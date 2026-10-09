@@ -132,7 +132,7 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
     let mut frames: Vec<Frame> = Vec::new();
     let mut call: Option<Call> = None;
     let mut program_counter = 0;
-    let mut held: Vec<String> = Vec::new();
+    let mut held: Vec<crate::arena::Owned> = Vec::new();
 
     for (depth, old) in frozen.frames.iter().enumerate() {
         let index = program.index_of(&old.function)?;
@@ -156,7 +156,7 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
         }
 
         let old_base = usize::try_from(old.base).ok()?;
-        let read = |register: usize, held: &mut Vec<String>| -> Option<Value> {
+        let read = |register: usize, held: &mut Vec<crate::arena::Owned>| -> Option<Value> {
             thaw_held(
                 frozen.registers.get(old_base.checked_add(register)?)?,
                 program,
@@ -205,7 +205,11 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
                 // A local keeps its name and its type's name and still cannot
                 // take the value: a `var` that held an optional's `null`, now
                 // an `int`. Its frame is not rebuilt; the body restarts.
-                if !holds(frozen.registers.get(old_base.checked_add(was)?)?, ty) {
+                if !holds(
+                    frozen.registers.get(old_base.checked_add(was)?)?,
+                    ty,
+                    &program.structs,
+                ) {
                     return None;
                 }
                 *registers.get_mut(base + usize::from(now))? = read(was, &mut held)?;
@@ -247,12 +251,18 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
     if frozen.frames.iter().all(|frame| unchanged(frame, program)) {
         return None;
     }
+    let arguments = thaw_arguments(frozen, program, &mut held).unwrap_or_default();
+    // What the frames hold must come back into the edited program — a frame
+    // kept as frozen is not checked local by local.
+    if !super::freeze::holds_all(&held, program) {
+        return None;
+    }
     Some(Machine {
         registers,
         frames,
         program_counter,
         finished: false,
-        arguments: thaw_arguments(frozen, program, &mut held).unwrap_or_default(),
+        arguments,
         held,
         origins: Default::default(),
     })
@@ -291,7 +301,7 @@ fn matched_locals<'s>(site: &'s Site, old: &[FrozenLocal]) -> Option<Vec<(u8, u6
 fn restart(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
     let name = &frozen.frames.first()?.function;
     let function = program.function(name)?;
-    let mut held = Vec::new();
+    let mut held: Vec<crate::arena::Owned> = Vec::new();
     let arguments = thaw_arguments(frozen, program, &mut held)?;
     // The parameters as declared, where the compiler recorded them.
     if let Some(entry) = function
@@ -308,10 +318,13 @@ fn restart(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
             || !parameters
                 .iter()
                 .zip(&frozen.arguments)
-                .all(|(parameter, value)| fits(value, &parameter.ty))
+                .all(|(parameter, value)| fits(value, &parameter.ty, &program.structs))
         {
             return None;
         }
+    }
+    if !super::freeze::holds_all(&held, program) {
+        return None;
     }
     let mut machine = Machine::new(program, name, &arguments)?;
     machine.held = held;
@@ -321,12 +334,12 @@ fn restart(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
 /// Whether a local of type `ty` can hold `value`: what [`fits`] says, an
 /// `int` in a float-typed local too — the VM widens one where a float is read,
 /// so `float x = 1;` holds an `Int` — and nothing written yet.
-fn holds(value: &FrozenValue, ty: &str) -> bool {
+fn holds(value: &FrozenValue, ty: &str, structs: &[crate::vm::StructLayout]) -> bool {
     let float = matches!(ty.trim_end_matches('?'), "float" | "Duration" | "Angle");
     // `Unit` is a local not written yet — `int count;` before its first
     // assignment — which any local can be.
     matches!(value, FrozenValue::Unit)
-        || fits(value, ty)
+        || fits(value, ty, structs)
         || (float && matches!(value, FrozenValue::Int(_)))
 }
 
@@ -334,9 +347,30 @@ fn holds(value: &FrozenValue, ty: &str) -> bool {
 ///
 /// A type whose values freeze as nothing more specific than their kind — a
 /// struct, an array — is taken on trust.
-fn fits(value: &FrozenValue, ty: &str) -> bool {
+fn fits(value: &FrozenValue, ty: &str, structs: &[crate::vm::StructLayout]) -> bool {
     if let Some(inner) = ty.strip_suffix('?') {
-        return matches!(value, FrozenValue::Null) || fits(value, inner);
+        return matches!(value, FrozenValue::Null) || fits(value, inner, structs);
+    }
+    if let Some(element) = ty.strip_suffix("[]") {
+        return match value {
+            FrozenValue::Array(items) => items.iter().all(|item| holds(item, element, structs)),
+            _ => false,
+        };
+    }
+    // A struct by its name; its fields are matched by name when it is
+    // imported into the running program.
+    if let FrozenValue::Struct { name, fields } = value {
+        let Some(layout) = structs.iter().find(|layout| layout.name == *name) else {
+            return false;
+        };
+        return name == ty
+            && fields.iter().all(|(field, value)| {
+                layout
+                    .fields
+                    .iter()
+                    .find(|(declared, _)| declared == field)
+                    .is_none_or(|(_, declared)| holds(value, declared, structs))
+            });
     }
     match ty {
         "int" => matches!(value, FrozenValue::Int(_)),

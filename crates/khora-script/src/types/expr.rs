@@ -39,6 +39,13 @@ impl Checker {
     /// Always returns a type: a failed expression yields [`Ty::Error`], which
     /// is compatible with everything, so one mistake produces one message.
     pub fn check_expr(&mut self, expr: &Expr, context: &Context) -> Ty {
+        let ty = self.check_expr_kind(expr, context);
+        self.types
+            .insert(std::ptr::from_ref(expr) as usize, ty.clone());
+        ty
+    }
+
+    fn check_expr_kind(&mut self, expr: &Expr, context: &Context) -> Ty {
         match expr {
             Expr::Int { .. } => Ty::Int,
             Expr::Float { .. } => Ty::Float,
@@ -131,9 +138,11 @@ impl Checker {
                     return self.entity_field(object, name, *span, context);
                 }
                 let field = self.check_field(&inner, name, *span);
+                // One level of absence, whichever made it: `s?.best` on an
+                // `int?` field is an `int?`, not an `int??`.
                 match field {
                     Ty::Error => Ty::Error,
-                    other => Ty::Optional(Box::new(other)),
+                    other => Ty::Optional(Box::new(other.unwrapped())),
                 }
             }
             Expr::Index {
@@ -159,17 +168,26 @@ impl Checker {
                 )
             }
             Expr::New { ty, args, span } => {
-                self.resolve(ty);
+                let built = self.resolve(ty);
                 for arg in args {
                     self.check_expr(arg, context);
                 }
-                self.error_note(
-                    "`new` is not supported yet",
-                    *span,
-                    "how a value is constructed is decided with arrays and structs; an engine type is built with its function — `Vec3(1.0, 2.0, 3.0)`",
-                );
+                let note = match &built {
+                    Ty::Struct(name) => format!("write a literal — `{name} {{ field: value }}`"),
+                    Ty::Engine(name) => {
+                        format!("an engine type is built with its function — `{name}(…)`")
+                    }
+                    _ => "a struct is built with a literal — `Loot { value: 1 }`".to_owned(),
+                };
+                self.error_note("`new` is not supported yet", *span, note);
                 Ty::Error
             }
+            Expr::StructLit {
+                name,
+                name_span,
+                fields,
+                span,
+            } => self.check_struct_lit(name, *name_span, fields, *span, context),
             // Reached only when a binding appears outside a condition, where
             // `check_if` would have intercepted it. Report rather than infer a
             // type for something that has no meaning here.
@@ -198,10 +216,28 @@ impl Checker {
             // the binding supplies it.
             return Ty::Array(Box::new(Ty::Error));
         };
-        let mut element = self.check_expr(first, context);
-        for other in rest {
-            let other_ty = self.check_expr(other, context);
-            element = self.unify(&element, &other_ty, span, "the elements of an array");
+        let types: Vec<Ty> = std::iter::once(first)
+            .chain(rest)
+            .map(|element| self.check_expr(element, context))
+            .collect();
+        // `null` beside a value makes the elements optionals of that value's
+        // type: `[null, e]` is an `Entity?[]`, not an array of anything.
+        let is_null = |ty: &Ty| matches!(ty, Ty::Optional(inner) if **inner == Ty::Error);
+        // The most telling element first: `[[], [1]]` is an `int[][]`
+        // whichever comes first.
+        let concrete = types
+            .iter()
+            .find(|ty| !is_null(ty) && !unknown_inside(ty))
+            .or_else(|| types.iter().find(|ty| !is_null(ty)));
+        let mut element = match concrete {
+            Some(ty) if types.iter().any(is_null) && !ty.is_optional() => {
+                Ty::Optional(Box::new(ty.clone()))
+            }
+            Some(ty) => ty.clone(),
+            None => types[0].clone(),
+        };
+        for ty in &types {
+            element = self.unify(&element, ty, span, "the elements of an array");
         }
         Ty::Array(Box::new(element))
     }
@@ -243,6 +279,20 @@ impl Checker {
             BinaryOp::Eq | BinaryOp::NotEq => {
                 if let Some(result) = self.overloaded(op, &left, &right, span) {
                     return result;
+                }
+                // `null` against an optional is the presence test, which stays.
+                let null = |ty: &Ty| matches!(ty, Ty::Optional(inner) if **inner == Ty::Error);
+                if let Some(composite) = [&left, &right]
+                    .into_iter()
+                    .find(|ty| matches!(ty.unwrapped(), Ty::Array(_) | Ty::Struct(_)))
+                    .filter(|_| !null(&left) && !null(&right))
+                {
+                    self.error_note(
+                        format!("`==` is not defined on `{}`", composite.name()),
+                        span,
+                        "compare what they hold — two arrays or structs are equal only by what an author decides",
+                    );
+                    return Ty::Bool;
                 }
                 if !left.accepts(&right) && !right.accepts(&left) {
                     self.error_note(
@@ -320,6 +370,34 @@ impl Checker {
 
         let target_ty = self.check_expr(target, context);
         let value_ty = self.check_expr(value, context);
+
+        // Some places can be read and not written.
+        if let Expr::Field { object, name, span } = target {
+            let receiver = self
+                .types
+                .get(&(std::ptr::from_ref(&**object) as usize))
+                .cloned()
+                .unwrap_or(Ty::Error);
+            match receiver {
+                Ty::Array(_) | Ty::Str if name == "Length" => {
+                    self.error_note(
+                        "`Length` is read-only",
+                        *span,
+                        "it counts what the value holds; change the value to change it",
+                    );
+                    return Ty::Error;
+                }
+                Ty::Engine(engine) => {
+                    self.error_note(
+                        format!("a `{engine}`'s components are read-only"),
+                        *span,
+                        format!("build a new one — `{engine}(…)` — and assign it"),
+                    );
+                    return Ty::Error;
+                }
+                _ => {}
+            }
+        }
 
         match op {
             // A target already reported says nothing about the operation.
@@ -406,46 +484,8 @@ impl Checker {
 
         // `entity.Method(…)`: an entity has no methods — a behavior's own are
         // called by name.
-        let through = match callee {
-            Expr::Field { object, name, span } => Some((object, name, *span, false)),
-            Expr::OptionalField { object, name, span } => Some((object, name, *span, true)),
-            _ => None,
-        };
-        if let Some((object, name, at, optional)) = through {
-            let checked = self.check_expr(object, context);
-            if optional && !checked.is_optional() && !matches!(checked, Ty::Error) {
-                self.error_note(
-                    format!("`{}` is never null", checked.name()),
-                    at,
-                    "use `.` — `?.` is for optionals, and using it here suggests a doubt the type says is unfounded",
-                );
-            }
-            let receiver = if optional {
-                checked.unwrapped()
-            } else {
-                checked
-            };
-            for argument in args {
-                self.check_expr(argument, context);
-            }
-            if receiver == Ty::Entity {
-                let own =
-                    matches!(**object, Expr::This(_)) && self.method_names.contains(name.as_str());
-                match (&context.owner, own) {
-                    (Some(owner), true) => self.error(
-                        format!("`{name}` is a method of `{owner}`: call it by name — `{name}()`"),
-                        at,
-                    ),
-                    _ => self.error_note(
-                        format!("an entity has no method `{name}`"),
-                        at,
-                        "calling a method on an entity is not available yet — a behavior's own methods are called by name",
-                    ),
-                }
-            } else {
-                self.check_field(&receiver, name, at);
-            }
-            return Ty::Error;
+        if let Some(ty) = self.check_method_call(callee, args, context) {
+            return ty;
         }
 
         // Unknown callee: check the arguments so their errors surface, and
@@ -458,26 +498,7 @@ impl Checker {
         Ty::Error
     }
 
-    /// `entity.name`: an entity has no fields — reported at the line, about
-    /// what was written.
-    fn entity_field(&mut self, object: &Expr, name: &str, span: Span, context: &Context) -> Ty {
-        let own =
-            matches!(object, Expr::This(_)) && self.field_names.iter().any(|field| field == name);
-        match (&context.owner, own) {
-            (Some(owner), true) => self.error(
-                format!("`{name}` is a field of `{owner}`: name it directly"),
-                span,
-            ),
-            _ => self.error_note(
-                format!("an entity has no field `{name}`"),
-                span,
-                "a component is read with `Get` on the entity — reading components from a script is not available yet",
-            ),
-        }
-        Ty::Error
-    }
-
-    fn check_field(&mut self, receiver: &Ty, name: &str, span: Span) -> Ty {
+    pub(super) fn check_field(&mut self, receiver: &Ty, name: &str, span: Span) -> Ty {
         match receiver {
             Ty::Error => Ty::Error,
             Ty::Struct(struct_name) => {
@@ -582,6 +603,11 @@ impl Checker {
 
     /// The type both sides must share, reporting when they cannot.
     pub fn unify(&mut self, left: &Ty, right: &Ty, span: Span, what: &str) -> Ty {
+        // The side that says something wins: `c ? [] : ["a"]` is a
+        // `string[]`, whichever branch is empty.
+        if unknown_inside(left) && right.accepts(left) {
+            return right.clone();
+        }
         if left.accepts(right) {
             return left.clone();
         }
@@ -620,4 +646,29 @@ fn is_assignable_target(expr: &Expr) -> bool {
         expr,
         Expr::Ident { .. } | Expr::Field { .. } | Expr::Index { .. }
     )
+}
+
+/// Whether `ty` holds a part nothing has said anything about — the element of
+/// an empty `[]`.
+pub(super) fn unknown_inside(ty: &Ty) -> bool {
+    match ty {
+        Ty::Error => true,
+        Ty::Array(inner) | Ty::Optional(inner) => unknown_inside(inner),
+        _ => false,
+    }
+}
+
+/// Whether a `var` given this type would hold something nobody named — an
+/// array whose elements are unknown (`[]`), or only ever `null`.
+pub(super) fn says_nothing(ty: &Ty) -> bool {
+    match ty {
+        Ty::Array(inner) => matches!(**inner, Ty::Error) || null_only(inner) || says_nothing(inner),
+        Ty::Optional(inner) => says_nothing(inner),
+        _ => false,
+    }
+}
+
+/// `null`'s own type: an optional of nothing.
+fn null_only(ty: &Ty) -> bool {
+    matches!(ty, Ty::Optional(inner) if **inner == Ty::Error)
 }

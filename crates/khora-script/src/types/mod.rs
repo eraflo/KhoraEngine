@@ -32,11 +32,13 @@
 //! everything, so one mistake yields one message instead of a cascade.
 
 mod arithmetic;
+mod calls;
 pub mod expr;
 mod members;
 mod returns;
 pub mod scope;
 pub mod stmt;
+mod structs;
 pub mod ty;
 
 #[cfg(test)]
@@ -60,6 +62,10 @@ pub struct Checked {
     /// Each `var`'s inferred type, keyed by its initialiser's address in the
     /// module checked — valid only alongside that module.
     pub inferred: HashMap<usize, String>,
+    /// Every expression's type, keyed by its address in the module checked —
+    /// what the compiler asks where a shape cannot say: an element's type, an
+    /// array or a struct, which value is copied.
+    pub types: HashMap<usize, Ty>,
 }
 
 impl Checked {
@@ -91,6 +97,7 @@ pub fn check_with(module: &Module, natives: &crate::native::NativeRegistry) -> C
     Checked {
         diagnostics: checker.diagnostics,
         inferred: checker.inferred,
+        types: checker.types,
     }
 }
 
@@ -99,6 +106,12 @@ pub fn check_with(module: &Module, natives: &crate::native::NativeRegistry) -> C
 pub struct StructInfo {
     /// Field types by name.
     pub fields: HashMap<String, Ty>,
+    /// Field names in declaration order.
+    pub order: Vec<String>,
+    /// The fields that declare a default.
+    pub defaulted: Vec<String>,
+    /// Each defaulted field's default, as written.
+    pub default_exprs: HashMap<String, crate::ast::Expr>,
     /// Operator overloads, keyed by operator and right-hand type name.
     ///
     /// Keyed on the *written* right-hand type rather than the resolved one so
@@ -194,6 +207,8 @@ pub struct Checker {
     pub scopes: Scopes,
     /// What each `var` inferred — see [`Checked::inferred`].
     pub inferred: HashMap<usize, String>,
+    /// Every expression's type — see [`Checked::types`].
+    pub types: HashMap<usize, Ty>,
     /// The states declaring each state method of the behavior being checked:
     /// callable only from inside its state, and named when a call from
     /// anywhere else is refused.
@@ -222,6 +237,7 @@ impl Checker {
             diagnostics: Vec::new(),
             scopes: Scopes::new(),
             inferred: HashMap::new(),
+            types: HashMap::new(),
             state_methods: HashMap::new(),
             unready: Vec::new(),
             field_names: Vec::new(),
@@ -269,6 +285,9 @@ impl Checker {
                     decl.name.clone(),
                     StructInfo {
                         fields: HashMap::new(),
+                        order: Vec::new(),
+                        defaulted: Vec::new(),
+                        default_exprs: HashMap::new(),
                         operators: Vec::new(),
                     },
                 );
@@ -309,6 +328,9 @@ impl Checker {
 
     fn collect_struct(&mut self, decl: &StructDecl) {
         let mut fields = HashMap::new();
+        let mut order = Vec::new();
+        let mut defaulted = Vec::new();
+        let mut default_exprs = HashMap::new();
         for field in &decl.fields {
             let ty = self.resolve(&field.ty);
             if fields.contains_key(&field.name) {
@@ -319,6 +341,11 @@ impl Checker {
                 continue;
             }
             fields.insert(field.name.clone(), ty);
+            order.push(field.name.clone());
+            if let Some(default) = &field.default {
+                defaulted.push(field.name.clone());
+                default_exprs.insert(field.name.clone(), default.clone());
+            }
         }
 
         let operators = decl
@@ -329,6 +356,9 @@ impl Checker {
 
         if let Some(info) = self.structs.get_mut(&decl.name) {
             info.fields = fields;
+            info.order = order;
+            info.defaulted = defaulted;
+            info.default_exprs = default_exprs;
             info.operators = operators;
         }
     }
@@ -457,6 +487,8 @@ impl Checker {
             let context = Context::sync(format!("a default of `{}`", decl.name), Ty::Void);
             let actual = self.check_expr(default, &context);
             self.expect_assignable(&declared, &actual, default.span());
+            self.expect_constant_default(default);
+            self.expect_finite_default(&decl.name, &field.name, default);
         }
     }
 

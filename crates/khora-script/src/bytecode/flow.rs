@@ -121,7 +121,7 @@ impl Compiler {
     /// unless a value is to be bound; the caller releases to `mark` then.
     fn compile_test<'a>(&mut self, condition: &'a Expr, mark: usize) -> (usize, Option<Bound<'a>>) {
         if let Expr::Binding { name, value, .. } = condition {
-            let (register, shape) = self.compile_expr(value);
+            let (register, shape) = self.compile_value(value);
             let jump = self.emit(Instruction::JumpIfNull {
                 src: register,
                 target: usize::MAX,
@@ -237,7 +237,7 @@ impl Compiler {
     /// arm's body has, so a body is free to reuse it.
     pub(super) fn compile_match(&mut self, subject: &Expr, arms: &[MatchArm]) {
         let mark = self.registers.mark();
-        let (value, _) = self.compile_expr(subject);
+        let (value, _) = self.compile_value(subject);
         let mut ends: Vec<usize> = Vec::new();
         let mut to_next: Option<usize> = None;
         let mut seen: HashMap<String, usize> = HashMap::new();

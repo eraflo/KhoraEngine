@@ -158,7 +158,19 @@ pub enum Expr {
         /// The whole expression.
         span: Span,
     },
-    /// `new Health(1, 2)`
+    /// `Loot { value: 1, weight: 2 }` — a struct value, its fields by name.
+    StructLit {
+        /// The struct.
+        name: String,
+        /// Where the name sits.
+        name_span: Span,
+        /// Each field written: its name, where the name sits, its value.
+        fields: Vec<(String, Span, Expr)>,
+        /// The whole expression.
+        span: Span,
+    },
+    /// `new Health(1, 2)` — parsed so the checker can point at the literal;
+    /// never compiled.
     New {
         /// The type constructed.
         ty: TypeRef,
@@ -224,6 +236,7 @@ impl Expr {
             | Self::Index { span, .. }
             | Self::Ternary { span, .. }
             | Self::New { span, .. }
+            | Self::StructLit { span, .. }
             | Self::Binding { span, .. }
             | Self::Await { span, .. }
             | Self::Cast { span, .. } => *span,

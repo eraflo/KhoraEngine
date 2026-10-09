@@ -360,7 +360,7 @@ impl Parser {
     pub(super) fn parse_every(&mut self) -> Parse<EveryDecl> {
         let start = self.span();
         self.advance(); // `every`
-        let interval = self.parse_expr()?;
+        let interval = self.parse_expr_before_block()?;
         let body = self.parse_body_or_arrow(false)?;
         let span = start.to(body.span);
         Ok(EveryDecl {
@@ -373,7 +373,7 @@ impl Parser {
     pub(super) fn parse_after(&mut self) -> Parse<AfterDecl> {
         let start = self.span();
         self.advance(); // `after`
-        let delay = self.parse_expr()?;
+        let delay = self.parse_expr_before_block()?;
         let body = self.parse_body_or_arrow(false)?;
         let span = start.to(body.span);
         Ok(AfterDecl { delay, body, span })

@@ -50,6 +50,10 @@ pub enum SiteKind {
     LoopHead,
     /// Just after an `await`.
     Await,
+    /// Just before an operation whose cost depends on what it touches — a
+    /// copy, a field read or write of an array. A run that cannot pay for it
+    /// stops here, with the operation not yet done.
+    Checkpoint,
     /// Just after a call returns, in the caller.
     Return {
         /// Where the callee's frame begins, relative to the caller's.

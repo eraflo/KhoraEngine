@@ -40,6 +40,7 @@
 mod freeze;
 mod held;
 pub mod instruction;
+mod objects;
 pub mod program;
 pub mod resume;
 pub mod site;
@@ -49,10 +50,12 @@ pub mod value;
 mod tests;
 
 pub use instruction::{Instruction, Reg};
-pub use program::{BehaviorLayout, Function, Program, StateLayout, TimerKind, TimerLayout};
+pub use program::{
+    BehaviorLayout, Function, Program, StateLayout, StructLayout, TimerKind, TimerLayout,
+};
 pub use resume::{resume, Abandoned, ResumeTier};
 pub use site::{Site, SiteKind, SiteLocal};
-pub use value::{resolve_str, StrError, StrRef, Value};
+pub use value::{resolve_str, ObjRef, StrError, StrRef, Value};
 
 use serde::{Deserialize, Serialize};
 
@@ -135,6 +138,20 @@ pub enum Fault {
         /// `Eq`, and a fault is.
         value: String,
     },
+    /// An index outside the array it was used on — negative, or at or past
+    /// its length.
+    IndexOutOfRange {
+        /// The index, as the program computed it.
+        index: i64,
+        /// The array's length.
+        len: usize,
+    },
+    /// An array was expected and something else was found — a reference that
+    /// no longer exists, or a value of another kind.
+    NotAnObject {
+        /// What was found.
+        found: &'static str,
+    },
 }
 
 /// The outcome of one [`Machine::run`] call.
@@ -193,11 +210,12 @@ pub struct Machine {
     /// again from its entry, and it has to be handed what it was handed then.
     #[serde(default)]
     arguments: Vec<Value>,
-    /// The text the registers and arguments referenced when the machine last
-    /// suspended, each named by a [`StrRef::Held`]. Empty while it runs.
+    /// The text and arrays the registers and arguments referenced when the
+    /// machine last suspended, each named by a [`StrRef::Held`] or an
+    /// [`ObjRef::Held`]. Empty while it runs.
     #[serde(default)]
-    held: Vec<String>,
-    /// Where in the arena each held string was copied from — see
+    held: Vec<crate::arena::Owned>,
+    /// Where in the arena each held value was copied from — see
     /// [`held::Origins`].
     #[serde(skip)]
     origins: held::Origins,
@@ -291,7 +309,7 @@ impl Machine {
         let mut overdraft = 0;
         // The text it held while suspended, back where running code reads it.
         if !self.finished {
-            if let Err(fault) = self.rehydrate(&mut host.arena) {
+            if let Err(fault) = self.rehydrate(&mut host.arena, program) {
                 return (self.fault(fault), 0);
             }
         }
@@ -299,7 +317,7 @@ impl Machine {
         // And out again: the arena it built text in is emptied before the
         // machine next runs, and may be saved before then.
         if matches!(outcome, Run::Suspended(_)) {
-            self.evacuate(&host.arena);
+            self.evacuate(&host.arena, program);
         }
         (outcome, fuel.saturating_sub(remaining) + overdraft)
     }
@@ -320,6 +338,15 @@ impl Machine {
         // A run starts where a suspension left it — a safepoint or just past an
         // `await` — or at a function's entry: a place it may stop at.
         let mut at_safepoint = true;
+        // Whether this run has executed nothing yet: a sized operation it starts
+        // at runs whatever it costs, so every run makes progress.
+        let mut first = true;
+        // Where this run started, in which frame: a sized operation that stops
+        // a run at an earlier place it can walk back to runs anyway when the
+        // run started there, so a run that resumes there makes progress.
+        // Once: the operation the run resumed for, not every later one that
+        // walks back to the same place.
+        let mut entry = Some(self.entry_point());
 
         loop {
             let Some(frame) = self.frames.last() else {
@@ -369,7 +396,26 @@ impl Machine {
                     Some(native) => native.cost,
                     None => return self.fault(Fault::UnknownNative { index: function }),
                 },
-                _ => instruction.cost(),
+                _ => match self.sized_cost(&instruction, host) {
+                    // A sized operation is its own checkpoint: it does not
+                    // start when the fuel left cannot pay for it — unless it is
+                    // the first thing this run does, so every run progresses.
+                    Some(cost) => {
+                        // Whether it is paid for or not, the first sized
+                        // operation spends the pass the run started with.
+                        let pass = entry.take();
+                        if cost > *remaining && !first {
+                            let back = instruction.stops_at().unwrap_or(self.program_counter);
+                            let here = (self.frames.len(), self.function_index(), back);
+                            if pass != Some(here) {
+                                self.program_counter = back;
+                                return Run::Suspended(Suspension::OutOfFuel);
+                            }
+                        }
+                        cost
+                    }
+                    None => instruction.cost(),
+                },
             };
             // Past the budget, the run goes on to the next safepoint and the
             // rest is charged as an overdraft. Never a loop: every back edge
@@ -382,6 +428,11 @@ impl Machine {
                 *remaining -= cost;
             }
             at_safepoint = false;
+            // A safepoint does no work: the run's first instruction is the
+            // first that costs something.
+            if cost > 0 {
+                first = false;
+            }
             let from = self.program_counter;
 
             match self.step(&instruction, program, host, function.code.len()) {
@@ -415,6 +466,22 @@ impl Machine {
                 Err(fault) => return self.fault(fault),
             }
         }
+    }
+
+    /// Where a run starts: the frame depth, the function, the instruction.
+    fn entry_point(&self) -> (usize, usize, usize) {
+        (
+            self.frames.len(),
+            self.function_index(),
+            self.program_counter,
+        )
+    }
+
+    /// The function the innermost frame runs.
+    fn function_index(&self) -> usize {
+        self.frames
+            .last()
+            .map_or(usize::MAX, |frame| frame.function)
     }
 
     fn fault(&mut self, fault: Fault) -> Run {
@@ -594,11 +661,10 @@ impl Machine {
                     // Text kept in a field is stored by value, so reading it
                     // brings a copy into the frame arena — where everything the
                     // running code can name lives.
-                    Some(Persisted::Owned(object)) => {
-                        let copy = object.clone();
-                        let reference = host.arena.alloc(copy).map_err(|_| Fault::ArenaFull)?;
-                        Value::Str(StrRef::Arena(reference))
-                    }
+                    Some(Persisted::Owned(owned)) => host
+                        .arena
+                        .import(owned, program)
+                        .map_err(|_| Fault::ArenaFull)?,
                     // A slot the instance does not have yet: a script that
                     // gained a field since this entity was saved. Unset rather
                     // than a fault — hot-reload is meant to survive that.
@@ -607,7 +673,7 @@ impl Machine {
                 self.write(dst, value)?;
                 Ok(Step::Next)
             }
-            Instruction::StoreField { slot, src } => {
+            Instruction::StoreField { slot, src } | Instruction::WriteBack { slot, src } => {
                 let value = self.read(src)?;
                 let stored = self.persist(value, program, host)?;
                 host.fields.set(slot as usize, stored);
@@ -626,6 +692,18 @@ impl Machine {
                 self.write(dst, Value::Str(StrRef::Const(index)))?;
                 Ok(Step::Next)
             }
+            Instruction::NewArray { .. }
+            | Instruction::Extend { .. }
+            | Instruction::GetIndex { .. }
+            | Instruction::SetIndex { .. }
+            | Instruction::Length { .. }
+            | Instruction::Copy { .. }
+            | Instruction::NewStruct { .. }
+            | Instruction::GetField { .. }
+            | Instruction::SetField { .. }
+            | Instruction::Push { .. }
+            | Instruction::RemoveAt { .. } => self.step_object(instruction, program, host),
+
             Instruction::Concat { dst, lhs, rhs } => {
                 let left = self.read(lhs)?;
                 let right = self.read(rhs)?;

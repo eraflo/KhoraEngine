@@ -80,6 +80,7 @@ fn double_code() -> Vec<Instruction> {
 fn pausing_call() -> Program {
     Program {
         max_overdraft: 0,
+        structs: Vec::new(),
         strings: Vec::new(),
         behaviors: Vec::new(),
         functions: vec![
@@ -93,6 +94,7 @@ fn pausing_call() -> Program {
 fn pausing_call_reordered() -> Program {
     Program {
         max_overdraft: 0,
+        structs: Vec::new(),
         strings: Vec::new(),
         behaviors: Vec::new(),
         functions: vec![
@@ -106,6 +108,7 @@ fn pausing_call_reordered() -> Program {
 fn pausing_call_renamed() -> Program {
     Program {
         max_overdraft: 0,
+        structs: Vec::new(),
         strings: Vec::new(),
         behaviors: Vec::new(),
         functions: vec![
@@ -119,6 +122,7 @@ fn pausing_call_renamed() -> Program {
 fn pausing_literal(strings: &[&str], index: u32) -> Program {
     Program {
         max_overdraft: 0,
+        structs: Vec::new(),
         strings: strings.iter().map(|s| (*s).to_owned()).collect(),
         behaviors: Vec::new(),
         functions: vec![function(
@@ -138,6 +142,7 @@ fn pausing_literal(strings: &[&str], index: u32) -> Program {
 fn pausing_joined() -> Program {
     Program {
         max_overdraft: 0,
+        structs: Vec::new(),
         strings: vec!["wind".to_owned(), "-up".to_owned()],
         behaviors: Vec::new(),
         functions: vec![function(

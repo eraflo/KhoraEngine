@@ -39,6 +39,7 @@ impl Compiler {
         self.fields.clear();
         let mut layout = crate::vm::BehaviorLayout {
             name: decl.name.clone(),
+            structs: self.program.structs.clone(),
             fields: Vec::new(),
             field_types: Vec::new(),
             states: Vec::new(),
@@ -363,7 +364,7 @@ impl Compiler {
                 Some(expr) => self.compile_expr(expr).0,
                 None => self.zero_of_type(&field.ty),
             };
-            self.emit(Instruction::StoreField { slot, src });
+            self.emit(Instruction::WriteBack { slot, src });
             self.registers.release_to(mark);
             self.naming.leave();
         }
@@ -377,7 +378,7 @@ impl Compiler {
                 let slot = layout.state_slot() as u16;
                 let mark = self.registers.mark();
                 let (src, _) = self.constant(crate::vm::Value::Int(0), Shape::Int);
-                self.emit(Instruction::StoreField { slot, src });
+                self.emit(Instruction::WriteBack { slot, src });
                 self.registers.release_to(mark);
             }
 
@@ -388,7 +389,7 @@ impl Compiler {
                 let slot = layout.timer_slot(index) as u16;
                 let mark = self.registers.mark();
                 let (src, _) = self.constant(crate::vm::Value::Float(timer.seconds), Shape::Float);
-                self.emit(Instruction::StoreField { slot, src });
+                self.emit(Instruction::WriteBack { slot, src });
                 self.registers.release_to(mark);
             }
 

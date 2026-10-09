@@ -269,10 +269,12 @@ fn vector(runtime: &ScriptRuntime, slot: usize) -> Option<khora_core::math::Vec3
 
 /// Reads a field expected to hold text.
 fn text(runtime: &ScriptRuntime, slot: usize) -> Option<String> {
-    match runtime.peek(entity(0), "Guard")?.fields.get(slot)? {
-        khora_script::arena::Persisted::Owned(khora_script::arena::Object::Str(s)) => {
-            Some(s.clone())
-        }
+    let stored = runtime.peek(entity(0), "Guard")?.fields.get(slot)?;
+    if !matches!(stored, khora_script::arena::Persisted::Owned(..)) {
+        return None;
+    }
+    match khora_script::bridge::from_persisted(stored) {
+        Ok(Some(khora_core::script::ScriptValue::Str(s))) => Some(s),
         _ => None,
     }
 }

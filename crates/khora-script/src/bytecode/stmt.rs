@@ -71,7 +71,7 @@ impl Compiler {
                 let mark = self.registers.mark();
                 let shape = match (ty, value) {
                     (Some(written), Some(expr)) => {
-                        let (source, _) = self.compile_expr(expr);
+                        let (source, _) = self.compile_value(expr);
                         let declared = super::shape_of(written);
                         let slot =
                             self.declare_local(name, declared, super::keys::type_name(written));
@@ -85,7 +85,7 @@ impl Compiler {
                     // `var` takes the initialiser's shape, which is what the
                     // checker inferred its type from.
                     (None, Some(expr)) => {
-                        let (source, shape) = self.compile_expr(expr);
+                        let (source, shape) = self.compile_value(expr);
                         let ty = self
                             .inferred
                             .get(&(std::ptr::from_ref(expr) as usize))
@@ -173,12 +173,13 @@ impl Compiler {
             Stmt::Break(span) => self.compile_break(*span),
             Stmt::Continue(span) => self.compile_continue(*span),
             Stmt::Match { subject, arms, .. } => self.compile_match(subject, arms),
-
-            // `foreach` walks an array, which arrives with arrays. Reporting is
-            // better than emitting a loop over nothing.
-            other => {
-                self.error("this statement cannot be compiled yet", other.span());
-            }
+            Stmt::Foreach {
+                ty,
+                name,
+                iterable,
+                body,
+                ..
+            } => self.compile_foreach(ty.as_ref(), name, iterable, body),
         }
     }
 
@@ -262,7 +263,7 @@ impl Compiler {
 
         for (argument, slot) in args.iter().zip(slots) {
             let inner = self.registers.mark();
-            let (value, _) = self.compile_expr(argument);
+            let (value, _) = self.compile_value(argument);
             if value != slot {
                 self.emit(Instruction::Move {
                     dst: slot,
@@ -358,8 +359,9 @@ impl Compiler {
             writes.push((*slot, register));
         }
 
+        // All or nothing: a state is never half-entered.
         for (slot, src) in writes {
-            self.emit(Instruction::StoreField { slot, src });
+            self.emit(Instruction::WriteBack { slot, src });
         }
         self.registers.release_to(mark);
     }

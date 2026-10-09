@@ -37,7 +37,7 @@ behavior Guard {
 | `import "path.erg";` | runs | before every other item; paths relative to the script root; a cycle is refused with its chain. Every imported module joins **one flat namespace**; `as Alias` parses and is unused |
 | `fn <type> Name(params) { … }` | runs | free functions; called before their declaration and recursively; `this` is refused in them; a name an engine function already has is refused |
 | `behavior Name { … }` | runs | the unit the engine attaches to an entity |
-| `struct Name { … }` | parses | fields and operator overloads check; struct values cannot be built, read or written yet |
+| `struct Name { … }` | runs — a value type; its field defaults must be constants; operator overloads check but do not compile yet |
 | `[Attribute]` on a behavior | parses | nothing reads it yet |
 
 Comments are `// line` and `/* block */`.
@@ -58,11 +58,55 @@ Comments are `// line` and `/* block */`.
 | `int`, `float`, `bool`, `string`, `Entity` | runs |
 | `Vec2`, `Vec3`, `Vec4`, `Quat`, `Color` | runs — built by calling `Vec3(1.0, 2.0, 3.0)`; components `.x .y .z .w` (`.r .g .b .a`) read-only |
 | `Duration`, `Angle` | runs — distinct from `float` and from each other; `2s + 500ms` is `2.5s`, `2s + 90deg` is refused |
-| `T?` | runs — holds a value or `null`; one declared without a value starts `null`; `a ?? b`, `if (var x = opt)`, `while (var x = opt)` and `match` unwrap it; `?.` does not run yet |
-| `T[]`, `Map<K, V>` | checks — no literal, no indexing yet |
+| `T?` | runs — holds a value or `null`; one declared without a value starts `null`; `a ?? b`, `?.`, `if (var x = opt)`, `while (var x = opt)` and `match` unwrap it |
+| `T[]` | runs — `[1, 2, 3]`, `xs[i]`, `xs.Length`, `foreach`, `xs.Push(v)`, `xs.RemoveAt(i)`; one declared without a value starts `[]` |
+| `Map<K, V>` | checks — no literal, no indexing |
 
-The one implicit conversion: an `int` where a `float` is expected. There is no
-way yet to turn a `Duration` or an `Angle` into a `float` in compiled code.
+The one implicit conversion: an `int` where a `float` is expected. A
+`Duration` or an `Angle` reads as a `float` with `d.Seconds`, `a.Radians`,
+`a.Degrees`.
+
+## Arrays and structs
+
+```text
+struct Waypoint { Vec3 at; float wait = 0.5; }
+
+behavior Patroller {
+    Waypoint[] route = [
+        Waypoint { at: Vec3(0.0, 0.0, 0.0) },
+        Waypoint { at: Vec3(4.0, 0.0, 0.0), wait: 2.0 }
+    ];
+    int current = 0;
+
+    void Update(float dt) {
+        Waypoint next = route[current];      // a copy
+        current = (current + 1) % route.Length;
+    }
+}
+```
+
+- **Values, not references.** Binding an array or a struct read from a
+  variable, a field or an element copies it — `b = a; b.x = 9;` leaves `a`
+  alone, and so does passing one to a function or iterating it. Two guards never
+  share one patrol route by accident; to share data, point at the same entity.
+- **Writing through a path changes the value in place**: `route[1].at = …`,
+  `grid[0][2] = 7`, `xs[i] += 1`.
+- **A literal names its fields**, in any order: `Waypoint { at: p }`. A field it
+  leaves out takes its default, else its type's zero; a field with neither must
+  be written. A struct's defaults are constants — a number, text, `null`, a
+  duration, an angle, or an array or struct literal of those.
+- **Growing and shrinking**: `xs.Push(v)` appends a copy of `v`;
+  `xs.RemoveAt(i)` removes the element at `i` and shifts the rest down. Both
+  change the array in place, so `xs` must be a variable, a field, or an element
+  or field of one — `Make().Push(1)` is refused: nothing would keep the result.
+- `xs[i]` outside the array faults (`IndexOutOfRange`). `==` is not defined on
+  arrays or structs — compare what they hold. `Length` and an engine type's
+  components are read-only.
+- `s?.field` reads a field of an optional struct, or gives `null`.
+- **Saved by name.** A field holding an array or a struct is saved and
+  restored by its field names: after an edit, a struct field that is gone is
+  dropped, a new one takes its default or its zero.
+- Copying, building and saving cost fuel in proportion to the size.
 
 ## Fields
 
@@ -78,7 +122,7 @@ A field is `Type name [= default];` — `var` is for locals only. A default is a
 expression, run once by the instance's initialiser, in the order the fields are
 declared: it may read a field declared above it, never itself or one below.
 Without one, a field starts at its type's zero — `int` `0`, `float`,
-`Duration`, `Angle` `0.0`, `bool` `false`, `string` `""`, `T?` `null`. `Entity`,
+`Duration`, `Angle` `0.0`, `bool` `false`, `string` `""`, `T?` `null`, `T[]` `[]`. `Entity`,
 the engine types and structs have no zero: such a field starts unset — set it in
 the inspector — and reading it before writing faults.
 
@@ -170,7 +214,7 @@ stateDiagram-v2
 | `break`, `continue` | runs — act on the innermost loop, from anywhere inside it; in a `for`, `continue` still runs the step |
 | `if (var x = opt)`, `while (var x = Next())` | runs — `x` is the present value, in the branch or the body only |
 | `match (opt) { T x => …, null => … }` | runs — takes an optional apart; see below |
-| `foreach (var x in xs)` | checks |
+| `foreach (var x in xs)`, `foreach (int x in xs)` | runs — over a copy of `xs` taken when the loop starts; `x` is a copy of each element |
 | `int x;` without a value | runs — starts at its type's zero; `Entity e;`, `Vec3 v;` are refused: give them a value, or use `Entity?` |
 
 ### `match`
@@ -215,7 +259,7 @@ async void Attack() { await 0.5s; Strike(); }
 | `Name(args)` | runs — functions and natives by bare name |
 | `obj.Method()` | checks |
 | `a ?? b` | runs — `a` unless it is `null`; `b` is evaluated only then. A `float?` falls back to a float even when `b` is written as an int |
-| `a?.b`, `[…]`, `a[i]` | checks |
+| `[a, b]`, `a[i]`, `a.Length`, `a?.b`, `Name { field: v }` | runs — see [Arrays and structs](#arrays-and-structs) |
 | `new T(…)` | refused — not supported yet; build an engine type with its function, `Vec3(1.0, 2.0, 3.0)` |
 | `entity.Field` | refused — an entity has no fields: a behavior's own fields are named directly, a component is read with `Get` (not available yet) |
 
@@ -268,11 +312,9 @@ void Hurt() { Raise(this, "Damaged", 30); }
 
 ## Not yet
 
-Pinned as pending in the conformance suite, each with the spec that owns it:
-struct values and fields, arrays and maps, `foreach`, `match`, `break` and
-`continue`, optional bindings, `?.`, method calls,
-awaiting events, and a check that every path of a non-`void` function returns.
-Until then: no closures, no method calls, no struct or array values at run time.
+Maps, methods on structs and arrays (beyond `Push` and `RemoveAt`), struct
+operator overloads at run time, value patterns in `match`, awaiting events,
+closures.
 
 ## See also
 

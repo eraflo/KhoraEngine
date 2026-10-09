@@ -19,6 +19,7 @@
 
 use super::{Parse, Parser};
 use crate::ast::*;
+use crate::diagnostics::Span;
 use crate::lexer::{Keyword, TokenKind};
 
 impl Parser {
@@ -378,6 +379,9 @@ impl Parser {
                 Ok(Expr::This(span))
             }
             TokenKind::Ident(name) => {
+                if self.at_struct_literal() {
+                    return self.parse_struct_literal(name, span);
+                }
                 self.advance();
                 Ok(Expr::Ident { name, span })
             }
@@ -442,6 +446,62 @@ impl Parser {
             }
             _ => Err(self.error_here("expected an expression")),
         }
+    }
+
+    /// An expression a block follows directly: `Name {` there opens the
+    /// block, so a struct literal is not looked for.
+    pub(super) fn parse_expr_before_block(&mut self) -> Parse<Expr> {
+        let outer = std::mem::replace(&mut self.no_struct_literal, true);
+        let parsed = self.parse_expr();
+        self.no_struct_literal = outer;
+        parsed
+    }
+
+    /// Whether the name under the cursor opens `Name { }` or `Name { field: …`.
+    fn at_struct_literal(&self) -> bool {
+        if self.no_struct_literal || !matches!(self.peek_at(1), TokenKind::LBrace) {
+            return false;
+        }
+        match self.peek_at(2) {
+            TokenKind::RBrace => true,
+            TokenKind::Ident(_) => matches!(self.peek_at(3), TokenKind::Colon),
+            _ => false,
+        }
+    }
+
+    /// `Name { field: value, … }`.
+    fn parse_struct_literal(&mut self, name: String, name_span: Span) -> Parse<Expr> {
+        self.advance(); // the name
+        self.advance(); // `{`
+                        // Inside the braces a literal is an ordinary expression again.
+        let outer = std::mem::replace(&mut self.no_struct_literal, false);
+        let mut fields = Vec::new();
+        let result = (|| {
+            if !self.check(&TokenKind::RBrace) {
+                loop {
+                    let field_span = self.span();
+                    let TokenKind::Ident(field) = self.peek().clone() else {
+                        return Err(self.error_here("expected a field name"));
+                    };
+                    self.advance();
+                    self.expect(TokenKind::Colon, "`:` after the field name")?;
+                    let value = self.parse_expr()?;
+                    fields.push((field, field_span, value));
+                    if !self.eat(&TokenKind::Comma) {
+                        break;
+                    }
+                }
+            }
+            self.expect(TokenKind::RBrace, "`}` to close the literal")
+        })();
+        self.no_struct_literal = outer;
+        let end = result?;
+        Ok(Expr::StructLit {
+            name,
+            name_span,
+            fields,
+            span: name_span.to(end),
+        })
     }
 
     /// Whether `(` opens a cast rather than a group.

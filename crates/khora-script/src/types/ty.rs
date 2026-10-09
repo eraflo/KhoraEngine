@@ -125,6 +125,8 @@ impl Ty {
             (Self::Float, Self::Int) => true,
             // `null` is typed `Optional(Error)` so it fits any optional.
             (Self::Optional(_), Self::Optional(inner)) if **inner == Self::Error => true,
+            // `int?` where a `float?` is wanted: the widening, under the `?`.
+            (Self::Optional(wanted), Self::Optional(got)) => wanted.accepts(got),
             // A present value is acceptable where an optional is wanted; the
             // reverse is what the nullability check exists to reject.
             (Self::Optional(inner), other) => inner.accepts(other),

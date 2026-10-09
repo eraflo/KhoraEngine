@@ -118,6 +118,10 @@ pub struct BehaviorLayout {
     pub name: String,
     /// Field names, index = slot.
     pub fields: Vec<String>,
+    /// The structs the program declares, for reading a saved struct value
+    /// into a field by name — a copy of [`Program::structs`].
+    #[serde(default)]
+    pub structs: Vec<StructLayout>,
     /// Each field's type as written (`int?`, `Vec3`), index = slot: what a
     /// value carried in by name must still fit. Empty for a layout recorded
     /// before types were, which takes every value on trust.
@@ -207,9 +211,34 @@ pub struct Program {
     /// hold.
     #[serde(default)]
     pub max_overdraft: u64,
+    /// Every struct the program declares, addressed by index.
+    #[serde(default)]
+    pub structs: Vec<StructLayout>,
+}
+
+/// A struct as the running program knows it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StructLayout {
+    /// Its name.
+    pub name: String,
+    /// Its fields in declaration order — the order a struct object holds them
+    /// in — each with its type as written.
+    pub fields: Vec<(String, String)>,
+    /// Each field's declared default, a constant: what a literal leaving it
+    /// out, and a saved value missing it, take.
+    pub defaults: Vec<Option<crate::arena::Owned>>,
 }
 
 impl Program {
+    /// The struct named `name`, with its index.
+    pub fn struct_named(&self, name: &str) -> Option<(u16, &StructLayout)> {
+        self.structs
+            .iter()
+            .enumerate()
+            .find(|(_, layout)| layout.name == name)
+            .and_then(|(index, layout)| Some((u16::try_from(index).ok()?, layout)))
+    }
+
     /// The index of the function named `name`.
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.functions.iter().position(|f| f.name == name)

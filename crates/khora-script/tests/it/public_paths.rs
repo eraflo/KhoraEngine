@@ -122,6 +122,7 @@ fn arena_error_variants(x: &khora_script::arena::ArenaError) {
         khora_script::arena::ArenaError::Stale { .. } => {}
         khora_script::arena::ArenaError::OutOfBounds => {}
         khora_script::arena::ArenaError::Full => {}
+        khora_script::arena::ArenaError::Mismatch => {}
     }
 }
 
@@ -129,6 +130,7 @@ fn object_variants(x: &khora_script::arena::Object) {
     match x {
         khora_script::arena::Object::Array(..) => {}
         khora_script::arena::Object::Str(..) => {}
+        khora_script::arena::Object::Struct { .. } => {}
     }
 }
 
@@ -285,6 +287,7 @@ fn expr_variants(x: &khora_script::ast::expr::Expr) {
         khora_script::ast::expr::Expr::Index { .. } => {}
         khora_script::ast::expr::Expr::Ternary { .. } => {}
         khora_script::ast::expr::Expr::New { .. } => {}
+        khora_script::ast::expr::Expr::StructLit { .. } => {}
         khora_script::ast::expr::Expr::Binding { .. } => {}
         khora_script::ast::expr::Expr::Await { .. } => {}
         khora_script::ast::expr::Expr::Cast { .. } => {}
@@ -373,6 +376,7 @@ fn shape_variants(x: &khora_script::bytecode::Shape) {
         khora_script::bytecode::Shape::Float => {}
         khora_script::bytecode::Shape::Str => {}
         khora_script::bytecode::Shape::Engine(..) => {}
+        khora_script::bytecode::Shape::Object => {}
         khora_script::bytecode::Shape::Other => {}
     }
 }
@@ -672,6 +676,8 @@ fn fault_variants(x: &khora_script::vm::Fault) {
         khora_script::vm::Fault::NoSubject => {}
         khora_script::vm::Fault::NativeFailed { .. } => {}
         khora_script::vm::Fault::InvalidCast { .. } => {}
+        khora_script::vm::Fault::IndexOutOfRange { .. } => {}
+        khora_script::vm::Fault::NotAnObject { .. } => {}
     }
 }
 
@@ -715,11 +721,23 @@ fn instruction_variants(x: &khora_script::vm::instruction::Instruction) {
         khora_script::vm::instruction::Instruction::Jump { .. } => {}
         khora_script::vm::instruction::Instruction::JumpIfNot { .. } => {}
         khora_script::vm::instruction::Instruction::JumpIfNull { .. } => {}
+        khora_script::vm::instruction::Instruction::NewArray { .. } => {}
+        khora_script::vm::instruction::Instruction::Extend { .. } => {}
+        khora_script::vm::instruction::Instruction::GetIndex { .. } => {}
+        khora_script::vm::instruction::Instruction::SetIndex { .. } => {}
+        khora_script::vm::instruction::Instruction::Length { .. } => {}
+        khora_script::vm::instruction::Instruction::Copy { .. } => {}
+        khora_script::vm::instruction::Instruction::NewStruct { .. } => {}
+        khora_script::vm::instruction::Instruction::GetField { .. } => {}
+        khora_script::vm::instruction::Instruction::SetField { .. } => {}
+        khora_script::vm::instruction::Instruction::Push { .. } => {}
+        khora_script::vm::instruction::Instruction::RemoveAt { .. } => {}
         khora_script::vm::instruction::Instruction::Call { .. } => {}
         khora_script::vm::instruction::Instruction::Return { .. } => {}
         khora_script::vm::instruction::Instruction::Become { .. } => {}
         khora_script::vm::instruction::Instruction::LoadField { .. } => {}
         khora_script::vm::instruction::Instruction::StoreField { .. } => {}
+        khora_script::vm::instruction::Instruction::WriteBack { .. } => {}
         khora_script::vm::instruction::Instruction::LoadStr { .. } => {}
         khora_script::vm::instruction::Instruction::Concat { .. } => {}
         khora_script::vm::instruction::Instruction::NativeCall { .. } => {}
@@ -788,6 +806,7 @@ fn value_variants(x: &khora_script::vm::value::Value) {
         khora_script::vm::value::Value::Quat(..) => {}
         khora_script::vm::value::Value::Color(..) => {}
         khora_script::vm::value::Value::Null => {}
+        khora_script::vm::value::Value::Obj(..) => {}
     }
 }
 
@@ -941,7 +960,7 @@ fn module_arena_paths_still_resolve() {
     let _ = khora_script::arena::persistent::PersistentStore::is_empty;
     let _ = khora_script::arena::persistent::PersistentStore::get;
     let _ = khora_script::arena::persistent::PersistentStore::set;
-    let _ = khora_script::arena::persistent::PersistentStore::store_object;
+    let _ = khora_script::arena::persistent::PersistentStore::store_owned;
     let _ = khora_script::arena::persistent::PersistentStore::truncate;
     is_debug::<khora_script::arena::persistent::PersistentStore>();
     is_clone::<khora_script::arena::persistent::PersistentStore>();

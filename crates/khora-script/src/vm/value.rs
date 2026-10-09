@@ -72,6 +72,20 @@ pub enum Value {
     Color(khora_core::math::LinearRgba),
     /// Absent optional.
     Null,
+    /// An array, wherever it lives.
+    Obj(ObjRef),
+}
+
+/// Where an array lives: the frame arena, or — while its machine is suspended
+/// — the machine itself. The same two places built text can be, for the same
+/// reasons (see [`StrRef`]); a handle, so [`Value`] stays `Copy`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ObjRef {
+    /// In the frame arena.
+    Arena(ArenaRef),
+    /// Owned by a suspended machine, at this index of what it holds. Never
+    /// seen while the machine runs.
+    Held(u32),
 }
 
 /// Where a string's characters actually are.
@@ -203,6 +217,20 @@ impl Value {
         }
     }
 
+    /// The object reference inside, or `None`.
+    pub fn as_obj(self) -> Option<ObjRef> {
+        match self {
+            Self::Obj(reference) => Some(reference),
+            _ => None,
+        }
+    }
+
+    /// Whether this is text or an object — a value whose content lives
+    /// somewhere else and has to be carried out of a frame by value.
+    pub fn is_reference(self) -> bool {
+        matches!(self, Self::Str(_) | Self::Obj(_))
+    }
+
     /// Whether this is the absent optional.
     pub fn is_null(self) -> bool {
         matches!(self, Self::Null)
@@ -223,6 +251,7 @@ impl Value {
             Self::Quat(_) => "Quat",
             Self::Color(_) => "Color",
             Self::Null => "null",
+            Self::Obj(_) => "array",
         }
     }
 }

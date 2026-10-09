@@ -40,13 +40,13 @@
 //!
 //! # What a mirror buys today, and what it does not
 //!
-//! It buys the **checker**: a name resolves, a field resolves with its type, and
-//! a misspelling is refused where it was written. It does not yet buy a *read* —
-//! the compiler lowers `v.x` on an engine type and nothing else, so
-//! `t.translation` type-checks and then stops at "only an engine type's
-//! components can be read yet". That is a limit of the bytecode, older than this
-//! module and pinned by a test here, and it is a compile error rather than a
-//! wrong value at run time.
+//! It buys a **struct**: a name resolves, a field resolves with its type, a
+//! misspelling is refused where it was written, and a `Transform` value — built
+//! as a literal, passed as a parameter — reads and writes its fields like any
+//! struct's. It does not yet buy reading a component *from an entity*:
+//! `e.Transform` is refused, naming `Get`, until scripts can read components —
+//! pinned by `a_component_is_not_yet_read_from_an_entity` here, a compile error
+//! rather than a wrong value at run time.
 //!
 //! The distinction matters because `ENGINE_TYPES` in `khora-script` records the
 //! mistake this resembles: it once named `Transform`, which had no fields at
@@ -358,25 +358,70 @@ mod tests {
         );
     }
 
-    /// **The limit, pinned.** The compiler lowers `v.x` on an engine type and
-    /// nothing else, so a mirrored field type-checks and then stops here. It is
-    /// older than this module — every Ergon `struct` has always had it — and it
-    /// is a compile error rather than a wrong value at run time.
+    /// **A mirrored component is a struct a script can read.** A mirror is an
+    /// ordinary Ergon `struct`, so a value of it — here written as a literal,
+    /// every field given — is built, passed and read like any other: the
+    /// program compiles, and the read returns the field that was written.
     ///
-    /// When the projected read lands, this test is what says so.
+    /// `.y` goes through two hops on purpose: `translation` is a struct field
+    /// holding an engine type, and `y` is that engine type's own component, so
+    /// both kinds of read are exercised on a mirrored value.
     #[test]
-    fn reading_a_mirrored_field_still_needs_the_ecs_bridge() {
+    fn a_mirrored_component_is_a_struct_a_script_can_read() {
+        use khora_script::{Host, Machine, Run, Value};
+
         let result = compile(
             "import \"engine/components.erg\";
-             fn float Height(Transform t) { return t.translation.y; }",
+             fn float Height(Transform t) { return t.translation.y; }
+             fn float Main() {
+                 var t = Transform {
+                     translation: Vec3(1.0, 2.5, 3.0),
+                     rotation: Quat(0.0, 0.0, 0.0, 1.0),
+                     scale: Vec3(1.0, 1.0, 1.0)
+                 };
+                 return Height(t);
+             }",
         );
-
         assert!(
-            result.diagnostics.iter().any(is_lowering_limit),
-            "got {:?}",
+            result.diagnostics.is_empty(),
+            "a struct read over a mirror should compile; got {:?}",
             result.diagnostics
         );
+        let program = result.program.expect("a program with no diagnostics");
+
+        let mut machine = Machine::new(&program, "Main", &[]).expect("`Main` is a function");
+        let mut host = Host::new();
+        let (run, _) = machine.run_counting(&program, &mut host, u64::MAX);
+        assert!(matches!(run, Run::Completed), "got {run:?}");
+        assert_eq!(machine.result(), Value::Float(2.5));
+    }
+
+    /// **The limit that remains, pinned.** A mirror describes a component's
+    /// shape; it does not yet fetch one from an entity. `e.Transform` is
+    /// refused by the checker — an entity has no fields — and the refusal names
+    /// `Get`, the way a component will be read from an entity. It is a compile
+    /// error rather than a wrong value at run time.
+    ///
+    /// When reading a component from an entity lands, this test is what says
+    /// so: it will start failing, and should be rewritten to read the value.
+    #[test]
+    fn a_component_is_not_yet_read_from_an_entity() {
+        let result = compile(
+            "import \"engine/components.erg\";
+             fn float Height(Entity e) { return e.Transform.translation.y; }",
+        );
+
         assert!(!result.succeeded());
+        let refusal = result
+            .diagnostics
+            .iter()
+            .find(|d| d.message.contains("an entity has no field `Transform`"))
+            .unwrap_or_else(|| panic!("got {:?}", result.diagnostics));
+        let note = refusal.note.as_deref().unwrap_or_default();
+        assert!(
+            note.contains("`Get`"),
+            "the refusal should name `Get`; got note {note:?}"
+        );
     }
 
     /// A type Ergon has no spelling for is named in a comment, not dropped.

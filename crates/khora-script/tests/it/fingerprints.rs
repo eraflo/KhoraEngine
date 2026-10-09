@@ -244,8 +244,11 @@ behavior Guard {
 /// What [`PINNED_SOURCE`] fingerprints to, as a program.
 ///
 /// A fingerprint is written into saves and compared after a load, so it has
-/// to be the same in every build, on every Rust release.
-const PINNED_PROGRAM: u64 = 0x3b5c_ca3c_d15e_8c3a;
+/// to be the same in every build, on every Rust release. It moves only when
+/// the code compiled from the source does: the guard's initialiser writes its
+/// fields with `WriteBack`, a store that is never a place the run stops at,
+/// rather than `StoreField`.
+const PINNED_PROGRAM: u64 = 0xf6fc_4cc0_2244_8f08;
 
 /// What `Twice` in [`PINNED_SOURCE`] fingerprints to.
 const PINNED_TWICE: u64 = 0x8d9f_aa74_f44d_1129;

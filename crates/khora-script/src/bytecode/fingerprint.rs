@@ -106,6 +106,27 @@ impl Hash {
         self.0.update(&value.to_le_bytes());
     }
 
+    /// A struct, by its name — and one of its fields, by its name.
+    fn struct_layout(&mut self, program: &Program, layout: u16, slot: Option<u16>) {
+        let declared = program.structs.get(usize::from(layout));
+        self.text(declared.map_or("", |declared| declared.name.as_str()));
+        match slot {
+            Some(slot) => self.text(
+                declared
+                    .and_then(|declared| declared.fields.get(usize::from(slot)))
+                    .map_or("", |(field, _)| field.as_str()),
+            ),
+            None => {
+                for (field, _) in declared
+                    .map(|declared| declared.fields.as_slice())
+                    .unwrap_or(&[])
+                {
+                    self.text(field);
+                }
+            }
+        }
+    }
+
     fn text(&mut self, text: &str) {
         self.number(text.len() as u64);
         self.0.update(text.as_bytes());
@@ -151,6 +172,7 @@ impl Hash {
             // Neither is ever a compiled constant; named only so the match
             // stays exhaustive.
             Value::Str(StrRef::Held(_)) => self.text("held"),
+            Value::Obj(_) => self.text("obj"),
             Value::Vec2(v) => {
                 self.text("vec2");
                 self.floats(&[v.x, v.y]);
@@ -215,6 +237,59 @@ impl Hash {
                 self.op("JumpIfNot", &[*cond]);
                 self.number(*target as u64);
             }
+            I::NewArray { dst, base, count } => {
+                self.op("NewArray", &[*dst, *base]);
+                self.number(u64::from(*count));
+            }
+            I::Extend { array, base, count } => {
+                self.op("Extend", &[*array, *base]);
+                self.number(u64::from(*count));
+            }
+            I::GetIndex { dst, object, index } => self.op("GetIndex", &[*dst, *object, *index]),
+            I::SetIndex { object, index, src } => self.op("SetIndex", &[*object, *index, *src]),
+            I::Length { dst, src } => self.op("Length", &[*dst, *src]),
+            I::Copy { dst, src } => self.op("Copy", &[*dst, *src]),
+            I::Push { array, src } => self.op("Push", &[*array, *src]),
+            I::RemoveAt {
+                array,
+                index,
+                charged,
+                from,
+            } => {
+                self.op("RemoveAt", &[*array, *index]);
+                self.number(u64::from(*charged));
+                self.number(*from as u64);
+            }
+            // A struct by its name and its fields', never by index: a struct
+            // declared elsewhere, or a field moved, is the same code.
+            I::NewStruct {
+                dst,
+                layout,
+                base,
+                count,
+            } => {
+                self.op("NewStruct", &[*dst, *base]);
+                self.number(u64::from(*count));
+                self.struct_layout(program, *layout, None);
+            }
+            I::GetField {
+                dst,
+                object,
+                layout,
+                slot,
+            } => {
+                self.op("GetField", &[*dst, *object]);
+                self.struct_layout(program, *layout, Some(*slot));
+            }
+            I::SetField {
+                object,
+                layout,
+                slot,
+                src,
+            } => {
+                self.op("SetField", &[*object, *src]);
+                self.struct_layout(program, *layout, Some(*slot));
+            }
             I::JumpIfNull { src, target } => {
                 self.op("JumpIfNull", &[*src]);
                 self.number(*target as u64);
@@ -256,6 +331,10 @@ impl Hash {
             }
             I::StoreField { slot, src } => {
                 self.op("StoreField", &[*src]);
+                self.text(&slot_name(layout, *slot));
+            }
+            I::WriteBack { slot, src } => {
+                self.op("WriteBack", &[*src]);
                 self.text(&slot_name(layout, *slot));
             }
             I::LoadStr { dst, index } => {

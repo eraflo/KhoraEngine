@@ -221,7 +221,7 @@ pub fn inferred_type(shape: Shape) -> String {
         Shape::Float => "float".to_owned(),
         Shape::Str => "string".to_owned(),
         Shape::Engine(name) => name.to_owned(),
-        Shape::Other => "var".to_owned(),
+        Shape::Object | Shape::Other => "var".to_owned(),
     }
 }
 

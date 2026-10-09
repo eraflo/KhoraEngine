@@ -167,7 +167,7 @@ pub fn store_from_snapshot(layout: &BehaviorLayout, saved: &ScriptSnapshot) -> P
             continue;
         };
         let ty = layout.field_types.get(slot).map(String::as_str);
-        set(&mut store, slot, name, value, ty);
+        set(&mut store, slot, name, value, ty, &layout.structs);
     }
 
     // The state before its data, because the data is only meaningful once the
@@ -227,7 +227,14 @@ fn restore_state_fields(
             continue;
         };
         let ty = state.types.get(offset).map(String::as_str);
-        set(store, layout.state_data_slot() + offset, name, value, ty);
+        set(
+            store,
+            layout.state_data_slot() + offset,
+            name,
+            value,
+            ty,
+            &layout.structs,
+        );
     }
 }
 
@@ -281,6 +288,7 @@ fn set(
     name: &str,
     value: &ScriptValue,
     ty: Option<&str>,
+    structs: &[khora_script::vm::StructLayout],
 ) {
     // Carried by name into code that may have retyped it: a value its type can
     // no longer hold — a `null` in what is now an `int` — is left behind, and
@@ -294,7 +302,14 @@ fn set(
             return;
         }
     }
-    match khora_script::bridge::to_persisted(value) {
+    // Through the declared type when there is one: a saved struct names its
+    // fields but not itself, and the type says which it is and what a field
+    // it lacks starts at.
+    let persisted = match ty {
+        Some(ty) => khora_script::bridge::to_persisted_as(value, ty, structs),
+        None => khora_script::bridge::to_persisted(value),
+    };
+    match persisted {
         Ok(persisted) => store.set(slot, persisted),
         Err(why) => log::warn!("field `{name}` was not restored: {why}"),
     }
@@ -545,6 +560,7 @@ mod tests {
             name: "Guard".to_owned(),
             fields: fields.iter().map(|f| (*f).to_owned()).collect(),
             field_types: Vec::new(),
+            structs: Vec::new(),
             states: Vec::new(),
             timers: Vec::new(),
         }
@@ -711,25 +727,50 @@ mod tests {
         );
     }
 
-    /// Refused loudly rather than dropped: a guard silently back at the origin
-    /// after a reload is far harder to trace than a warning. An array is the
-    /// case still waiting for a representation.
-    #[test]
-    fn a_value_that_cannot_be_stored_is_refused_rather_than_dropped() {
-        let layout = layout(&["waypoints"]);
-        let store = store_from_snapshot(
-            &layout,
-            &saved(&[(
-                "waypoints",
-                ScriptValue::Array(vec![ScriptValue::Int(1), ScriptValue::Int(2)]),
-            )]),
-        );
+    /// A layout whose fields are declared with these types.
+    fn typed_layout(fields: &[(&str, &str)]) -> BehaviorLayout {
+        BehaviorLayout {
+            field_types: fields.iter().map(|(_, ty)| (*ty).to_owned()).collect(),
+            ..layout(&fields.iter().map(|(name, _)| *name).collect::<Vec<_>>())
+        }
+    }
 
-        assert_eq!(
+    /// An array travels through the field's declared type: a patrol route
+    /// saved as a list loads as that list.
+    #[test]
+    fn an_array_field_round_trips_through_its_declared_type() {
+        let layout = typed_layout(&[("waypoints", "int[]")]);
+        let route = ScriptValue::Array(vec![ScriptValue::Int(1), ScriptValue::Int(2)]);
+        let store = store_from_snapshot(&layout, &saved(&[("waypoints", route.clone())]));
+
+        assert_ne!(
             store.get(0),
             Some(&Persisted::Scalar(Value::Unit)),
-            "unset, so the initialiser still gives it a default"
+            "the list was stored"
         );
+        assert_eq!(
+            snapshot_from_store(&layout, &store).fields,
+            vec![("waypoints".to_owned(), route)]
+        );
+    }
+
+    /// Refused loudly rather than dropped: a guard silently back at the origin
+    /// after a reload is far harder to trace than a warning. A value its
+    /// declared type cannot hold — a list in an `int`, ints in a `string[]` —
+    /// leaves the slot unset, so the initialiser still gives it a default.
+    #[test]
+    fn a_value_that_cannot_be_stored_is_refused_rather_than_dropped() {
+        let ints = ScriptValue::Array(vec![ScriptValue::Int(1), ScriptValue::Int(2)]);
+        for ty in ["int", "string[]"] {
+            let layout = typed_layout(&[("waypoints", ty)]);
+            let store = store_from_snapshot(&layout, &saved(&[("waypoints", ints.clone())]));
+
+            assert_eq!(
+                store.get(0),
+                Some(&Persisted::Scalar(Value::Unit)),
+                "`{ty}`: unset, so the initialiser still gives it a default"
+            );
+        }
     }
 
     #[test]

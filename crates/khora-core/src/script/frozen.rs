@@ -163,6 +163,16 @@ pub enum FrozenValue {
     /// Text built while running that the suspended machine owned: its
     /// characters, not a literal of the program.
     Text(String),
+    /// An array the suspended machine owned, element by element.
+    Array(Vec<FrozenValue>),
+    /// A struct the suspended machine owned: its type's name and its fields by
+    /// name, so a load into edited code matches them by name.
+    Struct {
+        /// The struct's declared name.
+        name: String,
+        /// Each field, by name.
+        fields: Vec<(String, FrozenValue)>,
+    },
 }
 
 #[cfg(test)]

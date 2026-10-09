@@ -22,7 +22,7 @@ use khora_core::lane::{Lane, LaneContext, OutputDeck};
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptArrival, ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
-use khora_script::arena::{Object, Persisted};
+use khora_script::arena::Persisted;
 use khora_script::vm::{Program, ResumeTier};
 use khora_script::{check, compile, ergon_fn, lex, parse};
 
@@ -111,8 +111,14 @@ fn frames(runtime: &mut ScriptRuntime, observed: Option<ScriptSnapshot>, deltas:
 
 fn text_of(runtime: &ScriptRuntime, field: &str) -> Option<String> {
     let slot = runtime.program(MODULE)?.layout("Guard")?.slot_of(field)?;
-    match runtime.peek(subject(), "Guard")?.fields.get(slot)? {
-        Persisted::Owned(Object::Str(text)) => Some(text.clone()),
+    // Read as the boundary reads it: the text an owned slot holds, `None` for
+    // anything else — a scalar, or a reference into a frame.
+    let stored = runtime.peek(subject(), "Guard")?.fields.get(slot)?;
+    if !matches!(stored, Persisted::Owned(..)) {
+        return None;
+    }
+    match khora_script::bridge::from_persisted(stored) {
+        Ok(Some(ScriptValue::Str(text))) => Some(text),
         _ => None,
     }
 }

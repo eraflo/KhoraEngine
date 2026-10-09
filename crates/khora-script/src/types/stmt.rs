@@ -194,6 +194,14 @@ impl Checker {
             }
             // `var` — the parser guarantees an initialiser, so this is the
             // inference case.
+            (None, Some(actual)) if super::expr::says_nothing(&actual) => {
+                self.error_note(
+                    format!("`{name}` needs its element type"),
+                    span,
+                    "an empty `[]` says nothing about what it will hold — write the type: `int[] xs = [];`",
+                );
+                Ty::Error
+            }
             (None, Some(actual)) => {
                 // What `var` inferred, for the compiler to record at the sites
                 // the local is live at: its shape alone cannot tell `int` from
@@ -440,11 +448,11 @@ impl Checker {
 }
 
 /// Whether a value of type `ty` declared without one can start at a zero of
-/// its own: `0`, `0.0`, `false`, `""`, `null`.
+/// its own: `0`, `0.0`, `false`, `""`, `null`, `[]`.
 ///
 /// An entity has none — index 0 is a real entity — and neither has a vector,
 /// a rotation (its identity is not four zeroes) or a struct.
-fn has_zero(ty: &Ty) -> bool {
+pub(super) fn has_zero(ty: &Ty) -> bool {
     matches!(
         ty,
         Ty::Int
@@ -454,6 +462,7 @@ fn has_zero(ty: &Ty) -> bool {
             | Ty::Bool
             | Ty::Str
             | Ty::Optional(_)
+            | Ty::Array(_)
             | Ty::Error
     )
 }

@@ -41,11 +41,13 @@
 //! it rules out, and unlike a collector its cost does not vary from frame to
 //! frame.
 
+pub mod owned;
 pub mod persistent;
 
 #[cfg(test)]
 mod tests;
 
+pub use owned::Owned;
 pub use persistent::{Persisted, PersistentStore};
 
 use serde::{Deserialize, Serialize};
@@ -88,6 +90,14 @@ pub enum Object {
     Array(Vec<Value>),
     /// A string.
     Str(String),
+    /// A struct: its fields in declaration order. `layout` indexes
+    /// [`Program::structs`](crate::vm::Program::structs).
+    Struct {
+        /// Which struct.
+        layout: u16,
+        /// Its fields' values, in declaration order.
+        fields: Vec<Value>,
+    },
 }
 
 impl Object {
@@ -98,6 +108,7 @@ impl Object {
             // Characters, not bytes: `Length` should agree with what the author
             // can count, which is what the diagnostics already assume.
             Self::Str(text) => text.chars().count(),
+            Self::Struct { fields, .. } => fields.len(),
         }
     }
 
@@ -111,6 +122,7 @@ impl Object {
         match self {
             Self::Array(_) => "array",
             Self::Str(_) => "string",
+            Self::Struct { .. } => "struct",
         }
     }
 }
@@ -132,6 +144,9 @@ pub enum ArenaError {
     OutOfBounds,
     /// The arena is full.
     Full,
+    /// A value the program's declarations cannot hold — a struct it no longer
+    /// declares, or one missing a field that has neither a default nor a zero.
+    Mismatch,
 }
 
 impl ArenaError {
@@ -144,6 +159,7 @@ impl ArenaError {
             ),
             Self::OutOfBounds => "this value is not in the arena".to_owned(),
             Self::Full => "the frame arena is full".to_owned(),
+            Self::Mismatch => "this value does not fit what the script declares".to_owned(),
         }
     }
 
@@ -155,6 +171,7 @@ impl ArenaError {
             }
             Self::OutOfBounds => "the reference does not point into this arena",
             Self::Full => "a single frame allocated more than the arena holds — a loop building an array without bound is the usual cause",
+            Self::Mismatch => "a saved value is matched to the script by field name; a field with neither a default nor a zero must be saved",
         }
     }
 }

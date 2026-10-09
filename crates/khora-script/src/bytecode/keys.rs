@@ -341,6 +341,14 @@ impl Key {
                 self.text(name);
                 self.expr(value);
             }
+            Expr::StructLit { name, fields, .. } => {
+                self.tag(23);
+                self.text(name);
+                for (field, _, value) in fields {
+                    self.text(field);
+                    self.expr(value);
+                }
+            }
             Expr::Await { operand, .. } => {
                 self.tag(21);
                 self.expr(operand);

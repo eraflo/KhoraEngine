@@ -56,6 +56,10 @@ impl Compiler {
                 Some((register, shape)) => (register, shape),
                 None => match self.fields.get(name).copied() {
                     Some((slot, shape)) => {
+                        // An array field comes in as a copy, and pays for it.
+                        if shape == Shape::Object {
+                            self.record_checkpoint("load");
+                        }
                         let dst = self.registers.temp();
                         self.emit(Instruction::LoadField { dst, slot });
                         (dst, shape)
@@ -75,10 +79,15 @@ impl Compiler {
                 value,
                 span,
             } => {
+                let into_struct = matches!(&**target, Expr::Field { object, name, .. }
+                    if self.struct_field(object, name).is_some());
+                if matches!(&**target, Expr::Index { .. }) || into_struct {
+                    return self.compile_place_assign(target, *op, value, *span);
+                }
                 let Expr::Ident { name, .. } = &**target else {
-                    // Fields and elements need the ECS bridge to address; until
-                    // then, refusing is better than emitting a write to nowhere.
-                    self.error("only variables can be assigned to yet", *span);
+                    // A struct's fields arrive with structs; refusing is better
+                    // than emitting a write to nowhere.
+                    self.error("only variables and elements can be assigned to yet", *span);
                     return self.constant(Value::Unit, Shape::Other);
                 };
                 let Some((slot, shape)) = self.lookup_local(name) else {
@@ -105,7 +114,7 @@ impl Compiler {
                     }
                     None => {
                         let mark = self.registers.mark();
-                        let (source, _) = self.compile_expr(value);
+                        let (source, _) = self.compile_value(value);
                         self.emit(Instruction::Move {
                             dst: slot,
                             src: source,
@@ -122,7 +131,25 @@ impl Compiler {
             // rather than given its own instruction: a component read is an
             // engine function like any other, and giving it a second mechanism
             // would mean a second thing to keep in step with the declaration.
-            Expr::Field { object, name, span } => self.compile_field(object, name, *span),
+            Expr::Field { object, name, span } => match self
+                .compile_length(object, name)
+                .or_else(|| self.compile_unit_reading(object, name))
+            {
+                Some(read) => read,
+                None => match self.compile_struct_read(expr, object, name) {
+                    Some(read) => read,
+                    None => self.compile_field(object, name, *span),
+                },
+            },
+            Expr::OptionalField { object, name, span } => {
+                self.compile_optional_field(expr, object, name, *span)
+            }
+            Expr::StructLit {
+                name, fields, span, ..
+            } => self.compile_struct_lit(name, fields, *span),
+
+            Expr::ArrayLit { elements, .. } => self.compile_array(elements),
+            Expr::Index { object, index, .. } => self.compile_index(expr, object, index),
 
             // The duration is evaluated *before* suspending, so what is waited
             // for is what the expression meant at the moment `await` was
@@ -200,6 +227,12 @@ impl Compiler {
             }
             None => self.compile_expr(value).0,
         };
+        // An array is stored by value, and pays for the copy.
+        if shape == Shape::Object {
+            self.record_checkpoint("store");
+            self.emit(Instruction::StoreField { slot, src });
+            return (src, shape);
+        }
         self.emit(Instruction::StoreField { slot, src });
 
         // The result of an assignment is the value assigned. Reading the field
@@ -278,7 +311,9 @@ impl Compiler {
             // is a position, and a rotation's identity is not four zeroes. The
             // slot stays unset, and the first read of it faults rather than
             // silently placing something at the origin.
-            Shape::Engine(_) | Shape::Other => self.constant(Value::Unit, Shape::Other).0,
+            Shape::Engine(_) | Shape::Object | Shape::Other => {
+                self.constant(Value::Unit, Shape::Other).0
+            }
         }
     }
 
@@ -291,6 +326,10 @@ impl Compiler {
         }
         if matches!(ty, crate::ast::TypeRef::Named { name, .. } if name == "bool") {
             return self.constant(Value::Bool(false), Shape::Other).0;
+        }
+        // An array starts empty.
+        if matches!(ty, crate::ast::TypeRef::Array { .. }) {
+            return self.compile_array(&[]).0;
         }
         self.zero_of(super::shape_of(ty))
     }
@@ -392,6 +431,16 @@ impl Compiler {
         args: &[Expr],
         span: crate::diagnostics::Span,
     ) -> (Reg, Shape) {
+        let method = match callee {
+            Expr::Field { object, name, .. } => Some((object, name, false)),
+            Expr::OptionalField { object, name, .. } => Some((object, name, true)),
+            _ => None,
+        };
+        if let Some((object, name, optional)) = method {
+            if let Some(done) = self.compile_array_method(object, name, args, optional, span) {
+                return done;
+            }
+        }
         let Expr::Ident { name, .. } = callee else {
             self.error("only named functions can be called yet", span);
             return self.constant(Value::Unit, Shape::Other);
@@ -456,7 +505,7 @@ impl Compiler {
 
         for (argument, slot) in args.iter().zip(slots) {
             let mark = self.registers.mark();
-            let (value, _) = self.compile_expr(argument);
+            let (value, _) = self.compile_value(argument);
             if value != slot {
                 self.emit(Instruction::Move {
                     dst: slot,

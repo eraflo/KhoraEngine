@@ -191,8 +191,13 @@ fn the_persistent_store_outlives_what_the_arena_drops() {
     let mut store = PersistentStore::with_slots(1);
 
     let reference = arena.alloc(array(&[1, 2, 3])).expect("room");
-    let object = arena.get(reference).expect("just allocated").clone();
-    store.store_object(0, &object);
+    let owned = arena
+        .export(
+            Value::Obj(crate::vm::ObjRef::Arena(reference)),
+            &crate::vm::Program::default(),
+        )
+        .expect("just allocated");
+    store.store_owned(0, owned);
 
     arena.reset();
 
@@ -202,7 +207,12 @@ fn the_persistent_store_outlives_what_the_arena_drops() {
     ));
     assert_eq!(
         store.get(0),
-        Some(&Persisted::Owned(array(&[1, 2, 3]))),
+        Some(&Persisted::Owned(crate::arena::Owned::Array(
+            [1, 2, 3]
+                .iter()
+                .map(|n| crate::arena::Owned::Scalar(Value::Int(*n)))
+                .collect()
+        ))),
         "the copy survived the frame the original did not"
     );
 }

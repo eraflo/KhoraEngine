@@ -36,8 +36,11 @@ pub fn fits(value: &ScriptValue, ty: &str) -> bool {
     if let Some(inner) = ty.strip_suffix('?') {
         return matches!(value, ScriptValue::Null) || fits(value, inner);
     }
-    if ty.ends_with("[]") {
-        return matches!(value, ScriptValue::Array(_));
+    if let Some(element) = ty.strip_suffix("[]") {
+        return match value {
+            ScriptValue::Array(items) => items.iter().all(|item| fits(item, element)),
+            _ => false,
+        };
     }
     match ty {
         "int" => matches!(value, ScriptValue::Int(_)),
@@ -52,6 +55,7 @@ pub fn fits(value: &ScriptValue, ty: &str) -> bool {
         "Vec4" => matches!(value, ScriptValue::Vec4(_)),
         "Quat" => matches!(value, ScriptValue::Quat(_)),
         "Color" => matches!(value, ScriptValue::Color(_)),
-        _ => !matches!(value, ScriptValue::Null),
+        // Any other name is a struct: only a struct value can be one.
+        _ => matches!(value, ScriptValue::Struct(_)),
     }
 }

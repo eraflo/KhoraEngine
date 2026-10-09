@@ -98,6 +98,21 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
 - **A value carried by name must fit its declared type.** Layouts record each field's and state slot's
   written type (`BehaviorLayout::field_types`, `StateLayout::types`); `persistence::set` drops a carried
   value `bridge::fits` refuses (a `null` into a retyped `int`), so the field takes its default.
+- **Arrays and structs are values** (`Value::Obj(ObjRef)`, `Object::{Array, Struct}`): the compiler copies
+  (`Copy`) a value read from a place when it is bound — `bytecode/objects.rs::compile_value` — and writes
+  through a path in place, evaluating indices and the right-hand side *first*, so no write goes through a
+  reference taken before a stop. A path rooted at a field ends with `WriteBack`, never a stop.
+- **One owned form** (`arena/owned.rs::Owned`, `Arena::export`/`import`): the store (`Persisted::Owned`), a
+  suspended machine (`Machine.held`) and the bridge all use it; a struct is owned **by field names** and
+  imported against `Program::structs` (`StructLayout`, constant `defaults`), so an edit adding or removing a
+  field keeps the rest. `ScriptValue::Struct` carries no type name: `bridge::to_persisted_as` takes the
+  declared type (`BehaviorLayout::structs`).
+- **Sized operations** (`vm/objects.rs::sized_cost`): `Copy`, `LoadField`/`StoreField` of an object are
+  charged their size and are checkpoints (the VM stops before one it cannot pay for, unless first in the
+  run; `SiteKind::Checkpoint` names the place). `WriteBack` and `Become` are charged but never stopped at —
+  a state entry or an update is never half-done.
+- **The checker's types reach the compiler** through `Checked::types` (every expression's `Ty`, keyed by
+  address), as `inferred` does for `var`.
 - **Calls resolve lexically.** Inside state `S`: `S`'s methods, then the behavior's, then free functions
   and natives (`types/members.rs`, `bytecode/expr.rs::compile_call` via `Compiler.state`). A state's
   method called from outside it is a checker error naming the state.
@@ -147,12 +162,10 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** �
 - The rate that converts a time budget into fuel is measured by the **lane** and stored on
   `ScriptRuntime`, not assumed by the agent. `INITIAL_RATE` lives in
   `khora-lanes/src/script_lane/runtime.rs` and is the single definition.
-- **An Ergon `struct` type-checks but its fields do not lower.** `compile_field`
-  (`khora-script/src/bytecode/expr.rs`) emits an accessor call for `Shape::Engine` and refuses
-  everything else with "only an engine type's components can be read yet". This predates the mirrors and
-  applies to every `struct`, including one a game declares — so a mirrored `t.translation` passes the
-  checker and stops at the compiler. Pinned by `reading_a_mirrored_field_still_needs_the_ecs_bridge` in
-  `khora-io/src/script/mirror.rs`; that test is what will say the projected read has landed.
+- **A mirrored component is an ordinary `struct`**: its fields read and write like any struct value's
+  (`bytecode/structs.rs`). What is not there yet is reading a component *from an entity* (`e.Get(T)`,
+  Ergon spec 07): `entity.Field` is a checker error naming `Get` (`types/calls.rs::entity_field`), and
+  the khora-io mirror tests pin that limit.
 - `ENGINE_TYPES` (`khora-script/src/types/ty.rs`) is a list of names with a `Value` variant, a
   constructor and accessors behind them. It once named `Transform`, which had none, so `Transform t;`
   shaped cleanly and failed with the misleading "`Transform` has no `x`". Adding a name there without

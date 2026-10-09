@@ -119,14 +119,19 @@ fn text_survives_a_saved_slot() {
     let original = ScriptValue::Str("Boss".to_owned());
     let stored = to_persisted(&original).expect("stored");
 
-    assert!(matches!(stored, Persisted::Owned(Object::Str(_))));
+    assert!(
+        matches!(stored, Persisted::Owned(..)),
+        "owned, not a reference: {stored:?}"
+    );
     assert_eq!(from_persisted(&stored).expect("read"), Some(original));
 }
 
 // ─── What the table says cannot travel ──────────────────────────────────────
 
-/// Refused **by name**. A silent drop is what put a guard at the origin after a
-/// reload with nothing said.
+/// Refused **by name** where the boundary hands a register a value — an event's
+/// payload, which stays scalars and text. A silent drop is what put a guard at
+/// the origin after a reload with nothing said. (A list going into a saved
+/// field goes through the field's declared type instead.)
 #[test]
 fn a_list_is_refused_rather_than_dropped() {
     let mut arena = Arena::new();
@@ -136,19 +141,17 @@ fn a_list_is_refused_rather_than_dropped() {
         to_register(&list, &mut arena),
         Err(Unrepresentable::kind("list", "a register"))
     );
-    assert_eq!(
-        to_persisted(&list),
-        Err(Unrepresentable::kind("list", "a saved field"))
-    );
 }
 
+/// The same for a struct: an event's payload has no form for one. (A struct
+/// going into a saved field goes through the field's declared type, which
+/// names the struct — see the lane's `struct_fields` tests.)
 #[test]
 fn a_struct_is_refused_rather_than_dropped() {
     let mut arena = Arena::new();
     let fields = ScriptValue::Struct(vec![("current".to_owned(), ScriptValue::Int(50))]);
 
     assert!(to_register(&fields, &mut arena).is_err());
-    assert!(to_persisted(&fields).is_err());
 }
 
 /// **`null` does not leave a register.** It crosses into a save (see

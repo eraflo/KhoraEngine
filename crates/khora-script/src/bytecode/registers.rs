@@ -34,6 +34,9 @@ pub struct Registers {
     next: usize,
     /// The largest `next` ever reached — the frame size the function needs.
     high_water: usize,
+    /// Whether an index past what a register can name was handed out: the
+    /// function cannot be emitted, and must be refused rather than wrap.
+    overflowed: bool,
 }
 
 impl Registers {
@@ -46,6 +49,7 @@ impl Registers {
             locals: parameters,
             next: parameters,
             high_water: parameters,
+            overflowed: false,
         }
     }
 
@@ -58,7 +62,7 @@ impl Registers {
         self.locals += 1;
         self.next = self.next.max(self.locals);
         self.high_water = self.high_water.max(self.next);
-        index as Reg
+        self.name(index)
     }
 
     /// Takes a scratch register.
@@ -66,7 +70,23 @@ impl Registers {
         let index = self.next;
         self.next += 1;
         self.high_water = self.high_water.max(self.next);
-        index as Reg
+        self.name(index)
+    }
+
+    /// The register `index` is, noting when there is none.
+    fn name(&mut self, index: usize) -> Reg {
+        match Reg::try_from(index) {
+            Ok(register) => register,
+            Err(_) => {
+                self.overflowed = true;
+                Reg::MAX
+            }
+        }
+    }
+
+    /// Whether the function needed more registers than exist.
+    pub fn overflowed(&self) -> bool {
+        self.overflowed
     }
 
     /// The current top, to be restored by [`Self::release_to`].

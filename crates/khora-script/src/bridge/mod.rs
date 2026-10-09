@@ -43,7 +43,7 @@
 
 use khora_core::script::ScriptValue;
 
-use crate::arena::{Arena, Object, Persisted};
+use crate::arena::{Arena, Object, Owned, Persisted};
 use crate::vm::{resolve_str, StrRef, Value};
 
 /// Why a value could not cross.
@@ -149,6 +149,11 @@ macro_rules! define_from_register {
                         .map_err(|_| Unrepresentable::kind("string", "the engine"))?
                         .to_owned(),
                 ),
+                // An event or a command carries scalars and text; an array has
+                // no form there yet.
+                Value::Obj(_) => {
+                    return Err(Unrepresentable::kind("list", "the engine"))
+                }
                 // `null` is the absent optional, plus two internal uses — a
                 // spent `after`, an unarmed countdown. A handler declares
                 // `int amount`, never `int? amount`, so an event carrying this
@@ -175,13 +180,11 @@ macro_rules! define_to_persisted {
                 ScriptValue::Unit => Persisted::Scalar(Value::Unit),
                 // Owned, like every string a field holds: an arena handle would
                 // be stale by the next frame, let alone across a save.
-                ScriptValue::Str(text) => Persisted::Owned(Object::Str(text.clone())),
-                // `Object::Array` holds `Value`s, so this is convertible — but
-                // nothing writes one yet, and a conversion with no caller is a
-                // conversion nobody has checked.
-                ScriptValue::Array(_) => {
-                    return Err(Unrepresentable::kind("list", "a saved field"))
-                }
+                ScriptValue::Str(text) => Persisted::Owned(Owned::Str(text.clone())),
+                // Owned all the way down, like every value a field holds.
+                ScriptValue::Array(items) => Persisted::Owned(Owned::Array(
+                    items.iter().map(to_owned).collect::<Result<_, _>>()?,
+                )),
                 ScriptValue::Struct(_) => {
                     return Err(Unrepresentable::kind("struct", "a saved field"))
                 }
@@ -222,19 +225,53 @@ macro_rules! define_from_persisted {
                     Value::Str(_) => {
                         return Err(Unrepresentable::kind("borrowed string", "the scene"))
                     }
+                    // The same for an array: the store keeps an owned copy.
+                    Value::Obj(_) => {
+                        return Err(Unrepresentable::kind("borrowed list", "the scene"))
+                    }
                 },
-                Persisted::Owned(Object::Str(text)) => Some(ScriptValue::Str(text.clone())),
-                Persisted::Owned(Object::Array(_)) => {
-                    return Err(Unrepresentable::kind("list", "the scene"))
-                }
+                Persisted::Owned(owned) => Some(from_owned(owned)?),
             })
         }
     };
 }
 khora_core::script_value_table!(define_from_persisted);
 
+/// The owned form of a boundary value: what an array's element, or a field,
+/// keeps of it.
+pub fn to_owned(value: &ScriptValue) -> Result<Owned, Unrepresentable> {
+    Ok(match to_persisted(value)? {
+        Persisted::Scalar(scalar) => Owned::Scalar(scalar),
+        Persisted::Owned(owned) => owned,
+    })
+}
+
+/// The boundary form of an owned value. An element nothing was written to
+/// reads as `Unit`.
+pub fn from_owned(owned: &Owned) -> Result<ScriptValue, Unrepresentable> {
+    Ok(match owned {
+        Owned::Scalar(scalar) => {
+            from_persisted(&Persisted::Scalar(*scalar))?.unwrap_or(ScriptValue::Unit)
+        }
+        Owned::Str(text) => ScriptValue::Str(text.clone()),
+        Owned::Array(items) => {
+            ScriptValue::Array(items.iter().map(from_owned).collect::<Result<_, _>>()?)
+        }
+        // Named by its fields; the struct itself is the declared type of
+        // wherever it goes back to.
+        Owned::Struct { fields, .. } => ScriptValue::Struct(
+            fields
+                .iter()
+                .map(|(name, value)| Ok((name.clone(), from_owned(value)?)))
+                .collect::<Result<_, Unrepresentable>>()?,
+        ),
+    })
+}
+
+mod declared;
 mod fits;
 
+pub use declared::{to_owned_as, to_persisted_as};
 pub use fits::fits;
 
 #[cfg(test)]

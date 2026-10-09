@@ -20,15 +20,15 @@
 //! arena can be freed blindly precisely because everything with a longer life
 //! was put somewhere else on purpose.
 //!
-//! Scalars are stored inline. Arrays and strings are **owned copies**, not
-//! arena references — a reference would be stale by the next frame, and the
-//! whole point of this store is to hold what the arena cannot. Storing one is
-//! therefore a copy, which is also why the compiler is expected to refuse it
-//! where the author did not mean it.
+//! Scalars are stored inline. Arrays and strings are **owned copies**
+//! ([`Owned`]), not arena references — a reference would be stale by the next
+//! frame, and the whole point of this store is to hold what the arena cannot.
+//! Storing one is therefore a copy, which is also what value semantics asks of
+//! assigning one.
 
 use serde::{Deserialize, Serialize};
 
-use super::Object;
+use super::Owned;
 use crate::vm::Value;
 
 /// A value that outlives the frame it was made in.
@@ -40,7 +40,7 @@ pub enum Persisted {
     ///
     /// Owned rather than referenced: an arena handle would be stale the moment
     /// the frame ended, so keeping one here would store a guaranteed dangle.
-    Owned(Object),
+    Owned(Owned),
 }
 
 /// The fields and state of one behavior instance.
@@ -92,9 +92,9 @@ impl PersistentStore {
         self.slots[slot] = value;
     }
 
-    /// Copies an arena object into the store, so it survives the frame.
-    pub fn store_object(&mut self, slot: usize, object: &Object) {
-        self.set(slot, Persisted::Owned(object.clone()));
+    /// Keeps an owned value in the store, so it survives the frame.
+    pub fn store_owned(&mut self, slot: usize, owned: Owned) {
+        self.set(slot, Persisted::Owned(owned));
     }
 
     /// Drops slots past `count`, keeping the rest.
@@ -125,8 +125,11 @@ mod tests {
     #[test]
     fn an_object_is_stored_by_value() {
         let mut store = PersistentStore::with_slots(1);
-        let array = Object::Array(vec![Value::Int(1), Value::Int(2)]);
-        store.store_object(0, &array);
+        let array = Owned::Array(vec![
+            Owned::Scalar(Value::Int(1)),
+            Owned::Scalar(Value::Int(2)),
+        ]);
+        store.store_owned(0, array.clone());
 
         assert_eq!(store.get(0), Some(&Persisted::Owned(array)));
     }

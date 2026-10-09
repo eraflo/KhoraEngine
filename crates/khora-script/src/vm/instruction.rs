@@ -292,6 +292,19 @@ pub enum Instruction {
         /// The value.
         src: Reg,
     },
+    /// Writes a field as the last step of something that must not stop
+    /// halfway — an update through a path rooted at the field, a state's
+    /// entry, an initialiser. Never a place the run stops at: a stop between
+    /// loading a field and writing it back would erase a write another body
+    /// made meanwhile, and one between a state's stores would leave it
+    /// half-entered. Costs one unit: what it copies was paid for when it was
+    /// loaded, copied or built.
+    WriteBack {
+        /// Which field, by declaration order.
+        slot: u16,
+        /// The value.
+        src: Reg,
+    },
 
     /// Loads a string literal from the program's constant table.
     ///
@@ -368,6 +381,119 @@ pub enum Instruction {
     /// back edges land on one, so that stretch is never a loop.
     Safepoint,
 
+    /// `dst = [base .. base + count]` — a new array of consecutive registers.
+    NewArray {
+        /// Where the array goes.
+        dst: Reg,
+        /// The first element's register.
+        base: Reg,
+        /// How many elements.
+        count: u16,
+    },
+    /// Appends `base .. base + count` to the array in `array` — how a literal
+    /// longer than the registers a call can lay out is built, in chunks.
+    Extend {
+        /// The array.
+        array: Reg,
+        /// The first element's register.
+        base: Reg,
+        /// How many elements.
+        count: u16,
+    },
+    /// `dst = object[index]`.
+    GetIndex {
+        /// Destination.
+        dst: Reg,
+        /// The array.
+        object: Reg,
+        /// The index, an `int`.
+        index: Reg,
+    },
+    /// `object[index] = src`, in place.
+    SetIndex {
+        /// The array.
+        object: Reg,
+        /// The index, an `int`.
+        index: Reg,
+        /// The value written.
+        src: Reg,
+    },
+    /// `dst = src.Length` — an array's elements, a string's characters.
+    Length {
+        /// Destination.
+        dst: Reg,
+        /// The array or string.
+        src: Reg,
+    },
+    /// `dst = a deep copy of src` — what binding a value read from a place
+    /// means under value semantics. Sized: costs what it copies.
+    Copy {
+        /// Destination.
+        dst: Reg,
+        /// What is copied.
+        src: Reg,
+    },
+
+    /// `dst = layout { base .. base + count }` — a new struct of consecutive
+    /// registers, one per field in declaration order.
+    NewStruct {
+        /// Where the struct goes.
+        dst: Reg,
+        /// Which struct, an index into the program's.
+        layout: u16,
+        /// The first field's register.
+        base: Reg,
+        /// How many fields.
+        count: u16,
+    },
+    /// `dst = object.field`, the field by its declaration order.
+    GetField {
+        /// Destination.
+        dst: Reg,
+        /// The struct.
+        object: Reg,
+        /// Which struct it is — what names the field.
+        layout: u16,
+        /// The field's position.
+        slot: u16,
+    },
+    /// `object.field = src`, in place.
+    SetField {
+        /// The struct.
+        object: Reg,
+        /// Which struct it is.
+        layout: u16,
+        /// The field's position.
+        slot: u16,
+        /// The value written.
+        src: Reg,
+    },
+
+    /// `array.Push(src)`, in place.
+    Push {
+        /// The array.
+        array: Reg,
+        /// What is appended.
+        src: Reg,
+    },
+    /// `array.RemoveAt(index)`, in place: what follows shifts down.
+    RemoveAt {
+        /// The array.
+        array: Reg,
+        /// The index, an `int`.
+        index: Reg,
+        /// Whether it is charged what it shifts, and a place the run may stop
+        /// before — on a variable's array. Inside an update of a field, the
+        /// field's load paid for the array, and nothing stops halfway.
+        charged: bool,
+        /// Where a run that cannot pay for it stops: the start of the path
+        /// walked to reach the array. Walking it again is free of effects,
+        /// and stopping there rather than here leaves no reference into the
+        /// array held across the stop — a reference a suspension would copy
+        /// apart from the array it points into.
+        from: usize,
+    },
+
     /// Suspends voluntarily, for no stated reason.
     Yield,
     /// Stops the program.
@@ -375,15 +501,36 @@ pub enum Instruction {
 }
 
 impl Instruction {
+    /// Where a run stops when it cannot pay for this one, when that is not
+    /// the instruction itself.
+    pub fn stops_at(&self) -> Option<usize> {
+        match self {
+            Self::RemoveAt {
+                charged: true,
+                from,
+                ..
+            } => Some(*from),
+            _ => None,
+        }
+    }
+
     /// What running this costs from the fuel budget.
     ///
     /// Uniform today, except for a safepoint, which marks a place rather than
     /// doing work. It is a method rather than a constant because a call and a
     /// move plainly do not cost the same, and the shape should be here when
     /// measurement says so — not retrofitted through every call site.
+    ///
+    /// Building an array pays for its elements: a ten-thousand-element literal
+    /// is not one unit of work. An operation whose size only the running
+    /// program knows — `Copy`, a field read or write of an array — is charged
+    /// by the VM when it runs; this is its floor.
     pub fn cost(&self) -> u64 {
         match self {
             Self::Safepoint => 0,
+            Self::NewArray { count, .. }
+            | Self::Extend { count, .. }
+            | Self::NewStruct { count, .. } => 1 + u64::from(*count),
             _ => 1,
         }
     }

@@ -946,6 +946,13 @@ fn frozen_value_variants(x: &khora_core::script::frozen::FrozenValue) {
         khora_core::script::frozen::FrozenValue::Color(..) => {}
         khora_core::script::frozen::FrozenValue::Null => {}
         khora_core::script::frozen::FrozenValue::Text(..) => {}
+        khora_core::script::frozen::FrozenValue::Array(..) => {}
+        khora_core::script::frozen::FrozenValue::Struct { name, fields } => {
+            let _: (
+                &String,
+                &Vec<(String, khora_core::script::frozen::FrozenValue)>,
+            ) = (name, fields);
+        }
     }
 }
 

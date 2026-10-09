@@ -644,128 +644,110 @@ const SHIPPED: &[Row] = &[
         args: &[],
         expect: Expect::Runs(Value::Int(3)),
     },
+    // ─── Values (spec 05) ───────────────────────────────────────────────────
+    Row {
+        construct: "array literal and index",
+        source: "fn int F() { return [1, 2, 3][1]; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(2)),
+    },
+    Row {
+        construct: "array `.Length`",
+        source: "fn int F() { int[] xs = [1, 2, 3]; return xs.Length; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(3)),
+    },
+    Row {
+        construct: "string `.Length`",
+        source: r#"fn int F() { string s = "abc"; return s.Length; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(3)),
+    },
+    Row {
+        construct: "`foreach`",
+        source: "fn int F() {
+                     int sum = 0;
+                     foreach (var x in [1, 2, 3]) { sum = sum + x; }
+                     return sum;
+                 }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(6)),
+    },
+    Row {
+        construct: "struct literal and field read",
+        source: "struct Loot { int value; int weight = 5; }
+                 fn int F() { Loot l = Loot { value: 3 }; return l.value; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(3)),
+    },
+    Row {
+        construct: "struct literal with a missing field",
+        source: "struct Loot { int value; int weight = 5; }
+                 fn int F() { Loot l = Loot { value: 3 }; return l.weight; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(5)),
+    },
+    Row {
+        construct: "struct field write",
+        source: "struct Loot { int value; }
+                 fn int F() { Loot l = Loot { value: 3 }; l.value = 9; return l.value; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(9)),
+    },
+    Row {
+        construct: "struct value semantics",
+        source: "struct Loot { int value; }
+                 fn int F() {
+                     Loot a = Loot { value: 3 };
+                     Loot b = a;
+                     b.value = 9;
+                     return a.value;
+                 }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(3)),
+    },
+    Row {
+        construct: "`?.` on a present value",
+        source: "struct Loot { int value; }
+                 fn int? F() { Loot? l = Loot { value: 3 }; return l?.value; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(3)),
+    },
+    Row {
+        construct: "`?.` on null",
+        source: "struct Loot { int value; }
+                 fn int? F() { Loot? l = null; return l?.value; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Null),
+    },
+    Row {
+        construct: "nested path write",
+        source: "struct Point { float x; float y; }
+                 struct Route { Point[] points; }
+                 fn float F() {
+                     Route r = Route { points: [Point { x: 1.0, y: 0.0 }, Point { x: 2.0, y: 0.0 }] };
+                     r.points[1].x = 4.0;
+                     return r.points[1].x;
+                 }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Float(4.0)),
+    },
 ];
 
 /// What a spec will change. Each row states the behaviour the spec must
 /// deliver, and names the spec.
-const PENDING: &[(&str, Row)] = &[
-    // ─── 05 — values ────────────────────────────────────────────────────────
-    (
-        "05",
-        Row {
-            construct: "array literal and index",
-            source: "fn int F() { return [1, 2, 3][1]; }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(2)),
-        },
-    ),
-    (
-        "05",
-        Row {
-            construct: "array `.Length`",
-            source: "fn int F() { int[] xs = [1, 2, 3]; return xs.Length; }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(3)),
-        },
-    ),
-    (
-        "05",
-        Row {
-            construct: "string `.Length`",
-            source: r#"fn int F() { string s = "abc"; return s.Length; }"#,
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(3)),
-        },
-    ),
-    (
-        "05",
-        Row {
-            construct: "`foreach`",
-            source: "fn int F() {
-                         int sum = 0;
-                         foreach (var x in [1, 2, 3]) { sum = sum + x; }
-                         return sum;
-                     }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(6)),
-        },
-    ),
-    (
-        "05",
-        Row {
-            construct: "struct literal and field read",
-            source: "struct Loot { int value; int weight = 5; }
-                     fn int F() { Loot l = Loot { value: 3 }; return l.value; }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(3)),
-        },
-    ),
-    (
-        "05",
-        Row {
-            construct: "struct literal with a missing field",
-            source: "struct Loot { int value; int weight = 5; }
-                     fn int F() { Loot l = Loot { value: 3 }; return l.weight; }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(5)),
-        },
-    ),
-    (
-        "05",
-        Row {
-            construct: "struct field write",
-            source: "struct Loot { int value; }
-                     fn int F() { Loot l = Loot { value: 3 }; l.value = 9; return l.value; }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(9)),
-        },
-    ),
-    (
-        "05",
-        Row {
-            construct: "struct value semantics",
-            source: "struct Loot { int value; }
-                     fn int F() {
-                         Loot a = Loot { value: 3 };
-                         Loot b = a;
-                         b.value = 9;
-                         return a.value;
-                     }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(3)),
-        },
-    ),
-    (
-        "05",
-        Row {
-            construct: "`?.` on a present value",
-            source: "struct Loot { int value; }
-                     fn int? F() { Loot? l = Loot { value: 3 }; return l?.value; }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Int(3)),
-        },
-    ),
-    (
-        "05",
-        Row {
-            construct: "`?.` on null",
-            source: "struct Loot { int value; }
-                     fn int? F() { Loot? l = null; return l?.value; }",
-            entry: "F",
-            args: &[],
-            expect: Expect::Runs(Value::Null),
-        },
-    ),
-];
+const PENDING: &[(&str, Row)] = &[];
 
 // ─── The runner ─────────────────────────────────────────────────────────────
 

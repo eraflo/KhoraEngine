@@ -72,6 +72,9 @@ struct Parser {
     tokens: Vec<Token>,
     position: usize,
     diagnostics: Vec<Diagnostic>,
+    /// Set while parsing an expression a block follows directly — `every
+    /// period { … }` — where `Name {` opens the block, not a struct literal.
+    no_struct_literal: bool,
 }
 
 impl Parser {
@@ -80,6 +83,7 @@ impl Parser {
             tokens,
             position: 0,
             diagnostics: Vec::new(),
+            no_struct_literal: false,
         }
     }
 

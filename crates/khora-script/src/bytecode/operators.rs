@@ -264,7 +264,7 @@ fn operand_name(shape: Shape) -> &'static str {
         Shape::Engine(name) => name,
         Shape::Int | Shape::Float => "float",
         Shape::Str => "string",
-        Shape::Other => "?",
+        Shape::Object | Shape::Other => "?",
     }
 }
 

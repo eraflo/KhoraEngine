@@ -52,10 +52,13 @@ pub mod expr;
 mod fingerprint;
 mod flow;
 pub mod keys;
+mod methods;
+mod objects;
 mod operators;
 pub mod registers;
 pub mod sites;
 pub mod stmt;
+mod structs;
 
 #[cfg(test)]
 mod tests;
@@ -104,8 +107,11 @@ pub fn compile_with(module: &Module, natives: &crate::native::NativeRegistry) ->
     let mut compiler = Compiler::new();
     // The types `var` declarations inferred: a site records each local's
     // type, and a resumed frame trusts it to tell `int?` from `int`.
-    compiler.inferred = crate::types::check_with(module, natives).inferred;
+    let checked = crate::types::check_with(module, natives);
+    compiler.inferred = checked.inferred;
+    compiler.types = checked.types;
     compiler.collect_natives(natives);
+    compiler.collect_structs(module);
     compiler.collect_signatures(module);
     compiler.compile_functions(module);
     fingerprint::seal(&mut compiler.program, natives);
@@ -136,6 +142,9 @@ pub enum Shape {
     /// to find the accessor that belongs to *this* type — the compiler works in
     /// shapes, so the shape is where the answer has to be.
     Engine(&'static str),
+    /// An array: a handle whose binding from a place copies (value
+    /// semantics).
+    Object,
     /// Not a number: bool, null, a struct, void.
     Other,
 }
@@ -232,6 +241,12 @@ pub struct Compiler {
     pub naming: sites::Naming,
     /// What each `var` declaration inferred, from the checker.
     pub inferred: HashMap<usize, String>,
+    /// Every expression's type, from the checker — see
+    /// [`Checked::types`](crate::types::Checked::types).
+    pub types: HashMap<usize, crate::types::Ty>,
+    /// The structs the module declares, by name — what a literal fills its
+    /// fields from.
+    pub struct_decls: HashMap<String, crate::ast::StructDecl>,
 }
 
 impl Compiler {
@@ -255,6 +270,8 @@ impl Compiler {
             locals: Vec::new(),
             naming: sites::Naming::default(),
             inferred: HashMap::new(),
+            types: HashMap::new(),
+            struct_decls: HashMap::new(),
         }
     }
 
@@ -428,6 +445,15 @@ impl Compiler {
         self.naming.reset();
         self.record_entry();
         self.compile_statements(&body.statements);
+        if self.registers.overflowed() {
+            self.error(
+                format!(
+                    "`{name}` needs more than {} registers — split it into smaller functions",
+                    Reg::MAX as usize + 1
+                ),
+                body.span,
+            );
+        }
 
         // A function that falls off its end returns nothing. The VM handles
         // that, but emitting it makes the intent explicit in a disassembly.
@@ -563,18 +589,21 @@ pub fn shape_of(ty: &TypeRef) -> Shape {
         // ever reaches an instruction that cares — the checker refuses
         // arithmetic on an optional until it is unwrapped.
         TypeRef::Optional { inner, .. } => shape_of(inner),
+        TypeRef::Array { .. } => Shape::Object,
         TypeRef::Named { name, .. } => match name.as_str() {
             "int" => Shape::Int,
             // Durations and angles are floats at run time: the checker has
             // already proved the units agree, so the arithmetic is the same.
             "float" | "Duration" | "Angle" => Shape::Float,
             "string" => Shape::Str,
+            "bool" | "Entity" => Shape::Other,
             // Borrowed from the checker's list so the name is `'static`, which
-            // is what lets a shape carry it.
+            // is what lets a shape carry it. Any other name the checker let
+            // through is a struct.
             other => crate::types::ty::ENGINE_TYPES
                 .iter()
                 .find(|known| **known == other)
-                .map_or(Shape::Other, |known| Shape::Engine(known)),
+                .map_or(Shape::Object, |known| Shape::Engine(known)),
         },
         _ => Shape::Other,
     }

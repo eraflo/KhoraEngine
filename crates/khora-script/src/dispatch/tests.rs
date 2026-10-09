@@ -369,8 +369,9 @@ fn an_event_with_the_wrong_arity_is_refused() {
 /// This once asserted that a `Vec3` was such a case. It was not — it was one
 /// half of a translation written twice, where the raising side knew about
 /// vectors and the delivery side did not. A single bridge removed the asymmetry,
-/// so the example had to become something that is *actually* unrepresentable: a
-/// list, which a register cannot name.
+/// so the example had to become something an event genuinely cannot carry: a
+/// list. A register holds arrays now, but an event's payload stays scalars and
+/// text.
 #[test]
 fn an_argument_a_register_cannot_hold_is_refused() {
     let program = build(GUARD);
@@ -688,20 +689,18 @@ fn a_string_field_is_kept_by_value() {
     )
     .expect("delivered");
 
+    let stored = host.fields.get(0).expect("the field was written");
+    assert!(matches!(stored, Persisted::Owned(..)), "owned: {stored:?}");
     assert_eq!(
-        host.fields.get(0),
-        Some(&Persisted::Owned(crate::arena::Object::Str(
-            "boss".to_owned()
-        ))),
+        crate::bridge::from_persisted(stored),
+        Ok(Some(ScriptValue::Str("boss".to_owned()))),
     );
 
     // And it survives the frame the arena does not.
     host.end_frame();
     assert_eq!(
-        host.fields.get(0),
-        Some(&Persisted::Owned(crate::arena::Object::Str(
-            "boss".to_owned()
-        ))),
+        host.fields.get(0).map(crate::bridge::from_persisted),
+        Some(Ok(Some(ScriptValue::Str("boss".to_owned())))),
     );
 }
 

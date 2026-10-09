@@ -370,8 +370,12 @@ fn become_stores_its_string_arguments_by_value() {
     let program = build(
         r#"behavior Guard {
                string y = "b";
+               string assigned = "";
                state Patrol {
-                   void Spot() { become Chase("x" + y); }
+                   void Spot() {
+                       assigned = "x" + y;
+                       become Chase("x" + y);
+                   }
                }
                state Chase(string prey) { }
            }"#,
@@ -388,10 +392,15 @@ fn become_stores_its_string_arguments_by_value() {
 
     let slot = layout.state_data_slot();
     let stored = host.fields.get(slot).expect("Chase's datum was written");
+    let field = layout.slot_of("assigned").expect("`assigned` is a field");
     assert_eq!(
-        stored,
-        &Persisted::Owned(Object::Str("xb".to_owned())),
-        "stored as the field assignment stores text"
+        Some(stored),
+        host.fields.get(field),
+        "stored as the field assignment stores the same text"
+    );
+    assert!(
+        matches!(stored, Persisted::Owned(..)),
+        "owned by the store, not a reference into the frame: {stored:?}"
     );
     assert_eq!(
         from_persisted(stored),

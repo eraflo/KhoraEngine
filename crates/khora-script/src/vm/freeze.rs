@@ -26,8 +26,8 @@
 
 use khora_core::script::{FrozenFrame, FrozenLocal, FrozenMachine, FrozenValue, PendingBody};
 
-use super::{Frame, Machine, Program, StrRef, Value};
-use crate::arena::ArenaRef;
+use super::{Frame, Machine, ObjRef, Program, StrRef, Value};
+use crate::arena::{ArenaRef, Owned};
 
 impl Machine {
     /// This machine, written down, owing `body` when it finishes.
@@ -54,8 +54,23 @@ impl Machine {
                 };
                 // The first site at that counter: a function's entry before the
                 // statement that starts there, an `await` before the statement
-                // that follows it — the place the frame actually stopped.
-                let site = function.sites.iter().find(|site| site.pc as usize == pc);
+                // that follows it — the place the frame actually stopped. Where
+                // a call's return and a checkpoint share a counter, a frame still
+                // waiting on its call stands at the return, the innermost one at
+                // the checkpoint.
+                let innermost = depth + 1 == self.frames.len();
+                let at = |site: &&super::Site| site.pc as usize == pc;
+                let preferred = |site: &&super::Site| match site.kind {
+                    super::SiteKind::Checkpoint => innermost,
+                    super::SiteKind::Return { .. } => !innermost,
+                    _ => false,
+                };
+                let site = function
+                    .sites
+                    .iter()
+                    .filter(at)
+                    .find(preferred)
+                    .or_else(|| function.sites.iter().find(at));
                 Some(FrozenFrame {
                     function: function.name.clone(),
                     base: frame.base as u64,
@@ -119,12 +134,20 @@ impl Machine {
             .map(|(depth, frame)| thaw_frame(frame, depth, registers.len(), program))
             .collect::<Option<_>>()?;
 
+        let arguments = thaw_arguments(frozen, program, &mut held).unwrap_or_default();
+        // A held value the program can no longer hold — a struct renamed, a
+        // field retyped or added with neither default nor zero — refuses the
+        // thaw rather than faulting when the machine next runs: the resume
+        // then rebuilds or restarts the body.
+        if !holds_all(&held, program) {
+            return None;
+        }
         Some(Self {
             registers,
             frames,
             program_counter: usize::try_from(frozen.program_counter).ok()?,
             finished: false,
-            arguments: thaw_arguments(frozen, program, &mut held).unwrap_or_default(),
+            arguments,
             held,
             origins: Default::default(),
         })
@@ -149,6 +172,8 @@ impl Value {
             // Its text is the machine's, which writes it down itself (see
             // `Machine::freeze`); a held reference alone names nothing.
             Self::Str(StrRef::Held(_)) => FrozenValue::Expired,
+            // The same for an array: only its machine can write it down.
+            Self::Obj(_) => FrozenValue::Expired,
             Self::Vec2(value) => FrozenValue::Vec2(value),
             Self::Vec3(value) => FrozenValue::Vec3(value),
             Self::Vec4(value) => FrozenValue::Vec4(value),
@@ -182,8 +207,18 @@ impl Value {
             FrozenValue::Quat(value) => Self::Quat(*value),
             FrozenValue::Color(value) => Self::Color(*value),
             FrozenValue::Null => Self::Null,
+            // Like text, an array or a struct is owned by the machine that
+            // thaws it.
+            FrozenValue::Array(_) | FrozenValue::Struct { .. } => return None,
         })
     }
+}
+
+/// Whether every held value can come back into `program`'s arena.
+pub(super) fn holds_all(held: &[Owned], program: &Program) -> bool {
+    let mut scratch = crate::arena::Arena::new();
+    held.iter()
+        .all(|owned| scratch.import(owned, program).is_ok())
 }
 
 /// The body's arguments, in `program`, their text added to `held`.
@@ -193,7 +228,7 @@ impl Value {
 pub(super) fn thaw_arguments(
     frozen: &FrozenMachine,
     program: &Program,
-    held: &mut Vec<String>,
+    held: &mut Vec<Owned>,
 ) -> Option<Vec<Value>> {
     frozen
         .arguments
@@ -202,32 +237,82 @@ pub(super) fn thaw_arguments(
         .collect()
 }
 
-/// A register of a machine holding `held`, written down: held text by value.
-pub(super) fn freeze_held(value: Value, program: &Program, held: &[String]) -> Option<FrozenValue> {
+/// A register of a machine holding `held`, written down: held text and arrays
+/// by value.
+pub(super) fn freeze_held(value: Value, program: &Program, held: &[Owned]) -> Option<FrozenValue> {
     match value {
-        Value::Str(StrRef::Held(index)) => Some(
-            held.get(index as usize)
-                .map_or(FrozenValue::Expired, |text| FrozenValue::Text(text.clone())),
-        ),
+        Value::Str(StrRef::Held(index)) | Value::Obj(ObjRef::Held(index)) => {
+            match held.get(index as usize) {
+                Some(owned) => freeze_owned(owned, program),
+                None => Some(FrozenValue::Expired),
+            }
+        }
         other => other.freeze(program),
     }
 }
 
-/// A register, in `program`, for a machine holding `held`: text it owned goes
-/// back into `held`, and the register names it there.
+/// An owned value, written down.
+fn freeze_owned(owned: &Owned, program: &Program) -> Option<FrozenValue> {
+    Some(match owned {
+        Owned::Scalar(value) => value.freeze(program)?,
+        Owned::Str(text) => FrozenValue::Text(text.clone()),
+        Owned::Array(items) => FrozenValue::Array(
+            items
+                .iter()
+                .map(|item| freeze_owned(item, program))
+                .collect::<Option<_>>()?,
+        ),
+        Owned::Struct { name, fields } => FrozenValue::Struct {
+            name: name.clone(),
+            fields: fields
+                .iter()
+                .map(|(field, value)| Some((field.clone(), freeze_owned(value, program)?)))
+                .collect::<Option<_>>()?,
+        },
+    })
+}
+
+/// A register, in `program`, for a machine holding `held`: text and arrays it
+/// owned go back into `held`, and the register names them there.
 pub(super) fn thaw_held(
     frozen: &FrozenValue,
     program: &Program,
-    held: &mut Vec<String>,
+    held: &mut Vec<Owned>,
 ) -> Option<Value> {
     match frozen {
-        FrozenValue::Text(text) => {
+        FrozenValue::Text(_) | FrozenValue::Array(_) | FrozenValue::Struct { .. } => {
             let index = u32::try_from(held.len()).ok()?;
-            held.push(text.clone());
-            Some(Value::Str(StrRef::Held(index)))
+            held.push(thaw_owned(frozen, program)?);
+            Some(match frozen {
+                FrozenValue::Text(_) => Value::Str(StrRef::Held(index)),
+                _ => Value::Obj(ObjRef::Held(index)),
+            })
         }
         other => Value::thaw(other, program),
     }
+}
+
+/// The owned value a written-down one describes. `None` for one no machine
+/// could have held — text that had expired, a literal `program` lacks.
+fn thaw_owned(frozen: &FrozenValue, program: &Program) -> Option<Owned> {
+    Some(match frozen {
+        FrozenValue::Text(text) | FrozenValue::Literal(text) => Owned::Str(text.clone()),
+        FrozenValue::Array(items) => Owned::Array(
+            items
+                .iter()
+                .map(|item| thaw_owned(item, program))
+                .collect::<Option<_>>()?,
+        ),
+        FrozenValue::Struct { name, fields } => Owned::Struct {
+            name: name.clone(),
+            fields: fields
+                .iter()
+                .map(|(field, value)| Some((field.clone(), thaw_owned(value, program)?)))
+                .collect::<Option<_>>()?,
+        },
+        FrozenValue::Expired => return None,
+        scalar => Owned::Scalar(Value::thaw(scalar, program)?),
+    })
 }
 
 /// One frame, if `program` has its function and the register file holds it.

@@ -286,16 +286,26 @@ fn a_struct_field_default_is_type_checked() {
     assert_rejected(both, "expected `int`, found `string`");
     assert_rejected(both, "expected `bool`, found `int`");
 
+    // A default is a constant, so one that reads a name is refused — for
+    // naming what it cannot read, or for not being a constant.
     let reads_a_field = "struct S { int a = 1; int b = a; }";
     let found = errors(reads_a_field);
     assert!(
-        found.iter().any(|d| d.message.contains("`a`")),
-        "a default reading another field is refused, naming it: got {found:?}"
+        found
+            .iter()
+            .any(|d| d.message.contains("`a`") || d.message.contains("constant")),
+        "a default reading another field is refused: got {found:?}"
     );
 
-    assert_rejected(
-        "struct S { Entity owner = this; }",
-        "`this` names the entity a behavior is attached to",
+    let reads_this = "struct S { Entity owner = this; }";
+    let found = errors(reads_this);
+    assert!(
+        found.iter().any(|d| {
+            d.message
+                .contains("`this` names the entity a behavior is attached to")
+                || d.message.contains("constant")
+        }),
+        "a default reading `this` is refused: got {found:?}"
     );
 
     assert_accepted(
