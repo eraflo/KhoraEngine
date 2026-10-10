@@ -475,76 +475,102 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
     };
 
     // Generate From impls
-    let from_original_to_serializable = if matches!(fields, Fields::Named(_))
-        && !serializable_field_defs.is_empty()
-    {
-        quote! {
-            impl From<#name> for #serializable_name {
-                fn from(value: #name) -> Self {
-                    Self {
-                        #(#to_serializable_assigns),*
+    let from_original_to_serializable =
+        if matches!(fields, Fields::Named(_)) && !serializable_field_defs.is_empty() {
+            quote! {
+                impl From<#name> for #serializable_name {
+                    fn from(value: #name) -> Self {
+                        Self {
+                            #(#to_serializable_assigns),*
+                        }
                     }
                 }
             }
-        }
-    } else if matches!(fields, Fields::Unnamed(_)) {
-        let indices: Vec<syn::Index> = (0..included_fields.len()).map(syn::Index::from).collect();
-        quote! {
-            impl From<#name> for #serializable_name {
-                fn from(value: #name) -> Self {
-                    Self(#(value.#indices),*)
+        } else if matches!(fields, Fields::Unnamed(_)) {
+            // The mirror holds the included fields in order; each is read from its
+            // real position in the original, past any skipped field before it.
+            let positions: Vec<syn::Index> = fields
+                .iter()
+                .enumerate()
+                .filter(|(_, field)| {
+                    included_fields
+                        .iter()
+                        .any(|kept| std::ptr::eq(*kept, *field))
+                })
+                .map(|(position, _)| syn::Index::from(position))
+                .collect();
+            quote! {
+                impl From<#name> for #serializable_name {
+                    fn from(value: #name) -> Self {
+                        Self(#(value.#positions),*)
+                    }
                 }
             }
-        }
-    } else {
-        // A marker — a unit struct, or one whose every field is skipped. The
-        // mirror above is generated for it; without these two impls it had a
-        // type and no way to reach it, so the registration did not compile and
-        // the only way to declare such a component was
-        // `#[component(no_serializable)]` — which drops the registration
-        // entirely and makes the marker vanish from every scene file. A marker
-        // carries no data and all of its meaning: its presence *is* the value.
-        quote! {
-            impl From<#name> for #serializable_name {
-                fn from(_: #name) -> Self {
-                    Self
+        } else {
+            // A marker — a unit struct, or one whose every field is skipped. The
+            // mirror above is generated for it; without these two impls it had a
+            // type and no way to reach it, so the registration did not compile and
+            // the only way to declare such a component was
+            // `#[component(no_serializable)]` — which drops the registration
+            // entirely and makes the marker vanish from every scene file. A marker
+            // carries no data and all of its meaning: its presence *is* the value.
+            quote! {
+                impl From<#name> for #serializable_name {
+                    fn from(_: #name) -> Self {
+                        Self
+                    }
                 }
             }
-        }
-    };
+        };
 
-    let from_serializable_to_original = if matches!(fields, Fields::Named(_))
-        && !serializable_field_defs.is_empty()
-    {
-        quote! {
-            impl From<#serializable_name> for #name {
-                fn from(serializable: #serializable_name) -> Self {
-                    Self {
-                        #(#all_from_fields),*
+    let from_serializable_to_original =
+        if matches!(fields, Fields::Named(_)) && !serializable_field_defs.is_empty() {
+            quote! {
+                impl From<#serializable_name> for #name {
+                    fn from(serializable: #serializable_name) -> Self {
+                        Self {
+                            #(#all_from_fields),*
+                        }
                     }
                 }
             }
-        }
-    } else if matches!(fields, Fields::Unnamed(_)) {
-        let indices: Vec<syn::Index> = (0..included_fields.len()).map(syn::Index::from).collect();
-        quote! {
-            impl From<#serializable_name> for #name {
-                fn from(serializable: #serializable_name) -> Self {
-                    Self(#(serializable.#indices),*)
+        } else if matches!(fields, Fields::Unnamed(_)) {
+            // Every position of the original, in order: an included field from its
+            // slot in the mirror, a skipped one from its `Default`.
+            let mut slot = 0;
+            let values: Vec<_> = fields
+                .iter()
+                .map(|field| {
+                    if included_fields
+                        .iter()
+                        .any(|kept| std::ptr::eq(*kept, field))
+                    {
+                        let index = syn::Index::from(slot);
+                        slot += 1;
+                        quote! { serializable.#index }
+                    } else {
+                        quote! { Default::default() }
+                    }
+                })
+                .collect();
+            quote! {
+                impl From<#serializable_name> for #name {
+                    fn from(serializable: #serializable_name) -> Self {
+                        Self(#(#values),*)
+                    }
                 }
             }
-        }
-    } else {
-        // The other direction for a marker. `Default` rather than `Self`,
-        // because a struct whose fields were all skipped has fields to fill.
-        quote! {
-            impl From<#serializable_name> for #name {
-                fn from(_: #serializable_name) -> Self {
-                    Self::default()
+        } else {
+            // The other direction for a marker. `Default` rather than `Self`,
+            // because a struct whose fields were all skipped has fields to fill.
+            quote! {
+                impl From<#serializable_name> for #name {
+                    fn from(_: #serializable_name) -> Self {
+                        Self::default()
+                    }
                 }
             }
-        }
-    };
+        };
 
     let schema_cell = format_ident!("__KHORA_SCHEMA_OF_{}", name);
     let expanded = quote! {
