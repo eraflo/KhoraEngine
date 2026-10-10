@@ -35,6 +35,13 @@ impl Checker {
         span: Span,
         context: &Context,
     ) -> Ty {
+        if self.components.contains_key(name) {
+            for (_, _, value) in fields {
+                self.check_expr(value, context);
+            }
+            self.component_as_value(name, name_span);
+            return Ty::Error;
+        }
         let Some(info) = self.structs.get(name).cloned() else {
             let note = if crate::types::ty::ENGINE_TYPES.contains(&name) {
                 format!("an engine type is built with its function — `{name}(…)`")

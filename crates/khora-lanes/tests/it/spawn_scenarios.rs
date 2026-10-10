@@ -208,7 +208,7 @@ const GREETER: &str = r#"behavior Greeter {
                             int greeted = 0;
                             void OnSpawn() {
                                 greeted += 1;
-                                Raise(this, "Greeted");
+                                this.Raise("Greeted");
                             }
                         }"#;
 
@@ -216,14 +216,14 @@ const GREETER: &str = r#"behavior Greeter {
 /// once it has run is empty but for its lifecycle. Its announcement is
 /// observable only as an event.
 const CHIME: &str = r#"behavior Chime {
-                          void OnSpawn() { Raise(this, "Chimed"); }
+                          void OnSpawn() { this.Raise("Chimed"); }
                       }"#;
 
 /// Announces itself, then walks every frame — so the lane writes its state
 /// every frame.
 const PACER: &str = r#"behavior Pacer {
                           int steps = 0;
-                          void OnSpawn() { Raise(this, "Paced"); }
+                          void OnSpawn() { this.Raise("Paced"); }
                           void Update(float dt) { steps += 1; }
                       }"#;
 
@@ -234,10 +234,10 @@ const HERALD: &str = r#"behavior Herald {
                            int second = 0;
                            void OnSpawn() {
                                first += 1;
-                               Raise(this, "Before");
+                               this.Raise("Before");
                                SpawnRecordWall();
                                second += 1;
-                               Raise(this, "After");
+                               this.Raise("After");
                            }
                        }"#;
 
@@ -614,7 +614,7 @@ fn a_behavior_added_after_the_save_runs_on_spawn() {
 /// Says goodbye, so a farewell is visible as an event.
 const KEEPER: &str = r#"behavior Keeper {
                            int health = 100;
-                           void OnDespawn() { Raise(this, "Gone"); }
+                           void OnDespawn() { this.Raise("Gone"); }
                        }"#;
 
 /// A view of `entities`, each running `Keeper`.

@@ -61,7 +61,7 @@ impl Checker {
             // `this` is the entity, not an object. A behavior is a component on
             // an entity and has no identity apart from it, so there is nothing
             // else `this` could usefully be — and typing it as the entity is
-            // what makes `Despawn(this)` and `SetParent(this, …)` read the way
+            // what makes `this.Despawn()` and `this.SetParent(…)` read the way
             // the API is written, without a conversion nobody would expect to
             // need.
             Expr::This(span) => {
@@ -419,9 +419,17 @@ impl Checker {
     }
 
     fn check_call(&mut self, callee: &Expr, args: &[Expr], span: Span, context: &Context) -> Ty {
-        // Free functions and engine functions are callable by name; methods on
-        // engine objects arrive with the script lane.
+        // Free functions and engine functions are callable by name; an engine
+        // operation on an entity is called on it, and its free form refused.
         if let Expr::Ident { name, .. } = callee {
+            if name == "Spawn" && !self.functions.contains_key(name) {
+                return self.check_spawn(args, span, context);
+            }
+            if !self.functions.contains_key(name)
+                && self.refuse_free_form(name, args, span, context)
+            {
+                return Ty::Error;
+            }
             // The script's own first, so a host that later exposes a name a
             // script already uses cannot change what that script means.
             let known = self

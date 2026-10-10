@@ -85,9 +85,9 @@ fn machine_for(program: &Program, member: &str, args: &[Value], host: &Host) -> 
     Machine::new(program, &function, args).expect("the member exists")
 }
 
-/// **Another body's write survives a path write cut for fuel.** `Set` writes
+/// **Another body's write survives a path write cut for fuel.** `Put` writes
 /// `xs[1]` of a fifty-element field, a slice of fuel at a time; whenever it
-/// stops, `Poke` writes `xs[0]` in the next frame. Once `Set` is done, the
+/// stops, `Poke` writes `xs[0]` in the next frame. Once `Put` is done, the
 /// field holds both writes — at every slice. A cut between the field's load
 /// and its store puts back the copy loaded before `Poke` ran, and `xs[0]` is
 /// `0` again.
@@ -96,7 +96,7 @@ fn a_field_written_while_a_path_write_waits_for_fuel_keeps_that_write() {
     let program = build(&format!(
         "behavior Guard {{
              int[] xs = [{}];
-             void Set() {{ int i = 1; xs[i] = 7; }}
+             void Put() {{ int i = 1; xs[i] = 7; }}
              void Poke() {{ xs[0] = 5; }}
              int At(int i) {{ return xs[i]; }}
          }}",
@@ -105,7 +105,7 @@ fn a_field_written_while_a_path_write_waits_for_fuel_keeps_that_write() {
     let mut wrong = Vec::new();
     for slice in 1..=120u64 {
         let mut host = instance(&program);
-        let mut set = machine_for(&program, "Set", &[], &host);
+        let mut set = machine_for(&program, "Put", &[], &host);
         let mut cut = false;
         loop {
             match set.run(&program, &mut host, slice) {

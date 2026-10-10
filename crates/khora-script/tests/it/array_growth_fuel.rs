@@ -283,7 +283,7 @@ fn a_remove_at_waits_for_fuel_it_can_pay_for() {
 type Expected = (&'static str, i64, [(i64, i64); 3]);
 
 /// **Another body's write survives a push or a removal on a field cut for
-/// fuel.** `Add` pushes onto a fifty-element field and `Drop` removes its
+/// fuel.** `Append` pushes onto a fifty-element field and `Drop` removes its
 /// second element, a slice of fuel at a time; whenever one stops, `Poke`
 /// writes `xs[0]` in the next frame. Once it is done, the field holds both
 /// changes — at every slice. A stop between the field's load and its write
@@ -293,7 +293,7 @@ fn a_field_written_while_a_push_or_a_removal_waits_keeps_that_write() {
     let program = build(&format!(
         "behavior Guard {{
              int[] xs = [{}];
-             void Add() {{ int v = 7; xs.Push(v); }}
+             void Append() {{ int v = 7; xs.Push(v); }}
              void Drop() {{ int i = 1; xs.RemoveAt(i); }}
              void Poke() {{ xs[0] = 5; }}
              int Count() {{ return xs.Length; }}
@@ -302,7 +302,7 @@ fn a_field_written_while_a_push_or_a_removal_waits_keeps_that_write() {
         ints(50)
     ));
     let cases: [Expected; 2] = [
-        ("Add", 51, [(0, 5), (1, 1), (50, 7)]),
+        ("Append", 51, [(0, 5), (1, 1), (50, 7)]),
         ("Drop", 49, [(0, 5), (1, 2), (48, 49)]),
     ];
     let mut wrong = Vec::new();

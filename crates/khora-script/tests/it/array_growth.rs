@@ -259,7 +259,7 @@ const GUARD: &str = r#"struct Loot { int value; }
                                void Walk(int v) { route.Push(v); }
                                int Route() { return route.Length * 10 + route[route.Length - 1]; }
                            }
-                           void Add(int v) { ids.Push(v); }
+                           void Append(int v) { ids.Push(v); }
                            void Drop(int i) { ids.RemoveAt(i); }
                            void Grow(int v) { grid[1].Push(v); }
                            void Pack(int v) { bag.items.Push(Loot { value: v }); bag.count += 1; }
@@ -281,8 +281,8 @@ fn a_field_grown_and_shrunk_keeps_what_was_done_to_it() {
     let program = build(GUARD);
     let mut host = instance(&program);
     let steps: [(&str, &[Value]); 9] = [
-        ("Add", &[Value::Int(3)]),
-        ("Add", &[Value::Int(4)]),
+        ("Append", &[Value::Int(3)]),
+        ("Append", &[Value::Int(4)]),
         ("Drop", &[Value::Int(0)]),
         ("Grow", &[Value::Int(5)]),
         ("Pack", &[Value::Int(3)]),
@@ -421,8 +421,8 @@ const WAITER: &str = r#"behavior Guard {
                             int[] ids = [1, 2, 3];
                             async int Slow() { await 1.0s; return 7; }
                             async int Which() { await 1.0s; return 1; }
-                            async void Add() { ids.Push(Slow()); }
-                            async void Remove() { ids.RemoveAt(Which()); }
+                            async void Grow() { ids.Push(Slow()); }
+                            async void Shrink() { ids.RemoveAt(Which()); }
                             async int Local() {
                                 int[] ys = [1, 2];
                                 ys.Push(Slow());
@@ -454,7 +454,7 @@ fn ids(program: &Program, host: &mut Host) -> Vec<Result<Value, Fault>> {
 #[test]
 fn an_argument_that_waits_keeps_a_write_made_meanwhile() {
     let program = build(WAITER);
-    let cases: [(&str, &[i64]); 2] = [("Add", &[5, 2, 3, 7]), ("Remove", &[5, 3])];
+    let cases: [(&str, &[i64]); 2] = [("Grow", &[5, 2, 3, 7]), ("Shrink", &[5, 3])];
     let mut wrong = Vec::new();
     for (member, wanted) in cases {
         let mut host = instance(&program);

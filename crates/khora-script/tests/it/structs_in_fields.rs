@@ -241,8 +241,8 @@ const WRITER: &str = "behavior Guard {
                           Route route = Route { points: [Point { x: 1.0 }, Point { x: 2.0 }] };
                           async int Slow() { await 1.0s; return 7; }
                           async float SlowFloat() { await 1.0s; return 7.5; }
-                          async void Set() { pair.b = Slow(); }
-                          async void Add() { pair.b += Slow(); }
+                          async void Put() { pair.b = Slow(); }
+                          async void Bump() { pair.b += Slow(); }
                           async void Far() { route.points[1].x = SlowFloat(); }
                           void Poke() { pair.a = 5; route.points[0].x = 5.0; }
                           int A() { return pair.a; }
@@ -260,8 +260,8 @@ const WRITER: &str = "behavior Guard {
 fn a_struct_field_written_during_the_right_hand_side_keeps_that_write() {
     let program = build(&format!("{TYPES}\n{WRITER}"));
     let cases: [(&str, &[(&str, Value)]); 3] = [
-        ("Set", &[("A", Value::Int(5)), ("B", Value::Int(7))]),
-        ("Add", &[("A", Value::Int(5)), ("B", Value::Int(9))]),
+        ("Put", &[("A", Value::Int(5)), ("B", Value::Int(7))]),
+        ("Bump", &[("A", Value::Int(5)), ("B", Value::Int(9))]),
         (
             "Far",
             &[("X0", Value::Float(5.0)), ("X1", Value::Float(7.5))],

@@ -347,6 +347,45 @@ pub enum Instruction {
         dst: Reg,
     },
 
+    /// `entity.Set(C { … })` or `entity.Add(C { … })`: queues a write of the
+    /// fields of [`Program::patches`](super::Program::patches)`[patch]`, whose
+    /// values are in `base..base + count`, for the frame boundary.
+    WriteComponent {
+        /// Set the named fields, or attach then set them.
+        mode: WriteMode,
+        /// The entity written to.
+        entity: Reg,
+        /// Which patch.
+        patch: u32,
+        /// First value register.
+        base: Reg,
+        /// How many fields the patch names.
+        count: u16,
+    },
+
+    /// `entity.Remove(C)`: queues the removal of the component named by
+    /// [`Program::strings`](super::Program::strings)`[component]`.
+    RemoveComponent {
+        /// The entity.
+        entity: Reg,
+        /// The component's name, as a string index.
+        component: u32,
+    },
+
+    /// `Spawn(position, C1 { … }, …)`: queues a new entity at `position`
+    /// carrying each patch of [`Program::spawns`](super::Program::spawns)`[spawn]`,
+    /// whose values follow one another from `base`.
+    SpawnEntity {
+        /// The new entity's position.
+        position: Reg,
+        /// Which spawn.
+        spawn: u32,
+        /// First value register.
+        base: Reg,
+        /// How many fields all its patches name together.
+        count: u16,
+    },
+
     /// Suspends until `seconds` of game time have passed.
     ///
     /// The same suspension the fuel budget uses — the machine stops on an
@@ -530,8 +569,19 @@ impl Instruction {
             Self::Safepoint => 0,
             Self::NewArray { count, .. }
             | Self::Extend { count, .. }
-            | Self::NewStruct { count, .. } => 1 + u64::from(*count),
+            | Self::NewStruct { count, .. }
+            | Self::WriteComponent { count, .. }
+            | Self::SpawnEntity { count, .. } => 1 + u64::from(*count),
             _ => 1,
         }
     }
+}
+
+/// What a [`Instruction::WriteComponent`] does to an entity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WriteMode {
+    /// Writes the named fields of a component the entity holds.
+    Set,
+    /// Attaches the component with its defaults, then writes the named fields.
+    Add,
 }

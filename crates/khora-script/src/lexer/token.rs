@@ -158,6 +158,8 @@ pub enum Keyword {
     As,
     /// `struct`
     Struct,
+    /// `component`
+    Component,
     /// `fn`
     Fn,
     /// `var`
@@ -215,6 +217,7 @@ impl Keyword {
             "import" => Self::Import,
             "as" => Self::As,
             "struct" => Self::Struct,
+            "component" => Self::Component,
             "fn" => Self::Fn,
             "var" => Self::Var,
             "void" => Self::Void,

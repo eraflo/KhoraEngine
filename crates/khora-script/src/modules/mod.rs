@@ -246,3 +246,28 @@ pub fn report_name_clashes(resolved: &Resolved) -> Vec<Diagnostic> {
     }
     clashes
 }
+
+/// Refuses a `component` declared anywhere but the engine's own module.
+///
+/// A component is the engine's: it is stored in the `World`, saved in scenes
+/// and offered in the editor. A script cannot declare one of its own yet, and a
+/// declaration elsewhere would describe a component that does not exist.
+pub fn report_foreign_components(resolved: &Resolved) -> Vec<Diagnostic> {
+    resolved
+        .modules
+        .iter()
+        .filter(|module| module.path != crate::ENGINE_COMPONENTS_MODULE)
+        .flat_map(|module| module.module.items.iter())
+        .filter(|item| matches!(item, crate::ast::Item::Component(_)))
+        .map(|item| {
+            Diagnostic::error(
+                "declaring a component in a script is not supported yet",
+                item.name_span(),
+            )
+            .with_note(format!(
+                "the engine's components come from `{}`; declare a `struct` for a value of your own",
+                crate::ENGINE_COMPONENTS_MODULE
+            ))
+        })
+        .collect()
+}

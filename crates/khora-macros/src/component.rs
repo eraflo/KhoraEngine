@@ -611,8 +611,12 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     })
                 },
                 create_default: |world, entity| {
-                    world.add_component(entity, <#name>::default()).ok();
-                    Ok(())
+                    // Reported, not swallowed: a caller told "attached" must
+                    // find the component there.
+                    world
+                        .add_component(entity, <#name>::default())
+                        .map(|_| ())
+                        .map_err(|error| format!("{error:?}"))
                 },
                 to_json: |world, entity| {
                     world.clone_component::<#name>(entity).and_then(|c| {

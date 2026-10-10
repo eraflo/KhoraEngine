@@ -87,6 +87,8 @@ fn pausing_call() -> Program {
             function("Main", 0, 3, main_code(1)),
             function("Double", 1, 3, double_code()),
         ],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     }
 }
 
@@ -101,6 +103,8 @@ fn pausing_call_reordered() -> Program {
             function("Double", 1, 3, double_code()),
             function("Main", 0, 3, main_code(0)),
         ],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     }
 }
 
@@ -115,6 +119,8 @@ fn pausing_call_renamed() -> Program {
             function("Main", 0, 3, main_code(1)),
             function("Triple", 1, 3, double_code()),
         ],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     }
 }
 
@@ -135,6 +141,8 @@ fn pausing_literal(strings: &[&str], index: u32) -> Program {
                 Instruction::Return { src: 0 },
             ],
         )],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     }
 }
 
@@ -161,6 +169,8 @@ fn pausing_joined() -> Program {
                 Instruction::Return { src: 2 },
             ],
         )],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     }
 }
 

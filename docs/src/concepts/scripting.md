@@ -56,18 +56,18 @@ behavior Guard {
 
     on Damaged(int amount) {
         health -= amount;
-        if (health <= 0) { Despawn(this); }
+        if (health <= 0) { this.Despawn(); }
     }
 
     state Patrol {
-        every 2s { Raise(this, "Look"); }
+        every 2s { this.Raise("Look"); }
         on Spotted(Entity foe) { become Chase(foe); }
     }
 
     state Chase(Entity foe) {
         async void Attack() {
             await 0.5s;           // wind up
-            Raise(foe, "Damaged", 10);
+            foe.Raise("Damaged", 10);
         }
     }
 }
@@ -306,7 +306,7 @@ Two places, not eight: a row in the `script_value_table!` X-macro
 `khora-script::native::engine_types`. Exposing `Vec3` once cost an
 `impl ScriptType`, a hand-written constructor, and an arm in each of four
 converters across three crates — and the copies diverged, so
-`Raise(e, "Hit", Vec3(…))` produced a value the delivery side did not know, the
+`e.Raise("Hit", Vec3(…))` produced a value the delivery side did not know, the
 lane treated that as a fault, and the target behavior was disabled for good.
 
 It is deliberately a **declaration and not an attribute**. An attribute belongs

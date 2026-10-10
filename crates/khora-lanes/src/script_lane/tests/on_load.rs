@@ -40,18 +40,18 @@ behavior Guard {
     async void Attack() {
         await 1.0s;
         fired += 1;
-        Raise(this, "Resumed");
+        this.Raise("Resumed");
     }
 
     on Spotted(int by) { Attack(); }
-    on Poked(int by) { Raise(this, "Heard"); }
+    on Poked(int by) { this.Raise("Heard"); }
 
-    void OnLoad() { Raise(this, "Loaded", health); }
-    void OnSpawn() { Raise(this, "Spawned"); }
+    void OnLoad() { this.Raise("Loaded", health); }
+    void OnSpawn() { this.Raise("Spawned"); }
 
-    every 0.5s { Raise(this, "Ticked"); }
+    every 0.5s { this.Raise("Ticked"); }
 
-    void Update(float dt) { Raise(this, "Updated"); }
+    void Update(float dt) { this.Raise("Updated"); }
 }
 "#;
 
@@ -65,19 +65,19 @@ behavior Guard {
     async void Attack() {
         await 1.0s;
         fired += 1;
-        Raise(this, "Fired");
+        this.Raise("Fired");
     }
 
     async void Settle() {
         await 0.5s;
         settled += 1;
-        Raise(this, "Settled");
+        this.Raise("Settled");
     }
 
     on Spotted(int by) { Attack(); }
 
     void OnLoad() {
-        Raise(this, "LoadStarted");
+        this.Raise("LoadStarted");
         Settle();
     }
 }
@@ -88,7 +88,7 @@ const FAULTY: &str = r#"
 behavior Guard {
     int zero = 0;
 
-    void Update(float dt) { Raise(this, "Ticked"); }
+    void Update(float dt) { this.Raise("Ticked"); }
 
     on Tick(int by) { zero = by / zero; }
 }
@@ -100,7 +100,7 @@ behavior Guard {
     int zero = 0;
     int fixed = 1;
 
-    void Update(float dt) { Raise(this, "Ticked"); }
+    void Update(float dt) { this.Raise("Ticked"); }
 
     on Tick(int by) { zero = by; }
 }
@@ -263,8 +263,8 @@ fn on_load_does_not_run_on_scene_load_or_stop() {
     const ANNOUNCER: &str = r#"
     behavior Guard {
         int health = 100;
-        void OnLoad() { Raise(this, "Loaded"); }
-        void OnSpawn() { Raise(this, "Spawned"); }
+        void OnLoad() { this.Raise("Loaded"); }
+        void OnSpawn() { this.Raise("Spawned"); }
     }
     "#;
     let mut runtime = runtime_of(ANNOUNCER);

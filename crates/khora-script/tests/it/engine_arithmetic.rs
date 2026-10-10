@@ -124,7 +124,7 @@ fn vector_addition_subtraction_scaling() {
     let program = build(
         "fn Vec3 A() { return Vec3(1.0, 2.0, 3.0); }
          fn Vec3 B() { return Vec3(0.5, 0.25, -1.0); }
-         fn Vec3 Add() { return A() + B(); }
+         fn Vec3 Plus() { return A() + B(); }
          fn Vec3 Sub() { return A() - B(); }
          fn Vec3 Scale() { return A() * 2.5; }
          fn Vec3 ScaleLeft() { return 2.5 * A(); }
@@ -138,7 +138,7 @@ fn vector_addition_subtraction_scaling() {
     let a = Vec3::new(1.0, 2.0, 3.0);
     let b = Vec3::new(0.5, 0.25, -1.0);
 
-    assert_eq!(run(&program, "Add"), Value::Vec3(a + b));
+    assert_eq!(run(&program, "Plus"), Value::Vec3(a + b));
     assert_eq!(run(&program, "Sub"), Value::Vec3(a - b));
     assert_eq!(run(&program, "Scale"), Value::Vec3(a * 2.5));
     assert_eq!(run(&program, "ScaleLeft"), Value::Vec3(2.5 * a));
@@ -242,7 +242,7 @@ fn color_modulates_and_scales() {
     let program = build(
         "fn Color A() { return Color(0.5, 0.25, 1.0, 1.0); }
          fn Color B() { return Color(0.5, 0.5, 0.25, 0.5); }
-         fn Color Add() { return A() + B(); }
+         fn Color Plus() { return A() + B(); }
          fn Color Sub() { return A() - B(); }
          fn Color Modulate() { return A() * B(); }
          fn Color Scale() { return A() * 2.0; }
@@ -251,7 +251,7 @@ fn color_modulates_and_scales() {
     let a = LinearRgba::new(0.5, 0.25, 1.0, 1.0);
     let b = LinearRgba::new(0.5, 0.5, 0.25, 0.5);
 
-    assert_eq!(run(&program, "Add"), Value::Color(a + b));
+    assert_eq!(run(&program, "Plus"), Value::Color(a + b));
     assert_eq!(run(&program, "Sub"), Value::Color(a - b));
     assert_eq!(run(&program, "Modulate"), Value::Color(a * b));
     assert_eq!(run(&program, "Scale"), Value::Color(a * 2.0));
@@ -341,7 +341,7 @@ fn engine_arithmetic_survives_every_fuel_slice() {
 
 /// The operator natives are named `"<L> <op> <R>"` (`"- V"` for unary minus).
 /// A space is not part of an identifier, so no source can call one by name;
-/// and a script's own `Add`, `Mul` or `Neg` stays the script's: declaring one
+/// and a script's own `Sub`, `Mul` or `Neg` stays the script's: declaring one
 /// changes neither what it calls nor what the operator does.
 #[test]
 fn operator_natives_are_unreachable_by_name() {
@@ -371,9 +371,9 @@ fn operator_natives_are_unreachable_by_name() {
     }
 
     let program = build(
-        "fn Vec3 Add(Vec3 a, Vec3 b) { return a; }
+        "fn Vec3 Sub(Vec3 a, Vec3 b) { return a; }
          fn Vec3 Neg(Vec3 a) { return a; }
-         fn Vec3 Called() { return Add(Vec3(1.0, 2.0, 3.0), Vec3(1.0, 1.0, 1.0)); }
+         fn Vec3 Called() { return Sub(Vec3(1.0, 2.0, 3.0), Vec3(1.0, 1.0, 1.0)); }
          fn Vec3 Summed() { return Vec3(1.0, 2.0, 3.0) + Vec3(1.0, 1.0, 1.0); }
          fn Vec3 Negated() { return -Neg(Vec3(1.0, 2.0, 3.0)); }",
     );
@@ -383,7 +383,7 @@ fn operator_natives_are_unreachable_by_name() {
     assert_eq!(
         run(&program, "Called"),
         Value::Vec3(a),
-        "the script's `Add`"
+        "the script's `Sub`"
     );
     assert_eq!(run(&program, "Summed"), Value::Vec3(a + b), "the operator");
     assert_eq!(

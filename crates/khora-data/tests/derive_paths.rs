@@ -299,3 +299,39 @@ fn a_field_soa_derived_registration_restores_the_component() {
         Some(spin(1.0, 2.0, 3.0))
     );
 }
+
+/// **A failed add is the caller's to know.** `create_default` attaches the
+/// component's default; when the `World` refuses — the entity is gone, or
+/// already carries one — the refusal reaches the caller rather than reading
+/// as an attach that happened.
+#[test]
+fn create_default_reports_a_failed_add() {
+    let registration =
+        khora_data::scene::registration_of("GuardMass").expect("the derive registers GuardMass");
+    let mut world = World::new();
+
+    let gone = world.spawn(());
+    world.despawn(gone);
+    assert!(
+        (registration.create_default)(&mut world, gone).is_err(),
+        "adding to a despawned entity is refused, and says so"
+    );
+
+    let holder = world.spawn(mass(4.0, "kept"));
+    assert!(
+        (registration.create_default)(&mut world, holder).is_err(),
+        "adding what is already attached is refused, and says so"
+    );
+    assert_eq!(
+        world.clone_component::<GuardMass>(holder),
+        Some(mass(4.0, "kept")),
+        "the refused add left the component as it was"
+    );
+
+    let fresh = world.spawn(());
+    (registration.create_default)(&mut world, fresh).expect("a plain add succeeds");
+    assert_eq!(
+        world.clone_component::<GuardMass>(fresh),
+        Some(GuardMass::default())
+    );
+}

@@ -38,6 +38,7 @@ behavior Guard {
 | `fn <type> Name(params) { … }` | runs | free functions; called before their declaration and recursively; `this` is refused in them; a name an engine function already has is refused |
 | `behavior Name { … }` | runs | the unit the engine attaches to an entity |
 | `struct Name { … }` | runs — a value type; its field defaults must be constants; operator overloads check but do not compile yet |
+| `component Name { … }` | refused in a script — only the engine's module `engine/components.erg` declares the components a script writes |
 | `[Attribute]` on a behavior | parses | nothing reads it yet |
 
 Comments are `// line` and `/* block */`.
@@ -153,7 +154,7 @@ these parameters:
 | `void Update(float dt)` | every turn, last, with the frame's delta |
 | `void OnSpawn()` | once per entity, ever — a save remembers it ran; a hot reload does not rerun it |
 | `void OnLoad()` | after a game save restored the instance, before anything else; never on a scene load or Stop |
-| `void OnDespawn()` | when the despawn is decided — by `Despawn(this)`, or noticed a frame later |
+| `void OnDespawn()` | when the despawn is decided — by `this.Despawn()`, or noticed a frame later |
 | `void OnResumeFailed(string member)` | an edit left nothing of a body part-way through; `member` is e.g. `"OnSpawn"`, `"Chase.Attack"`, `"__every(0.5)"` |
 | `void FixedUpdate(float dt)` | reserved — never called yet; the checker warns |
 
@@ -168,7 +169,7 @@ behavior Guard {
     }
     state Chase(Entity foe) {
         int missed = 0;
-        every 1s { Raise(foe, "Damaged", 5); }
+        every 1s { foe.Raise("Damaged", 5); }
         after 10s => become Patrol;
     }
 }
@@ -285,22 +286,66 @@ refused with the operation's name and the list of what the type defines.
 |---|---|
 | Maths | `Abs`, `Floor`, `Ceil`, `Round`, `Sign`, `Sqrt` (faults below zero) `(float) → float`; `Min`, `Max` `(float, float)`; `Clamp(v, lo, hi)` (faults if `lo > hi`); `Lerp(a, b, t)` (unclamped) |
 | Text | `Log`, `Warn`, `Error` `(string)`; `Length(string) → int` |
-| World — queued, applied at the frame's end | `Position() → Vec3` (own entity, as the frame began); `Translate(Entity, Vec3)`, `SetPosition(Entity, Vec3)`, `SetScale(Entity, Vec3)`, `Despawn(Entity)`, `SetParent(Entity, Entity)`, `Detach(Entity)` |
+| World — queued, applied at the frame's end | `Position() → Vec3` (own entity, as the frame began); called on an entity `e`: `e.Translate(Vec3)`, `e.SetPosition(Vec3)`, `e.SetRotation(Quat)`, `e.SetScale(Vec3)`, `e.Despawn()`, `e.SetParent(Entity)`, `e.Detach()`; components — see [Writing components](#writing-components) |
 | Input | `Pressed(string action) → bool`, `JustPressed(string) → bool` |
-| Events | `Raise(Entity target, string name, …payload)` |
+| Events | `target.Raise(string name, …payload)` |
 | Constructors | `Vec2`, `Vec3`, `Vec4`, `Quat(x, y, z, w)`, `Color(r, g, b, a)` |
 
 A world write is a queued command: `Position()` does not see a `SetPosition` until
 the next frame.
 
+**An operation on an entity is called on it.** Every engine function whose first
+parameter is an `Entity` is written `e.Name(…)` — `this.SetPosition(v)`,
+`enemy.Despawn()`, `target.Raise("Hit", 3)`. The free form `SetPosition(this, v)` is
+refused with its rewrite. `Spawn`, the maths, `Log` and `Pressed` stay free
+functions.
+
+## Writing components
+
+```text
+import "engine/components.erg";
+
+behavior Anchor {
+    void OnSpawn() {
+        this.Set(RigidBody { mass: 12.0 });   // only `mass` changes
+        this.Add(Collider { friction: 0.8 }); // defaults, then `friction`
+    }
+    on Released() { this.Remove(Collider); }
+}
+
+behavior Spawner {
+    every 2s { Spawn(Position(), AudioSource { volume: 0.5 }); }
+}
+```
+
+| Write | Does | Refused |
+|---|---|---|
+| `e.Set(C { field: v, … })` | writes the fields named; the others keep their values | at the frame's end, when `e` has no `C` |
+| `e.Add(C { field: v, … })` | attaches `C` with its defaults, then writes the fields named | at the frame's end, when `e` already has a `C` |
+| `e.Remove(C)` | detaches `C` | at the frame's end, when `e` has no `C` |
+| `Spawn(Vec3 position, C1 { … }, …)` | a new entity at `position`, upright, carrying each component | the whole spawn, when one component refuses its value — no entity is left behind |
+
+- The components a script writes are those `engine/components.erg` declares with
+  `component`: the ones an author may add in the editor. `Transform` is placed with
+  `SetPosition`, `Translate`, `SetRotation` and `SetScale`; a component the engine
+  computes (`Derived`, `Runtime`) or a tool sets (`Parent`) is a `struct` there — a
+  value a script can build, not write.
+- A component literal is a *patch*: it appears only as the argument of `Set`, `Add`
+  or `Spawn`, and its fields are evaluated in the order written. A component is not
+  a type — `RigidBody r;` is refused.
+- Each write costs `1 +` the number of fields it names. `Spawn` returns nothing:
+  the new entity configures itself in its own `OnSpawn`.
+- `Set`, `Add`, `Remove`, `Get`, `Has` and `Spawn` are reserved: no function or
+  method may take one of these names.
+
 ## Events
 
 ```text
 on Damaged(int amount) { health -= amount; }
-void Hurt() { Raise(this, "Damaged", 30); }
+void Hurt() { this.Raise("Damaged", 30); }
 ```
 
-- `Raise(target, "Name", …)` delivers **next frame**, to the handler named `Name`
+- `target.Raise("Name", …)` delivers **next frame**, to the handler named `Name`
   — the current state's first, then the behavior's.
 - The payload is checked against the handler that receives it: a wrong count is
   reported, a missing handler is simply not delivered, a despawned target hears
@@ -308,13 +353,14 @@ void Hurt() { Raise(this, "Damaged", 30); }
 - A payload carries `bool`, `int`, `float`, `string`, `Entity` and the engine
   types — not `null`, whether a script or the engine raised it.
 - The engine raises `Touched(Entity other)` and `Separated` from collisions:
-  `on Touched(Entity other) { Despawn(other); }`.
+  `on Touched(Entity other) { other.Despawn(); }`.
 
 ## Not yet
 
 Maps, methods on structs and arrays (beyond `Push` and `RemoveAt`), struct
 operator overloads at run time, value patterns in `match`, awaiting events,
-closures.
+closures, reading a component (`e.Get(C)`, `e.Has(C)`), components declared in a
+script.
 
 ## See also
 

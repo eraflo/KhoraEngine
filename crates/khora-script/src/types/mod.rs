@@ -33,6 +33,7 @@
 
 mod arithmetic;
 mod calls;
+mod components;
 pub mod expr;
 mod members;
 mod returns;
@@ -190,6 +191,8 @@ impl Context {
 pub struct Checker {
     /// Structs by name.
     pub structs: HashMap<String, StructInfo>,
+    /// The engine's components a script may write, by name.
+    pub components: HashMap<String, components::ComponentInfo>,
     /// Free functions by name.
     pub functions: HashMap<String, FnInfo>,
     /// Engine functions by name.
@@ -231,6 +234,7 @@ impl Checker {
     fn new() -> Self {
         Self {
             structs: HashMap::new(),
+            components: HashMap::new(),
             functions: HashMap::new(),
             natives: HashMap::new(),
             behaviors: Vec::new(),
@@ -259,6 +263,11 @@ impl Checker {
     /// Resolves a written type, reporting and yielding [`Ty::Error`] when the
     /// name is unknown.
     pub fn resolve(&mut self, ty: &crate::ast::TypeRef) -> Ty {
+        // A component is written to an entity, never held: it is not a type.
+        if let Some((name, span)) = named_component(ty, &self.components) {
+            self.component_as_value(&name, span);
+            return Ty::Error;
+        }
         let known: Vec<String> = self.structs.keys().cloned().collect();
         match ty::resolve(ty, &|name| known.iter().any(|s| s == name)) {
             Some(resolved) => resolved,
@@ -295,6 +304,12 @@ impl Checker {
             if let Item::Behavior(decl) = item {
                 self.behaviors.push(decl.name.clone());
             }
+            // Known by name before any type is resolved, so a field or a
+            // parameter of a component's type is refused for what it is.
+            if let Item::Component(decl) = item {
+                self.components
+                    .insert(decl.name.clone(), Default::default());
+            }
         }
 
         self.report_duplicate_names(module);
@@ -303,6 +318,7 @@ impl Checker {
         for item in &module.items {
             match item {
                 Item::Struct(decl) => self.collect_struct(decl),
+                Item::Component(decl) => self.collect_component(decl),
                 Item::Function(decl) => self.collect_function(decl),
                 Item::Behavior(_) => {}
             }
@@ -414,6 +430,9 @@ impl Checker {
     fn collect_function(&mut self, decl: &FunctionDecl) {
         let params = decl.params.iter().map(|p| self.resolve(&p.ty)).collect();
         let result = self.resolve(&decl.return_ty);
+        if self.refuse_reserved(&decl.name, decl.name_span) {
+            return;
+        }
         if self.functions.contains_key(&decl.name) {
             self.error(
                 format!("function `{}` is declared twice", decl.name),
@@ -451,6 +470,7 @@ impl Checker {
                 Item::Function(decl) => self.check_function(decl),
                 Item::Behavior(decl) => self.check_behavior(decl),
                 Item::Struct(decl) => self.check_struct_bodies(decl),
+                Item::Component(_) => {}
             }
         }
     }
@@ -577,5 +597,22 @@ fn written_name(ty: &crate::ast::TypeRef) -> String {
             "{name}<{}>",
             args.iter().map(written_name).collect::<Vec<_>>().join(", ")
         ),
+    }
+}
+
+/// The component `ty` names, at any depth (`RigidBody`, `RigidBody[]`,
+/// `RigidBody?`), with where it is written.
+fn named_component(
+    ty: &crate::ast::TypeRef,
+    components: &HashMap<String, components::ComponentInfo>,
+) -> Option<(String, Span)> {
+    use crate::ast::TypeRef;
+    match ty {
+        TypeRef::Named { name, span } => {
+            components.contains_key(name).then(|| (name.clone(), *span))
+        }
+        TypeRef::Optional { inner, .. } => named_component(inner, components),
+        TypeRef::Array { element, .. } => named_component(element, components),
+        _ => None,
     }
 }

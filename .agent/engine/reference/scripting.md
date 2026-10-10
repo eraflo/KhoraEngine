@@ -120,6 +120,19 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   stale and is then edited, in that order, and the second is found long after the first. `PreludeLoader`
   answers `engine/components.erg` ahead of the inner loader, so a file left at that path — a copy of an
   older engine — cannot shadow the mirror of the one running.
+- **Entity operations are methods; one spelling.** A native whose first parameter is `Entity` is called
+  `e.Name(…)` and compiles to the same `NativeCall`, receiver first (`types/components.rs`,
+  `bytecode/components.rs`); the free form is refused with "Write `e.Name(…)`". `Set`/`Add`/`Remove`
+  (and `Get`/`Has`, 07) are intrinsics; with `Spawn` they are reserved names (`types/components.rs::RESERVED`).
+- **A component write is a patch.** `e.Set(C { … })`, `e.Add(C { … })`, `e.Remove(C)`, `Spawn(pos, C { … }, …)`
+  compile to `Instruction::{WriteComponent, RemoveComponent, SpawnEntity}` over `Program::{patches, spawns}`
+  (component + field *names*, written order) and queue `WorldCommand::{SetComponent, AddComponent,
+  RemoveComponent, Spawn}` in `host.commands` (`vm/commands.rs`); cost `1 +` fields; never a stop. A
+  component literal is valid only as their argument; a component is not a type.
+- **`component` declarations come only from `ENGINE_COMPONENTS_MODULE`** (`engine/components.erg`,
+  `khora_script::ENGINE_COMPONENTS_MODULE`, checked on the resolved modules —
+  `modules::report_foreign_components`). The mirror emits `component` for hand-authorable provenance
+  except `Transform` (placed by `native::world::PLACEMENT`), and `struct` with a `//` reason for the rest.
 - **A mirror that cannot express something says so; it never guesses.** A field whose Rust type Ergon
   has no spelling for stays as a comment naming that type; a component whose every field is like that,
   or whose field names the language cannot spell (a tuple index, or a reserved word — `Script.behavior`,
@@ -162,10 +175,11 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** �
 - The rate that converts a time budget into fuel is measured by the **lane** and stored on
   `ScriptRuntime`, not assumed by the agent. `INITIAL_RATE` lives in
   `khora-lanes/src/script_lane/runtime.rs` and is the single definition.
-- **A mirrored component is an ordinary `struct`**: its fields read and write like any struct value's
-  (`bytecode/structs.rs`). What is not there yet is reading a component *from an entity* (`e.Get(T)`,
-  Ergon spec 07): `entity.Field` is a checker error naming `Get` (`types/calls.rs::entity_field`), and
-  the khora-io mirror tests pin that limit.
+- **A mirrored component a script cannot write stays an ordinary `struct`** (`Transform`, derived and
+  runtime components): its fields read and write like any struct value's. A writable one is a `component`,
+  not a value. What is not there yet is reading a component *from an entity* (`e.Get(T)`, Ergon spec
+  07): `entity.Field` is a checker error naming `Get` (`types/calls.rs::entity_field`), and the khora-io
+  mirror tests pin that limit.
 - `ENGINE_TYPES` (`khora-script/src/types/ty.rs`) is a list of names with a `Value` variant, a
   constructor and accessors behind them. It once named `Transform`, which had none, so `Transform t;`
   shaped cleanly and failed with the misleading "`Transform` has no `x`". Adding a name there without

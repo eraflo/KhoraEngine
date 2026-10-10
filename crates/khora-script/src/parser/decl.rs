@@ -69,13 +69,16 @@ impl Parser {
         if self.check_keyword(Keyword::Struct) {
             return Ok(Item::Struct(self.parse_struct()?));
         }
+        if self.check_keyword(Keyword::Component) {
+            return Ok(Item::Component(self.parse_component()?));
+        }
         if self.check_keyword(Keyword::Fn) {
             return Ok(Item::Function(self.parse_function()?));
         }
 
         Err(self.error_with_note(
             "expected a declaration",
-            "a file may declare `behavior`, `struct` or `fn`, and start with `import`",
+            "a file may declare `behavior`, `struct`, `component` or `fn`, and start with `import`",
         ))
     }
 
@@ -138,6 +141,43 @@ impl Parser {
             name_span,
             fields,
             operators,
+            span: start.to(end),
+        })
+    }
+
+    /// `component Name { fields }` — fields only: a component is data the
+    /// engine stores, with no defaults (an unnamed field of a write is left
+    /// alone) and no operators.
+    pub(super) fn parse_component(&mut self) -> Parse<StructDecl> {
+        let start = self.span();
+        self.advance(); // `component`
+        let (name, name_span) = self.expect_ident("a component name")?;
+        self.expect(TokenKind::LBrace, "`{` to open the component body")?;
+
+        let mut fields = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.at_end() {
+            match self.parse_field() {
+                Ok(field) => fields.push(field),
+                Err(Bail) => self.recover_to_statement(),
+            }
+        }
+        for field in &fields {
+            if let Some(default) = &field.default {
+                self.diagnostics.push(
+                    Diagnostic::error("a component field has no default", default.span())
+                        .with_note(
+                            "a write names the fields it changes and leaves the others as they are",
+                        ),
+                );
+            }
+        }
+
+        let end = self.expect(TokenKind::RBrace, "`}` to close the component body")?;
+        Ok(StructDecl {
+            name,
+            name_span,
+            fields,
+            operators: Vec::new(),
             span: start.to(end),
         })
     }

@@ -67,7 +67,7 @@ pub static ON_SPAWN: Lifecycle = Lifecycle {
 /// `void OnDespawn()` — once, when the entity is on its way out.
 ///
 /// Runs when the despawn is **decided**, not when it is performed: a script that
-/// calls `Despawn(this)` gets this before the frame boundary applies it, while
+/// calls `this.Despawn()` gets this before the frame boundary applies it, while
 /// the entity is still there to be read. An entity removed by something other
 /// than a script is noticed the frame after it left the view, which is as early
 /// as a lane that only reads a projection can know.

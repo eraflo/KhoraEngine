@@ -76,6 +76,7 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> CompileOutcome 
     };
 
     let mut diagnostics = crate::modules::report_name_clashes(&resolved);
+    diagnostics.extend(crate::modules::report_foreign_components(&resolved));
     if crate::diagnostics::has_errors(&diagnostics) {
         return CompileOutcome {
             program: None,

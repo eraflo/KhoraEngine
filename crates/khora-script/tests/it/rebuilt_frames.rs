@@ -205,11 +205,11 @@ fn a_rebuilt_frame_pairs_a_shadowing_local_with_its_own_value() {
 fn every_cut_resumed_into_edited_code_finishes_with_the_edited_result() {
     let source = |tail: &str| {
         format!(
-            "fn int Add(int a, int b) {{ int s = a + b; return s; }}
+            "fn int Sum(int a, int b) {{ int s = a + b; return s; }}
              fn int F() {{
                  int total = 0;
                  for (int i = 0; i < 3; i = i + 1) {{
-                     total = total + Add(i, Add(1, i)) * 2 - Add(1, 1);
+                     total = total + Sum(i, Sum(1, i)) * 2 - Sum(1, 1);
                  }}
                  int k = 0;
                  while (k < 2) {{
@@ -219,7 +219,7 @@ fn every_cut_resumed_into_edited_code_finishes_with_the_edited_result() {
                  if (total < 0) {{
                      total = 0;
                  }} else if (total > 1) {{
-                     total = Add(total, 1);
+                     total = Sum(total, 1);
                  }}
                  {tail}
              }}"

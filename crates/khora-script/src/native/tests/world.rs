@@ -14,7 +14,7 @@
 
 //! Tests for the world-changing surface.
 //!
-//! The decisive one: a source program says `Translate(this, …)` and a
+//! The decisive one: a source program says `this.Translate(…)` and a
 //! `WorldCommand` comes out the other side. Every layer between — `this`
 //! resolving to an entity, `Vec3` surviving a register, the checker agreeing
 //! that a native takes one — has to hold for that to happen at all.
@@ -77,7 +77,7 @@ fn a_script_moves_an_entity_by_queueing_a_command() {
     let mut host = host_at(Vec3::ZERO);
     let outcome = run_member(
         "behavior Mover {
-             void Go() { Translate(this, Vec3(0.0, 1.0, 0.0)); }
+             void Go() { this.Translate(Vec3(0.0, 1.0, 0.0)); }
          }",
         "Mover.Go",
         &mut host,
@@ -99,7 +99,7 @@ fn a_script_moves_an_entity_by_queueing_a_command() {
 fn this_resolves_to_the_running_entity() {
     let mut host = host_at(Vec3::ZERO);
     run_member(
-        "behavior Mover { void Go() { Despawn(this); } }",
+        "behavior Mover { void Go() { this.Despawn(); } }",
         "Mover.Go",
         &mut host,
     );
@@ -115,7 +115,7 @@ fn this_resolves_to_the_running_entity() {
 #[test]
 fn this_is_refused_in_a_free_function() {
     let natives = NativeRegistry::discovered();
-    let parsed = parse(lex("fn void Go() { Despawn(this); }").tokens);
+    let parsed = parse(lex("fn void Go() { this.Despawn(); }").tokens);
     let found: Vec<String> = check_with(&parsed.module, &natives)
         .diagnostics
         .into_iter()
@@ -134,7 +134,7 @@ fn this_is_refused_in_a_free_function() {
 fn this_faults_when_the_host_named_no_entity() {
     let mut host = Host::new();
     let outcome = run_member(
-        "behavior Mover { void Go() { Despawn(this); } }",
+        "behavior Mover { void Go() { this.Despawn(); } }",
         "Mover.Go",
         &mut host,
     );
@@ -155,7 +155,7 @@ fn a_vector_is_built_from_computed_components() {
              void Go() {
                  float speed = 3.0;
                  float dt = 0.5;
-                 SetPosition(this, Vec3(speed * dt, 0.0, 0.0 - speed));
+                 this.SetPosition(Vec3(speed * dt, 0.0, 0.0 - speed));
              }
          }",
         "Mover.Go",
@@ -181,7 +181,7 @@ fn a_vector_survives_a_local() {
         "behavior Mover {
              void Go() {
                  Vec3 up = Vec3(0.0, 1.0, 0.0);
-                 Translate(this, up);
+                 this.Translate(up);
              }
          }",
         "Mover.Go",
@@ -204,7 +204,7 @@ fn a_vector_survives_a_local() {
 fn position_answers_with_what_the_frame_projected() {
     let mut host = host_at(Vec3::new(1.0, 2.0, 3.0));
     run_member(
-        "behavior Mover { void Go() { SetPosition(this, Position()); } }",
+        "behavior Mover { void Go() { this.SetPosition(Position()); } }",
         "Mover.Go",
         &mut host,
     );
@@ -226,8 +226,8 @@ fn a_write_is_not_readable_back_in_the_same_turn() {
     run_member(
         "behavior Mover {
              void Go() {
-                 Translate(this, Vec3(5.0, 0.0, 0.0));
-                 SetPosition(this, Position());
+                 this.Translate(Vec3(5.0, 0.0, 0.0));
+                 this.SetPosition(Position());
              }
          }",
         "Mover.Go",
@@ -255,7 +255,7 @@ fn position_faults_when_the_frame_placed_nothing() {
         ..Host::new()
     };
     let outcome = run_member(
-        "behavior Mover { void Go() { SetPosition(this, Position()); } }",
+        "behavior Mover { void Go() { this.SetPosition(Position()); } }",
         "Mover.Go",
         &mut host,
     );
@@ -268,7 +268,7 @@ fn position_faults_when_the_frame_placed_nothing() {
 
 // ─── Hierarchy ──────────────────────────────────────────────────────────────
 
-/// Detaching is its own call rather than `SetParent(e, null)`: an optional
+/// Detaching is its own call rather than `e.SetParent(null)`: an optional
 /// argument would make every hierarchy call carry a nullable to express what is
 /// a different intent anyway.
 #[test]
@@ -277,8 +277,8 @@ fn attaching_and_detaching_are_two_calls() {
     run_member(
         "behavior Mover {
              void Go() {
-                 SetParent(this, this);
-                 Detach(this);
+                 this.SetParent(this);
+                 this.Detach();
              }
          }",
         "Mover.Go",

@@ -235,7 +235,7 @@ behavior Guard {
     int health = 100;
 
     on Damaged(int amount) {
-        Despawn(this);
+        this.Despawn();
     }
 
     void OnDespawn() {

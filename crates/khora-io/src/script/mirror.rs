@@ -59,6 +59,7 @@
 
 use std::sync::OnceLock;
 
+use khora_data::ecs::ComponentProvenance;
 use khora_data::scene::{ComponentRegistration, ComponentShape};
 use khora_script::modules::SourceLoader;
 use khora_script::TokenKind;
@@ -68,7 +69,7 @@ use khora_script::TokenKind;
 /// `import "engine/components.erg";` — an ordinary import, so a script that does
 /// not use a component pays nothing, and a project declaring its own `Camera`
 /// only meets the clash if it asked for ours.
-pub const MIRROR_MODULE: &str = "engine/components.erg";
+pub const MIRROR_MODULE: &str = khora_script::ENGINE_COMPONENTS_MODULE;
 
 /// The Ergon source mirroring every registered component.
 ///
@@ -171,10 +172,15 @@ fn declaration(registration: &ComponentRegistration) -> String {
         return not_mirrored(name, &format!("its field `{}` {reason}", field.name));
     }
 
+    // What a script may do with it: write it, when an author may — the rule
+    // the editor's "+ Add Component" follows — or only hold it as a value.
+    let (keyword, why) = writable(registration);
+    let preface = why.map_or(String::new(), |why| format!("// {name}: {why}\n"));
+
     // A marker carries no data, and one line says so without looking like a
     // declaration whose body went missing.
     if fields.is_empty() {
-        return format!("struct {name} {{ }}\n");
+        return format!("{preface}{keyword} {name} {{ }}\n");
     }
 
     let types: Vec<Option<String>> = fields.iter().map(|field| ergon_type(field.ty)).collect();
@@ -186,7 +192,7 @@ fn declaration(registration: &ComponentRegistration) -> String {
         return not_mirrored(name, "Ergon cannot yet name the type of any of its fields");
     }
 
-    let mut declaration = format!("struct {name} {{\n");
+    let mut declaration = format!("{preface}{keyword} {name} {{\n");
     for (field, ty) in fields.iter().zip(types) {
         match ty {
             Some(ty) => declaration.push_str(&format!("    {ty} {};\n", field.name)),
@@ -198,6 +204,36 @@ fn declaration(registration: &ComponentRegistration) -> String {
     }
     declaration.push_str("}\n");
     declaration
+}
+
+/// How a script may hold `registration`: as a `component` it writes, or as a
+/// `struct` value only — with the reason, which the module says above it.
+fn writable(registration: &ComponentRegistration) -> (&'static str, Option<String>) {
+    let (placed, natives) = khora_script::native::world::PLACEMENT;
+    if registration.type_name == placed {
+        return (
+            "struct",
+            Some(format!(
+                "not written as a component — placed with {}",
+                natives
+                    .iter()
+                    .map(|native| format!("`{native}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        );
+    }
+    match registration.provenance {
+        provenance if provenance.is_hand_authorable() => ("component", None),
+        ComponentProvenance::ToolAuthored => (
+            "struct",
+            Some("not written by a script — set by its own operations".to_owned()),
+        ),
+        _ => (
+            "struct",
+            Some("written by the engine, not by a script".to_owned()),
+        ),
+    }
 }
 
 /// A component that has no declaration, and the reason.
@@ -505,6 +541,7 @@ mod tests {
             let name = registration.type_name;
             assert!(
                 source.contains(&format!("struct {name} {{"))
+                    || source.contains(&format!("component {name} {{"))
                     || source.contains(&format!("// {name} — not mirrored")),
                 "{name} is neither mirrored nor explained"
             );
@@ -540,13 +577,108 @@ mod tests {
     fn the_declarations_are_in_name_order() {
         let names: Vec<&str> = mirror_source()
             .lines()
-            .filter_map(|line| line.strip_prefix("struct "))
+            .filter_map(|line| {
+                line.strip_prefix("struct ")
+                    .or_else(|| line.strip_prefix("component "))
+            })
             .filter_map(|rest| rest.split_whitespace().next())
             .collect();
 
         let mut sorted = names.clone();
         sorted.sort_unstable();
         assert_eq!(names, sorted);
+    }
+
+    /// The line declaring `name`, as a `component` or a `struct`, with the
+    /// line before it.
+    fn declared(source: &str, name: &str) -> Option<(&'static str, Option<String>)> {
+        let lines: Vec<&str> = source.lines().collect();
+        lines.iter().enumerate().find_map(|(at, line)| {
+            let kind = if line.starts_with(&format!("component {name} {{")) {
+                "component"
+            } else if line.starts_with(&format!("struct {name} {{")) {
+                "struct"
+            } else {
+                return None;
+            };
+            let before = at
+                .checked_sub(1)
+                .and_then(|previous| lines.get(previous))
+                .map(|line| (*line).to_owned());
+            Some((kind, before))
+        })
+    }
+
+    /// **A script may write what an author may write.** Every component the
+    /// editor's "+ Add Component" offers is declared a `component` — the
+    /// physics and audio ones a game reaches for first among them.
+    #[test]
+    fn the_mirror_emits_components_not_structs() {
+        let source = mirror_source();
+        for name in ["RigidBody", "Collider", "AudioSource"] {
+            assert_eq!(
+                declared(source, name).map(|(kind, _)| kind),
+                Some("component"),
+                "`{name}` should be a component; got:\n{source}"
+            );
+        }
+
+        for registration in inventory::iter::<ComponentRegistration> {
+            let name = registration.type_name;
+            let Some((kind, _)) = declared(source, name) else {
+                continue; // Not mirrored, for a stated reason.
+            };
+            if registration.provenance.is_hand_authorable() && name != "Transform" {
+                assert_eq!(kind, "component", "`{name}` is authorable; got:\n{source}");
+            }
+        }
+    }
+
+    /// **And nothing else is.** What the engine writes — `Derived`, `Runtime` —
+    /// what a tool writes, and `Transform`, which has its own placement
+    /// natives, stay plain structs, each saying why just above it.
+    #[test]
+    fn the_mirror_follows_the_add_component_rule() {
+        let source = mirror_source();
+
+        for registration in inventory::iter::<ComponentRegistration> {
+            let name = registration.type_name;
+            if registration.provenance.is_hand_authorable() && name != "Transform" {
+                continue;
+            }
+            let Some((kind, before)) = declared(source, name) else {
+                continue; // Not mirrored, for a stated reason.
+            };
+            assert_eq!(
+                kind, "struct",
+                "`{name}` must not be writable; got:\n{source}"
+            );
+            assert!(
+                before.as_deref().is_some_and(|line| line.trim_start().starts_with("//")),
+                "`{name}` should be preceded by a comment saying why it is not writable; got:\n{source}"
+            );
+        }
+
+        let (kind, before) = declared(source, "Transform").expect("Transform is mirrored");
+        assert_eq!(kind, "struct");
+        let before = before.unwrap_or_default();
+        assert!(
+            before.contains("SetPosition"),
+            "the comment above `Transform` names its placement natives; got {before:?}"
+        );
+
+        for engine_written in ["BodyMotion", "Teleported"] {
+            let (kind, before) = declared(source, engine_written)
+                .unwrap_or_else(|| panic!("`{engine_written}` is mirrored; got:\n{source}"));
+            assert_eq!(kind, "struct");
+            assert!(
+                before
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("written by the engine"),
+                "the comment above `{engine_written}` says the engine writes it; got {before:?}"
+            );
+        }
     }
 
     // ── The type mapping ──────────────────────────────

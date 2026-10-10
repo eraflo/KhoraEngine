@@ -144,6 +144,7 @@ fn persisted_variants(x: &khora_script::arena::persistent::Persisted) {
 fn item_variants(x: &khora_script::ast::Item) {
     match x {
         khora_script::ast::Item::Struct(..) => {}
+        khora_script::ast::Item::Component(..) => {}
         khora_script::ast::Item::Function(..) => {}
         khora_script::ast::Item::Behavior(..) => {}
     }
@@ -438,6 +439,7 @@ fn keyword_variants(x: &khora_script::lexer::token::Keyword) {
         khora_script::lexer::token::Keyword::Import => {}
         khora_script::lexer::token::Keyword::As => {}
         khora_script::lexer::token::Keyword::Struct => {}
+        khora_script::lexer::token::Keyword::Component => {}
         khora_script::lexer::token::Keyword::Fn => {}
         khora_script::lexer::token::Keyword::Var => {}
         khora_script::lexer::token::Keyword::Void => {}
@@ -675,6 +677,7 @@ fn fault_variants(x: &khora_script::vm::Fault) {
         khora_script::vm::Fault::ArenaFull => {}
         khora_script::vm::Fault::NoSubject => {}
         khora_script::vm::Fault::NativeFailed { .. } => {}
+        khora_script::vm::Fault::Unwritable { .. } => {}
         khora_script::vm::Fault::InvalidCast { .. } => {}
         khora_script::vm::Fault::IndexOutOfRange { .. } => {}
         khora_script::vm::Fault::NotAnObject { .. } => {}
@@ -741,6 +744,9 @@ fn instruction_variants(x: &khora_script::vm::instruction::Instruction) {
         khora_script::vm::instruction::Instruction::LoadStr { .. } => {}
         khora_script::vm::instruction::Instruction::Concat { .. } => {}
         khora_script::vm::instruction::Instruction::NativeCall { .. } => {}
+        khora_script::vm::instruction::Instruction::WriteComponent { .. } => {}
+        khora_script::vm::instruction::Instruction::RemoveComponent { .. } => {}
+        khora_script::vm::instruction::Instruction::SpawnEntity { .. } => {}
         khora_script::vm::instruction::Instruction::Await { .. } => {}
         khora_script::vm::instruction::Instruction::LoadSelf { .. } => {}
         khora_script::vm::instruction::Instruction::Safepoint => {}

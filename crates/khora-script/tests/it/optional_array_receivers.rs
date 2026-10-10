@@ -113,7 +113,7 @@ fn an_element_receiver_of_a_question_dot_is_evaluated_once() {
 const FIELD: &str = "behavior Guard {
                          int[]? xs = [1];
                          async int Slow() { await 1.0s; return 7; }
-                         async void Add() { xs?.Push(Slow()); }
+                         async void Append() { xs?.Push(Slow()); }
                          void Push() { xs?.Push(2); }
                          void Clear() { xs = null; }
                          int Count() { int[] ys = xs ?? [-1, -1, -1]; return ys.Length; }
@@ -128,11 +128,11 @@ const FIELD: &str = "behavior Guard {
 fn a_field_emptied_while_a_question_dot_push_waits_is_not_pushed_to() {
     let program = build(FIELD);
     let mut host = instance(&program);
-    let mut machine = machine_for(&program, "Add", &host);
+    let mut machine = machine_for(&program, "Append", &host);
     assert_eq!(
         machine.run(&program, &mut host, u64::MAX),
         Run::Suspended(Suspension::Awaiting),
-        "the premise: `Add` stops at the await in its argument"
+        "the premise: `Append` stops at the await in its argument"
     );
     next_frame(&mut host);
     call(&program, "Clear", &mut host).expect("the other write runs");

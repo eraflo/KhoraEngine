@@ -759,7 +759,7 @@ mod macro_tests {
     fn a_context_parameter_is_not_an_argument_the_script_supplies() {
         let natives = registry();
         let program = build(
-            "fn void Main(Entity e) { Shove(e, 2.0); }
+            "fn void Main(Entity e) { e.Shove(2.0); }
              fn void Unused() { }",
             &natives,
         );

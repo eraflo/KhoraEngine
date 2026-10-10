@@ -48,7 +48,7 @@ const PLAYER: &str = r#"
 behavior Player {
     void Update(float dt) {
         if (Pressed("jump")) {
-            Despawn(this);
+            this.Despawn();
         }
     }
 }

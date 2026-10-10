@@ -396,7 +396,7 @@ fn a_string_argument_survives_the_bodys_suspension_in_an_event_handler() {
         r#"behavior Guard {{
                string heard = "";
                {PAUSE}
-               void OnSpawn() {{ Raise(this, "Named", "a" + HeldTextName()); }}
+               void OnSpawn() {{ this.Raise("Named", "a" + HeldTextName()); }}
                on Named(string s) {{
                    Pause();
                    heard = s;

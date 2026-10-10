@@ -58,7 +58,7 @@ behavior Guard {
     int hits = 0;
 
     void OnSpawn() {
-        Raise(this, "Damaged", 25);
+        this.Raise("Damaged", 25);
     }
 
     on Damaged(int amount) {
@@ -135,8 +135,8 @@ fn an_event_is_not_delivered_in_the_frame_it_was_raised() {
         behavior Guard {
             int health = 100;
 
-            void OnSpawn() { Raise(this, "Damaged", 1); }
-            on Damaged(int amount) { Raise(this, "Damaged", 1); }
+            void OnSpawn() { this.Raise("Damaged", 1); }
+            on Damaged(int amount) { this.Raise("Damaged", 1); }
         }
         "#,
     );
@@ -176,7 +176,7 @@ fn raising_an_event_nobody_handles_is_quiet() {
         r#"
         behavior Guard {
             int health = 100;
-            void OnSpawn() { Raise(this, "Opened", 1); }
+            void OnSpawn() { this.Raise("Opened", 1); }
         }
         "#,
     );
@@ -200,7 +200,7 @@ fn a_payload_the_handler_cannot_take_faults_at_delivery() {
         r#"
         behavior Guard {
             int health = 100;
-            void OnSpawn() { Raise(this, "Damaged"); }
+            void OnSpawn() { this.Raise("Damaged"); }
             on Damaged(int amount) { health -= amount; }
         }
         "#,
@@ -297,7 +297,7 @@ fn an_event_can_carry_a_vector() {
             int hits = 0;
 
             void OnSpawn() {
-                Raise(this, "Hit", Vec3(1.0, 2.0, 3.0));
+                this.Raise("Hit", Vec3(1.0, 2.0, 3.0));
             }
 
             on Hit(Vec3 where) {
@@ -335,7 +335,7 @@ fn an_event_can_carry_text() {
             int hits = 0;
 
             void OnSpawn() {
-                Raise(this, "Named", "boss");
+                this.Raise("Named", "boss");
             }
 
             on Named(string who) {

@@ -108,8 +108,8 @@ fn elements(program: &Program, host: &mut Host) -> Vec<Result<Value, Fault>> {
 const GUARD: &str = r#"behavior Guard {
                            int[] xs = [1, 2, 3];
                            async int Slow() { await 1.0s; return 7; }
-                           async void Set() { int i = 1; xs[i] = Slow(); }
-                           async void Add() { xs[1] += Slow(); }
+                           async void Put() { int i = 1; xs[i] = Slow(); }
+                           async void Bump() { xs[1] += Slow(); }
                            void Poke() { xs[0] = 5; }
                            int At(int i) { return xs[i]; }
 
@@ -167,7 +167,7 @@ fn a_write_through_a_path_lands_once() {
 #[test]
 fn a_field_written_during_the_right_hand_side_keeps_that_write() {
     let program = build(GUARD);
-    for (member, second) in [("Set", 7), ("Add", 9)] {
+    for (member, second) in [("Put", 7), ("Bump", 9)] {
         let mut host = instance(&program);
         let mut machine = machine_for(&program, member, &[], &host);
         assert_eq!(

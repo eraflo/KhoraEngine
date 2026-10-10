@@ -233,7 +233,7 @@ fn a_restarted_handler_keeps_its_text_argument() {
             r#"behavior Guard {{
                    string heard = "";
                    async void Pause() {{ await 1.0s; }}
-                   void OnSpawn() {{ Raise(this, "Named", "a" + HeldTextTail()); }}
+                   void OnSpawn() {{ this.Raise("Named", "a" + HeldTextTail()); }}
                    on Named(string s) {{
                        {pad}
                        Pause();

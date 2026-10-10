@@ -14,11 +14,12 @@
 
 //! `receiver.Method(…)` and `receiver.name` where the receiver has no fields.
 //!
-//! The only methods today are an array's `Push` and `RemoveAt`, which change
-//! the array in place — so the receiver must be a *place*: a variable, a field,
-//! or an element or struct field of one. An array nothing keeps (`Make()`,
-//! `[1]`) would grow and be thrown away. An entity has neither fields nor
-//! methods: a behavior's own are named directly.
+//! An array's `Push` and `RemoveAt` change the array in place — so the
+//! receiver must be a *place*: a variable, a field, or an element or struct
+//! field of one. An array nothing keeps (`Make()`, `[1]`) would grow and be
+//! thrown away. An entity's methods are the engine's operations on it
+//! (`types/components.rs`); it has no fields, and a behavior's own methods are
+//! named directly.
 
 use super::{Checker, Context, Ty};
 use crate::ast::Expr;
@@ -57,6 +58,11 @@ impl Checker {
         if let Ty::Array(element) = &receiver {
             return Some(self.check_array_method(object, name, at, element, args, context));
         }
+        if receiver == Ty::Entity && !optional {
+            if let Some(ty) = self.check_entity_method(object, name, at, args, context) {
+                return Some(ty);
+            }
+        }
         for argument in args {
             self.check_expr(argument, context);
         }
@@ -71,7 +77,7 @@ impl Checker {
                 _ => self.error_note(
                     format!("an entity has no method `{name}`"),
                     at,
-                    "calling a method on an entity is not available yet — a behavior's own methods are called by name",
+                    "an entity's methods are the engine's operations on it — a behavior's own methods are called by name",
                 ),
             }
         } else if !matches!(receiver, Ty::Error) {

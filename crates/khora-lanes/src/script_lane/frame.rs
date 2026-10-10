@@ -152,7 +152,7 @@ pub fn run_behaviors(
         };
         let carried = state.carried.take();
 
-        // Where this behavior's own commands start, so a `Despawn(this)` it
+        // Where this behavior's own commands start, so a `this.Despawn()` it
         // queues can be told from one an earlier behavior queued.
         let commands_before = host.commands.len();
 

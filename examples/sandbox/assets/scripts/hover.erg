@@ -32,6 +32,6 @@ behavior Hover {
         float t = phase - Floor(phase);
         float lift = height * (1.0 - Abs(t * 2.0 - 1.0));
 
-        SetPosition(this, Vec3(-2.2, ground + lift, -1.4));
+        this.SetPosition(Vec3(-2.2, ground + lift, -1.4));
     }
 }

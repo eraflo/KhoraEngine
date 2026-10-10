@@ -214,6 +214,23 @@ pub struct Program {
     /// Every struct the program declares, addressed by index.
     #[serde(default)]
     pub structs: Vec<StructLayout>,
+    /// Every component write the program makes — which component, and which
+    /// of its fields, in the order written — addressed by index.
+    #[serde(default)]
+    pub patches: Vec<Patch>,
+    /// Every `Spawn`'s components, as patch indices in the order written.
+    #[serde(default)]
+    pub spawns: Vec<Vec<u32>>,
+}
+
+/// One component write: the component, and the fields it names. A field left
+/// out is left as the entity holds it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Patch {
+    /// The component's name.
+    pub component: String,
+    /// The fields written, in the order written.
+    pub fields: Vec<String>,
 }
 
 /// A struct as the running program knows it.

@@ -161,8 +161,8 @@ const LOADER: &str = r#"behavior Loader {
                            int health = 100;
                            int greeted = 0;
                            int loaded = 0;
-                           void OnSpawn() { greeted += 1; Raise(this, "Greeted"); }
-                           void OnLoad() { loaded += 1; Raise(this, "Loaded"); }
+                           void OnSpawn() { greeted += 1; this.Raise("Greeted"); }
+                           void OnLoad() { loaded += 1; this.Raise("Loaded"); }
                        }"#;
 
 /// **An arrival is handed over once, and a frame out of fuel drops it.** The
@@ -261,11 +261,11 @@ const WAVER: &str = r#"behavior Guard {
                           async void Attack() {
                               await 1.0s;
                               fired += 1;
-                              Raise(this, "Fired");
+                              this.Raise("Fired");
                           }
                           async void Wave() {
                               await 0.5s;
-                              Raise(this, "Waved");
+                              this.Raise("Waved");
                           }
                           on Spotted(int by) { Attack(); }
                           void OnSpawn() { Wave(); }
@@ -345,8 +345,8 @@ fn an_on_spawn_that_waits_does_not_drop_the_body_a_save_restored() {
 
 const ANNOUNCER: &str = r#"behavior Guard {
                               int steps = 0;
-                              void OnSpawn() { Raise(this, "Spawned"); }
-                              void OnLoad() { Raise(this, "Loaded"); }
+                              void OnSpawn() { this.Raise("Spawned"); }
+                              void OnLoad() { this.Raise("Loaded"); }
                               void Update(float dt) { steps += 1; }
                           }"#;
 
@@ -398,7 +398,7 @@ fn returning_to_play_from_another_mode_is_not_a_load() {
 
 /// Says goodbye where anything can hear it.
 const LEAVER: &str = r#"behavior Guard {
-                           void OnDespawn() { Raise(this, "Bye"); }
+                           void OnDespawn() { this.Raise("Bye"); }
                        }"#;
 
 /// One frame through the lane itself, the way the scripting agent runs it.

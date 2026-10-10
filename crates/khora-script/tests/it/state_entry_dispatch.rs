@@ -64,7 +64,7 @@ fn run_to_end(mut machine: Machine, program: &Program, host: &mut Host) {
 fn an_event_named_like_the_state_entry_is_not_delivered_to_it() {
     let program = build(
         r#"behavior Guard {
-               state Patrol { void Probe() { Raise(this, "__enter", 1); } }
+               state Patrol { void Probe() { this.Raise("__enter", 1); } }
                state Chase { }
            }"#,
     );

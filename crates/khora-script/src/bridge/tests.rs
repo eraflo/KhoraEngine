@@ -219,7 +219,7 @@ fn an_event_still_refuses_a_null_payload() {
     let source = r#"behavior Guard {
                         int? maybe = null;
                         on Hurt(int amount) { }
-                        void Shout() { Raise(this, "Hurt", maybe); }
+                        void Shout() { this.Raise("Hurt", maybe); }
                     }"#;
     let lexed = lex(source);
     assert!(lexed.diagnostics.is_empty(), "{:?}", lexed.diagnostics);

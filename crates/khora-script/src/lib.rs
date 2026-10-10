@@ -88,3 +88,9 @@ pub use parser::{parse, Parsed};
 pub use pipeline::{compile_module, CompileOutcome};
 pub use types::{check, Checked, Ty};
 pub use vm::{Function, Instruction, Machine, Program, Run, Suspension, Value};
+
+/// The module the engine serves its component declarations from.
+///
+/// `import "engine/components.erg";` — the one module a `component` declaration
+/// is accepted from, until scripts can declare their own.
+pub const ENGINE_COMPONENTS_MODULE: &str = "engine/components.erg";

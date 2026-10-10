@@ -61,6 +61,9 @@ pub struct Module {
 pub enum Item {
     /// `struct Loot { … }`
     Struct(StructDecl),
+    /// `component RigidBody { … }` — one of the engine's components, as a
+    /// script may write it; declared only by the engine's own module.
+    Component(StructDecl),
     /// `fn float Distance(Vec3 a, Vec3 b) { … }`
     Function(FunctionDecl),
     /// `behavior Guard { … }`
@@ -71,7 +74,7 @@ impl Item {
     /// The declared name, for duplicate detection and import resolution.
     pub fn name(&self) -> &str {
         match self {
-            Self::Struct(decl) => &decl.name,
+            Self::Struct(decl) | Self::Component(decl) => &decl.name,
             Self::Function(decl) => &decl.name,
             Self::Behavior(decl) => &decl.name,
         }
@@ -80,7 +83,7 @@ impl Item {
     /// The name's span, so "already declared" can point at both sites.
     pub fn name_span(&self) -> Span {
         match self {
-            Self::Struct(decl) => decl.name_span,
+            Self::Struct(decl) | Self::Component(decl) => decl.name_span,
             Self::Function(decl) => decl.name_span,
             Self::Behavior(decl) => decl.name_span,
         }

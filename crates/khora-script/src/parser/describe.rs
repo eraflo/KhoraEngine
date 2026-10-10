@@ -47,6 +47,7 @@ fn keyword_text(keyword: Keyword) -> &'static str {
         Keyword::Import => "import",
         Keyword::As => "as",
         Keyword::Struct => "struct",
+        Keyword::Component => "component",
         Keyword::Fn => "fn",
         Keyword::Var => "var",
         Keyword::Void => "void",

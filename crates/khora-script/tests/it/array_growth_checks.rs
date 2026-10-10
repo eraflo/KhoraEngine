@@ -115,7 +115,7 @@ fn push_and_remove_at_check_on_every_place() {
         "behavior Guard {
              int[] ids;
              int[][] grid = [[1]];
-             void Add(int v) { ids.Push(v); grid[0].Push(v); }
+             void Append(int v) { ids.Push(v); grid[0].Push(v); }
              void Drop() { ids.RemoveAt(0); grid[0].RemoveAt(0); }
              state Patrol { int[] route; void Walk() { route.Push(1); route.RemoveAt(0); } }
          }",

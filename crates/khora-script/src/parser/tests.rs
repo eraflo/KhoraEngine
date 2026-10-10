@@ -79,7 +79,7 @@ fn the_guard_example_parses() {
                     health -= amount;
                     if (health <= 0) {
                         Spawn(transform.position);
-                        Despawn(this);
+                        this.Despawn();
                     }
                 }
             }

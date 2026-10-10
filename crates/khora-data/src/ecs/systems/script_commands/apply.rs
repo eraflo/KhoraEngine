@@ -236,9 +236,23 @@ fn set_component(
         entity,
         component: component.to_owned(),
     })?;
+    // Nothing named, nothing to write — a marker's literal names no field, and
+    // its JSON form (`null`) takes no merge.
+    if names_no_field(value) {
+        return Ok(());
+    }
     let patch = to_json(value).map_err(rejected_by(component))?;
 
     (registration.from_json)(world, entity, &merge(current, patch)).map_err(rejected_by(component))
+}
+
+/// Whether a write names no field: `Unit`, or a struct with none.
+fn names_no_field(value: &ScriptValue) -> bool {
+    match value {
+        ScriptValue::Unit => true,
+        ScriptValue::Struct(fields) => fields.is_empty(),
+        _ => false,
+    }
 }
 
 fn add_component(
@@ -263,10 +277,16 @@ fn add_component(
     // fields it cares about, then apply its value as a patch over that.
     (registration.create_default)(world, entity).map_err(rejected_by(component))?;
 
-    if matches!(value, ScriptValue::Unit) {
+    if names_no_field(value) {
         return Ok(());
     }
-    set_component(world, entity, component, value)
+    // All or nothing, as a spawn is: a patch the component refuses takes the
+    // defaulted component back off, so a refused add attaches nothing.
+    set_component(world, entity, component, value).inspect_err(|_| {
+        if let Err(error) = (registration.remove)(world, entity) {
+            log::error!("a refused {component} could not be taken back off: {error}");
+        }
+    })
 }
 
 fn remove_component(

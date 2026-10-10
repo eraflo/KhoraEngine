@@ -35,7 +35,7 @@ pub struct NativeFn {
     /// Whether it accepts arguments beyond the declared ones.
     ///
     /// Almost nothing should. It exists for the calls whose payload the *callee*
-    /// defines rather than the caller — `Raise(e, "Damaged", 10)` carries
+    /// defines rather than the caller — `e.Raise("Damaged", 10)` carries
     /// whatever the handler declares, and the checker cannot know which handler
     /// that will be, because the answer depends on the state the entity is in
     /// when the event arrives. Those arguments are therefore checked at

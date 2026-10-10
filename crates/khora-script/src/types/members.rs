@@ -58,6 +58,7 @@ impl Checker {
         for member in members {
             match member {
                 BehaviorMember::Method(method) => {
+                    self.refuse_reserved(&method.name, method.name_span);
                     self.method_names.insert(method.name.clone());
                     let params = method.params.iter().map(|p| self.resolve(&p.ty)).collect();
                     let result = self.resolve(&method.return_ty);

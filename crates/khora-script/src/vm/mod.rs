@@ -37,6 +37,7 @@
 //! scene. Everything that must survive lives in [`Machine`], and nothing else
 //! does.
 
+mod commands;
 mod freeze;
 mod held;
 pub mod instruction;
@@ -49,9 +50,9 @@ pub mod value;
 #[cfg(test)]
 mod tests;
 
-pub use instruction::{Instruction, Reg};
+pub use instruction::{Instruction, Reg, WriteMode};
 pub use program::{
-    BehaviorLayout, Function, Program, StateLayout, StructLayout, TimerKind, TimerLayout,
+    BehaviorLayout, Function, Patch, Program, StateLayout, StructLayout, TimerKind, TimerLayout,
 };
 pub use resume::{resume, Abandoned, ResumeTier};
 pub use site::{Site, SiteKind, SiteLocal};
@@ -124,6 +125,15 @@ pub enum Fault {
     /// caller ran a behavior's member without naming whose it was — a wiring
     /// mistake in the host, reported rather than aimed at entity zero.
     NoSubject,
+    /// A component write whose field has no form the engine takes.
+    Unwritable {
+        /// The component.
+        component: String,
+        /// The field.
+        field: String,
+        /// Why.
+        reason: String,
+    },
     /// An engine function refused.
     NativeFailed {
         /// Which one.
@@ -703,6 +713,9 @@ impl Machine {
             | Instruction::SetField { .. }
             | Instruction::Push { .. }
             | Instruction::RemoveAt { .. } => self.step_object(instruction, program, host),
+            Instruction::WriteComponent { .. }
+            | Instruction::RemoveComponent { .. }
+            | Instruction::SpawnEntity { .. } => self.step_command(instruction, program, host),
 
             Instruction::Concat { dst, lhs, rhs } => {
                 let left = self.read(lhs)?;

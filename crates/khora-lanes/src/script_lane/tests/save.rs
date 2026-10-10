@@ -223,7 +223,7 @@ fn a_countdown_keeps_what_is_left_of_it() {
 }
 
 /// **A spent `after` is spent.** Recording it as zero would make loading the
-/// save fire it a second time, which for `after 10s => Despawn(this)` is an
+/// save fire it a second time, which for `after 10s => this.Despawn()` is an
 /// entity that dies twice.
 #[test]
 fn a_countdown_that_fired_does_not_fire_again_on_load() {

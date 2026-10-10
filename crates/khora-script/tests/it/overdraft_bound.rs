@@ -80,7 +80,7 @@ fn instance(program: &Program) -> Host {
 
 /// **No run spends more than its fuel plus the overdraft bound, unless it
 /// started at a sized operation.** A guard holds a ten-by-hundred grid built
-/// from a small literal, so the code is short and the data is large. `Set`
+/// from a small literal, so the code is short and the data is large. `Put`
 /// writes one cell through the field (`grid[0][0] = 1`); `Go` enters a state
 /// with the grid as its argument. Each body begins with a one-unit statement,
 /// so no sized operation is the first thing its first run does. Run once at
@@ -94,7 +94,7 @@ fn no_run_spends_past_its_fuel_more_than_the_overdraft_bound() {
         "behavior Guard {{
              int[] row = [{}];
              int[][] grid = [row, row, row, row, row, row, row, row, row, row];
-             void Set() {{ int k = 0; grid[0][0] = 1; }}
+             void Put() {{ int k = 0; grid[0][0] = 1; }}
              state Idle {{
                  void Go() {{ int k = 0; become Wide(grid); }}
              }}
@@ -104,7 +104,7 @@ fn no_run_spends_past_its_fuel_more_than_the_overdraft_bound() {
     ));
     let bound = program.max_overdraft();
     let mut wrong = Vec::new();
-    for member in ["Set", "Go"] {
+    for member in ["Put", "Go"] {
         let mut worst: Option<(u64, u64)> = None;
         for fuel in 1..=3_000u64 {
             let mut host = instance(&program);

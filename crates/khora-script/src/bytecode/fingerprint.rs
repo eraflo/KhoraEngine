@@ -106,6 +106,19 @@ impl Hash {
         self.0.update(&value.to_le_bytes());
     }
 
+    /// A component write, by the component's name and its fields' names.
+    fn patch(&mut self, program: &Program, patch: u32) {
+        let declared = program.patches.get(patch as usize);
+        self.text(declared.map_or("", |declared| declared.component.as_str()));
+        let fields = declared
+            .map(|declared| declared.fields.as_slice())
+            .unwrap_or(&[]);
+        self.number(fields.len() as u64);
+        for field in fields {
+            self.text(field);
+        }
+    }
+
     /// A struct, by its name — and one of its fields, by its name.
     fn struct_layout(&mut self, program: &Program, layout: u16, slot: Option<u16>) {
         let declared = program.structs.get(usize::from(layout));
@@ -350,6 +363,43 @@ impl Hash {
             } => {
                 self.op("NativeCall", &[*base, *argc, *dst]);
                 self.text(natives.at(*function).map_or("", |native| native.name));
+            }
+            I::WriteComponent {
+                mode,
+                entity,
+                patch,
+                base,
+                count,
+            } => {
+                self.op("WriteComponent", &[*entity, *base]);
+                self.text(match mode {
+                    crate::vm::WriteMode::Set => "set",
+                    crate::vm::WriteMode::Add => "add",
+                });
+                self.number(u64::from(*count));
+                self.patch(program, *patch);
+            }
+            I::RemoveComponent { entity, component } => {
+                self.op("RemoveComponent", &[*entity]);
+                self.text(program.string(*component).unwrap_or_default());
+            }
+            I::SpawnEntity {
+                position,
+                spawn,
+                base,
+                count,
+            } => {
+                self.op("SpawnEntity", &[*position, *base]);
+                self.number(u64::from(*count));
+                let patches = program
+                    .spawns
+                    .get(*spawn as usize)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                self.number(patches.len() as u64);
+                for patch in patches {
+                    self.patch(program, *patch);
+                }
             }
             I::Await { seconds, dst } => self.op("Await", &[*seconds, *dst]),
             I::LoadSelf { dst } => self.op("LoadSelf", &[*dst]),

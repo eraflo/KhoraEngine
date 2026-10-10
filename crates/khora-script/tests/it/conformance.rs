@@ -452,7 +452,7 @@ const SHIPPED: &[Row] = &[
         source: r#"behavior Guard {
                        int health = 100;
                        on Damaged(int amount) { health -= amount; }
-                       void Hurt() { Raise(this, "Damaged", 30); }
+                       void Hurt() { this.Raise("Damaged", 30); }
                        int Health() { return health; }
                    }"#,
         entry: "Guard.Hurt; deliver; Guard.Health",
@@ -742,6 +742,125 @@ const SHIPPED: &[Row] = &[
         entry: "F",
         args: &[],
         expect: Expect::Runs(Value::Float(4.0)),
+    },
+    // ─── Entity methods and component writes (spec 06) ──────────────────────
+    Row {
+        construct: "an entity operation as a method",
+        source: "behavior Mover {
+                     int Go() { this.Translate(Vec3(0.0, 1.0, 0.0)); return 1; }
+                 }",
+        entry: "Mover.Go",
+        args: &[],
+        expect: Expect::Runs(Value::Int(1)),
+    },
+    Row {
+        construct: "a method on an entity held in a variable",
+        source: "behavior Mover {
+                     int Go() { Entity e = this; e.SetPosition(Vec3(1.0, 2.0, 3.0)); e.Despawn(); return 2; }
+                 }",
+        entry: "Mover.Go",
+        args: &[],
+        expect: Expect::Runs(Value::Int(2)),
+    },
+    Row {
+        construct: "`SetRotation`",
+        source: "behavior Turret {
+                     int Aim() { this.SetRotation(Quat(0.0, 0.6, 0.0, 0.8)); return 3; }
+                 }",
+        entry: "Turret.Aim",
+        args: &[],
+        expect: Expect::Runs(Value::Int(3)),
+    },
+    Row {
+        construct: "the free form of an entity operation",
+        source: "behavior Mover {
+                     void Go() { Vec3 v = Vec3(1.0, 0.0, 0.0); SetPosition(this, v); }
+                 }",
+        entry: "Mover.Go",
+        args: &[],
+        expect: Expect::Rejected("Write `this.SetPosition(v)`"),
+    },
+    Row {
+        construct: "the free form of `Raise`",
+        source: r#"behavior Guard {
+                       on Damaged(int amount) { }
+                       void Hurt() { Raise(this, "Damaged", 30); }
+                   }"#,
+        entry: "Guard.Hurt",
+        args: &[],
+        expect: Expect::Rejected(r#"Write `this.Raise("Damaged", 30)`"#),
+    },
+    Row {
+        construct: "`Set`",
+        source: "component Health { int current; int max; }
+                 behavior Guard {
+                     int Heal() { this.Set(Health { current: 5 }); return 5; }
+                 }",
+        entry: "Guard.Heal",
+        args: &[],
+        expect: Expect::Runs(Value::Int(5)),
+    },
+    Row {
+        construct: "`Add`",
+        source: "component Health { int current; int max; }
+                 behavior Guard {
+                     int Arm() { this.Add(Health { max: 10, current: 10 }); return 10; }
+                 }",
+        entry: "Guard.Arm",
+        args: &[],
+        expect: Expect::Runs(Value::Int(10)),
+    },
+    Row {
+        construct: "`Remove`",
+        source: "component Health { int current; int max; }
+                 behavior Guard {
+                     int Disarm() { this.Remove(Health); return 0; }
+                 }",
+        entry: "Guard.Disarm",
+        args: &[],
+        expect: Expect::Runs(Value::Int(0)),
+    },
+    Row {
+        construct: "`Spawn`",
+        source: "component Health { int current; int max; }
+                 fn int F() {
+                     Spawn(Vec3(0.0, 1.0, 0.0), Health { current: 3 });
+                     Spawn(Vec3(0.0, 2.0, 0.0));
+                     return 2;
+                 }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(2)),
+    },
+    Row {
+        construct: "`Spawn` called on an entity",
+        source: "behavior Spawner { void Go() { this.Spawn(Vec3(0.0, 0.0, 0.0)); } }",
+        entry: "Spawner.Go",
+        args: &[],
+        expect: Expect::Rejected("`Spawn`"),
+    },
+    Row {
+        construct: "a component as a variable's type",
+        source: "component Health { int current; int max; }
+                 fn void F() { Health h; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("`Health` is a component"),
+    },
+    Row {
+        construct: "`Set` of a plain struct",
+        source: "struct Loot { int value; }
+                 behavior Guard { void Go() { this.Set(Loot { value: 1 }); } }",
+        entry: "Guard.Go",
+        args: &[],
+        expect: Expect::Rejected("`Loot` is not a component a script writes"),
+    },
+    Row {
+        construct: "a function named like an intrinsic",
+        source: "fn void Set() { }",
+        entry: "Set",
+        args: &[],
+        expect: Expect::Rejected("`Set`"),
     },
 ];
 

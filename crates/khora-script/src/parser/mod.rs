@@ -235,7 +235,11 @@ impl Parser {
             if matches!(
                 self.peek(),
                 TokenKind::Keyword(
-                    Keyword::Behavior | Keyword::Struct | Keyword::Fn | Keyword::Import
+                    Keyword::Behavior
+                        | Keyword::Struct
+                        | Keyword::Component
+                        | Keyword::Fn
+                        | Keyword::Import
                 )
             ) {
                 return;

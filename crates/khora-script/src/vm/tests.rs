@@ -79,6 +79,8 @@ fn counting_program(limit: i64) -> Program {
                 Instruction::Return { src: 0 },
             ],
         )],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     }
 }
 
@@ -126,6 +128,8 @@ fn calling_program() -> Program {
                 ],
             ),
         ],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     }
 }
 
@@ -274,6 +278,8 @@ fn float_arithmetic_works_and_stays_float() {
                 Instruction::Return { src: 2 },
             ],
         )],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     };
     assert_eq!(run_to_completion(&program, "Half"), Value::Float(1.5));
 }
@@ -308,6 +314,8 @@ fn integer_division_by_zero_faults_but_float_does_not() {
                 },
             ],
         )],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     };
     let mut machine = Machine::new(&int_program, "Bad", &[]).expect("entry exists");
     assert_eq!(
@@ -341,6 +349,8 @@ fn integer_division_by_zero_faults_but_float_does_not() {
                 Instruction::Return { src: 2 },
             ],
         )],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     };
     let Value::Float(result) = run_to_completion(&float_program, "Inf") else {
         panic!("expected a float");
@@ -380,6 +390,8 @@ fn large_integers_compare_exactly() {
                 Instruction::Return { src: 2 },
             ],
         )],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     };
     assert_eq!(
         run_to_completion(&program, "Compare"),
@@ -411,6 +423,8 @@ fn unbounded_recursion_faults_instead_of_exhausting_memory() {
                 Instruction::Return { src: 0 },
             ],
         )],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     };
     let mut machine = Machine::new(&program, "Forever", &[]).expect("entry exists");
     assert_eq!(
@@ -443,6 +457,8 @@ fn yield_suspends_once_and_moves_on() {
                 Instruction::Return { src: 0 },
             ],
         )],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     };
 
     let mut machine = Machine::new(&program, "Pause", &[]).expect("entry exists");
@@ -477,6 +493,8 @@ fn falling_off_the_end_completes() {
                 value: Value::Int(1),
             }],
         )],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     };
     let mut machine = Machine::new(&program, "Empty", &[]).expect("entry exists");
     assert_eq!(
@@ -515,6 +533,8 @@ fn faults_report_instead_of_panicking() {
             2,
             vec![Instruction::Move { dst: 0, src: 200 }],
         )],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     };
     let mut machine = Machine::new(&bad_register, "Bad", &[]).expect("entry exists");
     assert!(matches!(
@@ -534,6 +554,8 @@ fn faults_report_instead_of_panicking() {
             1,
             vec![Instruction::Jump { target: 99 }],
         )],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     };
     let mut machine = Machine::new(&bad_jump, "Bad", &[]).expect("entry exists");
     assert_eq!(
@@ -562,6 +584,8 @@ fn faults_report_instead_of_panicking() {
                 },
             ],
         )],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     };
     let mut machine = Machine::new(&bad_type, "Bad", &[]).expect("entry exists");
     assert_eq!(
@@ -622,6 +646,8 @@ fn a_callee_starts_with_clean_registers() {
             // Returns its own r1, which it never wrote.
             function("Peek", 0, 2, vec![Instruction::Return { src: 1 }]),
         ],
+        patches: Vec::new(),
+        spawns: Vec::new(),
     };
     assert_eq!(run_to_completion(&program, "Main"), Value::Unit);
 }

@@ -47,11 +47,11 @@ fn build(source: &str) -> Program {
 }
 
 /// Loops, calls, long statements, and a native in the middle of one.
-const BUSY: &str = "fn int Add(int a, int b) { int s = a + b; return s; }
+const BUSY: &str = "fn int Sum(int a, int b) { int s = a + b; return s; }
                     fn int F() {
                         int total = 0;
                         for (int i = 0; i < 4; i = i + 1) {
-                            total = total + Add(i, i * 2) * 3 - Add(1, 2) + SafepointWall();
+                            total = total + Sum(i, i * 2) * 3 - Sum(1, 2) + SafepointWall();
                         }
                         int k = 0;
                         while (k < 3) {

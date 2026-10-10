@@ -43,7 +43,7 @@ const MODULE: &str = "ai/guard.erg";
 const GUARD: &str = r#"
 behavior Guard {
     on Touched(Entity other) {
-        Despawn(other);
+        other.Despawn();
     }
 }
 "#;

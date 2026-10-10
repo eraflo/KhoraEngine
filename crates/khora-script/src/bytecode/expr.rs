@@ -340,19 +340,9 @@ impl Compiler {
     /// literal is immutable, so sharing one is indistinguishable from twenty
     /// copies — except in the size of the program.
     pub(super) fn string_constant(&mut self, text: &str) -> (Reg, Shape) {
-        let index = match self.program.strings.iter().position(|known| known == text) {
-            Some(index) => index,
-            None => {
-                self.program.strings.push(text.to_owned());
-                self.program.strings.len() - 1
-            }
-        };
-
+        let index = self.intern(text);
         let dst = self.registers.temp();
-        self.emit(Instruction::LoadStr {
-            dst,
-            index: index as u32,
-        });
+        self.emit(Instruction::LoadStr { dst, index });
         (dst, Shape::Str)
     }
 
@@ -440,11 +430,21 @@ impl Compiler {
             if let Some(done) = self.compile_array_method(object, name, args, optional, span) {
                 return done;
             }
+            if !optional {
+                if let Some(done) = self.compile_entity_method(object, name, args, span) {
+                    return done;
+                }
+            }
         }
         let Expr::Ident { name, .. } = callee else {
-            self.error("only named functions can be called yet", span);
+            self.error("only named functions and methods can be called", span);
             return self.constant(Value::Unit, Shape::Other);
         };
+        if name == "Spawn" && !self.signatures.contains_key(name) {
+            return self.compile_spawn(args, span);
+        }
+        let args: Vec<&Expr> = args.iter().collect();
+        let args = args.as_slice();
         // A member calls its siblings by their bare name — `Riposte()`, not
         // `Guard.Riposte()`, which is not even syntax. Resolved first, so a
         // behavior's own method wins over a free function of the same name:
@@ -491,7 +491,12 @@ impl Compiler {
     /// Split out because a sibling call resolves differently but is emitted
     /// identically — duplicating the argument placement is exactly how the two
     /// would drift apart.
-    fn emit_call(&mut self, target: CallTarget, name: &str, args: &[Expr]) -> (Reg, Shape) {
+    pub(super) fn emit_call(
+        &mut self,
+        target: CallTarget,
+        name: &str,
+        args: &[&Expr],
+    ) -> (Reg, Shape) {
         // Arguments must land in *consecutive* registers: the callee's frame
         // starts at the first of them, so its parameters need no copying.
         //
@@ -563,7 +568,7 @@ impl Compiler {
 /// emission: they address different tables, and a script function's index used
 /// as a native's would call whatever sits at that slot in the registry.
 #[derive(Debug, Clone, Copy)]
-enum CallTarget {
+pub(super) enum CallTarget {
     /// A function compiled from this program.
     Script(usize),
     /// A function the host exposes.

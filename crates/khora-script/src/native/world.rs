@@ -37,7 +37,7 @@
 //! written yet.
 
 use khora_core::ecs::entity::EntityId;
-use khora_core::math::Vec3;
+use khora_core::math::{Quaternion, Vec3};
 use khora_core::script::WorldCommand;
 use khora_macros::ergon_fn;
 
@@ -84,6 +84,22 @@ fn set_position(context: &mut NativeContext<'_>, entity: EntityId, value: Vec3) 
         .push(WorldCommand::SetTranslation { entity, value });
 }
 
+/// Turns the entity, replacing its rotation.
+#[ergon_fn]
+fn set_rotation(context: &mut NativeContext<'_>, entity: EntityId, value: Quaternion) {
+    context
+        .commands
+        .push(WorldCommand::SetRotation { entity, value });
+}
+
+/// The component placed by its own operations rather than written as one, and
+/// those operations: they allocate nothing and look nothing up, which is why
+/// they exist. A script writing `Transform` is pointed at them.
+pub const PLACEMENT: (&str, &[&str]) = (
+    "Transform",
+    &["SetPosition", "Translate", "SetRotation", "SetScale"],
+);
+
 /// Resizes the entity.
 #[ergon_fn]
 fn set_scale(context: &mut NativeContext<'_>, entity: EntityId, value: Vec3) {
@@ -126,7 +142,7 @@ fn set_parent(context: &mut NativeContext<'_>, entity: EntityId, parent: EntityI
 
 /// Detaches the entity from whatever it was parented to.
 ///
-/// Its own function rather than `SetParent(e, null)`: an optional `Entity`
+/// Its own function rather than `e.SetParent(null)`: an optional `Entity`
 /// argument would make every hierarchy call carry a nullable the caller has to
 /// think about, to express something that is a different intent anyway.
 #[ergon_fn]

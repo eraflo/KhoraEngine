@@ -34,6 +34,9 @@ impl Compiler {
     /// a field index and a literal all resolve against it.
     pub(super) fn collect_structs(&mut self, module: &Module) {
         for item in &module.items {
+            if let Item::Component(decl) = item {
+                self.component_decls.insert(decl.name.clone(), decl.clone());
+            }
             let Item::Struct(decl) = item else {
                 continue;
             };

@@ -47,6 +47,7 @@
 //! `state`, `become`, `every` and `after` are here.
 
 mod behavior;
+mod components;
 mod entry;
 pub mod expr;
 mod fingerprint;
@@ -247,6 +248,9 @@ pub struct Compiler {
     /// The structs the module declares, by name — what a literal fills its
     /// fields from.
     pub struct_decls: HashMap<String, crate::ast::StructDecl>,
+    /// The components the program writes, by name — what a write's field is
+    /// declared as.
+    pub component_decls: HashMap<String, crate::ast::StructDecl>,
 }
 
 impl Compiler {
@@ -272,6 +276,7 @@ impl Compiler {
             inferred: HashMap::new(),
             types: HashMap::new(),
             struct_decls: HashMap::new(),
+            component_decls: HashMap::new(),
         }
     }
 
@@ -406,7 +411,7 @@ impl Compiler {
                         index += 1;
                     }
                 }
-                Item::Struct(_) => {}
+                Item::Struct(_) | Item::Component(_) => {}
             }
         }
     }
@@ -418,7 +423,7 @@ impl Compiler {
                     self.compile_body(&decl.name, &decl.params, &decl.body);
                 }
                 Item::Behavior(decl) => self.compile_behavior(decl),
-                Item::Struct(_) => {}
+                Item::Struct(_) | Item::Component(_) => {}
             }
         }
     }
