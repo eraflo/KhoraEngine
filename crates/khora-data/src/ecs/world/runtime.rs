@@ -23,11 +23,11 @@ use khora_core::script::ScriptValue;
 
 use super::component_access::AddComponentError;
 use super::World;
-use crate::ecs::packed::{FieldError, PackedColumn, PackedColumns, PackedLayout};
+use crate::ecs::packed::{FieldError, FieldKind, PackedColumn, PackedColumns, PackedLayout};
 use crate::ecs::page::PageIndex;
 use crate::ecs::{
     AnyVec, Component, ComponentKey, ComponentProvenance, ComponentRegistry, ComponentVTable,
-    SemanticDomain,
+    FieldWriteError, SemanticDomain,
 };
 use crate::scene::component_registration::registration_for;
 
@@ -190,10 +190,10 @@ impl<'w> RowRef<'w> {
         self.vtable
     }
 
-    /// The value of the field at `slot` — of a run-time component; a Rust
-    /// component's fields are read through its type.
+    /// The value of the field at `slot`, `None` for one a script cannot
+    /// reach.
     pub fn field(&self, slot: usize) -> Option<ScriptValue> {
-        packed(self.column)?.get(self.row, slot)
+        self.vtable.columns.read_field(self.column, self.row, slot)
     }
 }
 
@@ -215,30 +215,57 @@ impl<'w> RowMut<'w> {
         self.vtable
     }
 
-    /// The value of the field at `slot` — of a run-time component.
+    /// The value of the field at `slot`, `None` for one a script cannot
+    /// reach.
     pub fn field(&self, slot: usize) -> Option<ScriptValue> {
-        packed(&*self.column)?.get(self.row, slot)
+        self.vtable
+            .columns
+            .read_field(&*self.column, self.row, slot)
     }
 
-    /// Writes the field at `slot` of a run-time component, refusing a value
-    /// not of its kind.
+    /// Writes the fields the patch names, by slot — all or nothing: every
+    /// value is checked before any is written.
+    pub fn write_fields(&mut self, patch: &[(usize, &ScriptValue)]) -> Result<(), FieldWriteError> {
+        self.vtable
+            .columns
+            .write_fields(self.column, self.row, patch)
+    }
+
+    /// Writes the field at `slot`, refusing a value it cannot hold.
     ///
     /// # Panics
     ///
-    /// When `slot` is not a field of the component's layout, or the row is a
-    /// Rust component's: a slot comes from the layout the row is read with.
+    /// When `slot` is not a field of the component: a slot comes from the
+    /// component the row is read with.
     pub fn set_field(&mut self, slot: usize, value: &ScriptValue) -> Result<(), FieldError> {
         let row = self.row;
-        let column = self
-            .column
-            .as_any_mut()
-            .downcast_mut::<PackedColumn>()
-            .expect("a field is written by slot on a declared component's row");
-        assert!(
-            column.has(row, slot),
-            "slot {slot} is not a field of this row"
-        );
-        column.set(row, slot, value)
+        if let Some(column) = self.column.as_any_mut().downcast_mut::<PackedColumn>() {
+            assert!(
+                column.has(row, slot),
+                "slot {slot} is not a field of this row"
+            );
+            return column.set(row, slot, value);
+        }
+        let columns = &self.vtable.columns;
+        let kind = columns
+            .field_type(slot)
+            .map_or(FieldKind::Value, |ty| FieldKind::of(&ty));
+        match columns.write_fields(self.column, row, &[(slot, value)]) {
+            Ok(()) => Ok(()),
+            Err(FieldWriteError::NoSuchField(field)) => {
+                panic!("slot {field} is not a field of this row")
+            }
+            Err(FieldWriteError::NotAccessible(field)) => Err(FieldError {
+                field,
+                expected: kind,
+                found: value.type_name().to_owned(),
+            }),
+            Err(FieldWriteError::Refused { field, .. }) => Err(FieldError {
+                field,
+                expected: kind,
+                found: value.type_name().to_owned(),
+            }),
+        }
     }
 }
 
@@ -379,7 +406,7 @@ impl World {
                         field: name.clone(),
                     })?;
                     let field = &layout.fields()[slot];
-                    if field.kind.holds(value) {
+                    if field.kind.accept(value).is_some() {
                         Ok((slot, value))
                     } else {
                         Err(RowError::Field(FieldError {

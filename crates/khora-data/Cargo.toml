@@ -33,3 +33,7 @@ harness = false
 [[bench]]
 name = "scene_load_bench"
 harness = false
+
+[[bench]]
+name = "script_commands_bench"
+harness = false

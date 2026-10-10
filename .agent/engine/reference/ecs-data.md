@@ -48,6 +48,16 @@ snapshot, atomic loads, game saves and prefab links.
   registry assigns. One `ComponentVTable` per component (`component_registry.rs`): key, short name, domain,
   layout, provenance, `columns: Arc<dyn ColumnOps>` (`RustColumns<T>` zero-sized; `PackedColumns` for a
   declared component). Short names are unique across Rust and declared components.
+- **Typed field access, no JSON on the per-frame path.** `khora_core::script::ScriptField` (`field/mod.rs`) is the
+  one answer to "what is this Rust type to a script" (`ergon()`, `to_script`, `from_script`; `f32` refuses
+  non-finite values, narrow ints are range-checked; `u64`/`usize`/`f64` deliberately not implemented). The
+  derive emits `Component::{script_fields, script_type, read_field, write_field}` from `included_fields` (skip
+  honoured) through autoref specialisation (`field::probe`) — a field of another type is "not accessible", not
+  a compile error. `ColumnOps::{field_slot, field_type, read_field, write_fields (all or nothing), snapshot}`
+  → `ColumnSnapshot` (a typed copy, converted only when a row is read). The script-command applier writes by
+  slot through them (`row_mut().write_fields`); attachment is decided by `World::row`, never by a clone.
+  The mirror spells fields with `ComponentRegistration::script_type`, never by parsing type names. JSON stays
+  for the editor, scene files and the hierarchy (`Parent`/`Children`).
 - **Declared components** (`World::register_runtime_component`, `relayout`, `add_runtime_component`,
   `row`/`row_mut`, `remove_component_by_key`; `ecs/packed/`, `ecs/world/runtime.rs`) live in their domain's
   pages and migrate by key (`ecs/world/migration.rs`). Scenes, snapshots and game saves skip them until they

@@ -254,6 +254,8 @@ inventory::submit! {
                 Err(e) => Err(format!("{e:?}")),
             }
         },
+        // A one-of: no field a script reaches.
+        script_type: |_| None,
     }
 }
 

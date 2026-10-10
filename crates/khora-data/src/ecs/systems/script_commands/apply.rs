@@ -24,10 +24,10 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Quaternion, Vec3};
 use khora_core::script::{ComponentName, ScriptValue, WorldCommand};
 
-use crate::ecs::{HierarchyWrite, Transform, World};
+use crate::ecs::{ComponentKey, FieldWriteError, HierarchyWrite, RowError, Transform, World};
 use crate::scene::component_registration::registration_of;
 
-use super::json::{merge, to_json};
+use super::json::to_json;
 
 /// Why a command could not be applied.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -224,34 +224,72 @@ fn set_component(
     component: &str,
     value: &ScriptValue,
 ) -> Result<(), ApplyError> {
-    let registration = lookup(world, entity, component)?;
+    let key = key_of(world, entity, component)?;
     if let Some(written) = write_hierarchy(world, entity, component, value)? {
         return written;
     }
+    let patch = patch_of(world, key, component, value)?;
 
-    // Read what is there, merge the write onto it, put it back. The merge is
-    // what makes a one-field write mean "change this field" rather than "reset
-    // every field the script did not mention".
-    let current = (registration.to_json)(world, entity).ok_or_else(|| ApplyError::NotAttached {
-        entity,
-        component: component.to_owned(),
-    })?;
-    // Nothing named, nothing to write — a marker's literal names no field, and
-    // its JSON form (`null`) takes no merge.
-    if names_no_field(value) {
+    // Only the fields named are written, in place, through the component's
+    // own column operations: no copy of the component, no serialisation —
+    // and a refused value writes nothing.
+    let mut row = world
+        .row_mut(entity, key)
+        .ok_or_else(|| ApplyError::NotAttached {
+            entity,
+            component: component.to_owned(),
+        })?;
+    if patch.is_empty() {
         return Ok(());
     }
-    let patch = to_json(value).map_err(rejected_by(component))?;
-
-    (registration.from_json)(world, entity, &merge(current, patch)).map_err(rejected_by(component))
+    row.write_fields(&patch)
+        .map_err(|error| rejected_by(component)(describe(&error)))
 }
 
-/// Whether a write names no field: `Unit`, or a struct with none.
-fn names_no_field(value: &ScriptValue) -> bool {
+/// The slots `value` writes, by the component's field names.
+///
+/// A component's fields are a `ScriptValue::Struct`; `Unit` names none; a
+/// component with a single field (`Name`) also takes its value bare.
+fn patch_of<'v>(
+    world: &World,
+    key: ComponentKey,
+    component: &str,
+    value: &'v ScriptValue,
+) -> Result<Vec<(usize, &'v ScriptValue)>, ApplyError> {
+    let columns = &world
+        .components()
+        .vtable(key)
+        .ok_or_else(|| ApplyError::UnknownComponent(component.to_owned()))?
+        .columns;
     match value {
-        ScriptValue::Unit => true,
-        ScriptValue::Struct(fields) => fields.is_empty(),
-        _ => false,
+        ScriptValue::Unit => Ok(Vec::new()),
+        ScriptValue::Struct(fields) => fields
+            .iter()
+            .map(|(name, value)| {
+                columns
+                    .field_slot(name)
+                    .map(|slot| (slot, value))
+                    .ok_or_else(|| rejected_by(component)(format!("it has no field `{name}`")))
+            })
+            .collect(),
+        bare => match (columns.field_slot("0"), columns.field_slot("1")) {
+            (Some(slot), None) => Ok(vec![(slot, bare)]),
+            _ => Err(rejected_by(component)(format!(
+                "a component is written with its fields, not a bare `{}`",
+                bare.type_name()
+            ))),
+        },
+    }
+}
+
+/// A refused typed write, in words.
+fn describe(error: &FieldWriteError) -> String {
+    match error {
+        FieldWriteError::NoSuchField(field) => format!("it has no field `{field}`"),
+        FieldWriteError::NotAccessible(field) => {
+            format!("its field `{field}` is not one a script can write")
+        }
+        FieldWriteError::Refused { field, error } => format!("its field `{field}` {error}"),
     }
 }
 
@@ -261,8 +299,10 @@ fn add_component(
     component: &str,
     value: &ScriptValue,
 ) -> Result<(), ApplyError> {
-    let registration = lookup(world, entity, component)?;
-    if (registration.to_json)(world, entity).is_some() {
+    let key = key_of(world, entity, component)?;
+    // Decided from the entity's row — the component is neither cloned nor
+    // serialised to answer a yes/no question.
+    if world.row(entity, key).is_some() {
         return Err(ApplyError::AlreadyAttached {
             entity,
             component: component.to_owned(),
@@ -273,19 +313,38 @@ fn add_component(
         return written;
     }
 
+    // A declared component is attached with its defaults and the value in one
+    // step, by its own road.
+    let declared = world
+        .components()
+        .vtable(key)
+        .is_some_and(|vtable| vtable.columns.packed().is_some());
+    if declared {
+        return world
+            .add_runtime_component(entity, key, value)
+            .map_err(|error| match error {
+                RowError::NoSuchEntity(entity) => ApplyError::NoSuchEntity(entity),
+                RowError::AlreadyAttached => ApplyError::AlreadyAttached {
+                    entity,
+                    component: component.to_owned(),
+                },
+                other => rejected_by(component)(format!("{other:?}")),
+            });
+    }
+
+    let registration = registration_of(component)
+        .ok_or_else(|| ApplyError::UnknownComponent(component.to_owned()))?;
+    // Checked before anything is attached: a value naming a field the
+    // component lacks attaches nothing.
+    patch_of(world, key, component, value)?;
     // Start from the component's own default so a script only has to name the
     // fields it cares about, then apply its value as a patch over that.
     (registration.create_default)(world, entity).map_err(rejected_by(component))?;
 
-    if names_no_field(value) {
-        return Ok(());
-    }
     // All or nothing, as a spawn is: a patch the component refuses takes the
     // defaulted component back off, so a refused add attaches nothing.
     set_component(world, entity, component, value).inspect_err(|_| {
-        if let Err(error) = (registration.remove)(world, entity) {
-            log::error!("a refused {component} could not be taken back off: {error}");
-        }
+        world.remove_component_by_key(entity, key);
     })
 }
 
@@ -294,12 +353,19 @@ fn remove_component(
     entity: EntityId,
     component: &str,
 ) -> Result<(), ApplyError> {
-    let registration = lookup(world, entity, component)?;
+    let key = key_of(world, entity, component)?;
     if let Some(written) = world.write_hierarchy_by_name(entity, component, HierarchyWrite::Remove)
     {
         return written.map_err(rejected_by(component));
     }
-    (registration.remove)(world, entity).map_err(rejected_by(component))
+    if world.remove_component_by_key(entity, key) {
+        Ok(())
+    } else {
+        Err(ApplyError::NotAttached {
+            entity,
+            component: component.to_owned(),
+        })
+    }
 }
 
 /// A by-name write to the hierarchy, made by the module that owns it — so a
@@ -320,15 +386,15 @@ fn write_hierarchy(
         .map(|written| written.map_err(rejected_by(component))))
 }
 
-fn lookup(
-    world: &World,
-    entity: EntityId,
-    component: &str,
-) -> Result<&'static crate::scene::component_registration::ComponentRegistration, ApplyError> {
+/// The key of the component named `component`, on a live entity.
+fn key_of(world: &World, entity: EntityId, component: &str) -> Result<ComponentKey, ApplyError> {
     if !world.contains(entity) {
         return Err(ApplyError::NoSuchEntity(entity));
     }
-    registration_of(component).ok_or_else(|| ApplyError::UnknownComponent(component.to_owned()))
+    world
+        .components()
+        .key_named(component)
+        .ok_or_else(|| ApplyError::UnknownComponent(component.to_owned()))
 }
 
 /// Attributes a failure to the component that refused it.

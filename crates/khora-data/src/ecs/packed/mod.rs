@@ -87,7 +87,7 @@ pub(crate) enum Place {
 impl PackedLayout {
     /// A layout of `fields`, refusing a name used twice or a default that is not
     /// of its field's kind.
-    pub fn new(fields: Vec<PackedField>) -> Result<Self, LayoutError> {
+    pub fn new(mut fields: Vec<PackedField>) -> Result<Self, LayoutError> {
         let mut places = Vec::with_capacity(fields.len());
         let (mut stride, mut boxed) = (0, 0);
         for (at, field) in fields.iter().enumerate() {
@@ -99,7 +99,7 @@ impl PackedLayout {
                     field: field.name.clone(),
                 });
             }
-            if !field.kind.holds(&field.default) {
+            if field.kind.accept(&field.default).is_none() {
                 return Err(LayoutError::DefaultOfAnotherKind {
                     field: field.name.clone(),
                     kind: field.kind,
@@ -116,6 +116,13 @@ impl PackedLayout {
                     Place::Boxed(boxed - 1)
                 }
             });
+        }
+        // Each default as its kind stores it — an `int` default of a `float`
+        // field becomes that float — so a new row is written like any value.
+        for field in &mut fields {
+            if let Some(accepted) = field.kind.accept(&field.default) {
+                field.default = accepted;
+            }
         }
         Ok(Self {
             fields,
@@ -163,6 +170,52 @@ impl FieldKind {
             Self::Vec4 | Self::Quat | Self::Color => 16,
             Self::Value => return None,
         })
+    }
+
+    /// How Ergon spells the kind — `Value`, any value, as `any`.
+    pub(crate) fn spelling(self) -> &'static str {
+        match self {
+            Self::Bool => "bool",
+            Self::Int => "int",
+            Self::Float => "float",
+            Self::Vec2 => "Vec2",
+            Self::Vec3 => "Vec3",
+            Self::Vec4 => "Vec4",
+            Self::Quat => "Quat",
+            Self::Color => "Color",
+            Self::Entity => "Entity",
+            Self::Value => "any",
+        }
+    }
+
+    /// The kind of a field of Ergon type `ty`: a scalar or an engine type is
+    /// its own kind, anything else — text, an array, an optional — `Value`.
+    pub(crate) fn of(ty: &khora_core::script::ErgonType) -> Self {
+        use khora_core::script::ErgonType;
+        match ty {
+            ErgonType::Bool => Self::Bool,
+            ErgonType::Int => Self::Int,
+            ErgonType::Float => Self::Float,
+            ErgonType::Entity => Self::Entity,
+            ErgonType::Engine("Vec2") => Self::Vec2,
+            ErgonType::Engine("Vec3") => Self::Vec3,
+            ErgonType::Engine("Vec4") => Self::Vec4,
+            ErgonType::Engine("Quat") => Self::Quat,
+            ErgonType::Engine("Color") => Self::Color,
+            _ => Self::Value,
+        }
+    }
+
+    /// `value` as this kind stores it, or `None` when it is not one: an
+    /// `int` is taken as the float it names, and a non-finite number is
+    /// refused — the rule a Rust component's field follows.
+    pub(crate) fn accept(self, value: &ScriptValue) -> Option<ScriptValue> {
+        let value = match (self, value) {
+            (Self::Float, ScriptValue::Int(v)) => ScriptValue::Float(*v as f32),
+            (_, other) if self.holds(other) => other.clone(),
+            _ => return None,
+        };
+        value.is_finite().then_some(value)
     }
 
     /// Whether `value` is a value of this kind.

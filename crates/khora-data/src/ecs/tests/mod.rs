@@ -25,6 +25,7 @@ mod relayout;
 mod runtime_components;
 mod runtime_rows;
 mod spawn_refusal;
+mod typed_fields;
 
 use crate::ecs::query::Without;
 use crate::ecs::SemanticDomain;

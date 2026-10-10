@@ -419,15 +419,63 @@ fn a_recycled_entity_does_not_see_its_predecessor_s_row() {
     );
 }
 
+/// A derived Rust component with a field a script reaches, a skipped one and
+/// one of a type no script can hold.
+#[derive(Debug, Clone, Default, PartialEq, khora_macros::Component)]
+struct Gearbox {
+    ratio: f32,
+    #[component(skip)]
+    wear: u32,
+    revs: u64,
+}
+
+/// A Rust row read by key reads the fields a script reaches — and only those:
+/// a skipped field has no slot, a field of a type no script can hold reads
+/// nothing, a slot past the last field reads nothing, and an entity lacking
+/// the component has no row of it.
 #[test]
-fn a_rust_row_read_by_key_has_no_field() {
+fn a_rust_row_reads_only_the_fields_a_script_reaches() {
     let (mut world, _, _, crowd) = crowd();
     let transform = ComponentKey::of::<Transform>();
+    let translation = ScriptValue::Vec3(Vec3::new(2.0, 0.0, 0.0));
     let row = world.row(crowd[2], transform).expect("a Transform row");
-    assert_eq!(row.field(0), None);
     assert_eq!(&*row.vtable().name, "Transform");
+    assert_eq!(row.field(0), Some(translation.clone()));
+    assert_eq!(row.field(3), None, "Transform has three fields");
     let row = world.row_mut(crowd[2], transform).expect("a Transform row");
-    assert_eq!(row.field(0), None);
+    assert_eq!(row.field(0), Some(translation));
+    assert_eq!(row.field(3), None);
+
+    world.register_component::<Gearbox>(SemanticDomain::Spatial);
+    world
+        .add_component(
+            crowd[2],
+            Gearbox {
+                ratio: 3.5,
+                wear: 9,
+                revs: 7,
+            },
+        )
+        .expect("Gearbox attaches");
+    let gearbox = ComponentKey::of::<Gearbox>();
+    let columns = world
+        .components()
+        .vtable(gearbox)
+        .expect("registered")
+        .columns
+        .clone();
+    assert_eq!(
+        columns.field_slot("wear"),
+        None,
+        "a skipped field has no slot"
+    );
+    let ratio = columns.field_slot("ratio").expect("ratio has a slot");
+    let revs = columns.field_slot("revs").expect("revs has a slot");
+    let row = world.row(crowd[2], gearbox).expect("a Gearbox row");
+    assert_eq!(row.field(ratio), Some(ScriptValue::Float(3.5)));
+    assert_eq!(row.field(revs), None, "a u64 is no script value");
+    assert_eq!(row.field(2), None, "two fields reach a script");
+
     assert!(
         world.row(crowd[2], ComponentKey::of::<Spin>()).is_none(),
         "an entity lacking the component has no row of it"

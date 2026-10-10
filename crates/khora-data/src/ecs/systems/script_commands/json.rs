@@ -12,22 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Turning a script's value into component data.
+//! Turning a script's value into JSON — for the hierarchy alone.
 //!
-//! The bridge to `#[derive(Component)]`. The derive already emits `to_json` and
-//! `from_json` against the generated `SerializableX` mirror, which is how the
-//! editor's inspector commits a field edit without per-type code. A script write
-//! is the same operation from a different keyboard, so it takes the same road
-//! rather than laying a second one.
+//! A script's component writes go through each component's typed column
+//! operations, field by field, with no serialisation. `Parent` and `Children`
+//! are the exception: the hierarchy module that owns both halves of an edge
+//! takes its writes as JSON (`World::write_hierarchy_by_name`), the form the
+//! editor hands it too.
 //!
-//! Two things the road does not do on its own:
-//!
-//! - `from_json` deserializes the **whole** mirror, so a partial write has to be
-//!   merged onto what the component already holds — see [`merge`]. Without it
-//!   `health.current = 50` would mean "reset every other field to nothing".
-//! - JSON has no NaN, and a script can produce one from `0.0 / 0.0`. Converting
-//!   it silently would write a `null` where a number belongs; [`to_json`]
-//!   refuses instead, and the fault names the field.
+//! JSON has no NaN, and a script can produce one from `0.0 / 0.0`. Converting
+//! it silently would write a `null` where a number belongs; [`to_json`]
+//! refuses instead, and the fault names the field.
 
 use khora_core::script::ScriptValue;
 use serde_json::{Map, Value as Json};
@@ -105,26 +100,4 @@ fn number_from_float(number: f32) -> Result<Json, String> {
     serde_json::Number::from_f64(number as f64)
         .map(Json::Number)
         .ok_or_else(|| format!("{number} cannot be written to a component"))
-}
-
-/// Merges `patch` onto `base`, field by field.
-///
-/// Recursive on objects and replacing everywhere else: writing one field of a
-/// nested struct leaves its siblings alone, while writing an array replaces it
-/// whole. Element-wise array merging would make `waypoints = [a, b]` on a
-/// four-element list keep the last two, which is not what the assignment says.
-pub(super) fn merge(base: Json, patch: Json) -> Json {
-    match (base, patch) {
-        (Json::Object(mut base), Json::Object(patch)) => {
-            for (key, value) in patch {
-                let merged = match base.remove(&key) {
-                    Some(existing) => merge(existing, value),
-                    None => value,
-                };
-                base.insert(key, merged);
-            }
-            Json::Object(base)
-        }
-        (_, patch) => patch,
-    }
 }

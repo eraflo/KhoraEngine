@@ -183,7 +183,11 @@ fn declaration(registration: &ComponentRegistration) -> String {
         return format!("{preface}{keyword} {name} {{ }}\n");
     }
 
-    let types: Vec<Option<String>> = fields.iter().map(|field| ergon_type(field.ty)).collect();
+    // What each field is to a script comes from the field type itself
+    // (`ScriptField`), never from how its type happens to be spelled.
+    let types: Vec<Option<String>> = (0..fields.len())
+        .map(|slot| (registration.script_type)(slot).map(|ty| ty.to_string()))
+        .collect();
 
     // A component none of whose fields can be expressed would otherwise mirror
     // as an empty struct — which reads as a marker. That is the same conflation
@@ -239,51 +243,6 @@ fn writable(registration: &ComponentRegistration) -> (&'static str, Option<Strin
 /// A component that has no declaration, and the reason.
 fn not_mirrored(name: &str, reason: &str) -> String {
     format!("// {name} — not mirrored: {reason}.\n")
-}
-
-/// The Ergon spelling of a Rust type, when there is one.
-///
-/// Deliberately refuses the widths that would not survive the trip: Ergon's
-/// `int` is 64-bit signed and its `float` is 32-bit, so `u64` and `f64` are left
-/// unexpressed rather than silently truncated. A field that reads back a
-/// different number than it was given is worse than a field a script cannot see.
-fn ergon_type(rust: &str) -> Option<String> {
-    let rust = rust.trim();
-
-    if let Some(inner) = generic_argument(rust, "Option") {
-        return ergon_type(inner).map(|inner| format!("{inner}?"));
-    }
-    if let Some(inner) = generic_argument(rust, "Vec") {
-        return ergon_type(inner).map(|inner| format!("{inner}[]"));
-    }
-
-    Some(
-        match rust {
-            "f32" => "float",
-            "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" => "int",
-            "bool" => "bool",
-            "String" => "string",
-            "EntityId" => "Entity",
-            "Quaternion" => "Quat",
-            "LinearRgba" => "Color",
-            "Vec2" | "Vec3" | "Vec4" => rust,
-            _ => return None,
-        }
-        .to_owned(),
-    )
-}
-
-/// The `T` of `Name<T>`, when `rust` is exactly that.
-///
-/// The schema carries what `stringify!` produced, so the separators are spaced —
-/// `Vec < EntityId >`. Matching the head exactly is what keeps `Vec3` from being
-/// read as a `Vec` of something.
-fn generic_argument<'a>(rust: &'a str, name: &str) -> Option<&'a str> {
-    let (head, rest) = rust.split_once('<')?;
-    if head.trim() != name {
-        return None;
-    }
-    Some(rest.trim_end().strip_suffix('>')?.trim())
 }
 
 /// Why an Ergon source could not spell `name` as a field, if it could not.
@@ -682,54 +641,90 @@ mod tests {
     }
 
     // ── The type mapping ──────────────────────────────
+    //
+    // What a Rust field type is to a script is `ScriptField`'s answer
+    // (`khora_core::script::field`, where its spellings, refused widths and
+    // wrappers are pinned); the registration carries it here by slot.
 
+    /// **The type, not its spelling.** `length` is spelled `Meters` and
+    /// `stops` `Stops` — aliases a spelling cannot see through — and the
+    /// registration types them `float` and `Entity[]`: that is what is
+    /// mirrored. `odometer` is spelled `f32` but the registration gives it no
+    /// script type, so it is a comment, whatever its spelling suggests.
     #[test]
-    fn the_primitives_map_to_their_ergon_spellings() {
-        assert_eq!(ergon_type("f32").as_deref(), Some("float"));
-        assert_eq!(ergon_type("i32").as_deref(), Some("int"));
-        assert_eq!(ergon_type("bool").as_deref(), Some("bool"));
-        assert_eq!(ergon_type("String").as_deref(), Some("string"));
-        assert_eq!(ergon_type("EntityId").as_deref(), Some("Entity"));
-        assert_eq!(ergon_type("Quaternion").as_deref(), Some("Quat"));
-        assert_eq!(ergon_type("LinearRgba").as_deref(), Some("Color"));
-    }
+    fn the_mirror_reads_the_trait_not_the_spelling() {
+        use khora_core::script::ErgonType;
+        use khora_data::scene::FieldSchema;
 
-    /// **A number that would not survive the trip is refused.** Ergon's `int` is
-    /// 64-bit signed and its `float` is 32-bit, so a `u64` read back as an `int`
-    /// could differ from what it was given — and a field that lies is worse than
-    /// one a script cannot see.
-    #[test]
-    fn a_width_that_would_truncate_is_left_unexpressed() {
-        assert_eq!(ergon_type("u64"), None);
-        assert_eq!(ergon_type("usize"), None);
-        assert_eq!(ergon_type("f64"), None);
-    }
+        struct Ruler;
+        const FIELDS: &[FieldSchema] = &[
+            FieldSchema {
+                name: "length",
+                ty: "Meters",
+            },
+            FieldSchema {
+                name: "stops",
+                ty: "Stops",
+            },
+            FieldSchema {
+                name: "odometer",
+                ty: "f32",
+            },
+        ];
+        let registration = ComponentRegistration {
+            type_id: std::any::TypeId::of::<Ruler>(),
+            type_name: "Ruler",
+            shape: ComponentShape::Fields(FIELDS),
+            provenance: ComponentProvenance::Authored,
+            formerly: &[],
+            resumable: false,
+            column_to_record: |_, _, _| unreachable!("the mirror reads no column"),
+            stage: |_, _| unreachable!("the mirror stages nothing"),
+            schema: || unreachable!("the mirror traces no schema"),
+            schema_complete: || unreachable!("the mirror traces no schema"),
+            column_to_snapshot: |_, _, _, _| unreachable!("the mirror reads no column"),
+            stage_snapshot: |_, _| unreachable!("the mirror stages nothing"),
+            create_default: |_, _| unreachable!("the mirror adds nothing"),
+            to_json: |_, _| unreachable!("the mirror reads no world"),
+            from_json: |_, _, _| unreachable!("the mirror writes no world"),
+            remove: |_, _| unreachable!("the mirror writes no world"),
+            script_type: |slot| match slot {
+                0 => Some(ErgonType::Float),
+                1 => Some(ErgonType::Array(Box::new(ErgonType::Entity))),
+                _ => None,
+            },
+        };
 
-    /// The schema carries what `stringify!` produced, spaces and all.
-    #[test]
-    fn the_spaced_generics_stringify_produces_are_understood() {
-        assert_eq!(ergon_type("Vec < EntityId >").as_deref(), Some("Entity[]"));
-        assert_eq!(ergon_type("Option < i32 >").as_deref(), Some("int?"));
-        assert_eq!(
-            ergon_type("Vec < Vec < Vec3 > >").as_deref(),
-            Some("Vec3[][]")
+        let mirrored = declaration(&registration);
+        assert!(
+            mirrored.contains(
+                "    float length;
+"
+            ),
+            "got:
+{mirrored}"
         );
-    }
-
-    /// `Vec3` is a type, not a `Vec` of `3`. Matching the head exactly is what
-    /// keeps the two apart.
-    #[test]
-    fn a_vec3_is_not_read_as_a_collection() {
-        assert_eq!(ergon_type("Vec3").as_deref(), Some("Vec3"));
-    }
-
-    /// A wrapper whose contents cannot be expressed cannot be expressed either —
-    /// there is no half-answer for `Vec<(String, ScriptValue)>`.
-    #[test]
-    fn a_generic_over_something_unexpressible_is_unexpressible() {
-        assert_eq!(ergon_type("Vec < [u32; 2] >"), None);
-        assert_eq!(ergon_type("Option < ScriptValue >"), None);
-        assert_eq!(ergon_type("UiRect < f32 >"), None);
+        assert!(
+            mirrored.contains(
+                "    Entity[] stops;
+"
+            ),
+            "got:
+{mirrored}"
+        );
+        assert!(
+            mirrored.contains(
+                "    // odometer: no Ergon type for `f32` yet.
+"
+            ),
+            "got:
+{mirrored}"
+        );
+        assert!(
+            !mirrored.contains("float odometer"),
+            "got:
+{mirrored}"
+        );
     }
 
     /// The keyword list lives in the lexer, and this is how it is consulted

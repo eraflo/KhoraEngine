@@ -19,6 +19,8 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, Data, DeriveInput, Fields};
 
+use crate::script_fields::script_methods;
+
 pub fn derive_component(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -39,6 +41,51 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                 #component_impl
                 compile_error!("Component derive only supports structs");
             });
+        }
+    };
+
+    // Separate included and skipped fields
+    let mut included_fields = Vec::new();
+    let mut skipped_fields = Vec::new();
+
+    // A field's former names, read by the mirror as serde aliases: a save
+    // written before the rename still fills the field (named fields only — a
+    // tuple field has no name to rename).
+    let mut field_formerly: Vec<Vec<syn::LitStr>> = Vec::new();
+    for field in fields.iter() {
+        let mut is_skip = false;
+        let mut former = Vec::new();
+        for attr in &field.attrs {
+            if !attr.path().is_ident("component") {
+                continue;
+            }
+            let _ = attr.parse_nested_meta(|meta| {
+                if meta.path.is_ident("skip") {
+                    is_skip = true;
+                } else if meta.path.is_ident("formerly") {
+                    former.push(meta.value()?.parse::<syn::LitStr>()?);
+                } else if meta.input.peek(syn::Token![=]) {
+                    let _ = meta.value()?.parse::<syn::Expr>()?;
+                }
+                Ok(())
+            });
+        }
+
+        if !is_skip {
+            field_formerly.push(former);
+        }
+        if is_skip {
+            skipped_fields.push(field);
+        } else {
+            included_fields.push(field);
+        }
+    }
+
+    let script_methods = script_methods(fields, &included_fields);
+
+    let component_impl = quote! {
+        impl #impl_generics crate::ecs::component::Component for #name #ty_generics #where_clause {
+            #script_methods
         }
     };
 
@@ -111,6 +158,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         };
         let comp_impl = quote! {
             impl #impl_generics crate::ecs::component::Component for #name #ty_generics #where_clause {
+                #script_methods
                 fn make_column() -> Box<dyn crate::ecs::page::AnyVec> {
                     Box::new(crate::ecs::soa::FieldSoaColumn::<#name>::new())
                 }
@@ -265,43 +313,6 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
             #domain_registration
             #soa_layout_impl
         });
-    }
-
-    // Separate included and skipped fields
-    let mut included_fields = Vec::new();
-    let mut skipped_fields = Vec::new();
-
-    // A field's former names, read by the mirror as serde aliases: a save
-    // written before the rename still fills the field (named fields only — a
-    // tuple field has no name to rename).
-    let mut field_formerly: Vec<Vec<syn::LitStr>> = Vec::new();
-    for field in fields.iter() {
-        let mut is_skip = false;
-        let mut former = Vec::new();
-        for attr in &field.attrs {
-            if !attr.path().is_ident("component") {
-                continue;
-            }
-            let _ = attr.parse_nested_meta(|meta| {
-                if meta.path.is_ident("skip") {
-                    is_skip = true;
-                } else if meta.path.is_ident("formerly") {
-                    former.push(meta.value()?.parse::<syn::LitStr>()?);
-                } else if meta.input.peek(syn::Token![=]) {
-                    let _ = meta.value()?.parse::<syn::Expr>()?;
-                }
-                Ok(())
-            });
-        }
-
-        if !is_skip {
-            field_formerly.push(former);
-        }
-        if is_skip {
-            skipped_fields.push(field);
-        } else {
-            included_fields.push(field);
-        }
     }
 
     // Generate Serializable struct fields (only included fields)
@@ -642,6 +653,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                         Err(e) => Err(format!("{:?}", e)),
                     }
                 },
+                script_type: <#name as crate::ecs::component::Component>::script_type,
             }
         }
     };

@@ -527,7 +527,7 @@ fn a_non_finite_number_is_refused_rather_than_written_as_nothing() {
 // ─── Value conversion ───────────────────────────────────────────────────────
 
 mod json {
-    use super::super::json::{merge, to_json};
+    use super::super::json::to_json;
     use khora_core::script::ScriptValue;
     use serde_json::json;
 
@@ -572,30 +572,690 @@ mod json {
         )]);
         assert!(to_json(&value).is_err());
     }
+}
 
-    #[test]
-    fn merging_keeps_the_fields_the_patch_does_not_mention() {
-        let base = json!({"current": 100, "max": 100});
-        let patch = json!({"current": 50});
-        assert_eq!(merge(base, patch), json!({"current": 50, "max": 100}));
+// ─── Typed writes ───────────────────────────────────────────────────────────
+
+/// A script's component writes go field by field, through the component's
+/// typed access — no serde, no copy of the component — and a declared
+/// component takes the same road as a Rust one.
+mod typed {
+    use std::cell::Cell;
+
+    use khora_core::ecs::entity::EntityId;
+    use khora_core::math::{LinearRgba, Quaternion, Vec3};
+    use khora_core::script::{ErgonType, FieldValueError, ScriptField, ScriptValue, WorldCommand};
+
+    use super::{apply, ApplyError};
+    use crate::ecs::{
+        ComponentKey, ComponentProvenance, FieldKind, PackedField, PackedLayout,
+        RuntimeComponentDecl, SemanticDomain, Transform, World,
+    };
+
+    /// A float that panics when serialised: a component holding one can be
+    /// written only by a road that never serialises it.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, serde::Deserialize)]
+    #[serde(transparent)]
+    struct Unserialisable(f32);
+
+    impl serde::Serialize for Unserialisable {
+        fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+            panic!("a script write went through serde")
+        }
     }
 
+    impl ScriptField for Unserialisable {
+        fn ergon() -> ErgonType {
+            f32::ergon()
+        }
+        fn to_script(&self) -> ScriptValue {
+            self.0.to_script()
+        }
+        fn from_script(value: &ScriptValue) -> Result<Self, FieldValueError> {
+            f32::from_script(value).map(Self)
+        }
+    }
+
+    /// A component that cannot be serialised, with a narrow integer, a string
+    /// and a skipped field beside it.
+    #[derive(Debug, Clone, Default, PartialEq, khora_macros::Component)]
+    struct Thermostat {
+        reading: Unserialisable,
+        level: u8,
+        label: String,
+        #[component(skip)]
+        cache: u32,
+    }
+
+    thread_local! {
+        /// How many times a `Tally` was cloned on this thread.
+        static TALLY_CLONES: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// A component that counts its clones.
+    #[derive(Debug, Default, PartialEq, khora_macros::Component)]
+    struct Tally {
+        count: i64,
+    }
+
+    impl Clone for Tally {
+        fn clone(&self) -> Self {
+            TALLY_CLONES.with(|clones| clones.set(clones.get() + 1));
+            Self { count: self.count }
+        }
+    }
+
+    fn world() -> World {
+        let mut world = World::new();
+        world.register_component::<Thermostat>(SemanticDomain::Spatial);
+        world.register_component::<Tally>(SemanticDomain::Spatial);
+        world
+    }
+
+    fn thermostat() -> Thermostat {
+        Thermostat {
+            reading: Unserialisable(1.0),
+            level: 3,
+            label: "hall".to_owned(),
+            cache: 9,
+        }
+    }
+
+    fn fields(pairs: &[(&str, ScriptValue)]) -> ScriptValue {
+        ScriptValue::Struct(
+            pairs
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), value.clone()))
+                .collect(),
+        )
+    }
+
+    fn set(entity: EntityId, component: &str, value: ScriptValue) -> WorldCommand {
+        WorldCommand::SetComponent {
+            entity,
+            component: component.into(),
+            value,
+        }
+    }
+
+    fn add(entity: EntityId, component: &str, value: ScriptValue) -> WorldCommand {
+        WorldCommand::AddComponent {
+            entity,
+            component: component.into(),
+            value,
+        }
+    }
+
+    fn spawn_with(components: Vec<(&str, ScriptValue)>) -> WorldCommand {
+        WorldCommand::Spawn {
+            position: Vec3::ZERO,
+            rotation: Quaternion::IDENTITY,
+            components: components
+                .into_iter()
+                .map(|(name, value)| (name.into(), value))
+                .collect(),
+        }
+    }
+
+    fn is_rejected_by(error: &ApplyError, name: &str) -> bool {
+        matches!(error, ApplyError::Rejected { component, .. } if component == name)
+    }
+
+    /// **The JSON road is gone.** `Thermostat` panics if it is ever
+    /// serialised; a script sets it, adds it and spawns it without that
+    /// happening, and the values land.
     #[test]
-    fn merging_reaches_into_nested_objects() {
-        let base = json!({"transform": {"x": 1, "y": 2}, "name": "a"});
-        let patch = json!({"transform": {"y": 9}});
+    fn a_script_write_does_not_serialise() {
+        let mut world = world();
+        let entity = world.spawn((Transform::identity(), thermostat()));
+
+        apply(
+            &mut world,
+            &set(
+                entity,
+                "Thermostat",
+                fields(&[("reading", ScriptValue::Float(2.5))]),
+            ),
+        )
+        .expect("a float reading is written");
         assert_eq!(
-            merge(base, patch),
-            json!({"transform": {"x": 1, "y": 9}, "name": "a"})
+            world.get::<Thermostat>(entity).map(|t| t.reading),
+            Some(Unserialisable(2.5))
+        );
+
+        let bare = world.spawn(Transform::identity());
+        apply(
+            &mut world,
+            &add(
+                bare,
+                "Thermostat",
+                fields(&[("level", ScriptValue::Int(4))]),
+            ),
+        )
+        .expect("a Thermostat is added");
+        assert_eq!(
+            world.get::<Thermostat>(bare),
+            Some(&Thermostat {
+                level: 4,
+                ..Thermostat::default()
+            })
+        );
+
+        apply(
+            &mut world,
+            &spawn_with(vec![(
+                "Thermostat",
+                fields(&[("label", ScriptValue::Str("porch".to_owned()))]),
+            )]),
+        )
+        .expect("a Thermostat is spawned");
+        let porch = world
+            .iter_entities()
+            .filter_map(|e| world.get::<Thermostat>(e))
+            .filter(|t| t.label == "porch")
+            .count();
+        assert_eq!(porch, 1);
+    }
+
+    /// Only the named fields change. The skipped one keeps its value too: a
+    /// typed write never rebuilds the component from what a script sees.
+    #[test]
+    fn a_script_write_touches_only_named_fields() {
+        let mut world = world();
+        let entity = world.spawn((Transform::identity(), thermostat()));
+
+        apply(
+            &mut world,
+            &set(
+                entity,
+                "Thermostat",
+                fields(&[("level", ScriptValue::Int(7))]),
+            ),
+        )
+        .expect("a level is written");
+
+        assert_eq!(
+            world.get::<Thermostat>(entity),
+            Some(&Thermostat {
+                level: 7,
+                ..thermostat()
+            })
         );
     }
 
-    /// An array is replaced whole. Merging element-wise would make
-    /// `waypoints = [a, b]` on a four-element list keep the last two.
+    /// **Attached or not is a lookup.** Refusing to add what an entity has
+    /// does not copy the component to find out.
     #[test]
-    fn merging_replaces_arrays_rather_than_splicing_them() {
-        let base = json!({"waypoints": [1, 2, 3, 4]});
-        let patch = json!({"waypoints": [9, 8]});
-        assert_eq!(merge(base, patch), json!({"waypoints": [9, 8]}));
+    fn attachment_is_decided_without_cloning() {
+        let mut world = world();
+        let entity = world.spawn((Transform::identity(), Tally { count: 1 }));
+        TALLY_CLONES.with(|clones| clones.set(0));
+
+        let error = apply(&mut world, &add(entity, "Tally", ScriptValue::Unit))
+            .expect_err("already attached");
+
+        assert_eq!(
+            error,
+            ApplyError::AlreadyAttached {
+                entity,
+                component: "Tally".to_owned(),
+            }
+        );
+        assert_eq!(TALLY_CLONES.with(Cell::get), 0, "the Tally was cloned");
+        assert_eq!(world.get::<Tally>(entity), Some(&Tally { count: 1 }));
+    }
+
+    /// **All or nothing.** A patch with one value that fits and one that does
+    /// not is refused whole: neither field changes.
+    #[test]
+    fn a_refused_value_writes_nothing() {
+        let mut world = world();
+        let entity = world.spawn((Transform::identity(), thermostat()));
+
+        let error = apply(
+            &mut world,
+            &set(
+                entity,
+                "Thermostat",
+                fields(&[
+                    ("label", ScriptValue::Str("attic".to_owned())),
+                    ("level", ScriptValue::Int(300)),
+                ]),
+            ),
+        )
+        .expect_err("300 is no u8");
+
+        assert!(is_rejected_by(&error, "Thermostat"), "got {error:?}");
+        assert_eq!(world.get::<Thermostat>(entity), Some(&thermostat()));
+    }
+
+    /// A NaN reading is not a reading: refused, and a spawn holding one rolls
+    /// back whole, as an add holding one attaches nothing.
+    #[test]
+    fn a_non_finite_float_is_refused() {
+        let mut world = world();
+
+        let error = apply(
+            &mut world,
+            &spawn_with(vec![(
+                "Thermostat",
+                fields(&[("reading", ScriptValue::Float(f32::NAN))]),
+            )]),
+        )
+        .expect_err("NaN is refused");
+        assert!(is_rejected_by(&error, "Thermostat"), "got {error:?}");
+        assert_eq!(world.iter_entities().count(), 0, "the spawn rolled back");
+
+        let entity = world.spawn(Transform::identity());
+        let error = apply(
+            &mut world,
+            &add(
+                entity,
+                "Thermostat",
+                fields(&[("reading", ScriptValue::Float(f32::INFINITY))]),
+            ),
+        )
+        .expect_err("infinity is refused");
+        assert!(is_rejected_by(&error, "Thermostat"), "got {error:?}");
+        assert!(
+            world.get::<Thermostat>(entity).is_none(),
+            "nothing attached"
+        );
+    }
+
+    /// A `u8` takes `0..=255`; anything else is refused rather than wrapped.
+    #[test]
+    fn an_integer_out_of_range_is_refused() {
+        let mut world = world();
+        let entity = world.spawn((Transform::identity(), thermostat()));
+
+        for value in [-1, 256, 300] {
+            let error = apply(
+                &mut world,
+                &set(
+                    entity,
+                    "Thermostat",
+                    fields(&[("level", ScriptValue::Int(value))]),
+                ),
+            )
+            .expect_err("out of a u8's range");
+            assert!(
+                is_rejected_by(&error, "Thermostat"),
+                "{value}: got {error:?}"
+            );
+        }
+        assert_eq!(world.get::<Thermostat>(entity), Some(&thermostat()));
+
+        apply(
+            &mut world,
+            &set(
+                entity,
+                "Thermostat",
+                fields(&[("level", ScriptValue::Int(255))]),
+            ),
+        )
+        .expect("255 fits");
+        assert_eq!(world.get::<Thermostat>(entity).map(|t| t.level), Some(255));
+    }
+
+    /// A skipped field has no slot, so a script cannot write it: the write is
+    /// refused rather than silently dropped.
+    #[test]
+    fn a_skipped_field_is_not_written_by_a_script() {
+        let mut world = world();
+        let entity = world.spawn((Transform::identity(), thermostat()));
+
+        let error = apply(
+            &mut world,
+            &set(
+                entity,
+                "Thermostat",
+                fields(&[("cache", ScriptValue::Int(1))]),
+            ),
+        )
+        .expect_err("`cache` is skipped");
+
+        assert!(is_rejected_by(&error, "Thermostat"), "got {error:?}");
+        assert_eq!(world.get::<Thermostat>(entity), Some(&thermostat()));
+    }
+
+    /// A field the component does not have is refused, naming the component,
+    /// rather than ignored.
+    #[test]
+    fn a_write_to_an_unknown_field_is_rejected() {
+        let mut world = world();
+        let entity = world.spawn(Transform::from_translation(Vec3::new(1.0, 2.0, 3.0)));
+
+        let error = apply(
+            &mut world,
+            &set(
+                entity,
+                "Transform",
+                fields(&[("tranlsation", ScriptValue::Vec3(Vec3::ONE))]),
+            ),
+        )
+        .expect_err("Transform has no `tranlsation`");
+
+        assert!(is_rejected_by(&error, "Transform"), "got {error:?}");
+        assert_eq!(
+            world.get::<Transform>(entity).map(|t| t.translation),
+            Some(Vec3::new(1.0, 2.0, 3.0))
+        );
+    }
+
+    // ─── Declared components ────────────────────────────────────────────────
+
+    /// `Charge { amount: int, tint: Color }`, declared while the engine runs.
+    fn declare_charge(world: &mut World) -> ComponentKey {
+        let field = |name: &str, kind, default| PackedField {
+            name: name.to_owned(),
+            kind,
+            default,
+        };
+        world
+            .register_runtime_component(RuntimeComponentDecl {
+                name: "Charge".to_owned(),
+                domain: SemanticDomain::Spatial,
+                provenance: ComponentProvenance::Authored,
+                layout: PackedLayout::new(vec![
+                    field("amount", FieldKind::Int, ScriptValue::Int(0)),
+                    field(
+                        "tint",
+                        FieldKind::Color,
+                        ScriptValue::Color(LinearRgba::WHITE),
+                    ),
+                ])
+                .expect("a valid layout"),
+            })
+            .expect("Charge registers")
+    }
+
+    /// `entity`'s value of field `name` of the declared component `key`.
+    fn read(world: &World, entity: EntityId, key: ComponentKey, name: &str) -> Option<ScriptValue> {
+        let slot = world
+            .components()
+            .vtable(key)?
+            .columns
+            .packed()?
+            .slot_of(name)?;
+        world.row(entity, key)?.field(slot)
+    }
+
+    /// **One road.** `SetComponent` naming a declared component writes its
+    /// packed fields — the named one only — and refuses a value of the wrong
+    /// kind without writing anything.
+    #[test]
+    fn a_declared_component_is_written_by_the_same_road() {
+        let mut world = world();
+        let charge = declare_charge(&mut world);
+        let entity = world.spawn(Transform::identity());
+        world
+            .add_runtime_component(entity, charge, &ScriptValue::Unit)
+            .expect("Charge attaches");
+
+        apply(
+            &mut world,
+            &set(entity, "Charge", fields(&[("amount", ScriptValue::Int(7))])),
+        )
+        .expect("an int amount is written");
+        assert_eq!(
+            read(&world, entity, charge, "amount"),
+            Some(ScriptValue::Int(7))
+        );
+        assert_eq!(
+            read(&world, entity, charge, "tint"),
+            Some(ScriptValue::Color(LinearRgba::WHITE)),
+            "the field not named is untouched"
+        );
+
+        let error = apply(
+            &mut world,
+            &set(
+                entity,
+                "Charge",
+                fields(&[
+                    ("amount", ScriptValue::Int(9)),
+                    ("tint", ScriptValue::Int(1)),
+                ]),
+            ),
+        )
+        .expect_err("an int is not a Color");
+        assert!(is_rejected_by(&error, "Charge"), "got {error:?}");
+        assert_eq!(
+            read(&world, entity, charge, "amount"),
+            Some(ScriptValue::Int(7)),
+            "nothing written"
+        );
+    }
+
+    /// And added, refused when already there, spawned with, and removed — by
+    /// name, like a Rust component.
+    #[test]
+    fn a_declared_component_is_added_and_removed_by_name() {
+        let mut world = world();
+        let charge = declare_charge(&mut world);
+        let entity = world.spawn(Transform::identity());
+
+        apply(
+            &mut world,
+            &add(entity, "Charge", fields(&[("amount", ScriptValue::Int(2))])),
+        )
+        .expect("Charge is added");
+        assert_eq!(
+            read(&world, entity, charge, "amount"),
+            Some(ScriptValue::Int(2))
+        );
+
+        let error = apply(&mut world, &add(entity, "Charge", ScriptValue::Unit))
+            .expect_err("already attached");
+        assert_eq!(
+            error,
+            ApplyError::AlreadyAttached {
+                entity,
+                component: "Charge".to_owned(),
+            }
+        );
+
+        apply(
+            &mut world,
+            &WorldCommand::RemoveComponent {
+                entity,
+                component: "Charge".into(),
+            },
+        )
+        .expect("Charge is removed");
+        assert!(world.row(entity, charge).is_none(), "detached");
+
+        let before: Vec<EntityId> = world.iter_entities().collect();
+        apply(
+            &mut world,
+            &spawn_with(vec![("Charge", fields(&[("amount", ScriptValue::Int(5))]))]),
+        )
+        .expect("a Charge is spawned");
+        let spawned: Vec<EntityId> = world
+            .iter_entities()
+            .filter(|e| !before.contains(e))
+            .collect();
+        assert_eq!(spawned.len(), 1);
+        assert_eq!(
+            read(&world, spawned[0], charge, "amount"),
+            Some(ScriptValue::Int(5))
+        );
+    }
+
+    // ─── What a typed write accepts ─────────────────────────────────────────
+
+    /// **The language's one widening.** `float m = 1;` holds an `Int` at run
+    /// time — the VM widens it where a float is read — and `e.Set(RigidBody {
+    /// mass: m })` queues that `Int`. The JSON road read it as the float it
+    /// means; the typed road must too, rather than refuse a write the checker
+    /// accepted.
+    #[test]
+    fn an_int_written_to_a_float_field_lands_as_that_float() {
+        let mut world = World::new();
+        let entity = world.spawn((Transform::identity(), crate::ecs::RigidBody::default()));
+
+        apply(
+            &mut world,
+            &set(
+                entity,
+                "RigidBody",
+                fields(&[("mass", ScriptValue::Int(3))]),
+            ),
+        )
+        .expect("an int mass is the float it means");
+
+        assert_eq!(
+            world
+                .get::<crate::ecs::RigidBody>(entity)
+                .map(|body| body.mass),
+            Some(3.0)
+        );
+    }
+
+    /// A NaN inside a `Vec3` or a `Quat` is no more a position or a turn than
+    /// a NaN `f32` is a mass: the JSON road refused one (serde reads no `null`
+    /// as an `f32`), and so must the typed road — every system reading the
+    /// transform would inherit it.
+    #[test]
+    fn a_non_finite_component_of_an_engine_value_is_refused() {
+        let mut world = World::new();
+        let entity = world.spawn(Transform::from_translation(Vec3::new(1.0, 2.0, 3.0)));
+
+        let error = apply(
+            &mut world,
+            &set(
+                entity,
+                "Transform",
+                fields(&[(
+                    "translation",
+                    ScriptValue::Vec3(Vec3::new(f32::NAN, 0.0, 0.0)),
+                )]),
+            ),
+        )
+        .expect_err("a NaN translation is refused");
+        assert!(is_rejected_by(&error, "Transform"), "got {error:?}");
+
+        let error = apply(
+            &mut world,
+            &set(
+                entity,
+                "Transform",
+                fields(&[(
+                    "rotation",
+                    ScriptValue::Quat(Quaternion::new(0.0, f32::INFINITY, 0.0, 1.0)),
+                )]),
+            ),
+        )
+        .expect_err("an infinite rotation is refused");
+        assert!(is_rejected_by(&error, "Transform"), "got {error:?}");
+
+        let transform = world.get::<Transform>(entity).expect("still there");
+        assert_eq!(transform.translation, Vec3::new(1.0, 2.0, 3.0));
+        assert_eq!(transform.rotation, Quaternion::IDENTITY);
+    }
+
+    /// **One road, one rule.** A declared component's `float` field refuses a
+    /// NaN as a Rust `f32` field does.
+    #[test]
+    fn a_declared_float_field_refuses_a_non_finite_value() {
+        let mut world = world();
+        let fuel = world
+            .register_runtime_component(RuntimeComponentDecl {
+                name: "Fuel".to_owned(),
+                domain: SemanticDomain::Spatial,
+                provenance: ComponentProvenance::Authored,
+                layout: PackedLayout::new(vec![PackedField {
+                    name: "litres".to_owned(),
+                    kind: FieldKind::Float,
+                    default: ScriptValue::Float(5.0),
+                }])
+                .expect("a valid layout"),
+            })
+            .expect("Fuel registers");
+        let entity = world.spawn(Transform::identity());
+        world
+            .add_runtime_component(entity, fuel, &ScriptValue::Unit)
+            .expect("Fuel attaches");
+
+        let error = apply(
+            &mut world,
+            &set(
+                entity,
+                "Fuel",
+                fields(&[("litres", ScriptValue::Float(f32::NAN))]),
+            ),
+        )
+        .expect_err("a NaN is refused");
+
+        assert!(is_rejected_by(&error, "Fuel"), "got {error:?}");
+        assert_eq!(
+            read(&world, entity, fuel, "litres"),
+            Some(ScriptValue::Float(5.0))
+        );
+    }
+
+    /// A route: an array beside a scalar.
+    #[derive(Debug, Clone, Default, PartialEq, khora_macros::Component)]
+    struct Patrol {
+        waypoints: Vec<Vec3>,
+        speed: f32,
+    }
+
+    /// **An array is replaced whole.** `waypoints = [a, b]` on a four-point
+    /// route leaves exactly `[a, b]` — not the first two overwritten and the
+    /// last two kept — and the field not named keeps its value.
+    #[test]
+    fn a_vec_field_set_by_a_script_is_replaced_whole() {
+        let mut world = world();
+        world.register_component::<Patrol>(SemanticDomain::Spatial);
+        let route = |n: usize| {
+            (0..n)
+                .map(|i| Vec3::new(i as f32, 0.0, 0.0))
+                .collect::<Vec<_>>()
+        };
+        let entity = world.spawn((
+            Transform::identity(),
+            Patrol {
+                waypoints: route(4),
+                speed: 2.0,
+            },
+        ));
+        let replaced = [Vec3::new(9.0, 9.0, 9.0), Vec3::new(8.0, 8.0, 8.0)];
+
+        apply(
+            &mut world,
+            &set(
+                entity,
+                "Patrol",
+                fields(&[(
+                    "waypoints",
+                    ScriptValue::Array(replaced.iter().copied().map(ScriptValue::Vec3).collect()),
+                )]),
+            ),
+        )
+        .expect("an array of Vec3 is written");
+
+        assert_eq!(
+            world.get::<Patrol>(entity),
+            Some(&Patrol {
+                waypoints: replaced.to_vec(),
+                speed: 2.0,
+            })
+        );
+
+        apply(
+            &mut world,
+            &set(
+                entity,
+                "Patrol",
+                fields(&[("waypoints", ScriptValue::Array(Vec::new()))]),
+            ),
+        )
+        .expect("an empty array is written");
+        assert_eq!(
+            world.get::<Patrol>(entity).map(|p| p.waypoints.len()),
+            Some(0)
+        );
     }
 }

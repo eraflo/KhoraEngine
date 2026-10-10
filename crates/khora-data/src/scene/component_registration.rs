@@ -126,6 +126,10 @@ pub struct ComponentRegistration {
     /// component in place. Used by the editor inspector's per-card delete
     /// button to drop a component by `type_name` lookup.
     pub remove: fn(&mut World, EntityId) -> Result<(), String>,
+
+    /// The Ergon type of the field at a slot — the field's position in
+    /// [`shape`](Self::shape) — `None` for a field a script cannot reach.
+    pub script_type: fn(usize) -> Option<khora_core::script::ErgonType>,
 }
 
 inventory::collect!(ComponentRegistration);

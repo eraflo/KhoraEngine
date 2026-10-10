@@ -115,7 +115,13 @@ layout, its provenance, and the operations storage needs on its columns — crea
 one, copy a row into another page. Storage calls those operations and never
 learns a column's concrete type; that is what lets a field-SoA column and a plain
 `Vec<T>` sit side by side, and what lets a component exist with no Rust type at
-all.
+all. The same table reads and writes a component's fields one at a time, by
+slot — what a script's `e.Set(Health { current: 5 })` becomes at the frame
+boundary: the one field written in place, nothing cloned, nothing serialised —
+and takes a typed copy of a column that can be read row by row without the
+`World`. What a field is to a script is decided once, by its Rust type
+(`ScriptField`): a type that would not survive the trip, such as `u64` or `f64`,
+is simply out of a script's reach.
 
 **Components declared while the engine runs.** A script can declare a component
 that no Rust type stands for. It is registered with its fields and its domain,

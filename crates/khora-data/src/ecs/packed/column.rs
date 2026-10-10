@@ -17,13 +17,14 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use khora_core::script::ScriptValue;
+use khora_core::script::{FieldValueError, ScriptValue};
 
 use super::{decode, encode, FieldError, PackedLayout, Place};
-use crate::ecs::{AnyVec, ColumnOps};
+use crate::ecs::{AnyVec, ColumnOps, ColumnSnapshot, FieldWriteError};
 
 /// The rows of one run-time component in one page: the inline parts packed
 /// back to back, `stride` bytes each, and the out-of-line values beside them.
+#[derive(Clone)]
 pub(crate) struct PackedColumn {
     layout: Arc<PackedLayout>,
     bytes: Vec<u8>,
@@ -78,14 +79,14 @@ impl PackedColumn {
         value: &ScriptValue,
     ) -> Result<(), FieldError> {
         let field = &self.layout.fields()[slot];
-        if !field.kind.holds(value) {
+        let Some(accepted) = field.kind.accept(value) else {
             return Err(FieldError {
                 field: field.name.clone(),
                 expected: field.kind,
                 found: value.type_name().to_owned(),
             });
-        }
-        self.store(row, slot, value.clone());
+        };
+        self.store(row, slot, accepted);
         Ok(())
     }
 
@@ -208,5 +209,74 @@ impl ColumnOps for PackedColumns {
 
     fn packed(&self) -> Option<&PackedLayout> {
         Some(&self.layout)
+    }
+
+    fn field_slot(&self, name: &str) -> Option<usize> {
+        self.layout.slot_of(name)
+    }
+
+    fn read_field(&self, column: &dyn AnyVec, row: usize, slot: usize) -> Option<ScriptValue> {
+        column
+            .as_any()
+            .downcast_ref::<PackedColumn>()?
+            .get(row, slot)
+    }
+
+    fn write_fields(
+        &self,
+        column: &mut dyn AnyVec,
+        row: usize,
+        patch: &[(usize, &ScriptValue)],
+    ) -> Result<(), FieldWriteError> {
+        // Every value checked before any is written: all or nothing.
+        for &(slot, value) in patch {
+            let Some(field) = self.layout.fields().get(slot) else {
+                return Err(FieldWriteError::NoSuchField(format!("#{slot}")));
+            };
+            if field.kind.accept(value).is_none() {
+                return Err(FieldWriteError::Refused {
+                    field: field.name.clone(),
+                    error: FieldValueError {
+                        expected: field.kind.spelling().to_owned(),
+                        found: value.type_name().to_owned(),
+                    },
+                });
+            }
+        }
+        let column = column
+            .as_any_mut()
+            .downcast_mut::<PackedColumn>()
+            .expect("a declared component's column is packed");
+        for &(slot, value) in patch {
+            // Checked of its kind above.
+            let _ = column.set(row, slot, value);
+        }
+        Ok(())
+    }
+
+    fn snapshot(&self, column: &dyn AnyVec) -> Box<dyn ColumnSnapshot> {
+        let column = column
+            .as_any()
+            .downcast_ref::<PackedColumn>()
+            .expect("a declared component's column is packed");
+        Box::new(column.clone())
+    }
+}
+
+/// A copy of a declared component's column.
+impl ColumnSnapshot for PackedColumn {
+    fn len(&self) -> usize {
+        self.rows
+    }
+
+    fn read(&self, row: usize) -> ScriptValue {
+        ScriptValue::Struct(
+            self.layout
+                .fields()
+                .iter()
+                .enumerate()
+                .filter_map(|(slot, field)| Some((field.name.clone(), self.get(row, slot)?)))
+                .collect(),
+        )
     }
 }

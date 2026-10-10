@@ -17,6 +17,8 @@
 //! Components are data structures that are attached to entities in the ECS.
 //! They are used to store data that is associated with an entity.
 
+use khora_core::script::{ErgonType, FieldValueError, ScriptValue};
+
 use crate::ecs::page::AnyVec;
 
 /// A marker trait for types that can be used as components in the ECS.
@@ -119,5 +121,38 @@ pub trait Component: Clone + 'static + Send + Sync {
             .downcast_mut::<Vec<Self>>()
             .expect("AoS column type mismatch");
         v[row] = self;
+    }
+
+    /// The names of the fields a script reaches, by slot: a field's slot is
+    /// its position in this list. Default: none.
+    fn script_fields() -> &'static [&'static str]
+    where
+        Self: Sized,
+    {
+        &[]
+    }
+
+    /// The Ergon type of the field at `slot`, `None` for a field a script
+    /// cannot reach. Default: none.
+    fn script_type(_slot: usize) -> Option<ErgonType>
+    where
+        Self: Sized,
+    {
+        None
+    }
+
+    /// The value of the field at `slot`, `None` for a field a script cannot
+    /// reach. Default: none.
+    fn read_field(&self, _slot: usize) -> Option<ScriptValue> {
+        None
+    }
+
+    /// Writes the field at `slot`, refusing a value it cannot hold. Default:
+    /// every write refused.
+    fn write_field(&mut self, _slot: usize, value: &ScriptValue) -> Result<(), FieldValueError> {
+        Err(FieldValueError {
+            expected: "a field a script can write".to_owned(),
+            found: value.type_name().to_owned(),
+        })
     }
 }

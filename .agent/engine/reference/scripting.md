@@ -133,8 +133,9 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   `khora_script::ENGINE_COMPONENTS_MODULE`, checked on the resolved modules —
   `modules::report_foreign_components`). The mirror emits `component` for hand-authorable provenance
   except `Transform` (placed by `native::world::PLACEMENT`), and `struct` with a `//` reason for the rest.
-- **A mirror that cannot express something says so; it never guesses.** A field whose Rust type Ergon
-  has no spelling for stays as a comment naming that type; a component whose every field is like that,
+- **A mirror that cannot express something says so; it never guesses.** A field's Ergon type comes from
+  `ScriptField` (`ComponentRegistration::script_type`), never from parsing the Rust spelling; a field whose
+  type is not a `ScriptField` stays as a comment naming that type; a component whose every field is like that,
   or whose field names the language cannot spell (a tuple index, or a reserved word — `Script.behavior`,
   `UiInteraction.state`), is left undeclared with the reason. An empty `struct` means *marker*, and
   emitting one for a component that does carry data would be a false statement.

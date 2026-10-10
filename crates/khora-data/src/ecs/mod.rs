@@ -49,7 +49,7 @@ mod world_ext;
 
 pub use bitset::DomainBitset;
 pub use bundle::ComponentBundle;
-pub use column_ops::ColumnOps;
+pub use column_ops::{ColumnOps, ColumnSnapshot, FieldWriteError};
 pub use component::Component;
 pub use component_key::{ColumnMap, ComponentKey, KeyHasher};
 pub use component_registry::*;

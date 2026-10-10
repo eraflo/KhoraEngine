@@ -84,6 +84,23 @@ pub enum ScriptValue {
 }
 
 impl ScriptValue {
+    /// Whether every number the value carries is finite — a `float`, every
+    /// lane of an engine value, every element of an array or a struct. Text,
+    /// handles and `null` carry none.
+    pub fn is_finite(&self) -> bool {
+        match self {
+            Self::Float(v) => v.is_finite(),
+            Self::Vec2(v) => v.x.is_finite() && v.y.is_finite(),
+            Self::Vec3(v) => v.x.is_finite() && v.y.is_finite() && v.z.is_finite(),
+            Self::Vec4(v) => [v.x, v.y, v.z, v.w].iter().all(|lane| lane.is_finite()),
+            Self::Quat(q) => [q.x, q.y, q.z, q.w].iter().all(|lane| lane.is_finite()),
+            Self::Color(c) => [c.r, c.g, c.b, c.a].iter().all(|lane| lane.is_finite()),
+            Self::Array(items) => items.iter().all(Self::is_finite),
+            Self::Struct(fields) => fields.iter().all(|(_, value)| value.is_finite()),
+            _ => true,
+        }
+    }
+
     /// The type name, as an author would write it.
     ///
     /// Used by the applier when a component patch arrives with the wrong shape:

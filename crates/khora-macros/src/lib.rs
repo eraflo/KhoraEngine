@@ -16,6 +16,7 @@
 
 mod component;
 mod ergon_fn;
+mod script_fields;
 
 use proc_macro::TokenStream;
 
