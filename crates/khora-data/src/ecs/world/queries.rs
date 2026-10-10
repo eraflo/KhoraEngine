@@ -19,8 +19,13 @@ use std::{any::TypeId, collections::HashSet};
 use super::World;
 use crate::ecs::{
     query::{NativeRowPlan, Query, ReadOnlyWorldQuery, WorldQuery},
-    DomainBitset, QueryMut, QueryPlan,
+    ComponentKey, DomainBitset, QueryMut, QueryPlan,
 };
+
+/// The plan-cache key of a query over the Rust components `type_ids`.
+fn plan_key(type_ids: &[TypeId]) -> Vec<ComponentKey> {
+    type_ids.iter().copied().map(ComponentKey::Rust).collect()
+}
 
 impl World {
     /// Creates an iterator that queries the world for entities matching a set of components and filters.
@@ -57,7 +62,7 @@ impl World {
                 .query_cache
                 .read()
                 .unwrap_or_else(|e| e.into_inner());
-            if let Some(plan) = cache.get(&type_ids) {
+            if let Some(plan) = cache.get(&plan_key(&type_ids)) {
                 plan.clone()
             } else {
                 drop(cache);
@@ -67,7 +72,7 @@ impl World {
                     .query_cache
                     .write()
                     .unwrap_or_else(|e| e.into_inner());
-                cache.insert(type_ids.clone(), new_plan.clone());
+                cache.insert(plan_key(&type_ids), new_plan.clone());
                 new_plan
             }
         };
@@ -86,7 +91,9 @@ impl World {
             .iter()
             .map(|&pid| self.storage.pages[pid as usize].row_count() as u64)
             .sum();
-        self.storage.registry.record_access(&type_ids, rows_scanned);
+        self.storage
+            .registry
+            .record_access(&plan_key(&type_ids), rows_scanned);
 
         // 3. Return the query with the plan and the current matching pages.
         Query::new(self, plan, matching_page_indices, row_plan)
@@ -120,7 +127,7 @@ impl World {
                 .query_cache
                 .read()
                 .unwrap_or_else(|e| e.into_inner());
-            if let Some(plan) = cache.get(&type_ids) {
+            if let Some(plan) = cache.get(&plan_key(&type_ids)) {
                 plan.clone()
             } else {
                 drop(cache);
@@ -130,7 +137,7 @@ impl World {
                     .query_cache
                     .write()
                     .unwrap_or_else(|e| e.into_inner());
-                cache.insert(type_ids.clone(), new_plan.clone());
+                cache.insert(plan_key(&type_ids), new_plan.clone());
                 new_plan
             }
         };
@@ -145,7 +152,9 @@ impl World {
             .iter()
             .map(|&pid| self.storage.pages[pid as usize].row_count() as u64)
             .sum();
-        self.storage.registry.record_access(&type_ids, rows_scanned);
+        self.storage
+            .registry
+            .record_access(&plan_key(&type_ids), rows_scanned);
 
         // The caller may write through every `&mut` term of the query:
         // mark those domains changed ONCE here, at construction — never
@@ -183,7 +192,7 @@ impl World {
             // NATIVE MODE: All components belong to the same semantic domain (or none).
             // This is the fastest execution path as it avoids any cross-domain joins.
             let first_domain = domains.into_iter().next();
-            let plan = QueryPlan::new(false, first_domain, HashSet::new(), type_ids.to_vec());
+            let plan = QueryPlan::new(false, first_domain, HashSet::new(), plan_key(type_ids));
             return plan;
         }
 
@@ -219,7 +228,7 @@ impl World {
         let mut driver_signature = Vec::new();
         for type_id in type_ids {
             if self.storage.registry.get_domain(*type_id) == Some(driver_domain) {
-                driver_signature.push(*type_id);
+                driver_signature.push(ComponentKey::Rust(*type_id));
             }
         }
         driver_signature.sort();
@@ -292,16 +301,24 @@ impl World {
     }
 
     /// Internal helper to find pages matching a signature and filter.
-    fn find_matching_pages(&self, type_ids: &[TypeId], without_type_ids: &[TypeId]) -> Vec<u32> {
+    fn find_matching_pages(
+        &self,
+        signature: &[ComponentKey],
+        without_type_ids: &[TypeId],
+    ) -> Vec<u32> {
         let mut matching_page_indices = Vec::new();
         'page_loop: for (page_id, page) in self.storage.pages.iter().enumerate() {
-            for required_type in type_ids {
-                if page.type_ids.binary_search(required_type).is_err() {
+            for required in signature {
+                if page.keys.binary_search(required).is_err() {
                     continue 'page_loop;
                 }
             }
             for excluded_type in without_type_ids {
-                if page.type_ids.binary_search(excluded_type).is_ok() {
+                if page
+                    .keys
+                    .binary_search(&ComponentKey::Rust(*excluded_type))
+                    .is_ok()
+                {
                     continue 'page_loop;
                 }
             }

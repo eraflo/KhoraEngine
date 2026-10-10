@@ -19,7 +19,7 @@ use std::any::TypeId;
 use khora_core::ecs::entity::EntityId;
 
 use super::World;
-use crate::ecs::{page::PageIndex, Component, SemanticDomain};
+use crate::ecs::{page::PageIndex, Component, ComponentKey, SemanticDomain};
 
 /// Errors that can occur when adding a component to an entity.
 #[derive(Debug, PartialEq, Eq)]
@@ -70,28 +70,16 @@ impl World {
     ///
     /// # Panics
     ///
-    /// When the type is already registered in another domain: every value
+    /// When the type is already registered in another domain — every value
     /// stored so far is reached through the domain it was stored under, and
-    /// moving the type would hide them all.
+    /// moving the type would hide them all — or when another Rust type has
+    /// its short name, the one name scenes, the editor and scripts know it by.
+    /// [`try_register_component`](Self::try_register_component) is the
+    /// fallible form.
     pub fn register_component<T: Component>(&mut self, domain: SemanticDomain) {
-        if let Some(existing) = self.storage.registry.get_domain(TypeId::of::<T>()) {
-            if existing == domain {
-                return;
-            }
-            panic!(
-                "`{}` is already registered in the {existing:?} domain; registering it in {domain:?} would hide every value stored under the first",
-                std::any::type_name::<T>()
-            );
+        if let Err(error) = self.try_register_component::<T>(domain) {
+            panic!("{error}");
         }
-        self.storage.registry.register::<T>(domain);
-        self.type_registry.register::<T>();
-        // A plan names the domains its components live in; one made before
-        // this registration would keep looking for `T` where it is not.
-        self.planner
-            .query_cache
-            .write()
-            .unwrap_or_else(|e| e.into_inner())
-            .clear();
     }
 
     /// This operation is designed to be fast. It performs the necessary data
@@ -114,136 +102,11 @@ impl World {
         entity_id: EntityId,
         component: C,
     ) -> Result<Option<PageIndex>, AddComponentError> {
-        // 1. Validate EntityId and get metadata — a copy, written back when
-        // the move is done. The slot keeps its metadata meanwhile: an entity
-        // is never seen dead halfway through a change, even one that unwinds.
-        let Some((id_in_world, Some(current))) = self.entities.get(entity_id.index as usize) else {
-            return Err(AddComponentError::EntityNotFound);
-        };
-        let mut metadata = current.clone();
-
-        if id_in_world.generation != entity_id.generation {
-            return Err(AddComponentError::EntityNotFound);
-        }
-
-        let Some(domain) = self.storage.registry.get_domain(TypeId::of::<C>()) else {
-            return Err(AddComponentError::ComponentNotRegistered);
-        };
-
-        let old_location_opt = metadata.locations.get(&domain).copied();
-
-        // 2. Determine old and new page signatures
-        let old_type_ids = old_location_opt.map_or(Vec::new(), |loc| {
-            self.storage.pages[loc.page_id as usize].type_ids.clone()
-        });
-        let mut new_type_ids = old_type_ids.clone();
-        new_type_ids.push(TypeId::of::<C>());
-        new_type_ids.sort();
-        new_type_ids.dedup();
-
-        if new_type_ids == old_type_ids {
-            return Err(AddComponentError::ComponentAlreadyExists);
-        }
-
-        // 3. Find or create the destination page
-        let dest_page_id = self.find_or_create_page_for_signature(&new_type_ids);
-
-        // 4. Perform the migration
-        let dest_row_index;
-        unsafe {
-            // SAFETY: when an old location exists it lives on a different page
-            // than `dest_page_id` (the equal-page case is unreachable — a
-            // differing signature guarantees a different page), so `src_page`
-            // and `dest_page` are borrowed disjointly through raw pointers into
-            // `storage.pages`.
-            let (src_page_opt, dest_page) = if let Some(loc) = old_location_opt {
-                if loc.page_id == dest_page_id {
-                    unreachable!(
-                        "same-page migration must be caught by the earlier signature check"
-                    );
-                } else {
-                    let all_pages_ptr = self.storage.pages.as_mut_ptr();
-                    let dest_page = &mut *all_pages_ptr.add(dest_page_id as usize);
-                    let src_page = &*all_pages_ptr.add(loc.page_id as usize);
-                    (Some(src_page), dest_page)
-                }
-            } else {
-                (None, &mut self.storage.pages[dest_page_id as usize])
-            };
-
-            dest_row_index = dest_page.entities.len() as u32;
-
-            if let Some(src_page) = src_page_opt {
-                let src_row = old_location_opt.unwrap().row_index as usize;
-                for type_id in &old_type_ids {
-                    let copier = self.storage.registry.get_row_copier(type_id).unwrap();
-                    let src_col = src_page.columns.get(type_id).unwrap();
-                    let dest_col = dest_page.columns.get_mut(type_id).unwrap();
-                    copier(src_col.as_ref(), src_row, dest_col.as_mut());
-                }
-            }
-
-            // Push through the component's own column hook: the column is a
-            // `Vec<C>` for AoS but a `FieldSoaColumn<C>` for field-SoA.
-            let dest_col = dest_page
-                .columns
-                .get_mut(&TypeId::of::<C>())
-                .expect("destination page signature includes the added component");
-            component.push_into_column(dest_col.as_mut());
-
-            dest_page.add_entity(entity_id);
-        }
-
-        // 5. Update metadata and put it back.
-        //
-        // The migration copied the entity's *whole* archetype row (every
-        // component in the source page, across all its domains) into the
-        // destination page. A multi-domain entity is stored in one page under
-        // several domain keys all addressing the same `(page, row)` (see
-        // `remove_from_page`), so repoint EVERY co-located domain — not just the
-        // added component's — to keep the entity in one page (the CRPECS
-        // archetype model) and leave the old row fully dead (reclaimable by
-        // compaction) instead of a partial orphan with duplicated columns.
-        let new_location = PageIndex {
-            page_id: dest_page_id,
-            row_index: dest_row_index,
-        };
-        match old_location_opt {
-            Some(old) => {
-                for loc in metadata.locations.values_mut() {
-                    if *loc == old {
-                        *loc = new_location;
-                    }
-                }
-            }
-            // First component in this domain — no prior row to migrate from.
-            None => {
-                metadata.locations.insert(domain, new_location);
-            }
-        }
-
-        // Update the domain bitset for the entity.
-        self.storage
-            .domain_bitsets
-            .entry(domain)
-            .or_default()
-            .set(entity_id.index);
-
-        self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
-
-        // The entity gained a component in this domain — invalidate cached Views.
-        self.bump_domain_epoch(domain);
-
-        // 6. Record the abandoned source page so maintenance compacts its
-        //    now-orphaned row later (see `StorageManager::dirty_pages`). The
-        //    `None` case adds the entity to a domain for the first time, leaving
-        //    no orphan behind.
-        if let Some(old) = old_location_opt {
-            self.storage.dirty_pages.insert(old.page_id);
-        }
-
-        // 7. Return the old location for cleanup, without performing swap_remove
-        Ok(old_location_opt)
+        // Pushed through the component's own column hook: the column is a
+        // `Vec<C>` for AoS but a `FieldSoaColumn<C>` for field-SoA.
+        self.attach(entity_id, ComponentKey::of::<C>(), |column| {
+            component.push_into_column(column)
+        })
     }
 
     /// Removes a **single** component `C` from `entity`, preserving every
@@ -274,110 +137,7 @@ impl World {
         &mut self,
         entity_id: EntityId,
     ) -> Result<Option<PageIndex>, RemoveComponentError> {
-        // 1. Validate the entity, and copy its metadata — written back when
-        // the change is done, so the slot is never empty while it runs.
-        let Some((id_in_world, Some(current))) = self.entities.get(entity_id.index as usize) else {
-            return Err(RemoveComponentError::EntityNotFound);
-        };
-        let mut metadata = current.clone();
-        if id_in_world.generation != entity_id.generation {
-            return Err(RemoveComponentError::EntityNotFound);
-        }
-
-        // 2. Resolve the component's domain.
-        let Some(domain) = self.storage.registry.get_domain(TypeId::of::<C>()) else {
-            return Err(RemoveComponentError::ComponentNotRegistered);
-        };
-
-        let Some(loc) = metadata.locations.get(&domain).copied() else {
-            // Entity isn't in this domain at all.
-            return Err(RemoveComponentError::ComponentNotPresent);
-        };
-
-        let target_type = TypeId::of::<C>();
-        let old_type_ids = self.storage.pages[loc.page_id as usize].type_ids.clone();
-        if !old_type_ids.contains(&target_type) {
-            // Entity is in this domain but doesn't have C specifically.
-            return Err(RemoveComponentError::ComponentNotPresent);
-        }
-
-        // 3. Build the new domain signature (sans C).
-        let new_type_ids: Vec<TypeId> = old_type_ids
-            .iter()
-            .copied()
-            .filter(|t| *t != target_type)
-            .collect();
-
-        // 4. If C was the last component in this domain, just drop the
-        //    domain location and bitset bit. No page migration needed.
-        if new_type_ids.is_empty() {
-            metadata.locations.remove(&domain);
-            if let Some(bitset) = self.storage.domain_bitsets.get_mut(&domain) {
-                bitset.clear(entity_id.index);
-            }
-            self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
-            // The entity left this domain entirely — invalidate cached Views.
-            self.bump_domain_epoch(domain);
-            // The row is orphaned (metadata no longer references it) — schedule
-            // its page for compaction.
-            self.storage.dirty_pages.insert(loc.page_id);
-            return Ok(Some(loc));
-        }
-
-        // 5. Find or create the destination page for the reduced signature.
-        let dest_page_id = self.find_or_create_page_for_signature(&new_type_ids);
-
-        // 6. Migrate every surviving same-domain component from src → dest.
-        let dest_row_index;
-        unsafe {
-            // SAFETY: src and dest are different pages (signatures differ),
-            // so we can borrow them disjointly through raw pointers.
-            let all_pages_ptr = self.storage.pages.as_mut_ptr();
-            let dest_page = &mut *all_pages_ptr.add(dest_page_id as usize);
-            let src_page = &*all_pages_ptr.add(loc.page_id as usize);
-            assert_ne!(
-                loc.page_id, dest_page_id,
-                "remove_component: src/dest aliased"
-            );
-
-            dest_row_index = dest_page.entities.len() as u32;
-            let src_row = loc.row_index as usize;
-
-            for type_id in &new_type_ids {
-                let copier = self.storage.registry.get_row_copier(type_id).unwrap();
-                let src_col = src_page.columns.get(type_id).unwrap();
-                let dest_col = dest_page.columns.get_mut(type_id).unwrap();
-                copier(src_col.as_ref(), src_row, dest_col.as_mut());
-            }
-
-            dest_page.add_entity(entity_id);
-        }
-
-        // 7. Update entity metadata to point at the new (page, row). As in
-        //    `add_component`, the whole archetype row migrated, so repoint every
-        //    co-located domain (not just this one) to keep the entity in one page
-        //    and leave the old row fully dead.
-        let new_location = PageIndex {
-            page_id: dest_page_id,
-            row_index: dest_row_index,
-        };
-        for l in metadata.locations.values_mut() {
-            if *l == loc {
-                *l = new_location;
-            }
-        }
-        // The bitset stays set — other components remain in this domain.
-        self.entities.get_mut(entity_id.index as usize).unwrap().1 = Some(metadata);
-
-        // The entity lost a component in this domain — invalidate cached Views.
-        self.bump_domain_epoch(domain);
-
-        // 8. Record the abandoned source page so maintenance compacts its
-        //    now-orphaned row later.
-        self.storage.dirty_pages.insert(loc.page_id);
-
-        // 9. Hand the old location off to the GC.
-        Ok(Some(loc))
+        self.detach(entity_id, ComponentKey::of::<C>())
     }
 
     /// Logically removes all components belonging to a specific `SemanticDomain` from an entity.
@@ -458,7 +218,7 @@ impl World {
         // 3. Get the component data from the page.
         let type_id = TypeId::of::<T>();
         let page = self.storage.pages.get_mut(location.page_id as usize)?;
-        let column = page.columns.get_mut(&type_id)?;
+        let column = page.columns.get_mut(&ComponentKey::Rust(type_id))?;
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
 
         vec.get_mut(location.row_index as usize)
@@ -529,7 +289,7 @@ impl World {
                     // but we know the indices are disjoint or the data is disjoint.
                     let world_ptr = self as *mut Self;
                     if let Some(page) = (&mut *world_ptr).storage.pages.get_mut(page_id as usize) {
-                        if let Some(column) = page.columns.get_mut(&type_id) {
+                        if let Some(column) = page.columns.get_mut(&ComponentKey::Rust(type_id)) {
                             if let Some(vec) = column.as_any_mut().downcast_mut::<Vec<T>>() {
                                 // Through the buffer's pointer: a slice over
                                 // the column would invalidate the items taken
@@ -575,7 +335,7 @@ impl World {
         // 4. Return the immutable reference.
         let vec = page
             .columns
-            .get(&type_id)?
+            .get(&ComponentKey::Rust(type_id))?
             .as_any()
             .downcast_ref::<Vec<T>>()?;
         vec.get(location.row_index as usize)
@@ -597,7 +357,7 @@ impl World {
         let domain = self.storage.registry.get_domain(TypeId::of::<T>())?;
         let location = metadata.locations.get(&domain)?;
         let page = self.storage.pages.get(location.page_id as usize)?;
-        let column = page.columns.get(&TypeId::of::<T>())?;
+        let column = page.columns.get(&ComponentKey::of::<T>())?;
         Some(T::clone_from_column(
             column.as_ref(),
             location.row_index as usize,
@@ -627,7 +387,7 @@ impl World {
         let Some(page) = self.storage.pages.get_mut(location.page_id as usize) else {
             return false;
         };
-        let Some(column) = page.columns.get_mut(&TypeId::of::<T>()) else {
+        let Some(column) = page.columns.get_mut(&ComponentKey::of::<T>()) else {
             return false;
         };
         value.set_in_column(column.as_mut(), location.row_index as usize);
@@ -654,7 +414,7 @@ impl World {
             self.bump_domain_epoch(domain);
         }
         for page in self.storage.pages.iter_mut() {
-            if let Some(column) = page.columns.get_mut(&type_id) {
+            if let Some(column) = page.columns.get_mut(&ComponentKey::Rust(type_id)) {
                 if let Some(soa) = column
                     .as_any_mut()
                     .downcast_mut::<crate::ecs::FieldSoaColumn<T>>()

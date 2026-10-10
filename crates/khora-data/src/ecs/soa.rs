@@ -169,6 +169,10 @@ impl<T: SoaLayout> AnyVec for FieldSoaColumn<T> {
             field.swap_remove(index);
         }
     }
+
+    fn len(&self) -> usize {
+        FieldSoaColumn::len(self)
+    }
 }
 
 #[cfg(test)]

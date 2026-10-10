@@ -31,8 +31,9 @@ around.
 ## The storage model
 
 The `World` owns three things: an **entity store** (sparse, generation-checked), a
-**component registry** (typed, inventory-driven), and a set of **archetype pages**
-(contiguous struct-of-arrays storage, one per component combination).
+**component registry** (one vtable per component, filled from `inventory` as the
+world is built), and a set of **archetype pages** (contiguous struct-of-arrays
+storage, one per component combination).
 
 ```mermaid
 graph TD
@@ -99,6 +100,34 @@ it from its current page to the page whose archetype includes `RigidBody`; the
 cost is a bounded, component-by-component memcpy, not a world-wide event. A bitset
 on each page records which slots are live, so iteration walks set bits and indexes
 into the SoA arrays with no per-entity allocation and no per-entity branching.
+
+**A page describes itself.** Its columns are keyed by the component's own
+**`ComponentKey`** — a Rust component's `TypeId`, a compile-time constant — so
+reading a column needs the page and the key, never the `World` that filled it, and
+a component has the same key in every world. The `World` is a way into the
+storage, not what gives it meaning. A column is found in constant time whatever
+the page's width: the key is already a hash, and the page's map keeps it as one
+(`KeyHasher`) instead of hashing it again on every row a query visits.
+
+**The vtable.** The registry holds one `ComponentVTable` per component: its key,
+its one short name (what scenes, the editor and scripts call it), its domain, its
+layout, its provenance, and the operations storage needs on its columns — create
+one, copy a row into another page. Storage calls those operations and never
+learns a column's concrete type; that is what lets a field-SoA column and a plain
+`Vec<T>` sit side by side, and what lets a component exist with no Rust type at
+all.
+
+**Components declared while the engine runs.** A script can declare a component
+that no Rust type stands for. It is registered with its fields and its domain,
+keyed by `ComponentKey::named(name)` — a stable hash of its name, the same in
+every world and every run — and stored in its domain's pages beside the Rust
+components, migrating with its entity exactly as they do. Its columns pack each
+row's fixed-size fields inline and keep strings, arrays and structs beside them,
+copied with the row. Changing its fields (a script reload) rebuilds every row by
+field name: a field keeps its value while its name and kind are unchanged, and
+takes its default otherwise. A name belongs to one component only, Rust or
+declared, and two Rust types with one short name are refused when the world is
+built.
 
 ## Semantic domains
 

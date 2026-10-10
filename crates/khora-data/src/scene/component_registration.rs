@@ -23,6 +23,8 @@ use crate::ecs::AnyVec;
 use crate::ecs::{ComponentProvenance, World};
 use khora_core::ecs::entity::EntityId;
 use std::any::TypeId;
+use std::collections::HashMap;
+use std::sync::OnceLock;
 
 /// Writes row `row` of a page column positionally into the buffer, entity
 /// references through the writer — see
@@ -259,17 +261,42 @@ impl Kept {
     }
 }
 
+/// The registrations, indexed once: the inventory is fixed at link time, so
+/// it is read once and every lookup after that is a map lookup.
+struct Index {
+    by_name: HashMap<&'static str, &'static ComponentRegistration>,
+    by_former_name: HashMap<&'static str, &'static ComponentRegistration>,
+    by_type: HashMap<TypeId, &'static ComponentRegistration>,
+}
+
+fn index() -> &'static Index {
+    static INDEX: OnceLock<Index> = OnceLock::new();
+    INDEX.get_or_init(|| {
+        let mut index = Index {
+            by_name: HashMap::new(),
+            by_former_name: HashMap::new(),
+            by_type: HashMap::new(),
+        };
+        for reg in inventory::iter::<ComponentRegistration> {
+            index.by_name.entry(reg.type_name).or_insert(reg);
+            index.by_type.entry(reg.type_id).or_insert(reg);
+            for former in reg.formerly {
+                index.by_former_name.entry(former).or_insert(reg);
+            }
+        }
+        index
+    })
+}
+
 /// The registration a save names `type_name` by: its current name, or one it
 /// was known by before.
 pub fn registration_named(type_name: &str) -> Option<&'static ComponentRegistration> {
-    inventory::iter::<ComponentRegistration>
-        .into_iter()
-        .find(|reg| reg.type_name == type_name)
-        .or_else(|| {
-            inventory::iter::<ComponentRegistration>
-                .into_iter()
-                .find(|reg| reg.formerly.contains(&type_name))
-        })
+    let index = index();
+    index
+        .by_name
+        .get(type_name)
+        .or_else(|| index.by_former_name.get(type_name))
+        .copied()
 }
 
 /// Looks up the registration of a component by its `type_name`.
@@ -279,9 +306,12 @@ pub fn registration_named(type_name: &str) -> Option<&'static ComponentRegistrat
 /// everything needed to create, patch and drop a component without per-type
 /// code, and a parallel table would be one more thing to keep in step.
 pub fn registration_of(type_name: &str) -> Option<&'static ComponentRegistration> {
-    inventory::iter::<ComponentRegistration>
-        .into_iter()
-        .find(|reg| reg.type_name == type_name)
+    index().by_name.get(type_name).copied()
+}
+
+/// The registration of the Rust component `type_id`, if it has one.
+pub fn registration_for(type_id: TypeId) -> Option<&'static ComponentRegistration> {
+    index().by_type.get(&type_id).copied()
 }
 
 /// Looks up the registered provenance of a component by its `type_name`.
@@ -291,10 +321,7 @@ pub fn registration_of(type_name: &str) -> Option<&'static ComponentRegistration
 /// `#[component(no_serializable)]`, neither of which participates in
 /// serialization, duplication or the "Add Component" menu.
 pub fn provenance_of(type_name: &str) -> Option<ComponentProvenance> {
-    inventory::iter::<ComponentRegistration>
-        .into_iter()
-        .find(|reg| reg.type_name == type_name)
-        .map(|reg| reg.provenance)
+    registration_of(type_name).map(|reg| reg.provenance)
 }
 
 #[cfg(test)]

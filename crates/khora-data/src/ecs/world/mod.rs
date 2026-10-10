@@ -28,20 +28,23 @@ use crate::ecs::page::PageIndex;
 use crate::ecs::planner::QueryPlanner;
 use crate::ecs::storage::StorageManager;
 use crate::ecs::{
-    ComponentBundle, LayoutPolicy, MaterialRef, MeshRef, SemanticDomain, TypeRegistry,
+    ComponentBundle, ComponentKey, LayoutPolicy, MaterialRef, MeshRef, SemanticDomain,
 };
 
 mod compaction;
 mod component_access;
 mod hierarchy;
 mod identity;
+mod migration;
 mod queries;
+mod runtime;
 
 pub use component_access::AddComponentError;
 pub use component_access::RemoveComponentError;
 pub use component_access::SpawnError;
 pub use hierarchy::HierarchyWrite;
 pub(crate) use hierarchy::LoadedHierarchy;
+pub use runtime::{RegisterError, RelayoutReport, RowError, RowMut, RowRef, RuntimeComponentDecl};
 
 /// Simple statistics for a semantic domain.
 #[derive(Debug, Default, Clone, Copy)]
@@ -60,8 +63,6 @@ pub struct World {
     pub(crate) storage: StorageManager,
     /// Manages query planning and caching.
     pub(crate) planner: QueryPlanner,
-    /// Type names, for access-pattern telemetry.
-    type_registry: TypeRegistry,
     /// Monotonic per-domain change counters ("epochs"), indexed by
     /// [`SemanticDomain::index`]. Every entry point that can change a
     /// domain's *semantic* content (spawn/despawn, component add/remove,
@@ -154,8 +155,8 @@ impl World {
         }
     }
 
-    /// Finds or creates a page for the given signature of component `TypeId`s.
-    fn find_or_create_page_for_signature(&mut self, signature: &[TypeId]) -> u32 {
+    /// Finds or creates a page for the given signature (sorted component keys).
+    fn find_or_create_page_for_signature(&mut self, signature: &[ComponentKey]) -> u32 {
         self.storage.find_or_create_page_for_signature(signature)
     }
 
@@ -165,7 +166,6 @@ impl World {
             entities: EntityStore::new(),
             storage: StorageManager::new(ComponentRegistry::default()),
             planner: QueryPlanner::new(),
-            type_registry: TypeRegistry::default(),
             domain_epochs: [0; SemanticDomain::COUNT],
             identity: identity::IdentityCell::default(),
             nowhere: None,
@@ -185,7 +185,7 @@ impl World {
 
         // Auto-register every component that declares its domain via
         // `#[derive(Component)]` + `#[component(domain = ...)]`. Idempotent with the
-        // explicit calls above (same TypeId → same vtable).
+        // explicit calls above (same type, same domain → same id).
         for reg in inventory::iter::<crate::ecs::ComponentDomainRegistration> {
             (reg.register)(&mut world);
         }
@@ -222,22 +222,16 @@ impl World {
     }
 
     /// A snapshot of every registered component's access pattern as
-    /// `(type_name, size_bytes, query_count, rows_scanned)`. The hot path
-    /// samples this at a low rate and publishes it through the observation
-    /// tunnel; the DCC turns it into a read-only layout recommendation.
+    /// `(name, size_bytes, query_count, rows_scanned)`, by the component's one
+    /// short name. The hot path samples this at a low rate and publishes it
+    /// through the observation tunnel; the DCC turns it into a read-only
+    /// layout recommendation.
     pub fn component_access_snapshot(&self) -> Vec<(String, usize, u64, u64)> {
         self.storage
             .registry
             .access_snapshot()
             .into_iter()
-            .map(|(tid, size, qc, rows)| {
-                let name = self
-                    .type_registry
-                    .get_name_of(&tid)
-                    .unwrap_or("<unknown>")
-                    .to_string();
-                (name, size, qc, rows)
-            })
+            .map(|(name, size, qc, rows)| (name.to_string(), size, qc, rows))
             .collect()
     }
 
@@ -382,28 +376,28 @@ impl World {
             .pages
             .get(location.page_id as usize)?
             .columns
-            .get(&type_id)?;
+            .get(&ComponentKey::Rust(type_id))?;
         Some((column.as_ref(), location.row_index as usize))
     }
 
     /// Places a row for `entity` in the page of `signature` (sorted, deduped
-    /// `TypeId`s of registered components), `fill` pushing exactly one value
+    /// keys of registered components), `fill` pushing exactly one value
     /// into each of the page's columns — what a spawn does for a bundle,
     /// for a signature only known at run time. How a load builds a page: one
     /// row per entity, in place, without migrating anything.
     ///
-    /// Returns `false`, touching nothing, when `entity` is not alive, a type
+    /// Returns `false`, touching nothing, when `entity` is not alive, a key
     /// is not registered, or the entity already holds a component of one of
     /// the signature's domains.
     pub(crate) fn place_row(
         &mut self,
         entity: EntityId,
-        signature: &[TypeId],
+        signature: &[ComponentKey],
         fill: impl FnOnce(&mut crate::ecs::page::ComponentPage),
     ) -> bool {
         let mut domains = Vec::with_capacity(signature.len());
-        for type_id in signature {
-            let Some(domain) = self.storage.registry.get_domain(*type_id) else {
+        for key in signature {
+            let Some(domain) = self.storage.registry.domain_of(*key) else {
                 return false;
             };
             if !domains.contains(&domain) {

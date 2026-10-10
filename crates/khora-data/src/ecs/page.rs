@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::{
-    any::{Any, TypeId},
-    collections::HashMap,
-};
+use std::any::Any;
 
 use khora_core::ecs::entity::EntityId;
+
+use crate::ecs::{ColumnMap, ComponentKey};
 
 /// An internal helper trait to perform vector operations on a type-erased `Box<dyn Any>`.
 ///
@@ -32,6 +31,14 @@ pub trait AnyVec: Any + Send + Sync {
 
     /// Performs a `swap_remove` on the underlying column, removing the element at `index`.
     fn swap_remove_any(&mut self, index: usize);
+
+    /// The number of rows the column holds.
+    fn len(&self) -> usize;
+
+    /// Whether the column holds no row.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 // We implement this trait for any `Vec<T>` where T is `'static`.
@@ -46,6 +53,10 @@ impl<T: 'static + Send + Sync> AnyVec for Vec<T> {
 
     fn swap_remove_any(&mut self, index: usize) {
         self.swap_remove(index);
+    }
+
+    fn len(&self) -> usize {
+        Vec::len(self)
     }
 }
 
@@ -70,20 +81,22 @@ pub struct PageIndex {
 /// component type `T`. This SoA layout is the key to our high iteration performance,
 /// as it guarantees contiguous data access for native queries.
 pub struct ComponentPage {
-    /// A map from a component's `TypeId` to its actual storage column.
+    /// A map from a component's [`ComponentKey`] to its actual storage column.
+    /// The key is the component's own, the same in every `World`: the page
+    /// describes itself, and reading a column needs nothing but the page.
     /// The `Box<dyn AnyVec>` is a type-erased `Vec<T>` that knows how to
     /// perform basic vector operations like `swap_remove`.
-    pub(crate) columns: HashMap<TypeId, Box<dyn AnyVec>>,
+    pub(crate) columns: ColumnMap,
 
     /// A list of the `EntityId`s that own the data in each row of this page.
     /// The entity at `entities[i]` corresponds to the components at `columns[...][i]`.
     /// This is crucial for reverse lookups, especially during entity despawning.
     pub(crate) entities: Vec<EntityId>,
 
-    /// The sorted list of `TypeId`s for the components stored in this page.
+    /// The sorted list of the keys of the components stored in this page.
     /// This acts as the page's "signature" for matching with bundles. It is
     /// kept sorted to ensure that the signature is canonical.
-    pub(crate) type_ids: Vec<TypeId>,
+    pub(crate) keys: Vec<ComponentKey>,
 }
 
 impl ComponentPage {

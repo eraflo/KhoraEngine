@@ -14,8 +14,7 @@
 
 //! Internal query planning and caching.
 
-use crate::ecs::QueryPlan;
-use std::any::TypeId;
+use crate::ecs::{ComponentKey, QueryPlan};
 use std::collections::HashMap;
 use std::sync::RwLock;
 
@@ -25,8 +24,8 @@ use std::sync::RwLock;
 /// query signatures to determine the most efficient execution path. It caches
 /// generated `QueryPlan`s to avoid redundant analysis for frequently used queries.
 pub(crate) struct QueryPlanner {
-    /// A thread-safe cache mapping from a set of component `TypeId`s to an optimized `QueryPlan`.
-    pub(crate) query_cache: RwLock<HashMap<Vec<TypeId>, QueryPlan>>,
+    /// A thread-safe cache mapping from a set of component keys to an optimized `QueryPlan`.
+    pub(crate) query_cache: RwLock<HashMap<Vec<ComponentKey>, QueryPlan>>,
 }
 
 impl QueryPlanner {

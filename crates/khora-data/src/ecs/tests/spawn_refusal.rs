@@ -239,7 +239,7 @@ fn a_bundle_naming_a_type_twice_does_not_shift_the_next_entitys_row() {
     for page in &world.storage.pages {
         let positions = page
             .columns
-            .get(&std::any::TypeId::of::<Position>())
+            .get(&crate::ecs::ComponentKey::of::<Position>())
             .and_then(|column| column.as_any().downcast_ref::<Vec<Position>>());
         if let Some(positions) = positions {
             assert_eq!(

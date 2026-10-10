@@ -14,8 +14,8 @@
 
 //! Defines the `QueryPlan`, which pre-calculates the most efficient way to execute an ECS query.
 
-use crate::ecs::SemanticDomain;
-use std::{any::TypeId, collections::HashSet};
+use crate::ecs::{ComponentKey, SemanticDomain};
+use std::collections::HashSet;
 
 /// Defines whether a query can be executed "natively" or requires a transversal join.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,7 +46,7 @@ pub struct QueryPlan {
     /// If Transversal, these are the peer domains that must be joined.
     pub peer_domains: HashSet<SemanticDomain>,
     /// The signature used to find matching pages (driver domain components).
-    pub driver_signature: Vec<TypeId>,
+    pub driver_signature: Vec<ComponentKey>,
 }
 
 impl QueryPlan {
@@ -55,7 +55,7 @@ impl QueryPlan {
         is_transversal: bool,
         driver_domain: Option<SemanticDomain>,
         peer_domains: HashSet<SemanticDomain>,
-        driver_signature: Vec<TypeId>,
+        driver_signature: Vec<ComponentKey>,
     ) -> Self {
         Self {
             mode: if is_transversal {

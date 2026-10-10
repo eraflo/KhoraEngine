@@ -17,7 +17,7 @@
 use khora_core::ecs::entity::EntityId;
 
 use super::{live_metadata, WorldQuery};
-use crate::ecs::{page::ComponentPage, Component, World};
+use crate::ecs::{page::ComponentPage, Component, ComponentKey, World};
 use std::{any::TypeId, marker::PhantomData};
 
 /// A `WorldQuery` filter that matches entities that do NOT have component `T`.
@@ -64,7 +64,7 @@ impl<T: Component> WorldQuery for Without<T> {
         // If ANY page contains the forbidden component, filtering failed.
         for location in metadata.locations.values() {
             let page = &world.storage.pages[location.page_id as usize];
-            if page.type_ids.binary_search(&TypeId::of::<T>()).is_ok() {
+            if page.keys.binary_search(&ComponentKey::of::<T>()).is_ok() {
                 return None;
             }
         }

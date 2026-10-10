@@ -13,12 +13,12 @@
 // limitations under the License.
 
 use std::any::TypeId;
-use std::collections::HashMap;
 
 use crate::ecs::component::Component;
 use crate::ecs::component_registry::ComponentRegistry;
 use crate::ecs::entity::EntityMetadata;
-use crate::ecs::page::{AnyVec, ComponentPage, PageIndex};
+use crate::ecs::page::{ComponentPage, PageIndex};
+use crate::ecs::{ColumnMap, ComponentKey};
 
 /// A trait for any collection of components that can be spawned together as a single unit.
 ///
@@ -39,7 +39,7 @@ pub trait ComponentBundle {
     ///
     /// This is called by the `World` when a new `ComponentPage` needs to be
     /// created for a specific bundle layout.
-    fn create_columns() -> HashMap<TypeId, Box<dyn AnyVec>>;
+    fn create_columns() -> ColumnMap;
 
     /// The first of this bundle's component types `registry` does not know,
     /// by name — a type that would be stored where nothing can find it.
@@ -78,8 +78,8 @@ impl ComponentBundle for () {
         Vec::new()
     }
 
-    fn create_columns() -> HashMap<TypeId, Box<dyn AnyVec>> {
-        HashMap::new()
+    fn create_columns() -> ColumnMap {
+        ColumnMap::default()
     }
 
     fn unregistered(_registry: &ComponentRegistry) -> Option<&'static str> {
@@ -106,11 +106,11 @@ impl<C1: Component> ComponentBundle for C1 {
         vec![TypeId::of::<C1>()]
     }
 
-    fn create_columns() -> HashMap<TypeId, Box<dyn AnyVec>> {
-        let mut columns: HashMap<TypeId, Box<dyn AnyVec>> = HashMap::new();
+    fn create_columns() -> ColumnMap {
+        let mut columns = ColumnMap::default();
         // Route through the component's layout hook (AoS by default, field-SoA
         // when opted in) — the column type is the component's choice.
-        columns.insert(TypeId::of::<C1>(), C1::make_column());
+        columns.insert(ComponentKey::of::<C1>(), C1::make_column());
         columns
     }
 
@@ -134,7 +134,11 @@ impl<C1: Component> ComponentBundle for C1 {
     }
 
     unsafe fn add_to_page(self, page: &mut ComponentPage) {
-        let column = page.columns.get_mut(&TypeId::of::<C1>()).unwrap().as_mut();
+        let column = page
+            .columns
+            .get_mut(&ComponentKey::of::<C1>())
+            .unwrap()
+            .as_mut();
         self.push_into_column(column);
     }
 }
@@ -152,10 +156,10 @@ macro_rules! impl_bundle_tuple {
                 ids
             }
 
-            fn create_columns() -> HashMap<TypeId, Box<dyn AnyVec>> {
-                let mut columns: HashMap<TypeId, Box<dyn AnyVec>> = HashMap::new();
+            fn create_columns() -> ColumnMap {
+                let mut columns = ColumnMap::default();
                 $(
-                    columns.insert(TypeId::of::<$C>(), $C::make_column());
+                    columns.insert(ComponentKey::of::<$C>(), $C::make_column());
                 )*
                 columns
             }
@@ -192,7 +196,7 @@ macro_rules! impl_bundle_tuple {
 
             unsafe fn add_to_page(self, page: &mut ComponentPage) {
                 $(
-                    let column = page.columns.get_mut(&TypeId::of::<$C>()).unwrap().as_mut();
+                    let column = page.columns.get_mut(&ComponentKey::of::<$C>()).unwrap().as_mut();
                     self.$idx.push_into_column(column);
                 )*
             }

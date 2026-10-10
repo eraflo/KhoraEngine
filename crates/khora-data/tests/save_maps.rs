@@ -263,3 +263,30 @@ fn a_save_older_than_a_type_rename_merges_with_a_later_scene_edit() {
         );
     }
 }
+
+/// **A renamed component is found by its current name and by its former one,**
+/// and the world knows it by its current name only — the name its registration
+/// gives it.
+#[test]
+fn a_renamed_component_is_found_by_its_former_name() {
+    let current = khora_data::scene::registration_of("Ward").expect("Ward by its name");
+    assert_eq!(current.type_id, std::any::TypeId::of::<Ward>());
+    let former =
+        khora_data::scene::registration_named("LegacyWard").expect("Ward by its former name");
+    assert!(std::ptr::eq(former, current));
+    let named = khora_data::scene::registration_named("Ward").expect("Ward by its name");
+    assert!(std::ptr::eq(named, current));
+
+    let world = World::new();
+    let key = world
+        .components()
+        .key_named("Ward")
+        .expect("the world names Ward");
+    assert_eq!(key, khora_data::ecs::ComponentKey::of::<Ward>());
+    let vtable = world.components().vtable(key).expect("Ward's vtable");
+    assert_eq!(&*vtable.name, "Ward");
+    assert_eq!(
+        vtable.rust.map(|rust| rust.type_id),
+        Some(std::any::TypeId::of::<Ward>())
+    );
+}

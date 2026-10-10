@@ -14,15 +14,14 @@
 
 //! Defines the `ComponentRegistry` and `SemanticDomain` for the CRPECS.
 
-use crate::ecs::{AnyVec, Component};
+use crate::ecs::column_ops::RustColumns;
+use crate::ecs::{AnyVec, ColumnMap, ColumnOps, Component, ComponentKey, RegisterError};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::{
     any::{self, TypeId},
     collections::HashMap,
 };
-
-/// Type alias for the row copy function pointer.
-type RowCopyFn = unsafe fn(&dyn AnyVec, usize, &mut dyn AnyVec);
 
 /// Defines the semantic domains a component can belong to.
 ///
@@ -165,12 +164,12 @@ pub enum LayoutPolicy {
     },
 }
 
-/// Online access-pattern counters for one component type.
+/// Online access-pattern counters for one component.
 ///
 /// Updated **once per query** (off the per-element hot path), read by the DCC /
 /// telemetry to decide whether a memory-layout repack would pay off. Atomics so
-/// they can be recorded through `&self`. One small entry per component *type*
-/// (not per entity): the memory cost is constant, not proportional to the world.
+/// they can be recorded through `&self`. One small entry per component (not
+/// per entity): the memory cost is constant, not proportional to the world.
 #[derive(Debug, Default)]
 pub struct AccessCounters {
     /// Number of queries that touched this component.
@@ -179,80 +178,221 @@ pub struct AccessCounters {
     pub rows_scanned: AtomicU64,
 }
 
-/// Stores the set of type-erased functions for a registered component.
-#[derive(Debug)]
-struct ComponentVTable {
-    /// The semantic domain this component belongs to.
-    domain: SemanticDomain,
-    /// Current physical layout of this component's columns (default `Soa`).
-    layout: LayoutPolicy,
-    /// `size_of::<T>()` — recorded at registration (where `T` is known) so the
-    /// layout advisor can reason about component "fatness" from a `TypeId` alone.
-    size_bytes: usize,
-    /// Creates a new, empty `Box<dyn AnyVec>` for this component type.
-    create_column: fn() -> Box<dyn AnyVec>,
-    /// Copies a single element from a source column to a destination column.
-    copy_row: RowCopyFn,
+/// The Rust half of a component's identity — absent for a declared component.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RustIdentity {
+    /// The type's `TypeId`.
+    pub type_id: TypeId,
+    /// The type's full path (`std::any::type_name`).
+    pub path: &'static str,
 }
 
-/// A registry that maps component types to their semantic domains.
+/// A component's vtable: what storage knows about it and does with its
+/// columns, registered once per component.
 ///
-/// This is a critical internal part of the `World`. It provides a single source
-/// of truth for determining which semantic group a component's data belongs to,
-/// enabling the `World` to correctly store and retrieve component data from pages.
+/// Pages hold type-erased columns; this table says which domain's pages hold
+/// the component, how its columns are laid out, and — through
+/// [`columns`](Self::columns) — how to create one and move a row between
+/// pages, without storage ever knowing the column's type.
+pub struct ComponentVTable {
+    /// The key a page's columns know it by.
+    pub key: ComponentKey,
+    /// The one name, short: what scenes, the editor and scripts use.
+    pub name: Arc<str>,
+    /// Its Rust type, `None` for a declared component.
+    pub rust: Option<RustIdentity>,
+    /// The semantic domain whose pages hold it.
+    pub domain: SemanticDomain,
+    /// Current physical layout of its columns (default `Soa`).
+    pub layout: LayoutPolicy,
+    /// Who writes it.
+    pub provenance: ComponentProvenance,
+    /// What storage does with its columns.
+    pub columns: Arc<dyn ColumnOps>,
+}
+
+impl std::fmt::Debug for ComponentVTable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ComponentVTable")
+            .field("key", &self.key)
+            .field("name", &self.name)
+            .field("rust", &self.rust)
+            .field("domain", &self.domain)
+            .field("layout", &self.layout)
+            .field("provenance", &self.provenance)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Every component a `World` stores: one vtable each, by key.
+///
+/// A component is found by its key — its `TypeId`, or its declared name's
+/// hash — or by its one short name. Rust components are registered as the
+/// world is built; declared components while it runs.
 #[derive(Debug, Default)]
 pub struct ComponentRegistry {
-    /// Maps a component's `TypeId` to its VTable of operations.
-    mapping: HashMap<TypeId, ComponentVTable>,
-    /// Per-component-type online access-pattern counters (layout adaptation).
-    access: HashMap<TypeId, AccessCounters>,
+    vtables: HashMap<ComponentKey, ComponentVTable>,
+    by_name: HashMap<Arc<str>, ComponentKey>,
+    /// Per-component online access-pattern counters (layout adaptation).
+    access: HashMap<ComponentKey, AccessCounters>,
 }
 
 impl ComponentRegistry {
-    /// Registers a component type with its domain and lifecycle functions.
-    pub(crate) fn register<T: Component>(&mut self, domain: SemanticDomain) {
-        self.mapping.insert(
-            TypeId::of::<T>(),
-            ComponentVTable {
-                domain,
-                layout: LayoutPolicy::Soa,
-                size_bytes: std::mem::size_of::<T>(),
-                // Column creation, row-push, and cross-page row-copy all route
-                // through the `Component` trait hooks, which default to the AoS
-                // `Vec<T>` column and are overridden by field-SoA components.
-                create_column: T::make_column,
-                copy_row: T::copy_row_between,
-            },
-        );
-        // Ensure an access-counter slot exists for this component type.
-        self.access.entry(TypeId::of::<T>()).or_default();
+    /// The vtable of component `key`, if registered.
+    pub fn vtable(&self, key: ComponentKey) -> Option<&ComponentVTable> {
+        self.vtables.get(&key)
     }
 
-    /// Looks up the `SemanticDomain` for a given `TypeId`.
+    /// The key of the component named `name` (its short name), if registered.
+    pub fn key_named(&self, name: &str) -> Option<ComponentKey> {
+        self.by_name.get(name).copied()
+    }
+
+    /// The number of registered components.
+    pub fn len(&self) -> usize {
+        self.vtables.len()
+    }
+
+    /// Whether no component is registered.
+    pub fn is_empty(&self) -> bool {
+        self.vtables.is_empty()
+    }
+
+    /// Every registered component, in no particular order.
+    pub fn iter(&self) -> impl Iterator<Item = &ComponentVTable> {
+        self.vtables.values()
+    }
+
+    /// Registers the Rust component `T` in `domain`. Registering it again in
+    /// the domain it has changes nothing.
+    pub(crate) fn register<T: Component>(
+        &mut self,
+        domain: SemanticDomain,
+        provenance: ComponentProvenance,
+    ) -> Result<ComponentKey, RegisterError> {
+        let key = ComponentKey::of::<T>();
+        let path = any::type_name::<T>();
+        let name = short_name(path);
+        if let Some(existing) = self.vtables.get(&key) {
+            return if existing.domain == domain {
+                Ok(key)
+            } else {
+                Err(RegisterError::DomainConflict {
+                    name,
+                    existing: existing.domain,
+                    requested: domain,
+                })
+            };
+        }
+        if let Some(taken) = self.key_named(&name) {
+            return Err(match self.vtables[&taken].rust {
+                Some(first) => RegisterError::DuplicateName {
+                    name,
+                    first: first.path.to_owned(),
+                    second: path.to_owned(),
+                },
+                None => RegisterError::NameTaken { name },
+            });
+        }
+        self.insert(ComponentVTable {
+            key,
+            name: name.into(),
+            rust: Some(RustIdentity {
+                type_id: TypeId::of::<T>(),
+                path,
+            }),
+            domain,
+            layout: LayoutPolicy::Soa,
+            provenance,
+            columns: Arc::new(RustColumns::<T>::new()),
+        });
+        Ok(key)
+    }
+
+    /// Registers a component declared while the engine runs, under the key of
+    /// its name.
+    pub(crate) fn register_declared(
+        &mut self,
+        name: &str,
+        domain: SemanticDomain,
+        provenance: ComponentProvenance,
+        columns: Arc<dyn ColumnOps>,
+    ) -> Result<ComponentKey, RegisterError> {
+        if let Some(taken) = self.key_named(name) {
+            return Err(match self.vtables[&taken].rust {
+                Some(_) => RegisterError::NameTaken {
+                    name: name.to_owned(),
+                },
+                None => RegisterError::AlreadyRegistered {
+                    name: name.to_owned(),
+                    key: taken,
+                },
+            });
+        }
+        let key = ComponentKey::named(name);
+        if let Some(other) = self.vtables.get(&key) {
+            return Err(RegisterError::KeyCollision {
+                name: name.to_owned(),
+                other: other.name.to_string(),
+            });
+        }
+        self.insert(ComponentVTable {
+            key,
+            name: name.into(),
+            rust: None,
+            domain,
+            layout: LayoutPolicy::Soa,
+            provenance,
+            columns,
+        });
+        Ok(key)
+    }
+
+    fn insert(&mut self, vtable: ComponentVTable) {
+        self.by_name.insert(vtable.name.clone(), vtable.key);
+        self.access.entry(vtable.key).or_default();
+        self.vtables.insert(vtable.key, vtable);
+    }
+
+    /// Replaces a declared component's column operations — its new fields.
+    pub(crate) fn set_columns(&mut self, key: ComponentKey, columns: Arc<dyn ColumnOps>) {
+        if let Some(vtable) = self.vtables.get_mut(&key) {
+            vtable.columns = columns;
+        }
+    }
+
+    /// The domain of component `key`, if registered.
+    pub fn domain_of(&self, key: ComponentKey) -> Option<SemanticDomain> {
+        self.vtables.get(&key).map(|vtable| vtable.domain)
+    }
+
+    /// Looks up the `SemanticDomain` of the Rust component `type_id`.
     pub fn get_domain(&self, type_id: TypeId) -> Option<SemanticDomain> {
-        self.mapping.get(&type_id).map(|vtable| vtable.domain)
+        self.domain_of(ComponentKey::Rust(type_id))
     }
 
     /// Returns the [`LayoutPolicy`] a component is currently stored with.
     pub fn layout_of(&self, type_id: TypeId) -> Option<LayoutPolicy> {
-        self.mapping.get(&type_id).map(|v| v.layout)
+        self.vtables
+            .get(&ComponentKey::Rust(type_id))
+            .map(|vtable| vtable.layout)
     }
 
     /// Sets the intended [`LayoutPolicy`] for a component. The actual repack of
     /// stored columns is performed by the layout-adaptation pass; this only
     /// records the target.
     pub fn set_layout(&mut self, type_id: TypeId, layout: LayoutPolicy) {
-        if let Some(v) = self.mapping.get_mut(&type_id) {
-            v.layout = layout;
+        if let Some(vtable) = self.vtables.get_mut(&ComponentKey::Rust(type_id)) {
+            vtable.layout = layout;
         }
     }
 
     /// Records one access: increments the query count and adds `rows` to the
-    /// scanned total for every component in `type_ids`. Lock-free, called once
+    /// scanned total for every component in `keys`. Lock-free, called once
     /// per query — never per element.
-    pub fn record_access(&self, type_ids: &[TypeId], rows: u64) {
-        for tid in type_ids {
-            if let Some(c) = self.access.get(tid) {
+    pub fn record_access(&self, keys: &[ComponentKey], rows: u64) {
+        for key in keys {
+            if let Some(c) = self.access.get(key) {
                 c.query_count.fetch_add(1, Ordering::Relaxed);
                 c.rows_scanned.fetch_add(rows, Ordering::Relaxed);
             }
@@ -261,7 +401,7 @@ impl ComponentRegistry {
 
     /// Returns `(query_count, rows_scanned)` for a component, if registered.
     pub fn access_stats(&self, type_id: TypeId) -> Option<(u64, u64)> {
-        self.access.get(&type_id).map(|c| {
+        self.access.get(&ComponentKey::Rust(type_id)).map(|c| {
             (
                 c.query_count.load(Ordering::Relaxed),
                 c.rows_scanned.load(Ordering::Relaxed),
@@ -269,56 +409,83 @@ impl ComponentRegistry {
         })
     }
 
-    /// `size_of` for a registered component type, or `None` if unregistered.
+    /// The size of one row of a registered component, or `None` if unregistered.
     pub fn size_of(&self, type_id: TypeId) -> Option<usize> {
-        self.mapping.get(&type_id).map(|v| v.size_bytes)
+        self.vtables
+            .get(&ComponentKey::Rust(type_id))
+            .map(|vtable| vtable.columns.size_bytes())
     }
 
-    /// Snapshot of every registered component's `(type_id, size_bytes,
+    /// Snapshot of every registered component's `(name, size_bytes,
     /// query_count, rows_scanned)` — the input the DCC's layout advisor reads
     /// (read-only; observation tunnel). Allocates a small `Vec` (one entry per
-    /// component *type*), so it is cheap enough to sample off the hot path.
-    pub fn access_snapshot(&self) -> Vec<(TypeId, usize, u64, u64)> {
-        self.access
-            .iter()
-            .filter_map(|(tid, c)| {
-                self.mapping.get(tid).map(|v| {
-                    (
-                        *tid,
-                        v.size_bytes,
-                        c.query_count.load(Ordering::Relaxed),
-                        c.rows_scanned.load(Ordering::Relaxed),
-                    )
-                })
+    /// component), so it is cheap enough to sample off the hot path.
+    pub fn access_snapshot(&self) -> Vec<(Arc<str>, usize, u64, u64)> {
+        self.vtables
+            .values()
+            .filter_map(|vtable| {
+                let c = self.access.get(&vtable.key)?;
+                Some((
+                    vtable.name.clone(),
+                    vtable.columns.size_bytes(),
+                    c.query_count.load(Ordering::Relaxed),
+                    c.rows_scanned.load(Ordering::Relaxed),
+                ))
             })
             .collect()
     }
 
-    /// (Internal) Gets the column constructor function for a given TypeId.
-    pub(crate) fn get_column_constructor(
-        &self,
-        type_id: &TypeId,
-    ) -> Option<fn() -> Box<dyn AnyVec>> {
-        self.mapping.get(type_id).map(|vtable| vtable.create_column)
+    /// (Internal) Creates the empty columns of a signature, through each
+    /// component's vtable.
+    pub(crate) fn create_columns_for_signature(&self, signature: &[ComponentKey]) -> ColumnMap {
+        signature
+            .iter()
+            .map(|key| {
+                let vtable = self
+                    .vtables
+                    .get(key)
+                    .expect("a page signature names registered components only");
+                (*key, vtable.columns.create_column())
+            })
+            .collect()
     }
 
-    /// (Internal) Gets the row copy function for a given TypeId.
-    pub(crate) fn get_row_copier(&self, type_id: &TypeId) -> Option<RowCopyFn> {
-        self.mapping.get(type_id).map(|vtable| vtable.copy_row)
-    }
-
-    /// (Internal) Creates empty columns for a given type signature.
-    pub(crate) fn create_columns_for_signature(
+    /// (Internal) Copies row `row` of `src` onto the end of `dst`, both
+    /// columns of component `key`.
+    pub(crate) fn copy_row(
         &self,
-        signature: &[TypeId],
-    ) -> HashMap<TypeId, Box<dyn AnyVec>> {
-        let mut columns = HashMap::new();
-        for type_id in signature {
-            let constructor = self.get_column_constructor(type_id).unwrap();
-            columns.insert(*type_id, constructor());
+        key: ComponentKey,
+        src: &dyn AnyVec,
+        row: usize,
+        dst: &mut dyn AnyVec,
+    ) {
+        if let Some(vtable) = self.vtables.get(&key) {
+            vtable.columns.copy_row(src, row, dst);
         }
-        columns
     }
+}
+
+/// A type's name with every path stripped, generics included:
+/// `khora_data::ecs::HandleComponent<khora_core::asset::Mesh>` is
+/// `HandleComponent<Mesh>` — for a derived component, the name it was written
+/// with.
+pub(crate) fn short_name(path: &str) -> String {
+    let mut name = String::with_capacity(path.len());
+    let mut token = String::new();
+    let flush = |token: &mut String, name: &mut String| {
+        name.push_str(token.rsplit("::").next().unwrap_or(token));
+        token.clear();
+    };
+    for c in path.chars() {
+        if c.is_alphanumeric() || c == '_' || c == ':' {
+            token.push(c);
+        } else {
+            flush(&mut token, &mut name);
+            name.push(c);
+        }
+    }
+    flush(&mut token, &mut name);
+    name
 }
 
 /// Inventory entry submitted by `#[derive(Component)]` when the type carries a
@@ -328,36 +495,16 @@ impl ComponentRegistry {
 /// with its declared [`SemanticDomain`], so domain assignment is a **property of
 /// the type** (single source of truth) instead of a hand-maintained list in
 /// `World::new`. Collected via [`inventory`] and replayed by `World::new`.
+///
+/// It is the storage half of a Rust component; its persistence half is its
+/// `ComponentRegistration`. The world's [`ComponentRegistry`] joins both into
+/// one [`ComponentVTable`].
 pub struct ComponentDomainRegistration {
     /// Registers the component into `world` (calls `World::register_component`).
     pub register: fn(&mut crate::ecs::World),
 }
 
 inventory::collect!(ComponentDomainRegistration);
-
-/// A registry that provides reflection data, like type names.
-#[derive(Debug, Default)]
-pub struct TypeRegistry {
-    /// Maps a component's `TypeId` to its string name.
-    id_to_name: HashMap<TypeId, String>,
-    /// Maps a component's string name to its `TypeId`.
-    name_to_id: HashMap<String, TypeId>,
-}
-
-impl TypeRegistry {
-    /// Registers a component type, storing its name and TypeId.
-    pub(crate) fn register<T: Component>(&mut self) {
-        let type_id = TypeId::of::<T>();
-        let type_name = any::type_name::<T>().to_string();
-        self.id_to_name.insert(type_id, type_name.clone());
-        self.name_to_id.insert(type_name, type_id);
-    }
-
-    /// Gets the string name for a given TypeId.
-    pub(crate) fn get_name_of(&self, type_id: &TypeId) -> Option<&str> {
-        self.id_to_name.get(type_id).map(|s| s.as_str())
-    }
-}
 
 #[cfg(test)]
 mod provenance_tests {

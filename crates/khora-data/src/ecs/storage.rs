@@ -15,9 +15,10 @@
 //! Internal component storage and page management.
 
 use crate::ecs::component_registry::ComponentRegistry;
-use crate::ecs::page::{AnyVec, ComponentPage};
-use crate::ecs::{ComponentBundle, DomainBitset, DomainStats, SemanticDomain};
-use std::any::TypeId;
+use crate::ecs::page::ComponentPage;
+use crate::ecs::{
+    ColumnMap, ComponentBundle, ComponentKey, DomainBitset, DomainStats, SemanticDomain,
+};
 use std::collections::{HashMap, HashSet};
 
 /// Internal manager for component pages, domain bitsets, and archetype caching.
@@ -28,9 +29,9 @@ use std::collections::{HashMap, HashSet};
 pub(crate) struct StorageManager {
     /// All allocated component pages, grouped by their component signatures.
     pub(crate) pages: Vec<ComponentPage>,
-    /// A cache mapping from a component type signature (list of `TypeId`s) to its page index.
+    /// A cache mapping from a page signature (sorted component keys) to its page index.
     /// This enables $O(1)$ lookup for existing archetypes.
-    pub(crate) archetype_map: HashMap<Vec<TypeId>, u32>,
+    pub(crate) archetype_map: HashMap<Vec<ComponentKey>, u32>,
     /// The registry defining which component types belong to which semantic domains.
     pub(crate) registry: ComponentRegistry,
     /// Bitsets for each domain where the $i$-th bit indicates if entity $i$ has components in that domain.
@@ -68,23 +69,19 @@ impl StorageManager {
         }
     }
 
-    /// Allocates a page slot for `type_ids` with the given `columns`: recycles a
+    /// Allocates a page slot for `keys` with the given `columns`: recycles a
     /// freed slot when one is available (no `page_id` churn) and otherwise
     /// appends. Updates `archetype_map` and the domain page-count. Returns the
     /// page id.
-    fn alloc_page(
-        &mut self,
-        type_ids: Vec<TypeId>,
-        columns: HashMap<TypeId, Box<dyn AnyVec>>,
-    ) -> u32 {
-        if let Some(first_type) = type_ids.first() {
-            if let Some(domain) = self.registry.get_domain(*first_type) {
+    fn alloc_page(&mut self, keys: Vec<ComponentKey>, columns: ColumnMap) -> u32 {
+        if let Some(first) = keys.first() {
+            if let Some(domain) = self.registry.domain_of(*first) {
                 self.domain_stats.entry(domain).or_default().page_count += 1;
             }
         }
 
         let page = ComponentPage {
-            type_ids: type_ids.clone(),
+            keys: keys.clone(),
             columns,
             entities: Vec::new(),
         };
@@ -99,7 +96,7 @@ impl StorageManager {
             id
         };
 
-        self.archetype_map.insert(type_ids, page_id);
+        self.archetype_map.insert(keys, page_id);
         page_id
     }
 
@@ -116,15 +113,15 @@ impl StorageManager {
             return;
         }
 
-        let type_ids = page.type_ids.clone();
-        if let Some(first_type) = type_ids.first() {
-            if let Some(domain) = self.registry.get_domain(*first_type) {
+        let keys = page.keys.clone();
+        if let Some(first) = keys.first() {
+            if let Some(domain) = self.registry.domain_of(*first) {
                 if let Some(stats) = self.domain_stats.get_mut(&domain) {
                     stats.page_count = stats.page_count.saturating_sub(1);
                 }
             }
         }
-        self.archetype_map.remove(&type_ids);
+        self.archetype_map.remove(&keys);
         self.free_pages.push(page_id);
     }
 
@@ -134,22 +131,25 @@ impl StorageManager {
     /// exact signature of the bundle already exists, its index is returned immediately.
     /// Otherwise, a new page is allocated and the cache is updated.
     pub fn find_or_create_page_for_bundle<B: ComponentBundle>(&mut self) -> u32 {
-        let bundle_type_ids = B::type_ids();
+        // A bundle's components are Rust ones, keyed by their `TypeId`s — in
+        // the same order, so the signature stays sorted.
+        let bundle_keys: Vec<ComponentKey> =
+            B::type_ids().into_iter().map(ComponentKey::Rust).collect();
 
         // High-performance $O(1)$ lookup via archetype map.
-        if let Some(&page_id) = self.archetype_map.get(&bundle_type_ids) {
+        if let Some(&page_id) = self.archetype_map.get(&bundle_keys) {
             return page_id;
         }
 
         // Cache miss: allocate (recycling a freed slot when possible).
-        self.alloc_page(bundle_type_ids, B::create_columns())
+        self.alloc_page(bundle_keys, B::create_columns())
     }
 
-    /// Finds or creates a page for a specific type signature (sorted TypeIds).
+    /// Finds or creates a page for a specific signature (sorted component keys).
     ///
     /// This is used during entity migrations or when adding/removing components
-    /// where the bundle type is only known dynamically via a slice of `TypeId`s.
-    pub fn find_or_create_page_for_signature(&mut self, signature: &[TypeId]) -> u32 {
+    /// where the components are only known dynamically, by key.
+    pub fn find_or_create_page_for_signature(&mut self, signature: &[ComponentKey]) -> u32 {
         // High-performance $O(1)$ lookup via archetype map.
         if let Some(&page_id) = self.archetype_map.get(signature) {
             return page_id;

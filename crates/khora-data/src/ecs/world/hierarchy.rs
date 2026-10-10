@@ -30,7 +30,7 @@ use khora_core::ecs::entity::EntityId;
 
 use super::World;
 use crate::ecs::page::ComponentPage;
-use crate::ecs::{Children, Component, Parent};
+use crate::ecs::{Children, Component, ComponentKey, Parent};
 
 /// What a by-name write does to a component — see
 /// [`World::write_hierarchy_by_name`].
@@ -304,9 +304,13 @@ impl World {
             signature.push(children_type);
             signature.sort();
         }
-        self.place_row(entity, &signature, |page| {
+        let keys: Vec<ComponentKey> = signature.into_iter().map(ComponentKey::Rust).collect();
+        self.place_row(entity, &keys, |page| {
             fill(page);
-            if let (Some(list), Some(column)) = (list, page.columns.get_mut(&children_type)) {
+            if let (Some(list), Some(column)) = (
+                list,
+                page.columns.get_mut(&ComponentKey::Rust(children_type)),
+            ) {
                 Children(list).push_into_column(column.as_mut());
             }
         })

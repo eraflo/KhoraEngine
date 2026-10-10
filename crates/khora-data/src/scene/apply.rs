@@ -28,6 +28,8 @@
 //! load leaves no orphan row behind for compaction.
 
 use std::any::TypeId;
+
+use crate::ecs::ComponentKey;
 use std::collections::{HashMap, HashSet};
 
 use khora_core::ecs::entity::EntityId;
@@ -461,7 +463,9 @@ impl Prepared {
                 let placed =
                     world.place_loaded_row(entity, &page.signature, &mut hierarchy, |target| {
                         for (type_id, value) in values {
-                            if let Some(column) = target.columns.get_mut(&type_id) {
+                            if let Some(column) =
+                                target.columns.get_mut(&ComponentKey::Rust(type_id))
+                            {
                                 value.push_into(column.as_mut());
                             }
                         }

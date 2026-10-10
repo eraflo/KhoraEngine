@@ -33,6 +33,7 @@ use khora_data::scene::{
 };
 
 mod decimals;
+mod declared_components;
 mod failures;
 mod hierarchy_and_identity;
 mod hostile_records;

@@ -22,6 +22,8 @@
 //! reaches the record.
 
 use std::any::TypeId;
+
+use crate::ecs::ComponentKey;
 use std::collections::{HashMap, HashSet};
 
 use khora_core::ecs::entity::EntityId;
@@ -227,9 +229,13 @@ pub(super) fn capture_pages<V>(
 
     for (page_id, page) in world.storage.pages.iter().enumerate() {
         let mut saved: Vec<&'static ComponentRegistration> = page
-            .type_ids
+            .keys
             .iter()
-            .filter_map(|type_id| registrations.get(type_id).copied())
+            // A declared component has no registration: not saved here.
+            .filter_map(|key| match key {
+                ComponentKey::Rust(type_id) => registrations.get(type_id).copied(),
+                ComponentKey::Declared(_) => None,
+            })
             .collect();
         if saved.is_empty() {
             continue;
@@ -264,7 +270,7 @@ pub(super) fn capture_pages<V>(
             record.rows.push(inside.ids[&entity]);
             for (slot, reg) in columns.iter().enumerate() {
                 // In the signature, so in the columns: a page keeps both in step.
-                let Some(column) = page.columns.get(&reg.type_id) else {
+                let Some(column) = page.columns.get(&ComponentKey::Rust(reg.type_id)) else {
                     return Err(SaveError::Component {
                         component: reg.type_name.to_owned(),
                         error: RecordError("its page has no column for it".to_owned()),

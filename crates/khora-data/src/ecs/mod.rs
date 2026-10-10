@@ -26,13 +26,16 @@
 
 mod bitset;
 mod bundle;
+mod column_ops;
 pub mod component;
+mod component_key;
 mod component_registry;
 mod components;
 mod entity;
 mod entity_store;
 pub mod layout;
 pub mod maintenance;
+mod packed;
 mod page;
 mod planner;
 mod query;
@@ -46,11 +49,14 @@ mod world_ext;
 
 pub use bitset::DomainBitset;
 pub use bundle::ComponentBundle;
+pub use column_ops::ColumnOps;
 pub use component::Component;
+pub use component_key::{ColumnMap, ComponentKey, KeyHasher};
 pub use component_registry::*;
 pub use components::*;
 pub use entity::*;
 pub use maintenance::EcsMaintenance;
+pub use packed::{FieldError, FieldKind, LayoutError, PackedField, PackedLayout};
 pub use page::*;
 pub use query::*;
 pub use query_plan::{QueryMode, QueryPlan};

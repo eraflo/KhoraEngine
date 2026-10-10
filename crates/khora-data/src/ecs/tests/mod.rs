@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+mod component_keys;
+mod declared_names;
 mod entity_count;
 mod entity_count_unwind;
 mod hierarchy;
@@ -19,6 +21,9 @@ mod hierarchy_writers;
 mod query_mut_aliasing;
 mod query_mut_writes;
 mod query_plan_after_registration;
+mod relayout;
+mod runtime_components;
+mod runtime_rows;
 mod spawn_refusal;
 
 use crate::ecs::query::Without;

@@ -377,6 +377,130 @@ fn component_domain_registration_fields(x: &khora_data::ecs::ComponentDomainRegi
     let _ = (&x.register,);
 }
 
+fn rust_identity_fields(x: &khora_data::ecs::RustIdentity) {
+    let _ = (&x.type_id, &x.path);
+}
+
+fn component_vtable_fields(x: &khora_data::ecs::ComponentVTable) {
+    let _ = (
+        &x.key,
+        &x.name,
+        &x.rust,
+        &x.domain,
+        &x.layout,
+        &x.provenance,
+        &x.columns,
+    );
+}
+
+fn component_key_variants(x: &khora_data::ecs::ComponentKey) {
+    match x {
+        khora_data::ecs::ComponentKey::Rust(type_id) => {
+            let _: &std::any::TypeId = type_id;
+        }
+        khora_data::ecs::ComponentKey::Declared(hash) => {
+            let _: &u128 = hash;
+        }
+    }
+}
+
+fn column_ops_trait_items<O: khora_data::ecs::ColumnOps + ?Sized>() {
+    let _ = O::create_column;
+    let _ = O::copy_row;
+    let _ = O::size_bytes;
+    let _ = O::packed;
+}
+
+fn field_kind_variants(x: &khora_data::ecs::FieldKind) {
+    match x {
+        khora_data::ecs::FieldKind::Bool => {}
+        khora_data::ecs::FieldKind::Int => {}
+        khora_data::ecs::FieldKind::Float => {}
+        khora_data::ecs::FieldKind::Vec2 => {}
+        khora_data::ecs::FieldKind::Vec3 => {}
+        khora_data::ecs::FieldKind::Vec4 => {}
+        khora_data::ecs::FieldKind::Quat => {}
+        khora_data::ecs::FieldKind::Color => {}
+        khora_data::ecs::FieldKind::Entity => {}
+        khora_data::ecs::FieldKind::Value => {}
+    }
+}
+
+fn packed_field_fields(x: &khora_data::ecs::PackedField) {
+    let _ = (&x.name, &x.kind, &x.default);
+}
+
+fn field_error_fields(x: &khora_data::ecs::FieldError) {
+    let _ = (&x.field, &x.expected, &x.found);
+}
+
+fn runtime_component_decl_fields(x: &khora_data::ecs::RuntimeComponentDecl) {
+    let _ = (&x.name, &x.domain, &x.provenance, &x.layout);
+}
+
+fn relayout_report_fields(x: &khora_data::ecs::RelayoutReport) {
+    let _ = (&x.dropped, &x.defaulted);
+}
+
+fn register_error_variants(x: &khora_data::ecs::RegisterError) {
+    match x {
+        khora_data::ecs::RegisterError::NameTaken { name } => {
+            let _: &String = name;
+        }
+        khora_data::ecs::RegisterError::AlreadyRegistered { name, key } => {
+            let _: (&String, &khora_data::ecs::ComponentKey) = (name, key);
+        }
+        khora_data::ecs::RegisterError::DuplicateName {
+            name,
+            first,
+            second,
+        } => {
+            let _: (&String, &String, &String) = (name, first, second);
+        }
+        khora_data::ecs::RegisterError::DomainConflict {
+            name,
+            existing,
+            requested,
+        } => {
+            let _: (
+                &String,
+                &khora_data::ecs::SemanticDomain,
+                &khora_data::ecs::SemanticDomain,
+            ) = (name, existing, requested);
+        }
+        khora_data::ecs::RegisterError::NotRuntime { name } => {
+            let _: &String = name;
+        }
+        khora_data::ecs::RegisterError::KeyCollision { name, other } => {
+            let _: (&String, &String) = (name, other);
+        }
+        khora_data::ecs::RegisterError::Unknown(key) => {
+            let _: &khora_data::ecs::ComponentKey = key;
+        }
+    }
+}
+
+fn row_error_variants(x: &khora_data::ecs::RowError) {
+    match x {
+        khora_data::ecs::RowError::NoSuchEntity(entity) => {
+            let _: &khora_core::ecs::entity::EntityId = entity;
+        }
+        khora_data::ecs::RowError::Unknown(key) => {
+            let _: &khora_data::ecs::ComponentKey = key;
+        }
+        khora_data::ecs::RowError::AlreadyAttached => {}
+        khora_data::ecs::RowError::Field(error) => {
+            let _: &khora_data::ecs::FieldError = error;
+        }
+        khora_data::ecs::RowError::UnknownField { field } => {
+            let _: &String = field;
+        }
+        khora_data::ecs::RowError::NotFields { found } => {
+            let _: &String = found;
+        }
+    }
+}
+
 fn add_component_error_variants(x: &khora_data::ecs::AddComponentError) {
     match x {
         khora_data::ecs::AddComponentError::EntityNotFound => {}
@@ -1292,9 +1416,74 @@ fn module_ecs_paths_still_resolve() {
     let _ = type_name::<khora_data::ecs::ComponentDomainRegistration>();
     let _ =
         component_domain_registration_fields as fn(&khora_data::ecs::ComponentDomainRegistration);
-    let _ = type_name::<khora_data::ecs::TypeRegistry>();
-    is_debug::<khora_data::ecs::TypeRegistry>();
-    is_default::<khora_data::ecs::TypeRegistry>();
+    let _ = type_name::<khora_data::ecs::ComponentKey>();
+    let _ = component_key_variants as fn(&khora_data::ecs::ComponentKey);
+    let _ = khora_data::ecs::ComponentKey::of::<khora_data::ecs::Transform>;
+    const _: khora_data::ecs::ComponentKey = khora_data::ecs::ComponentKey::named("Pinned");
+    is_clone::<khora_data::ecs::ComponentKey>();
+    is_copy::<khora_data::ecs::ComponentKey>();
+    is_debug::<khora_data::ecs::ComponentKey>();
+    is_eq::<khora_data::ecs::ComponentKey>();
+    is_hash::<khora_data::ecs::ComponentKey>();
+    is_partial_eq::<khora_data::ecs::ComponentKey>();
+    let _ = type_name::<khora_data::ecs::RustIdentity>();
+    let _ = rust_identity_fields as fn(&khora_data::ecs::RustIdentity);
+    let _ = type_name::<khora_data::ecs::ComponentVTable>();
+    let _ = component_vtable_fields as fn(&khora_data::ecs::ComponentVTable);
+    let _ = khora_data::ecs::ComponentRegistry::vtable;
+    let _ = khora_data::ecs::ComponentRegistry::key_named;
+    let _ = khora_data::ecs::ComponentRegistry::domain_of;
+    let _ = khora_data::ecs::ComponentRegistry::len;
+    let _ = khora_data::ecs::ComponentRegistry::is_empty;
+    let _ = khora_data::ecs::ComponentRegistry::iter;
+    let _ = type_name::<dyn khora_data::ecs::ColumnOps>();
+    column_ops_trait_items::<dyn khora_data::ecs::ColumnOps>();
+    let _ = type_name::<khora_data::ecs::FieldKind>();
+    let _ = field_kind_variants as fn(&khora_data::ecs::FieldKind);
+    is_clone::<khora_data::ecs::FieldKind>();
+    is_copy::<khora_data::ecs::FieldKind>();
+    is_debug::<khora_data::ecs::FieldKind>();
+    is_eq::<khora_data::ecs::FieldKind>();
+    is_partial_eq::<khora_data::ecs::FieldKind>();
+    let _ = type_name::<khora_data::ecs::PackedField>();
+    let _ = packed_field_fields as fn(&khora_data::ecs::PackedField);
+    is_clone::<khora_data::ecs::PackedField>();
+    is_debug::<khora_data::ecs::PackedField>();
+    let _ = type_name::<khora_data::ecs::PackedLayout>();
+    let _ = khora_data::ecs::PackedLayout::new;
+    let _ = khora_data::ecs::PackedLayout::fields;
+    let _ = khora_data::ecs::PackedLayout::slot_of;
+    is_clone::<khora_data::ecs::PackedLayout>();
+    is_debug::<khora_data::ecs::PackedLayout>();
+    let _ = type_name::<khora_data::ecs::LayoutError>();
+    is_debug::<khora_data::ecs::LayoutError>();
+    let _ = type_name::<khora_data::ecs::FieldError>();
+    let _ = field_error_fields as fn(&khora_data::ecs::FieldError);
+    is_debug::<khora_data::ecs::FieldError>();
+    is_partial_eq::<khora_data::ecs::FieldError>();
+    let _ = type_name::<khora_data::ecs::RuntimeComponentDecl>();
+    let _ = runtime_component_decl_fields as fn(&khora_data::ecs::RuntimeComponentDecl);
+    let _ = type_name::<khora_data::ecs::RelayoutReport>();
+    let _ = relayout_report_fields as fn(&khora_data::ecs::RelayoutReport);
+    is_debug::<khora_data::ecs::RelayoutReport>();
+    is_partial_eq::<khora_data::ecs::RelayoutReport>();
+    let _ = type_name::<khora_data::ecs::RegisterError>();
+    let _ = register_error_variants as fn(&khora_data::ecs::RegisterError);
+    is_debug::<khora_data::ecs::RegisterError>();
+    is_partial_eq::<khora_data::ecs::RegisterError>();
+    let _ = type_name::<khora_data::ecs::RowError>();
+    let _ = row_error_variants as fn(&khora_data::ecs::RowError);
+    is_debug::<khora_data::ecs::RowError>();
+    is_partial_eq::<khora_data::ecs::RowError>();
+    let _ = type_name::<khora_data::ecs::RowRef<'static>>();
+    let _ = khora_data::ecs::RowRef::key;
+    let _ = khora_data::ecs::RowRef::vtable;
+    let _ = khora_data::ecs::RowRef::field;
+    let _ = type_name::<khora_data::ecs::RowMut<'static>>();
+    let _ = khora_data::ecs::RowMut::key;
+    let _ = khora_data::ecs::RowMut::vtable;
+    let _ = khora_data::ecs::RowMut::field;
+    let _ = khora_data::ecs::RowMut::set_field;
     let _ = type_name::<khora_data::ecs::AddComponentError>();
     let _ = add_component_error_variants as fn(&khora_data::ecs::AddComponentError);
     is_debug::<khora_data::ecs::AddComponentError>();
@@ -1351,6 +1540,14 @@ fn module_ecs_paths_still_resolve() {
     let _ = khora_data::ecs::World::clone_component::<khora_data::ecs::Transform>;
     let _ = khora_data::ecs::World::set_component::<khora_data::ecs::Transform>;
     let _ = khora_data::ecs::World::iter_entities;
+    let _ = khora_data::ecs::World::components;
+    let _ = khora_data::ecs::World::try_register_component::<khora_data::ecs::Transform>;
+    let _ = khora_data::ecs::World::register_runtime_component;
+    let _ = khora_data::ecs::World::relayout;
+    let _ = khora_data::ecs::World::add_runtime_component;
+    let _ = khora_data::ecs::World::remove_component_by_key;
+    let _ = khora_data::ecs::World::row;
+    let _ = khora_data::ecs::World::row_mut;
     is_ui_layout_view::<khora_data::ecs::World>();
     is_default::<khora_data::ecs::World>();
 }

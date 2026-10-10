@@ -19,7 +19,7 @@ use khora_core::ecs::entity::EntityId;
 use super::WorldQuery;
 use crate::ecs::{
     page::{AnyVec, ComponentPage},
-    FieldSoaColumn, SoaLayout, World,
+    ComponentKey, FieldSoaColumn, SoaLayout, World,
 };
 use std::{any::TypeId, marker::PhantomData};
 
@@ -44,7 +44,7 @@ impl<T: SoaLayout> WorldQuery for Soa<T> {
 
     unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
         let page = &*page_ptr;
-        let column: &dyn AnyVec = &**page.columns.get(&TypeId::of::<T>()).unwrap();
+        let column: &dyn AnyVec = &**page.columns.get(&ComponentKey::of::<T>()).unwrap();
         let soa = column
             .as_any()
             .downcast_ref::<FieldSoaColumn<T>>()

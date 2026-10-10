@@ -87,9 +87,9 @@ impl World {
             // Iteration order for every domain this page participates in changed.
             let mut domains: Vec<SemanticDomain> = {
                 let page = &self.storage.pages[page_id as usize];
-                page.type_ids
+                page.keys
                     .iter()
-                    .filter_map(|t| self.storage.registry.get_domain(*t))
+                    .filter_map(|key| self.storage.registry.domain_of(*key))
                     .collect()
             };
             domains.sort_by_key(|d| d.index());

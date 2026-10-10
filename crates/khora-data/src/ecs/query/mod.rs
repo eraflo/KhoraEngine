@@ -17,7 +17,7 @@ use khora_core::ecs::entity::EntityId;
 use crate::ecs::{
     entity::EntityMetadata,
     page::{AnyVec, ComponentPage, PageIndex},
-    Component, SemanticDomain, World,
+    Component, ComponentKey, SemanticDomain, World,
 };
 use std::any::TypeId;
 
@@ -91,8 +91,8 @@ fn has_foreign_excluded(
     filters.iter().any(|(domain, type_id)| {
         meta.locations.get(domain).is_some_and(|loc| {
             world.storage.pages[loc.page_id as usize]
-                .type_ids
-                .binary_search(type_id)
+                .keys
+                .binary_search(&ComponentKey::Rust(*type_id))
                 .is_ok()
         })
     })
@@ -206,7 +206,7 @@ impl<T: Component> WorldQuery for &T {
 
         // 2. Get the type-erased column for the component `T`.
         // We can unwrap because the caller guarantees the column exists.
-        let column: &dyn AnyVec = &**page.columns.get(&TypeId::of::<T>()).unwrap();
+        let column: &dyn AnyVec = &**page.columns.get(&ComponentKey::of::<T>()).unwrap();
 
         // 3. Downcast the column to its concrete `Vec<T>` type.
         // First, cast to `&dyn Any`, then `downcast_ref`.
@@ -229,7 +229,7 @@ impl<T: Component> WorldQuery for &T {
 
         // Get the page for the entity.
         let page = &world.storage.pages[location.page_id as usize];
-        let column = page.columns.get(&TypeId::of::<T>())?;
+        let column = page.columns.get(&ComponentKey::of::<T>())?;
         let vec = column.as_any().downcast_ref::<Vec<T>>()?;
         vec.get(location.row_index as usize)
     }
@@ -259,7 +259,7 @@ impl<T: Component> WorldQuery for &mut T {
         // UNSAFE: We cast the const pointer to a mutable one.
         // This is safe ONLY if the query engine guarantees no other access.
         let page = &mut *(page_ptr as *mut ComponentPage);
-        let column = page.columns.get_mut(&TypeId::of::<T>()).unwrap();
+        let column = page.columns.get_mut(&ComponentKey::of::<T>()).unwrap();
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>().unwrap();
         debug_assert!(row_index < vec.len());
         // Through the buffer's pointer, never a slice: `get_unchecked_mut`
@@ -276,7 +276,7 @@ impl<T: Component> WorldQuery for &mut T {
         let world_mut = &mut *(world as *mut World);
 
         let page = &mut world_mut.storage.pages[location.page_id as usize];
-        let column = page.columns.get_mut(&TypeId::of::<T>())?;
+        let column = page.columns.get_mut(&ComponentKey::of::<T>())?;
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
         column_item(vec, location.row_index as usize)
     }
@@ -297,7 +297,7 @@ impl<T: Component> WorldQuery for Option<&T> {
 
     unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
         let page = &*page_ptr;
-        let column = page.columns.get(&TypeId::of::<T>())?;
+        let column = page.columns.get(&ComponentKey::of::<T>())?;
         let vec = column.as_any().downcast_ref::<Vec<T>>()?;
         vec.get(row_index)
     }
@@ -317,7 +317,7 @@ impl<T: Component> WorldQuery for Option<&T> {
         let page = &world.storage.pages[location.page_id as usize];
         Some(
             page.columns
-                .get(&TypeId::of::<T>())
+                .get(&ComponentKey::of::<T>())
                 .and_then(|column| column.as_any().downcast_ref::<Vec<T>>())
                 .and_then(|vec| vec.get(location.row_index as usize)),
         )
@@ -342,7 +342,7 @@ impl<T: Component> WorldQuery for Option<&mut T> {
 
     unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
         let page = &mut *(page_ptr as *mut ComponentPage);
-        let column = page.columns.get_mut(&TypeId::of::<T>())?;
+        let column = page.columns.get_mut(&ComponentKey::of::<T>())?;
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
         column_item(vec, row_index)
     }
@@ -362,7 +362,7 @@ impl<T: Component> WorldQuery for Option<&mut T> {
         let page = &mut world_mut.storage.pages[location.page_id as usize];
         Some(
             page.columns
-                .get_mut(&TypeId::of::<T>())
+                .get_mut(&ComponentKey::of::<T>())
                 .and_then(|column| column.as_any_mut().downcast_mut::<Vec<T>>())
                 .and_then(|vec| column_item(vec, location.row_index as usize)),
         )

@@ -42,6 +42,16 @@ snapshot, atomic loads, game saves and prefab links.
   column — a slice reborrow invalidates items already handed out (Miri, Stacked Borrows).
 - **Spawning:** `spawn` panics on an unregistered component type or a bundle naming one twice; `try_spawn`
   returns `SpawnError`. Registering a component clears the query-plan cache.
+- **Keys, not World-local ids.** Page columns are keyed by `ComponentKey` (`Rust(TypeId)` | `Declared(u128)`,
+  `ComponentKey::named` = FNV-1a 128 of the name) in a `ColumnMap` (`KeyHasher`, no second hash). A page must
+  stay readable without its `World` and a component keep one key across worlds — never key storage by an id a
+  registry assigns. One `ComponentVTable` per component (`component_registry.rs`): key, short name, domain,
+  layout, provenance, `columns: Arc<dyn ColumnOps>` (`RustColumns<T>` zero-sized; `PackedColumns` for a
+  declared component). Short names are unique across Rust and declared components.
+- **Declared components** (`World::register_runtime_component`, `relayout`, `add_runtime_component`,
+  `row`/`row_mut`, `remove_component_by_key`; `ecs/packed/`, `ecs/world/runtime.rs`) live in their domain's
+  pages and migrate by key (`ecs/world/migration.rs`). Scenes, snapshots and game saves skip them until they
+  get a registration (Ergon spec 08).
 - Verify `unsafe` query/storage changes under Miri: `cargo +nightly miri test -p khora-data --lib -- <filter>`.
 
 ## Persistence
