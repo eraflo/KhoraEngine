@@ -16,6 +16,7 @@
 
 use std::marker::PhantomData;
 
+pub use khora_core::script::ColumnSnapshot;
 use khora_core::script::{FieldValueError, ScriptValue};
 
 use crate::ecs::packed::PackedLayout;
@@ -70,20 +71,6 @@ pub trait ColumnOps: Send + Sync {
 
     /// A copy of the column, readable row by row without the `World`.
     fn snapshot(&self, column: &dyn AnyVec) -> Box<dyn ColumnSnapshot>;
-}
-
-/// A copy of one component column, read row by row as script values.
-pub trait ColumnSnapshot: Send + Sync {
-    /// The number of rows.
-    fn len(&self) -> usize;
-
-    /// Whether the copy holds no row.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Row `row`, as a `ScriptValue::Struct` of the fields a script reaches.
-    fn read(&self, row: usize) -> ScriptValue;
 }
 
 /// Why a typed write to a component's fields was refused.

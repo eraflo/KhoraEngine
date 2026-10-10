@@ -188,6 +188,10 @@ impl Agent for ScriptAgent {
         // queue) because the deck lent below borrows the context exclusively.
         let reloads = context.locked::<Channel<ScriptReload>>().cloned();
         let events = context.locked::<Channel<ScriptEvent>>().cloned();
+        // What the loaded programs read, written by the lane for the flow.
+        let catalog = context
+            .locked::<Arc<khora_core::script::ScriptCatalog>>()
+            .cloned();
 
         let mut ctx = LaneContext::new();
         // `view` is borrowed from the LaneBus, read-only for the frame.
@@ -204,6 +208,9 @@ impl Agent for ScriptAgent {
         }
         if let Some(events) = &events {
             ctx.insert_ref(events);
+        }
+        if let Some(catalog) = &catalog {
+            ctx.insert_ref(catalog);
         }
 
         let Some(lane) = self.lanes.get(self.current_lane) else {
@@ -240,8 +247,8 @@ impl Agent for ScriptAgent {
             // behavior that faults is the thing that has actually stopped.
             is_stalled: report.faulted > 0,
             message: format!(
-                "{} ran, {} deferred, {} faulted",
-                report.completed, report.deferred, report.faulted
+                "{} ran, {} deferred, {} faulted, {} component rows projected",
+                report.completed, report.deferred, report.faulted, report.projected_rows
             ),
         }
     }
@@ -269,6 +276,8 @@ impl Agent for ScriptAgent {
             .locking::<Channel<ScriptReload>>()
             .locking::<Channel<ScriptEvent>>()
             .locking::<Arc<Mutex<ScriptRuntime>>>()
+            // Written by the lane: the read set the flow projects next frame.
+            .locking::<Arc<khora_core::script::ScriptCatalog>>()
     }
 
     fn execution_timing(&self) -> ExecutionTiming {
@@ -319,6 +328,7 @@ mod tests {
             resumed: false,
             delta_seconds: 0.0,
             input: Default::default(),
+            components: Default::default(),
             programs: vec![ScriptProgram {
                 module: "ai/guard.erg".to_owned(),
                 behavior: "Guard".to_owned(),

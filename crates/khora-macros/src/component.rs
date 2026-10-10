@@ -572,6 +572,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
             }
         };
 
+    let script_default = crate::script_fields::script_default(name);
     let schema_cell = format_ident!("__KHORA_SCHEMA_OF_{}", name);
     let expanded = quote! {
         #component_impl
@@ -680,6 +681,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     }
                 },
                 script_type: <#name as crate::ecs::component::Component>::script_type,
+                script_default: #script_default,
             }
         }
     };

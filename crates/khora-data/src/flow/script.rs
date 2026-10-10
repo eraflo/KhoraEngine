@@ -117,6 +117,9 @@ pub struct ScriptView {
     /// something a lane may read, and until this field `InputMap` was published
     /// every frame with no consumer anywhere in the CLAD descent.
     pub input: khora_core::platform::InputSnapshot,
+    /// The components some loaded program reads, projected for this frame —
+    /// empty when nothing reads.
+    pub components: std::sync::Arc<khora_core::script::ComponentProjection>,
 }
 
 impl ScriptView {
@@ -215,6 +218,17 @@ impl Flow for ScriptFlow {
             return view;
         }
         view.resumed = !self.ran;
+
+        // Only what some loaded program reads, and nothing at all when none
+        // reads anything: a projection is a copy of every column it names.
+        let reads = runtime
+            .resources
+            .get::<std::sync::Arc<khora_core::script::ScriptCatalog>>()
+            .map(|catalog| catalog.reads())
+            .unwrap_or_default();
+        if !reads.is_empty() {
+            view.components = std::sync::Arc::new(world.project_components(&reads));
+        }
 
         for entity in world.iter_entities() {
             let Some(script) = world.get::<Script>(entity) else {
@@ -607,6 +621,366 @@ mod tests {
                 .iter()
                 .all(|instance| instance.arrival.is_none()),
             "and nobody arrives again"
+        );
+    }
+
+    // ─── The components scripts read ────────────────────────────────────────
+
+    use std::cell::Cell;
+    use std::sync::Arc;
+
+    use khora_core::script::{
+        ComponentName, ComponentProjection, ErgonType, FieldValueError, ScriptCatalog, ScriptField,
+    };
+    use khora_macros::Component;
+
+    use crate::ecs::{
+        Collider, ComponentKey, ComponentProvenance, FieldKind, PackedField, PackedLayout,
+        RigidBody, RuntimeComponentDecl,
+    };
+
+    thread_local! {
+        /// How many `Counted` values became script values, on this thread.
+        static CONVERSIONS: Cell<usize> = const { Cell::new(0) };
+        /// How many `Counted` values were cloned, on this thread.
+        static CLONES: Cell<usize> = const { Cell::new(0) };
+    }
+
+    /// An `int` field that counts what is done to it: cloned (a snapshot
+    /// copies the column) and converted (a row is read as a script value).
+    #[derive(Debug, Default, PartialEq)]
+    struct Counted(i64);
+
+    impl Clone for Counted {
+        fn clone(&self) -> Self {
+            CLONES.with(|clones| clones.set(clones.get() + 1));
+            Self(self.0)
+        }
+    }
+
+    impl ScriptField for Counted {
+        fn ergon() -> ErgonType {
+            ErgonType::Int
+        }
+        fn to_script(&self) -> ScriptValue {
+            CONVERSIONS.with(|conversions| conversions.set(conversions.get() + 1));
+            ScriptValue::Int(self.0)
+        }
+        fn from_script(value: &ScriptValue) -> Result<Self, FieldValueError> {
+            i64::from_script(value).map(Self)
+        }
+    }
+
+    /// A component whose one field counts its clones and conversions.
+    #[derive(Debug, Clone, Default, Component)]
+    #[component(no_serializable)]
+    struct Tally {
+        count: Counted,
+    }
+
+    fn conversions() -> usize {
+        CONVERSIONS.with(Cell::get)
+    }
+
+    fn clones() -> usize {
+        CLONES.with(Cell::get)
+    }
+
+    fn reset_counts() {
+        CONVERSIONS.with(|conversions| conversions.set(0));
+        CLONES.with(|clones| clones.set(0));
+    }
+
+    /// A world storing `Tally`, with one scripted entity.
+    fn world_with_tally() -> World {
+        let mut world = World::new();
+        world.register_component::<Tally>(SemanticDomain::Spatial);
+        world.spawn((Transform::identity(), Script::new("ai/probe.erg", "Probe")));
+        world
+    }
+
+    /// A runtime whose catalog reads `reads`, and the catalog.
+    fn reading(reads: &[&str]) -> (Runtime, Arc<ScriptCatalog>) {
+        let catalog = Arc::new(ScriptCatalog::default());
+        catalog.set_reads(reads.iter().map(|name| ComponentName::new(*name)).collect());
+        let mut runtime = Runtime::default();
+        runtime.resources.insert(Arc::clone(&catalog));
+        (runtime, catalog)
+    }
+
+    /// The components one frame of the flow projects over `world`.
+    fn components_of(world: &World, runtime: &Runtime) -> Arc<ComponentProjection> {
+        frame(&mut ScriptFlow::default(), world, runtime).components
+    }
+
+    /// Field `name` of a struct value.
+    fn field(value: &ScriptValue, name: &str) -> Option<ScriptValue> {
+        value
+            .as_fields()?
+            .iter()
+            .find(|(field, _)| field == name)
+            .map(|(_, value)| value.clone())
+    }
+
+    fn names(projection: &ComponentProjection) -> Vec<String> {
+        projection
+            .names()
+            .into_iter()
+            .map(|name| name.as_str().to_owned())
+            .collect()
+    }
+
+    /// **Zero work when nothing reads.** A read component is projected — its
+    /// column copied — and once no loaded program reads it, nothing is, and no
+    /// page is touched: no row is even cloned. A runtime with no catalog at
+    /// all projects nothing either.
+    #[test]
+    fn nothing_is_projected_when_nothing_reads() {
+        let mut world = world_with_tally();
+        for count in 0..8 {
+            world.spawn((
+                Transform::identity(),
+                Tally {
+                    count: Counted(count),
+                },
+            ));
+        }
+        let (runtime, catalog) = reading(&["Tally"]);
+
+        reset_counts();
+        let read = components_of(&world, &runtime);
+        assert_eq!(names(&read), vec!["Tally"], "read, so projected");
+        assert!(clones() > 0, "a read component's column is copied");
+
+        catalog.set_reads(Vec::new());
+        reset_counts();
+        let unread = components_of(&world, &runtime);
+        assert!(
+            unread.names().is_empty(),
+            "nothing reads, nothing projected"
+        );
+        assert_eq!(unread.rows(), 0);
+        assert_eq!(clones(), 0, "no page was touched");
+
+        reset_counts();
+        let without = components_of(&world, &Runtime::default());
+        assert!(without.names().is_empty(), "no catalog, nothing projected");
+        assert_eq!(clones(), 0);
+    }
+
+    /// **Only what is read is projected.** A program reading `RigidBody` gets
+    /// every holder of it, and nothing of `Collider` or `Tally`, held by the
+    /// same scene.
+    #[test]
+    fn only_read_components_are_projected() {
+        let mut world = world_with_tally();
+        let light = world.spawn((
+            Transform::identity(),
+            RigidBody {
+                mass: 2.0,
+                ..RigidBody::default()
+            },
+        ));
+        let heavy = world.spawn((
+            Transform::identity(),
+            RigidBody {
+                mass: 40.0,
+                ..RigidBody::default()
+            },
+            Collider::default(),
+        ));
+        let other = world.spawn((Transform::identity(), Tally { count: Counted(1) }));
+        let (runtime, _catalog) = reading(&["RigidBody"]);
+
+        let projection = components_of(&world, &runtime);
+
+        assert_eq!(names(&projection), vec!["RigidBody"]);
+        assert!(projection.component("Collider").is_none());
+        assert!(projection.component("Tally").is_none());
+        let bodies = projection.component("RigidBody").expect("projected");
+        assert_eq!(bodies.holders(), 2);
+        assert_eq!(projection.rows(), 2);
+        let mass_of = |entity| field(&bodies.get(entity).expect("a holder"), "mass");
+        assert_eq!(mass_of(light), Some(ScriptValue::Float(2.0)));
+        assert_eq!(mass_of(heavy), Some(ScriptValue::Float(40.0)));
+        assert!(!bodies.has(other));
+        assert_eq!(bodies.get(other), None);
+    }
+
+    /// The total rows the page columns of component `key` hold, orphans
+    /// included.
+    fn stored_rows(world: &World, key: ComponentKey) -> usize {
+        world
+            .storage
+            .pages
+            .iter()
+            .filter_map(|page| page.columns.get(&key))
+            .map(|column| column.len())
+            .sum()
+    }
+
+    /// **An orphan row is nobody's.** An entity that migrated away from a
+    /// page leaves its row there until compaction: one that dropped its rigid
+    /// body is not a holder, and one that moved to another page holding it is
+    /// indexed once, at its live row — the value it holds now.
+    #[test]
+    fn orphan_rows_are_not_projected() {
+        let mut world = world_with_tally();
+        let dropped = world.spawn((
+            Transform::identity(),
+            RigidBody {
+                mass: 2.0,
+                ..RigidBody::default()
+            },
+            Collider::default(),
+        ));
+        world
+            .remove_component::<RigidBody>(dropped)
+            .expect("the rigid body is removed");
+        let moved = world.spawn((
+            Transform::identity(),
+            RigidBody {
+                mass: 3.0,
+                ..RigidBody::default()
+            },
+        ));
+        world
+            .add_component(moved, Collider::default())
+            .expect("the collider is added");
+        world
+            .get_mut::<RigidBody>(moved)
+            .expect("still a body")
+            .mass = 9.0;
+        assert_eq!(
+            stored_rows(&world, ComponentKey::of::<RigidBody>()),
+            3,
+            "two orphan rows are left behind, beside the live one"
+        );
+        let (runtime, _catalog) = reading(&["RigidBody"]);
+
+        let projection = components_of(&world, &runtime);
+        let bodies = projection.component("RigidBody").expect("projected");
+
+        assert!(!bodies.has(dropped), "its orphan row is not a holding");
+        assert_eq!(bodies.get(dropped), None);
+        assert!(bodies.has(moved));
+        assert_eq!(
+            field(&bodies.get(moved).expect("a holder"), "mass"),
+            Some(ScriptValue::Float(9.0)),
+            "read at its live row"
+        );
+        assert_eq!(bodies.holders(), 1);
+        assert_eq!(projection.rows(), 1);
+    }
+
+    /// **A row becomes a script value only when it is read.** Projecting ten
+    /// thousand rows copies them and converts none; one `get` converts one.
+    #[test]
+    fn a_row_is_converted_only_when_read() {
+        let mut world = world_with_tally();
+        let mut picked = None;
+        for count in 0..10_000 {
+            let entity = world.spawn((
+                Transform::identity(),
+                Tally {
+                    count: Counted(count),
+                },
+            ));
+            if count == 4_321 {
+                picked = Some(entity);
+            }
+        }
+        let picked = picked.expect("spawned");
+        let (runtime, _catalog) = reading(&["Tally"]);
+
+        reset_counts();
+        let projection = components_of(&world, &runtime);
+        let tallies = projection.component("Tally").expect("projected");
+        assert_eq!(tallies.holders(), 10_000);
+        assert_eq!(conversions(), 0, "projecting converts nothing");
+
+        let read = tallies.get(picked).expect("a holder");
+
+        assert_eq!(field(&read, "count"), Some(ScriptValue::Int(4_321)));
+        assert_eq!(conversions(), 1, "one read, one conversion");
+    }
+
+    /// **A component declared at run time is read by name**, like a Rust one,
+    /// and its default row is its layout's defaults.
+    #[test]
+    fn a_declared_component_is_projected_by_name() {
+        let mut world = world_with_tally();
+        let signal = world
+            .register_runtime_component(RuntimeComponentDecl {
+                name: "Signal".to_owned(),
+                domain: SemanticDomain::Spatial,
+                provenance: ComponentProvenance::Authored,
+                layout: PackedLayout::new(vec![PackedField {
+                    name: "strength".to_owned(),
+                    kind: FieldKind::Int,
+                    default: ScriptValue::Int(1),
+                }])
+                .expect("a valid layout"),
+            })
+            .expect("Signal registers");
+        let beacon = world.spawn(Transform::identity());
+        world
+            .add_runtime_component(
+                beacon,
+                signal,
+                &ScriptValue::Struct(vec![("strength".to_owned(), ScriptValue::Int(7))]),
+            )
+            .expect("attached");
+        let silent = world.spawn(Transform::identity());
+        let (runtime, _catalog) = reading(&["Signal"]);
+
+        let projection = components_of(&world, &runtime);
+        let signals = projection.component("Signal").expect("projected");
+
+        assert_eq!(
+            field(&signals.get(beacon).expect("a holder"), "strength"),
+            Some(ScriptValue::Int(7))
+        );
+        assert!(!signals.has(silent));
+        assert_eq!(
+            signals.default_row().and_then(|row| field(row, "strength")),
+            Some(ScriptValue::Int(1))
+        );
+    }
+
+    /// **A read component nobody holds is still answered**: it is projected
+    /// with no holder — and with its default row, which an `Add` in the
+    /// working set starts from. A name no component has gets an entry too, so
+    /// "is it projected" never depends on the scene.
+    #[test]
+    fn a_read_component_nobody_holds_is_projected_empty() {
+        let world = world_with_tally();
+        let (runtime, _catalog) = reading(&["Collider", "Shield"]);
+
+        let projection = components_of(&world, &runtime);
+
+        let colliders = projection.component("Collider").expect("projected");
+        assert_eq!(colliders.holders(), 0);
+        let default = colliders.default_row().expect("a Rust component's default");
+        let made = Collider::default();
+        assert_eq!(
+            field(default, "friction"),
+            Some(ScriptValue::Float(made.friction))
+        );
+        assert_eq!(
+            field(default, "restitution"),
+            Some(ScriptValue::Float(made.restitution))
+        );
+        assert_eq!(
+            field(default, "is_sensor"),
+            Some(ScriptValue::Bool(made.is_sensor))
+        );
+        assert_eq!(
+            projection
+                .component("Shield")
+                .map(|shield| shield.holders()),
+            Some(0),
+            "an unknown name is projected, empty"
         );
     }
 }

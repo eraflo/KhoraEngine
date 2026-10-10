@@ -125,6 +125,14 @@ pub enum Fault {
     /// caller ran a behavior's member without naming whose it was — a wiring
     /// mistake in the host, reported rather than aimed at entity zero.
     NoSubject,
+    /// A component read whose copy does not fit the component the program
+    /// declares — a projection from another build of the engine.
+    Unreadable {
+        /// The component.
+        component: String,
+        /// Why.
+        reason: String,
+    },
     /// A component write whose field has no form the engine takes.
     Unwritable {
         /// The component.
@@ -714,6 +722,8 @@ impl Machine {
             | Instruction::Push { .. }
             | Instruction::RemoveAt { .. } => self.step_object(instruction, program, host),
             Instruction::WriteComponent { .. }
+            | Instruction::GetComponent { .. }
+            | Instruction::HasComponent { .. }
             | Instruction::RemoveComponent { .. }
             | Instruction::SpawnEntity { .. } => self.step_command(instruction, program, host),
 

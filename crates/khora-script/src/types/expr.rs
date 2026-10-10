@@ -370,6 +370,9 @@ impl Checker {
 
         let target_ty = self.check_expr(target, context);
         let value_ty = self.check_expr(value, context);
+        if self.refuse_copy_write(target) {
+            return Ty::Error;
+        }
 
         // Some places can be read and not written.
         if let Expr::Field { object, name, span } = target {
@@ -510,11 +513,17 @@ impl Checker {
         match receiver {
             Ty::Error => Ty::Error,
             Ty::Struct(struct_name) => {
-                match self
+                // A component's copy reads its fields like a struct's.
+                let field = self
                     .structs
                     .get(struct_name)
                     .and_then(|info| info.fields.get(name))
-                {
+                    .or_else(|| {
+                        self.components
+                            .get(struct_name)
+                            .and_then(|info| info.fields.get(name))
+                    });
+                match field {
                     Some(ty) => ty.clone(),
                     None => {
                         self.error(format!("`{struct_name}` has no field `{name}`"), span);

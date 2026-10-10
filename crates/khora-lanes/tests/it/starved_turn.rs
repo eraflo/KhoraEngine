@@ -63,6 +63,7 @@ fn view_of(behavior: &str, delta: f32, authored: Option<ScriptSnapshot>) -> Scri
         resumed: false,
         delta_seconds: delta,
         input: Default::default(),
+        components: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: behavior.to_owned(),
@@ -593,6 +594,7 @@ fn one_instances_wait_is_not_anothers_resume_delay() {
         resumed: false,
         delta_seconds: delta,
         input: Default::default(),
+        components: Default::default(),
         programs: vec![program("Waiter"), program("Guard")],
         instances: vec![instance(waiter, 0), instance(guard, 1)],
     };

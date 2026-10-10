@@ -363,6 +363,31 @@ pub enum Instruction {
         count: u16,
     },
 
+    /// `entity.Get(C)`: a copy of the component named by
+    /// [`Program::strings`](super::Program::strings)`[component]`, as this
+    /// frame's scripts see it — or `null` when the entity does not hold it.
+    GetComponent {
+        /// Where the copy goes.
+        dst: Reg,
+        /// The entity read.
+        entity: Reg,
+        /// The component's name, as a string index.
+        component: u32,
+        /// How many fields the component has: what the copy costs.
+        count: u16,
+    },
+
+    /// `entity.Has(C)`: whether the entity holds the component, as this
+    /// frame's scripts see it.
+    HasComponent {
+        /// Where the answer goes.
+        dst: Reg,
+        /// The entity.
+        entity: Reg,
+        /// The component's name, as a string index.
+        component: u32,
+    },
+
     /// `entity.Remove(C)`: queues the removal of the component named by
     /// [`Program::strings`](super::Program::strings)`[component]`.
     RemoveComponent {
@@ -571,6 +596,7 @@ impl Instruction {
             | Self::Extend { count, .. }
             | Self::NewStruct { count, .. }
             | Self::WriteComponent { count, .. }
+            | Self::GetComponent { count, .. }
             | Self::SpawnEntity { count, .. } => 1 + u64::from(*count),
             _ => 1,
         }

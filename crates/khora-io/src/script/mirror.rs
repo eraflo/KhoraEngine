@@ -40,13 +40,13 @@
 //!
 //! # What a mirror buys today, and what it does not
 //!
-//! It buys a **struct**: a name resolves, a field resolves with its type, a
-//! misspelling is refused where it was written, and a `Transform` value — built
-//! as a literal, passed as a parameter — reads and writes its fields like any
-//! struct's. It does not yet buy reading a component *from an entity*:
-//! `e.Transform` is refused, naming `Get`, until scripts can read components —
-//! pinned by `a_component_is_not_yet_read_from_an_entity` here, a compile error
-//! rather than a wrong value at run time.
+//! It buys a name that resolves, a field that resolves with its type, and a
+//! misspelling refused where it was written. A `component` is written with
+//! `e.Set(C { … })` and read with `e.Get(C)`, a read-only copy; a component a
+//! script cannot write stays a `struct` — a `Transform` value, built as a
+//! literal or passed as a parameter, reads and writes its fields like any
+//! struct's. `e.Transform` is refused, naming `Get` — pinned by
+//! `a_component_is_read_from_an_entity_with_get` here.
 //!
 //! The distinction matters because `ENGINE_TYPES` in `khora-script` records the
 //! mistake this resembles: it once named `Transform`, which had no fields at
@@ -391,31 +391,95 @@ mod tests {
         assert_eq!(machine.result(), Value::Float(2.5));
     }
 
-    /// **The limit that remains, pinned.** A mirror describes a component's
-    /// shape; it does not yet fetch one from an entity. `e.Transform` is
-    /// refused by the checker — an entity has no fields — and the refusal names
-    /// `Get`, the way a component will be read from an entity. It is a compile
-    /// error rather than a wrong value at run time.
-    ///
-    /// When reading a component from an entity lands, this test is what says
-    /// so: it will start failing, and should be rewritten to read the value.
+    /// **A component is read from an entity with `Get`.** Against the real
+    /// mirror, `e.Get(RigidBody)` compiles, the program says it reads
+    /// `RigidBody`, and the copy it returns imports as the mirror's struct:
+    /// the read returns the entity's mass. `e.RigidBody` stays refused — an
+    /// entity has no fields — and the refusal names `Get`, the way to read one,
+    /// no longer saying reading is unavailable.
     #[test]
-    fn a_component_is_not_yet_read_from_an_entity() {
+    fn a_component_is_read_from_an_entity_with_get() {
+        use std::collections::HashMap;
+        use std::sync::Arc;
+
+        use khora_core::ecs::entity::EntityId;
+        use khora_core::math::Vec3;
+        use khora_core::script::{
+            ColumnSnapshot, ComponentName, ComponentProjection, FrameComponents,
+            ProjectedComponent, ScriptValue,
+        };
+        use khora_script::{Host, Machine, Run, Value};
+
+        struct Rows(Vec<ScriptValue>);
+        impl ColumnSnapshot for Rows {
+            fn len(&self) -> usize {
+                self.0.len()
+            }
+            fn read(&self, row: usize) -> ScriptValue {
+                self.0[row].clone()
+            }
+        }
+
         let result = compile(
             "import \"engine/components.erg\";
-             fn float Height(Entity e) { return e.Transform.translation.y; }",
+             fn float Mass(Entity e) {
+                 if (var b = e.Get(RigidBody)) { return b.mass; }
+                 return -1.0;
+             }",
         );
+        assert!(
+            result.succeeded(),
+            "a read over the mirror should compile; got {:?}",
+            result.diagnostics
+        );
+        let program = result.program.expect("a program with no errors");
+        assert_eq!(program.reads, vec!["RigidBody".to_owned()]);
 
-        assert!(!result.succeeded());
-        let refusal = result
+        let holder = EntityId {
+            index: 3,
+            generation: 1,
+        };
+        let row = ScriptValue::Struct(vec![
+            ("mass".to_owned(), ScriptValue::Float(3.5)),
+            ("ccd_enabled".to_owned(), ScriptValue::Bool(false)),
+            ("initial_velocity".to_owned(), ScriptValue::Vec3(Vec3::ZERO)),
+            (
+                "initial_angular_velocity".to_owned(),
+                ScriptValue::Vec3(Vec3::ZERO),
+            ),
+        ]);
+        let projection = ComponentProjection::new(vec![ProjectedComponent::new(
+            ComponentName::new("RigidBody"),
+            vec![Box::new(Rows(vec![row]))],
+            HashMap::from([(holder, (0, 0))]),
+            None,
+        )]);
+        let mut host = Host::new();
+        host.components = FrameComponents::new(Arc::new(projection));
+        let mut machine =
+            Machine::new(&program, "Mass", &[Value::Entity(holder)]).expect("`Mass` exists");
+        let (run, _) = machine.run_counting(&program, &mut host, u64::MAX);
+        assert!(matches!(run, Run::Completed), "got {run:?}");
+        assert_eq!(machine.result(), Value::Float(3.5));
+
+        let refused = compile(
+            "import \"engine/components.erg\";
+             fn float Mass(Entity e) { return e.RigidBody.mass; }",
+        );
+        assert!(!refused.succeeded());
+        let refusal = refused
             .diagnostics
             .iter()
-            .find(|d| d.message.contains("an entity has no field `Transform`"))
-            .unwrap_or_else(|| panic!("got {:?}", result.diagnostics));
+            .find(|d| d.message.contains("an entity has no field `RigidBody`"))
+            .unwrap_or_else(|| panic!("got {:?}", refused.diagnostics));
         let note = refusal.note.as_deref().unwrap_or_default();
         assert!(
             note.contains("`Get`"),
             "the refusal should name `Get`; got note {note:?}"
+        );
+        assert!(
+            !note.contains("not available"),
+            "reading a component is available now; got note {note:?}"
         );
     }
 
@@ -693,6 +757,7 @@ mod tests {
                 1 => Some(ErgonType::Array(Box::new(ErgonType::Entity))),
                 _ => None,
             },
+            script_default: || None,
         };
 
         let mirrored = declaration(&registration);

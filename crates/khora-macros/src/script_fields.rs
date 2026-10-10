@@ -97,3 +97,25 @@ pub(crate) fn script_methods(fields: &Fields, included_fields: &[&syn::Field]) -
         }
     }
 }
+
+/// The registration's `script_default`: the component's `Default`, as a
+/// script reads it — what a script's `Add` starts from in the frame's working
+/// set.
+pub(crate) fn script_default(name: &syn::Ident) -> impl ToTokens {
+    quote! { || {
+        let value = <#name as ::core::default::Default>::default();
+        let fields = <#name as crate::ecs::component::Component>::script_fields();
+        ::core::option::Option::Some(::khora_core::script::ScriptValue::Struct(
+            fields
+                .iter()
+                .enumerate()
+                .filter_map(|(slot, field)| {
+                    ::core::option::Option::Some((
+                        (*field).to_owned(),
+                        crate::ecs::component::Component::read_field(&value, slot)?,
+                    ))
+                })
+                .collect(),
+        ))
+    } }
+}

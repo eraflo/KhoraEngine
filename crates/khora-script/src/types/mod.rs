@@ -282,6 +282,21 @@ impl Checker {
         }
     }
 
+    /// Resolves the type of a local given its value: a component names the
+    /// type of a copy (`Health? h = e.Get(Health);`).
+    pub fn resolve_copy(&mut self, ty: &crate::ast::TypeRef) -> Ty {
+        if named_component(ty, &self.components).is_none() {
+            return self.resolve(ty);
+        }
+        let known: Vec<String> = self
+            .structs
+            .keys()
+            .chain(self.components.keys())
+            .cloned()
+            .collect();
+        ty::resolve(ty, &|name| known.iter().any(|s| s == name)).unwrap_or(Ty::Error)
+    }
+
     // ── Pass one: declarations ────────────────────────
 
     /// Gathers every declared name before any body is checked, so a file's

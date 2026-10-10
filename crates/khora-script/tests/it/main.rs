@@ -29,6 +29,7 @@ mod arrays;
 mod bound_name_shadowing;
 mod calls_through_an_entity;
 mod coalesce_and_casts;
+mod component_reads;
 mod component_write_receivers;
 mod component_writes;
 mod component_writes_under_fuel;

@@ -78,6 +78,7 @@ fn a_scene_with_the_player(input: khora_core::platform::InputSnapshot) -> Script
         resumed: false,
         delta_seconds: 1.0 / 60.0,
         input,
+        components: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: "Player".to_owned(),

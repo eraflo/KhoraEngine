@@ -72,6 +72,12 @@ pub struct Host {
     /// an event another will hear, and both are collected here until whoever
     /// owns the frame takes them.
     pub outbox: EventQueue,
+    /// The components scripts may read this frame, and what this frame's
+    /// scripts wrote over them.
+    ///
+    /// Set once by the lane from the view, for the frame: every behavior reads
+    /// the same working set, and each one's writes are in it for the next.
+    pub components: khora_core::script::FrameComponents,
 }
 
 impl Default for Host {
@@ -98,6 +104,7 @@ impl Host {
             position: None,
             input: Default::default(),
             outbox: EventQueue::new(),
+            components: Default::default(),
         }
     }
 

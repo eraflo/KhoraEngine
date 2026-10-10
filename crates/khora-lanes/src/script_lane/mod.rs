@@ -56,8 +56,9 @@ pub use report::{Resumed, ScriptRunReport};
 pub use runtime::{Body, Instance, Pending, ReloadReport, ScriptRuntime};
 
 use std::any::Any;
+use std::sync::Arc;
 
-use self::reload::apply_reloads;
+use self::reload::{apply_reloads, publish_reads};
 use khora_core::event::Channel;
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, OutputDeck};
 use khora_core::script::{CommandBuffer, ScriptEvent, ScriptStateWriteback};
@@ -119,7 +120,13 @@ impl Lane for BudgetedScriptLane {
 
         // Applied before anything runs, so a frame never executes the version
         // the author has just replaced.
-        apply_reloads(runtime, &reloads);
+        let catalog = ctx
+            .get_ref::<Arc<khora_core::script::ScriptCatalog>>()
+            .map(Arc::clone);
+        apply_reloads(runtime, &reloads, &view.components, catalog.as_ref());
+        if let Some(catalog) = &catalog {
+            publish_reads(runtime, catalog);
+        }
 
         if view.is_empty() {
             // Play resuming on an empty scene still forgets what left while it
@@ -161,7 +168,11 @@ impl Lane for BudgetedScriptLane {
         // Once for the frame, not once per behavior: input is a fact about
         // the frame, and every behavior in it must see the same one.
         host.input = view.input.clone();
+        // The frame's working set: what the view projected, with this frame's
+        // own writes over it as they are queued.
+        host.components = khora_core::script::FrameComponents::new(Arc::clone(&view.components));
         let mut report = run_behaviors(view, &events, runtime, &mut host, fuel.0);
+        report.projected_rows = view.components.rows();
         report.raised = host.take_events();
 
         // Handed over together with the arena reset, so no command can

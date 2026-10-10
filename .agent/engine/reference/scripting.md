@@ -129,6 +129,15 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   (component + field *names*, written order) and queue `WorldCommand::{SetComponent, AddComponent,
   RemoveComponent, Spawn}` in `host.commands` (`vm/commands.rs`); cost `1 +` fields; never a stop. A
   component literal is valid only as their argument; a component is not a type.
+- **Component reads: a per-frame projection, a working set.** `e.Get(C)` → `C?` (a read-only copy:
+  `types/components.rs::refuse_copy_write`), `e.Has(C)` → bool; `Instruction::{GetComponent, HasComponent}`
+  (`vm/commands.rs`) answer from `Host::components: khora_core::script::FrameComponents` — the view's
+  `ComponentProjection` with this frame's own `Set`/`Add`/`Remove` observed over it as they are queued.
+  `Program::reads` (sorted) → the lane publishes the union to `Arc<ScriptCatalog>` every frame
+  (`script_lane/reload.rs`); `ScriptFlow` projects only those (`World::project_components`, one
+  `ColumnSnapshot` per page column, live rows only — snapshots include orphan rows). A reload whose reads
+  were not projected this frame is deferred one frame. A `component` declaration is also a `StructLayout`, so
+  a copy imports as a struct.
 - **`component` declarations come only from `ENGINE_COMPONENTS_MODULE`** (`engine/components.erg`,
   `khora_script::ENGINE_COMPONENTS_MODULE`, checked on the resolved modules —
   `modules::report_foreign_components`). The mirror emits `component` for hand-authorable provenance
@@ -178,9 +187,8 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** �
   `khora-lanes/src/script_lane/runtime.rs` and is the single definition.
 - **A mirrored component a script cannot write stays an ordinary `struct`** (`Transform`, derived and
   runtime components): its fields read and write like any struct value's. A writable one is a `component`,
-  not a value. What is not there yet is reading a component *from an entity* (`e.Get(T)`, Ergon spec
-  07): `entity.Field` is a checker error naming `Get` (`types/calls.rs::entity_field`), and the khora-io
-  mirror tests pin that limit.
+  read as a copy with `e.Get(T)`; `entity.Field` is a checker error naming `Get`
+  (`types/calls.rs::entity_field`).
 - `ENGINE_TYPES` (`khora-script/src/types/ty.rs`) is a list of names with a `Value` variant, a
   constructor and accessors behind them. It once named `Transform`, which had none, so `Transform t;`
   shaped cleanly and failed with the misleading "`Transform` has no `x`". Adding a name there without

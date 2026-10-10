@@ -239,6 +239,17 @@ impl<A: EngineApp> EngineCore<A> {
                 .resources
                 .insert(khora_core::script::engine_event_channel());
         }
+        // What the loaded scripts read: written by the script lane, read by the
+        // script flow to project only those components.
+        if runtime
+            .resources
+            .get::<std::sync::Arc<khora_core::script::ScriptCatalog>>()
+            .is_none()
+        {
+            runtime.resources.insert(std::sync::Arc::new(
+                khora_core::script::ScriptCatalog::default(),
+            ));
+        }
 
         // Create the game world — reading the shipped prefabs, where the app
         // ships an asset service, so a game saved over a level holding prefab

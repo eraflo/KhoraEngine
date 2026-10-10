@@ -63,6 +63,16 @@ impl Compiler {
                 };
                 Some(self.compile_remove(object, component))
             }
+            "Get" | "Has" => {
+                let Some(Expr::Ident {
+                    name: component, ..
+                }) = args.first()
+                else {
+                    self.error(format!("`{name}` takes a component's name"), span);
+                    return Some(self.constant(Value::Unit, Shape::Other));
+                };
+                Some(self.compile_read(name == "Get", object, component))
+            }
             _ => {
                 let (index, _) = self.natives.get(name).copied()?;
                 let all: Vec<&Expr> = std::iter::once(object).chain(args).collect();
@@ -133,6 +143,44 @@ impl Compiler {
         });
         self.registers.release_to(mark);
         self.constant(Value::Unit, Shape::Other)
+    }
+
+    /// `entity.Get(C)` and `entity.Has(C)`; the component joins the
+    /// program's read set, which decides what the frame projects.
+    fn compile_read(&mut self, copy: bool, object: &Expr, component: &str) -> (Reg, Shape) {
+        if let Err(at) = self
+            .program
+            .reads
+            .binary_search_by(|known| known.as_str().cmp(component))
+        {
+            self.program.reads.insert(at, component.to_owned());
+        }
+        let mark = self.registers.mark();
+        let entity = self.registers.temp();
+        self.place(object, entity);
+        let name = self.intern(component);
+        self.registers.release_to(mark);
+        let dst = self.registers.temp();
+        if copy {
+            let count = self
+                .component_decls
+                .get(component)
+                .map_or(0, |decl| decl.fields.len());
+            self.emit(Instruction::GetComponent {
+                dst,
+                entity,
+                component: name,
+                count: count as u16,
+            });
+            (dst, Shape::Object)
+        } else {
+            self.emit(Instruction::HasComponent {
+                dst,
+                entity,
+                component: name,
+            });
+            (dst, Shape::Other)
+        }
     }
 
     /// `entity.Remove(C)`.

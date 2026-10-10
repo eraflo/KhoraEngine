@@ -221,6 +221,10 @@ pub struct Program {
     /// Every `Spawn`'s components, as patch indices in the order written.
     #[serde(default)]
     pub spawns: Vec<Vec<u32>>,
+    /// Every component this program reads with `Get` or `Has`, sorted, each
+    /// once.
+    #[serde(default)]
+    pub reads: Vec<String>,
 }
 
 /// One component write: the component, and the fields it names. A field left

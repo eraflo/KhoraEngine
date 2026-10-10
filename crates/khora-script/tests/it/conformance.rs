@@ -862,6 +862,62 @@ const SHIPPED: &[Row] = &[
         args: &[],
         expect: Expect::Rejected("`Set`"),
     },
+    // ─── Component reads (spec 07) ──────────────────────────────────────────
+    // A row's host projects no component, so every entity holds none.
+    Row {
+        construct: "`Get` of a component the entity does not hold",
+        source: "component Health { int current; int max; }
+                 behavior Medic {
+                     int Look() { if (var h = this.Get(Health)) { return h.current; } return -1; }
+                 }",
+        entry: "Medic.Look",
+        args: &[],
+        expect: Expect::Runs(Value::Int(-1)),
+    },
+    Row {
+        construct: "`Has`",
+        source: "component Health { int current; int max; }
+                 behavior Medic { bool Probe() { return this.Has(Health); } }",
+        entry: "Medic.Probe",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(false)),
+    },
+    Row {
+        construct: "a component-typed local holding a `Get`",
+        source: "component Health { int current; int max; }
+                 behavior Medic {
+                     int Look() { Health? h = this.Get(Health); return h?.current ?? 7; }
+                 }",
+        entry: "Medic.Look",
+        args: &[],
+        expect: Expect::Runs(Value::Int(7)),
+    },
+    Row {
+        construct: "`Get` on an entity held in a variable",
+        source: "component Health { int current; int max; }
+                 fn int F(Entity e) { var h = e.Get(Health); return h?.max ?? 3; }",
+        entry: "F",
+        args: &[Value::Entity(SUBJECT)],
+        expect: Expect::Runs(Value::Int(3)),
+    },
+    Row {
+        construct: "a field of a copy written",
+        source: "component Health { int current; int max; }
+                 behavior Medic {
+                     void Heal() { if (var h = this.Get(Health)) { h.current = 5; } }
+                 }",
+        entry: "Medic.Heal",
+        args: &[],
+        expect: Expect::Rejected("`h` is a copy of `Health` and is read-only"),
+    },
+    Row {
+        construct: "`Get` of a plain struct",
+        source: "struct Loot { int value; }
+                 behavior Guard { void Go() { var l = this.Get(Loot); } }",
+        entry: "Guard.Go",
+        args: &[],
+        expect: Expect::Rejected("`Loot` is not a component"),
+    },
 ];
 
 /// What a spec will change. Each row states the behaviour the spec must

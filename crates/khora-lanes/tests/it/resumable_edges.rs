@@ -61,6 +61,7 @@ fn view_of(
         resumed: false,
         delta_seconds: delta,
         input: Default::default(),
+        components: Default::default(),
         programs: vec![ScriptProgram {
             module: module.to_owned(),
             behavior: behavior.to_owned(),

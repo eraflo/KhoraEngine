@@ -82,6 +82,7 @@ fn view_of(behavior: &str, delta: f32, arrival: Option<ScriptArrival>) -> Script
     ScriptView {
         delta_seconds: delta,
         input: Default::default(),
+        components: Default::default(),
         resumed: false,
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),

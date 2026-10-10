@@ -299,6 +299,8 @@ pub struct ScriptRuntime {
     /// grows: text a frame built and something kept past it fails to read in a
     /// later frame, rather than reading what that frame built at its index.
     arena: Arena,
+    /// Reloads waiting for the frame whose view projects what they read.
+    deferred: Vec<khora_script::reload::ScriptReload>,
 }
 
 /// Instructions per millisecond, before anything has been measured.
@@ -326,6 +328,7 @@ impl Default for ScriptRuntime {
             last_unloaded: 0,
             rate: INITIAL_RATE,
             arena: Arena::new(),
+            deferred: Vec::new(),
         }
     }
 }
@@ -570,6 +573,32 @@ impl ScriptRuntime {
     /// the ordinary shape of running a behavior, not an unusual one.
     pub fn program(&self, module: &str) -> Option<&Arc<Program>> {
         self.programs.get(module)
+    }
+
+    /// Every loaded program.
+    pub fn programs(&self) -> impl Iterator<Item = &Arc<Program>> {
+        self.programs.values()
+    }
+
+    /// The reloads waiting for a frame that projects what they read, taken.
+    pub(crate) fn take_deferred(&mut self) -> Vec<khora_script::reload::ScriptReload> {
+        std::mem::take(&mut self.deferred)
+    }
+
+    /// Keeps `reload` for the next frame.
+    pub(crate) fn defer(&mut self, reload: khora_script::reload::ScriptReload) {
+        self.deferred.push(reload);
+    }
+
+    /// Whether a compiled program of `module` waits for the frame that
+    /// projects what it reads.
+    pub(crate) fn is_waiting(&self, module: &str) -> bool {
+        self.deferred.iter().any(|reload| reload.module == module)
+    }
+
+    /// The reloads waiting, as they are.
+    pub(crate) fn deferred(&self) -> &[khora_script::reload::ScriptReload] {
+        &self.deferred
     }
 
     /// How many modules are loaded.

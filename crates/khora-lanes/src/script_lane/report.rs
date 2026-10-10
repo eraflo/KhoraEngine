@@ -80,4 +80,7 @@ pub struct ScriptRunReport {
     pub state: Vec<ScriptStateUpdate>,
     /// Suspended bodies a load took back below the exact tier, or abandoned.
     pub resumes: Vec<Resumed>,
+    /// The component rows the frame's view projected for scripts to read —
+    /// what the reads cost, made visible.
+    pub projected_rows: usize,
 }

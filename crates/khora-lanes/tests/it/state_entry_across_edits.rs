@@ -68,6 +68,7 @@ fn view(observed: Option<ScriptSnapshot>) -> ScriptView {
         resumed: false,
         delta_seconds: 0.016,
         input: Default::default(),
+        components: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: "Guard".to_owned(),

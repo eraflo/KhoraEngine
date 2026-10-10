@@ -93,7 +93,12 @@ pub fn run_behaviors(
             // here said both causes were "reported by whatever failed to supply
             // it"; neither was, and that assumption hid a subsystem that looked
             // wired and was not.
-            report.unloaded += 1;
+            //
+            // A program compiled and waiting a frame for the components it
+            // reads is neither: it runs from the next frame.
+            if !runtime.is_waiting(&program.module) {
+                report.unloaded += 1;
+            }
             continue;
         };
         // A handle, not the program: the runtime is borrowed mutably below for

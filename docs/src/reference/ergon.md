@@ -338,6 +338,35 @@ behavior Spawner {
 - `Set`, `Add`, `Remove`, `Get`, `Has` and `Spawn` are reserved: no function or
   method may take one of these names.
 
+## Reading components
+
+```text
+if (var h = target.Get(Health)) {
+    if (h.current < 20) { target.Set(Health { current: h.current + 1 }); }
+}
+bool shielded = target.Has(Shield);
+```
+
+| Read | Gives |
+|---|---|
+| `e.Get(C)` | `C?` — a copy of `e`'s component, or `null` when it has none |
+| `e.Has(C)` | `bool` |
+
+- Any entity, any `component`. A copy is read-only: `h.current = 5` is refused —
+  write the component with `e.Set(C { … })`. `C` names the type of a local given
+  its value (`Health? h = e.Get(Health);`), never a field, a parameter or a return.
+- **A script sees its own writes within the frame.** `Set` then `Get` reads the new
+  value; `Add` makes `Has` true and `Get` the defaults with the fields written;
+  `Remove` makes them false and `null`. The engine's systems see only what the
+  frame's end applied. A despawned entity keeps its components until the frame's end — its
+  `OnDespawn` still reads them.
+- Only the components some loaded program reads are projected each frame, and
+  nothing when none reads anything; a `Get` converts only the row it reads. It
+  costs `1 +` the component's field count; `Has` costs 1.
+- A reload that reads a component no program read before runs from the next frame,
+  the first whose view holds it — its first `Get` never reads `null` for a
+  component that exists.
+
 ## Events
 
 ```text
@@ -359,8 +388,8 @@ void Hurt() { this.Raise("Damaged", 30); }
 
 Maps, methods on structs and arrays (beyond `Push` and `RemoveAt`), struct
 operator overloads at run time, value patterns in `match`, awaiting events,
-closures, reading a component (`e.Get(C)`, `e.Has(C)`), components declared in a
-script.
+closures, components declared in a script, reading `Transform` with `Get` (use
+`Position()`).
 
 ## See also
 

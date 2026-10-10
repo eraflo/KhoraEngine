@@ -45,6 +45,7 @@ fn a_scene_with_one_script() -> ScriptView {
         resumed: false,
         delta_seconds: 0.0,
         input: Default::default(),
+        components: Default::default(),
         programs: vec![ScriptProgram {
             module: "ai/guard.erg".to_owned(),
             behavior: "Guard".to_owned(),

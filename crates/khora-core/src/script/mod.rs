@@ -35,10 +35,12 @@
 //! [`AgentAccess::Isolated`]: crate::agent::AgentAccess::Isolated
 
 pub mod buffer;
+pub mod catalog;
 pub mod command;
 pub mod event;
 pub mod field;
 pub mod frozen;
+pub mod projection;
 pub mod snapshot;
 pub mod table;
 pub mod value;
@@ -48,10 +50,12 @@ pub mod writeback;
 mod tests;
 
 pub use buffer::{CommandBuffer, Conflict};
+pub use catalog::{CatalogData, ScriptCatalog};
 pub use command::{ComponentName, WorldCommand, WriteTarget};
 pub use event::{engine_event_channel, EventQueue, ScriptEvent, ENGINE_EVENT_BACKLOG};
 pub use field::{ErgonType, FieldValueError, ScriptField};
 pub use frozen::{FrozenFrame, FrozenLocal, FrozenMachine, FrozenValue, PendingBody};
+pub use projection::{ColumnSnapshot, ComponentProjection, FrameComponents, ProjectedComponent};
 pub use snapshot::{
     InstanceLifecycle, PendingSequence, RecordedFault, ScriptSnapshot, TimerRemaining,
 };

@@ -36,6 +36,7 @@ mod component_access;
 mod hierarchy;
 mod identity;
 mod migration;
+mod projection;
 mod queries;
 mod runtime;
 

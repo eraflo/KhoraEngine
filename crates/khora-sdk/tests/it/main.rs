@@ -24,3 +24,4 @@ mod game_saves;
 mod mode_to_dcc;
 mod public_paths;
 mod runtime_config_file;
+mod script_catalog;

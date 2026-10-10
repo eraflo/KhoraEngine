@@ -69,6 +69,7 @@ fn view_of(behavior: &str, delta: f32) -> ScriptView {
         delta_seconds: delta,
         resumed: false,
         input: Default::default(),
+        components: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: behavior.to_owned(),

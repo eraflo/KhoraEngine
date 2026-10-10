@@ -84,15 +84,12 @@ impl Checker {
                 return Some(Ty::Void);
             }
             "Get" | "Has" => {
-                for argument in args {
-                    self.check_expr(argument, context);
-                }
-                self.error_note(
-                    format!("`{name}` on an entity is not available yet"),
-                    at,
-                    "reading a component from a script comes with the next step of the language",
-                );
-                return Some(Ty::Error);
+                let read = self.check_read(name, args, at, context);
+                return Some(match (name, read) {
+                    ("Get", Some(component)) => Ty::Optional(Box::new(Ty::Struct(component))),
+                    ("Has", Some(_)) => Ty::Bool,
+                    _ => Ty::Error,
+                });
             }
             "Spawn" => {
                 for argument in args {
@@ -295,6 +292,78 @@ impl Checker {
         }
     }
 
+    /// `e.Get(C)` and `e.Has(C)`: a bare component name. Returns it when it is
+    /// one.
+    fn check_read(
+        &mut self,
+        operation: &str,
+        args: &[Expr],
+        at: Span,
+        context: &Context,
+    ) -> Option<String> {
+        if args.len() != 1 {
+            for argument in args {
+                self.check_expr(argument, context);
+            }
+            self.error(
+                format!("`{operation}` takes 1 argument, found {}", args.len()),
+                at,
+            );
+            return None;
+        }
+        let Expr::Ident { name, span } = &args[0] else {
+            self.check_expr(&args[0], context);
+            self.error_note(
+                format!("`{operation}` takes a component's name"),
+                args[0].span(),
+                format!("write `e.{operation}(Health)` — the component, not a value of it"),
+            );
+            return None;
+        };
+        if self.components.contains_key(name) {
+            return Some(name.clone());
+        }
+        let (placed, _) = crate::native::world::PLACEMENT;
+        if name == placed {
+            self.error_note(
+                format!("`{name}` is not a component a script reads"),
+                *span,
+                "an entity's own position reads with `Position()`",
+            );
+        } else {
+            self.not_a_component(name, *span);
+        }
+        None
+    }
+
+    /// A write through a copy a `Get` returned — an assignment to a place
+    /// rooted at it, or an array of it grown or shrunk: refused, with the write
+    /// that was meant. `true` when `target` is one.
+    pub(super) fn refuse_copy_write(&mut self, target: &Expr) -> bool {
+        let mut place = target;
+        while let Expr::Field { object, .. } | Expr::Index { object, .. } = place {
+            let held = self
+                .types
+                .get(&(std::ptr::from_ref(&**object) as usize))
+                .cloned();
+            if let Some(Ty::Struct(component)) = held {
+                if self.components.contains_key(&component) {
+                    let copy = sketch(root_of(object));
+                    self.error_note(
+                        format!("`{copy}` is a copy of `{component}` and is read-only"),
+                        target.span(),
+                        format!(
+                            "Write the component with `target.Set({component} {{ … }})` — a copy changes nothing"
+                        ),
+                    );
+                    return true;
+                }
+            }
+            place = object;
+        }
+        false
+    }
+
     /// `name` is not a component a script writes — with what to do instead.
     fn not_a_component(&mut self, name: &str, span: Span) {
         let (placed, natives) = crate::native::world::PLACEMENT;
@@ -328,6 +397,14 @@ impl Checker {
                 "write it with `target.Set({name} {{ … }})`, add it with `target.Add({name} {{ … }})`; reading one comes with `target.Get({name})`"
             ),
         );
+    }
+}
+
+/// The variable or `this` a place is rooted at.
+fn root_of(expr: &Expr) -> &Expr {
+    match expr {
+        Expr::Field { object, .. } | Expr::Index { object, .. } => root_of(object),
+        other => other,
     }
 }
 

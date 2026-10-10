@@ -678,6 +678,7 @@ fn fault_variants(x: &khora_script::vm::Fault) {
         khora_script::vm::Fault::NoSubject => {}
         khora_script::vm::Fault::NativeFailed { .. } => {}
         khora_script::vm::Fault::Unwritable { .. } => {}
+        khora_script::vm::Fault::Unreadable { .. } => {}
         khora_script::vm::Fault::InvalidCast { .. } => {}
         khora_script::vm::Fault::IndexOutOfRange { .. } => {}
         khora_script::vm::Fault::NotAnObject { .. } => {}
@@ -745,6 +746,8 @@ fn instruction_variants(x: &khora_script::vm::instruction::Instruction) {
         khora_script::vm::instruction::Instruction::Concat { .. } => {}
         khora_script::vm::instruction::Instruction::NativeCall { .. } => {}
         khora_script::vm::instruction::Instruction::WriteComponent { .. } => {}
+        khora_script::vm::instruction::Instruction::GetComponent { .. } => {}
+        khora_script::vm::instruction::Instruction::HasComponent { .. } => {}
         khora_script::vm::instruction::Instruction::RemoveComponent { .. } => {}
         khora_script::vm::instruction::Instruction::SpawnEntity { .. } => {}
         khora_script::vm::instruction::Instruction::Await { .. } => {}

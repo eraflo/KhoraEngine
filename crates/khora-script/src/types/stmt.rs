@@ -173,7 +173,12 @@ impl Checker {
         span: Span,
         context: &Context,
     ) {
-        let declared = ty.map(|ty| self.resolve(ty));
+        // A component names the type of a copy a `Get` returned — so only a
+        // local given its value may be declared with one.
+        let declared = ty.map(|ty| match value {
+            Some(_) => self.resolve_copy(ty),
+            None => self.resolve(ty),
+        });
         let initial = value.map(|expr| self.check_expr(expr, context));
 
         let bound = match (declared, initial) {

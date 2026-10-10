@@ -379,6 +379,24 @@ impl Hash {
                 self.number(u64::from(*count));
                 self.patch(program, *patch);
             }
+            I::GetComponent {
+                dst,
+                entity,
+                component,
+                count,
+            } => {
+                self.op("GetComponent", &[*dst, *entity]);
+                self.number(u64::from(*count));
+                self.text(program.string(*component).unwrap_or_default());
+            }
+            I::HasComponent {
+                dst,
+                entity,
+                component,
+            } => {
+                self.op("HasComponent", &[*dst, *entity]);
+                self.text(program.string(*component).unwrap_or_default());
+            }
             I::RemoveComponent { entity, component } => {
                 self.op("RemoveComponent", &[*entity]);
                 self.text(program.string(*component).unwrap_or_default());

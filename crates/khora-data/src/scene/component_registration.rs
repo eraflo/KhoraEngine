@@ -130,6 +130,9 @@ pub struct ComponentRegistration {
     /// The Ergon type of the field at a slot — the field's position in
     /// [`shape`](Self::shape) — `None` for a field a script cannot reach.
     pub script_type: fn(usize) -> Option<khora_core::script::ErgonType>,
+    /// The component's default, as a script reads it — what a script's `Add`
+    /// starts from, before its own fields. `None` for one a script cannot read.
+    pub script_default: fn() -> Option<khora_core::script::ScriptValue>,
 }
 
 inventory::collect!(ComponentRegistration);

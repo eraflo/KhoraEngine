@@ -73,6 +73,7 @@ fn arrive(
         resumed: false,
         delta_seconds: 0.0,
         input: Default::default(),
+        components: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: "Guard".to_owned(),

@@ -94,6 +94,7 @@ fn a_scene_with_one_hovering_sphere(delta_seconds: f32) -> ScriptView {
         resumed: false,
         delta_seconds,
         input: Default::default(),
+        components: Default::default(),
         programs: vec![ScriptProgram {
             module: MODULE.to_owned(),
             behavior: BEHAVIOR.to_owned(),

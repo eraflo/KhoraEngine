@@ -12,13 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Component writes: `Set`, `Add`, `Remove`, `Spawn`.
+//! Component writes — `Set`, `Add`, `Remove`, `Spawn` — and reads — `Get`,
+//! `Has`.
 //!
 //! A script never touches the `World`: each write becomes a
 //! [`WorldCommand`] queued in [`Host::commands`] — where every native's
 //! command already goes — and the frame boundary applies it. A patch carries
 //! the fields it names and nothing else, so what a script did not name is left
 //! as the entity holds it.
+//!
+//! A read answers from the frame's working set (`Host::components`): the
+//! projection of what the loaded programs read, with this frame's own writes
+//! over it — every write is observed as it is queued.
 
 use khora_core::math::Quaternion;
 use khora_core::script::{ComponentName, ScriptValue, WorldCommand};
@@ -45,7 +50,7 @@ impl Machine {
             } => {
                 let entity = self.entity_at(entity)?;
                 let (component, value) = self.patch_value(program, host, patch, base)?;
-                host.commands.push(match mode {
+                let command = match mode {
                     WriteMode::Set => WorldCommand::SetComponent {
                         entity,
                         component,
@@ -56,15 +61,53 @@ impl Machine {
                         component,
                         value,
                     },
-                });
+                };
+                // A script reads its own writes within the frame.
+                host.components.observe(&command);
+                host.commands.push(command);
+            }
+            Instruction::GetComponent {
+                dst,
+                entity,
+                component,
+                ..
+            } => {
+                let entity = self.entity_at(entity)?;
+                let name = program.string(component).ok_or(Fault::BadString)?;
+                let copy = match host.components.get(name, entity) {
+                    None => Value::Null,
+                    Some(read) => {
+                        let unreadable = |reason: String| Fault::Unreadable {
+                            component: name.to_owned(),
+                            reason,
+                        };
+                        let owned = crate::bridge::to_owned_as(&read, name, &program.structs)
+                            .map_err(|error| unreadable(error.to_string()))?;
+                        host.arena
+                            .import(&owned, program)
+                            .map_err(|error| unreadable(format!("{error:?}")))?
+                    }
+                };
+                self.write(dst, copy)?;
+            }
+            Instruction::HasComponent {
+                dst,
+                entity,
+                component,
+            } => {
+                let entity = self.entity_at(entity)?;
+                let name = program.string(component).ok_or(Fault::BadString)?;
+                self.write(dst, Value::Bool(host.components.has(name, entity)))?;
             }
             Instruction::RemoveComponent { entity, component } => {
                 let entity = self.entity_at(entity)?;
                 let name = program.string(component).ok_or(Fault::BadString)?;
-                host.commands.push(WorldCommand::RemoveComponent {
+                let command = WorldCommand::RemoveComponent {
                     entity,
                     component: ComponentName::new(name),
-                });
+                };
+                host.components.observe(&command);
+                host.commands.push(command);
             }
             Instruction::SpawnEntity {
                 position,

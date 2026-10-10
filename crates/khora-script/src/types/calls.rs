@@ -100,6 +100,14 @@ impl Checker {
         args: &[Expr],
         context: &Context,
     ) -> Ty {
+        // Growing or shrinking an array held by a component's copy changes the
+        // copy only — the same trap as assigning to one of its fields.
+        if self.refuse_copy_write(object) {
+            for argument in args {
+                self.check_expr(argument, context);
+            }
+            return Ty::Error;
+        }
         let wanted = match name {
             "Push" => element.clone(),
             "RemoveAt" => Ty::Int,
@@ -156,7 +164,7 @@ impl Checker {
             _ => self.error_note(
                 format!("an entity has no field `{name}`"),
                 span,
-                "a component is read with `Get` on the entity — reading components from a script is not available yet",
+                format!("a component is read with `Get` on the entity — `e.Get({name})?.field`, or `if (var c = e.Get({name})) {{ … }}`"),
             ),
         }
         Ty::Error
