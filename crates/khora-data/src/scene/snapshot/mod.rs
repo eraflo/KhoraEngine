@@ -206,7 +206,7 @@ pub fn prepare_snapshot(world: &mut World, file: &SceneFile) -> Result<Prepared,
                 types,
             } => {
                 let load = Arc::new(
-                    plan_fields(world, name, *domain, fields.clone(), types.clone())
+                    plan_fields(world, name, *domain, fields.clone(), types.clone(), false)
                         .map_err(refused)?,
                 );
                 if declared.insert(name.clone(), Arc::clone(&load)).is_some() {

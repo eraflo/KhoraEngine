@@ -286,7 +286,7 @@ pub(super) fn capture_pages<'w, V>(
                 // Described by the record, beside its pages.
                 ComponentKey::Declared(_) => registry
                     .vtable(*key)
-                    .filter(|vtable| is_saved_declared(vtable))
+                    .filter(|vtable| is_saved_declared(vtable, kept))
                     .map(Saved::Declared),
             })
             .collect();

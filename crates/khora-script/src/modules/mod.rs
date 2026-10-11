@@ -32,6 +32,7 @@
 //! Without that, a diamond would produce duplicate declarations that collide
 //! with themselves, and the same syntax error twenty times.
 
+pub mod behaviors;
 pub mod components;
 pub mod loader;
 pub mod path;

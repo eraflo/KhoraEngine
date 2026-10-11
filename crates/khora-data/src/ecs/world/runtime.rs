@@ -42,6 +42,9 @@ pub struct RuntimeComponentDecl {
     pub domain: SemanticDomain,
     /// Who writes it.
     pub provenance: ComponentProvenance,
+    /// Whether a game save keeps it although a scene does not: state the
+    /// engine wrote while running and reads back to resume.
+    pub resumable: bool,
     /// Its fields.
     pub layout: PackedLayout,
 }
@@ -316,9 +319,13 @@ impl World {
         decl: RuntimeComponentDecl,
     ) -> Result<ComponentKey, RegisterError> {
         let columns = Arc::new(PackedColumns::new(Arc::new(decl.layout)));
-        self.storage
-            .registry
-            .register_declared(&decl.name, decl.domain, decl.provenance, columns)
+        self.storage.registry.register_declared(
+            &decl.name,
+            decl.domain,
+            decl.provenance,
+            decl.resumable,
+            columns,
+        )
     }
 
     /// Gives a declared component new fields, rebuilding every row of it field

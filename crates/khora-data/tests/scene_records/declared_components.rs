@@ -83,6 +83,7 @@ pub(super) fn declare(
             name: name.to_owned(),
             domain,
             provenance: ComponentProvenance::Authored,
+            resumable: false,
             layout: PackedLayout::new(fields).expect("a valid layout"),
         })
         .unwrap_or_else(|e| panic!("`{name}` registers: {e}"))

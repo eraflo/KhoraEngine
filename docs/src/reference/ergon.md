@@ -39,7 +39,8 @@ behavior Guard {
 | `behavior Name { … }` | runs | the unit the engine attaches to an entity |
 | `struct Name { … }` | runs — a value type; its field defaults must be constants; operator overloads check but do not compile yet |
 | `[Domain(D)] component Name { … }` | runs — a component the project declares; see [Declaring components](#declaring-components) |
-| `[Attribute]` on a behavior | parses | nothing reads it yet |
+| `[Domain(D)]` on a behavior | runs — where the behavior's fields are stored (default `Script`) |
+| `[Critical]`, `[Budget(…)]`, `[Rate(…)]` on a behavior | parses — nothing reads them yet; any other attribute is refused |
 
 Comments are `// line` and `/* block */`.
 

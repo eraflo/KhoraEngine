@@ -242,6 +242,27 @@ pub struct DeclaredComponent {
     pub domain: khora_core::ecs::SemanticDomain,
     /// Its fields, in declaration order.
     pub fields: Vec<DeclaredField>,
+    /// What declares it: a `component`, a `behavior`'s authored fields, or a
+    /// behavior's state companion. A program frozen before behaviors were
+    /// components declares only components.
+    #[serde(default)]
+    pub kind: DeclaredKind,
+}
+
+/// What a [`DeclaredComponent`] stands for.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum DeclaredKind {
+    /// A `component` a script declares.
+    #[default]
+    Component,
+    /// A `behavior`'s authored fields.
+    Behavior,
+    /// The state the engine keeps for a behavior's instance: its state, state
+    /// data, timers, pending sequence and lifecycle.
+    BehaviorState {
+        /// The behavior it belongs to.
+        behavior: String,
+    },
 }
 
 /// One field of a [`DeclaredComponent`].

@@ -28,10 +28,10 @@ use crate::arena::Owned;
 use crate::ast::{Attribute, Expr, Field, Item, StructDecl, TypeRef};
 use crate::bytecode::keys::type_name;
 use crate::diagnostics::Diagnostic;
-use crate::vm::{DeclaredComponent, DeclaredField, Program};
+use crate::vm::{DeclaredComponent, DeclaredField, DeclaredKind, Program};
 
 /// The attribute that places a component's data.
-const DOMAIN: &str = "Domain";
+pub(super) const DOMAIN: &str = "Domain";
 
 /// Every refusal about the components the project's own modules declare:
 /// a name the engine uses, an attribute other than one `[Domain(…)]`, a
@@ -94,6 +94,7 @@ pub fn declared_components(resolved: &Resolved, program: &Program) -> Vec<Declar
                     default: default_of(program, &decl.name, slot, &field.ty),
                 })
                 .collect(),
+            kind: DeclaredKind::Component,
         })
         .collect();
     declared.sort_by(|a, b| a.name.cmp(&b.name));
@@ -164,7 +165,7 @@ fn report_attributes(attributes: &[Attribute], diagnostics: &mut Vec<Diagnostic>
 }
 
 /// The domain names, as an author writes them.
-fn known_domains() -> String {
+pub(super) fn known_domains() -> String {
     SemanticDomain::ALL
         .iter()
         .map(|domain| format!("`{}`", domain.name()))
@@ -173,7 +174,7 @@ fn known_domains() -> String {
 }
 
 /// The domain `[Domain(X)]` names, when it names one.
-fn domain_of(attributes: &[Attribute]) -> Option<SemanticDomain> {
+pub(super) fn domain_of(attributes: &[Attribute]) -> Option<SemanticDomain> {
     attributes
         .iter()
         .filter(|attribute| attribute.name == DOMAIN)
@@ -222,7 +223,7 @@ fn report_field(field: &Field, diagnostics: &mut Vec<Diagnostic>) {
 }
 
 /// Where in `expr`, a default, a float literal stands for no finite number.
-fn non_finite(expr: &Expr) -> Option<crate::diagnostics::Span> {
+pub(super) fn non_finite(expr: &Expr) -> Option<crate::diagnostics::Span> {
     match expr {
         Expr::Float { value, span }
         | Expr::Duration { value, span }
@@ -237,7 +238,7 @@ fn non_finite(expr: &Expr) -> Option<crate::diagnostics::Span> {
 
 /// What a field type is to the engine's storage. `None` for one it cannot
 /// store (`Map<…>`).
-fn ergon_type(ty: &TypeRef) -> Option<ErgonType> {
+pub(super) fn ergon_type(ty: &TypeRef) -> Option<ErgonType> {
     Some(match ty {
         TypeRef::Void | TypeRef::Generic { .. } => return None,
         TypeRef::Optional { inner, .. } => ErgonType::Optional(Box::new(ergon_type(inner)?)),
@@ -255,7 +256,11 @@ fn ergon_type(ty: &TypeRef) -> Option<ErgonType> {
 /// layouts: a struct changed between two versions of a component is then a
 /// field of another type. A struct already being expanded — one that holds
 /// itself — stays known by its name.
-fn with_struct_fields(ty: ErgonType, program: &Program, expanding: &mut Vec<String>) -> ErgonType {
+pub(super) fn with_struct_fields(
+    ty: ErgonType,
+    program: &Program,
+    expanding: &mut Vec<String>,
+) -> ErgonType {
     match ty {
         ErgonType::Optional(inner) => {
             ErgonType::Optional(Box::new(with_struct_fields(*inner, program, expanding)))
@@ -290,7 +295,7 @@ fn with_struct_fields(ty: ErgonType, program: &Program, expanding: &mut Vec<Stri
 
 /// `ty` as the engine stores it: a duration and an angle are floats a script
 /// reads in its own unit.
-fn as_stored(ty: ErgonType) -> ErgonType {
+pub(super) fn as_stored(ty: ErgonType) -> ErgonType {
     match ty {
         ErgonType::Struct { name, .. } if name == "Duration" || name == "Angle" => ErgonType::Float,
         ErgonType::Optional(inner) => ErgonType::Optional(Box::new(as_stored(*inner))),
@@ -317,7 +322,7 @@ fn default_of(program: &Program, component: &str, slot: usize, ty: &TypeRef) -> 
 
 /// `value` as a field of `ty` holds it: an `int` written where a `float` is
 /// declared — inside an optional or an array too — is that float.
-fn at_type(value: ScriptValue, ty: &ErgonType) -> ScriptValue {
+pub(super) fn at_type(value: ScriptValue, ty: &ErgonType) -> ScriptValue {
     match (ty, value) {
         (ErgonType::Float, ScriptValue::Int(v)) => ScriptValue::Float(v as f32),
         (ErgonType::Optional(inner), value) if value != ScriptValue::Null => at_type(value, inner),

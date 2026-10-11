@@ -61,6 +61,8 @@ pub mod sites;
 pub mod stmt;
 mod structs;
 
+pub(crate) use structs::constant;
+
 #[cfg(test)]
 mod tests;
 

@@ -41,6 +41,9 @@ pub enum ErgonType {
     Optional(Box<ErgonType>),
     /// `T[]`
     Array(Box<ErgonType>),
+    /// Any value — what the engine keeps of a script's own state. Spelled
+    /// `<any>`, which no struct's name can be.
+    Any,
     /// A struct a script declares: its name and, where known, its fields —
     /// what tells two versions of one struct apart. `None` where the struct
     /// holds itself, or nothing more was known.
@@ -75,12 +78,16 @@ impl ErgonType {
     }
 
     fn parse_at(text: &[u8], at: &mut usize) -> Option<Self> {
+        if text[*at..].starts_with(b"<any>") {
+            *at += b"<any>".len();
+            return Some(Self::parse_suffixes(text, at, Self::Any));
+        }
         let start = *at;
         while *at < text.len() && (text[*at].is_ascii_alphanumeric() || text[*at] == b'_') {
             *at += 1;
         }
         let name = std::str::from_utf8(&text[start..*at]).ok()?;
-        let mut ty = match name {
+        let ty = match name {
             "" => return None,
             "bool" => Self::Bool,
             "int" => Self::Int,
@@ -120,6 +127,11 @@ impl ErgonType {
                 }
             },
         };
+        Some(Self::parse_suffixes(text, at, ty))
+    }
+
+    /// `ty` with the `?` and `[]` that follow it at `at`.
+    fn parse_suffixes(text: &[u8], at: &mut usize, mut ty: Self) -> Self {
         loop {
             match text.get(*at) {
                 Some(b'?') => {
@@ -130,7 +142,7 @@ impl ErgonType {
                     *at += 2;
                     ty = Self::Array(Box::new(ty));
                 }
-                _ => return Some(ty),
+                _ => return ty,
             }
         }
     }
@@ -168,6 +180,7 @@ impl ErgonType {
             | (Self::Float, ScriptValue::Float(_) | ScriptValue::Int(_))
             | (Self::Str, ScriptValue::Str(_))
             | (Self::Entity, ScriptValue::Entity(_)) => true,
+            (Self::Any, _) => true,
             (Self::Engine(name), value) => value.type_name() == *name,
             (Self::Optional(_), ScriptValue::Null) => true,
             (Self::Optional(inner), value) => inner.admits(value),
@@ -220,6 +233,7 @@ impl std::fmt::Display for ErgonType {
             Self::Engine(name) => f.write_str(name),
             Self::Optional(inner) => write!(f, "{inner}?"),
             Self::Array(element) => write!(f, "{element}[]"),
+            Self::Any => f.write_str("<any>"),
             Self::Struct { name, .. } => f.write_str(name),
         }
     }

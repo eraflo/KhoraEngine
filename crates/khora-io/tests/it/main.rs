@@ -18,6 +18,7 @@
 //! full link of the crate's dependency tree. New integration tests join this
 //! binary as a module instead of adding a file at the root of `tests/`.
 
+mod behavior_components;
 mod declared_component_scenes;
 mod game_saves;
 mod game_saves_text_base;

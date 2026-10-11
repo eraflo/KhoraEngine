@@ -37,7 +37,7 @@ use serde::{Deserialize, Serialize};
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{ErgonType, ScriptValue};
 
-use super::component_registration::{registration_named, Staged, StagedComponent};
+use super::component_registration::{registration_named, Kept, Staged, StagedComponent};
 use super::record::{
     from_record, to_record, EntityRef, Record, RecordError, ReferenceReader, ReferenceWriter,
     ReportEntry, ReportKind,
@@ -59,6 +59,11 @@ pub struct DeclaredRecord {
     pub domain: SemanticDomain,
     /// Its fields, in declaration order.
     pub fields: Vec<DeclaredFieldRecord>,
+    /// Whether a game save keeps it although a scene does not: a behavior's
+    /// state companion. A declaration written before there were any reads
+    /// as not.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub resumable: bool,
 }
 
 /// One field of a [`DeclaredRecord`].
@@ -96,6 +101,7 @@ pub(super) fn declaration_of(vtable: &ComponentVTable) -> Option<DeclaredRecord>
                 default: encode(&field.default, &mut Outside).unwrap_or(Record::Unit),
             })
             .collect(),
+        resumable: vtable.resumable,
     })
 }
 
@@ -128,7 +134,7 @@ pub(crate) fn described<'a>(
 /// itself: `{ name, domain, fields: [{ name, kind, default }] }`.
 pub(crate) fn declaration_to_record(declared: &DeclaredRecord) -> Record {
     let text = |value: &str| Record::Str(value.to_owned());
-    Record::Struct {
+    let mut record = Record::Struct {
         name: "Declared".to_owned(),
         fields: vec![
             ("name".to_owned(), text(&declared.name)),
@@ -158,7 +164,13 @@ pub(crate) fn declaration_to_record(declared: &DeclaredRecord) -> Record {
                 ),
             ),
         ],
+    };
+    if declared.resumable {
+        if let Record::Struct { fields, .. } = &mut record {
+            fields.push(("resumable".to_owned(), Record::Bool(true)));
+        }
     }
+    record
 }
 
 /// The declaration [`declaration_to_record`] wrote.
@@ -207,7 +219,20 @@ pub(crate) fn declaration_from_record(record: &Record) -> Result<DeclaredRecord,
                 })
             })
             .collect::<Result<_, String>>()?,
+        // Written only when true: a file of components only reads as before.
+        resumable: matches!(record_part(record, "resumable"), Some(Record::Bool(true))),
     })
+}
+
+/// The part `name` of a declaration's record, when it has one.
+fn record_part<'r>(record: &'r Record, name: &str) -> Option<&'r Record> {
+    let Record::Struct { fields, .. } = record else {
+        return None;
+    };
+    fields
+        .iter()
+        .find(|(known, _)| known == name)
+        .map(|(_, value)| value)
 }
 
 /// Every field kind, as a file names it.
@@ -244,7 +269,7 @@ pub(crate) fn declarations_of(world: &World) -> Vec<DeclaredRecord> {
     let mut declared: Vec<DeclaredRecord> = world
         .components()
         .iter()
-        .filter(|vtable| is_saved_declared(vtable))
+        .filter(|vtable| is_saved_declared(vtable, Kept::Game))
         .filter_map(declaration_of)
         .collect();
     declared.sort_by(|a, b| a.name.cmp(&b.name));
@@ -264,10 +289,12 @@ pub(crate) fn register_all(world: &mut World, declared: &[DeclaredRecord]) {
     }
 }
 
-/// Whether a scene keeps `vtable`'s component: one declared while the
-/// engine runs, that someone authored.
-pub(super) fn is_saved_declared(vtable: &ComponentVTable) -> bool {
-    vtable.rust.is_none() && vtable.provenance.is_copied_on_duplicate()
+/// Whether a document `kept` keeps `vtable`'s component, one declared while
+/// the engine runs: a scene what someone authored, a game save that and the
+/// state play resumes from (a behavior's state companion).
+pub(super) fn is_saved_declared(vtable: &ComponentVTable, kept: Kept) -> bool {
+    vtable.rust.is_none()
+        && (vtable.provenance.is_copied_on_duplicate() || (kept == Kept::Game && vtable.resumable))
 }
 
 /// Row `row` of a declared component's `column`, as a record: its fields by
@@ -336,6 +363,8 @@ pub(crate) struct DeclaredLoad {
     file_fields: Vec<String>,
     /// The declaration to register when the world has none.
     pub(crate) register: Option<RuntimeComponentDecl>,
+    /// Whether it is runtime state a game save keeps and a scene does not.
+    pub(crate) resumable: bool,
 }
 
 /// Plans reading the file's `declared` component into `world`. Refused when
@@ -360,18 +389,27 @@ pub(crate) fn plan(world: &World, declared: &DeclaredRecord) -> Result<DeclaredL
         .iter()
         .map(|field| field.ty.clone())
         .collect();
-    plan_fields(world, name, declared.domain, fields, types)
+    plan_fields(
+        world,
+        name,
+        declared.domain,
+        fields,
+        types,
+        declared.resumable,
+    )
 }
 
 /// Plans reading a declared component a file describes as `fields` of
-/// `types` (each where known), stored in `file_domain`, into `world`.
-/// Refused when its name is a Rust component's.
+/// `types` (each where known), stored in `file_domain` — runtime state a
+/// game save resumes from when `resumable` — into `world`. Refused when its
+/// name is a Rust component's.
 pub(crate) fn plan_fields(
     world: &World,
     name: &str,
     file_domain: SemanticDomain,
     fields: Vec<PackedField>,
     types: Vec<Option<ErgonType>>,
+    resumable: bool,
 ) -> Result<DeclaredLoad, String> {
     let refused = || {
         format!("the file declares `{name}`, a name an engine component has: a file cannot redeclare it")
@@ -381,25 +419,33 @@ pub(crate) fn plan_fields(
     }
     let live = match world.components().key_named(name) {
         Some(ComponentKey::Rust(_)) => return Err(refused()),
-        Some(key) => world
-            .components()
-            .vtable(key)
-            .and_then(|vtable| Some((vtable.domain, Arc::new(vtable.columns.packed()?.clone())))),
+        Some(key) => world.components().vtable(key).and_then(|vtable| {
+            Some((
+                vtable.domain,
+                Arc::new(vtable.columns.packed()?.clone()),
+                vtable.resumable,
+            ))
+        }),
         None => None,
     };
     let file_fields = fields.iter().map(|field| field.name.clone()).collect();
-    let (domain, layout, register) = match live {
-        Some((domain, layout)) => (domain, layout, None),
+    let (domain, layout, register, resumable) = match live {
+        Some((domain, layout, live_resumable)) => (domain, layout, None, live_resumable),
         None => {
             let layout = typed_layout(fields, types)
                 .map_err(|error| format!("the file's declaration of `{name}`: {error:?}"))?;
             let register = RuntimeComponentDecl {
                 name: name.to_owned(),
                 domain: file_domain,
-                provenance: ComponentProvenance::Authored,
+                provenance: if resumable {
+                    ComponentProvenance::Runtime
+                } else {
+                    ComponentProvenance::Authored
+                },
+                resumable,
                 layout: layout.clone(),
             };
-            (file_domain, Arc::new(layout), Some(register))
+            (file_domain, Arc::new(layout), Some(register), resumable)
         }
     };
     Ok(DeclaredLoad {
@@ -410,6 +456,7 @@ pub(crate) fn plan_fields(
         layout,
         file_fields,
         register,
+        resumable,
     })
 }
 

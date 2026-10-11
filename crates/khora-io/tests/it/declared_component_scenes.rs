@@ -50,6 +50,7 @@ fn guarded() -> (World, PersistentId, PersistentId) {
             name: "Health".into(),
             domain: SemanticDomain::Physics,
             provenance: ComponentProvenance::Authored,
+            resumable: false,
             layout: PackedLayout::new(vec![
                 PackedField {
                     name: "current".into(),

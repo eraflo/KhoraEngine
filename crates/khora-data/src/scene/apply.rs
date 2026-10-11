@@ -275,6 +275,21 @@ pub(super) fn prepare_kept(
                     }
                     columns.push((index, Loaded::Rust(reg)));
                 }
+                // Runtime state a scene does not keep — a behavior's state
+                // companion — is skipped, said so; its declaration was read.
+                None if declared
+                    .get(name.as_str())
+                    .is_some_and(|load| load.resumable && kept == Kept::Scene) =>
+                {
+                    for id in &page.rows {
+                        report.entries.push(ReportEntry {
+                            entity: Some(*id),
+                            component: Some(name.clone()),
+                            path: String::new(),
+                            kind: ReportKind::NotSaved,
+                        });
+                    }
+                }
                 None if declared.contains_key(name) => {
                     columns.push((index, Loaded::Declared(Arc::clone(&declared[name]))));
                 }
@@ -319,10 +334,16 @@ pub(super) fn prepare_kept(
             }
         },
     )?;
+    // A component the load skipped registers nothing.
     let used = record
         .pages
         .iter()
-        .flat_map(|page| page.components.iter().map(String::as_str));
+        .flat_map(|page| page.components.iter().map(String::as_str))
+        .filter(|name| {
+            !declared
+                .get(*name)
+                .is_some_and(|load| load.resumable && kept == Kept::Scene)
+        });
     prepared.set_register(to_register(&declared, used));
     Ok(prepared)
 }

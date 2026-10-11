@@ -26,6 +26,7 @@ mod array_growth_checks;
 mod array_growth_fuel;
 mod array_paths;
 mod arrays;
+mod behavior_components;
 mod bound_name_shadowing;
 mod calls_through_an_entity;
 mod coalesce_and_casts;

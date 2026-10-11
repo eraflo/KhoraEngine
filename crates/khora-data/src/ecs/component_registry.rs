@@ -163,6 +163,8 @@ pub struct ComponentVTable {
     pub layout: LayoutPolicy,
     /// Who writes it.
     pub provenance: ComponentProvenance,
+    /// Whether a game save keeps it although a scene does not.
+    pub resumable: bool,
     /// What storage does with its columns.
     pub columns: Arc<dyn ColumnOps>,
 }
@@ -260,6 +262,7 @@ impl ComponentRegistry {
             domain,
             layout: LayoutPolicy::Soa,
             provenance,
+            resumable: false,
             columns: Arc::new(RustColumns::<T>::new()),
         });
         Ok(key)
@@ -272,6 +275,7 @@ impl ComponentRegistry {
         name: &str,
         domain: SemanticDomain,
         provenance: ComponentProvenance,
+        resumable: bool,
         columns: Arc<dyn ColumnOps>,
     ) -> Result<ComponentKey, RegisterError> {
         if let Some(taken) = self.key_named(name) {
@@ -299,6 +303,7 @@ impl ComponentRegistry {
             domain,
             layout: LayoutPolicy::Soa,
             provenance,
+            resumable,
             columns,
         });
         Ok(key)

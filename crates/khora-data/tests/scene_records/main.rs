@@ -32,6 +32,7 @@ use khora_data::scene::{
     MsgPackEncoding, PageRecord, SceneEncoding, SceneRecord, TextEncoding,
 };
 
+mod behavior_components;
 mod decimals;
 mod declared_component_loads;
 mod declared_component_prefabs;

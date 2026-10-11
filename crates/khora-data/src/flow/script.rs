@@ -915,6 +915,7 @@ mod tests {
                 name: "Signal".to_owned(),
                 domain: SemanticDomain::Spatial,
                 provenance: ComponentProvenance::Authored,
+                resumable: false,
                 layout: PackedLayout::new(vec![PackedField {
                     name: "strength".to_owned(),
                     kind: FieldKind::Int,

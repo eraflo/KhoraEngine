@@ -742,17 +742,21 @@ fn an_unchanged_declaration_bumps_no_epoch() {
 // ─── What the engine sends ──────────────────────────────────────────────────
 
 /// **The mount sends each declaring module's components once**, whichever
-/// modules import it; a module that declares nothing sends nothing.
+/// modules import it; a module that declares nothing sends nothing. The two
+/// importers write `Health` from plain functions — a behavior is a component
+/// of its own, and would be a declaration of theirs.
 #[test]
 fn load_all_sends_each_declaring_module_once() {
     let dir = tempfile::TempDir::new().expect("a temp dir");
     std::fs::create_dir_all(dir.path().join("game")).expect("makes a subdir");
     std::fs::write(dir.path().join("game/health.erg"), HEALTH).expect("writes");
-    for medic in ["game/medic.erg", "game/nurse.erg"] {
+    for (path, function) in [("game/medic.erg", "Treat"), ("game/nurse.erg", "Tend")] {
         std::fs::write(
-            dir.path().join(medic),
-            "import \"game/health.erg\";
-             behavior Medic { void Go() { this.Add(Health { }); } }",
+            dir.path().join(path),
+            format!(
+                "import \"game/health.erg\";
+                 fn void {function}(Entity e) {{ e.Add(Health {{ }}); }}"
+            ),
         )
         .expect("writes");
     }
@@ -929,6 +933,7 @@ fn a_component_registered_without_a_script_is_adopted() {
             name: "Health".to_owned(),
             domain: SemanticDomain::Physics,
             provenance: ComponentProvenance::Authored,
+            resumable: false,
             layout: khora_data::ecs::PackedLayout::new(vec![khora_data::ecs::PackedField {
                 name: "current".to_owned(),
                 kind: khora_data::ecs::FieldKind::Int,

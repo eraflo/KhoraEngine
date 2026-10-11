@@ -66,6 +66,7 @@ pub(super) fn decl(
         name: name.to_owned(),
         domain,
         provenance: ComponentProvenance::Authored,
+        resumable: false,
         layout: layout(fields),
     }
 }
@@ -286,6 +287,7 @@ fn a_runtime_component_is_described_by_the_registry() {
             name: "Wake".to_owned(),
             domain: SemanticDomain::Physics,
             provenance: ComponentProvenance::Runtime,
+            resumable: false,
             layout: layout(vec![field(
                 "strength",
                 FieldKind::Float,

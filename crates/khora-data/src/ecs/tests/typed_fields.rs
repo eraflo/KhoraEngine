@@ -204,6 +204,7 @@ fn declare_signal(world: &mut World) -> ComponentKey {
             name: "Signal".to_owned(),
             domain: SemanticDomain::Spatial,
             provenance: ComponentProvenance::Authored,
+            resumable: false,
             layout: PackedLayout::new(vec![
                 field("strength", FieldKind::Int, ScriptValue::Int(0)),
                 field(

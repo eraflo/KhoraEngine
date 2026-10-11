@@ -45,7 +45,7 @@ use khora_data::ecs::{
     ComponentProvenance, DataSystemRegistration, FieldKind, PackedField, PackedLayout,
     RuntimeComponentDecl, TickPhase, World,
 };
-use khora_script::vm::DeclaredComponent;
+use khora_script::vm::{DeclaredComponent, DeclaredKind};
 
 /// The components one module declares, as it last compiled — none when it
 /// declares none, or no longer exists.
@@ -148,8 +148,17 @@ pub fn apply_declarations(
     // it itself; a module outside it keeps what it owned.
     let mut declared: BTreeMap<&str, (&str, &DeclaredComponent)> = BTreeMap::new();
     for (module, components) in &sets {
+        // A behavior refused here takes its state companion with it: the
+        // state of a behavior that is not registered is no one's.
+        let mut refused_here: Vec<&str> = Vec::new();
         for component in components.iter() {
             let name = component.name.as_str();
+            if let DeclaredKind::BehaviorState { behavior } = &component.kind {
+                if refused_here.contains(&behavior.as_str()) {
+                    report.refused.push(name.to_owned());
+                    continue;
+                }
+            }
             let owner = state.owner.get(name).map(String::as_str).filter(|owner| {
                 owner != module
                     && sets
@@ -170,6 +179,7 @@ pub fn apply_declarations(
                     "`{name}` is declared by both `{first}` and `{module}`: it stays as `{first}` declares it — rename one"
                 );
                 report.refused.push(name.to_owned());
+                refused_here.push(name);
                 continue;
             }
             declared.insert(name, (module, component));
@@ -184,6 +194,14 @@ pub fn apply_declarations(
     });
 
     for (name, (module, component)) in &declared {
+        // Sorted by name, a behavior comes before its companion: one that
+        // could not be registered leaves its companion unregistered too.
+        if let DeclaredKind::BehaviorState { behavior } = &component.kind {
+            if world.components().key_named(behavior).is_none() {
+                log::error!("`{name}` is not registered: its behavior `{behavior}` is not");
+                continue;
+            }
+        }
         apply_one(world, state, component, &mut report);
         state.orphans.remove(*name);
         state.refused.remove(*name);
@@ -245,10 +263,18 @@ fn apply_one(
         }
     };
     let Some(key) = world.components().key_named(name) else {
+        // A behavior's state companion is what the engine writes while the
+        // behavior runs: never in a scene, always in a game save.
+        let state = matches!(component.kind, DeclaredKind::BehaviorState { .. });
         match world.register_runtime_component(RuntimeComponentDecl {
             name: name.clone(),
             domain: component.domain,
-            provenance: ComponentProvenance::Authored,
+            provenance: if state {
+                ComponentProvenance::Runtime
+            } else {
+                ComponentProvenance::Authored
+            },
+            resumable: state,
             layout,
         }) {
             Ok(_) => report.registered.push(name.clone()),

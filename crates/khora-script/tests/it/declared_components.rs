@@ -25,7 +25,9 @@ use khora_core::ecs::SemanticDomain;
 use khora_core::script::{
     ComponentName, ComponentProjection, ErgonType, FrameComponents, ProjectedComponent, ScriptValue,
 };
-use khora_script::vm::{DeclaredComponent, DeclaredField, Machine, Program, Run, Value};
+use khora_script::vm::{
+    DeclaredComponent, DeclaredField, DeclaredKind, Machine, Program, Run, Value,
+};
 use khora_script::{
     compile_module, CompileOutcome, Diagnostic, Host, MemoryLoader, ENGINE_COMPONENTS_MODULE,
 };
@@ -113,6 +115,7 @@ fn a_program_lists_the_components_it_declares() {
                         ScriptValue::Array(Vec::new()),
                     ),
                 ],
+                kind: DeclaredKind::Component,
             },
             DeclaredComponent {
                 name: "Shield".to_owned(),
@@ -127,6 +130,7 @@ fn a_program_lists_the_components_it_declares() {
                     ),
                     field("raised", ErgonType::Bool, ScriptValue::Bool(true)),
                 ],
+                kind: DeclaredKind::Component,
             },
         ]
     );
@@ -266,4 +270,32 @@ fn add_then_get_reads_the_declared_defaults() {
 
     assert_eq!(machine.run(&program, &mut host, u64::MAX), Run::Completed);
     assert_eq!(machine.result(), Value::Int(100_100));
+}
+
+/// **A struct a script names `Value` is a struct**: the type a file keeps of
+/// a field of it — written `Value{n:int}` — reads back as that struct, and a
+/// component field of it is typed with the struct's fields, so a value of
+/// another shape is kept out of it.
+#[test]
+fn a_field_of_a_struct_named_value_is_typed_as_that_struct() {
+    let expected = ErgonType::Struct {
+        name: "Value".to_owned(),
+        fields: Some(vec![("n".to_owned(), ErgonType::Int)]),
+    };
+    assert_eq!(
+        ErgonType::parse("Value{n:int}"),
+        Some(expected.clone()),
+        "the type a file keeps of the field reads back"
+    );
+
+    let program = build(
+        "struct Value { int n = 0; }
+         component Holder { Value held = Value { n: 1 }; }",
+    );
+    let holder = program
+        .declared
+        .iter()
+        .find(|declared| declared.name == "Holder")
+        .expect("`Holder` is declared");
+    assert_eq!(holder.fields[0].ty, expected, "the struct, with its fields");
 }

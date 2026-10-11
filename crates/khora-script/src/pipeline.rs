@@ -80,6 +80,10 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> CompileOutcome 
         &resolved,
         loader.engine_components(),
     ));
+    diagnostics.extend(crate::modules::behaviors::report_script_behaviors(
+        &resolved,
+        loader.engine_components(),
+    ));
     if crate::diagnostics::has_errors(&diagnostics) {
         return CompileOutcome {
             program: None,
@@ -100,8 +104,14 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> CompileOutcome 
     diagnostics.extend(compiled.diagnostics);
     let failed = crate::diagnostics::has_errors(&diagnostics);
     if !failed {
-        compiled.program.declared =
+        let mut declared =
             crate::modules::components::declared_components(&resolved, &compiled.program);
+        declared.extend(crate::modules::behaviors::declared_behaviors(
+            &resolved,
+            &compiled.program,
+        ));
+        declared.sort_by(|a, b| a.name.cmp(&b.name));
+        compiled.program.declared = declared;
     }
 
     CompileOutcome {

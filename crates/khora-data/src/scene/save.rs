@@ -638,7 +638,9 @@ pub fn promote(base: &SceneRecord, save: &SaveRecord) -> SceneRecord {
     // a script declares, saved by a scene.
     let authored = |name: &str| {
         registration_named(name).is_some_and(|reg| reg.is_saved())
-            || read.declarations().any(|declared| declared.name == name)
+            || read
+                .declarations()
+                .any(|declared| declared.name == name && !declared.resumable)
     };
 
     let mut pages = Pages::default();

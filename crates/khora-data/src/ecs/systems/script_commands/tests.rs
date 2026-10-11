@@ -957,6 +957,7 @@ mod typed {
                 name: "Charge".to_owned(),
                 domain: SemanticDomain::Spatial,
                 provenance: ComponentProvenance::Authored,
+                resumable: false,
                 layout: PackedLayout::new(vec![
                     field("amount", FieldKind::Int, ScriptValue::Int(0)),
                     field(
@@ -1165,6 +1166,7 @@ mod typed {
                 name: "Fuel".to_owned(),
                 domain: SemanticDomain::Spatial,
                 provenance: ComponentProvenance::Authored,
+                resumable: false,
                 layout: PackedLayout::new(vec![PackedField {
                     name: "litres".to_owned(),
                     kind: FieldKind::Float,
@@ -1369,6 +1371,7 @@ mod column {
                 name: name.to_owned(),
                 domain: SemanticDomain::Spatial,
                 provenance: ComponentProvenance::Authored,
+                resumable: false,
                 layout: PackedLayout::new(fields).expect("a valid layout"),
             })
             .expect("the component registers")

@@ -147,6 +147,17 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   `ColumnSnapshot` per page column, live rows only — snapshots include orphan rows). A reload whose reads
   were not projected this frame is deferred one frame. A `component` declaration is also a `StructLayout`, so
   a copy imports as a struct.
+- **Behaviors are components (spec 09, phase 1 — registered and persisted; the lane does not run on
+  them yet).** `modules/behaviors.rs::declared_behaviors`: each project behavior declares `Guard`
+  (`DeclaredKind::Behavior`, its fields in `[Domain(…)]`, default = the constant, else the zero, else a
+  placeholder — the initialiser writes the real one) and `Guard#state` (`DeclaredKind::BehaviorState`,
+  Script domain, fixed fields `state, state_fields, timers, pending, initialised, spawned, fault,
+  resume_failed`; `<any>` = `ErgonType::Any`). Registration: the companion is `Runtime` + `resumable`
+  (`ComponentVTable.resumable`); a behavior refused or unregistered takes its companion with it.
+  Persistence: `is_saved_declared(vtable, kept)` — a scene and the Play snapshot keep `Guard`, a game save
+  both, `promote` never the companion; `DeclaredRecord.resumable`; a scene load reports a companion
+  `NotSaved` and registers nothing for it. Names are global (a behavior named like any component is
+  refused). Unknown behavior attributes are refused.
 - **Script-defined components (spec 08).** A `component` outside `ENGINE_COMPONENTS_MODULE` is the
   project's: `[Domain(D)]` (one, nothing else), field defaults (constants; an engine value of numbers
   `Vec3(…)` too — component fields only), zero when absent, a type with no zero needs one. Checked per module

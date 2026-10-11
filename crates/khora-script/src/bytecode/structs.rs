@@ -231,7 +231,7 @@ impl Compiler {
 
 /// The value a constant expression stands for — what a struct field's default
 /// is (the checker refused any other).
-fn constant(expr: &Expr) -> Option<Owned> {
+pub(crate) fn constant(expr: &Expr) -> Option<Owned> {
     use khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
     if let Some((ty, n)) = crate::types::engine_constant(expr) {
         return Some(Owned::Scalar(match (ty, n.as_slice()) {
