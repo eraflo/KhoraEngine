@@ -71,6 +71,28 @@ pub trait ColumnOps: Send + Sync {
 
     /// A copy of the column, readable row by row without the `World`.
     fn snapshot(&self, column: &dyn AnyVec) -> Box<dyn ColumnSnapshot>;
+
+    /// Writes many rows of `column`: for each `(row, values)`, `values[i]`
+    /// into the field at `slots[i]`. Each row is all or nothing, as
+    /// [`Self::write_fields`] is; a refused row is skipped and the others are
+    /// written. Returns how many rows were written.
+    fn write_rows(
+        &self,
+        column: &mut dyn AnyVec,
+        slots: &[usize],
+        rows: &[(usize, &[ScriptValue])],
+    ) -> usize {
+        let mut patch = Vec::with_capacity(slots.len());
+        let mut written = 0;
+        for &(row, values) in rows {
+            patch.clear();
+            patch.extend(slots.iter().copied().zip(values.iter()));
+            if self.write_fields(column, row, &patch).is_ok() {
+                written += 1;
+            }
+        }
+        written
+    }
 }
 
 /// Why a typed write to a component's fields was refused.
@@ -160,6 +182,53 @@ impl<T: Component> ColumnOps for RustColumns<T> {
         }
         value.set_in_column(column, row);
         Ok(())
+    }
+
+    /// In place where the column is an array of `T`: each row's values are
+    /// checked whole ([`Component::check_field`]), then written where they
+    /// sit — no copy of a row is made, and a refused row is left untouched. A
+    /// field-split column takes the copy road of [`Self::write_fields`].
+    fn write_rows(
+        &self,
+        column: &mut dyn AnyVec,
+        slots: &[usize],
+        rows: &[(usize, &[ScriptValue])],
+    ) -> usize {
+        // The slots are the batch's, checked once rather than once a row.
+        if slots.iter().any(|&slot| T::script_type(slot).is_none()) {
+            return 0;
+        }
+        let Some(values) = column.as_any_mut().downcast_mut::<Vec<T>>() else {
+            let mut patch = Vec::with_capacity(slots.len());
+            let mut written = 0;
+            for &(row, row_values) in rows {
+                patch.clear();
+                patch.extend(slots.iter().copied().zip(row_values.iter()));
+                if self.write_fields(column, row, &patch).is_ok() {
+                    written += 1;
+                }
+            }
+            return written;
+        };
+        let mut written = 0;
+        for &(row, row_values) in rows {
+            let Some(target) = values.get_mut(row) else {
+                continue;
+            };
+            let fits = slots
+                .iter()
+                .zip(row_values)
+                .all(|(&slot, value)| T::check_field(slot, value).is_ok());
+            if !fits {
+                continue;
+            }
+            for (&slot, value) in slots.iter().zip(row_values) {
+                // Checked above: the value is one the field takes.
+                let _ = target.write_field(slot, value);
+            }
+            written += 1;
+        }
+        written
     }
 
     fn snapshot(&self, column: &dyn AnyVec) -> Box<dyn ColumnSnapshot> {

@@ -34,6 +34,7 @@
 //!
 //! [`AgentAccess::Isolated`]: crate::agent::AgentAccess::Isolated
 
+pub mod batch;
 pub mod buffer;
 pub mod catalog;
 pub mod command;
@@ -49,9 +50,10 @@ pub mod writeback;
 #[cfg(test)]
 mod tests;
 
+pub use batch::{BatchShapeError, ColumnBatch};
 pub use buffer::{CommandBuffer, Conflict};
 pub use catalog::{CatalogData, ScriptCatalog};
-pub use command::{ComponentName, WorldCommand, WriteTarget};
+pub use command::{ComponentName, WorldCommand, WriteTarget, WriteTargetRef};
 pub use event::{engine_event_channel, EventQueue, ScriptEvent, ENGINE_EVENT_BACKLOG};
 pub use field::{ErgonType, FieldValueError, ScriptField};
 pub use frozen::{FrozenFrame, FrozenLocal, FrozenMachine, FrozenValue, PendingBody};

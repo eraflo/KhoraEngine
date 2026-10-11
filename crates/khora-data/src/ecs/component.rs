@@ -147,6 +147,17 @@ pub trait Component: Clone + 'static + Send + Sync {
         None
     }
 
+    /// Whether the field at `slot` would take `value` — the check
+    /// [`write_field`](Self::write_field) makes, without writing: what lets a
+    /// row be checked whole before any of its fields is written. Default:
+    /// every value refused.
+    fn check_field(_slot: usize, value: &ScriptValue) -> Result<(), FieldValueError> {
+        Err(FieldValueError {
+            expected: "a field a script can write".to_owned(),
+            found: value.type_name().to_owned(),
+        })
+    }
+
     /// Writes the field at `slot`, refusing a value it cannot hold. Default:
     /// every write refused.
     fn write_field(&mut self, _slot: usize, value: &ScriptValue) -> Result<(), FieldValueError> {

@@ -409,6 +409,15 @@ fn column_ops_trait_items<O: khora_data::ecs::ColumnOps + ?Sized>() {
     let _ = O::copy_row;
     let _ = O::size_bytes;
     let _ = O::packed;
+    let _ = O::write_rows;
+}
+
+fn column_write_report_fields(x: &khora_data::ecs::ColumnWriteReport) {
+    let _: (&usize, &usize, &usize) = (&x.written, &x.missing, &x.refused);
+}
+
+fn apply_report_fields(x: &khora_data::ecs::systems::script_commands::ApplyReport) {
+    let _: (&usize, &usize, &usize) = (&x.applied, &x.rows_written, &x.rows_skipped);
 }
 
 fn field_kind_variants(x: &khora_data::ecs::FieldKind) {
@@ -1094,6 +1103,13 @@ fn module_ecs_paths_still_resolve() {
     is_eq::<khora_data::ecs::systems::script_commands::ApplyError>();
     is_partial_eq::<khora_data::ecs::systems::script_commands::ApplyError>();
     let _ = khora_data::ecs::systems::script_commands::apply_all;
+    let _ = khora_data::ecs::systems::script_commands::apply_all_reporting;
+    let _ = type_name::<khora_data::ecs::systems::script_commands::ApplyReport>();
+    let _ = apply_report_fields as fn(&khora_data::ecs::systems::script_commands::ApplyReport);
+    is_clone::<khora_data::ecs::systems::script_commands::ApplyReport>();
+    is_debug::<khora_data::ecs::systems::script_commands::ApplyReport>();
+    is_eq::<khora_data::ecs::systems::script_commands::ApplyReport>();
+    is_partial_eq::<khora_data::ecs::systems::script_commands::ApplyReport>();
     let _ = khora_data::ecs::systems::transform_propagation::transform_propagation_system;
     let _ = khora_data::ecs::systems::transform_propagation_system;
     same_item(
@@ -1463,6 +1479,22 @@ fn module_ecs_paths_still_resolve() {
     is_partial_eq::<khora_data::ecs::FieldError>();
     let _ = type_name::<khora_data::ecs::RuntimeComponentDecl>();
     let _ = runtime_component_decl_fields as fn(&khora_data::ecs::RuntimeComponentDecl);
+    let _ = type_name::<khora_data::ecs::ColumnWriteReport>();
+    let _ = column_write_report_fields as fn(&khora_data::ecs::ColumnWriteReport);
+    is_clone::<khora_data::ecs::ColumnWriteReport>();
+    is_debug::<khora_data::ecs::ColumnWriteReport>();
+    is_eq::<khora_data::ecs::ColumnWriteReport>();
+    is_partial_eq::<khora_data::ecs::ColumnWriteReport>();
+    #[allow(clippy::type_complexity)]
+    let _: fn(
+        &mut khora_data::ecs::World,
+        khora_data::ecs::ComponentKey,
+        &[usize],
+        Vec<(
+            khora_core::ecs::entity::EntityId,
+            &'static [khora_core::script::ScriptValue],
+        )>,
+    ) -> khora_data::ecs::ColumnWriteReport = khora_data::ecs::World::write_column;
     let _ = type_name::<khora_data::ecs::RelayoutReport>();
     let _ = relayout_report_fields as fn(&khora_data::ecs::RelayoutReport);
     is_debug::<khora_data::ecs::RelayoutReport>();

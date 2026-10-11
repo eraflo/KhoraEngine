@@ -18,7 +18,12 @@
 //! applied order must not depend on which worker finished first, and a write
 //! that another write silently discards must be reported.
 
-use super::{CommandBuffer, ComponentName, ScriptValue, WorldCommand, WriteTarget};
+use std::sync::Arc;
+
+use super::{
+    BatchShapeError, ColumnBatch, CommandBuffer, ComponentName, ScriptValue, WorldCommand,
+    WriteTarget,
+};
 use crate::ecs::entity::EntityId;
 use crate::math::{Quaternion, Vec3};
 
@@ -226,7 +231,7 @@ fn a_spawn_names_no_entity() {
         components: vec![("Name".into(), ScriptValue::Str("Explosion".to_owned()))],
     };
     assert_eq!(spawn.entity(), None);
-    assert_eq!(spawn.write_target(), None);
+    assert!(targets_of(&spawn).is_empty());
 }
 
 #[test]
@@ -285,4 +290,518 @@ fn a_string_and_an_array_read_back_by_reference() {
 
     let list = ScriptValue::Array(vec![ScriptValue::Int(1), ScriptValue::Int(2)]);
     assert_eq!(list.as_array().map(<[_]>::len), Some(2));
+}
+
+// ─── Column batches ─────────────────────────────────────────────────────────
+
+/// Every `(entity, target)` a command overwrites, owned, in the order the
+/// command names them.
+fn targets_of(command: &WorldCommand) -> Vec<(EntityId, WriteTarget)> {
+    let mut targets = Vec::new();
+    command.for_each_write_target(|entity, target| targets.push((entity, target.into_owned())));
+    targets
+}
+
+fn names(fields: &[&str]) -> Vec<String> {
+    fields.iter().map(|field| (*field).to_owned()).collect()
+}
+
+/// A `Health` batch writing `fields`, one row per `(entity, values)`.
+fn health_batch(fields: &[&str], rows: &[(u32, Vec<ScriptValue>)]) -> WorldCommand {
+    let mut batch = ColumnBatch::new(names(fields)).expect("distinct fields");
+    for (index, values) in rows {
+        batch
+            .push_row(entity(*index), values.clone())
+            .expect("a row of the batch's width");
+    }
+    WorldCommand::WriteColumn {
+        component: ComponentName::new("Health"),
+        batch: Arc::new(batch),
+    }
+}
+
+/// `SetComponent(Health, value)` on entity `index`.
+fn set_health(index: u32, value: ScriptValue) -> WorldCommand {
+    WorldCommand::SetComponent {
+        entity: entity(index),
+        component: ComponentName::new("Health"),
+        value,
+    }
+}
+
+/// A `Health` patch naming `fields`.
+fn health_patch(fields: &[(&str, i64)]) -> ScriptValue {
+    ScriptValue::Struct(
+        fields
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), ScriptValue::Int(*value)))
+            .collect(),
+    )
+}
+
+fn health_field(field: &str) -> WriteTarget {
+    WriteTarget::Field(ComponentName::new("Health"), field.to_owned())
+}
+
+/// A batch reads back the rows it was given, in the order they were pushed,
+/// each with one value per field.
+#[test]
+fn a_batch_reads_back_its_rows_in_push_order() {
+    let mut batch = ColumnBatch::new(names(&["current", "max"])).expect("distinct fields");
+    assert!(batch.is_empty());
+    assert_eq!(batch.len(), 0);
+
+    batch
+        .push_row(entity(4), [ScriptValue::Int(1), ScriptValue::Int(10)])
+        .expect("two values for two fields");
+    batch
+        .push_row(entity(2), vec![ScriptValue::Int(2), ScriptValue::Int(20)])
+        .expect("two values for two fields");
+
+    assert_eq!(batch.fields(), &names(&["current", "max"])[..]);
+    assert_eq!(batch.len(), 2);
+    assert!(!batch.is_empty());
+    let rows: Vec<(EntityId, Vec<ScriptValue>)> = batch
+        .rows()
+        .map(|(entity, values)| (entity, values.to_vec()))
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            (entity(4), vec![ScriptValue::Int(1), ScriptValue::Int(10)]),
+            (entity(2), vec![ScriptValue::Int(2), ScriptValue::Int(20)]),
+        ]
+    );
+}
+
+/// The same entity may appear twice: the boundary applies the later row.
+#[test]
+fn a_batch_keeps_two_rows_of_one_entity() {
+    let mut batch = ColumnBatch::new(names(&["current"])).expect("one field");
+    batch
+        .push_row(entity(1), [ScriptValue::Int(1)])
+        .expect("fits");
+    batch
+        .push_row(entity(1), [ScriptValue::Int(2)])
+        .expect("fits");
+
+    assert_eq!(batch.len(), 2);
+    let values: Vec<ScriptValue> = batch.rows().map(|(_, values)| values[0].clone()).collect();
+    assert_eq!(values, vec![ScriptValue::Int(1), ScriptValue::Int(2)]);
+}
+
+/// A row would write a field named twice twice; the batch is refused at
+/// `new`, naming the field.
+#[test]
+fn a_batch_naming_a_field_twice_is_refused() {
+    let refused = ColumnBatch::new(names(&["current", "max", "current"]));
+
+    assert_eq!(
+        refused,
+        Err(BatchShapeError::DuplicateField("current".to_owned()))
+    );
+}
+
+/// A row holding too few or too many values is refused, and the batch is
+/// left as it was.
+#[test]
+fn a_row_of_the_wrong_width_is_refused() {
+    let mut batch = ColumnBatch::new(names(&["current", "max"])).expect("distinct fields");
+    batch
+        .push_row(entity(1), [ScriptValue::Int(1), ScriptValue::Int(2)])
+        .expect("fits");
+
+    assert_eq!(
+        batch.push_row(entity(2), [ScriptValue::Int(1)]),
+        Err(BatchShapeError::WrongWidth {
+            expected: 2,
+            found: 1
+        })
+    );
+    assert_eq!(
+        batch.push_row(
+            entity(3),
+            [
+                ScriptValue::Int(1),
+                ScriptValue::Int(2),
+                ScriptValue::Int(3)
+            ]
+        ),
+        Err(BatchShapeError::WrongWidth {
+            expected: 2,
+            found: 3
+        })
+    );
+    assert_eq!(batch.len(), 1, "a refused row is not kept");
+    assert_eq!(
+        batch.rows().map(|(entity, _)| entity).collect::<Vec<_>>(),
+        vec![entity(1)]
+    );
+}
+
+/// A batch with no field writes nothing; a row of it holds no value.
+#[test]
+fn a_batch_of_no_field_takes_empty_rows() {
+    let mut batch = ColumnBatch::new(Vec::new()).expect("no field is no duplicate");
+    batch
+        .push_row(entity(1), Vec::<ScriptValue>::new())
+        .expect("zero values for zero fields");
+    assert_eq!(
+        batch.push_row(entity(2), [ScriptValue::Int(1)]),
+        Err(BatchShapeError::WrongWidth {
+            expected: 0,
+            found: 1
+        })
+    );
+    assert_eq!(batch.len(), 1);
+}
+
+/// A column write has many subjects, so it names no single entity.
+#[test]
+fn a_column_write_names_no_single_entity() {
+    let command = health_batch(&["current"], &[(1, vec![ScriptValue::Int(1)])]);
+
+    assert_eq!(command.entity(), None);
+}
+
+// ─── Write targets ──────────────────────────────────────────────────────────
+
+/// A batch overwrites one field of one entity per cell.
+#[test]
+fn a_column_write_targets_every_cell() {
+    let command = health_batch(
+        &["current", "max"],
+        &[
+            (1, vec![ScriptValue::Int(1), ScriptValue::Int(10)]),
+            (2, vec![ScriptValue::Int(2), ScriptValue::Int(20)]),
+        ],
+    );
+
+    let mut targets = targets_of(&command);
+    targets.sort_by(|a, b| (a.0.index, &a.1).cmp(&(b.0.index, &b.1)));
+    assert_eq!(
+        targets,
+        vec![
+            (entity(1), health_field("current")),
+            (entity(1), health_field("max")),
+            (entity(2), health_field("current")),
+            (entity(2), health_field("max")),
+        ]
+    );
+}
+
+/// A `Set` of a struct writes the fields it names; a `Set` of anything else,
+/// an `Add` and a `Remove` write the component whole.
+#[test]
+fn a_component_write_targets_its_fields_or_the_whole_component() {
+    let mut targets = targets_of(&set_health(3, health_patch(&[("max", 1), ("current", 2)])));
+    targets.sort_by(|a, b| a.1.cmp(&b.1));
+    assert_eq!(
+        targets,
+        vec![
+            (entity(3), health_field("current")),
+            (entity(3), health_field("max")),
+        ]
+    );
+
+    let whole = WriteTarget::Component(ComponentName::new("Health"));
+    for command in [
+        set_health(3, ScriptValue::Int(5)),
+        WorldCommand::AddComponent {
+            entity: entity(3),
+            component: ComponentName::new("Health"),
+            value: health_patch(&[("current", 1)]),
+        },
+        WorldCommand::RemoveComponent {
+            entity: entity(3),
+            component: ComponentName::new("Health"),
+        },
+    ] {
+        assert_eq!(
+            targets_of(&command),
+            vec![(entity(3), whole.clone())],
+            "{command:?}"
+        );
+    }
+}
+
+/// The transform and lifecycle commands keep their one target each; a nudge
+/// and a spawn have none.
+#[test]
+fn the_other_commands_keep_their_targets() {
+    assert_eq!(
+        targets_of(&place(4, 1.0)),
+        vec![(entity(4), WriteTarget::Translation)]
+    );
+    assert_eq!(
+        targets_of(&WorldCommand::SetRotation {
+            entity: entity(4),
+            value: Quaternion::IDENTITY,
+        }),
+        vec![(entity(4), WriteTarget::Rotation)]
+    );
+    assert_eq!(
+        targets_of(&WorldCommand::SetScale {
+            entity: entity(4),
+            value: Vec3::ONE,
+        }),
+        vec![(entity(4), WriteTarget::Scale)]
+    );
+    assert_eq!(
+        targets_of(&WorldCommand::SetParent {
+            entity: entity(4),
+            parent: None,
+        }),
+        vec![(entity(4), WriteTarget::Parent)]
+    );
+    assert_eq!(
+        targets_of(&WorldCommand::Despawn { entity: entity(4) }),
+        vec![(entity(4), WriteTarget::Existence)]
+    );
+    assert!(targets_of(&nudge(4, 1.0)).is_empty());
+}
+
+/// A field target reads as the component and the field it lands on.
+#[test]
+fn a_field_target_names_its_component_and_field() {
+    assert_eq!(
+        health_field("current").to_string(),
+        "component Health field current"
+    );
+    assert_eq!(
+        WriteTarget::Component(ComponentName::new("Health")).to_string(),
+        "component Health"
+    );
+}
+
+// ─── Conflicts per field ────────────────────────────────────────────────────
+
+/// **The merge composes them.** Two patches on different fields of one
+/// component lose nothing.
+#[test]
+fn disjoint_fields_do_not_conflict() {
+    let mut buffer = CommandBuffer::new();
+    buffer.push(set_health(3, health_patch(&[("current", 5)])));
+    buffer.push(set_health(3, health_patch(&[("max", 10)])));
+
+    assert!(buffer.conflicts().is_empty(), "{:?}", buffer.conflicts());
+}
+
+/// Two patches on the same field lose one write: reported on that field,
+/// with the count.
+#[test]
+fn the_same_field_conflicts() {
+    let mut buffer = CommandBuffer::new();
+    buffer.push(set_health(3, health_patch(&[("current", 5)])));
+    buffer.push(set_health(3, health_patch(&[("current", 6), ("max", 10)])));
+    buffer.push(set_health(3, health_patch(&[("current", 7)])));
+
+    let conflicts = buffer.conflicts();
+    assert_eq!(conflicts.len(), 1, "{conflicts:?}");
+    assert_eq!(conflicts[0].entity, entity(3));
+    assert_eq!(conflicts[0].target, health_field("current"));
+    assert_eq!(conflicts[0].writes, 3);
+    let message = conflicts[0].message();
+    assert!(
+        message.contains("component Health field current"),
+        "got: {message}"
+    );
+    assert!(message.contains("3 times"), "got: {message}");
+}
+
+/// A whole-component write overwrites every field, so it conflicts with any
+/// field write to that component of that entity — reported on the component.
+/// Disjoint field writes on another entity, beside it, still compose.
+#[test]
+fn a_whole_component_write_conflicts_with_a_field_write() {
+    let whole_writes = [
+        WorldCommand::AddComponent {
+            entity: entity(3),
+            component: ComponentName::new("Health"),
+            value: health_patch(&[("current", 1)]),
+        },
+        WorldCommand::RemoveComponent {
+            entity: entity(3),
+            component: ComponentName::new("Health"),
+        },
+        set_health(3, ScriptValue::Int(5)),
+    ];
+
+    for whole in whole_writes {
+        let mut buffer = CommandBuffer::new();
+        buffer.push(set_health(3, health_patch(&[("max", 10)])));
+        buffer.push(whole.clone());
+        buffer.push(set_health(4, health_patch(&[("current", 1)])));
+        buffer.push(set_health(4, health_patch(&[("max", 1)])));
+
+        let conflicts = buffer.conflicts();
+        assert_eq!(conflicts.len(), 1, "{whole:?}: {conflicts:?}");
+        assert_eq!(conflicts[0].entity, entity(3));
+        assert_eq!(
+            conflicts[0].target,
+            WriteTarget::Component(ComponentName::new("Health")),
+            "{whole:?}"
+        );
+        assert_eq!(conflicts[0].writes, 2, "{whole:?}");
+    }
+}
+
+/// A cell of a batch and a `Set` of the same field of the same entity lose
+/// one write; a `Set` of another field does not.
+#[test]
+fn a_column_cell_conflicts_with_a_set_of_the_same_field() {
+    let mut buffer = CommandBuffer::new();
+    buffer.push(set_health(2, health_patch(&[("current", 9)])));
+    buffer.push(set_health(1, health_patch(&[("max", 9)])));
+    buffer.push(health_batch(
+        &["current"],
+        &[
+            (1, vec![ScriptValue::Int(1)]),
+            (2, vec![ScriptValue::Int(2)]),
+        ],
+    ));
+
+    let conflicts = buffer.conflicts();
+    assert_eq!(conflicts.len(), 1, "{conflicts:?}");
+    assert_eq!(conflicts[0].entity, entity(2));
+    assert_eq!(conflicts[0].target, health_field("current"));
+    assert_eq!(conflicts[0].writes, 2);
+}
+
+/// **Large batches.** Ten thousand rows, one entity among them twice: one
+/// conflict, on that entity's field, and nothing else.
+#[test]
+fn a_large_batch_reports_its_one_duplicated_cell() {
+    let mut batch = ColumnBatch::new(names(&["current"])).expect("one field");
+    for index in 0..10_000 {
+        batch
+            .push_row(entity(index), [ScriptValue::Int(i64::from(index))])
+            .expect("fits");
+    }
+    batch
+        .push_row(entity(4_242), [ScriptValue::Int(-1)])
+        .expect("fits");
+    let mut buffer = CommandBuffer::new();
+    buffer.push(WorldCommand::WriteColumn {
+        component: ComponentName::new("Health"),
+        batch: Arc::new(batch),
+    });
+
+    let conflicts = buffer.conflicts();
+    assert_eq!(
+        conflicts.len(),
+        1,
+        "{:?}",
+        &conflicts[..conflicts.len().min(4)]
+    );
+    assert_eq!(conflicts[0].entity, entity(4_242));
+    assert_eq!(conflicts[0].target, health_field("current"));
+    assert_eq!(conflicts[0].writes, 2);
+}
+
+/// Field conflicts come back in a fixed order: by entity, then by target,
+/// fields of one component by name.
+#[test]
+fn field_conflicts_are_reported_in_a_stable_order() {
+    let mut buffer = CommandBuffer::new();
+    buffer.push(set_health(3, health_patch(&[("max", 1), ("current", 1)])));
+    buffer.push(set_health(3, health_patch(&[("current", 2), ("max", 2)])));
+    buffer.push(place(1, 1.0));
+    buffer.push(place(1, 2.0));
+
+    let found: Vec<(u32, WriteTarget)> = buffer
+        .conflicts()
+        .into_iter()
+        .map(|conflict| (conflict.entity.index, conflict.target))
+        .collect();
+    assert_eq!(
+        found,
+        vec![
+            (1, WriteTarget::Translation),
+            (3, health_field("current")),
+            (3, health_field("max")),
+        ]
+    );
+}
+
+/// **A whole-component conflict counts writes, not cells.** A removal and
+/// one patch of two fields are two writes landing on `Health` — the message
+/// says "written 2 times" — as a removal and a two-field batch row are.
+#[test]
+fn a_whole_component_conflict_counts_each_write_once() {
+    let remove = WorldCommand::RemoveComponent {
+        entity: entity(3),
+        component: ComponentName::new("Health"),
+    };
+    let field_writes = [
+        set_health(3, health_patch(&[("current", 1), ("max", 2)])),
+        health_batch(
+            &["current", "max"],
+            &[(3, vec![ScriptValue::Int(1), ScriptValue::Int(2)])],
+        ),
+    ];
+
+    for write in field_writes {
+        let mut buffer = CommandBuffer::new();
+        buffer.push(write.clone());
+        buffer.push(remove.clone());
+
+        let conflicts = buffer.conflicts();
+        assert_eq!(conflicts.len(), 1, "{write:?}: {conflicts:?}");
+        assert_eq!(
+            conflicts[0].target,
+            WriteTarget::Component(ComponentName::new("Health"))
+        );
+        assert_eq!(
+            conflicts[0].writes,
+            2,
+            "{write:?}: {}",
+            conflicts[0].message()
+        );
+    }
+}
+
+/// **Mixed writes, counted one per command and row.** On entity 3: an add,
+/// a two-field patch, a batch holding it twice and a one-field patch are
+/// five writes, reported once on the component. On entity 4: a patch and a
+/// batch row share only `max`, reported on that field alone. A `Set` of
+/// nothing and a batch of no field write nothing and count for nothing.
+#[test]
+fn mixed_writes_are_counted_one_per_command_and_row() {
+    let mut buffer = CommandBuffer::new();
+    buffer.push(WorldCommand::AddComponent {
+        entity: entity(3),
+        component: ComponentName::new("Health"),
+        value: ScriptValue::Unit,
+    });
+    buffer.push(set_health(3, health_patch(&[("current", 1), ("max", 2)])));
+    buffer.push(set_health(4, health_patch(&[("current", 1), ("max", 2)])));
+    buffer.push(health_batch(
+        &["current", "max"],
+        &[
+            (3, vec![ScriptValue::Int(1), ScriptValue::Int(2)]),
+            (3, vec![ScriptValue::Int(3), ScriptValue::Int(4)]),
+        ],
+    ));
+    buffer.push(health_batch(&["max"], &[(4, vec![ScriptValue::Int(9)])]));
+    buffer.push(set_health(3, health_patch(&[("max", 5)])));
+    buffer.push(set_health(5, ScriptValue::Unit));
+    buffer.push(health_batch(&[], &[(5, vec![])]));
+    buffer.push(WorldCommand::RemoveComponent {
+        entity: entity(5),
+        component: ComponentName::new("Health"),
+    });
+
+    let found: Vec<(u32, WriteTarget, usize)> = buffer
+        .conflicts()
+        .into_iter()
+        .map(|conflict| (conflict.entity.index, conflict.target, conflict.writes))
+        .collect();
+    assert_eq!(
+        found,
+        vec![
+            (3, WriteTarget::Component(ComponentName::new("Health")), 5),
+            (4, health_field("max"), 2),
+        ]
+    );
 }

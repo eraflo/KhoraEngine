@@ -178,6 +178,19 @@ the script lane touches no `World`, its agent declares `AgentAccess::Isolated`
 and can share a wave with other world-free agents. The rule and the performance
 are the same fact.
 
+The commands apply in the order they were queued. Many rows of one component —
+a system sweeping ten thousand healths — travel as **one** command, a column
+write: the component and its fields are resolved once, the rows are written page
+by page in memory order, and a row whose entity is gone is skipped and counted
+rather than failing the rest. On 10,000 rows it costs about a sixth of the same
+writes queued one by one (`cargo bench -p khora-data --bench
+script_commands_bench`).
+
+Two writes landing on the same thing in one frame are reported in debug builds —
+the last one wins. They are told apart **per field**: two scripts writing
+`current` and `max` of one `Health` compose and are not reported; two writing
+`current` are, and so is an add or a removal of `Health` beside any write to it.
+
 ## An event is never delivered in the frame it was raised
 
 One behavior tells another something; the other hears it next frame.

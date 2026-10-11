@@ -41,10 +41,12 @@
 //!
 //! [`AgentAccess::Isolated`]: crate::agent::AgentAccess::Isolated
 
+use std::sync::Arc;
+
 use crate::ecs::entity::EntityId;
 use crate::math::{Quaternion, Vec3};
 
-use super::ScriptValue;
+use super::{ColumnBatch, ScriptValue};
 
 /// The name of a component type, as a script spells it.
 ///
@@ -178,6 +180,13 @@ pub enum WorldCommand {
         /// The component type.
         component: ComponentName,
     },
+    /// Writes many rows of one component, in one pass at the boundary.
+    WriteColumn {
+        /// The component type.
+        component: ComponentName,
+        /// The rows, and the fields each writes.
+        batch: Arc<ColumnBatch>,
+    },
 }
 
 /// What an absolute write lands on.
@@ -198,6 +207,43 @@ pub enum WriteTarget {
     Existence,
     /// One component's value.
     Component(ComponentName),
+    /// One field of one component.
+    Field(ComponentName, String),
+}
+
+/// A [`WriteTarget`] borrowed from the command that writes it, so counting
+/// the targets of a large batch allocates nothing per cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum WriteTargetRef<'a> {
+    /// The entity's translation.
+    Translation,
+    /// The entity's rotation.
+    Rotation,
+    /// The entity's scale.
+    Scale,
+    /// The entity's parent.
+    Parent,
+    /// Whether the entity exists at all.
+    Existence,
+    /// One component's value, whole.
+    Component(&'a ComponentName),
+    /// One field of one component.
+    Field(&'a ComponentName, &'a str),
+}
+
+impl WriteTargetRef<'_> {
+    /// The owned target.
+    pub fn into_owned(self) -> WriteTarget {
+        match self {
+            Self::Translation => WriteTarget::Translation,
+            Self::Rotation => WriteTarget::Rotation,
+            Self::Scale => WriteTarget::Scale,
+            Self::Parent => WriteTarget::Parent,
+            Self::Existence => WriteTarget::Existence,
+            Self::Component(name) => WriteTarget::Component(name.clone()),
+            Self::Field(name, field) => WriteTarget::Field(name.clone(), field.to_owned()),
+        }
+    }
 }
 
 impl std::fmt::Display for WriteTarget {
@@ -209,6 +255,7 @@ impl std::fmt::Display for WriteTarget {
             Self::Parent => f.write_str("parent"),
             Self::Existence => f.write_str("existence"),
             Self::Component(name) => write!(f, "component {name}"),
+            Self::Field(name, field) => write!(f, "component {name} field {field}"),
         }
     }
 }
@@ -216,7 +263,8 @@ impl std::fmt::Display for WriteTarget {
 impl WorldCommand {
     /// The entity the command acts on, if it acts on an existing one.
     ///
-    /// `None` for [`Self::Spawn`], whose subject does not exist yet.
+    /// `None` for [`Self::Spawn`], whose subject does not exist yet, and for
+    /// [`Self::WriteColumn`], which acts on many.
     pub fn entity(&self) -> Option<EntityId> {
         match self {
             Self::SetTranslation { entity, .. }
@@ -229,26 +277,55 @@ impl WorldCommand {
             | Self::AddComponent { entity, .. }
             | Self::RemoveComponent { entity, .. } => Some(*entity),
             Self::Spawn { .. } => None,
+            Self::WriteColumn { .. } => None,
         }
     }
 
-    /// What this command overwrites, if it overwrites anything.
-    ///
-    /// `None` means no write can be lost to it: [`Self::Translate`] accumulates
-    /// and [`Self::Spawn`] creates. Both are order-dependent but neither
-    /// discards another script's work.
-    pub fn write_target(&self) -> Option<(EntityId, WriteTarget)> {
-        let target = match self {
-            Self::SetTranslation { .. } => WriteTarget::Translation,
-            Self::SetRotation { .. } => WriteTarget::Rotation,
-            Self::SetScale { .. } => WriteTarget::Scale,
-            Self::SetParent { .. } => WriteTarget::Parent,
-            Self::Despawn { .. } => WriteTarget::Existence,
-            Self::SetComponent { component, .. }
-            | Self::AddComponent { component, .. }
-            | Self::RemoveComponent { component, .. } => WriteTarget::Component(component.clone()),
-            Self::Translate { .. } | Self::Spawn { .. } => return None,
-        };
-        self.entity().map(|entity| (entity, target))
+    /// Calls `f` with every entity and target this command overwrites — none
+    /// for a command that cannot lose a write, one per field for a field
+    /// write, one per row and field for a [`Self::WriteColumn`]. The targets
+    /// borrow from the command, so a caller may keep them while it counts.
+    pub fn for_each_write_target<'a>(&'a self, mut f: impl FnMut(EntityId, WriteTargetRef<'a>)) {
+        match self {
+            Self::SetTranslation { entity, .. } => f(*entity, WriteTargetRef::Translation),
+            Self::SetRotation { entity, .. } => f(*entity, WriteTargetRef::Rotation),
+            Self::SetScale { entity, .. } => f(*entity, WriteTargetRef::Scale),
+            Self::SetParent { entity, .. } => f(*entity, WriteTargetRef::Parent),
+            Self::Despawn { entity } => f(*entity, WriteTargetRef::Existence),
+            // A patch overwrites the fields it names, and only those.
+            Self::SetComponent {
+                entity,
+                component,
+                value: ScriptValue::Struct(fields),
+            } => {
+                for (field, _) in fields {
+                    f(*entity, WriteTargetRef::Field(component, field));
+                }
+            }
+            // Nothing to write: nothing lost.
+            Self::SetComponent {
+                value: ScriptValue::Unit,
+                ..
+            } => {}
+            // A value that is not a patch, an add, a removal: the whole
+            // component.
+            Self::SetComponent {
+                entity, component, ..
+            }
+            | Self::AddComponent {
+                entity, component, ..
+            }
+            | Self::RemoveComponent { entity, component } => {
+                f(*entity, WriteTargetRef::Component(component));
+            }
+            Self::WriteColumn { component, batch } => {
+                for (entity, _) in batch.rows() {
+                    for field in batch.fields() {
+                        f(entity, WriteTargetRef::Field(component, field));
+                    }
+                }
+            }
+            Self::Translate { .. } | Self::Spawn { .. } => {}
+        }
     }
 }

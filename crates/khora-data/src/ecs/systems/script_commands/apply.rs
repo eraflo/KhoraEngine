@@ -22,9 +22,11 @@
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Quaternion, Vec3};
-use khora_core::script::{ComponentName, ScriptValue, WorldCommand};
+use khora_core::script::{ColumnBatch, ComponentName, ScriptValue, WorldCommand};
 
-use crate::ecs::{ComponentKey, FieldWriteError, HierarchyWrite, RowError, Transform, World};
+use crate::ecs::{
+    ColumnWriteReport, ComponentKey, FieldWriteError, HierarchyWrite, RowError, Transform, World,
+};
 use crate::scene::component_registration::registration_of;
 
 use super::json::to_json;
@@ -109,8 +111,79 @@ impl std::fmt::Display for ApplyError {
     }
 }
 
-/// Applies one command to the world.
-pub(super) fn apply(world: &mut World, command: &WorldCommand) -> Result<(), ApplyError> {
+/// Applies one command to the world, and what a column write did with its
+/// rows — nothing, for any other command.
+pub(super) fn apply(
+    world: &mut World,
+    command: &WorldCommand,
+) -> Result<ColumnWriteReport, ApplyError> {
+    if let WorldCommand::WriteColumn { component, batch } = command {
+        return write_column(world, component.as_str(), batch);
+    }
+    apply_one(world, command).map(|()| ColumnWriteReport::default())
+}
+
+/// A batch's rows, its component and fields resolved once: an unknown
+/// component or field refuses the whole batch, as it refuses a `Set`. The
+/// hierarchy is written one entity at a time, through its own invariants —
+/// never in a batch.
+fn write_column(
+    world: &mut World,
+    component: &str,
+    batch: &ColumnBatch,
+) -> Result<ColumnWriteReport, ApplyError> {
+    if matches!(component, "Parent" | "Children") {
+        return Err(ApplyError::Rejected {
+            component: component.to_owned(),
+            reason: "the hierarchy is written one entity at a time, never in a column".to_owned(),
+        });
+    }
+    let key = world
+        .components()
+        .key_named(component)
+        .ok_or_else(|| ApplyError::UnknownComponent(component.to_owned()))?;
+    let columns = &world
+        .components()
+        .vtable(key)
+        .ok_or_else(|| ApplyError::UnknownComponent(component.to_owned()))?
+        .columns;
+    let slots = batch
+        .fields()
+        .iter()
+        .map(|field| {
+            let slot = columns
+                .field_slot(field)
+                .ok_or_else(|| ApplyError::Rejected {
+                    component: component.to_owned(),
+                    reason: format!("it has no field `{field}`"),
+                })?;
+            // Every field of a declared component is a script's; a Rust
+            // component's field is when it has a script type.
+            if columns.packed().is_some() || columns.field_type(slot).is_some() {
+                Ok(slot)
+            } else {
+                Err(ApplyError::Rejected {
+                    component: component.to_owned(),
+                    reason: format!("its field `{field}` is not one a script writes"),
+                })
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let report = world.write_column(key, &slots, batch.rows());
+    let skipped = report.missing + report.refused;
+    if skipped > 0 {
+        log::warn!(
+            "a column write of {component} skipped {skipped} of {} rows: {} gone or without it, {} refused",
+            batch.len(),
+            report.missing,
+            report.refused
+        );
+    }
+    Ok(report)
+}
+
+/// Applies one command that is not a column write.
+fn apply_one(world: &mut World, command: &WorldCommand) -> Result<(), ApplyError> {
     match command {
         WorldCommand::SetTranslation { entity, value } => {
             transform_mut(world, *entity).map(|t| t.translation = *value)
@@ -151,6 +224,7 @@ pub(super) fn apply(world: &mut World, command: &WorldCommand) -> Result<(), App
         WorldCommand::RemoveComponent { entity, component } => {
             remove_component(world, *entity, component.as_str())
         }
+        WorldCommand::WriteColumn { .. } => unreachable!("a column write is applied whole"),
     }
 }
 

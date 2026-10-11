@@ -62,7 +62,16 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   `resume_tiers.rs`).
 - Engine→script events: `khora-core/src/script/event.rs` (`Channel<ScriptEvent>`).
 - Script→engine effects: `khora-core/src/script/buffer.rs` (`CommandBuffer`, `WorldCommand`), applied
-  by a `DataSystem` in `khora-data/src/ecs/systems/script_commands/`.
+  by a `DataSystem` in `khora-data/src/ecs/systems/script_commands/`. **Column writes (E3):**
+  `WorldCommand::WriteColumn { component, batch: Arc<ColumnBatch> }` (`script/batch.rs`, fields private,
+  rows checked for width) rides the ordered stream; the applier resolves the component and fields once
+  and calls `World::write_column` (`ecs/world/column_write.rs`): rows placed through the domain's entity
+  locations, stably sorted by page and row, `ColumnOps::write_rows` per page (Rust `Vec<T>` written in
+  place, a refused row put back field by field), one epoch bump. Skipped rows are counted
+  (`apply_all_reporting` → `ApplyReport`). `Parent`/`Children` are refused in a batch.
+  **Conflicts are per field, two levels** (`for_each_write_target`, borrowed `WriteTargetRef`): a whole
+  write (`Add`, `Remove`, a non-patch `Set`) conflicts with any write to that component; a patch or a
+  column cell only with the same field.
 
 ## Hard rules
 - **A script never writes the `World`.** Its effects are queued as `WorldCommand`s and applied by a

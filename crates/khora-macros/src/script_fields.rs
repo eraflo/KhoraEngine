@@ -73,6 +73,24 @@ pub(crate) fn script_methods(fields: &Fields, included_fields: &[&syn::Field]) -
                 _ => ::core::option::Option::None,
             }
         }
+        fn check_field(
+            slot: usize,
+            value: &::khora_core::script::ScriptValue,
+        ) -> ::core::result::Result<(), ::khora_core::script::FieldValueError> {
+            #[allow(unused_imports)]
+            use ::khora_core::script::field::probe::{Probe, ViaNothing as _, ViaScriptField as _};
+            let refused = || ::khora_core::script::FieldValueError {
+                expected: "a field a script can write".to_owned(),
+                found: value.type_name().to_owned(),
+            };
+            match slot {
+                #(#slots => match (&&Probe::<#types>::new()).writer() {
+                    ::core::option::Option::Some(write) => write(value).map(|_| ()),
+                    ::core::option::Option::None => ::core::result::Result::Err(refused()),
+                },)*
+                _ => ::core::result::Result::Err(refused()),
+            }
+        }
         fn write_field(
             &mut self,
             slot: usize,

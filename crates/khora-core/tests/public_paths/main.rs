@@ -119,6 +119,7 @@ mod every_pub_mod {
     use khora_core::runtime::typed_registry as _;
     use khora_core::scene as _;
     use khora_core::script as _;
+    use khora_core::script::batch as _;
     use khora_core::script::buffer as _;
     use khora_core::script::command as _;
     use khora_core::script::event as _;
@@ -880,6 +881,10 @@ fn world_command_variants(x: &khora_core::script::command::WorldCommand) {
         khora_core::script::command::WorldCommand::SetComponent { .. } => {}
         khora_core::script::command::WorldCommand::AddComponent { .. } => {}
         khora_core::script::command::WorldCommand::RemoveComponent { .. } => {}
+        khora_core::script::command::WorldCommand::WriteColumn { component, batch } => {
+            let _: &khora_core::script::command::ComponentName = component;
+            let _: &std::sync::Arc<khora_core::script::batch::ColumnBatch> = batch;
+        }
     }
 }
 
@@ -891,6 +896,38 @@ fn write_target_variants(x: &khora_core::script::command::WriteTarget) {
         khora_core::script::command::WriteTarget::Parent => {}
         khora_core::script::command::WriteTarget::Existence => {}
         khora_core::script::command::WriteTarget::Component(..) => {}
+        khora_core::script::command::WriteTarget::Field(component, field) => {
+            let _: &khora_core::script::command::ComponentName = component;
+            let _: &String = field;
+        }
+    }
+}
+
+fn write_target_ref_variants(x: &khora_core::script::command::WriteTargetRef<'_>) {
+    match x {
+        khora_core::script::command::WriteTargetRef::Translation => {}
+        khora_core::script::command::WriteTargetRef::Rotation => {}
+        khora_core::script::command::WriteTargetRef::Scale => {}
+        khora_core::script::command::WriteTargetRef::Parent => {}
+        khora_core::script::command::WriteTargetRef::Existence => {}
+        khora_core::script::command::WriteTargetRef::Component(component) => {
+            let _: &&khora_core::script::command::ComponentName = component;
+        }
+        khora_core::script::command::WriteTargetRef::Field(component, field) => {
+            let _: &&khora_core::script::command::ComponentName = component;
+            let _: &&str = field;
+        }
+    }
+}
+
+fn batch_shape_error_variants(x: &khora_core::script::batch::BatchShapeError) {
+    match x {
+        khora_core::script::batch::BatchShapeError::DuplicateField(field) => {
+            let _: &String = field;
+        }
+        khora_core::script::batch::BatchShapeError::WrongWidth { expected, found } => {
+            let _: (&usize, &usize) = (expected, found);
+        }
     }
 }
 
@@ -2525,7 +2562,10 @@ fn module_script_paths_still_resolve() {
     );
     let _ = world_command_variants as fn(&khora_core::script::command::WorldCommand);
     let _ = khora_core::script::command::WorldCommand::entity;
-    let _ = khora_core::script::command::WorldCommand::write_target;
+    let _: fn(
+        &'static khora_core::script::command::WorldCommand,
+        fn(khora_core::ecs::entity::EntityId, khora_core::script::command::WriteTargetRef<'static>),
+    ) = khora_core::script::command::WorldCommand::for_each_write_target;
     is_debug::<khora_core::script::command::WorldCommand>();
     is_clone::<khora_core::script::command::WorldCommand>();
     is_partial_eq::<khora_core::script::command::WorldCommand>();
@@ -2544,6 +2584,53 @@ fn module_script_paths_still_resolve() {
     is_partial_ord::<khora_core::script::command::WriteTarget>();
     is_ord::<khora_core::script::command::WriteTarget>();
     is_display::<khora_core::script::command::WriteTarget>();
+    let _ = type_name::<khora_core::script::command::WriteTargetRef<'static>>();
+    let _ = type_name::<khora_core::script::WriteTargetRef<'static>>();
+    same_type(
+        PhantomData::<khora_core::script::WriteTargetRef<'static>>,
+        PhantomData::<khora_core::script::command::WriteTargetRef<'static>>,
+    );
+    let _ = write_target_ref_variants as fn(&khora_core::script::command::WriteTargetRef<'_>);
+    let _ = khora_core::script::command::WriteTargetRef::into_owned;
+    is_debug::<khora_core::script::command::WriteTargetRef<'static>>();
+    is_clone::<khora_core::script::command::WriteTargetRef<'static>>();
+    is_copy::<khora_core::script::command::WriteTargetRef<'static>>();
+    is_partial_eq::<khora_core::script::command::WriteTargetRef<'static>>();
+    is_eq::<khora_core::script::command::WriteTargetRef<'static>>();
+    is_hash::<khora_core::script::command::WriteTargetRef<'static>>();
+    is_partial_ord::<khora_core::script::command::WriteTargetRef<'static>>();
+    is_ord::<khora_core::script::command::WriteTargetRef<'static>>();
+    let _ = type_name::<khora_core::script::batch::ColumnBatch>();
+    let _ = type_name::<khora_core::script::ColumnBatch>();
+    same_type(
+        PhantomData::<khora_core::script::ColumnBatch>,
+        PhantomData::<khora_core::script::batch::ColumnBatch>,
+    );
+    let _ = khora_core::script::batch::ColumnBatch::new;
+    let _: fn(
+        &mut khora_core::script::batch::ColumnBatch,
+        khora_core::ecs::entity::EntityId,
+        Vec<khora_core::script::ScriptValue>,
+    ) -> Result<(), khora_core::script::batch::BatchShapeError> =
+        khora_core::script::batch::ColumnBatch::push_row;
+    let _ = khora_core::script::batch::ColumnBatch::fields;
+    let _ = khora_core::script::batch::ColumnBatch::len;
+    let _ = khora_core::script::batch::ColumnBatch::is_empty;
+    let _ = khora_core::script::batch::ColumnBatch::rows;
+    is_debug::<khora_core::script::batch::ColumnBatch>();
+    is_clone::<khora_core::script::batch::ColumnBatch>();
+    is_partial_eq::<khora_core::script::batch::ColumnBatch>();
+    let _ = type_name::<khora_core::script::batch::BatchShapeError>();
+    let _ = type_name::<khora_core::script::BatchShapeError>();
+    same_type(
+        PhantomData::<khora_core::script::BatchShapeError>,
+        PhantomData::<khora_core::script::batch::BatchShapeError>,
+    );
+    let _ = batch_shape_error_variants as fn(&khora_core::script::batch::BatchShapeError);
+    is_debug::<khora_core::script::batch::BatchShapeError>();
+    is_clone::<khora_core::script::batch::BatchShapeError>();
+    is_partial_eq::<khora_core::script::batch::BatchShapeError>();
+    is_eq::<khora_core::script::batch::BatchShapeError>();
     let _ = khora_core::script::event::ENGINE_EVENT_BACKLOG;
     let _ = khora_core::script::ENGINE_EVENT_BACKLOG;
     let _ = type_name::<khora_core::script::event::EventQueue>();

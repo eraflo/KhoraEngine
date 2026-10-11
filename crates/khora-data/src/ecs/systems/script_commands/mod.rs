@@ -59,14 +59,42 @@ use crate::ecs::{DataSystemRegistration, TickPhase, World};
 /// Returns how many were applied, which is what the tests assert on and what a
 /// future telemetry counter would read.
 pub fn apply_all(world: &mut World, buffer: &CommandBuffer) -> usize {
-    let mut applied = 0;
+    apply_all_reporting(world, buffer).applied
+}
+
+/// What [`apply_all_reporting`] did with a buffer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ApplyReport {
+    /// Commands applied — a column write counts once, whatever its rows did.
+    pub applied: usize,
+    /// Rows of column writes written.
+    pub rows_written: usize,
+    /// Rows of column writes skipped: an entity gone or without the
+    /// component, or a value a field refused.
+    pub rows_skipped: usize,
+}
+
+/// Applies every queued command as [`apply_all`] does, and reports the rows
+/// of column writes too.
+pub fn apply_all_reporting(world: &mut World, buffer: &CommandBuffer) -> ApplyReport {
+    let mut report = ApplyReport::default();
     for command in buffer {
         match apply::apply(world, command) {
-            Ok(()) => applied += 1,
-            Err(error) => log::error!("script command ignored: {error}"),
+            Ok(rows) => {
+                report.applied += 1;
+                report.rows_written += rows.written;
+                report.rows_skipped += rows.missing + rows.refused;
+            }
+            Err(error) => {
+                // A column write refused whole skips every row it carried.
+                if let khora_core::script::WorldCommand::WriteColumn { batch, .. } = command {
+                    report.rows_skipped += batch.len();
+                }
+                log::error!("script command ignored: {error}");
+            }
         }
     }
-    applied
+    report
 }
 
 fn apply_script_commands(world: &mut World, _runtime: &Runtime, deck: &mut OutputDeck) {

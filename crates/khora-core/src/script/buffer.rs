@@ -40,7 +40,7 @@ use std::collections::HashMap;
 
 use crate::ecs::entity::EntityId;
 
-use super::{WorldCommand, WriteTarget};
+use super::{ComponentName, WorldCommand, WriteTarget, WriteTargetRef};
 
 /// Two or more absolute writes landing on the same thing in one frame.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,23 +114,83 @@ impl CommandBuffer {
     ///
     /// Returned in a fixed order so a test — or a log a user is comparing across
     /// two runs — does not change shape between runs of the same frame.
+    ///
+    /// Two levels: a write of a whole component — an add, a removal, a value
+    /// that is not a patch — loses any other write to that component of that
+    /// entity, reported once for the component; a patch or a column cell
+    /// loses only another write to the same field. Two patches of different
+    /// fields compose, and are not reported.
     pub fn conflicts(&self) -> Vec<Conflict> {
-        let mut counts: HashMap<(EntityId, WriteTarget), usize> = HashMap::new();
+        // Borrowed from the commands: a large batch is counted without a
+        // name allocated per cell.
+        let mut counts: HashMap<(EntityId, WriteTargetRef<'_>), usize> = HashMap::new();
         for command in &self.commands {
-            if let Some(key) = command.write_target() {
-                *counts.entry(key).or_insert(0) += 1;
+            command.for_each_write_target(|entity, target| {
+                *counts.entry((entity, target)).or_insert(0) += 1;
+            });
+        }
+
+        // How many writes landed on each component of each entity — a
+        // patch, an add, a row of a column write count once whatever fields
+        // they name — and how many of them wrote it whole.
+        let mut per_component: HashMap<(EntityId, &ComponentName), (usize, usize)> = HashMap::new();
+        let mut touched: Vec<(EntityId, &ComponentName, bool)> = Vec::new();
+        for command in &self.commands {
+            if let WorldCommand::WriteColumn { component, batch } = command {
+                if !batch.fields().is_empty() {
+                    for (entity, _) in batch.rows() {
+                        per_component.entry((entity, component)).or_default().0 += 1;
+                    }
+                }
+                continue;
+            }
+            touched.clear();
+            command.for_each_write_target(|entity, target| match target {
+                WriteTargetRef::Component(name) => touched.push((entity, name, true)),
+                WriteTargetRef::Field(name, _) => touched.push((entity, name, false)),
+                _ => {}
+            });
+            touched.sort_by(|a, b| {
+                (a.0.index, a.0.generation, a.1).cmp(&(b.0.index, b.0.generation, b.1))
+            });
+            touched.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
+            for &(entity, name, whole) in &touched {
+                let total = per_component.entry((entity, name)).or_default();
+                total.0 += 1;
+                total.1 += usize::from(whole);
             }
         }
 
-        let mut conflicts: Vec<_> = counts
-            .into_iter()
-            .filter(|(_, writes)| *writes > 1)
-            .map(|((entity, target), writes)| Conflict {
+        let mut conflicts: Vec<Conflict> = Vec::new();
+        for ((entity, name), (writes, whole)) in &per_component {
+            if *whole > 0 && *writes > 1 {
+                conflicts.push(Conflict {
+                    entity: *entity,
+                    target: WriteTarget::Component((*name).clone()),
+                    writes: *writes,
+                });
+            }
+        }
+        for ((entity, target), writes) in counts {
+            if writes < 2 {
+                continue;
+            }
+            // A field of a component already reported whole is part of
+            // that report.
+            if let WriteTargetRef::Field(name, _) | WriteTargetRef::Component(name) = target {
+                if per_component
+                    .get(&(entity, name))
+                    .is_some_and(|(_, whole)| *whole > 0)
+                {
+                    continue;
+                }
+            }
+            conflicts.push(Conflict {
                 entity,
-                target,
+                target: target.into_owned(),
                 writes,
-            })
-            .collect();
+            });
+        }
         conflicts.sort_by(|a, b| {
             (a.entity.index, a.entity.generation, &a.target).cmp(&(
                 b.entity.index,

@@ -728,3 +728,69 @@ fn a_snapshot_is_a_copy_the_world_does_not_change() {
         ])
     );
 }
+
+/// One field of each kind a script writes, and one it cannot (`u64`).
+#[derive(Debug, Clone, Default, PartialEq, Component)]
+struct Almanac {
+    day: u8,
+    offset: i16,
+    year: u32,
+    tide: f32,
+    peak: Option<f32>,
+    marks: Vec<i32>,
+    drift: Vec3,
+    turn: khora_core::math::Quaternion,
+    tint: LinearRgba,
+    title: String,
+    leap: bool,
+    keeper: Option<EntityId>,
+    epoch: u64,
+}
+
+/// **The check is the write, without the write.** For every field and a
+/// spread of values — in and out of a narrow int's range, non-finite
+/// floats and lanes, `null` for an optional, arrays with a bad item, the
+/// wrong kind — `check_field` takes exactly what `write_field` takes, so a
+/// row checked whole is a row that writes whole.
+#[test]
+fn check_field_takes_exactly_what_write_field_takes() {
+    use khora_core::math::Quaternion;
+    let values = [
+        ScriptValue::Unit,
+        ScriptValue::Null,
+        ScriptValue::Bool(true),
+        ScriptValue::Int(0),
+        ScriptValue::Int(-1),
+        ScriptValue::Int(255),
+        ScriptValue::Int(256),
+        ScriptValue::Int(40_000),
+        ScriptValue::Int(i64::MAX),
+        ScriptValue::Float(1.5),
+        ScriptValue::Float(f32::NAN),
+        ScriptValue::Float(f32::INFINITY),
+        ScriptValue::Str("é".to_owned()),
+        ScriptValue::Entity(entity_at(3)),
+        ScriptValue::Vec3(Vec3::ONE),
+        ScriptValue::Vec3(Vec3::new(f32::NAN, 0.0, 0.0)),
+        ScriptValue::Quat(Quaternion::IDENTITY),
+        ScriptValue::Color(LinearRgba::WHITE),
+        ScriptValue::Array(vec![]),
+        ScriptValue::Array(vec![ScriptValue::Int(1), ScriptValue::Int(2)]),
+        ScriptValue::Array(vec![ScriptValue::Int(1), ScriptValue::Float(2.0)]),
+        ScriptValue::Array(vec![ScriptValue::Int(i64::MAX)]),
+        ScriptValue::Struct(vec![]),
+    ];
+
+    for slot in 0..Almanac::script_fields().len() + 1 {
+        for value in &values {
+            let checked = Almanac::check_field(slot, value).is_ok();
+            let written = Almanac::default().write_field(slot, value).is_ok();
+            assert_eq!(
+                checked,
+                written,
+                "slot {slot} ({:?}), {value:?}: checked {checked}, written {written}",
+                Almanac::script_fields().get(slot)
+            );
+        }
+    }
+}

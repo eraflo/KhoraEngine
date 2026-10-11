@@ -257,6 +257,27 @@ impl FrameComponents {
             {
                 self.overlay.insert((component.clone(), *entity), None);
             }
+            // Each row a `Set` of the batch's fields, in the batch's order.
+            WorldCommand::WriteColumn { component, batch } => {
+                if self.tracked(component).is_none() {
+                    return;
+                }
+                for (entity, values) in batch.rows() {
+                    let Some(current) = self.get(component.as_str(), entity) else {
+                        continue;
+                    };
+                    let patch = ScriptValue::Struct(
+                        batch
+                            .fields()
+                            .iter()
+                            .cloned()
+                            .zip(values.iter().cloned())
+                            .collect(),
+                    );
+                    self.overlay
+                        .insert((component.clone(), entity), Some(merged(current, &patch)));
+                }
+            }
             _ => {}
         }
     }

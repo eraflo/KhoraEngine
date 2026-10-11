@@ -21,7 +21,7 @@ use std::sync::Arc;
 use super::{ColumnSnapshot, ComponentProjection, FrameComponents, ProjectedComponent};
 use crate::ecs::entity::EntityId;
 use crate::math::Vec3;
-use crate::script::{ComponentName, ScriptValue, WorldCommand};
+use crate::script::{ColumnBatch, ComponentName, ScriptValue, WorldCommand};
 
 fn entity(index: u32) -> EntityId {
     EntityId {
@@ -259,4 +259,106 @@ fn commands_about_other_things_leave_the_working_set_alone() {
         field(&frame.get("Health", entity(3)).expect("held"), "current"),
         Some(ScriptValue::Int(7))
     );
+}
+
+// ─── Column writes ──────────────────────────────────────────────────────────
+
+/// A `Health` column write of `fields`, one row per `(entity, values)`.
+fn write_column(fields: &[&str], rows: &[(EntityId, Vec<ScriptValue>)]) -> WorldCommand {
+    let mut batch = ColumnBatch::new(fields.iter().map(|f| (*f).to_owned()).collect())
+        .expect("distinct fields");
+    for (target, values) in rows {
+        batch
+            .push_row(*target, values.clone())
+            .expect("a row of the batch's width");
+    }
+    WorldCommand::WriteColumn {
+        component: ComponentName::new("Health"),
+        batch: Arc::new(batch),
+    }
+}
+
+/// **A batch merges each row** into the copy its entity holds, as a `Set`
+/// of the same fields would; a row of an entity holding nothing attaches
+/// nothing.
+#[test]
+fn a_column_write_merges_each_row_into_the_copy() {
+    let mut frame = working_set();
+
+    frame.observe(&write_column(
+        &["current"],
+        &[
+            (entity(1), vec![ScriptValue::Int(8)]),
+            (entity(3), vec![ScriptValue::Int(9)]),
+            (entity(2), vec![ScriptValue::Int(4)]),
+        ],
+    ));
+
+    assert_eq!(frame.get("Health", entity(1)), Some(health(8, 10)));
+    assert_eq!(frame.get("Health", entity(3)), Some(health(9, 20)));
+    assert!(!frame.has("Health", entity(2)), "not a holder");
+    assert_eq!(frame.get("Health", entity(2)), None);
+}
+
+/// Folded in emission order: a `Set` after the batch wins over it, a batch
+/// after a `Set` wins over that, and of two rows of one entity the later.
+#[test]
+fn a_column_write_is_folded_in_emission_order() {
+    let mut frame = working_set();
+
+    frame.observe(&set(entity(1), fields(&[("current", ScriptValue::Int(2))])));
+    frame.observe(&write_column(
+        &["current", "max"],
+        &[
+            (entity(1), vec![ScriptValue::Int(3), ScriptValue::Int(30)]),
+            (entity(1), vec![ScriptValue::Int(4), ScriptValue::Int(40)]),
+        ],
+    ));
+    assert_eq!(frame.get("Health", entity(1)), Some(health(4, 40)));
+
+    frame.observe(&set(entity(1), fields(&[("max", ScriptValue::Int(41))])));
+    assert_eq!(frame.get("Health", entity(1)), Some(health(4, 41)));
+}
+
+/// A batch of a component nobody reads leaves the working set alone.
+#[test]
+fn a_column_write_of_an_untracked_component_changes_nothing() {
+    let mut frame = working_set();
+    let mut batch = ColumnBatch::new(vec!["friction".to_owned()]).expect("one field");
+    batch
+        .push_row(entity(1), [ScriptValue::Float(0.8)])
+        .expect("fits");
+
+    frame.observe(&WorldCommand::WriteColumn {
+        component: ComponentName::new("Collider"),
+        batch: Arc::new(batch),
+    });
+
+    assert!(!frame.has("Collider", entity(1)));
+    assert_eq!(frame.get("Health", entity(1)), Some(health(5, 10)));
+}
+
+/// A batch follows what the frame did to its entities before it: a row of
+/// an entity whose component was removed attaches nothing back, a row of
+/// one that was added this frame lands on the added copy.
+#[test]
+fn a_column_write_follows_the_removals_and_adds_before_it() {
+    let mut frame = working_set();
+    frame.observe(&remove(entity(1)));
+    frame.observe(&add(entity(2), fields(&[("max", ScriptValue::Int(50))])));
+
+    frame.observe(&write_column(
+        &["current"],
+        &[
+            (entity(1), vec![ScriptValue::Int(8)]),
+            (entity(2), vec![ScriptValue::Int(9)]),
+        ],
+    ));
+
+    assert!(
+        !frame.has("Health", entity(1)),
+        "a removed component came back"
+    );
+    assert_eq!(frame.get("Health", entity(1)), None);
+    assert_eq!(frame.get("Health", entity(2)), Some(health(9, 50)));
 }

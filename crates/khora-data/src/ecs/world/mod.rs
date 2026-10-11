@@ -31,6 +31,7 @@ use crate::ecs::{
     ComponentBundle, ComponentKey, LayoutPolicy, MaterialRef, MeshRef, SemanticDomain,
 };
 
+mod column_write;
 mod compaction;
 mod component_access;
 mod hierarchy;
@@ -40,6 +41,7 @@ mod projection;
 mod queries;
 mod runtime;
 
+pub use column_write::ColumnWriteReport;
 pub use component_access::AddComponentError;
 pub use component_access::RemoveComponentError;
 pub use component_access::SpawnError;
