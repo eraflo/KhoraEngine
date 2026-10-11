@@ -225,6 +225,35 @@ pub struct Program {
     /// once.
     #[serde(default)]
     pub reads: Vec<String>,
+    /// Every component its scripts declare — outside the engine's own module
+    /// — sorted by name: what the engine registers for it.
+    #[serde(default)]
+    pub declared: Vec<DeclaredComponent>,
+}
+
+/// A component a script declares: what the engine needs to store it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeclaredComponent {
+    /// Its name, unique among every component.
+    pub name: String,
+    /// The module that declares it.
+    pub module: String,
+    /// The domain whose pages hold it: `[Domain(…)]`, else `Script`.
+    pub domain: khora_core::ecs::SemanticDomain,
+    /// Its fields, in declaration order.
+    pub fields: Vec<DeclaredField>,
+}
+
+/// One field of a [`DeclaredComponent`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DeclaredField {
+    /// Its name.
+    pub name: String,
+    /// What it holds.
+    pub ty: khora_core::script::ErgonType,
+    /// What a new row starts with: the declared default, else the type's
+    /// zero.
+    pub default: khora_core::script::ScriptValue,
 }
 
 /// One component write: the component, and the fields it names. A field left

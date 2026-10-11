@@ -39,6 +39,7 @@ fn named(rows: &[(PersistentId, &str)]) -> SceneRecord {
                 .collect()],
         }],
         instances: Vec::new(),
+        declared: Vec::new(),
     }
 }
 

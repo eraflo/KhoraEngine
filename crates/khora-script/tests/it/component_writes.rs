@@ -420,26 +420,45 @@ fn spawn_takes_a_position_then_distinct_components() {
     );
 }
 
-/// **Only the engine declares components, until scripts can.** A `component`
-/// in the script's own module, or in a module it imports, is refused.
+/// **A script declares components of its own** (spec 08), in its own module
+/// or in one it imports, and writes them with the same operations — the same
+/// commands — as the engine's.
 #[test]
-fn a_component_declared_in_a_script_is_refused() {
-    let message = "declaring a component in a script is not supported yet";
-    refused_saying("component Shield { int charge; }", message);
+fn a_component_declared_in_a_script_is_written_like_an_engine_one() {
+    let program = build(
+        "component Shield { int charge; }
+         behavior Bearer { void Go() { this.Set(Shield { charge: 3 }); } }",
+    );
+    assert_eq!(
+        queued(&program, "Bearer.Go", &[]),
+        vec![WorldCommand::SetComponent {
+            entity: SUBJECT,
+            component: ComponentName::new("Shield"),
+            value: patch(&[("charge", ScriptValue::Int(3))]),
+        }]
+    );
 
-    let control = compile("fn void Probe() { }");
-    assert!(control.succeeded(), "{:?}", errors_of(&control));
     let imported = compile_with(
-        "import \"gear/shield.erg\";",
+        "import \"gear/shield.erg\";
+         behavior Bearer { void Go() { this.Add(Shield { charge: 4 }); this.Remove(Shield); } }",
         &[("gear/shield.erg", "component Shield { int charge; }")],
     );
-    assert!(
-        imported
-            .diagnostics
-            .iter()
-            .any(|d| d.message.contains(message)),
-        "got {:?}",
-        imported.diagnostics
+    let errors = errors_of(&imported);
+    assert!(errors.is_empty(), "should compile: {errors:?}");
+    let program = imported.program.expect("a program with no errors");
+    assert_eq!(
+        queued(&program, "Bearer.Go", &[]),
+        vec![
+            WorldCommand::AddComponent {
+                entity: SUBJECT,
+                component: ComponentName::new("Shield"),
+                value: patch(&[("charge", ScriptValue::Int(4))]),
+            },
+            WorldCommand::RemoveComponent {
+                entity: SUBJECT,
+                component: ComponentName::new("Shield"),
+            },
+        ]
     );
 }
 

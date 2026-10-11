@@ -18,8 +18,9 @@
 //! pages: for each, the rows that are live (a page may hold rows an entity
 //! has left, waiting for compaction), and for each component worth saving, its
 //! column read row by row. The values are written by name through the
-//! component's registration; how the column is laid out in memory never
-//! reaches the record.
+//! component's registration — or, for a component declared while the engine
+//! runs, field by field through its declaration, which the record then
+//! carries; how the column is laid out in memory never reaches the record.
 
 use std::any::TypeId;
 
@@ -30,9 +31,10 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 
 use super::component_registration::{ComponentRegistration, Kept};
+use super::declared::{declaration_of, is_saved_declared, write_value};
 use super::record::{EntityRef, RecordError, ReferenceWriter};
 use super::scene_record::{PageRecord, SceneRecord};
-use crate::ecs::{Children, Parent, World};
+use crate::ecs::{AnyVec, Children, ComponentVTable, Parent, World};
 
 /// Why a world could not be written down.
 #[derive(Debug, Clone, PartialEq)]
@@ -163,18 +165,22 @@ fn capture(
         entities,
         root,
         kept,
-        |reg, column, row, references| (reg.column_to_record)(column, row, references),
+        |saved, column, row, references| match saved {
+            Saved::Rust(reg) => (reg.column_to_record)(column, row, references),
+            Saved::Declared(vtable) => write_value(vtable, column, row, references),
+        },
     )?;
     Ok(SceneRecord {
         entities: ids,
         instances: Vec::new(),
+        declared: declarations_in(&pages),
         pages: pages
             .into_iter()
             .map(|page| PageRecord {
                 components: page
                     .components
                     .iter()
-                    .map(|reg| reg.type_name.to_owned())
+                    .map(|saved| saved.name().to_owned())
                     .collect(),
                 rows: page.rows,
                 columns: page.columns,
@@ -183,10 +189,53 @@ fn capture(
     })
 }
 
+/// The declaration of every declared component `pages` hold, sorted by name.
+pub(super) fn declarations_in<V>(pages: &[CapturedPage<'_, V>]) -> Vec<super::DeclaredRecord> {
+    let mut declared: Vec<&ComponentVTable> = pages
+        .iter()
+        .flat_map(|page| page.components.iter())
+        .filter_map(|saved| match saved {
+            Saved::Declared(vtable) => Some(*vtable),
+            Saved::Rust(_) => None,
+        })
+        .collect();
+    declared.sort_by(|a, b| a.name.cmp(&b.name));
+    declared.dedup_by(|a, b| a.key == b.key);
+    declared.into_iter().filter_map(declaration_of).collect()
+}
+
+/// A component a capture writes: a Rust one, through its registration, or
+/// one declared while the engine runs, through its declaration.
+#[derive(Clone, Copy)]
+pub(super) enum Saved<'w> {
+    /// A Rust component.
+    Rust(&'static ComponentRegistration),
+    /// A component declared while the engine runs.
+    Declared(&'w ComponentVTable),
+}
+
+impl<'w> Saved<'w> {
+    /// Its name.
+    pub(super) fn name(&self) -> &'w str {
+        match self {
+            Self::Rust(reg) => reg.type_name,
+            Self::Declared(vtable) => &vtable.name,
+        }
+    }
+
+    /// Its key in the world's pages.
+    pub(super) fn key(&self) -> ComponentKey {
+        match self {
+            Self::Rust(reg) => ComponentKey::Rust(reg.type_id),
+            Self::Declared(vtable) => vtable.key,
+        }
+    }
+}
+
 /// One page of a capture: its saved components, sorted by name, its rows'
 /// identities, and a value per row in each component's column.
-pub(super) struct CapturedPage<V> {
-    pub(super) components: Vec<&'static ComponentRegistration>,
+pub(super) struct CapturedPage<'w, V> {
+    pub(super) components: Vec<Saved<'w>>,
     pub(super) rows: Vec<PersistentId>,
     pub(super) columns: Vec<Vec<V>>,
 }
@@ -195,18 +244,18 @@ pub(super) struct CapturedPage<V> {
 /// component's value with `write` — a record, positional bytes — and
 /// grouping rows of the same saved signature into one page. The identities
 /// of `entities`, in order, and the pages.
-pub(super) fn capture_pages<V>(
-    world: &World,
+pub(super) fn capture_pages<'w, V>(
+    world: &'w World,
     entities: &[EntityId],
     root: Option<EntityId>,
     kept: Kept,
     mut write: impl FnMut(
-        &'static ComponentRegistration,
-        &dyn crate::ecs::AnyVec,
+        Saved<'w>,
+        &dyn AnyVec,
         usize,
         &mut dyn ReferenceWriter,
     ) -> Result<V, RecordError>,
-) -> Result<(Vec<PersistentId>, Vec<CapturedPage<V>>), SaveError> {
+) -> Result<(Vec<PersistentId>, Vec<CapturedPage<'w, V>>), SaveError> {
     let mut inside = InsideOnly {
         ids: HashMap::with_capacity(entities.len()),
     };
@@ -225,22 +274,26 @@ pub(super) fn capture_pages<V>(
     // Pages whose saved components are the same land in one page record:
     // the record holds what a load needs to build, one page per signature.
     let mut pages: Vec<CapturedPage<V>> = Vec::new();
-    let mut by_signature: HashMap<Vec<&'static str>, usize> = HashMap::new();
+    let mut by_signature: HashMap<Vec<&'w str>, usize> = HashMap::new();
+    let registry = world.components();
 
     for (page_id, page) in world.storage.pages.iter().enumerate() {
-        let mut saved: Vec<&'static ComponentRegistration> = page
+        let mut saved: Vec<Saved<'w>> = page
             .keys
             .iter()
-            // A declared component has no registration: not saved here.
             .filter_map(|key| match key {
-                ComponentKey::Rust(type_id) => registrations.get(type_id).copied(),
-                ComponentKey::Declared(_) => None,
+                ComponentKey::Rust(type_id) => registrations.get(type_id).copied().map(Saved::Rust),
+                // Described by the record, beside its pages.
+                ComponentKey::Declared(_) => registry
+                    .vtable(*key)
+                    .filter(|vtable| is_saved_declared(vtable))
+                    .map(Saved::Declared),
             })
             .collect();
         if saved.is_empty() {
             continue;
         }
-        saved.sort_by_key(|reg| reg.type_name);
+        saved.sort_by_key(|saved| saved.name());
 
         for (row, &entity) in page.entities.iter().enumerate() {
             if !captured.contains(&entity) || !world.is_live_row_of(page_id as u32, row, entity) {
@@ -248,17 +301,19 @@ pub(super) fn capture_pages<V>(
             }
             // The subtree root's parent is outside the subtree: left out, so
             // the instance is placed wherever it is made.
-            let columns: Vec<&&ComponentRegistration> = saved
+            let columns: Vec<&Saved<'w>> = saved
                 .iter()
-                .filter(|reg| !(Some(entity) == root && reg.type_id == parent))
+                .filter(|saved| {
+                    !(Some(entity) == root && saved.key() == ComponentKey::Rust(parent))
+                })
                 .collect();
             if columns.is_empty() {
                 continue;
             }
-            let signature: Vec<&'static str> = columns.iter().map(|reg| reg.type_name).collect();
+            let signature: Vec<&'w str> = columns.iter().map(|saved| saved.name()).collect();
             let index = *by_signature.entry(signature).or_insert_with(|| {
                 pages.push(CapturedPage {
-                    components: columns.iter().map(|reg| **reg).collect(),
+                    components: columns.iter().map(|saved| **saved).collect(),
                     rows: Vec::new(),
                     columns: std::iter::repeat_with(Vec::new)
                         .take(columns.len())
@@ -268,17 +323,17 @@ pub(super) fn capture_pages<V>(
             });
             let record = &mut pages[index];
             record.rows.push(inside.ids[&entity]);
-            for (slot, reg) in columns.iter().enumerate() {
+            for (slot, saved) in columns.iter().enumerate() {
                 // In the signature, so in the columns: a page keeps both in step.
-                let Some(column) = page.columns.get(&ComponentKey::Rust(reg.type_id)) else {
+                let Some(column) = page.columns.get(&saved.key()) else {
                     return Err(SaveError::Component {
-                        component: reg.type_name.to_owned(),
+                        component: saved.name().to_owned(),
                         error: RecordError("its page has no column for it".to_owned()),
                     });
                 };
-                let value = write(reg, column.as_ref(), row, &mut inside).map_err(|error| {
+                let value = write(**saved, column.as_ref(), row, &mut inside).map_err(|error| {
                     SaveError::Component {
-                        component: reg.type_name.to_owned(),
+                        component: saved.name().to_owned(),
                         error,
                     }
                 })?;

@@ -28,25 +28,38 @@
 //! then persistent ids) and its values column after column, each value its
 //! length then its bytes. Counts and lengths are LEB128 varints.
 
-use std::any::TypeId;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use khora_core::ecs::PersistentId;
 use khora_core::scene::SceneFile;
+use khora_core::script::{ErgonType, ScriptValue};
 
-use super::apply::{failure, prepare_pages, LoadFailure, PagePlan, Prepared};
-use super::capture::{capture_pages, world_in_tree_order, SaveError};
+use super::apply::{failure, prepare_pages, to_register, LoadFailure, Loaded, PagePlan, Prepared};
+use super::capture::{capture_pages, world_in_tree_order, SaveError, Saved};
 use super::component_registration::{ComponentRegistration, Kept};
+use super::declared::{kind_name, kind_named, nowhere, plan_fields, DeclaredLoad};
 use super::file::{check_format, encoding_of, scene_file};
-use super::positional::write_varint;
-use super::record::LoadReport;
-use crate::ecs::World;
+use super::positional::{from_positional, to_positional, write_varint};
+use super::record::{LoadReport, RecordError};
+use crate::ecs::{ComponentKey, PackedField, SemanticDomain, World};
 
 /// The id a scene header names the snapshot encoding by.
 pub const SNAPSHOT_ENCODING_ID: &str = "KH_SNAPSHOT_V1";
 
 /// The payload layout this module writes and reads.
-const VERSION: u8 = 1;
+///
+/// Version 2 lists, beside each Rust component and its fingerprint, each
+/// component declared while the engine runs with its fields — read back onto
+/// the world's declaration by name, since a hot reload may have given it new
+/// fields since the snapshot was taken.
+const VERSION: u8 = 2;
+
+/// A table entry naming a Rust component, guarded by its fingerprint —
+/// the only entry layout 1, which still reads, has.
+const RUST_ENTRY: u8 = 0;
+/// A table entry describing a component declared while the engine runs.
+const DECLARED_ENTRY: u8 = 1;
 
 /// Writes every entity of `world` and its saved components as a snapshot.
 pub fn write_snapshot(world: &World) -> Result<SceneFile, SaveError> {
@@ -56,35 +69,91 @@ pub fn write_snapshot(world: &World) -> Result<SceneFile, SaveError> {
         &entities,
         None,
         Kept::Scene,
-        |reg, column, row, references| {
+        |saved, column, row, references| {
             let mut bytes = Vec::new();
-            (reg.column_to_snapshot)(column, row, &mut bytes, references)?;
+            match saved {
+                Saved::Rust(reg) => (reg.column_to_snapshot)(column, row, &mut bytes, references)?,
+                // Every field, in the declaration's order.
+                Saved::Declared(vtable) => {
+                    let fields = vtable
+                        .columns
+                        .packed()
+                        .map_or(0, |layout| layout.fields().len());
+                    let values: Vec<ScriptValue> = (0..fields)
+                        .map(|slot| {
+                            vtable
+                                .columns
+                                .read_field(column, row, slot)
+                                .unwrap_or(ScriptValue::Unit)
+                        })
+                        .collect();
+                    to_positional(&values, &mut bytes, references)?;
+                }
+            }
             Ok(bytes)
         },
     )?;
 
     // Every component the pages hold, once, in the order first met — each
-    // one a fingerprint can guard.
-    let mut table: Vec<&'static ComponentRegistration> = Vec::new();
-    let mut index_of: HashMap<TypeId, usize> = HashMap::new();
+    // Rust one a fingerprint can guard.
+    let mut table: Vec<Saved> = Vec::new();
+    let mut index_of: HashMap<ComponentKey, usize> = HashMap::new();
     for page in &pages {
-        for reg in &page.components {
-            if let std::collections::hash_map::Entry::Vacant(slot) = index_of.entry(reg.type_id) {
-                if !(reg.schema_complete)() {
-                    return Err(SaveError::Unguarded(reg.type_name.to_owned()));
+        for saved in &page.components {
+            if let std::collections::hash_map::Entry::Vacant(slot) = index_of.entry(saved.key()) {
+                if let Saved::Rust(reg) = saved {
+                    if !(reg.schema_complete)() {
+                        return Err(SaveError::Unguarded(reg.type_name.to_owned()));
+                    }
                 }
                 slot.insert(table.len());
-                table.push(*reg);
+                table.push(*saved);
             }
         }
     }
 
     let mut payload = vec![VERSION];
     write_varint(&mut payload, table.len() as u64);
-    for reg in &table {
-        write_varint(&mut payload, reg.type_name.len() as u64);
-        payload.extend_from_slice(reg.type_name.as_bytes());
-        payload.extend_from_slice(&(reg.schema)().to_le_bytes());
+    for saved in &table {
+        let name = saved.name();
+        write_varint(&mut payload, name.len() as u64);
+        payload.extend_from_slice(name.as_bytes());
+        match saved {
+            Saved::Rust(reg) => {
+                payload.push(RUST_ENTRY);
+                payload.extend_from_slice(&(reg.schema)().to_le_bytes());
+            }
+            Saved::Declared(vtable) => {
+                payload.push(DECLARED_ENTRY);
+                payload.push(vtable.domain.index() as u8);
+                let fields = vtable
+                    .columns
+                    .packed()
+                    .map_or(&[][..], |layout| layout.fields());
+                write_varint(&mut payload, fields.len() as u64);
+                for (slot, field) in fields.iter().enumerate() {
+                    let ty = vtable
+                        .columns
+                        .packed()
+                        .and_then(|layout| layout.ty(slot))
+                        .map(|ty| ty.signature())
+                        .unwrap_or_default();
+                    for text in [field.name.as_str(), kind_name(field.kind), ty.as_str()] {
+                        write_varint(&mut payload, text.len() as u64);
+                        payload.extend_from_slice(text.as_bytes());
+                    }
+                    let mut default = Vec::new();
+                    to_positional(&field.default, &mut default, &mut Outside).map_err(|error| {
+                        SaveError::Component {
+                            component: name.to_owned(),
+                            error,
+                        }
+                    })?;
+                    write_varint(&mut payload, default.len() as u64);
+                    payload.extend_from_slice(&default);
+                }
+            }
+        }
     }
     write_varint(&mut payload, ids.len() as u64);
     for id in &ids {
@@ -93,8 +162,8 @@ pub fn write_snapshot(world: &World) -> Result<SceneFile, SaveError> {
     write_varint(&mut payload, pages.len() as u64);
     for page in &pages {
         write_varint(&mut payload, page.components.len() as u64);
-        for reg in &page.components {
-            write_varint(&mut payload, index_of[&reg.type_id] as u64);
+        for saved in &page.components {
+            write_varint(&mut payload, index_of[&saved.key()] as u64);
         }
         write_varint(&mut payload, page.rows.len() as u64);
         for id in &page.rows {
@@ -123,6 +192,31 @@ pub fn prepare_snapshot(world: &mut World, file: &SceneFile) -> Result<Prepared,
     check_format(file).map_err(|error| refused(error.to_string()))?;
     let snapshot = Snapshot::read(&file.payload).map_err(refused)?;
 
+    // Each declared component read onto the world's declaration, or
+    // registered from the snapshot's when the world has none.
+    let mut declared = HashMap::new();
+    let mut table = Vec::with_capacity(snapshot.table.len());
+    for entry in &snapshot.table {
+        table.push(match entry {
+            Entry::Rust(reg) => Loaded::Rust(reg),
+            Entry::Declared {
+                name,
+                domain,
+                fields,
+                types,
+            } => {
+                let load = Arc::new(
+                    plan_fields(world, name, *domain, fields.clone(), types.clone())
+                        .map_err(refused)?,
+                );
+                if declared.insert(name.clone(), Arc::clone(&load)).is_some() {
+                    return Err(refused(format!("the snapshot lists `{name}` twice")));
+                }
+                Loaded::Declared(load)
+            }
+        });
+    }
+
     let plans = snapshot
         .pages
         .iter()
@@ -132,24 +226,62 @@ pub fn prepare_snapshot(world: &mut World, file: &SceneFile) -> Result<Prepared,
                 .components
                 .iter()
                 .enumerate()
-                .map(|(column, &table)| (column, snapshot.table[table]))
+                .map(|(column, &entry)| (column, table[entry].clone()))
                 .collect(),
         })
         .collect();
-    prepare_pages(
+    let mut prepared = prepare_pages(
         world,
         &snapshot.entities,
         plans,
         LoadReport::default(),
-        |reg, page, column, row, references| {
-            (reg.stage_snapshot)(snapshot.pages[page].values[column][row], references)
+        |loaded, page, column, row, references| {
+            let bytes = snapshot.pages[page].values[column][row];
+            match loaded {
+                Loaded::Rust(reg) => (reg.stage_snapshot)(bytes, references),
+                Loaded::Declared(load) => {
+                    let values: Vec<ScriptValue> = from_positional(bytes, references)?;
+                    Ok(stage_declared(load, values))
+                }
+            }
         },
-    )
+    )?;
+    let used: Vec<String> = declared.keys().cloned().collect();
+    prepared.set_register(to_register(&declared, used.iter().map(String::as_str)));
+    Ok(prepared)
+}
+
+/// A declared component's row, from the values the snapshot holds.
+fn stage_declared(load: &DeclaredLoad, values: Vec<ScriptValue>) -> super::Staged {
+    load.stage_values(values)
+}
+
+/// A component the snapshot's table lists.
+enum Entry {
+    /// A Rust component, its fingerprint the one this build has.
+    Rust(&'static ComponentRegistration),
+    /// A component declared while the engine ran.
+    Declared {
+        name: String,
+        domain: SemanticDomain,
+        fields: Vec<PackedField>,
+        types: Vec<Option<ErgonType>>,
+    },
+}
+
+/// Writes every entity as one outside the snapshot: what a declaration's
+/// default names is no entity a load could bring.
+struct Outside;
+
+impl super::record::ReferenceWriter for Outside {
+    fn write_entity(&mut self, _: khora_core::ecs::entity::EntityId) -> super::record::EntityRef {
+        super::record::EntityRef::Outside
+    }
 }
 
 /// A snapshot's payload, read and checked, its values not yet.
 struct Snapshot<'p> {
-    table: Vec<&'static ComponentRegistration>,
+    table: Vec<Entry>,
     entities: Vec<PersistentId>,
     pages: Vec<SnapshotPage<'p>>,
 }
@@ -169,20 +301,69 @@ impl<'p> Snapshot<'p> {
             at: 0,
         };
         let version = input.byte()?;
-        if version != VERSION {
+        if !(1..=VERSION).contains(&version) {
             return Err(format!(
-                "snapshot layout {version}, this engine reads {VERSION}"
+                "snapshot layout {version}, this engine reads up to {VERSION}"
             ));
         }
 
-        let count = input.count(9)?;
+        // A name's length, a name, an entry kind and what it holds.
+        let count = input.count(3)?;
         let mut table = Vec::with_capacity(count);
         for _ in 0..count {
-            let len = input.count(1)?;
-            let name = std::str::from_utf8(input.take(len)?)
-                .map_err(|_| "a component name that is not UTF-8".to_owned())?;
-            let fingerprint = input.u64_le()?;
-            table.push(registration_for(name, fingerprint)?);
+            let name = input.text()?;
+            // Layout 1 lists Rust components only, with no entry kind.
+            let kind = if version == 1 {
+                RUST_ENTRY
+            } else {
+                input.byte()?
+            };
+            table.push(match kind {
+                RUST_ENTRY => Entry::Rust(registration_for(name, input.u64_le()?)?),
+                DECLARED_ENTRY => {
+                    let domain = SemanticDomain::ALL
+                        .get(usize::from(input.byte()?))
+                        .copied()
+                        .ok_or_else(|| {
+                            format!("`{name}` is stored in no domain this engine has")
+                        })?;
+                    let count = input.count(3)?;
+                    let mut fields = Vec::with_capacity(count);
+                    let mut types = Vec::with_capacity(count);
+                    for _ in 0..count {
+                        let field = input.text()?.to_owned();
+                        let kind = input.text()?;
+                        let kind = kind_named(kind)
+                            .ok_or_else(|| format!("`{name}.{field}` is of no kind: `{kind}`"))?;
+                        let ty = match input.text()? {
+                            "" => None,
+                            ty => Some(ErgonType::parse(ty).ok_or_else(|| {
+                                format!("`{name}.{field}` is of no type: `{ty}`")
+                            })?),
+                        };
+                        let len = input.count(1)?;
+                        let default: ScriptValue =
+                            from_positional(input.take(len)?, &mut nowhere()).map_err(
+                                |RecordError(error)| {
+                                    format!("the default of `{name}.{field}`: {error}")
+                                },
+                            )?;
+                        fields.push(PackedField {
+                            name: field,
+                            kind,
+                            default,
+                        });
+                        types.push(ty);
+                    }
+                    Entry::Declared {
+                        name: name.to_owned(),
+                        domain,
+                        fields,
+                        types,
+                    }
+                }
+                other => return Err(format!("`{name}` has a table entry of kind {other}")),
+            });
         }
 
         let count = input.count(8)?;
@@ -302,6 +483,12 @@ impl<'p> Input<'p> {
         let taken = &self.bytes[self.at..self.at + len];
         self.at += len;
         Ok(taken)
+    }
+
+    /// A length, then that many bytes of UTF-8.
+    fn text(&mut self) -> Result<&'p str, String> {
+        let len = self.count(1)?;
+        std::str::from_utf8(self.take(len)?).map_err(|_| "a name that is not UTF-8".to_owned())
     }
 
     fn u64_le(&mut self) -> Result<u64, String> {

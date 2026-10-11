@@ -41,6 +41,9 @@ pub struct StructDecl {
     pub fields: Vec<Field>,
     /// Operator overloads declared on this struct.
     pub operators: Vec<OperatorDecl>,
+    /// `[Domain(…)]` and the like, written before a `component`; a struct
+    /// takes none.
+    pub attributes: Vec<Attribute>,
     /// The whole declaration.
     pub span: Span,
 }

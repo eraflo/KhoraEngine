@@ -108,6 +108,7 @@ fn transforms_scene(count: u64) -> SceneRecord {
             rows,
             columns: vec![(0..count).map(|n| transform(n as f32)).collect()],
         }],
+        declared: Vec::new(),
     }
 }
 
@@ -240,6 +241,7 @@ fn every_kind_scene() -> SceneRecord {
                 columns: vec![vec![marker(), marker()]],
             },
         ],
+        declared: Vec::new(),
     }
 }
 
@@ -253,6 +255,7 @@ fn empty_page_scene() -> SceneRecord {
             rows: vec![],
             columns: vec![vec![], vec![]],
         }],
+        declared: Vec::new(),
     }
 }
 
@@ -388,6 +391,7 @@ fn the_text_encoding_is_readable_json() {
                 )],
             ],
         }],
+        declared: Vec::new(),
     };
 
     let bytes = TextEncoding.encode(&record).expect("text encodes");
@@ -531,6 +535,7 @@ fn every_encoding_reads_a_value_back_by_name() {
                 to_record(&value, &mut ByIndex).expect("the probe writes")
             ]],
         }],
+        declared: Vec::new(),
     };
 
     for (name, encoding) in every_encoding() {

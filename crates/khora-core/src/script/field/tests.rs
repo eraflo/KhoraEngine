@@ -275,3 +275,75 @@ fn a_float_field_takes_an_int_as_that_float() {
     assert_eq!(f32::from_script(&ScriptValue::Int(3)), Ok(3.0));
     assert_eq!(f32::from_script(&ScriptValue::Int(-2)), Ok(-2.0));
 }
+
+#[test]
+fn a_type_reads_back_from_its_spelling() {
+    for ty in [
+        ErgonType::Bool,
+        ErgonType::Int,
+        ErgonType::Float,
+        ErgonType::Str,
+        ErgonType::Entity,
+        ErgonType::Engine("Vec3"),
+        ErgonType::named_struct("Loot"),
+        ErgonType::Optional(Box::new(ErgonType::Engine("Quat"))),
+        ErgonType::Array(Box::new(ErgonType::Optional(Box::new(ErgonType::Int)))),
+    ] {
+        assert_eq!(ErgonType::parse(&ty.to_string()), Some(ty));
+    }
+}
+
+#[test]
+fn a_type_is_saved_as_its_spelling() {
+    let ty = ErgonType::Array(Box::new(ErgonType::Engine("Color")));
+    let text = serde_json::to_string(&ty).expect("serializes");
+    assert_eq!(text, "\"Color[]\"");
+    assert_eq!(serde_json::from_str::<ErgonType>(&text).expect("reads"), ty);
+    assert!(serde_json::from_str::<ErgonType>("\"int<\"").is_err());
+}
+
+#[test]
+fn a_struct_signature_reads_back_with_its_fields() {
+    let point = ErgonType::Struct {
+        name: "Point".to_owned(),
+        fields: Some(vec![
+            ("x".to_owned(), ErgonType::Int),
+            (
+                "tags".to_owned(),
+                ErgonType::Array(Box::new(ErgonType::Optional(Box::new(ErgonType::Str)))),
+            ),
+        ]),
+    };
+    let ty = ErgonType::Array(Box::new(ErgonType::Optional(Box::new(point))));
+    assert_eq!(ty.signature(), "Point{x:int,tags:string?[]}?[]");
+    assert_eq!(ty.to_string(), "Point?[]");
+    assert_eq!(ErgonType::parse(&ty.signature()), Some(ty));
+    assert_eq!(ErgonType::parse("Point{x:int"), None);
+    assert_eq!(ErgonType::parse("Point{x}"), None);
+}
+
+#[test]
+fn a_type_admits_only_its_own_values() {
+    let note = ErgonType::Optional(Box::new(ErgonType::Int));
+    assert!(note.admits(&ScriptValue::Null));
+    assert!(note.admits(&ScriptValue::Int(3)));
+    assert!(!note.admits(&ScriptValue::Str("sharp".to_owned())));
+
+    let point = ErgonType::Struct {
+        name: "Point".to_owned(),
+        fields: Some(vec![("x".to_owned(), ErgonType::Str)]),
+    };
+    let x = |value: ScriptValue| ScriptValue::Struct(vec![("x".to_owned(), value)]);
+    assert!(point.admits(&x(ScriptValue::Str("west".to_owned()))));
+    assert!(
+        !point.admits(&x(ScriptValue::Int(1))),
+        "another shape of the struct"
+    );
+    assert!(
+        ErgonType::Float.admits(&ScriptValue::Int(2)),
+        "an int is taken as a float"
+    );
+    assert!(
+        ErgonType::Engine("Vec3").admits(&ScriptValue::Vec3(crate::math::Vec3::new(0.0, 0.0, 0.0)))
+    );
+}

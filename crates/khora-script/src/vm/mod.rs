@@ -52,7 +52,8 @@ mod tests;
 
 pub use instruction::{Instruction, Reg, WriteMode};
 pub use program::{
-    BehaviorLayout, Function, Patch, Program, StateLayout, StructLayout, TimerKind, TimerLayout,
+    BehaviorLayout, DeclaredComponent, DeclaredField, Function, Patch, Program, StateLayout,
+    StructLayout, TimerKind, TimerLayout,
 };
 pub use resume::{resume, Abandoned, ResumeTier};
 pub use site::{Site, SiteKind, SiteLocal};

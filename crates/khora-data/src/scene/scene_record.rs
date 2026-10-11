@@ -30,6 +30,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use khora_core::asset::AssetUUID;
 
+use super::declared::DeclaredRecord;
 use super::record::Record;
 use super::save::SaveRecord;
 
@@ -45,6 +46,10 @@ pub struct SceneRecord {
     /// are not in `pages`, they are the prefab's, with the instance's
     /// differences on top.
     pub instances: Vec<InstanceRecord>,
+    /// The declaration of every component declared while the engine ran
+    /// that `pages` hold, sorted by name: no registration knows such a
+    /// component, so the record describes it.
+    pub declared: Vec<DeclaredRecord>,
 }
 
 /// A prefab instance, kept as a link: the prefab, the identity of its root,
@@ -76,15 +81,21 @@ pub struct PageRecord {
 /// Written as `{"entities": [..], "pages": [{"rows": [..], "columns": {"Name":
 /// [value per row], ..}}, ..]}` — a page's components are the keys of its
 /// columns, in signature order: a text save reads as the pages the scene is
-/// stored in. A record linking to prefabs adds `"instances": [..]`.
+/// stored in. A record linking to prefabs adds `"instances": [..]`; one
+/// holding components declared while the engine ran adds their
+/// `"declared": [..]`.
 impl Serialize for SceneRecord {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let linked = !self.instances.is_empty();
-        let mut map = serializer.serialize_map(Some(if linked { 3 } else { 2 }))?;
+        let described = !self.declared.is_empty();
+        let mut map = serializer.serialize_map(Some(2 + linked as usize + described as usize))?;
         map.serialize_entry("entities", &Ids(&self.entities))?;
         map.serialize_entry("pages", &self.pages)?;
         if linked {
             map.serialize_entry("instances", &self.instances)?;
+        }
+        if described {
+            map.serialize_entry("declared", &self.declared)?;
         }
         map.end()
     }
@@ -154,12 +165,15 @@ impl<'de> Deserialize<'de> for SceneRecord {
             pages: Vec<RawPage>,
             #[serde(default)]
             instances: Vec<InstanceRecord>,
+            #[serde(default)]
+            declared: Vec<DeclaredRecord>,
         }
         let raw = Raw::deserialize(deserializer)?;
         Ok(SceneRecord {
             entities: ids_from(raw.entities),
             pages: pages_from(raw.pages),
             instances: raw.instances,
+            declared: raw.declared,
         })
     }
 }
@@ -175,12 +189,15 @@ pub(super) fn plain_record<'de, D: Deserializer<'de>>(
     struct Raw {
         entities: Vec<u64>,
         pages: Vec<RawPage>,
+        #[serde(default)]
+        declared: Vec<DeclaredRecord>,
     }
     let raw = Raw::deserialize(deserializer)?;
     Ok(SceneRecord {
         entities: ids_from(raw.entities),
         pages: pages_from(raw.pages),
         instances: Vec::new(),
+        declared: raw.declared,
     })
 }
 

@@ -59,18 +59,21 @@ impl Parser {
             return Ok(Item::Behavior(self.parse_behavior(attributes)?));
         }
 
+        // Which attributes mean something on a component is the checker's
+        // question; the grammar only places them.
+        if self.check_keyword(Keyword::Component) {
+            return Ok(Item::Component(self.parse_component(attributes)?));
+        }
+
         if let Some(attribute) = attributes.first() {
             self.diagnostics.push(
-                Diagnostic::error("attributes only apply to behaviors", attribute.span)
-                    .with_note("`[Critical]`, `[Budget(…)]` and `[Rate(…)]` guide the DCC's arbitration, which schedules behaviors"),
+                Diagnostic::error("attributes only apply to behaviors and components", attribute.span)
+                    .with_note("`[Critical]`, `[Budget(…)]` and `[Rate(…)]` guide the DCC's arbitration, which schedules behaviors; `[Domain(…)]` places a component's data"),
             );
         }
 
         if self.check_keyword(Keyword::Struct) {
             return Ok(Item::Struct(self.parse_struct()?));
-        }
-        if self.check_keyword(Keyword::Component) {
-            return Ok(Item::Component(self.parse_component()?));
         }
         if self.check_keyword(Keyword::Fn) {
             return Ok(Item::Function(self.parse_function()?));
@@ -141,14 +144,16 @@ impl Parser {
             name_span,
             fields,
             operators,
+            attributes: Vec::new(),
             span: start.to(end),
         })
     }
 
-    /// `component Name { fields }` — fields only: a component is data the
-    /// engine stores, with no defaults (an unnamed field of a write is left
-    /// alone) and no operators.
-    pub(super) fn parse_component(&mut self) -> Parse<StructDecl> {
+    /// `[Domain(…)] component Name { fields }` — fields only, each with an
+    /// optional default: a component is data the engine stores, with no
+    /// operators. A default is what a new row starts with; a write still
+    /// leaves the fields it does not name as they are.
+    pub(super) fn parse_component(&mut self, attributes: Vec<Attribute>) -> Parse<StructDecl> {
         let start = self.span();
         self.advance(); // `component`
         let (name, name_span) = self.expect_ident("a component name")?;
@@ -161,16 +166,6 @@ impl Parser {
                 Err(Bail) => self.recover_to_statement(),
             }
         }
-        for field in &fields {
-            if let Some(default) = &field.default {
-                self.diagnostics.push(
-                    Diagnostic::error("a component field has no default", default.span())
-                        .with_note(
-                            "a write names the fields it changes and leaves the others as they are",
-                        ),
-                );
-            }
-        }
 
         let end = self.expect(TokenKind::RBrace, "`}` to close the component body")?;
         Ok(StructDecl {
@@ -178,6 +173,7 @@ impl Parser {
             name_span,
             fields,
             operators: Vec::new(),
+            attributes,
             span: start.to(end),
         })
     }

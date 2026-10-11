@@ -23,51 +23,7 @@ use std::{
     collections::HashMap,
 };
 
-/// Defines the semantic domains a component can belong to.
-///
-/// This is used by the [`ComponentRegistry`] to map a component type to its
-/// corresponding `ComponentPage` group. This grouping is the core principle that
-/// allows the CRPECS to have fast, domain-specific queries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SemanticDomain {
-    /// For components related to position, physics, and the scene graph.
-    Spatial,
-    /// For components related to rendering, such as mesh and material handles.
-    Render,
-    /// For components related to audio, such as audio sources and listeners.
-    Audio,
-    /// For components related to physics simulation.
-    Physics,
-    /// For components driving the in-world UI subsystem (UiNode, UiText, etc).
-    Ui,
-    /// For gameplay logic attached to entities — which behavior an entity runs
-    /// and the state that behavior keeps.
-    ///
-    /// Its own domain rather than a corner of `Spatial` because the two change
-    /// on different clocks: a transform moves every frame, while which script an
-    /// entity runs changes when a designer edits the scene. Sharing an epoch
-    /// would mean one invalidates the other's cached projection for no reason.
-    Script,
-}
-
-impl SemanticDomain {
-    /// Number of semantic domains — sizes fixed per-domain tables such as the
-    /// [`World`](crate::ecs::World)'s change epochs.
-    pub const COUNT: usize = 6;
-
-    /// Dense index of this domain in `0..COUNT`, used to address fixed
-    /// per-domain arrays without a `HashMap` lookup.
-    pub const fn index(self) -> usize {
-        match self {
-            SemanticDomain::Spatial => 0,
-            SemanticDomain::Render => 1,
-            SemanticDomain::Audio => 2,
-            SemanticDomain::Physics => 3,
-            SemanticDomain::Ui => 4,
-            SemanticDomain::Script => 5,
-        }
-    }
-}
+pub use khora_core::ecs::SemanticDomain;
 
 /// Who is allowed to write a component — the axis orthogonal to
 /// [`SemanticDomain`].
@@ -358,6 +314,14 @@ impl ComponentRegistry {
     pub(crate) fn set_columns(&mut self, key: ComponentKey, columns: Arc<dyn ColumnOps>) {
         if let Some(vtable) = self.vtables.get_mut(&key) {
             vtable.columns = columns;
+        }
+    }
+
+    /// Moves a declared component to `domain`; its rows are the caller's to
+    /// move.
+    pub(crate) fn set_domain(&mut self, key: ComponentKey, domain: SemanticDomain) {
+        if let Some(vtable) = self.vtables.get_mut(&key) {
+            vtable.domain = domain;
         }
     }
 

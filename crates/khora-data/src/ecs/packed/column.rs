@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use khora_core::script::{FieldValueError, ScriptValue};
 
-use super::{decode, encode, FieldError, PackedLayout, Place};
+use super::{decode, encode, FieldError, FieldKind, PackedLayout, Place};
 use crate::ecs::{AnyVec, ColumnOps, ColumnSnapshot, FieldWriteError};
 
 /// The rows of one run-time component in one page: the inline parts packed
@@ -40,6 +40,11 @@ impl PackedColumn {
             boxed: Vec::new(),
             rows: 0,
         }
+    }
+
+    /// The fields this column's rows hold.
+    pub(crate) fn layout(&self) -> &PackedLayout {
+        &self.layout
     }
 
     /// Appends a row holding every field's default.
@@ -122,21 +127,32 @@ impl PackedColumn {
     }
 
     /// The column rebuilt under `layout`: each field kept by name where its
-    /// kind is unchanged, its new default otherwise.
+    /// kind is unchanged or [widens](FieldKind::widens) to the new one,
+    /// converted; its new default otherwise.
+    ///
+    /// A field whose Ergon type changed takes its default too, though its
+    /// kind did not: a `string?` that became an `int?` holds no `int`.
     pub(crate) fn relaid(&self, layout: &Arc<PackedLayout>) -> PackedColumn {
         let mut column = PackedColumn::new(layout.clone());
-        let kept: Vec<Option<usize>> = layout
+        let kept: Vec<Option<(usize, FieldKind)>> = layout
             .fields()
             .iter()
-            .map(|field| {
+            .enumerate()
+            .map(|(slot, field)| {
                 let old = self.layout.slot_of(&field.name)?;
-                (self.layout.fields()[old].kind == field.kind).then_some(old)
+                let from = self.layout.fields()[old].kind;
+                let changed = retyped(self.layout.ty(old), layout.ty(slot));
+                (from.widens(field.kind) && !changed).then_some((old, from))
             })
             .collect();
         for row in 0..self.rows {
             column.push_defaults();
             for (slot, old) in kept.iter().enumerate() {
-                if let Some(value) = old.and_then(|old| self.get(row, old)) {
+                let to = layout.fields()[slot].kind;
+                if let Some(value) = old
+                    .and_then(|(old, from)| from.widened(to, &self.get(row, old)?))
+                    .and_then(|value| layout.admit(slot, &value))
+                {
                     column.store(row, slot, value);
                 }
             }
@@ -278,5 +294,20 @@ impl ColumnSnapshot for PackedColumn {
                 .filter_map(|(slot, field)| Some((field.name.clone(), self.get(row, slot)?)))
                 .collect(),
         )
+    }
+}
+
+/// Whether a field's Ergon type changed from `from` to `to` in a way that
+/// leaves its values meaningless — anything but an `int` becoming a `float`.
+/// A field whose type is not known on both sides is judged by its kind.
+pub(crate) fn retyped(
+    from: Option<&khora_core::script::ErgonType>,
+    to: Option<&khora_core::script::ErgonType>,
+) -> bool {
+    use khora_core::script::ErgonType;
+    match (from, to) {
+        (Some(ErgonType::Int), Some(ErgonType::Float)) => false,
+        (Some(from), Some(to)) => from != to,
+        _ => false,
     }
 }

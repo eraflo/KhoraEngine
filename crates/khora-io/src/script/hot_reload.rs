@@ -59,6 +59,9 @@ use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 use khora_script::reload::ScriptReload;
+use khora_script::vm::Program;
+
+use crate::script::declarations::{PendingDeclarations, ScriptDeclarations};
 
 use khora_script::modules::{imports_of, EXTENSION};
 
@@ -147,6 +150,30 @@ fn importers_of(
     affected
 }
 
+/// Sends, once per module, the components `program` says that module
+/// declares, skipping the modules already in `sent`.
+fn send_declared(
+    program: &Program,
+    declarations: &PendingDeclarations,
+    sent: &mut BTreeSet<String>,
+) {
+    let mut by_module: BTreeMap<&str, Vec<_>> = BTreeMap::new();
+    for component in &program.declared {
+        by_module
+            .entry(component.module.as_str())
+            .or_default()
+            .push(component.clone());
+    }
+    for (module, components) in by_module {
+        if sent.insert(module.to_owned()) {
+            declarations.send(ScriptDeclarations {
+                module: module.to_owned(),
+                components,
+            });
+        }
+    }
+}
+
 /// Compiles every module under `script_root` and queues them all.
 ///
 /// The pump reacts to *changes*, which leaves the first frame with no programs
@@ -154,16 +181,26 @@ fn importers_of(
 /// file. This is the initial load, and it takes the same road a reload does so
 /// there is one way a program reaches the runtime rather than two.
 ///
+/// The components the modules declare go to `declarations`, once per
+/// declaring module however many import it, for the frame boundary to
+/// register before the first program runs.
+///
 /// Returns how many compiled. A module that does not compile is reported and
 /// skipped: one broken script should not stop the others from running.
-pub fn load_all(script_root: &Path, pending: &PendingReloads) -> usize {
+pub fn load_all(
+    script_root: &Path,
+    pending: &PendingReloads,
+    declarations: &PendingDeclarations,
+) -> usize {
     let loader = PreludeLoader::new(DiskLoader::new(script_root));
     let mut loaded = 0;
+    let mut sent = BTreeSet::new();
 
     for module in modules_under(script_root).into_keys() {
         let compiled = compile_module(&loader, &module);
         match compiled.program {
             Some(program) => {
+                send_declared(&program, declarations, &mut sent);
                 pending.send(ScriptReload { module, program });
                 loaded += 1;
             }
@@ -244,12 +281,46 @@ fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
     let script_root = watcher.assets_root().join(root.unwrap_or_default());
     let affected = importers_of(&modules_under(&script_root), &changed);
     let loader = PreludeLoader::new(DiskLoader::new(&script_root));
+    let declarations = runtime.resources.get::<PendingDeclarations>();
+    let mut sent = BTreeSet::new();
+
+    // A deleted file declares nothing any more: what it declared is orphaned,
+    // kept with its data.
+    if let Some(declarations) = declarations {
+        for module in &changed {
+            if !script_root.join(module).is_file() {
+                declarations.send(ScriptDeclarations {
+                    module: module.clone(),
+                    components: Vec::new(),
+                });
+            }
+        }
+    }
 
     for module in affected {
         let compiled = compile_module(&loader, &module);
         match compiled.program {
             Some(program) => {
                 log::info!("script hot-reload: recompiled {module}");
+                // What an edited module declares now — nothing, when the
+                // author removed its last component.
+                if let Some(declarations) = declarations {
+                    if changed.contains(&module) && sent.insert(module.clone()) {
+                        declarations.send(ScriptDeclarations {
+                            module: module.clone(),
+                            components: program
+                                .declared
+                                .iter()
+                                .filter(|component| component.module == module)
+                                .cloned()
+                                .collect(),
+                        });
+                    }
+                    // And every module it declares through: a struct edited in
+                    // one module changes the defaults of a component another
+                    // declares with it.
+                    send_declared(&program, declarations, &mut sent);
+                }
                 pending.send(ScriptReload { module, program });
             }
             None => {
@@ -487,7 +558,14 @@ mod load_tests {
         .expect("writes");
 
         let pending = reload_channel();
-        assert_eq!(load_all(dir.path(), &pending), 2);
+        assert_eq!(
+            load_all(
+                dir.path(),
+                &pending,
+                &crate::script::declarations::declaration_channel()
+            ),
+            2
+        );
 
         let queued: Vec<String> = pending.drain().into_iter().map(|r| r.module).collect();
         assert!(queued.contains(&"ai/guard.erg".to_owned()), "{queued:?}");
@@ -507,7 +585,11 @@ mod load_tests {
         .expect("writes");
 
         let pending = reload_channel();
-        load_all(dir.path(), &pending);
+        load_all(
+            dir.path(),
+            &pending,
+            &crate::script::declarations::declaration_channel(),
+        );
 
         assert_eq!(
             pending.drain().first().map(|r| r.module.clone()),
@@ -525,7 +607,14 @@ mod load_tests {
         std::fs::write(dir.path().join("broken.erg"), "behavior {{{").expect("writes");
 
         let pending = reload_channel();
-        assert_eq!(load_all(dir.path(), &pending), 1);
+        assert_eq!(
+            load_all(
+                dir.path(),
+                &pending,
+                &crate::script::declarations::declaration_channel()
+            ),
+            1
+        );
         assert_eq!(
             pending.drain().first().map(|r| r.module.clone()),
             Some("good.erg".to_owned())
@@ -537,7 +626,14 @@ mod load_tests {
         let dir = tempfile::TempDir::new().expect("a temp dir");
         let pending = reload_channel();
 
-        assert_eq!(load_all(dir.path(), &pending), 0);
+        assert_eq!(
+            load_all(
+                dir.path(),
+                &pending,
+                &crate::script::declarations::declaration_channel()
+            ),
+            0
+        );
         assert!(pending.is_empty());
     }
 }

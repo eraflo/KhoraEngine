@@ -25,6 +25,7 @@ pub mod shape;
 
 pub mod apply;
 pub mod capture;
+pub mod declared;
 pub mod encoding;
 mod entity_refs;
 pub mod file;
@@ -43,6 +44,7 @@ pub use shape::{ComponentShape, FieldSchema};
 
 pub use apply::{apply, prepare, Applied, Identity, LoadFailure, Prepared};
 pub use capture::{capture_subtree, capture_world, SaveError};
+pub use declared::{DeclaredFieldRecord, DeclaredRecord};
 pub use encoding::{
     encoding_named, CompactEncoding, EncodingError, MsgPackEncoding, SceneEncoding, TextEncoding,
 };

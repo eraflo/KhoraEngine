@@ -32,5 +32,6 @@ mod save_mid_attack_test;
 mod scene_edit_after_save;
 mod script_component_reads;
 mod script_component_writes;
+mod script_defined_components;
 mod script_delivery_test;
 mod shipped_script_runs_test;

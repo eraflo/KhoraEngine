@@ -90,6 +90,7 @@ fn pausing_call() -> Program {
         patches: Vec::new(),
         spawns: Vec::new(),
         reads: Vec::new(),
+        declared: Vec::new(),
     }
 }
 
@@ -107,6 +108,7 @@ fn pausing_call_reordered() -> Program {
         patches: Vec::new(),
         spawns: Vec::new(),
         reads: Vec::new(),
+        declared: Vec::new(),
     }
 }
 
@@ -124,6 +126,7 @@ fn pausing_call_renamed() -> Program {
         patches: Vec::new(),
         spawns: Vec::new(),
         reads: Vec::new(),
+        declared: Vec::new(),
     }
 }
 
@@ -147,6 +150,7 @@ fn pausing_literal(strings: &[&str], index: u32) -> Program {
         patches: Vec::new(),
         spawns: Vec::new(),
         reads: Vec::new(),
+        declared: Vec::new(),
     }
 }
 
@@ -176,6 +180,7 @@ fn pausing_joined() -> Program {
         patches: Vec::new(),
         spawns: Vec::new(),
         reads: Vec::new(),
+        declared: Vec::new(),
     }
 }
 

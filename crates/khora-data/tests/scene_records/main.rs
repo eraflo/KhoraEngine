@@ -33,6 +33,10 @@ use khora_data::scene::{
 };
 
 mod decimals;
+mod declared_component_loads;
+mod declared_component_prefabs;
+mod declared_component_saves;
+mod declared_component_snapshots;
 mod declared_components;
 mod failures;
 mod hierarchy_and_identity;

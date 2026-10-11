@@ -267,7 +267,7 @@ pub fn apply_to_prefab(
         }
     }
 
-    let written = record_from(local.entities.clone(), rows);
+    let written = record_from(local.entities.clone(), rows, &[&local, &live]);
     collapse(
         &written,
         &Except {

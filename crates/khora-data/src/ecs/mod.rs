@@ -35,7 +35,7 @@ mod entity;
 mod entity_store;
 pub mod layout;
 pub mod maintenance;
-mod packed;
+pub(crate) mod packed;
 mod page;
 mod planner;
 mod query;

@@ -481,6 +481,22 @@ fn a_broken_declaration_does_not_hide_the_next() {
     );
 }
 
+/// **A component takes `[Domain(…)]` and field defaults** (Ergon spec 08):
+/// which attributes mean something on it is the checker's question, not the
+/// grammar's.
+#[test]
+fn a_component_takes_attributes_and_field_defaults() {
+    let module = parse_ok(
+        "[Domain(Physics)]
+         component Health { int current = 100; int max = 100; string label; }",
+    );
+    assert_eq!(module.items.len(), 1);
+    let Item::Component(_) = &module.items[0] else {
+        panic!("expected a component");
+    };
+    assert_eq!(module.items[0].name(), "Health");
+}
+
 #[test]
 fn attributes_on_a_struct_are_refused_with_a_reason() {
     let lexed = lex("[Critical] struct S { }");

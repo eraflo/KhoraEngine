@@ -30,6 +30,13 @@ use std::collections::HashMap;
 pub trait SourceLoader {
     /// The text of the module at `path`, or `None` if there is none.
     fn load(&self, path: &str) -> Option<String>;
+
+    /// The name of every component the engine registers, its `formerly`
+    /// names included — what a script's own `component` may not be called.
+    /// Empty for a loader that serves no engine.
+    fn engine_components(&self) -> &[String] {
+        &[]
+    }
 }
 
 /// A loader backed by a map, for tests and for the editor's unsaved buffers.

@@ -67,8 +67,9 @@ use khora_script::TokenKind;
 /// Where a script imports the mirrors from.
 ///
 /// `import "engine/components.erg";` — an ordinary import, so a script that does
-/// not use a component pays nothing, and a project declaring its own `Camera`
-/// only meets the clash if it asked for ours.
+/// not use a component pays nothing. A project's own `component` may not take
+/// an engine component's name whether it imports this or not: a name is unique
+/// among every component the engine stores.
 pub const MIRROR_MODULE: &str = khora_script::ENGINE_COMPONENTS_MODULE;
 
 /// The Ergon source mirroring every registered component.
@@ -119,6 +120,28 @@ impl<L: SourceLoader> SourceLoader for PreludeLoader<L> {
         }
         self.inner.load(path)
     }
+
+    fn engine_components(&self) -> &[String] {
+        engine_component_names()
+    }
+}
+
+/// Every engine component's name and former name, sorted: the complete list
+/// — the mirror leaves some out, the registrations do not.
+fn engine_component_names() -> &'static [String] {
+    static NAMES: OnceLock<Vec<String>> = OnceLock::new();
+    NAMES.get_or_init(|| {
+        let mut names: Vec<String> = inventory::iter::<ComponentRegistration>
+            .into_iter()
+            .flat_map(|registration| {
+                std::iter::once(registration.type_name).chain(registration.formerly.iter().copied())
+            })
+            .map(str::to_owned)
+            .collect();
+        names.sort();
+        names.dedup();
+        names
+    })
 }
 
 /// Builds the module.
@@ -805,5 +828,77 @@ mod tests {
             Some("is not a name Ergon can spell")
         );
         assert_eq!(unspellable(""), Some("is not a name Ergon can spell"));
+    }
+
+    // ── The engine's names (Ergon spec 08) ────────────
+
+    /// **Every engine component's name, mirrored or not.** A script may not
+    /// declare a component the engine has — and the mirror leaves some out
+    /// (`Script`, whose field is a reserved word), so the list is the
+    /// registry's, `formerly` names included, never the mirror's.
+    #[test]
+    fn the_prelude_names_every_engine_component() {
+        let loader = PreludeLoader::new(MemoryLoader::new());
+        let names = loader.engine_components();
+
+        for registration in inventory::iter::<ComponentRegistration> {
+            assert!(
+                names.iter().any(|name| name == registration.type_name),
+                "`{}` is missing from the engine's names",
+                registration.type_name
+            );
+            for formerly in registration.formerly {
+                assert!(
+                    names.iter().any(|name| name == formerly),
+                    "`{formerly}`, formerly `{}`, is missing",
+                    registration.type_name
+                );
+            }
+        }
+        assert!(
+            names.iter().any(|name| name == "Script"),
+            "an unmirrored component is named too"
+        );
+        assert!(
+            !names.iter().any(|name| name == "Vec3"),
+            "a type is not a component"
+        );
+    }
+
+    /// **The clash, against the real engine.** A script declaring `RigidBody`
+    /// — or `Script`, which the mirror does not declare — is refused at the
+    /// name, saying how to use the engine's instead.
+    #[test]
+    fn a_script_component_named_like_an_engine_one_is_refused() {
+        for name in ["RigidBody", "Script"] {
+            let source = format!("fn void Probe() {{ }}\ncomponent {name} {{ int n = 0; }}");
+            let result = compile(&source);
+
+            assert!(!result.succeeded(), "`{name}` should be refused");
+            let refusal = result
+                .diagnostics
+                .iter()
+                .find(|d| {
+                    format!("{} {}", d.message, d.note.as_deref().unwrap_or_default())
+                        .contains(&format!("`{name}` is an engine component"))
+                })
+                .unwrap_or_else(|| {
+                    panic!(
+                        "expected the engine-name refusal; got {:?}",
+                        result.diagnostics
+                    )
+                });
+            assert_eq!(
+                &source[refusal.span.start as usize..refusal.span.end as usize],
+                name
+            );
+        }
+
+        let own = compile("component Shield { int charge = 3; }\nfn void Probe() { }");
+        assert!(
+            own.succeeded(),
+            "a name the engine does not use compiles: {:?}",
+            own.diagnostics
+        );
     }
 }

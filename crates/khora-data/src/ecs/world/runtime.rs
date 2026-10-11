@@ -23,7 +23,9 @@ use khora_core::script::ScriptValue;
 
 use super::component_access::AddComponentError;
 use super::World;
-use crate::ecs::packed::{FieldError, FieldKind, PackedColumn, PackedColumns, PackedLayout};
+use crate::ecs::packed::{
+    retyped, FieldError, FieldKind, PackedColumn, PackedColumns, PackedLayout,
+};
 use crate::ecs::page::PageIndex;
 use crate::ecs::{
     AnyVec, Component, ComponentKey, ComponentProvenance, ComponentRegistry, ComponentVTable,
@@ -321,7 +323,12 @@ impl World {
 
     /// Gives a declared component new fields, rebuilding every row of it field
     /// by field, by name: a field keeps its value where its name and kind are
-    /// unchanged, and takes its default where it is new or changed kind.
+    /// unchanged — or where an `int` became a `float` and converts losslessly
+    /// — and takes its default where it is new or changed kind.
+    ///
+    /// Where both layouts know a field's Ergon type, a field whose type
+    /// changed takes its default though its kind did not (`string?` to
+    /// `int?`: both any value).
     pub fn relayout(
         &mut self,
         key: ComponentKey,
@@ -347,11 +354,14 @@ impl World {
             defaulted: layout
                 .fields()
                 .iter()
-                .filter(|field| {
-                    old.slot_of(&field.name)
-                        .is_none_or(|slot| old.fields()[slot].kind != field.kind)
+                .enumerate()
+                .filter(|(at, field)| {
+                    old.slot_of(&field.name).is_none_or(|slot| {
+                        !old.fields()[slot].kind.widens(field.kind)
+                            || retyped(old.ty(slot), layout.ty(*at))
+                    })
                 })
-                .map(|field| field.name.clone())
+                .map(|(_, field)| field.name.clone())
                 .collect(),
         };
         if !report.dropped.is_empty() {
@@ -376,6 +386,72 @@ impl World {
             .set_columns(key, Arc::new(PackedColumns::new(layout)));
         self.bump_domain_epoch(domain);
         Ok(report)
+    }
+
+    /// Moves a declared component to `domain`: every row of it goes to its
+    /// entity's page of the new domain, values intact.
+    pub fn move_component_domain(
+        &mut self,
+        key: ComponentKey,
+        domain: SemanticDomain,
+    ) -> Result<(), RegisterError> {
+        let vtable = self
+            .storage
+            .registry
+            .vtable(key)
+            .ok_or(RegisterError::Unknown(key))?;
+        let Some(layout) = vtable.columns.packed() else {
+            return Err(RegisterError::NotRuntime {
+                name: vtable.name.to_string(),
+            });
+        };
+        let from = vtable.domain;
+        if from == domain {
+            return Ok(());
+        }
+        // Every row read out by name before any moves: a row is detached from
+        // its page and attached to the entity's page of the new domain, which
+        // is the one move a page knows how to make.
+        let names: Vec<String> = layout.fields().iter().map(|f| f.name.clone()).collect();
+        let held: Vec<(EntityId, ScriptValue)> = self
+            .iter_entities()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter_map(|entity| {
+                let row = self.row(entity, key)?;
+                let fields = names
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(slot, name)| Some((name.clone(), row.field(slot)?)))
+                    .collect();
+                Some((entity, ScriptValue::Struct(fields)))
+            })
+            .collect();
+        for (entity, _) in &held {
+            let _ = self.detach(*entity, key);
+        }
+        self.storage.registry.set_domain(key, domain);
+        // A plan names the domains its components live in.
+        self.planner
+            .query_cache
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        for (entity, value) in &held {
+            // The values are the component's own, read from it above.
+            if let Err(error) = self.add_runtime_component(*entity, key, value) {
+                log::error!(
+                    "moving a row of `{}` to {domain:?} lost it: {error:?}",
+                    self.storage
+                        .registry
+                        .vtable(key)
+                        .map_or("?", |vtable| &*vtable.name)
+                );
+            }
+        }
+        self.bump_domain_epoch(from);
+        self.bump_domain_epoch(domain);
+        Ok(())
     }
 
     /// Attaches a declared component: its defaults, then `value`'s fields (a

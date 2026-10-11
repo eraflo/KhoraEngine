@@ -239,6 +239,27 @@ impl<A: EngineApp> EngineCore<A> {
                 .resources
                 .insert(khora_core::script::engine_event_channel());
         }
+        // The components the scripts declare: sent by the compile path,
+        // registered at the frame boundary in every mode, with the memory of
+        // which module declares each.
+        if runtime
+            .resources
+            .get::<khora_io::script::declarations::PendingDeclarations>()
+            .is_none()
+        {
+            runtime
+                .resources
+                .insert(khora_io::script::declarations::declaration_channel());
+        }
+        if runtime
+            .resources
+            .get::<std::sync::Arc<std::sync::Mutex<khora_io::script::declarations::DeclaredComponents>>>()
+            .is_none()
+        {
+            runtime.resources.insert(std::sync::Arc::new(std::sync::Mutex::new(
+                khora_io::script::declarations::DeclaredComponents::default(),
+            )));
+        }
         // What the loaded scripts read: written by the script lane, read by the
         // script flow to project only those components.
         if runtime

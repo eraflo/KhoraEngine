@@ -52,6 +52,31 @@ impl Checker {
             .insert(decl.name.clone(), ComponentInfo { fields });
     }
 
+    /// Checks a component's field defaults as a struct's are checked: each
+    /// fits its field and is a constant — data, read wherever a row is built
+    /// or loaded, never run.
+    pub(super) fn check_component_defaults(&mut self, decl: &StructDecl) {
+        for field in &decl.fields {
+            let Some(default) = &field.default else {
+                continue;
+            };
+            self.scopes = super::Scopes::new();
+            // As collected: resolving the type again would report an unknown
+            // one a second time.
+            let declared = self
+                .components
+                .get(&decl.name)
+                .and_then(|info| info.fields.get(&field.name))
+                .cloned()
+                .unwrap_or(Ty::Error);
+            let context = Context::sync(format!("a default of `{}`", decl.name), Ty::Void);
+            let actual = self.check_expr(default, &context);
+            self.expect_assignable(&declared, &actual, default.span());
+            self.expect_component_constant(default);
+            self.expect_finite_default(&decl.name, &field.name, default);
+        }
+    }
+
     /// Refuses a reserved name as a function's or a method's.
     pub(super) fn refuse_reserved(&mut self, name: &str, span: Span) -> bool {
         if !RESERVED.contains(&name) {

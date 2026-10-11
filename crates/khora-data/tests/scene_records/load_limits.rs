@@ -335,6 +335,7 @@ fn depth_128_is_accepted_and_129_refused_in_binary_encodings() {
                 rows: vec![PersistentId::authored(7)],
                 columns: vec![vec![nested(depth)]],
             }],
+            declared: Vec::new(),
         };
         for (name, encoding) in [
             ("compact", &CompactEncoding as &dyn SceneEncoding),

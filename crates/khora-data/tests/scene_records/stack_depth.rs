@@ -45,6 +45,7 @@ fn the_deepest_value_decodes_on_a_one_mib_stack() {
             rows: vec![PersistentId::authored(7)],
             columns: vec![vec![nested(128)]],
         }],
+        declared: Vec::new(),
     };
     let decoders: [(&str, Decode); 3] = [
         ("compact", |bytes| CompactEncoding.decode(bytes)),
@@ -73,6 +74,7 @@ fn one_level_past_the_bound_is_refused_in_text_too() {
             rows: vec![PersistentId::authored(7)],
             columns: vec![vec![nested(129)]],
         }],
+        declared: Vec::new(),
     };
     let bytes = TextEncoding.encode(&record).expect("encodes");
     assert!(TextEncoding.decode(&bytes).is_err());

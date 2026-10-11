@@ -17,7 +17,9 @@
 //! This module provides core data structures like [`entity::EntityId`]. The concrete ECS
 //! implementation lives in the `khora-data` crate, which depends on these types.
 
+pub mod domain;
 pub mod entity;
 pub mod persistent_id;
 
+pub use domain::SemanticDomain;
 pub use persistent_id::PersistentId;

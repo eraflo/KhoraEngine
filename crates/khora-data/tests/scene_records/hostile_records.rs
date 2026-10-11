@@ -303,6 +303,7 @@ fn a_deeply_nested_msgpack_value_is_an_error_not_a_crash() {
             rows: vec![PersistentId::authored(7)],
             columns: vec![vec![Record::Str("PLACEHOLDER".into())]],
         }],
+        declared: Vec::new(),
     };
     let bytes = MsgPackEncoding.encode(&record).expect("encodes");
     let marker = b"\xabPLACEHOLDER";

@@ -40,15 +40,22 @@ use khora_core::asset::AssetUUID;
 use khora_core::ecs::PersistentId;
 
 use super::EncodingError;
+use crate::scene::declared::{declaration_from_record, declaration_to_record};
 use crate::scene::record::{EntityRef, Record, VariantPayload};
 use crate::scene::save::{RemovedComponents, SaveRecord};
 use crate::scene::scene_record::{InstanceRecord, PageRecord, SceneRecord};
 
 /// The layout version this module writes and reads.
 ///
+/// Version 3 ends with the declarations of the components declared while the
+/// engine ran that the record holds, and is written only by a record holding
+/// one: any other is written as version 2, byte for byte what it always was.
 /// Version 2 ends with the record's prefab instances; version 1, which has
 /// none, still reads.
-const VERSION: u8 = 2;
+const VERSION: u8 = 3;
+
+/// The version a record with no declared component is written as.
+const UNDECLARED_VERSION: u8 = 2;
 
 mod tag {
     pub const UNIT: u8 = 0;
@@ -126,8 +133,17 @@ pub(super) fn encode(record: &SceneRecord) -> Vec<u8> {
         write_varint(&mut body, delta.len() as u64);
         body.extend(delta);
     }
+    let version = if record.declared.is_empty() {
+        UNDECLARED_VERSION
+    } else {
+        write_varint(&mut body, record.declared.len() as u64);
+        for declared in &record.declared {
+            tables.write_value(&mut body, &declaration_to_record(declared));
+        }
+        VERSION
+    };
 
-    let mut out = vec![VERSION];
+    let mut out = vec![version];
     write_varint(&mut out, tables.symbols.len() as u64);
     for symbol in &tables.symbols {
         write_varint(&mut out, symbol.len() as u64);
@@ -445,7 +461,7 @@ pub(super) fn decode(bytes: &[u8]) -> Result<SceneRecord, EncodingError> {
 fn decode_record(bytes: &[u8], links: Links) -> Result<SceneRecord, EncodingError> {
     let mut input = Input { bytes, at: 0 };
     let version = input.byte()?;
-    if version != VERSION && version != 1 {
+    if !(1..=VERSION).contains(&version) {
         return Err(error(format!(
             "compact layout version {version}, expected {VERSION}"
         )));
@@ -552,6 +568,16 @@ fn decode_record(bytes: &[u8], links: Links) -> Result<SceneRecord, EncodingErro
             });
         }
     }
+    let mut declared = Vec::new();
+    if version >= 3 {
+        // A declaration is a value at least a byte long.
+        let count = input.count(1)?;
+        declared.reserve(count);
+        for _ in 0..count {
+            let value = reader.value(&mut input)?;
+            declared.push(declaration_from_record(&value).map_err(error)?);
+        }
+    }
     if input.at != bytes.len() {
         return Err(error(format!(
             "{} byte(s) after the last page",
@@ -562,6 +588,7 @@ fn decode_record(bytes: &[u8], links: Links) -> Result<SceneRecord, EncodingErro
         entities,
         pages,
         instances,
+        declared,
     })
 }
 

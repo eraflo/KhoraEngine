@@ -60,8 +60,12 @@ snapshot, atomic loads, game saves and prefab links.
   for the editor, scene files and the hierarchy (`Parent`/`Children`).
 - **Declared components** (`World::register_runtime_component`, `relayout`, `add_runtime_component`,
   `row`/`row_mut`, `remove_component_by_key`; `ecs/packed/`, `ecs/world/runtime.rs`) live in their domain's
-  pages and migrate by key (`ecs/world/migration.rs`). Scenes, snapshots and game saves skip them until they
-  get a registration (Ergon spec 08).
+  pages and migrate by key (`ecs/world/migration.rs`); `move_component_domain` moves every row to another
+  domain, `relayout` keeps a value by name where its kind is unchanged or an int widens to a float exactly.
+  A record holding one describes it (`SceneRecord.declared`, `scene/declared.rs`): scenes, prefabs, game saves,
+  compact v3 (v2 when none), snapshot v2 (fields by name, mapped onto the live declaration on restore). Cells are
+  **self-typed** (each field a serde-tagged `ScriptValue`), so the table only registers a missing component; a
+  cell is mapped by name and by value. Saves are compared under one declaration (`save::as_read(.., under)`).
 - Verify `unsafe` query/storage changes under Miri: `cargo +nightly miri test -p khora-data --lib -- <filter>`.
 
 ## Persistence
@@ -99,7 +103,9 @@ Play/Stop, `khora-editor/src/scene_io/mod.rs`) — never a project's only copy.
 **Atomic load.** `prepare` checks every component name, reserves an id per entity and stages every value;
 only then does `Prepared::commit(world, Identity::Keep | Fresh)` add, page by page (no migration, no
 orphan rows). `Prepared::abandon` returns the reserved ids. Unknown name → whole load fails, unless the
-name is `formerly` of a type (reported `Renamed`) or declared retired (reported `Retired`). The
+name is `formerly` of a type (reported `Renamed`), declared retired (reported `Retired`), or described by the
+record's own `declared` table — then read onto the world's declaration by name (`Defaulted`/`Dropped`/`Widened`),
+or registered from the file at `commit`. A file declaration named like a Rust component fails the load. The
 `LoadReport` lists every adaptation (`ReportKind`); callers should show it.
 `SerializationService::{load_world, replace_world}` — `replace_world` stages before despawning anything.
 

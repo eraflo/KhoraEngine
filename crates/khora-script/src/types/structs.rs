@@ -103,6 +103,21 @@ impl Checker {
             "a struct's defaults are data, read wherever one is built or loaded — write a number, text, `null`, a duration, an angle, or `[…]` / `Name { … }` of those",
         );
     }
+
+    /// Refuses a component field default that is not a constant. A
+    /// component's own field may also start at an engine value built from
+    /// numbers — `Vec3(0.0, 0.0, 1.0)` — since those types have no zero and
+    /// the engine stores them inline.
+    pub(super) fn expect_component_constant(&mut self, default: &Expr) {
+        if is_constant(default) || engine_constant(default).is_some() {
+            return;
+        }
+        self.error_note(
+            "a component field's default must be a constant",
+            default.span(),
+            "a component's defaults are data, read wherever a row is built or loaded — write a number, text, `null`, a duration, an angle, an engine value of numbers (`Vec3(0.0, 1.0, 0.0)`), or `[…]` / `Name { … }` of those",
+        );
+    }
 }
 
 impl Checker {
@@ -162,6 +177,52 @@ impl Checker {
             _ => {}
         }
     }
+}
+
+/// The engine types a constant may construct, with how many numbers each
+/// takes: `Vec3(0.0, 0.0, 1.0)` is data, as `[0.0, 0.0, 1.0]` is.
+pub(crate) const ENGINE_CONSTRUCTORS: [(&str, usize); 5] = [
+    ("Vec2", 2),
+    ("Vec3", 3),
+    ("Vec4", 4),
+    ("Quat", 4),
+    ("Color", 4),
+];
+
+/// The number a constant numeric expression stands for: a literal, or a
+/// negated one.
+pub(crate) fn constant_number(expr: &Expr) -> Option<f32> {
+    match expr {
+        Expr::Int { value, .. } => Some(*value as f32),
+        Expr::Float { value, .. } => Some(*value),
+        Expr::Unary {
+            op: UnaryOp::Neg,
+            operand,
+            ..
+        } => match **operand {
+            Expr::Int { .. } | Expr::Float { .. } => constant_number(operand).map(|v| -v),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// The engine type `expr` constructs from constant numbers, and those
+/// numbers — `Vec3(0.0, 0.0, 1.0)`.
+pub(crate) fn engine_constant(expr: &Expr) -> Option<(&'static str, Vec<f32>)> {
+    let Expr::Call { callee, args, .. } = expr else {
+        return None;
+    };
+    let Expr::Ident { name, .. } = &**callee else {
+        return None;
+    };
+    let (ty, arity) = ENGINE_CONSTRUCTORS
+        .iter()
+        .find(|(known, _)| known == name)?;
+    if args.len() != *arity {
+        return None;
+    }
+    Some((ty, args.iter().map(constant_number).collect::<Option<_>>()?))
 }
 
 /// Whether `expr` is a constant: a literal, a negated number, or an array or

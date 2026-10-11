@@ -241,3 +241,40 @@ fn relayout_of_a_rust_component_is_refused() {
         "Transform is still a Rust component"
     );
 }
+
+/// **The int → float widening a reload keeps** (Ergon spec 08). A field
+/// retyped from `int` to `float` keeps each row's value, converted: it is
+/// neither dropped nor defaulted. The other direction stays a retype — see
+/// `relayout_of_a_retyped_field_takes_its_default`.
+#[test]
+fn relayout_keeps_an_int_widened_to_a_float() {
+    let (mut world, mover, alone, paired) = movers();
+
+    let report = world
+        .relayout(
+            mover,
+            layout(vec![
+                field("hp", FieldKind::Float, ScriptValue::Float(0.5)),
+                field("speed", FieldKind::Float, ScriptValue::Float(1.0)),
+                field("label", FieldKind::Value, str_value("none")),
+            ]),
+        )
+        .expect("Mover is relaid out");
+
+    assert!(report.dropped.is_empty(), "{report:?}");
+    assert!(
+        !report.defaulted.contains(&"hp".to_owned()),
+        "the widened field kept its values: {report:?}"
+    );
+    for (entity, hp, speed) in [(alone, 7.0, 2.5), (paired, 9.0, 4.0)] {
+        assert_eq!(
+            read(&world, entity, mover, "hp"),
+            Some(ScriptValue::Float(hp)),
+            "the int is kept, as the float it names"
+        );
+        assert_eq!(
+            read(&world, entity, mover, "speed"),
+            Some(ScriptValue::Float(speed))
+        );
+    }
+}

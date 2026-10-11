@@ -253,6 +253,21 @@ of the mirror and rebuilt on load, typically by the asset system. A type renamed
 code keeps its saves readable with `#[component(formerly = "OldName")]`; a field,
 with `#[component(formerly = "old_name")]`.
 
+A component a script declares (`component Health { … }` in Ergon) has no Rust type
+and no registration, so a record holding one **describes it**: beside its pages,
+the record lists each such component's name, domain and fields. Its values are
+written field by field, by name, each field the tagged value it is
+(`"current": {"Int": 42}`): a cell says what it holds whatever declaration reads it,
+so records saved under two declarations of one component — a prefab saved before
+its scene, a game saved before its scene was — still merge. A game save is compared
+under the declarations of the world it is taken from. Each declared field also
+records its Ergon type — a struct with its fields — so a value of another type
+(text saved for what is now an `int?`) is dropped, reported, never read into it. A world that never heard of it — a scene opened
+before any script ran, a scene of a project that no longer declares it — registers
+it from the file when the load commits; a world declaring it differently reads the
+file's fields onto its own by name, and the load report says what it adapted. A name
+neither registered, described, nor retired still fails the whole load.
+
 ## Play-mode snapshots
 
 Pressing Play snapshots the world; pressing Stop restores it. The snapshot is a

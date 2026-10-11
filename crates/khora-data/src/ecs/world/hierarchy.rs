@@ -280,31 +280,32 @@ impl World {
     pub(crate) fn place_loaded_row(
         &mut self,
         entity: EntityId,
-        signature: &[TypeId],
+        signature: &[ComponentKey],
         hierarchy: &mut LoadedHierarchy,
         fill: impl FnOnce(&mut ComponentPage),
     ) -> bool {
-        let parent_type = TypeId::of::<Parent>();
+        let parent_key = ComponentKey::of::<Parent>();
         let children_type = TypeId::of::<Children>();
-        let mut signature = signature.to_vec();
+        let children_key = ComponentKey::Rust(children_type);
+        let mut keys = signature.to_vec();
         if !hierarchy.parents.contains_key(&entity) {
-            signature.retain(|type_id| *type_id != parent_type);
+            keys.retain(|key| *key != parent_key);
         }
         let children_domain = self.component_domain(children_type);
+        let registry = &self.storage.registry;
         let holds_children_domain = children_domain.is_some()
-            && signature
+            && keys
                 .iter()
-                .any(|type_id| self.component_domain(*type_id) == children_domain);
+                .any(|key| registry.domain_of(*key) == children_domain);
         let list = if holds_children_domain {
             hierarchy.children.remove(&entity)
         } else {
             None
         };
         if list.is_some() {
-            signature.push(children_type);
-            signature.sort();
+            keys.push(children_key);
+            keys.sort();
         }
-        let keys: Vec<ComponentKey> = signature.into_iter().map(ComponentKey::Rust).collect();
         self.place_row(entity, &keys, |page| {
             fill(page);
             if let (Some(list), Some(column)) = (

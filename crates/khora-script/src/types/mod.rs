@@ -40,6 +40,7 @@ mod returns;
 pub mod scope;
 pub mod stmt;
 mod structs;
+pub(crate) use structs::engine_constant;
 pub mod ty;
 
 #[cfg(test)]
@@ -485,7 +486,7 @@ impl Checker {
                 Item::Function(decl) => self.check_function(decl),
                 Item::Behavior(decl) => self.check_behavior(decl),
                 Item::Struct(decl) => self.check_struct_bodies(decl),
-                Item::Component(_) => {}
+                Item::Component(decl) => self.check_component_defaults(decl),
             }
         }
     }

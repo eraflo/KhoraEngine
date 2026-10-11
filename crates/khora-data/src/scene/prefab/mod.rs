@@ -39,6 +39,7 @@ use khora_core::scene::SceneFile;
 
 use super::apply::{apply, Identity, LoadFailure};
 use super::capture::{capture_subtree, SaveError};
+use super::declared::described;
 use super::encoding::CompactEncoding;
 use super::entity_refs::parent_in;
 use super::file::{read_scene_file, write_scene_file};
@@ -164,7 +165,7 @@ fn prefab_under(
     if let Some(components) = rows.get_mut(&root) {
         components.retain(|(name, _)| name != LINK);
     }
-    Ok(record_from(expanded.entities, rows))
+    Ok(record_from(expanded.entities.clone(), rows, &[&expanded]))
 }
 
 /// Each entity's components in `record`, owned.
@@ -175,10 +176,12 @@ fn rows_of(record: &SceneRecord) -> HashMap<PersistentId, Vec<(String, Record)>>
         .collect()
 }
 
-/// A record of `entities`, each with its components from `rows`.
+/// A record of `entities`, each with its components from `rows` — those
+/// components the records `rows` came from declared described as they did.
 fn record_from(
     entities: Vec<PersistentId>,
     mut rows: HashMap<PersistentId, Vec<(String, Record)>>,
+    from: &[&SceneRecord],
 ) -> SceneRecord {
     let mut pages = Pages::default();
     for id in &entities {
@@ -187,6 +190,10 @@ fn record_from(
         }
     }
     SceneRecord {
+        declared: described(
+            &pages.pages,
+            from.iter().flat_map(|record| record.declared.iter()),
+        ),
         entities,
         pages: pages.pages,
         instances: Vec::new(),
@@ -205,10 +212,13 @@ fn expand_in(
     let mut rows = rows_of(record);
     let mut laid_out: HashMap<PersistentId, Vec<PersistentId>> = HashMap::new();
     let mut report = Vec::new();
+    let mut sources = Vec::new();
     for instance in &record.instances {
         let base = prefab_under(instance.prefab, instance.root, prefabs, stack)?;
         let (composed, left_out) = compose_reporting(&base, &instance.delta)?;
         report.extend(left_out);
+        sources.push(base);
+        sources.push(composed.clone());
         let mut members = rows_of(&composed);
         let root = members.entry(instance.root).or_default();
         root.retain(|(name, _)| name != LINK);
@@ -257,7 +267,11 @@ fn expand_in(
     for instance in &record.instances {
         restore_sibling_order(&mut entities, &rows, &instance.delta.order);
     }
-    Ok((record_from(entities, rows), report))
+    // The record being opened last: its declarations win, every cell saying
+    // what it holds whichever its prefab was saved under.
+    sources.push(record.clone());
+    let sources: Vec<&SceneRecord> = sources.iter().collect();
+    Ok((record_from(entities, rows, &sources), report))
 }
 
 /// `record` with every prefab instance it links to brought in from
@@ -364,7 +378,7 @@ pub fn collapse(
         }
         let mut in_order: Vec<PersistentId> = ids.iter().copied().collect();
         in_order.sort_by_key(|id| position[id]);
-        let now = record_from(in_order.clone(), now_rows);
+        let now = record_from(in_order.clone(), now_rows, &[record]);
         let mut delta = delta_between(*prefab, &base, &now)?;
 
         // The order of siblings, where it is not the prefab's: a member's
@@ -422,7 +436,7 @@ pub fn collapse(
         .into_iter()
         .filter(|(id, _)| !taken.contains(id))
         .collect();
-    let mut collapsed = record_from(entities, plain);
+    let mut collapsed = record_from(entities, plain, &[record]);
     collapsed.instances = instances;
     Ok(collapsed)
 }
@@ -460,6 +474,7 @@ pub fn instantiate_prefab(
 ) -> Result<EntityId, LoadFailure> {
     let root = PersistentId::random_authored();
     let record = SceneRecord {
+        declared: Vec::new(),
         entities: vec![root],
         pages: Vec::new(),
         instances: vec![InstanceRecord {

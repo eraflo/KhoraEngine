@@ -128,8 +128,17 @@ warning — and a snapshot naming it is refused.
 
 </div>
 
-Payload: `version: u8`; the component table — a count, then each name (length,
-UTF-8) and its fingerprint (`u64` LE); the entities' persistent ids; the pages —
+A component a script declares has no Rust schema to trace. Its table entry carries
+its declaration instead — its domain and each field's name, kind and default — and
+its rows are read back onto the running world's declaration **by name**, as a record
+would be: a hot reload during Play may have given it new fields, and Stop must still
+restore.
+
+Payload: `version: u8` (`2`; layout `1`, Rust components only, still reads); the
+component table — a count, then each name (length, UTF-8), an entry kind and what it
+holds: `0` and the fingerprint (`u64` LE) for a Rust component, `1`, the domain's
+index and the fields (a count, then each name, kind name, Ergon type — its signature,
+empty when unknown — and positional default) for a declared one; the entities' persistent ids; the pages —
 each its components by table index, its rows, then its values column after column,
 each value its length and its positional bytes. A positional value is fields in
 order: varints for counts and integers (signed ones zig-zagged), floats at their
@@ -144,14 +153,17 @@ On 10 000 entities (a transform and a name each), a snapshot loads in about
 
 ### Compact layout
 
-The compact payload starts with its layout version — `2` — and writes every
+The compact payload starts with its layout version — `2`, or `3` — and writes every
 name once. A table of **symbols** (component, struct, field, enum and variant
 names) and a table of **shapes** (a struct's name and field names, or an enum's
 name and a variant's) come first; every value after them refers to its shape or
 name by index. The entities and the pages follow, each page column by column —
 the order CRPECS stores them in — and last the prefab instances: each its root
 (`u64` LE), its prefab (16-byte UUID), then its delta behind its length, in the
-game save layout below. Layout `1`, which has no instances, still reads.
+game save layout below. A record holding components a script declares is written as
+layout `3`, which ends with their declarations — a count, then each as one value:
+its name, domain and fields (name, kind, Ergon type, default). Any other record is still written
+as layout `2`, byte for byte. Layout `1`, which has no instances, still reads.
 
 <div class="kp-figure-frame">
 

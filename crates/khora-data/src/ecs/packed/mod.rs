@@ -17,14 +17,15 @@
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
-use khora_core::script::ScriptValue;
+use khora_core::script::{ErgonType, ScriptValue};
 
 mod column;
+pub(crate) use column::retyped;
 
 pub(crate) use column::{PackedColumn, PackedColumns};
 
 /// The kind of a run-time component's field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum FieldKind {
     /// `bool`
     Bool,
@@ -67,6 +68,9 @@ pub struct PackedField {
 #[derive(Debug, Clone)]
 pub struct PackedLayout {
     fields: Vec<PackedField>,
+    /// Per field, its Ergon type where known: what tells apart values its
+    /// kind does not — a `string?` and an `int?` are both any value.
+    types: Vec<Option<ErgonType>>,
     /// Per field, in declaration order: where it sits in a row.
     places: Vec<Place>,
     /// Bytes of the inline part of a row.
@@ -125,11 +129,44 @@ impl PackedLayout {
             }
         }
         Ok(Self {
+            types: vec![None; fields.len()],
             fields,
             places,
             stride,
             boxed,
         })
+    }
+
+    /// A layout of `fields`, each of the Ergon type at its position in
+    /// `types` — what a script's declaration gives. A value of another type
+    /// is then refused where a row is read from a file, and a field whose
+    /// type changed is defaulted where the layout changes.
+    pub fn typed(fields: Vec<PackedField>, types: Vec<ErgonType>) -> Result<Self, LayoutError> {
+        let mut layout = Self::new(fields)?;
+        for (slot, ty) in types.into_iter().enumerate().take(layout.types.len()) {
+            layout.types[slot] = Some(ty);
+        }
+        Ok(layout)
+    }
+
+    /// The Ergon type of field `slot`, where known.
+    pub fn ty(&self, slot: usize) -> Option<&ErgonType> {
+        self.types.get(slot).and_then(Option::as_ref)
+    }
+
+    /// Whether `other` holds the same fields, of the same types.
+    pub fn same_as(&self, other: &PackedLayout) -> bool {
+        self.fields == other.fields && self.types == other.types
+    }
+
+    /// `value` as field `slot` keeps it — `None` when its kind refuses it,
+    /// or its type is known and is another.
+    pub(crate) fn admit(&self, slot: usize, value: &ScriptValue) -> Option<ScriptValue> {
+        let accepted = self.fields.get(slot)?.kind.accept(value)?;
+        match self.ty(slot) {
+            Some(ty) if !ty.admits(&accepted) => None,
+            _ => Some(accepted),
+        }
     }
 
     /// The fields, in declaration order.
@@ -190,7 +227,7 @@ impl FieldKind {
 
     /// The kind of a field of Ergon type `ty`: a scalar or an engine type is
     /// its own kind, anything else — text, an array, an optional — `Value`.
-    pub(crate) fn of(ty: &khora_core::script::ErgonType) -> Self {
+    pub fn of(ty: &khora_core::script::ErgonType) -> Self {
         use khora_core::script::ErgonType;
         match ty {
             ErgonType::Bool => Self::Bool,
@@ -203,6 +240,27 @@ impl FieldKind {
             ErgonType::Engine("Quat") => Self::Quat,
             ErgonType::Engine("Color") => Self::Color,
             _ => Self::Value,
+        }
+    }
+
+    /// Whether a value of this kind may be kept, converted, when its field
+    /// becomes of kind `to`: the same kind, or an `int` becoming a `float` —
+    /// each value kept only where it [converts losslessly](Self::widened).
+    pub(crate) fn widens(self, to: FieldKind) -> bool {
+        self == to || (self == Self::Int && to == Self::Float)
+    }
+
+    /// `value`, of this kind, as a field of kind `to` keeps it — `None` when
+    /// it cannot be kept: another kind, or an `int` past what a `float` holds
+    /// exactly (2^24), which would be rounded.
+    pub(crate) fn widened(self, to: FieldKind, value: &ScriptValue) -> Option<ScriptValue> {
+        match (self, to, value) {
+            (Self::Int, Self::Float, ScriptValue::Int(v)) => {
+                let float = *v as f32;
+                (float as i64 == *v).then_some(ScriptValue::Float(float))
+            }
+            _ if self == to => Some(value.clone()),
+            _ => None,
         }
     }
 

@@ -38,7 +38,7 @@ behavior Guard {
 | `fn <type> Name(params) { … }` | runs | free functions; called before their declaration and recursively; `this` is refused in them; a name an engine function already has is refused |
 | `behavior Name { … }` | runs | the unit the engine attaches to an entity |
 | `struct Name { … }` | runs — a value type; its field defaults must be constants; operator overloads check but do not compile yet |
-| `component Name { … }` | refused in a script — only the engine's module `engine/components.erg` declares the components a script writes |
+| `[Domain(D)] component Name { … }` | runs — a component the project declares; see [Declaring components](#declaring-components) |
 | `[Attribute]` on a behavior | parses | nothing reads it yet |
 
 Comments are `// line` and `/* block */`.
@@ -262,7 +262,7 @@ async void Attack() { await 0.5s; Strike(); }
 | `a ?? b` | runs — `a` unless it is `null`; `b` is evaluated only then. A `float?` falls back to a float even when `b` is written as an int |
 | `[a, b]`, `a[i]`, `a.Length`, `a?.b`, `Name { field: v }` | runs — see [Arrays and structs](#arrays-and-structs) |
 | `new T(…)` | refused — not supported yet; build an engine type with its function, `Vec3(1.0, 2.0, 3.0)` |
-| `entity.Field` | refused — an entity has no fields: a behavior's own fields are named directly, a component is read with `Get` (not available yet) |
+| `entity.Field` | refused — an entity has no fields: a behavior's own fields are named directly, a component is read with `Get` |
 
 ## Engine-type arithmetic
 
@@ -326,7 +326,8 @@ behavior Spawner {
 | `Spawn(Vec3 position, C1 { … }, …)` | a new entity at `position`, upright, carrying each component | the whole spawn, when one component refuses its value — no entity is left behind |
 
 - The components a script writes are those `engine/components.erg` declares with
-  `component`: the ones an author may add in the editor. `Transform` is placed with
+  `component` — the ones an author may add in the editor — and the project's own
+  ([Declaring components](#declaring-components)). `Transform` is placed with
   `SetPosition`, `Translate`, `SetRotation` and `SetScale`; a component the engine
   computes (`Derived`, `Runtime`) or a tool sets (`Parent`) is a `struct` there — a
   value a script can build, not write.
@@ -367,6 +368,54 @@ bool shielded = target.Has(Shield);
   the first whose view holds it — its first `Get` never reads `null` for a
   component that exists.
 
+## Declaring components
+
+```text
+[Domain(Physics)]
+component Health { int current = 100; int max = 100; }
+
+component Loot { string item = ""; int value = 0; Vec3 drop = Vec3(0.0, 1.0, 0.0); }
+
+behavior Chest {
+    on Opened() {
+        Spawn(Position(), Loot { item: "sword", value: 30 });
+        this.Remove(Loot);
+    }
+}
+```
+
+A project's `component` is a real component: stored in its domain's pages, in a
+packed column, written and read with `Set`, `Add`, `Remove`, `Spawn`, `Get` and
+`Has` like the engine's, saved with scenes, prefabs and game saves.
+
+- `[Domain(D)]` places the data — `Spatial`, `Render`, `Audio`, `Physics`, `Ui`
+  or `Script`; without it, `Script`. Only one, and no other attribute.
+- A field without a default takes its type's zero (`0`, `0.0`, `false`, `""`,
+  `null`, `[]`). An `Entity`, a struct or an engine value has none: give it a
+  default or make it optional. A default is a constant — an engine value may be
+  built from numbers, `Vec3(0.0, 0.0, 1.0)`.
+- A field holds what a struct field holds; a `Map` is refused. A name used twice
+  is refused.
+- A name an engine component has — or had (`formerly`) — is refused at the
+  declaration, whether the module imports `engine/components.erg` or not. Two
+  modules declaring one name: the first keeps it, the second is refused at
+  registration and logged.
+- The engine registers a declaration at the frame boundary, in the editor and in
+  play alike. Editing it while the game runs:
+
+| The author… | The rows already stored… |
+|---|---|
+| adds a field | take its default |
+| renames or removes a field | lose its value, logged by name; a new name takes its default |
+| changes a field's type | take its default — except `int` → `float`, kept where it converts exactly |
+| changes `[Domain]` | move to the new domain's pages, values intact |
+| deletes the declaration | keep it, with their data: the component is *orphaned*, logged, never deleted — declaring it again adopts it |
+
+- A scene holding a project component describes it — its domain and fields — so
+  it loads anywhere, before any script runs, and still loads once the project
+  stops declaring it (orphaned). A world declaring it differently reads the
+  scene's fields onto its own by name, and the load report says what it adapted.
+
 ## Events
 
 ```text
@@ -388,8 +437,8 @@ void Hurt() { this.Raise("Damaged", 30); }
 
 Maps, methods on structs and arrays (beyond `Push` and `RemoveAt`), struct
 operator overloads at run time, value patterns in `match`, awaiting events,
-closures, components declared in a script, reading `Transform` with `Get` (use
-`Position()`).
+closures, reading `Transform` with `Get` (use `Position()`), project components in
+the editor's inspector.
 
 ## See also
 

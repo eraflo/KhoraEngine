@@ -41,8 +41,174 @@ pub enum ErgonType {
     Optional(Box<ErgonType>),
     /// `T[]`
     Array(Box<ErgonType>),
+    /// A struct a script declares: its name and, where known, its fields —
+    /// what tells two versions of one struct apart. `None` where the struct
+    /// holds itself, or nothing more was known.
+    Struct {
+        /// Its name.
+        name: String,
+        /// Its fields, in declaration order.
+        fields: Option<Vec<(String, ErgonType)>>,
+    },
 }
 
+/// The engine types a script names, as [`ErgonType::Engine`] holds them.
+const ENGINE_TYPES: [&str; 5] = ["Vec2", "Vec3", "Vec4", "Quat", "Color"];
+
+impl ErgonType {
+    /// A struct known by its name only.
+    pub fn named_struct(name: impl Into<String>) -> Self {
+        Self::Struct {
+            name: name.into(),
+            fields: None,
+        }
+    }
+
+    /// The type spelled `text` — as Ergon writes it (`int`, `Vec3?`,
+    /// `string[]`, `Loot`), or as a [signature](Self::signature) writes it,
+    /// a struct with its fields (`Loot{item:string,value:int}[]`). `None` for
+    /// text that is not a type.
+    pub fn parse(text: &str) -> Option<Self> {
+        let mut at = 0;
+        let ty = Self::parse_at(text.as_bytes(), &mut at)?;
+        (at == text.len()).then_some(ty)
+    }
+
+    fn parse_at(text: &[u8], at: &mut usize) -> Option<Self> {
+        let start = *at;
+        while *at < text.len() && (text[*at].is_ascii_alphanumeric() || text[*at] == b'_') {
+            *at += 1;
+        }
+        let name = std::str::from_utf8(&text[start..*at]).ok()?;
+        let mut ty = match name {
+            "" => return None,
+            "bool" => Self::Bool,
+            "int" => Self::Int,
+            "float" => Self::Float,
+            "string" => Self::Str,
+            "Entity" => Self::Entity,
+            name => match ENGINE_TYPES.iter().find(|known| **known == name) {
+                Some(known) => Self::Engine(known),
+                None => {
+                    let mut fields = None;
+                    if text.get(*at) == Some(&b'{') {
+                        *at += 1;
+                        let mut listed = Vec::new();
+                        while text.get(*at) != Some(&b'}') {
+                            if !listed.is_empty() {
+                                (text.get(*at) == Some(&b',')).then_some(())?;
+                                *at += 1;
+                            }
+                            let field_start = *at;
+                            while *at < text.len()
+                                && (text[*at].is_ascii_alphanumeric() || text[*at] == b'_')
+                            {
+                                *at += 1;
+                            }
+                            let field = std::str::from_utf8(&text[field_start..*at]).ok()?;
+                            (!field.is_empty() && text.get(*at) == Some(&b':')).then_some(())?;
+                            *at += 1;
+                            listed.push((field.to_owned(), Self::parse_at(text, at)?));
+                        }
+                        *at += 1;
+                        fields = Some(listed);
+                    }
+                    Self::Struct {
+                        name: name.to_owned(),
+                        fields,
+                    }
+                }
+            },
+        };
+        loop {
+            match text.get(*at) {
+                Some(b'?') => {
+                    *at += 1;
+                    ty = Self::Optional(Box::new(ty));
+                }
+                Some(b'[') if text.get(*at + 1) == Some(&b']') => {
+                    *at += 2;
+                    ty = Self::Array(Box::new(ty));
+                }
+                _ => return Some(ty),
+            }
+        }
+    }
+
+    /// The type written whole: as Ergon spells it, each struct with its
+    /// fields — `Loot{item:string,value:int}[]`. What a file keeps of a field's
+    /// type, so a reader tells two versions of one struct apart.
+    pub fn signature(&self) -> String {
+        match self {
+            Self::Struct {
+                name,
+                fields: Some(fields),
+            } => format!(
+                "{name}{{{}}}",
+                fields
+                    .iter()
+                    .map(|(field, ty)| format!("{field}:{}", ty.signature()))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            Self::Optional(inner) => format!("{}?", inner.signature()),
+            Self::Array(element) => format!("{}[]", element.signature()),
+            other => other.to_string(),
+        }
+    }
+
+    /// Whether `value` is a value of this type: what keeps a value of
+    /// another type — a `string` for what is now an `int?`, a struct of
+    /// another shape — out of a field it would not fit. An `int` is taken
+    /// where a `float` is, as everywhere a script writes one.
+    pub fn admits(&self, value: &ScriptValue) -> bool {
+        match (self, value) {
+            (Self::Bool, ScriptValue::Bool(_))
+            | (Self::Int, ScriptValue::Int(_))
+            | (Self::Float, ScriptValue::Float(_) | ScriptValue::Int(_))
+            | (Self::Str, ScriptValue::Str(_))
+            | (Self::Entity, ScriptValue::Entity(_)) => true,
+            (Self::Engine(name), value) => value.type_name() == *name,
+            (Self::Optional(_), ScriptValue::Null) => true,
+            (Self::Optional(inner), value) => inner.admits(value),
+            (Self::Array(element), ScriptValue::Array(items)) => {
+                items.iter().all(|item| element.admits(item))
+            }
+            (Self::Struct { fields: None, .. }, ScriptValue::Struct(_)) => true,
+            (
+                Self::Struct {
+                    fields: Some(declared),
+                    ..
+                },
+                ScriptValue::Struct(fields),
+            ) => fields.iter().all(|(name, value)| {
+                declared
+                    .iter()
+                    .find(|(known, _)| known == name)
+                    .is_some_and(|(_, ty)| ty.admits(value))
+            }),
+            _ => false,
+        }
+    }
+}
+
+// Written as its signature: a file or a program says `int[]` — a struct with
+// its fields — and a reader of it needs no knowledge of this enum's shape.
+impl serde::Serialize for ErgonType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.signature())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ErgonType {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Self::parse(&text)
+            .ok_or_else(|| serde::de::Error::custom(format!("`{text}` is not an Ergon type")))
+    }
+}
+
+/// As Ergon spells the type: a struct by its name.
 impl std::fmt::Display for ErgonType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -54,6 +220,7 @@ impl std::fmt::Display for ErgonType {
             Self::Engine(name) => f.write_str(name),
             Self::Optional(inner) => write!(f, "{inner}?"),
             Self::Array(element) => write!(f, "{element}[]"),
+            Self::Struct { name, .. } => f.write_str(name),
         }
     }
 }

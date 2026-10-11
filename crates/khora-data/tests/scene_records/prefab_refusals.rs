@@ -130,6 +130,7 @@ fn a_record_that_still_links_to_prefabs_is_refused_by_prepare() {
                 before: SceneRecord::default(),
             },
         }],
+        declared: Vec::new(),
     };
 
     let (mut world, bystander) = bystander_world();

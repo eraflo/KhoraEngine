@@ -40,6 +40,7 @@ use serde::{Deserialize, Serialize};
 use super::apply::{prepare_kept, Identity, LoadFailure, Prepared};
 use super::capture::{capture_game, capture_world, SaveError};
 use super::component_registration::{registration_named, Kept};
+use super::declared::{declarations_of, described, register_all, DeclaredRecord};
 use super::encoding::{encoding_named, EncodingError, SceneEncoding};
 use super::entity_refs::{parent_in, referenced};
 use super::file::{check_save_format, encoding_of, file_with, SceneFileReadError};
@@ -168,16 +169,23 @@ impl Pages {
 ///
 /// `entities` are every entity the values may refer to, so a reference to
 /// one the record has no row for is still a reference, not an outside one.
+///
+/// A component declared while the engine ran is read under `under` where it
+/// names it — the declaration the record is compared against — and under the
+/// record's own otherwise.
 pub(super) fn as_read(
     record: &SceneRecord,
     entities: Vec<PersistentId>,
     kept: Kept,
+    under: &[DeclaredRecord],
 ) -> Result<SceneRecord, LoadFailure> {
     let mut world = World::new();
+    register_all(&mut world, under);
     let whole = SceneRecord {
         entities,
         instances: Vec::new(),
         pages: record.pages.clone(),
+        declared: record.declared.clone(),
     };
     prepare_kept(&mut world, &whole, kept)?.commit(&mut world, Identity::Keep);
     let captured = match kept {
@@ -190,9 +198,12 @@ pub(super) fn as_read(
     })
 }
 
-/// `scene` as this build reads it.
-fn scene_as_read(scene: &SceneRecord) -> Result<SceneRecord, LoadFailure> {
-    as_read(scene, scene.entities.clone(), Kept::Scene)
+/// `scene` as this build reads it, its declared components under `under`.
+fn scene_as_read(
+    scene: &SceneRecord,
+    under: &[DeclaredRecord],
+) -> Result<SceneRecord, LoadFailure> {
+    as_read(scene, scene.entities.clone(), Kept::Scene, under)
 }
 
 /// How `world` differs from `base`, the scene it started from, known as
@@ -202,7 +213,11 @@ pub fn capture_save(
     base_id: AssetUUID,
     base: &SceneRecord,
 ) -> Result<SaveRecord, SaveError> {
-    let base = scene_as_read(base).map_err(|failure| SaveError::Base(failure.message))?;
+    // The scene read as the running world declares its components: a
+    // component only redeclared since the scene was saved is not a change the
+    // game made.
+    let base = scene_as_read(base, &declarations_of(world))
+        .map_err(|failure| SaveError::Base(failure.message))?;
     let now = capture_game(world)?;
     Ok(differences(base_id, &base, &now))
 }
@@ -223,7 +238,7 @@ pub(super) fn delta_between(
                 .into_iter()
                 .filter(|id| !listed.contains(id)),
         );
-        as_read(record, among, Kept::Scene)
+        as_read(record, among, Kept::Scene, &now.declared)
             .map(|canonical| SceneRecord {
                 entities: record.entities.clone(),
                 ..canonical
@@ -304,18 +319,20 @@ fn differences(base_id: AssetUUID, base: &SceneRecord, now: &SceneRecord) -> Sav
         changes: SceneRecord {
             entities,
             instances: Vec::new(),
+            declared: described(&changes.pages, &now.declared),
             pages: changes.pages,
         },
         before: SceneRecord {
             entities: before_entities,
             instances: Vec::new(),
+            declared: described(&before.pages, &base.declared),
             pages: before.pages,
         },
     }
 }
 
 /// A record that could not be read, and why.
-type Unreadable = (SceneRecord, LoadFailure);
+type Unreadable = Box<(SceneRecord, LoadFailure)>;
 
 /// A save, read for merging: its values as this build reads them, and what it
 /// says of each entity.
@@ -330,10 +347,20 @@ struct Read {
 }
 
 impl Read {
+    /// Every declaration the records read describe — the scene's last, so it
+    /// wins: the save was read under it.
+    fn declarations(&self) -> impl Iterator<Item = &DeclaredRecord> {
+        self.before
+            .declared
+            .iter()
+            .chain(&self.changes.declared)
+            .chain(&self.base.declared)
+    }
+
     /// Reads `save` against `base`. What cannot be read is the error, with
     /// the record that could not.
     fn new(base: &SceneRecord, save: &SaveRecord) -> Result<Read, Unreadable> {
-        let base = scene_as_read(base).map_err(|failure| (base.clone(), failure))?;
+        let base = scene_as_read(base, &[]).map_err(|failure| Box::new((base.clone(), failure)))?;
         let in_base: HashSet<PersistentId> = base.entities.iter().copied().collect();
         let mut everyone = base.entities.clone();
         let mut seen = in_base.clone();
@@ -354,12 +381,15 @@ impl Read {
                 entities: everyone.clone(),
                 instances: Vec::new(),
                 pages: record.pages.clone(),
+                declared: record.declared.clone(),
             };
-            (record, failure)
+            Box::new((record, failure))
         };
-        let changes = as_read(&save.changes, everyone.clone(), Kept::Game)
+        // The save read as the scene, as it is now, declares its components:
+        // the three-way merge compares values of one declaration.
+        let changes = as_read(&save.changes, everyone.clone(), Kept::Game, &base.declared)
             .map_err(|failure| unreadable(&save.changes, failure))?;
-        let before = as_read(&save.before, everyone.clone(), Kept::Scene)
+        let before = as_read(&save.before, everyone.clone(), Kept::Scene, &base.declared)
             .map_err(|failure| unreadable(&save.before, failure))?;
         // A name the save wrote is read as today's: a component renamed since
         // is the same component.
@@ -523,7 +553,7 @@ impl<'r> Sides<'r> {
 pub fn compose(base: &SceneRecord, save: &SaveRecord) -> SceneRecord {
     match composed(base, save) {
         Ok((record, _)) => record,
-        Err((unreadable, _)) => unreadable,
+        Err(unreadable) => unreadable.0,
     }
 }
 
@@ -534,7 +564,7 @@ pub fn compose_reporting(
     base: &SceneRecord,
     save: &SaveRecord,
 ) -> Result<(SceneRecord, Vec<ReportEntry>), LoadFailure> {
-    composed(base, save).map_err(|(_, failure)| failure)
+    composed(base, save).map_err(|unreadable| unreadable.1)
 }
 
 fn composed(
@@ -584,6 +614,7 @@ fn composed(
         SceneRecord {
             entities,
             instances: Vec::new(),
+            declared: described(&pages.pages, read.declarations()),
             pages: pages.pages,
         },
         report,
@@ -603,7 +634,12 @@ pub fn promote(base: &SceneRecord, save: &SaveRecord) -> SceneRecord {
     };
     let sides = Sides::of(&read);
     let nothing = Components::new();
-    let authored = |name: &str| registration_named(name).is_some_and(|reg| reg.is_saved());
+    // A component the records describe themselves was authored: it is one
+    // a script declares, saved by a scene.
+    let authored = |name: &str| {
+        registration_named(name).is_some_and(|reg| reg.is_saved())
+            || read.declarations().any(|declared| declared.name == name)
+    };
 
     let mut pages = Pages::default();
     let mut ignored = Vec::new();
@@ -624,6 +660,7 @@ pub fn promote(base: &SceneRecord, save: &SaveRecord) -> SceneRecord {
     SceneRecord {
         entities: base.entities.clone(),
         instances: Vec::new(),
+        declared: described(&pages.pages, read.declarations()),
         pages: pages.pages,
     }
 }

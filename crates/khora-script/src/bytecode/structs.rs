@@ -232,6 +232,17 @@ impl Compiler {
 /// The value a constant expression stands for — what a struct field's default
 /// is (the checker refused any other).
 fn constant(expr: &Expr) -> Option<Owned> {
+    use khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
+    if let Some((ty, n)) = crate::types::engine_constant(expr) {
+        return Some(Owned::Scalar(match (ty, n.as_slice()) {
+            ("Vec2", [x, y]) => Value::Vec2(Vec2::new(*x, *y)),
+            ("Vec3", [x, y, z]) => Value::Vec3(Vec3::new(*x, *y, *z)),
+            ("Vec4", [x, y, z, w]) => Value::Vec4(Vec4::new(*x, *y, *z, *w)),
+            ("Quat", [x, y, z, w]) => Value::Quat(Quaternion::new(*x, *y, *z, *w)),
+            ("Color", [r, g, b, a]) => Value::Color(LinearRgba::new(*r, *g, *b, *a)),
+            _ => return None,
+        }));
+    }
     Some(match expr {
         Expr::Int { value, .. } => Owned::Scalar(Value::Int(*value)),
         Expr::Float { value, .. } | Expr::Duration { value, .. } | Expr::Angle { value, .. } => {

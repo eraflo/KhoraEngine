@@ -159,6 +159,7 @@ pub(super) fn remap_record(
     map: &HashMap<PersistentId, PersistentId>,
 ) -> SceneRecord {
     SceneRecord {
+        declared: record.declared.clone(),
         entities: remap_ids(&record.entities, map),
         pages: record
             .pages

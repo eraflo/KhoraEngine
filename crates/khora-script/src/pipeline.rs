@@ -76,7 +76,10 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> CompileOutcome 
     };
 
     let mut diagnostics = crate::modules::report_name_clashes(&resolved);
-    diagnostics.extend(crate::modules::report_foreign_components(&resolved));
+    diagnostics.extend(crate::modules::components::report_script_components(
+        &resolved,
+        loader.engine_components(),
+    ));
     if crate::diagnostics::has_errors(&diagnostics) {
         return CompileOutcome {
             program: None,
@@ -93,9 +96,13 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> CompileOutcome 
         };
     }
 
-    let compiled = crate::compile(&merged);
+    let mut compiled = crate::compile(&merged);
     diagnostics.extend(compiled.diagnostics);
     let failed = crate::diagnostics::has_errors(&diagnostics);
+    if !failed {
+        compiled.program.declared =
+            crate::modules::components::declared_components(&resolved, &compiled.program);
+    }
 
     CompileOutcome {
         program: (!failed).then_some(compiled.program),

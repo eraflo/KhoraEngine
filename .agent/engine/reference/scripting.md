@@ -138,10 +138,22 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   `ColumnSnapshot` per page column, live rows only — snapshots include orphan rows). A reload whose reads
   were not projected this frame is deferred one frame. A `component` declaration is also a `StructLayout`, so
   a copy imports as a struct.
-- **`component` declarations come only from `ENGINE_COMPONENTS_MODULE`** (`engine/components.erg`,
-  `khora_script::ENGINE_COMPONENTS_MODULE`, checked on the resolved modules —
-  `modules::report_foreign_components`). The mirror emits `component` for hand-authorable provenance
-  except `Transform` (placed by `native::world::PLACEMENT`), and `struct` with a `//` reason for the rest.
+- **Script-defined components (spec 08).** A `component` outside `ENGINE_COMPONENTS_MODULE` is the
+  project's: `[Domain(D)]` (one, nothing else), field defaults (constants; an engine value of numbers
+  `Vec3(…)` too — component fields only), zero when absent, a type with no zero needs one. Checked per module
+  before the merge (`modules/components.rs::report_script_components`): a name in
+  `SourceLoader::engine_components` (every registration name + `formerly`, from `PreludeLoader`) is refused at
+  its span; duplicate fields, `Map` fields and non-finite literals too. `Program.declared:
+  Vec<DeclaredComponent{name, module, domain, fields: {name, ty: ErgonType, default}}>` (sorted). The compile
+  path (`load_all`, the pump) sends one `ScriptDeclarations` per declaring module on
+  `Channel<ScriptDeclarations>`; the `script_components` DataSystem (PreExtract, after `script_hot_reload`,
+  **every mode**) runs `khora_io::script::declarations::apply_declarations`: register, relayout (a type change
+  the storage kind hides is reset via `relayout_resetting`), `move_component_domain`, orphan (never delete),
+  adopt; a second module declaring an owned name is refused (`report.refused`). The editor does not call
+  `scripts::mount` yet — it learns project components only from the scenes it loads.
+- **The engine's components come from `ENGINE_COMPONENTS_MODULE`** (`engine/components.erg`). The mirror
+  emits `component` for hand-authorable provenance except `Transform` (placed by
+  `native::world::PLACEMENT`), and `struct` with a `//` reason for the rest.
 - **A mirror that cannot express something says so; it never guesses.** A field's Ergon type comes from
   `ScriptField` (`ComponentRegistration::script_type`), never from parsing the Rust spelling; a field whose
   type is not a `ScriptField` stays as a comment naming that type; a component whose every field is like that,

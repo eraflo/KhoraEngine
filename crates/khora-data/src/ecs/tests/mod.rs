@@ -14,6 +14,7 @@
 
 mod component_keys;
 mod declared_names;
+mod domain_moves;
 mod entity_count;
 mod entity_count_unwind;
 mod hierarchy;
