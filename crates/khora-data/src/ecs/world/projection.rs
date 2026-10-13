@@ -26,7 +26,40 @@ use super::World;
 use crate::ecs::ComponentKey;
 use crate::scene::component_registration::registration_for;
 
+/// A component that is a behavior: its key, and the module whose program
+/// runs it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BehaviorComponent<'w> {
+    /// The component.
+    pub key: ComponentKey,
+    /// The module that declares the behavior, relative to the script root.
+    pub module: &'w str,
+    /// The behavior's name — the component's.
+    pub name: &'w str,
+}
+
 impl World {
+    /// Every registered component that is a behavior
+    /// ([`ScriptRole::Behavior`](crate::ecs::ScriptRole::Behavior)), sorted
+    /// by `(module, name)`. A behavior's state companion, a declared component
+    /// with no role and a Rust component are not behaviors.
+    pub fn behavior_components(&self) -> Vec<BehaviorComponent<'_>> {
+        let mut behaviors: Vec<BehaviorComponent<'_>> = self
+            .components()
+            .iter()
+            .filter_map(|vtable| match &vtable.script {
+                Some(crate::ecs::ScriptRole::Behavior { module }) => Some(BehaviorComponent {
+                    key: vtable.key,
+                    module,
+                    name: &vtable.name,
+                }),
+                _ => None,
+            })
+            .collect();
+        behaviors.sort_by(|a, b| (a.module, a.name).cmp(&(b.module, b.name)));
+        behaviors
+    }
+
     /// A projection of the components named `names`: one typed copy of every
     /// page column holding each, and where each live holder's row is.
     ///

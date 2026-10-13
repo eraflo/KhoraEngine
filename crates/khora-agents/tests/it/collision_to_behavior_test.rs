@@ -180,3 +180,91 @@ fn a_touched_event_reaches_the_behavior_that_declared_the_handler() {
         "the agent took the event rather than leaving it queued"
     );
 }
+
+// ─── A behavior attached by its component ───────────────────────────────────
+
+/// A guard attached as a component: it counts what touched and left it, and
+/// despawns what touched it — so the handler's argument is checked too.
+const COMPONENT_GUARD: crate::behavior_session::Project = &[(
+    MODULE,
+    "behavior Guard {
+         int touched = 0;
+         int separated = 0;
+         on Touched(Entity other) { touched += 1; other.Despawn(); }
+         on Separated(Entity other) { separated += 1; }
+     }",
+)];
+
+/// Puts `contact` through the engine's `Maintenance` systems — where
+/// `collision_to_script` turns a contact into events — and hands what they
+/// raised to `session`, for its next frame.
+fn report_contact(
+    session: &mut crate::behavior_session::Session,
+    contact: khora_core::physics::Collision,
+) {
+    let collisions = khora_core::physics::collision_channel();
+    let raised = engine_event_channel();
+    let mut runtime = Runtime::default();
+    runtime.resources.insert(collisions.clone());
+    runtime.resources.insert(raised.clone());
+    collisions.send(contact);
+    khora_control::substrate::run_data_systems(
+        &mut session.world,
+        &runtime,
+        &mut OutputDeck::new(),
+        khora_data::ecs::TickPhase::Maintenance,
+    );
+    for event in raised.drain() {
+        session.send(event);
+    }
+}
+
+/// **From a physics contact to the handler of a behavior attached by its
+/// component** — no `Script`, no hand-built view: the contact goes through
+/// `collision_to_script`, the flow projects the guard from its component,
+/// the lane runs `on Touched` with the other entity in hand, and the field
+/// it wrote is the `World`'s.
+#[test]
+fn a_contact_reaches_the_handler_of_a_behavior_attached_by_its_component() {
+    use crate::behavior_session::{attach, int, Session};
+    use khora_core::physics::{Collision, CollisionKind};
+
+    let mut session = Session::new(khora_data::ecs::World::new(), COMPONENT_GUARD);
+    let guard = session.world.spawn(khora_data::ecs::Transform::identity());
+    attach(&mut session.world, guard, "Guard", &[]);
+    let visitor = session.world.spawn(khora_data::ecs::Transform::identity());
+    session.frame(0.016);
+
+    report_contact(
+        &mut session,
+        Collision {
+            kind: CollisionKind::Started,
+            a: visitor,
+            b: guard,
+        },
+    );
+    session.frame(0.016);
+
+    assert_eq!(int(&session.world, guard, "Guard", "touched"), Some(1));
+    assert!(
+        !session.world.contains(visitor),
+        "the handler was handed the entity that touched it"
+    );
+
+    report_contact(
+        &mut session,
+        Collision {
+            kind: CollisionKind::Stopped,
+            a: guard,
+            b: visitor,
+        },
+    );
+    session.frame(0.016);
+
+    assert_eq!(int(&session.world, guard, "Guard", "separated"), Some(1));
+    assert_eq!(
+        int(&session.world, guard, "Guard", "touched"),
+        Some(1),
+        "a contact is heard once"
+    );
+}

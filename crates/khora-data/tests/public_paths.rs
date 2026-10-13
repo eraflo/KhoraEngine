@@ -447,6 +447,10 @@ fn runtime_component_decl_fields(x: &khora_data::ecs::RuntimeComponentDecl) {
     let _ = (&x.name, &x.domain, &x.provenance, &x.layout);
 }
 
+fn behavior_component_fields(x: &khora_data::ecs::BehaviorComponent<'_>) {
+    let _ = (&x.key, &x.module, &x.name);
+}
+
 fn relayout_report_fields(x: &khora_data::ecs::RelayoutReport) {
     let _ = (&x.dropped, &x.defaulted);
 }
@@ -1511,6 +1515,13 @@ fn module_ecs_paths_still_resolve() {
     let _ = khora_data::ecs::RowRef::key;
     let _ = khora_data::ecs::RowRef::vtable;
     let _ = khora_data::ecs::RowRef::field;
+    let _ = type_name::<khora_data::ecs::BehaviorComponent<'static>>();
+    let _ = behavior_component_fields as fn(&khora_data::ecs::BehaviorComponent<'static>);
+    is_clone::<khora_data::ecs::BehaviorComponent<'static>>();
+    is_debug::<khora_data::ecs::BehaviorComponent<'static>>();
+    is_partial_eq::<khora_data::ecs::BehaviorComponent<'static>>();
+    let _: fn(&khora_data::ecs::World) -> Vec<khora_data::ecs::BehaviorComponent<'_>> =
+        khora_data::ecs::World::behavior_components;
     let _ = type_name::<khora_data::ecs::RowMut<'static>>();
     let _ = khora_data::ecs::RowMut::key;
     let _ = khora_data::ecs::RowMut::vtable;

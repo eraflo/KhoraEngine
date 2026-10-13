@@ -33,8 +33,9 @@
 //!
 //! A contact between two pieces of scenery would otherwise put two events in a
 //! bounded channel for nobody to handle, and a busy frame of scenery would drop
-//! the events that had a handler waiting. The check is the `Script` component,
-//! which is what makes an entity one the scripting agent will run at all.
+//! the events that had a handler waiting. The check is a behavior's component
+//! — or the legacy `Script` — which is what makes an entity one the scripting
+//! agent will run at all.
 //!
 //! # Delivery is next frame
 //!
@@ -73,10 +74,23 @@ fn collision_to_script(world: &mut World, runtime: &Runtime, _deck: &mut OutputD
 
     // Collected once rather than queried per contact: a frame of scenery
     // grinding together is hundreds of contacts, and each `query` is a walk.
-    let scripted: Vec<_> = world
+    let legacy: Vec<_> = world
         .query::<(khora_core::ecs::entity::EntityId, &Script)>()
         .map(|(entity, _)| entity)
         .collect();
+    // An entity runs a behavior when it holds one's component: each looked up
+    // where the entity's row is, per contact side.
+    let behaviors: Vec<_> = world
+        .behavior_components()
+        .into_iter()
+        .map(|behavior| behavior.key)
+        .collect();
+    let scripted = |entity| {
+        legacy.contains(&entity)
+            || behaviors
+                .iter()
+                .any(|key| world.row(entity, *key).is_some())
+    };
 
     for contact in contacts {
         let name = match contact.kind {
@@ -84,7 +98,7 @@ fn collision_to_script(world: &mut World, runtime: &Runtime, _deck: &mut OutputD
             CollisionKind::Stopped => SEPARATED,
         };
         for (subject, other) in [(contact.a, contact.b), (contact.b, contact.a)] {
-            if !scripted.contains(&subject) {
+            if !scripted(subject) {
                 continue;
             }
             events.send(ScriptEvent {
@@ -112,6 +126,10 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ecs::{
+        ComponentKey, ComponentProvenance, FieldKind, PackedField, PackedLayout,
+        RuntimeComponentDecl, ScriptRole, SemanticDomain,
+    };
     use khora_core::ecs::entity::EntityId;
     use khora_core::physics::collision_channel;
     use khora_core::script::engine_event_channel;
@@ -242,6 +260,262 @@ mod tests {
         run(&mut world, &runtime);
 
         assert_eq!(events.len(), 1);
+    }
+
+    /// Registers the declared component `name`, playing `role` for scripts,
+    /// with one `int` field.
+    fn declare(world: &mut World, name: &str, role: Option<ScriptRole>) -> ComponentKey {
+        let key = world
+            .register_runtime_component(RuntimeComponentDecl {
+                name: name.to_owned(),
+                domain: SemanticDomain::Script,
+                provenance: ComponentProvenance::Authored,
+                resumable: false,
+                layout: PackedLayout::new(vec![PackedField {
+                    name: "n".to_owned(),
+                    kind: FieldKind::Int,
+                    default: ScriptValue::Int(0),
+                }])
+                .expect("a valid layout"),
+            })
+            .unwrap_or_else(|e| panic!("`{name}` registers: {e}"));
+        world.set_script_role(key, role);
+        key
+    }
+
+    /// The behavior `Guard`, declared by `ai/guard.erg`.
+    fn guard_behavior(world: &mut World) -> ComponentKey {
+        declare(
+            world,
+            "Guard",
+            Some(ScriptRole::Behavior {
+                module: "ai/guard.erg".to_owned(),
+            }),
+        )
+    }
+
+    /// An entity holding declared component `key` and nothing scripted else.
+    fn holding(world: &mut World, key: ComponentKey) -> EntityId {
+        let entity = world.spawn(crate::ecs::Transform::default());
+        world
+            .add_runtime_component(entity, key, &ScriptValue::Unit)
+            .expect("the component attaches");
+        entity
+    }
+
+    /// One contact of `kind` between `a` and `b`, run through the system;
+    /// what it raised.
+    fn raised_by(
+        world: &mut World,
+        kind: CollisionKind,
+        a: EntityId,
+        b: EntityId,
+    ) -> Vec<ScriptEvent> {
+        let (runtime, collisions, events) = wired();
+        collisions.send(Collision { kind, a, b });
+        run(world, &runtime);
+        events.drain()
+    }
+
+    /// **A behavior is a component.** Adding `Guard` to an entity is what
+    /// attaches the behavior, so holding it — with no `Script` — is what makes
+    /// the entity hear that something touched it.
+    #[test]
+    fn an_entity_holding_a_behavior_component_hears_it_was_touched() {
+        let mut world = World::new();
+        let guard = guard_behavior(&mut world);
+        let scripted = holding(&mut world, guard);
+        let plain = world.spawn(crate::ecs::Transform::default());
+
+        let raised = raised_by(&mut world, CollisionKind::Started, plain, scripted);
+
+        assert_eq!(raised.len(), 1, "{raised:?}");
+        assert_eq!(raised[0].target, scripted);
+        assert_eq!(raised[0].name, TOUCHED);
+        assert_eq!(raised[0].args, vec![ScriptValue::Entity(plain)]);
+    }
+
+    #[test]
+    fn an_entity_holding_a_behavior_component_hears_it_separated() {
+        let mut world = World::new();
+        let guard = guard_behavior(&mut world);
+        let scripted = holding(&mut world, guard);
+        let plain = world.spawn(crate::ecs::Transform::default());
+
+        let raised = raised_by(&mut world, CollisionKind::Stopped, scripted, plain);
+
+        assert_eq!(raised.len(), 1, "{raised:?}");
+        assert_eq!(raised[0].target, scripted);
+        assert_eq!(raised[0].name, SEPARATED);
+        assert_eq!(raised[0].args, vec![ScriptValue::Entity(plain)]);
+    }
+
+    /// Any behavior counts, not only the first declared: each side holding
+    /// a different one hears about the other.
+    #[test]
+    fn two_entities_holding_different_behaviors_both_hear_the_contact() {
+        let mut world = World::new();
+        let guard = guard_behavior(&mut world);
+        let door = declare(
+            &mut world,
+            "Door",
+            Some(ScriptRole::Behavior {
+                module: "props/door.erg".to_owned(),
+            }),
+        );
+        let one = holding(&mut world, guard);
+        let other = holding(&mut world, door);
+
+        let raised = raised_by(&mut world, CollisionKind::Started, one, other);
+
+        assert_eq!(raised.len(), 2, "{raised:?}");
+        assert!(raised
+            .iter()
+            .any(|e| e.target == one && e.args == vec![ScriptValue::Entity(other)]));
+        assert!(raised
+            .iter()
+            .any(|e| e.target == other && e.args == vec![ScriptValue::Entity(one)]));
+    }
+
+    /// Until `Script` is retired, both ways of attaching a behavior are heard
+    /// in the same frame.
+    #[test]
+    fn a_behavior_component_holder_and_a_legacy_script_holder_both_hear_the_contact() {
+        let mut world = World::new();
+        let guard = guard_behavior(&mut world);
+        let declared = holding(&mut world, guard);
+        let legacy = world.spawn(Script {
+            module: "ai/guard.erg".to_owned(),
+            behavior: "Guard".to_owned(),
+            ..Default::default()
+        });
+
+        let raised = raised_by(&mut world, CollisionKind::Started, declared, legacy);
+
+        assert_eq!(raised.len(), 2, "{raised:?}");
+        assert!(raised.iter().any(|e| e.target == declared));
+        assert!(raised.iter().any(|e| e.target == legacy));
+    }
+
+    /// A declared component with no role is data, not a program: an entity
+    /// holding only that runs nothing, so an event for it would only take a
+    /// place in the bounded channel.
+    #[test]
+    fn an_entity_holding_only_a_plain_declared_component_hears_nothing() {
+        let mut world = World::new();
+        let health = declare(&mut world, "Health", None);
+        let holder = holding(&mut world, health);
+        let plain = world.spawn(crate::ecs::Transform::default());
+
+        assert!(raised_by(&mut world, CollisionKind::Started, holder, plain).is_empty());
+    }
+
+    /// A state companion is what the engine keeps of a behavior, not the
+    /// behavior: left alone on an entity (its behavior removed), it runs
+    /// nothing.
+    #[test]
+    fn an_entity_holding_only_a_state_companion_hears_nothing() {
+        let mut world = World::new();
+        guard_behavior(&mut world);
+        let state = declare(
+            &mut world,
+            "Guard#state",
+            Some(ScriptRole::BehaviorState {
+                behavior: "Guard".to_owned(),
+            }),
+        );
+        let holder = holding(&mut world, state);
+        let plain = world.spawn(crate::ecs::Transform::default());
+
+        assert!(raised_by(&mut world, CollisionKind::Started, holder, plain).is_empty());
+    }
+
+    /// An entity whose behavior component was removed stops being scripted:
+    /// what is checked is what it holds now, not what it once held.
+    #[test]
+    fn an_entity_whose_behavior_component_was_removed_hears_nothing() {
+        let mut world = World::new();
+        let guard = guard_behavior(&mut world);
+        let holder = holding(&mut world, guard);
+        assert!(
+            world.remove_component_by_key(holder, guard),
+            "the behavior detaches"
+        );
+        let plain = world.spawn(crate::ecs::Transform::default());
+
+        assert!(raised_by(&mut world, CollisionKind::Started, holder, plain).is_empty());
+    }
+
+    /// An entity attached both ways — a legacy `Script` and a behavior
+    /// component — is one subject: one event per side of the contact, which
+    /// the lane hands to each behavior it runs, never two in the channel.
+    #[test]
+    fn an_entity_holding_a_script_and_a_behavior_component_hears_a_contact_once() {
+        let mut world = World::new();
+        let guard = guard_behavior(&mut world);
+        let both = world.spawn(Script {
+            module: "ai/guard.erg".to_owned(),
+            behavior: "Guard".to_owned(),
+            ..Default::default()
+        });
+        world
+            .add_runtime_component(both, guard, &ScriptValue::Unit)
+            .expect("the component attaches");
+        let plain = world.spawn(crate::ecs::Transform::default());
+
+        let raised = raised_by(&mut world, CollisionKind::Started, both, plain);
+
+        assert_eq!(raised.len(), 1, "{raised:?}");
+        assert_eq!(raised[0].target, both);
+    }
+
+    /// An entity despawned before the contact is read runs nothing any more:
+    /// its behavior component went with it.
+    #[test]
+    fn a_despawned_behavior_holder_hears_nothing() {
+        let mut world = World::new();
+        let guard = guard_behavior(&mut world);
+        let gone = holding(&mut world, guard);
+        let plain = world.spawn(crate::ecs::Transform::default());
+        assert!(world.despawn(gone), "the holder despawns");
+
+        assert!(raised_by(&mut world, CollisionKind::Started, gone, plain).is_empty());
+    }
+
+    /// A contact naming a despawned entity whose slot now holds a newer
+    /// behavior holder is about the dead one: the newcomer is not told.
+    #[test]
+    fn a_contact_naming_a_recycled_entity_reaches_neither_generation() {
+        let mut world = World::new();
+        let guard = guard_behavior(&mut world);
+        let stale = holding(&mut world, guard);
+        assert!(world.despawn(stale), "the holder despawns");
+        let newcomer = holding(&mut world, guard);
+        assert_eq!(newcomer.index, stale.index, "the slot is reused");
+        assert_ne!(newcomer.generation, stale.generation);
+        let plain = world.spawn(crate::ecs::Transform::default());
+
+        let raised = raised_by(&mut world, CollisionKind::Started, stale, plain);
+
+        assert!(raised.is_empty(), "{raised:?}");
+    }
+
+    /// An orphaned behavior — no script declares it any more, its role and
+    /// data kept — is still one the flow projects, so its holder still hears
+    /// contacts: who is told follows who runs.
+    #[test]
+    fn an_orphaned_behavior_holder_still_hears_a_contact() {
+        let mut world = World::new();
+        let guard = guard_behavior(&mut world);
+        world.set_declared_by(guard, Some("ai/guard.erg".to_owned()));
+        let holder = holding(&mut world, guard);
+        world.set_declared_by(guard, None);
+        let plain = world.spawn(crate::ecs::Transform::default());
+
+        let raised = raised_by(&mut world, CollisionKind::Started, holder, plain);
+
+        assert_eq!(raised.len(), 1, "{raised:?}");
+        assert_eq!(raised[0].target, holder);
     }
 
     /// Physics without scripting is an ordinary configuration, not a failure.

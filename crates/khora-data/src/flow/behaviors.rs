@@ -37,31 +37,6 @@ const STATE_SUFFIX: &str = "#state";
 /// Instances, by entity and behavior.
 type Pairs = HashSet<(EntityId, String)>;
 
-/// One behavior a world holds, by its component.
-struct Behavior<'w> {
-    module: &'w str,
-    name: &'w str,
-    key: ComponentKey,
-}
-
-/// Every behavior component `world` registers, by module then name.
-fn behaviors(world: &World) -> Vec<Behavior<'_>> {
-    let mut behaviors: Vec<Behavior> = world
-        .components()
-        .iter()
-        .filter_map(|vtable| match &vtable.script {
-            Some(ScriptRole::Behavior { module }) => Some(Behavior {
-                module,
-                name: &vtable.name,
-                key: vtable.key,
-            }),
-            _ => None,
-        })
-        .collect();
-    behaviors.sort_by(|a, b| (a.module, a.name).cmp(&(b.module, b.name)));
-    behaviors
-}
-
 /// Whether `entity` holds the component of the behavior named `behavior`.
 pub(super) fn attaches(world: &World, entity: EntityId, behavior: &str) -> bool {
     world.components().key_named(behavior).is_some_and(|key| {
@@ -78,7 +53,7 @@ pub(super) fn attaches(world: &World, entity: EntityId, behavior: &str) -> bool 
 pub(super) fn attached(world: &World) -> (Pairs, Pairs) {
     let mut attached = HashSet::new();
     let mut with_state = HashSet::new();
-    for behavior in behaviors(world) {
+    for behavior in world.behavior_components() {
         let companion = world
             .components()
             .key_named(&format!("{}{STATE_SUFFIX}", behavior.name));
@@ -101,7 +76,7 @@ pub(super) fn project_behaviors(
     newcomers: &HashSet<(EntityId, String)>,
     view: &mut ScriptView,
 ) {
-    for behavior in behaviors(world) {
+    for behavior in world.behavior_components() {
         let program = ScriptProgram {
             module: behavior.module.to_owned(),
             behavior: behavior.name.to_owned(),

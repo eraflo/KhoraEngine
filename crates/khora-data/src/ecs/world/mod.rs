@@ -47,6 +47,7 @@ pub use component_access::RemoveComponentError;
 pub use component_access::SpawnError;
 pub use hierarchy::HierarchyWrite;
 pub(crate) use hierarchy::LoadedHierarchy;
+pub use projection::BehaviorComponent;
 pub use runtime::{RegisterError, RelayoutReport, RowError, RowMut, RowRef, RuntimeComponentDecl};
 
 /// Simple statistics for a semantic domain.
