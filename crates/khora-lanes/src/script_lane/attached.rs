@@ -14,8 +14,7 @@
 
 //! What the lane keeps across frames beside its instances: what it last saw
 //! of each component-attached instance's row, the events an instance of an
-//! entity running several behaviors has yet to hear, and where a starved
-//! frame stopped.
+//! entity running several behaviors has yet to hear.
 //!
 //! A behavior attached by its component is stored in the `World`, and the
 //! lane is handed its row every frame. Comparing that row with what the lane
@@ -31,16 +30,13 @@ use khora_core::script::{ScriptEvent, ScriptValue};
 /// An instance, by its entity and its behavior.
 type Key = (EntityId, String);
 
-/// The lane's memory of the instances a component attaches, and its cursor.
+/// The lane's memory of the instances a component attaches.
 #[derive(Debug, Default)]
 pub struct Attached {
     /// Each instance's row as the lane last saw or wrote it.
     seen: HashMap<Key, Vec<(String, ScriptValue)>>,
     /// Events an instance has not heard yet, held for its next turn.
     held: HashMap<Key, Vec<ScriptEvent>>,
-    /// The first instance a starved frame did not finish, where the next
-    /// frame starts.
-    cursor: Option<Key>,
 }
 
 impl Attached {
@@ -95,16 +91,5 @@ impl Attached {
         if !events.is_empty() {
             self.held.insert((entity, behavior.to_owned()), events);
         }
-    }
-
-    /// Where the frame starts.
-    pub(super) fn cursor(&self) -> Option<&Key> {
-        self.cursor.as_ref()
-    }
-
-    /// Where the next frame starts: the first instance this one did not
-    /// finish, or the beginning.
-    pub(super) fn set_cursor(&mut self, cursor: Option<Key>) {
-        self.cursor = cursor;
     }
 }

@@ -301,8 +301,10 @@ pub struct ScriptRuntime {
     arena: Arena,
     /// Reloads waiting for the frame whose view projects what they read.
     deferred: Vec<khora_script::reload::ScriptReload>,
-    /// What it keeps of component-attached instances, and its cursor.
+    /// What it keeps of component-attached instances.
     pub(super) attached: super::attached::Attached,
+    /// What each behavior carries from frame to frame of the fuel's sharing.
+    pub(super) shares: super::shares::FuelShares,
 }
 
 /// Instructions per millisecond, before anything has been measured.
@@ -332,6 +334,7 @@ impl Default for ScriptRuntime {
             arena: Arena::new(),
             deferred: Vec::new(),
             attached: Default::default(),
+            shares: Default::default(),
         }
     }
 }
