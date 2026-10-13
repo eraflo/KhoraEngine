@@ -55,12 +55,20 @@ pub(crate) fn compile(project: Project, module: &str) -> Program {
 
 /// What the engine sends for `module`'s declarations.
 fn declarations_of(project: Project, module: &str) -> ScriptDeclarations {
+    declared_in(module, &compile(project, module))
+}
+
+/// What the engine sends for the components `program`, compiled as
+/// `module`, declares in that module — the ones it declares through an
+/// import are that module's to send.
+pub(crate) fn declared_in(module: &str, program: &Program) -> ScriptDeclarations {
     ScriptDeclarations {
         module: module.to_owned(),
-        components: compile(project, module)
+        components: program
             .declared
-            .into_iter()
+            .iter()
             .filter(|declared| declared.module == module)
+            .cloned()
             .collect(),
     }
 }

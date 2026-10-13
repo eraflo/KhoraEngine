@@ -27,7 +27,7 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::script::{ComponentName, FrameComponents, ScriptValue, WorldCommand};
 use khora_data::ecs::systems::script_commands::apply_all;
 use khora_data::ecs::{
-    Collider, ComponentKey, ComponentProvenance, Script, SemanticDomain, Transform, World,
+    Collider, ComponentKey, ComponentProvenance, SemanticDomain, Transform, World,
 };
 use khora_io::script::declarations::{
     apply_declarations, declaration_channel, DeclarationReport, DeclaredComponents,
@@ -278,14 +278,14 @@ fn a_project_can_declare_many_components() {
     }
 }
 
-/// **A variable-size field moves with its row.** The entity's Script row
-/// migrates — a Rust Script-domain component is added, then removed — and the
-/// text stays.
+/// **A variable-size field moves with its row.** The entity's Physics row
+/// migrates — a Rust Physics-domain component is added, then removed — and
+/// the text stays.
 #[test]
 fn a_string_field_survives_a_page_migration() {
     let (mut world, _, _) = registered(&[declarations(
         "game/tag.erg",
-        "component Inscription { string label = \"none\"; int n = 0; }",
+        "[Domain(Physics)]\ncomponent Inscription { string label = \"none\"; int n = 0; }",
     )]);
     let neighbour = world.spawn(Transform::identity());
     attach(
@@ -309,15 +309,15 @@ fn a_string_field_survives_a_page_migration() {
     );
 
     world
-        .add_component(entity, Script::new("game/tag.erg", "Holder"))
-        .expect("Script attaches");
+        .add_component(entity, Collider::default())
+        .expect("Collider attaches");
     assert_eq!(
         read(&world, entity, "Inscription", "label"),
         Some(ScriptValue::Str("sword of a thousand cuts".to_owned()))
     );
     world
-        .remove_component::<Script>(entity)
-        .expect("Script detaches");
+        .remove_component::<Collider>(entity)
+        .expect("Collider detaches");
     assert_eq!(
         read(&world, entity, "Inscription", "label"),
         Some(ScriptValue::Str("sword of a thousand cuts".to_owned()))

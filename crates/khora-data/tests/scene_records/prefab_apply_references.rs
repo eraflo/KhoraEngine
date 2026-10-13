@@ -19,32 +19,26 @@
 use khora_core::asset::AssetUUID;
 use khora_core::math::Vec3;
 use khora_core::script::ScriptValue;
-use khora_data::ecs::{Light, Name, Script, Transform};
+use khora_data::ecs::{Light, Name, Transform};
 use khora_data::scene::{apply_to_prefab, capture_subtree, instantiate_prefab, InstanceOf};
 
+use super::declared_components::{attach, field_of, set_field};
 use super::prefab_apply::{component, placed};
 use super::prefab_sample::*;
 use super::*;
 
-/// The entity the `aim` field of `entity`'s script names, if it names one.
+/// The entity the `aim` field of `entity`'s turret behavior names, if it
+/// names one.
 fn aim(world: &World, entity: EntityId) -> Option<EntityId> {
-    let script = world.get::<Script>(entity)?;
-    script
-        .fields
-        .iter()
-        .find(|(name, _)| name == "aim")
-        .and_then(|(_, value)| match value {
-            ScriptValue::Entity(target) => Some(*target),
-            _ => None,
-        })
+    match field_of(world, entity, TURRET, "aim")? {
+        ScriptValue::Entity(target) => Some(target),
+        _ => None,
+    }
 }
 
-/// `entity`'s script, aiming at `target`.
+/// `entity`'s turret behavior, aiming at `target`.
 fn aim_at(world: &mut World, entity: EntityId, target: EntityId) {
-    let script = world.get_mut::<Script>(entity).expect("scripted");
-    *script = script
-        .clone()
-        .with_field("aim", ScriptValue::Entity(target));
+    set_field(world, entity, TURRET, "aim", ScriptValue::Entity(target));
 }
 
 /// A member aiming at another member is applied as the prefab aiming at its
@@ -55,7 +49,7 @@ fn applying_a_reference_to_a_member_names_the_prefabs_own_entity() {
     let barrel = placed.member(placed.turret.barrel);
     aim_at(&mut placed.world, placed.root, barrel);
 
-    let written = placed.apply(component(placed.root, "Script"));
+    let written = placed.apply(component(placed.root, TURRET));
 
     let prefab = open(&written, &placed.library);
     assert_eq!(
@@ -75,7 +69,7 @@ fn applying_a_reference_to_a_scene_entity_names_none_of_the_prefab() {
     placed.world.mark_authored(lone).expect("authored");
     aim_at(&mut placed.world, placed.root, lone);
 
-    let written = placed.apply(component(placed.root, "Script"));
+    let written = placed.apply(component(placed.root, TURRET));
 
     let prefab = open(&written, &placed.library);
     let target = aim(&prefab, entity(&prefab, placed.turret.root));
@@ -94,15 +88,14 @@ fn applying_a_reference_to_a_scene_entity_names_none_of_the_prefab() {
 #[test]
 fn applying_a_reference_to_an_author_entity_sharing_a_prefab_id_names_none_of_the_prefab() {
     let mut world = World::new();
+    declare_turret(&mut world);
     let root = world.spawn((Transform::identity(), Name::new("Turret"), Light::point()));
     let barrel = world.spawn((
         Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
         Name::new("Barrel"),
     ));
     world.set_parent(barrel, Some(root));
-    world
-        .add_component(root, Script::new("ai/turret.erg", "Turret"))
-        .expect("a script attaches");
+    attach(&mut world, root, TURRET, ScriptValue::Unit);
     let root_id = world.mark_authored(root).expect("authored");
     let barrel_id = world.mark_authored(barrel).expect("authored");
     let prefab = AssetUUID::new();
@@ -121,7 +114,7 @@ fn applying_a_reference_to_an_author_entity_sharing_a_prefab_id_names_none_of_th
             root: instance,
             prefab,
         },
-        &component(instance, "Script"),
+        &component(instance, TURRET),
         &library,
     )
     .unwrap_or_else(|e| panic!("the apply is refused: {e}"));

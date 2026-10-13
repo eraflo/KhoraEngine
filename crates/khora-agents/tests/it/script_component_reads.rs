@@ -37,9 +37,12 @@ use khora_core::script::{
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::{
     Collider, ComponentProvenance, FieldKind, PackedField, PackedLayout, RigidBody,
-    RuntimeComponentDecl, Script, SemanticDomain, TickPhase, Transform, World,
+    RuntimeComponentDecl, SemanticDomain, TickPhase, Transform, World,
 };
 use khora_data::flow::{Flow, ScriptFlow};
+use khora_io::script::declarations::{
+    declaration_channel, DeclaredComponents, PendingDeclarations,
+};
 use khora_io::script::mirror::PreludeLoader;
 use khora_lanes::script_lane::ScriptRuntime;
 use khora_script::arena::Persisted;
@@ -47,13 +50,15 @@ use khora_script::reload::ScriptReload;
 use khora_script::vm::{Program, Value};
 use khora_script::{compile_module, Diagnostic, MemoryLoader, ENGINE_COMPONENTS_MODULE};
 
+use super::behavior_session::{attach, declared_in};
+
 const MODULE: &str = "game/probe.erg";
 
-/// `main` importing the engine's mirrors, compiled.
+/// `main` importing the engine's mirrors, compiled as `MODULE`.
 fn build(main: &str) -> Program {
     let source = format!("import \"engine/components.erg\";\n{main}");
-    let loader = PreludeLoader::new(MemoryLoader::new().with("main.erg", source));
-    let result = compile_module(&loader, "main.erg");
+    let loader = PreludeLoader::new(MemoryLoader::new().with(MODULE, source));
+    let result = compile_module(&loader, MODULE);
     let errors: Vec<&Diagnostic> = result.diagnostics.iter().filter(|d| d.is_error()).collect();
     assert!(errors.is_empty(), "should compile: {errors:?}");
     result.program.expect("a program with no errors")
@@ -69,28 +74,37 @@ fn body(mass: f32) -> RigidBody {
 }
 
 /// One running session, wired the way the engine wires one: the catalog the
-/// lane writes and the flow reads, the reload channel programs arrive by.
+/// lane writes and the flow reads, the channels a compiled module's
+/// declarations and program arrive by.
 struct Session {
     world: World,
     flow: ScriptFlow,
     agent: ScriptAgent,
     scripts: Arc<Mutex<ScriptRuntime>>,
     reloads: Channel<ScriptReload>,
+    declarations: PendingDeclarations,
     catalog: Arc<ScriptCatalog>,
     runtime: Arc<Runtime>,
 }
 
 impl Session {
     /// A session over `world`, `program` sent as `MODULE` — the way the
-    /// engine hands a compiled script to the lane.
+    /// engine hands a compiled script to the lane — and the behaviors it
+    /// declares registered at once, the way the engine registers them before
+    /// a game's `setup`, so they can be attached before the first frame.
     fn over(world: World, program: Program) -> Self {
         let scripts = Arc::new(Mutex::new(ScriptRuntime::new()));
         let reloads = khora_io::script::hot_reload::reload_channel();
+        let declarations = declaration_channel();
         let catalog = Arc::new(ScriptCatalog::default());
 
         let mut runtime = Runtime::default();
         runtime.services.insert(Arc::clone(&scripts));
         runtime.resources.insert(reloads.clone());
+        runtime.resources.insert(declarations.clone());
+        runtime
+            .resources
+            .insert(Arc::new(Mutex::new(DeclaredComponents::default())));
         runtime.resources.insert(engine_event_channel());
         runtime.resources.insert(Arc::clone(&catalog));
 
@@ -103,31 +117,45 @@ impl Session {
             extra_params: Default::default(),
         });
 
-        let session = Self {
+        let mut session = Self {
             world,
             flow: ScriptFlow::default(),
             agent,
             scripts,
             reloads,
+            declarations,
             catalog,
             runtime: Arc::new(runtime),
         };
         session.load(program);
+        session.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
         session
     }
 
-    /// Sends `program` as the new `MODULE`, as a hot-reload would.
+    /// Sends `program` as the new `MODULE`, with what it declares, as a
+    /// hot-reload would.
     fn load(&self, program: Program) {
+        self.declarations.send(declared_in(MODULE, &program));
         self.reloads.send(ScriptReload {
             module: MODULE.to_owned(),
             program,
         });
     }
 
-    /// The first half of a frame: project, then run the scripts. Returns the
-    /// deck holding what they queued, not yet applied, and what the flow
-    /// projected.
+    fn boundary(&mut self, phase: TickPhase, deck: &mut OutputDeck) {
+        run_data_systems(&mut self.world, &self.runtime, deck, phase);
+    }
+
+    /// Attaches the behavior `name` to `entity`, its named fields set.
+    fn attach(&mut self, entity: EntityId, name: &str, fields: &[(&str, ScriptValue)]) {
+        attach(&mut self.world, entity, name, fields);
+    }
+
+    /// The first half of a frame: register what was declared, project, then
+    /// run the scripts. Returns the deck holding what they queued, not yet
+    /// applied, and what the flow projected.
     fn run_scripts(&mut self) -> (OutputDeck, Arc<ComponentProjection>) {
+        self.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
         let selection = self.flow.select(&self.world, &self.runtime);
         let mut view = self.flow.project(&self.world, &selection, &self.runtime);
         view.delta_seconds = 0.016;
@@ -153,12 +181,7 @@ impl Session {
 
     /// The second half: the frame-boundary systems apply what was queued.
     fn apply(&mut self, mut deck: OutputDeck) {
-        run_data_systems(
-            &mut self.world,
-            &self.runtime,
-            &mut deck,
-            TickPhase::Maintenance,
-        );
+        self.boundary(TickPhase::Maintenance, &mut deck);
     }
 
     /// One whole frame. Returns what the flow projected for it.
@@ -220,12 +243,9 @@ const READS_ITS_OWN_BODY: &str = "behavior Probe {
 #[test]
 fn get_reads_this_entitys_component() {
     let mut world = World::new();
-    let probe = world.spawn((
-        Transform::identity(),
-        body(2.0),
-        Script::new(MODULE, "Probe"),
-    ));
+    let probe = world.spawn((Transform::identity(), body(2.0)));
     let mut session = Session::over(world, build(READS_ITS_OWN_BODY));
+    session.attach(probe, "Probe", &[]);
 
     session.until(4, "the probe never read its rigid body", |s| {
         s.float(probe, "Probe", "mass")
@@ -245,10 +265,7 @@ fn get_reads_this_entitys_component() {
 fn get_reads_another_entitys_component() {
     let mut world = World::new();
     let target = world.spawn((Transform::identity(), body(7.5)));
-    let watcher = world.spawn((
-        Transform::identity(),
-        Script::new(MODULE, "Watcher").with_field("target", ScriptValue::Entity(target)),
-    ));
+    let watcher = world.spawn(Transform::identity());
     let mut session = Session::over(
         world,
         build(
@@ -264,6 +281,11 @@ fn get_reads_another_entitys_component() {
                  }
              }",
         ),
+    );
+    session.attach(
+        watcher,
+        "Watcher",
+        &[("target", ScriptValue::Entity(target))],
     );
 
     session.until(4, "the watcher never read its target", |s| {
@@ -285,7 +307,7 @@ fn get_reads_another_entitys_component() {
 fn get_returns_null_when_absent() {
     let mut world = World::new();
     world.spawn((Transform::identity(), Collider::default()));
-    let bare = world.spawn((Transform::identity(), Script::new(MODULE, "Probe")));
+    let bare = world.spawn(Transform::identity());
     let mut session = Session::over(
         world,
         build(
@@ -297,6 +319,7 @@ fn get_returns_null_when_absent() {
              }",
         ),
     );
+    session.attach(bare, "Probe", &[]);
 
     session.until(4, "the probe never ran", |s| {
         s.int(bare, "Probe", "seen").is_some_and(|seen| seen != 0)
@@ -309,12 +332,8 @@ fn get_returns_null_when_absent() {
 #[test]
 fn has_matches_the_world() {
     let mut world = World::new();
-    let holder = world.spawn((
-        Transform::identity(),
-        body(1.0),
-        Script::new(MODULE, "Probe"),
-    ));
-    let bare = world.spawn((Transform::identity(), Script::new(MODULE, "Probe")));
+    let holder = world.spawn((Transform::identity(), body(1.0)));
+    let bare = world.spawn(Transform::identity());
     let mut session = Session::over(
         world,
         build(
@@ -324,6 +343,8 @@ fn has_matches_the_world() {
              }",
         ),
     );
+    session.attach(holder, "Probe", &[]);
+    session.attach(bare, "Probe", &[]);
 
     session.until(4, "the probes never ran", |s| {
         s.int(holder, "Probe", "has").is_some_and(|has| has != 0)
@@ -361,12 +382,9 @@ const WRITES_THEN_READS: &str = "behavior Heavier {
 #[test]
 fn a_script_sees_its_own_write_this_frame() {
     let mut world = World::new();
-    let entity = world.spawn((
-        Transform::identity(),
-        body(2.0),
-        Script::new(MODULE, "Heavier"),
-    ));
+    let entity = world.spawn((Transform::identity(), body(2.0)));
     let mut session = Session::over(world, build(WRITES_THEN_READS));
+    session.attach(entity, "Heavier", &[]);
 
     session.until(4, "the behavior never read its body", |s| {
         s.float(entity, "Heavier", "before")
@@ -401,11 +419,7 @@ fn a_script_sees_its_own_write_this_frame() {
 #[test]
 fn has_follows_add_and_remove_this_frame() {
     let mut world = World::new();
-    let entity = world.spawn((
-        Transform::identity(),
-        body(2.0),
-        Script::new(MODULE, "Swapper"),
-    ));
+    let entity = world.spawn((Transform::identity(), body(2.0)));
     let mut session = Session::over(
         world,
         build(
@@ -431,6 +445,7 @@ fn has_follows_add_and_remove_this_frame() {
              }",
         ),
     );
+    session.attach(entity, "Swapper", &[]);
 
     session.until(4, "the swapper never ran", |s| {
         s.int(entity, "Swapper", "done") == Some(1)
@@ -478,12 +493,9 @@ fn has_follows_add_and_remove_this_frame() {
 #[test]
 fn engine_systems_see_only_the_boundary() {
     let mut world = World::new();
-    let entity = world.spawn((
-        Transform::identity(),
-        body(2.0),
-        Script::new(MODULE, "Heavier"),
-    ));
+    let entity = world.spawn((Transform::identity(), body(2.0)));
     let mut session = Session::over(world, build(WRITES_THEN_READS));
+    session.attach(entity, "Heavier", &[]);
 
     // Frames until the behavior has run once, its write held back.
     let mut held = None;
@@ -536,16 +548,12 @@ fn names_of(list: &[&str]) -> Vec<ComponentName> {
 #[test]
 fn a_program_that_reads_nothing_projects_nothing() {
     let mut world = World::new();
-    world.spawn((
-        Transform::identity(),
-        body(2.0),
-        Collider::default(),
-        Script::new(MODULE, "Mover"),
-    ));
+    let mover = world.spawn((Transform::identity(), body(2.0), Collider::default()));
     let mut session = Session::over(
         world,
         build("behavior Mover { void Update(float dt) { this.Translate(Vec3(0.0, 1.0, 0.0)); } }"),
     );
+    session.attach(mover, "Mover", &[]);
 
     for _ in 0..3 {
         let projected = session.frame();
@@ -564,13 +572,9 @@ fn a_program_that_reads_nothing_projects_nothing() {
 #[test]
 fn the_read_set_follows_reloads() {
     let mut world = World::new();
-    world.spawn((
-        Transform::identity(),
-        body(2.0),
-        Collider::default(),
-        Script::new(MODULE, "Probe"),
-    ));
+    let probe = world.spawn((Transform::identity(), body(2.0), Collider::default()));
     let mut session = Session::over(world, build(READS_ITS_OWN_BODY));
+    session.attach(probe, "Probe", &[]);
 
     for _ in 0..3 {
         session.frame();
@@ -622,7 +626,6 @@ fn a_program_whose_reads_grew_waits_a_frame() {
             friction: 0.9,
             ..Collider::default()
         },
-        Script::new(MODULE, "Probe"),
     ));
     let grip = "behavior Probe {
         float mass = -1.0;
@@ -647,8 +650,8 @@ fn a_program_whose_reads_grew_waits_a_frame() {
             friction: 0.9,
             ..Collider::default()
         },
-        Script::new(MODULE, "Probe"),
     ));
+    first.attach(arrived, "Probe", &[]);
     for _ in 0..4 {
         first.frame();
         assert_ne!(
@@ -661,6 +664,7 @@ fn a_program_whose_reads_grew_waits_a_frame() {
 
     // A reload that grows the reads of a program already running.
     let mut session = Session::over(world, build(READS_ITS_OWN_BODY));
+    session.attach(entity, "Probe", &[]);
     session.until(4, "the first version never ran", |s| {
         s.float(entity, "Probe", "mass")
             .is_some_and(|mass| mass != -1.0)
@@ -686,12 +690,9 @@ fn a_program_whose_reads_grew_waits_a_frame() {
 #[test]
 fn a_program_waiting_for_its_reads_is_not_reported_unloaded() {
     let mut world = World::new();
-    world.spawn((
-        Transform::identity(),
-        body(2.0),
-        Script::new(MODULE, "Probe"),
-    ));
+    let probe = world.spawn((Transform::identity(), body(2.0)));
     let mut session = Session::over(world, build(READS_ITS_OWN_BODY));
+    session.attach(probe, "Probe", &[]);
 
     for frame in 0..3 {
         session.frame();
@@ -715,12 +716,7 @@ fn a_program_waiting_for_its_reads_is_not_reported_unloaded() {
 #[test]
 fn a_waiting_reload_replaced_before_it_installs_never_runs() {
     let mut world = World::new();
-    let entity = world.spawn((
-        Transform::identity(),
-        body(2.0),
-        Collider::default(),
-        Script::new(MODULE, "Probe"),
-    ));
+    let entity = world.spawn((Transform::identity(), body(2.0), Collider::default()));
     let version = |n: i64, reads: &str| {
         build(&format!(
             "behavior Probe {{
@@ -730,6 +726,7 @@ fn a_waiting_reload_replaced_before_it_installs_never_runs() {
         ))
     };
     let mut session = Session::over(world, version(1, ""));
+    session.attach(entity, "Probe", &[]);
     session.until(4, "the first version never ran", |s| {
         s.int(entity, "Probe", "version") == Some(1)
     });
@@ -759,12 +756,9 @@ fn a_waiting_reload_replaced_before_it_installs_never_runs() {
 #[test]
 fn a_reload_that_stops_reading_stops_projecting() {
     let mut world = World::new();
-    world.spawn((
-        Transform::identity(),
-        body(2.0),
-        Script::new(MODULE, "Probe"),
-    ));
+    let probe = world.spawn((Transform::identity(), body(2.0)));
     let mut session = Session::over(world, build(READS_ITS_OWN_BODY));
+    session.attach(probe, "Probe", &[]);
     for _ in 0..3 {
         session.frame();
     }
@@ -786,28 +780,23 @@ fn a_reload_that_stops_reading_stops_projecting() {
 }
 
 /// **One behavior reads what another wrote earlier in the same frame** — the
-/// working set is the frame's, in the order behaviors run — while the `World`
-/// holds the old value until the boundary.
+/// working set is the frame's, in the order behaviors run (by module, then
+/// name: `Heavier` before `Weigher`) — while the `World` holds the old value
+/// until the boundary.
 #[test]
 fn a_behavior_reads_what_an_earlier_one_wrote_this_frame() {
     let mut world = World::new();
     let target = world.spawn((Transform::identity(), body(2.0)));
-    world.spawn((
-        Transform::identity(),
-        Script::new(MODULE, "Writer").with_field("target", ScriptValue::Entity(target)),
-    ));
-    let reader = world.spawn((
-        Transform::identity(),
-        Script::new(MODULE, "Reader").with_field("target", ScriptValue::Entity(target)),
-    ));
+    let writer = world.spawn(Transform::identity());
+    let reader = world.spawn(Transform::identity());
     let mut session = Session::over(
         world,
         build(
-            "behavior Writer {
+            "behavior Heavier {
                  Entity target;
                  void Update(float dt) { target.Set(RigidBody { mass: 9.0 }); }
              }
-             behavior Reader {
+             behavior Weigher {
                  Entity target;
                  float mass = -1.0;
                  void Update(float dt) {
@@ -816,12 +805,22 @@ fn a_behavior_reads_what_an_earlier_one_wrote_this_frame() {
              }",
         ),
     );
+    session.attach(
+        writer,
+        "Heavier",
+        &[("target", ScriptValue::Entity(target))],
+    );
+    session.attach(
+        reader,
+        "Weigher",
+        &[("target", ScriptValue::Entity(target))],
+    );
 
     let mut held = None;
     for _ in 0..4 {
         let (deck, _) = session.run_scripts();
         if session
-            .float(reader, "Reader", "mass")
+            .float(reader, "Weigher", "mass")
             .is_some_and(|mass| mass != -1.0)
         {
             held = Some(deck);
@@ -831,7 +830,7 @@ fn a_behavior_reads_what_an_earlier_one_wrote_this_frame() {
     }
     assert!(held.is_some(), "the reader ran within four frames");
     assert_eq!(
-        session.float(reader, "Reader", "mass"),
+        session.float(reader, "Weigher", "mass"),
         Some(9.0),
         "the reader saw the writer's write"
     );
@@ -861,7 +860,7 @@ fn get_of_a_declared_component() {
             .expect("a valid layout"),
         })
         .expect("Signal registers");
-    let beacon = world.spawn((Transform::identity(), Script::new(MODULE, "Receiver")));
+    let beacon = world.spawn(Transform::identity());
     world
         .add_runtime_component(
             beacon,
@@ -873,7 +872,7 @@ fn get_of_a_declared_component() {
     let loader = MemoryLoader::new()
         .with(ENGINE_COMPONENTS_MODULE, "component Signal { int strength; }")
         .with(
-            "main.erg",
+            MODULE,
             format!(
                 "import \"{ENGINE_COMPONENTS_MODULE}\";
                  behavior Receiver {{
@@ -884,10 +883,11 @@ fn get_of_a_declared_component() {
                  }}"
             ),
         );
-    let result = compile_module(&loader, "main.erg");
+    let result = compile_module(&loader, MODULE);
     let errors: Vec<&Diagnostic> = result.diagnostics.iter().filter(|d| d.is_error()).collect();
     assert!(errors.is_empty(), "should compile: {errors:?}");
     let mut session = Session::over(world, result.program.expect("compiled"));
+    session.attach(beacon, "Receiver", &[]);
 
     session.until(4, "the receiver never ran", |s| {
         s.int(beacon, "Receiver", "strength")
@@ -916,12 +916,9 @@ fn the_report_counts_the_projected_rows() {
     for mass in [1.0, 2.0, 3.0] {
         world.spawn((Transform::identity(), body(mass)));
     }
-    let probe = world.spawn((
-        Transform::identity(),
-        body(4.0),
-        Script::new(MODULE, "Probe"),
-    ));
+    let probe = world.spawn((Transform::identity(), body(4.0)));
     let mut session = Session::over(world, build(READS_ITS_OWN_BODY));
+    session.attach(probe, "Probe", &[]);
 
     session.until(4, "the probe never read its rigid body", |s| {
         s.float(probe, "Probe", "mass")

@@ -21,7 +21,10 @@ use std::cell::Cell;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::ScriptValue;
 
-use crate::ecs::{ColumnWriteReport, ComponentKey, SemanticDomain, Transform, World};
+use crate::ecs::{
+    ColumnWriteReport, ComponentKey, ComponentProvenance, FieldKind, PackedField, PackedLayout,
+    RuntimeComponentDecl, SemanticDomain, Transform, World,
+};
 
 thread_local! {
     /// How many times a `Gauge` was cloned on this thread.
@@ -405,4 +408,120 @@ fn a_column_write_of_no_field_writes_reports_and_bumps_nothing() {
     for (i, &entity) in entities.iter().enumerate() {
         assert_eq!(world.get::<Gauge>(entity), Some(&gauge(i as i64)));
     }
+}
+
+/// A declared component of provenance `provenance` in `Script`: a `float`
+/// `speed` and a `pending` holding any value — and `entity`, holding it.
+fn declared(provenance: ComponentProvenance) -> (World, ComponentKey, EntityId) {
+    let mut world = World::new();
+    let key = world
+        .register_runtime_component(RuntimeComponentDecl {
+            name: "Guard".to_owned(),
+            domain: SemanticDomain::Script,
+            provenance,
+            resumable: provenance == ComponentProvenance::Runtime,
+            layout: PackedLayout::new(vec![
+                PackedField {
+                    name: "speed".to_owned(),
+                    kind: FieldKind::Float,
+                    default: ScriptValue::Float(1.0),
+                },
+                PackedField {
+                    name: "pending".to_owned(),
+                    kind: FieldKind::Value,
+                    default: ScriptValue::Null,
+                },
+            ])
+            .expect("a valid layout"),
+        })
+        .expect("Guard registers");
+    let entity = world.spawn(Transform::identity());
+    world
+        .add_runtime_component(entity, key, &ScriptValue::Unit)
+        .expect("Guard attaches with its defaults");
+    (world, key, entity)
+}
+
+/// A frozen sequence as a companion holds it: a NaN and an infinity nested
+/// in a struct.
+fn non_finite_pending() -> ScriptValue {
+    ScriptValue::Struct(vec![
+        ("remaining".to_owned(), ScriptValue::Float(f32::INFINITY)),
+        (
+            "registers".to_owned(),
+            ScriptValue::Array(vec![ScriptValue::Float(f32::NAN), ScriptValue::Int(3)]),
+        ),
+    ])
+}
+
+/// **Authored data is finite.** A declared component an author writes
+/// refuses a NaN, at the top of a field or nested in one — attached or
+/// written by a column write — and keeps what it held.
+#[test]
+fn an_authored_declared_component_refuses_a_non_finite_number() {
+    let (mut world, key, entity) = declared(ComponentProvenance::Authored);
+    let other = world.spawn(Transform::identity());
+    assert!(
+        world
+            .add_runtime_component(
+                other,
+                key,
+                &ScriptValue::Struct(vec![("speed".to_owned(), ScriptValue::Float(f32::NAN))]),
+            )
+            .is_err(),
+        "a NaN attached"
+    );
+    assert!(world.row(other, key).is_none(), "nothing was attached");
+
+    let rows = [
+        (
+            entity,
+            vec![ScriptValue::Float(f32::NAN), ScriptValue::Null],
+        ),
+        (entity, vec![ScriptValue::Float(2.0), non_finite_pending()]),
+    ];
+    for row in &rows {
+        let report = world.write_column(key, &[0, 1], borrowed(std::slice::from_ref(row)));
+        assert_eq!(
+            report,
+            ColumnWriteReport {
+                refused: 1,
+                ..ColumnWriteReport::default()
+            },
+            "{row:?}"
+        );
+    }
+    let held = world.row(entity, key).expect("Guard is held");
+    assert_eq!(held.field(0), Some(ScriptValue::Float(1.0)));
+    assert_eq!(held.field(1), Some(ScriptValue::Null));
+}
+
+/// **What the engine writes keeps what it holds.** A behavior's state
+/// companion, `Runtime`, takes a frozen sequence with a NaN and an infinity
+/// nested in its `pending` through a column write — the writeback's path —
+/// and reads them back as written.
+#[test]
+fn a_runtime_companion_keeps_a_non_finite_number_written_by_a_column_write() {
+    let (mut world, key, entity) = declared(ComponentProvenance::Runtime);
+    let rows = [(
+        entity,
+        vec![ScriptValue::Float(f32::NEG_INFINITY), non_finite_pending()],
+    )];
+
+    let report = world.write_column(key, &[0, 1], borrowed(&rows));
+
+    assert_eq!(
+        report,
+        ColumnWriteReport {
+            written: 1,
+            ..ColumnWriteReport::default()
+        }
+    );
+    let held = world.row(entity, key).expect("the companion is held");
+    assert_eq!(held.field(0), Some(ScriptValue::Float(f32::NEG_INFINITY)));
+    // Compared as text: a NaN equals nothing, itself included.
+    assert_eq!(
+        format!("{:?}", held.field(1)),
+        format!("{:?}", Some(non_finite_pending()))
+    );
 }

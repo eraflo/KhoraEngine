@@ -23,7 +23,7 @@ use khora_core::math::Vec3;
 use khora_core::script::ScriptValue;
 use khora_data::ecs::{
     ComponentKey, ComponentProvenance, FieldKind, PackedField, PackedLayout, RuntimeComponentDecl,
-    SemanticDomain, Transform,
+    ScriptRole, SemanticDomain, Transform,
 };
 
 use super::*;
@@ -87,6 +87,110 @@ pub(super) fn declare(
             layout: PackedLayout::new(fields).expect("a valid layout"),
         })
         .unwrap_or_else(|e| panic!("`{name}` registers: {e}"))
+}
+
+/// The name of `behavior`'s state companion.
+pub(super) fn state_of(behavior: &str) -> String {
+    format!("{behavior}#state")
+}
+
+/// A behavior's state companion's fields — the same for every behavior, with
+/// the defaults the scripts declare them with.
+pub(super) fn companion_fields() -> Vec<PackedField> {
+    vec![
+        field("state", FieldKind::Value, ScriptValue::Null),
+        field(
+            "state_fields",
+            FieldKind::Value,
+            ScriptValue::Struct(Vec::new()),
+        ),
+        field("timers", FieldKind::Value, ScriptValue::Array(Vec::new())),
+        field("pending", FieldKind::Value, ScriptValue::Null),
+        field("initialised", FieldKind::Bool, ScriptValue::Bool(false)),
+        field("spawned", FieldKind::Bool, ScriptValue::Bool(false)),
+        field("fault", FieldKind::Value, ScriptValue::Null),
+        field(
+            "resume_failed",
+            FieldKind::Value,
+            ScriptValue::Array(Vec::new()),
+        ),
+    ]
+}
+
+/// Registers the behavior `name` that `module` declares, with `fields`, and
+/// its state companion, as the scripts' registration registers them: the
+/// behavior authored, the companion `Runtime` and resumable, both in
+/// `Script`, each with its part for scripts and its declaring module.
+/// Returns the behavior's key.
+pub(super) fn declare_behavior(
+    world: &mut World,
+    name: &str,
+    module: &str,
+    fields: Vec<PackedField>,
+) -> ComponentKey {
+    fn register(
+        world: &mut World,
+        name: &str,
+        provenance: ComponentProvenance,
+        resumable: bool,
+        fields: Vec<PackedField>,
+    ) -> ComponentKey {
+        world
+            .register_runtime_component(RuntimeComponentDecl {
+                name: name.to_owned(),
+                domain: SemanticDomain::Script,
+                provenance,
+                resumable,
+                layout: PackedLayout::new(fields).expect("a valid layout"),
+            })
+            .unwrap_or_else(|e| panic!("`{name}` registers: {e}"))
+    }
+    let behavior = register(world, name, ComponentProvenance::Authored, false, fields);
+    world.set_script_role(
+        behavior,
+        Some(ScriptRole::Behavior {
+            module: module.to_owned(),
+        }),
+    );
+    world.set_declared_by(behavior, Some(module.to_owned()));
+    let state = register(
+        world,
+        &state_of(name),
+        ComponentProvenance::Runtime,
+        true,
+        companion_fields(),
+    );
+    world.set_script_role(
+        state,
+        Some(ScriptRole::BehaviorState {
+            behavior: name.to_owned(),
+        }),
+    );
+    world.set_declared_by(state, Some(module.to_owned()));
+    behavior
+}
+
+/// A component's value naming its fields: a `Struct` of `pairs`.
+pub(super) fn with_fields(pairs: &[(&str, ScriptValue)]) -> ScriptValue {
+    ScriptValue::Struct(
+        pairs
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), value.clone()))
+            .collect(),
+    )
+}
+
+/// The entity `entity`'s `component` field `name` holds.
+pub(super) fn entity_field(
+    world: &World,
+    entity: EntityId,
+    component: &str,
+    name: &str,
+) -> EntityId {
+    match field_of(world, entity, component, name) {
+        Some(ScriptValue::Entity(target)) => target,
+        other => panic!("`{component}.{name}` holds {other:?}, not an entity"),
+    }
 }
 
 /// Both test components, declared as the scripts declare them.
@@ -295,9 +399,17 @@ pub(super) fn translations(world: &World) -> Vec<f32> {
 /// on the entity known by the same identity, field for field, its entity
 /// references pointing at the same entities.
 pub(super) fn assert_same_declared(src: &World, dst: &World, case: &str) {
+    assert_same_rows(src, dst, &["Health", "Mood"], case);
+}
+
+/// Asserts every row of each declared component of `components` that an
+/// entity of `src` holds is in `dst`, on the entity known by the same
+/// identity, field for field, its entity references pointing at the same
+/// entities — and that `dst` holds no row `src` did not.
+pub(super) fn assert_same_rows(src: &World, dst: &World, components: &[&str], case: &str) {
     let map = entity_map(src, dst);
     for (&entity, &twin) in &map {
-        for component in ["Health", "Mood"] {
+        for &component in components {
             let expected = fields_of(src, entity, component).map(|fields| {
                 fields
                     .into_iter()

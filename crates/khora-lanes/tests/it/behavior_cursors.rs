@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **Behaviors a `Script` attaches keep a budget cursor per behavior** — a
-//! program, `(module, behavior)` — exactly as behaviors their component
-//! attaches do. The instances of one behavior share its cursor, whichever
+//! **Behaviors keep a budget cursor per behavior** — a program, `(module,
+//! behavior)`. The instances of one behavior share its cursor, whichever
 //! entities hold them; two behaviors never share one, even when they live in
 //! one module or carry one name in two. Each behavior is handed its fair share
 //! of the frame's fuel, in the view's program order.
@@ -52,10 +51,10 @@ fn entity(index: u32) -> EntityId {
     }
 }
 
-/// A legacy view: `programs` in their order, then each instance as
+/// A hand-built view: `programs` in their order, then each instance as
 /// `(entity index, program index)`, in the order given — entity order, as the
-/// flow lists `Script` instances.
-fn legacy_view(programs: &[(&str, &str)], instances: &[(u32, u32)]) -> ScriptView {
+/// flow lists each behavior's instances.
+fn view_of(programs: &[(&str, &str)], instances: &[(u32, u32)]) -> ScriptView {
     ScriptView {
         resumed: false,
         delta_seconds: 0.016,
@@ -130,18 +129,18 @@ fn two_behaviors_one_module() -> ScriptRuntime {
     runtime
 }
 
-/// **Two legacy behaviors of one module resume from separate cursors.**
+/// **Two behaviors of one module resume from separate cursors.**
 /// `First` runs on entities 0–9 and `Second` on 10–19, so a single cursor
 /// over the view would spend a frame's fuel on one block and leave the other
 /// out. With fuel for six turns each behavior takes three, every frame, from
 /// where it stopped — so all twenty run within four frames.
 #[test]
-fn two_legacy_behaviors_of_one_module_resume_from_separate_cursors() {
+fn two_behaviors_of_one_module_resume_from_separate_cursors() {
     let instances: Vec<(u32, u32)> = (0..10)
         .map(|i| (i, 0))
         .chain((10..20).map(|i| (i, 1)))
         .collect();
-    let view = legacy_view(
+    let view = view_of(
         &[("cursors.erg", "First"), ("cursors.erg", "Second")],
         &instances,
     );
@@ -175,19 +174,19 @@ fn two_legacy_behaviors_of_one_module_resume_from_separate_cursors() {
     }
 }
 
-/// **Every instance of one legacy behavior shares its cursor, whichever
+/// **Every instance of one behavior shares its cursor, whichever
 /// entities hold it.** `First` holds entities 0–4 and 10–14, `Second` 5–9 and
 /// 15–19. With fuel for six turns, `First` sweeps its own ten in entity order,
 /// three a frame, picking up at the first one the last frame had no fuel for:
 /// 0 1 2, then 3 4 10, then 11 12 13, then 14 0 1 — and `Second` likewise
 /// through its own.
 #[test]
-fn the_instances_of_one_legacy_behavior_share_its_cursor() {
+fn the_instances_of_one_behavior_share_its_cursor() {
     let first_holds: Vec<u32> = (0..5).chain(10..15).collect();
     let instances: Vec<(u32, u32)> = (0..20)
         .map(|i| (i, if first_holds.contains(&i) { 0 } else { 1 }))
         .collect();
-    let view = legacy_view(
+    let view = view_of(
         &[("cursors.erg", "First"), ("cursors.erg", "Second")],
         &instances,
     );
@@ -222,12 +221,12 @@ fn the_instances_of_one_legacy_behavior_share_its_cursor() {
     }
 }
 
-/// **Two legacy behaviors with one name, in two modules, are two behaviors.**
+/// **Two behaviors with one name, in two modules, are two behaviors.**
 /// A program is `(module, behavior)`: `First` of `a.erg` on entities 0–9 and
 /// `First` of `b.erg` on 10–19 each keep their own cursor and their own share,
 /// so with fuel for six turns each runs three a frame.
 #[test]
-fn same_named_legacy_behaviors_of_two_modules_get_separate_cursors() {
+fn same_named_behaviors_of_two_modules_get_separate_cursors() {
     let mut runtime = ScriptRuntime::new();
     let source = format!("behavior First {{ int ticks = 0; {TICK} }}");
     runtime.add_program("a.erg", build(&source));
@@ -236,7 +235,7 @@ fn same_named_legacy_behaviors_of_two_modules_get_separate_cursors() {
         .map(|i| (i, 0))
         .chain((10..20).map(|i| (i, 1)))
         .collect();
-    let view = legacy_view(&[("a.erg", "First"), ("b.erg", "First")], &instances);
+    let view = view_of(&[("a.erg", "First"), ("b.erg", "First")], &instances);
     let per_turn = settle(&view, &mut runtime);
 
     let mut seen: Vec<u32> = Vec::new();

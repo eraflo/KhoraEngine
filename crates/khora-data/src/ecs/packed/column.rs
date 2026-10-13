@@ -84,7 +84,7 @@ impl PackedColumn {
         value: &ScriptValue,
     ) -> Result<(), FieldError> {
         let field = &self.layout.fields()[slot];
-        let Some(accepted) = field.kind.accept(value) else {
+        let Some(accepted) = self.layout.accept(slot, value) else {
             return Err(FieldError {
                 field: field.name.clone(),
                 expected: field.kind,
@@ -249,7 +249,7 @@ impl ColumnOps for PackedColumns {
             let Some(field) = self.layout.fields().get(slot) else {
                 return Err(FieldWriteError::NoSuchField(format!("#{slot}")));
             };
-            if field.kind.accept(value).is_none() {
+            if self.layout.accept(slot, value).is_none() {
                 return Err(FieldWriteError::Refused {
                     field: field.name.clone(),
                     error: FieldValueError {

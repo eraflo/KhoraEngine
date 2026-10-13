@@ -19,12 +19,12 @@
 use std::collections::HashSet;
 
 use khora_core::math::Vec3;
-use khora_data::ecs::{
-    Camera, EcsMaintenance, GlobalTransform, Name, Script, Tag, Transform, World,
-};
+use khora_core::script::ScriptValue;
+use khora_data::ecs::{Camera, EcsMaintenance, GlobalTransform, Name, Tag, Transform, World};
 use khora_data::scene::record::{EntityRef, ReferenceWriter, ReportKind};
 use khora_data::scene::{component_to_record, registration_named};
 
+use super::declared_components::{attach, declare_behavior};
 use super::failures::{fingerprint, occupied_world};
 use super::*;
 
@@ -291,11 +291,10 @@ fn loading_leaves_no_orphan_rows() {
         Camera::new_perspective(std::f32::consts::FRAC_PI_3, 1.5, 0.05, 500.0),
     )
     .expect("a camera attaches");
-    src.spawn(Script {
-        module: "ai/idle.erg".into(),
-        behavior: "Idle".into(),
-        fields: vec![],
-    });
+    // A behavior with no fields, alone on its entity.
+    declare_behavior(&mut src, "Idle", "ai/idle.erg", Vec::new());
+    let idle = src.spawn(());
+    attach(&mut src, idle, "Idle", ScriptValue::Unit);
     src.spawn(GlobalTransform::identity());
 
     for (name, encoding) in every_encoding() {

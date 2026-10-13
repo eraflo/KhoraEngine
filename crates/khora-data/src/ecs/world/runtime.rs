@@ -318,7 +318,9 @@ impl World {
         &mut self,
         decl: RuntimeComponentDecl,
     ) -> Result<ComponentKey, RegisterError> {
-        let columns = Arc::new(PackedColumns::new(Arc::new(decl.layout)));
+        let mut layout = decl.layout;
+        layout.kept_for(decl.provenance);
+        let columns = Arc::new(PackedColumns::new(Arc::new(layout)));
         self.storage.registry.register_declared(
             &decl.name,
             decl.domain,
@@ -379,6 +381,8 @@ impl World {
             );
         }
         let domain = vtable.domain;
+        let mut layout = layout;
+        layout.kept_for(vtable.provenance);
         let layout = Arc::new(layout);
         for page in &mut self.storage.pages {
             let Some(column) = page.columns.get_mut(&key) else {
@@ -503,7 +507,7 @@ impl World {
                         field: name.clone(),
                     })?;
                     let field = &layout.fields()[slot];
-                    if field.kind.accept(value).is_some() {
+                    if layout.accept(slot, value).is_some() {
                         Ok((slot, value))
                     } else {
                         Err(RowError::Field(FieldError {

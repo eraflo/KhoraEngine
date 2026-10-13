@@ -31,7 +31,10 @@ use khora_data::scene::{
     SaveRecord,
 };
 
-use super::declared_components::{attach, field, field_of, fields_of, set_field};
+use super::declared_components::{
+    attach, companion_fields, declare_behavior as declare_guard, field, field_of, fields_of,
+    set_field,
+};
 use super::snapshot::{load_snapshot, snapshot_of};
 use super::*;
 
@@ -43,28 +46,6 @@ fn guard_fields() -> Vec<PackedField> {
     vec![
         field("speed", FieldKind::Float, ScriptValue::Float(1.5)),
         field("hp", FieldKind::Int, ScriptValue::Int(10)),
-    ]
-}
-
-/// The state companion's fields — the same for every behavior.
-fn companion_fields() -> Vec<PackedField> {
-    vec![
-        field("state", FieldKind::Value, ScriptValue::Null),
-        field(
-            "state_fields",
-            FieldKind::Value,
-            ScriptValue::Struct(Vec::new()),
-        ),
-        field("timers", FieldKind::Value, ScriptValue::Struct(Vec::new())),
-        field("pending", FieldKind::Value, ScriptValue::Null),
-        field("initialised", FieldKind::Bool, ScriptValue::Bool(false)),
-        field("spawned", FieldKind::Bool, ScriptValue::Bool(false)),
-        field("fault", FieldKind::Value, ScriptValue::Null),
-        field(
-            "resume_failed",
-            FieldKind::Value,
-            ScriptValue::Array(Vec::new()),
-        ),
     ]
 }
 
@@ -89,20 +70,7 @@ fn register(
 /// `Guard` and its companion, registered as the scripts' registration
 /// registers them — and `Scratch`, engine state no save keeps.
 fn declare_behavior(world: &mut World) {
-    register(
-        world,
-        GUARD,
-        ComponentProvenance::Authored,
-        false,
-        guard_fields(),
-    );
-    register(
-        world,
-        STATE,
-        ComponentProvenance::Runtime,
-        true,
-        companion_fields(),
-    );
+    declare_guard(world, GUARD, "ai/guard.erg", guard_fields());
     register(
         world,
         "Scratch",

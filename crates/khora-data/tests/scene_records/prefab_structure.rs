@@ -20,12 +20,15 @@ use khora_core::asset::AssetUUID;
 use khora_core::math::Vec3;
 use khora_core::scene::SceneFile;
 use khora_core::script::ScriptValue;
-use khora_data::ecs::{Name, PrefabInstance, Script, Transform};
+use khora_data::ecs::{FieldKind, Name, PrefabInstance, Transform};
 use khora_data::scene::{
     capture_subtree, collapse, expand, instantiate_prefab, instantiate_subtree, read_scene_file,
     serialize_subtree, write_scene_file,
 };
 
+use super::declared_components::{
+    attach, declare_behavior, field, field_of, set_field, with_fields, NO_ONE,
+};
 use super::prefab_sample::*;
 use super::*;
 
@@ -199,10 +202,8 @@ fn a_reference_from_an_instance_to_the_scene_survives_a_file_and_a_prefab_edit()
     let guard_id = world.mark_authored(guard).expect("authored");
     let root = instantiate_prefab(&mut world, prefab, &library).expect("instantiates");
     let instance = id(&world, root);
-    world.get_mut::<Script>(root).expect("scripted").fields =
-        Script::new("ai/turret.erg", "Turret")
-            .with_field("aim", ScriptValue::Entity(entity(&world, guard_id)))
-            .fields;
+    let target = entity(&world, guard_id);
+    set_field(&mut world, root, TURRET, "aim", ScriptValue::Entity(target));
     let scene = save(&world, &library);
     for encoding in [
         &CompactEncoding as &dyn SceneEncoding,
@@ -220,8 +221,8 @@ fn a_reference_from_an_instance_to_the_scene_survives_a_file_and_a_prefab_edit()
         let loaded = open(&read, &Library::default().with(prefab, edited_turret));
         let root = entity(&loaded, instance);
         assert_eq!(
-            loaded.get::<Script>(root).expect("scripted").field("aim"),
-            Some(&ScriptValue::Entity(entity(&loaded, guard_id))),
+            field_of(&loaded, root, TURRET, "aim"),
+            Some(ScriptValue::Entity(entity(&loaded, guard_id))),
             "{}",
             encoding.id()
         );
@@ -243,11 +244,23 @@ fn a_scene_opens_after_its_prefab_loses_what_the_scene_hangs_from() {
     let muzzle = world.spawn((Transform::identity(), Name::new("Muzzle")));
     world.set_parent(muzzle, Some(barrel));
     let muzzle = world.mark_authored(muzzle).expect("authored");
-    let guard = world.spawn((
-        Transform::identity(),
-        Name::new("Guard"),
-        Script::new("ai/guard.erg", "Guard").with_field("watch", ScriptValue::Entity(barrel)),
-    ));
+    declare_behavior(
+        &mut world,
+        "Guard",
+        "ai/guard.erg",
+        vec![field(
+            "watch",
+            FieldKind::Entity,
+            ScriptValue::Entity(NO_ONE),
+        )],
+    );
+    let guard = world.spawn((Transform::identity(), Name::new("Guard")));
+    attach(
+        &mut world,
+        guard,
+        "Guard",
+        with_fields(&[("watch", ScriptValue::Entity(barrel))]),
+    );
     let guard = world.mark_authored(guard).expect("authored");
     let scene = save(&world, &library);
 

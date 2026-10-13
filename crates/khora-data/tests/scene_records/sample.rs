@@ -24,14 +24,31 @@ use khora_core::script::{
 };
 use khora_core::ui::types::{UiFlexDirection, UiRect, UiVal};
 use khora_data::ecs::{
-    ActiveEvents, AudioListener, AudioSource, BodyMotion, Camera, Collider, GlobalTransform,
-    KinematicCharacterController, Light, MaterialRef, MeshRef, Name, PhysicsMaterial,
-    PrefabInstance, ProceduralMeshKind, RigidBody, Script, ScriptState, Tag, Transform, World,
+    ActiveEvents, AudioListener, AudioSource, BodyMotion, Camera, Collider, FieldKind,
+    GlobalTransform, KinematicCharacterController, Light, MaterialRef, MeshRef, Name, PackedField,
+    PhysicsMaterial, PrefabInstance, ProceduralMeshKind, RigidBody, Tag, Transform, World,
 };
+use khora_data::flow::companion::companion_row;
 use khora_data::ui::{
     UiBorder, UiColor, UiImage, UiInteraction, UiInteractionState, UiNode, UiStyle, UiText,
     UiTransform,
 };
+
+use super::declared_components::{attach, declare_behavior, field, state_of, with_fields, NO_ONE};
+
+/// The sample's behavior, declared by `ai/guard.erg`.
+pub const GUARD: &str = "Guard";
+
+/// `Guard`'s fields: a number, a target, a list of entities, and a struct
+/// holding an entity among other values.
+fn guard_fields() -> Vec<PackedField> {
+    vec![
+        field("speed", FieldKind::Float, ScriptValue::Float(1.0)),
+        field("target", FieldKind::Entity, ScriptValue::Entity(NO_ONE)),
+        field("patrol", FieldKind::Value, ScriptValue::Array(Vec::new())),
+        field("memory", FieldKind::Value, ScriptValue::Null),
+    ]
+}
 
 /// The entities of the sample world, by role.
 pub struct Sample {
@@ -236,39 +253,42 @@ pub fn sample_world() -> (World, Sample) {
         },
     );
 
-    let guard = world.spawn((
-        Transform::identity(),
-        Name::new("Guard"),
-        Script {
-            module: "ai/guard.erg".into(),
-            behavior: "Guard".into(),
-            fields: vec![
-                ("speed".into(), ScriptValue::Float(0.1)),
-                ("target".into(), ScriptValue::Entity(child)),
-                (
-                    "patrol".into(),
-                    ScriptValue::Array(vec![ScriptValue::Entity(root), ScriptValue::Entity(body)]),
-                ),
-                (
-                    "memory".into(),
-                    ScriptValue::Struct(vec![
-                        ("last_seen".into(), ScriptValue::Entity(grandchild)),
-                        (
-                            "tint".into(),
-                            ScriptValue::Color(LinearRgba::new(0.1, 0.2, 0.3, 0.4)),
-                        ),
-                        ("aim".into(), ScriptValue::Vec2(Vec2::new(1.0, -2.0))),
-                    ]),
-                ),
-            ],
-        },
-        // Runtime: what the lane observed — a sequence frozen part-way with an
-        // entity in a register. A game save keeps it; a scene never does.
-        ScriptState {
-            behavior: "Guard".into(),
-            snapshot: suspended_snapshot(child),
-        },
-    ));
+    declare_behavior(&mut world, GUARD, "ai/guard.erg", guard_fields());
+    let guard = world.spawn((Transform::identity(), Name::new("Guard")));
+    attach(
+        &mut world,
+        guard,
+        GUARD,
+        with_fields(&[
+            ("speed", ScriptValue::Float(0.1)),
+            ("target", ScriptValue::Entity(child)),
+            (
+                "patrol",
+                ScriptValue::Array(vec![ScriptValue::Entity(root), ScriptValue::Entity(body)]),
+            ),
+            (
+                "memory",
+                ScriptValue::Struct(vec![
+                    ("last_seen".into(), ScriptValue::Entity(grandchild)),
+                    (
+                        "tint".into(),
+                        ScriptValue::Color(LinearRgba::new(0.1, 0.2, 0.3, 0.4)),
+                    ),
+                    ("aim".into(), ScriptValue::Vec2(Vec2::new(1.0, -2.0))),
+                ]),
+            ),
+        ]),
+    );
+    // Runtime: what the lane observed — a sequence frozen part-way with an
+    // entity in a register. A game save keeps it; a scene never does.
+    let state = companion_row(&suspended_snapshot(child), true)
+        .expect("a frozen instance is a companion's fields");
+    attach(
+        &mut world,
+        guard,
+        &state_of(GUARD),
+        ScriptValue::Struct(state),
+    );
 
     let panel = world.spawn((
         UiNode {

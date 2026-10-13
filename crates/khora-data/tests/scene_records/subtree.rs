@@ -17,10 +17,11 @@
 use std::collections::HashSet;
 
 use khora_core::script::ScriptValue;
-use khora_data::ecs::{Children, Name, Parent, Script, Transform, World};
+use khora_data::ecs::{Children, FieldKind, Name, Parent, Transform, World};
 use khora_data::scene::record::{EntityRef, Record, VariantPayload};
 use khora_data::scene::{capture_subtree, SaveError};
 
+use super::declared_components::{attach, declare_behavior, field, field_of, with_fields, NO_ONE};
 use super::*;
 
 /// Every entity reference a record holds, wherever it sits.
@@ -52,7 +53,7 @@ pub(super) fn references_in(record: &Record, found: &mut Vec<EntityRef>) {
 }
 
 /// A prefab-shaped world: a level holding a turret (root), its barrel (child)
-/// and its sight (grandchild); the turret's script aims at the sight — inside
+/// and its sight (grandchild); the turret's behavior aims at the sight — inside
 /// the subtree — and remembers the player — outside it.
 struct Level {
     world: World,
@@ -64,6 +65,15 @@ struct Level {
 
 fn level() -> Level {
     let mut world = World::new();
+    declare_behavior(
+        &mut world,
+        "Turret",
+        "ai/turret.erg",
+        vec![
+            field("aim", FieldKind::Entity, ScriptValue::Entity(NO_ONE)),
+            field("enemy", FieldKind::Entity, ScriptValue::Entity(NO_ONE)),
+        ],
+    );
     let level_root = world.spawn((Transform::identity(), Name::new("Level")));
     let player = world.spawn((Transform::identity(), Name::new("Player")));
     let turret = world.spawn((Transform::identity(), Name::new("Turret")));
@@ -72,19 +82,15 @@ fn level() -> Level {
     world.set_parent(turret, Some(level_root));
     world.set_parent(barrel, Some(turret));
     world.set_parent(sight, Some(barrel));
-    world
-        .add_component(
-            turret,
-            Script {
-                module: "ai/turret.erg".into(),
-                behavior: "Turret".into(),
-                fields: vec![
-                    ("aim".into(), ScriptValue::Entity(sight)),
-                    ("enemy".into(), ScriptValue::Entity(player)),
-                ],
-            },
-        )
-        .expect("a script attaches");
+    attach(
+        &mut world,
+        turret,
+        "Turret",
+        with_fields(&[
+            ("aim", ScriptValue::Entity(sight)),
+            ("enemy", ScriptValue::Entity(player)),
+        ]),
+    );
     for entity in [level_root, player, turret, barrel, sight] {
         world.mark_authored(entity).expect("authored");
     }
@@ -245,19 +251,15 @@ fn a_subtree_round_trips_as_a_fresh_instance() {
                 "{name}"
             );
 
-            let script = level
-                .world
-                .get::<Script>(turret)
-                .expect("the script came along");
             assert_eq!(
-                script.field("aim"),
-                Some(&ScriptValue::Entity(sight)),
+                field_of(&level.world, turret, "Turret", "aim"),
+                Some(ScriptValue::Entity(sight)),
                 "{name}: a reference inside the subtree points inside the instance"
             );
-            match script.field("enemy") {
+            match field_of(&level.world, turret, "Turret", "enemy") {
                 Some(ScriptValue::Entity(enemy)) => {
                     assert!(
-                        !level.world.contains(*enemy),
+                        !level.world.contains(enemy),
                         "{name}: a reference outside the subtree is dead in the instance"
                     );
                 }
@@ -266,11 +268,10 @@ fn a_subtree_round_trips_as_a_fresh_instance() {
         }
 
         // The original is untouched by its copies.
-        let script = level
-            .world
-            .get::<Script>(level.turret)
-            .expect("original script");
-        assert_eq!(script.field("aim"), Some(&ScriptValue::Entity(level.sight)));
+        assert_eq!(
+            field_of(&level.world, level.turret, "Turret", "aim"),
+            Some(ScriptValue::Entity(level.sight))
+        );
         assert_eq!(
             level
                 .world

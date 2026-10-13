@@ -432,16 +432,20 @@ pub(crate) fn plan_fields(
     let (domain, layout, register, resumable) = match live {
         Some((domain, layout, live_resumable)) => (domain, layout, None, live_resumable),
         None => {
-            let layout = typed_layout(fields, types)
+            let provenance = if resumable {
+                ComponentProvenance::Runtime
+            } else {
+                ComponentProvenance::Authored
+            };
+            let mut layout = typed_layout(fields, types)
                 .map_err(|error| format!("the file's declaration of `{name}`: {error:?}"))?;
+            // Read as the world it registers in will keep it: an engine-written
+            // component's non-finite numbers are values, not damage.
+            layout.kept_for(provenance);
             let register = RuntimeComponentDecl {
                 name: name.to_owned(),
                 domain: file_domain,
-                provenance: if resumable {
-                    ComponentProvenance::Runtime
-                } else {
-                    ComponentProvenance::Authored
-                },
+                provenance,
                 resumable,
                 layout: layout.clone(),
             };

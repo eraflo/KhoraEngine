@@ -32,9 +32,7 @@ use khora_core::event::Channel;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::script::{engine_event_channel, ScriptCatalog, ScriptValue};
 use khora_core::{EngineContext, Runtime, WorldAccess};
-use khora_data::ecs::{
-    DataSystemRegistration, Script, SemanticDomain, TickPhase, Transform, World,
-};
+use khora_data::ecs::{DataSystemRegistration, SemanticDomain, TickPhase, Transform, World};
 use khora_data::flow::{Flow, ScriptFlow};
 use khora_io::script::declarations::{declaration_channel, DeclaredComponents, ScriptDeclarations};
 use khora_io::script::mirror::PreludeLoader;
@@ -43,6 +41,8 @@ use khora_script::arena::Persisted;
 use khora_script::reload::ScriptReload;
 use khora_script::vm::{Program, Value};
 use khora_script::{compile_module, Diagnostic, MemoryLoader};
+
+use super::behavior_session::{attach, declared_in};
 
 const HEALTH_MODULE: &str = "game/health.erg";
 const MEDIC_MODULE: &str = "game/medic.erg";
@@ -77,14 +77,7 @@ fn compile(module: &str) -> Program {
 
 /// What the engine sends for `Health`'s module.
 fn health_declarations() -> ScriptDeclarations {
-    ScriptDeclarations {
-        module: HEALTH_MODULE.to_owned(),
-        components: compile(HEALTH_MODULE)
-            .declared
-            .into_iter()
-            .filter(|declared| declared.module == HEALTH_MODULE)
-            .collect(),
-    }
+    declared_in(HEALTH_MODULE, &compile(HEALTH_MODULE))
 }
 
 /// The resources the registration reads: the channel the compile path sends
@@ -200,15 +193,20 @@ impl Session {
         (session, reloads, declarations)
     }
 
-    /// One frame: the boundary's `PreExtract` systems, the projection, the
-    /// scripts, then `Maintenance` applying what they queued.
-    fn frame(&mut self) {
+    /// The boundary's `PreExtract` systems: what was declared is registered.
+    fn register(&mut self) {
         run_data_systems(
             &mut self.world,
             &self.runtime,
             &mut OutputDeck::new(),
             TickPhase::PreExtract,
         );
+    }
+
+    /// One frame: the boundary's `PreExtract` systems, the projection, the
+    /// scripts, then `Maintenance` applying what they queued.
+    fn frame(&mut self) {
+        self.register();
         let selection = self.flow.select(&self.world, &self.runtime);
         let mut view = self.flow.project(&self.world, &selection, &self.runtime);
         view.delta_seconds = 0.016;
@@ -252,12 +250,20 @@ impl Session {
 /// component is registered** — both sent in the same frame, as a mount or a
 /// hot reload sends them: the behavior adds `Health`, reads its own write,
 /// and the `World` holds the row with the declared default for the field it
-/// did not name.
+/// did not name. The medic is attached by its own component, registered
+/// beforehand.
 #[test]
 fn a_behavior_adds_and_reads_a_component_its_project_declares() {
     let mut world = World::new();
-    let medic = world.spawn((Transform::identity(), Script::new(MEDIC_MODULE, "Medic")));
+    let medic = world.spawn(Transform::identity());
     let (mut session, reloads, declarations) = Session::new(world);
+    declarations.send(declared_in(MEDIC_MODULE, &compile(MEDIC_MODULE)));
+    session.register();
+    attach(&mut session.world, medic, "Medic", &[]);
+    assert!(
+        session.world.components().key_named("Health").is_none(),
+        "the premise: `Health` is not registered yet"
+    );
 
     declarations.send(health_declarations());
     reloads.send(ScriptReload {

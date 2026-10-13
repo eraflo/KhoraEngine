@@ -297,12 +297,12 @@ fn a_members_parent_is_no_override_wherever_the_instance_sits_in_the_scene() {
     }
 }
 
-/// A prefab whose script aims outside it — at an entity of the scene it was
+/// A prefab whose root aims outside it — at an entity of the scene it was
 /// made in — holds a reference to nothing, and so does every instance of
 /// it: an untouched instance overrides nothing there.
 #[test]
 fn a_reference_to_nothing_is_no_override() {
-    let placed = scripted(|made, _, _| made.spawn((Transform::identity(), Name::new("Lone"))));
+    let placed = aiming(|made, _, _| made.spawn((Transform::identity(), Name::new("Lone"))));
 
     let inspected = inspect_prefab(&placed.world, placed.root, &placed.library)
         .expect("the root belongs to its instance");

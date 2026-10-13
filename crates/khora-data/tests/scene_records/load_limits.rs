@@ -17,8 +17,9 @@
 //! created id, looping and long hierarchies, floats that are not finite.
 
 use khora_core::script::ScriptValue;
-use khora_data::ecs::{Camera, Name, Parent, Script, Transform, World};
+use khora_data::ecs::{Camera, FieldKind, Name, Parent, SemanticDomain, Transform, World};
 
+use super::declared_components::{attach, declare, field, with_fields};
 use super::*;
 
 fn nested_array(depth: usize) -> ScriptValue {
@@ -29,18 +30,38 @@ fn nested_array(depth: usize) -> ScriptValue {
     v
 }
 
+/// A world of one entity whose declared component's field `v` is an array
+/// nested `depth` deep.
 fn deep_world(depth: usize) -> World {
     let mut src = World::new();
-    src.spawn((
-        Transform::identity(),
-        Name::new("deep"),
-        Script {
-            module: "a.erg".into(),
-            behavior: "A".into(),
-            fields: vec![("v".into(), nested_array(depth))],
-        },
-    ));
+    declare(
+        &mut src,
+        "A",
+        SemanticDomain::Script,
+        vec![field("v", FieldKind::Value, ScriptValue::Null)],
+    );
+    let deep = src.spawn((Transform::identity(), Name::new("deep")));
+    attach(
+        &mut src,
+        deep,
+        "A",
+        with_fields(&[("v", nested_array(depth))]),
+    );
     src
+}
+
+/// The deepest a declared component's field nests in a world a capture
+/// accepts.
+const DEEPEST: usize = 63;
+
+/// The world [`deep_world`] makes at the deepest nesting a capture accepts —
+/// one level more is refused.
+fn deepest_world() -> World {
+    assert!(
+        capture_world(&deep_world(DEEPEST + 1)).is_err(),
+        "a capture accepts a field nested deeper than {DEEPEST}"
+    );
+    deep_world(DEEPEST)
 }
 
 /// The compact name budget must cover every name the decoder copies out of
@@ -93,15 +114,15 @@ fn varint(out: &mut Vec<u8>, mut v: u64) {
     }
 }
 
-/// A script field nested as deep as a capture accepts (an array 62 deep is
-/// about 125 record levels; 63 is refused by the capture) saves without
+/// A field nested as deep as a capture accepts (an array 63 deep; 64 is
+/// refused by the capture) saves without
 /// error in every encoding — so it must load in every encoding. The text
 /// encoding writes it, then its JSON reader stops at serde_json's own
 /// recursion limit (128 nested arrays and maps, counting the five levels of
 /// the scene document around the value) below the record's.
 #[test]
 fn what_a_capture_accepts_loads_back_in_every_encoding() {
-    let record = capture_world(&deep_world(62)).expect("a capture accepts it");
+    let record = capture_world(&deepest_world()).expect("a capture accepts it");
     let mut lost = Vec::new();
     for (name, encoding) in every_encoding() {
         let Ok(bytes) = encoding.encode(&record) else {
@@ -126,7 +147,7 @@ fn what_a_capture_accepts_loads_back_in_every_encoding() {
 /// (128) does not.
 #[test]
 fn compact_decode_at_the_depth_a_capture_accepts_fits_a_1_mib_stack() {
-    let record = capture_world(&deep_world(62)).expect("a capture accepts it");
+    let record = capture_world(&deepest_world()).expect("a capture accepts it");
     let bytes = CompactEncoding.encode(&record).expect("encodes");
     let outcome = std::thread::Builder::new()
         .stack_size(1024 * 1024)

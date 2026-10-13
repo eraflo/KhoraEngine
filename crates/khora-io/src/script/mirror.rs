@@ -539,13 +539,13 @@ mod tests {
     }
 
     /// A reserved word is its own reason, not folded into the positional one:
-    /// `Script.behavior` has a perfectly good name that this language happens to
-    /// have taken, which is a different problem with a different fix.
+    /// `UiInteraction.state` has a perfectly good name that this language
+    /// happens to have taken, which is a different problem with a different fix.
     #[test]
     fn a_reserved_field_name_is_reported_as_one() {
         assert!(
             mirror_source().contains(
-                "// Script — not mirrored: its field `behavior` is a word Ergon reserves."
+                "// UiInteraction — not mirrored: its field `state` is a word Ergon reserves."
             ),
             "got:\n{}",
             mirror_source()
@@ -834,7 +834,7 @@ mod tests {
 
     /// **Every engine component's name, mirrored or not.** A script may not
     /// declare a component the engine has — and the mirror leaves some out
-    /// (`Script`, whose field is a reserved word), so the list is the
+    /// (`UiInteraction`, whose field is a reserved word), so the list is the
     /// registry's, `formerly` names included, never the mirror's.
     #[test]
     fn the_prelude_names_every_engine_component() {
@@ -856,7 +856,7 @@ mod tests {
             }
         }
         assert!(
-            names.iter().any(|name| name == "Script"),
+            names.iter().any(|name| name == "UiInteraction"),
             "an unmirrored component is named too"
         );
         assert!(
@@ -866,11 +866,11 @@ mod tests {
     }
 
     /// **The clash, against the real engine.** A script declaring `RigidBody`
-    /// — or `Script`, which the mirror does not declare — is refused at the
-    /// name, saying how to use the engine's instead.
+    /// — or `UiInteraction`, which the mirror does not declare — is refused
+    /// at the name, saying how to use the engine's instead.
     #[test]
     fn a_script_component_named_like_an_engine_one_is_refused() {
-        for name in ["RigidBody", "Script"] {
+        for name in ["RigidBody", "UiInteraction"] {
             let source = format!("fn void Probe() {{ }}\ncomponent {name} {{ int n = 0; }}");
             let result = compile(&source);
 

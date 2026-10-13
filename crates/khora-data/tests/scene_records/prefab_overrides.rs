@@ -18,10 +18,11 @@
 use khora_core::asset::AssetUUID;
 use khora_core::math::Vec3;
 use khora_core::script::ScriptValue;
-use khora_data::ecs::{Light, Name, PrefabInstance, Script, Tag, Transform};
+use khora_data::ecs::{FieldKind, Light, Name, PrefabInstance, Tag, Transform};
 use khora_data::scene::instantiate_prefab;
 use khora_data::scene::record::EntityRef;
 
+use super::declared_components::{attach, declare_behavior, field, field_of, with_fields, NO_ONE};
 use super::prefab_sample::*;
 use super::subtree::references_in;
 use super::*;
@@ -259,11 +260,23 @@ fn references_into_an_instance_resolve_after_prefab_edit() {
     let instance = id(&world, root);
     let sight_id = PersistentId::within(instance, turret.sight);
     let sight = entity(&world, sight_id);
-    let guard = world.spawn((
-        Transform::identity(),
-        Name::new("Guard"),
-        Script::new("ai/guard.erg", "Guard").with_field("watch", ScriptValue::Entity(sight)),
-    ));
+    declare_behavior(
+        &mut world,
+        "Guard",
+        "ai/guard.erg",
+        vec![field(
+            "watch",
+            FieldKind::Entity,
+            ScriptValue::Entity(NO_ONE),
+        )],
+    );
+    let guard = world.spawn((Transform::identity(), Name::new("Guard")));
+    attach(
+        &mut world,
+        guard,
+        "Guard",
+        with_fields(&[("watch", ScriptValue::Entity(sight))]),
+    );
     let guard = world.mark_authored(guard).expect("authored");
     let scene = save(&world, &library);
 
@@ -299,17 +312,14 @@ fn references_into_an_instance_resolve_after_prefab_edit() {
     assert_eq!(name(&loaded, sight), "Sight Mk2");
     let guard = entity(&loaded, guard);
     assert_eq!(
-        loaded
-            .get::<Script>(guard)
-            .expect("scripted")
-            .field("watch"),
-        Some(&ScriptValue::Entity(sight)),
+        field_of(&loaded, guard, "Guard", "watch"),
+        Some(ScriptValue::Entity(sight)),
         "the scene's reference finds the sight"
     );
     let root = entity(&loaded, instance);
     assert_eq!(
-        loaded.get::<Script>(root).expect("scripted").field("aim"),
-        Some(&ScriptValue::Entity(sight)),
+        field_of(&loaded, root, TURRET, "aim"),
+        Some(ScriptValue::Entity(sight)),
         "the prefab's own reference finds the instance's sight"
     );
 }

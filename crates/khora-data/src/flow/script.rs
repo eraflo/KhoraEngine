@@ -340,6 +340,45 @@ mod tests {
         flow.project(world, &selection, &Runtime::default())
     }
 
+    /// Registers the behavior `name` that `module` declares, with an `int`
+    /// field `health` of default 0, as the scripts' registration does:
+    /// authored, in `Script`, a behavior for scripts.
+    fn declare_behavior(world: &mut World, module: &str, name: &str) -> ComponentKey {
+        let key = world
+            .register_runtime_component(RuntimeComponentDecl {
+                name: name.to_owned(),
+                domain: SemanticDomain::Script,
+                provenance: ComponentProvenance::Authored,
+                resumable: false,
+                layout: PackedLayout::new(vec![PackedField {
+                    name: "health".to_owned(),
+                    kind: FieldKind::Int,
+                    default: ScriptValue::Int(0),
+                }])
+                .expect("a valid layout"),
+            })
+            .expect("the behavior registers");
+        world.set_script_role(
+            key,
+            Some(crate::ecs::ScriptRole::Behavior {
+                module: module.to_owned(),
+            }),
+        );
+        world.set_declared_by(key, Some(module.to_owned()));
+        key
+    }
+
+    /// Attaches the behavior `key` to `entity`, its `health` set to `health`.
+    fn attach_behavior(world: &mut World, entity: EntityId, key: ComponentKey, health: i64) {
+        world
+            .add_runtime_component(
+                entity,
+                key,
+                &ScriptValue::Struct(vec![("health".to_owned(), ScriptValue::Int(health))]),
+            )
+            .expect("the behavior attaches");
+    }
+
     #[test]
     fn an_entity_without_a_script_is_not_projected() {
         let mut world = World::new();
@@ -373,8 +412,10 @@ mod tests {
     #[test]
     fn many_instances_of_one_behavior_share_a_single_program() {
         let mut world = World::new();
+        let guard = declare_behavior(&mut world, "ai/guard.erg", "Guard");
         for _ in 0..50 {
-            world.spawn((Transform::identity(), Script::new("ai/guard.erg", "Guard")));
+            let entity = world.spawn(Transform::identity());
+            attach_behavior(&mut world, entity, guard, 100);
         }
 
         let view = project(&world);
@@ -415,7 +456,9 @@ mod tests {
     #[test]
     fn an_entity_with_no_transform_still_runs() {
         let mut world = World::new();
-        world.spawn(Script::new("game/rules.erg", "Rules"));
+        let rules = declare_behavior(&mut world, "game/rules.erg", "Rules");
+        let entity = world.spawn(());
+        attach_behavior(&mut world, entity, rules, 0);
 
         let view = project(&world);
         assert_eq!(view.len(), 1);
@@ -577,7 +620,9 @@ mod tests {
     #[test]
     fn the_flow_projects_nothing_while_gameplay_does_not_run() {
         let mut world = World::new();
-        world.spawn((Transform::identity(), Script::new("ai/guard.erg", "Guard")));
+        let guard = declare_behavior(&mut world, "ai/guard.erg", "Guard");
+        let entity = world.spawn(Transform::identity());
+        attach_behavior(&mut world, entity, guard, 100);
 
         let unset = Runtime::default();
         assert_eq!(
@@ -601,10 +646,9 @@ mod tests {
     #[test]
     fn returning_to_play_carries_on_without_arriving_again() {
         let mut world = World::new();
-        let seen = world.spawn((
-            Transform::identity(),
-            Script::new("ai/guard.erg", "Guard").with_field("health", ScriptValue::Int(100)),
-        ));
+        let guard = declare_behavior(&mut world, "ai/guard.erg", "Guard");
+        let seen = world.spawn(Transform::identity());
+        attach_behavior(&mut world, seen, guard, 100);
         let (runtime, mode) = runtime_in(khora_core::agent::EngineMode::Playing);
         let mut flow = ScriptFlow::default();
 
@@ -617,10 +661,8 @@ mod tests {
         *mode.write().expect("the mode lock") =
             khora_core::agent::EngineMode::Custom("editor".to_owned());
         assert!(frame(&mut flow, &world, &runtime).is_empty(), "editing");
-        let spawned = world.spawn((
-            Transform::identity(),
-            Script::new("ai/guard.erg", "Guard").with_field("health", ScriptValue::Int(70)),
-        ));
+        let spawned = world.spawn(Transform::identity());
+        attach_behavior(&mut world, spawned, guard, 70);
         assert!(
             frame(&mut flow, &world, &runtime).is_empty(),
             "still editing"
@@ -727,11 +769,10 @@ mod tests {
         CLONES.with(|clones| clones.set(0));
     }
 
-    /// A world storing `Tally`, with one scripted entity.
+    /// A world storing `Tally`.
     fn world_with_tally() -> World {
         let mut world = World::new();
         world.register_component::<Tally>(SemanticDomain::Spatial);
-        world.spawn((Transform::identity(), Script::new("ai/probe.erg", "Probe")));
         world
     }
 

@@ -16,12 +16,90 @@
 //! scene, read back with it, refused whole when they cannot be.
 
 use khora_core::asset::AssetUUID;
+use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 use khora_core::math::Vec3;
 use khora_core::scene::{SceneFile, SerializationGoal, SAVE_MAGIC_BYTES};
-use khora_core::script::{ScriptSnapshot, ScriptValue};
-use khora_data::ecs::{Name, Script, ScriptState, Transform, World};
+use khora_core::script::ScriptValue;
+use khora_data::ecs::{ComponentKey, Name, Transform, World};
+use khora_io::script::declarations::{apply_declarations, DeclaredComponents, ScriptDeclarations};
+use khora_io::script::mirror::PreludeLoader;
 use khora_io::serialization::SerializationService;
+use khora_script::{compile_module, Diagnostic, MemoryLoader};
+
+const GUARD_MODULE: &str = "ai/guard.erg";
+
+/// Registers `Guard` and its state companion `Guard#state` in `world`, as
+/// the engine does once the guard's module compiles.
+fn declare_guard(world: &mut World) {
+    let loader = PreludeLoader::new(
+        MemoryLoader::new().with(GUARD_MODULE, "behavior Guard { int health = 100; }"),
+    );
+    let result = compile_module(&loader, GUARD_MODULE);
+    let errors: Vec<&Diagnostic> = result.diagnostics.iter().filter(|d| d.is_error()).collect();
+    assert!(errors.is_empty(), "the guard should compile: {errors:?}");
+    let program = result.program.expect("a program with no errors");
+    let report = apply_declarations(
+        world,
+        &mut DeclaredComponents::default(),
+        &[ScriptDeclarations {
+            module: GUARD_MODULE.to_owned(),
+            components: program.declared,
+        }],
+    );
+    assert_eq!(
+        report.registered,
+        vec!["Guard".to_owned(), "Guard#state".to_owned()]
+    );
+}
+
+/// The slot of `component`'s field `name`, with the component's key.
+fn slot_of(world: &World, component: &str, name: &str) -> (ComponentKey, usize) {
+    let key = world
+        .components()
+        .key_named(component)
+        .unwrap_or_else(|| panic!("`{component}` is registered"));
+    let slot = world
+        .components()
+        .vtable(key)
+        .and_then(|vtable| vtable.columns.packed())
+        .and_then(|packed| packed.slot_of(name))
+        .unwrap_or_else(|| panic!("`{component}` has a field `{name}`"));
+    (key, slot)
+}
+
+/// The value of `entity`'s `component` field `name`.
+fn field_of(world: &World, entity: EntityId, component: &str, name: &str) -> Option<ScriptValue> {
+    let (key, slot) = slot_of(world, component, name);
+    world.row(entity, key)?.field(slot)
+}
+
+/// Adds `component` to `entity`, its named fields set, the others defaulted.
+fn add(world: &mut World, entity: EntityId, component: &str, fields: &[(&str, ScriptValue)]) {
+    let key = world
+        .components()
+        .key_named(component)
+        .unwrap_or_else(|| panic!("`{component}` is registered"));
+    let value = ScriptValue::Struct(
+        fields
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), value.clone()))
+            .collect(),
+    );
+    world
+        .add_runtime_component(entity, key, &value)
+        .unwrap_or_else(|e| panic!("`{component}` attaches: {e:?}"));
+}
+
+/// Writes `entity`'s `component` field `name` in place.
+fn set(world: &mut World, entity: EntityId, component: &str, name: &str, value: ScriptValue) {
+    let (key, slot) = slot_of(world, component, name);
+    world
+        .row_mut(entity, key)
+        .unwrap_or_else(|| panic!("the entity holds `{component}`"))
+        .set_field(slot, &value)
+        .unwrap_or_else(|e| panic!("`{component}.{name}` takes {value:?}: {e:?}"));
+}
 
 /// A scene, played: the world as played, the base scene's file, the base's
 /// identity, and the identities of the entities the test follows.
@@ -38,11 +116,17 @@ struct Played {
 fn played() -> Played {
     let service = SerializationService::new();
     let mut world = World::new();
+    declare_guard(&mut world);
     let guard = world.spawn((
         Transform::from_translation(Vec3::new(1.0, 0.0, 0.0)),
         Name::new("Guard"),
-        Script::new("ai/guard.erg", "Guard").with_field("health", ScriptValue::Int(100)),
     ));
+    add(
+        &mut world,
+        guard,
+        "Guard",
+        &[("health", ScriptValue::Int(100))],
+    );
     let bystander = world.spawn((Transform::identity(), Name::new("Bystander")));
     let doomed = world.spawn((Transform::identity(), Name::new("Doomed")));
     for entity in [guard, bystander, doomed] {
@@ -60,19 +144,13 @@ fn played() -> Played {
         .get_mut::<Transform>(guard)
         .expect("placed")
         .translation = Vec3::new(1.0, 0.0, 7.0);
-    world
-        .add_component(
-            guard,
-            ScriptState {
-                behavior: "Guard".into(),
-                snapshot: ScriptSnapshot {
-                    state: Some("Chase".into()),
-                    ..ScriptSnapshot::default()
-                }
-                .with_field("health", ScriptValue::Int(40)),
-            },
-        )
-        .expect("observed");
+    set(&mut world, guard, "Guard", "health", ScriptValue::Int(40));
+    add(
+        &mut world,
+        guard,
+        "Guard#state",
+        &[("state", ScriptValue::Str("Chase".into()))],
+    );
     world.despawn(doomed);
     let spawned = world.spawn((
         Transform::from_translation(Vec3::new(3.0, 3.0, 3.0)),
@@ -91,7 +169,7 @@ fn played() -> Played {
     }
 }
 
-fn twin(world: &World, id: PersistentId) -> khora_core::ecs::entity::EntityId {
+fn twin(world: &World, id: PersistentId) -> EntityId {
     world
         .entity_with_id(id)
         .unwrap_or_else(|| panic!("nothing in the loaded world is {id:?}"))
@@ -99,8 +177,8 @@ fn twin(world: &World, id: PersistentId) -> khora_core::ecs::entity::EntityId {
 
 /// **The round trip a player relies on.** A game saved in any goal's encoding
 /// names its base, survives its own bytes, and loads back — with the base —
-/// as the world that was saved: the moves, the observed state, the spawn, and
-/// the destruction.
+/// as the world that was saved: the moves, the behavior's changed field and
+/// its state companion, the spawn, and the destruction.
 #[test]
 fn a_game_round_trips_through_save_game_and_load_game() {
     let service = SerializationService::new();
@@ -139,18 +217,14 @@ fn a_game_round_trips_through_save_game_and_load_game() {
             "{goal:?}: the move"
         );
         assert_eq!(
-            loaded.get::<Script>(guard),
-            Some(&Script::new("ai/guard.erg", "Guard").with_field("health", ScriptValue::Int(100))),
-            "{goal:?}: the authored script"
+            field_of(&loaded, guard, "Guard", "health"),
+            Some(ScriptValue::Int(40)),
+            "{goal:?}: the field the game changed"
         );
-        let state = loaded
-            .get::<ScriptState>(guard)
-            .expect("the observed state");
-        assert_eq!(state.snapshot.state.as_deref(), Some("Chase"), "{goal:?}");
         assert_eq!(
-            state.snapshot.field("health"),
-            Some(&ScriptValue::Int(40)),
-            "{goal:?}"
+            field_of(&loaded, guard, "Guard#state", "state"),
+            Some(ScriptValue::Str("Chase".into())),
+            "{goal:?}: the state companion"
         );
         assert_eq!(
             loaded

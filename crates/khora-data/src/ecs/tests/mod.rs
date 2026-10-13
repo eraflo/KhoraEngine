@@ -1593,16 +1593,21 @@ fn emptied_page_slot_is_recycled() {
 
 #[cfg(test)]
 mod script_domain_migration_tests {
-    use crate::ecs::components::{GlobalTransform, Script, Transform};
-    use crate::ecs::World;
+    use crate::ecs::components::{GlobalTransform, Transform};
+    use crate::ecs::{
+        ComponentProvenance, FieldKind, PackedField, PackedLayout, RuntimeComponentDecl,
+        SemanticDomain, World,
+    };
     use khora_core::math::Vec3;
+    use khora_core::script::ScriptValue;
 
     /// **Adding a component in a domain the entity does not yet occupy.**
     ///
-    /// Reproduces a panic seen when the sandbox attached a `Script` to a sphere
-    /// that already carried `Transform`, `GlobalTransform`, `MeshRef` and
-    /// `MaterialRef`: `copy_row_between` read a row past the end of the source
-    /// column during the archetype migration.
+    /// Reproduces a panic seen when the sandbox attached a behavior to a
+    /// sphere that already carried `Transform`, `GlobalTransform`, `MeshRef`
+    /// and `MaterialRef`: `copy_row_between` read a row past the end of the
+    /// source column during the archetype migration. The behavior here is a
+    /// component declared in `Script`, as the sandbox's `Hover` is.
     #[test]
     fn a_late_domain_component_migrates_cleanly() {
         let mut world = World::new();
@@ -1614,15 +1619,36 @@ mod script_domain_migration_tests {
             let _ = filler;
         }
 
-        let entity = world.spawn((Transform::default(), GlobalTransform::default()));
-        let _ = world.add_component(entity, Script::new("hover.erg", "Hover"));
+        let hover = world
+            .register_runtime_component(RuntimeComponentDecl {
+                name: "Hover".to_owned(),
+                domain: SemanticDomain::Script,
+                provenance: ComponentProvenance::Authored,
+                resumable: false,
+                layout: PackedLayout::new(vec![PackedField {
+                    name: "height".to_owned(),
+                    kind: FieldKind::Float,
+                    default: ScriptValue::Float(0.0),
+                }])
+                .expect("a valid layout"),
+            })
+            .expect("`Hover` registers");
 
-        let script = world.get::<Script>(entity);
-        assert!(
-            script.is_some(),
-            "the component did not survive the migration"
+        let entity = world.spawn((Transform::default(), GlobalTransform::default()));
+        world
+            .add_runtime_component(
+                entity,
+                hover,
+                &ScriptValue::Struct(vec![("height".to_owned(), ScriptValue::Float(1.5))]),
+            )
+            .expect("`Hover` attaches");
+
+        let row = world.row(entity, hover);
+        assert!(row.is_some(), "the component did not survive the migration");
+        assert_eq!(
+            row.and_then(|row| row.field(0)),
+            Some(ScriptValue::Float(1.5))
         );
-        assert_eq!(script.unwrap().behavior, "Hover");
         assert!(
             world.get::<Transform>(entity).is_some(),
             "the components it already had must survive too"

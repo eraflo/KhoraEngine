@@ -20,12 +20,26 @@ use std::collections::HashMap;
 use khora_core::asset::AssetUUID;
 use khora_core::math::Vec3;
 use khora_core::script::ScriptValue;
-use khora_data::ecs::{Light, Name, Script, Transform};
+use khora_data::ecs::{FieldKind, Light, Name, Transform};
 use khora_data::scene::{
     capture_subtree, collapse, expand, instantiate_prefab, PrefabSource, SaveError,
 };
 
+use super::declared_components::{attach, declare_behavior, field, with_fields, NO_ONE};
 use super::*;
+
+/// The turret's behavior: its field `aim` names the entity it aims at.
+pub(super) const TURRET: &str = "Turret";
+
+/// Declares the turret's behavior in `world`.
+pub(super) fn declare_turret(world: &mut World) {
+    declare_behavior(
+        world,
+        TURRET,
+        "ai/turret.erg",
+        vec![field("aim", FieldKind::Entity, ScriptValue::Entity(NO_ONE))],
+    );
+}
 
 /// Prefabs held in memory, by asset id — what a project's asset service is
 /// to a running editor.
@@ -49,7 +63,7 @@ impl PrefabSource for Library {
     }
 }
 
-/// A turret prefab: its root (placed, named, lit, with a script aiming at
+/// A turret prefab: its root (placed, named, lit, with a behavior aiming at
 /// the sight) and two children, a barrel and a sight — by their ids in the
 /// prefab.
 pub(super) struct Turret {
@@ -61,6 +75,7 @@ pub(super) struct Turret {
 
 pub(super) fn turret() -> Turret {
     let mut world = World::new();
+    declare_turret(&mut world);
     let root = world.spawn((Transform::identity(), Name::new("Turret"), Light::point()));
     let barrel = world.spawn((
         Transform::from_translation(Vec3::new(0.0, 1.0, 0.0)),
@@ -72,12 +87,12 @@ pub(super) fn turret() -> Turret {
     ));
     world.set_parent(barrel, Some(root));
     world.set_parent(sight, Some(root));
-    world
-        .add_component(
-            root,
-            Script::new("ai/turret.erg", "Turret").with_field("aim", ScriptValue::Entity(sight)),
-        )
-        .expect("a script attaches");
+    attach(
+        &mut world,
+        root,
+        TURRET,
+        with_fields(&[("aim", ScriptValue::Entity(sight))]),
+    );
     for entity in [root, barrel, sight] {
         world.mark_authored(entity).expect("authored");
     }

@@ -19,14 +19,19 @@ use khora_core::asset::AssetUUID;
 use khora_core::math::{Vec2, Vec3};
 use khora_core::scene::{SceneFile, SCENE_FORMAT_VERSION};
 use khora_core::script::ScriptValue;
-use khora_data::ecs::{MaterialRef, MeshRef, Name, Parent, Script, Transform};
+use khora_data::ecs::{FieldKind, MaterialRef, MeshRef, Name, Parent, Transform};
 use khora_data::scene::record::ReportKind;
 use khora_data::scene::snapshot::{prepare_snapshot, write_snapshot, SNAPSHOT_ENCODING_ID};
 use khora_data::scene::LoadFailure;
 use khora_data::ui::UiImage;
 
+use super::declared_components::assert_same_rows;
+use super::declared_components::{
+    attach, declare_behavior, entity_field, field, field_of, with_fields, NO_ONE,
+};
 use super::renames::{Beacon, Stamina};
-use super::sample::sample_world;
+use super::round_trip::SUPERSEDED;
+use super::sample::{sample_world, GUARD};
 use super::*;
 
 /// `world` written as a snapshot, then read back as a file on disk would be.
@@ -48,18 +53,26 @@ pub fn load_snapshot(world: &mut World, file: &SceneFile) -> Result<Applied, Loa
     Ok(prepared.commit(world, Identity::Keep))
 }
 
-/// The entity a script field holds.
-fn field_entity(script: &Script, field: &str) -> EntityId {
-    match script.field(field) {
-        Some(ScriptValue::Entity(entity)) => *entity,
-        other => panic!("field `{field}` holds {other:?}, not an entity"),
-    }
+/// Declares the behavior `Holder`: the entity fields `entities`, and
+/// `crowd` and `aim`, any value.
+fn declare_holder(world: &mut World, entities: &[&str]) {
+    let mut fields: Vec<_> = entities
+        .iter()
+        .map(|entity| field(entity, FieldKind::Entity, ScriptValue::Entity(NO_ONE)))
+        .collect();
+    fields.push(field(
+        "crowd",
+        FieldKind::Value,
+        ScriptValue::Array(Vec::new()),
+    ));
+    fields.push(field("aim", FieldKind::Value, ScriptValue::Null));
+    declare_behavior(world, "Holder", "ai/holder.erg", fields);
 }
 
-/// A snapshot holds every component a scene records — the sample's, and
-/// the test's own — and brings all of them back equal, each entity under the
-/// identity it had, with nothing adapted: a snapshot is read by the schema
-/// that wrote it.
+/// A snapshot holds every component a scene records — the sample's, its
+/// declared behavior included, and the test's own — and brings all of them
+/// back equal, each entity under the identity it had, with nothing adapted:
+/// a snapshot is read by the schema that wrote it.
 #[test]
 fn a_snapshot_round_trips_every_registration() {
     let (mut src, sample) = sample_world();
@@ -70,7 +83,7 @@ fn a_snapshot_round_trips_every_registration() {
             regen: 0.25,
         },
     ));
-    for reg in saved_registrations() {
+    for reg in saved_registrations().filter(|reg| !SUPERSEDED.contains(&reg.type_name)) {
         assert!(
             src.iter_entities()
                 .any(|entity| (reg.to_json)(&src, entity).is_some()),
@@ -100,6 +113,7 @@ fn a_snapshot_round_trips_every_registration() {
         assert_eq!(dst.persistent_id(*entity), Some(*id));
     }
     assert_same_world(&src, &dst, "snapshot");
+    assert_same_rows(&src, &dst, &[GUARD], "snapshot");
 }
 
 /// A snapshot writes values by position: the names of a component's fields
@@ -125,12 +139,13 @@ fn a_snapshot_holds_no_field_names() {
 }
 
 /// Identities and references survive a snapshot: authored and created ids,
-/// entity references in a script field and in a list,
+/// entity references in a behavior's field and in a list,
 /// asset references, and the hierarchy with its children in their order —
 /// loaded beside entities the world already has.
 #[test]
 fn a_snapshot_keeps_identities_and_references() {
     let mut src = World::new();
+    declare_holder(&mut src, &["target"]);
     // Ids a fresh world would not hand out in this order.
     let scratch: Vec<_> = (0..4).map(|_| src.spawn(Transform::identity())).collect();
     for entity in scratch {
@@ -151,22 +166,20 @@ fn a_snapshot_keeps_identities_and_references() {
     for child in [first, second, third] {
         src.set_parent(child, Some(root));
     }
-    let holder = src.spawn((
-        Transform::identity(),
-        Name::new("Holder"),
-        Script {
-            module: "ai/holder.erg".into(),
-            behavior: "Holder".into(),
-            fields: vec![
-                ("target".into(), ScriptValue::Entity(second)),
-                (
-                    "crowd".into(),
-                    ScriptValue::Array(vec![ScriptValue::Entity(third), ScriptValue::Entity(root)]),
-                ),
-                ("aim".into(), ScriptValue::Vec2(Vec2::new(1.0, -2.0))),
-            ],
-        },
-    ));
+    let holder = src.spawn((Transform::identity(), Name::new("Holder")));
+    attach(
+        &mut src,
+        holder,
+        "Holder",
+        with_fields(&[
+            ("target", ScriptValue::Entity(second)),
+            (
+                "crowd",
+                ScriptValue::Array(vec![ScriptValue::Entity(third), ScriptValue::Entity(root)]),
+            ),
+            ("aim", ScriptValue::Vec2(Vec2::new(1.0, -2.0))),
+        ]),
+    );
     src.set_parent(holder, Some(first));
     for entity in [root, first, holder] {
         src.mark_authored(entity).expect("authored");
@@ -209,14 +222,20 @@ fn a_snapshot_keeps_identities_and_references() {
     assert_eq!(dst.get::<Parent>(twin(holder)), Some(&Parent(twin(first))));
 
     // Entity references, wherever they sit.
-    let script = dst.get::<Script>(twin(holder)).expect("the script loaded");
-    assert_eq!(field_entity(script, "target"), twin(second));
     assert_eq!(
-        script.field("crowd"),
-        Some(&ScriptValue::Array(vec![
+        entity_field(&dst, twin(holder), "Holder", "target"),
+        twin(second)
+    );
+    assert_eq!(
+        field_of(&dst, twin(holder), "Holder", "crowd"),
+        Some(ScriptValue::Array(vec![
             ScriptValue::Entity(twin(third)),
             ScriptValue::Entity(twin(root)),
         ]))
+    );
+    assert_eq!(
+        field_of(&dst, twin(holder), "Holder", "aim"),
+        Some(ScriptValue::Vec2(Vec2::new(1.0, -2.0)))
     );
 
     // Asset references, verbatim.
@@ -257,20 +276,19 @@ fn a_snapshot_keeps_identities_and_references() {
 #[test]
 fn a_dead_reference_in_a_snapshot_names_the_nowhere_entity() {
     let mut src = World::new();
+    declare_holder(&mut src, &["first", "second"]);
     let gone_one = src.spawn((Transform::identity(), Name::new("GoneOne")));
     let gone_two = src.spawn((Transform::identity(), Name::new("GoneTwo")));
-    let holder = src.spawn((
-        Transform::identity(),
-        Name::new("Holder"),
-        Script {
-            module: "ai/holder.erg".into(),
-            behavior: "Holder".into(),
-            fields: vec![
-                ("first".into(), ScriptValue::Entity(gone_one)),
-                ("second".into(), ScriptValue::Entity(gone_two)),
-            ],
-        },
-    ));
+    let holder = src.spawn((Transform::identity(), Name::new("Holder")));
+    attach(
+        &mut src,
+        holder,
+        "Holder",
+        with_fields(&[
+            ("first", ScriptValue::Entity(gone_one)),
+            ("second", ScriptValue::Entity(gone_two)),
+        ]),
+    );
     let holder_id = src.persistent_id(holder).expect("id");
     src.despawn(gone_one);
     src.despawn(gone_two);
@@ -280,11 +298,7 @@ fn a_dead_reference_in_a_snapshot_names_the_nowhere_entity() {
     let applied =
         load_snapshot(&mut dst, &file).unwrap_or_else(|e| panic!("a dead reference loads: {e}"));
     let fields = |world: &World, entity: EntityId| {
-        let script = world.get::<Script>(entity).expect("the script loaded");
-        [
-            field_entity(script, "first"),
-            field_entity(script, "second"),
-        ]
+        ["first", "second"].map(|name| entity_field(world, entity, "Holder", name))
     };
     let holder_back = dst.entity_with_id(holder_id).expect("the holder loaded");
     let [first, second] = fields(&dst, holder_back);
@@ -302,7 +316,7 @@ fn a_dead_reference_in_a_snapshot_names_the_nowhere_entity() {
     assert!(!dead.is_empty(), "dead references are reported");
     for entry in dead {
         assert_eq!(entry.entity, Some(holder_id), "{entry:?}");
-        assert_eq!(entry.component.as_deref(), Some("Script"), "{entry:?}");
+        assert_eq!(entry.component.as_deref(), Some("Holder"), "{entry:?}");
     }
 
     // The record path, into the same world, binds to the same entity.

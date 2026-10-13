@@ -305,23 +305,18 @@ fn reverting_an_untouched_instance_keeps_its_hierarchy() {
     }
 }
 
-/// The instance deleted the barrel its script aims at — structure, which a
-/// revert leaves as it is — and changed the script's range. Reverting the
+/// The instance deleted the barrel its root aims at — structure, which a
+/// revert leaves as it is — and changed the aim's range. Reverting the
 /// instance still takes the range back to the prefab's.
 #[test]
-fn reverting_the_instance_reverts_a_script_aiming_at_a_deleted_member() {
-    use khora_sdk::khora_core::script::ScriptValue;
-    use khora_sdk::khora_data::ecs::Script;
-
-    let mut placed = scripted(|_, _, barrel| barrel);
+fn reverting_the_instance_reverts_an_aim_at_a_deleted_member() {
+    let mut placed = aiming(|_, _, barrel| barrel);
     placed.world.despawn(placed.barrel);
-    {
-        let script = placed
-            .world
-            .get_component_mut::<Script>(placed.root)
-            .expect("scripted");
-        *script = script.clone().with_field("range", ScriptValue::Float(9.0));
-    }
+    placed
+        .world
+        .get_component_mut::<Aim>(placed.root)
+        .expect("aiming")
+        .range = 9.0;
     let instance = InstanceOf {
         root: placed.root,
         prefab: placed.prefab,
@@ -332,7 +327,7 @@ fn reverting_the_instance_reverts_a_script_aiming_at_a_deleted_member() {
     let edits = revert_instance(placed.world.inner_world(), &instance, &scratch);
     apply(&mut placed.world, edits);
 
-    assert_eq!(script_range(&placed.world, placed.root), Some(5.0));
+    assert_eq!(aim_range(&placed.world, placed.root), Some(5.0));
 }
 
 /// A barrel the author took out to the scene's root has lost the parent the

@@ -17,42 +17,32 @@
 //! An instance restored from a save runs `OnLoad` once and never `OnSpawn`
 //! again; one that starts fresh runs `OnSpawn` once; and the body a save
 //! caught part-way finishes once.
+//!
+//! The behaviors are components: an entity holding `Guard` runs `Guard`, and
+//! what the engine keeps of the instance is its state companion
+//! `Guard#state` — what a game save restores.
 
 use std::sync::{Arc, RwLock};
 
 use khora_core::agent::{EngineMode, SharedEngineMode};
 use khora_core::ecs::entity::EntityId;
-use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
+use khora_core::script::{EventQueue, InstanceLifecycle, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_core::Runtime;
-use khora_data::ecs::{Script, ScriptState, Transform, World};
+use khora_data::ecs::{Transform, World};
 use khora_data::flow::{Flow, ScriptFlow, ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{run_behaviors, ScriptRunReport, ScriptRuntime};
+use khora_lanes::script_lane::{run_behaviors, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::native::Host;
-use khora_script::vm::{Program, Value};
-use khora_script::{check, compile, lex, parse};
+use khora_script::vm::Value;
 
-const MODULE: &str = "lifecycle_breaker.erg";
+use super::declared_behaviors::{attach, declared, program, recorded, restore, write_back};
 
-fn build(source: &str) -> Program {
-    let lexed = lex(source);
-    assert!(lexed.diagnostics.is_empty(), "{:?}", lexed.diagnostics);
-    let parsed = parse(lexed.tokens);
-    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
-    let checked = check(&parsed.module);
-    assert!(checked.diagnostics.is_empty(), "{:?}", checked.diagnostics);
-    let compiled = compile(&parsed.module);
-    assert!(
-        compiled.diagnostics.is_empty(),
-        "{:?}",
-        compiled.diagnostics
-    );
-    compiled.program
-}
+const MODULE: &str = "lifecycle_restore.erg";
 
+/// A script runtime holding `source`'s program, for a hand-built view.
 fn runtime_of(source: &str) -> ScriptRuntime {
     let mut runtime = ScriptRuntime::new();
-    runtime.add_program(MODULE, build(source));
+    runtime.add_program(MODULE, program(MODULE, source));
     runtime
 }
 
@@ -106,22 +96,15 @@ fn int_of(runtime: &ScriptRuntime, entity: EntityId, behavior: &str, name: &str)
     }
 }
 
-/// Writes what the lane reported back onto the world, the way the
-/// `ScriptState` writeback does.
-fn write_back(world: &mut World, report: &ScriptRunReport) {
-    for update in &report.state {
-        let state = ScriptState {
-            behavior: update.behavior.clone(),
-            snapshot: update.snapshot.clone(),
-        };
-        if let Some(held) = world.get_mut::<ScriptState>(update.entity) {
-            *held = state;
-        } else {
-            world
-                .add_component(update.entity, state)
-                .expect("the entity is alive and ScriptState is registered");
-        }
-    }
+/// `saved` as a state that says `OnSpawn` never ran: what a save written
+/// before the lifecycle was recorded reads as.
+fn never_spawned(saved: ScriptSnapshot) -> ScriptSnapshot {
+    let old = ScriptSnapshot {
+        lifecycle: InstanceLifecycle::default(),
+        ..saved
+    };
+    assert!(!old.lifecycle.spawned, "it reads as never spawned");
+    old
 }
 
 /// A world projected through the real flow under the frame's mode.
@@ -147,7 +130,12 @@ impl Game {
 
     fn view(&mut self) -> ScriptView {
         let selection = self.flow.select(&self.world, &self.runtime);
-        self.flow.project(&self.world, &selection, &self.runtime)
+        let view = self.flow.project(&self.world, &selection, &self.runtime);
+        assert!(
+            view.instances.iter().all(|instance| instance.row.is_some()),
+            "every instance is attached by its behavior's component"
+        );
+        view
     }
 
     fn set_mode(&self, mode: EngineMode) {
@@ -189,25 +177,14 @@ fn a_restored_entity_deferred_on_its_arrival_frame_still_loads() {
     }
     .with_field("health", ScriptValue::Int(40))
     .with_field("greeted", ScriptValue::Int(1));
-    let restored_state = || ScriptState {
-        behavior: "Loader".to_owned(),
-        snapshot: saved.clone(),
-    };
 
     // Two restored guards; the first is listed first and spends the frame.
-    let mut world = World::new();
-    let first = world.spawn((
-        Transform::identity(),
-        Script::new(MODULE, "Loader"),
-        restored_state(),
-    ));
-    let second = world.spawn((
-        Transform::identity(),
-        Script::new(MODULE, "Loader"),
-        restored_state(),
-    ));
+    let (mut world, mut runtime) = declared(MODULE, LOADER);
+    let first = world.spawn(Transform::identity());
+    restore(&mut world, first, "Loader", &saved);
+    let second = world.spawn(Transform::identity());
+    restore(&mut world, second, "Loader", &saved);
     let mut game = Game::new(world);
-    let mut runtime = runtime_of(LOADER);
     let mut host = Host::new();
 
     // The frame they arrive on, with fuel for one instruction.
@@ -273,11 +250,11 @@ const WAVER: &str = r#"behavior Guard {
                           void OnSpawn() { Wave(); }
                       }"#;
 
-/// **A save written before the lifecycle was recorded.** It carries no
-/// `lifecycle`, so it reads back as not spawned — `#[serde(default)]`. The
-/// load owes `OnSpawn` *and* the attack the save caught part-way: `OnSpawn`
-/// runs, waits, and is stored as the body part-way — over the attack, which
-/// is never resumed.
+/// **A restored state that says `OnSpawn` never ran.** The state companion
+/// holds the attack the save caught part-way, and says the instance has not
+/// spawned — as a save written before the lifecycle was recorded reads. The
+/// load owes `OnSpawn` *and* the attack: `OnSpawn` runs, waits, and is
+/// stored as the body part-way — over the attack, which is never resumed.
 #[test]
 fn an_on_spawn_that_waits_does_not_drop_the_body_a_save_restored() {
     // The running game: OnSpawn waves and finishes, then the guard is spotted
@@ -309,24 +286,12 @@ fn an_on_spawn_that_waits_does_not_drop_the_body_a_save_restored() {
     assert!(saved.pending.is_some(), "the attack is part-way: {saved:?}");
 
     // As a save from before the lifecycle was recorded holds it.
-    let mut json = serde_json::to_value(&saved).expect("a snapshot is JSON");
-    json.as_object_mut()
-        .expect("a snapshot is an object")
-        .remove("lifecycle");
-    let old: ScriptSnapshot = serde_json::from_value(json).expect("an older save still reads");
-    assert!(!old.lifecycle.spawned, "it reads as never spawned");
+    let old = never_spawned(saved);
 
-    let mut world = World::new();
-    world.spawn((
-        Transform::identity(),
-        Script::new(MODULE, "Guard"),
-        ScriptState {
-            behavior: "Guard".to_owned(),
-            snapshot: old,
-        },
-    ));
+    let (mut world, mut loaded) = declared(MODULE, WAVER);
+    let guard = world.spawn(Transform::identity());
+    restore(&mut world, guard, "Guard", &old);
     let mut game = Game::new(world);
-    let mut loaded = runtime_of(WAVER);
     let mut host = Host::new();
     let mut raised = Vec::new();
     for _ in 0..6 {
@@ -355,15 +320,15 @@ const ANNOUNCER: &str = r#"behavior Guard {
 /// **Leaving the game for a moment is not loading a save.** A game that
 /// switches to a mode of its own — a photo mode, a cutscene tool — and back
 /// keeps its world: nothing was restored. But the flow forgets what it had
-/// seen, so every entity arrives again carrying the `ScriptState` the lane
-/// wrote, and the lane takes that for a save: `OnLoad` runs for every
-/// instance.
+/// seen, so every entity arrives again carrying the state companion the
+/// writeback recorded, and the lane takes that for a save: `OnLoad` runs for
+/// every instance.
 #[test]
 fn returning_to_play_from_another_mode_is_not_a_load() {
-    let mut world = World::new();
-    world.spawn((Transform::identity(), Script::new(MODULE, "Guard")));
+    let (mut world, mut runtime) = declared(MODULE, ANNOUNCER);
+    let guard = world.spawn(Transform::identity());
+    attach(&mut world, guard, "Guard", &[]);
     let mut game = Game::new(world);
-    let mut runtime = runtime_of(ANNOUNCER);
     let mut host = Host::new();
     let mut raised = Vec::new();
 
@@ -374,6 +339,10 @@ fn returning_to_play_from_another_mode_is_not_a_load() {
         raised.extend(names(&mut host));
     }
     assert_eq!(count(&raised, "Spawned"), 1, "it announced itself");
+    assert!(
+        recorded(&game.world, guard, "Guard").is_some(),
+        "the writeback recorded its state companion"
+    );
 
     // A frame in another mode: the scripting agent is registered for
     // `Playing` only, so the lane does not run; the flow still selects.
@@ -427,10 +396,10 @@ fn lane_frame(view: &ScriptView, runtime: &mut ScriptRuntime) {
 /// resumption was meant to withhold.
 #[test]
 fn an_entity_that_left_while_play_was_away_gets_no_farewell_later() {
-    let mut world = World::new();
-    let gone = world.spawn((Transform::identity(), Script::new(MODULE, "Guard")));
+    let (mut world, mut runtime) = declared(MODULE, LEAVER);
+    let gone = world.spawn(Transform::identity());
+    attach(&mut world, gone, "Guard", &[]);
     let mut game = Game::new(world);
-    let mut runtime = runtime_of(LEAVER);
 
     let view = game.view();
     lane_frame(&view, &mut runtime);
@@ -449,8 +418,8 @@ fn an_entity_that_left_while_play_was_away_gets_no_farewell_later() {
     lane_frame(&back, &mut runtime);
 
     // Later, something scripted appears.
-    game.world
-        .spawn((Transform::identity(), Script::new(MODULE, "Guard")));
+    let newcomer = game.world.spawn(Transform::identity());
+    attach(&mut game.world, newcomer, "Guard", &[]);
     let later = game.view();
     assert!(!later.resumed);
     lane_frame(&later, &mut runtime);
@@ -469,15 +438,15 @@ fn an_entity_that_left_while_play_was_away_gets_no_farewell_later() {
 
 // ─── OnSpawn cut behind a restored body, then saved ─────────────────────────
 
-/// **A cut `OnSpawn` must still finish across a save.** A save from before
-/// the lifecycle was recorded owes `OnSpawn` and a body part-way. `OnSpawn`
-/// runs, waits, and the restored body waits behind it. A save taken now
-/// writes the restored body — and `spawned`. Loaded, `OnSpawn` is not owed
-/// and its rest is not pending: it never finishes, in any run of the game.
+/// **A cut `OnSpawn` must still finish across a save.** A restored state
+/// that says `OnSpawn` never ran owes it and a body part-way. `OnSpawn` runs,
+/// waits, and the restored body waits behind it. A save taken now records
+/// the restored body — and `spawned`. Loaded, `OnSpawn` is not owed and its
+/// rest is not pending: it never finishes, in any run of the game.
 #[test]
 fn an_on_spawn_cut_behind_a_restored_body_finishes_across_a_save() {
-    // The running game, as in the round before: OnSpawn has waved, the
-    // attack is part-way.
+    // The running game, as in the test above: OnSpawn has waved, the attack
+    // is part-way.
     let mut running = runtime_of(WAVER);
     let mut host = Host::new();
     run_behaviors(
@@ -502,46 +471,25 @@ fn an_on_spawn_cut_behind_a_restored_body_finishes_across_a_save() {
         .first()
         .map(|update| update.snapshot.clone())
         .expect("the lane wrote the guard");
-    let mut json = serde_json::to_value(&saved).expect("a snapshot is JSON");
-    json.as_object_mut()
-        .expect("a snapshot is an object")
-        .remove("lifecycle");
-    let old: ScriptSnapshot = serde_json::from_value(json).expect("an older save still reads");
+    let old = never_spawned(saved);
 
     // Loaded: OnSpawn runs and waits; a save is taken that frame.
-    let mut world = World::new();
-    world.spawn((
-        Transform::identity(),
-        Script::new(MODULE, "Guard"),
-        ScriptState {
-            behavior: "Guard".to_owned(),
-            snapshot: old,
-        },
-    ));
+    let (mut world, mut loaded) = declared(MODULE, WAVER);
+    let guard = world.spawn(Transform::identity());
+    restore(&mut world, guard, "Guard", &old);
     let mut game = Game::new(world);
-    let mut loaded = runtime_of(WAVER);
     let mut host = Host::new();
     let view = game.view();
     let report = run_behaviors(&view, &EventQueue::new(), &mut loaded, &mut host, u64::MAX);
     let mut waved = count(&names(&mut host), "Waved");
-    let resaved = report
-        .state
-        .first()
-        .map(|update| update.snapshot.clone())
-        .expect("the lane wrote the guard");
+    write_back(&mut game.world, &report);
+    let resaved = recorded(&game.world, guard, "Guard").expect("the writeback recorded the guard");
 
     // Loaded again: whatever the save holds, OnSpawn's wave must come.
-    let mut world = World::new();
-    world.spawn((
-        Transform::identity(),
-        Script::new(MODULE, "Guard"),
-        ScriptState {
-            behavior: "Guard".to_owned(),
-            snapshot: resaved.clone(),
-        },
-    ));
+    let (mut world, mut again) = declared(MODULE, WAVER);
+    let guard = world.spawn(Transform::identity());
+    restore(&mut world, guard, "Guard", &resaved);
     let mut game = Game::new(world);
-    let mut again = runtime_of(WAVER);
     let mut host = Host::new();
     for _ in 0..6 {
         let mut view = game.view();

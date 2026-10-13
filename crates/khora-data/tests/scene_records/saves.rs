@@ -18,11 +18,34 @@
 use khora_core::asset::AssetUUID;
 use khora_core::math::Vec3;
 use khora_core::script::{FrozenValue, ScriptSnapshot, ScriptValue};
-use khora_data::ecs::{BodyMotion, Light, Name, Script, ScriptState, Tag, Transform};
+use khora_data::ecs::{BodyMotion, FieldKind, Light, Name, Tag, Transform};
+use khora_data::flow::companion::{companion_row, companion_snapshot};
 use khora_data::scene::{capture_save, compose, prepare_game, SaveRecord};
 
+use super::declared_components::{
+    attach, declare_behavior, field, field_of, fields_of, set_field, with_fields,
+};
 use super::sample::suspended_snapshot;
 use super::*;
+
+/// The sentry's behavior.
+const SENTRY: &str = "Sentry";
+
+/// The sentry's state companion.
+const SENTRY_STATE: &str = "Sentry#state";
+
+/// Gives `entity` the sentry's state companion, recording `snapshot`.
+fn attach_state(world: &mut World, entity: EntityId, snapshot: &ScriptSnapshot) {
+    let row = companion_row(snapshot, true).expect("a snapshot is a companion's fields");
+    attach(world, entity, SENTRY_STATE, ScriptValue::Struct(row));
+}
+
+/// What `entity`'s state companion records, if it holds one.
+fn recorded_state(world: &World, entity: EntityId) -> Option<ScriptSnapshot> {
+    let row = fields_of(world, entity, SENTRY_STATE)?;
+    let (snapshot, _) = companion_snapshot(&row).expect("the companion's fields are a snapshot");
+    Some(snapshot)
+}
 
 /// The scene a game starts from: three authored entities.
 struct Scene {
@@ -31,12 +54,18 @@ struct Scene {
     a: EntityId,
     /// A bystander: placed, named, lit.
     b: EntityId,
-    /// A scripted sentry.
+    /// A sentry, running a behavior.
     c: EntityId,
 }
 
 fn scene() -> Scene {
     let mut world = World::new();
+    declare_behavior(
+        &mut world,
+        SENTRY,
+        "ai/sentry.erg",
+        vec![field("speed", FieldKind::Float, ScriptValue::Float(1.0))],
+    );
     let a = world.spawn((
         Transform::from_translation(Vec3::new(1.0, 2.0, 3.0)),
         Name::new("A"),
@@ -47,11 +76,13 @@ fn scene() -> Scene {
         Name::new("B"),
         Light::point(),
     ));
-    let c = world.spawn((
-        Transform::identity(),
-        Name::new("C"),
-        Script::new("ai/sentry.erg", "Sentry").with_field("speed", ScriptValue::Float(2.0)),
-    ));
+    let c = world.spawn((Transform::identity(), Name::new("C")));
+    attach(
+        &mut world,
+        c,
+        SENTRY,
+        with_fields(&[("speed", ScriptValue::Float(2.0))]),
+    );
     for entity in [a, b, c] {
         world.mark_authored(entity).expect("authored");
     }
@@ -326,26 +357,26 @@ fn an_added_component_is_restored() {
 }
 
 /// **What a save resumes from.** A runtime component declared resumable —
-/// `ScriptState` — travels in the save; one that is not — `BodyMotion` — is
-/// not, and the load does not bring it back.
+/// a behavior's state companion — travels in the save; one that is not —
+/// `BodyMotion` — is not, and the load does not bring it back.
 #[test]
 fn a_resumable_runtime_component_is_kept_and_a_non_resumable_one_is_not() {
     let mut scene = scene();
     let base = capture_world(&scene.world).expect("captures");
     let c = id(&scene.world, scene.c);
 
-    let state = ScriptState {
-        behavior: "Sentry".into(),
-        snapshot: ScriptSnapshot {
-            state: Some("Alert".into()),
-            ..ScriptSnapshot::default()
-        }
-        .with_field("speed", ScriptValue::Float(4.0)),
+    let state = ScriptSnapshot {
+        state: Some("Alert".into()),
+        ..ScriptSnapshot::default()
     };
-    scene
-        .world
-        .add_component(scene.c, state.clone())
-        .expect("the state attaches");
+    attach_state(&mut scene.world, scene.c, &state);
+    set_field(
+        &mut scene.world,
+        scene.c,
+        SENTRY,
+        "speed",
+        ScriptValue::Float(4.0),
+    );
     scene
         .world
         .add_component(
@@ -360,7 +391,7 @@ fn a_resumable_runtime_component_is_kept_and_a_non_resumable_one_is_not() {
     let save = capture_save(&scene.world, AssetUUID::new(), &base).expect("saves");
     let cells = cells_of(&save.changes, c);
     assert!(
-        cells.iter().any(|(name, _)| name == "ScriptState"),
+        cells.iter().any(|(name, _)| name == SENTRY_STATE),
         "{cells:?}"
     );
     assert!(
@@ -370,12 +401,12 @@ fn a_resumable_runtime_component_is_kept_and_a_non_resumable_one_is_not() {
 
     let dst = load(&base, &save);
     let back = twin(&dst, c);
-    assert_eq!(dst.get::<ScriptState>(back), Some(&state));
+    assert_eq!(recorded_state(&dst, back), Some(state));
     assert!(dst.get::<BodyMotion>(back).is_none());
     assert_eq!(
-        dst.get::<Script>(back),
-        scene.world.get::<Script>(scene.c),
-        "the authored script, unchanged"
+        field_of(&dst, back, SENTRY, "speed"),
+        Some(ScriptValue::Float(4.0)),
+        "the behavior's field, as the run tuned it"
     );
 }
 
@@ -399,25 +430,13 @@ fn a_reference_in_resumed_state_is_remapped() {
     if let Some(pending) = snapshot.pending.as_mut() {
         pending.machine.registers.push(FrozenValue::Entity(spawned));
     }
-    scene
-        .world
-        .add_component(
-            scene.c,
-            ScriptState {
-                behavior: "Sentry".into(),
-                snapshot,
-            },
-        )
-        .expect("the state attaches");
+    attach_state(&mut scene.world, scene.c, &snapshot);
 
     let save = capture_save(&scene.world, AssetUUID::new(), &base).expect("saves");
     let dst = load(&base, &save);
 
-    let state = dst
-        .get::<ScriptState>(twin(&dst, c))
-        .expect("the state loaded");
+    let state = recorded_state(&dst, twin(&dst, c)).expect("the state loaded");
     let registers = &state
-        .snapshot
         .pending
         .as_ref()
         .expect("the pending sequence")
@@ -446,22 +465,13 @@ fn a_game_load_is_atomic() {
         .expect("placed")
         .translation
         .x = 5.0;
-    scene
-        .world
-        .add_component(
-            scene.c,
-            ScriptState {
-                behavior: "Sentry".into(),
-                snapshot: ScriptSnapshot::default(),
-            },
-        )
-        .expect("the state attaches");
+    attach_state(&mut scene.world, scene.c, &ScriptSnapshot::default());
     let save = capture_save(&scene.world, AssetUUID::new(), &base).expect("saves");
 
     let mut damaged = save.clone();
-    *value_mut(&mut damaged.changes, c, "ScriptState") = Record::Str("garbage".into());
+    *value_mut(&mut damaged.changes, c, SENTRY_STATE) = Record::Str("garbage".into());
     let mut unknown = save.clone();
-    let page = slot_of(&unknown.changes, c, "ScriptState")
+    let page = slot_of(&unknown.changes, c, SENTRY_STATE)
         .map(|(page, _, _)| page)
         .expect("the state is recorded");
     add_column(&mut unknown.changes, page, "NoSuchComponent", Record::Unit);
@@ -485,6 +495,6 @@ fn a_game_load_is_atomic() {
         assert_eq!(dst.iter_entities().count(), 1, "{what}: entities");
         assert_eq!(dst.persistent_id(resident), Some(resident_id), "{what}");
         assert_eq!(components_of(&dst, resident), before, "{what}");
-        assert!(dst.get::<ScriptState>(resident).is_none(), "{what}");
+        assert!(fields_of(&dst, resident, SENTRY_STATE).is_none(), "{what}");
     }
 }

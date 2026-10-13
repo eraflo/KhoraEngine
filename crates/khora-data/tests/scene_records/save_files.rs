@@ -18,14 +18,17 @@
 use khora_core::asset::AssetUUID;
 use khora_core::math::Vec3;
 use khora_core::scene::{SceneFile, HEADER_MAGIC_BYTES, SAVE_MAGIC_BYTES};
-use khora_core::script::ScriptSnapshot;
-use khora_data::ecs::{Light, Name, Script, ScriptState, Tag, Transform};
+use khora_core::script::ScriptValue;
+use khora_data::ecs::{FieldKind, Light, Name, Tag, Transform};
 use khora_data::scene::{
     capture_save, compose, prepare_game, promote, read_save_file, read_scene_file, write_save_file,
     write_scene_file, SaveRecord, SceneFileReadError,
 };
 
-use super::sample::sample_world;
+use super::declared_components::{
+    assert_same_rows, attach, declare_behavior, field, fields_of, state_of, with_fields,
+};
+use super::sample::{sample_world, GUARD};
 use super::*;
 
 /// The sample world as a scene, then played: one entity moved, one
@@ -75,7 +78,7 @@ fn every_encoding_round_trips_a_save_record() {
         save.changes
             .pages
             .iter()
-            .any(|page| page.components.iter().any(|name| name == "ScriptState")),
+            .any(|page| page.components.contains(&state_of(GUARD))),
         "the sample's observed state is in the save"
     );
 
@@ -117,16 +120,7 @@ fn every_encoding_round_trips_a_save_record() {
             applied.report
         );
         assert_same_world(&played, &dst, name);
-        let map = entity_map(&played, &dst);
-        for (&entity, &loaded) in &map {
-            let expected = played
-                .get::<ScriptState>(entity)
-                .map(|state| remap(&serde_json::to_value(state).expect("JSON"), &map));
-            let got = dst
-                .get::<ScriptState>(loaded)
-                .map(|state| serde_json::to_value(state).expect("JSON"));
-            assert_eq!(got, expected, "{name}: the observed state of {entity:?}");
-        }
+        assert_same_rows(&played, &dst, &[GUARD, &state_of(GUARD)], name);
     }
 }
 
@@ -169,11 +163,14 @@ fn promote_patches_surviving_base_entities_only() {
     ));
     let b = world.spawn((Transform::identity(), Name::new("B"), Light::point()));
     let c = world.spawn((Transform::identity(), Name::new("C")));
-    let d = world.spawn((
-        Transform::identity(),
-        Name::new("D"),
-        Script::new("ai/sentry.erg", "Sentry"),
-    ));
+    declare_behavior(
+        &mut world,
+        "Sentry",
+        "ai/sentry.erg",
+        vec![field("speed", FieldKind::Float, ScriptValue::Float(1.0))],
+    );
+    let d = world.spawn((Transform::identity(), Name::new("D")));
+    attach(&mut world, d, "Sentry", ScriptValue::Unit);
     for entity in [a, b, c, d] {
         world.mark_authored(entity).expect("authored");
     }
@@ -193,15 +190,12 @@ fn promote_patches_surviving_base_entities_only() {
     world.despawn(c);
     let spawned = world.spawn((Transform::identity(), Name::new("Spawned")));
     let spawned_id = world.persistent_id(spawned).expect("an id");
-    world
-        .add_component(
-            d,
-            ScriptState {
-                behavior: "Sentry".into(),
-                snapshot: ScriptSnapshot::default(),
-            },
-        )
-        .expect("observed");
+    attach(
+        &mut world,
+        d,
+        &state_of("Sentry"),
+        with_fields(&[("spawned", ScriptValue::Bool(true))]),
+    );
     let save = capture_save(&world, AssetUUID::new(), &base).expect("saves");
 
     let promoted = promote(&base, &save);
@@ -215,7 +209,7 @@ fn promote_patches_surviving_base_entities_only() {
         promoted
             .pages
             .iter()
-            .all(|page| page.components.iter().all(|name| name != "ScriptState")),
+            .all(|page| !page.components.contains(&state_of("Sentry"))),
         "no observed state"
     );
 
@@ -239,10 +233,10 @@ fn promote_patches_surviving_base_entities_only() {
         Some("C"),
         "C was destroyed in a run, not by an author: it stays"
     );
-    assert!(scene.get::<ScriptState>(at(3)).is_none());
+    assert_eq!(fields_of(&scene, at(3), &state_of("Sentry")), None);
     assert_eq!(
-        scene.get::<Script>(at(3)),
-        Some(&Script::new("ai/sentry.erg", "Sentry"))
+        fields_of(&scene, at(3), "Sentry"),
+        Some(vec![("speed".to_owned(), ScriptValue::Float(1.0))])
     );
     assert_eq!(scene.iter_entities().count(), 4);
 }

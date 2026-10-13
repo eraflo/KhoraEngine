@@ -21,11 +21,12 @@ use khora_core::asset::AssetUUID;
 use khora_core::math::Vec3;
 use khora_core::scene::SceneFile;
 use khora_core::script::ScriptValue;
-use khora_data::ecs::{Name, PrefabInstance, Script, Transform};
+use khora_data::ecs::{Name, PrefabInstance, Transform};
 use khora_data::scene::{
     collapse, expand, instantiate_prefab, instantiate_subtree, read_scene_file, serialize_subtree,
 };
 
+use super::declared_components::field_of;
 use super::prefab_sample::*;
 use super::*;
 
@@ -99,8 +100,8 @@ fn instantiating_a_prefab_links_the_instance() {
     assert_eq!(parent(&world, barrel), Some(root));
     assert_eq!(parent(&world, sight), Some(root));
     assert_eq!(
-        world.get::<Script>(root).expect("scripted").field("aim"),
-        Some(&ScriptValue::Entity(sight)),
+        field_of(&world, root, TURRET, "aim"),
+        Some(ScriptValue::Entity(sight)),
         "a reference inside the prefab points inside the instance"
     );
     for member in [barrel, sight] {

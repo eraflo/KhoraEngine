@@ -14,10 +14,11 @@
 
 //! **An edit to the scene after a save reaches what the game did not
 //! change**, through the whole road: the flow projects the scene, the agent
-//! runs the lane, the writeback records what it observed, the game is saved
-//! against its scene, the author edits a behavior's fields in the scene, and
-//! the game loaded against the edited scene runs with the edit wherever the
-//! game had left the field alone.
+//! runs the lane, the writeback writes what it changed into the behavior's
+//! component, the game is saved against its scene, the author edits the
+//! component's fields in the scene, and the game loaded against the edited
+//! scene runs with the edit wherever the game had left the field alone —
+//! the save's per-field three-way merge.
 
 use std::sync::{Arc, Mutex};
 
@@ -33,17 +34,21 @@ use khora_core::math::Vec3;
 use khora_core::scene::SerializationGoal;
 use khora_core::script::{engine_event_channel, ScriptEvent, ScriptValue};
 use khora_core::{EngineContext, Runtime, WorldAccess};
-use khora_data::ecs::{Name, Script, ScriptState, TickPhase, Transform, World};
+use khora_data::ecs::{Name, TickPhase, Transform, World};
 use khora_data::flow::{Flow, ScriptFlow};
+use khora_io::script::declarations::{apply_declarations, DeclaredComponents};
 use khora_io::serialization::SerializationService;
 use khora_lanes::script_lane::ScriptRuntime;
 use khora_script::arena::Persisted;
-use khora_script::vm::Program;
+
+use super::behavior_session::{attach, compile, declared_in, edit, int, Project};
 
 const MODULE: &str = "ai/guard.erg";
 
 /// A guard with a field the game never changes and one it does.
-const GUARD: &str = r#"
+const GUARD: Project = &[(
+    MODULE,
+    r#"
 behavior Guard {
     int speed = 1;
     int health = 100;
@@ -52,25 +57,22 @@ behavior Guard {
         health -= amount;
     }
 }
-"#;
+"#,
+)];
 
-fn compile(source: &str) -> Program {
-    let lexed = khora_script::lex(source);
-    assert!(lexed.diagnostics.is_empty(), "{:?}", lexed.diagnostics);
-    let parsed = khora_script::parse(lexed.tokens.clone());
-    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
-    let checked = khora_script::check(&parsed.module);
-    assert!(checked.diagnostics.is_empty(), "{:?}", checked.diagnostics);
-    let compiled = khora_script::compile(&parsed.module);
-    assert!(
-        compiled.diagnostics.is_empty(),
-        "{:?}",
-        compiled.diagnostics
+/// Registers the guard's components — `Guard` and its state companion
+/// `Guard#state` — in `world`, as the engine does once its scripts compile.
+fn declare(world: &mut World) {
+    let report = apply_declarations(
+        world,
+        &mut DeclaredComponents::default(),
+        &[declared_in(MODULE, &compile(GUARD, MODULE))],
     );
-    compiled.program
+    assert!(report.refused.is_empty(), "{report:?}");
 }
 
-/// One running session, wired the way the engine wires one.
+/// One running session: its world, the flow projecting it, the agent and the
+/// scripting world it drives, and the engine's event queue.
 struct Session {
     world: World,
     flow: ScriptFlow,
@@ -81,9 +83,12 @@ struct Session {
 }
 
 impl Session {
-    fn over(world: World) -> Self {
+    /// A session over `world`, wired the way the engine wires one, with the
+    /// guard's module compiled and its components registered.
+    fn over(mut world: World) -> Self {
+        declare(&mut world);
         let mut scripts = ScriptRuntime::new();
-        scripts.add_program(MODULE, compile(GUARD));
+        scripts.add_program(MODULE, compile(GUARD, MODULE));
         let scripts = Arc::new(Mutex::new(scripts));
         let events = engine_event_channel();
 
@@ -92,6 +97,8 @@ impl Session {
         runtime.resources.insert(events.clone());
 
         let mut agent = ScriptAgent::default();
+        // The DCC does this every frame; without it there is no fuel and
+        // every behavior is deferred.
         agent.apply_budget(ResourceBudget {
             strategy_id: StrategyId::Balanced,
             time_limit: std::time::Duration::from_millis(50),
@@ -109,8 +116,8 @@ impl Session {
         }
     }
 
-    /// One frame: project, run the agent, then the frame-boundary systems
-    /// that write back what it observed.
+    /// One frame of `delta` seconds: project, run the agent, then the
+    /// frame-boundary systems that write back what it observed.
     fn frame(&mut self, delta: f32) {
         let selection = self.flow.select(&self.world, &self.runtime);
         let mut view = self.flow.project(&self.world, &selection, &self.runtime);
@@ -157,18 +164,25 @@ impl Session {
 }
 
 #[test]
-fn a_scene_edit_after_a_save_reaches_the_field_the_game_left_alone() {
+fn a_scene_edit_to_guard_speed_after_a_save_reaches_the_untouched_field() {
     let service = SerializationService::new();
 
     // The scene, as authored: speed 3, health 100.
     let mut world = World::new();
+    declare(&mut world);
     let guard = world.spawn((
         Transform::from_translation(Vec3::new(2.0, 0.0, 0.0)),
         Name::new("Guard"),
-        Script::new(MODULE, "Guard")
-            .with_field("speed", ScriptValue::Int(3))
-            .with_field("health", ScriptValue::Int(100)),
     ));
+    attach(
+        &mut world,
+        guard,
+        "Guard",
+        &[
+            ("speed", ScriptValue::Int(3)),
+            ("health", ScriptValue::Int(100)),
+        ],
+    );
     let guard_id = world.mark_authored(guard).expect("authored");
     let base_file = service
         .save_world(&world, SerializationGoal::EditorInterchange)
@@ -189,14 +203,13 @@ fn a_scene_edit_after_a_save_reaches_the_field_the_game_left_alone() {
         (Some(3), Some(40)),
         "the premise: hurt, at the authored speed"
     );
-    let observed = session
-        .world
-        .get::<ScriptState>(guard)
-        .expect("the writeback recorded what the lane observed");
     assert_eq!(
-        observed.snapshot.field("speed"),
-        Some(&ScriptValue::Int(3)),
-        "the premise: the observed state holds every field, the untouched one included"
+        (
+            int(&session.world, guard, "Guard", "speed"),
+            int(&session.world, guard, "Guard", "health")
+        ),
+        (Some(3), Some(40)),
+        "the premise: the writeback wrote the hurt into `Guard`, the speed left as authored"
     );
 
     // Save the game, then quit.
@@ -218,12 +231,20 @@ fn a_scene_edit_after_a_save_reaches_the_field_the_game_left_alone() {
     let edited_guard = editing
         .entity_with_id(guard_id)
         .expect("the guard is in the scene");
-    let script = editing
-        .get_mut::<Script>(edited_guard)
-        .expect("the guard has its script");
-    *script = Script::new(MODULE, "Guard")
-        .with_field("speed", ScriptValue::Int(5))
-        .with_field("health", ScriptValue::Int(120));
+    edit(
+        &mut editing,
+        edited_guard,
+        "Guard",
+        "speed",
+        ScriptValue::Int(5),
+    );
+    edit(
+        &mut editing,
+        edited_guard,
+        "Guard",
+        "health",
+        ScriptValue::Int(120),
+    );
     let edited_base = service
         .save_world(&editing, SerializationGoal::EditorInterchange)
         .expect("the edited scene saves");
@@ -237,11 +258,12 @@ fn a_scene_edit_after_a_save_reaches_the_field_the_game_left_alone() {
         .entity_with_id(guard_id)
         .expect("the guard is back, under its identity");
     assert_eq!(
-        loaded
-            .get::<Script>(guard_back)
-            .and_then(|s| s.field("speed")),
-        Some(&ScriptValue::Int(5)),
-        "the premise: the scene's edit reached the loaded `Script`"
+        (
+            int(&loaded, guard_back, "Guard", "speed"),
+            int(&loaded, guard_back, "Guard", "health")
+        ),
+        (Some(5), Some(40)),
+        "the premise: the scene's edit reached the loaded `Guard.speed`; `health` is the save's"
     );
 
     let mut session = Session::over(loaded);

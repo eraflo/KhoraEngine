@@ -15,9 +15,12 @@
 //! Entity references inside components, across a save.
 
 use khora_core::script::ScriptValue;
-use khora_data::ecs::{Children, Name, Parent, Script, Transform, World};
+use khora_data::ecs::{Children, FieldKind, Name, Parent, Transform, World};
 use khora_data::scene::record::ReportKind;
 
+use super::declared_components::{
+    attach, declare_behavior, entity_field, field, field_of, with_fields, NO_ONE,
+};
 use super::*;
 
 /// The entity `world` knows by the identity `src_entity` had in `src`.
@@ -29,17 +32,28 @@ fn twin(src: &World, dst: &World, src_entity: EntityId) -> EntityId {
         .unwrap_or_else(|| panic!("nothing in the loaded world is {id:?}"))
 }
 
-/// The entity a script field holds.
-fn field_entity(script: &Script, field: &str) -> EntityId {
-    match script.field(field) {
-        Some(ScriptValue::Entity(entity)) => *entity,
-        other => panic!("field `{field}` holds {other:?}, not an entity"),
-    }
+/// Declares the behavior `name`, its fields entities but `crowd`, a list.
+fn declare_referring(world: &mut World, name: &str, entities: &[&str]) {
+    let mut fields: Vec<_> = entities
+        .iter()
+        .map(|entity| field(entity, FieldKind::Entity, ScriptValue::Entity(NO_ONE)))
+        .collect();
+    fields.push(field(
+        "crowd",
+        FieldKind::Value,
+        ScriptValue::Array(Vec::new()),
+    ));
+    declare_behavior(
+        world,
+        name,
+        &format!("ai/{}.erg", name.to_lowercase()),
+        fields,
+    );
 }
 
 /// A world where one entity refers to three others every way a scene
-/// component can: a parent, a script field, and a list of entities in a script
-/// field. (An entity in a register of a frozen sequence is observed state,
+/// component can: a parent, a behavior's entity field, and a list of
+/// entities in a behavior's field. (An entity in a register of a frozen sequence is observed state,
 /// which a scene never holds; a game save carries it — see `saves`.)
 fn referring_world() -> (World, [EntityId; 4]) {
     let mut world = World::new();
@@ -51,27 +65,26 @@ fn referring_world() -> (World, [EntityId; 4]) {
     let a = world.spawn((Transform::identity(), Name::new("A")));
     let b = world.spawn((Transform::identity(), Name::new("B")));
     let c = world.spawn((Transform::identity(), Name::new("C")));
-    let holder = world.spawn((
-        Transform::identity(),
-        Name::new("Holder"),
-        Script {
-            module: "ai/holder.erg".into(),
-            behavior: "Holder".into(),
-            fields: vec![
-                ("target".into(), ScriptValue::Entity(b)),
-                (
-                    "crowd".into(),
-                    ScriptValue::Array(vec![ScriptValue::Entity(c), ScriptValue::Entity(a)]),
-                ),
-            ],
-        },
-    ));
+    declare_referring(&mut world, "Holder", &["target"]);
+    let holder = world.spawn((Transform::identity(), Name::new("Holder")));
+    attach(
+        &mut world,
+        holder,
+        "Holder",
+        with_fields(&[
+            ("target", ScriptValue::Entity(b)),
+            (
+                "crowd",
+                ScriptValue::Array(vec![ScriptValue::Entity(c), ScriptValue::Entity(a)]),
+            ),
+        ]),
+    );
     world.set_parent(holder, Some(a));
     (world, [a, b, c, holder])
 }
 
 /// A reference is to an entity, not to the slot it happened to occupy: after a
-/// load, every reference — `Parent`, a script field, a list of entities —
+/// load, every reference — `Parent`, a behavior's field, a list of entities —
 /// names the reloaded entity it named before.
 #[test]
 fn a_reference_inside_a_component_is_remapped() {
@@ -85,15 +98,14 @@ fn a_reference_inside_a_component_is_remapped() {
         let parent = dst.get::<Parent>(holder_back).expect("the parent survives");
         assert_eq!(parent.0, twin(&src, &dst, a), "{name}: Parent");
 
-        let script = dst.get::<Script>(holder_back).expect("the script survives");
         assert_eq!(
-            field_entity(script, "target"),
+            entity_field(&dst, holder_back, "Holder", "target"),
             twin(&src, &dst, b),
-            "{name}: a script field"
+            "{name}: a behavior's field"
         );
         assert_eq!(
-            script.field("crowd"),
-            Some(&ScriptValue::Array(vec![
+            field_of(&dst, holder_back, "Holder", "crowd"),
+            Some(ScriptValue::Array(vec![
                 ScriptValue::Entity(twin(&src, &dst, c)),
                 ScriptValue::Entity(twin(&src, &dst, a)),
             ])),
@@ -163,25 +175,24 @@ fn hierarchy_survives_every_encoding() {
     }
 }
 
-/// A record of one holder whose script fields name two entities the record
+/// A record of one holder whose behavior's fields name two entities the record
 /// does not hold, and the holder's identity.
 fn dangling_record() -> (PersistentId, SceneRecord) {
     let mut src = World::new();
+    declare_referring(&mut src, "Holder", &["first", "second", "first_again"]);
     let gone_one = src.spawn((Transform::identity(), Name::new("GoneOne")));
     let gone_two = src.spawn((Transform::identity(), Name::new("GoneTwo")));
-    let holder = src.spawn((
-        Transform::identity(),
-        Name::new("Holder"),
-        Script {
-            module: "ai/holder.erg".into(),
-            behavior: "Holder".into(),
-            fields: vec![
-                ("first".into(), ScriptValue::Entity(gone_one)),
-                ("second".into(), ScriptValue::Entity(gone_two)),
-                ("first_again".into(), ScriptValue::Entity(gone_one)),
-            ],
-        },
-    ));
+    let holder = src.spawn((Transform::identity(), Name::new("Holder")));
+    attach(
+        &mut src,
+        holder,
+        "Holder",
+        with_fields(&[
+            ("first", ScriptValue::Entity(gone_one)),
+            ("second", ScriptValue::Entity(gone_two)),
+            ("first_again", ScriptValue::Entity(gone_one)),
+        ]),
+    );
     let holder_id = src.persistent_id(holder).expect("id");
     let gone_ids = [gone_one, gone_two].map(|e| src.persistent_id(e).expect("id"));
 
@@ -204,10 +215,11 @@ fn dangling_fields(world: &World, applied: &Applied, name: &str) -> [EntityId; 3
         .entities
         .first()
         .unwrap_or_else(|| panic!("{name}: the holder loaded"));
-    let script = world
-        .get::<Script>(holder)
-        .unwrap_or_else(|| panic!("{name}: its script loaded"));
-    ["first", "second", "first_again"].map(|field| field_entity(script, field))
+    assert!(
+        field_of(world, holder, "Holder", "first").is_some(),
+        "{name}: its behavior loaded"
+    );
+    ["first", "second", "first_again"].map(|field| entity_field(world, holder, "Holder", field))
 }
 
 /// A reference to an entity the save does not hold loads as the world's one
@@ -252,7 +264,7 @@ fn a_dangling_reference_names_the_one_nowhere_entity() {
             assert_eq!(entry.entity, Some(holder_id), "{name}: {entry:?}");
             assert_eq!(
                 entry.component.as_deref(),
-                Some("Script"),
+                Some("Holder"),
                 "{name}: {entry:?}"
             );
         }
@@ -283,18 +295,17 @@ fn a_dangling_reference_names_the_one_nowhere_entity() {
 /// different records into one world.
 #[test]
 fn every_unbindable_reference_in_a_world_names_the_same_entity() {
-    // A subtree whose root's script names an entity outside it.
+    // A subtree whose root's behavior names an entity outside it.
     let mut src = World::new();
+    declare_referring(&mut src, "Root", &["enemy"]);
     let outsider = src.spawn((Transform::identity(), Name::new("Outsider")));
-    let root = src.spawn((
-        Transform::identity(),
-        Name::new("Root"),
-        Script {
-            module: "ai/root.erg".into(),
-            behavior: "Root".into(),
-            fields: vec![("enemy".into(), ScriptValue::Entity(outsider))],
-        },
-    ));
+    let root = src.spawn((Transform::identity(), Name::new("Root")));
+    attach(
+        &mut src,
+        root,
+        "Root",
+        with_fields(&[("enemy", ScriptValue::Entity(outsider))]),
+    );
     let subtree = khora_data::scene::capture_subtree(&src, root).expect("captures");
     let (_, dangling) = dangling_record();
 
@@ -307,8 +318,7 @@ fn every_unbindable_reference_in_a_world_names_the_same_entity() {
             let applied = apply(&mut dst, &subtree, Identity::Fresh)
                 .unwrap_or_else(|e| panic!("{name}: the subtree loads: {e}"));
             let &(_, root_back) = applied.entities.first().expect("the root loaded");
-            let script = dst.get::<Script>(root_back).expect("its script loaded");
-            named.push(field_entity(script, "enemy"));
+            named.push(entity_field(&dst, root_back, "Root", "enemy"));
             let applied = apply(&mut dst, &dangling, Identity::Keep)
                 .unwrap_or_else(|e| panic!("{name}: the dangling record loads: {e}"));
             named.extend(dangling_fields(&dst, &applied, name));

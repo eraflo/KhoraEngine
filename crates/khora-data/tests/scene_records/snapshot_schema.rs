@@ -683,27 +683,34 @@ fn remapped_debug(value: &impl std::fmt::Debug, map: &HashMap<EntityId, EntityId
 }
 
 /// A game save taken while a schedule's body is suspended keeps every
-/// register, every frame and what finishing it owes — through every encoding.
-/// (A scene, and the Play snapshot, hold no observed state at all.)
+/// register — non-finite numbers included — every frame and what finishing
+/// it owes, in the behavior's state companion, through every encoding. (A
+/// scene, and the Play snapshot, hold no observed state at all.)
 #[test]
 fn a_pending_sequence_with_every_register_kind_survives_every_save_encoding() {
-    use khora_data::ecs::{Script, ScriptState, Transform};
+    use khora_core::script::ScriptValue;
+    use khora_data::ecs::Transform;
+    use khora_data::flow::companion::{companion_row, companion_snapshot};
     use khora_data::scene::{capture_save, compose, prepare_game, read_save_file, write_save_file};
+
+    use super::declared_components::{attach, declare_behavior, fields_of, state_of};
     let mut src = World::new();
+    declare_behavior(&mut src, "Guard", "ai/guard.erg", Vec::new());
     let target = src.spawn(Transform::identity());
     let holder = src.spawn(Transform::identity());
-    src.add_component(holder, Script::new("ai/guard.erg", "Guard"))
-        .expect("a script attaches");
+    attach(&mut src, holder, "Guard", ScriptValue::Unit);
     for entity in [target, holder] {
         src.mark_authored(entity).expect("authored");
     }
     let base = capture_world(&src).expect("the base scene captures");
-    let state = ScriptState {
-        behavior: "Guard".into(),
-        snapshot: every_register_snapshot(target),
-    };
-    src.add_component(holder, state.clone())
-        .expect("the observed state attaches");
+    let state = every_register_snapshot(target);
+    let row = companion_row(&state, true).expect("a snapshot is a companion's fields");
+    attach(
+        &mut src,
+        holder,
+        &state_of("Guard"),
+        ScriptValue::Struct(row),
+    );
 
     let save = capture_save(&src, AssetUUID::new(), &base).expect("the save captures");
     let mut failures = Vec::new();
@@ -733,9 +740,12 @@ fn a_pending_sequence_with_every_register_kind_survives_every_save_encoding() {
             }
         }
         let map = entity_map(&src, &dst);
-        let loaded = dst
-            .get::<ScriptState>(map[&holder])
-            .map(|s| format!("{s:?}"));
+        let loaded = fields_of(&dst, map[&holder], &state_of("Guard")).map(|row| {
+            match companion_snapshot(&row) {
+                Ok((snapshot, _)) => format!("{snapshot:?}"),
+                Err(e) => format!("not a snapshot: {e}"),
+            }
+        });
         let expected = remapped_debug(&state, &map);
         if loaded.as_deref() != Some(expected.as_str()) {
             failures.push(format!("{name}: loaded {loaded:?}"));

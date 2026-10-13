@@ -208,21 +208,138 @@ fn play_stop_restores_state_after_multi_domain_despawn() {
     );
 }
 
+/// What separates a behavior's name from its state companion's.
+const STATE_SUFFIX: &str = "#state";
+
+/// The behavior `Guard` with `fields`, and its state companion
+/// `Guard#state`, registered in `world` as the scripts' registration
+/// registers a behavior's two components: the behavior's authored, the
+/// companion runtime and resumable, each with its role and its module.
+fn declare_guard(
+    world: &mut khora_sdk::khora_data::ecs::World,
+    fields: Vec<khora_sdk::khora_data::ecs::PackedField>,
+) {
+    use khora_sdk::khora_data::ecs::{
+        ComponentProvenance, FieldKind, PackedField, PackedLayout, RuntimeComponentDecl,
+        ScriptRole, SemanticDomain,
+    };
+
+    let field = |name: &str, kind: FieldKind, default: ScriptValue| PackedField {
+        name: name.to_owned(),
+        kind,
+        default,
+    };
+    let companion = vec![
+        field("state", FieldKind::Value, ScriptValue::Null),
+        field(
+            "state_fields",
+            FieldKind::Value,
+            ScriptValue::Struct(Vec::new()),
+        ),
+        field("timers", FieldKind::Value, ScriptValue::Struct(Vec::new())),
+        field("pending", FieldKind::Value, ScriptValue::Null),
+        field("initialised", FieldKind::Bool, ScriptValue::Bool(false)),
+        field("spawned", FieldKind::Bool, ScriptValue::Bool(false)),
+        field("fault", FieldKind::Value, ScriptValue::Null),
+        field(
+            "resume_failed",
+            FieldKind::Value,
+            ScriptValue::Array(Vec::new()),
+        ),
+    ];
+    let state = format!("Guard{STATE_SUFFIX}");
+    for (name, fields, resumable, role) in [
+        (
+            "Guard".to_owned(),
+            fields,
+            false,
+            ScriptRole::Behavior {
+                module: "ai/guard.erg".to_owned(),
+            },
+        ),
+        (
+            state,
+            companion,
+            true,
+            ScriptRole::BehaviorState {
+                behavior: "Guard".to_owned(),
+            },
+        ),
+    ] {
+        let key = world
+            .register_runtime_component(RuntimeComponentDecl {
+                name: name.clone(),
+                domain: SemanticDomain::Script,
+                provenance: if resumable {
+                    ComponentProvenance::Runtime
+                } else {
+                    ComponentProvenance::Authored
+                },
+                resumable,
+                layout: PackedLayout::new(fields).expect("a valid layout"),
+            })
+            .unwrap_or_else(|e| panic!("`{name}` registers: {e}"));
+        world.set_script_role(key, Some(role));
+        world.set_declared_by(key, Some("ai/guard.erg".to_owned()));
+    }
+}
+
+/// The key of the component named `name` in `world`.
+fn key_of(world: &GameWorld, name: &str) -> khora_sdk::khora_data::ecs::ComponentKey {
+    world
+        .inner_world()
+        .components()
+        .key_named(name)
+        .unwrap_or_else(|| panic!("`{name}` is registered"))
+}
+
+/// Field `field` of `entity`'s declared component `name`, as the world holds it.
+fn declared_field(
+    world: &GameWorld,
+    entity: EntityId,
+    name: &str,
+    field: &str,
+) -> Option<ScriptValue> {
+    world
+        .inner_world()
+        .declared_row(entity, key_of(world, name))?
+        .into_iter()
+        .find_map(|(known, value)| (known == field).then_some(value))
+}
+
+/// Whether any entity of `world` holds the component named `name`.
+fn anyone_holds(world: &GameWorld, name: &str) -> bool {
+    !world.inner_world().holders(key_of(world, name)).is_empty()
+}
+
 /// Stop rebuilds the scene from the play snapshot, so every entity comes
-/// back as a new `EntityId`. A script that pointed at another entity in
+/// back as a new `EntityId`. A behavior that pointed at another entity in
 /// an authored field must point at that entity's restored self after Stop,
 /// found by its persistent identity, not at the slot it occupied before
-/// play. What the behavior was observed doing during play — its
-/// `ScriptState`, even one holding a reference — is not authored, and
-/// does not survive Stop.
+/// play. What the behavior was observed doing during play — its state
+/// companion `Guard#state`, even one holding a reference — is not authored,
+/// and does not survive Stop.
 #[test]
 fn stop_restores_script_targets() {
     use khora_sdk::khora_core::script::{
         FrozenFrame, FrozenMachine, FrozenValue, PendingBody, PendingSequence, ScriptSnapshot,
     };
-    use khora_sdk::khora_data::ecs::ScriptState;
+    use khora_sdk::khora_data::ecs::{FieldKind, PackedField};
+    use khora_sdk::khora_data::flow::companion::companion_row;
 
     let mut world = GameWorld::new();
+    declare_guard(
+        world.inner_world_mut(),
+        vec![PackedField {
+            name: "target".to_owned(),
+            kind: FieldKind::Entity,
+            // No one: the placeholder of an entity field.
+            default: ScriptValue::Entity(EntityId {
+                index: u32::MAX,
+                generation: u32::MAX,
+            }),
+        }],
+    );
     let target = world.spawn((
         Transform::from_translation(Vec3::new(5.0, 0.0, 0.0)),
         GlobalTransform::identity(),
@@ -232,34 +349,42 @@ fn stop_restores_script_targets() {
         Transform::identity(),
         GlobalTransform::identity(),
         Name::new("Guard"),
-        Script::new("ai/guard.erg", "Guard").with_field("target", ScriptValue::Entity(target)),
-        ScriptState {
-            behavior: "Guard".into(),
-            snapshot: ScriptSnapshot {
-                pending: Some(PendingSequence {
-                    fingerprint: 7,
-                    remaining: 0.5,
-                    machine: FrozenMachine {
-                        body: PendingBody::Update,
-                        registers: vec![FrozenValue::Entity(target)],
-                        frames: vec![FrozenFrame {
-                            function: "on_update".into(),
-                            base: 0,
-                            return_pc: 0,
-                            result: 0,
-                            site: String::new(),
-                            fingerprint: 0,
-                            locals: Vec::new(),
-                            temporaries: Vec::new(),
-                        }],
-                        program_counter: 3,
-                        arguments: Vec::new(),
-                    },
-                }),
-                ..ScriptSnapshot::default()
-            },
-        },
     ));
+    world
+        .add_declared_component(guard, "Guard", &[("target", ScriptValue::Entity(target))])
+        .expect("the guard's behavior attaches");
+    let observed = ScriptSnapshot {
+        pending: Some(PendingSequence {
+            fingerprint: 7,
+            remaining: 0.5,
+            machine: FrozenMachine {
+                body: PendingBody::Update,
+                registers: vec![FrozenValue::Entity(target)],
+                frames: vec![FrozenFrame {
+                    function: "on_update".into(),
+                    base: 0,
+                    return_pc: 0,
+                    result: 0,
+                    site: String::new(),
+                    fingerprint: 0,
+                    locals: Vec::new(),
+                    temporaries: Vec::new(),
+                }],
+                program_counter: 3,
+                arguments: Vec::new(),
+            },
+        }),
+        ..ScriptSnapshot::default()
+    };
+    let state = key_of(&world, &format!("Guard{STATE_SUFFIX}"));
+    world
+        .inner_world_mut()
+        .add_runtime_component(
+            guard,
+            state,
+            &ScriptValue::Struct(companion_row(&observed, true).expect("a companion row")),
+        )
+        .expect("the observed state attaches");
     // The editor marks authored every entity it creates.
     let target_id = world
         .inner_world_mut()
@@ -307,41 +432,46 @@ fn stop_restores_script_targets() {
         "the target keeps its identity across play"
     );
 
-    let script = world
-        .get_component::<Script>(guard_back)
-        .expect("the guard keeps its script");
     assert_eq!(
-        script.field("target"),
-        Some(&ScriptValue::Entity(target_back)),
+        declared_field(&world, guard_back, "Guard", "target"),
+        Some(ScriptValue::Entity(target_back)),
         "the authored field points at the restored target"
     );
     assert!(
-        world
-            .iter_entities()
-            .all(|e| world.get_component::<ScriptState>(e).is_none()),
+        !anyone_holds(&world, &format!("Guard{STATE_SUFFIX}")),
         "no observed state survives Stop"
     );
 }
 
 /// **The Play snapshot is the authored scene.** After the lane's state is
 /// written back during play, the snapshot Stop restores from holds the
-/// `Script` exactly as authored and no observed state.
+/// behavior's component exactly as authored and no observed state.
 #[test]
 fn the_play_snapshot_never_holds_observed_state() {
     use khora_sdk::khora_core::lane::OutputDeck;
     use khora_sdk::khora_core::script::{ScriptSnapshot, ScriptStateUpdate, ScriptStateWriteback};
-    use khora_sdk::khora_data::ecs::{DataSystemRegistration, ScriptState};
+    use khora_sdk::khora_data::ecs::{DataSystemRegistration, FieldKind, PackedField};
 
     let mut world = GameWorld::new();
-    let authored = Script::new("ai/guard.erg", "Guard").with_field("health", ScriptValue::Int(100));
-    let guard = world.spawn((Transform::identity(), Name::new("Guard"), authored.clone()));
+    declare_guard(
+        world.inner_world_mut(),
+        vec![PackedField {
+            name: "health".to_owned(),
+            kind: FieldKind::Int,
+            default: ScriptValue::Int(0),
+        }],
+    );
+    let guard = world.spawn((Transform::identity(), Name::new("Guard")));
+    world
+        .add_declared_component(guard, "Guard", &[("health", ScriptValue::Int(100))])
+        .expect("the guard's behavior attaches");
     world
         .inner_world_mut()
         .mark_authored(guard)
         .expect("authored");
 
-    // A frame of play: the lane observed the guard at forty health, and
-    // the frame boundary wrote that back.
+    // A frame of play: the lane moved the guard to its `Alert` state without
+    // touching a field, and the frame boundary wrote that back.
     let writeback = khora_sdk::inventory::iter::<DataSystemRegistration>
         .into_iter()
         .find(|system| system.name == "script_state_writeback")
@@ -351,16 +481,21 @@ fn the_play_snapshot_never_holds_observed_state() {
         .extend([ScriptStateUpdate {
             entity: guard,
             behavior: "Guard".into(),
-            snapshot: ScriptSnapshot::default().with_field("health", ScriptValue::Int(40)),
-            changed: None,
+            snapshot: ScriptSnapshot {
+                state: Some("Alert".to_owned()),
+                ..ScriptSnapshot::default()
+            }
+            .with_field("health", ScriptValue::Int(100)),
+            changed: Some(Vec::new()),
         }]);
     (writeback.run)(
         world.inner_world_mut(),
         &khora_sdk::khora_core::Runtime::default(),
         &mut deck,
     );
-    assert!(
-        world.get_component::<ScriptState>(guard).is_some(),
+    assert_eq!(
+        declared_field(&world, guard, &format!("Guard{STATE_SUFFIX}"), "state"),
+        Some(ScriptValue::Str("Alert".to_owned())),
         "the observed state is in the world"
     );
 
@@ -376,8 +511,19 @@ fn the_play_snapshot_never_holds_observed_state() {
                 .is_some_and(|n| n.as_str() == "Guard")
         })
         .expect("the guard is in the snapshot");
-    assert_eq!(restored.get_component::<Script>(back), Some(&authored));
-    assert!(restored.get_component::<ScriptState>(back).is_none());
+    assert_eq!(
+        declared_field(&restored, back, "Guard", "health"),
+        Some(ScriptValue::Int(100)),
+        "the behavior's component, as authored"
+    );
+    assert!(
+        restored
+            .inner_world()
+            .components()
+            .key_named(&format!("Guard{STATE_SUFFIX}"))
+            .is_none_or(|state| restored.inner_world().row(back, state).is_none()),
+        "no observed state"
+    );
 }
 
 /// The scene the editor saves by default is the one the runtime loads when

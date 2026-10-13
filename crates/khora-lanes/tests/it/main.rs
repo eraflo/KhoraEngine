@@ -20,12 +20,13 @@
 
 mod array_fields;
 mod authored_base;
+mod behavior_cursors;
 mod behavior_fuel_shares;
+mod declared_behaviors;
 mod durable_text;
 mod frozen_save;
 mod held_text;
 mod inventory_fields;
-mod legacy_behavior_cursors;
 mod lifecycle_restore;
 mod nested_array_saves;
 mod null_fields;

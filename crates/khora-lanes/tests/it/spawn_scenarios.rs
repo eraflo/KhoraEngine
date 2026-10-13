@@ -22,20 +22,24 @@
 //! `OnSpawn` has started, and the lane reads that record — an entity that
 //! starts fresh announces itself exactly once, and one restored from a save
 //! never again.
+//!
+//! The behaviors are components: an entity holding `Greeter` runs `Greeter`,
+//! and the record is its state companion `Greeter#state`.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, PendingBody, ScriptSnapshot, ScriptValue};
 use khora_core::Runtime;
-use khora_data::ecs::{Script, ScriptState, Transform, World};
+use khora_data::ecs::{Transform, World};
 use khora_data::flow::{
     Flow, ScriptArrival, ScriptFlow, ScriptInstance, ScriptProgram, ScriptView,
 };
 use khora_lanes::script_lane::{run_behaviors, ScriptRunReport, ScriptRuntime};
 use khora_script::arena::Persisted;
+use khora_script::ergon_fn;
 use khora_script::native::Host;
-use khora_script::vm::{Program, Value};
-use khora_script::{check, compile, ergon_fn, lex, parse};
+use khora_script::vm::Value;
 
+use super::declared_behaviors::{attach, declared, program, restore, write_back};
 use super::saves::every_encoding;
 
 /// A native costing far more than the small slices below, so a body can be cut
@@ -47,25 +51,10 @@ fn spawn_record_wall() -> f32 {
 
 const MODULE: &str = "spawn_record.erg";
 
-fn build(source: &str) -> Program {
-    let lexed = lex(source);
-    assert!(lexed.diagnostics.is_empty(), "{:?}", lexed.diagnostics);
-    let parsed = parse(lexed.tokens);
-    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
-    let checked = check(&parsed.module);
-    assert!(checked.diagnostics.is_empty(), "{:?}", checked.diagnostics);
-    let compiled = compile(&parsed.module);
-    assert!(
-        compiled.diagnostics.is_empty(),
-        "{:?}",
-        compiled.diagnostics
-    );
-    compiled.program
-}
-
+/// A script runtime holding `source`'s program, for a hand-built view.
 fn runtime_of(source: &str) -> ScriptRuntime {
     let mut runtime = ScriptRuntime::new();
-    runtime.add_program(MODULE, build(source));
+    runtime.add_program(MODULE, program(MODULE, source));
     runtime
 }
 
@@ -146,7 +135,8 @@ fn recorded(report: &ScriptRunReport) -> ScriptSnapshot {
 }
 
 /// A world holding scripted entities, projected through the real flow — the
-/// road every arrival takes from the world to the lane.
+/// road every arrival takes from the world to the lane — and written back
+/// through the engine's writeback, the road back.
 struct Scene {
     world: World,
     flow: ScriptFlow,
@@ -154,14 +144,42 @@ struct Scene {
 }
 
 impl Scene {
-    fn holding(bundle: impl khora_data::ecs::ComponentBundle) -> Self {
-        let mut world = World::new();
-        let entity = world.spawn(bundle);
-        Self {
+    /// A world declaring `source`'s behaviors, with one entity: `place` gives
+    /// it its components. The script runtime holding `source`'s program comes
+    /// with it.
+    fn of(source: &str, place: impl FnOnce(&mut World, EntityId)) -> (Self, ScriptRuntime) {
+        let (mut world, runtime) = declared(MODULE, source);
+        let entity = world.spawn(Transform::identity());
+        place(&mut world, entity);
+        let scene = Self {
             world,
             flow: ScriptFlow::default(),
             entity,
-        }
+        };
+        (scene, runtime)
+    }
+
+    /// One entity placed in a scene, holding `behavior` with the designer's
+    /// `fields`.
+    fn placed(
+        source: &str,
+        behavior: &str,
+        fields: &[(&str, ScriptValue)],
+    ) -> (Self, ScriptRuntime) {
+        let fields: Vec<(String, ScriptValue)> = fields
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), value.clone()))
+            .collect();
+        Self::of(source, |world, entity| {
+            attach(world, entity, behavior, &fields)
+        })
+    }
+
+    /// Spawns another entity holding `behavior` at its defaults.
+    fn spawn(&mut self, behavior: &str) -> EntityId {
+        let entity = self.world.spawn(Transform::identity());
+        attach(&mut self.world, entity, behavior, &[]);
+        entity
     }
 
     /// This frame's view, as the flow projects it.
@@ -169,6 +187,10 @@ impl Scene {
         let runtime = Runtime::default();
         let selection = self.flow.select(&self.world, &runtime);
         let mut view = self.flow.project(&self.world, &selection, &runtime);
+        assert!(
+            view.instances.iter().all(|instance| instance.row.is_some()),
+            "every instance is attached by its behavior's component"
+        );
         view.delta_seconds = delta;
         view
     }
@@ -183,23 +205,20 @@ impl Scene {
         let mut raised = Vec::new();
         for _ in 0..frames {
             let view = self.view(0.0);
-            raised.extend(frame(runtime, host, &view, u64::MAX).1);
+            let (report, events) = frame(runtime, host, &view, u64::MAX);
+            write_back(&mut self.world, &report);
+            raised.extend(events);
         }
         raised
     }
 }
 
-/// An entity restored from a game save: its `Script`, and the `ScriptState`
-/// the lane wrote back for `behavior`.
-fn restored(behavior: &str, observed: ScriptSnapshot) -> Scene {
-    Scene::holding((
-        Transform::identity(),
-        Script::new(MODULE, behavior),
-        ScriptState {
-            behavior: behavior.to_owned(),
-            snapshot: observed,
-        },
-    ))
+/// An entity restored from a game save: its `behavior` with the fields it
+/// had, and the state companion the writeback recorded as `observed`.
+fn restored(source: &str, behavior: &str, observed: &ScriptSnapshot) -> (Scene, ScriptRuntime) {
+    Scene::of(source, |world, entity| {
+        restore(world, entity, behavior, observed)
+    })
 }
 
 // ─── Behaviors ──────────────────────────────────────────────────────────────
@@ -338,11 +357,8 @@ fn a_scene_authored_entity_runs_on_spawn_once_and_keeps_the_designers_values() {
 /// announces itself exactly once.
 #[test]
 fn an_entity_placed_in_a_scene_runs_on_spawn_once_through_the_flow() {
-    let mut scene = Scene::holding((
-        Transform::identity(),
-        Script::new(MODULE, "Greeter").with_field("health", ScriptValue::Int(40)),
-    ));
-    let mut runtime = runtime_of(GREETER);
+    let (mut scene, mut runtime) =
+        Scene::placed(GREETER, "Greeter", &[("health", ScriptValue::Int(40))]);
     let mut host = Host::new();
 
     let raised = scene.run(&mut runtime, &mut host, 3);
@@ -360,8 +376,7 @@ fn an_entity_placed_in_a_scene_runs_on_spawn_once_through_the_flow() {
 /// behavior with nothing to hold, still announces itself.
 #[test]
 fn a_bare_entity_placed_in_a_scene_runs_on_spawn_through_the_flow() {
-    let mut scene = Scene::holding((Transform::identity(), Script::new(MODULE, "Chime")));
-    let mut runtime = runtime_of(CHIME);
+    let (mut scene, mut runtime) = Scene::placed(CHIME, "Chime", &[]);
     let mut host = Host::new();
 
     let raised = scene.run(&mut runtime, &mut host, 3);
@@ -374,12 +389,12 @@ fn a_bare_entity_placed_in_a_scene_runs_on_spawn_through_the_flow() {
 /// after it once.
 #[test]
 fn a_scene_authored_entity_whose_on_spawn_is_cut_finishes_it_once() {
-    let mut scene = Scene::holding((Transform::identity(), Script::new(MODULE, "Herald")));
-    let mut runtime = runtime_of(HERALD);
+    let (mut scene, mut runtime) = Scene::placed(HERALD, "Herald", &[]);
     let mut host = Host::new();
 
     let view = scene.view(0.0);
-    let (_, mut raised) = frame(&mut runtime, &mut host, &view, CUT_BEFORE_THE_WALL);
+    let (report, mut raised) = frame(&mut runtime, &mut host, &view, CUT_BEFORE_THE_WALL);
+    write_back(&mut scene.world, &report);
     assert_eq!(
         herald(&runtime, scene.entity),
         (Some(1), Some(0)),
@@ -401,14 +416,11 @@ fn a_scene_authored_entity_whose_on_spawn_is_cut_finishes_it_once() {
 /// the entity already running does not announce itself again.
 #[test]
 fn a_runtime_spawned_entity_runs_on_spawn() {
-    let mut scene = Scene::holding((Transform::identity(), Script::new(MODULE, "Greeter")));
-    let mut runtime = runtime_of(GREETER);
+    let (mut scene, mut runtime) = Scene::placed(GREETER, "Greeter", &[]);
     let mut host = Host::new();
     let mut raised = scene.run(&mut runtime, &mut host, 2);
 
-    let newcomer = scene
-        .world
-        .spawn((Transform::identity(), Script::new(MODULE, "Greeter")));
+    let newcomer = scene.spawn("Greeter");
     raised.extend(scene.run(&mut runtime, &mut host, 3));
 
     assert_eq!(
@@ -490,8 +502,7 @@ fn a_restored_entity_that_had_spawned_does_not_run_on_spawn_again() {
     let saved = saved_after_one_frame(GREETER, "Greeter", "Greeted");
 
     for (encoding, carry) in every_encoding() {
-        let mut scene = restored("Greeter", carry(&saved));
-        let mut runtime = runtime_of(GREETER);
+        let (mut scene, mut runtime) = restored(GREETER, "Greeter", &carry(&saved));
         let mut host = Host::new();
 
         let raised = scene.run(&mut runtime, &mut host, 3);
@@ -526,8 +537,7 @@ fn a_restored_stateless_behavior_does_not_run_on_spawn_again() {
     );
 
     for (encoding, carry) in every_encoding() {
-        let mut scene = restored("Chime", carry(&saved));
-        let mut runtime = runtime_of(CHIME);
+        let (mut scene, mut runtime) = restored(CHIME, "Chime", &carry(&saved));
         let mut host = Host::new();
 
         let raised = scene.run(&mut runtime, &mut host, 3);
@@ -556,8 +566,7 @@ fn a_save_with_on_spawn_cut_part_way_finishes_it_once_after_loading() {
         let loaded = carry(&saved);
         assert_eq!(loaded, saved, "{encoding}: the save is carried whole");
 
-        let mut scene = restored("Herald", loaded);
-        let mut runtime = runtime_of(HERALD);
+        let (mut scene, mut runtime) = restored(HERALD, "Herald", &loaded);
         let mut host = Host::new();
 
         let raised = scene.run(&mut runtime, &mut host, 3);
@@ -582,22 +591,19 @@ fn a_save_with_on_spawn_cut_part_way_finishes_it_once_after_loading() {
 
 /// **A behavior new to a saved entity has never spawned.** The save recorded
 /// what another behavior observed of the entity — that one had spawned. The
-/// behavior the entity runs now was never observed, so it starts fresh and
-/// announces itself once.
+/// behavior added to the entity since was never observed, so it starts fresh
+/// and announces itself once; the restored one does not announce itself
+/// again.
 #[test]
 fn a_behavior_added_after_the_save_runs_on_spawn() {
     let saved = saved_after_one_frame(CHIME, "Chime", "Chimed");
+    let both = format!("{GREETER}\n{CHIME}");
 
     for (encoding, carry) in every_encoding() {
-        let mut scene = Scene::holding((
-            Transform::identity(),
-            Script::new(MODULE, "Greeter"),
-            ScriptState {
-                behavior: "Chime".to_owned(),
-                snapshot: carry(&saved),
-            },
-        ));
-        let mut runtime = runtime_of(GREETER);
+        let (mut scene, mut runtime) = Scene::of(&both, |world, entity| {
+            restore(world, entity, "Chime", &carry(&saved));
+            attach(world, entity, "Greeter", &[]);
+        });
         let mut host = Host::new();
 
         let raised = scene.run(&mut runtime, &mut host, 3);
@@ -608,6 +614,11 @@ fn a_behavior_added_after_the_save_runs_on_spawn() {
             "{encoding}: the new behavior announced itself, once"
         );
         assert_eq!(int_of(&runtime, scene.entity, "Greeter", 1), Some(1));
+        assert_eq!(
+            count(&raised, "Chimed"),
+            0,
+            "{encoding}: the restored behavior did not announce itself again"
+        );
     }
 }
 
@@ -679,10 +690,8 @@ fn an_entity_that_left_while_the_game_was_away_is_dropped_without_a_farewell() {
 fn returning_to_play_drops_what_left_without_a_farewell_through_the_flow() {
     use khora_core::agent::{EngineMode, SharedEngineMode};
 
-    let mut scene = Scene::holding((Transform::identity(), Script::new(MODULE, "Keeper")));
-    let left = scene
-        .world
-        .spawn((Transform::identity(), Script::new(MODULE, "Keeper")));
+    let (mut scene, mut runtime) = Scene::placed(KEEPER, "Keeper", &[]);
+    let left = scene.spawn("Keeper");
     let mode: SharedEngineMode = std::sync::Arc::new(std::sync::RwLock::new(EngineMode::Playing));
     let mut engine = Runtime::default();
     engine.resources.insert(mode.clone());
@@ -690,7 +699,6 @@ fn returning_to_play_drops_what_left_without_a_farewell_through_the_flow() {
         let selection = scene.flow.select(&scene.world, &engine);
         scene.flow.project(&scene.world, &selection, &engine)
     };
-    let mut runtime = runtime_of(KEEPER);
     let mut host = Host::new();
 
     let playing = view(&mut scene);

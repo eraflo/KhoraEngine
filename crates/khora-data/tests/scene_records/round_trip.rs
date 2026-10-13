@@ -19,16 +19,22 @@ use khora_core::math::LinearRgba;
 use khora_data::ecs::{MaterialRef, Transform, World};
 use khora_data::scene::{capture_world, TextEncoding};
 
-use super::sample::sample_world;
+use super::declared_components::{assert_same_rows, fields_of, state_of};
+use super::sample::{sample_world, GUARD};
 use super::*;
 
 /// Test-local components, which the sample world does not carry on purpose.
 const TEST_COMPONENTS: &[&str] = &["Beacon", "Stamina"];
 
+/// `Script`, which a behavior's own declared component supersedes: the
+/// sample's behavior is declared.
+pub(super) const SUPERSEDED: &[&str] = &["Script"];
+
 /// A save is only as good as its worst component: every kind a scene records
-/// — all of them, the script with entities in its fields included — must
+/// — all of them, the behavior with entities in its fields included — must
 /// come back from every encoding equal, under the
-/// identity it was saved with, with nothing the load had to adapt.
+/// identity it was saved with, with nothing the load had to adapt; the
+/// behavior's state, the engine's, is left out.
 #[test]
 fn a_world_round_trips_through_every_encoding() {
     let (mut src, sample) = sample_world();
@@ -36,7 +42,7 @@ fn a_world_round_trips_through_every_encoding() {
     // The sample must really hold every kind, or this test proves less than
     // its name says.
     for reg in saved_registrations() {
-        if TEST_COMPONENTS.contains(&reg.type_name) {
+        if TEST_COMPONENTS.contains(&reg.type_name) || SUPERSEDED.contains(&reg.type_name) {
             continue;
         }
         assert!(
@@ -69,12 +75,23 @@ fn a_world_round_trips_through_every_encoding() {
             assert_eq!(dst.persistent_id(*entity), Some(*id), "{name}");
         }
         assert_same_world(&src, &dst, name);
+        assert_same_rows(&src, &dst, &[GUARD], name);
+        let guard = dst
+            .entity_with_id(src.persistent_id(sample.guard).expect("an id"))
+            .expect("the guard loaded");
+        assert!(fields_of(&dst, guard, GUARD).is_some(), "{name}");
+        assert_eq!(
+            fields_of(&dst, guard, &state_of(GUARD)),
+            None,
+            "{name}: a scene never holds a behavior's state"
+        );
     }
 }
 
 /// A scene holds what an author or a tool wrote, and nothing the engine
 /// computed or observed: `GlobalTransform` and `Children` are rebuilt on load,
-/// and `BodyMotion` belongs to a running simulation.
+/// `BodyMotion` belongs to a running simulation, and a behavior's state to
+/// the running behavior.
 #[test]
 fn a_capture_holds_only_what_an_author_wrote() {
     let (src, sample) = sample_world();
@@ -85,13 +102,13 @@ fn a_capture_holds_only_what_an_author_wrote() {
         .iter()
         .flat_map(|page| page.components.iter().map(String::as_str))
         .collect();
-    for engine_written in ["GlobalTransform", "Children", "BodyMotion"] {
+    for engine_written in ["GlobalTransform", "Children", "BodyMotion", "Guard#state"] {
         assert!(
             !names.contains(&engine_written),
             "`{engine_written}` is the engine's, not the author's"
         );
     }
-    for authored in ["Transform", "Parent", "Script", "MaterialRef", "MeshRef"] {
+    for authored in ["Transform", "Parent", GUARD, "MaterialRef", "MeshRef"] {
         assert!(names.contains(&authored), "`{authored}` must be recorded");
     }
 

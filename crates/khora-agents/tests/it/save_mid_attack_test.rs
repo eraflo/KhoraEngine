@@ -14,8 +14,9 @@
 
 //! **A guard saved mid-attack loads mid-attack**, through the whole road: the
 //! flow projects the scene, the agent runs the lane, the writeback records
-//! what the lane observed, the serialization service saves the game against
-//! its scene, and a fresh world loaded from the two finishes the attack.
+//! what the lane observed in the guard's state companion, the serialization
+//! service saves the game against its scene, and a fresh world loaded from
+//! the two finishes the attack.
 
 use std::sync::{Arc, Mutex};
 
@@ -31,17 +32,21 @@ use khora_core::math::Vec3;
 use khora_core::scene::SerializationGoal;
 use khora_core::script::{engine_event_channel, ScriptEvent, ScriptValue};
 use khora_core::{EngineContext, Runtime, WorldAccess};
-use khora_data::ecs::{Name, Script, ScriptState, TickPhase, Transform, World};
+use khora_data::ecs::{Name, TickPhase, Transform, World};
 use khora_data::flow::{Flow, ScriptFlow};
+use khora_io::script::declarations::{apply_declarations, DeclaredComponents};
 use khora_io::serialization::SerializationService;
 use khora_lanes::script_lane::ScriptRuntime;
 use khora_script::arena::Persisted;
-use khora_script::vm::Program;
+
+use super::behavior_session::{attach, compile, declared_in, field, int, Project};
 
 const MODULE: &str = "ai/guard.erg";
 
 /// A guard whose attack winds up for a second before it lands.
-const GUARD: &str = r#"
+const GUARD: Project = &[(
+    MODULE,
+    r#"
 behavior Guard {
     int health = 100;
     int fired = 0;
@@ -55,22 +60,18 @@ behavior Guard {
         Attack();
     }
 }
-"#;
+"#,
+)];
 
-fn compile(source: &str) -> Program {
-    let lexed = khora_script::lex(source);
-    assert!(lexed.diagnostics.is_empty(), "{:?}", lexed.diagnostics);
-    let parsed = khora_script::parse(lexed.tokens.clone());
-    assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
-    let checked = khora_script::check(&parsed.module);
-    assert!(checked.diagnostics.is_empty(), "{:?}", checked.diagnostics);
-    let compiled = khora_script::compile(&parsed.module);
-    assert!(
-        compiled.diagnostics.is_empty(),
-        "{:?}",
-        compiled.diagnostics
+/// Registers the guard's components — `Guard` and its state companion
+/// `Guard#state` — in `world`, as the engine does once its scripts compile.
+fn declare(world: &mut World) {
+    let report = apply_declarations(
+        world,
+        &mut DeclaredComponents::default(),
+        &[declared_in(MODULE, &compile(GUARD, MODULE))],
     );
-    compiled.program
+    assert!(report.refused.is_empty(), "{report:?}");
 }
 
 /// One running session: its world, the flow projecting it, the agent and the
@@ -86,10 +87,11 @@ struct Session {
 
 impl Session {
     /// A session over `world`, wired the way the engine wires one, with the
-    /// guard's module compiled.
-    fn over(world: World) -> Self {
+    /// guard's module compiled and its components registered.
+    fn over(mut world: World) -> Self {
+        declare(&mut world);
         let mut scripts = ScriptRuntime::new();
-        scripts.add_program(MODULE, compile(GUARD));
+        scripts.add_program(MODULE, compile(GUARD, MODULE));
         let scripts = Arc::new(Mutex::new(scripts));
         let events = engine_event_channel();
 
@@ -164,17 +166,24 @@ impl Session {
     }
 }
 
+/// The suspended sequence the guard's state companion records.
+fn pending(world: &World, guard: EntityId) -> ScriptValue {
+    field(world, guard, "Guard#state", "pending")
+        .expect("the writeback recorded what the lane observed")
+}
+
 #[test]
 fn a_guard_saved_mid_attack_loads_mid_attack() {
     let service = SerializationService::new();
 
     // The scene, as authored.
     let mut world = World::new();
+    declare(&mut world);
     let guard = world.spawn((
         Transform::from_translation(Vec3::new(2.0, 0.0, 0.0)),
         Name::new("Guard"),
-        Script::new(MODULE, "Guard"),
     ));
+    attach(&mut world, guard, "Guard", &[]);
     let guard_id = world.mark_authored(guard).expect("authored");
     let base_file = service
         .save_world(&world, SerializationGoal::EditorInterchange)
@@ -188,18 +197,18 @@ fn a_guard_saved_mid_attack_loads_mid_attack() {
         .send(ScriptEvent::new(guard, "Spotted").with(ScriptValue::Int(1)));
     session.frame(0.016);
     assert_eq!(session.fired(guard), Some(0), "winding up");
-    let observed = session
-        .world
-        .get::<ScriptState>(guard)
-        .expect("the writeback recorded what the lane observed");
-    assert!(
-        observed.snapshot.pending.is_some(),
-        "the attack is caught part-way: {observed:?}"
+    assert_ne!(
+        pending(&session.world, guard),
+        ScriptValue::Null,
+        "the attack is caught part-way"
     );
     assert_eq!(
-        session.world.get::<Script>(guard),
-        Some(&Script::new(MODULE, "Guard")),
-        "the authored script is untouched"
+        (
+            int(&session.world, guard, "Guard", "health"),
+            int(&session.world, guard, "Guard", "fired")
+        ),
+        (Some(100), Some(0)),
+        "the guard's component holds its fields, unchanged by the wind-up"
     );
 
     // Save the game, then quit.
@@ -230,12 +239,16 @@ fn a_guard_saved_mid_attack_loads_mid_attack() {
     // The rest of it lands the attack — once.
     session.frame(0.6);
     assert_eq!(session.fired(guard_back), Some(1), "and then it fired");
-    let state = session
-        .world
-        .get::<ScriptState>(guard_back)
-        .expect("the observed state");
-    assert_eq!(state.snapshot.field("fired"), Some(&ScriptValue::Int(1)));
-    assert!(state.snapshot.pending.is_none(), "the sequence finished");
+    assert_eq!(
+        int(&session.world, guard_back, "Guard", "fired"),
+        Some(1),
+        "written back to the guard's component"
+    );
+    assert_eq!(
+        pending(&session.world, guard_back),
+        ScriptValue::Null,
+        "the sequence finished"
+    );
 
     session.frame(1.5);
     assert_eq!(session.fired(guard_back), Some(1), "exactly once");

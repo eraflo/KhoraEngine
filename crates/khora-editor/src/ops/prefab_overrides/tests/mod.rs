@@ -16,6 +16,7 @@
 //! inspected instance member against its prefab, and the edits that revert
 //! an override.
 
+mod aim;
 mod inspection;
 mod json_paths;
 mod reverts;
@@ -31,6 +32,7 @@ use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::math::Vec3;
 
 use super::*;
+use aim::Aim;
 
 /// Prefabs held in memory, by asset id.
 struct Library(HashMap<AssetUUID, SceneRecord>);
@@ -148,10 +150,10 @@ fn placed_after_others() -> Placed {
     }
 }
 
-/// A scripted turret placed in an editor world: its root's script aims where
-/// `aim` says in the world the prefab is made in — given the root and the
-/// barrel — and gives a `range` of 5.
-struct Scripted {
+/// An aiming turret placed in an editor world: its root's [`Aim`] targets
+/// what `aim` says in the world the prefab is made in — given the root and
+/// the barrel — with a `range` of 5.
+struct Aiming {
     world: GameWorld,
     library: Library,
     prefab: AssetUUID,
@@ -159,22 +161,14 @@ struct Scripted {
     barrel: EntityId,
 }
 
-fn scripted(aim: impl FnOnce(&mut World, EntityId, EntityId) -> EntityId) -> Scripted {
-    use khora_sdk::khora_core::script::ScriptValue;
-    use khora_sdk::khora_data::ecs::Script;
-
+fn aiming(aim: impl FnOnce(&mut World, EntityId, EntityId) -> EntityId) -> Aiming {
     let mut made = World::new();
     let root = made.spawn((Transform::identity(), Name::new("Turret")));
     let barrel = made.spawn((Transform::identity(), Name::new("Barrel")));
     made.set_parent(barrel, Some(root));
     let target = aim(&mut made, root, barrel);
-    made.add_component(
-        root,
-        Script::new("ai/turret.erg", "Turret")
-            .with_field("aim", ScriptValue::Entity(target))
-            .with_field("range", ScriptValue::Float(5.0)),
-    )
-    .expect("a script attaches");
+    made.add_component(root, Aim { target, range: 5.0 })
+        .expect("an aim attaches");
     made.mark_authored(root).expect("authored");
     let barrel_id = made.mark_authored(barrel).expect("authored");
     let prefab = AssetUUID::new();
@@ -193,7 +187,7 @@ fn scripted(aim: impl FnOnce(&mut World, EntityId, EntityId) -> EntityId) -> Scr
         .inner_world()
         .entity_with_id(PersistentId::within(instance, barrel_id))
         .expect("the barrel is there");
-    Scripted {
+    Aiming {
         world,
         library,
         prefab,
@@ -202,19 +196,9 @@ fn scripted(aim: impl FnOnce(&mut World, EntityId, EntityId) -> EntityId) -> Scr
     }
 }
 
-/// The `range` the script of `entity` gives.
-fn script_range(world: &GameWorld, entity: EntityId) -> Option<f32> {
-    use khora_sdk::khora_core::script::ScriptValue;
-    use khora_sdk::khora_data::ecs::Script;
-
-    world
-        .get_component::<Script>(entity)?
-        .fields
-        .iter()
-        .find_map(|(name, value)| match (name.as_str(), value) {
-            ("range", ScriptValue::Float(range)) => Some(*range),
-            _ => None,
-        })
+/// The `range` the [`Aim`] of `entity` gives.
+fn aim_range(world: &GameWorld, entity: EntityId) -> Option<f32> {
+    world.get_component::<Aim>(entity).map(|aim| aim.range)
 }
 
 impl Placed {

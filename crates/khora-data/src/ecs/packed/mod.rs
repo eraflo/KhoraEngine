@@ -77,6 +77,11 @@ pub struct PackedLayout {
     stride: usize,
     /// Out-of-line slots per row.
     boxed: usize,
+    /// Whether a non-finite number is refused. Authored data is finite, the
+    /// rule a Rust component's field follows; what the engine writes — a
+    /// behavior's suspended machine, whose registers may hold `0.0 / 0.0` —
+    /// is kept as computed. Set by the world from the component's provenance.
+    finite: bool,
 }
 
 /// Where one field sits in a row.
@@ -134,6 +139,7 @@ impl PackedLayout {
             places,
             stride,
             boxed,
+            finite: true,
         })
     }
 
@@ -154,6 +160,23 @@ impl PackedLayout {
         self.types.get(slot).and_then(Option::as_ref)
     }
 
+    /// `value` as field `slot` stores it, or `None` when its kind refuses it —
+    /// or, where this layout keeps authored data, when it is not finite.
+    pub(crate) fn accept(&self, slot: usize, value: &ScriptValue) -> Option<ScriptValue> {
+        let kind = self.fields.get(slot)?.kind;
+        if self.finite {
+            kind.accept(value)
+        } else {
+            kind.stored(value)
+        }
+    }
+
+    /// Makes this layout keep what a component of `provenance` holds: an
+    /// engine-written one keeps non-finite numbers.
+    pub(crate) fn kept_for(&mut self, provenance: crate::ecs::ComponentProvenance) {
+        self.finite = provenance.is_copied_on_duplicate();
+    }
+
     /// Whether `other` holds the same fields, of the same types.
     pub fn same_as(&self, other: &PackedLayout) -> bool {
         self.fields == other.fields && self.types == other.types
@@ -162,7 +185,7 @@ impl PackedLayout {
     /// `value` as field `slot` keeps it — `None` when its kind refuses it,
     /// or its type is known and is another.
     pub(crate) fn admit(&self, slot: usize, value: &ScriptValue) -> Option<ScriptValue> {
-        let accepted = self.fields.get(slot)?.kind.accept(value)?;
+        let accepted = self.accept(slot, value)?;
         match self.ty(slot) {
             Some(ty) if !ty.admits(&accepted) => None,
             _ => Some(accepted),
@@ -268,12 +291,17 @@ impl FieldKind {
     /// `int` is taken as the float it names, and a non-finite number is
     /// refused — the rule a Rust component's field follows.
     pub(crate) fn accept(self, value: &ScriptValue) -> Option<ScriptValue> {
-        let value = match (self, value) {
-            (Self::Float, ScriptValue::Int(v)) => ScriptValue::Float(*v as f32),
-            (_, other) if self.holds(other) => other.clone(),
-            _ => return None,
-        };
-        value.is_finite().then_some(value)
+        self.stored(value).filter(ScriptValue::is_finite)
+    }
+
+    /// `value` as this kind stores it, or `None` when it is not one — finite
+    /// or not.
+    pub(crate) fn stored(self, value: &ScriptValue) -> Option<ScriptValue> {
+        match (self, value) {
+            (Self::Float, ScriptValue::Int(v)) => Some(ScriptValue::Float(*v as f32)),
+            (_, other) if self.holds(other) => Some(other.clone()),
+            _ => None,
+        }
     }
 
     /// Whether `value` is a value of this kind.
