@@ -1,7 +1,7 @@
 // The first Ergon module versioned in this repository.
 //
 // It exists to prove the chain end to end — a `.erg` on disk is found, compiled,
-// attached to an entity through the `Script` component, budgeted by GORNA, and
+// attached to an entity as its own component, `Hover`, budgeted by GORNA, and
 // its effects applied to the world. Until this file, every part of that chain
 // was tested in isolation and none of it ran in an application.
 //

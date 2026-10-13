@@ -284,6 +284,12 @@ impl<A: EngineApp> EngineCore<A> {
             game_world.set_prefabs(Arc::new(khora_io::serialization::AssetPrefabs::new(assets)));
         }
 
+        // What the scripts mounted above declare, registered before `setup`:
+        // they were compiled as they were mounted, so a game attaches its
+        // behaviors from its first entities. The frame boundary then finds
+        // nothing pending, and registers nothing twice.
+        khora_io::script::declarations::register_pending(game_world.inner_world_mut(), &runtime);
+
         // Call app setup. The runtime is now fully populated, so the app can
         // read any engine resource here. Mutation goes through `register_agents`.
         app.setup(&mut game_world, &runtime);

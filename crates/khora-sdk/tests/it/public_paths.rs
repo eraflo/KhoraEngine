@@ -92,6 +92,17 @@ fn runtime_config_fields(x: &khora_sdk::RuntimeConfig) {
     let _: &bool = &x.verify_integrity;
 }
 
+fn declared_component_error_variants(x: &khora_sdk::DeclaredComponentError) {
+    match x {
+        khora_sdk::DeclaredComponentError::NotDeclared(name) => {
+            let _: &String = name;
+        }
+        khora_sdk::DeclaredComponentError::Refused(error) => {
+            let _: &khora_data::ecs::RowError = error;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Trait items, named through a generic parameter. A generic body is
 // type-checked where it is written, so these need no implementor and are
@@ -530,6 +541,11 @@ fn module_crate_root_paths_still_resolve() {
     let _ = khora_sdk::GameWorld::spawn_camera;
     let _ = khora_sdk::GameWorld::add_mesh;
     let _ = khora_sdk::GameWorld::add_component::<khora_sdk::prelude::ecs::Transform>;
+    let _ = khora_sdk::GameWorld::add_declared_component;
+    let _ = type_name::<khora_sdk::DeclaredComponentError>();
+    let _ = declared_component_error_variants as fn(&khora_sdk::DeclaredComponentError);
+    is_clone::<khora_sdk::DeclaredComponentError>();
+    is_debug::<khora_sdk::DeclaredComponentError>();
     let _ = khora_sdk::GameWorld::remove_component::<khora_sdk::prelude::ecs::Transform>;
     let _ = khora_sdk::GameWorld::query::<&'static khora_sdk::prelude::ecs::Transform>;
     let _ = khora_sdk::GameWorld::query_mut::<&'static mut khora_sdk::prelude::ecs::Transform>;

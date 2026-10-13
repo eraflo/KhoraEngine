@@ -544,3 +544,177 @@ fn a_behavior_registered_from_a_save_gains_its_role_when_its_module_declares_it(
         "the adopted components keep the rows the save loaded"
     );
 }
+
+// ─── Registered from the runtime's channel ──────────────────────────────────
+
+/// A runtime holding the declaration channel and the registration's shared
+/// memory, as the engine's bootstrap leaves it.
+fn registration_runtime() -> khora_core::Runtime {
+    use khora_io::script::declarations::declaration_channel;
+    use std::sync::{Arc, Mutex};
+    let mut runtime = khora_core::Runtime::new();
+    runtime.resources.insert(declaration_channel());
+    runtime
+        .resources
+        .insert(Arc::new(Mutex::new(DeclaredComponents::default())));
+    runtime
+}
+
+/// What `runtime`'s compile path sent and no frame boundary drained yet.
+fn send(runtime: &khora_core::Runtime, declarations: ScriptDeclarations) {
+    runtime
+        .resources
+        .get::<khora_io::script::declarations::PendingDeclarations>()
+        .expect("the runtime holds the declaration channel")
+        .send(declarations);
+}
+
+/// The registration memory `runtime` shares.
+fn shared_state(
+    runtime: &khora_core::Runtime,
+) -> std::sync::Arc<std::sync::Mutex<DeclaredComponents>> {
+    runtime
+        .resources
+        .get::<std::sync::Arc<std::sync::Mutex<DeclaredComponents>>>()
+        .cloned()
+        .expect("the runtime holds the registration state")
+}
+
+/// **What the compile path sent is registered on demand**, before any frame
+/// boundary: the behavior and its companion are in the world with their
+/// roles, and the runtime's shared memory knows which module declares them.
+#[test]
+fn pending_declarations_are_registered_with_their_roles() {
+    use khora_io::script::declarations::register_pending;
+    let runtime = registration_runtime();
+    send(&runtime, declarations("ai/guard.erg", GUARD));
+    let mut world = World::new();
+
+    let report = register_pending(&mut world, &runtime);
+
+    assert_eq!(
+        report.registered,
+        vec!["Guard".to_owned(), "Guard#state".to_owned()]
+    );
+    assert_eq!(field_names(vtable(&world, "Guard")), vec!["speed", "hp"]);
+    assert_eq!(
+        role(&world, "Guard"),
+        Some(ScriptRole::Behavior {
+            module: "ai/guard.erg".to_owned()
+        })
+    );
+    assert_eq!(
+        role(&world, "Guard#state"),
+        Some(ScriptRole::BehaviorState {
+            behavior: "Guard".to_owned()
+        })
+    );
+    let state = shared_state(&runtime);
+    let state = state.lock().expect("the registration state lock");
+    assert_eq!(
+        state.owner_of("Guard"),
+        Some("ai/guard.erg"),
+        "the runtime's shared memory, not a private one"
+    );
+}
+
+/// **The channel is drained**: called again with nothing sent since, the
+/// registration registers nothing — what the frame boundary's data system
+/// finds after the bootstrap registered the initial load.
+#[test]
+fn registering_pending_declarations_drains_the_channel() {
+    use khora_io::script::declarations::{register_pending, PendingDeclarations};
+    let runtime = registration_runtime();
+    send(&runtime, declarations("ai/guard.erg", GUARD));
+    let mut world = World::new();
+    let first = register_pending(&mut world, &runtime);
+    assert!(!first.registered.is_empty(), "{first:?}");
+
+    assert!(
+        runtime
+            .resources
+            .get::<PendingDeclarations>()
+            .expect("the channel")
+            .is_empty(),
+        "nothing left for the frame boundary"
+    );
+    assert_eq!(
+        register_pending(&mut world, &runtime),
+        DeclarationReport::default()
+    );
+}
+
+/// **Its memory lasts across calls**: a module that sends a new set after a
+/// first registration relays its behavior out — never adopts it as a stranger,
+/// which a registration with a fresh memory each call would.
+#[test]
+fn a_later_registration_remembers_who_declared_what() {
+    use khora_io::script::declarations::register_pending;
+    let runtime = registration_runtime();
+    let mut world = World::new();
+    send(&runtime, declarations("ai/guard.erg", GUARD));
+    register_pending(&mut world, &runtime);
+
+    send(
+        &runtime,
+        declarations(
+            "ai/guard.erg",
+            "behavior Guard { float speed = 1.5; int hp = 10; bool alert = false; }",
+        ),
+    );
+    let report = register_pending(&mut world, &runtime);
+
+    assert_eq!(report.relaid, vec!["Guard".to_owned()], "{report:?}");
+    assert!(report.adopted.is_empty(), "{report:?}");
+    assert_eq!(
+        field_names(vtable(&world, "Guard")),
+        vec!["speed", "hp", "alert"]
+    );
+}
+
+/// **Nothing pending, nothing done.**
+#[test]
+fn registering_with_nothing_pending_reports_nothing() {
+    use khora_io::script::declarations::register_pending;
+    let runtime = registration_runtime();
+    let mut world = World::new();
+
+    assert_eq!(
+        register_pending(&mut world, &runtime),
+        DeclarationReport::default()
+    );
+}
+
+/// **A runtime with no channel** — an application that mounts no script —
+/// registers nothing, and does not panic.
+#[test]
+fn registering_without_a_declaration_channel_reports_nothing() {
+    use khora_io::script::declarations::register_pending;
+    let runtime = khora_core::Runtime::new();
+    let mut world = World::new();
+
+    assert_eq!(
+        register_pending(&mut world, &runtime),
+        DeclarationReport::default()
+    );
+}
+
+/// **A runtime with declarations but no registration memory** registers
+/// nothing, and does not panic: there is nowhere to remember who owns what.
+#[test]
+fn registering_without_a_registration_state_reports_nothing() {
+    use khora_io::script::declarations::{declaration_channel, register_pending};
+    let mut runtime = khora_core::Runtime::new();
+    runtime.resources.insert(declaration_channel());
+    send(&runtime, declarations("ai/guard.erg", GUARD));
+    let mut world = World::new();
+
+    assert_eq!(
+        register_pending(&mut world, &runtime),
+        DeclarationReport::default()
+    );
+    assert!(
+        world.components().key_named("Guard").is_none(),
+        "nothing registered"
+    );
+}

@@ -168,6 +168,10 @@ pub struct ComponentVTable {
     /// The part it plays for scripts — a behavior, or a behavior's state
     /// companion — `None` for every other component.
     pub script: Option<crate::ecs::ScriptRole>,
+    /// The module whose script declares it now — `None` for a Rust
+    /// component, for one only a file declared, and for one no script
+    /// declares any more (an orphan, kept with its data).
+    pub declared_by: Option<String>,
     /// What storage does with its columns.
     pub columns: Arc<dyn ColumnOps>,
 }
@@ -267,6 +271,7 @@ impl ComponentRegistry {
             provenance,
             resumable: false,
             script: None,
+            declared_by: None,
             columns: Arc::new(RustColumns::<T>::new()),
         });
         Ok(key)
@@ -309,6 +314,7 @@ impl ComponentRegistry {
             provenance,
             resumable,
             script: None,
+            declared_by: None,
             columns,
         });
         Ok(key)
@@ -328,6 +334,13 @@ impl ComponentRegistry {
     ) {
         if let Some(vtable) = self.vtables.get_mut(&key) {
             vtable.script = role;
+        }
+    }
+
+    /// Records which module's script declares component `key` now.
+    pub(crate) fn set_declared_by(&mut self, key: ComponentKey, module: Option<String>) {
+        if let Some(vtable) = self.vtables.get_mut(&key) {
+            vtable.declared_by = module;
         }
     }
 

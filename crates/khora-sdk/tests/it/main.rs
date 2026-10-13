@@ -18,6 +18,7 @@
 //! full link of the crate's dependency tree. New integration tests join this
 //! binary as a module instead of adding a file at the root of `tests/`.
 
+mod declared_components;
 mod editor_shader_sources;
 mod engine_mode;
 mod game_saves;

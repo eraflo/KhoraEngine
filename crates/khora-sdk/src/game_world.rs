@@ -23,14 +23,27 @@ use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::ecs::entity::EntityId;
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::scene::{SceneFile, SerializationGoal};
+use khora_core::script::ScriptValue;
 use khora_data::ecs::{
-    Camera, Component, ComponentBundle, GlobalTransform, HandleComponent, Query, QueryMut,
-    ReadOnlyWorldQuery, Transform, World, WorldQuery,
+    Camera, Component, ComponentBundle, ComponentKey, GlobalTransform, HandleComponent, Query,
+    QueryMut, ReadOnlyWorldQuery, RowError, ScriptRole, Transform, World, WorldQuery,
 };
 use khora_data::scene::record::LoadReport;
 use khora_data::scene::PrefabSource;
 use khora_io::serialization::{SerializationService, SerializationServiceError};
 use std::sync::Arc;
+
+/// Why [`GameWorld::add_declared_component`] attached nothing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DeclaredComponentError {
+    /// No component a script declares now has this name: a Rust component's
+    /// name, a behavior's state companion, a component no script declares
+    /// any more.
+    NotDeclared(String),
+    /// The world refused the row: a dead entity, a field that refused its
+    /// value, a field the component does not have, a component already held.
+    Refused(RowError),
+}
 
 /// A high-level facade over the internal ECS `World` and `Assets` registry.
 ///
@@ -201,6 +214,44 @@ impl GameWorld {
                 e
             );
         }
+    }
+
+    /// Attaches the component a script declares under `name` to `entity`:
+    /// the fields `fields` names take their values, the others the declared
+    /// defaults. Nothing is attached when the world refuses a value.
+    ///
+    /// A Rust component's name is [`DeclaredComponentError::NotDeclared`]: it
+    /// has no declared fields — attach it with [`add_component`](Self::add_component).
+    pub fn add_declared_component(
+        &mut self,
+        entity: EntityId,
+        name: &str,
+        fields: &[(&str, ScriptValue)],
+    ) -> Result<(), DeclaredComponentError> {
+        // Declared by a script now — not a Rust component, not one only a file
+        // or a script that dropped it declares — and not a behavior's state,
+        // which the engine writes as the behavior runs.
+        let key = self
+            .world
+            .components()
+            .key_named(name)
+            .filter(|key| matches!(key, ComponentKey::Declared(_)))
+            .filter(|key| {
+                self.world.components().vtable(*key).is_some_and(|vtable| {
+                    vtable.declared_by.is_some()
+                        && !matches!(vtable.script, Some(ScriptRole::BehaviorState { .. }))
+                })
+            })
+            .ok_or_else(|| DeclaredComponentError::NotDeclared(name.to_owned()))?;
+        let value = ScriptValue::Struct(
+            fields
+                .iter()
+                .map(|(field, value)| ((*field).to_owned(), value.clone()))
+                .collect(),
+        );
+        self.world
+            .add_runtime_component(entity, key, &value)
+            .map_err(DeclaredComponentError::Refused)
     }
 
     /// Removes a single component `C` from `entity`. Other components on

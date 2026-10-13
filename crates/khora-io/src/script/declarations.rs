@@ -231,6 +231,9 @@ pub fn apply_declarations(
         log::warn!(
             "`{name}` is no longer declared by any script: it stays registered with its data, orphaned"
         );
+        if let Some(key) = world.components().key_named(&name) {
+            world.set_declared_by(key, None);
+        }
         state.orphans.insert(name.clone());
         report.orphaned.push(name);
     }
@@ -269,6 +272,7 @@ fn apply_one(
             }),
         };
         world.set_script_role(key, role);
+        world.set_declared_by(key, Some(module.to_owned()));
     }
 }
 
@@ -352,17 +356,24 @@ fn layout_of(component: &DeclaredComponent) -> Result<PackedLayout, khora_data::
     )
 }
 
-fn script_components_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+/// Registers in `world` what the compile path left in `runtime`'s
+/// [`PendingDeclarations`], with the runtime's shared
+/// `Arc<Mutex<DeclaredComponents>>` as the registration's memory.
+///
+/// Drains the channel: a second call registers nothing until the compile path
+/// sends again. An empty report when the runtime holds no channel, no state,
+/// or nothing is pending.
+pub fn register_pending(world: &mut World, runtime: &Runtime) -> DeclarationReport {
     let Some(pending) = runtime.resources.get::<PendingDeclarations>() else {
-        return;
+        return DeclarationReport::default();
     };
     let batch = pending.drain();
     if batch.is_empty() {
-        return;
+        return DeclarationReport::default();
     }
     let Some(state) = runtime.resources.get::<Arc<Mutex<DeclaredComponents>>>() else {
         log::error!("script components were declared, but the engine keeps no registration state");
-        return;
+        return DeclarationReport::default();
     };
     let mut state = state.lock().unwrap_or_else(|e| e.into_inner());
     let report = apply_declarations(world, &mut state, &batch);
@@ -372,6 +383,11 @@ fn script_components_system(world: &mut World, runtime: &Runtime, _deck: &mut Ou
             report.registered.join(", ")
         );
     }
+    report
+}
+
+fn script_components_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+    register_pending(world, runtime);
 }
 
 inventory::submit! {

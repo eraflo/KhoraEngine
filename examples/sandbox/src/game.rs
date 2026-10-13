@@ -189,24 +189,27 @@ impl EngineApp for SandboxGame {
         // A sphere driven by Ergon rather than by Rust — the first entity in
         // this repository whose motion comes from a script.
         //
-        // `Script` names the module and the behaviour; `with_field` overrides a
-        // default the script declared, which is exactly what the inspector
-        // edits and what a scene file keeps. The behaviour itself is in
-        // `assets/scripts/hover.erg`, recompiled from source at startup.
+        // A behaviour is a component: `Hover`, declared by
+        // `assets/scripts/hover.erg` and registered from it before `setup`.
+        // Naming `speed` overrides the default the script declared, which is
+        // exactly what the inspector edits and what a scene file keeps.
         let scripted = khora_sdk::prelude::materials::StandardMaterial {
             base_color: khora_sdk::prelude::math::LinearRgba::rgb(0.9, 0.45, 0.15),
             roughness: 0.35,
             ..Default::default()
         };
         let scripted_handle = world.add_material(*Box::new(scripted));
-        khora_sdk::spawn_sphere(world, 0.45, 32, 16)
+        let hovering = khora_sdk::spawn_sphere(world, 0.45, 32, 16)
             .at_position(Vec3::new(-2.2, 0.8, -1.4))
             .with_component(scripted_handle)
-            .with_component(
-                khora_sdk::prelude::ecs::Script::new("hover.erg", "Hover")
-                    .with_field("speed", khora_sdk::prelude::ecs::ScriptValue::Float(0.9)),
-            )
             .build();
+        if let Err(error) = world.add_declared_component(
+            hovering,
+            "Hover",
+            &[("speed", khora_sdk::prelude::ecs::ScriptValue::Float(0.9))],
+        ) {
+            log::error!("the hovering sphere has no `Hover`: {error:?}");
+        }
 
         // Two tinted glass spheres, one behind the other, to show alpha
         // blending: `AlphaMode::Blend` puts them in the depth-sorted

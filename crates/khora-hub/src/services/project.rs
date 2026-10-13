@@ -189,8 +189,8 @@ fn default_main_erg(project_name: &str) -> String {
         "// {project_name} — gameplay in Ergon.\n\
          //\n\
          // Every `.erg` under `assets/scripts` is compiled when the game starts,\n\
-         // and recompiled when you save. Attach a behaviour to an entity by\n\
-         // adding a `Script` component naming this file and the behaviour.\n\
+         // and recompiled when you save. A behaviour is a component: attach\n\
+         // `Main` to an entity by adding its component, `Main`.\n\
          //\n\
          // A behaviour cannot write the world directly: `SetPosition`, `Despawn`\n\
          // and the rest queue a command the engine applies at a boundary where\n\

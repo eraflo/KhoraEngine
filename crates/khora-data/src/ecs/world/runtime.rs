@@ -403,6 +403,12 @@ impl World {
         self.storage.registry.set_script_role(key, role);
     }
 
+    /// Records which module's script declares component `key` now — `None`
+    /// once no script does.
+    pub fn set_declared_by(&mut self, key: ComponentKey, module: Option<String>) {
+        self.storage.registry.set_declared_by(key, module);
+    }
+
     /// Moves a declared component to `domain`: every row of it goes to its
     /// entity's page of the new domain, values intact.
     pub fn move_component_domain(

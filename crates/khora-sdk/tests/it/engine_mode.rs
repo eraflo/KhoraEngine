@@ -21,11 +21,12 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use khora_sdk::khora_core::agent::{EngineMode, SharedEngineMode};
-use khora_sdk::khora_data::ecs::{Script, ScriptState};
+use khora_sdk::khora_core::ecs::entity::EntityId;
+use khora_sdk::khora_core::script::ScriptValue;
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::{
-    AgentId, AgentProvider, DccService, EngineApp, EngineCore, ExecutionPhase, GameWorld,
-    InputEvent, PhaseProvider, Runtime, WindowConfig,
+    AgentId, AgentProvider, DccService, DeclaredComponentError, EngineApp, EngineCore,
+    ExecutionPhase, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 
 /// A game: every hook left to the engine's defaults.
@@ -51,9 +52,17 @@ fn tool_mode() -> EngineMode {
     EngineMode::Custom("tool".to_owned())
 }
 
-/// A tool built on the engine: it starts out of the game, and its scene holds
-/// one entity running `Greeter`.
-struct Tool;
+/// A tool built on the engine: it starts out of the game and, when its
+/// scripts are mounted, its setup spawns one entity and attaches `Greeter` —
+/// the behavior the mounted `greeter.erg` declares — by adding its component.
+#[derive(Default)]
+struct Tool {
+    /// Whether setup attaches `Greeter`: only a tool whose scripts are
+    /// mounted can.
+    greeter: bool,
+    /// What attaching `Greeter` in setup gave: the entity, or why not.
+    attached: Option<Result<EntityId, DeclaredComponentError>>,
+}
 
 impl AgentProvider for Tool {
     fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
@@ -64,10 +73,17 @@ impl EngineApp for Tool {
         WindowConfig::default()
     }
     fn new() -> Self {
-        Tool
+        Tool::default()
     }
     fn setup(&mut self, world: &mut GameWorld, _runtime: &Runtime) {
-        world.spawn((Transform::identity(), Script::new(MODULE, "Greeter")));
+        if self.greeter {
+            let entity = world.spawn(Transform::identity());
+            self.attached = Some(
+                world
+                    .add_declared_component(entity, "Greeter", &[])
+                    .map(|()| entity),
+            );
+        }
     }
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
     fn initial_mode(&self) -> EngineMode {
@@ -90,7 +106,13 @@ fn tool_engine(root: Option<&PathBuf>) -> EngineCore<Tool> {
         khora_sdk::scripts::mount(&mut runtime, root);
     }
     let mut engine = EngineCore::<Tool>::new();
-    engine.bootstrap(Tool, runtime);
+    engine.bootstrap(
+        Tool {
+            greeter: root.is_some(),
+            attached: None,
+        },
+        runtime,
+    );
     engine
 }
 
@@ -208,22 +230,44 @@ fn assets_with_greeter() -> PathBuf {
     root
 }
 
-/// The `ScriptState` the engine recorded for the scripted entity, if any.
-fn script_state(engine: &mut EngineCore<Tool>) -> Option<ScriptState> {
-    let world = engine.game_world_mut()?;
-    let entity = world
-        .iter_entities()
-        .find(|entity| world.get_component::<Script>(*entity).is_some())?;
-    world.get_component::<ScriptState>(entity).cloned()
+/// The entity setup attached `Greeter` to.
+fn greeter(engine: &mut EngineCore<Tool>) -> EntityId {
+    match engine.app_mut().and_then(|tool| tool.attached.clone()) {
+        Some(Ok(entity)) => entity,
+        other => panic!("setup attaches the behavior its mounted scripts declare, got {other:?}"),
+    }
 }
 
-/// **End to end.** While the tool is out of the game no script runs, so
-/// nothing is observed; once the game is played the scripted entity arrives
-/// fresh and announces itself.
+/// The `greeted` field of `entity`'s `Greeter` row, if it holds one.
+fn greeted(engine: &mut EngineCore<Tool>, entity: EntityId) -> Option<ScriptValue> {
+    let world = engine.game_world_mut()?.inner_world();
+    let key = world.components().key_named("Greeter")?;
+    world
+        .declared_row(entity, key)?
+        .into_iter()
+        .find_map(|(name, value)| (name == "greeted").then_some(value))
+}
+
+/// Whether `entity` holds the state the engine writes once `Greeter` ran.
+fn holds_greeter_state(engine: &mut EngineCore<Tool>, entity: EntityId) -> bool {
+    let Some(world) = engine.game_world_mut().map(|world| world.inner_world()) else {
+        return false;
+    };
+    world
+        .components()
+        .key_named("Greeter#state")
+        .is_some_and(|key| world.row(entity, key).is_some())
+}
+
+/// **End to end.** Setup attaches the behavior the mounted scripts declare.
+/// While the tool is out of the game no script runs, so its field keeps its
+/// default and the engine wrote no state; once the game is played the
+/// entity arrives fresh and announces itself, in its `Greeter` row.
 #[test]
 fn scripts_run_only_once_the_game_is_played() {
     let root = assets_with_greeter();
     let mut engine = tool_engine(Some(&root));
+    let entity = greeter(&mut engine);
     let mode = published(&engine);
 
     for _ in 0..30 {
@@ -231,21 +275,20 @@ fn scripts_run_only_once_the_game_is_played() {
         std::thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(
-        script_state(&mut engine),
-        None,
+        greeted(&mut engine, entity),
+        Some(ScriptValue::Int(0)),
         "out of the game, nothing ran"
+    );
+    assert!(
+        !holds_greeter_state(&mut engine, entity),
+        "out of the game, the engine wrote no state"
     );
 
     *mode.write().expect("the mode lock") = EngineMode::Playing;
     tick_until(
         &mut engine,
         "OnSpawn to run once the game is played",
-        |engine| {
-            script_state(engine).is_some_and(|state| {
-                state.snapshot.field("greeted")
-                    == Some(&khora_sdk::khora_core::script::ScriptValue::Int(1))
-            })
-        },
+        |engine| greeted(engine, entity) == Some(ScriptValue::Int(1)),
     );
 
     let _ = std::fs::remove_dir_all(&root);
