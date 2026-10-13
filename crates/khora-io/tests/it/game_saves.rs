@@ -324,3 +324,90 @@ fn a_scene_has_no_save_base() {
 
     assert!(service.save_base(&played.base_file).is_err());
 }
+
+/// **What reading the save adapts is in the load's report.** A hand edit
+/// wrote text into the save's `Guard.health`, an `int`: composing the save
+/// drops it, and `load_game` says so — the guard, `Guard`, `health` — as it
+/// would for any other adaptation of the load.
+#[test]
+fn load_game_reports_a_value_the_save_could_not_hold() {
+    use khora_data::scene::record::{Record, ReportKind};
+    use khora_data::scene::{read_save_file, write_save_file, CompactEncoding};
+
+    let service = SerializationService::new();
+    let played = played();
+    let save_file = service
+        .save_game(
+            &played.world,
+            played.base_id,
+            &played.base_file,
+            SerializationGoal::EditorInterchange,
+        )
+        .expect("the game saves");
+
+    /// Field `name` of a component's cell.
+    fn field_in<'r>(cell: &'r mut Record, name: &str) -> Option<&'r mut Record> {
+        match cell {
+            Record::Struct { fields, .. } => fields
+                .iter_mut()
+                .find(|(field, _)| field == name)
+                .map(|(_, value)| value),
+            Record::Map(entries) => entries
+                .iter_mut()
+                .find(|(field, _)| *field == Record::Str(name.to_owned()))
+                .map(|(_, value)| value),
+            _ => None,
+        }
+    }
+
+    // The hand edit: the guard's `Guard.health` given the text its
+    // `Guard#state.state` holds ("Chase") — a well-formed value, of another
+    // type than the field declares.
+    let mut save = read_save_file(&save_file).expect("the save reads");
+    let mut edited = 0;
+    for page in &mut save.changes.pages {
+        let column_of = |component: &str| page.components.iter().position(|n| n == component);
+        let (Some(guard), Some(state)) = (column_of("Guard"), column_of("Guard#state")) else {
+            continue;
+        };
+        let Some(row) = page.rows.iter().position(|id| *id == played.guard) else {
+            continue;
+        };
+        let text = field_in(&mut page.columns[state][row], "state")
+            .expect("the state companion holds `state`")
+            .clone();
+        let health = field_in(&mut page.columns[guard][row], "health")
+            .expect("the guard's `Guard` holds `health`");
+        *health = text;
+        edited += 1;
+    }
+    assert_eq!(
+        edited, 1,
+        "the save holds the guard's changed `Guard` beside its state companion"
+    );
+    let save_file = write_save_file(&save, &CompactEncoding).expect("the edited save writes");
+
+    let mut loaded = World::new();
+    let report = service
+        .load_game(&mut loaded, &save_file, &played.base_file)
+        .unwrap_or_else(|e| panic!("the edited save does not load: {e}"));
+    let dropped: Vec<_> = report
+        .entries
+        .iter()
+        .filter(|entry| {
+            entry.entity == Some(played.guard)
+                && entry.component.as_deref() == Some("Guard")
+                && entry.path == "health"
+                && entry.kind == ReportKind::Dropped
+        })
+        .collect();
+    assert_eq!(
+        dropped.len(),
+        1,
+        "the dropped `Guard.health` is reported exactly once: {report:?}"
+    );
+    assert!(
+        field_of(&loaded, twin(&loaded, played.guard), "Guard", "health").is_some(),
+        "the guard keeps its `Guard`"
+    );
+}

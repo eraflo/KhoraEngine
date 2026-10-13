@@ -114,7 +114,9 @@ pub fn prefab_world(
     let root = world
         .persistent_id(instance.root)
         .ok_or_else(|| failed("the instance root is not alive".to_owned()))?;
-    let base = prefab_under(
+    // The prefab as the instance compares against it: nothing is loaded from
+    // it, so what reading it adapted is not reported.
+    let (base, _) = prefab_under(
         instance.prefab,
         root,
         &ReadOnce::new(prefabs),

@@ -44,7 +44,9 @@ use super::encoding::CompactEncoding;
 use super::entity_refs::parent_in;
 use super::file::{read_scene_file, write_scene_file};
 use super::record::{to_record, EntityRef, LoadReport, Record, ReferenceWriter, ReportEntry};
-use super::save::{components_of, compose_reporting, delta_between, owned, Pages, SaveRecord};
+use super::save::{
+    about_what_loads, components_of, compose_reporting, delta_between, owned, Pages, SaveRecord,
+};
 use super::scene_record::{InstanceRecord, SceneRecord};
 use crate::ecs::{PrefabInstance, SerializablePrefabInstance, World};
 
@@ -148,7 +150,7 @@ fn prefab_under(
     root: PersistentId,
     prefabs: &dyn PrefabSource,
     stack: &mut Stack,
-) -> Result<SceneRecord, LoadFailure> {
+) -> Result<(SceneRecord, Vec<ReportEntry>), LoadFailure> {
     let record = read_prefab(prefab, prefabs, stack)?;
     let prefab_root = record.entities[0];
     let mut map: HashMap<PersistentId, PersistentId> = record
@@ -159,13 +161,16 @@ fn prefab_under(
         .collect();
     stack.push(prefab);
     let keyed = moved_record(&record, &mut map, prefabs, stack)?;
-    let (expanded, _) = expand_in(&keyed, prefabs, stack)?;
+    let (expanded, report) = expand_in(&keyed, prefabs, stack)?;
     stack.pop();
     let mut rows = rows_of(&expanded);
     if let Some(components) = rows.get_mut(&root) {
         components.retain(|(name, _)| name != LINK);
     }
-    Ok(record_from(expanded.entities.clone(), rows, &[&expanded]))
+    Ok((
+        record_from(expanded.entities.clone(), rows, &[&expanded]),
+        report,
+    ))
 }
 
 /// Each entity's components in `record`, owned.
@@ -214,8 +219,9 @@ fn expand_in(
     let mut report = Vec::new();
     let mut sources = Vec::new();
     for instance in &record.instances {
-        let base = prefab_under(instance.prefab, instance.root, prefabs, stack)?;
+        let (base, inside) = prefab_under(instance.prefab, instance.root, prefabs, stack)?;
         let (composed, left_out) = compose_reporting(&base, &instance.delta)?;
+        report.extend(inside);
         report.extend(left_out);
         sources.push(base);
         sources.push(composed.clone());
@@ -291,7 +297,9 @@ pub fn expand_reporting(
     record: &SceneRecord,
     prefabs: &dyn PrefabSource,
 ) -> Result<(SceneRecord, Vec<ReportEntry>), LoadFailure> {
-    expand_in(record, &ReadOnce::new(prefabs), &mut Stack::new())
+    let (expanded, report) = expand_in(record, &ReadOnce::new(prefabs), &mut Stack::new())?;
+    let report = about_what_loads(&expanded, report);
+    Ok((expanded, report))
 }
 
 /// `record` with every prefab instance not inside another one written as a
@@ -359,8 +367,10 @@ pub fn collapse(
     let mut taken: HashSet<PersistentId> = HashSet::new();
     let mut instances = Vec::new();
     for (root, prefab, ids) in outer {
+        // Expanded only to compare the instance against: nothing is loaded
+        // from it, so what reading it adapted is not reported.
         let base = match prefab_under(*prefab, *root, &prefabs, &mut Stack::new()) {
-            Ok(base) => base,
+            Ok((base, _)) => base,
             Err(failure) => {
                 log::warn!(
                     "a prefab instance is written whole, not as a link: {}",

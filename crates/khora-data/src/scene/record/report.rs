@@ -53,7 +53,7 @@ impl LoadReport {
 }
 
 /// One thing a load adapted.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ReportEntry {
     /// The entity it happened on, when there is one.
     pub entity: Option<PersistentId>,
@@ -66,7 +66,7 @@ pub struct ReportEntry {
 }
 
 /// What a load did to one place in a value.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ReportKind {
     /// The save predates this field; it took its default.
     Defaulted,

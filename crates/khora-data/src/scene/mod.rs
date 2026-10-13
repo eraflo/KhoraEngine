@@ -56,7 +56,7 @@ pub use prefab::{
 };
 pub use retired::{is_retired, RetiredComponent};
 pub use save::{
-    capture_save, compose, compose_reporting, prepare_game, promote, read_save_file,
-    write_save_file, RemovedComponents, SaveRecord,
+    about_what_loads, capture_save, compose, compose_reporting, prepare_game, promote,
+    read_save_file, write_save_file, RemovedComponents, SaveRecord,
 };
 pub use scene_record::{InstanceRecord, PageRecord, SceneRecord};

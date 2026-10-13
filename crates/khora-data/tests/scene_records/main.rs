@@ -63,6 +63,7 @@ mod round_trip;
 mod sample;
 mod save_against_edits;
 mod save_files;
+mod save_read_reports;
 mod save_renames_and_damage;
 mod saves;
 mod script_null_values;

@@ -196,7 +196,7 @@ prefabs, but never of itself, at any depth. See [Prefabs](../concepts/prefabs.md
 ## Game save
 
 A game save is a file with the same header and magic `KHORASAV`. Its payload is a
-`SaveRecord` (`crates/khora-data/src/scene/save.rs`): how the running world
+`SaveRecord` (`crates/khora-data/src/scene/save/mod.rs`): how the running world
 differs from the scene it was taken against. See
 [Scenes and game saves](../concepts/saves.md).
 

@@ -474,3 +474,105 @@ fn a_projects_prefabs_are_read_through_its_asset_service() {
         Some("Sight Mk2")
     );
 }
+
+/// Takes field `field` out of `entity`'s `component` cell in `record`, as a
+/// file written before the field was added holds it. Returns whether it did.
+fn written_before_the_field(
+    record: &mut SceneRecord,
+    entity: PersistentId,
+    component: &str,
+    field: &str,
+) -> bool {
+    use khora_data::scene::record::Record;
+    let mut taken = false;
+    for page in &mut record.pages {
+        let Some(column) = page.components.iter().position(|name| name == component) else {
+            continue;
+        };
+        let Some(row) = page.rows.iter().position(|id| *id == entity) else {
+            continue;
+        };
+        if let Record::Struct { fields, .. } = &mut page.columns[column][row] {
+            let before = fields.len();
+            fields.retain(|(name, _)| name != field);
+            taken |= fields.len() != before;
+        }
+    }
+    taken
+}
+
+/// **A game over an older prefab reports each adaptation once.** The turret
+/// prefab and the game save were both written before `Transform` had a
+/// `scale`: the prefab's barrel lacks it, and so does the barrel play moved,
+/// in the save. Loading the game defaults the barrel's `scale` — reading the
+/// prefab to expand the scene, and reading the save to merge it — and the
+/// report says so once: one place, one adaptation.
+#[test]
+fn a_game_over_an_older_prefab_reports_each_adaptation_once() {
+    use khora_data::scene::record::ReportKind;
+    use khora_data::scene::write_save_file;
+
+    let turret = turret();
+    let prefab = AssetUUID::new();
+    let library = Library::default().with(prefab, turret.record.clone());
+    let mut level = level(prefab, &turret, &library);
+    let service = library.service();
+    let base_file = service
+        .save_world(&level.world, SerializationGoal::EditorInterchange)
+        .expect("the scene saves");
+    let barrel_id = PersistentId::within(level.instance, turret.barrel);
+    let barrel = entity(&level.world, barrel_id);
+    level
+        .world
+        .get_mut::<Transform>(barrel)
+        .expect("placed")
+        .translation
+        .z = 9.0;
+    let save_file = service
+        .save_game(
+            &level.world,
+            AssetUUID::new_v5("scenes/level.kscene"),
+            &base_file,
+            SerializationGoal::EditorInterchange,
+        )
+        .expect("the game saves");
+
+    let mut older_prefab = turret.record.clone();
+    assert!(written_before_the_field(
+        &mut older_prefab,
+        turret.barrel,
+        "Transform",
+        "scale"
+    ));
+    let mut save = read_save_file(&save_file).expect("the save reads");
+    assert!(written_before_the_field(
+        &mut save.changes,
+        barrel_id,
+        "Transform",
+        "scale"
+    ));
+    written_before_the_field(&mut save.before, barrel_id, "Transform", "scale");
+    let save_file = write_save_file(&save, &CompactEncoding).expect("the older save writes");
+
+    let mut dst = World::new();
+    let report = Library::default()
+        .with(prefab, older_prefab)
+        .service()
+        .load_game(&mut dst, &save_file, &base_file)
+        .unwrap_or_else(|e| panic!("the older game loads: {e}"));
+    let defaulted: Vec<_> = report
+        .entries
+        .iter()
+        .filter(|entry| {
+            entry.entity == Some(barrel_id)
+                && entry.component.as_deref() == Some("Transform")
+                && entry.kind == ReportKind::Defaulted
+        })
+        .collect();
+    assert_eq!(
+        defaulted.len(),
+        1,
+        "the barrel's defaulted `scale` is reported once: {:?}",
+        report.entries
+    );
+}

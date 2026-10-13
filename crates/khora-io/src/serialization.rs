@@ -28,10 +28,11 @@ use khora_data::ecs::World;
 use khora_data::scene::record::{LoadReport, ReportEntry};
 use khora_data::scene::snapshot::{prepare_snapshot, write_snapshot, SNAPSHOT_ENCODING_ID};
 use khora_data::scene::{
-    capture_save, capture_world, collapse, compose_reporting, encoding_of, expand_reporting,
-    prepare, prepare_game, read_save_file, read_scene_file, write_save_file, write_scene_file,
-    CompactEncoding, Identity, LoadFailure, MsgPackEncoding, NoPrefabs, PrefabSource, Prepared,
-    SaveError, SceneEncoding, SceneFileReadError, SceneRecord, TextEncoding,
+    about_what_loads, capture_save, capture_world, collapse, compose_reporting, encoding_of,
+    expand_reporting, prepare, prepare_game, read_save_file, read_scene_file, write_save_file,
+    write_scene_file, CompactEncoding, Identity, LoadFailure, MsgPackEncoding, NoPrefabs,
+    PrefabSource, Prepared, SaveError, SceneEncoding, SceneFileReadError, SceneRecord,
+    TextEncoding,
 };
 
 use crate::asset::AssetService;
@@ -314,10 +315,12 @@ impl SerializationService {
     ) -> Result<LoadReport, SerializationServiceError> {
         let save = read_save_file(save_file).map_err(SerializationServiceError::ReadFailed)?;
         let base = read_scene_file(base_file).map_err(SerializationServiceError::ReadFailed)?;
-        let (base, mut left_out) = Self::expanded(base, self.prefabs())?;
-        let (record, merged_out) =
+        let (base, expanding) = Self::expanded(base, self.prefabs())?;
+        let (record, merging) =
             compose_reporting(&base, &save).map_err(SerializationServiceError::LoadFailed)?;
-        left_out.extend(merged_out);
+        // Expanding the scene and merging the save each report what they read:
+        // one place adapted once, and only what the game loads.
+        let left_out = about_what_loads(&record, expanding.into_iter().chain(merging));
         let prepared =
             prepare_game(world, &record).map_err(SerializationServiceError::LoadFailed)?;
         let mut report = Self::replace_with(prepared, world);
