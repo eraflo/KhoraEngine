@@ -81,6 +81,7 @@ fn view_of(behavior: &str, delta: f32) -> ScriptView {
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
+            row: None,
         }],
     }
 }

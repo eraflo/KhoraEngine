@@ -352,6 +352,7 @@ fn the_play_snapshot_never_holds_observed_state() {
             entity: guard,
             behavior: "Guard".into(),
             snapshot: ScriptSnapshot::default().with_field("health", ScriptValue::Int(40)),
+            changed: None,
         }]);
     (writeback.run)(
         world.inner_world_mut(),

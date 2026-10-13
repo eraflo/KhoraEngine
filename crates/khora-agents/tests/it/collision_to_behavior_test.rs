@@ -86,6 +86,7 @@ fn a_scene_with_a_guard() -> ScriptView {
             translation: Default::default(),
             rotation: Default::default(),
             scale: Default::default(),
+            row: None,
         }],
     }
 }

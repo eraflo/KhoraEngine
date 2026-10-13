@@ -261,7 +261,7 @@ fn companion_fields() -> Vec<DeclaredField> {
         field("pending", ErgonType::Any, ScriptValue::Null),
         field("initialised", ErgonType::Bool, ScriptValue::Bool(false)),
         field("spawned", ErgonType::Bool, ScriptValue::Bool(false)),
-        field("fault", text(), ScriptValue::Null),
+        field("fault", ErgonType::Any, ScriptValue::Null),
         field(
             "resume_failed",
             ErgonType::Any,

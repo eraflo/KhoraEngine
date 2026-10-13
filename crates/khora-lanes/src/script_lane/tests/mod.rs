@@ -101,6 +101,7 @@ pub(super) fn view_of(count: u32) -> ScriptView {
                 translation: khora_core::math::Vec3::ZERO,
                 rotation: khora_core::math::Quaternion::IDENTITY,
                 scale: khora_core::math::Vec3::ONE,
+                row: None,
             })
             .collect(),
     }
@@ -314,6 +315,7 @@ fn a_recycled_index_does_not_inherit_the_old_instances_state() {
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
+            row: None,
         }],
     };
     run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
@@ -367,6 +369,7 @@ fn a_faulting_behavior_is_disabled_rather_than_retried() {
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
+            row: None,
         }],
     };
     let mut events = EventQueue::new();

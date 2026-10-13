@@ -395,6 +395,14 @@ impl World {
         Ok(report)
     }
 
+    /// Records the part declared component `key` plays for scripts — a
+    /// behavior, or a behavior's state companion — as its declaring module
+    /// says; a component a file registered gains it once a module declares
+    /// it.
+    pub fn set_script_role(&mut self, key: ComponentKey, role: Option<crate::ecs::ScriptRole>) {
+        self.storage.registry.set_script_role(key, role);
+    }
+
     /// Moves a declared component to `domain`: every row of it goes to its
     /// entity's page of the new domain, values intact.
     pub fn move_component_domain(
@@ -528,8 +536,32 @@ impl World {
 
     /// Detaches component `key` from `entity` — a Rust component or a
     /// declared one; `false` when it held none.
+    ///
+    /// A behavior's state companion leaves with the behavior: what the engine
+    /// kept of an instance belongs to that instance, and a behavior attached
+    /// again starts afresh.
     pub fn remove_component_by_key(&mut self, entity: EntityId, key: ComponentKey) -> bool {
-        self.detach(entity, key).is_ok()
+        let companion = match self
+            .storage
+            .registry
+            .vtable(key)
+            .map(|vtable| &vtable.script)
+        {
+            Some(Some(crate::ecs::ScriptRole::Behavior { .. })) => self
+                .storage
+                .registry
+                .vtable(key)
+                .map(|vtable| format!("{}#state", vtable.name))
+                .and_then(|name| self.storage.registry.key_named(&name)),
+            _ => None,
+        };
+        let removed = self.detach(entity, key).is_ok();
+        if removed {
+            if let Some(companion) = companion {
+                let _ = self.detach(entity, companion);
+            }
+        }
+        removed
     }
 
     /// `entity`'s row of component `key`.

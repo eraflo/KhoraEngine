@@ -81,6 +81,7 @@ fn view(arrival: Option<ScriptArrival>) -> ScriptView {
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
+            row: None,
         }],
     }
 }

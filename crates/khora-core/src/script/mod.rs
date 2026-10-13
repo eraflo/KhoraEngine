@@ -45,6 +45,7 @@ pub mod projection;
 pub mod snapshot;
 pub mod table;
 pub mod value;
+pub mod value_serde;
 pub mod writeback;
 
 #[cfg(test)]

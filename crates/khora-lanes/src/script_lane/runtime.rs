@@ -260,7 +260,7 @@ pub fn place_state_data(
 #[derive(Debug)]
 pub struct ScriptRuntime {
     programs: HashMap<String, Arc<Program>>,
-    instances: HashMap<(EntityId, String), Instance>,
+    pub(super) instances: HashMap<(EntityId, String), Instance>,
     /// What behaviors raised for each other, waiting for the next frame.
     ///
     /// Held here rather than routed through the `World` and back: an event from
@@ -301,6 +301,8 @@ pub struct ScriptRuntime {
     arena: Arena,
     /// Reloads waiting for the frame whose view projects what they read.
     deferred: Vec<khora_script::reload::ScriptReload>,
+    /// What it keeps of component-attached instances, and its cursor.
+    pub(super) attached: super::attached::Attached,
 }
 
 /// Instructions per millisecond, before anything has been measured.
@@ -329,6 +331,7 @@ impl Default for ScriptRuntime {
             rate: INITIAL_RATE,
             arena: Arena::new(),
             deferred: Vec::new(),
+            attached: Default::default(),
         }
     }
 }
@@ -617,41 +620,9 @@ impl ScriptRuntime {
             .or_default()
     }
 
-    /// Instances whose entity the predicate no longer keeps, and which have not
-    /// yet said goodbye.
-    ///
-    /// Returned as `(entity, behavior, module)` rather than acted on here: the
-    /// farewell is a *run*, which needs a host and a budget, and neither belongs
-    /// to a store of state. The caller runs them and then calls
-    /// [`retain_live`](Self::retain_live) to drop them.
-    pub fn departed(&self, alive: impl Fn(EntityId) -> bool) -> Vec<(EntityId, String, String)> {
-        self.instances
-            .iter()
-            // Only an instance that announced itself says goodbye: one that
-            // never had a turn — its arrival still held — never began. And
-            // not a disabled one: a behavior that faulted is not called again.
-            .filter(|((entity, _), instance)| {
-                instance.spawned && !instance.disabled && !instance.farewelled && !alive(*entity)
-            })
-            .map(|((entity, behavior), instance)| {
-                (*entity, behavior.clone(), instance.module.clone())
-            })
-            .collect()
-    }
-
     /// The state of one entity's behavior, if it has any.
     pub fn peek(&self, entity: EntityId, behavior: &str) -> Option<&Instance> {
         self.instances.get(&(entity, behavior.to_owned()))
-    }
-
-    /// Forgets every instance the given predicate does not keep.
-    ///
-    /// Called with the frame's live entities, which is how a despawned one's
-    /// fields are released. Sweeping rather than reacting to a despawn: the
-    /// lane never sees the despawn, only the view that no longer contains it,
-    /// and deriving the answer means nothing has to be notified.
-    pub fn retain_live(&mut self, alive: impl Fn(EntityId) -> bool) {
-        self.instances.retain(|(entity, _), _| alive(*entity));
     }
 
     /// How many instances are held.

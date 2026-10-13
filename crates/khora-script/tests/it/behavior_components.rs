@@ -37,7 +37,8 @@ const ENGINE_NAMES: [&str; 2] = ["RigidBody", "OldBody"];
 
 /// The state companion's fields, in order, each with its type's signature —
 /// the any-value ones `<any>`, a spelling no struct name can take — the same
-/// for every behavior.
+/// for every behavior. `fault` is any value: a recorded fault carries the
+/// fingerprint of the program it faulted in beside its reason.
 const COMPANION: [(&str, &str); 8] = [
     ("state", "string?"),
     ("state_fields", "<any>"),
@@ -45,7 +46,7 @@ const COMPANION: [(&str, &str); 8] = [
     ("pending", "<any>"),
     ("initialised", "bool"),
     ("spawned", "bool"),
-    ("fault", "string?"),
+    ("fault", "<any>"),
     ("resume_failed", "<any>"),
 ];
 

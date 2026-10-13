@@ -41,6 +41,8 @@
 //! ```
 
 pub mod audio;
+mod behaviors;
+pub mod companion;
 pub mod physics;
 mod registration;
 pub mod render;

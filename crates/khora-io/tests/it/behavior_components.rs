@@ -18,7 +18,9 @@
 //! registered `Runtime` and resumable.
 
 use khora_core::script::ScriptValue;
-use khora_data::ecs::{ComponentProvenance, ComponentVTable, SemanticDomain, Transform, World};
+use khora_data::ecs::{
+    ComponentProvenance, ComponentVTable, ScriptRole, SemanticDomain, Transform, World,
+};
 use khora_io::script::declarations::{
     apply_declarations, DeclarationReport, DeclaredComponents, ScriptDeclarations,
 };
@@ -417,5 +419,128 @@ fn stop_restores_the_behavior_and_drops_its_state() {
     assert!(
         world.row(entity, key("Guard#state")).is_none(),
         "its state is not"
+    );
+}
+
+// ─── The part each plays for scripts ────────────────────────────────────────
+
+fn role(world: &World, name: &str) -> Option<ScriptRole> {
+    vtable(world, name).script.clone()
+}
+
+/// **The registry knows what a behavior is**: the behavior's component names
+/// the module whose program runs it, its companion names the behavior it
+/// belongs to, and a component declared beside them plays no part.
+#[test]
+fn a_behavior_and_its_companion_register_with_their_script_roles() {
+    let (world, _, report) = registered(&[declarations(
+        "ai/guard.erg",
+        &format!("component Loot {{ int value = 1; }}\n{GUARD}"),
+    )]);
+    assert!(report.refused.is_empty(), "{report:?}");
+
+    assert_eq!(
+        role(&world, "Guard"),
+        Some(ScriptRole::Behavior {
+            module: "ai/guard.erg".to_owned()
+        })
+    );
+    assert_eq!(
+        role(&world, "Guard#state"),
+        Some(ScriptRole::BehaviorState {
+            behavior: "Guard".to_owned()
+        })
+    );
+    assert_eq!(role(&world, "Loot"), None, "a component is no behavior");
+    assert_eq!(role(&world, "Transform"), None, "nor is a Rust one");
+}
+
+/// **A refused behavior lends its role to nothing**: the component another
+/// module owns under its name stays a component, while a behavior of a third
+/// module registers as one.
+#[test]
+fn a_refused_behavior_gives_no_role_to_the_component_it_collides_with() {
+    let (world, _, report) = registered(&[
+        declarations("a.erg", "component Guard { int n = 0; }"),
+        declarations("b.erg", GUARD),
+        declarations("c.erg", "behavior Sentry { int seen = 0; }"),
+    ]);
+    assert!(report.refused.contains(&"Guard".to_owned()), "{report:?}");
+
+    assert_eq!(role(&world, "Guard"), None, "`a.erg`'s component");
+    assert_eq!(
+        role(&world, "Sentry"),
+        Some(ScriptRole::Behavior {
+            module: "c.erg".to_owned()
+        })
+    );
+}
+
+/// **A behavior registered from a file becomes a behavior once its module
+/// declares it.** A game save loaded into a fresh world registers `Guard`
+/// and its companion from the declarations it carries — which say nothing of
+/// scripts — and the registration of the module that declares the behavior
+/// adopts both, giving each its role.
+#[test]
+fn a_behavior_registered_from_a_save_gains_its_role_when_its_module_declares_it() {
+    use khora_core::asset::AssetUUID;
+    use khora_core::scene::{SceneFile, SerializationGoal};
+    use khora_io::serialization::SerializationService;
+
+    let (world, id) = holding("ai/guard.erg", GUARD, "Guard");
+    let service = SerializationService::new();
+    let on_disk = |file: &SceneFile| SceneFile::from_bytes(&file.to_bytes()).expect("parses");
+    let scene = on_disk(
+        &service
+            .save_world(&world, SerializationGoal::EditorInterchange)
+            .expect("the scene saves"),
+    );
+    let save = on_disk(
+        &service
+            .save_game(
+                &world,
+                AssetUUID::new(),
+                &scene,
+                SerializationGoal::EditorInterchange,
+            )
+            .expect("the game saves"),
+    );
+
+    let mut fresh = World::new();
+    service
+        .load_game(&mut fresh, &save, &scene)
+        .expect("the game loads");
+    let guard = fresh.entity_with_id(id).expect("the guard is back");
+    assert_eq!(role(&fresh, "Guard"), None, "registered from the file");
+    assert_eq!(
+        role(&fresh, "Guard#state"),
+        None,
+        "registered from the file"
+    );
+
+    let mut state = DeclaredComponents::default();
+    let report = apply_declarations(
+        &mut fresh,
+        &mut state,
+        &[declarations("ai/guard.erg", GUARD)],
+    );
+    assert!(report.refused.is_empty(), "adopted: {report:?}");
+
+    assert_eq!(
+        role(&fresh, "Guard"),
+        Some(ScriptRole::Behavior {
+            module: "ai/guard.erg".to_owned()
+        })
+    );
+    assert_eq!(
+        role(&fresh, "Guard#state"),
+        Some(ScriptRole::BehaviorState {
+            behavior: "Guard".to_owned()
+        })
+    );
+    let key = |name: &str| fresh.components().key_named(name).expect("registered");
+    assert!(
+        fresh.row(guard, key("Guard")).is_some() && fresh.row(guard, key("Guard#state")).is_some(),
+        "the adopted components keep the rows the save loaded"
     );
 }

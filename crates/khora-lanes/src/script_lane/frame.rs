@@ -23,6 +23,7 @@ use khora_script::native::Host;
 use khora_script::vm::{Abandoned, ResumeTier};
 
 use super::hooks::{despawns_itself, say_goodbye};
+use super::mail::keep;
 use super::persistence;
 use super::report::{Resumed, ScriptRunReport};
 use super::runtime::{Body, Instance, Pending, ScriptRuntime};
@@ -47,7 +48,19 @@ pub fn run_behaviors(
     host: &mut Host,
     fuel: u64,
 ) -> ScriptRunReport {
-    let live: std::collections::HashSet<_> = view.instances.iter().map(|i| i.entity).collect();
+    // Each instance by its entity and behavior: a behavior detached from an
+    // entity that lives on has left, as one whose entity was despawned.
+    let live: std::collections::HashSet<(khora_core::ecs::entity::EntityId, &str)> = view
+        .instances
+        .iter()
+        .filter_map(|instance| {
+            Some((
+                instance.entity,
+                view.program_of(instance)?.behavior.as_str(),
+            ))
+        })
+        .collect();
+    let is_live = |entity, behavior: &str| live.contains(&(entity, behavior));
 
     let mut report = ScriptRunReport::default();
 
@@ -59,15 +72,65 @@ pub fn run_behaviors(
     // An entity that left while the game was not running left without the
     // game: no `OnDespawn` for it, only forgetting.
     if view.resumed {
-        runtime.retain_live(|entity| live.contains(&entity));
+        runtime.retain_behaviors(is_live);
     }
-    farewell_departed(&live, runtime, host, fuel, &mut report);
-    runtime.retain_live(|entity| live.contains(&entity));
+    // Where each entity still in the view is: a behavior detached from one
+    // reads its position in its farewell.
+    let positions: std::collections::HashMap<_, _> = view
+        .instances
+        .iter()
+        .map(|instance| (instance.entity, instance.translation))
+        .collect();
+    farewell_departed(&is_live, &positions, runtime, host, fuel, &mut report);
+    runtime.retain_behaviors(is_live);
 
+    // An entity running several behaviors: what one of them has not heard is
+    // held for it alone, so the others are not told twice.
+    let mut counts: std::collections::HashMap<_, usize> = std::collections::HashMap::new();
     for instance in &view.instances {
+        *counts.entry(instance.entity).or_default() += 1;
+    }
+    // From where the last starved frame stopped, so a frame short of fuel
+    // does not leave the same instances out every frame.
+    let start = runtime
+        .attached
+        .cursor()
+        .and_then(|(entity, behavior)| {
+            view.instances.iter().position(|instance| {
+                instance.entity == *entity
+                    && view
+                        .program_of(instance)
+                        .is_some_and(|program| program.behavior == *behavior)
+            })
+        })
+        .unwrap_or(0);
+    let order = (start..view.instances.len()).chain(0..start);
+    let mut starved_at: Option<(khora_core::ecs::entity::EntityId, String)> = None;
+
+    for at in order {
+        let instance = &view.instances[at];
         let Some(program) = view.program_of(instance) else {
             continue;
         };
+        let several = counts.get(&instance.entity).copied().unwrap_or(0) > 1;
+        // What it was not told while the entity ran several behaviors comes
+        // first — and is not lost when the entity is down to this one.
+        let earlier = runtime
+            .attached
+            .take_held(instance.entity, &program.behavior);
+        let held = if several || !earlier.is_empty() {
+            let mut queue = EventQueue::new();
+            for event in earlier
+                .into_iter()
+                .chain(events.for_entity(instance.entity).cloned())
+            {
+                queue.push(event);
+            }
+            Some(queue)
+        } else {
+            None
+        };
+        let events = held.as_ref().unwrap_or(events);
         // Held on the instance until its first turn: a frame that has no fuel
         // left for it, or no program yet, must not lose what it brings — the
         // flow hands an arrival over once.
@@ -75,13 +138,33 @@ pub fn run_behaviors(
             runtime
                 .instance(instance.entity, &program.behavior)
                 .arriving = Some(arrival.clone());
+            // Seen as it arrives: a field written before its first turn —
+            // which a starved frame may put off — is then taken as written
+            // outside it.
+            if let Some(row) = &instance.row {
+                runtime
+                    .attached
+                    .saw(instance.entity, &program.behavior, row.clone());
+            }
         }
 
         let remaining = fuel.saturating_sub(report.spent);
         if remaining == 0 {
             report.deferred += 1;
+            // The first instance the frame had no fuel for starts the next:
+            // one cut part-way through its turn carries on when the rotation
+            // comes back to it, so every instance moves forward.
+            starved_at.get_or_insert_with(|| (instance.entity, program.behavior.clone()));
             // The turn never happened, so nothing addressed to it was seen.
-            keep_undelivered(events, instance.entity, 0, &mut report);
+            keep(
+                events,
+                instance.entity,
+                0,
+                several,
+                &program.behavior,
+                runtime,
+                &mut report,
+            );
             continue;
         }
 
@@ -105,11 +188,31 @@ pub fn run_behaviors(
         // the instance's fields, and a thousand guards share one `Guard`.
         let compiled = std::sync::Arc::clone(compiled);
 
+        // A component-attached instance's fields written outside the lane since
+        // it last saw them, taken before it runs.
+        let mut outside = match &instance.row {
+            Some(row) => runtime
+                .attached
+                .changed_outside(instance.entity, &program.behavior, row),
+            None => Vec::new(),
+        };
+
         // What the entity brings, applied once, when it first appears. The
         // initialiser still runs — the slots it did not bring take the defaults
         // their author wrote — and these go back on top, which is exactly the
         // road a reload already takes.
         let state = runtime.instance(instance.entity, &program.behavior);
+        // An instance yet to arrive takes what was written meanwhile as what
+        // it arrives with: put back over its initialiser's defaults, not under
+        // them.
+        if let Some(arrival) = state.arriving.as_mut() {
+            for (name, value) in outside.drain(..) {
+                match arrival.fields.iter_mut().find(|(field, _)| *field == name) {
+                    Some((_, held)) => *held = value,
+                    None => arrival.fields.push((name, value)),
+                }
+            }
+        }
         let arriving = state.arriving.take().and_then(|arrival| {
             let layout = compiled.layout(&program.behavior)?;
             let arrived = persistence::arrived(&arrival);
@@ -124,6 +227,17 @@ pub fn run_behaviors(
         if let Some(arriving) = arriving {
             let resumed = arrive(state, arriving, &program.behavior, &compiled);
             report.resumes.extend(resumed);
+        }
+        if !outside.is_empty() {
+            if let Some(layout) = compiled.layout(&program.behavior) {
+                persistence::adopt_fields(layout, &mut state.fields, &outside);
+                // An initialiser part-way puts what the instance carries back
+                // on top when it finishes: what was written meanwhile goes
+                // there too.
+                if let Some(carried) = state.carried.as_mut() {
+                    persistence::adopt_fields(layout, carried, &outside);
+                }
+            }
         }
         if state.disabled {
             continue;
@@ -233,7 +347,15 @@ pub fn run_behaviors(
             Outcome::Deferred { spent, delivered } => {
                 report.deferred += 1;
                 report.spent += spent;
-                keep_undelivered(events, instance.entity, delivered, &mut report);
+                keep(
+                    events,
+                    instance.entity,
+                    delivered,
+                    several,
+                    &program.behavior,
+                    runtime,
+                    &mut report,
+                );
             }
             // Part-way through a body, which carries on next turn. On an
             // `await` it counts as completed: the script did exactly what it
@@ -253,12 +375,28 @@ pub fn run_behaviors(
                 report.spent += spent;
                 // A busy behavior is not finished: what it has not been told yet
                 // waits for the turn that will listen.
-                keep_undelivered(events, instance.entity, delivered, &mut report);
+                keep(
+                    events,
+                    instance.entity,
+                    delivered,
+                    several,
+                    &program.behavior,
+                    runtime,
+                    &mut report,
+                );
             }
             Outcome::Uninitialised { spent } => {
                 report.deferred += 1;
                 report.spent += spent;
-                keep_undelivered(events, instance.entity, 0, &mut report);
+                keep(
+                    events,
+                    instance.entity,
+                    0,
+                    several,
+                    &program.behavior,
+                    runtime,
+                    &mut report,
+                );
             }
             Outcome::Faulted { spent, reason } => {
                 log::error!(
@@ -344,14 +482,47 @@ pub fn run_behaviors(
                 snapshot.authored = held.base.clone();
                 snapshot.overridden = held.overridden.clone();
 
+                // A component-attached instance writes back only the fields
+                // its turn changed: another script's write to another field
+                // the same frame survives.
+                let changed = instance.row.as_ref().map(|row| {
+                    snapshot
+                        .fields
+                        .iter()
+                        .filter(|(name, value)| {
+                            !row.iter().any(|(known, was)| known == name && was == value)
+                        })
+                        .map(|(name, _)| name.clone())
+                        .collect()
+                });
                 report.state.push(ScriptStateUpdate {
                     entity: instance.entity,
                     behavior: program.behavior.clone(),
                     snapshot,
+                    changed,
                 });
             }
         }
+        // What the lane has of the instance's row now — what the world will
+        // hold once the frame's writeback lands.
+        if let (Some(row), Some(layout)) = (&instance.row, compiled.layout(&program.behavior)) {
+            let held = runtime.instance(instance.entity, &program.behavior);
+            let fields = match (&held.carried, held.initialised) {
+                (Some(owed), false) => owed,
+                _ => &held.fields,
+            };
+            let mut now = persistence::snapshot_from_store(layout, fields).fields;
+            for (name, value) in row {
+                if !now.iter().any(|(known, _)| known == name) {
+                    now.push((name.clone(), value.clone()));
+                }
+            }
+            runtime
+                .attached
+                .saw(instance.entity, &program.behavior, now);
+        }
     }
+    runtime.attached.set_cursor(starved_at);
 
     report
 }
@@ -463,13 +634,17 @@ pub(super) fn delta_moved_a_countdown(
 /// but the earliest a lane reading a projection can know, and it is why the
 /// script-initiated path exists at all.
 pub(super) fn farewell_departed(
-    live: &std::collections::HashSet<khora_core::ecs::entity::EntityId>,
+    live: &impl Fn(khora_core::ecs::entity::EntityId, &str) -> bool,
+    positions: &std::collections::HashMap<
+        khora_core::ecs::entity::EntityId,
+        khora_core::math::Vec3,
+    >,
     runtime: &mut ScriptRuntime,
     host: &mut Host,
     fuel: u64,
     report: &mut ScriptRunReport,
 ) {
-    for (entity, behavior, module) in runtime.departed(|entity| live.contains(&entity)) {
+    for (entity, behavior, module) in runtime.departed_behaviors(live) {
         let left = fuel.saturating_sub(report.spent);
         if left == 0 {
             return;
@@ -479,33 +654,14 @@ pub(super) fn farewell_departed(
         };
 
         host.entity = Some(entity);
-        // The entity has already left the view, so there is no pose to give it.
-        // `Position()` faults rather than answering with where it used to be —
-        // the other half of why a script that despawns itself is told at the
-        // moment it decides, while its pose is still there.
-        host.position = None;
+        // An entity that has left the view has no pose to give: `Position()`
+        // faults rather than answering with where it used to be — the other
+        // half of why a script that despawns itself is told at the moment it
+        // decides. A behavior detached from an entity still in the view reads
+        // where it is.
+        host.position = positions.get(&entity).copied();
         host.fields = std::mem::take(&mut runtime.instance(entity, &behavior).fields);
         report.spent += say_goodbye(&program, &behavior, host, left.min(FUEL_PER_BEHAVIOR));
         host.fields = khora_script::arena::PersistentStore::new();
-    }
-}
-
-/// Puts back what an instance was never told.
-///
-/// **Only what it was never told.** A turn that got through three of its five
-/// events and then ran out of fuel keeps two; putting back all five would
-/// deliver the first three twice, and a `Damaged` arriving twice is exactly as
-/// wrong as one that never arrives.
-///
-/// A faulted behavior keeps nothing: it is disabled, so it will never handle
-/// them, and holding them would grow the queue for a listener that is gone.
-fn keep_undelivered(
-    events: &EventQueue,
-    entity: khora_core::ecs::entity::EntityId,
-    delivered: usize,
-    report: &mut ScriptRunReport,
-) {
-    for event in events.for_entity(entity).skip(delivered) {
-        report.undelivered.push(event.clone());
     }
 }

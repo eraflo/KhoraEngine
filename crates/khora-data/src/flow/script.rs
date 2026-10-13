@@ -65,6 +65,12 @@ pub struct ScriptInstance {
     /// before — never merged here. The lane composes them.
     pub arrival: Option<ScriptArrival>,
 
+    /// The behavior's component row this frame, its fields by name, for an
+    /// instance its component attaches — `None` for one a `Script` attaches.
+    /// Handed over every frame, so the lane takes a field written outside it
+    /// since: an edit during play, another script's write.
+    pub row: Option<Vec<(String, ScriptValue)>>,
+
     /// Where the entity is, this frame.
     ///
     /// Carried rather than looked up because the lane has no `World` to look it
@@ -148,10 +154,10 @@ pub struct ScriptFlow {
     /// entity set, and the lane sees only what it is given. Keeping it here is
     /// what turns "send the fields once" into something the projection can
     /// actually decide.
-    seen: HashSet<EntityId>,
+    seen: HashSet<(EntityId, String)>,
     /// Entities appearing for the first time, computed in `select` for
     /// `project` — which is `&self` and cannot work it out itself.
-    newcomers: HashSet<EntityId>,
+    newcomers: HashSet<(EntityId, String)>,
     /// Whether gameplay runs this frame. Where it does not — an editor
     /// editing a scene, a game in a tool mode — nothing is projected and
     /// nothing is remembered: an entity seen before carries on when play
@@ -159,6 +165,15 @@ pub struct ScriptFlow {
     running: bool,
     /// Whether gameplay ran the frame before.
     ran: bool,
+    /// The `(entity, behavior)` pairs a behavior's component attaches, as
+    /// last seen — the component path's `seen`.
+    attached: HashSet<(EntityId, String)>,
+    /// The attached pairs whose entity held the behavior's state companion
+    /// last frame: one that holds it no more was detached and attached again
+    /// between two frames, and arrives afresh.
+    with_state: HashSet<(EntityId, String)>,
+    /// The pairs attached for the first time this frame.
+    attached_newcomers: HashSet<(EntityId, String)>,
 }
 
 /// Whether the frame's mode runs gameplay. A runtime without a mode is a game
@@ -181,14 +196,28 @@ impl Flow for ScriptFlow {
         self.running = gameplay_runs(runtime);
         if !self.running {
             self.newcomers.clear();
+            self.attached_newcomers.clear();
             return Selection::new();
         }
-        let live: HashSet<EntityId> = world
+        let (attached, with_state) = super::behaviors::attached(world);
+        self.attached_newcomers = attached
+            .iter()
+            .filter(|pair| {
+                !self.attached.contains(*pair)
+                    || (self.with_state.contains(*pair) && !with_state.contains(*pair))
+            })
+            .cloned()
+            .collect();
+        self.attached = attached;
+        self.with_state = with_state;
+        // By entity and behavior: a `Script` switched to another behavior is
+        // a newcomer of that behavior, and arrives with its fields.
+        let live: HashSet<(EntityId, String)> = world
             .iter_entities()
-            .filter(|entity| world.get::<Script>(*entity).is_some())
+            .filter_map(|entity| Some((entity, world.get::<Script>(entity)?.behavior.clone())))
             .collect();
 
-        self.newcomers = live.difference(&self.seen).copied().collect();
+        self.newcomers = live.difference(&self.seen).cloned().collect();
         // Replaced rather than extended, so a despawned entity is forgotten and
         // an index that comes back — with a new generation — is a newcomer
         // again. Growing forever would also be a leak in a scene that spawns.
@@ -234,6 +263,11 @@ impl Flow for ScriptFlow {
             let Some(script) = world.get::<Script>(entity) else {
                 continue;
             };
+            // The same behavior attached by its component as well: one
+            // instance, the component's.
+            if super::behaviors::attaches(world, entity, &script.behavior) {
+                continue;
+            }
 
             let program = ScriptProgram {
                 module: script.module.clone(),
@@ -252,7 +286,7 @@ impl Flow for ScriptFlow {
 
             let arrival = self
                 .newcomers
-                .contains(&entity)
+                .contains(&(entity, script.behavior.clone()))
                 .then(|| arrival_of(world, entity, script));
 
             let transform = world.get::<Transform>(entity).copied();
@@ -266,8 +300,10 @@ impl Flow for ScriptFlow {
                 translation: transform.map_or(Vec3::ZERO, |t| t.translation),
                 rotation: transform.map_or(Quaternion::IDENTITY, |t| t.rotation),
                 scale: transform.map_or(Vec3::ONE, |t| t.scale),
+                row: None,
             });
         }
+        super::behaviors::project_behaviors(world, &self.attached_newcomers, &mut view);
         view
     }
 

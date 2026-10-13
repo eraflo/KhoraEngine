@@ -39,8 +39,11 @@
 //! [`CommandBuffer`] slot on the deck. Not the `World` — which is what makes
 //! the whole thing schedulable in parallel.
 
+mod attached;
+mod departure;
 mod frame;
 mod hooks;
+mod mail;
 pub mod persistence;
 mod reload;
 pub mod report;
@@ -128,7 +131,9 @@ impl Lane for BudgetedScriptLane {
             publish_reads(runtime, catalog);
         }
 
-        if view.is_empty() {
+        // A view that holds nothing while instances are still held has just
+        // lost its last ones: they are told goodbye like any that leave.
+        if view.is_empty() && (view.resumed || runtime.instance_count() == 0) {
             // Play resuming on an empty scene still forgets what left while it
             // was away — or a later frame would bid it farewell.
             if view.resumed {

@@ -281,6 +281,22 @@ fn owner(layout: &BehaviorLayout, timer: &khora_script::vm::TimerLayout) -> Opti
         .map(|state| state.name.clone())
 }
 
+/// Writes into `store` each of `fields` its layout declares, by name — the
+/// fields of a component-attached instance written outside the lane.
+pub fn adopt_fields(
+    layout: &BehaviorLayout,
+    store: &mut PersistentStore,
+    fields: &[(String, ScriptValue)],
+) {
+    for (name, value) in fields {
+        let Some(slot) = layout.slot_of(name) else {
+            continue;
+        };
+        let ty = layout.field_types.get(slot).map(String::as_str);
+        set(store, slot, name, value, ty, &layout.structs);
+    }
+}
+
 /// Writes one value, saying so when it is of a kind that cannot travel.
 fn set(
     store: &mut PersistentStore,

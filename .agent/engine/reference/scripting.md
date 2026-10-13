@@ -147,8 +147,21 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   `ColumnSnapshot` per page column, live rows only — snapshots include orphan rows). A reload whose reads
   were not projected this frame is deferred one frame. A `component` declaration is also a `StructLayout`, so
   a copy imports as a struct.
-- **Behaviors are components (spec 09, phase 1 — registered and persisted; the lane does not run on
-  them yet).** `modules/behaviors.rs::declared_behaviors`: each project behavior declares `Guard`
+- **Behaviors attached by their component run (spec 09, phase 2)**, beside the legacy `Script` path (retired
+  in P3). Registry: `ComponentVTable.script: Option<ScriptRole{Behavior{module}|BehaviorState{behavior}}>`,
+  set by `apply_declarations` on register and adopt (`World::set_script_role`). Flow (`flow/behaviors.rs`):
+  behaviors by `(module, name)`, rows by entity (`World::declared_rows`), `ScriptInstance.row` = the full row
+  every frame, `arrival` only for a new `(entity, behavior)` (fields away from the registered defaults, or the
+  companion as `observed`); a `Script` naming a behavior the entity holds as a component is skipped. Lane
+  (`script_lane/attached.rs`): `seen` rows → fields written outside are adopted (into a pending arrival before
+  the first turn); `ScriptStateUpdate.changed` = fields the turn changed; one rotating cursor set only when the
+  frame's budget cut an instance; events held per instance on an entity running several behaviors; liveness
+  per `(entity, behavior)` — removing a behavior's component farewells it (`OnDespawn`), and its companion is
+  dropped (`drop_orphaned_companions`). Writeback (`systems/script_state/attached.rs`): changed fields as
+  `World::write_column` per `(behavior, kept fields)` — a value a field refuses is left out — and the
+  companion whole (`flow/companion` ↔ `ScriptSnapshot`, `<any>` fields through
+  `khora_core::script::value_serde`).
+- **Behaviors are components (spec 09, phase 1 — registered and persisted).** `modules/behaviors.rs::declared_behaviors`: each project behavior declares `Guard`
   (`DeclaredKind::Behavior`, its fields in `[Domain(…)]`, default = the constant, else the zero, else a
   placeholder — the initialiser writes the real one) and `Guard#state` (`DeclaredKind::BehaviorState`,
   Script domain, fixed fields `state, state_fields, timers, pending, initialised, spawned, fault,

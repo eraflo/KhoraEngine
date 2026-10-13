@@ -18,7 +18,9 @@
 use std::collections::HashMap;
 
 use khora_core::ecs::entity::EntityId;
-use khora_core::script::{ColumnSnapshot, ComponentName, ComponentProjection, ProjectedComponent};
+use khora_core::script::{
+    ColumnSnapshot, ComponentName, ComponentProjection, ProjectedComponent, ScriptValue,
+};
 
 use super::World;
 use crate::ecs::ComponentKey;
@@ -73,6 +75,93 @@ impl World {
             }
         }
         ProjectedComponent::new(name.clone(), columns, index, default_row(self, key))
+    }
+
+    /// Every live row of declared component `key`: its entity and its fields
+    /// by name, read from the pages that hold it and nothing else.
+    pub fn declared_rows(&self, key: ComponentKey) -> Vec<(EntityId, Vec<(String, ScriptValue)>)> {
+        let registry = &self.storage.registry;
+        let Some(vtable) = registry.vtable(key) else {
+            return Vec::new();
+        };
+        let Some(layout) = vtable.columns.packed() else {
+            return Vec::new();
+        };
+        let mut rows = Vec::new();
+        for (page_id, page) in self.storage.pages.iter().enumerate() {
+            let Some(column) = page.columns.get(&key) else {
+                continue;
+            };
+            for (row, &entity) in page.entities.iter().enumerate() {
+                if !self.holds_at(entity, vtable.domain, page_id, row) {
+                    continue;
+                }
+                let fields = layout
+                    .fields()
+                    .iter()
+                    .enumerate()
+                    .map(|(slot, field)| {
+                        let value = vtable
+                            .columns
+                            .read_field(column.as_ref(), row, slot)
+                            .unwrap_or_else(|| field.default.clone());
+                        (field.name.clone(), value)
+                    })
+                    .collect();
+                rows.push((entity, fields));
+            }
+        }
+        rows
+    }
+
+    /// Every entity holding component `key` live, from the pages that hold
+    /// it and nothing else — its values not read.
+    pub fn holders(&self, key: ComponentKey) -> Vec<EntityId> {
+        let Some(domain) = self
+            .storage
+            .registry
+            .vtable(key)
+            .map(|vtable| vtable.domain)
+        else {
+            return Vec::new();
+        };
+        let mut holders = Vec::new();
+        for (page_id, page) in self.storage.pages.iter().enumerate() {
+            if !page.columns.contains_key(&key) {
+                continue;
+            }
+            holders.extend(
+                page.entities
+                    .iter()
+                    .enumerate()
+                    .filter(|&(row, &entity)| self.holds_at(entity, domain, page_id, row))
+                    .map(|(_, &entity)| entity),
+            );
+        }
+        holders
+    }
+
+    /// `entity`'s row of declared component `key`, its fields by name.
+    pub fn declared_row(
+        &self,
+        entity: EntityId,
+        key: ComponentKey,
+    ) -> Option<Vec<(String, ScriptValue)>> {
+        let row = self.row(entity, key)?;
+        let layout = row.vtable().columns.packed()?;
+        Some(
+            layout
+                .fields()
+                .iter()
+                .enumerate()
+                .map(|(slot, field)| {
+                    (
+                        field.name.clone(),
+                        row.field(slot).unwrap_or_else(|| field.default.clone()),
+                    )
+                })
+                .collect(),
+        )
     }
 
     /// Whether `row` of page `page_id` is `entity`'s live row in `domain`.

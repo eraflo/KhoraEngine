@@ -19,6 +19,13 @@
 
 mod agent_negotiation_snapshot_test;
 mod asset_loading_test;
+mod behavior_budget;
+mod behavior_game_saves;
+mod behavior_removal;
+mod behavior_session;
+mod behavior_writeback;
+mod behaviors_as_components;
+mod behaviors_on_one_entity;
 mod collision_to_behavior_test;
 mod contention_test;
 mod frame_e2e_test;

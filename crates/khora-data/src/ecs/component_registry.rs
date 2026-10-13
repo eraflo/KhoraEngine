@@ -165,6 +165,9 @@ pub struct ComponentVTable {
     pub provenance: ComponentProvenance,
     /// Whether a game save keeps it although a scene does not.
     pub resumable: bool,
+    /// The part it plays for scripts — a behavior, or a behavior's state
+    /// companion — `None` for every other component.
+    pub script: Option<crate::ecs::ScriptRole>,
     /// What storage does with its columns.
     pub columns: Arc<dyn ColumnOps>,
 }
@@ -263,6 +266,7 @@ impl ComponentRegistry {
             layout: LayoutPolicy::Soa,
             provenance,
             resumable: false,
+            script: None,
             columns: Arc::new(RustColumns::<T>::new()),
         });
         Ok(key)
@@ -304,6 +308,7 @@ impl ComponentRegistry {
             layout: LayoutPolicy::Soa,
             provenance,
             resumable,
+            script: None,
             columns,
         });
         Ok(key)
@@ -313,6 +318,17 @@ impl ComponentRegistry {
         self.by_name.insert(vtable.name.clone(), vtable.key);
         self.access.entry(vtable.key).or_default();
         self.vtables.insert(vtable.key, vtable);
+    }
+
+    /// Records the part component `key` plays for scripts.
+    pub(crate) fn set_script_role(
+        &mut self,
+        key: ComponentKey,
+        role: Option<crate::ecs::ScriptRole>,
+    ) {
+        if let Some(vtable) = self.vtables.get_mut(&key) {
+            vtable.script = role;
+        }
     }
 
     /// Replaces a declared component's column operations — its new fields.

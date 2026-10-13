@@ -343,6 +343,7 @@ mod tests {
                 translation: Default::default(),
                 rotation: Default::default(),
                 scale: Default::default(),
+                row: None,
             }],
         }
     }

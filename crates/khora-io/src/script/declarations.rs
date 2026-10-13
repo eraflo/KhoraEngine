@@ -41,6 +41,7 @@ use std::sync::{Arc, Mutex};
 use khora_core::event::{Channel, Supersedes, WhenFull};
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
+use khora_data::ecs::ScriptRole;
 use khora_data::ecs::{
     ComponentProvenance, DataSystemRegistration, FieldKind, PackedField, PackedLayout,
     RuntimeComponentDecl, TickPhase, World,
@@ -202,7 +203,7 @@ pub fn apply_declarations(
                 continue;
             }
         }
-        apply_one(world, state, component, &mut report);
+        apply_one(world, state, component, module, &mut report);
         state.orphans.remove(*name);
         state.refused.remove(*name);
         state.owner.insert((*name).to_owned(), (*module).to_owned());
@@ -223,7 +224,7 @@ pub fn apply_declarations(
         // A module refused this name still declares it: it is that module's
         // now, not an orphan.
         if let Some((module, component)) = state.refused.remove(&name) {
-            apply_one(world, state, &component, &mut report);
+            apply_one(world, state, &component, &module, &mut report);
             state.owner.insert(name, module);
             continue;
         }
@@ -247,8 +248,32 @@ pub fn apply_declarations(
     report
 }
 
-/// Brings one component's registration in line with its declaration.
+/// Brings one component's registration in line with its declaration, and
+/// records the part it plays for scripts.
 fn apply_one(
+    world: &mut World,
+    state: &DeclaredComponents,
+    component: &DeclaredComponent,
+    module: &str,
+    report: &mut DeclarationReport,
+) {
+    apply_layout(world, state, component, report);
+    if let Some(key) = world.components().key_named(&component.name) {
+        let role = match &component.kind {
+            DeclaredKind::Component => None,
+            DeclaredKind::Behavior => Some(ScriptRole::Behavior {
+                module: module.to_owned(),
+            }),
+            DeclaredKind::BehaviorState { behavior } => Some(ScriptRole::BehaviorState {
+                behavior: behavior.clone(),
+            }),
+        };
+        world.set_script_role(key, role);
+    }
+}
+
+/// Brings one component's registration in line with its declaration.
+fn apply_layout(
     world: &mut World,
     state: &DeclaredComponents,
     component: &DeclaredComponent,

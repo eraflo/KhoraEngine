@@ -26,6 +26,7 @@ fn update(entity: EntityId, behavior: &str, health: i64) -> ScriptStateUpdate {
         entity,
         behavior: behavior.to_owned(),
         snapshot: ScriptSnapshot::default().with_field("health", ScriptValue::Int(health)),
+        changed: None,
     }
 }
 

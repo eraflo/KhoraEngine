@@ -48,11 +48,14 @@ use crate::ecs::{DataSystemRegistration, Script, ScriptState, TickPhase, Without
 fn script_state_writeback(world: &mut World, _runtime: &Runtime, deck: &mut OutputDeck) {
     if deck.contains::<ScriptStateWriteback>() {
         let mut updates = deck.take::<ScriptStateWriteback>();
-        for update in updates.drain() {
+        // A behavior its component attaches is written to that component and
+        // its state companion; one a `Script` attaches, to its `ScriptState`.
+        for update in attached::write_back(world, updates.drain().collect()) {
             record(world, update.entity, update.behavior, update.snapshot);
         }
     }
     drop_orphaned_states(world);
+    attached::drop_orphaned_companions(world);
 }
 
 /// Records what the lane observed of `entity`'s behavior, if the entity still
@@ -99,5 +102,6 @@ inventory::submit! {
     }
 }
 
+mod attached;
 #[cfg(test)]
 mod tests;

@@ -53,6 +53,10 @@ pub struct ScriptStateUpdate {
     pub behavior: String,
     /// Everything it is: fields, state, countdowns, a suspended sequence.
     pub snapshot: ScriptSnapshot,
+    /// For a behavior its component attaches, the fields this turn changed:
+    /// the only ones written back, so a field another script wrote the same
+    /// frame survives. `None` for one a `Script` attaches, recorded whole.
+    pub changed: Option<Vec<String>>,
 }
 
 /// Instance state waiting to be recorded in the scene.
