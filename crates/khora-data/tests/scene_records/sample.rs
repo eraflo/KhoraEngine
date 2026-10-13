@@ -64,8 +64,6 @@ pub struct Sample {
 /// one of its registers.
 pub fn suspended_snapshot(target: EntityId) -> ScriptSnapshot {
     ScriptSnapshot {
-        authored: Vec::new(),
-        overridden: Vec::new(),
         fields: vec![("speed".into(), ScriptValue::Float(3.0))],
         state: Some("Patrol".into()),
         state_fields: vec![("waypoint".into(), ScriptValue::Int(2))],

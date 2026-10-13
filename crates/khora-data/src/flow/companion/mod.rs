@@ -30,8 +30,7 @@ mod tests;
 /// The companion's fields, by name, in its layout's order, recording
 /// `snapshot`'s state, state data, countdowns, suspended sequence and
 /// lifecycle, and whether the instance's initialiser has run. The snapshot's
-/// own fields — `fields`, `authored`, `overridden` — are the behavior's
-/// component's, and are left out.
+/// `fields` are the behavior's component's, and are left out.
 pub fn companion_row(
     snapshot: &ScriptSnapshot,
     initialised: bool,

@@ -18,7 +18,7 @@
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, FrozenValue, PendingBody, ScriptSnapshot, ScriptValue};
-use khora_data::flow::{ScriptArrival, ScriptInstance, ScriptProgram, ScriptView};
+use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{run_behaviors, ScriptRunReport, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::vm::{Program, Value};
@@ -58,7 +58,7 @@ fn subject() -> EntityId {
     }
 }
 
-fn view_of(behavior: &str, delta: f32, authored: Option<ScriptSnapshot>) -> ScriptView {
+fn view_of(behavior: &str, delta: f32, arriving: Option<ScriptSnapshot>) -> ScriptView {
     ScriptView {
         resumed: false,
         delta_seconds: delta,
@@ -71,11 +71,9 @@ fn view_of(behavior: &str, delta: f32, authored: Option<ScriptSnapshot>) -> Scri
         instances: vec![ScriptInstance {
             entity: subject(),
             program: 0,
-            // What the lane wrote back arrives as observed state.
-            arrival: authored.map(|observed| ScriptArrival {
-                fields: Vec::new(),
-                observed: Some(observed),
-            }),
+            // What the lane wrote back arrives as the row's fields and the
+            // companion's observed state.
+            arrival: arriving.map(crate::saves::loaded),
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
@@ -502,12 +500,12 @@ fn a_save_taken_between_an_edit_and_the_abandonment_does_not_resume_the_old_mach
 
     let mut loaded = runtime_of(EDITED_ATTACKER);
     let mut host = Host::new();
-    let mut authored = Some(snapshot);
+    let mut arriving = Some(snapshot);
     for delta in [0.1, 0.5, 0.5, 0.5] {
         run(
             &mut loaded,
             &mut host,
-            &view_of("Guard", delta, authored.take()),
+            &view_of("Guard", delta, arriving.take()),
             u64::MAX,
         );
     }
@@ -570,12 +568,12 @@ fn a_cut_after_body_loaded_into_edited_code_finishes_and_does_not_fire_again() {
 
     let mut loaded = runtime_of(EDITED_FUSE);
     let mut host = Host::new();
-    let mut authored = Some(snapshot);
+    let mut arriving = Some(snapshot);
     for _ in 0..3 {
         run(
             &mut loaded,
             &mut host,
-            &view_of("Fuse", 0.1, authored.take()),
+            &view_of("Fuse", 0.1, arriving.take()),
             u64::MAX,
         );
     }

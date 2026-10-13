@@ -19,7 +19,6 @@
 //! no budget at all. Degrading must cost lateness, never correctness.
 
 mod arrival;
-mod authored;
 mod event;
 mod lifecycle;
 mod on_load;
@@ -73,6 +72,19 @@ pub(super) fn runtime_of(source: &str) -> ScriptRuntime {
     let mut runtime = ScriptRuntime::new();
     runtime.add_program(MODULE, compile(source));
     runtime
+}
+
+/// How a load hands a saved guard back: its fields as its component's row
+/// holds them, everything else as its companion recorded it — a companion
+/// holds none of the behavior's own fields.
+pub(super) fn loaded(saved: khora_core::script::ScriptSnapshot) -> khora_data::flow::ScriptArrival {
+    khora_data::flow::ScriptArrival {
+        fields: saved.fields.clone(),
+        observed: Some(khora_core::script::ScriptSnapshot {
+            fields: Vec::new(),
+            ..saved
+        }),
+    }
 }
 
 pub(super) fn entity(index: u32) -> EntityId {

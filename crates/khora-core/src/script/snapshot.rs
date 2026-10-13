@@ -125,17 +125,6 @@ pub struct RecordedFault {
 pub struct ScriptSnapshot {
     /// The behavior's own fields, by name.
     pub fields: Vec<(String, ScriptValue)>,
-    /// Every field's authored value the instance's observed
-    /// [`fields`](Self::fields) descend from: its override from `Script.fields`,
-    /// or its declared default where it had none.
-    #[serde(default)]
-    pub authored: Vec<(String, ScriptValue)>,
-    /// Which [`authored`](Self::authored) values were overrides rather than
-    /// declared defaults. An override the author removes since sends an
-    /// untouched field back to its default; a default is never re-evaluated
-    /// on a load — it may have read the world when the instance appeared.
-    #[serde(default)]
-    pub overridden: Vec<String>,
     /// Which state it is in, by name.
     ///
     /// `None` for a behavior that declares no states. A name the reloaded script

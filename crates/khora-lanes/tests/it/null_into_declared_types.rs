@@ -17,10 +17,9 @@
 //! A field holding `null` now crosses a save as itself. The other side of that
 //! is that every road a value takes into a slot — an engine-raised event, a
 //! hot reload, a load into an edited script, a state entered — has to keep a
-//! `null` out of an `int`, which no `int` declaration allows. And the
-//! three-way merge of an arrival has to treat a `null` as the value it is: an
-//! author's `null` override, and a game's `null`, each win where a value
-//! would.
+//! `null` out of an `int`, which no `int` declaration allows. And an arrival
+//! has to treat a `null` its row holds as the value it is — an author's, or a
+//! game's — not as a field left unset.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
@@ -63,13 +62,18 @@ fn runtime_of(source: &str) -> ScriptRuntime {
     runtime
 }
 
-/// The guard's view for one frame, arriving with `fields` authored and
-/// `observed` from an earlier session, if either.
+/// The guard's view for one frame, arriving with `fields` on its row, and
+/// restored from what an earlier session `observed` of it, if either.
 fn view(
     delta: f32,
     fields: Vec<(String, ScriptValue)>,
     observed: Option<ScriptSnapshot>,
 ) -> ScriptView {
+    // A companion holds none of the behavior's own fields: they are its row's.
+    let observed = observed.map(|observed| ScriptSnapshot {
+        fields: Vec::new(),
+        ..observed
+    });
     let arrival =
         (!fields.is_empty() || observed.is_some()).then_some(ScriptArrival { fields, observed });
     ScriptView {
@@ -266,7 +270,7 @@ fn a_saved_null_does_not_load_into_a_field_no_longer_optional() {
     frame(
         &mut revived,
         &mut host,
-        &view(0.0, Vec::new(), Some(saved)),
+        &view(0.0, saved.fields.clone(), Some(saved)),
         &EventQueue::new(),
     );
 
@@ -313,14 +317,14 @@ fn a_declared_null_state_datum_is_not_what_the_previous_state_left() {
     );
 }
 
-// ─── The arrival merge ──────────────────────────────────────────────────────
+// ─── The row's values ───────────────────────────────────────────────────────
 
-/// **The game's `null` is a change like any other.** `best` arrived overridden
-/// to `7`, the game cleared it, and the author has since changed the override
-/// to `9`: the field the game changed keeps the game's value — `null` — in
-/// every encoding, not the author's new `9`.
+/// **The game's `null` is a value like any other.** `best` arrived authored as
+/// `7` and the game cleared it: the save's row holds `null`, and a load gives
+/// back `null` in every encoding — not the `7` it arrived with, nor the
+/// declared `4`.
 #[test]
-fn a_field_the_game_cleared_keeps_its_null_over_an_authored_edit() {
+fn a_field_the_game_cleared_loads_as_null() {
     let mut runtime = runtime_of(OPTIONAL_BEST);
     let mut host = Host::new();
     let saved = frame(
@@ -330,30 +334,31 @@ fn a_field_the_game_cleared_keeps_its_null_over_an_authored_edit() {
         &raised("Clear", &[]),
     )
     .expect("the guard did work, so the lane recorded it");
+    assert_eq!(saved.field("best"), Some(&ScriptValue::Null), "the premise");
 
     for (encoding, carry) in every_encoding() {
+        let carried = carry(&saved);
         let mut revived = runtime_of(OPTIONAL_BEST);
         let mut host = Host::new();
         frame(
             &mut revived,
             &mut host,
-            &view(0.0, best(ScriptValue::Int(9)), Some(carry(&saved))),
+            &view(0.0, carried.fields.clone(), Some(carried)),
             &EventQueue::new(),
         );
         assert_eq!(
             field_value(&revived, "best"),
             null(),
-            "through {encoding}: the game's `null` stands over the edited override"
+            "through {encoding}: the game's `null` stands"
         );
     }
 }
 
-/// **An author's `null` is an override like any other.** `best` overridden to
-/// `null` starts null; left alone, it loads null while the override stands,
-/// takes the author's new value when the override changes, and the declared
-/// `4` once the override is removed.
+/// **A restored instance takes what its row holds, `null` included.** Loaded
+/// from the same save, `best` is whatever the row arriving with it says — a
+/// `null`, a `6` — and, the row holding no `best`, its declared `4`.
 #[test]
-fn an_authored_null_override_is_followed_like_any_other() {
+fn a_restored_instance_takes_its_rows_value_a_null_included() {
     let mut runtime = runtime_of(OPTIONAL_BEST);
     let mut host = Host::new();
     let saved = frame(
@@ -366,22 +371,22 @@ fn an_authored_null_override_is_followed_like_any_other() {
     assert_eq!(
         field_value(&runtime, "best"),
         null(),
-        "the override reached it"
+        "an authored null reached it"
     );
 
     for (encoding, carry) in every_encoding() {
         let cases = [
-            (best(ScriptValue::Null), null(), "the override stands"),
-            (best(ScriptValue::Int(6)), int(6), "the override changed"),
-            (Vec::new(), int(4), "the override removed"),
+            (best(ScriptValue::Null), null(), "the row holds null"),
+            (best(ScriptValue::Int(6)), int(6), "the row holds 6"),
+            (Vec::new(), int(4), "the row holds no `best`"),
         ];
-        for (authored, expected, case) in cases {
+        for (row, expected, case) in cases {
             let mut revived = runtime_of(OPTIONAL_BEST);
             let mut host = Host::new();
             frame(
                 &mut revived,
                 &mut host,
-                &view(0.0, authored, Some(carry(&saved))),
+                &view(0.0, row, Some(carry(&saved))),
                 &EventQueue::new(),
             );
             assert_eq!(

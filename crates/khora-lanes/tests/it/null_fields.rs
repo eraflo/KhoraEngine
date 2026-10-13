@@ -61,13 +61,18 @@ fn runtime_of(source: &str) -> ScriptRuntime {
     runtime
 }
 
-/// The guard's view for one frame, arriving with `fields` authored and
-/// `observed` from an earlier session, if either.
+/// The guard's view for one frame, arriving with `fields` on its row, and
+/// restored from what an earlier session `observed` of it, if either.
 fn view(
     delta: f32,
     fields: Vec<(String, ScriptValue)>,
     observed: Option<ScriptSnapshot>,
 ) -> ScriptView {
+    // A companion holds none of the behavior's own fields: they are its row's.
+    let observed = observed.map(|observed| ScriptSnapshot {
+        fields: Vec::new(),
+        ..observed
+    });
     let arrival =
         (!fields.is_empty() || observed.is_some()).then_some(ScriptArrival { fields, observed });
     ScriptView {
@@ -116,7 +121,7 @@ fn reload(source: &str, saved: ScriptSnapshot) -> (ScriptRuntime, Host) {
     frame(
         &mut runtime,
         &mut host,
-        &view(0.0, Vec::new(), Some(saved)),
+        &view(0.0, saved.fields.clone(), Some(saved)),
         &EventQueue::new(),
     );
     (runtime, host)
@@ -242,49 +247,6 @@ fn a_null_state_datum_survives_a_save() {
             slot_value(&revived, slot),
             Some(Persisted::Scalar(Value::Null)),
             "through {encoding}: `seen` loads as null, not as its declared 4"
-        );
-    }
-}
-
-// ─── The authored base ──────────────────────────────────────────────────────
-
-const DECLARES_NULL_DEFAULTS: &str = r#"behavior Guard {
-                                            int speed = 1;
-                                            int? best;
-                                            int? worst = null;
-                                        }"#;
-
-/// **A declared-null default is a default.** The base a snapshot records holds
-/// `best: null` for `int? best;` (and for an explicit `= null`) beside the
-/// other fields' defaults — and keeps it through every encoding — so a load
-/// can tell a field the game left alone from one it changed.
-#[test]
-fn a_null_default_is_part_of_the_authored_base() {
-    let mut runtime = runtime_of(DECLARES_NULL_DEFAULTS);
-    let mut host = Host::new();
-    let saved = frame(
-        &mut runtime,
-        &mut host,
-        &view(0.0, vec![("speed".to_owned(), ScriptValue::Int(3))], None),
-        &EventQueue::new(),
-    )
-    .expect("the guard did work, so the lane recorded it");
-
-    assert_eq!(
-        sorted(saved.authored.clone()),
-        vec![
-            ("best".to_owned(), ScriptValue::Null),
-            ("speed".to_owned(), ScriptValue::Int(3)),
-            ("worst".to_owned(), ScriptValue::Null),
-        ],
-        "the base holds the speed override and both declared-null defaults"
-    );
-
-    for (encoding, carry) in every_encoding() {
-        let carried = carry(&saved);
-        assert_eq!(
-            carried.authored, saved.authored,
-            "through {encoding}: the base travels"
         );
     }
 }

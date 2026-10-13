@@ -202,8 +202,6 @@ fn engine_types_round_trip() {
     assert_eq!(round_trip(&values), values);
 
     let frozen = ScriptSnapshot {
-        authored: Vec::new(),
-        overridden: Vec::new(),
         fields: vec![("speed".into(), ScriptValue::Float(3.0))],
         state: Some("Patrol".into()),
         state_fields: vec![("waypoint".into(), ScriptValue::Int(2))],

@@ -21,6 +21,7 @@
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 use khora_core::script::ScriptSnapshot;
+use khora_data::flow::ScriptArrival;
 use khora_data::scene::positional::{from_positional, to_positional};
 use khora_data::scene::record::{
     from_record, to_record, EntityRef, Record, RecordError, ReferenceReader, ReferenceWriter,
@@ -97,4 +98,18 @@ pub fn every_encoding() -> [(&'static str, Carry); 5] {
             through_positional(&through_json(s))
         }),
     ]
+}
+
+/// How a load hands a saved behavior back to the lane: its fields as its
+/// component's row holds them, everything else — its state, its countdowns, a
+/// sequence part-way — as its companion recorded it. A companion holds none of
+/// the behavior's own fields.
+pub fn loaded(saved: ScriptSnapshot) -> ScriptArrival {
+    ScriptArrival {
+        fields: saved.fields.clone(),
+        observed: Some(ScriptSnapshot {
+            fields: Vec::new(),
+            ..saved
+        }),
+    }
 }

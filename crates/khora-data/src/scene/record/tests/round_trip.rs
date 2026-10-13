@@ -137,8 +137,6 @@ fn frozen_machine(target: EntityId) -> FrozenMachine {
 /// A behavior instance mid-way through everything it can be doing.
 fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
     ScriptSnapshot {
-        authored: Vec::new(),
-        overridden: Vec::new(),
         fields: vec![
             ("speed".into(), ScriptValue::Float(3.0)),
             ("target".into(), ScriptValue::Entity(target)),

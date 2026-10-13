@@ -298,8 +298,6 @@ mod tests {
     #[test]
     fn a_frozen_snapshot_round_trips_through_a_definition_save() {
         let original = ScriptSnapshot {
-            authored: Vec::new(),
-            overridden: Vec::new(),
             fields: vec![("fired".to_owned(), ScriptValue::Int(0))],
             state: None,
             state_fields: Vec::new(),

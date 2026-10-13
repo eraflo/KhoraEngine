@@ -19,7 +19,6 @@
 //! binary as a module instead of adding a file at the root of `tests/`.
 
 mod array_fields;
-mod authored_base;
 mod behavior_cursors;
 mod behavior_fuel_shares;
 mod declared_behaviors;

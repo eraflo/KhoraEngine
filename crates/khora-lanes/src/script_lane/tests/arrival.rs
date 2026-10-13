@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! An instance's first frame: the authored fields and the observed state
-//! arrive apart, and the lane composes them — what was observed over what was
-//! authored, and what was never observed as it was authored.
+//! An instance's first frame: its fields and its observed state arrive apart —
+//! the fields from its component's row, the rest (its state, its countdowns,
+//! a sequence part-way) from its companion — and the lane puts them together.
 
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptArrival, ScriptInstance, ScriptProgram, ScriptView};
@@ -123,22 +123,23 @@ fn first_frame(source: &str, arrival: ScriptArrival) -> (ScriptRuntime, Host) {
     (runtime, host)
 }
 
-/// **Where the guard got to, not where it started.** A field both the author
-/// set and the game observed takes the observed value; the state it was in
-/// comes from the observed state.
+/// **Its fields from its component, its state from its companion.** A
+/// restored guard takes every field from the row it arrives with and the state
+/// it was in from what was observed of it. Fields an observed snapshot still
+/// carries are not the guard's: its component is.
 #[test]
-fn an_arrivals_observed_values_win_over_authored_ones() {
+fn a_restored_arrival_takes_its_fields_from_its_row_and_its_state_from_its_companion() {
     let observed = ScriptSnapshot {
         state: Some("Chase".to_owned()),
         state_fields: vec![("missed".to_owned(), ScriptValue::Int(2))],
         ..ScriptSnapshot::default()
     }
-    .with_field("health", ScriptValue::Int(40));
+    .with_field("health", ScriptValue::Int(100));
 
     let (runtime, _) = first_frame(
         GUARD,
         ScriptArrival {
-            fields: vec![("health".to_owned(), ScriptValue::Int(100))],
+            fields: vec![("health".to_owned(), ScriptValue::Int(40))],
             observed: Some(observed),
         },
     );
@@ -146,7 +147,7 @@ fn an_arrivals_observed_values_win_over_authored_ones() {
     assert_eq!(
         int_at(&runtime, slot_of(&runtime, "health")),
         Some(40),
-        "the observed health, not the authored one"
+        "the row's health, not a field the observed snapshot carried"
     );
     assert_eq!(
         int_at(&runtime, state_slot(&runtime)),
@@ -155,27 +156,26 @@ fn an_arrivals_observed_values_win_over_authored_ones() {
     );
 }
 
-/// **A designer's edit is not lost to a save that never saw the field.** A
-/// field the observed state lacks — the script gained it, or the save never
-/// recorded it — takes the value its author set, not the declared default.
+/// **A field its row lacks takes its declared default**, restored or not —
+/// the script gained it since, or the row never held it.
 #[test]
-fn a_field_the_observed_state_lacks_takes_the_authored_value() {
+fn a_field_a_restored_row_lacks_takes_its_declared_default() {
     let (runtime, _) = first_frame(
         GUARD,
         ScriptArrival {
-            fields: vec![
-                ("health".to_owned(), ScriptValue::Int(100)),
-                ("armour".to_owned(), ScriptValue::Int(9)),
-            ],
-            observed: Some(ScriptSnapshot::default().with_field("health", ScriptValue::Int(40))),
+            fields: vec![("health".to_owned(), ScriptValue::Int(40))],
+            observed: Some(ScriptSnapshot {
+                state: Some("Chase".to_owned()),
+                ..ScriptSnapshot::default()
+            }),
         },
     );
 
     assert_eq!(int_at(&runtime, slot_of(&runtime, "health")), Some(40));
     assert_eq!(
         int_at(&runtime, slot_of(&runtime, "armour")),
-        Some(9),
-        "the authored armour, not the declared 5"
+        Some(5),
+        "the declared armour"
     );
 }
 
@@ -262,5 +262,99 @@ fn an_observed_pending_sequence_resumes() {
         int_at(&runtime, fired),
         Some(1),
         "and then it fired, exactly once"
+    );
+}
+
+/// A guard that remembers where it first appeared.
+const HOMING: &str = r#"
+behavior Guard {
+    Vec3 home = Position();
+}
+"#;
+
+/// One frame of the homing guard standing at `x`; what the lane recorded.
+fn homing_frame(
+    runtime: &mut ScriptRuntime,
+    x: f32,
+    arrival: Option<ScriptArrival>,
+) -> Option<ScriptSnapshot> {
+    let mut view = view(0.0, arrival);
+    view.instances[0].translation = khora_core::math::Vec3::new(x, 0.0, 0.0);
+    let mut host = Host::new();
+    let report = run_behaviors(&view, &EventQueue::new(), runtime, &mut host, u64::MAX);
+    report.state.first().map(|update| update.snapshot.clone())
+}
+
+/// **A default that read the world is not read again on a load.** The guard
+/// appeared at x = 1 and recorded it as `home`; loaded where the game had
+/// since moved it, x = 5, it keeps the `home` its row holds — the initialiser
+/// runs, and the loaded values go back on top of what it produced.
+#[test]
+fn a_default_read_from_the_world_survives_a_save_unchanged() {
+    let mut first = runtime_of(HOMING);
+    let saved = homing_frame(
+        &mut first,
+        1.0,
+        Some(ScriptArrival {
+            fields: Vec::new(),
+            observed: None,
+        }),
+    )
+    .expect("the arrival ran the initialiser");
+    let home = Some(&ScriptValue::Vec3(khora_core::math::Vec3::new(
+        1.0, 0.0, 0.0,
+    )));
+    assert_eq!(saved.field("home"), home, "the premise: home is x = 1");
+
+    let mut loaded = runtime_of(HOMING);
+    homing_frame(&mut loaded, 5.0, Some(super::loaded(saved)));
+    let layout = loaded
+        .program(MODULE)
+        .and_then(|program| program.layout("Guard"))
+        .expect("declared")
+        .clone();
+    let held = loaded.peek(entity(0), "Guard").map(|instance| {
+        crate::script_lane::persistence::snapshot_from_store(&layout, &instance.fields)
+    });
+
+    assert_eq!(
+        held.as_ref().and_then(|snapshot| snapshot.field("home")),
+        home,
+        "a save and a load leave `home` where the game had it"
+    );
+}
+
+/// **An instance the lane does not hold, and that brings no arrival, starts
+/// from its row.** The flow sends an arrival once, the frame a behavior
+/// appears; were the lane to forget the instance later — while the flow still
+/// lists it — the instance would otherwise start over from its declared
+/// defaults, and its writeback would put them over the values its component
+/// holds.
+#[test]
+fn an_instance_the_lane_forgot_starts_from_its_row_not_its_defaults() {
+    let mut runtime = runtime_of(GUARD);
+    let mut host = Host::new();
+    let mut view = view(0.0, None);
+    view.instances[0].row = vec![
+        ("health".to_owned(), ScriptValue::Int(40)),
+        ("armour".to_owned(), ScriptValue::Int(9)),
+    ];
+
+    let report = run_behaviors(
+        &view,
+        &EventQueue::new(),
+        &mut runtime,
+        &mut host,
+        1_000_000,
+    );
+
+    assert_eq!(int_at(&runtime, slot_of(&runtime, "health")), Some(40));
+    assert_eq!(int_at(&runtime, slot_of(&runtime, "armour")), Some(9));
+    assert!(
+        report.state.iter().all(|update| !update
+            .changed
+            .iter()
+            .any(|field| field == "health" || field == "armour")),
+        "nothing it holds is written back as changed: {report:?}"
     );
 }

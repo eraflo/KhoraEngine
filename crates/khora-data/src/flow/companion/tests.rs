@@ -48,8 +48,6 @@ fn entity(index: u32, generation: u32) -> EntityId {
 fn busy() -> ScriptSnapshot {
     ScriptSnapshot {
         fields: Vec::new(),
-        authored: Vec::new(),
-        overridden: Vec::new(),
         state: Some("Alert".to_owned()),
         state_fields: vec![
             ("level".to_owned(), ScriptValue::Int(5)),
@@ -186,12 +184,7 @@ fn a_companion_row_round_trips_a_snapshot() {
 /// from it.
 #[test]
 fn a_companion_row_keeps_none_of_the_behavior_fields() {
-    let snapshot = ScriptSnapshot {
-        authored: vec![("hp".to_owned(), ScriptValue::Int(100))],
-        overridden: vec!["hp".to_owned()],
-        ..busy()
-    }
-    .with_field("hp", ScriptValue::Int(40));
+    let snapshot = busy().with_field("hp", ScriptValue::Int(40));
 
     let row = companion_row(&snapshot, true).expect("a row");
     assert!(
@@ -200,7 +193,7 @@ fn a_companion_row_keeps_none_of_the_behavior_fields() {
         "{row:?}"
     );
     let (back, _) = companion_snapshot(&row).expect("reads back");
-    assert!(back.fields.is_empty() && back.authored.is_empty() && back.overridden.is_empty());
+    assert!(back.fields.is_empty(), "{:?}", back.fields);
     assert_eq!(back.state, snapshot.state);
     assert_eq!(back.pending, snapshot.pending);
 }

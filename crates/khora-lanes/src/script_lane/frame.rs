@@ -144,7 +144,17 @@ pub fn run_behaviors(
             // Held on the instance until its first turn: a frame that has no fuel
             // left for it, or no program yet, must not lose what it brings — the
             // flow hands an arrival over once.
-            if let Some(arrival) = &instance.arrival {
+            // An instance the lane does not hold and the flow sends no arrival
+            // for — the lane forgot it while the flow did not — is what its
+            // row says, never its defaults.
+            let forgotten = (instance.arrival.is_none()
+                && !instance.row.is_empty()
+                && runtime.peek(instance.entity, &program.behavior).is_none())
+            .then(|| khora_data::flow::ScriptArrival {
+                fields: instance.row.clone(),
+                observed: None,
+            });
+            if let Some(arrival) = instance.arrival.as_ref().or(forgotten.as_ref()) {
                 runtime
                     .instance(instance.entity, &program.behavior)
                     .arriving = Some(arrival.clone());
@@ -202,6 +212,13 @@ pub fn run_behaviors(
             // A handle, not the program: the runtime is borrowed mutably below for
             // the instance's fields, and a thousand guards share one `Guard`.
             let compiled = std::sync::Arc::clone(compiled);
+            // A module saved without the behavior has nothing to run for it:
+            // unloaded, its fields left as they are for the edit that brings
+            // the behavior back.
+            if compiled.layout(&program.behavior).is_none() {
+                report.unloaded += 1;
+                continue;
+            }
 
             // The instance's fields written outside the lane since it last saw
             // them, taken before it runs.
@@ -230,7 +247,6 @@ pub fn run_behaviors(
                 let layout = compiled.layout(&program.behavior)?;
                 let arrived = persistence::arrived(&arrival);
                 Some(Arriving {
-                    base: persistence::arrival_base(&arrival),
                     store: persistence::store_from_snapshot(layout, &arrived),
                     resumed: super::resumption::resume(&arrived, &compiled, layout),
                     restored: arrival.observed.is_some(),
@@ -256,6 +272,7 @@ pub fn run_behaviors(
                 continue;
             }
             state.module.clone_from(&program.module);
+            state.built_for = Some(std::sync::Arc::clone(&compiled));
             let lifecycle_before = (
                 state.spawned,
                 state.fault.is_some(),
@@ -280,7 +297,6 @@ pub fn run_behaviors(
                 loading: state.loading,
                 after_load: state.after_load.take(),
                 resume_failed: std::mem::take(&mut state.resume_failed),
-                defaults: None,
             };
             let carried = state.carried.take();
 
@@ -325,23 +341,6 @@ pub fn run_behaviors(
             state.loading = progress.loading;
             state.after_load = progress.after_load;
             state.resume_failed = progress.resume_failed;
-            // The authored base, completed: a field it holds no value for takes
-            // its declared default, and a field the script no longer declares
-            // leaves it. What it already holds stays — after a reload, a carried
-            // value descends from the old default, not the one just produced.
-            if let Some(defaults) = progress.defaults {
-                state
-                    .base
-                    .retain(|(name, _)| defaults.iter().any(|(field, _)| field == name));
-                state
-                    .overridden
-                    .retain(|name| defaults.iter().any(|(field, _)| field == name));
-                for (name, default) in defaults {
-                    if !state.base.iter().any(|(field, _)| *field == name) {
-                        state.base.push((name, default));
-                    }
-                }
-            }
             // Kept until the initialiser that has to put them back has finished.
             if !state.initialised {
                 state.carried = carried;
@@ -492,8 +491,6 @@ pub fn run_behaviors(
                         spawned: held.spawned && !spawning_in_front,
                         fault: held.fault.clone(),
                     };
-                    snapshot.authored = held.base.clone();
-                    snapshot.overridden = held.overridden.clone();
 
                     // Only the fields its turn changed are written back:
                     // another script's write to another field the same frame
@@ -554,9 +551,6 @@ pub fn run_behaviors(
 /// What an entity brings the first frame it appears, read against its
 /// program.
 struct Arriving {
-    /// Its authored base and which of it were overrides — see
-    /// [`persistence::arrival_base`].
-    base: (Vec<(String, khora_core::script::ScriptValue)>, Vec<String>),
     /// Its fields, as they go back on top of the initialiser's defaults.
     store: khora_script::arena::PersistentStore,
     /// The body a save caught part-way, taken back into the script as it is
@@ -589,8 +583,6 @@ fn arrive(
     *state = Instance {
         fields: arriving.store.clone(),
         carried: Some(arriving.store),
-        base: arriving.base.0,
-        overridden: arriving.base.1,
         ..Instance::default()
     };
     if !arriving.restored {

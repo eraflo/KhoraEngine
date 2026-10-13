@@ -33,7 +33,7 @@ use khora_script::native::Host;
 use khora_script::vm::{Machine, Program, Run, StrRef, Suspension, Value};
 
 use super::hooks::{call_hook, Hook};
-use super::persistence;
+
 use super::runtime::{self, Body, Pending};
 
 /// What running one behavior did.
@@ -137,8 +137,6 @@ pub(super) struct Progress {
     /// The members of bodies an edit left nothing of, each owed
     /// `OnResumeFailed`, oldest first.
     pub(super) resume_failed: Vec<String>,
-    /// The declared defaults, once this turn's initialiser has produced them.
-    pub(super) defaults: Option<Vec<(String, khora_core::script::ScriptValue)>>,
 }
 
 /// The state a carried store is in, when it is not the first — the one the
@@ -308,15 +306,8 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                 }
             }
         }
-        // What the declared defaults are, before anything goes on top: the
-        // base an authored value is compared against when no override names
-        // the field.
-        if let Some(layout) = program.layout(behavior) {
-            progress.defaults = Some(persistence::snapshot_from_store(layout, &host.fields).fields);
-        }
-        // After the defaults, not before: the initialiser writes every slot,
-        // so anything carried across a reload or a load has to go back on top
-        // of what it just produced.
+        // The initialiser writes every slot, so anything carried across a
+        // reload or a load has to go back on top of what it just produced.
         if let Some(carried) = carried {
             runtime::restore_carried(&mut host.fields, carried);
         }

@@ -128,12 +128,9 @@ fn view(delta: f32, arrival: Option<ScriptArrival>) -> ScriptView {
     }
 }
 
-/// Restored from a save: the lane's own record, observed.
-fn restored(observed: ScriptSnapshot) -> Option<ScriptArrival> {
-    Some(ScriptArrival {
-        fields: Vec::new(),
-        observed: Some(observed),
-    })
+/// Restored from a save: the lane's own record, its fields on the row.
+fn restored(saved: ScriptSnapshot) -> Option<ScriptArrival> {
+    Some(super::loaded(saved))
 }
 
 /// A fresh start: authored fields, nothing observed.

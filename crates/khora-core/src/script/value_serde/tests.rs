@@ -430,8 +430,6 @@ fn a_script_snapshot_round_trips() {
             ("hp".to_owned(), ScriptValue::Int(40)),
             ("target".to_owned(), ScriptValue::Entity(entity(3, 1))),
         ],
-        authored: vec![("hp".to_owned(), ScriptValue::Int(100))],
-        overridden: vec!["hp".to_owned()],
         state: Some("Alert".to_owned()),
         state_fields: vec![
             ("level".to_owned(), ScriptValue::Int(5)),

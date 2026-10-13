@@ -21,7 +21,7 @@
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
-use khora_data::flow::{ScriptArrival, ScriptInstance, ScriptProgram, ScriptView};
+use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{run_behaviors, Body, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::vm::{Program, Value};
@@ -65,10 +65,7 @@ fn view_of(delta: f32, observed: Option<ScriptSnapshot>) -> ScriptView {
         instances: vec![ScriptInstance {
             entity: subject(),
             program: 0,
-            arrival: observed.map(|observed| ScriptArrival {
-                fields: Vec::new(),
-                observed: Some(observed),
-            }),
+            arrival: observed.map(crate::saves::loaded),
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,

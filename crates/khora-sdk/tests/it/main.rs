@@ -24,5 +24,6 @@ mod engine_mode;
 mod game_saves;
 mod mode_to_dcc;
 mod public_paths;
+mod reload_after_an_emptied_module;
 mod runtime_config_file;
 mod script_catalog;

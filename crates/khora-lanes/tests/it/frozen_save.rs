@@ -24,7 +24,7 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::script::{
     EventQueue, FrozenMachine, PendingBody, ScriptEvent, ScriptSnapshot, ScriptValue,
 };
-use khora_data::flow::{ScriptArrival, ScriptInstance, ScriptProgram, ScriptView};
+use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{run_behaviors, ScriptRunReport, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::dispatch::resolve_member;
@@ -65,7 +65,7 @@ fn subject() -> EntityId {
     }
 }
 
-fn view_of(behavior: &str, delta: f32, authored: Option<ScriptSnapshot>) -> ScriptView {
+fn view_of(behavior: &str, delta: f32, arriving: Option<ScriptSnapshot>) -> ScriptView {
     ScriptView {
         resumed: false,
         delta_seconds: delta,
@@ -78,11 +78,9 @@ fn view_of(behavior: &str, delta: f32, authored: Option<ScriptSnapshot>) -> Scri
         instances: vec![ScriptInstance {
             entity: subject(),
             program: 0,
-            // What the lane wrote back arrives as observed state.
-            arrival: authored.map(|observed| ScriptArrival {
-                fields: Vec::new(),
-                observed: Some(observed),
-            }),
+            // What the lane wrote back arrives as the row's fields and the
+            // companion's observed state.
+            arrival: arriving.map(crate::saves::loaded),
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
@@ -122,20 +120,20 @@ fn frozen_in(snapshot: &ScriptSnapshot) -> &FrozenMachine {
         .machine
 }
 
-/// Runs `frames` (their deltas), the first carrying `authored`, and returns
+/// Runs `frames` (their deltas), the first carrying `arriving`, and returns
 /// the ints at `slots` afterwards.
 fn after_frames(
     runtime: &mut ScriptRuntime,
     host: &mut Host,
     behavior: &str,
-    authored: Option<ScriptSnapshot>,
+    arriving: Option<ScriptSnapshot>,
     frames: &[f32],
     slots: &[usize],
 ) -> Vec<Option<i64>> {
-    let mut authored = authored;
+    let mut arriving = arriving;
     for delta in frames {
         run_behaviors(
-            &view_of(behavior, *delta, authored.take()),
+            &view_of(behavior, *delta, arriving.take()),
             &EventQueue::new(),
             runtime,
             host,
@@ -556,13 +554,13 @@ fn a_cut_timer_body_survives_every_encoding_and_rearms_once() {
 
         let mut runtime = runtime_of(TICKER);
         let mut host = Host::new();
-        let mut authored = Some(loaded);
+        let mut arriving = Some(loaded);
         for ((frames, _), expected) in cadence.iter().zip(&unsaved) {
             let now = after_frames(
                 &mut runtime,
                 &mut host,
                 "Ticker",
-                authored.take(),
+                arriving.take(),
                 frames,
                 &[0, 1],
             );

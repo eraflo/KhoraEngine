@@ -36,7 +36,7 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::script::EventQueue;
 use khora_script::arena::{Arena, Persisted, PersistentStore};
 use khora_script::vm::Value;
-use khora_script::vm::{Machine, Program, ResumeTier};
+use khora_script::vm::{BehaviorLayout, Machine, Program, ResumeTier};
 use serde::{Deserialize, Serialize};
 
 /// One behavior instance's state.
@@ -130,16 +130,11 @@ pub struct Instance {
     /// each owed its own `OnResumeFailed`, oldest first, one a turn.
     pub resume_failed: Vec<String>,
 
-    /// Every field's authored value — its override, or its declared default
-    /// where it had none — the base its observed values descend from, written
-    /// into every snapshot so a later arrival can tell a field the game
-    /// changed from one an author edited. Set at arrival; the declared
-    /// defaults fill what it lacks once the initialiser has run, and a reload
-    /// keeps it — a carried value descends from the old default, not the new.
-    pub base: Vec<(String, khora_core::script::ScriptValue)>,
-
-    /// Which [`base`](Self::base) values were overrides rather than defaults.
-    pub overridden: Vec<String>,
+    /// The program its fields are laid out for — what it last ran, or what a
+    /// reload carried it into. A reload carries from this layout, not from
+    /// whatever the module held just before: a module saved without the
+    /// behavior in between leaves the instance's store as it was.
+    pub built_for: Option<Arc<Program>>,
 }
 
 /// A suspended member and how long is left of its wait.
@@ -457,40 +452,14 @@ impl ScriptRuntime {
     pub fn reload(&mut self, module: &str, program: Program) -> Vec<ReloadReport> {
         let previous = self.programs.get(module).cloned();
         let fingerprint = program.fingerprint();
+        let program = Arc::new(program);
         let mut reports = Vec::new();
 
         for layout in &program.behaviors {
-            let old = previous
+            let mut report = previous
                 .as_ref()
-                .and_then(|program| program.layout(&layout.name));
-            let Some(old) = old else {
-                // A behavior the module did not have before: nothing to carry.
-                continue;
-            };
-
-            let old_program = previous.as_deref();
-            let mut report = ReloadReport {
-                behavior: layout.name.clone(),
-                kept: layout
-                    .fields
-                    .iter()
-                    .filter(|field| old.slot_of(field).is_some())
-                    .cloned()
-                    .collect(),
-                added: layout
-                    .fields
-                    .iter()
-                    .filter(|field| old.slot_of(field).is_none())
-                    .cloned()
-                    .collect(),
-                dropped: old
-                    .fields
-                    .iter()
-                    .filter(|field| layout.slot_of(field).is_none())
-                    .cloned()
-                    .collect(),
-                resumes: Vec::new(),
-            };
+                .and_then(|program| program.layout(&layout.name))
+                .map(|old| reload_report(old, layout));
 
             for ((_, behavior), instance) in self.instances.iter_mut() {
                 // Another module may declare a behavior of the same name; its
@@ -498,6 +467,18 @@ impl ScriptRuntime {
                 if behavior != &layout.name || instance.module != module {
                     continue;
                 }
+                // From the layout its fields were built for: the module may
+                // have been saved without the behavior since.
+                let Some(old_program) = instance.built_for.clone().or_else(|| previous.clone())
+                else {
+                    continue;
+                };
+                let Some(old) = old_program.layout(&layout.name) else {
+                    // A behavior its program did not have: nothing to carry.
+                    continue;
+                };
+                let report = report.get_or_insert_with(|| reload_report(old, layout));
+                instance.built_for = Some(Arc::clone(&program));
                 // An instance whose initialiser has not finished still owes the
                 // values set aside for it; its fields hold the half-run
                 // initialiser's defaults, not what the instance is.
@@ -526,7 +507,7 @@ impl ScriptRuntime {
                 // a save taken in between, above all — goes on holding a
                 // position the program no longer has. The body a load restored,
                 // waiting behind its `OnLoad`, likewise.
-                if let Some(old_program) = old_program {
+                {
                     for slot in [&mut instance.pending, &mut instance.after_load] {
                         let Some(pending) = slot.take() else {
                             continue;
@@ -535,7 +516,7 @@ impl ScriptRuntime {
                             *slot = Some(pending);
                             continue;
                         }
-                        match resumption::carry(&pending, old_program, old, &program, layout) {
+                        match resumption::carry(&pending, &old_program, old, &program, layout) {
                             Ok((carried, tier)) => {
                                 if tier != ResumeTier::Exact {
                                     report.resumes.push(Resumed {
@@ -565,10 +546,10 @@ impl ScriptRuntime {
                 instance.fault = None;
             }
 
-            reports.push(report);
+            reports.extend(report);
         }
 
-        self.programs.insert(module.to_owned(), Arc::new(program));
+        self.programs.insert(module.to_owned(), program);
         reports
     }
 
@@ -649,4 +630,31 @@ pub(super) fn member_of(pending: &Pending, program: &Program) -> String {
                 .to_owned()
         })
         .unwrap_or_default()
+}
+
+/// What a reload from `old` to `layout` keeps, adds and drops of a behavior's
+/// fields.
+fn reload_report(old: &BehaviorLayout, layout: &BehaviorLayout) -> ReloadReport {
+    ReloadReport {
+        behavior: layout.name.clone(),
+        kept: layout
+            .fields
+            .iter()
+            .filter(|field| old.slot_of(field).is_some())
+            .cloned()
+            .collect(),
+        added: layout
+            .fields
+            .iter()
+            .filter(|field| old.slot_of(field).is_none())
+            .cloned()
+            .collect(),
+        dropped: old
+            .fields
+            .iter()
+            .filter(|field| layout.slot_of(field).is_none())
+            .cloned()
+            .collect(),
+        resumes: Vec::new(),
+    }
 }

@@ -12,15 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Array fields of every shape survive a game save, and an author's edit to
-//! one still reaches it.
+//! Array fields of every shape survive a game save.
 //!
 //! An array of arrays, an array of optionals holding `null`, an array emptied
 //! while playing: each is saved as the value it holds and loads back as that
 //! value through every scene encoding — never flattened, never with a `null`
 //! turned into "nothing written", never with an empty array mistaken for an
-//! unset field and given its default. A field the game left alone takes the
-//! author's edited array after the load, as a scalar field does.
+//! unset field and given its default.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
@@ -66,16 +64,11 @@ fn subject() -> EntityId {
     }
 }
 
-/// How an instance arrives: the fields its author set, and what a save
-/// observed of it, if it is loaded from one.
-type Arrival = (Vec<(String, ScriptValue)>, Option<ScriptSnapshot>);
-
-/// One frame for the guard: arriving (with `authored` fields and `observed`
-/// from a save) or already there, delivering `events`. What the lane
-/// recorded of it.
+/// One frame for the guard: arriving (fresh, or loaded from a save) or
+/// already there, delivering `events`. What the lane recorded of it.
 fn frame(
     runtime: &mut ScriptRuntime,
-    arrival: Option<Arrival>,
+    arrival: Option<ScriptArrival>,
     events: &EventQueue,
 ) -> Option<ScriptSnapshot> {
     let view = ScriptView {
@@ -90,7 +83,7 @@ fn frame(
         instances: vec![ScriptInstance {
             entity: subject(),
             program: 0,
-            arrival: arrival.map(|(fields, observed)| ScriptArrival { fields, observed }),
+            arrival,
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
@@ -115,19 +108,21 @@ fn route(values: &[i64]) -> Vec<(String, ScriptValue)> {
     vec![("route".to_owned(), ints(values))]
 }
 
-/// **Every shape of array, through every encoding, with an authored edit.**
-/// The guard arrives with `route` authored as `[5, 6]` and plays: its grid,
-/// its marks and its spent list change. The save records each as it is; a
-/// fresh session loading it — the author having since set `route` to `[7]` —
-/// holds the played arrays as saved and the author's new route, which the
-/// game never touched.
+/// **Every shape of array, through every encoding.** The guard arrives with
+/// `route` authored as `[5, 6]` and plays: its grid, its marks and its spent
+/// list change. The save records each as it is; a fresh session loading it
+/// holds the played arrays as saved, and the route the game never touched as
+/// it was authored.
 #[test]
 fn nested_optional_and_emptied_arrays_survive_a_save_in_every_encoding() {
     let mut runtime = ScriptRuntime::new();
     runtime.add_program(MODULE, build(GUARD));
     frame(
         &mut runtime,
-        Some((route(&[5, 6]), None)),
+        Some(ScriptArrival {
+            fields: route(&[5, 6]),
+            observed: None,
+        }),
         &EventQueue::new(),
     );
     let mut events = EventQueue::new();
@@ -147,7 +142,7 @@ fn nested_optional_and_emptied_arrays_survive_a_save_in_every_encoding() {
         revived.add_program(MODULE, build(GUARD));
         frame(
             &mut revived,
-            Some((route(&[7]), Some(carried))),
+            Some(crate::saves::loaded(carried)),
             &EventQueue::new(),
         );
         assert_eq!(
@@ -167,8 +162,8 @@ fn nested_optional_and_emptied_arrays_survive_a_save_in_every_encoding() {
         );
         assert_eq!(
             field(&revived, "route"),
-            Some(ints(&[7])),
-            "{encoding}: the author's edit reaches the route the game left alone"
+            Some(ints(&[5, 6])),
+            "{encoding}: the route as it was authored"
         );
     }
 }

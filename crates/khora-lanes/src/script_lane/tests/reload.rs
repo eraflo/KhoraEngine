@@ -332,13 +332,10 @@ fn a_field_the_scene_did_not_save_takes_its_declared_default() {
             entity: entity(0),
             program: 0,
             // A save from before `armour` and `rage` existed.
-            arrival: Some(khora_data::flow::ScriptArrival {
-                fields: Vec::new(),
-                observed: Some(
-                    khora_core::script::ScriptSnapshot::default()
-                        .with_field("health", ScriptValue::Int(40)),
-                ),
-            }),
+            arrival: Some(super::loaded(
+                khora_core::script::ScriptSnapshot::default()
+                    .with_field("health", ScriptValue::Int(40)),
+            )),
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
@@ -395,10 +392,7 @@ fn a_frames_state_travels_to_the_scene_and_back() {
         instances: vec![ScriptInstance {
             entity: entity(0),
             program: 0,
-            arrival: Some(khora_data::flow::ScriptArrival {
-                fields: Vec::new(),
-                observed: Some(saved),
-            }),
+            arrival: Some(super::loaded(saved)),
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,

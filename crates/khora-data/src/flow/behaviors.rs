@@ -139,13 +139,6 @@ fn arrival_of(
                 log::error!("a behavior's recorded state could not be read: {error}");
                 None
             }
-        })
-        .map(|mut snapshot| {
-            // One value per field: the component is both what was authored
-            // and what the game made of it.
-            snapshot.fields = fields.to_vec();
-            snapshot.authored = fields.to_vec();
-            snapshot
         });
     let fields = match observed {
         Some(_) => fields.to_vec(),
