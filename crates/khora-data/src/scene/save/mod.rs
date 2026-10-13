@@ -50,7 +50,8 @@ use crate::ecs::World;
 
 mod read;
 mod reports;
-use read::{as_read, scene_as_read, Read, Unreadable};
+pub(crate) use read::scene_as_read;
+use read::{as_read, Read, Unreadable};
 pub use reports::about_what_loads;
 
 /// What a game save holds, against the scene it was taken from.

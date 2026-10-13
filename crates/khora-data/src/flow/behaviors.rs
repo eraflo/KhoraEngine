@@ -29,24 +29,13 @@ use khora_core::script::ScriptValue;
 
 use super::companion::companion_snapshot;
 use super::script::{ScriptArrival, ScriptInstance, ScriptProgram, ScriptView};
-use crate::ecs::{ComponentKey, ScriptRole, Transform, World};
+use crate::ecs::{ComponentKey, Transform, World};
 
 /// What separates a behavior's name from its state companion's.
 const STATE_SUFFIX: &str = "#state";
 
 /// Instances, by entity and behavior.
 type Pairs = HashSet<(EntityId, String)>;
-
-/// Whether `entity` holds the component of the behavior named `behavior`.
-pub(super) fn attaches(world: &World, entity: EntityId, behavior: &str) -> bool {
-    world.components().key_named(behavior).is_some_and(|key| {
-        world
-            .components()
-            .vtable(key)
-            .is_some_and(|vtable| matches!(vtable.script, Some(ScriptRole::Behavior { .. })))
-            && world.row(entity, key).is_some()
-    })
-}
 
 /// Every `(entity, behavior)` a component attaches, and those whose entity
 /// holds the behavior's state companion too.
@@ -103,7 +92,7 @@ pub(super) fn project_behaviors(
                 entity,
                 program: index as u32,
                 arrival,
-                row: Some(fields),
+                row: fields,
                 translation: transform.map_or(Vec3::ZERO, |t| t.translation),
                 rotation: transform.map_or(Quaternion::IDENTITY, |t| t.rotation),
                 scale: transform.map_or(Vec3::ONE, |t| t.scale),

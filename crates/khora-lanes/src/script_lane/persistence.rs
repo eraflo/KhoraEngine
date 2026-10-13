@@ -15,10 +15,10 @@
 //! Between what a scene stores and what the VM runs.
 //!
 //! A behavior's state is part of a game save: a guard saved at forty health
-//! loads at forty, not at the hundred its author typed. The [`Script`]
-//! component holds what the author typed; the `ScriptState` component holds
-//! what the game made of it — both **by name**, while the VM addresses them by
-//! slot.
+//! loads at forty, not at the hundred its author typed. The behavior's
+//! component — `Guard` — holds its fields, and its state companion —
+//! `Guard#state` — what the engine keeps to resume it, both **by name**, while
+//! the VM addresses them by slot.
 //!
 //! # Why the scene keeps names and the machine keeps slots
 //!
@@ -40,7 +40,6 @@
 //! refused **loudly**: a conversion that silently dropped one would put a guard
 //! at the origin after a reload with nothing said.
 //!
-//! [`Script`]: khora_data::ecs::Script
 //! [`bridge`]: khora_script::bridge
 
 use khora_core::script::{

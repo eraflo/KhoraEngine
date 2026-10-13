@@ -24,7 +24,7 @@
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
-use khora_core::script::{ScriptSnapshot, ScriptStateWriteback, ScriptValue};
+use khora_core::script::{BehaviorWriteback, ScriptSnapshot, ScriptValue};
 use khora_core::Runtime;
 use khora_data::ecs::{
     ComponentKey, ComponentProvenance, DataSystemRegistration, FieldKind, PackedField,
@@ -168,14 +168,14 @@ pub(crate) fn recorded(world: &World, entity: EntityId, behavior: &str) -> Optio
 }
 
 /// Writes what the lane reported back onto the world through the engine's
-/// own `script_state_writeback`, as the frame's `Maintenance` runs it.
+/// own `behavior_writeback`, as the frame's `Maintenance` runs it.
 pub(crate) fn write_back(world: &mut World, report: &ScriptRunReport) {
     let mut deck = OutputDeck::new();
-    deck.slot::<ScriptStateWriteback>()
+    deck.slot::<BehaviorWriteback>()
         .extend(report.state.iter().cloned());
     let system = khora_script::inventory::iter::<DataSystemRegistration>
         .into_iter()
-        .find(|system| system.name == "script_state_writeback")
+        .find(|system| system.name == "behavior_writeback")
         .expect("the engine registers the behaviors' writeback");
     (system.run)(world, &Runtime::default(), &mut deck);
 }

@@ -22,6 +22,7 @@
 
 pub mod asset_eviction;
 pub mod audio_playback_writeback;
+pub mod behavior_writeback;
 pub mod capture_previous_transform;
 pub mod collision_dispatch;
 pub mod collision_to_script;
@@ -34,7 +35,6 @@ pub mod input_map_update;
 pub mod physics_debug_extraction;
 pub mod physics_world_writeback;
 pub mod script_commands;
-pub mod script_state;
 pub mod transform_propagation;
 
 pub use transform_propagation::transform_propagation_system;

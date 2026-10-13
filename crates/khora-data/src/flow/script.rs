@@ -38,7 +38,7 @@ use khora_core::math::{Quaternion, Vec3};
 use khora_core::script::{ScriptSnapshot, ScriptValue};
 use khora_core::Runtime;
 
-use crate::ecs::{Script, ScriptState, SemanticDomain, Transform, World};
+use crate::ecs::{SemanticDomain, World};
 use crate::flow::{Flow, Selection};
 use crate::register_flow;
 
@@ -65,11 +65,10 @@ pub struct ScriptInstance {
     /// before — never merged here. The lane composes them.
     pub arrival: Option<ScriptArrival>,
 
-    /// The behavior's component row this frame, its fields by name, for an
-    /// instance its component attaches — `None` for one a `Script` attaches.
-    /// Handed over every frame, so the lane takes a field written outside it
-    /// since: an edit during play, another script's write.
-    pub row: Option<Vec<(String, ScriptValue)>>,
+    /// The behavior's component row this frame, its fields by name. Handed
+    /// over every frame, so the lane takes a field written outside it since:
+    /// an edit during play, another script's write.
+    pub row: Vec<(String, ScriptValue)>,
 
     /// Where the entity is, this frame.
     ///
@@ -89,10 +88,10 @@ pub struct ScriptInstance {
 /// the lane decides how they combine.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ScriptArrival {
-    /// The fields its author set, from its `Script`.
+    /// The fields its component holds as it arrives.
     pub fields: Vec<(String, ScriptValue)>,
-    /// What was observed of this behavior before — its `ScriptState` — if the
-    /// entity has one recorded by the same behavior.
+    /// What was observed of this behavior before — its state companion — if
+    /// the entity holds one.
     pub observed: Option<ScriptSnapshot>,
 }
 
@@ -148,16 +147,6 @@ impl ScriptView {
 /// Projects the scene's scripts into a [`ScriptView`].
 #[derive(Default)]
 pub struct ScriptFlow {
-    /// Entities whose authored fields have already been handed over.
-    ///
-    /// The flow is the only place that can know this: it sees every frame's
-    /// entity set, and the lane sees only what it is given. Keeping it here is
-    /// what turns "send the fields once" into something the projection can
-    /// actually decide.
-    seen: HashSet<(EntityId, String)>,
-    /// Entities appearing for the first time, computed in `select` for
-    /// `project` — which is `&self` and cannot work it out itself.
-    newcomers: HashSet<(EntityId, String)>,
     /// Whether gameplay runs this frame. Where it does not — an editor
     /// editing a scene, a game in a tool mode — nothing is projected and
     /// nothing is remembered: an entity seen before carries on when play
@@ -166,13 +155,19 @@ pub struct ScriptFlow {
     /// Whether gameplay ran the frame before.
     ran: bool,
     /// The `(entity, behavior)` pairs a behavior's component attaches, as
-    /// last seen — the component path's `seen`.
+    /// last seen.
+    ///
+    /// The flow is the only place that can know which are new: it sees every
+    /// frame's entity set, and the lane sees only what it is given. Replaced
+    /// rather than extended, so a despawned entity is forgotten and an index
+    /// that comes back — with a new generation — is a newcomer again.
     attached: HashSet<(EntityId, String)>,
     /// The attached pairs whose entity held the behavior's state companion
     /// last frame: one that holds it no more was detached and attached again
     /// between two frames, and arrives afresh.
     with_state: HashSet<(EntityId, String)>,
-    /// The pairs attached for the first time this frame.
+    /// The pairs attached for the first time this frame, computed in
+    /// `select` for `project` — which is `&self` and cannot work it out.
     attached_newcomers: HashSet<(EntityId, String)>,
 }
 
@@ -195,7 +190,6 @@ impl Flow for ScriptFlow {
         self.ran = self.running;
         self.running = gameplay_runs(runtime);
         if !self.running {
-            self.newcomers.clear();
             self.attached_newcomers.clear();
             return Selection::new();
         }
@@ -210,19 +204,6 @@ impl Flow for ScriptFlow {
             .collect();
         self.attached = attached;
         self.with_state = with_state;
-        // By entity and behavior: a `Script` switched to another behavior is
-        // a newcomer of that behavior, and arrives with its fields.
-        let live: HashSet<(EntityId, String)> = world
-            .iter_entities()
-            .filter_map(|entity| Some((entity, world.get::<Script>(entity)?.behavior.clone())))
-            .collect();
-
-        self.newcomers = live.difference(&self.seen).cloned().collect();
-        // Replaced rather than extended, so a despawned entity is forgotten and
-        // an index that comes back — with a new generation — is a newcomer
-        // again. Growing forever would also be a leak in a scene that spawns.
-        self.seen = live;
-
         Selection::new()
     }
 
@@ -259,50 +240,6 @@ impl Flow for ScriptFlow {
             view.components = std::sync::Arc::new(world.project_components(&reads));
         }
 
-        for entity in world.iter_entities() {
-            let Some(script) = world.get::<Script>(entity) else {
-                continue;
-            };
-            // The same behavior attached by its component as well: one
-            // instance, the component's.
-            if super::behaviors::attaches(world, entity, &script.behavior) {
-                continue;
-            }
-
-            let program = ScriptProgram {
-                module: script.module.clone(),
-                behavior: script.behavior.clone(),
-            };
-            // Linear rather than hashed: a scene has a handful of distinct
-            // behaviors and thousands of instances, so the scan is over the
-            // short list and a map's hashing would cost more than it saves.
-            let index = match view.programs.iter().position(|known| *known == program) {
-                Some(index) => index,
-                None => {
-                    view.programs.push(program);
-                    view.programs.len() - 1
-                }
-            };
-
-            let arrival = self
-                .newcomers
-                .contains(&(entity, script.behavior.clone()))
-                .then(|| arrival_of(world, entity, script));
-
-            let transform = world.get::<Transform>(entity).copied();
-            view.instances.push(ScriptInstance {
-                entity,
-                program: index as u32,
-                arrival,
-                // An entity with a behavior but no `Transform` is legitimate —
-                // a game-state manager has nowhere to be. Identity keeps the
-                // lane branch-free rather than making every read an `Option`.
-                translation: transform.map_or(Vec3::ZERO, |t| t.translation),
-                rotation: transform.map_or(Quaternion::IDENTITY, |t| t.rotation),
-                scale: transform.map_or(Vec3::ONE, |t| t.scale),
-                row: None,
-            });
-        }
         super::behaviors::project_behaviors(world, &self.attached_newcomers, &mut view);
         view
     }
@@ -313,23 +250,12 @@ impl Flow for ScriptFlow {
     // frame while still costing the hash.
 }
 
-/// What `entity` brings the first frame it appears.
-fn arrival_of(world: &World, entity: EntityId, script: &Script) -> ScriptArrival {
-    let observed = world
-        .get::<ScriptState>(entity)
-        .filter(|state| state.behavior == script.behavior)
-        .map(|state| state.snapshot.clone());
-    ScriptArrival {
-        fields: script.fields.clone(),
-        observed,
-    }
-}
-
 register_flow!(ScriptFlow);
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ecs::Transform;
 
     /// Runs both stages, the way the registration trampoline does — `select`
     /// is where the flow works out which entities are new, so a test that
@@ -380,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn an_entity_without_a_script_is_not_projected() {
+    fn an_entity_without_a_behavior_is_not_projected() {
         let mut world = World::new();
         world.spawn(Transform::identity());
 
@@ -388,12 +314,11 @@ mod tests {
     }
 
     #[test]
-    fn a_scripted_entity_arrives_with_its_program_and_place() {
+    fn an_entity_running_a_behavior_arrives_with_its_program_and_place() {
         let mut world = World::new();
-        let entity = world.spawn((
-            Transform::from_translation(Vec3::new(1.0, 2.0, 3.0)),
-            Script::new("ai/guard.erg", "Guard"),
-        ));
+        let guard = declare_behavior(&mut world, "ai/guard.erg", "Guard");
+        let entity = world.spawn(Transform::from_translation(Vec3::new(1.0, 2.0, 3.0)));
+        attach_behavior(&mut world, entity, guard, 100);
 
         let view = project(&world);
         assert_eq!(view.len(), 1);
@@ -427,29 +352,18 @@ mod tests {
     #[test]
     fn distinct_behaviors_get_distinct_programs() {
         let mut world = World::new();
-        world.spawn((Transform::identity(), Script::new("ai/guard.erg", "Guard")));
-        world.spawn((Transform::identity(), Script::new("ai/guard.erg", "Sentry")));
-        world.spawn((
-            Transform::identity(),
-            Script::new("loot/chest.erg", "Chest"),
-        ));
+        for (module, name) in [
+            ("ai/guard.erg", "Guard"),
+            ("ai/guard.erg", "Sentry"),
+            ("loot/chest.erg", "Chest"),
+        ] {
+            let behavior = declare_behavior(&mut world, module, name);
+            let entity = world.spawn(Transform::identity());
+            attach_behavior(&mut world, entity, behavior, 1);
+        }
 
         let view = project(&world);
         assert_eq!(view.programs.len(), 3);
-    }
-
-    /// Two behaviors of the same name in different modules are two behaviors —
-    /// deduplicating on the name alone would run one where the other was meant.
-    #[test]
-    fn the_module_is_part_of_a_programs_identity() {
-        let mut world = World::new();
-        world.spawn((Transform::identity(), Script::new("ai/guard.erg", "Guard")));
-        world.spawn((
-            Transform::identity(),
-            Script::new("town/guard.erg", "Guard"),
-        ));
-
-        assert_eq!(project(&world).programs.len(), 2);
     }
 
     /// A game-state manager has nowhere to be, and must still run.
@@ -464,136 +378,6 @@ mod tests {
         assert_eq!(view.len(), 1);
         assert_eq!(view.instances[0].translation, Vec3::ZERO);
         assert_eq!(view.instances[0].scale, Vec3::ONE);
-    }
-
-    /// The view is what the lane sees, so it must reflect an authored field
-    /// change without the lane consulting the `World` itself.
-    #[test]
-    fn the_projection_follows_the_world() {
-        let mut world = World::new();
-        let entity = world.spawn((Transform::identity(), Script::new("ai/guard.erg", "Guard")));
-
-        if let Some(script) = world.get_mut::<Script>(entity) {
-            *script =
-                Script::new("ai/guard.erg", "Chase").with_field("speed", ScriptValue::Float(5.0));
-        }
-
-        let view = project(&world);
-        assert_eq!(
-            view.program_of(&view.instances[0])
-                .map(|p| p.behavior.as_str()),
-            Some("Chase")
-        );
-    }
-
-    /// **No merge.** A newcomer hands the lane what its author set and what
-    /// was observed of it, side by side: which wins is the lane's decision,
-    /// and a value both hold arrives twice rather than once, overwritten.
-    #[test]
-    fn a_newcomer_arrives_with_authored_fields_and_observed_state_apart() {
-        let mut world = World::new();
-        let observed = ScriptSnapshot {
-            state: Some("Chase".to_owned()),
-            ..ScriptSnapshot::default()
-        }
-        .with_field("health", ScriptValue::Int(40));
-        world.spawn((
-            Transform::identity(),
-            Script::new("ai/guard.erg", "Guard")
-                .with_field("health", ScriptValue::Int(100))
-                .with_field("speed", ScriptValue::Float(3.0)),
-            crate::ecs::ScriptState {
-                behavior: "Guard".to_owned(),
-                snapshot: observed.clone(),
-            },
-        ));
-
-        let view = project(&world);
-
-        assert_eq!(
-            view.instances[0].arrival,
-            Some(ScriptArrival {
-                fields: vec![
-                    ("health".to_owned(), ScriptValue::Int(100)),
-                    ("speed".to_owned(), ScriptValue::Float(3.0)),
-                ],
-                observed: Some(observed),
-            })
-        );
-    }
-
-    /// An entity that never ran arrives with its authored fields and nothing
-    /// observed.
-    #[test]
-    fn a_newcomer_that_never_ran_arrives_with_nothing_observed() {
-        let mut world = World::new();
-        world.spawn((
-            Transform::identity(),
-            Script::new("ai/guard.erg", "Guard").with_field("health", ScriptValue::Int(100)),
-        ));
-
-        let view = project(&world);
-
-        assert_eq!(
-            view.instances[0].arrival,
-            Some(ScriptArrival {
-                fields: vec![("health".to_owned(), ScriptValue::Int(100))],
-                observed: None,
-            })
-        );
-    }
-
-    /// A state observed of another behavior — the entity's behavior was
-    /// swapped since — is not handed over: a `Chase` must not start from a
-    /// `Guard`'s fields and state.
-    #[test]
-    fn a_state_for_another_behavior_is_not_handed_over() {
-        let mut world = World::new();
-        world.spawn((
-            Transform::identity(),
-            Script::new("ai/guard.erg", "Chase").with_field("speed", ScriptValue::Float(5.0)),
-            crate::ecs::ScriptState {
-                behavior: "Guard".to_owned(),
-                snapshot: ScriptSnapshot::default().with_field("health", ScriptValue::Int(40)),
-            },
-        ));
-
-        let view = project(&world);
-
-        assert_eq!(
-            view.instances[0].arrival,
-            Some(ScriptArrival {
-                fields: vec![("speed".to_owned(), ScriptValue::Float(5.0))],
-                observed: None,
-            })
-        );
-    }
-
-    /// The arrival is delivered once: after the first frame the lane holds the
-    /// live state, and sending it again would clone every field of every
-    /// entity every frame for nobody.
-    #[test]
-    fn no_arrival_after_the_first_frame() {
-        let mut world = World::new();
-        world.spawn((
-            Transform::identity(),
-            Script::new("ai/guard.erg", "Guard").with_field("health", ScriptValue::Int(100)),
-            crate::ecs::ScriptState {
-                behavior: "Guard".to_owned(),
-                snapshot: ScriptSnapshot::default().with_field("health", ScriptValue::Int(40)),
-            },
-        ));
-
-        let mut flow = ScriptFlow::default();
-        let runtime = Runtime::default();
-        let selection = flow.select(&world, &runtime);
-        let first = flow.project(&world, &selection, &runtime);
-        let selection = flow.select(&world, &runtime);
-        let second = flow.project(&world, &selection, &runtime);
-
-        assert!(first.instances[0].arrival.is_some(), "the first frame");
-        assert_eq!(second.len(), 1, "the instance still runs");
-        assert_eq!(second.instances[0].arrival, None, "but arrives only once");
     }
 
     // ─── Gameplay runs only while the game is played ────────────────────────

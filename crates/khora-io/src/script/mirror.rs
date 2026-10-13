@@ -126,8 +126,10 @@ impl<L: SourceLoader> SourceLoader for PreludeLoader<L> {
     }
 }
 
-/// Every engine component's name and former name, sorted: the complete list
-/// — the mirror leaves some out, the registrations do not.
+/// Every engine component's name and former name, and every retired
+/// component's, sorted: the complete list — the mirror leaves some out, the
+/// registrations do not. A retired name stays the engine's: a script
+/// declaring it would read an old file's cells of the type that was removed.
 fn engine_component_names() -> &'static [String] {
     static NAMES: OnceLock<Vec<String>> = OnceLock::new();
     NAMES.get_or_init(|| {
@@ -136,6 +138,11 @@ fn engine_component_names() -> &'static [String] {
             .flat_map(|registration| {
                 std::iter::once(registration.type_name).chain(registration.formerly.iter().copied())
             })
+            .chain(
+                inventory::iter::<khora_data::scene::RetiredComponent>
+                    .into_iter()
+                    .map(|retired| retired.name),
+            )
             .map(str::to_owned)
             .collect();
         names.sort();
@@ -900,5 +907,71 @@ mod tests {
             "a name the engine does not use compiles: {:?}",
             own.diagnostics
         );
+    }
+
+    // A component retired for these tests only: no registration has its
+    // name, so only the retired list can make it the engine's.
+    inventory::submit! {
+        khora_data::scene::RetiredComponent { name: "Sundial" }
+    }
+
+    /// Asserts `source` is refused at `name`, as a name the engine's
+    /// components hold.
+    fn assert_refused_at_name(source: &str, name: &str) {
+        let result = compile(source);
+        assert!(!result.succeeded(), "`{name}` should be refused: {source}");
+        let refusal = result
+            .diagnostics
+            .iter()
+            .find(|d| {
+                &source[d.span.start as usize..d.span.end as usize] == name
+                    && format!("{} {}", d.message, d.note.as_deref().unwrap_or_default())
+                        .contains("engine component")
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "expected the engine-name refusal at `{name}`; got {:?}",
+                    result.diagnostics
+                )
+            });
+        assert!(
+            refusal.message.contains(&format!("`{name}`")),
+            "the refusal names `{name}`: {}",
+            refusal.message
+        );
+    }
+
+    /// **A retired name is still the engine's.** A load checks a file's
+    /// declared names before the retired ones, so a script declaring a
+    /// retired component's name would capture an old file's cells: the name
+    /// is among the engine's, and a `component` or `behavior` declaring it is
+    /// refused at the name.
+    #[test]
+    fn a_retired_component_name_is_refused_as_an_engine_one() {
+        let loader = PreludeLoader::new(MemoryLoader::new());
+        assert!(
+            loader
+                .engine_components()
+                .iter()
+                .any(|name| name == "Sundial"),
+            "a retired name is among the engine's names"
+        );
+        for kind in ["component", "behavior"] {
+            let source = format!("fn void Probe() {{ }}\n{kind} Sundial {{ int n = 0; }}");
+            assert_refused_at_name(&source, "Sundial");
+        }
+    }
+
+    /// **What a behavior replaced cannot be declared.** `"Script"` and
+    /// `"ScriptState"` — the components a behavior replaced, retired — are
+    /// refused as a `behavior` and as a `component`, at the name.
+    #[test]
+    fn a_script_may_not_declare_the_components_a_behavior_replaced() {
+        for name in ["Script", "ScriptState"] {
+            for kind in ["behavior", "component"] {
+                let source = format!("fn void Probe() {{ }}\n{kind} {name} {{ int n = 0; }}");
+                assert_refused_at_name(&source, name);
+            }
+        }
     }
 }

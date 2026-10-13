@@ -31,20 +31,21 @@ use khora_core::ui::types::{UiFlexDirection, UiRect, UiVal};
 use crate::ecs::{
     ActiveEvents, AudioListener, AudioSource, BodyMotion, Camera, Children, Collider,
     GlobalTransform, KinematicCharacterController, Light, Name, Parent, PhysicsDebugData,
-    PhysicsMaterial, ProceduralMeshKind, ProjectionType, RigidBody, Script, ScriptState,
-    SerializableActiveEvents, SerializableAudioListener, SerializableAudioSource,
-    SerializableBodyMotion, SerializableCamera, SerializableChildren, SerializableCollider,
-    SerializableGlobalTransform, SerializableKinematicCharacterController, SerializableLight,
-    SerializableName, SerializableParent, SerializablePhysicsDebugData,
-    SerializablePhysicsMaterial, SerializableRigidBody, SerializableScript,
-    SerializableScriptState, SerializableSimulatedTransform, SerializableTag,
-    SerializableTeleported, SerializableTransform, SimulatedTransform, Tag, Teleported, Transform,
+    PhysicsMaterial, ProceduralMeshKind, ProjectionType, RigidBody, SerializableActiveEvents,
+    SerializableAudioListener, SerializableAudioSource, SerializableBodyMotion, SerializableCamera,
+    SerializableChildren, SerializableCollider, SerializableGlobalTransform,
+    SerializableKinematicCharacterController, SerializableLight, SerializableName,
+    SerializableParent, SerializablePhysicsDebugData, SerializablePhysicsMaterial,
+    SerializableRigidBody, SerializableSimulatedTransform, SerializableTag, SerializableTeleported,
+    SerializableTransform, SimulatedTransform, Tag, Teleported, Transform,
 };
 use crate::ui::{
     SerializableUiBorder, SerializableUiColor, SerializableUiImage, SerializableUiInteraction,
     SerializableUiNode, SerializableUiStyle, SerializableUiText, SerializableUiTransform, UiBorder,
     UiColor, UiImage, UiInteraction, UiInteractionState, UiNode, UiStyle, UiText, UiTransform,
 };
+
+use crate::flow::companion::companion_row;
 
 use super::*;
 
@@ -345,19 +346,18 @@ fn every_persisted_type_round_trips() {
         }),
         ..ScriptSnapshot::default()
     });
-    assert_round_trips(&SerializableScript::from(Script {
-        module: "scripts/guard.erg".into(),
-        behavior: "Guard".into(),
-        fields: every_script_value(target)
+    // A behavior's component row, every value a field holds, and its state
+    // companion's row, a frozen machine inside.
+    assert_round_trips(&ScriptValue::Struct(
+        every_script_value(target)
             .into_iter()
             .enumerate()
             .map(|(i, value)| (format!("field_{i}"), value))
             .collect(),
-    }));
-    assert_round_trips(&SerializableScriptState::from(ScriptState {
-        behavior: "Guard".into(),
-        snapshot: busy_snapshot(other),
-    }));
+    ));
+    assert_round_trips(&ScriptValue::Struct(
+        companion_row(&busy_snapshot(other), true).expect("a companion row"),
+    ));
 
     // UI.
     for value in [UiVal::Px(10.0), UiVal::Percent(50.0), UiVal::Auto] {

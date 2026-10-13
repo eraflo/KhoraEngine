@@ -34,3 +34,10 @@ pub fn is_retired(name: &str) -> bool {
         .into_iter()
         .any(|retired| retired.name == name)
 }
+
+// The two legacy script components: one named the behavior an entity ran,
+// the other held what it was doing. A behavior is now a component of its own,
+// its state a companion beside it; projects were upgraded once — scenes,
+// prefabs and saves rewritten — and the two removed.
+inventory::submit! { RetiredComponent { name: "Script" } }
+inventory::submit! { RetiredComponent { name: "ScriptState" } }

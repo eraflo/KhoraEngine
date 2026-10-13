@@ -293,7 +293,7 @@ fn a_scene_value_seeds_the_instance_rather_than_the_declared_default() {
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
-            row: None,
+            row: Vec::new(),
         }],
     };
 
@@ -342,7 +342,7 @@ fn a_field_the_scene_did_not_save_takes_its_declared_default() {
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
-            row: None,
+            row: Vec::new(),
         }],
     };
     run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
@@ -402,7 +402,7 @@ fn a_frames_state_travels_to_the_scene_and_back() {
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
-            row: None,
+            row: Vec::new(),
         }],
     };
     let mut loaded = runtime_with_guard();

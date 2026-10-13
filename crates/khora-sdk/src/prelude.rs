@@ -58,12 +58,10 @@ pub mod ecs {
     pub use khora_data::ecs::{
         AudioSource, Camera, Children, Collider, Component, ComponentBundle, GlobalTransform,
         Light, MaterialRef, MeshRef, Name, Parent, ProceduralMeshKind, ProjectionType, RigidBody,
-        Script, Tag, Transform, Without,
+        Tag, Transform, Without,
     };
-    // `Script` is how an entity gets gameplay logic. It was missing from
-    // this list, which meant no game could attach a behaviour through the
-    // SDK at all — the only road in was the editor's generic
-    // "+ Add Component" card.
+    // A behavior is attached by its component, by name —
+    // `GameWorld::add_declared_component` — with its fields as script values.
     pub use khora_core::script::ScriptValue;
 }
 

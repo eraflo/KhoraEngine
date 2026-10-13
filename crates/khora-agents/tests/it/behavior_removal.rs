@@ -17,7 +17,7 @@
 //! entity's later despawn is none of its business.
 
 use khora_core::script::ScriptValue;
-use khora_data::ecs::{Script, ScriptState, Transform, World};
+use khora_data::ecs::{Transform, World};
 
 use super::behavior_session::{attach, field, int, key, Project, Session};
 
@@ -177,74 +177,6 @@ fn a_behavior_removed_and_added_again_between_two_frames_starts_afresh() {
         "the counter added back spawned"
     );
     assert_eq!(int(world, counter, "Counter", "ticks"), Some(1));
-}
-
-const SWITCHED: Project = &[
-    (
-        "game/old.erg",
-        "behavior Old {
-             Entity witness;
-             void OnDespawn() { witness.Translate(Vec3(1.0, 0.0, 0.0)); }
-             void Update(float dt) { }
-         }",
-    ),
-    (
-        "game/new.erg",
-        "behavior New {
-             int hp = 10;
-             int ticks = 0;
-             bool greeted = false;
-             void OnSpawn() { greeted = true; }
-             void Update(float dt) { ticks += 1; }
-         }",
-    ),
-];
-
-/// **A `Script` switched to another behavior says goodbye once, and starts
-/// the new one with the fields it names.** The entity runs `Old` through a
-/// `Script`; the `Script` is replaced by one naming `New` with `hp = 5`. The
-/// old behavior's `OnDespawn` moves the witness once, and `New` spawns and
-/// runs from the `hp` its `Script` gives it.
-#[test]
-fn a_script_switched_to_another_behavior_says_goodbye_once_and_starts_the_new_one() {
-    let mut session = Session::new(World::new(), SWITCHED);
-    let witness = session.world.spawn(Transform::identity());
-    let entity = session.world.spawn((
-        Transform::identity(),
-        Script::new("game/old.erg", "Old").with_field("witness", ScriptValue::Entity(witness)),
-    ));
-    session.frame(0.016);
-    session.frame(0.016);
-
-    *session
-        .world
-        .get_mut::<Script>(entity)
-        .expect("the entity runs a script") =
-        Script::new("game/new.erg", "New").with_field("hp", ScriptValue::Int(5));
-    for _ in 0..3 {
-        session.frame(0.016);
-    }
-
-    let world = &session.world;
-    let moved = world
-        .get::<Transform>(witness)
-        .expect("the witness has a pose")
-        .translation
-        .x;
-    assert_eq!(moved, 1.0, "the old behavior said goodbye once");
-    let state = world
-        .get::<ScriptState>(entity)
-        .expect("the new behavior's state is recorded");
-    assert_eq!(state.behavior, "New");
-    assert_eq!(
-        state.snapshot.field("greeted"),
-        Some(&ScriptValue::Bool(true))
-    );
-    assert_eq!(
-        state.snapshot.field("hp").and_then(ScriptValue::as_int),
-        Some(5),
-        "the new behavior starts from the `hp` its `Script` names"
-    );
 }
 
 const WAITER: Project = &[(

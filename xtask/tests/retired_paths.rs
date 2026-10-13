@@ -393,6 +393,130 @@ fn nothing_names_a_v1_scene_reader() {
     );
 }
 
+/// What attached a script before behaviors were components: the two legacy
+/// components and their serializable mirrors, their constructor, the
+/// writeback that kept them, and the one-time upgrade that converted a
+/// project's files away from them, by every name it went by.
+const RETIRED_LEGACY_SCRIPTS: &[&str] = &[
+    // The state component, its mirror, and every name built on it — the
+    // writeback and its update are named after the behavior now.
+    "ScriptState",
+    // The script component's mirror (and the state's).
+    "SerializableScript",
+    // The script component's constructor.
+    "Script::new(",
+    // The writeback's legacy half and its data system.
+    "drop_orphaned_states",
+    "script_state_writeback",
+    // The upgrade command.
+    "upgrade-behaviors",
+    "upgrade_behaviors",
+];
+
+/// The files and directories that held them.
+const RETIRED_LEGACY_SCRIPT_FILES: &[&str] = &[
+    "crates/khora-data/src/ecs/components/script.rs",
+    "crates/khora-data/src/ecs/components/script_state.rs",
+    "xtask/src/commands/upgrade_behaviors",
+    "xtask/tests/upgrade_behaviors.rs",
+];
+
+/// Where a legacy script name may still be spelled, and only as written: a
+/// file, the retired name, and the exact text the line must spell it as. The
+/// names are data there — the name a save holds a retired component under,
+/// declared retired, or the input of a test that such a file loads, or that
+/// a script may not take the name — never the Rust type.
+const LEGACY_SCRIPT_DATA: &[(&str, &str, &str)] = &[
+    // The retirement itself.
+    (
+        "crates/khora-data/src/scene/retired.rs",
+        "ScriptState",
+        "RetiredComponent { name: \"ScriptState\" }",
+    ),
+    // `a_scene_holding_a_script_and_its_state_loads_without_them_and_reports_both`
+    // and `a_game_save_holding_a_script_state_loads_without_it_and_reports_it`
+    // build files holding the retired name.
+    (
+        "crates/khora-data/tests/scene_records/retired_script_components.rs",
+        "ScriptState",
+        "\"ScriptState\"",
+    ),
+    // `a_script_may_not_declare_the_components_a_behavior_replaced` declares
+    // the retired name in a script.
+    (
+        "crates/khora-io/src/script/mirror.rs",
+        "ScriptState",
+        "\"ScriptState\"",
+    ),
+];
+
+/// Whether `line` of `file` names `retired` only as data.
+fn is_legacy_script_data(file: &str, retired: &str, line: &str) -> bool {
+    LEGACY_SCRIPT_DATA
+        .iter()
+        .any(|(allowed_file, allowed_name, spelled)| {
+            file == *allowed_file
+                && retired == *allowed_name
+                && line.contains(spelled)
+                // Every mention on the line is the allowed spelling.
+                && line.matches(retired).count() == line.matches(spelled).count()
+        })
+}
+
+/// The code the legacy script names are looked for in: every crate whole,
+/// the examples, the build tool and its tests — but this file, which names
+/// them to forbid them.
+fn legacy_script_scanned_files(root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for dir in ["crates", "examples", "xtask/src", "xtask/tests"] {
+        walk(&root.join(dir), &mut out);
+    }
+    out.retain(|path| {
+        rel(root, path) != "xtask/tests/retired_paths.rs"
+            && matches!(
+                path.extension().and_then(|e| e.to_str()),
+                Some("rs" | "toml")
+            )
+    });
+    out.sort();
+    out
+}
+
+/// Behaviors are components, and every project was upgraded to them: the
+/// legacy script component, its runtime state, the writeback's legacy half
+/// and the upgrade tool are gone — their files and every mention of them in
+/// code. A file still holding either component loads without it, reported as
+/// retired; that retirement, and the tests that build such a file, are the
+/// only places the names are spelled, as data.
+#[test]
+fn nothing_names_the_legacy_script_components() {
+    let root = repo_root();
+    let mut hits = Vec::new();
+    for retired in RETIRED_LEGACY_SCRIPT_FILES {
+        if root.join(retired).exists() {
+            hits.push(format!("{retired} still exists"));
+        }
+    }
+    for file in legacy_script_scanned_files(&root) {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        let path = rel(&root, &file);
+        for (number, line) in text.lines().enumerate() {
+            for retired in RETIRED_LEGACY_SCRIPTS {
+                if line.contains(retired) && !is_legacy_script_data(&path, retired, line) {
+                    hits.push(format!("{path}:{}: `{retired}`", number + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "the legacy script components are still named:\n  {}",
+        hits.join("\n  ")
+    );
+}
+
 /// The crates whose only use of bincode was the v1 scene codec: the derives
 /// on the engine's value types and the binary form of a suspended machine.
 const BINCODE_FREE_CRATES: &[&str] = &["crates/khora-core", "crates/khora-lanes"];

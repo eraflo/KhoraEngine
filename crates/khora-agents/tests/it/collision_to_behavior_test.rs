@@ -86,7 +86,7 @@ fn a_scene_with_a_guard() -> ScriptView {
             translation: Default::default(),
             rotation: Default::default(),
             scale: Default::default(),
-            row: None,
+            row: Vec::new(),
         }],
     }
 }
@@ -220,7 +220,7 @@ fn report_contact(
 }
 
 /// **From a physics contact to the handler of a behavior attached by its
-/// component** — no `Script`, no hand-built view: the contact goes through
+/// component** — no hand-built view: the contact goes through
 /// `collision_to_script`, the flow projects the guard from its component,
 /// the lane runs `on Touched` with the other entity in hand, and the field
 /// it wrote is the `World`'s.

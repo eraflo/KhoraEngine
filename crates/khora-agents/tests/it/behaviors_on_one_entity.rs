@@ -79,34 +79,6 @@ fn an_event_held_for_a_busy_behavior_survives_another_behavior_leaving() {
     );
 }
 
-const TICK: Project = &[(
-    "game/tick.erg",
-    "behavior Tick { int ticks = 0; void Update(float dt) { ticks += 1; } }",
-)];
-
-/// **One behavior attached twice to an entity — by its component and by a
-/// `Script` naming it — still runs once a frame**: the two attachments are
-/// one `(entity, behavior)`, and the instance they share must not take two
-/// turns a frame.
-#[test]
-fn a_behavior_attached_by_its_component_and_a_script_runs_once_a_frame() {
-    let mut session = Session::new(World::new(), TICK);
-    let entity = session.world.spawn((
-        Transform::identity(),
-        khora_data::ecs::Script::new("game/tick.erg", "Tick"),
-    ));
-    attach(&mut session.world, entity, "Tick", &[]);
-    for _ in 0..3 {
-        session.frame(0.016);
-    }
-    let report = session.scripts.last_report().clone();
-    assert_eq!(
-        report.completed, 1,
-        "one instance, one turn a frame: {report:?}"
-    );
-    assert_eq!(int(&session.world, entity, "Tick", "ticks"), Some(3));
-}
-
 const FAREWELLS: Project = &[
     ("game/mark.erg", "component Mark { int by = 0; }"),
     (

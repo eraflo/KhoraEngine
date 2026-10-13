@@ -63,4 +63,4 @@ pub use snapshot::{
     InstanceLifecycle, PendingSequence, RecordedFault, ScriptSnapshot, TimerRemaining,
 };
 pub use value::ScriptValue;
-pub use writeback::{ScriptStateUpdate, ScriptStateWriteback};
+pub use writeback::{BehaviorUpdate, BehaviorWriteback};

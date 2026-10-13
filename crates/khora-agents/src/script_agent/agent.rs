@@ -25,7 +25,7 @@ use khora_core::agent::{
 };
 use khora_core::event::Channel;
 use khora_core::lane::{LaneContext, LaneRegistry};
-use khora_core::script::{CommandBuffer, ScriptEvent, ScriptStateWriteback};
+use khora_core::script::{BehaviorWriteback, CommandBuffer, ScriptEvent};
 use khora_core::EngineContext;
 use khora_data::flow::ScriptView;
 use khora_lanes::script_lane::runtime::INITIAL_RATE;
@@ -271,7 +271,7 @@ impl Agent for ScriptAgent {
         Contention::none()
             .writing_deck([
                 TypeId::of::<CommandBuffer>(),
-                TypeId::of::<ScriptStateWriteback>(),
+                TypeId::of::<BehaviorWriteback>(),
             ])
             .locking::<Channel<ScriptReload>>()
             .locking::<Channel<ScriptEvent>>()
@@ -343,7 +343,7 @@ mod tests {
                 translation: Default::default(),
                 rotation: Default::default(),
                 scale: Default::default(),
-                row: None,
+                row: Vec::new(),
             }],
         }
     }

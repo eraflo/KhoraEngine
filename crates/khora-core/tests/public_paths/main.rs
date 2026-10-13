@@ -62,7 +62,7 @@ fn is_deserialize_owned<T: serde::de::DeserializeOwned>() {}
 fn is_display<T: std::fmt::Display>() {}
 fn is_eq<T: Eq>() {}
 fn is_error<T: std::error::Error>() {}
-fn is_extend_script_state_update<T: Extend<khora_core::script::writeback::ScriptStateUpdate>>() {}
+fn is_extend_behavior_update<T: Extend<khora_core::script::writeback::BehaviorUpdate>>() {}
 fn is_extend_world_command<T: Extend<khora_core::script::command::WorldCommand>>() {}
 fn is_from_str<T: From<&'static str>>() {}
 fn is_from_string<T: From<String>>() {}
@@ -1047,8 +1047,8 @@ fn script_value_variants(x: &khora_core::script::value::ScriptValue) {
     }
 }
 
-fn script_state_update_fields(x: &khora_core::script::writeback::ScriptStateUpdate) {
-    let _ = (&x.entity, &x.behavior, &x.snapshot);
+fn behavior_update_fields(x: &khora_core::script::writeback::BehaviorUpdate) {
+    let _ = (&x.entity, &x.behavior, &x.snapshot, &x.changed);
 }
 
 fn telemetry_event_variants(x: &khora_core::telemetry::event::TelemetryEvent) {
@@ -2799,29 +2799,29 @@ fn module_script_paths_still_resolve() {
     is_partial_eq::<khora_core::script::value::ScriptValue>();
     is_serialize::<khora_core::script::value::ScriptValue>();
     is_deserialize_owned::<khora_core::script::value::ScriptValue>();
-    let _ = type_name::<khora_core::script::writeback::ScriptStateUpdate>();
-    let _ = type_name::<khora_core::script::ScriptStateUpdate>();
+    let _ = type_name::<khora_core::script::writeback::BehaviorUpdate>();
+    let _ = type_name::<khora_core::script::BehaviorUpdate>();
     same_type(
-        PhantomData::<khora_core::script::ScriptStateUpdate>,
-        PhantomData::<khora_core::script::writeback::ScriptStateUpdate>,
+        PhantomData::<khora_core::script::BehaviorUpdate>,
+        PhantomData::<khora_core::script::writeback::BehaviorUpdate>,
     );
-    let _ = script_state_update_fields as fn(&khora_core::script::writeback::ScriptStateUpdate);
-    is_debug::<khora_core::script::writeback::ScriptStateUpdate>();
-    is_clone::<khora_core::script::writeback::ScriptStateUpdate>();
-    is_partial_eq::<khora_core::script::writeback::ScriptStateUpdate>();
-    is_extend_script_state_update::<khora_core::script::writeback::ScriptStateWriteback>();
-    let _ = type_name::<khora_core::script::writeback::ScriptStateWriteback>();
-    let _ = type_name::<khora_core::script::ScriptStateWriteback>();
+    let _ = behavior_update_fields as fn(&khora_core::script::writeback::BehaviorUpdate);
+    is_debug::<khora_core::script::writeback::BehaviorUpdate>();
+    is_clone::<khora_core::script::writeback::BehaviorUpdate>();
+    is_partial_eq::<khora_core::script::writeback::BehaviorUpdate>();
+    is_extend_behavior_update::<khora_core::script::writeback::BehaviorWriteback>();
+    let _ = type_name::<khora_core::script::writeback::BehaviorWriteback>();
+    let _ = type_name::<khora_core::script::BehaviorWriteback>();
     same_type(
-        PhantomData::<khora_core::script::ScriptStateWriteback>,
-        PhantomData::<khora_core::script::writeback::ScriptStateWriteback>,
+        PhantomData::<khora_core::script::BehaviorWriteback>,
+        PhantomData::<khora_core::script::writeback::BehaviorWriteback>,
     );
-    let _ = khora_core::script::writeback::ScriptStateWriteback::push;
-    let _ = khora_core::script::writeback::ScriptStateWriteback::drain;
-    is_debug::<khora_core::script::writeback::ScriptStateWriteback>();
-    is_clone::<khora_core::script::writeback::ScriptStateWriteback>();
-    is_default::<khora_core::script::writeback::ScriptStateWriteback>();
-    is_partial_eq::<khora_core::script::writeback::ScriptStateWriteback>();
+    let _ = khora_core::script::writeback::BehaviorWriteback::push;
+    let _ = khora_core::script::writeback::BehaviorWriteback::drain;
+    is_debug::<khora_core::script::writeback::BehaviorWriteback>();
+    is_clone::<khora_core::script::writeback::BehaviorWriteback>();
+    is_default::<khora_core::script::writeback::BehaviorWriteback>();
+    is_partial_eq::<khora_core::script::writeback::BehaviorWriteback>();
 }
 
 #[test]
@@ -3490,14 +3490,14 @@ mod paths_used_by_other_crates {
     use khora_core::scene::SerializationGoal as _; // khora-io, khora-sdk
     use khora_core::scene::HEADER_MAGIC_BYTES as _; // khora-io
     use khora_core::script::engine_event_channel as _; // khora-agents, khora-data, khora-sdk
+    use khora_core::script::BehaviorUpdate as _; // khora-data, khora-lanes
+    use khora_core::script::BehaviorWriteback as _; // khora-agents, khora-data, khora-lanes
     use khora_core::script::CommandBuffer as _; // khora-agents, khora-data, khora-lanes, khora-script
     use khora_core::script::ComponentName as _; // khora-data
     use khora_core::script::EventQueue as _; // khora-lanes, khora-script
     use khora_core::script::PendingSequence as _; // khora-lanes
     use khora_core::script::ScriptEvent as _; // khora-agents, khora-data, khora-lanes, khora-script, khora-sdk
     use khora_core::script::ScriptSnapshot as _; // khora-data, khora-lanes
-    use khora_core::script::ScriptStateUpdate as _; // khora-data, khora-lanes
-    use khora_core::script::ScriptStateWriteback as _; // khora-agents, khora-data, khora-lanes
     use khora_core::script::ScriptValue as _; // khora-agents, khora-data, khora-lanes, khora-script, khora-sdk
     use khora_core::script::ScriptValue::Int as _; // khora-lanes
     use khora_core::script::ScriptValue::Unit as _; // khora-data

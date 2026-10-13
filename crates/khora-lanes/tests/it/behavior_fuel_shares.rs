@@ -81,7 +81,7 @@ fn view(programs: &[(&str, &str)], instances: &[(u32, u32)]) -> ScriptView {
                 translation: khora_core::math::Vec3::ZERO,
                 rotation: khora_core::math::Quaternion::IDENTITY,
                 scale: khora_core::math::Vec3::ONE,
-                row: None,
+                row: Vec::new(),
             })
             .collect(),
     }
@@ -448,9 +448,9 @@ fn a_behavior_re_enabled_by_an_arrival_spends_within_the_frame_s_fuel() {
 }
 
 /// **A rotation resumes after its cursor in entity order when the view does
-/// not list its instances in that order.** One behavior attached by a
-/// `Script` to some entities and by its component to others is listed one
-/// kind after the other: here 5–9, then 0–4. Fuel for three turns runs 5 6 7,
+/// not list its instances in that order.** A view projected page by page
+/// lists one behavior's instances in the order of their pages, not their
+/// entities: here 5–9, then 0–4. Fuel for three turns runs 5 6 7,
 /// then 8 9 0, stopping at 1. Entity 1 leaves; the next frame should start at
 /// 2, the first after it — not at 5, the first listed with a greater index,
 /// which leaves 2 3 4 out again.

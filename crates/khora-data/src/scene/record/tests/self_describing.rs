@@ -28,12 +28,12 @@ use khora_core::ui::types::{UiRect, UiVal};
 use serde_json::json;
 
 use crate::ecs::{
-    AudioListener, Camera, Collider, Light, Name, Parent, ProjectionType, RigidBody, Script,
-    ScriptState, SerializableAudioListener, SerializableCamera, SerializableCollider,
-    SerializableLight, SerializableName, SerializableParent, SerializableRigidBody,
-    SerializableScript, SerializableScriptState, SerializableTag, SerializableTransform, Tag,
-    Transform,
+    AudioListener, Camera, Collider, Light, Name, Parent, ProjectionType, RigidBody,
+    SerializableAudioListener, SerializableCamera, SerializableCollider, SerializableLight,
+    SerializableName, SerializableParent, SerializableRigidBody, SerializableTag,
+    SerializableTransform, Tag, Transform,
 };
+use crate::flow::companion::companion_row;
 use crate::ui::{
     SerializableUiImage, SerializableUiStyle, SerializableUiText, UiImage, UiStyle, UiText,
 };
@@ -397,36 +397,32 @@ fn every_persisted_type_survives_the_self_describing_form() {
             ..RigidBody::default()
         }));
     }
-    assert_self_describes(&SerializableScript::from(Script {
-        module: "ai/guard.erg".into(),
-        behavior: "Guard".into(),
-        fields: vec![
-            ("speed".into(), ScriptValue::Float(0.1)),
-            ("target".into(), ScriptValue::Entity(target)),
-            ("unit".into(), ScriptValue::Unit),
-            ("count".into(), ScriptValue::Int(i64::MIN)),
-            ("aim".into(), ScriptValue::Vec2(Vec2::new(1.0, -2.0))),
-            (
-                "tint".into(),
-                ScriptValue::Color(LinearRgba::new(0.1, 0.2, 0.3, 0.4)),
-            ),
-            (
-                "v4".into(),
-                ScriptValue::Vec4(Vec4::new(1.0, 2.0, 3.0, 4.0)),
-            ),
-            (
-                "nested".into(),
-                ScriptValue::Array(vec![
-                    ScriptValue::Entity(target),
-                    ScriptValue::Struct(vec![("inner".into(), ScriptValue::Bool(true))]),
-                ]),
-            ),
-        ],
-    }));
-    assert_self_describes(&SerializableScriptState::from(ScriptState {
-        behavior: "Guard".into(),
-        snapshot: busy_snapshot(target),
-    }));
+    // A behavior's component row, and its state companion's.
+    assert_self_describes(&ScriptValue::Struct(vec![
+        ("speed".into(), ScriptValue::Float(0.1)),
+        ("target".into(), ScriptValue::Entity(target)),
+        ("unit".into(), ScriptValue::Unit),
+        ("count".into(), ScriptValue::Int(i64::MIN)),
+        ("aim".into(), ScriptValue::Vec2(Vec2::new(1.0, -2.0))),
+        (
+            "tint".into(),
+            ScriptValue::Color(LinearRgba::new(0.1, 0.2, 0.3, 0.4)),
+        ),
+        (
+            "v4".into(),
+            ScriptValue::Vec4(Vec4::new(1.0, 2.0, 3.0, 4.0)),
+        ),
+        (
+            "nested".into(),
+            ScriptValue::Array(vec![
+                ScriptValue::Entity(target),
+                ScriptValue::Struct(vec![("inner".into(), ScriptValue::Bool(true))]),
+            ]),
+        ),
+    ]));
+    assert_self_describes(&ScriptValue::Struct(
+        companion_row(&busy_snapshot(target), true).expect("a companion row"),
+    ));
     assert_self_describes(&SerializableUiStyle::from(UiStyle {
         texture_id: Some(42),
         ..UiStyle::default()

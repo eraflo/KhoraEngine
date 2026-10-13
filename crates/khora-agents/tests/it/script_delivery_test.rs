@@ -60,7 +60,7 @@ fn a_scene_with_one_script() -> ScriptView {
             translation: Default::default(),
             rotation: Default::default(),
             scale: Default::default(),
-            row: None,
+            row: Vec::new(),
         }],
     }
 }

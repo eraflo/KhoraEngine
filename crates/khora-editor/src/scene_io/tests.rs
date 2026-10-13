@@ -449,7 +449,7 @@ fn stop_restores_script_targets() {
 #[test]
 fn the_play_snapshot_never_holds_observed_state() {
     use khora_sdk::khora_core::lane::OutputDeck;
-    use khora_sdk::khora_core::script::{ScriptSnapshot, ScriptStateUpdate, ScriptStateWriteback};
+    use khora_sdk::khora_core::script::{BehaviorUpdate, BehaviorWriteback, ScriptSnapshot};
     use khora_sdk::khora_data::ecs::{DataSystemRegistration, FieldKind, PackedField};
 
     let mut world = GameWorld::new();
@@ -474,20 +474,19 @@ fn the_play_snapshot_never_holds_observed_state() {
     // touching a field, and the frame boundary wrote that back.
     let writeback = khora_sdk::inventory::iter::<DataSystemRegistration>
         .into_iter()
-        .find(|system| system.name == "script_state_writeback")
+        .find(|system| system.name == "behavior_writeback")
         .expect("the writeback is registered");
     let mut deck = OutputDeck::new();
-    deck.slot::<ScriptStateWriteback>()
-        .extend([ScriptStateUpdate {
-            entity: guard,
-            behavior: "Guard".into(),
-            snapshot: ScriptSnapshot {
-                state: Some("Alert".to_owned()),
-                ..ScriptSnapshot::default()
-            }
-            .with_field("health", ScriptValue::Int(100)),
-            changed: Some(Vec::new()),
-        }]);
+    deck.slot::<BehaviorWriteback>().extend([BehaviorUpdate {
+        entity: guard,
+        behavior: "Guard".into(),
+        snapshot: ScriptSnapshot {
+            state: Some("Alert".to_owned()),
+            ..ScriptSnapshot::default()
+        }
+        .with_field("health", ScriptValue::Int(100)),
+        changed: Vec::new(),
+    }]);
     (writeback.run)(
         world.inner_world_mut(),
         &khora_sdk::khora_core::Runtime::default(),

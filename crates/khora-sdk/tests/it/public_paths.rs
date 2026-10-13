@@ -1217,11 +1217,6 @@ fn module_prelude_paths_still_resolve() {
         PhantomData::<khora_sdk::prelude::ecs::RigidBody>,
         PhantomData::<khora_data::ecs::RigidBody>,
     );
-    let _ = type_name::<khora_sdk::prelude::ecs::Script>();
-    same_type(
-        PhantomData::<khora_sdk::prelude::ecs::Script>,
-        PhantomData::<khora_data::ecs::Script>,
-    );
     let _ = type_name::<khora_sdk::prelude::ecs::ScriptValue>();
     same_type(
         PhantomData::<khora_sdk::prelude::ecs::ScriptValue>,
@@ -2045,8 +2040,6 @@ fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_sdk::prelude::ecs::Light::point; // sandbox
     let _ = khora_sdk::prelude::ecs::LightType::Directional; // sandbox
     let _ = khora_sdk::prelude::ecs::LightType::Point; // sandbox
-    let _: fn(String, String) -> khora_sdk::prelude::ecs::Script =
-        khora_sdk::prelude::ecs::Script::new; // sandbox
     let _ = khora_sdk::prelude::ecs::ScriptValue::Float; // sandbox
     let _ = khora_sdk::prelude::ecs::Transform::from_translation; // sandbox
     let _ = khora_sdk::prelude::materials::AlphaMode::Blend; // sandbox

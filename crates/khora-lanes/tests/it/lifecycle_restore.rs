@@ -71,7 +71,7 @@ fn view_of(behavior: &str, delta: f32) -> ScriptView {
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
-            row: None,
+            row: Vec::new(),
         }],
     }
 }
@@ -130,12 +130,7 @@ impl Game {
 
     fn view(&mut self) -> ScriptView {
         let selection = self.flow.select(&self.world, &self.runtime);
-        let view = self.flow.project(&self.world, &selection, &self.runtime);
-        assert!(
-            view.instances.iter().all(|instance| instance.row.is_some()),
-            "every instance is attached by its behavior's component"
-        );
-        view
+        self.flow.project(&self.world, &selection, &self.runtime)
     }
 
     fn set_mode(&self, mode: EngineMode) {

@@ -20,7 +20,7 @@
 //! that disabled it — is recorded, so a save keeps it.
 
 use khora_core::script::{
-    EventQueue, PendingBody, ScriptEvent, ScriptSnapshot, ScriptStateUpdate, ScriptValue,
+    BehaviorUpdate, EventQueue, PendingBody, ScriptEvent, ScriptSnapshot, ScriptValue,
 };
 use khora_data::flow::{ScriptArrival, ScriptInstance, ScriptProgram, ScriptView};
 use khora_script::arena::Persisted;
@@ -123,7 +123,7 @@ fn view(delta: f32, arrival: Option<ScriptArrival>) -> ScriptView {
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
-            row: None,
+            row: Vec::new(),
         }],
     }
 }
@@ -184,7 +184,7 @@ fn recorded(report: &ScriptRunReport) -> ScriptSnapshot {
     report
         .state
         .first()
-        .map(|update: &ScriptStateUpdate| update.snapshot.clone())
+        .map(|update: &BehaviorUpdate| update.snapshot.clone())
         .unwrap_or_else(|| panic!("the lane wrote nothing this frame: {report:?}"))
 }
 

@@ -15,7 +15,8 @@
 //! Live behavior state on its way back into the scene.
 //!
 //! A behavior's fields live in the script lane while the game runs, and in the
-//! entity's `ScriptState` component when the game is saved. Something has to
+//! behavior's component and its state companion when the game is saved —
+//! `Guard` and `Guard#state`. Something has to
 //! carry them from the first to the second, and a save can happen at any
 //! moment — so the component has to be current at every moment, not only when
 //! someone asks.
@@ -46,39 +47,38 @@ use super::ScriptSnapshot;
 
 /// One instance's state, as the scene should record it.
 #[derive(Debug, Clone, PartialEq)]
-pub struct ScriptStateUpdate {
+pub struct BehaviorUpdate {
     /// Which entity.
     pub entity: EntityId,
     /// Which behavior on it — an entity may carry several.
     pub behavior: String,
     /// Everything it is: fields, state, countdowns, a suspended sequence.
     pub snapshot: ScriptSnapshot,
-    /// For a behavior its component attaches, the fields this turn changed:
-    /// the only ones written back, so a field another script wrote the same
-    /// frame survives. `None` for one a `Script` attaches, recorded whole.
-    pub changed: Option<Vec<String>>,
+    /// The fields this turn changed: the only ones written back, so a field
+    /// another script wrote the same frame survives.
+    pub changed: Vec<String>,
 }
 
 /// Instance state waiting to be recorded in the scene.
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct ScriptStateWriteback {
-    updates: Vec<ScriptStateUpdate>,
+pub struct BehaviorWriteback {
+    updates: Vec<BehaviorUpdate>,
 }
 
-impl ScriptStateWriteback {
+impl BehaviorWriteback {
     /// Queues one instance's state.
-    pub fn push(&mut self, update: ScriptStateUpdate) {
+    pub fn push(&mut self, update: BehaviorUpdate) {
         self.updates.push(update);
     }
 
     /// Takes every update, leaving the allocation intact for the next frame.
-    pub fn drain(&mut self) -> std::vec::Drain<'_, ScriptStateUpdate> {
+    pub fn drain(&mut self) -> std::vec::Drain<'_, BehaviorUpdate> {
         self.updates.drain(..)
     }
 }
 
-impl Extend<ScriptStateUpdate> for ScriptStateWriteback {
-    fn extend<T: IntoIterator<Item = ScriptStateUpdate>>(&mut self, iter: T) {
+impl Extend<BehaviorUpdate> for BehaviorWriteback {
+    fn extend<T: IntoIterator<Item = BehaviorUpdate>>(&mut self, iter: T) {
         self.updates.extend(iter);
     }
 }

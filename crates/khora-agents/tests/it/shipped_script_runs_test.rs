@@ -106,7 +106,7 @@ fn a_scene_with_one_hovering_sphere(delta_seconds: f32) -> ScriptView {
             translation: Default::default(),
             rotation: Default::default(),
             scale: Default::default(),
-            row: None,
+            row: Vec::new(),
         }],
     }
 }

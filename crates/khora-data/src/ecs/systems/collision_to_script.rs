@@ -33,9 +33,8 @@
 //!
 //! A contact between two pieces of scenery would otherwise put two events in a
 //! bounded channel for nobody to handle, and a busy frame of scenery would drop
-//! the events that had a handler waiting. The check is a behavior's component
-//! — or the legacy `Script` — which is what makes an entity one the scripting
-//! agent will run at all.
+//! the events that had a handler waiting. The check is a behavior's component,
+//! which is what makes an entity one the scripting agent will run at all.
 //!
 //! # Delivery is next frame
 //!
@@ -49,7 +48,7 @@ use khora_core::physics::{Collision, CollisionKind};
 use khora_core::script::{ScriptEvent, ScriptValue};
 use khora_core::Runtime;
 
-use crate::ecs::{DataSystemRegistration, Script, TickPhase, World};
+use crate::ecs::{DataSystemRegistration, TickPhase, World};
 
 /// What a behavior declares to hear that something started touching it.
 pub const TOUCHED: &str = "Touched";
@@ -72,24 +71,18 @@ fn collision_to_script(world: &mut World, runtime: &Runtime, _deck: &mut OutputD
         return;
     };
 
-    // Collected once rather than queried per contact: a frame of scenery
-    // grinding together is hundreds of contacts, and each `query` is a walk.
-    let legacy: Vec<_> = world
-        .query::<(khora_core::ecs::entity::EntityId, &Script)>()
-        .map(|(entity, _)| entity)
-        .collect();
-    // An entity runs a behavior when it holds one's component: each looked up
-    // where the entity's row is, per contact side.
+    // An entity runs a behavior when it holds one's component: the keys
+    // collected once, each looked up where the entity's row is, per contact
+    // side — a frame of scenery grinding together is hundreds of contacts.
     let behaviors: Vec<_> = world
         .behavior_components()
         .into_iter()
         .map(|behavior| behavior.key)
         .collect();
     let scripted = |entity| {
-        legacy.contains(&entity)
-            || behaviors
-                .iter()
-                .any(|key| world.row(entity, *key).is_some())
+        behaviors
+            .iter()
+            .any(|key| world.row(entity, *key).is_some())
     };
 
     for contact in contacts {
@@ -137,11 +130,8 @@ mod tests {
     /// A world where `scripted` runs a behavior and `plain` does not.
     fn a_world() -> (World, EntityId, EntityId) {
         let mut world = World::new();
-        let scripted = world.spawn(Script {
-            module: "ai/guard.erg".to_owned(),
-            behavior: "Guard".to_owned(),
-            ..Default::default()
-        });
+        let guard = guard_behavior(&mut world);
+        let scripted = holding(&mut world, guard);
         let plain = world.spawn(crate::ecs::Transform::default());
         (world, scripted, plain)
     }
@@ -185,16 +175,9 @@ mod tests {
     #[test]
     fn a_contact_between_two_scripted_entities_raises_both_ways() {
         let mut world = World::new();
-        let one = world.spawn(Script {
-            module: "ai/guard.erg".to_owned(),
-            behavior: "Guard".to_owned(),
-            ..Default::default()
-        });
-        let other = world.spawn(Script {
-            module: "ai/guard.erg".to_owned(),
-            behavior: "Guard".to_owned(),
-            ..Default::default()
-        });
+        let guard = guard_behavior(&mut world);
+        let one = holding(&mut world, guard);
+        let other = holding(&mut world, guard);
         let (runtime, collisions, events) = wired();
         collisions.send(Collision {
             kind: CollisionKind::Started,
@@ -318,7 +301,7 @@ mod tests {
     }
 
     /// **A behavior is a component.** Adding `Guard` to an entity is what
-    /// attaches the behavior, so holding it — with no `Script` — is what makes
+    /// attaches the behavior, so holding it is what makes
     /// the entity hear that something touched it.
     #[test]
     fn an_entity_holding_a_behavior_component_hears_it_was_touched() {
@@ -377,26 +360,6 @@ mod tests {
             .any(|e| e.target == other && e.args == vec![ScriptValue::Entity(one)]));
     }
 
-    /// Until `Script` is retired, both ways of attaching a behavior are heard
-    /// in the same frame.
-    #[test]
-    fn a_behavior_component_holder_and_a_legacy_script_holder_both_hear_the_contact() {
-        let mut world = World::new();
-        let guard = guard_behavior(&mut world);
-        let declared = holding(&mut world, guard);
-        let legacy = world.spawn(Script {
-            module: "ai/guard.erg".to_owned(),
-            behavior: "Guard".to_owned(),
-            ..Default::default()
-        });
-
-        let raised = raised_by(&mut world, CollisionKind::Started, declared, legacy);
-
-        assert_eq!(raised.len(), 2, "{raised:?}");
-        assert!(raised.iter().any(|e| e.target == declared));
-        assert!(raised.iter().any(|e| e.target == legacy));
-    }
-
     /// A declared component with no role is data, not a program: an entity
     /// holding only that runs nothing, so an event for it would only take a
     /// place in the bounded channel.
@@ -446,21 +409,24 @@ mod tests {
         assert!(raised_by(&mut world, CollisionKind::Started, holder, plain).is_empty());
     }
 
-    /// An entity attached both ways — a legacy `Script` and a behavior
-    /// component — is one subject: one event per side of the contact, which
-    /// the lane hands to each behavior it runs, never two in the channel.
+    /// An entity running two behaviors is one subject: one event per side
+    /// of the contact, which the lane hands to each behavior it runs, never
+    /// two in the channel.
     #[test]
-    fn an_entity_holding_a_script_and_a_behavior_component_hears_a_contact_once() {
+    fn an_entity_holding_two_behaviors_hears_a_contact_once() {
         let mut world = World::new();
         let guard = guard_behavior(&mut world);
-        let both = world.spawn(Script {
-            module: "ai/guard.erg".to_owned(),
-            behavior: "Guard".to_owned(),
-            ..Default::default()
-        });
+        let door = declare(
+            &mut world,
+            "Door",
+            Some(ScriptRole::Behavior {
+                module: "props/door.erg".to_owned(),
+            }),
+        );
+        let both = holding(&mut world, guard);
         world
-            .add_runtime_component(both, guard, &ScriptValue::Unit)
-            .expect("the component attaches");
+            .add_runtime_component(both, door, &ScriptValue::Unit)
+            .expect("the second behavior attaches");
         let plain = world.spawn(crate::ecs::Transform::default());
 
         let raised = raised_by(&mut world, CollisionKind::Started, both, plain);

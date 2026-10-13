@@ -363,36 +363,20 @@ mod provenance_tests {
             provenance_of("PhysicsDebugData"),
             Some(ComponentProvenance::Runtime)
         );
-        // What the script lane observed, written back by the engine: never
-        // authored, never in a scene.
-        assert_eq!(
-            provenance_of("ScriptState"),
-            Some(ComponentProvenance::Runtime)
-        );
     }
 
-    /// **A save resumes a behavior where it was.** `ScriptState` is written
-    /// while running, so a scene never holds it — but a game save does, and
-    /// that is what `is_resumed` says.
+    /// No Rust component is resumable: what a game save resumes a behavior
+    /// from is its state companion, a declared component. Marking one is a
+    /// decision about how its domain reads it back on load, not a flag to set
+    /// in passing.
     #[test]
-    fn script_state_is_runtime_and_resumable() {
-        let reg = registration_of("ScriptState").expect("ScriptState is registered");
-        assert_eq!(reg.provenance, ComponentProvenance::Runtime);
-        assert!(!reg.is_saved(), "a scene never holds observed state");
-        assert!(reg.is_resumed(), "a game save keeps it to resume");
-    }
-
-    /// Only `ScriptState` is resumable for now. Marking another component is
-    /// a decision about how its domain reads it back on load, not a flag to
-    /// set in passing.
-    #[test]
-    fn no_other_component_is_resumed() {
+    fn no_rust_component_is_resumed() {
         let resumed: Vec<&str> = inventory::iter::<ComponentRegistration>
             .into_iter()
             .filter(|reg| reg.is_resumed())
             .map(|reg| reg.type_name)
             .collect();
-        assert_eq!(resumed, vec!["ScriptState"]);
+        assert!(resumed.is_empty(), "{resumed:?}");
     }
 
     /// Resumable is about what the engine wrote: no component an author or a

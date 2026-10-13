@@ -17,7 +17,7 @@
 //! `report_status` is built from nothing else. Everything here is read by
 //! somebody outside this module; everything in the siblings is not.
 
-use khora_core::script::{EventQueue, ScriptStateUpdate};
+use khora_core::script::{BehaviorUpdate, EventQueue};
 use khora_script::vm::{Abandoned, ResumeTier};
 
 /// A suspended body that came back below the exact tier, or not at all.
@@ -77,7 +77,7 @@ pub struct ScriptRunReport {
     /// Carried in the report rather than written to the deck inside the loop so
     /// the run is one thing and its delivery another — which is also what lets
     /// [`run_behaviors`] be tested without a deck to write into.
-    pub state: Vec<ScriptStateUpdate>,
+    pub state: Vec<BehaviorUpdate>,
     /// Suspended bodies a load took back below the exact tier, or abandoned.
     pub resumes: Vec<Resumed>,
     /// The component rows the frame's view projected for scripts to read —

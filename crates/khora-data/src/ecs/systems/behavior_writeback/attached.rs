@@ -23,7 +23,7 @@
 use std::collections::BTreeMap;
 
 use khora_core::ecs::entity::EntityId;
-use khora_core::script::{ScriptStateUpdate, ScriptValue};
+use khora_core::script::{BehaviorUpdate, ScriptValue};
 
 use crate::ecs::{ComponentKey, ScriptRole, World};
 use crate::flow::companion::companion_row;
@@ -37,22 +37,15 @@ type Rows = Vec<(EntityId, Vec<ScriptValue>)>;
 /// An entity and its companion's fields by name.
 type StateRows = Vec<(EntityId, Vec<(String, ScriptValue)>)>;
 
-/// Writes back every update of a behavior its component attaches; hands back
-/// the others, for a `Script`'s `ScriptState`.
-pub(super) fn write_back(
-    world: &mut World,
-    updates: Vec<ScriptStateUpdate>,
-) -> Vec<ScriptStateUpdate> {
-    let mut legacy = Vec::new();
+/// Writes back every update: each behavior's changed fields to its
+/// component, what the engine keeps of it to its state companion.
+pub(super) fn write_back(world: &mut World, updates: Vec<BehaviorUpdate>) {
     // Per behavior component and set of changed fields: the rows of one
     // column write.
     let mut fields: BTreeMap<(ComponentKey, Vec<String>), Rows> = BTreeMap::new();
     let mut states: BTreeMap<ComponentKey, StateRows> = BTreeMap::new();
     for update in updates {
-        let Some(changed) = &update.changed else {
-            legacy.push(update);
-            continue;
-        };
+        let changed = &update.changed;
         let Some(key) = behavior_key(world, &update.behavior) else {
             continue;
         };
@@ -144,7 +137,6 @@ pub(super) fn write_back(
             write(world, companion, &names, rows);
         }
     }
-    legacy
 }
 
 /// The fields of `row` whose values component `key`'s fields take; the

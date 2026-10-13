@@ -77,7 +77,7 @@ fn view_of(
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
-            row: None,
+            row: Vec::new(),
         }],
     }
 }
@@ -255,7 +255,7 @@ fn a_save_taken_during_a_wait_records_what_is_left_of_it() {
 /// machine writes each literal register as its full text, so sixty frames
 /// holding the one literal come to several megabytes. Every encoding a scene
 /// carries the snapshot in reads it back whole: one that refused it would drop
-/// the entity's `Script`, so the entity would load with no behavior.
+/// the behavior's state, so the entity would load with no behavior.
 #[test]
 fn a_save_holding_a_deep_machine_reads_back() {
     let line = "x".repeat(100_000);

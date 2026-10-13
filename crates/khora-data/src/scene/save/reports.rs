@@ -30,7 +30,9 @@ use crate::scene::scene_record::SceneRecord;
 /// adapted. What a later step then discarded — an entity the save destroyed,
 /// a component it removed, a member an instance deleted — is not loaded, so
 /// what was adapted in it is not news. An entity the scene lost is the
-/// exception: [`ReportKind::RemovedFromScene`] says that its changes went.
+/// exception: [`ReportKind::RemovedFromScene`] says that its changes went. A
+/// retired component is never loaded — that is what [`ReportKind::Retired`]
+/// says — so it is reported where its entity loads.
 pub fn about_what_loads(
     record: &SceneRecord,
     entries: impl IntoIterator<Item = ReportEntry>,
@@ -47,8 +49,12 @@ pub fn about_what_loads(
         let Some(entity) = entry.entity else {
             return true;
         };
+        let entity_loads = listed.contains(&entity) || held.contains_key(&entity);
+        if entry.kind == ReportKind::Retired {
+            return entity_loads;
+        }
         match &entry.component {
-            None => listed.contains(&entity) || held.contains_key(&entity),
+            None => entity_loads,
             Some(component) => held
                 .get(&entity)
                 .is_some_and(|components| components.contains(component.as_str())),

@@ -84,7 +84,7 @@ fn view_of(behavior: &str, delta: f32, arrival: Option<ScriptArrival>) -> Script
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
-            row: None,
+            row: Vec::new(),
         }],
     }
 }
@@ -187,10 +187,6 @@ impl Scene {
         let runtime = Runtime::default();
         let selection = self.flow.select(&self.world, &runtime);
         let mut view = self.flow.project(&self.world, &selection, &runtime);
-        assert!(
-            view.instances.iter().all(|instance| instance.row.is_some()),
-            "every instance is attached by its behavior's component"
-        );
         view.delta_seconds = delta;
         view
     }

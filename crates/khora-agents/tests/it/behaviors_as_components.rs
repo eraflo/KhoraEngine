@@ -24,7 +24,7 @@ use khora_core::math::Vec3;
 use khora_core::scene::SerializationGoal;
 use khora_core::script::value_serde::from_value;
 use khora_core::script::{PendingSequence, ScriptEvent, ScriptValue};
-use khora_data::ecs::{Script, ScriptState, Transform, World};
+use khora_data::ecs::{Transform, World};
 use khora_data::flow::{ScriptArrival, ScriptView};
 use khora_io::serialization::SerializationService;
 
@@ -58,8 +58,8 @@ const COUNTER: Project = &[(
 )];
 
 /// **A behavior is attached by adding its component.** An entity given
-/// `Counter { ticks: 10 }` — no `Script` — runs `Counter`: its `OnSpawn`
-/// once, its `Update` once a frame, starting from the value its author set,
+/// `Counter { ticks: 10 }` runs `Counter`: its `OnSpawn` once, its
+/// `Update` once a frame, starting from the value its author set,
 /// and the `World` holds what it wrote. An entity without the component runs
 /// nothing.
 #[test]
@@ -286,14 +286,14 @@ fn a_behavior_instance_arrives_once_and_hands_over_its_row_every_frame() {
         }),
         "the fields its author set, nothing observed"
     );
-    assert_eq!(first.instances[0].row, Some(guard_row_with_hp_4()));
+    assert_eq!(first.instances[0].row, guard_row_with_hp_4());
 
     let second = session.project();
     assert_eq!(second.len(), 1);
     assert_eq!(second.instances[0].arrival, None, "it arrives once");
     assert_eq!(
         second.instances[0].row,
-        Some(guard_row_with_hp_4()),
+        guard_row_with_hp_4(),
         "and hands over its whole row every frame"
     );
 }
@@ -540,29 +540,6 @@ fn deferral_resumes_from_the_cursor() {
 
     let starved = starved_for_four_frames(&mut session, &entities, |world, entity| {
         int(world, entity, "Tick", "ticks")
-    });
-    assert!(starved.is_empty(), "never ran in four frames: {starved:?}");
-}
-
-/// **The cursor is the lane's, shared by the legacy path**: ten entities
-/// attached through `Script` are served in turn too.
-#[test]
-fn deferral_resumes_from_the_cursor_for_a_script_component() {
-    let mut session = Session::new(World::new(), TICK);
-    let entities: Vec<EntityId> = (0..10)
-        .map(|_| {
-            session
-                .world
-                .spawn((Transform::identity(), Script::new("game/tick.erg", "Tick")))
-        })
-        .collect();
-
-    let starved = starved_for_four_frames(&mut session, &entities, |world, entity| {
-        world
-            .get::<ScriptState>(entity)?
-            .snapshot
-            .field("ticks")?
-            .as_int()
     });
     assert!(starved.is_empty(), "never ran in four frames: {starved:?}");
 }

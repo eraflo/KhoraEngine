@@ -175,6 +175,21 @@ fn a_former_name_in_a_snapshot_is_refused() {
     );
 }
 
+/// A retired component is skipped by a record, never by a snapshot: the
+/// same build never wrote one, so a snapshot naming the retired script is
+/// refused whole, naming it.
+#[test]
+fn a_retired_component_in_a_snapshot_is_refused() {
+    let file = snapshot_of(&named_world("Saved"));
+    // `Script` — what a behavior replaced, retired — has the length of
+    // `Parent`.
+    assert_refused(
+        &replaced(&file, "Parent", "Script"),
+        "Script",
+        "a retired name",
+    );
+}
+
 /// A component the engine derives is never saved; a snapshot naming one is
 /// refused rather than skipped.
 #[test]

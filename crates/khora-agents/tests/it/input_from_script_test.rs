@@ -90,7 +90,7 @@ fn a_scene_with_the_player(input: khora_core::platform::InputSnapshot) -> Script
             translation: Default::default(),
             rotation: Default::default(),
             scale: Default::default(),
-            row: None,
+            row: Vec::new(),
         }],
     }
 }

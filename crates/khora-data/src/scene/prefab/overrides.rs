@@ -25,6 +25,7 @@ use khora_core::ecs::PersistentId;
 use super::super::apply::{apply, Identity, LoadFailure};
 use super::super::capture::{capture_subtree, SaveError};
 use super::super::record::{EntityRef, Record, VariantPayload};
+use super::super::save::scene_as_read;
 use super::super::scene_record::SceneRecord;
 use super::rekey::{members, remap_value};
 use super::sources::{Except, ReadOnce};
@@ -149,7 +150,13 @@ pub fn apply_to_prefab(
     // The prefab in its own ids, expanded, and where each member of the live
     // instance sits in it.
     let record = read_prefab(instance.prefab, &prefabs, &Stack::new()).map_err(unread)?;
-    let local = expand(&record, &prefabs).map_err(unread)?;
+    // As this build reads it — today's names and types, nothing retired — so
+    // what is written back is the prefab as it now is, whatever was applied.
+    let (local, _) = scene_as_read(
+        &expand(&record, &prefabs).map_err(unread)?,
+        &record.declared,
+    )
+    .map_err(unread)?;
     let prefab_root = record.entities[0];
     let to_local: HashMap<PersistentId, PersistentId> =
         members(instance.prefab, root, &prefabs, &mut Stack::new())

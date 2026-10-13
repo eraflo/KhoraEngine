@@ -60,7 +60,7 @@ pub(super) fn as_read(
 }
 
 /// `scene` as this build reads it, its declared components under `under`.
-pub(super) fn scene_as_read(
+pub(crate) fn scene_as_read(
     scene: &SceneRecord,
     under: &[DeclaredRecord],
 ) -> Result<(SceneRecord, LoadReport), LoadFailure> {

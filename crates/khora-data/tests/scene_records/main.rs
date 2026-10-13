@@ -59,6 +59,7 @@ mod prefab_scale;
 mod prefab_structure;
 mod references;
 mod renames;
+mod retired_script_components;
 mod round_trip;
 mod sample;
 mod save_against_edits;

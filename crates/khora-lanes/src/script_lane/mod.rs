@@ -65,7 +65,7 @@ use std::sync::Arc;
 use self::reload::{apply_reloads, publish_reads};
 use khora_core::event::Channel;
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, OutputDeck};
-use khora_core::script::{CommandBuffer, ScriptEvent, ScriptStateWriteback};
+use khora_core::script::{BehaviorWriteback, CommandBuffer, ScriptEvent};
 use khora_core::Stopwatch;
 use khora_data::flow::ScriptView;
 use khora_script::native::Host;
@@ -185,7 +185,7 @@ impl Lane for BudgetedScriptLane {
         // outlive the frame memory it might have referred to.
         deck.slot::<CommandBuffer>().extend(host.end_frame());
         runtime.return_arena(host.take_arena());
-        deck.slot::<ScriptStateWriteback>()
+        deck.slot::<BehaviorWriteback>()
             .extend(report.state.iter().cloned());
 
         if let Some(elapsed) = clock.elapsed() {

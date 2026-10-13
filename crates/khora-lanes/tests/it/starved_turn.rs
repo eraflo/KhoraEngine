@@ -79,7 +79,7 @@ fn view_of(behavior: &str, delta: f32, authored: Option<ScriptSnapshot>) -> Scri
             translation: khora_core::math::Vec3::ZERO,
             rotation: khora_core::math::Quaternion::IDENTITY,
             scale: khora_core::math::Vec3::ONE,
-            row: None,
+            row: Vec::new(),
         }],
     }
 }
@@ -585,7 +585,7 @@ fn one_instances_wait_is_not_anothers_resume_delay() {
         translation: khora_core::math::Vec3::ZERO,
         rotation: khora_core::math::Quaternion::IDENTITY,
         scale: khora_core::math::Vec3::ONE,
-        row: None,
+        row: Vec::new(),
     };
     let program = |behavior: &str| ScriptProgram {
         module: MODULE.to_owned(),

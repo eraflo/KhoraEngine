@@ -68,6 +68,7 @@ mod every_pub_mod {
     use khora_data::ecs::systems as _;
     use khora_data::ecs::systems::asset_eviction as _;
     use khora_data::ecs::systems::audio_playback_writeback as _;
+    use khora_data::ecs::systems::behavior_writeback as _;
     use khora_data::ecs::systems::capture_previous_transform as _;
     use khora_data::ecs::systems::collision_dispatch as _;
     use khora_data::ecs::systems::collision_to_script as _;
@@ -80,7 +81,6 @@ mod every_pub_mod {
     use khora_data::ecs::systems::physics_debug_extraction as _;
     use khora_data::ecs::systems::physics_world_writeback as _;
     use khora_data::ecs::systems::script_commands as _;
-    use khora_data::ecs::systems::script_state as _;
     use khora_data::ecs::systems::transform_propagation as _;
     use khora_data::flow as _;
     use khora_data::flow::audio as _;
@@ -300,14 +300,6 @@ fn rigid_body_fields(x: &khora_data::ecs::RigidBody) {
         &x.initial_velocity,
         &x.initial_angular_velocity,
     );
-}
-
-fn script_fields(x: &khora_data::ecs::Script) {
-    let _ = (&x.module, &x.behavior, &x.fields);
-}
-
-fn script_state_fields(x: &khora_data::ecs::ScriptState) {
-    let _ = (&x.behavior, &x.snapshot);
 }
 
 fn script_arrival_fields(x: &khora_data::flow::ScriptArrival) {
@@ -893,8 +885,6 @@ fn flow_trait_items<F: khora_data::flow::Flow>() {
 
 fn methods_taking_impl_into(tag: &mut khora_data::ecs::Tag) {
     let _ = khora_data::ecs::Name::new("");
-    let _ =
-        khora_data::ecs::Script::new("", "").with_field("", khora_core::script::ScriptValue::Unit);
     let _ = tag.insert("");
 }
 
@@ -1318,14 +1308,6 @@ fn module_ecs_paths_still_resolve() {
     is_component::<khora_data::ecs::RigidBody>();
     is_debug::<khora_data::ecs::RigidBody>();
     is_default::<khora_data::ecs::RigidBody>();
-    let _ = type_name::<khora_data::ecs::Script>();
-    let _ = script_fields as fn(&khora_data::ecs::Script);
-    let _ = khora_data::ecs::Script::field;
-    is_clone::<khora_data::ecs::Script>();
-    is_component::<khora_data::ecs::Script>();
-    is_debug::<khora_data::ecs::Script>();
-    is_default::<khora_data::ecs::Script>();
-    is_partial_eq::<khora_data::ecs::Script>();
     let _ = type_name::<khora_data::ecs::SimulatedTransform>();
     let _ = simulated_transform_fields as fn(&khora_data::ecs::SimulatedTransform);
     let _ = khora_data::ecs::SimulatedTransform::from_parts;
@@ -2275,13 +2257,6 @@ fn module_scene_records_paths_still_resolve() {
 
 #[test]
 fn module_scene_save_paths_still_resolve() {
-    let _ = type_name::<khora_data::ecs::ScriptState>();
-    let _ = script_state_fields as fn(&khora_data::ecs::ScriptState);
-    is_clone::<khora_data::ecs::ScriptState>();
-    is_debug::<khora_data::ecs::ScriptState>();
-    is_partial_eq::<khora_data::ecs::ScriptState>();
-    is_default::<khora_data::ecs::ScriptState>();
-
     let _ = type_name::<khora_data::flow::ScriptArrival>();
     same_type(
         PhantomData::<khora_data::flow::ScriptArrival>,
@@ -2668,7 +2643,6 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ =
         type_name::<khora_data::ecs::QueryMut<'static, &'static mut khora_data::ecs::Transform>>(); // khora-sdk
     let _ = type_name::<khora_data::ecs::RigidBody>(); // khora-agents, khora-sdk
-    let _ = type_name::<khora_data::ecs::Script>(); // khora-sdk
     let _ = type_name::<khora_data::ecs::SemanticDomain>(); // khora-agents, khora-editor
     let _ = type_name::<khora_data::ecs::SimulatedTransform>(); // khora-agents
     let _ = type_name::<khora_data::ecs::Tag>(); // khora-editor, khora-sdk
@@ -2789,8 +2763,6 @@ fn derive_generated_mirrors_still_resolve() {
     is_from::<khora_data::ecs::PhysicsMaterial, khora_data::ecs::SerializablePhysicsMaterial>();
     let _ = type_name::<khora_data::ecs::SerializableRigidBody>();
     is_from::<khora_data::ecs::RigidBody, khora_data::ecs::SerializableRigidBody>();
-    let _ = type_name::<khora_data::ecs::SerializableScript>();
-    is_from::<khora_data::ecs::Script, khora_data::ecs::SerializableScript>();
     let _ = type_name::<khora_data::ecs::SerializableSimulatedTransform>();
     is_from::<khora_data::ecs::SimulatedTransform, khora_data::ecs::SerializableSimulatedTransform>(
     );

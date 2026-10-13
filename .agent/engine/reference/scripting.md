@@ -52,9 +52,10 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
 - Freeze / resume: `vm/freeze.rs`, `vm/resume.rs` (`resume`, `ResumeTier`, `Abandoned`); the engine-side
   form `khora-core/src/script/frozen.rs` (`FrozenMachine`, `FrozenFrame`, `FrozenLocal`, `FrozenValue`).
 - What a save holds: `khora-core/src/script/snapshot.rs` (`ScriptSnapshot`, `InstanceLifecycle`,
-  `RecordedFault`), the component `khora-data/src/ecs/components/script_state.rs` (`ScriptState`:
-  `provenance = Runtime, resumable`), written back by `khora-data/src/ecs/systems/script_state/` from
-  `ScriptStateWriteback` (`khora-core/src/script/writeback.rs`).
+  `RecordedFault`), carried by a behavior's state companion `Guard#state` (registered `Runtime` +
+  resumable by `khora-io/src/script/declarations.rs`; its fields `khora-data/src/flow/companion/`),
+  written back by `khora-data/src/ecs/systems/behavior_writeback/` from `BehaviorWriteback`
+  (`khora-core/src/script/writeback.rs`).
 - Mode gate: `khora-data/src/flow/script.rs` (`gameplay_runs` → `EngineMode::runs_gameplay`) and the
   `register_agent_for_mode(…, vec![EngineMode::Playing])` call in `khora-sdk/src/engine/bootstrap.rs`.
 - Conformance suite: `crates/khora-script/tests/it/conformance.rs` (`SHIPPED` / `PENDING` rows); resume

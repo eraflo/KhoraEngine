@@ -17,7 +17,7 @@
 //! — whose turn it is, what each cost, who was deferred, and what has to be
 //! written back. A turn knows only about itself.
 
-use khora_core::script::{EventQueue, InstanceLifecycle, RecordedFault, ScriptStateUpdate};
+use khora_core::script::{BehaviorUpdate, EventQueue, InstanceLifecycle, RecordedFault};
 use khora_data::flow::ScriptView;
 use khora_script::native::Host;
 use khora_script::vm::{Abandoned, ResumeTier};
@@ -151,11 +151,9 @@ pub fn run_behaviors(
                 // Seen as it arrives: a field written before its first turn —
                 // which a starved frame may put off — is then taken as written
                 // outside it.
-                if let Some(row) = &instance.row {
-                    runtime
-                        .attached
-                        .saw(instance.entity, &program.behavior, row.clone());
-                }
+                runtime
+                    .attached
+                    .saw(instance.entity, &program.behavior, instance.row.clone());
             }
 
             let remaining = share_end.saturating_sub(report.spent);
@@ -205,16 +203,12 @@ pub fn run_behaviors(
             // the instance's fields, and a thousand guards share one `Guard`.
             let compiled = std::sync::Arc::clone(compiled);
 
-            // A component-attached instance's fields written outside the lane since
-            // it last saw them, taken before it runs.
-            let mut outside = match &instance.row {
-                Some(row) => {
-                    runtime
-                        .attached
-                        .changed_outside(instance.entity, &program.behavior, row)
-                }
-                None => Vec::new(),
-            };
+            // The instance's fields written outside the lane since it last saw
+            // them, taken before it runs.
+            let mut outside =
+                runtime
+                    .attached
+                    .changed_outside(instance.entity, &program.behavior, &instance.row);
 
             // What the entity brings, applied once, when it first appears. The
             // initialiser still runs — the slots it did not bring take the defaults
@@ -501,20 +495,21 @@ pub fn run_behaviors(
                     snapshot.authored = held.base.clone();
                     snapshot.overridden = held.overridden.clone();
 
-                    // A component-attached instance writes back only the fields
-                    // its turn changed: another script's write to another field
-                    // the same frame survives.
-                    let changed = instance.row.as_ref().map(|row| {
-                        snapshot
-                            .fields
-                            .iter()
-                            .filter(|(name, value)| {
-                                !row.iter().any(|(known, was)| known == name && was == value)
-                            })
-                            .map(|(name, _)| name.clone())
-                            .collect()
-                    });
-                    report.state.push(ScriptStateUpdate {
+                    // Only the fields its turn changed are written back:
+                    // another script's write to another field the same frame
+                    // survives.
+                    let changed = snapshot
+                        .fields
+                        .iter()
+                        .filter(|(name, value)| {
+                            !instance
+                                .row
+                                .iter()
+                                .any(|(known, was)| known == name && was == value)
+                        })
+                        .map(|(name, _)| name.clone())
+                        .collect();
+                    report.state.push(BehaviorUpdate {
                         entity: instance.entity,
                         behavior: program.behavior.clone(),
                         snapshot,
@@ -524,14 +519,14 @@ pub fn run_behaviors(
             }
             // What the lane has of the instance's row now — what the world will
             // hold once the frame's writeback lands.
-            if let (Some(row), Some(layout)) = (&instance.row, compiled.layout(&program.behavior)) {
+            if let Some(layout) = compiled.layout(&program.behavior) {
                 let held = runtime.instance(instance.entity, &program.behavior);
                 let fields = match (&held.carried, held.initialised) {
                     (Some(owed), false) => owed,
                     _ => &held.fields,
                 };
                 let mut now = persistence::snapshot_from_store(layout, fields).fields;
-                for (name, value) in row {
+                for (name, value) in &instance.row {
                     if !now.iter().any(|(known, _)| known == name) {
                         now.push((name.clone(), value.clone()));
                     }
