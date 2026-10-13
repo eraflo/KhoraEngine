@@ -23,8 +23,8 @@ Commits `4df3d77`…`42434eb` on `dev`. Detail: `reference/ecs-data.md` §Persis
 - **Authored scene vs observed save**: `SaveRecord` = differences from a base scene (`changes` + `before`,
   `created`, `destroyed`, removed components, `order`), loaded by a three-way merge onto the scene as it is
   now. `GameWorld::{save_game, load_game, set_prefabs}`; `SerializationService::{save_game, load_game}`.
-  Provenance decides scene content; `#[component(resumable)]` adds `Runtime` state to game saves
-  (`ScriptState`).
+  Provenance decides scene content; `resumable` adds `Runtime` state to game saves (a behavior's
+  `Guard#state`).
 - **Scripts only while Playing**: `ScriptAgent` registered via `register_agent_for_mode(…, [Playing])`,
   `ScriptFlow` gated on `EngineMode::runs_gameplay()`; editor maps Editing → `Custom("editor")`,
   Playing/Paused → `Playing`; `EngineApp::initial_mode()` seeds `SharedEngineMode`, read once per frame

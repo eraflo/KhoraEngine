@@ -129,7 +129,9 @@ for ev in inputs { if let InputEvent::MouseMoved { x, y } = ev { /* look */ } }
 - Components (`prelude::ecs`): `Transform`, `GlobalTransform`, `Camera`, `Light` (+ `LightType`,
   `DirectionalLight`/`PointLight`/`SpotLight`), `RigidBody` (+ `BodyType`), `Collider` (+ `ColliderShape`),
   `AudioSource`, `Name`, `Tag`, `Parent`/`Children`, `MeshRef`, `MaterialRef` (what `add_material`
-  returns), `Script` (+ `ScriptValue`).
+  returns), `ScriptValue`. A behavior is attached by its component, by name:
+  `world.add_declared_component(entity, "Hover", &[("speed", ScriptValue::Float(0.9))])` — the fields
+  named take their values, the rest the script's declared defaults.
 
 ## 7 — Scenes, saves & shipping
 

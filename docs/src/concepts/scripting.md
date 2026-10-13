@@ -211,14 +211,16 @@ resource would cost two frames of latency and a deck slot nothing else reads.
 
 ## Saved mid-sentence
 
-An entity's script is two components. `Script` is **authored**: which module and
-behavior, and the values the author set — it is what a scene holds. `ScriptState`
-is **runtime and resumable**: what the lane observed of the running behavior —
-and it is what a [game save](./saves.md) holds:
+A behavior is a component. `Guard` — declared by its script, attached by adding
+it to an entity — holds the behavior's fields: what the author set, and what the
+game makes of them as it plays. A scene holds it as authored. Beside it, its
+**state companion** `Guard#state` is **runtime and resumable**: what the engine
+keeps to resume the running behavior. A scene never holds it; a
+[game save](./saves.md) does, with the fields the game changed:
 
-| `ScriptState` keeps | So that, after a load… |
+| A save keeps | So that, after a load… |
 |---|---|
-| the fields, by name — a `null` too | the guard has the health it had; `best = null` loads as `null`, not as its default |
+| the fields the game changed, by name — a `null` too (`Guard`) | the guard has the health it had; `best = null` loads as `null`, not as its default |
 | the current state and its data | it is still chasing whom it was chasing |
 | each timer's remaining time | `every 2s` fires when it would have |
 | the body under way, frozen | an attack half-way through its wind-up finishes it |

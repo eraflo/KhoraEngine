@@ -23,7 +23,8 @@ Components live in `crates/khora-data/src/ecs/components/`. The `#[derive(Compon
    "+ Add Component"), `ToolAuthored` (saved, set by a tool action, e.g. `Parent`, `PrefabInstance`),
    `Derived` (recomputed from authored state — never saved), `Runtime` (per-run state — never saved).
    For `Runtime` state a **game save** must keep so play resumes, add `resumable`
-   (`#[component(domain = Script, provenance = Runtime, resumable)]`, like `ScriptState`).
+   (`#[component(domain = Physics, provenance = Runtime, resumable)]` — a decision about how the domain
+   reads it back on load; no Rust component does it today).
 3. Field attributes: `#[component(skip)]` for GPU handles / runtime caches. Do **not** reach for
    `#[component(no_serializable)]`: it removes the `ComponentRegistration` outright — the component is then
    never saved, never inspected, never found by name (`AudioListener` and `ActiveEvents` were silently

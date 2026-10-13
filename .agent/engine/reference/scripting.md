@@ -148,21 +148,25 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   `ColumnSnapshot` per page column, live rows only — snapshots include orphan rows). A reload whose reads
   were not projected this frame is deferred one frame. A `component` declaration is also a `StructLayout`, so
   a copy imports as a struct.
-- **Behaviors attached by their component run (spec 09, phase 2)**, beside the legacy `Script` path (retired
-  in P3). Registry: `ComponentVTable.script: Option<ScriptRole{Behavior{module}|BehaviorState{behavior}}>`,
-  set by `apply_declarations` on register and adopt (`World::set_script_role`). Flow (`flow/behaviors.rs`):
-  behaviors by `(module, name)`, rows by entity (`World::declared_rows`), `ScriptInstance.row` = the full row
-  every frame, `arrival` only for a new `(entity, behavior)` (fields away from the registered defaults, or the
-  companion as `observed`); a `Script` naming a behavior the entity holds as a component is skipped. Lane
-  (`script_lane/attached.rs`): `seen` rows → fields written outside are adopted (into a pending arrival before
-  the first turn); `ScriptStateUpdate.changed` = fields the turn changed; one rotating cursor set only when the
-  frame's budget cut an instance; events held per instance on an entity running several behaviors; liveness
-  per `(entity, behavior)` — removing a behavior's component farewells it (`OnDespawn`), and its companion is
-  dropped (`drop_orphaned_companions`). Writeback (`systems/script_state/attached.rs`): changed fields as
-  `World::write_column` per `(behavior, kept fields)` — a value a field refuses is left out — and the
-  companion whole (`flow/companion` ↔ `ScriptSnapshot`, `<any>` fields through
-  `khora_core::script::value_serde`).
-- **Behaviors are components (spec 09, phase 1 — registered and persisted).** `modules/behaviors.rs::declared_behaviors`: each project behavior declares `Guard`
+- **Behaviors run as components.** Registry: `ComponentVTable.script: Option<ScriptRole{Behavior{module}|
+  BehaviorState{behavior}}>` and `declared_by` (the module declaring it now; `None` for an orphan or a
+  file-only declaration), set by `apply_declarations`. Before an app's `setup`, the declarations of the
+  scripts mounted at startup are registered (`register_pending`), so `GameWorld::add_declared_component`
+  attaches a behavior by name. Flow (`flow/behaviors.rs`, `World::behavior_components`): behaviors by
+  `(module, name)`, rows by entity, `ScriptInstance.row` = the full row every frame, `arrival` only for a new
+  `(entity, behavior)` (fields away from the registered defaults, or — restored — the row and the
+  companion as `observed`). Lane (`script_lane/attached.rs`, `shares.rs`): `seen` rows → fields written
+  outside are adopted; `BehaviorUpdate.changed` = fields the turn changed; fuel shared per behavior (equal
+  shares among those that can spend, rotating remainder, debt for overdraft, a cursor each); an arriving
+  instance takes its fields from its row and its state from its companion — no base/override merge (the
+  game save's field-by-field merge carries a scene edit to a field the game left alone); hot reload carries
+  from the layout an instance was built for (`Instance.built_for`). Removing a behavior's component
+  farewells it (`OnDespawn`) and drops its companion. Writeback (`systems/behavior_writeback/`): changed
+  fields as `World::write_column` per `(behavior, fields)` — a value a field refuses is left out — and the
+  companion whole (`flow/companion` ↔ `ScriptSnapshot`). `collision_to_script` tells every holder of a
+  behavior component. The legacy `Script`/`ScriptState` components are retired (`scene/retired.rs`): an old
+  file loads with them skipped and reported, and a script may not declare either name.
+- **Behaviors are components — registered and persisted.** `modules/behaviors.rs::declared_behaviors`: each project behavior declares `Guard`
   (`DeclaredKind::Behavior`, its fields in `[Domain(…)]`, default = the constant, else the zero, else a
   placeholder — the initialiser writes the real one) and `Guard#state` (`DeclaredKind::BehaviorState`,
   Script domain, fixed fields `state, state_fields, timers, pending, initialised, spawned, fault,
@@ -191,7 +195,7 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
 - **A mirror that cannot express something says so; it never guesses.** A field's Ergon type comes from
   `ScriptField` (`ComponentRegistration::script_type`), never from parsing the Rust spelling; a field whose
   type is not a `ScriptField` stays as a comment naming that type; a component whose every field is like that,
-  or whose field names the language cannot spell (a tuple index, or a reserved word — `Script.behavior`,
+  or whose field names the language cannot spell (a tuple index, or a reserved word —
   `UiInteraction.state`), is left undeclared with the reason. An empty `struct` means *marker*, and
   emitting one for a component that does carry data would be a false statement.
 
@@ -218,8 +222,8 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** �
   inside a function stay numbers, guarded by fingerprints.
 
 ## Saves and lifecycle
-- `ScriptState` is `Runtime` + `resumable`: never in a scene, always in a game save — a guard saved
-  mid-attack loads mid-attack.
+- A behavior's state companion `Guard#state` is `Runtime` + `resumable`: never in a scene, always in a
+  game save — a guard saved mid-attack loads mid-attack.
 - `InstanceLifecycle { spawned, fault }` is **recorded**, not derived: an empty snapshot does not say
   whether `OnSpawn` ran. A fault recorded under another program fingerprint is cleared on load.
 - `OnLoad` runs once, only when an instance is **restored from a save** — after the initialiser and

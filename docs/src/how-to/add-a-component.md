@@ -72,7 +72,8 @@ the scene, copied when an entity is duplicated, and offered in the inspector's
 | `Runtime` | the engine, while running (`PhysicsDebugData`) | no | no | no |
 
 Runtime state that a **game save** must keep for play to resume where it stopped
-takes `resumable` as well — `ScriptState` is the one such component today. Marking
+takes `resumable` as well — no Rust component does today; a behavior's state
+companion, declared while the engine runs, is resumable. Marking
 another one is a decision about how its domain reads it back on load; see
 [Scenes and game saves](../concepts/saves.md).
 

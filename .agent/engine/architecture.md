@@ -128,9 +128,10 @@ Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`,
 
 `Transform`, `GlobalTransform`, `Camera`, `Light`, `MeshRef`, `MaterialRef`, `RigidBody`, `Collider`,
 `AudioSource`, `AudioListener`, `Parent`/`Children`, `Name`, `Tag`, `PrefabInstance` (instance root →
-prefab link, `ToolAuthored`), `Script` (behaviors), `ScriptState` (`Runtime` + `resumable` — kept by game
-saves, never by scenes), `HandleComponent<T>`, and the UI set (`UiTransform`, `UiColor`, `UiText`,
-`UiImage`, `UiBorder`). Each carries a `SemanticDomain` and a `ComponentProvenance`.
+prefab link, `ToolAuthored`), `HandleComponent<T>`, and the UI set (`UiTransform`, `UiColor`, `UiText`,
+`UiImage`, `UiBorder`). Each carries a `SemanticDomain` and a `ComponentProvenance`. A behavior is not a
+Rust component: its script declares `Guard` (authored) and its state companion `Guard#state` (`Runtime` +
+`resumable` — kept by game saves, never by scenes), registered while the engine runs.
 
 ## 6 — Critical file locations
 

@@ -84,8 +84,8 @@ The same derive carries what saving needs to know about the type, as attributes:
   `ToolAuthored`, `Derived`, `Runtime`). Only authored and tool-authored
   components go into a scene; derived and runtime state never does.
 - `resumable` marks runtime state a **game save** keeps anyway, because play
-  cannot resume without it — `ScriptState`, the observed state of a running
-  behavior, is the one such component today.
+  cannot resume without it. No Rust component does today; a behavior's state
+  companion, declared while the engine runs, is resumable.
 - `formerly = "OldName"` — on the type or on a field — lets a save written under
   an older name still load, read as today's name and reported as renamed.
 

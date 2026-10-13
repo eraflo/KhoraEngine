@@ -98,3 +98,10 @@ Durable decisions and their rationale. Append when a new structural decision lan
 20. **Old format readers are retired after a one-time upgrade** — `xtask assets upgrade-scenes` rewrote
     v1 scenes once, then the readers and the tool were deleted (`2daeeb9`). Older files are refused with
     `SceneFileReadError::OldFormat`; the engine carries one format, not a museum.
+
+21. **A behavior is a component** — `behavior Guard` declares the component `Guard` (authored, its
+    fields) and its state companion `Guard#state` (`Runtime` + `resumable`); adding `Guard` to an entity is
+    attaching the behavior. Behavior names are global (two modules declaring one is a compile error). The
+    legacy `Script`/`ScriptState` components were converted once by a one-time xtask upgrade, then retired
+    (`RetiredComponent`) — the same shape as decision 20. An arriving instance takes its fields from its row;
+    the game save's merge, not the lane, carries a scene edit to a field the game left alone.

@@ -53,7 +53,7 @@ ever disagree, those files win; this page is a digest, not a duplicate.
   the author: `ToolAuthored`, `Derived` or `Runtime` (absent means `Authored`).
   Only `Authored` and `ToolAuthored` components are saved in a scene. Add
   **`resumable`** to `Runtime` state a game save must keep for play to resume
-  (today only `ScriptState`) — a decision about how that domain reads it back,
+  (today no Rust component; a behavior's state companion is) — a decision about how that domain reads it back,
   not a flag to set in passing.
 - Use `#[component(skip)]` for fields that must not serialize (GPU handles,
   runtime caches). `#[component(no_serializable)]` drops the generated

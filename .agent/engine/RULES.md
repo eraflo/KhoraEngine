@@ -88,7 +88,7 @@ and [`security-privacy.md`](./security-privacy.md).
 - `#[derive(Component)]` for all ECS components; the macro generates the `SerializableX` mirror + `From` conversions and self-registers a `ComponentRegistration` via `inventory`.
 - `#[component(skip)]` for non-serialized fields (GPU handles, runtime caches).
 - `#[component(no_serializable)]` **removes the `ComponentRegistration`** (`khora-macros/src/component.rs:255-261`): the component is never saved, never inspected, never reachable by name. It is not "runtime state" — use a provenance for that. No shipped component uses it today.
-- Choose a **provenance** (`ComponentProvenance`, `khora-data/src/ecs/component_registry.rs`): `Authored` (default) and `ToolAuthored` are saved in scenes; `Derived` and `Runtime` never are. Add `#[component(resumable)]` to `Runtime` state a **game save** must keep so play resumes (e.g. `ScriptState`).
+- Choose a **provenance** (`ComponentProvenance`, `khora-data/src/ecs/component_registry.rs`): `Authored` (default) and `ToolAuthored` are saved in scenes; `Derived` and `Runtime` never are. Add `#[component(resumable)]` to `Runtime` state a **game save** must keep so play resumes (no Rust component does today; a behavior's state companion `Guard#state` is registered resumable at run time).
 - Declare a component's domain with `#[component(domain = Physics)]`. Only generics (`HandleComponent<T>`) and hand-written impls stay explicit in `World::new`.
 
 ## 7b — Ergon (scripting)

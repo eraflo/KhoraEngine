@@ -96,21 +96,19 @@ engine computes or keeps while running — are never written to a scene. A few o
 them are needed to *resume* a game rather than restart it, and declare
 themselves **resumable**:
 
-```rust
-#[derive(Component)]
-#[component(domain = Script, provenance = Runtime, resumable)]
-pub struct ScriptState { /* fields, countdowns, the body under way, lifecycle */ }
-```
+A Rust component says so with `#[component(provenance = Runtime, resumable)]`;
+none does today. The one resumable kind is declared while the engine runs: a
+behavior's state companion, `Guard#state`, registered `Runtime` and resumable
+beside the `Guard` its script declares.
 
-A save keeps every resumable component of every entity it holds. A script's
-fields are merged like everything else: its state records, beside each field, the
-authored value it started from — the scene's override or the declared default —
-so a field the game never changed takes the author's edit made since, and a field
-the game changed keeps the game's value. That is how a
-guard saved half-way through an attack loads half-way through it: its
-[script state](./scripting.md#saved-mid-sentence) carries the guard's fields,
-its timers' remaining time, the machine stopped at its `await`, and the facts
-of its life — whether it has spawned, whether it faulted and under which code.
+A save keeps every resumable component of every entity it holds. A behavior's
+fields are merged like everything else — they live in its component, compared
+field by field with the scene — so a field the game never changed takes the
+author's edit made since, and a field the game changed keeps the game's value.
+That is how a guard saved half-way through an attack loads half-way through it:
+its [state companion](./scripting.md#saved-mid-sentence) carries its state, its
+timers' remaining time, the machine stopped at its `await`, and the facts of its
+life — whether it has spawned, whether it faulted and under which code.
 
 ## Lifecycle across a save
 

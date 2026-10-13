@@ -146,10 +146,10 @@ A component's **provenance** decides where it is written:
 
 | Provenance | In a scene | In a game save | Examples |
 |---|---|---|---|
-| `Authored` | yes | when the game changed it | `Transform`, `Name`, `Script` |
+| `Authored` | yes | when the game changed it | `Transform`, `Name`, a behavior (`Guard`) |
 | `ToolAuthored` | yes | when the game changed it | `Parent`, `PrefabInstance` |
 | `Derived` | no — rebuilt on load | no | `Children`, a global transform |
-| `Runtime` | no | only if `resumable` | `ScriptState` (resumable) |
+| `Runtime` | no | only if `resumable` | a behavior's state companion `Guard#state` (resumable) |
 
 Derived values and plain runtime state are rebuilt rather than stored; a
 resumable component is what a [game save](./saves.md#what-a-save-keeps-that-a-scene-never-does)

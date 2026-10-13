@@ -68,7 +68,7 @@ action such as dragging in the scene tree; saved and copied, not offered),
 `Derived` (recomputed by the engine from authored state; never saved, never
 copied), and `Runtime` (per-run state that nobody authors and nothing
 recomputes). A `Runtime` component is never in a scene; one also declared
-`resumable` — `ScriptState` is the only one today — is kept by a
+`resumable` — a behavior's state companion `Guard#state` is the one kind today — is kept by a
 [game save](#game-save--saverecord) so play resumes where it stopped. It is what
 keeps a simulated pose out of a scene file without a line of filtering, because
 the serializer honours the axis directly. See [Physics](../concepts/physics.md)
