@@ -21,6 +21,7 @@ mod term;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[clap(
@@ -80,6 +81,18 @@ enum Commands {
 pub enum AssetCommand {
     /// Scans, builds metadata, and packs all assets into optimized archives.
     Pack,
+    /// Converts a project's scenes, prefabs and game saves from the legacy
+    /// `Script` / `ScriptState` components to behavior components. One-time.
+    UpgradeBehaviors {
+        /// The project root: the directory holding `assets/`.
+        project: PathBuf,
+        /// A directory of game saves to convert too. Repeatable.
+        #[clap(long)]
+        saves: Vec<PathBuf>,
+        /// Print what would be converted; write nothing.
+        #[clap(long)]
+        dry_run: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -99,6 +112,11 @@ fn main() -> Result<()> {
 
             Commands::Assets(command) => match command {
                 AssetCommand::Pack => commands::assets::pack()?,
+                AssetCommand::UpgradeBehaviors {
+                    project,
+                    saves,
+                    dry_run,
+                } => commands::upgrade_behaviors::run(&project, &saves, dry_run)?,
             },
 
             Commands::Ai { profile, args } => commands::ai::run(&profile, &args)?,

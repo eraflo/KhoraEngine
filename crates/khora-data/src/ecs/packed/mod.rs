@@ -184,7 +184,7 @@ impl PackedLayout {
 
     /// `value` as field `slot` keeps it — `None` when its kind refuses it,
     /// or its type is known and is another.
-    pub(crate) fn admit(&self, slot: usize, value: &ScriptValue) -> Option<ScriptValue> {
+    pub fn admit(&self, slot: usize, value: &ScriptValue) -> Option<ScriptValue> {
         let accepted = self.accept(slot, value)?;
         match self.ty(slot) {
             Some(ty) if !ty.admits(&accepted) => None,
