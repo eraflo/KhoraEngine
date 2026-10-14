@@ -20,9 +20,8 @@
 //! never changes the old one. Writing through a path (`grid[0][1] = 7`)
 //! changes the array the path names, in place.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::arena::PersistentStore;
-use khora_script::bytecode::init_name;
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{Fault, Machine, Program, Run, Value};
 use khora_script::{check, compile, ergon_fn, lex, parse, Host};
@@ -85,18 +84,12 @@ fn run_text(program: &Program, function: &str) -> Result<String, String> {
     }
 }
 
-/// A fresh instance of `behavior`, created as the engine creates one: fields
-/// sized from the layout, declared defaults run.
+/// A fresh instance of `behavior`, created as the engine creates one: its
+/// store built from the layout, every field at its default.
 fn instance(program: &Program, behavior: &str) -> Host {
-    let layout = program
-        .layout(behavior)
-        .unwrap_or_else(|| panic!("`{behavior}` is a behavior of the program"));
-    let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
-        .for_entity(SUBJECT);
-    let init = Machine::new(program, &init_name(behavior), &[]).expect("a field initialiser");
-    finish(init, program, &mut host).expect("the initialiser runs");
-    host
+    Host::new()
+        .with_fields(fresh_store(program, behavior))
+        .for_entity(SUBJECT)
 }
 
 /// Runs `member` with `args` on the instance `host` holds.
@@ -266,7 +259,8 @@ fn an_array_in_a_field_loads_as_an_array() {
     let program = build(
         r#"behavior Guard {
                int[] xs = [1, 2, 3];
-               string[] names = ["a", "b" + ArrayTextTail()];
+               string[] names = ["a", "b"];
+               void Name() { names = ["a", "b" + ArrayTextTail()]; }
                int Second() { return xs[1]; }
                int Count() { return xs.Length; }
                int NameLength() { return names[1].Length; }
@@ -275,6 +269,7 @@ fn an_array_in_a_field_loads_as_an_array() {
            }"#,
     );
     let mut host = instance(&program, "Guard");
+    call(&program, "Guard", "Name", &[], &mut host).expect("the text is built");
     host.end_frame();
 
     assert_eq!(

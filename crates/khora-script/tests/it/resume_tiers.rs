@@ -19,10 +19,10 @@
 //! around them moved; restarted from its entry with its original arguments
 //! when only its member is left; abandoned when even that is gone.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{FrozenMachine, PendingBody};
 use khora_script::arena::{Persisted, PersistentStore};
-use khora_script::bytecode::init_name;
 use khora_script::vm::{resume, Abandoned, ResumeTier, Suspension};
 use khora_script::{check, compile, lex, parse, Host, Machine, Program, Run, Value};
 
@@ -99,12 +99,9 @@ struct Stopped {
 /// Starts `member` of `program` with `args` on a fresh instance and freezes it
 /// at its first `await`.
 fn stopped(program: &Program, member: &str, args: &[Value]) -> Stopped {
-    let layout = program.layout("Guard").expect("the behavior has a layout");
     let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
+        .with_fields(fresh_store(program, "Guard"))
         .for_entity(subject());
-    let mut init = Machine::new(program, &init_name("Guard"), &[]).expect("defaults exist");
-    finish(&mut init, program, &mut host);
 
     let mut machine =
         Machine::new(program, &format!("Guard.{member}"), args).expect("the member exists");

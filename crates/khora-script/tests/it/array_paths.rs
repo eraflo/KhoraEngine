@@ -22,9 +22,9 @@
 //! would put back a stale copy and erase whatever another body wrote to the
 //! field in the meantime.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::arena::{Object, PersistentStore};
-use khora_script::bytecode::init_name;
+use khora_script::arena::Object;
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{Fault, Machine, Program, Run, Suspension, Value};
 use khora_script::{check, compile, lex, parse, Host};
@@ -78,13 +78,9 @@ fn finish(machine: &mut Machine, program: &Program, host: &mut Host) -> Result<V
 }
 
 fn instance(program: &Program) -> Host {
-    let layout = program.layout("Guard").expect("the guard's layout");
-    let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
-        .for_entity(SUBJECT);
-    let mut init = Machine::new(program, &init_name("Guard"), &[]).expect("a field initialiser");
-    finish(&mut init, program, &mut host).expect("the initialiser runs");
-    host
+    Host::new()
+        .with_fields(fresh_store(program, "Guard"))
+        .for_entity(SUBJECT)
 }
 
 fn machine_for(program: &Program, member: &str, args: &[Value], host: &Host) -> Machine {

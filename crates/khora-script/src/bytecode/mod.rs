@@ -48,7 +48,6 @@
 
 mod behavior;
 mod components;
-mod entry;
 pub mod expr;
 mod fingerprint;
 mod flow;
@@ -66,7 +65,6 @@ pub(crate) use structs::constant;
 #[cfg(test)]
 mod tests;
 
-pub use entry::enter_name;
 pub use registers::Registers;
 
 use std::collections::HashMap;
@@ -152,26 +150,6 @@ pub enum Shape {
     Other,
 }
 
-/// What entering a state has to write into the instance.
-///
-/// Entering is a real event, not just a change of discriminant: the state's own
-/// data starts at whatever its author declared, and its schedules start over.
-/// `every 0.5s` inside `Patrol` that resumed a half-spent countdown from the
-/// last time the guard patrolled would fire at a moment nothing decided.
-#[derive(Debug, Clone, Default)]
-pub struct StateEntry {
-    /// Its parameters, in order: what a `become` hands it.
-    pub params: Vec<(String, TypeRef)>,
-    /// Every one of its slots — parameters, then fields — by name, where a
-    /// default reads the state's own data from.
-    pub slots: Vec<(String, u16, Shape)>,
-    /// Its declared fields — the slots after the parameters — and their
-    /// defaults. `None` where the author wrote no default.
-    pub fields: Vec<(u16, String, Option<crate::ast::Expr>, TypeRef)>,
-    /// Its countdown slots, and what each is armed to.
-    pub timers: Vec<(u16, f32)>,
-}
-
 /// A local variable, and the register holding it.
 #[derive(Debug, Clone)]
 struct Local {
@@ -233,7 +211,6 @@ pub struct Compiler {
     /// the initialiser for the state a fresh instance starts in. Without it a
     /// state's declared defaults were decoration — `Become` wrote the arguments
     /// it was handed and nothing else, so `int missed = 7;` left an unset slot.
-    pub entries: HashMap<String, StateEntry>,
     /// Instructions of the function being compiled.
     pub code: Vec<Instruction>,
     /// Register allocation for the current function.
@@ -270,7 +247,6 @@ impl Compiler {
             behavior_fields: HashMap::new(),
             hidden_locals: 0,
             loops: Vec::new(),
-            entries: HashMap::new(),
             code: Vec::new(),
             registers: Registers::new(0),
             locals: Vec::new(),
@@ -349,14 +325,6 @@ impl Compiler {
                     index += 1;
                 }
                 Item::Behavior(decl) => {
-                    // The field initialiser is emitted first, so it takes the
-                    // index before any member.
-                    self.declare(init_name(&decl.name), Shape::Other, index, decl.name_span);
-                    index += 1;
-                    // Then the state entry, emitted right after it.
-                    self.declare(enter_name(&decl.name), Shape::Other, index, decl.name_span);
-                    index += 1;
-
                     for member in &decl.members {
                         // A state's members are functions too, emitted after
                         // the behavior's own. Counting only the behavior's was
@@ -578,15 +546,6 @@ impl Compiler {
             .find(|local| local.name == name)
             .map(|local| (local.register, local.shape))
     }
-}
-
-/// The function that fills a fresh instance's fields.
-///
-/// One place, because the compiler writes the name and the loader reads it, and
-/// two spellings of the same convention would fail silently — an instance whose
-/// fields simply never got their defaults.
-pub fn init_name(behavior: &str) -> String {
-    format!("{behavior}.__fields")
 }
 
 /// The numeric shape a written type compiles to.

@@ -43,7 +43,7 @@ const COUNTER: Project = &[(
 
 /// **The companion is added on the instance's first writeback**: before the
 /// first frame the entity holds the behavior alone; after it, the companion
-/// too — initialised, spawned, in no state, with no fault.
+/// too — spawned, in no state, with no fault.
 #[test]
 fn the_companion_is_added_on_the_first_writeback() {
     let mut session = Session::new(World::new(), COUNTER);
@@ -59,7 +59,6 @@ fn the_companion_is_added_on_the_first_writeback() {
         "the first writeback adds the companion"
     );
     let state = |name: &str| field(world, counter, "Counter#state", name);
-    assert_eq!(state("initialised"), Some(ScriptValue::Bool(true)));
     assert_eq!(state("spawned"), Some(ScriptValue::Bool(true)));
     assert_eq!(
         state("state"),
@@ -373,20 +372,21 @@ const SLOW_START: Project = &[(
     "game/slow.erg",
     "behavior Slow {
          int hp = 10;
-         int sum = Count();
+         int sum = 0;
          int ticks = 0;
          int Count() { int n = 0; while (n < 2000) { n += 1; } return n; }
+         void OnSpawn() { sum = Count(); }
          void Update(float dt) { ticks += 1; }
      }",
 )];
 
-/// **An initialiser cut by the budget writes nothing over the authored
+/// **An `OnSpawn` cut by the budget writes nothing over the authored
 /// fields.** The entity is attached with `hp = 7`; its first turns have fuel
-/// for only part of the initialiser. While it is part-way the row keeps the
-/// `hp` it was given, and once it finishes `hp` is still 7 and `sum` what
-/// the initialiser computed.
+/// for only part of `OnSpawn`. While it is part-way the row keeps the `hp` it
+/// was given, and once it finishes `hp` is still 7 and `sum` what `OnSpawn`
+/// computed.
 #[test]
-fn an_initialiser_cut_by_the_budget_keeps_the_authored_fields() {
+fn an_on_spawn_cut_by_the_budget_keeps_the_authored_fields() {
     let mut session = Session::new(World::new(), SLOW_START);
     let slow = session.world.spawn(Transform::identity());
     attach(
@@ -408,7 +408,7 @@ fn an_initialiser_cut_by_the_budget_keeps_the_authored_fields() {
     assert_eq!(
         int(&session.world, slow, "Slow", "ticks"),
         Some(0),
-        "still initialising"
+        "still spawning"
     );
 
     session.fuel = super::behavior_session::PLENTY;
@@ -559,13 +559,13 @@ fn arrays_text_and_structs_a_turn_writes_reach_the_component() {
     assert_eq!(session.scripts.last_report().faulted, 0);
 }
 
-/// **A field set while the initialiser is cut by the budget is kept.** The
-/// entity is attached with `hp = 7`; its initialiser needs several frames of
-/// fuel. Part-way, another script sets `hp` to 99. Once the initialiser
-/// finishes, `hp` is the 99 written meanwhile — the authored 7 the arrival
-/// brought is not put back over it.
+/// **A field set while `OnSpawn` is cut by the budget is kept.** The entity
+/// is attached with `hp = 7`; its `OnSpawn` needs several frames of fuel.
+/// Part-way, another script sets `hp` to 99. Once `OnSpawn` finishes, `hp` is
+/// the 99 written meanwhile — the authored 7 the arrival brought is not put
+/// back over it.
 #[test]
-fn a_field_set_while_the_initialiser_is_cut_is_kept() {
+fn a_field_set_while_on_spawn_is_cut_is_kept() {
     let mut session = Session::new(World::new(), SLOW_START);
     let slow = session.world.spawn(Transform::identity());
     attach(
@@ -589,18 +589,18 @@ fn a_field_set_while_the_initialiser_is_cut_is_kept() {
     assert_eq!(
         int(&session.world, slow, "Slow", "ticks"),
         Some(0),
-        "still initialising"
+        "still spawning"
     );
 
     session.fuel = super::behavior_session::PLENTY;
     session.frame(0.016);
     session.frame(0.016);
     let world = &session.world;
-    assert_eq!(int(world, slow, "Slow", "sum"), Some(2000), "initialised");
+    assert_eq!(int(world, slow, "Slow", "sum"), Some(2000), "spawned");
     assert_eq!(
         int(world, slow, "Slow", "hp"),
         Some(99),
-        "the `hp` written while the initialiser was cut"
+        "the `hp` written while `OnSpawn` was cut"
     );
 }
 

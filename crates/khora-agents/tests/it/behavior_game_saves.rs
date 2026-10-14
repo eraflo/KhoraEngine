@@ -28,7 +28,7 @@ use super::behavior_session::{attach, field, int, Project, Session};
 const HUNTER: Project = &[(
     "ai/hunter.erg",
     "behavior Hunter {
-         Entity struck;
+         Entity? struck;
          int hunts = 0;
          async void Hunt(Entity who) { await 1.0s; struck = who; hunts += 1; }
          on Mark(Entity who) { Hunt(who); }

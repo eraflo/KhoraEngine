@@ -20,10 +20,10 @@
 //! as the original would — and a frozen machine that does not fit the program
 //! it is thawed into must be refused, never run and never a panic.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{FrozenMachine, FrozenValue, PendingBody};
-use khora_script::arena::{Object, Persisted, PersistentStore};
-use khora_script::bytecode::init_name;
+use khora_script::arena::{Object, Persisted};
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{resolve_str, Fault, StrError, StrRef};
 use khora_script::{
@@ -671,14 +671,9 @@ fn subject() -> EntityId {
 
 /// An instance of `Attacker` with its declared defaults in place.
 fn attacker_host(program: &Program) -> Host {
-    let layout = program.layout("Attacker").expect("the behavior exists");
-    let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
-        .for_entity(subject());
-    let mut init =
-        Machine::new(program, &init_name("Attacker"), &[]).expect("the behavior has defaults");
-    finish(&mut init, program, &mut host);
-    host
+    Host::new()
+        .with_fields(fresh_store(program, "Attacker"))
+        .for_entity(subject())
 }
 
 /// **The point of it all.** A member stopped at its `await`, written down,

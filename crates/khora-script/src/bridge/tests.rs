@@ -172,7 +172,7 @@ fn null_has_no_boundary_form() {
 
 /// **The distinction the whole save path rests on.** An unwritten slot is not a
 /// value that happens to be empty: recording it would shadow the default the
-/// initialiser is meant to produce.
+/// layout gives a fresh instance.
 #[test]
 fn an_unwritten_slot_reads_as_nothing() {
     assert_eq!(from_persisted(&Persisted::Scalar(Value::Unit)), Ok(None));
@@ -211,8 +211,6 @@ fn null_reaches_a_register_as_the_absent_optional() {
 /// Raised from a script, the `Raise` fails and nothing is queued.
 #[test]
 fn an_event_still_refuses_a_null_payload() {
-    use crate::arena::PersistentStore;
-    use crate::bytecode::init_name;
     use crate::dispatch::resolve_member;
     use crate::{check, compile, lex, parse, Host, Machine, Run};
 
@@ -237,13 +235,11 @@ fn an_event_still_refuses_a_null_payload() {
 
     let layout = program.layout("Guard").expect("a layout");
     let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
+        .with_fields(layout.fresh_store())
         .for_entity(EntityId {
             index: 1,
             generation: 1,
         });
-    let mut init = Machine::new(&program, &init_name("Guard"), &[]).expect("an initialiser");
-    assert_eq!(init.run(&program, &mut host, u64::MAX), Run::Completed);
 
     let shout = resolve_member(&program, "Guard", "Shout", &host).expect("`Shout`");
     let mut machine = Machine::new(&program, &shout, &[]).expect("the member");

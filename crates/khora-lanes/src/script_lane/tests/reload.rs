@@ -66,7 +66,7 @@ fn hurt_one_guard() -> (ScriptRuntime, Host) {
     (runtime, host)
 }
 
-/// Runs one quiet frame, which is where a reloaded instance re-initialises.
+/// Runs one quiet frame, the first a reloaded instance runs in its new code.
 fn settle(runtime: &mut ScriptRuntime, host: &mut Host) {
     run_behaviors(&view_of(1), &EventQueue::new(), runtime, host, u64::MAX);
 }
@@ -112,7 +112,7 @@ fn a_field_inserted_above_does_not_steal_the_value_below_it() {
 }
 
 /// A field the edit introduced takes the default its author wrote, which only
-/// running the new initialiser can produce.
+/// the new layout holds.
 #[test]
 fn a_new_field_gets_its_declared_default() {
     let (mut runtime, mut host) = hurt_one_guard();
@@ -309,7 +309,7 @@ fn a_scene_value_seeds_the_instance_rather_than_the_declared_default() {
 }
 
 /// And what the scene did not carry takes the default its author wrote — the
-/// initialiser still runs, the saved values simply go back on top.
+/// store starts from the layout's defaults, and the saved values go on top.
 #[test]
 fn a_field_the_scene_did_not_save_takes_its_declared_default() {
     use khora_core::script::ScriptValue;
@@ -413,7 +413,7 @@ fn a_quiet_frame_sends_no_state() {
     let mut runtime = runtime_with_guard();
     let mut host = Host::new();
 
-    // The first frame initialises, which is work.
+    // The first frame spawns, which is work.
     let first = run_behaviors(
         &view_of(1),
         &EventQueue::new(),

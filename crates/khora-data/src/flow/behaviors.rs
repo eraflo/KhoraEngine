@@ -80,13 +80,12 @@ pub(super) fn project_behaviors(
         let companion = world
             .components()
             .key_named(&format!("{}{STATE_SUFFIX}", behavior.name));
-        let defaults = default_row(world, behavior.key);
         let mut rows = world.declared_rows(behavior.key);
         rows.sort_by_key(|(entity, _)| (entity.index, entity.generation));
         for (entity, fields) in rows {
             let arrival = newcomers
                 .contains(&(entity, behavior.name.to_owned()))
-                .then(|| arrival_of(world, entity, &fields, &defaults, companion));
+                .then(|| arrival_of(world, entity, &fields, companion));
             let transform = world.get::<Transform>(entity).copied();
             view.instances.push(ScriptInstance {
                 entity,
@@ -101,56 +100,27 @@ pub(super) fn project_behaviors(
     }
 }
 
-/// The registered default of each field of component `key`.
-fn default_row(world: &World, key: ComponentKey) -> Vec<(String, ScriptValue)> {
-    world
-        .components()
-        .vtable(key)
-        .and_then(|vtable| vtable.columns.packed())
-        .map(|layout| {
-            layout
-                .fields()
-                .iter()
-                .map(|field| (field.name.clone(), field.default.clone()))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// What an instance brings the first frame it appears: its row, and the
-/// companion's record of it when it has run before.
-///
-/// Before it has run, only the fields set away from their registered
-/// default are the author's: a default an initialiser computes — `Vec3 home
-/// = Position();` — is registered as a placeholder, and must not be put back
-/// over what the initialiser computes.
+/// What an instance brings the first frame it appears: its row — a
+/// behavior's defaults are data, so its registered default is the one its
+/// instance starts at — and the companion's record of it when it has run
+/// before.
 fn arrival_of(
     world: &World,
     entity: EntityId,
     fields: &[(String, ScriptValue)],
-    defaults: &[(String, ScriptValue)],
     companion: Option<ComponentKey>,
 ) -> ScriptArrival {
     let observed = companion
         .and_then(|key| world.declared_row(entity, key))
         .and_then(|row| match companion_snapshot(&row) {
-            Ok((snapshot, _)) => Some(snapshot),
+            Ok(snapshot) => Some(snapshot),
             Err(error) => {
                 log::error!("a behavior's recorded state could not be read: {error}");
                 None
             }
         });
-    let fields = match observed {
-        Some(_) => fields.to_vec(),
-        None => fields
-            .iter()
-            .filter(|(name, value)| {
-                !defaults
-                    .iter()
-                    .any(|(field, default)| field == name && default == value)
-            })
-            .cloned()
-            .collect(),
-    };
-    ScriptArrival { fields, observed }
+    ScriptArrival {
+        fields: fields.to_vec(),
+        observed,
+    }
 }

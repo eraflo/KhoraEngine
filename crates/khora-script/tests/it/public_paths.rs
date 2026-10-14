@@ -365,7 +365,6 @@ fn compiler_fields(x: &khora_script::bytecode::Compiler) {
         &x.natives,
         &x.behavior,
         &x.fields,
-        &x.entries,
         &x.code,
         &x.registers,
     );
@@ -380,10 +379,6 @@ fn shape_variants(x: &khora_script::bytecode::Shape) {
         khora_script::bytecode::Shape::Object => {}
         khora_script::bytecode::Shape::Other => {}
     }
-}
-
-fn state_entry_fields(x: &khora_script::bytecode::StateEntry) {
-    let _ = (&x.fields, &x.timers);
 }
 
 fn diagnostic_fields(x: &khora_script::diagnostics::Diagnostic) {
@@ -759,7 +754,7 @@ fn instruction_variants(x: &khora_script::vm::instruction::Instruction) {
 }
 
 fn behavior_layout_fields(x: &khora_script::vm::program::BehaviorLayout) {
-    let _ = (&x.name, &x.fields, &x.states, &x.timers);
+    let _ = (&x.name, &x.fields, &x.states, &x.timers, &x.defaults);
 }
 
 fn function_fields(x: &khora_script::vm::program::Function) {
@@ -771,7 +766,7 @@ fn program_fields(x: &khora_script::vm::program::Program) {
 }
 
 fn state_layout_fields(x: &khora_script::vm::program::StateLayout) {
-    let _ = (&x.name, &x.slots);
+    let _ = (&x.name, &x.slots, &x.defaults);
 }
 
 fn timer_kind_variants(x: &khora_script::vm::program::TimerKind) {
@@ -1301,7 +1296,6 @@ fn module_bytecode_paths_still_resolve() {
     let _ = khora_script::bytecode::Compiler::arithmetic;
     let _ = khora_script::bytecode::Compiler::compile_block;
     let _ = khora_script::bytecode::Compiler::compile_stmt;
-    let _ = khora_script::bytecode::Compiler::emit_state_entry;
     let _: fn(&mut khora_script::bytecode::Compiler, String, khora_script::diagnostics::Span) =
         khora_script::bytecode::Compiler::error;
     let _ = khora_script::bytecode::Compiler::emit;
@@ -1319,16 +1313,10 @@ fn module_bytecode_paths_still_resolve() {
     is_copy::<khora_script::bytecode::Shape>();
     is_partial_eq::<khora_script::bytecode::Shape>();
     is_eq::<khora_script::bytecode::Shape>();
-    let _ = type_name::<khora_script::bytecode::StateEntry>();
-    let _ = state_entry_fields as fn(&khora_script::bytecode::StateEntry);
-    is_debug::<khora_script::bytecode::StateEntry>();
-    is_clone::<khora_script::bytecode::StateEntry>();
-    is_default::<khora_script::bytecode::StateEntry>();
     let _ = khora_script::bytecode::compile;
     let _ = khora_script::compile;
     same_item(&khora_script::compile, &khora_script::bytecode::compile);
     let _ = khora_script::bytecode::compile_with;
-    let _ = khora_script::bytecode::init_name;
     let _ = type_name::<khora_script::bytecode::registers::Registers>();
     let _ = type_name::<khora_script::bytecode::Registers>();
     same_type(
@@ -1476,7 +1464,6 @@ fn module_dispatch_paths_still_resolve() {
     let _ = khora_script::dispatch::handles;
     let _ = khora_script::handles;
     same_item(&khora_script::handles, &khora_script::dispatch::handles);
-    let _ = khora_script::dispatch::initialise;
     let _ = khora_script::dispatch::invoke;
     let _ = khora_script::dispatch::resolve_member;
     let _ = khora_script::dispatch::state_handler_name;
@@ -2015,6 +2002,8 @@ fn module_vm_paths_still_resolve() {
     let _ = khora_script::vm::program::BehaviorLayout::slot_count;
     let _ = khora_script::vm::program::BehaviorLayout::state_index;
     let _ = khora_script::vm::program::BehaviorLayout::state_at;
+    let _ = khora_script::vm::program::BehaviorLayout::entry;
+    let _ = khora_script::vm::program::BehaviorLayout::fresh_store;
     is_debug::<khora_script::vm::program::BehaviorLayout>();
     is_clone::<khora_script::vm::program::BehaviorLayout>();
     is_partial_eq::<khora_script::vm::program::BehaviorLayout>();
@@ -2071,7 +2060,6 @@ fn module_vm_paths_still_resolve() {
     is_debug::<khora_script::vm::program::StateLayout>();
     is_clone::<khora_script::vm::program::StateLayout>();
     is_partial_eq::<khora_script::vm::program::StateLayout>();
-    is_eq::<khora_script::vm::program::StateLayout>();
     is_default::<khora_script::vm::program::StateLayout>();
     is_serialize::<khora_script::vm::program::StateLayout>();
     is_deserialize_owned::<khora_script::vm::program::StateLayout>();
@@ -2233,7 +2221,6 @@ mod paths_used_by_other_crates {
     use khora_script::compile as _; // khora-agents, khora-lanes
     use khora_script::compile_module as _; // hub, khora-agents, khora-io
     use khora_script::dispatch::deliver as _; // khora-lanes
-    use khora_script::dispatch::initialise as _; // khora-lanes
     use khora_script::dispatch::invoke as _; // khora-lanes
     use khora_script::dispatch::tick_timers as _; // khora-lanes
     use khora_script::dispatch::NotDelivered as _; // khora-lanes

@@ -22,6 +22,7 @@ mod behavior_components;
 mod declared_component_scenes;
 mod game_saves;
 mod game_saves_text_base;
+mod hot_reload_announcements;
 mod prefab_scenes;
 mod public_paths;
 mod scene_files;

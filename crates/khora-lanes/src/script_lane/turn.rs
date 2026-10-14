@@ -14,10 +14,11 @@
 
 //! One behavior's turn.
 //!
-//! The order inside a turn is the whole design, and it is not arbitrary: the
-//! initialiser, then `OnSpawn`, then a body resuming where it stopped, then the
+//! The order inside a turn is the whole design, and it is not arbitrary:
+//! `OnLoad`, then `OnSpawn`, then a body resuming where it stopped, then the
 //! timers, then the events, then `Update` last so it sees this frame's
-//! consequences rather than predicting them.
+//! consequences rather than predicting them. The instance's fields exist
+//! before its first turn — its defaults are data, and no code runs for them.
 //!
 //! Any body may stop part-way — out of fuel, or on an `await` — and every one
 //! resumes where it stopped rather than starting over: what ran before the cut
@@ -26,7 +27,6 @@
 //! picks the body up before anything new starts.
 
 use khora_core::script::EventQueue;
-use khora_script::bytecode::{enter_name, init_name};
 use khora_script::dispatch::{deliver, finish_timer, tick_timers, NotDelivered};
 use khora_script::lifecycle;
 use khora_script::native::Host;
@@ -34,7 +34,7 @@ use khora_script::vm::{Machine, Program, Run, StrRef, Suspension, Value};
 
 use super::hooks::{call_hook, Hook};
 
-use super::runtime::{self, Body, Pending};
+use super::runtime::{Body, Pending};
 
 /// What running one behavior did.
 pub(super) enum Outcome {
@@ -67,12 +67,6 @@ pub(super) enum Outcome {
         spent: u64,
         reason: String,
     },
-    /// The initialiser ran out of fuel: it is kept in
-    /// [`Progress::initialiser`], nothing else ran, and every event waits for
-    /// the turn that finishes it.
-    Uninitialised {
-        spent: u64,
-    },
 }
 
 impl Outcome {
@@ -94,8 +88,7 @@ impl Outcome {
             Self::Completed { spent }
             | Self::Deferred { spent, .. }
             | Self::Busy { spent, .. }
-            | Self::Faulted { spent, .. }
-            | Self::Uninitialised { spent } => *spent,
+            | Self::Faulted { spent, .. } => *spent,
         }
     }
 }
@@ -112,9 +105,6 @@ pub(super) struct Invocation<'a> {
     pub(super) fuel: u64,
     /// The seconds since the previous frame, for the countdowns.
     pub(super) delta: f32,
-    /// Values to restore after the initialiser, when this follows a reload or
-    /// a load.
-    pub(super) carried: Option<&'a khora_script::arena::PersistentStore>,
 }
 
 /// Where an instance has got to — what a turn advances.
@@ -122,12 +112,8 @@ pub(super) struct Invocation<'a> {
 /// The frame lends it to the turn and writes it back whatever happened, so a
 /// turn that stops early cannot lose a body part-way through.
 pub(super) struct Progress {
-    /// Whether the instance's declared defaults exist.
-    pub(super) initialised: bool,
     /// Whether it has announced itself through `OnSpawn`.
     pub(super) spawned: bool,
-    /// The initialiser, if an earlier turn ran out of fuel inside it.
-    pub(super) initialiser: Option<Machine>,
     /// The body part-way through, if there is one.
     pub(super) pending: Option<Pending>,
     /// Whether `OnLoad` is owed or part-way.
@@ -137,25 +123,6 @@ pub(super) struct Progress {
     /// The members of bodies an edit left nothing of, each owed
     /// `OnResumeFailed`, oldest first.
     pub(super) resume_failed: Vec<String>,
-}
-
-/// The state a carried store is in, when it is not the first — the one the
-/// initialiser already entered.
-fn carried_state(
-    program: &Program,
-    behavior: &str,
-    carried: &khora_script::arena::PersistentStore,
-) -> Option<i64> {
-    let layout = program.layout(behavior)?;
-    if layout.states.is_empty() {
-        return None;
-    }
-    match carried.get(layout.state_slot()) {
-        Some(khora_script::arena::Persisted::Scalar(Value::Int(state))) if *state != 0 => {
-            Some(*state)
-        }
-        _ => None,
-    }
 }
 
 /// `OnLoad` has finished: the body the load restored is the one owed next.
@@ -253,66 +220,10 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
         entity,
         events,
         fuel,
-        carried,
         delta,
     } = call;
     let call = &call;
     let mut spent = 0;
-
-    // The defaults, before anything can read a field. Resumed rather than
-    // restarted after a cut: an initialiser larger than one turn's slice would
-    // otherwise restart every turn and never finish.
-    if !progress.initialised {
-        // An instance coming back in a state other than the first enters that
-        // state's own defaults after the initialiser has entered the first:
-        // a datum new to its state would otherwise keep what the first state
-        // left in the slot they share. Both are one machine at a time, kept
-        // across a cut like the initialiser alone was.
-        let init = init_name(behavior);
-        let entering = carried.and_then(|carried| carried_state(program, behavior, carried));
-        let mut current = progress
-            .initialiser
-            .take()
-            .or_else(|| Machine::new(program, &init, &[]));
-        while let Some(mut machine) = current.take() {
-            let was_initialiser = machine
-                .outermost()
-                .and_then(|index| program.functions.get(index))
-                .is_some_and(|function| function.name == init);
-            let left = fuel.saturating_sub(spent);
-            let (run, cost) = machine.run_counting(program, host, left);
-            spent += cost;
-            match run {
-                Run::Completed => {
-                    if was_initialiser {
-                        current = entering.and_then(|state| {
-                            // Its defaults may read its parameters: what was
-                            // carried, never what the first state left in the
-                            // slots they share.
-                            if let (Some(layout), Some(carried)) =
-                                (program.layout(behavior), carried)
-                            {
-                                runtime::place_state_data(&mut host.fields, layout, state, carried);
-                            }
-                            Machine::new(program, &enter_name(behavior), &[Value::Int(state)])
-                        });
-                    }
-                }
-                Run::Faulted(fault) => return Outcome::faulted(spent, fault),
-                Run::Suspended(_) => {
-                    host.awaiting = None;
-                    progress.initialiser = Some(machine);
-                    return Outcome::Uninitialised { spent };
-                }
-            }
-        }
-        // The initialiser writes every slot, so anything carried across a
-        // reload or a load has to go back on top of what it just produced.
-        if let Some(carried) = carried {
-            runtime::restore_carried(&mut host.fields, carried);
-        }
-        progress.initialised = true;
-    }
 
     // A load announces itself first: `OnLoad` runs once the restored state is
     // in place, before anything else — `OnSpawn`, the body the save restored,
@@ -353,10 +264,10 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
         }
     }
 
-    // Once per entity, after the defaults exist and before anything else can
-    // observe the instance. A hot-reload clears `initialised` but not this: an
-    // edit to the script is not a new entity, and a guard should not announce
-    // itself again because its author changed a number.
+    // Once per entity, before anything else can observe the instance. A
+    // hot reload keeps it: an edit to the script is not a new entity, and a
+    // guard should not announce itself again because its author changed a
+    // number.
     if !progress.spawned {
         // Marked before it runs: a cut `OnSpawn` finishes through `pending`,
         // and must not be called a second time.

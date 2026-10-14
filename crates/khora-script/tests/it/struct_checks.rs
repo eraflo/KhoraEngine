@@ -16,7 +16,8 @@
 //!
 //! - A literal names each field once, only fields the struct declares, and
 //!   every field that has neither a default nor a zero.
-//! - A struct field's default is a constant — data, not code.
+//! - A struct field's default is a constant — data, not code; so is a
+//!   behavior field's.
 //! - `?.` on a field that is itself optional gives `T?`, never `T??`.
 //! - `==` and `!=` do not compare two structs, unless the struct overloads
 //!   them: compare their fields.
@@ -179,19 +180,24 @@ fn a_struct_field_default_must_be_a_constant() {
     ]);
 }
 
-/// A behavior field's default is not held to it: it runs in the instance's
-/// initialiser, so it may call a function.
+/// **A behavior field's default is a constant too**: it is data the engine
+/// seeds a fresh instance with, not code an initialiser runs. A call — or a
+/// struct literal holding one — is refused, saying so.
 #[test]
-fn a_behavior_field_default_may_still_run_code() {
-    assert_all_accepted(&["fn int G() { return 1; }
-         struct Inner { int value; }
-         behavior Guard { int a = G(); Inner inner = Inner { value: G() }; }"]);
-    // The premise: the same default is refused in a struct.
-    assert!(!errors(
-        "fn int G() { return 1; }
-         struct S { int a = G(); }"
-    )
-    .is_empty());
+fn a_behavior_field_default_that_runs_code_is_refused() {
+    assert_all_refused_saying(&[
+        (
+            "fn int G() { return 1; }
+             behavior Guard { int a = G(); }",
+            "a behavior field's default must be a constant",
+        ),
+        (
+            "fn int G() { return 1; }
+             struct Inner { int value; }
+             behavior Guard { Inner inner = Inner { value: G() }; }",
+            "a behavior field's default must be a constant",
+        ),
+    ]);
 }
 
 // ─── `?.` ───────────────────────────────────────────────────────────────────

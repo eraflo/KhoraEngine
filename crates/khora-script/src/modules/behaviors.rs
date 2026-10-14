@@ -23,9 +23,7 @@
 //! same fields for every behavior. `#` is no part of a name a script can
 //! write, so no script names a companion.
 
-use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::SemanticDomain;
-use khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 use khora_core::script::{ErgonType, ScriptValue};
 
 use super::components::{
@@ -33,9 +31,7 @@ use super::components::{
     DOMAIN,
 };
 use super::{Resolved, ResolvedModule};
-use crate::arena::Owned;
 use crate::ast::{Attribute, BehaviorDecl, BehaviorMember, Expr, Field, Item};
-use crate::bytecode::keys::type_name;
 use crate::diagnostics::Diagnostic;
 use crate::vm::{DeclaredComponent, DeclaredField, DeclaredKind, Program};
 
@@ -146,7 +142,8 @@ pub fn declared_behaviors(resolved: &Resolved, program: &Program) -> Vec<Declare
                     module: module.path.clone(),
                     domain: domain_of(&decl.attributes).unwrap_or(SemanticDomain::Script),
                     fields: fields_of(decl)
-                        .map(|field| declared_field(field, program))
+                        .enumerate()
+                        .map(|(slot, field)| declared_field(field, slot, &decl.name, program))
                         .collect(),
                     kind: DeclaredKind::Behavior,
                 },
@@ -190,25 +187,20 @@ fn fields_of(decl: &BehaviorDecl) -> impl Iterator<Item = &Field> {
     })
 }
 
-/// A behavior field as its component holds it. Its registered default is the
-/// written one where it is a constant, else its type's zero, else a value of
-/// its kind: a behavior's default may be computed when an instance starts —
-/// `Vec3 home = Position();` — and the instance's initialiser writes it then.
-fn declared_field(field: &Field, program: &Program) -> DeclaredField {
+/// A behavior field as its component holds it: its registered default is the
+/// layout's — the constant written, or its type's neutral value — so what a
+/// row starts at and what a fresh instance holds are one value.
+fn declared_field(field: &Field, slot: usize, behavior: &str, program: &Program) -> DeclaredField {
     // A type the storage names no type for — a `Map` — is held as any value.
     let ty = ergon_type(&field.ty).map_or(ErgonType::Any, |ty| {
         with_struct_fields(as_stored(ty), program, &mut Vec::new())
     });
-    let written = field
-        .default
-        .as_ref()
-        .and_then(crate::bytecode::constant)
-        .and_then(|owned| owned.completed(&type_name(&field.ty), &program.structs));
-    let default = written
-        .or_else(|| Owned::zero(&type_name(&field.ty)))
-        .and_then(|owned| crate::bridge::from_owned(&owned).ok())
+    let default = program
+        .layout(behavior)
+        .and_then(|layout| layout.defaults.get(slot))
+        .and_then(|owned| crate::bridge::from_owned(owned).ok())
         .map(|value| at_type(value, &ty))
-        .unwrap_or_else(|| placeholder(&ty));
+        .unwrap_or(ScriptValue::Null);
     DeclaredField {
         name: field.name.clone(),
         ty,
@@ -216,33 +208,9 @@ fn declared_field(field: &Field, program: &Program) -> DeclaredField {
     }
 }
 
-/// A value of `ty` for a field with no zero, until the initialiser writes the
-/// real one.
-fn placeholder(ty: &ErgonType) -> ScriptValue {
-    match ty {
-        ErgonType::Bool => ScriptValue::Bool(false),
-        ErgonType::Int => ScriptValue::Int(0),
-        ErgonType::Float => ScriptValue::Float(0.0),
-        ErgonType::Str => ScriptValue::Str(String::new()),
-        ErgonType::Entity => ScriptValue::Entity(EntityId {
-            index: u32::MAX,
-            generation: u32::MAX,
-        }),
-        ErgonType::Engine("Vec2") => ScriptValue::Vec2(Vec2::new(0.0, 0.0)),
-        ErgonType::Engine("Vec4") => ScriptValue::Vec4(Vec4::new(0.0, 0.0, 0.0, 0.0)),
-        ErgonType::Engine("Quat") => ScriptValue::Quat(Quaternion::IDENTITY),
-        ErgonType::Engine("Color") => ScriptValue::Color(LinearRgba::WHITE),
-        ErgonType::Engine(_) => ScriptValue::Vec3(Vec3::new(0.0, 0.0, 0.0)),
-        ErgonType::Optional(_) | ErgonType::Any => ScriptValue::Null,
-        ErgonType::Array(_) => ScriptValue::Array(Vec::new()),
-        ErgonType::Struct { .. } => ScriptValue::Struct(Vec::new()),
-    }
-}
-
 /// The fields of every state companion: the current state, by name; that
 /// state's data, by name; each timer's remaining time; a suspended sequence;
-/// whether the instance initialised and spawned; its fault; the bodies a
-/// resume abandoned.
+/// whether the instance spawned; its fault; the bodies a resume abandoned.
 fn companion_fields() -> Vec<DeclaredField> {
     let field = |name: &str, ty: ErgonType, default: ScriptValue| DeclaredField {
         name: name.to_owned(),
@@ -259,7 +227,6 @@ fn companion_fields() -> Vec<DeclaredField> {
         ),
         field("timers", ErgonType::Any, ScriptValue::Array(Vec::new())),
         field("pending", ErgonType::Any, ScriptValue::Null),
-        field("initialised", ErgonType::Bool, ScriptValue::Bool(false)),
         field("spawned", ErgonType::Bool, ScriptValue::Bool(false)),
         field("fault", ErgonType::Any, ScriptValue::Null),
         field(

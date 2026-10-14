@@ -21,11 +21,11 @@
 //! the lowering picks the wrong operation, and the program computes a value
 //! nobody wrote or faults on one it should have accepted.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::Vec3;
 use khora_core::script::{FrozenMachine, PendingBody};
-use khora_script::arena::{Persisted, PersistentStore};
-use khora_script::bytecode::init_name;
+use khora_script::arena::Persisted;
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{resume, Fault, ResumeTier, Suspension};
 use khora_script::{check, compile, lex, parse, Host, Machine, Program, Run, Value};
@@ -64,17 +64,11 @@ fn finish(mut machine: Machine, program: &Program, host: &mut Host) -> Result<Va
     panic!("still running after 1000 resumes");
 }
 
-/// A fresh instance of `behavior`: fields sized from the layout, defaults run.
+/// A fresh instance of `behavior`: its store built from the layout.
 fn instance(program: &Program, behavior: &str) -> Host {
-    let layout = program
-        .layout(behavior)
-        .unwrap_or_else(|| panic!("`{behavior}` is a behavior of the program"));
-    let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
-        .for_entity(SUBJECT);
-    let init = Machine::new(program, &init_name(behavior), &[]).expect("a field initialiser");
-    finish(init, program, &mut host).expect("the defaults run");
-    host
+    Host::new()
+        .with_fields(fresh_store(program, behavior))
+        .for_entity(SUBJECT)
 }
 
 /// Runs `member` on a fresh instance of `behavior`.

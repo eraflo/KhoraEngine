@@ -321,6 +321,23 @@ fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
                     // declares with it.
                     send_declared(&program, declarations, &mut sent);
                 }
+                // What it reads, before the lane installs it: the flow then
+                // projects those components the frame the program lands, and
+                // the program is not held back a frame over rows the World has
+                // already laid out for it.
+                if let Some(catalog) = runtime
+                    .resources
+                    .get::<std::sync::Arc<khora_core::script::ScriptCatalog>>()
+                {
+                    catalog.announce(
+                        module.clone(),
+                        program
+                            .reads
+                            .iter()
+                            .map(|read| khora_core::script::ComponentName::new(read.as_str()))
+                            .collect(),
+                    );
+                }
                 pending.send(ScriptReload { module, program });
             }
             None => {

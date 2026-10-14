@@ -40,6 +40,7 @@
 //! the whole thing schedulable in parallel.
 
 mod attached;
+mod carry;
 mod departure;
 mod frame;
 mod hooks;
@@ -50,6 +51,7 @@ pub mod report;
 pub mod resumption;
 pub mod runtime;
 mod shares;
+mod state_update;
 mod turn;
 
 #[cfg(test)]
@@ -183,6 +185,13 @@ impl Lane for BudgetedScriptLane {
 
         // Handed over together with the arena reset, so no command can
         // outlive the frame memory it might have referred to.
+        // Where each turn stands among the frame's commands, counted from
+        // those the slot already holds.
+        let held = deck.slot::<CommandBuffer>().len();
+        for update in &mut report.state {
+            update.read_until += held;
+            update.emitted_after += held;
+        }
         deck.slot::<CommandBuffer>().extend(host.end_frame());
         runtime.return_arena(host.take_arena());
         deck.slot::<BehaviorWriteback>()

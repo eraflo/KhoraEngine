@@ -32,14 +32,28 @@ pub struct ScriptCatalog(RwLock<CatalogData>);
 pub struct CatalogData {
     /// Every component some loaded program reads with `Get` or `Has`.
     pub reads: Vec<ComponentName>,
+    /// What each module's incoming program reads, announced by whatever
+    /// compiled it until the lane installs it.
+    pub announced: std::collections::BTreeMap<String, Vec<ComponentName>>,
 }
 
 impl ScriptCatalog {
-    /// The components some loaded program reads.
+    /// The components some loaded program reads, and those a program about
+    /// to be installed reads — so the frame that installs it has them.
     pub fn reads(&self) -> Vec<ComponentName> {
         self.0
             .read()
-            .map(|data| data.reads.clone())
+            .map(|data| {
+                let mut reads: Vec<ComponentName> = data
+                    .reads
+                    .iter()
+                    .chain(data.announced.values().flatten())
+                    .cloned()
+                    .collect();
+                reads.sort();
+                reads.dedup();
+                reads
+            })
             .unwrap_or_default()
     }
 
@@ -59,6 +73,28 @@ impl ScriptCatalog {
         }
         data.reads = reads;
         true
+    }
+
+    /// Records what the program `module` is about to be replaced with reads,
+    /// before the lane installs it — so the flow projects those components
+    /// the frame the program lands. A second announcement of the same module
+    /// replaces the first.
+    pub fn announce(&self, module: impl Into<String>, reads: Vec<ComponentName>) {
+        let mut data = match self.0.write() {
+            Ok(data) => data,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        data.announced.insert(module.into(), reads);
+    }
+
+    /// Forgets what `module` announced: its program was installed, or
+    /// replaced before it could be.
+    pub fn settle(&self, module: &str) {
+        let mut data = match self.0.write() {
+            Ok(data) => data,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        data.announced.remove(module);
     }
 }
 
@@ -103,5 +139,104 @@ mod tests {
             "a grown set"
         );
         assert!(catalog.set_reads(Vec::new()), "an emptied set");
+    }
+
+    fn sorted(mut reads: Vec<ComponentName>) -> Vec<ComponentName> {
+        reads.sort();
+        reads
+    }
+
+    /// **What the flow projects is what is loaded and what is about to be.**
+    /// The read set and every module's announcement together — each
+    /// component once, however many name it.
+    #[test]
+    fn the_reads_are_the_loaded_ones_and_the_announced_ones_together() {
+        let catalog = ScriptCatalog::default();
+        catalog.set_reads(names(&["RigidBody"]));
+        catalog.announce("ai/guard.erg", names(&["Collider", "RigidBody"]));
+
+        assert_eq!(
+            sorted(catalog.reads()),
+            names(&["Collider", "RigidBody"]),
+            "the union, each name once"
+        );
+    }
+
+    /// **The lane writing its read set every frame does not erase an
+    /// announcement**: the program announced has not been installed yet, and
+    /// the flow must go on projecting what it will read.
+    #[test]
+    fn setting_the_reads_keeps_what_was_announced() {
+        let catalog = ScriptCatalog::default();
+        catalog.announce("ai/guard.erg", names(&["Collider"]));
+
+        catalog.set_reads(names(&["RigidBody"]));
+        assert_eq!(sorted(catalog.reads()), names(&["Collider", "RigidBody"]));
+
+        catalog.set_reads(Vec::new());
+        assert_eq!(
+            catalog.reads(),
+            names(&["Collider"]),
+            "an emptied read set leaves the announcement"
+        );
+    }
+
+    /// **Settling a module drops its announcement, and only its.** Another
+    /// module still waiting keeps what it announced.
+    #[test]
+    fn settling_a_module_drops_its_announcement_alone() {
+        let catalog = ScriptCatalog::default();
+        catalog.announce("ai/guard.erg", names(&["Collider"]));
+        catalog.announce("ai/lamp.erg", names(&["Light"]));
+
+        catalog.settle("ai/guard.erg");
+
+        assert_eq!(catalog.reads(), names(&["Light"]));
+    }
+
+    /// Settling a module that announced nothing changes nothing.
+    #[test]
+    fn settling_a_module_that_announced_nothing_changes_nothing() {
+        let catalog = ScriptCatalog::default();
+        catalog.set_reads(names(&["RigidBody"]));
+        catalog.announce("ai/lamp.erg", names(&["Light"]));
+
+        catalog.settle("ai/guard.erg");
+
+        assert_eq!(sorted(catalog.reads()), names(&["Light", "RigidBody"]));
+    }
+
+    /// **A superseded program's reads do not linger.** A module saved twice
+    /// before its first version installed announces twice; only the second
+    /// version will run, so only what it reads is projected.
+    #[test]
+    fn announcing_a_module_again_replaces_what_it_announced() {
+        let catalog = ScriptCatalog::default();
+        catalog.announce("ai/guard.erg", names(&["Collider"]));
+        catalog.announce("ai/guard.erg", names(&["RigidBody"]));
+
+        assert_eq!(catalog.reads(), names(&["RigidBody"]));
+
+        catalog.announce("ai/guard.erg", Vec::new());
+        assert!(
+            catalog.reads().is_empty(),
+            "a version reading nothing announces nothing"
+        );
+    }
+
+    /// Once settled, the read set alone is what is read.
+    #[test]
+    fn a_settled_module_leaves_the_read_set_as_it_is() {
+        let catalog = ScriptCatalog::default();
+        catalog.announce("ai/guard.erg", names(&["Collider"]));
+        catalog.set_reads(names(&["Collider"]));
+
+        catalog.settle("ai/guard.erg");
+
+        assert_eq!(
+            catalog.reads(),
+            names(&["Collider"]),
+            "the installed program still reads it"
+        );
     }
 }

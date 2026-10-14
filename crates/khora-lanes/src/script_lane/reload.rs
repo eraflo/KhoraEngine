@@ -53,6 +53,9 @@ pub(crate) fn apply_reloads(
             continue;
         }
         apply(runtime, &reload);
+        if let Some(catalog) = catalog {
+            catalog.settle(&reload.module);
+        }
     }
 }
 

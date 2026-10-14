@@ -259,12 +259,13 @@ fn guard_row_with_hp_4() -> Vec<(String, ScriptValue)> {
 }
 
 /// **A behavior's instance arrives once, and hands over its row every
-/// frame.** The first frame it is projected, its arrival brings what its
-/// author set — `hp`, not `speed`, left at its registered default, which may
-/// stand in for a default the initialiser computes — and nothing observed,
-/// since it never ran. From the next frame there is no arrival, but the
-/// instance still carries its component's whole row, so the lane can take
-/// a field written outside it.
+/// frame.** The first frame it is projected, its arrival brings its
+/// component's whole row — `hp` as its author set it and `speed` at its
+/// registered default, which is the very value a fresh instance starts at,
+/// so nothing is filtered out — and nothing observed, since it never ran.
+/// From the next frame there is no arrival, but the instance still carries
+/// its component's whole row, so the lane can take a field written outside
+/// it.
 #[test]
 fn a_behavior_instance_arrives_once_and_hands_over_its_row_every_frame() {
     let mut session = Session::new(World::new(), GUARD);
@@ -281,10 +282,10 @@ fn a_behavior_instance_arrives_once_and_hands_over_its_row_every_frame() {
     assert_eq!(
         first.instances[0].arrival,
         Some(ScriptArrival {
-            fields: vec![("hp".to_owned(), ScriptValue::Int(4))],
+            fields: guard_row_with_hp_4(),
             observed: None,
         }),
-        "the fields its author set, nothing observed"
+        "its whole row, a field at its registered default included; nothing observed"
     );
     assert_eq!(first.instances[0].row, guard_row_with_hp_4());
 

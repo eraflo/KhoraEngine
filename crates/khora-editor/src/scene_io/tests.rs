@@ -238,7 +238,6 @@ fn declare_guard(
         ),
         field("timers", FieldKind::Value, ScriptValue::Struct(Vec::new())),
         field("pending", FieldKind::Value, ScriptValue::Null),
-        field("initialised", FieldKind::Bool, ScriptValue::Bool(false)),
         field("spawned", FieldKind::Bool, ScriptValue::Bool(false)),
         field("fault", FieldKind::Value, ScriptValue::Null),
         field(
@@ -382,7 +381,7 @@ fn stop_restores_script_targets() {
         .add_runtime_component(
             guard,
             state,
-            &ScriptValue::Struct(companion_row(&observed, true).expect("a companion row")),
+            &ScriptValue::Struct(companion_row(&observed).expect("a companion row")),
         )
         .expect("the observed state attaches");
     // The editor marks authored every entity it creates.
@@ -486,6 +485,8 @@ fn the_play_snapshot_never_holds_observed_state() {
         }
         .with_field("health", ScriptValue::Int(100)),
         changed: Vec::new(),
+        read_until: 0,
+        emitted_after: 0,
     }]);
     (writeback.run)(
         world.inner_world_mut(),

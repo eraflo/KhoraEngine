@@ -26,6 +26,8 @@ use crate::scene::capture_world;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{BehaviorUpdate, ScriptSnapshot, ScriptValue};
 
+mod emission_order;
+
 fn field(name: &str, kind: FieldKind, default: ScriptValue) -> PackedField {
     PackedField {
         name: name.to_owned(),
@@ -86,7 +88,6 @@ fn declare_behavior(world: &mut World, module: &str, name: &str) -> (ComponentKe
             ),
             field("timers", FieldKind::Value, ScriptValue::Array(Vec::new())),
             field("pending", FieldKind::Value, ScriptValue::Null),
-            field("initialised", FieldKind::Bool, ScriptValue::Bool(false)),
             field("spawned", FieldKind::Bool, ScriptValue::Bool(false)),
             field("fault", FieldKind::Value, ScriptValue::Null),
             field(
@@ -147,7 +148,7 @@ fn recorded(world: &World, entity: EntityId, key: ComponentKey) -> Option<Script
             )
         })
         .collect();
-    let (snapshot, _) = companion_snapshot(&fields).expect("the companion reads back");
+    let snapshot = companion_snapshot(&fields).expect("the companion reads back");
     Some(snapshot)
 }
 
@@ -158,6 +159,8 @@ fn update(entity: EntityId, behavior: &str, health: i64) -> BehaviorUpdate {
         behavior: behavior.to_owned(),
         snapshot: ScriptSnapshot::default().with_field("health", ScriptValue::Int(health)),
         changed: vec!["health".to_owned()],
+        read_until: 0,
+        emitted_after: 0,
     }
 }
 

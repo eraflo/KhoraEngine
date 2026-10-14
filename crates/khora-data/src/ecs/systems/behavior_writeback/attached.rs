@@ -39,13 +39,38 @@ type StateRows = Vec<(EntityId, Vec<(String, ScriptValue)>)>;
 
 /// Writes back every update: each behavior's changed fields to its
 /// component, what the engine keeps of it to its state companion.
-pub(super) fn write_back(world: &mut World, updates: Vec<BehaviorUpdate>) {
+pub(super) fn write_back(
+    world: &mut World,
+    updates: Vec<BehaviorUpdate>,
+    applied: &crate::ecs::systems::script_commands::AppliedWrites,
+) {
     // Per behavior component and set of changed fields: the rows of one
     // column write.
     let mut fields: BTreeMap<(ComponentKey, Vec<String>), Rows> = BTreeMap::new();
     let mut states: BTreeMap<ComponentKey, StateRows> = BTreeMap::new();
+    if cfg!(debug_assertions) {
+        super::order::report_lost_writes(world, &updates, applied);
+    }
     for update in updates {
-        let changed = &update.changed;
+        // In the order they were written: a turn's field a `Set` written after
+        // it overwrote is the `Set`'s. A component added or removed this frame
+        // is another instance's: what this turn wrote of the one it had goes.
+        let overwritten = applied.whole_written(update.entity, &update.behavior);
+        let changed: Vec<String> = update
+            .changed
+            .iter()
+            .filter(|field| {
+                !overwritten
+                    && !applied.field_written_from(
+                        update.entity,
+                        &update.behavior,
+                        field,
+                        update.emitted_after,
+                    )
+            })
+            .cloned()
+            .collect();
+        let changed = &changed;
         let Some(key) = behavior_key(world, &update.behavior) else {
             continue;
         };
@@ -97,7 +122,7 @@ pub(super) fn write_back(world: &mut World, updates: Vec<BehaviorUpdate>) {
         else {
             continue;
         };
-        match companion_row(&update.snapshot, true) {
+        match companion_row(&update.snapshot) {
             Ok(row) => states
                 .entry(companion)
                 .or_default()

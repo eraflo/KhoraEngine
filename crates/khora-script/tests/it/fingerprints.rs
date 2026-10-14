@@ -216,19 +216,26 @@ fn editing_a_literal_changes_the_program_fingerprint() {
         "behavior Guard {
              int health = 100;
              void Hurt() { health -= 1; }
+             void Heal() { health += 5; }
          }",
     );
     let after = build(
         "behavior Guard {
-             int health = 120;
-             void Hurt() { health -= 1; }
+             int health = 100;
+             void Hurt() { health -= 2; }
+             void Heal() { health += 5; }
          }",
     );
 
     assert_ne!(before.fingerprint(), after.fingerprint());
-    assert_eq!(
+    assert_ne!(
         fingerprint_of(&before, "Guard.Hurt"),
         fingerprint_of(&after, "Guard.Hurt"),
+        "the member holding the literal changed"
+    );
+    assert_eq!(
+        fingerprint_of(&before, "Guard.Heal"),
+        fingerprint_of(&after, "Guard.Heal"),
         "the member that does not hold the literal is unchanged"
     );
 }
@@ -245,10 +252,10 @@ behavior Guard {
 ///
 /// A fingerprint is written into saves and compared after a load, so it has
 /// to be the same in every build, on every Rust release. It moves only when
-/// the code compiled from the source does: the guard's initialiser writes its
-/// fields with `WriteBack`, a store that is never a place the run stops at,
-/// rather than `StoreField`.
-const PINNED_PROGRAM: u64 = 0xf6fc_4cc0_2244_8f08;
+/// the code compiled from the source does — as it did when a behavior's field
+/// defaults became data in its layout, and the code that wrote them was
+/// compiled no more.
+const PINNED_PROGRAM: u64 = 0x5993_1f5d_9185_ad1e;
 
 /// What `Twice` in [`PINNED_SOURCE`] fingerprints to.
 const PINNED_TWICE: u64 = 0x8d9f_aa74_f44d_1129;

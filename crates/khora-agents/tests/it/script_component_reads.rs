@@ -793,14 +793,18 @@ fn a_behavior_reads_what_an_earlier_one_wrote_this_frame() {
         world,
         build(
             "behavior Heavier {
-                 Entity target;
-                 void Update(float dt) { target.Set(RigidBody { mass: 9.0 }); }
+                 Entity? target;
+                 void Update(float dt) {
+                     if (var t = target) { t.Set(RigidBody { mass: 9.0 }); }
+                 }
              }
              behavior Weigher {
-                 Entity target;
+                 Entity? target;
                  float mass = -1.0;
                  void Update(float dt) {
-                     if (var b = target.Get(RigidBody)) { mass = b.mass; }
+                     if (var t = target) {
+                         if (var b = t.Get(RigidBody)) { mass = b.mass; }
+                     }
                  }
              }",
         ),

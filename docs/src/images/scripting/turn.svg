@@ -1,6 +1,6 @@
 <svg class="kp-figure" viewBox="0 0 760 388" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-turn-title kp-turn-desc">
   <title id="kp-turn-title">One behavior's turn in a frame</title>
-  <desc id="kp-turn-desc">A turn runs its steps in order, each only when it applies: the initialiser until the fields exist, OnLoad after a save is restored, OnSpawn once per entity, OnResumeFailed when an edit lost a body, the body under way, the timers that are due, the events raised last frame, and finally Update. A body still waiting on an await ends the turn there, and so does running out of fuel at any step.</desc>
+  <desc id="kp-turn-desc">A turn runs its steps in order, each only when it applies — its fields exist before the first, built from its defaults, which are data: OnLoad after a save is restored, OnSpawn once per entity, OnResumeFailed when an edit lost a body, the body under way, the timers that are due, the events raised last frame, and finally Update. A body still waiting on an await ends the turn there, and so does running out of fuel at any step.</desc>
   <style>
     .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
     .kp-bg { fill: var(--k-bg-0, #090d17); }
@@ -22,9 +22,9 @@
   <!-- 1 -->
   <rect class="kp-row" x="52" y="40" width="692" height="34" rx="4"/>
   <circle class="kp-node" cx="36" cy="57" r="5"/>
-  <text class="kp-station" x="64" y="62">initialiser</text>
-  <text class="kp-label" x="250" y="62">the fields don't exist yet</text>
-  <text class="kp-label" x="470" y="62">defaults, then carried values on top</text>
+  <text class="kp-station" x="64" y="62">fields</text>
+  <text class="kp-label" x="250" y="62">before the first turn</text>
+  <text class="kp-label" x="470" y="62">built from its defaults — data, no code runs</text>
   <!-- 2 -->
   <rect class="kp-row" x="52" y="78" width="692" height="34" rx="4"/>
   <circle class="kp-node" cx="36" cy="95" r="5"/>

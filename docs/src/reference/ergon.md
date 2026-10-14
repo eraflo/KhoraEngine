@@ -120,13 +120,18 @@ behavior Lamp {
 }
 ```
 
-A field is `Type name [= default];` — `var` is for locals only. A default is any
-expression, run once by the instance's initialiser, in the order the fields are
-declared: it may read a field declared above it, never itself or one below.
-Without one, a field starts at its type's zero — `int` `0`, `float`,
-`Duration`, `Angle` `0.0`, `bool` `false`, `string` `""`, `T?` `null`, `T[]` `[]`. `Entity`,
-the engine types and structs have no zero: such a field starts unset — set it in
-the inspector — and reading it before writing faults.
+A field is `Type name [= default];` — `var` is for locals only. A default is a
+**constant** — a number, text, `null`, a duration, an angle, an engine value of
+numbers (`Vec3(0.0, 1.0, 0.0)`), or `[…]` / `Name { … }` of those — because a
+behavior is a component and its defaults are data: what its component registers,
+what a fresh instance holds before its first turn, and what an edit that adds the
+field gives a running one. No code runs for them. A starting value that has to be
+computed — `home = Position();` — is set in `OnSpawn`. Without a default, a field
+starts at its type's neutral value — `int` `0`, `float`, `Duration`, `Angle`
+`0.0`, `bool` `false`, `string` `""`, `T?` `null`, `T[]` `[]`, `Vec2`/`Vec3`/`Vec4`
+zero, `Quat` the identity, `Color` white, a struct its own defaults. An `Entity`
+has none: write it `Entity?`, and it starts at `null`. A state's data follows the
+same rule; a value computed on entering a state is a parameter of `become`.
 
 ## Members
 

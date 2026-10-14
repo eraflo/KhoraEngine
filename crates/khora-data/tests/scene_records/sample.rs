@@ -279,7 +279,7 @@ pub fn sample_world() -> (World, Sample) {
     );
     // Runtime: what the lane observed — a sequence frozen part-way with an
     // entity in a register. A game save keeps it; a scene never does.
-    let state = companion_row(&suspended_snapshot(child), true)
+    let state = companion_row(&suspended_snapshot(child))
         .expect("a frozen instance is a companion's fields");
     attach(
         &mut world,

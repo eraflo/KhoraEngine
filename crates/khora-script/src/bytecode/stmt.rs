@@ -273,96 +273,30 @@ impl Compiler {
             self.registers.release_to(inner);
         }
 
-        // Everything else entering the state implies, written before the
-        // discriminant moves so the instance is never briefly in a state whose
-        // data has not arrived. Its defaults read the arguments where they sit.
-        self.emit_state_entry(state, (!args.is_empty()).then_some(base));
-
+        let behavior = self
+            .program
+            .behaviors
+            .iter()
+            .position(|known| known.name == layout.name)
+            .unwrap_or_default();
+        let writes = layout
+            .entry(index)
+            .iter()
+            .map(|(_, value)| match value {
+                crate::arena::Persisted::Owned(owned) => owned.size(),
+                crate::arena::Persisted::Scalar(_) => 1,
+            })
+            .sum::<usize>()
+            + args.len();
         self.emit(Instruction::Become {
+            behavior: behavior as u16,
+            writes: u32::try_from(writes).unwrap_or(u32::MAX),
             state: index as u16,
             base,
             argc: args.len() as u8,
             state_slot: layout.state_slot() as u16,
             data_slot: layout.state_data_slot() as u16,
         });
-        self.registers.release_to(mark);
-    }
-
-    /// Writes a state's declared defaults and arms its schedules.
-    ///
-    /// Emitted wherever a state is entered — every `become`, and the initialiser
-    /// for the state a fresh instance starts in — because entering is what makes
-    /// those true, not the file the state was declared in. Without it `state
-    /// Chase { int missed = 7; }` left `missed` unset and every `every` inside a
-    /// state resumed a countdown from the last visit.
-    ///
-    /// Every default is evaluated into a register *before* any of them is
-    /// stored, so a default that suspends cannot leave the state half-written.
-    ///
-    /// A default is the entered state's code, wherever the `become` is: it
-    /// calls that state's methods, and reads the behavior's fields and that
-    /// state's data — a parameter from `arguments`, the registers the `become`
-    /// placed them in (from its slot when the state is entered without one),
-    /// and a field declared above it from the register its own default was
-    /// just evaluated into. Never the locals of the member the `become` is
-    /// written in, nor the data of the state it is written in.
-    pub fn emit_state_entry(&mut self, state: &str, arguments: Option<Reg>) {
-        let Some(entry) = self.entries.get(state).cloned() else {
-            return;
-        };
-
-        let mark = self.registers.mark();
-        let mut writes: Vec<(u16, Reg)> = Vec::new();
-        let caller = self.state.replace(state.to_owned());
-        let mut scope = self.behavior_fields.clone();
-        for (name, slot, shape) in &entry.slots {
-            scope.insert(name.clone(), (*slot, *shape));
-        }
-        let outer = std::mem::replace(&mut self.fields, scope);
-        let locals = self.locals.len();
-        let hidden = self.hide_locals();
-        if let Some(base) = arguments {
-            for (offset, (name, ty)) in entry.params.iter().enumerate() {
-                let register = base + offset as Reg;
-                self.bind_local(
-                    name,
-                    register,
-                    super::shape_of(ty),
-                    super::keys::type_name(ty),
-                );
-            }
-        }
-
-        for (slot, name, default, ty) in &entry.fields {
-            let register = match default {
-                Some(expr) => self.compile_expr(expr).0,
-                // Its type's zero rather than unset, for the reason a
-                // behavior's field with no written default gets one: `int
-                // missed;` reads as a number that starts at nothing.
-                None => self.zero_of_type(ty),
-            };
-            writes.push((*slot, register));
-            self.bind_local(
-                name,
-                register,
-                super::shape_of(ty),
-                super::keys::type_name(ty),
-            );
-        }
-        self.locals.truncate(locals);
-        self.reveal_locals(hidden);
-        self.fields = outer;
-        self.state = caller;
-
-        for (slot, seconds) in &entry.timers {
-            let register = self.constant(Value::Float(*seconds), Shape::Float).0;
-            writes.push((*slot, register));
-        }
-
-        // All or nothing: a state is never half-entered.
-        for (slot, src) in writes {
-            self.emit(Instruction::WriteBack { slot, src });
-        }
         self.registers.release_to(mark);
     }
 }

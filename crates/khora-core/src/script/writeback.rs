@@ -57,6 +57,16 @@ pub struct BehaviorUpdate {
     /// The fields this turn changed: the only ones written back, so a field
     /// another script wrote the same frame survives.
     pub changed: Vec<String>,
+    /// How many of the frame's [`CommandBuffer`] commands were queued when
+    /// the turn began: a `Set` of its fields at a lower position was read by
+    /// it, and is not a write it lost to.
+    ///
+    /// [`CommandBuffer`]: super::CommandBuffer
+    pub read_until: usize,
+    /// How many of the frame's commands were queued when the turn's writes
+    /// took effect — its end: a `Set` of a changed field at this position or
+    /// later wins over it; one the turn queued itself, before, loses to it.
+    pub emitted_after: usize,
 }
 
 /// Instance state waiting to be recorded in the scene.

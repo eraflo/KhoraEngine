@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Bodies that resume where they stopped, at their edges: a save taken
-//! while the initialiser is part-way, a timer body cut before an edit, and a
-//! saved timer body that names a schedule the behavior does not have.
+//! Bodies that resume where they stopped, at their edges: a timer body cut
+//! before an edit, and a saved timer body that names a schedule the behavior
+//! does not have.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, FrozenValue, PendingBody, ScriptSnapshot, ScriptValue};
@@ -113,103 +113,6 @@ fn run(
     fuel: u64,
 ) -> ScriptRunReport {
     run_behaviors(view, &EventQueue::new(), runtime, host, fuel)
-}
-
-// ─── A save taken while the initialiser is part-way ─────────────────────────
-
-/// Writes `health` first, then stops in `Pad`.
-///
-/// The wall sits in a function the initialiser calls: fuel runs out only at a
-/// safepoint, and an initialiser's own are its entry and the return of each
-/// call it makes. A wall written as the default itself would be paid as an
-/// overdraft and the initialiser would finish.
-const HEAVY_GUARD: &str = "fn float Pad() { return ResumableWall(); }
-                           behavior Guard {
-                               int health = 100;
-                               float pad = Pad();
-                           }";
-
-/// **A save taken while the initialiser is part-way holds the loaded values.**
-/// A guard loaded at 40 health whose initialiser is cut after writing the
-/// declared 100: the instance still owes the 40 (the initialiser is resumed and
-/// the saved values go back on top once it finishes). The scene is written
-/// that same frame, and a save taken then must record 40 — recording the
-/// half-run initialiser's 100 makes the next load bring the guard back at full
-/// health.
-#[test]
-fn a_save_taken_while_the_initialiser_is_part_way_keeps_the_loaded_values() {
-    let loaded = ScriptSnapshot::default().with_field("health", ScriptValue::Int(40));
-
-    let mut runtime = runtime_of(HEAVY_GUARD);
-    let mut host = Host::new();
-    let cut = run(
-        &mut runtime,
-        &mut host,
-        &view_of("Guard", 0.0, Some(loaded)),
-        10,
-    );
-    assert_eq!(cut.deferred, 1, "the initialiser did not finish");
-
-    // The running game still ends at 40, once the initialiser finishes.
-    run(
-        &mut runtime,
-        &mut host,
-        &view_of("Guard", 0.0, None),
-        u64::MAX,
-    );
-    assert_eq!(int_at(&runtime, "Guard", 0), Some(40), "the running game");
-
-    // A save taken on the cut frame, loaded into a fresh game.
-    let snapshot = saved(&cut);
-    let mut reloaded = runtime_of(HEAVY_GUARD);
-    let mut host = Host::new();
-    run(
-        &mut reloaded,
-        &mut host,
-        &view_of("Guard", 0.0, Some(snapshot.clone())),
-        u64::MAX,
-    );
-    assert_eq!(
-        int_at(&reloaded, "Guard", 0),
-        Some(40),
-        "the save taken mid-initialiser loses the loaded health: {:?}",
-        snapshot.fields
-    );
-}
-
-/// **A reload while the initialiser is part-way keeps the loaded values.** The
-/// guard loaded at 40 has its initialiser cut after it wrote the declared 100;
-/// the 40 is still owed, held aside until the initialiser finishes. The author
-/// then saves the script unchanged. The reload carries the instance's fields
-/// across — which at that moment hold the half-run initialiser's 100, not the
-/// 40 still owed — and the guard comes back at full health.
-#[test]
-fn a_reload_while_the_initialiser_is_part_way_keeps_the_loaded_values() {
-    let loaded = ScriptSnapshot::default().with_field("health", ScriptValue::Int(40));
-
-    let mut runtime = runtime_of(HEAVY_GUARD);
-    let mut host = Host::new();
-    let cut = run(
-        &mut runtime,
-        &mut host,
-        &view_of("Guard", 0.0, Some(loaded)),
-        10,
-    );
-    assert_eq!(cut.deferred, 1, "the initialiser did not finish");
-
-    runtime.reload(MODULE, build(HEAVY_GUARD));
-    run(
-        &mut runtime,
-        &mut host,
-        &view_of("Guard", 0.0, None),
-        u64::MAX,
-    );
-
-    assert_eq!(
-        int_at(&runtime, "Guard", 0),
-        Some(40),
-        "the loaded health, not the declared default"
-    );
 }
 
 // ─── A timer body cut before an edit ────────────────────────────────────────

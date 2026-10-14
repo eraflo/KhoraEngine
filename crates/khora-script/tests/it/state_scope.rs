@@ -19,14 +19,11 @@
 //! refused by the checker with a message naming the state it belongs to.
 //!
 //! Every place a state's code is compiled resolves the same way: its methods,
-//! its handlers, its `every` / `after` bodies, and its data's defaults —
-//! wherever the entry into the state is emitted (the initialiser, a `become`
-//! written in another state, the engine's `Behavior.__enter`).
+//! its handlers and its `every` / `after` bodies.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::arena::PersistentStore;
-use khora_script::bytecode::{enter_name, init_name};
-use khora_script::dispatch::{current_state, resolve_member};
+use khora_script::dispatch::resolve_member;
 use khora_script::{check, compile, lex, parse, Diagnostic, Host, Machine, Program, Run};
 use khora_script::{Suspension, Value};
 
@@ -106,16 +103,12 @@ fn finish(mut machine: Machine, program: &Program, host: &mut Host, slice: u64) 
     panic!("never completed at a slice of {slice}");
 }
 
-/// A fresh instance of `behavior`, as the engine creates one: fields sized
-/// from the layout, its initialiser run (which enters the first state).
+/// A fresh instance of `behavior`, as the engine creates one: its store built
+/// from the layout, in the first state.
 fn instance(program: &Program, behavior: &str) -> Host {
-    let layout = program.layout(behavior).expect("a layout");
-    let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
-        .for_entity(SUBJECT);
-    let init = Machine::new(program, &init_name(behavior), &[]).expect("an initialiser");
-    finish(init, program, &mut host, u64::MAX);
-    host
+    Host::new()
+        .with_fields(fresh_store(program, behavior))
+        .for_entity(SUBJECT)
 }
 
 /// Calls `member` of the instance, resolved the way the engine resolves it.
@@ -334,19 +327,6 @@ fn calling_a_states_method_from_the_behavior_is_refused_by_name() {
     );
 }
 
-/// A behavior field's default is behavior-level code: a state's method is not
-/// in its scope either.
-#[test]
-fn a_behavior_default_calling_a_states_method_is_refused_by_name() {
-    refused_with(
-        "behavior Timer {
-             float start = Half();
-             state Idle { float Half() { return 0.5; } }
-         }",
-        "`Half` belongs to state `Idle`",
-    );
-}
-
 /// A behavior-level handler or schedule is behavior-level code too.
 #[test]
 fn a_behavior_handler_calling_a_states_method_is_refused_by_name() {
@@ -447,96 +427,6 @@ fn a_state_handler_calls_its_states_method() {
     assert_eq!(
         call(&program, "Guard", "Hits", &[], &mut host, u64::MAX),
         Value::Int(13)
-    );
-}
-
-/// The first state's datum defaults to a call of its own method, and the
-/// initialiser — behavior-level code — enters it.
-#[test]
-fn a_state_default_calls_its_states_method_when_entered_first() {
-    let program = build(
-        "behavior Guard {
-             state Patrol {
-                 int Base() { return 5; }
-                 int laps = Base();
-                 int Laps() { return laps; }
-             }
-         }",
-    );
-    let mut host = instance(&program, "Guard");
-
-    assert_eq!(
-        call(&program, "Guard", "Laps", &[], &mut host, u64::MAX),
-        Value::Int(5)
-    );
-}
-
-/// `become Chase` written inside `Patrol` emits `Chase`'s defaults: a default
-/// calling `Base()` means `Chase`'s `Base`, not the `Patrol` namesake the
-/// `become` is written beside.
-#[test]
-fn a_state_default_calls_its_states_method_when_entered_by_become() {
-    let program = build(
-        "behavior Guard {
-             int Base() { return 3; }
-             state Patrol {
-                 int Base() { return 1; }
-                 void Spot() { become Chase; }
-             }
-             state Chase {
-                 int Base() { return 7; }
-                 int missed = Base();
-                 int Missed() { return missed; }
-             }
-         }",
-    );
-    let mut host = instance(&program, "Guard");
-    call(&program, "Guard", "Spot", &[], &mut host, u64::MAX);
-
-    assert_eq!(current_state(&program, "Guard", &host), Some("Chase"));
-    assert_eq!(
-        call(&program, "Guard", "Missed", &[], &mut host, u64::MAX),
-        Value::Int(7),
-        "the default ran `Chase.Base`"
-    );
-}
-
-/// The engine's `Behavior.__enter` — the way a restored instance re-enters
-/// its state — runs the same defaults, resolved against the state entered.
-#[test]
-fn a_state_default_calls_its_states_method_when_entered_by_the_engine() {
-    let program = build(
-        "behavior Guard {
-             state Patrol { int laps = 0; }
-             state Chase {
-                 int Base() { return 7; }
-                 int missed = Base();
-                 int Missed() { return missed; }
-             }
-         }",
-    );
-    let mut host = instance(&program, "Guard");
-    let enter =
-        Machine::new(&program, &enter_name("Guard"), &[Value::Int(1)]).expect("the state entry");
-    finish(enter, &program, &mut host, u64::MAX);
-
-    assert_eq!(current_state(&program, "Guard", &host), Some("Chase"));
-    assert_eq!(
-        call(&program, "Guard", "Missed", &[], &mut host, u64::MAX),
-        Value::Int(7)
-    );
-}
-
-/// A state's datum defaulting to a call of another state's method is refused
-/// by name, like any other call out of scope.
-#[test]
-fn a_state_default_calling_another_states_method_is_refused_by_name() {
-    refused_with(
-        "behavior Guard {
-             state Patrol { int Base() { return 1; } }
-             state Chase { int missed = Base(); }
-         }",
-        "`Base` belongs to state `Patrol`",
     );
 }
 

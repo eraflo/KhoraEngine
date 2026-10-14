@@ -19,9 +19,8 @@
 //! truncated toward zero, and a float no `int` holds faults rather than
 //! saturating into a number nobody wrote.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::arena::PersistentStore;
-use khora_script::bytecode::init_name;
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{Fault, Machine, Program, Run, Value};
 use khora_script::{check, compile, lex, parse, Host};
@@ -86,16 +85,11 @@ fn cost_of(program: &Program, function: &str, args: &[Value]) -> u64 {
 }
 
 /// Runs `member` on a fresh instance of `behavior`, created as the engine
-/// creates one: fields sized from the layout, declared defaults run.
+/// creates one: its store built from the layout, every field at its default.
 fn run_member(program: &Program, behavior: &str, member: &str) -> Result<Value, Fault> {
-    let layout = program
-        .layout(behavior)
-        .unwrap_or_else(|| panic!("`{behavior}` is a behavior of the program"));
     let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
+        .with_fields(fresh_store(program, behavior))
         .for_entity(SUBJECT);
-    let init = Machine::new(program, &init_name(behavior), &[]).expect("a field initialiser");
-    finish(init, program, &mut host, u64::MAX)?;
 
     let function = resolve_member(program, behavior, member, &host)
         .unwrap_or_else(|| panic!("`{behavior}` has a member `{member}`"));

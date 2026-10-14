@@ -43,15 +43,14 @@
 //! | `deliver` | every event the previous steps raised, delivered to the instance |
 //!
 //! A row whose first step names a behavior gets one instance of it, as the
-//! engine creates one: its fields sized from the behavior's layout, its
-//! declared defaults run, and an entity to be `this`.
+//! engine creates one: its store built from the behavior's layout, every
+//! field at its default, and an entity to be `this`.
 //!
 //! A run that suspends is resumed until it completes: for fuel, and for an
 //! `await`, which a row treats as having elapsed at once.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::arena::PersistentStore;
-use khora_script::bytecode::init_name;
 use khora_script::dispatch::{deliver, resolve_member};
 use khora_script::vm::{Machine, Program, Run, Suspension, Value};
 use khora_script::{check, compile, lex, parse, Host};
@@ -1013,13 +1012,9 @@ fn execute(program: &Program, row: &Row, slice: u64) -> Result<Value, String> {
         .filter(|behavior| program.layout(behavior).is_some());
 
     if let Some(behavior) = behavior {
-        let layout = program.layout(behavior).expect("filtered on its presence");
         host = Host::new()
-            .with_fields(PersistentStore::with_slots(layout.slot_count()))
+            .with_fields(fresh_store(program, behavior))
             .for_entity(SUBJECT);
-        let machine = Machine::new(program, &init_name(behavior), &[])
-            .ok_or_else(|| format!("`{behavior}` has no field initialiser"))?;
-        finish(machine, program, &mut host, slice, &mut spent)?;
     }
 
     let mut last = Value::Unit;

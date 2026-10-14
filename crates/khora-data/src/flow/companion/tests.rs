@@ -26,12 +26,11 @@ use crate::ecs::{
 };
 
 /// The companion's fields, in order — the same for every behavior.
-const COMPANION: [&str; 8] = [
+const COMPANION: [&str; 7] = [
     "state",
     "state_fields",
     "timers",
     "pending",
-    "initialised",
     "spawned",
     "fault",
     "resume_failed",
@@ -120,7 +119,7 @@ fn value_of<'r>(row: &'r [(String, ScriptValue)], name: &str) -> &'r ScriptValue
 #[test]
 fn a_companion_row_names_the_companion_fields_in_order() {
     for snapshot in [ScriptSnapshot::default(), busy()] {
-        let row = companion_row(&snapshot, true).expect("a row");
+        let row = companion_row(&snapshot).expect("a row");
         assert_eq!(
             row.iter()
                 .map(|(name, _)| name.as_str())
@@ -134,13 +133,13 @@ fn a_companion_row_names_the_companion_fields_in_order() {
 /// for a behavior in no state.
 #[test]
 fn the_companion_holds_the_state_by_name() {
-    let row = companion_row(&busy(), true).expect("a row");
+    let row = companion_row(&busy()).expect("a row");
     assert_eq!(
         value_of(&row, "state"),
         &ScriptValue::Str("Alert".to_owned())
     );
 
-    let row = companion_row(&ScriptSnapshot::default(), false).expect("a row");
+    let row = companion_row(&ScriptSnapshot::default()).expect("a row");
     assert_eq!(value_of(&row, "state"), &ScriptValue::Null);
     assert_eq!(
         value_of(&row, "pending"),
@@ -150,32 +149,25 @@ fn the_companion_holds_the_state_by_name() {
     assert_eq!(value_of(&row, "fault"), &ScriptValue::Null, "no fault");
 }
 
-/// **The lifecycle's flags are the companion's `bool`s**: whether the
-/// initialiser ran, whether `OnSpawn` did.
+/// **The lifecycle's flag is the companion's `bool`**: whether `OnSpawn`
+/// ran.
 #[test]
-fn the_lifecycle_flags_are_the_companion_bools() {
-    let row = companion_row(&busy(), true).expect("a row");
-    assert_eq!(value_of(&row, "initialised"), &ScriptValue::Bool(true));
+fn the_lifecycle_flag_is_the_companion_bool() {
+    let row = companion_row(&busy()).expect("a row");
     assert_eq!(value_of(&row, "spawned"), &ScriptValue::Bool(true));
 
-    let row = companion_row(&ScriptSnapshot::default(), false).expect("a row");
-    assert_eq!(value_of(&row, "initialised"), &ScriptValue::Bool(false));
+    let row = companion_row(&ScriptSnapshot::default()).expect("a row");
     assert_eq!(value_of(&row, "spawned"), &ScriptValue::Bool(false));
 }
 
 /// **A companion row round trips a snapshot**: state and its data, the
-/// countdowns, the suspended sequence, the fault and the owed bodies — and
-/// whether the instance initialised.
+/// countdowns, the suspended sequence, the fault and the owed bodies.
 #[test]
 fn a_companion_row_round_trips_a_snapshot() {
-    for (snapshot, initialised) in [
-        (busy(), true),
-        (busy(), false),
-        (ScriptSnapshot::default(), false),
-    ] {
-        let row = companion_row(&snapshot, initialised).expect("a row");
+    for snapshot in [busy(), ScriptSnapshot::default()] {
+        let row = companion_row(&snapshot).expect("a row");
         let back = companion_snapshot(&row).expect("reads back");
-        assert_eq!(back, (snapshot, initialised));
+        assert_eq!(back, snapshot);
     }
 }
 
@@ -186,13 +178,13 @@ fn a_companion_row_round_trips_a_snapshot() {
 fn a_companion_row_keeps_none_of_the_behavior_fields() {
     let snapshot = busy().with_field("hp", ScriptValue::Int(40));
 
-    let row = companion_row(&snapshot, true).expect("a row");
+    let row = companion_row(&snapshot).expect("a row");
     assert!(
         row.iter()
             .all(|(name, _)| COMPANION.contains(&name.as_str())),
         "{row:?}"
     );
-    let (back, _) = companion_snapshot(&row).expect("reads back");
+    let back = companion_snapshot(&row).expect("reads back");
     assert!(back.fields.is_empty(), "{:?}", back.fields);
     assert_eq!(back.state, snapshot.state);
     assert_eq!(back.pending, snapshot.pending);
@@ -210,7 +202,7 @@ fn an_entity_in_a_pending_sequence_is_an_entity_value_of_the_row() {
             _ => false,
         }
     }
-    let row = companion_row(&busy(), true).expect("a row");
+    let row = companion_row(&busy()).expect("a row");
     assert!(
         holds(value_of(&row, "pending"), entity(7, 3)),
         "{:?}",
@@ -222,7 +214,7 @@ fn an_entity_in_a_pending_sequence_is_an_entity_value_of_the_row() {
 /// state: a `pending` that is no suspended sequence.
 #[test]
 fn a_companion_row_of_another_shape_is_refused() {
-    let mut row = companion_row(&busy(), true).expect("a row");
+    let mut row = companion_row(&busy()).expect("a row");
     for (name, value) in &mut row {
         if name == "pending" {
             *value = ScriptValue::Int(3);
@@ -256,7 +248,6 @@ fn a_companion_row_is_stored_and_read_back_by_the_world() {
                 ),
                 field("timers", FieldKind::Value, ScriptValue::Array(Vec::new())),
                 field("pending", FieldKind::Value, ScriptValue::Null),
-                field("initialised", FieldKind::Bool, ScriptValue::Bool(false)),
                 field("spawned", FieldKind::Bool, ScriptValue::Bool(false)),
                 field("fault", FieldKind::Value, ScriptValue::Null),
                 field(
@@ -269,7 +260,7 @@ fn a_companion_row_is_stored_and_read_back_by_the_world() {
         })
         .expect("the companion registers");
     let guard = world.spawn(Transform::identity());
-    let row = companion_row(&busy(), true).expect("a row");
+    let row = companion_row(&busy()).expect("a row");
     world
         .add_runtime_component(guard, key, &ScriptValue::Struct(row.clone()))
         .expect("the companion holds its row");
@@ -288,8 +279,53 @@ fn a_companion_row_is_stored_and_read_back_by_the_world() {
         })
         .collect();
     assert_eq!(read, row);
-    assert_eq!(
-        companion_snapshot(&read).expect("reads back"),
-        (busy(), true)
+    assert_eq!(companion_snapshot(&read).expect("reads back"), busy());
+}
+
+/// **A companion holds no `initialised` flag**: an instance's defaults are
+/// its layout's data, seeded the moment it exists, so nothing records
+/// whether an initialiser ran — and a companion row without one reads back.
+#[test]
+fn a_companion_row_without_an_initialised_flag_reads_back() {
+    let row = vec![
+        ("state".to_owned(), ScriptValue::Null),
+        ("state_fields".to_owned(), ScriptValue::Struct(Vec::new())),
+        ("timers".to_owned(), ScriptValue::Array(Vec::new())),
+        ("pending".to_owned(), ScriptValue::Null),
+        ("spawned".to_owned(), ScriptValue::Bool(true)),
+        ("fault".to_owned(), ScriptValue::Null),
+        ("resume_failed".to_owned(), ScriptValue::Array(Vec::new())),
+    ];
+    let read = companion_snapshot(&row);
+    assert!(
+        read.is_ok(),
+        "a companion of seven fields reads back: {:?}",
+        read.err()
     );
+}
+
+/// **A companion row written before defaults were data still reads back**:
+/// its `initialised` flag is a field the companion no longer declares, and
+/// is ignored — whichever way it was set, the snapshot is the same.
+#[test]
+fn a_companion_row_still_holding_an_initialised_flag_reads_back() {
+    let without = vec![
+        ("state".to_owned(), ScriptValue::Null),
+        ("state_fields".to_owned(), ScriptValue::Struct(Vec::new())),
+        ("timers".to_owned(), ScriptValue::Array(Vec::new())),
+        ("pending".to_owned(), ScriptValue::Null),
+        ("spawned".to_owned(), ScriptValue::Bool(true)),
+        ("fault".to_owned(), ScriptValue::Null),
+        ("resume_failed".to_owned(), ScriptValue::Array(Vec::new())),
+    ];
+    let expected = companion_snapshot(&without).expect("the current row reads back");
+    for flag in [false, true] {
+        let mut older = without.clone();
+        older.insert(4, ("initialised".to_owned(), ScriptValue::Bool(flag)));
+        assert_eq!(
+            companion_snapshot(&older).expect("an older row reads back"),
+            expected,
+            "`initialised: {flag}`"
+        );
+    }
 }

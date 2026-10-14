@@ -30,13 +30,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::script_lane::{persistence, resumption};
-use crate::script_lane::{Resumed, ScriptRunReport};
+use crate::script_lane::ScriptRunReport;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::EventQueue;
-use khora_script::arena::{Arena, Persisted, PersistentStore};
+use khora_script::arena::{Arena, PersistentStore};
 use khora_script::vm::Value;
-use khora_script::vm::{BehaviorLayout, Machine, Program, ResumeTier};
+use khora_script::vm::{BehaviorLayout, Machine, Program};
 use serde::{Deserialize, Serialize};
 
 /// One behavior instance's state.
@@ -48,19 +47,14 @@ pub struct Instance {
     /// to run, and by then the view no longer says which program to run it
     /// from — the instance has to carry the answer with it.
     pub module: String,
-    /// Its fields.
+    /// Its fields — every slot its layout has, from its first turn on: built
+    /// from the layout's data, or from what it arrived with on top of that.
     pub fields: PersistentStore,
-    /// Whether its declared defaults have been applied.
-    ///
-    /// A default is an expression, so it takes a run to produce; this is what
-    /// stops that run happening again every frame.
-    pub initialised: bool,
     /// Whether `OnSpawn` has run.
     ///
-    /// Deliberately not [`initialised`](Self::initialised), which a hot-reload
-    /// clears so the new program's defaults are produced. An edit to a script is
-    /// not a new entity: a guard that has already announced itself should not do
-    /// it again because its author changed a number.
+    /// A hot reload keeps it: an edit to a script is not a new entity, and a
+    /// guard that has already announced itself should not do it again because
+    /// its author changed a number.
     pub spawned: bool,
     /// Whether `OnDespawn` has run.
     ///
@@ -92,23 +86,6 @@ pub struct Instance {
     /// what finishing it completes.
     pub pending: Option<Pending>,
 
-    /// The initialiser, when a turn ran out of fuel before it finished.
-    ///
-    /// Apart from [`pending`](Self::pending): the initialiser runs before the
-    /// fields exist, so it must not share the slot with a sequence loaded from
-    /// a save. Never saved — a load reruns it, then restores the saved fields.
-    pub initialiser: Option<Machine>,
-
-    /// Values carried across a reload, to be restored **after** the new
-    /// program's initialiser has run.
-    ///
-    /// Not simply left in [`fields`](Self::fields), because the initialiser
-    /// writes every slot: a behavior that gained a field has to run it for the
-    /// new slot to get its declared default, and that run would overwrite the
-    /// values the reload just carried. So they are set aside and put back on
-    /// top — the new field gets its default, the old ones keep what they had.
-    pub carried: Option<PersistentStore>,
-
     /// The fault that disabled the instance, stamped with the program it
     /// faulted in — recorded, so a save keeps the instance disabled until the
     /// code changes.
@@ -135,6 +112,11 @@ pub struct Instance {
     /// whatever the module held just before: a module saved without the
     /// behavior in between leaves the instance's store as it was.
     pub built_for: Option<Arc<Program>>,
+
+    /// Whether a carry into another program has left the World's record of it
+    /// — its state companion — behind what it now is: written the frame of
+    /// the carry, whether or not it runs.
+    pub rewritten: bool,
 }
 
 /// A suspended member and how long is left of its wait.
@@ -205,43 +187,6 @@ impl ReloadReport {
     /// Whether anything was lost.
     pub fn lost_anything(&self) -> bool {
         !self.dropped.is_empty()
-    }
-}
-
-/// Writes `carried` over `fields`, skipping the slots it left unset.
-///
-/// The second half of a reload: the initialiser has just produced the new
-/// program's defaults for every slot, and this puts back the values that
-/// survived the edit. Unset slots are skipped rather than copied, which is
-/// exactly how a newly-added field keeps the default it was just given.
-pub fn restore_carried(fields: &mut PersistentStore, carried: &PersistentStore) {
-    for slot in 0..carried.len() {
-        match carried.get(slot) {
-            Some(Persisted::Scalar(Value::Unit)) | None => {}
-            Some(value) => fields.set(slot, value.clone()),
-        }
-    }
-}
-
-/// Puts a re-entered state's carried data in its slots, ahead of entering it:
-/// each slot the carried store holds a value for takes it, every other slot of
-/// the state is left unset — never what another state left there.
-pub fn place_state_data(
-    fields: &mut PersistentStore,
-    layout: &khora_script::vm::BehaviorLayout,
-    state: i64,
-    carried: &PersistentStore,
-) {
-    let Some(entered) = usize::try_from(state).ok().and_then(|i| layout.state_at(i)) else {
-        return;
-    };
-    for offset in 0..entered.slots.len() {
-        let slot = layout.state_data_slot() + offset;
-        let value = carried
-            .get(slot)
-            .cloned()
-            .unwrap_or(Persisted::Scalar(Value::Unit));
-        fields.set(slot, value);
     }
 }
 
@@ -443,7 +388,7 @@ impl ScriptRuntime {
     /// recompile — inserting one field at the top shifts every slot after it,
     /// and a positional carry-over would silently move a guard's health into
     /// its speed. A field that survived the edit keeps its value; one that is
-    /// new is left for the behavior's initialiser to fill; one that is gone is
+    /// new starts at its declared default; one that is gone is
     /// dropped.
     ///
     /// Returns what changed, so the caller can say so rather than reloading in
@@ -451,7 +396,6 @@ impl ScriptRuntime {
     /// told, not left to discover it.
     pub fn reload(&mut self, module: &str, program: Program) -> Vec<ReloadReport> {
         let previous = self.programs.get(module).cloned();
-        let fingerprint = program.fingerprint();
         let program = Arc::new(program);
         let mut reports = Vec::new();
 
@@ -467,6 +411,11 @@ impl ScriptRuntime {
                 if behavior != &layout.name || instance.module != module {
                     continue;
                 }
+                // An arrival waiting for its turn rebuilds the instance wholly,
+                // read against the program it runs then.
+                if instance.arriving.is_some() {
+                    continue;
+                }
                 // From the layout its fields were built for: the module may
                 // have been saved without the behavior since.
                 let Some(old_program) = instance.built_for.clone().or_else(|| previous.clone())
@@ -478,72 +427,12 @@ impl ScriptRuntime {
                     continue;
                 };
                 let report = report.get_or_insert_with(|| reload_report(old, layout));
-                instance.built_for = Some(Arc::clone(&program));
-                // An instance whose initialiser has not finished still owes the
-                // values set aside for it; its fields hold the half-run
-                // initialiser's defaults, not what the instance is.
-                let current = match (&instance.carried, instance.initialised) {
-                    (Some(owed), false) => owed,
-                    _ => &instance.fields,
-                };
-                // By name: inserting one field at the top shifts every slot
-                // after it, and carrying values positionally would move a
-                // guard's health into its speed. The state it is in, that
-                // state's data and every countdown cross by name too, so an
-                // edit does not send a chasing guard back to patrol.
-                let carried =
-                    persistence::carried_across(old, layout, current, instance.pending.as_ref());
-                instance.fields = carried.clone();
-                // Re-initialised so the new program's defaults are produced —
-                // its literals may have changed too, not only its field list.
-                // The carried values go back on top afterwards.
-                instance.initialised = false;
-                // An initialiser part-way through belongs to the old program.
-                instance.initialiser = None;
-                instance.carried = Some(carried);
-                // A body part-way through is a position in the old code. It is
-                // carried into the new code here, in whatever tier the edit
-                // allows, rather than when it would next run, so that nothing —
-                // a save taken in between, above all — goes on holding a
-                // position the program no longer has. The body a load restored,
-                // waiting behind its `OnLoad`, likewise.
-                {
-                    for slot in [&mut instance.pending, &mut instance.after_load] {
-                        let Some(pending) = slot.take() else {
-                            continue;
-                        };
-                        if pending.fingerprint == fingerprint {
-                            *slot = Some(pending);
-                            continue;
-                        }
-                        match resumption::carry(&pending, &old_program, old, &program, layout) {
-                            Ok((carried, tier)) => {
-                                if tier != ResumeTier::Exact {
-                                    report.resumes.push(Resumed {
-                                        behavior: layout.name.clone(),
-                                        member: member_of(&carried, &program),
-                                        tier: Ok(tier),
-                                    });
-                                }
-                                *slot = Some(carried);
-                            }
-                            Err(abandoned) => {
-                                report.resumes.push(Resumed {
-                                    behavior: layout.name.clone(),
-                                    member: abandoned.member.clone(),
-                                    tier: Err(abandoned.clone()),
-                                });
-                                // A schedule whose body it was is armed afresh
-                                // by the initialiser the reload reruns.
-                                instance.resume_failed.push(abandoned.member);
-                            }
-                        }
-                    }
-                }
-                // An edit is the author's answer to whatever faulted. Refusing
-                // to try again would make a script unfixable without a restart.
-                instance.disabled = false;
-                instance.fault = None;
+                report.resumes.extend(super::carry::carry_instance(
+                    instance,
+                    &old_program,
+                    &program,
+                    &layout.name,
+                ));
             }
 
             reports.extend(report);

@@ -106,7 +106,6 @@ pub(super) fn companion_fields() -> Vec<PackedField> {
         ),
         field("timers", FieldKind::Value, ScriptValue::Array(Vec::new())),
         field("pending", FieldKind::Value, ScriptValue::Null),
-        field("initialised", FieldKind::Bool, ScriptValue::Bool(false)),
         field("spawned", FieldKind::Bool, ScriptValue::Bool(false)),
         field("fault", FieldKind::Value, ScriptValue::Null),
         field(

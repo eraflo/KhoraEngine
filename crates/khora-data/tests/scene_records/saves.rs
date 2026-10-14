@@ -36,14 +36,14 @@ const SENTRY_STATE: &str = "Sentry#state";
 
 /// Gives `entity` the sentry's state companion, recording `snapshot`.
 fn attach_state(world: &mut World, entity: EntityId, snapshot: &ScriptSnapshot) {
-    let row = companion_row(snapshot, true).expect("a snapshot is a companion's fields");
+    let row = companion_row(snapshot).expect("a snapshot is a companion's fields");
     attach(world, entity, SENTRY_STATE, ScriptValue::Struct(row));
 }
 
 /// What `entity`'s state companion records, if it holds one.
 fn recorded_state(world: &World, entity: EntityId) -> Option<ScriptSnapshot> {
     let row = fields_of(world, entity, SENTRY_STATE)?;
-    let (snapshot, _) = companion_snapshot(&row).expect("the companion's fields are a snapshot");
+    let snapshot = companion_snapshot(&row).expect("the companion's fields are a snapshot");
     Some(snapshot)
 }
 

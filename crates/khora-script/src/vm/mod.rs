@@ -651,21 +651,32 @@ impl Machine {
             }
 
             Instruction::Become {
+                behavior,
+                writes: _,
                 state,
                 base,
                 argc,
                 state_slot,
                 data_slot,
             } => {
-                // The arguments first, while the old state's data is still
-                // there: an argument may have been read out of it, and writing
-                // the discriminant early would only matter if this could fail
-                // part-way, which it cannot.
+                // The arguments first, read while the old state's data is still
+                // there: an argument may have been read out of it. Then the
+                // entered state's data at its defaults and its countdowns armed
+                // — data the layout holds — then the arguments into their
+                // slots, and the discriminant last. Nothing here can fail
+                // part-way, so a state is never half-entered.
+                let mut arguments = Vec::with_capacity(usize::from(argc));
                 for offset in 0..argc {
                     let value = self.read(base + offset)?;
-                    let stored = self.persist(value, program, host)?;
-                    host.fields
-                        .set(data_slot as usize + offset as usize, stored);
+                    arguments.push(self.persist(value, program, host)?);
+                }
+                if let Some(layout) = program.behaviors.get(usize::from(behavior)) {
+                    for (slot, value) in layout.entry(usize::from(state)) {
+                        host.fields.set(slot, value);
+                    }
+                }
+                for (offset, stored) in arguments.into_iter().enumerate() {
+                    host.fields.set(data_slot as usize + offset, stored);
                 }
                 host.fields.set(
                     state_slot as usize,

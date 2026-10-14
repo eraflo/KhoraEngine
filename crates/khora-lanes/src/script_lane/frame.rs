@@ -17,7 +17,7 @@
 //! — whose turn it is, what each cost, who was deferred, and what has to be
 //! written back. A turn knows only about itself.
 
-use khora_core::script::{BehaviorUpdate, EventQueue, InstanceLifecycle, RecordedFault};
+use khora_core::script::{EventQueue, InstanceLifecycle, RecordedFault};
 use khora_data::flow::ScriptView;
 use khora_script::native::Host;
 use khora_script::vm::{Abandoned, ResumeTier};
@@ -26,7 +26,7 @@ use super::hooks::{despawns_itself, say_goodbye};
 use super::mail::keep;
 use super::persistence;
 use super::report::{Resumed, ScriptRunReport};
-use super::runtime::{Body, Instance, Pending, ScriptRuntime};
+use super::runtime::{Instance, Pending, ScriptRuntime};
 use super::shares;
 use super::turn::{run_one, Invocation, Outcome, Progress};
 
@@ -166,13 +166,34 @@ pub fn run_behaviors(
                     .saw(instance.entity, &program.behavior, instance.row.clone());
             }
 
+            // A module whose new program waits a frame for what it reads runs
+            // nothing meanwhile: old code over rows the World has already laid
+            // out for the new would spawn a newcomer under the code the author
+            // replaced. Deferred, its events kept for the frame it runs.
+            if runtime.is_waiting(&program.module) {
+                report.deferred += 1;
+                keep(
+                    events,
+                    instance.entity,
+                    0,
+                    several,
+                    &program.behavior,
+                    runtime,
+                    &mut report,
+                );
+                continue;
+            }
+
             let remaining = share_end.saturating_sub(report.spent);
             // With fuel left in the frame, a behavior with no program is not
             // starved: it goes on to be counted as unloaded.
             let unloaded = pool > 0 && runtime.program(&program.module).is_none();
             if remaining == 0 && !unloaded {
                 // A faulted instance would not have run with fuel either.
-                if shares::idle(runtime.peek(instance.entity, &program.behavior)) {
+                if shares::idle(
+                    runtime.peek(instance.entity, &program.behavior),
+                    runtime.program(&program.module),
+                ) {
                     continue;
                 }
                 report.deferred += 1;
@@ -180,6 +201,9 @@ pub fn run_behaviors(
                 // frame: one cut part-way through its turn carries on when the
                 // rotation comes back to it, so every instance moves forward.
                 starved_at.get_or_insert(instance.entity);
+                // Carried into new code this frame, its record follows even
+                // though it does not run: a save in between reads the World.
+                super::state_update::record_if_rewritten(runtime, instance, program, &mut report);
                 // The turn never happened, so nothing addressed to it was seen.
                 keep(
                     events,
@@ -227,14 +251,12 @@ pub fn run_behaviors(
                     .attached
                     .changed_outside(instance.entity, &program.behavior, &instance.row);
 
-            // What the entity brings, applied once, when it first appears. The
-            // initialiser still runs — the slots it did not bring take the defaults
-            // their author wrote — and these go back on top, which is exactly the
-            // road a reload already takes.
+            // What the entity brings, applied once, when it first appears, on
+            // top of its layout's defaults — the slots it did not bring take
+            // them.
             let state = runtime.instance(instance.entity, &program.behavior);
             // An instance yet to arrive takes what was written meanwhile as what
-            // it arrives with: put back over its initialiser's defaults, not under
-            // them.
+            // it arrives with.
             if let Some(arrival) = state.arriving.as_mut() {
                 for (name, value) in outside.drain(..) {
                     match arrival.fields.iter_mut().find(|(field, _)| *field == name) {
@@ -257,22 +279,52 @@ pub fn run_behaviors(
                 let resumed = arrive(state, arriving, &program.behavior, &compiled);
                 report.resumes.extend(resumed);
             }
-            if !outside.is_empty() {
+            // An instance that brought nothing — fresh, or set up by hand —
+            // starts from its layout: every field at its default, in its first
+            // state, its countdowns armed. No code runs for it.
+            if state.fields.is_empty() {
                 if let Some(layout) = compiled.layout(&program.behavior) {
-                    persistence::adopt_fields(layout, &mut state.fields, &outside);
-                    // An initialiser part-way puts what the instance carries back
-                    // on top when it finishes: what was written meanwhile goes
-                    // there too.
-                    if let Some(carried) = state.carried.as_mut() {
-                        persistence::adopt_fields(layout, carried, &outside);
+                    state.fields = layout.fresh_store();
+                }
+            }
+            // Laid out for another program than the one about to run — its
+            // behavior moved to another module — it is carried there first:
+            // before what was written outside goes in by the new layout's
+            // slots, and before a fault under the old code can hold it off.
+            let stale = state
+                .built_for
+                .as_ref()
+                .filter(|built| !std::sync::Arc::ptr_eq(built, &compiled))
+                .cloned();
+            if let Some(old_program) = stale {
+                let resumed =
+                    super::carry::carry_instance(state, &old_program, &compiled, &program.behavior);
+                report.resumes.extend(resumed);
+            }
+            state.module.clone_from(&program.module);
+            state.built_for = Some(std::sync::Arc::clone(&compiled));
+            // What was written outside since it last ran, then what another
+            // script `Set` of it earlier this frame: its turn starts from both.
+            let earlier =
+                super::state_update::sets_on(&host.commands, instance.entity, &program.behavior);
+            let read_until = host.commands.len();
+            let mut start_row = instance.row.clone();
+            for (name, value) in &earlier {
+                match start_row.iter_mut().find(|(known, _)| known == name) {
+                    Some((_, held)) => *held = value.clone(),
+                    None => start_row.push((name.clone(), value.clone())),
+                }
+            }
+            if let Some(layout) = compiled.layout(&program.behavior) {
+                for written in [&outside, &earlier] {
+                    if !written.is_empty() {
+                        persistence::adopt_fields(layout, &mut state.fields, written);
                     }
                 }
             }
             if state.disabled {
                 continue;
             }
-            state.module.clone_from(&program.module);
-            state.built_for = Some(std::sync::Arc::clone(&compiled));
             let lifecycle_before = (
                 state.spawned,
                 state.fault.is_some(),
@@ -290,15 +342,12 @@ pub fn run_behaviors(
             // stops takes its own from here.
             host.awaiting = None;
             let mut progress = Progress {
-                initialised: state.initialised,
                 spawned: state.spawned,
-                initialiser: state.initialiser.take(),
                 pending: state.pending.take(),
                 loading: state.loading,
                 after_load: state.after_load.take(),
                 resume_failed: std::mem::take(&mut state.resume_failed),
             };
-            let carried = state.carried.take();
 
             // Where this behavior's own commands start, so a `this.Despawn()` it
             // queues can be told from one an earlier behavior queued.
@@ -312,7 +361,6 @@ pub fn run_behaviors(
                     entity: instance.entity,
                     events,
                     fuel: slice,
-                    carried: carried.as_ref(),
                     delta: view.delta_seconds,
                 },
                 &mut progress,
@@ -334,17 +382,11 @@ pub fn run_behaviors(
             state.fields = std::mem::take(&mut host.fields);
             // Where the turn got to goes back whatever happened, so a turn that
             // stopped early loses no body part-way through.
-            state.initialised = progress.initialised;
             state.spawned = progress.spawned;
-            state.initialiser = progress.initialiser;
             state.pending = progress.pending;
             state.loading = progress.loading;
             state.after_load = progress.after_load;
             state.resume_failed = progress.resume_failed;
-            // Kept until the initialiser that has to put them back has finished.
-            if !state.initialised {
-                state.carried = carried;
-            }
             state.farewelled |= leaving;
 
             let farewell_cost = farewell.unwrap_or(0);
@@ -391,19 +433,6 @@ pub fn run_behaviors(
                         events,
                         instance.entity,
                         delivered,
-                        several,
-                        &program.behavior,
-                        runtime,
-                        &mut report,
-                    );
-                }
-                Outcome::Uninitialised { spent } => {
-                    report.deferred += 1;
-                    report.spent += spent;
-                    keep(
-                        events,
-                        instance.entity,
-                        0,
                         several,
                         &program.behavior,
                         runtime,
@@ -462,67 +491,37 @@ pub fn run_behaviors(
                         held.resume_failed.clone(),
                     ) != lifecycle_before
                 });
-            if outcome_cost + farewell_cost > 0 || ticked || waited || lifecycle_changed {
+            let rewritten = runtime
+                .peek(instance.entity, &program.behavior)
+                .is_some_and(|held| held.rewritten);
+            if outcome_cost + farewell_cost > 0
+                || ticked
+                || waited
+                || lifecycle_changed
+                || rewritten
+            {
                 if let Some(layout) = compiled.layout(&program.behavior) {
                     let held = runtime.instance(instance.entity, &program.behavior);
-                    // While its initialiser is part-way, an instance's fields hold
-                    // the half-run initialiser's defaults; what it *is* — loaded or
-                    // carried across a reload — waits aside until that finishes.
-                    let fields = match (&held.carried, held.initialised) {
-                        (Some(owed), false) => owed,
-                        _ => &held.fields,
-                    };
-                    // A hook part-way in front of a restored body — `OnLoad`, which a
-                    // load runs again anyway, or the `OnSpawn` of a save that
-                    // recorded no lifecycle — is not written: the save holds the
-                    // body waiting behind it.
-                    let pending = held.after_load.as_ref().or(held.pending.as_ref());
-                    let mut snapshot = persistence::snapshot_of(layout, fields, pending, &compiled);
-                    // An `OnSpawn` part-way in front of a restored body is not
-                    // written either: recorded as not yet spawned, it runs again
-                    // from its start on the next load, as a cut `OnLoad` does.
-                    let spawning_in_front = held.after_load.is_some()
-                        && held
-                            .pending
-                            .as_ref()
-                            .is_some_and(|pending| pending.body == Body::Spawn);
-                    snapshot.lifecycle = InstanceLifecycle {
-                        resume_failed: held.resume_failed.clone(),
-                        spawned: held.spawned && !spawning_in_front,
-                        fault: held.fault.clone(),
-                    };
-
-                    // Only the fields its turn changed are written back:
-                    // another script's write to another field the same frame
-                    // survives.
-                    let changed = snapshot
-                        .fields
-                        .iter()
-                        .filter(|(name, value)| {
-                            !instance
-                                .row
-                                .iter()
-                                .any(|(known, was)| known == name && was == value)
-                        })
-                        .map(|(name, _)| name.clone())
-                        .collect();
-                    report.state.push(BehaviorUpdate {
-                        entity: instance.entity,
-                        behavior: program.behavior.clone(),
-                        snapshot,
-                        changed,
-                    });
+                    held.rewritten = false;
+                    report.state.push(super::state_update::update_of(
+                        held,
+                        layout,
+                        &compiled,
+                        instance.entity,
+                        &program.behavior,
+                        &start_row,
+                        super::state_update::TurnPosition {
+                            began: read_until,
+                            ended: host.commands.len(),
+                        },
+                    ));
                 }
             }
             // What the lane has of the instance's row now — what the world will
             // hold once the frame's writeback lands.
             if let Some(layout) = compiled.layout(&program.behavior) {
                 let held = runtime.instance(instance.entity, &program.behavior);
-                let fields = match (&held.carried, held.initialised) {
-                    (Some(owed), false) => owed,
-                    _ => &held.fields,
-                };
-                let mut now = persistence::snapshot_from_store(layout, fields).fields;
+                let mut now = persistence::snapshot_from_store(layout, &held.fields).fields;
                 for (name, value) in &instance.row {
                     if !now.iter().any(|(known, _)| known == name) {
                         now.push((name.clone(), value.clone()));
@@ -551,7 +550,7 @@ pub fn run_behaviors(
 /// What an entity brings the first frame it appears, read against its
 /// program.
 struct Arriving {
-    /// Its fields, as they go back on top of the initialiser's defaults.
+    /// Its fields: its layout's defaults with what it brought on top.
     store: khora_script::arena::PersistentStore,
     /// The body a save caught part-way, taken back into the script as it is
     /// now — or abandoned.
@@ -581,8 +580,7 @@ fn arrive(
 ) -> Option<Resumed> {
     let fingerprint = program.fingerprint();
     *state = Instance {
-        fields: arriving.store.clone(),
-        carried: Some(arriving.store),
+        fields: arriving.store,
         ..Instance::default()
     };
     if !arriving.restored {

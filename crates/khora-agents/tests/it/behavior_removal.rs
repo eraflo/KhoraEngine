@@ -66,8 +66,8 @@ const LEAVING: Project = &[
         "game/leaver.erg",
         "import \"game/mark.erg\";
          behavior Leaver {
-             Entity witness;
-             void OnDespawn() { witness.Set(Mark { by: 1 }); }
+             Entity? witness;
+             void OnDespawn() { if (var w = witness) { w.Set(Mark { by: 1 }); } }
          }",
     ),
     (
@@ -264,8 +264,11 @@ const LEAVING_FROM_WHERE_IT_IS: Project = &[
         "game/leaver.erg",
         "import \"game/mark.erg\";
          behavior Leaver {
-             Entity witness;
-             void OnDespawn() { Vec3 at = Position(); witness.Set(Mark { by: 1 }); }
+             Entity? witness;
+             void OnDespawn() {
+                 Vec3 at = Position();
+                 if (var w = witness) { w.Set(Mark { by: 1 }); }
+             }
          }",
     ),
     (

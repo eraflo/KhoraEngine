@@ -207,7 +207,7 @@ fn caught_mid_attack(source: &str) -> ScriptSnapshot {
 // ─── OnLoad ─────────────────────────────────────────────────────────────────
 
 /// **First, and with what was restored.** `OnLoad` runs after the
-/// initialiser and the restore — it sees the restored health, not the
+/// restore — it sees the restored health, not the
 /// declared one — and before everything else the turn runs: `OnSpawn` still
 /// owed, the body the save caught part-way, the timers, the events, `Update`.
 #[test]

@@ -21,9 +21,8 @@
 //! would be a fiction. A copy (or a field load) that the fuel left in a run
 //! cannot pay for waits for the next run, unless it is the run's first step.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::arena::PersistentStore;
-use khora_script::bytecode::init_name;
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{Machine, Program, Run, Suspension, Value};
 use khora_script::{check, compile, lex, parse, Host};
@@ -225,15 +224,9 @@ fn loading_a_big_field_waits_for_fuel_it_can_pay_for() {
          }}",
         ints(1000)
     ));
-    let layout = program.layout("Guard").expect("the guard's layout");
     let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
+        .with_fields(fresh_store(&program, "Guard"))
         .for_entity(SUBJECT);
-    let mut init = Machine::new(&program, &init_name("Guard"), &[]).expect("an initialiser");
-    assert_eq!(
-        spend_whole(&mut init, &program, &mut host).0,
-        Run::Completed
-    );
     host.end_frame();
 
     let count = resolve_member(&program, "Guard", "Count", &host).expect("`Count`");

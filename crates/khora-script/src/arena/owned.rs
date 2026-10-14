@@ -133,7 +133,14 @@ impl Owned {
             ));
         }
         let Self::Struct { name, fields } = self else {
-            return Some(self.clone());
+            // A number written as an integer where its type is a float is the
+            // float it names — `float speed = 3;` holds `3.0`.
+            return Some(match (ty, self) {
+                ("float" | "Duration" | "Angle", Self::Scalar(Value::Int(value))) => {
+                    Self::Scalar(Value::Float(*value as f32))
+                }
+                _ => self.clone(),
+            });
         };
         let layout = structs.iter().find(|layout| layout.name == *name)?;
         let fields = layout
@@ -145,7 +152,7 @@ impl Owned {
                     Some((_, value)) => value.clone(),
                     None => match layout.defaults.get(slot) {
                         Some(Some(default)) => default.clone(),
-                        _ => Owned::zero(field_ty)?,
+                        _ => Owned::neutral_within(field_ty, structs, depth + 1)?,
                     },
                 };
                 Some((
@@ -176,6 +183,46 @@ impl Owned {
             "string" => Self::Str(String::new()),
             _ => return None,
         })
+    }
+}
+
+impl Owned {
+    /// What a field of `ty` written with no default starts at: its zero, an
+    /// engine value's neutral — `Vec3(0, 0, 0)`, the identity rotation,
+    /// white — or a struct's own defaults. `None` for a type with none: an
+    /// `Entity` names an entity, and no entity is what `Entity?` spells.
+    pub fn neutral(ty: &str, structs: &[StructLayout]) -> Option<Owned> {
+        Self::neutral_within(ty, structs, 0)
+    }
+
+    fn neutral_within(ty: &str, structs: &[StructLayout], depth: usize) -> Option<Owned> {
+        use khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
+        if let Some(zero) = Self::zero(ty) {
+            return Some(zero);
+        }
+        Some(Self::Scalar(match ty {
+            "Vec2" => Value::Vec2(Vec2::new(0.0, 0.0)),
+            "Vec3" => Value::Vec3(Vec3::new(0.0, 0.0, 0.0)),
+            "Vec4" => Value::Vec4(Vec4::new(0.0, 0.0, 0.0, 0.0)),
+            "Quat" => Value::Quat(Quaternion::IDENTITY),
+            "Color" => Value::Color(LinearRgba::WHITE),
+            _ if structs.iter().any(|layout| layout.name == ty) => {
+                return Self::Struct {
+                    name: ty.to_owned(),
+                    fields: Vec::new(),
+                }
+                .completed_within(ty, structs, depth);
+            }
+            _ => return None,
+        }))
+    }
+
+    /// As a store holds it: a scalar inline, anything else by value.
+    pub fn persisted(&self) -> super::Persisted {
+        match self {
+            Self::Scalar(value) => super::Persisted::Scalar(*value),
+            other => super::Persisted::Owned(other.clone()),
+        }
     }
 }
 

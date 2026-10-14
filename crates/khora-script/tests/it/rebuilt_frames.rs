@@ -19,9 +19,8 @@
 //! from that point: the locals it reads are its own, and a value a call just
 //! returned is still there for the rest of the statement.
 
+use crate::support::fresh_store;
 use khora_core::script::{FrozenMachine, PendingBody};
-use khora_script::arena::PersistentStore;
-use khora_script::bytecode::init_name;
 use khora_script::vm::{resume, ResumeTier, Suspension};
 use khora_script::{check, compile, lex, parse, Host, Machine, Program, Run, Value};
 
@@ -166,10 +165,7 @@ fn a_rebuilt_frame_pairs_a_shadowing_local_with_its_own_value() {
          }",
     );
 
-    let layout = original.layout("Guard").expect("a layout");
-    let mut host = Host::new().with_fields(PersistentStore::with_slots(layout.slot_count()));
-    let mut init = Machine::new(&original, &init_name("Guard"), &[]).expect("defaults");
-    finish(&mut init, &original, &mut host);
+    let mut host = Host::new().with_fields(fresh_store(&original, "Guard"));
     let mut machine = Machine::new(&original, "Guard.Hit", &[]).expect("Hit");
     assert_eq!(
         machine.run(&original, &mut host, u64::MAX),
@@ -184,9 +180,7 @@ fn a_rebuilt_frame_pairs_a_shadowing_local_with_its_own_value() {
         resume(&frozen, original.fingerprint(), &edited).expect("the site is still there");
     assert_eq!(tier, ResumeTier::Rebuilt);
     let edited_layout = edited.layout("Guard").expect("a layout");
-    let mut host = Host::new().with_fields(PersistentStore::with_slots(edited_layout.slot_count()));
-    let mut init = Machine::new(&edited, &init_name("Guard"), &[]).expect("defaults");
-    finish(&mut init, &edited, &mut host);
+    let mut host = Host::new().with_fields(fresh_store(&edited, "Guard"));
     finish(&mut machine, &edited, &mut host);
 
     let slot = edited_layout.slot_of("landed").expect("landed");
@@ -388,9 +382,7 @@ fn an_unchanged_callee_does_not_force_its_edited_caller_to_restart() {
     );
 
     let layout = original.layout("Guard").expect("a layout");
-    let mut host = Host::new().with_fields(PersistentStore::with_slots(layout.slot_count()));
-    let mut init = Machine::new(&original, &init_name("Guard"), &[]).expect("defaults");
-    finish(&mut init, &original, &mut host);
+    let mut host = Host::new().with_fields(fresh_store(&original, "Guard"));
     let mut machine = Machine::new(&original, "Guard.Strike", &[]).expect("Strike");
     assert_eq!(
         machine.run(&original, &mut host, u64::MAX),
@@ -454,9 +446,7 @@ fn a_caller_waiting_on_its_call_is_rebuilt_whatever_its_result_register_held() {
     let edited = behavior("", " + 100");
 
     let layout = original.layout("Guard").expect("a layout");
-    let mut host = Host::new().with_fields(PersistentStore::with_slots(layout.slot_count()));
-    let mut init = Machine::new(&original, &init_name("Guard"), &[]).expect("defaults");
-    finish(&mut init, &original, &mut host);
+    let mut host = Host::new().with_fields(fresh_store(&original, "Guard"));
     let mut machine = Machine::new(&original, "Guard.Strike", &[]).expect("Strike");
     assert_eq!(
         machine.run(&original, &mut host, u64::MAX),
@@ -516,9 +506,7 @@ fn an_outer_local_keeps_its_value_when_the_local_shadowing_it_is_removed() {
     let edited = behavior("");
 
     let layout = original.layout("Guard").expect("a layout");
-    let mut host = Host::new().with_fields(PersistentStore::with_slots(layout.slot_count()));
-    let mut init = Machine::new(&original, &init_name("Guard"), &[]).expect("defaults");
-    finish(&mut init, &original, &mut host);
+    let mut host = Host::new().with_fields(fresh_store(&original, "Guard"));
     let mut machine = Machine::new(&original, "Guard.Hit", &[]).expect("Hit");
     assert_eq!(
         machine.run(&original, &mut host, u64::MAX),

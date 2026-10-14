@@ -153,7 +153,7 @@ pub(crate) fn restore_state(
     behavior: &str,
     observed: &ScriptSnapshot,
 ) {
-    let row = companion_row(observed, true).expect("a snapshot fills a companion");
+    let row = companion_row(observed).expect("a snapshot fills a companion");
     attach(world, entity, &format!("{behavior}{STATE_SUFFIX}"), &row);
 }
 
@@ -162,7 +162,7 @@ pub(crate) fn restore_state(
 /// was written.
 pub(crate) fn recorded(world: &World, entity: EntityId, behavior: &str) -> Option<ScriptSnapshot> {
     let companion = world.declared_row(entity, key(world, &format!("{behavior}{STATE_SUFFIX}")))?;
-    let (mut snapshot, _) = companion_snapshot(&companion).expect("a companion reads back");
+    let mut snapshot = companion_snapshot(&companion).expect("a companion reads back");
     snapshot.fields = world.declared_row(entity, key(world, behavior))?;
     Some(snapshot)
 }

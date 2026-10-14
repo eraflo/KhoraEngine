@@ -21,10 +21,10 @@
 //! index, and never as a fault. A `become` writes its string arguments into
 //! the durable store by value, as a field assignment does.
 
+use crate::support::fresh_store;
 use khora_core::script::{FrozenMachine, FrozenValue, PendingBody, ScriptValue};
-use khora_script::arena::{Object, Persisted, PersistentStore};
+use khora_script::arena::{Object, Persisted};
 use khora_script::bridge::from_persisted;
-use khora_script::bytecode::init_name;
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{resume, ResumeTier};
 use khora_script::{
@@ -381,9 +381,7 @@ fn become_stores_its_string_arguments_by_value() {
            }"#,
     );
     let layout = program.layout("Guard").expect("the behavior has a layout");
-    let mut host = Host::new().with_fields(PersistentStore::with_slots(layout.slot_count()));
-    let mut init = Machine::new(&program, &init_name("Guard"), &[]).expect("defaults exist");
-    assert_eq!(init.run(&program, &mut host, u64::MAX), Run::Completed);
+    let mut host = Host::new().with_fields(fresh_store(&program, "Guard"));
 
     let spot = resolve_member(&program, "Guard", "Spot", &host).expect("Patrol has `Spot`");
     let mut machine = Machine::new(&program, &spot, &[]).expect("the member exists");

@@ -47,9 +47,12 @@ use khora_core::Runtime;
 use crate::ecs::{DataSystemRegistration, TickPhase, World};
 
 fn behavior_writeback(world: &mut World, _runtime: &Runtime, deck: &mut OutputDeck) {
+    // What the frame's commands wrote, and where: a turn's field a command
+    // written after it overwrote is that command's.
+    let applied = deck.take::<super::script_commands::AppliedWrites>();
     if deck.contains::<BehaviorWriteback>() {
         let mut updates = deck.take::<BehaviorWriteback>();
-        attached::write_back(world, updates.drain().collect());
+        attached::write_back(world, updates.drain().collect(), &applied);
     }
     attached::drop_orphaned_companions(world);
 }
@@ -68,5 +71,6 @@ inventory::submit! {
 }
 
 mod attached;
+mod order;
 #[cfg(test)]
 mod tests;

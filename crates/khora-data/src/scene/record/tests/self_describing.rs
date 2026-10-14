@@ -419,7 +419,7 @@ fn every_persisted_type_survives_the_self_describing_form() {
         ),
     ]));
     assert_self_describes(&ScriptValue::Struct(
-        companion_row(&busy_snapshot(target), true).expect("a companion row"),
+        companion_row(&busy_snapshot(target)).expect("a companion row"),
     ));
     assert_self_describes(&SerializableUiStyle::from(UiStyle {
         texture_id: Some(42),

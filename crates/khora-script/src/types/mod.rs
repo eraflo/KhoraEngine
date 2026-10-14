@@ -319,6 +319,10 @@ impl Checker {
             }
             if let Item::Behavior(decl) = item {
                 self.behaviors.push(decl.name.clone());
+                // A behavior is a component too: another script writes and
+                // reads it by name.
+                self.components
+                    .insert(decl.name.clone(), Default::default());
             }
             // Known by name before any type is resolved, so a field or a
             // parameter of a component's type is refused for what it is.
@@ -336,7 +340,7 @@ impl Checker {
                 Item::Struct(decl) => self.collect_struct(decl),
                 Item::Component(decl) => self.collect_component(decl),
                 Item::Function(decl) => self.collect_function(decl),
-                Item::Behavior(_) => {}
+                Item::Behavior(decl) => self.collect_component(&decl.as_component()),
             }
         }
     }

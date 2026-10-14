@@ -436,16 +436,17 @@ fn a_behavior_attached_in_setup_runs_every_frame_with_the_field_setup_named() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-/// **A field setup leaves unnamed takes what its initialiser computes**, not
-/// the placeholder registered as its default.
+/// **A field setup leaves unnamed takes what `OnSpawn` computes**, starting
+/// from its registered default, while the field setup named keeps its value.
 #[test]
-fn a_field_setup_leaves_unnamed_takes_what_its_initialiser_computes() {
+fn a_field_setup_leaves_unnamed_takes_what_on_spawn_computes() {
     let root = assets_with(
         "homing.erg",
         "behavior Homing {
              float speed = 1.5;
-             Vec3 home = Position();
+             Vec3 home;
              int ticks = 0;
+             void OnSpawn() { home = Position(); }
              void Update(float dt) { ticks += 1; }
          }",
     );
@@ -469,7 +470,7 @@ fn a_field_setup_leaves_unnamed_takes_what_its_initialiser_computes() {
     assert_eq!(
         field_of(&mut engine, entity, "Homing", "home"),
         Some(ScriptValue::Vec3(at)),
-        "the initialiser ran where setup put the entity"
+        "`OnSpawn` ran where setup put the entity"
     );
     assert_eq!(
         field_of(&mut engine, entity, "Homing", "speed"),

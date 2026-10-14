@@ -14,13 +14,14 @@
 
 //! An instance carried into edited code re-enters the state it was in.
 //!
-//! A hot reload, or a load into a script edited since the save, runs the
-//! initialiser — which enters the *first* state — then `Behavior.__enter` for
-//! the state carried, then puts the carried values back on top. Data slots are
-//! shared between states, so until the carried values land, the slots of the
-//! carried state hold what the first state's entry wrote. Whatever the entry
-//! computes, and whatever a carried value left behind leaves in its slot, must
-//! come from the carried state's own data — never from the first state's.
+//! A hot reload, or a load into a script edited since the save, builds the
+//! instance's store from its layout — which enters the *first* state — then
+//! enters the state carried, then puts the carried values back on top. Data
+//! slots are shared between states, so until the carried values land, the
+//! slots of the carried state hold what the first state's entry wrote.
+//! Whatever the entry writes, and whatever a carried value left behind leaves
+//! in its slot, must come from the carried state's own data — never from the
+//! first state's.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot};
@@ -135,19 +136,18 @@ const CHASING_DOUBLED: &str = r#"behavior Guard {
                                      on Spot() { become Chase(4); }
                                      state Patrol { int other = 50; }
                                      state Chase(int seen) {
-                                         int doubled = seen * 2;
+                                         int doubled = 8;
                                          int Seen() { return seen; }
                                      }
                                  }"#;
 
-/// **A datum the edit adds defaults from its state's carried parameter.** The
-/// guard is chasing with `seen = 4`; an edit adds `int doubled = seen * 2` to
-/// `Chase`. The re-entry computes `doubled` from `seen`'s slot before the
-/// carried 4 is back in it — when the slot still holds `Patrol`'s `other = 50`
-/// — and gives 100. It must be 8: `seen` is 4, before the edit and after. The
-/// same through a load of a save taken before the edit.
+/// **A datum the edit adds takes its own default, never another state's
+/// datum.** The guard is chasing with `seen = 4`; an edit adds
+/// `int doubled = 8` to `Chase`. The slot it lands in may still hold
+/// `Patrol`'s `other = 50`; it must be 8, and `seen` still 4. The same through
+/// a load of a save taken before the edit.
 #[test]
-fn a_datum_added_by_an_edit_defaults_from_its_states_carried_parameter() {
+fn a_datum_added_by_an_edit_takes_its_default_not_another_states_datum() {
     let mut runtime = runtime_of(CHASING);
     let mut host = Host::new();
     let saved = frame(&mut runtime, &mut host, &view(None), &raised("Spot"));
@@ -163,7 +163,7 @@ fn a_datum_added_by_an_edit_defaults_from_its_states_carried_parameter() {
     assert_eq!(
         state_value(&runtime, "Chase", "doubled"),
         int(8),
-        "hot reload: `doubled` was computed from `Patrol`'s datum in `seen`'s slot"
+        "hot reload: `doubled` holds `Patrol`'s datum, not its default"
     );
 
     let saved = saved.expect("the guard did work, so the lane recorded it");
@@ -179,7 +179,7 @@ fn a_datum_added_by_an_edit_defaults_from_its_states_carried_parameter() {
     assert_eq!(
         state_value(&runtime, "Chase", "doubled"),
         int(8),
-        "load: `doubled` was computed from `Patrol`'s datum in `seen`'s slot"
+        "load: `doubled` holds `Patrol`'s datum, not its default"
     );
 }
 
@@ -188,8 +188,8 @@ fn a_datum_added_by_an_edit_defaults_from_its_states_carried_parameter() {
 /// **A parameter a retype leaves behind does not keep another state's datum.**
 /// The guard chases with `string seen = "x"`; an edit makes it `int seen`. The
 /// carried text no longer fits and is left behind — but a parameter has no
-/// default for the re-entry to write, so its slot keeps what the initialiser's
-/// entry into `Patrol` put there: `float other = 2.5`, in an `int`.
+/// default for the re-entry to write, so its slot must not keep what the
+/// layout's entry into `Patrol` put there: `float other = 2.5`, in an `int`.
 #[test]
 fn a_parameter_left_behind_by_a_retype_does_not_hold_another_states_datum() {
     let mut runtime = runtime_of(

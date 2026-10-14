@@ -262,6 +262,12 @@ pub enum Instruction {
     /// Jumping would mean the rest of the statement that said `become` ran
     /// inside a state it had just left.
     Become {
+        /// The behavior whose state it is, by its index among the program's
+        /// layouts: what entering it writes is read from there.
+        behavior: u16,
+        /// How many values entering it writes — its data, nested ones
+        /// included, its countdowns and its arguments: what it costs.
+        writes: u32,
         /// The state's discriminant.
         state: u16,
         /// First argument register.
@@ -598,6 +604,7 @@ impl Instruction {
             | Self::WriteComponent { count, .. }
             | Self::GetComponent { count, .. }
             | Self::SpawnEntity { count, .. } => 1 + u64::from(*count),
+            Self::Become { writes, .. } => 1 + u64::from(*writes),
             _ => 1,
         }
     }

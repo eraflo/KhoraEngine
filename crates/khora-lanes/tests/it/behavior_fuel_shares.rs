@@ -197,7 +197,7 @@ fn a_behavior_after_an_overdrafting_one_still_runs_within_bounded_frames() {
         &[("hog.erg", "Hog"), ("tick.erg", "Tick")],
         &[(0, 0), (1, 1)],
     );
-    // Both spawned and initialised.
+    // Both spawned.
     frame(&view, &mut runtime, PLENTY);
 
     let mut tick_ran = 0;

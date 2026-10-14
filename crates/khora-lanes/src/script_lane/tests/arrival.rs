@@ -268,7 +268,11 @@ fn an_observed_pending_sequence_resumes() {
 /// A guard that remembers where it first appeared.
 const HOMING: &str = r#"
 behavior Guard {
-    Vec3 home = Position();
+    Vec3 home;
+
+    void OnSpawn() {
+        home = Position();
+    }
 }
 "#;
 
@@ -285,12 +289,13 @@ fn homing_frame(
     report.state.first().map(|update| update.snapshot.clone())
 }
 
-/// **A default that read the world is not read again on a load.** The guard
-/// appeared at x = 1 and recorded it as `home`; loaded where the game had
-/// since moved it, x = 5, it keeps the `home` its row holds — the initialiser
-/// runs, and the loaded values go back on top of what it produced.
+/// **A starting value read from the world is not read again on a load.** The
+/// guard appeared at x = 1 and recorded it as `home` in `OnSpawn`; loaded
+/// where the game had since moved it, x = 5, it keeps the `home` its row
+/// holds — a loaded instance has spawned already, and its fields are the
+/// loaded ones.
 #[test]
-fn a_default_read_from_the_world_survives_a_save_unchanged() {
+fn a_starting_value_read_from_the_world_survives_a_save_unchanged() {
     let mut first = runtime_of(HOMING);
     let saved = homing_frame(
         &mut first,
@@ -300,7 +305,7 @@ fn a_default_read_from_the_world_survives_a_save_unchanged() {
             observed: None,
         }),
     )
-    .expect("the arrival ran the initialiser");
+    .expect("the arrival ran `OnSpawn`");
     let home = Some(&ScriptValue::Vec3(khora_core::math::Vec3::new(
         1.0, 0.0, 0.0,
     )));

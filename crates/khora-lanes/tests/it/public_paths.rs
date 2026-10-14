@@ -208,13 +208,10 @@ fn instance_fields(x: &khora_lanes::script_lane::runtime::Instance) {
     let _ = (
         &x.module,
         &x.fields,
-        &x.initialised,
         &x.spawned,
         &x.farewelled,
         &x.disabled,
         &x.pending,
-        &x.carried,
-        &x.initialiser,
         &x.fault,
         &x.loading,
         &x.after_load,
@@ -575,7 +572,6 @@ fn module_script_lane_paths_still_resolve() {
     let _ = khora_lanes::script_lane::runtime::ScriptRuntime::instance_count;
     is_debug::<khora_lanes::script_lane::runtime::ScriptRuntime>();
     is_default::<khora_lanes::script_lane::runtime::ScriptRuntime>();
-    let _ = khora_lanes::script_lane::runtime::restore_carried;
 }
 
 // ---------------------------------------------------------------------------

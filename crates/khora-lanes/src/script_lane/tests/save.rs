@@ -267,6 +267,10 @@ behavior Guard {
         fired += 1;
     }
 
+    void Heal() {
+        health += 5;
+    }
+
     on Spotted(int by) {
         Attack();
     }
@@ -349,7 +353,7 @@ fn a_sequence_is_abandoned_when_its_handler_is_gone() {
 fn a_sequence_survives_an_edit_that_only_changes_a_literal() {
     let saved = caught_mid_attack();
 
-    let retuned = WAITER.replace("int health = 100;", "int health = 120;");
+    let retuned = WAITER.replace("health += 5;", "health += 7;");
     assert_ne!(
         compile(&retuned).fingerprint(),
         compile(WAITER).fingerprint(),
@@ -438,8 +442,8 @@ behavior Guard {
 "#;
 
 /// **Data an edit added to the state a save caught starts at its own
-/// default** — not at the first state's, which the initialiser entered on
-/// the way and which shares those slots.
+/// default** — not at the first state's, which a fresh store enters on the
+/// way and which shares those slots.
 #[test]
 fn data_added_to_the_saved_state_since_the_save_starts_at_its_declared_default() {
     let mut runtime = runtime_of(GUARD);
@@ -500,9 +504,9 @@ behavior Guard {
 "#;
 
 /// **Entering the saved state, whatever the slice.** A guard saved chasing,
-/// with its chase's countdown part-spent, is loaded under a budget that cuts
-/// the initialiser — or the entry into the chase after it — at every possible
-/// point. It ends exactly where an uncut load does.
+/// with its chase's countdown part-spent, is loaded under every budget: its
+/// store is built from the layout and the save before its first turn, with no
+/// fuel spent, so it ends exactly where an uncut load does.
 #[test]
 fn entering_the_saved_state_ends_the_same_under_every_fuel_slice() {
     // Saved before the edit that gave the chase `spotted`.
@@ -523,27 +527,14 @@ fn entering_the_saved_state_ends_the_same_under_every_fuel_slice() {
     let load = |fuel: u64| {
         let mut runtime = runtime_of(CHASE_WITH_SCHEDULE);
         let mut host = Host::new();
-        let mut observed = Some(saved.clone());
-        for _ in 0..200 {
-            let view = view(0.0, observed.take());
-            run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, fuel);
-            if runtime
-                .peek(entity(0), "Guard")
-                .is_some_and(|instance| instance.initialised)
-            {
-                break;
-            }
-        }
+        let view = view(0.0, Some(saved.clone()));
+        run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, fuel);
         let layout = runtime
             .program(MODULE)
             .and_then(|program| program.layout("Guard"))
             .expect("declared")
             .clone();
         let instance = runtime.peek(entity(0), "Guard").expect("live");
-        assert!(
-            instance.initialised,
-            "fuel {fuel}: the initialiser finished"
-        );
         crate::script_lane::persistence::snapshot_from_store(&layout, &instance.fields)
     };
 

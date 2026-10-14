@@ -168,8 +168,8 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   file loads with them skipped and reported, and a script may not declare either name.
 - **Behaviors are components — registered and persisted.** `modules/behaviors.rs::declared_behaviors`: each project behavior declares `Guard`
   (`DeclaredKind::Behavior`, its fields in `[Domain(…)]`, default = the constant, else the zero, else a
-  placeholder — the initialiser writes the real one) and `Guard#state` (`DeclaredKind::BehaviorState`,
-  Script domain, fixed fields `state, state_fields, timers, pending, initialised, spawned, fault,
+  constant — defaults are layout data, `BehaviorLayout.defaults`) and `Guard#state` (`DeclaredKind::BehaviorState`,
+  Script domain, fixed fields `state, state_fields, timers, pending, spawned, fault,
   resume_failed`; `<any>` = `ErgonType::Any`). Registration: the companion is `Runtime` + `resumable`
   (`ComponentVTable.resumable`); a behavior refused or unregistered takes its companion with it.
   Persistence: `is_saved_declared(vtable, kept)` — a scene and the Play snapshot keep `Guard`, a game save
@@ -226,7 +226,7 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** �
   game save — a guard saved mid-attack loads mid-attack.
 - `InstanceLifecycle { spawned, fault }` is **recorded**, not derived: an empty snapshot does not say
   whether `OnSpawn` ran. A fault recorded under another program fingerprint is cleared on load.
-- `OnLoad` runs once, only when an instance is **restored from a save** — after the initialiser and
+- `OnLoad` runs once, only when an instance is **restored from a save** — after its fields and
   restore, before anything else that turn. A scene load or editor Stop is a fresh start (`OnSpawn`).
 
 ## Traps
@@ -248,3 +248,25 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** �
 ## Skills
 - [`build-and-test`](../skills/build-and-test/SKILL.md) · [`debug-frame`](../skills/debug-frame/SKILL.md)
   · [`run-the-engine`](../skills/run-the-engine/SKILL.md).
+- **Defaults are data.** A behavior field's and a state datum's default must be a constant (checker,
+  `types/structs.rs::expect_behavior_constant`); a field with no default takes its type's neutral value
+  (`Owned::neutral`), and a type with none (`Entity`) must be written optional. `BehaviorLayout.defaults` /
+  `StateLayout.defaults` hold them; `BehaviorLayout::fresh_store()` builds a fresh instance (fields, first
+  state entered, timers armed) with no VM run and no fuel; `entry(state)` is what entering a state writes,
+  and `Instruction::Become` writes it from the layout at run time — so editing only a default leaves the
+  program fingerprint alone. There is no initialiser: no `__fields`/`__enter`, no `initialised`/`carried`.
+- **Hot reload in step.** The pump announces each recompiled program's reads
+  (`ScriptCatalog::announce`); the flow projects `reads ∪ announced`; the lane installs before any turn and
+  `settle`s. A module whose reload still waits takes no turn (deferred, events kept). An instance's
+  `built_for` program differing from the one about to run — a behavior moved to another module — is carried
+  at the turn (`script_lane/carry.rs::carry_instance`, shared with `ScriptRuntime::reload`); a carried
+  instance is `rewritten` and emits its `BehaviorUpdate` that frame even starved or quiet. An instance whose
+  arrival is held is neither carried nor recorded: the arrival rebuilds it.
+- **One write order.** A behavior is a component other scripts `Set`/`Get`/`Has` (`BehaviorDecl::as_component`);
+  `this.Set(<own behavior>)` is refused. A turn starts from the `Set`s of its fields emitted earlier in the
+  frame (`state_update::sets_on`); `BehaviorUpdate.read_until` / `emitted_after` = frame commands queued when it
+  began / ended (rebased onto the deck slot); `changed` is against the row with those earlier `Set`s. `script_commands` records `AppliedWrites` (last applied index per field /
+  whole component); `behavior_writeback` drops a turn field written at or after `emitted_after`, drops all of
+  them when the component was written whole in the frame, and `behavior_writeback/order.rs` reports each
+  behavior field written more than once (debug) — the turn plus the `Set`s it did not read — instead of
+  `script_commands`.

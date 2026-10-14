@@ -41,7 +41,7 @@ impl Checker {
         self.field_names.clear();
         self.declare_fields(&decl.members);
         self.check_first_state(&decl.members);
-        self.check_members(&decl.members, &decl.name, &states);
+        self.check_members(&decl.members, &decl.name, &states, false);
 
         // Methods belong to their behavior; leaving them in scope would let the
         // next declaration call them.
@@ -167,11 +167,26 @@ impl Checker {
         }
     }
 
-    fn check_members(&mut self, members: &[BehaviorMember], owner: &str, states: &[String]) {
+    fn check_members(
+        &mut self,
+        members: &[BehaviorMember],
+        owner: &str,
+        states: &[String],
+        in_state: bool,
+    ) {
         for (position, member) in members.iter().enumerate() {
             match member {
                 BehaviorMember::Field(field) => {
+                    if field.default.is_none() {
+                        let ty = self.resolve(&field.ty);
+                        self.expect_neutral(&field.name, &ty, field.span);
+                    }
                     if let Some(default) = &field.default {
+                        // Data, not code: a default that is not a constant is
+                        // reported as that, and only that.
+                        if !self.expect_behavior_constant(default, in_state) {
+                            continue;
+                        }
                         let declared = self.resolve(&field.ty);
                         let mut context = Context::sync(owner, Ty::Void);
                         context.owner = Some(owner.to_owned());
@@ -268,7 +283,7 @@ impl Checker {
                     let outer = self.functions.clone();
                     let outer_methods = self.method_names.clone();
                     self.collect_methods(&state.members);
-                    self.check_members(&state.members, owner, states);
+                    self.check_members(&state.members, owner, states, true);
                     self.functions = outer;
                     self.method_names = outer_methods;
                     self.field_names.truncate(fields);
@@ -277,4 +292,68 @@ impl Checker {
             }
         }
     }
+
+    /// Refuses a field written with no default whose type has no neutral
+    /// value to start at — an `Entity` names one entity or none, and none is
+    /// what `Entity?` spells.
+    pub(super) fn expect_neutral(&mut self, name: &str, ty: &Ty, span: crate::diagnostics::Span) {
+        if self.has_neutral(ty, 0) {
+            return;
+        }
+        self.error_note(
+            format!(
+                "`{name}` needs a default: {} has no neutral value",
+                article(ty)
+            ),
+            span,
+            format!("make it optional (`{}?`): it starts at `null`", ty.name()),
+        );
+    }
+}
+
+impl Checker {
+    /// Whether a field of `ty` written with no default has a value to start
+    /// at: a number's zero, `false`, empty text or array, an engine value's
+    /// neutral (`Vec3(0, 0, 0)`, the identity rotation, white), `null` for an
+    /// optional — and a struct whose every field has a default or a neutral
+    /// value of its own: a struct holding an `Entity` with no default has
+    /// none, as its literals already have to name it.
+    fn has_neutral(&self, ty: &Ty, depth: usize) -> bool {
+        match ty {
+            Ty::Int
+            | Ty::Float
+            | Ty::Bool
+            | Ty::Str
+            | Ty::Duration
+            | Ty::Angle
+            | Ty::Optional(_)
+            | Ty::Array(_)
+            | Ty::Error => true,
+            Ty::Engine(name) => super::structs::ENGINE_CONSTRUCTORS
+                .iter()
+                .any(|(known, _)| known == name),
+            // A struct that contains itself has no end to start at.
+            Ty::Struct(_) if depth > 32 => false,
+            Ty::Struct(name) => self.structs.get(name).is_none_or(|info| {
+                info.order.iter().all(|field| {
+                    info.defaulted.contains(field)
+                        || info
+                            .fields
+                            .get(field)
+                            .is_none_or(|ty| self.has_neutral(ty, depth + 1))
+                })
+            }),
+            _ => false,
+        }
+    }
+}
+
+/// `ty` with its article, as a message names it — "an `Entity`".
+fn article(ty: &Ty) -> String {
+    let name = ty.name();
+    let vowel = name
+        .chars()
+        .next()
+        .is_some_and(|c| "AEIOUaeiou".contains(c));
+    format!("{} `{name}`", if vowel { "an" } else { "a" })
 }

@@ -23,10 +23,9 @@
 //! back with no stop in between, so a write another body makes while this
 //! one waits for fuel is never erased.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::PendingBody;
-use khora_script::arena::PersistentStore;
-use khora_script::bytecode::init_name;
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{resume, Fault, Machine, Program, ResumeTier, Run, Suspension, Value};
 use khora_script::{check, compile, lex, parse, Host};
@@ -101,12 +100,9 @@ fn sliced(
 }
 
 fn instance(program: &Program) -> Host {
-    let layout = program.layout("Guard").expect("the guard's layout");
     let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
+        .with_fields(fresh_store(program, "Guard"))
         .for_entity(SUBJECT);
-    let mut init = Machine::new(program, &init_name("Guard"), &[]).expect("a field initialiser");
-    finish(&mut init, program, &mut host).expect("the initialiser runs");
     host.end_frame();
     host
 }

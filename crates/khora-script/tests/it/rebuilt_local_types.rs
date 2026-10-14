@@ -19,10 +19,10 @@
 //! again. A value the new local cannot hold must not be carried — and a value
 //! it *can* hold must not force a restart, which runs those statements twice.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::PendingBody;
-use khora_script::arena::{Persisted, PersistentStore};
-use khora_script::bytecode::init_name;
+use khora_script::arena::Persisted;
 use khora_script::vm::{resume, Fault, ResumeTier, Suspension};
 use khora_script::{check, compile, lex, parse, Host, Machine, Program, Run, Value};
 
@@ -86,12 +86,9 @@ fn resumed(original: &str, edited: &str) -> Resumed {
     let original = guard(original);
     let edited = guard(edited);
 
-    let layout = original.layout("Guard").expect("a layout");
     let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
+        .with_fields(fresh_store(&original, "Guard"))
         .for_entity(SUBJECT);
-    let init = Machine::new(&original, &init_name("Guard"), &[]).expect("an initialiser");
-    finish(init, &original, &mut host).expect("the defaults run");
 
     let mut machine = Machine::new(&original, "Guard.Attack", &[]).expect("the member");
     assert_eq!(

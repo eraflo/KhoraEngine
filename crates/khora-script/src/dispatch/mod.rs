@@ -183,28 +183,6 @@ pub fn resolve_member(
     program.index_of(&plain).is_some().then_some(plain)
 }
 
-/// Gives a fresh instance the field values its behavior declares.
-///
-/// Run once, when the instance is created or reloaded — never per frame. A
-/// default is an expression, so producing it means running code; skipping this
-/// leaves every field unset, and the first arithmetic on one faults rather than
-/// treating it as zero.
-///
-/// The host's [`fields`](Host::fields) is written in place, so a caller sizes
-/// it first — [`PersistentStore::with_slots`] — and reads it back afterwards.
-///
-/// [`PersistentStore::with_slots`]: crate::arena::PersistentStore::with_slots
-pub fn initialise(
-    program: &Program,
-    behavior: &str,
-    host: &mut Host,
-    fuel: u64,
-) -> Option<(Run, u64)> {
-    let name = crate::bytecode::init_name(behavior);
-    let mut machine = Machine::new(program, &name, &[])?;
-    Some(machine.run_counting(program, host, fuel))
-}
-
 /// Advances the behavior's countdowns and runs whichever came due.
 ///
 /// Called once per frame with the time that passed. A countdown rather than a

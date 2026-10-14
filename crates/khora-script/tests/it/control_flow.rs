@@ -21,10 +21,10 @@
 //! not grow for a jump out of a loop, and the overdraft bound still covers the
 //! branches the new tests make.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::PendingBody;
-use khora_script::arena::{Persisted, PersistentStore};
-use khora_script::bytecode::init_name;
+use khora_script::arena::Persisted;
 use khora_script::vm::{resume, ResumeTier, Suspension};
 use khora_script::{check, compile, ergon_fn, lex, parse, Host, Machine, Program, Run, Value};
 
@@ -60,22 +60,15 @@ fn build(source: &str) -> Program {
     compiled.program
 }
 
-/// A host for `entry`: a fresh instance of its behavior with its defaults
-/// run, or a bare host for a free function.
+/// A host for `entry`: a fresh instance of its behavior at its defaults, or a
+/// bare host for a free function.
 fn host_for(program: &Program, entry: &str) -> Host {
-    let Some(layout) = entry
-        .split_once('.')
-        .and_then(|(behavior, _)| program.layout(behavior))
-    else {
-        return Host::new();
-    };
-    let behavior = entry.split_once('.').map(|(b, _)| b).unwrap_or_default();
-    let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
-        .for_entity(SUBJECT);
-    let mut init = Machine::new(program, &init_name(behavior), &[]).expect("an initialiser");
-    assert_eq!(init.run(program, &mut host, CEILING), Run::Completed);
-    host
+    match entry.split_once('.') {
+        Some((behavior, _)) if program.layout(behavior).is_some() => Host::new()
+            .with_fields(fresh_store(program, behavior))
+            .for_entity(SUBJECT),
+        _ => Host::new(),
+    }
 }
 
 /// Runs `entry(args)` in one go; an `await` counts as elapsed.

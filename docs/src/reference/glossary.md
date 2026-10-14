@@ -252,7 +252,7 @@ the world as it was. See [Serialization](../concepts/serialization.md).
 ### OnLoad / OnResumeFailed
 
 Two Ergon lifecycle hooks. **`void OnLoad()`** runs once when a behavior instance
-is restored from a game save — after its fields are initialised and restored,
+is restored from a game save — after its fields are restored,
 before anything else its turn runs; not on a scene load nor on Stop, which are
 fresh starts and get `OnSpawn`. **`void OnResumeFailed(string member)`** runs once
 for a suspended body that no [resume tier](#resume-tier) could take back into the

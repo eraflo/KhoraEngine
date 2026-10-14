@@ -156,6 +156,28 @@ pub struct BehaviorDecl {
     pub span: Span,
 }
 
+impl BehaviorDecl {
+    /// The component the behavior is: its own fields — not a state's — under
+    /// its name, what another script writes with `Set` and reads with `Get`.
+    pub fn as_component(&self) -> StructDecl {
+        StructDecl {
+            name: self.name.clone(),
+            name_span: self.name_span,
+            fields: self
+                .members
+                .iter()
+                .filter_map(|member| match member {
+                    BehaviorMember::Field(field) => Some(field.clone()),
+                    _ => None,
+                })
+                .collect(),
+            operators: Vec::new(),
+            attributes: self.attributes.clone(),
+            span: self.span,
+        }
+    }
+}
+
 /// `[Critical]` or `[Budget(0.2ms)]`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Attribute {

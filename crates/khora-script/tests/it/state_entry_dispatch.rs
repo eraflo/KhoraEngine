@@ -12,16 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `Behavior.__enter` is the engine's way into a state, not a member.
+//! Only `become` changes a state from inside a game.
 //!
-//! The compiler emits it beside the behavior's members, under the same
-//! `Behavior.name` scheme dispatch resolves events and lifecycle members by.
-//! An event a script raises must not reach it: only `become` changes a state
-//! from inside a game.
+//! What entering a state writes is data in the behavior's layout, not a
+//! function compiled beside its members, so an event a script raises under the
+//! name the state entry once had (`__enter`) reaches nothing.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::arena::PersistentStore;
-use khora_script::bytecode::init_name;
 use khora_script::dispatch::{current_state, deliver, handles, resolve_member};
 use khora_script::{check, compile, lex, parse, Host, Machine, Program, Run};
 
@@ -57,9 +55,9 @@ fn run_to_end(mut machine: Machine, program: &Program, host: &mut Host) {
 /// A `Patrol` guard raises `"__enter"` on itself with `1`. Nothing handles an
 /// event of that name, so it is not delivered and the guard stays in `Patrol`.
 ///
-/// Observed: `handles(.., "__enter")` is true, the event is delivered to the
-/// compiler's `Guard.__enter`, and the guard is in `Chase` — a state change no
-/// `become` made.
+/// Observed while the state entry was a function: `handles(.., "__enter")`
+/// was true, the event was delivered to the compiler's `Guard.__enter`, and
+/// the guard was in `Chase` — a state change no `become` made.
 #[test]
 fn an_event_named_like_the_state_entry_is_not_delivered_to_it() {
     let program = build(
@@ -68,12 +66,9 @@ fn an_event_named_like_the_state_entry_is_not_delivered_to_it() {
                state Chase { }
            }"#,
     );
-    let layout = program.layout("Guard").expect("a layout");
     let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
+        .with_fields(fresh_store(&program, "Guard"))
         .for_entity(SUBJECT);
-    let init = Machine::new(&program, &init_name("Guard"), &[]).expect("an initialiser");
-    run_to_end(init, &program, &mut host);
     let probe = resolve_member(&program, "Guard", "Probe", &host).expect("`Probe`");
     let machine = Machine::new(&program, &probe, &[]).expect("the member");
     run_to_end(machine, &program, &mut host);

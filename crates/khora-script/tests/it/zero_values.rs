@@ -18,12 +18,15 @@
 //! `T x;`, a behavior field and a state datum without a default all start at
 //! their type's zero — `0`, `0.0`, `false`, `""`, `null`. A type with no zero
 //! (`Entity`, an engine type, a struct) is refused as a local, where nothing
-//! could ever give it a value before it is read; as a field or a state datum it
-//! stays unset, for a designer to set in the inspector.
+//! could ever give it a value before it is read; as a field or a state datum an
+//! engine type starts at its neutral value — `Vec3(0, 0, 0)`, the identity
+//! rotation — and an `Entity`, which has none, is refused: `Entity?` starts at
+//! `null`.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::arena::{Persisted, PersistentStore};
-use khora_script::bytecode::init_name;
+use khora_core::math::{Quaternion, Vec3};
+use khora_script::arena::Persisted;
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{Fault, Machine, Program, Run, Value};
 use khora_script::{check, compile, lex, parse, Diagnostic, Host};
@@ -75,18 +78,12 @@ fn run(program: &Program, function: &str) -> Result<Value, Fault> {
     finish(machine, program, &mut Host::new())
 }
 
-/// A fresh instance of `behavior`, created as the engine creates one: fields
-/// sized from the layout, declared defaults run.
+/// A fresh instance of `behavior`, created as the engine creates one: its
+/// store built from the layout, every field at its default.
 fn instance(program: &Program, behavior: &str) -> Host {
-    let layout = program
-        .layout(behavior)
-        .unwrap_or_else(|| panic!("`{behavior}` is a behavior of the program"));
-    let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
-        .for_entity(SUBJECT);
-    let init = Machine::new(program, &init_name(behavior), &[]).expect("a field initialiser");
-    finish(init, program, &mut host).expect("the initialiser runs");
-    host
+    Host::new()
+        .with_fields(fresh_store(program, behavior))
+        .for_entity(SUBJECT)
 }
 
 /// Runs `member` on the instance `host` holds, resolved the way the engine
@@ -196,9 +193,9 @@ fn a_local_without_initialiser_starts_at_zero_on_every_pass() {
 }
 
 /// **A field takes the same rule as a local.** `bool armed;` starts `false`,
-/// `int? best;` `null`, `int`, `float` and `string` their zeroes. A field of a
-/// type with no zero is accepted — a designer sets it in the inspector — and
-/// stays unset until someone does.
+/// `int? best;` `null`, `int`, `float` and `string` their zeroes. An engine
+/// type with no zero starts at its neutral value, and `Entity? target;` at
+/// `null` — a fresh instance holds no unset field.
 #[test]
 fn a_field_without_default_starts_at_its_zero() {
     let program = build(
@@ -208,7 +205,7 @@ fn a_field_without_default_starts_at_its_zero() {
                int shots;
                float heat;
                string label;
-               Entity target;
+               Entity? target;
                Vec3 aim;
                Quat turn;
 
@@ -238,14 +235,19 @@ fn a_field_without_default_starts_at_its_zero() {
         .collect();
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 
-    // No zero is invented for these: each slot holds the unset marker.
+    // The types with no zero start at their neutral value, or `null`.
     let layout = program.layout("Turret").expect("a layout");
-    for field in ["target", "aim", "turn"] {
+    let neutral = [
+        ("target", Value::Null),
+        ("aim", Value::Vec3(Vec3::new(0.0, 0.0, 0.0))),
+        ("turn", Value::Quat(Quaternion::IDENTITY)),
+    ];
+    for (field, wanted) in neutral {
         let slot = layout.slot_of(field).expect("a declared field");
         assert_eq!(
             host.fields.get(slot),
-            Some(&Persisted::Scalar(Value::Unit)),
-            "`{field}` has no zero and stays unset"
+            Some(&Persisted::Scalar(wanted)),
+            "`{field}` starts at its neutral value"
         );
     }
 }

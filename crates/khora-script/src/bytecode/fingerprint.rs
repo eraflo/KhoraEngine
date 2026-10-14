@@ -323,6 +323,8 @@ impl Hash {
             }
             I::Return { src } => self.op("Return", &[*src]),
             I::Become {
+                behavior: _,
+                writes: _,
                 state,
                 base,
                 argc,

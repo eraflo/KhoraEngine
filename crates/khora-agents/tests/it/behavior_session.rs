@@ -168,6 +168,51 @@ impl Session {
     pub(crate) fn send(&self, event: ScriptEvent) {
         self.events.send(event);
     }
+
+    /// `modules` saved by their author, recompiled among `project`, handed
+    /// over the way the hot-reload pump hands them before the next frame's
+    /// boundary: what each declares, what its program reads announced to the
+    /// catalog, and the program.
+    pub(crate) fn recompile(&self, project: Project, modules: &[&str]) {
+        for &module in modules {
+            let program = compile(project, module);
+            self.catalog.announce(
+                module,
+                program
+                    .reads
+                    .iter()
+                    .map(|read| khora_core::script::ComponentName::new(read.as_str()))
+                    .collect(),
+            );
+            self.hand_over(module, program);
+        }
+    }
+
+    /// `modules` recompiled among `project` and sent straight into the
+    /// channels, announcing nothing — a program installed some other way
+    /// than through the pump.
+    pub(crate) fn recompile_unannounced(&self, project: Project, modules: &[&str]) {
+        for &module in modules {
+            self.hand_over(module, compile(project, module));
+        }
+    }
+
+    fn hand_over(&self, module: &str, program: Program) {
+        self.runtime
+            .resources
+            .get::<khora_io::script::declarations::PendingDeclarations>()
+            .expect("a declaration channel")
+            .send(declared_in(module, &program));
+        self.reloads.send(ScriptReload {
+            module: module.to_owned(),
+            program,
+        });
+    }
+
+    /// The catalog the lane writes and the flow reads.
+    pub(crate) fn catalog(&self) -> &ScriptCatalog {
+        &self.catalog
+    }
 }
 
 /// The key of the component named `name`.

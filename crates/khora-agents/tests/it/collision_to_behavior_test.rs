@@ -117,7 +117,7 @@ fn run_one_frame(agent: &mut ScriptAgent, runtime: &Arc<Runtime>) -> Vec<WorldCo
 ///
 /// The event is put on the channel the way `collision_to_script` puts it there.
 /// Delivery is next frame by design, so the guard runs twice: once to be
-/// spawned and initialised, once to hear about the contact.
+/// spawned, once to hear about the contact.
 #[test]
 fn a_touched_event_reaches_the_behavior_that_declared_the_handler() {
     let events = engine_event_channel();
@@ -154,7 +154,7 @@ fn a_touched_event_reaches_the_behavior_that_declared_the_handler() {
         extra_params: Default::default(),
     });
 
-    // Frame one: the program is applied and the guard initialises. Nothing has
+    // Frame one: the program is applied and the guard spawns. Nothing has
     // touched it, so it queues nothing.
     let quiet = run_one_frame(&mut agent, &runtime);
     assert!(quiet.is_empty(), "nothing touched it yet; got {quiet:?}");

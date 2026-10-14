@@ -35,12 +35,11 @@ const GUARD: &str = "behavior Guard {
 }";
 
 /// The state companion's fields, in order — the same for every behavior.
-const COMPANION_FIELDS: [&str; 8] = [
+const COMPANION_FIELDS: [&str; 7] = [
     "state",
     "state_fields",
     "timers",
     "pending",
-    "initialised",
     "spawned",
     "fault",
     "resume_failed",
@@ -221,8 +220,9 @@ fn a_behavior_named_like_another_modules_component_is_refused_at_registration() 
 
 /// **Every field a behavior may hold registers**: whatever its type — an
 /// engine value, an entity, a struct, an optional, an array, a map — with or
-/// without a default, the behavior's component registers with every field,
-/// and its companion beside it.
+/// without a default (a type with no neutral value is held as an optional),
+/// the behavior's component registers with every field, and its companion
+/// beside it.
 #[test]
 fn every_field_a_behavior_holds_registers() {
     let (world, _, report) = registered(&[declarations(
@@ -234,7 +234,7 @@ fn every_field_a_behavior_holds_registers() {
              int hp;
              float speed;
              string title;
-             Entity target;
+             Entity? target;
              Vec2 aim;
              Vec3 home;
              Vec4 mask;
@@ -246,7 +246,7 @@ fn every_field_a_behavior_holds_registers() {
              Route route = Route { };
              Point? waypoint;
              Entity[] seen;
-             Map<string, int> tally;
+             Map<string, int>? tally;
              void Update(float dt) { }
          }",
     )]);
@@ -343,27 +343,28 @@ fn round_trips(world: &World) -> Vec<String> {
 }
 
 /// **A behavior holding a map is saved and loaded back**: a scene and a game
-/// save of an entity holding it load into a fresh world, under every record
-/// goal — the declaration a file keeps of it reads back.
+/// save of an entity holding one (optional, as a map has no neutral value)
+/// load into a fresh world, under every record goal — the declaration a file
+/// keeps of it reads back.
 #[test]
 fn a_behavior_holding_a_map_saves_and_loads_back() {
     let (world, _) = holding(
         "ai/guard.erg",
-        "behavior Guard { Map<string, int> tally; int hp = 1; }",
+        "behavior Guard { Map<string, int>? tally; int hp = 1; }",
         "Guard",
     );
     let failed = round_trips(&world);
     assert!(failed.is_empty(), "{failed:#?}");
 }
 
-/// **A behavior holding an entity with no default is saved and loaded back**:
-/// a new row starts it at a placeholder, which a scene and a game save carry
-/// like any field.
+/// **A behavior holding an optional entity with no default is saved and
+/// loaded back**: a new row starts it at `null`, which a scene and a game save
+/// carry like any field.
 #[test]
-fn a_behavior_holding_an_entity_with_no_default_saves_and_loads_back() {
+fn a_behavior_holding_an_optional_entity_with_no_default_saves_and_loads_back() {
     let (world, _) = holding(
         "ai/guard.erg",
-        "behavior Guard { Entity target; int hp = 1; }",
+        "behavior Guard { Entity? target; int hp = 1; }",
         "Guard",
     );
     let failed = round_trips(&world);

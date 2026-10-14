@@ -17,10 +17,9 @@
 //! functions and natives — in every construct a call can sit in, and with the
 //! result shaped by the function actually called.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::arena::PersistentStore;
-use khora_script::bytecode::init_name;
-use khora_script::dispatch::{current_state, resolve_member};
+use khora_script::dispatch::resolve_member;
 use khora_script::{check, compile, lex, parse, Diagnostic, Host, Machine, Program, Run};
 use khora_script::{Suspension, Value};
 
@@ -77,15 +76,11 @@ fn finish(mut machine: Machine, program: &Program, host: &mut Host, slice: u64) 
     panic!("never completed at a slice of {slice}");
 }
 
-/// A fresh instance of `behavior`, its initialiser run.
+/// A fresh instance of `behavior`, its store built from the layout.
 fn instance(program: &Program, behavior: &str) -> Host {
-    let layout = program.layout(behavior).expect("a layout");
-    let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
-        .for_entity(SUBJECT);
-    let init = Machine::new(program, &init_name(behavior), &[]).expect("an initialiser");
-    finish(init, program, &mut host, u64::MAX);
-    host
+    Host::new()
+        .with_fields(fresh_store(program, behavior))
+        .for_entity(SUBJECT)
 }
 
 /// Calls `member` of the instance, resolved the way the engine resolves it.
@@ -196,37 +191,11 @@ fn a_state_siblings_vector_and_float_results_feed_arithmetic() {
     );
 }
 
-// ─── Where a state's entry defaults and `become` arguments resolve ──────────
-
-/// A behavior-level `become` emits the entered state's defaults, which call
-/// the entered state's method rather than the behavior's namesake.
-#[test]
-fn a_state_default_entered_from_a_behavior_member_calls_the_states_method() {
-    let program = build(
-        "behavior Guard {
-             int Base() { return 3; }
-             void Spot() { become Chase; }
-             state Patrol { int laps = 0; }
-             state Chase {
-                 int Base() { return 7; }
-                 int missed = Base();
-                 int Missed() { return missed; }
-             }
-         }",
-    );
-    let mut host = instance(&program, "Guard");
-    call(&program, "Guard", "Spot", &[], &mut host, u64::MAX);
-
-    assert_eq!(current_state(&program, "Guard", &host), Some("Chase"));
-    assert_eq!(
-        call(&program, "Guard", "Missed", &[], &mut host, u64::MAX),
-        Value::Int(7)
-    );
-}
+// ─── Where a `become`'s arguments resolve ───────────────────────────────────
 
 /// `become Chase(Base())` written inside `Patrol`: the argument is the
-/// caller's code, so `Base` is `Patrol`'s even though the defaults emitted
-/// beside it are `Chase`'s.
+/// caller's code, so `Base` is `Patrol`'s even though the state it enters
+/// declares a namesake of its own.
 #[test]
 fn a_become_argument_calls_the_callers_states_method() {
     let program = build(
@@ -237,7 +206,7 @@ fn a_become_argument_calls_the_callers_states_method() {
              }
              state Chase(int seen) {
                  int Base() { return 7; }
-                 int missed = Base();
+                 int missed = 7;
                  int Seen() { return seen * 10 + missed; }
              }
          }",
@@ -304,30 +273,4 @@ fn moving_a_called_method_out_of_its_state_changes_the_callers_fingerprint() {
             .fingerprint
     };
     assert_ne!(of(&in_state), of(&in_behavior));
-}
-
-// ─── A state's entry defaults see the state's own data ──────────────────────
-
-/// A state's datum defaults to an expression over the state's parameter. The
-/// checker accepts it — the state's parameters are in scope inside it — so
-/// the compiler, which emits the default wherever the state is entered, must
-/// too, and the default must see the value `become` passed.
-#[test]
-fn a_state_default_reads_its_own_states_parameter() {
-    let program = build(
-        "behavior Guard {
-             void Spot() { become Chase(4); }
-             state Patrol { int other = 50; }
-             state Chase(int seen) {
-                 int doubled = seen * 2;
-                 int Doubled() { return doubled; }
-             }
-         }",
-    );
-    let mut host = instance(&program, "Guard");
-    call(&program, "Guard", "Spot", &[], &mut host, u64::MAX);
-    assert_eq!(
-        call(&program, "Guard", "Doubled", &[], &mut host, u64::MAX),
-        Value::Int(8)
-    );
 }

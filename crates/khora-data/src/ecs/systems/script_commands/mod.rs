@@ -40,6 +40,8 @@
 //! [`CommandBuffer`]: khora_core::script::CommandBuffer
 //! [`OutputDeck`]: khora_core::lane::OutputDeck
 
+mod applied;
+pub use applied::AppliedWrites;
 mod apply;
 mod json;
 
@@ -77,10 +79,21 @@ pub struct ApplyReport {
 /// Applies every queued command as [`apply_all`] does, and reports the rows
 /// of column writes too.
 pub fn apply_all_reporting(world: &mut World, buffer: &CommandBuffer) -> ApplyReport {
+    apply_each(world, buffer, |_, _| {})
+}
+
+/// Applies every queued command in order, calling `applied` with the index
+/// and the command of each that applied.
+fn apply_each(
+    world: &mut World,
+    buffer: &CommandBuffer,
+    mut applied: impl FnMut(usize, &khora_core::script::WorldCommand),
+) -> ApplyReport {
     let mut report = ApplyReport::default();
-    for command in buffer {
+    for (index, command) in buffer.iter().enumerate() {
         match apply::apply(world, command) {
             Ok(rows) => {
+                applied(index, command);
                 report.applied += 1;
                 report.rows_written += rows.written;
                 report.rows_skipped += rows.missing + rows.refused;
@@ -110,8 +123,26 @@ fn apply_script_commands(world: &mut World, _runtime: &Runtime, deck: &mut Outpu
         return;
     }
 
-    buffer.warn_on_conflicts();
-    apply_all(world, &buffer);
+    // Debug builds only, as `CommandBuffer::warn_on_conflicts`: a behavior's
+    // fields are reported by its writeback instead, which knows its turn —
+    // what it read and what it wrote — and what applied.
+    if cfg!(debug_assertions) {
+        for conflict in buffer.conflicts() {
+            if let khora_core::script::WriteTarget::Field(component, _) = &conflict.target {
+                if is_behavior(world, component.as_str()) {
+                    continue;
+                }
+            }
+            log::warn!("{}", conflict.message());
+        }
+    }
+    let mut applied = AppliedWrites::default();
+    apply_each(world, &buffer, |index, command| {
+        applied.record(index, command)
+    });
+    // For the behaviors' writeback, after this: a turn's field a later
+    // command wrote is that command's.
+    *deck.slot::<AppliedWrites>() = applied;
 }
 
 inventory::submit! {
@@ -126,4 +157,15 @@ inventory::submit! {
         order_hint: 20,
         runs_after: &[],
     }
+}
+
+/// Whether `component` is a behavior's — what its writeback reports on.
+fn is_behavior(world: &World, component: &str) -> bool {
+    world
+        .components()
+        .key_named(component)
+        .and_then(|key| world.components().vtable(key))
+        .is_some_and(|vtable| {
+            matches!(vtable.script, Some(crate::ecs::ScriptRole::Behavior { .. }))
+        })
 }

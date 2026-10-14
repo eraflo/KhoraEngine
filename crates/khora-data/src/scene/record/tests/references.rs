@@ -229,14 +229,14 @@ fn an_entity_reference_goes_through_the_hooks() {
         }),
         ..ScriptSnapshot::default()
     };
-    let companion = ScriptValue::Struct(companion_row(&snapshot, true).expect("a companion row"));
+    let companion = ScriptValue::Struct(companion_row(&snapshot).expect("a companion row"));
     let (_, table, back, read) = through_hooks(&companion);
     assert_eq!(table.written, vec![c]);
     assert_eq!(read.len(), 1);
     let ScriptValue::Struct(back) = back else {
         panic!("a companion row reads back as a struct: {back:?}");
     };
-    let (back, _) = companion_snapshot(&back).expect("the companion reads back");
+    let back = companion_snapshot(&back).expect("the companion reads back");
     let pending = back.pending.expect("the pending sequence survives");
     assert_eq!(
         pending.machine.registers,

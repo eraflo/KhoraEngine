@@ -354,7 +354,7 @@ fn every_persisted_type_round_trips() {
             .collect(),
     ));
     assert_round_trips(&ScriptValue::Struct(
-        companion_row(&busy_snapshot(other), true).expect("a companion row"),
+        companion_row(&busy_snapshot(other)).expect("a companion row"),
     ));
 
     // UI.

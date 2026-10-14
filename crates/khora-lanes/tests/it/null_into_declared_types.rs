@@ -216,7 +216,7 @@ fn a_null_does_not_cross_a_reload_into_a_field_no_longer_optional() {
 }
 
 /// An edit that keeps `best` optional carries its `null` by name, like any
-/// value — not back to the `4` the initialiser the reload reruns gives it.
+/// value — not back to its default `4`.
 #[test]
 fn a_null_field_crosses_a_reload_that_keeps_it_optional() {
     let mut runtime = runtime_of(OPTIONAL_BEST);

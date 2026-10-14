@@ -15,7 +15,7 @@
 //! A field holding `null` is a value a save keeps, not a hole it skips.
 //!
 //! `int? best = 4; best = null;` read back as "nothing written" drops `best`
-//! from the save, and the load's initialiser gives it `4` again — a game that
+//! from the save, and the load gives it its default `4` again — a game that
 //! cleared a record finds it restored. Each test runs a behavior, takes the
 //! snapshot the lane wrote, carries it through every scene encoding, and loads
 //! it into a **fresh** runtime.

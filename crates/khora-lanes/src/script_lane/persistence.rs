@@ -66,16 +66,18 @@ pub fn arrived(arrival: &khora_data::flow::ScriptArrival) -> ScriptSnapshot {
 
 /// Builds an instance's store from what a scene saved.
 ///
+/// Starts from the layout's own data — every field at its default, the first
+/// state, the countdowns armed — and puts what was saved on top, by name.
 /// Fields the layout does not declare are ignored — the script dropped them
-/// since the save. Fields the layout declares but the save lacks are left
-/// unset, for the behavior's initialiser to fill with its declared default.
+/// since the save. Fields the layout declares but the save lacks keep their
+/// declared default.
 ///
 /// The same for a state the script no longer has and a schedule it no longer
 /// declares: what is gone is gone, and what is new takes what the new script
 /// says. Neither is an error — that is simply a scene older than its script,
 /// which is the normal condition of a project between two edits.
 pub fn store_from_snapshot(layout: &BehaviorLayout, saved: &ScriptSnapshot) -> PersistentStore {
-    let mut store = PersistentStore::with_slots(layout.slot_count());
+    let mut store = layout.fresh_store();
 
     for (name, value) in &saved.fields {
         let Some(slot) = layout.slot_of(name) else {
@@ -96,6 +98,12 @@ pub fn store_from_snapshot(layout: &BehaviorLayout, saved: &ScriptSnapshot) -> P
                     layout.state_slot(),
                     Persisted::Scalar(Value::Int(index as i64)),
                 );
+                // Entered, then its saved data on top: a datum the edit added
+                // to the state takes its default, never what the first state
+                // left in the slot they share.
+                for (slot, value) in layout.entry(index) {
+                    store.set(slot, value);
+                }
                 restore_state_fields(&mut store, layout, index, &saved.state_fields);
             }
             None => log::warn!(
@@ -115,8 +123,7 @@ pub fn store_from_snapshot(layout: &BehaviorLayout, saved: &ScriptSnapshot) -> P
             continue;
         };
         // `None` is a spent `after`, which the running form writes as `Null` —
-        // not as zero, which would be a countdown due right now, and not as
-        // `Unit`, which is an unset slot the initialiser is free to arm.
+        // not as zero, which would be a countdown due right now.
         let value = match saved.remaining {
             Some(seconds) => Value::Float(seconds),
             None => Value::Null,
@@ -315,8 +322,8 @@ fn countdowns(layout: &BehaviorLayout, store: &PersistentStore) -> Vec<TimerRema
             let (repeating, _, state) = key.clone();
             seen.push(key);
 
-            // An unset slot is a schedule that has never been armed, which only
-            // happens before the initialiser has run. Nothing to record.
+            // An unset slot is a schedule that has never been armed — a store
+            // built by hand. Nothing to record.
             let remaining = match store.get(layout.timer_slot(index))? {
                 Persisted::Scalar(Value::Float(seconds)) => Some(*seconds),
                 // Spent: an `after` that fired. Recorded as such rather than
@@ -379,7 +386,7 @@ fn settled_snapshot(
 /// By name, never by position, the way a save is read: fields by name, the
 /// current state by name and its data by slot name, each countdown by its
 /// schedule's identity. A field, state or schedule the edit removed is
-/// dropped; a new one is left for the initialiser to start fresh. A schedule
+/// dropped; a new one starts at its declared default. A schedule
 /// whose body is part-way crosses rearmed, as a save writes it: finishing the
 /// body rearms it again, and a body the edit abandons leaves a schedule that
 /// waits its interval rather than one still due.
@@ -484,6 +491,7 @@ pub(super) fn thawed_body(
 mod tests {
     use super::*;
     use khora_core::ecs::entity::EntityId;
+    use khora_script::arena::Owned;
 
     fn layout(fields: &[&str]) -> BehaviorLayout {
         BehaviorLayout {
@@ -493,7 +501,13 @@ mod tests {
             structs: Vec::new(),
             states: Vec::new(),
             timers: Vec::new(),
+            defaults: Vec::new(),
         }
+    }
+
+    /// `layout`, each field defaulting to the value given for it.
+    fn with_defaults(layout: BehaviorLayout, defaults: Vec<Owned>) -> BehaviorLayout {
+        BehaviorLayout { defaults, ..layout }
     }
 
     /// A scene snapshot holding just these fields.
@@ -594,18 +608,22 @@ mod tests {
         assert_eq!(store.get(0), Some(&Persisted::Scalar(Value::Int(40))));
     }
 
-    /// Left unset, so the behavior's initialiser gives it the default its
-    /// author wrote — a zero written here would shadow that.
+    /// A field the save lacks starts at the default its author wrote — the
+    /// layout's data — never at a zero that would shadow it.
     #[test]
-    fn a_field_the_save_lacks_is_left_for_the_initialiser() {
-        let layout = layout(&["health", "rage"]);
+    fn a_field_the_save_lacks_takes_its_layout_default() {
+        let layout = with_defaults(
+            layout(&["health", "rage"]),
+            vec![Owned::Scalar(Value::Int(100)), Owned::Scalar(Value::Int(7))],
+        );
         let store = store_from_snapshot(&layout, &saved(&[("health", ScriptValue::Int(40))]));
 
         assert_eq!(store.len(), 2, "the slot exists");
+        assert_eq!(store.get(0), Some(&Persisted::Scalar(Value::Int(40))));
         assert_eq!(
             store.get(1),
-            Some(&Persisted::Scalar(Value::Unit)),
-            "and is unset rather than zero"
+            Some(&Persisted::Scalar(Value::Int(7))),
+            "the default the author wrote, not zero"
         );
     }
 
@@ -624,7 +642,7 @@ mod tests {
     }
 
     /// An unset slot yields no field at all: a scene recording "this has no
-    /// value" would load it as such and shadow the initialiser's default.
+    /// value" would load it as such and shadow the field's default.
     #[test]
     fn an_unset_slot_writes_no_field() {
         let layout = layout(&["health", "rage"]);
@@ -687,18 +705,19 @@ mod tests {
     /// Refused loudly rather than dropped: a guard silently back at the origin
     /// after a reload is far harder to trace than a warning. A value its
     /// declared type cannot hold — a list in an `int`, ints in a `string[]` —
-    /// leaves the slot unset, so the initialiser still gives it a default.
+    /// leaves the field at its default.
     #[test]
     fn a_value_that_cannot_be_stored_is_refused_rather_than_dropped() {
         let ints = ScriptValue::Array(vec![ScriptValue::Int(1), ScriptValue::Int(2)]);
         for ty in ["int", "string[]"] {
-            let layout = typed_layout(&[("waypoints", ty)]);
+            let default = Owned::neutral(ty, &[]).expect("a type with a neutral value");
+            let layout = with_defaults(typed_layout(&[("waypoints", ty)]), vec![default.clone()]);
             let store = store_from_snapshot(&layout, &saved(&[("waypoints", ints.clone())]));
 
             assert_eq!(
                 store.get(0),
-                Some(&Persisted::Scalar(Value::Unit)),
-                "`{ty}`: unset, so the initialiser still gives it a default"
+                Some(&default.persisted()),
+                "`{ty}`: the value is refused, so the field keeps its default"
             );
         }
     }

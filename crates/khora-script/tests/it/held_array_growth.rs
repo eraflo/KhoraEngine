@@ -21,10 +21,10 @@
 //! reads back with every element the body gave it, text built running
 //! included, and nothing the next frame built at the same arena index.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{FrozenMachine, FrozenValue, PendingBody};
-use khora_script::arena::{Object, PersistentStore};
-use khora_script::bytecode::init_name;
+use khora_script::arena::Object;
 use khora_script::dispatch::resolve_member;
 use khora_script::{
     check, compile, ergon_fn, lex, parse, Host, Machine, Program, Run, Suspension, Value,
@@ -302,12 +302,9 @@ fn a_field_grown_across_an_await_keeps_both_changes() {
     let program = build(FIELDED);
     let mut wrong = Vec::new();
     for slice in (1..=60u64).chain([u64::MAX]) {
-        let layout = program.layout("Guard").expect("the guard's layout");
         let mut host = Host::new()
-            .with_fields(PersistentStore::with_slots(layout.slot_count()))
+            .with_fields(fresh_store(&program, "Guard"))
             .for_entity(SUBJECT);
-        let mut init = Machine::new(&program, &init_name("Guard"), &[]).expect("an initialiser");
-        complete(&mut init, &program, &mut host, u64::MAX).expect("the initialiser runs");
         next_frame(&mut host);
 
         let grow = resolve_member(&program, "Guard", "Grow", &host).expect("`Grow`");

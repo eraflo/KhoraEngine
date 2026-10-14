@@ -13,8 +13,8 @@
 // limitations under the License.
 
 //! A behavior's turn cut short by fuel, attacked from every side it can be
-//! resumed from: an initialiser that has to run again, a handler kept as a
-//! machine, a timer body retried next frame, and a reload or a save in between.
+//! resumed from: a handler kept as a machine, a timer body retried next frame,
+//! and a reload or a save in between.
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
@@ -101,163 +101,21 @@ fn hit(amount: i64) -> EventQueue {
     events
 }
 
-/// A guard whose initialiser and handler a small slice can cut.
+/// A guard whose handler a small slice can cut.
 ///
 /// Fuel runs out only at a safepoint — a function's entry, a statement's
-/// start, a loop's head, the return of a call. The default is a call so a
-/// one-unit slice stops the initialiser at `Full`'s entry, and the handler has
-/// two statements so a two-unit slice stops it between them, the hit applied
-/// and not yet counted.
-const GUARD: &str = "fn int Full() { return 100; }
-                     behavior Guard {
-                         int health = Full();
+/// start, a loop's head, the return of a call. The handler has two statements
+/// so a two-unit slice stops it between them, the hit applied and not yet
+/// counted.
+const GUARD: &str = "behavior Guard {
+                         int health = 100;
                          int hits = 0;
                          on Damaged(int amount) { health -= amount; hits += 1; }
                      }";
 
-// ─── The initialiser ────────────────────────────────────────────────────────
-
-/// **A reload whose initialiser is starved forgets the guard.** The frame takes
-/// `carried` off the instance before the turn; `Uninitialised` never puts it
-/// back, so the frame that finally finishes the initialiser has nothing to
-/// restore and the guard is back at its declared 100.
-#[test]
-fn a_starved_initialiser_after_a_reload_keeps_the_carried_values() {
-    let mut runtime = runtime_of(GUARD);
-    let mut host = Host::new();
-
-    run_behaviors(
-        &view_of("Guard", 0.0, None),
-        &hit(30),
-        &mut runtime,
-        &mut host,
-        u64::MAX,
-    );
-    assert_eq!(int_at(&runtime, "Guard", 0), Some(70));
-
-    // The author saves the file unchanged; the next frame has one unit of fuel.
-    runtime.reload(MODULE, build(GUARD));
-    let starved = run_behaviors(
-        &view_of("Guard", 0.0, None),
-        &EventQueue::new(),
-        &mut runtime,
-        &mut host,
-        1,
-    );
-    assert_eq!(starved.deferred, 1, "the initialiser did not finish");
-
-    run_behaviors(
-        &view_of("Guard", 0.0, None),
-        &EventQueue::new(),
-        &mut runtime,
-        &mut host,
-        u64::MAX,
-    );
-    assert_eq!(
-        int_at(&runtime, "Guard", 0),
-        Some(70),
-        "the health the guard had before the edit"
-    );
-}
-
-/// **The same, from a saved scene.** The scene's values arrive once, on the
-/// frame the entity first appears; if that frame starves the initialiser they
-/// are dropped with `carried`, and the next frame no longer has them.
-#[test]
-fn a_starved_initialiser_on_the_first_frame_keeps_the_scenes_values() {
-    let mut runtime = runtime_of(GUARD);
-    let mut host = Host::new();
-    let saved = ScriptSnapshot::default().with_field("health", ScriptValue::Int(40));
-
-    let starved = run_behaviors(
-        &view_of("Guard", 0.0, Some(saved)),
-        &EventQueue::new(),
-        &mut runtime,
-        &mut host,
-        1,
-    );
-    assert_eq!(starved.deferred, 1, "the initialiser did not finish");
-
-    // The flow hands the authored values over once; later frames carry none.
-    run_behaviors(
-        &view_of("Guard", 0.0, None),
-        &EventQueue::new(),
-        &mut runtime,
-        &mut host,
-        u64::MAX,
-    );
-    assert_eq!(
-        int_at(&runtime, "Guard", 0),
-        Some(40),
-        "the saved health, not the declared default"
-    );
-}
-
-/// **A starved initialiser drops a sequence part-way through an `await`.** A
-/// reload keeps the pending machine; the frame takes it off the instance and
-/// only the `Awaiting` arm puts one back, so `Uninitialised` loses it and the
-/// attack never lands.
-#[test]
-fn a_starved_initialiser_after_a_reload_keeps_the_pending_sequence() {
-    // The default is a call, so a one-unit slice stops the initialiser at
-    // `Zero`'s entry: fuel runs out only at a safepoint.
-    const ATTACKER: &str = "fn int Zero() { return 0; }
-                            behavior Guard {
-                                int fired = Zero();
-                                async void Attack() {
-                                    await 1.0s;
-                                    fired += 1;
-                                }
-                                on Spotted(int by) { Attack(); }
-                            }";
-    let mut runtime = runtime_of(ATTACKER);
-    let mut host = Host::new();
-
-    let mut spotted = EventQueue::new();
-    spotted.push(ScriptEvent::new(subject(), "Spotted").with(ScriptValue::Int(1)));
-    run_behaviors(
-        &view_of("Guard", 0.0, None),
-        &spotted,
-        &mut runtime,
-        &mut host,
-        u64::MAX,
-    );
-    assert!(
-        runtime
-            .peek(subject(), "Guard")
-            .is_some_and(|i| i.pending.is_some()),
-        "mid-attack"
-    );
-
-    runtime.reload(MODULE, build(ATTACKER));
-    run_behaviors(
-        &view_of("Guard", 0.1, None),
-        &EventQueue::new(),
-        &mut runtime,
-        &mut host,
-        1,
-    );
-    for _ in 0..5 {
-        run_behaviors(
-            &view_of("Guard", 0.5, None),
-            &EventQueue::new(),
-            &mut runtime,
-            &mut host,
-            u64::MAX,
-        );
-    }
-
-    assert_eq!(
-        int_at(&runtime, "Guard", 0),
-        Some(1),
-        "the attack that was under way when the frame starved still lands"
-    );
-}
-
 /// **`OnSpawn` cut short by fuel is never finished.** `call_hook` reports a
 /// suspension as `Ran`, the frame marks the instance spawned, and `OnSpawn` is
-/// never called again — so the part after the cut never runs. With a slice the
-/// initialiser uses up exactly, `OnSpawn` gets zero fuel and runs not at all.
+/// never called again — so the part after the cut never runs.
 #[test]
 fn an_on_spawn_cut_short_by_fuel_still_runs_whole_once() {
     let source = "behavior Herald {
@@ -272,7 +130,7 @@ fn an_on_spawn_cut_short_by_fuel_still_runs_whole_once() {
     let mut runtime = runtime_of(source);
     let mut host = Host::new();
 
-    // Enough for the initialiser and `first += 1`, not for the wall.
+    // Enough for `first += 1`, not for the wall.
     run_behaviors(
         &view_of("Herald", 0.0, None),
         &EventQueue::new(),
@@ -341,10 +199,9 @@ fn a_handler_cut_short_by_fuel_is_reported_deferred() {
 /// its old slots.
 #[test]
 fn a_kept_handler_resumes_into_edited_code_only_where_its_code_is_unchanged() {
-    const EDITED: &str = "fn int Full() { return 100; }
-                          behavior Guard {
+    const EDITED: &str = "behavior Guard {
                               int armour = 5;
-                              int health = Full();
+                              int health = 100;
                               int hits = 0;
                               void Heal() { health = 999; armour = 999; }
                               on Damaged(int amount) { health -= amount; hits += 1; }
@@ -505,45 +362,6 @@ fn a_timer_body_that_never_fits_does_not_fire_every_frame() {
     assert!(
         prefix <= 2,
         "one second of `every 0.5s` is two ticks, however starved; got {prefix}"
-    );
-}
-
-/// **An initialiser larger than one behavior's slice never finishes.** Retried
-/// whole every frame, and every frame capped at `FUEL_PER_BEHAVIOR` (100 000),
-/// so a default that costs more is restarted from the top forever: the
-/// instance is deferred on every frame of the game however much fuel the frame
-/// has, and every event addressed to it is put back, unheard, forever.
-#[test]
-fn an_initialiser_larger_than_one_slice_still_finishes() {
-    let source = "fn int Heavy() {
-                      int total = 0;
-                      for (int i = 0; i < 40000; i = i + 1) { total = total + 1; }
-                      return total;
-                  }
-                  behavior Slow {
-                      int total = Heavy();
-                  }";
-    let mut runtime = runtime_of(source);
-    let mut host = Host::new();
-
-    let mut last = None;
-    for _ in 0..10 {
-        last = Some(run_behaviors(
-            &view_of("Slow", 0.0, None),
-            &EventQueue::new(),
-            &mut runtime,
-            &mut host,
-            u64::MAX,
-        ));
-    }
-
-    assert_eq!(
-        (
-            int_at(&runtime, "Slow", 0),
-            last.map(|report| report.deferred)
-        ),
-        (Some(40000), Some(0)),
-        "ten frames with unlimited fuel finish one initialiser"
     );
 }
 

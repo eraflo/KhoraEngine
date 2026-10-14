@@ -704,7 +704,7 @@ fn a_pending_sequence_with_every_register_kind_survives_every_save_encoding() {
     }
     let base = capture_world(&src).expect("the base scene captures");
     let state = every_register_snapshot(target);
-    let row = companion_row(&state, true).expect("a snapshot is a companion's fields");
+    let row = companion_row(&state).expect("a snapshot is a companion's fields");
     attach(
         &mut src,
         holder,
@@ -742,7 +742,7 @@ fn a_pending_sequence_with_every_register_kind_survives_every_save_encoding() {
         let map = entity_map(&src, &dst);
         let loaded = fields_of(&dst, map[&holder], &state_of("Guard")).map(|row| {
             match companion_snapshot(&row) {
-                Ok((snapshot, _)) => format!("{snapshot:?}"),
+                Ok(snapshot) => format!("{snapshot:?}"),
                 Err(e) => format!("not a snapshot: {e}"),
             }
         });

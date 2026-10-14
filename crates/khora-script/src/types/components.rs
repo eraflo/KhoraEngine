@@ -101,6 +101,7 @@ impl Checker {
     ) -> Option<Ty> {
         match name {
             "Set" | "Add" => {
+                self.refuse_own_component(object, name, args, context);
                 self.check_patch_arguments(name, args, at, context);
                 return Some(Ty::Void);
             }
@@ -237,6 +238,35 @@ impl Checker {
         }
         for extra in args.iter().skip(1) {
             self.check_expr(extra, context);
+        }
+    }
+
+    /// `this.Set(Guard { … })` inside `Guard`: a behavior changes its own
+    /// fields by assigning them — read and written within its turn, in the
+    /// order written — not by queueing a write of itself.
+    fn refuse_own_component(
+        &mut self,
+        object: &Expr,
+        operation: &str,
+        args: &[Expr],
+        context: &Context,
+    ) {
+        let (
+            Expr::This(_),
+            Some(Expr::StructLit {
+                name, name_span, ..
+            }),
+            Some(owner),
+        ) = (object, args.first(), context.owner.as_deref())
+        else {
+            return;
+        };
+        if name == owner {
+            self.error_note(
+                format!("`{owner}` `{operation}`s its own component"),
+                *name_span,
+                "assign the field instead — `health = 3;` — a behavior's own fields are written as it runs",
+            );
         }
     }
 

@@ -409,9 +409,9 @@ behavior Guard {
 }
 "#;
 
-/// **A spent `after` stays spent.** It fired before the edit; the edit
-/// re-runs the initialiser, which arms every schedule — but the carried
-/// countdown says "spent", so it does not fire a second time.
+/// **A spent `after` stays spent.** It fired before the edit; the new
+/// layout arms every schedule — but the carried countdown says "spent", so it
+/// does not fire a second time.
 #[test]
 fn an_after_spent_before_a_reload_does_not_fire_again() {
     let mut runtime = runtime_of(ONE_SHOT);

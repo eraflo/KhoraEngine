@@ -20,6 +20,7 @@
 
 mod arrival;
 mod event;
+mod fresh_instances;
 mod lifecycle;
 mod on_load;
 mod reload;
@@ -162,7 +163,7 @@ fn every_behavior_runs_when_the_budget_allows() {
     }
 }
 
-/// Defaults are applied once, not every frame — a behavior that re-initialised each
+/// Defaults are applied once, not every frame — a behavior reset to them each
 /// frame would never accumulate anything.
 #[test]
 fn a_behavior_keeps_its_state_across_frames() {
@@ -189,7 +190,7 @@ fn a_frame_with_no_events_completes_everything() {
     let report = run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
 
     assert_eq!(report.completed, 2);
-    assert_eq!(health(&runtime, 0), Some(100), "initialised to its default");
+    assert_eq!(health(&runtime, 0), Some(100), "at its default");
 }
 
 // ─── Degrading ──────────────────────────────────────────────────────────────

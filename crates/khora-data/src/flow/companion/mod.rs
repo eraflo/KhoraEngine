@@ -29,11 +29,10 @@ mod tests;
 
 /// The companion's fields, by name, in its layout's order, recording
 /// `snapshot`'s state, state data, countdowns, suspended sequence and
-/// lifecycle, and whether the instance's initialiser has run. The snapshot's
-/// `fields` are the behavior's component's, and are left out.
+/// lifecycle. The snapshot's `fields` are the behavior's component's, and are
+/// left out.
 pub fn companion_row(
     snapshot: &ScriptSnapshot,
-    initialised: bool,
 ) -> Result<Vec<(String, ScriptValue)>, ValueSerdeError> {
     let text = |value: &Option<String>| value.clone().map_or(ScriptValue::Null, ScriptValue::Str);
     Ok(vec![
@@ -44,7 +43,6 @@ pub fn companion_row(
         ),
         ("timers".to_owned(), to_value(&snapshot.timers)?),
         ("pending".to_owned(), to_value(&snapshot.pending)?),
-        ("initialised".to_owned(), ScriptValue::Bool(initialised)),
         (
             "spawned".to_owned(),
             ScriptValue::Bool(snapshot.lifecycle.spawned),
@@ -57,11 +55,12 @@ pub fn companion_row(
     ])
 }
 
-/// What a companion's fields record: the snapshot, its own fields empty,
-/// and whether the instance's initialiser has run.
+/// What a companion's fields record: the snapshot, its own fields empty.
+/// A field the companion no longer declares — `initialised`, from before an
+/// instance's defaults were data — is ignored.
 pub fn companion_snapshot(
     row: &[(String, ScriptValue)],
-) -> Result<(ScriptSnapshot, bool), ValueSerdeError> {
+) -> Result<ScriptSnapshot, ValueSerdeError> {
     let field = |name: &str| {
         row.iter()
             .find(|(known, _)| known == name)
@@ -107,5 +106,5 @@ pub fn companion_snapshot(
         },
         ..ScriptSnapshot::default()
     };
-    Ok((snapshot, flag("initialised")?))
+    Ok(snapshot)
 }

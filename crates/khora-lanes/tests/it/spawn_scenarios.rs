@@ -258,8 +258,8 @@ const HERALD: &str = r#"behavior Herald {
                            }
                        }"#;
 
-/// Enough for the initialiser and the part of `HERALD`'s `OnSpawn` before the
-/// wall, not for the wall.
+/// Enough for the part of `HERALD`'s `OnSpawn` before the wall, not for the
+/// wall.
 const CUT_BEFORE_THE_WALL: u64 = 30;
 
 /// The two slots of `HERALD`, after the frames have run.

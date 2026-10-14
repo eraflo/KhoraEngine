@@ -213,9 +213,9 @@ fn on_spawn_runs_exactly_once() {
     assert_eq!(field(&runtime, 1), Some(1));
 }
 
-/// **What separates it from the field initialiser.** A hot-reload re-runs the
-/// defaults, because the new program's literals may have changed. It must not
-/// re-run this: an edit to a script is not a new entity.
+/// **What separates it from the field defaults.** A hot-reload gives a field
+/// the edit adds its default, because the new program declares it. It must
+/// not re-run this: an edit to a script is not a new entity.
 #[test]
 fn a_hot_reload_does_not_spawn_the_entity_again() {
     let mut runtime = runtime_of(TICKER);

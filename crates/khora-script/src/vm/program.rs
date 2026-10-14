@@ -46,7 +46,7 @@ pub struct Function {
 }
 
 /// One `state` of a behavior, and the slots its own data occupies.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct StateLayout {
     /// The state's name.
     pub name: String,
@@ -60,6 +60,10 @@ pub struct StateLayout {
     /// [`BehaviorLayout::field_types`].
     #[serde(default)]
     pub types: Vec<String>,
+    /// What entering the state writes into each slot, index = slot: a
+    /// datum's default; `None` for a parameter, which `become` hands in.
+    #[serde(default)]
+    pub defaults: Vec<Option<crate::arena::Owned>>,
 }
 
 /// Whether a scheduled member repeats.
@@ -131,6 +135,12 @@ pub struct BehaviorLayout {
     pub states: Vec<StateLayout>,
     /// Its `every` and `after` members, in declaration order.
     pub timers: Vec<TimerLayout>,
+    /// Each field's default, index = slot: the constant written, or its
+    /// type's neutral value. Data, not code — what a fresh instance holds,
+    /// what its component registers, and what an edit that adds the field
+    /// gives a running one.
+    #[serde(default)]
+    pub defaults: Vec<crate::arena::Owned>,
 }
 
 impl BehaviorLayout {
@@ -179,6 +189,63 @@ impl BehaviorLayout {
     /// The state a discriminant names.
     pub fn state_at(&self, index: usize) -> Option<&StateLayout> {
         self.states.get(index)
+    }
+
+    /// What entering state `index` writes, by slot: its data's defaults, its
+    /// parameters unset — for `become`, or a save, to fill — and its own
+    /// countdowns armed at their full interval. Every slot of the state, so
+    /// nothing another state left in a slot they share survives the entry,
+    /// and a state's `every` does not resume a countdown from the last visit.
+    pub fn entry(&self, index: usize) -> Vec<(usize, crate::arena::Persisted)> {
+        let Some(state) = self.states.get(index) else {
+            return Vec::new();
+        };
+        let base = self.state_data_slot();
+        let data = (0..state.slots.len()).map(|offset| {
+            let value = state.defaults.get(offset).and_then(Option::as_ref).map_or(
+                crate::arena::Persisted::Scalar(super::Value::Unit),
+                |default| default.persisted(),
+            );
+            (base + offset, value)
+        });
+        let timers = self
+            .timers
+            .iter()
+            .enumerate()
+            .filter(|(_, timer)| timer.state == Some(index))
+            .map(|(at, timer)| {
+                (
+                    self.timer_slot(at),
+                    crate::arena::Persisted::Scalar(super::Value::Float(timer.seconds)),
+                )
+            });
+        data.chain(timers).collect()
+    }
+
+    /// A fresh instance's store, built from the layout alone: every field at
+    /// its default, in the first state with that state's data, every
+    /// countdown at its full interval. No code runs for it, and no fuel.
+    pub fn fresh_store(&self) -> crate::arena::PersistentStore {
+        let mut store = crate::arena::PersistentStore::with_slots(self.slot_count());
+        for (slot, default) in self.defaults.iter().enumerate() {
+            store.set(slot, default.persisted());
+        }
+        if !self.states.is_empty() {
+            store.set(
+                self.state_slot(),
+                crate::arena::Persisted::Scalar(super::Value::Int(0)),
+            );
+            for (slot, value) in self.entry(0) {
+                store.set(slot, value);
+            }
+        }
+        for (at, timer) in self.timers.iter().enumerate() {
+            store.set(
+                self.timer_slot(at),
+                crate::arena::Persisted::Scalar(super::Value::Float(timer.seconds)),
+            );
+        }
+        store
     }
 }
 

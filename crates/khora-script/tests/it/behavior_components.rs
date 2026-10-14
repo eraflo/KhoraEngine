@@ -19,6 +19,7 @@
 //! `Script` domain — and the names the compiler refuses a behavior.
 
 use khora_core::ecs::SemanticDomain;
+use khora_core::math::Vec3;
 use khora_core::script::{ErgonType, ScriptValue};
 use khora_script::modules::SourceLoader;
 use khora_script::vm::{DeclaredComponent, DeclaredKind, Program};
@@ -39,12 +40,11 @@ const ENGINE_NAMES: [&str; 2] = ["RigidBody", "OldBody"];
 /// the any-value ones `<any>`, a spelling no struct name can take — the same
 /// for every behavior. `fault` is any value: a recorded fault carries the
 /// fingerprint of the program it faulted in beside its reason.
-const COMPANION: [(&str, &str); 8] = [
+const COMPANION: [(&str, &str); 7] = [
     ("state", "string?"),
     ("state_fields", "<any>"),
     ("timers", "<any>"),
     ("pending", "<any>"),
-    ("initialised", "bool"),
     ("spawned", "bool"),
     ("fault", "<any>"),
     ("resume_failed", "<any>"),
@@ -237,7 +237,7 @@ fn a_behavior_declares_its_component_and_its_state_companion() {
 
 /// **Every state companion has one layout**, whatever its behavior holds —
 /// fields, states, timers, an `await` — and starts with no state, nothing
-/// initialised or spawned, and no fault.
+/// spawned, and no fault.
 #[test]
 fn every_state_companion_has_the_same_fixed_layout() {
     let program = build(
@@ -268,7 +268,6 @@ fn every_state_companion_has_the_same_fixed_layout() {
             .unwrap_or_else(|| panic!("the companion has `{name}`"))
     };
     assert_eq!(default("state"), ScriptValue::Null);
-    assert_eq!(default("initialised"), ScriptValue::Bool(false));
     assert_eq!(default("spawned"), ScriptValue::Bool(false));
     assert_eq!(default("fault"), ScriptValue::Null);
     for field in &plain.fields {
@@ -309,19 +308,16 @@ fn a_behavior_takes_its_domain_beside_the_scheduling_attributes() {
 
 /// **A field's registered default** is its constant default (an `int`
 /// written for a `float` is that float, a duration its seconds), else its
-/// type's zero — a field with no default, or one computed when the instance
-/// starts — else, for a type with no zero, some value of its kind: the
-/// initialiser still runs on the first turn and writes the real one.
+/// type's zero, else — for a type with no zero — its neutral value.
 #[test]
-fn a_behavior_field_registers_its_constant_default_else_its_zero_else_a_placeholder() {
+fn a_behavior_field_registers_its_constant_default_else_its_zero_else_its_neutral_value() {
     let program = build(
-        "fn int Hundred() { return 100; }
-         behavior Guard {
+        "behavior Guard {
              float speed = 2;
              Duration cooldown = 2s;
-             int computed = Hundred();
+             int count;
              string[] names;
-             Vec3 home = Position();
+             Vec3 home = Vec3(1.0, 2.0, 3.0);
              Vec3 heading;
          }",
     );
@@ -338,20 +334,15 @@ fn a_behavior_field_registers_its_constant_default_else_its_zero_else_a_placehol
     assert_eq!(field("speed").default, ScriptValue::Float(2.0));
     assert_eq!(field("cooldown").ty, ErgonType::Float);
     assert_eq!(field("cooldown").default, ScriptValue::Float(2.0));
-    assert_eq!(field("computed").ty, ErgonType::Int);
-    assert_eq!(
-        field("computed").default,
-        ScriptValue::Int(0),
-        "a default computed when the instance starts registers the zero"
-    );
+    assert_eq!(field("count").ty, ErgonType::Int);
+    assert_eq!(field("count").default, ScriptValue::Int(0));
     assert_eq!(field("names").default, ScriptValue::Array(Vec::new()));
-    for name in ["home", "heading"] {
+    for (name, wanted) in [
+        ("home", Vec3::new(1.0, 2.0, 3.0)),
+        ("heading", Vec3::new(0.0, 0.0, 0.0)),
+    ] {
         assert_eq!(field(name).ty, ErgonType::Engine("Vec3"));
-        assert!(
-            matches!(field(name).default, ScriptValue::Vec3(_)),
-            "`{name}` has no zero: its registered default is some `Vec3`, got {:?}",
-            field(name).default
-        );
+        assert_eq!(field(name).default, ScriptValue::Vec3(wanted), "`{name}`");
     }
     assert_eq!(
         guard
@@ -359,7 +350,7 @@ fn a_behavior_field_registers_its_constant_default_else_its_zero_else_a_placehol
             .iter()
             .map(|field| field.name.as_str())
             .collect::<Vec<_>>(),
-        vec!["speed", "cooldown", "computed", "names", "home", "heading"],
+        vec!["speed", "cooldown", "count", "names", "home", "heading"],
         "in declaration order"
     );
 }

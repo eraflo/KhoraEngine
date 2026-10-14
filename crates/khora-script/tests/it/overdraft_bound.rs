@@ -21,11 +21,10 @@
 //! every other operation, however large, either fits in the bound or is a
 //! place the run stops before.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::arena::PersistentStore;
-use khora_script::bytecode::init_name;
 use khora_script::dispatch::resolve_member;
-use khora_script::vm::{Fault, Machine, Program, Run, Value};
+use khora_script::vm::{Machine, Program, Run};
 use khora_script::{check, compile, lex, parse, Host};
 
 const SUBJECT: EntityId = EntityId {
@@ -53,34 +52,17 @@ fn ints(count: usize) -> String {
         .join(", ")
 }
 
-fn finish(machine: &mut Machine, program: &Program, host: &mut Host) -> Result<Value, Fault> {
-    for _ in 0..10_000 {
-        match machine.run(program, host, u64::MAX) {
-            Run::Completed => return Ok(machine.result()),
-            Run::Suspended(_) => {
-                host.awaiting = None;
-                host.end_frame();
-            }
-            Run::Faulted(fault) => return Err(fault),
-        }
-    }
-    panic!("no end");
-}
-
 fn instance(program: &Program) -> Host {
-    let layout = program.layout("Guard").expect("the guard's layout");
     let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
+        .with_fields(fresh_store(program, "Guard"))
         .for_entity(SUBJECT);
-    let mut init = Machine::new(program, &init_name("Guard"), &[]).expect("a field initialiser");
-    finish(&mut init, program, &mut host).expect("the initialiser runs");
     host.end_frame();
     host
 }
 
 /// **No run spends more than its fuel plus the overdraft bound, unless it
-/// started at a sized operation.** A guard holds a ten-by-hundred grid built
-/// from a small literal, so the code is short and the data is large. `Put`
+/// started at a sized operation.** A guard holds a ten-by-hundred grid as its
+/// field's default, so the code is short and the data is large. `Put`
 /// writes one cell through the field (`grid[0][0] = 1`); `Go` enters a state
 /// with the grid as its argument. Each body begins with a one-unit statement,
 /// so no sized operation is the first thing its first run does. Run once at
@@ -92,15 +74,14 @@ fn instance(program: &Program) -> Host {
 fn no_run_spends_past_its_fuel_more_than_the_overdraft_bound() {
     let program = build(&format!(
         "behavior Guard {{
-             int[] row = [{}];
-             int[][] grid = [row, row, row, row, row, row, row, row, row, row];
+             int[][] grid = [{}];
              void Put() {{ int k = 0; grid[0][0] = 1; }}
              state Idle {{
                  void Go() {{ int k = 0; become Wide(grid); }}
              }}
              state Wide(int[][] g) {{ int First() {{ return g.Length; }} }}
          }}",
-        ints(100)
+        vec![format!("[{}]", ints(100)); 10].join(", ")
     ));
     let bound = program.max_overdraft();
     let mut wrong = Vec::new();

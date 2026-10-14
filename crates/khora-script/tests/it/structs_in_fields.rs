@@ -21,9 +21,9 @@
 //! — after the right-hand side, so a write another body made to the field
 //! while this one waited survives.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::arena::{Object, PersistentStore};
-use khora_script::bytecode::init_name;
+use khora_script::arena::Object;
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{Fault, Machine, Program, Run, Suspension, Value};
 use khora_script::{check, compile, ergon_fn, lex, parse, Host};
@@ -84,13 +84,9 @@ fn finish(machine: &mut Machine, program: &Program, host: &mut Host) -> Result<V
 
 /// A fresh guard, created as the engine creates one.
 fn instance(program: &Program) -> Host {
-    let layout = program.layout("Guard").expect("the guard's layout");
-    let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
-        .for_entity(SUBJECT);
-    let mut init = Machine::new(program, &init_name("Guard"), &[]).expect("a field initialiser");
-    finish(&mut init, program, &mut host).expect("the initialiser runs");
-    host
+    Host::new()
+        .with_fields(fresh_store(program, "Guard"))
+        .for_entity(SUBJECT)
 }
 
 fn machine_for(program: &Program, member: &str, host: &Host) -> Machine {
@@ -139,7 +135,8 @@ fn a_struct_in_a_field_survives_frames() {
                Inner loot = Inner {{ value: 3 }};
                Outer nest = Outer {{ inner: Inner {{ value: 1 }}, count: 2 }};
                Route route = Route {{ points: [Point {{ x: 1.0 }}, Point {{ x: 2.0 }}] }};
-               Tagged tag = Tagged {{ label: "a" + StructFieldTail(), xs: [1, 2] }};
+               Tagged tag = Tagged {{ label: "a", xs: [1, 2] }};
+               void Label() {{ tag.label = "a" + StructFieldTail(); }}
                int Value() {{ return loot.value; }}
                int Nest() {{ return nest.inner.value * 10 + nest.count; }}
                float Second() {{ return route.points[1].x; }}
@@ -151,6 +148,7 @@ fn a_struct_in_a_field_survives_frames() {
            }}"#
     ));
     let mut host = instance(&program);
+    call(&program, "Label", &mut host).expect("the label is built");
     next_frame(&mut host);
     expect_calls(
         &program,

@@ -20,10 +20,10 @@
 //! alone: a body suspended in the `int t` arm is rebuilt there after its
 //! sibling arms moved or changed.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::PendingBody;
-use khora_script::arena::{Persisted, PersistentStore};
-use khora_script::bytecode::init_name;
+use khora_script::arena::Persisted;
 use khora_script::vm::{resume, ResumeTier, Suspension};
 use khora_script::{check, compile, lex, parse, Host, Machine, Program, Run, Value};
 
@@ -85,12 +85,9 @@ fn finish(machine: &mut Machine, program: &Program, host: &mut Host) {
 /// `Guard.Attack(5)` of `original` stopped at its await, resumed into
 /// `edited`: the tier and `(starts, landed)` once it finished.
 fn attack_resumed(original: &Program, edited: &Program) -> (ResumeTier, [Option<i64>; 2]) {
-    let layout = original.layout("Guard").expect("a layout");
     let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
+        .with_fields(fresh_store(original, "Guard"))
         .for_entity(SUBJECT);
-    let mut init = Machine::new(original, &init_name("Guard"), &[]).expect("defaults");
-    finish(&mut init, original, &mut host);
     let mut machine = Machine::new(original, "Guard.Attack", &[Value::Int(5)]).expect("Attack");
     assert_eq!(
         machine.run(original, &mut host, u64::MAX),

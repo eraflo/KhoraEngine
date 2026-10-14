@@ -19,9 +19,8 @@
 //! array the call changes is never a `null` the test let through — whatever
 //! another body did to the place while this one waited, or ran out of fuel.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::arena::PersistentStore;
-use khora_script::bytecode::init_name;
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{Fault, Machine, Program, Run, Suspension, Value};
 use khora_script::{check, compile, lex, parse, Host};
@@ -60,12 +59,9 @@ fn next_frame(host: &mut Host) {
 }
 
 fn instance(program: &Program) -> Host {
-    let layout = program.layout("Guard").expect("the guard's layout");
     let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
+        .with_fields(fresh_store(program, "Guard"))
         .for_entity(SUBJECT);
-    let init = Machine::new(program, &init_name("Guard"), &[]).expect("a field initialiser");
-    finish(init, program, &mut host).expect("the initialiser runs");
     host.end_frame();
     host
 }

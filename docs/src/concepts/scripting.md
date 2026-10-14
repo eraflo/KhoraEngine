@@ -191,6 +191,21 @@ the last one wins. They are told apart **per field**: two scripts writing
 `current` and `max` of one `Health` compose and are not reported; two writing
 `current` are, and so is an add or a removal of `Health` beside any write to it.
 
+A behavior is a component, so another script writes it like one —
+`target.Set(Guard { speed: 2.0 })` — and reads it with `Get` and `Has`; a
+behavior changes its own fields by assigning them, never by a `Set` of itself.
+Its turn and the scripts around it write in **one order**, the order the frame
+ran them in. A `Set` of a guard's field queued before the guard's turn is read
+by that turn — `speed += 1` builds on it, and nothing is lost. A `Set` queued
+after the turn is written after it and wins: the field the turn changed is
+the `Set`'s, and the turn's write is reported as lost, like any other. A `Set` a
+turn queues of its own fields — through an entity that happens to be its own —
+was not read by it and loses to what the turn wrote, reported as well; a
+component added or removed in the frame is another instance's, and keeps
+nothing the turn wrote of the old one. A field the turn only read is not a write
+of it, and each lost write is reported once, with every write that meant to set
+the field counted.
+
 ## An event is never delivered in the frame it was raised
 
 One behavior tells another something; the other hears it next frame.
@@ -260,6 +275,17 @@ state's data by slot name, each countdown by its schedule's identity. A chasing
 guard is still chasing after the edit, with what is left of its timers; a state
 or schedule the edit removed is dropped, a new one starts fresh, and a datum new
 to the current state starts at its own declared default.
+
+The World and the program move **in the same frame**. An edit's new fields are
+laid out in the World at the start of a frame; whatever compiled the program
+announces what it reads, so the frame projects those components and the lane
+installs the new program before any turn — no turn runs the old code over rows
+already laid out for the new. When a program does have to wait a frame for what
+it reads, its module's instances take no turn that frame: their events wait,
+and an entity arriving then spawns under the new code. A behavior moved to
+another module is carried there at its next turn, by the same rules, and an
+instance carried while starved of fuel still has its record — what a save
+reads — brought up to the new code that frame.
 
 ### A body part-way through, in tiers
 

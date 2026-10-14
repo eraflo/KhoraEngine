@@ -22,9 +22,9 @@
 //! semantics); `RemoveAt` shifts the elements after the index down by one,
 //! and an index outside the array faults, naming the index and the length.
 
+use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::arena::{Object, PersistentStore};
-use khora_script::bytecode::init_name;
+use khora_script::arena::Object;
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{Fault, Machine, Program, Run, Suspension, Value};
 use khora_script::{check, compile, ergon_fn, lex, parse, Host};
@@ -108,12 +108,9 @@ fn run_text(program: &Program, function: &str) -> Result<String, String> {
 
 /// A fresh instance of `Guard`, created as the engine creates one.
 fn instance(program: &Program) -> Host {
-    let layout = program.layout("Guard").expect("the guard's layout");
     let mut host = Host::new()
-        .with_fields(PersistentStore::with_slots(layout.slot_count()))
+        .with_fields(fresh_store(program, "Guard"))
         .for_entity(SUBJECT);
-    let init = Machine::new(program, &init_name("Guard"), &[]).expect("a field initialiser");
-    finish(init, program, &mut host).expect("the initialiser runs");
     host.end_frame();
     host
 }

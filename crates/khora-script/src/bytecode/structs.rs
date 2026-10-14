@@ -36,11 +36,20 @@ impl Compiler {
         for item in &module.items {
             // A component is also a struct layout with no defaults: what a
             // `Get` copy is, in the arena.
+            let behavior;
             let decl = match item {
                 Item::Struct(decl) => decl,
                 Item::Component(decl) => {
                     self.component_decls.insert(decl.name.clone(), decl.clone());
                     decl
+                }
+                // A behavior is a component too: a `Get` of it is a copy laid
+                // out like any component's.
+                Item::Behavior(decl) => {
+                    behavior = decl.as_component();
+                    self.component_decls
+                        .insert(behavior.name.clone(), behavior.clone());
+                    &behavior
                 }
                 _ => continue,
             };

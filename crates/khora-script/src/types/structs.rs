@@ -121,6 +121,31 @@ impl Checker {
 }
 
 impl Checker {
+    /// Refuses a behavior field's default — or, `in_state`, a state datum's —
+    /// that is not a constant. Both are data: the registered default of the
+    /// behavior's component, and what entering a state writes, read wherever
+    /// an instance is built, loaded or carried across an edit — no code runs
+    /// for them.
+    pub(super) fn expect_behavior_constant(&mut self, default: &Expr, in_state: bool) -> bool {
+        if is_data_constant(default) {
+            return true;
+        }
+        if in_state {
+            self.error_note(
+                "a state's data default must be a constant",
+                default.span(),
+                "a state's defaults are data, written whenever the state is entered — pass a computed value as a parameter of `become` (`become Chase(prey, prey.Position());`)",
+            );
+        } else {
+            self.error_note(
+                "a behavior field's default must be a constant",
+                default.span(),
+                "a behavior is a component: its defaults are data, read wherever a row is built or loaded — write a number, text, `null`, a duration, an angle, an engine value of numbers (`Vec3(0.0, 1.0, 0.0)`), or `[…]` / `Name { … }` of those; compute a starting value in `OnSpawn`",
+            );
+        }
+        false
+    }
+
     /// Refuses a default that, through the defaults of the literals it
     /// builds, builds itself again — `struct A { A? next = A { v: 1 }; }`
     /// leaves `next` out of its own literal, whose `next` is the same default.
@@ -223,6 +248,18 @@ pub(crate) fn engine_constant(expr: &Expr) -> Option<(&'static str, Vec<f32>)> {
         return None;
     }
     Some((ty, args.iter().map(constant_number).collect::<Option<_>>()?))
+}
+
+/// Whether `expr` is data: a constant, an engine value of constant numbers,
+/// or an array or struct literal of those — at any depth.
+pub(super) fn is_data_constant(expr: &Expr) -> bool {
+    match expr {
+        Expr::ArrayLit { elements, .. } => elements.iter().all(is_data_constant),
+        Expr::StructLit { fields, .. } => {
+            fields.iter().all(|(_, _, value)| is_data_constant(value))
+        }
+        _ => is_constant(expr) || engine_constant(expr).is_some(),
+    }
 }
 
 /// Whether `expr` is a constant: a literal, a negated number, or an array or

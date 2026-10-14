@@ -32,9 +32,11 @@
 //!   it starts the next frame.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use khora_core::ecs::entity::EntityId;
 use khora_data::flow::{ScriptProgram, ScriptView};
+use khora_script::vm::Program;
 
 use super::runtime::{Instance, ScriptRuntime};
 
@@ -197,7 +199,10 @@ pub(super) fn behaviors<'v>(
             let enabled = members.iter().any(|at| {
                 let instance = &view.instances[*at];
                 instance.arrival.is_some()
-                    || !idle(runtime.peek(instance.entity, &program.behavior))
+                    || !idle(
+                        runtime.peek(instance.entity, &program.behavior),
+                        runtime.program(&program.module),
+                    )
             });
             (
                 program.module.as_str(),
@@ -230,7 +235,14 @@ pub(super) fn behaviors<'v>(
 }
 
 /// Whether an instance will not run whatever the fuel: disabled by a fault,
-/// and with no arrival to start it again.
-pub(super) fn idle(instance: Option<&Instance>) -> bool {
-    matches!(instance, Some(state) if state.disabled && state.arriving.is_none())
+/// with no arrival to start it again, and already laid out for `program` —
+/// carried into another, an edit's answer to the fault, it runs again.
+pub(super) fn idle(instance: Option<&Instance>, program: Option<&Arc<Program>>) -> bool {
+    matches!(instance, Some(state)
+    if state.disabled
+        && state.arriving.is_none()
+        && match (&state.built_for, program) {
+            (Some(built), Some(program)) => Arc::ptr_eq(built, program),
+            _ => true,
+        })
 }

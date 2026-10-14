@@ -25,7 +25,7 @@ use khora_core::script::{EventQueue, ScriptEvent, ScriptValue, WorldCommand};
 
 use crate::arena::{Persisted, PersistentStore};
 use crate::bytecode::compile_with;
-use crate::dispatch::{deliver, handles, initialise, NotDelivered};
+use crate::dispatch::{deliver, handles, NotDelivered};
 use crate::lexer::lex;
 use crate::native::Host;
 use crate::parser::parse;
@@ -528,9 +528,9 @@ fn a_slot_the_store_does_not_have_is_not_quietly_a_number() {
     );
 }
 
-/// **What a declared default is worth.** `int seen = 5;` is an expression, so
-/// only running code can produce it — and an instance that skipped that would
-/// have unset fields rather than the values its author wrote.
+/// **What a declared default is worth.** A fresh instance's store holds the
+/// constants its author wrote, and a field written with no default holds its
+/// type's zero — never a hole.
 #[test]
 fn initialising_gives_an_instance_the_defaults_its_behavior_declares() {
     let program = build(
@@ -554,10 +554,7 @@ fn initialising_gives_an_instance_the_defaults_its_behavior_declares() {
     }
     .with_fields(PersistentStore::with_slots(3));
 
-    assert_eq!(
-        initialise(&program, "Counter", &mut host, u64::MAX).map(|(run, _)| run),
-        Some(Run::Completed)
-    );
+    host.fields = program.layout("Counter").expect("a layout").fresh_store();
     assert_eq!(host.fields.get(0), Some(&Persisted::Scalar(Value::Int(5))));
     assert_eq!(
         host.fields.get(1),
@@ -584,31 +581,6 @@ fn initialising_gives_an_instance_the_defaults_its_behavior_declares() {
         host.fields.get(0),
         Some(&Persisted::Scalar(Value::Int(7))),
         "the handler built on the default rather than replacing it"
-    );
-}
-
-/// A default can be any expression, including a call.
-#[test]
-fn a_default_may_be_computed() {
-    let program = build(
-        r#"
-        behavior Computed {
-            float side = 0.0;
-            float diagonal = 0.0;
-        }
-        "#,
-    );
-
-    let mut host = Host {
-        natives: registry_with_despawn(),
-        ..Host::new()
-    }
-    .with_fields(PersistentStore::with_slots(2));
-
-    initialise(&program, "Computed", &mut host, u64::MAX).expect("the initialiser exists");
-    assert_eq!(
-        host.fields.get(1),
-        Some(&Persisted::Scalar(Value::Float(0.0)))
     );
 }
 
@@ -709,7 +681,7 @@ fn a_string_field_is_kept_by_value() {
 mod states {
     use super::{build, entity, living, registry_with_despawn};
     use crate::arena::{Persisted, PersistentStore};
-    use crate::dispatch::{current_state, deliver, handles, initialise};
+    use crate::dispatch::{current_state, deliver, handles};
     use crate::native::Host;
     use crate::vm::{Program, Run, Value};
     use khora_core::script::{ScriptEvent, ScriptValue};
@@ -749,7 +721,7 @@ mod states {
         }
         .with_fields(PersistentStore::with_slots(layout.slot_count()));
 
-        initialise(program, "Guard", &mut host, u64::MAX).expect("an initialiser");
+        host.fields = program.layout("Guard").expect("a layout").fresh_store();
         host
     }
 
@@ -905,7 +877,7 @@ mod states {
             ..Host::new()
         }
         .with_fields(PersistentStore::with_slots(1));
-        initialise(&program, "Simple", &mut host, u64::MAX).expect("an initialiser");
+        host.fields = program.layout("Simple").expect("a layout").fresh_store();
 
         assert_eq!(current_state(&program, "Simple", &host), None);
 
@@ -929,7 +901,7 @@ mod states {
 mod timers {
     use super::{build, registry_with_despawn};
     use crate::arena::{Persisted, PersistentStore};
-    use crate::dispatch::{initialise, tick_timers, Ticked};
+    use crate::dispatch::{tick_timers, Ticked};
     use crate::native::Host;
     use crate::vm::{Program, Value};
 
@@ -956,7 +928,7 @@ mod timers {
             ..Host::new()
         }
         .with_fields(PersistentStore::with_slots(layout.slot_count()));
-        initialise(program, "Guard", &mut host, u64::MAX).expect("an initialiser");
+        host.fields = program.layout("Guard").expect("a layout").fresh_store();
         host
     }
 
@@ -1105,7 +1077,7 @@ mod timers {
 mod state_scoped {
     use super::{build, registry_with_despawn};
     use crate::arena::{Persisted, PersistentStore};
-    use crate::dispatch::{deliver, initialise, tick_timers, Ticked};
+    use crate::dispatch::{deliver, tick_timers, Ticked};
     use crate::native::Host;
     use crate::vm::{Program, Value};
     use khora_core::ecs::entity::EntityId;
@@ -1150,7 +1122,7 @@ mod state_scoped {
             index: 0,
             generation: 1,
         });
-        initialise(program, "Guard", &mut host, u64::MAX).expect("an initialiser");
+        host.fields = program.layout("Guard").expect("a layout").fresh_store();
         host
     }
 

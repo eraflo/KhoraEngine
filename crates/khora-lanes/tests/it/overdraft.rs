@@ -87,16 +87,17 @@ fn runtime_of(source: &str) -> ScriptRuntime {
     runtime
 }
 
-/// **Overdraft in the initialiser.** A behavior whose first field default is a
-/// call costing more than the frame's fuel: the initialiser is paid for past the
-/// slice, `run_counting` reports 50 for a slice of 1, and `run_one` then hands
-/// `OnSpawn` `fuel - spent` — an unchecked subtraction that underflows.
-/// Debug: panics. Release: wraps to ~`u64::MAX` fuel for `OnSpawn`.
+/// **Overdraft in `OnSpawn`.** A behavior whose `OnSpawn` opens with a call
+/// costing more than the frame's fuel: the call is paid for past the slice,
+/// `run_counting` reports 50 for a slice of 1, and the turn then hands what
+/// follows `fuel - spent` — an unchecked subtraction would underflow.
+/// Debug: panics. Release: wraps to ~`u64::MAX` fuel for `Update`.
 #[test]
-fn a_frame_smaller_than_the_initialisers_first_call_does_not_panic() {
+fn a_frame_smaller_than_on_spawns_first_call_does_not_panic() {
     let source = "behavior Costly {
-                      float d = LaneCostly();
-                      void OnSpawn() { }
+                      float d = 0.0;
+                      void OnSpawn() { d = LaneCostly(); }
+                      void Update(float dt) { }
                   }";
     let longest = build(source).max_overdraft();
     let mut runtime = runtime_of(source);
@@ -114,7 +115,7 @@ fn a_frame_smaller_than_the_initialisers_first_call_does_not_panic() {
     // longest stretch past the frame, and it must not panic getting there.
     assert!(
         longest >= 50,
-        "the initialiser's call is part of a stretch: {longest}"
+        "`OnSpawn`'s call is part of a stretch: {longest}"
     );
     assert!(
         report.spent <= 1 + longest,
@@ -123,15 +124,12 @@ fn a_frame_smaller_than_the_initialisers_first_call_does_not_panic() {
     );
 }
 
-/// **An initialiser starved of fuel is never finished.** With one unit of fuel
-/// the initialiser runs its first instruction and suspends; the machine is
-/// dropped, yet the instance is marked initialised, so the field keeps no value
-/// on every later frame — and the first `health -= …` faults on it.
-///
-/// Not introduced by the overdraft (the lane drops a suspended initialiser
-/// regardless), but it is what a tiny slice does to a behavior today.
+/// **A behavior first seen in a one-fuel frame still has its defaults.** A
+/// fresh instance's fields are its layout's data, seeded before its first turn
+/// and paid for with no fuel, so a tiny slice cannot leave a field without a
+/// value — and the first `health -= …` does not fault on it.
 #[test]
-fn a_starved_initialiser_still_leaves_the_defaults_in_place() {
+fn a_behavior_first_seen_in_a_starved_frame_has_its_defaults() {
     let source = "behavior Guard {
                       int health = 100;
                       on Damaged(int amount) { health -= amount; }
@@ -190,7 +188,7 @@ fn a_handler_cut_short_by_fuel_is_not_delivered_twice() {
     let mut host = Host::new();
     let view = view_of("Guard");
 
-    // Initialised and spawned, with nothing to hear.
+    // Spawned, with nothing to hear.
     run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
 
     // One hit, and fuel for part of its handler.
@@ -274,7 +272,7 @@ fn a_timer_due_in_a_starved_frame_fires_late_not_never() {
     let mut host = Host::new();
     let mut view = view_of("Ticker");
 
-    // Initialised, the schedule armed.
+    // Spawned, the schedule armed.
     run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
 
     // The interval elapses in a frame with one unit of fuel.

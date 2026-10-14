@@ -85,16 +85,16 @@ const FAREWELLS: Project = &[
         "game/a.erg",
         "import \"game/mark.erg\";
          behavior Zeta {
-             Entity witness;
-             void OnDespawn() { witness.Set(Mark { by: 1 }); }
+             Entity? witness;
+             void OnDespawn() { if (var w = witness) { w.Set(Mark { by: 1 }); } }
          }",
     ),
     (
         "game/b.erg",
         "import \"game/mark.erg\";
          behavior Alpha {
-             Entity witness;
-             void OnDespawn() { witness.Set(Mark { by: 2 }); }
+             Entity? witness;
+             void OnDespawn() { if (var w = witness) { w.Set(Mark { by: 2 }); } }
          }",
     ),
     (

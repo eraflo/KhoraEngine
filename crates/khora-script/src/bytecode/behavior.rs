@@ -20,12 +20,8 @@
 //! field table in scope while it compiles, and which state's data it can name.
 
 use super::sites;
-use super::{
-    init_name, keys, member_body, member_signature, shape_of, shape_of_state_slot, Compiler,
-    Registers, Shape, StateEntry,
-};
+use super::{keys, member_body, member_signature, shape_of, shape_of_state_slot, Compiler};
 use crate::ast::BehaviorMember;
-use crate::vm::{Function, Instruction};
 
 impl Compiler {
     /// Compiles a behavior's members, each as a function of its own.
@@ -44,6 +40,7 @@ impl Compiler {
             field_types: Vec::new(),
             states: Vec::new(),
             timers: Vec::new(),
+            defaults: Vec::new(),
         };
         for member in &decl.members {
             if let BehaviorMember::Field(field) = member {
@@ -52,6 +49,9 @@ impl Compiler {
                     .insert(field.name.clone(), (slot, shape_of(&field.ty)));
                 layout.fields.push(field.name.clone());
                 layout.field_types.push(keys::type_name(&field.ty));
+                layout
+                    .defaults
+                    .push(field_default(field, &self.program.structs));
             }
         }
         self.behavior_fields = self.fields.clone();
@@ -83,6 +83,17 @@ impl Compiler {
                             _ => None,
                         }))
                         .collect(),
+                    defaults: state
+                        .params
+                        .iter()
+                        .map(|_| None)
+                        .chain(state.members.iter().filter_map(|member| match member {
+                            BehaviorMember::Field(field) => {
+                                Some(Some(field_default(field, &self.program.structs)))
+                            }
+                            _ => None,
+                        }))
+                        .collect(),
                 });
             }
         }
@@ -110,11 +121,7 @@ impl Compiler {
         // to be findable, or a reload would treat "no layout" and "no fields" as
         // the same thing and reset an instance that had nothing to lose.
         self.program.behaviors.push(layout.clone());
-        self.collect_entries(&layout, decl);
         self.behavior = Some(layout);
-
-        self.compile_field_defaults(decl);
-        self.compile_state_entries(decl);
 
         for member in &decl.members {
             if let BehaviorMember::State(state) = member {
@@ -207,95 +214,6 @@ impl Compiler {
         self.state = None;
     }
 
-    /// Emits the function that gives a fresh instance its field values.
-    ///
-    /// A default is an *expression* — `float speed = 3.0;`, but also
-    /// `Sqrt(2.0)` — so only compiled code can produce it. Without this a
-    /// declared default would be decoration: the store would hand out unset
-    /// slots and the first arithmetic would fault.
-    ///
-    /// A field with no written default gets its type's zero rather than staying
-    /// unset, because `int health;` reads as a number that happens to start at
-    /// nothing, not as a hole.
-    /// Records what entering each of the behavior's states has to write.
-    ///
-    /// Read from the layout rather than recomputed, so the slots here are by
-    /// construction the slots the running code reads.
-    fn collect_entries(
-        &mut self,
-        layout: &crate::vm::BehaviorLayout,
-        decl: &crate::ast::BehaviorDecl,
-    ) {
-        self.entries.clear();
-
-        for member in &decl.members {
-            let BehaviorMember::State(state) = member else {
-                continue;
-            };
-            let Some(index) = layout.state_index(&state.name) else {
-                continue;
-            };
-
-            // The parameters come first in the state's slots and are written by
-            // `become` itself; only what the state *declares* needs a default.
-            let base = layout.state_data_slot() + state.params.len();
-            let fields = state
-                .members
-                .iter()
-                .filter_map(|member| match member {
-                    BehaviorMember::Field(field) => Some(field),
-                    _ => None,
-                })
-                .enumerate()
-                .map(|(offset, field)| {
-                    (
-                        (base + offset) as u16,
-                        field.name.clone(),
-                        field.default.clone(),
-                        field.ty.clone(),
-                    )
-                })
-                .collect();
-            let params = state
-                .params
-                .iter()
-                .map(|param| (param.name.clone(), param.ty.clone()))
-                .collect();
-            let slots = layout
-                .state_at(index)
-                .map(|entered| {
-                    entered
-                        .slots
-                        .iter()
-                        .enumerate()
-                        .map(|(offset, slot)| {
-                            let absolute = (layout.state_data_slot() + offset) as u16;
-                            (slot.clone(), absolute, shape_of_state_slot(state, slot))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            let timers = layout
-                .timers
-                .iter()
-                .enumerate()
-                .filter(|(_, timer)| timer.state == Some(index))
-                .map(|(slot, timer)| (layout.timer_slot(slot) as u16, timer.seconds))
-                .collect();
-
-            self.entries.insert(
-                state.name.clone(),
-                StateEntry {
-                    params,
-                    slots,
-                    fields,
-                    timers,
-                },
-            );
-        }
-    }
-
     /// Records every `every` and `after` among `members` in the layout.
     ///
     /// One walk for both levels, because a schedule is the same thing wherever
@@ -336,90 +254,21 @@ impl Compiler {
             });
         }
     }
+}
 
-    fn compile_field_defaults(&mut self, decl: &crate::ast::BehaviorDecl) {
-        self.code = Vec::new();
-        self.locals = Vec::new();
-        self.registers = Registers::new(0);
-        self.naming.reset();
-        self.record_entry();
-        // An initialiser has no statements: each default is a step of its own,
-        // named by the field, so a call it makes has a return site to name.
-        self.naming.open_block();
-
-        for member in &decl.members {
-            let BehaviorMember::Field(field) = member else {
-                continue;
-            };
-            let Some((slot, _)) = self.fields.get(&field.name).copied() else {
-                continue;
-            };
-
-            self.naming.enter_step(&format!(
-                "let.{}",
-                keys::field_key(&field.name, field.default.as_ref())
-            ));
-            let mark = self.registers.mark();
-            let src = match &field.default {
-                Some(expr) => self.compile_expr(expr).0,
-                None => self.zero_of_type(&field.ty),
-            };
-            self.emit(Instruction::WriteBack { slot, src });
-            self.registers.release_to(mark);
-            self.naming.leave();
-        }
-
-        // A behavior with states starts in the one declared first. Left unset,
-        // an instance would be in *no* state, and every handler written inside
-        // one would silently never fire — a state machine that compiles and
-        // does nothing.
-        if let Some(layout) = self.behavior.clone() {
-            if !layout.states.is_empty() {
-                let slot = layout.state_slot() as u16;
-                let mark = self.registers.mark();
-                let (src, _) = self.constant(crate::vm::Value::Int(0), Shape::Int);
-                self.emit(Instruction::WriteBack { slot, src });
-                self.registers.release_to(mark);
-            }
-
-            // Each countdown starts at its full interval, so `every 0.5s` first
-            // fires half a second in rather than on the frame the entity
-            // appeared — which is what "every half second" says.
-            for (index, timer) in layout.timers.iter().enumerate() {
-                let slot = layout.timer_slot(index) as u16;
-                let mark = self.registers.mark();
-                let (src, _) = self.constant(crate::vm::Value::Float(timer.seconds), Shape::Float);
-                self.emit(Instruction::WriteBack { slot, src });
-                self.registers.release_to(mark);
-            }
-
-            // The first state is entered, not merely selected: its declared
-            // data has to be there before anything reads it, exactly as a
-            // `become` into it would leave things.
-            if let Some(first) = layout.states.first().map(|state| state.name.clone()) {
-                self.naming
-                    .enter_step(&format!("become.{}", keys::state_key(&first)));
-                self.emit_state_entry(&first, None);
-                self.naming.leave();
-            }
-        }
-        self.naming.close_block();
-
-        let unit = self.registers.temp();
-        self.emit(Instruction::LoadConst {
-            dst: unit,
-            value: crate::vm::Value::Unit,
-        });
-        self.emit(Instruction::Return { src: unit });
-
-        let code = std::mem::take(&mut self.code);
-        self.program.functions.push(Function {
-            name: init_name(&decl.name),
-            arity: 0,
-            registers: self.registers.frame_size(),
-            code,
-            fingerprint: 0,
-            sites: std::mem::take(&mut self.naming.sites),
-        });
-    }
+/// A field's default as data: the constant written, completed against the
+/// program's structs, or its type's neutral value. The checker refuses
+/// anything else; a program that was refused gets `null`.
+fn field_default(
+    field: &crate::ast::Field,
+    structs: &[crate::vm::StructLayout],
+) -> crate::arena::Owned {
+    let ty = keys::type_name(&field.ty);
+    field
+        .default
+        .as_ref()
+        .and_then(super::constant)
+        .and_then(|owned| owned.completed(&ty, structs))
+        .or_else(|| crate::arena::Owned::neutral(&ty, structs))
+        .unwrap_or(crate::arena::Owned::Scalar(crate::vm::Value::Null))
 }

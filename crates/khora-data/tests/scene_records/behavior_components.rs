@@ -117,7 +117,6 @@ fn played() -> Played {
         STATE,
         fields(&[
             ("state", ScriptValue::Str("Patrol".into())),
-            ("initialised", ScriptValue::Bool(true)),
             ("spawned", ScriptValue::Bool(true)),
         ]),
     );
