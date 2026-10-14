@@ -47,7 +47,7 @@ pub fn resume(
         frozen,
         body,
         sequence.fingerprint,
-        sequence.remaining,
+        (sequence.remaining, sequence.running),
         program,
         &layout.name,
     ))
@@ -85,7 +85,7 @@ pub fn carry(
         &frozen,
         body,
         pending.fingerprint,
-        pending.remaining,
+        (pending.remaining, pending.running),
         new,
         &new_layout.name,
     )
@@ -97,7 +97,7 @@ fn taken_back(
     frozen: &FrozenMachine,
     body: Option<Body>,
     fingerprint: u64,
-    remaining: f32,
+    (remaining, running): (f32, f32),
     program: &Program,
     behavior: &str,
 ) -> Result<(Pending, ResumeTier), Abandoned> {
@@ -135,6 +135,9 @@ fn taken_back(
                     },
                     body,
                     fingerprint: program.fingerprint(),
+                    // Run again from its entry or not, it is the body that has
+                    // run that long without finishing.
+                    running,
                 },
                 tier,
             ))

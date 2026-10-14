@@ -122,13 +122,19 @@ impl SystemSession {
     /// One frame of `delta` seconds, the deck's command buffer already
     /// holding `before` when the scripts run — what another lane queued
     /// earlier in the tick, which no script sees.
+    ///
+    /// The flow projects every frame, as the engine's flows do; the script
+    /// lane runs only while the mode plays, because the engine registers the
+    /// script agent for `EngineMode::Playing` alone — outside it the lane is
+    /// never executed and the runtime keeps every instance as it stood.
     pub(crate) fn frame_after(&mut self, delta: f32, before: &[WorldCommand]) {
         self.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
         let mut view = self.project();
         view.delta_seconds = delta;
         let mut deck = OutputDeck::new();
         deck.slot::<CommandBuffer>().extend(before.iter().cloned());
-        {
+        let playing = self.mode.read().expect("the mode lock").runs_gameplay();
+        if playing {
             let mut ctx = LaneContext::new();
             ctx.insert_ref(&view);
             ctx.insert(Fuel(self.fuel));

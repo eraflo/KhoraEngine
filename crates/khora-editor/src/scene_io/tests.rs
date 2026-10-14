@@ -357,6 +357,7 @@ fn stop_restores_script_targets() {
         pending: Some(PendingSequence {
             fingerprint: 7,
             remaining: 0.5,
+            running: 0.0,
             machine: FrozenMachine {
                 body: PendingBody::Update,
                 registers: vec![FrozenValue::Entity(target)],

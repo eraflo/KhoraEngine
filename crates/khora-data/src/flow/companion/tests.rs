@@ -75,6 +75,7 @@ fn busy() -> ScriptSnapshot {
         pending: Some(PendingSequence {
             fingerprint: 0xFEDC_BA98_7654_3210,
             remaining: 0.75,
+            running: 0.0,
             machine: FrozenMachine {
                 body: PendingBody::Sequence,
                 registers: vec![

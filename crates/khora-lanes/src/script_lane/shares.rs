@@ -63,6 +63,8 @@ pub struct FuelShares {
     debts: HashMap<Behavior, u64>,
     /// Which behavior the first unit that does not divide goes to.
     rotation: u64,
+    /// For each behavior in debt, the instance whose turn overspent.
+    debtors: HashMap<Behavior, EntityId>,
 }
 
 impl FuelShares {
@@ -81,6 +83,8 @@ impl FuelShares {
         self.cursors
             .retain(|(module, name), _| behaviors.iter().any(|b| (b.0, b.1) == (module, name)));
         self.debts
+            .retain(|(module, name), _| behaviors.iter().any(|b| (b.0, b.1) == (module, name)));
+        self.debtors
             .retain(|(module, name), _| behaviors.iter().any(|b| (b.0, b.1) == (module, name)));
 
         let spending = behaviors.iter().filter(|b| b.2).count() as u64;
@@ -109,6 +113,7 @@ impl FuelShares {
                     self.debts.insert(key, debt - paid);
                 } else {
                     self.debts.remove(&key);
+                    self.debtors.remove(&key);
                 }
                 Some(Share { own, paid, owing })
             })
@@ -144,12 +149,16 @@ impl FuelShares {
     /// What a behavior leaves for the next frame: where it starts — the first
     /// of its instances this one had no fuel for, or its beginning — and what
     /// it spent past what it was handed, added to its debt.
+    ///
+    /// `debtor` is the instance whose turn overspent: the frames the behavior
+    /// sits out repaying it are that body's run time, no other's.
     pub(super) fn settle(
         &mut self,
         module: &str,
         behavior: &str,
         starved_at: Option<EntityId>,
         overspent: u64,
+        debtor: Option<EntityId>,
     ) {
         let key = (module.to_owned(), behavior.to_owned());
         match starved_at {
@@ -161,8 +170,28 @@ impl FuelShares {
             }
         }
         if overspent > 0 {
-            *self.debts.entry(key).or_default() += overspent;
+            *self.debts.entry(key.clone()).or_default() += overspent;
+            if let Some(debtor) = debtor {
+                self.debtors.insert(key, debtor);
+            }
         }
+    }
+
+    /// Forgives `module`'s `behavior` the debt `entity` ran up: a load brought
+    /// that instance back as the save had it, owing nothing.
+    pub(super) fn forgive(&mut self, module: &str, behavior: &str, entity: EntityId) {
+        let key = (module.to_owned(), behavior.to_owned());
+        if self.debtors.get(&key) == Some(&entity) {
+            self.debts.remove(&key);
+            self.debtors.remove(&key);
+        }
+    }
+
+    /// The instance whose overspending `module`'s `behavior` is repaying.
+    pub(super) fn debtor(&self, module: &str, behavior: &str) -> Option<EntityId> {
+        self.debtors
+            .get(&(module.to_owned(), behavior.to_owned()))
+            .copied()
     }
 }
 

@@ -394,6 +394,7 @@ fn a_pending_sequence_with_a_frozen_machine_round_trips() {
         let pending = PendingSequence {
             fingerprint: 0xDEAD_BEEF_0123_4567,
             remaining: 0.75,
+            running: 0.0,
             machine: frozen(body.clone()),
         };
         assert_eq!(round_trip(&pending), pending, "{body:?}");
@@ -454,6 +455,7 @@ fn a_script_snapshot_round_trips() {
         pending: Some(PendingSequence {
             fingerprint: u64::MAX,
             remaining: 0.5,
+            running: 0.0,
             machine: frozen(PendingBody::Timer {
                 timer: "Guard.__every(0.25)#1".to_owned(),
                 rearm: FrozenValue::Float(0.25),

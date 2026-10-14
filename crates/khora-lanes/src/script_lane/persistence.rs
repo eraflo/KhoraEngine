@@ -427,6 +427,7 @@ pub fn suspend(
     Some(PendingSequence {
         fingerprint: pending.fingerprint,
         remaining: pending.remaining,
+        running: pending.running,
         machine,
     })
 }

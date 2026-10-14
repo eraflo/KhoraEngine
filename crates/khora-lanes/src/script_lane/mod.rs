@@ -39,6 +39,7 @@
 //! [`CommandBuffer`] slot on the deck. Not the `World` — which is what makes
 //! the whole thing schedulable in parallel.
 
+mod arrival;
 mod attached;
 mod carry;
 mod departure;
@@ -53,13 +54,15 @@ pub mod runtime;
 mod shares;
 mod state_update;
 mod turn;
+pub mod watchdog;
 
 #[cfg(test)]
 mod tests;
 
 pub use frame::run_behaviors;
-pub use report::{Resumed, ScriptRunReport};
+pub use report::{Resumed, ScriptRunReport, Slow};
 pub use runtime::{Body, Instance, Pending, ReloadReport, ScriptRuntime};
+pub use watchdog::{WATCHDOG_FAULT, WATCHDOG_WARN};
 
 use std::any::Any;
 use std::sync::Arc;

@@ -30,6 +30,26 @@ use super::{Frame, Machine, ObjRef, Program, StrRef, Value};
 use crate::arena::{ArenaRef, Owned};
 
 impl Machine {
+    /// Where the machine stands, for a person: the innermost function and the
+    /// named site at its counter — `Guard.Update/while.3c1f…:head`.
+    pub fn standing(&self, program: &Program) -> String {
+        let Some(function) = self
+            .frames
+            .last()
+            .and_then(|frame| program.functions.get(frame.function))
+        else {
+            return String::new();
+        };
+        match function
+            .sites
+            .iter()
+            .find(|site| site.pc as usize == self.program_counter)
+        {
+            Some(site) => format!("{}/{}", function.name, site.name),
+            None => format!("{}@{}", function.name, self.program_counter),
+        }
+    }
+
     /// This machine, written down, owing `body` when it finishes.
     ///
     /// `None` when the machine does not belong to `program` — a frame naming a

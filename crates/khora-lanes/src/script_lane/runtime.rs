@@ -139,6 +139,10 @@ pub struct Pending {
     /// through [`resumption::carry`](super::resumption::carry), which
     /// restamps this.
     pub fingerprint: u64,
+    /// Game seconds the body has run without finishing since it started or
+    /// last resumed from an `await`.
+    #[serde(default)]
+    pub running: f32,
 }
 
 /// Which body a [`Pending`] machine is part-way through.

@@ -135,6 +135,7 @@ that id now belongs to.
 | Authored entity | changes on every load | random 63 bits, chosen once, kept by every save |
 | Inside a prefab instance | changes on every load | derived: `within(instance root, id in the prefab)` |
 | Created at runtime | changes on every load | the next free number in the *created* namespace, given the first time it is needed |
+| A script system's entity | changes on every load | named: `PersistentId::named("system:Name")`, the same in every save |
 | In a save | never | every row and every entity reference |
 
 A reference to an entity the save does not hold — deleted, or outside a saved
@@ -149,7 +150,7 @@ A component's **provenance** decides where it is written:
 | `Authored` | yes | when the game changed it | `Transform`, `Name`, a behavior (`Guard`) |
 | `ToolAuthored` | yes | when the game changed it | `Parent`, `PrefabInstance` |
 | `Derived` | no — rebuilt on load | no | `Children`, a global transform |
-| `Runtime` | no | only if `resumable` | a behavior's state companion `Guard#state` (resumable) |
+| `Runtime` | no | only if `resumable` | a behavior's state companion `Guard#state`; a system's component and its companion (all resumable) |
 
 Derived values and plain runtime state are rebuilt rather than stored; a
 resumable component is what a [game save](./saves.md#what-a-save-keeps-that-a-scene-never-does)

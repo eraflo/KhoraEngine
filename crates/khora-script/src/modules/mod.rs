@@ -227,6 +227,8 @@ pub fn report_name_clashes(resolved: &Resolved) -> Vec<Diagnostic> {
     for resolved_module in &resolved.modules {
         for item in &resolved_module.module.items {
             match owners.get(item.name()) {
+                // Twice in one module is the checker's to say, as that.
+                Some(first) if *first == resolved_module.path => {}
                 Some(first) => clashes.push(
                     Diagnostic::error(
                         format!(

@@ -311,6 +311,28 @@ fn a_name_declared_in_two_modules_is_reported() {
     assert!(clashes[0].message.contains("other.erg"));
 }
 
+/// A name declared twice in one module is not a clash between modules: the
+/// checker says it as "declared twice", and the whole program says it once.
+#[test]
+fn a_name_declared_twice_in_one_module_is_not_a_clash_between_modules() {
+    let loader = MemoryLoader::new().with(
+        "main.erg",
+        "component Health { int current; }\nsystem Health { }",
+    );
+    let resolved = resolve("main.erg", &loader);
+    assert!(report_name_clashes(&resolved).is_empty());
+
+    let result = crate::compile_module(&loader, "main.erg");
+    let errors: Vec<&str> = result
+        .diagnostics
+        .iter()
+        .filter(|d| d.is_error() && d.message.contains("`Health`"))
+        .map(|d| d.message.as_str())
+        .collect();
+    assert_eq!(errors.len(), 1, "said once: {errors:?}");
+    assert!(errors[0].contains("declared twice"), "{errors:?}");
+}
+
 #[test]
 fn distinct_names_across_modules_do_not_clash() {
     let loader = MemoryLoader::new()

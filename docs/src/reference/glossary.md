@@ -68,8 +68,9 @@ action such as dragging in the scene tree; saved and copied, not offered),
 `Derived` (recomputed by the engine from authored state; never saved, never
 copied), and `Runtime` (per-run state that nobody authors and nothing
 recomputes). A `Runtime` component is never in a scene; one also declared
-`resumable` — a behavior's state companion `Guard#state` is the one kind today — is kept by a
-[game save](#game-save--saverecord) so play resumes where it stopped. It is what
+`resumable` — a behavior's state companion `Guard#state`, and a
+[system](#system-ergon)'s component and its companion, are the kinds today — is
+kept by a [game save](#game-save--saverecord) so play resumes where it stopped. It is what
 keeps a simulated pose out of a scene file without a line of filtering, because
 the serializer honours the axis directly. See [Physics](../concepts/physics.md)
 and [Scenes and game saves](../concepts/saves.md).
@@ -140,7 +141,9 @@ needs stopping to be *ordinary*: when its fuel runs out, Ergon suspends at the
 next [safepoint](#safepoint) — never mid-expression — and keeps the machine that
 suspended, so the next frame resumes rather than restarts. Runs inside a fuel
 budget converted from the time GORNA allocated, and degrades by deferring whole
-behaviors rather than thinning every one. Scripts run only in
+behaviors rather than thinning every one. A script declares behaviors (one
+entity's logic) and [systems](#system-ergon) (one rule over the rows of a
+[query](#query-ergon)). Scripts run only in
 `EngineMode::Playing`. See [Scripting](../concepts/scripting.md) and the
 [Ergon reference](./ergon.md).
 
@@ -269,7 +272,10 @@ where the entity sits in one running world. Two namespaces share its 64 bits:
 edits on two branches do not collide; and **created** ids, numbered by the world
 for entities the game or code spawns. Entities inside a
 [prefab instance](#prefab--prefab-instance--override) derive theirs from the
-instance root's id. See [Data and the ECS](../concepts/ecs.md) and
+instance root's id. A **named** id, `PersistentId::named(text)`, is derived from
+a text under a namespace of its own, fixed forever, and lives in the authored
+namespace: a [system](#system-ergon)'s entity is `named("system:Name")`, the same
+in every save. See [Data and the ECS](../concepts/ecs.md) and
 [Serialization](../concepts/serialization.md).
 
 ### Prefab / prefab instance / override
@@ -283,6 +289,27 @@ one of those differences — a field value that differs, a component added or
 removed. The editor's inspector marks overrides, reverts them, and applies a
 field, a component or the whole instance's overrides back into the prefab. See [Prefabs](../concepts/prefabs.md) and
 [How-to: work with prefabs](../how-to/work-with-prefabs.md).
+
+### Query (Ergon)
+
+`foreach (Entity e, ref Health h, Regen r, Shield? s) with Player without Dead
+{ … }` — a `foreach` with no `in`, whose body runs once per entity holding every
+component bound without `?` and every `with`, and none of the `without`. Each
+binding is a copy of the row's component (`T?` is `null` where the row lacks
+it); only a [`ref` binding](#ref-binding-ergon), in a system, is written back.
+Outside a system a query is read-only. Every component it names joins the
+program's reads. See [Scripting](../concepts/scripting.md#queries-and-sweeps)
+and the [Ergon reference](./ergon.md#queries).
+
+### `ref` binding (Ergon)
+
+A query binding written `ref Health h`, allowed only in a system and never
+optional or of a behavior's component. `h` is a copy whose fields the body may
+assign; where the row ends — after the body, where a `continue` lands, before a
+`break` or a `return` leaves the sweep — the fields that differ from the row as
+read are written into the frame's working set at once and into the run's
+pending batch, which leaves as one `WriteColumn` per component and set of fields,
+in the order the run wrote them. See [Sweep](#sweep-ergon).
 
 ### ResourceBudget
 
@@ -377,6 +404,30 @@ The Scheduler invokes it because it owns tick ordering — this is orchestration
 *when* Data takes its turn, not control over *how* Data lays itself out. See
 [The frame](../concepts/the-frame.md).
 
+### Sweep (Ergon)
+
+One run of a [query](#query-ergon)'s body over its rows. The rows are taken once,
+when the sweep starts — in entity order, from the frame's working set — and held
+by the machine, so a structural change in the body is a command that leaves the
+sweep alone; each row is checked again when reached and skipped if it no longer
+matches. A sweep short of fuel stops at a safepoint like any body, even
+part-way through a row, and resumes next frame on that row; the rows it ended
+leave with the run, each written once. See
+[Scripting](../concepts/scripting.md#queries-and-sweeps).
+
+### System (Ergon)
+
+`system Name { … }` — a behavior with no subject: one rule over the entities its
+[queries](#query-ergon) match. No `this`, no `Position()`, no states, no `on`
+handlers, no `async`/`await`, no `OnSpawn`/`OnDespawn`; fields, `Update`,
+`every`/`after`, methods, `OnLoad` and `OnResumeFailed`. It runs as a behavior
+instance on **its one entity** — spawned by the `script_systems` data system
+while the game plays, known by the [named id](#persistentid) `system:Name`,
+holding the system's component and its state companion, both `Runtime` and
+resumable: never in a scene or a snapshot, kept by a game save. Behaviors and
+systems take their turns in one list, by module path, then source order. See
+[Scripting](../concepts/scripting.md#a-system-at-a-glance).
+
 ### Vessel
 
 The SDK's entity-spawn builder. It guarantees every spawned entity has a
@@ -392,6 +443,18 @@ and publishes into the `LaneBus` for lanes to consume (`RenderWorld`,
 `ShadowView`, …). A cached View is bit-identical to a freshly projected one — only
 *whether* the projection runs changes, never *what* it contains. See
 [AGDF](../concepts/agdf.md).
+
+### Watchdog (Ergon)
+
+What bounds a body that never finishes — a loop with no `await`, cut by fuel
+frame after frame. Per instance it counts the game time the body under way has
+spent running without finishing — a frame its behavior sits out repaying fuel
+that body overdrew included (a frame it waits on an `await`, or is not run for
+any other reason, adds nothing; resuming from an `await` restarts the count). At
+`WATCHDOG_WARN` (10 s) it is reported once, naming the member and its site; at
+`WATCHDOG_FAULT` (60 s) the instance faults like any fault — disabled until an
+edit to its module. The count is saved with the body. See
+[Scripting](../concepts/scripting.md#a-body-that-never-finishes).
 
 ---
 

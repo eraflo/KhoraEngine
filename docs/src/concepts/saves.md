@@ -44,7 +44,7 @@ was taken from:
 |---|---|
 | `base` | the scene the save was taken against, by asset id |
 | `order` | every entity of the saved world, tree by tree, each parent's children in order — so siblings keep the order play left them in |
-| `created` | the entities the game made; their ids come from the [created namespace](./serialization.md#pages-persistent-ids-provenance) |
+| `created` | the entities the game made; their ids come from the [created namespace](./serialization.md#pages-persistent-ids-provenance) — a system's entity keeps its named id |
 | `destroyed` | the scene's entities the game destroyed |
 | `removed` | the components the game removed from the scene's entities, **named** — a component the author adds to the scene later is not one the game removed |
 | `changes` | every entity that differs from the scene, with the components that differ, **whole** |
@@ -97,9 +97,10 @@ them are needed to *resume* a game rather than restart it, and declare
 themselves **resumable**:
 
 A Rust component says so with `#[component(provenance = Runtime, resumable)]`;
-none does today. The one resumable kind is declared while the engine runs: a
+none does today. The resumable kinds are declared while the engine runs: a
 behavior's state companion, `Guard#state`, registered `Runtime` and resumable
-beside the `Guard` its script declares.
+beside the `Guard` its script declares; and a [system](./scripting.md#a-system-at-a-glance)'s
+component with its companion, `Regeneration` and `Regeneration#state`.
 
 A save keeps every resumable component of every entity it holds. A behavior's
 fields are merged like everything else — they live in its component, compared
@@ -109,6 +110,16 @@ That is how a guard saved half-way through an attack loads half-way through it:
 its [state companion](./scripting.md#saved-mid-sentence) carries its state, its
 timers' remaining time, the machine stopped at its `await`, and the facts of its
 life — whether it has spawned, whether it faulted and under which code.
+
+A system's state lives on an entity no author made: the one the engine keeps
+for each system while the game plays, named `system:Regeneration`. A scene never
+holds it — whatever the encoding, the Play snapshot included — so pressing Stop
+takes it away. A game save holds it as an entity the game made, under that
+named id rather than a created number, with the system's fields and companion:
+its timers, a sweep it stood part-way through, a fault. Loading finds the entity
+of that name again instead of making a second; a save whose system the project
+has since renamed or removed loads, and the engine gives the stale entity up
+once play resumes.
 
 ## Lifecycle across a save
 

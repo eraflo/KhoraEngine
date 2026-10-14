@@ -34,6 +34,21 @@ pub struct Resumed {
     pub tier: Result<ResumeTier, Abandoned>,
 }
 
+/// A body that has run past [`WATCHDOG_WARN`](super::WATCHDOG_WARN) game
+/// seconds without finishing — reported once per run of the body, for the
+/// editor to show.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Slow {
+    /// The entity whose instance runs the body.
+    pub entity: khora_core::ecs::entity::EntityId,
+    /// Which behavior — or system — the body belongs to.
+    pub behavior: String,
+    /// The body's member path: `"Update"`, `"Patrol.OnHit"`, `"__every(0.5)"`.
+    pub member: String,
+    /// The named site the body stands at.
+    pub site: String,
+}
+
 /// What one run of the lane did.
 ///
 /// Returned through the context rather than logged, so the agent can report a
@@ -86,4 +101,6 @@ pub struct ScriptRunReport {
     /// The rows the frame's queries took: the work of its systems' sweeps,
     /// which the instance count alone does not price.
     pub swept_rows: usize,
+    /// Bodies this frame found running past the watchdog's first limit.
+    pub slow: Vec<Slow>,
 }

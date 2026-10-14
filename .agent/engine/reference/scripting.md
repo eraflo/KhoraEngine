@@ -75,6 +75,11 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   column cell only with the same field.
 
 ## Hard rules
+- **A system is a behavior with no subject — never a second runtime.** It runs as an instance on its
+  singleton entity; anything that needs an entity of its own is refused in it. `ref` is a system's only;
+  `ref` on a behavior's component is refused (a turn builds on earlier `Set`s, not on column writes).
+- **A `ref` batch never outlives its run** and leaves before a later command on its component — the run's
+  writes keep their order. A sweep's rows are taken once; structural changes in the body are commands.
 - **A script never writes the `World`.** Its effects are queued as `WorldCommand`s and applied by a
   data system during `Maintenance`. This is what lets the script lane run world-free.
 - **The agent chooses a lane; the lane does the work.** `ScriptAgent` holds lanes, current lane,
@@ -148,13 +153,14 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   `ColumnSnapshot` per page column, live rows only — snapshots include orphan rows). A reload whose reads
   were not projected this frame is deferred one frame. A `component` declaration is also a `StructLayout`, so
   a copy imports as a struct.
-- **Behaviors run as components.** Registry: `ComponentVTable.script: Option<ScriptRole{Behavior{module}|
-  BehaviorState{behavior}}>` and `declared_by` (the module declaring it now; `None` for an orphan or a
+- **Behaviors run as components.** Registry: `ComponentVTable.script: Option<ScriptRole{Behavior{module, order}|
+  System{module, order}|BehaviorState{behavior}}>` and `declared_by` (the module declaring it now; `None` for an orphan or a
   file-only declaration), set by `apply_declarations`. Before an app's `setup`, the declarations of the
   scripts mounted at startup are registered (`register_pending`), so `GameWorld::add_declared_component`
-  attaches a behavior by name. Flow (`flow/behaviors.rs`, `World::behavior_components`): behaviors by
-  `(module, name)`, rows by entity, `ScriptInstance.row` = the full row every frame, `arrival` only for a new
-  `(entity, behavior)` (fields away from the registered defaults, or — restored — the row and the
+  attaches a behavior by name. Flow (`flow/behaviors.rs`, `World::behavior_components`): behaviors and
+  systems by `(module, order, name)` — `order` = source position among the module's behaviors and
+  systems (`DeclaredComponent.order`) — rows by entity, `ScriptInstance.row` = the full row every
+  frame, `arrival` only for a new `(entity, behavior)` (fields away from the registered defaults, or — restored — the row and the
   companion as `observed`). Lane (`script_lane/attached.rs`, `shares.rs`): `seen` rows → fields written
   outside are adopted; `BehaviorUpdate.changed` = fields the turn changed; fuel shared per behavior (equal
   shares among those that can spend, rotating remainder, debt for overdraft, a cursor each); an arriving
@@ -198,6 +204,54 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   or whose field names the language cannot spell (a tuple index, or a reserved word —
   `UiInteraction.state`), is left undeclared with the reason. An empty `struct` means *marker*, and
   emitting one for a component that does carry data would be a false statement.
+- **Systems (spec 10) are behaviors with no subject.** `system Name { … }` (`Item::System`, parsed by
+  `parse_behavior`; no attributes) declares `Name` (`DeclaredKind::System`, Script domain) + `Name#state`;
+  both registered `Runtime` + resumable, role `ScriptRole::System { module, order }`
+  (`khora-io/src/script/declarations.rs`; a name changing kind on reload updates provenance/resumable).
+  Checker (`types/query.rs::check_system`, `types/expr.rs`, `types/stmt.rs`): refuses `this`,
+  `SUBJECT_NATIVES` (`Position`) directly and through any chain of free functions
+  (`SubjectCalls`, refused at the system's call), `state`, `become`, `on`, `async`/`await`,
+  `OnSpawn`/`OnDespawn`. A system's name is not in the checker's `components`: no script `Get`/`Set`/
+  `Add`/`Remove`/`Has`/queries it. **One singleton entity per system**: the `script_systems` DataSystem
+  (`khora-data/src/ecs/systems/script_systems.rs`, PreExtract after `script_components`, only while
+  `runs_gameplay()`) finds or spawns `PersistentId::named("system:Name")` (`singleton_id`; `NAMED`
+  namespace in `khora-core/src/ecs/persistent_id.rs` is fixed forever) holding `Name` at its defaults —
+  the lane gives it `Name#state` like any behavior — and despawns it when the name is no longer a
+  declared system. `flow/behaviors.rs::runs_on`: a system's row runs only on its singleton (other holders
+  are data). `scene/capture.rs::scene_entities` drops every singleton from scenes **and** snapshots;
+  `capture_game` keeps it (in `created`, under its named id). Only the declaring module's program runs a
+  system it is imported into.
+- **Queries (`Stmt::Query`).** `parser/stmt.rs::parse_foreach` → `parse_query` (a binding then `,`/`)`
+  instead of `in`, or a leading `ref`); `with`/`without` are contextual idents, `with` first; `ref` and
+  `system` are keywords. Checker `types/query.rs::check_query`: `Entity` once, never `?`/`ref`; each
+  component once, never both named and excluded; at least one required (bound without `?`, or `with`);
+  `ref` only in a system's members (free functions and behaviors are read-only), never on a behavior's
+  component, never optional; plain bindings are read-only copies (`refuse_copy_write`), no binding is
+  reassigned (`types/assign.rs`). Compile `bytecode/query.rs`: `QueryRows` (checkpoint, sized cost
+  `1 + scan_cost`) snapshots `FrameComponents::matching(all, none)` — entity order, candidates = holders of
+  the rarest required component, working set incl. this frame's adds/removes — into hidden local `#q`;
+  per row `QueryHolds` re-check (skip), `GetComponent` per binding, plus a hidden original `#o<name>` per
+  `ref`. Every named component joins `Program::reads`; queries fingerprinted by what they match.
+- **`ref` write-back.** `Instruction::WriteRow` at the row's end (body end / `continue`; `end_row_for_break`,
+  `end_rows_for_return`), cost `1 + fields`: fields differing from `#o` → `host.components.observe`
+  (working set, visible at once) + `vm/rows.rs::PendingRows` keyed (component, field names; a row joins
+  only the component's **latest** batch with exactly those fields). `send_rows` emits each batch as
+  `WorldCommand::WriteColumn` before a later `WriteComponent`/`RemoveComponent` of that component in the
+  run and at the end of **every** run (`Machine::run_counting`) — no batch outlives a run, none is frozen.
+  `host.swept` → `ScriptRunReport.swept_rows`; the agent prices `2 µs × instances + PER_ROW (200 ns) × rows`.
+- **Watchdog.** Constants in `khora-lanes/src/script_lane/watchdog.rs` (re-exported by `script_lane`),
+  report entry `report.rs::Slow`. `Pending.running` = game seconds a pending body *ran* without finishing:
+  the frame it starts and is cut (`turn.rs` `kept` + `park`) and every frame it is advanced and cut add `dt`;
+  a frame its behavior sits out repaying a debt **that body** overdrew is counted as it passes
+  (`watchdog::sit_out`, from the starvation path in `frame.rs`, debtor = `FuelShares::debtor`, only when the
+  share has fuel — `own > 0`); `await` waits and frames not run for any other reason add nothing; an
+  `await` resets it. Saved in the companion (`PendingSequence.running`, serde default 0), kept by every
+  hot-reload tier; a load forgives the instance's debt (`FuelShares::forgive`). A due timer never starts,
+  and a pending body is never resumed, with 0 fuel left. `WATCHDOG_WARN = 10 s`: one `log::warn!` + a
+  `Slow` entry as the count crosses it. `WATCHDOG_FAULT = 60 s`: a fault like any (instance disabled,
+  `#state.fault` fingerprint-stamped, re-enabled by an edit); the body is released (`turn.rs` `release`):
+  a timer is rearmed, a hook hands its place to the body restored behind it. Every body kind, behaviors
+  and systems.
 
 ## Resume (tiers)
 One path for every resume — next frame, hot reload, game load (`vm/resume.rs::resume`):
@@ -224,6 +278,8 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** �
 ## Saves and lifecycle
 - A behavior's state companion `Guard#state` is `Runtime` + `resumable`: never in a scene, always in a
   game save — a guard saved mid-attack loads mid-attack.
+- A system's component and its companion are `Runtime` + `resumable` on the singleton entity: never in a
+  scene or a snapshot, always in a game save; a load finds `system:Name` again, never makes a second.
 - `InstanceLifecycle { spawned, fault }` is **recorded**, not derived: an empty snapshot does not say
   whether `OnSpawn` ran. A fault recorded under another program fingerprint is cleared on load.
 - `OnLoad` runs once, only when an instance is **restored from a save** — after its fields and

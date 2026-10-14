@@ -77,6 +77,7 @@ pub fn suspended_snapshot(target: EntityId) -> ScriptSnapshot {
         pending: Some(PendingSequence {
             fingerprint: 0xfeed_beef_dead_c0de,
             remaining: 1.5,
+            running: 0.0,
             machine: FrozenMachine {
                 body: PendingBody::Update,
                 registers: vec![

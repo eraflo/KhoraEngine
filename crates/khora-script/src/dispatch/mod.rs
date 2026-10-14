@@ -240,9 +240,9 @@ pub fn tick_timers(
             continue;
         }
 
-        // Due, and another body is already part-way through: this one waits,
-        // due, for the turn after that body finishes.
-        if ticked.suspended.is_some() {
+        // Due, and another body is already part-way through — or no fuel is
+        // left to start it with: this one waits, due, for a later turn.
+        if ticked.suspended.is_some() || fuel <= ticked.spent {
             host.fields
                 .set(slot, Persisted::Scalar(Value::Float(remaining)));
             continue;

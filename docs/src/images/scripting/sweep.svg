@@ -1,0 +1,111 @@
+<svg class="kp-figure" viewBox="0 0 760 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-sweep-title kp-sweep-desc">
+  <title id="kp-sweep-title">A system's sweep, row by row</title>
+  <desc id="kp-sweep-desc">A query takes its rows once, when the sweep starts: the entities holding Health and Regen and no Dead, in entity order. Each row is checked again when it is reached, and one that has since gained Dead is skipped. At the end of a row, the fields of the ref copy that differ from the row as it was read are written into the frame's working set, where later rows, later sweeps and later scripts read them at once, and into the run's pending batch for Health and the fields written. However the run stops, each batch leaves as one column write, in the order it was started, and early before a later Set, Add or Remove of Health.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-code { fill: var(--k-bg-1, #101622); }
+    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-row { fill: var(--k-bg-1, #101622); }
+    .kp-cell { fill: var(--k-bg-3, #1f2636); }
+    .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
+    .kp-ghost { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 3 3; }
+    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 16px; }
+    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
+    .kp-verb { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11.5px; }
+    .kp-kw { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
+    .kp-mono-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+    .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+  </style>
+  <defs>
+    <marker id="kp-sweep-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path class="kp-arrowhead" d="M0,0 L8,4 L0,8 z"/>
+    </marker>
+  </defs>
+  <rect class="kp-bg" x="0" y="0" width="760" height="430" rx="8"/>
+  <!-- the query -->
+  <rect class="kp-code" x="16" y="16" width="728" height="34" rx="6"/>
+  <text class="kp-mono" x="32" y="37" style="font-size: 12px"><tspan class="kp-kw">foreach</tspan> (<tspan class="kp-kw">ref</tspan> Health h, Regen r) without Dead { h.current += r.rate; }</text>
+  <text class="kp-head" x="32" y="78">1 · rows, taken once</text>
+  <text class="kp-head" x="288" y="78">2 · each row's end</text>
+  <text class="kp-head" x="544" y="78">3 · where the write goes</text>
+  <!-- column 1: the row list -->
+  <rect class="kp-panel" x="16" y="88" width="216" height="236" rx="6"/>
+  <text class="kp-station" x="32" y="114">the row list</text>
+  <text class="kp-label" x="32" y="132">in entity order, at its start</text>
+  <rect class="kp-cell-soft" x="28" y="146" width="192" height="24" rx="2"/>
+  <text class="kp-mono" x="38" y="162">e2</text>
+  <text class="kp-mono" x="70" y="162">Health 38 · Regen 2</text>
+  <rect class="kp-cell-soft" x="28" y="176" width="192" height="24" rx="2"/>
+  <text class="kp-mono" x="38" y="192">e5</text>
+  <text class="kp-mono" x="70" y="192">Health 40 · Regen 2</text>
+  <rect class="kp-sel" x="25" y="173" width="198" height="30" rx="3"/>
+  <rect class="kp-ghost" x="28" y="206" width="192" height="24" rx="2"/>
+  <text class="kp-mono-dim" x="38" y="222">e8</text>
+  <text class="kp-note" x="70" y="222">gained Dead — skipped</text>
+  <rect class="kp-cell-soft" x="28" y="236" width="192" height="24" rx="2"/>
+  <text class="kp-mono" x="38" y="252">e11</text>
+  <text class="kp-mono" x="70" y="252">Health 97 · Regen 1</text>
+  <rect class="kp-cell-soft" x="28" y="266" width="192" height="24" rx="2"/>
+  <text class="kp-mono" x="38" y="282">e14</text>
+  <text class="kp-mono" x="70" y="282">Health 12 · Regen 3</text>
+  <text class="kp-note" x="32" y="310">each row re-checked when reached</text>
+  <path class="kp-flow" d="M226,188 L266,188" marker-end="url(#kp-sweep-arrow)"/>
+  <!-- column 2: the row's end -->
+  <rect class="kp-panel" x="272" y="88" width="216" height="236" rx="6"/>
+  <text class="kp-station" x="288" y="114">row's end</text>
+  <text class="kp-label" x="288" y="132">e5, as the body leaves it</text>
+  <text class="kp-head" x="288" y="162">read</text>
+  <rect class="kp-cell" x="324" y="146" width="152" height="24" rx="2"/>
+  <text class="kp-mono" x="332" y="162">current 40 · max 100</text>
+  <text class="kp-head" x="288" y="192">now</text>
+  <rect class="kp-cell" x="324" y="176" width="152" height="24" rx="2"/>
+  <text class="kp-mono" x="332" y="192">current 42 · max 100</text>
+  <rect class="kp-sel" x="321" y="173" width="158" height="30" rx="3"/>
+  <text class="kp-verb" x="288" y="228">WriteRow</text>
+  <text class="kp-label" x="288" y="246">changed fields only: current</text>
+  <text class="kp-note" x="288" y="272">after the last statement,</text>
+  <text class="kp-note" x="288" y="286">where a continue lands,</text>
+  <text class="kp-note" x="288" y="300">before a break or a return</text>
+  <path class="kp-flow" d="M490,224 C510,224 504,132 524,132" marker-end="url(#kp-sweep-arrow)"/>
+  <path class="kp-flow" d="M490,224 C510,224 504,206 524,206" marker-end="url(#kp-sweep-arrow)"/>
+  <!-- column 3: working set and pending batch -->
+  <rect class="kp-panel" x="528" y="88" width="216" height="236" rx="6"/>
+  <text class="kp-station" x="544" y="114">working set</text>
+  <text class="kp-label" x="544" y="132">later rows, sweeps, scripts</text>
+  <text class="kp-label" x="544" y="148">read current 42 at once</text>
+  <path class="kp-rule" d="M540,162 H732"/>
+  <text class="kp-station" x="544" y="188">pending batch</text>
+  <text class="kp-mono" x="544" y="206">Health {current}</text>
+  <rect class="kp-cell" x="540" y="216" width="44" height="34" rx="2"/>
+  <text class="kp-mono-dim" x="546" y="230">e2</text>
+  <text class="kp-mono" x="546" y="244">40</text>
+  <rect class="kp-cell" x="588" y="216" width="44" height="34" rx="2"/>
+  <text class="kp-mono-dim" x="594" y="230">e5</text>
+  <text class="kp-mono" x="594" y="244">42</text>
+  <rect class="kp-sel" x="585" y="213" width="50" height="40" rx="3"/>
+  <rect class="kp-cell" x="636" y="216" width="44" height="34" rx="2"/>
+  <text class="kp-mono-dim" x="642" y="230">e11</text>
+  <text class="kp-mono" x="642" y="244">98</text>
+  <rect class="kp-cell" x="684" y="216" width="44" height="34" rx="2"/>
+  <text class="kp-mono-dim" x="690" y="230">e14</text>
+  <text class="kp-mono" x="690" y="244">15</text>
+  <text class="kp-note" x="544" y="276">rows writing other fields</text>
+  <text class="kp-note" x="544" y="290">start a batch of their own</text>
+  <path class="kp-flow" d="M664,326 L664,348" marker-end="url(#kp-sweep-arrow)"/>
+  <!-- the run's end -->
+  <rect class="kp-row" x="16" y="340" width="728" height="74" rx="6"/>
+  <text class="kp-station" x="32" y="382">the run's end</text>
+  <text class="kp-label" x="168" y="364">However the run stops — finished, cut by fuel, faulted —</text>
+  <text class="kp-label" x="168" y="382">each batch leaves as one column write, in the order started,</text>
+  <text class="kp-label" x="168" y="400">and early, before a later Set, Add or Remove of Health.</text>
+  <rect class="kp-cell" x="600" y="352" width="128" height="26" rx="13"/>
+  <text class="kp-verb" x="664" y="369" text-anchor="middle">WriteColumn</text>
+  <text class="kp-note" x="664" y="398" text-anchor="middle">into the frame's commands</text>
+</svg>

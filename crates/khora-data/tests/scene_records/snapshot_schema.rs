@@ -530,6 +530,7 @@ fn a_pending_sequence_round_trips_with_its_frozen_machine() {
         let sequence = PendingSequence {
             fingerprint: 0xDEAD_BEEF_0123_4567,
             remaining: 0.75,
+            running: 0.0,
             machine,
         };
         let record = to_record(&sequence, &mut Nothing).expect("record");
@@ -630,6 +631,7 @@ fn every_register_snapshot(target: EntityId) -> khora_core::script::ScriptSnapsh
         pending: Some(PendingSequence {
             fingerprint: u64::MAX,
             remaining: f32::INFINITY,
+            running: 0.0,
             machine: FrozenMachine {
                 body: PendingBody::Timer {
                     timer: format!("Guard.__every(0.5)#{}", u32::MAX),

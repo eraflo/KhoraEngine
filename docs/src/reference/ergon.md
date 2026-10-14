@@ -37,6 +37,7 @@ behavior Guard {
 | `import "path.erg";` | runs | before every other item; paths relative to the script root; a cycle is refused with its chain. Every imported module joins **one flat namespace**; `as Alias` parses and is unused |
 | `fn <type> Name(params) { … }` | runs | free functions; called before their declaration and recursively; `this` is refused in them; a name an engine function already has is refused |
 | `behavior Name { … }` | runs | a component of the same name, its fields the behavior's, with a state companion `Name#state`; attached by adding the component (`GameWorld::add_declared_component`). Names are global: two modules declaring one is refused |
+| `system Name { … }` | runs | a behavior with no subject, run once a frame on an entity of its own; see [Systems](#systems). Its name is global like a behavior's |
 | `struct Name { … }` | runs — a value type; its field defaults must be constants; operator overloads check but do not compile yet |
 | `[Domain(D)] component Name { … }` | runs — a component the project declares; see [Declaring components](#declaring-components) |
 | `[Domain(D)]` on a behavior | runs — where the behavior's fields are stored (default `Script`) |
@@ -164,7 +165,9 @@ these parameters:
 | `void OnResumeFailed(string member)` | an edit left nothing of a body part-way through; `member` is e.g. `"OnSpawn"`, `"Chase.Attack"`, `"__every(0.5)"` |
 | `void FixedUpdate(float dt)` | reserved — never called yet; the checker warns |
 
-See [One turn](../concepts/scripting.md#one-turn) for their order.
+See [One turn](../concepts/scripting.md#one-turn) for their order. A
+[system](#systems) takes `Update`, `OnLoad` and `OnResumeFailed`; it has no
+entity to call `OnSpawn` or `OnDespawn` for.
 
 ## States
 
@@ -222,6 +225,7 @@ stateDiagram-v2
 | `if (var x = opt)`, `while (var x = Next())` | runs — `x` is the present value, in the branch or the body only |
 | `match (opt) { T x => …, null => … }` | runs — takes an optional apart; see below |
 | `foreach (var x in xs)`, `foreach (int x in xs)` | runs — over a copy of `xs` taken when the loop starts; `x` is a copy of each element |
+| `foreach (Entity e, ref Health h, Regen r) with A without B` | runs — a query: once per entity holding what it names; see [Queries](#queries) |
 | `int x;` without a value | runs — starts at its type's zero; `Entity e;`, `Vec3 v;` are refused: give them a value, or use `Entity?` |
 
 ### `match`
@@ -439,15 +443,137 @@ void Hurt() { this.Raise("Damaged", 30); }
 - The engine raises `Touched(Entity other)` and `Separated` from collisions:
   `on Touched(Entity other) { other.Despawn(); }`.
 
+## Systems
+
+```text
+component Regen { float rate = 2.0; }
+
+system Spawner {
+    int spawned = 0;
+
+    every 2s {
+        Spawn(Vec3(0.0, 0.0, 0.0), Regen { rate: 1.0 });
+        spawned += 1;
+    }
+    after 30s { Log("half a minute in"); }
+    void OnLoad() { Log("resumed"); }
+}
+```
+
+A `system` is a behavior with no subject: one rule over the entities its
+[queries](#queries) match, run once a frame while the game plays, on an entity
+of its own that no scene holds and a game save keeps
+([its one entity](../concepts/scripting.md#its-one-entity)). Its members are a
+behavior's — fields, `Update`, `OnLoad`, `OnResumeFailed`, `every`, `after`,
+methods — and its fields are named directly. In its queries, and only there, a
+binding may be `ref`.
+
+| Refused in a system | Message, in short | Why |
+|---|---|---|
+| `this` | `this` names the entity a behavior is attached to, and a system has none | its entities are the rows of its queries — bind one with `Entity e` |
+| `Position()` | `Position()` reads the entity a behavior is attached to | the same; there is no own position |
+| a call to a free function that reads `Position()`, itself or through others | `F` reads the entity a behavior is attached to through `Position()` | refused at the call; pass the function an `Entity` |
+| `state S { … }` | a system has no states | what one entity is doing is a behavior's state |
+| `become S;` | `become` has nowhere to go in a system | the same |
+| `on E(…) { … }` | a system receives no event: `on E` is aimed at an entity | handle it in a behavior of the entities it is sent to |
+| `async` member | a system has no `async` member | a wait would be one entity's time; a system's time is `every` and `after` |
+| `await` | `await` is not allowed in a system | the same |
+| `OnSpawn`, `OnDespawn` | a system has no entity to call `OnSpawn` for | a system starts with the game |
+| `[Critical]`, `[Domain(…)]`, any attribute | attributes only apply to behaviors and components | its fields live in the `Script` domain |
+| a name another declaration, an engine component or its `formerly` has | declared twice, or an engine component | a system is a component: one namespace for all |
+
+A system's component is not one a script reaches: `e.Get(Spawner)`,
+`e.Set(Spawner { … })`, `Add`, `Remove`, `Has` and a query binding `Spawner`
+are refused as not a component a script writes or binds — another holder would
+be a second instance.
+
+`system` and `ref` are keywords. `with` and `without` are words only after a
+query's parentheses; anywhere else they are ordinary names.
+
+## Queries
+
+```text
+component Health { float current = 100.0; float max = 100.0; }
+component Dead   { float since = 0.0; }
+
+system Triage {
+    int critical = 0;
+
+    void Update(float dt) {
+        foreach (Entity e, ref Health h) without Dead {
+            if (h.current <= 0.0) { e.Add(Dead { }); continue; }
+            h.current -= 1.0;
+            if (h.current < 10.0) { critical += 1; }
+        }
+    }
+}
+
+behavior Medic {
+    every 1s {
+        foreach (Entity e, Health h) without Dead {     // read-only
+            if (h.current < 20.0) { e.Set(Health { current: h.current + 5.0 }); }
+        }
+    }
+}
+```
+
+`foreach (bindings) [with A, …] [without B, …] body` — `with` before
+`without`, each optional. A row is an entity holding every component bound
+without `?` and every `with`, and none of the `without`.
+
+| Binding | Holds |
+|---|---|
+| `Entity e` | the row's entity; at most once, never `?` or `ref` |
+| `C c` | a read-only copy of the row's `C` |
+| `C? c` | a copy, or `null` where the row has no `C`; it does not filter |
+| `ref C c` | a copy whose changed fields are written back at the row's end — in a system only |
+
+- **The rows are taken when the sweep starts**, in entity order, from the
+  frame's working set — this frame's `Set`, `Add` and `Remove` included. A
+  structural change in the body is a command and leaves the sweep alone; each row
+  is checked again when it is reached, and skipped if it no longer matches.
+- **A `ref` copy is written where the row ends** — after the body, where a
+  `continue` lands, before a `break` or a `return` leaves the sweep: its changed
+  fields reach the working set at once and leave as one column write per
+  component and set of fields, in the order the run made them. See
+  [Queries and sweeps](../concepts/scripting.md#queries-and-sweeps).
+- `break`, `continue` and `return` act as in any loop; a query inside a query
+  sweeps its rows once per outer row.
+- **Cost**: taking the rows `1 +` the candidates visited (the holders of the
+  rarest required component), and is a place a run may stop before; checking a
+  row `1 +` the components it is checked against; each binding read `1 +` its
+  fields (a `ref` binding twice: its copy, and the row as read); each `ref`
+  write-back `1 +` the fields compared.
+- Outside a system's own members — in a behavior, in a free function — a query
+  is read-only.
+
+| Refused | Message, in short | Why |
+|---|---|---|
+| `ref C` outside a system | this query is read-only: only a system writes `C` in place | a behavior writes other entities with `e.Set(C { … })` |
+| `ref G`, `G` a behavior | `G` is a behavior's component: its fields are written by its own turn, or by `Set` | its turn builds on the `Set`s queued before it; a column write would bypass that order |
+| `ref C? c` | a `ref` binding cannot be optional | where `C` is absent there is nothing to write back to |
+| `r.rate = 2.0` on a plain binding | `r` is a copy of `Regen` and is read-only | write it with `e.Set(Regen { … })` |
+| `h = …` on any binding | `h` is a query's binding and cannot be reassigned | it is the row's own — declare a local |
+| `Loot l`, `int n`, `Health[] hs` | `X` is not a component | a query binds `Entity` and components |
+| `Entity? e`, `ref Entity e` | a row's entity is always there, and is not written | bind it as `Entity e` |
+| `Entity e, Entity f` | the row's entity is bound twice | — |
+| `Health a, Health b` | `Health` is named twice in this query | a component is bound once |
+| `Health h, Regen h` | `h` is bound twice in this query | — |
+| `Health h` … `without Health` | `Health` is both named and excluded | no row could match; with `Health?`, its binding would always be `null` |
+| only `?` bindings and `without` | a query needs a component every row holds | bind one without `?`, or name one after `with` |
+| `with`/`without` naming a struct or an unknown name | `X` is not a component | — |
+
 ## Not yet
 
 Maps, methods on structs and arrays (beyond `Push` and `RemoveAt`), struct
 operator overloads at run time, value patterns in `match`, awaiting events,
 closures, reading `Transform` with `Get` (use `Position()`), project components in
-the editor's inspector.
+the editor's inspector, reordering systems (`[Before]` / `[After]`), change
+filters in queries, systems running in parallel.
 
 ## See also
 
 - [Scripting](../concepts/scripting.md) — turns, safepoints, saves, resuming
   after edits.
-- [Glossary](./glossary.md) — safepoint, site, resume tier.
+- [Glossary](./glossary.md) — safepoint, site, resume tier, system, query, sweep,
+  watchdog.

@@ -162,6 +162,7 @@ fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
         pending: Some(PendingSequence {
             fingerprint: 0xfeed_beef_dead_c0de,
             remaining: 1.5,
+            running: 0.0,
             machine: frozen_machine(target),
         }),
         lifecycle: khora_core::script::InstanceLifecycle {
@@ -334,6 +335,7 @@ fn every_persisted_type_round_trips() {
         pending: Some(PendingSequence {
             fingerprint: 1,
             remaining: 0.0,
+            running: 0.0,
             machine: FrozenMachine {
                 body: PendingBody::Spawn,
                 registers: Vec::new(),

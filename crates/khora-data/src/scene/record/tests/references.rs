@@ -210,6 +210,7 @@ fn an_entity_reference_goes_through_the_hooks() {
         pending: Some(PendingSequence {
             fingerprint: 9,
             remaining: 0.5,
+            running: 0.0,
             machine: FrozenMachine {
                 body: PendingBody::Sequence,
                 registers: vec![FrozenValue::Int(1), FrozenValue::Entity(c)],

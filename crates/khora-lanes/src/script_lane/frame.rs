@@ -17,16 +17,16 @@
 //! — whose turn it is, what each cost, who was deferred, and what has to be
 //! written back. A turn knows only about itself.
 
-use khora_core::script::{EventQueue, InstanceLifecycle, RecordedFault};
+use khora_core::script::{EventQueue, RecordedFault};
 use khora_data::flow::ScriptView;
 use khora_script::native::Host;
-use khora_script::vm::{Abandoned, ResumeTier};
 
+use super::arrival::{arrive, Arriving};
 use super::hooks::{despawns_itself, say_goodbye};
 use super::mail::keep;
 use super::persistence;
-use super::report::{Resumed, ScriptRunReport};
-use super::runtime::{Instance, Pending, ScriptRuntime};
+use super::report::ScriptRunReport;
+use super::runtime::ScriptRuntime;
 use super::shares;
 use super::turn::{run_one, Invocation, Outcome, Progress};
 
@@ -116,6 +116,8 @@ pub fn run_behaviors(
         };
         let spent_before = report.spent;
         let mut starved_at: Option<khora_core::ecs::entity::EntityId> = None;
+        // The last instance to run: the one a behavior's overspending is.
+        let mut ran_last: Option<khora_core::ecs::entity::EntityId> = None;
 
         for at in order {
             let instance = &view.instances[at];
@@ -197,6 +199,20 @@ pub fn run_behaviors(
                     continue;
                 }
                 report.deferred += 1;
+                // Sitting out what it overdrew is the body's own run time —
+                // when the frame had fuel to repay it with.
+                let repaying = share.is_some_and(|share| share.owing && share.own > 0)
+                    && runtime.shares.debtor(&program.module, &program.behavior)
+                        == Some(instance.entity);
+                if repaying {
+                    super::watchdog::sat_out(
+                        runtime,
+                        instance,
+                        program,
+                        view.delta_seconds,
+                        &mut report,
+                    );
+                }
                 // The first instance the behavior had no fuel for starts it next
                 // frame: one cut part-way through its turn carries on when the
                 // rotation comes back to it, so every instance moves forward.
@@ -275,7 +291,9 @@ pub fn run_behaviors(
                     lifecycle: arrived.lifecycle,
                 })
             });
+            let mut loaded = false;
             if let Some(arriving) = arriving {
+                loaded = arriving.restored;
                 let resumed = arrive(state, arriving, &program.behavior, &compiled);
                 report.resumes.extend(resumed);
             }
@@ -347,7 +365,16 @@ pub fn run_behaviors(
                 loading: state.loading,
                 after_load: state.after_load.take(),
                 resume_failed: std::mem::take(&mut state.resume_failed),
+                slow: None,
             };
+
+            // Brought back by a load as the save had it, it owes nothing: what
+            // it had counted of a debt is in the count the save carried.
+            if loaded {
+                runtime
+                    .shares
+                    .forgive(&program.module, &program.behavior, instance.entity);
+            }
 
             // Where this behavior's own commands start, so a `this.Despawn()` it
             // queues can be told from one an earlier behavior queued.
@@ -366,6 +393,7 @@ pub fn run_behaviors(
                 &mut progress,
                 host,
             );
+            ran_last = Some(instance.entity);
 
             // Its farewell belongs to the frame that *decided* the despawn, not to
             // the one that notices the entity gone: here the entity is still in the
@@ -378,6 +406,21 @@ pub fn run_behaviors(
 
             // The fields go back whatever happened, so a fault does not lose the
             // state the behavior had before it.
+            if let Some((member, site)) = progress.slow.take() {
+                log::warn!(
+                    "script `{}` on {:?}: `{member}` has run {} s of game time without finishing — at {site}; the watchdog stops it at {} s",
+                    program.behavior,
+                    instance.entity,
+                    super::watchdog::WATCHDOG_WARN,
+                    super::watchdog::WATCHDOG_FAULT
+                );
+                report.slow.push(super::report::Slow {
+                    entity: instance.entity,
+                    behavior: program.behavior.clone(),
+                    member,
+                    site,
+                });
+            }
             let state = runtime.instance(instance.entity, &program.behavior);
             state.fields = std::mem::take(&mut host.fields);
             // Where the turn got to goes back whatever happened, so a turn that
@@ -541,86 +584,11 @@ pub fn run_behaviors(
             &group_program.behavior,
             starved_at,
             overspent,
+            ran_last,
         );
     }
 
     report
-}
-
-/// What an entity brings the first frame it appears, read against its
-/// program.
-struct Arriving {
-    /// Its fields: its layout's defaults with what it brought on top.
-    store: khora_script::arena::PersistentStore,
-    /// The body a save caught part-way, taken back into the script as it is
-    /// now — or abandoned.
-    resumed: Option<Result<(Pending, ResumeTier), Abandoned>>,
-    /// Whether it is restored from a save — observed before — rather than
-    /// starting fresh: a scene entity at Play, after Stop, a runtime spawn.
-    restored: bool,
-    /// What the save recorded of its life.
-    lifecycle: InstanceLifecycle,
-}
-
-/// Sets an instance from what its entity brings — wholly: nothing of an
-/// earlier instance under the same entity and behavior survives an arrival.
-///
-/// Fresh, it has not spawned: `OnSpawn` runs once. Restored from a save, it
-/// keeps whether it spawned, stays disabled by a fault recorded under this
-/// very code — a fault under other code is cleared, the fix having shipped —
-/// and owes `OnLoad`, with the body the save caught part-way waiting behind it
-/// — or, when an edit left nothing of that body, owes `OnResumeFailed`.
-///
-/// Returns how that body came back, when it came back below the exact tier.
-fn arrive(
-    state: &mut Instance,
-    arriving: Arriving,
-    behavior: &str,
-    program: &khora_script::vm::Program,
-) -> Option<Resumed> {
-    let fingerprint = program.fingerprint();
-    *state = Instance {
-        fields: arriving.store,
-        ..Instance::default()
-    };
-    if !arriving.restored {
-        return None;
-    }
-    state.spawned = arriving.lifecycle.spawned;
-    // Owed before the save, so heard before anything this load adds.
-    state.resume_failed = arriving.lifecycle.resume_failed.clone();
-    match arriving.lifecycle.fault {
-        Some(fault) if fault.fingerprint == fingerprint => {
-            state.disabled = true;
-            state.fault = Some(fault);
-        }
-        Some(fault) => log::info!(
-            "script `{behavior}` faulted before the save ({}); its code has changed since, so it \
-             runs again",
-            fault.reason
-        ),
-        None => {}
-    }
-    state.loading = true;
-    match arriving.resumed? {
-        Ok((pending, tier)) => {
-            let member = super::runtime::member_of(&pending, program);
-            state.after_load = Some(pending);
-            (tier != ResumeTier::Exact).then(|| Resumed {
-                behavior: behavior.to_owned(),
-                member,
-                tier: Ok(tier),
-            })
-        }
-        Err(abandoned) => {
-            state.resume_failed.push(abandoned.member.clone());
-            Some(Resumed {
-                behavior: behavior.to_owned(),
-                member: abandoned.member.clone(),
-                tier: Err(abandoned),
-            })
-        }
-    }
 }
 
 /// Whether this frame advanced any of the behavior's countdowns.

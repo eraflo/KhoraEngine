@@ -123,6 +123,9 @@ pub(super) struct Progress {
     /// The members of bodies an edit left nothing of, each owed
     /// `OnResumeFailed`, oldest first.
     pub(super) resume_failed: Vec<String>,
+    /// A body this turn found running past the watchdog's first limit: its
+    /// member and where it stands.
+    pub(super) slow: Option<(String, String)>,
 }
 
 /// `OnLoad` has finished: the body the load restored is the one owed next.
@@ -189,6 +192,16 @@ fn advance(
     }
 
     let left = fuel.saturating_sub(*spent);
+    // With nothing left of the turn — a hook in front of it spent it — it is
+    // not run, so it has not run this frame either.
+    if left == 0 {
+        progress.pending = Some(pending);
+        return Some(Outcome::Busy {
+            spent: *spent,
+            delivered: 0,
+            starved: true,
+        });
+    }
     let (run, cost) = pending.machine.run_counting(program, host, left);
     *spent += cost;
     match run {
@@ -201,7 +214,35 @@ fn advance(
             None
         }
         Run::Suspended(why) => {
-            pending.remaining = host.awaiting.take().unwrap_or(0.0);
+            match host.awaiting.take() {
+                // Waiting is not running: the count starts again after it.
+                Some(wait) => {
+                    pending.remaining = wait;
+                    pending.running = 0.0;
+                }
+                None => {
+                    pending.remaining = 0.0;
+                    let machine = &pending.machine;
+                    let site = || machine.standing(program);
+                    match super::watchdog::watch(&mut pending.running, delta, site) {
+                        super::watchdog::Watch::Quiet => {}
+                        super::watchdog::Watch::Slow => {
+                            progress.slow = Some((
+                                super::runtime::member_of(&pending, program),
+                                pending.machine.standing(program),
+                            ));
+                        }
+                        super::watchdog::Watch::Fault(reason) => {
+                            let member = super::runtime::member_of(&pending, program);
+                            release(progress, pending, program, behavior, host);
+                            return Some(Outcome::Faulted {
+                                spent: *spent,
+                                reason: format!("`{member}` {reason}"),
+                            });
+                        }
+                    }
+                }
+            }
             progress.pending = Some(pending);
             Some(Outcome::Busy {
                 spent: *spent,
@@ -209,7 +250,27 @@ fn advance(
                 starved: why == Suspension::OutOfFuel,
             })
         }
-        Run::Faulted(fault) => Some(Outcome::faulted(*spent, fault)),
+        Run::Faulted(fault) => {
+            release(progress, pending, program, behavior, host);
+            Some(Outcome::faulted(*spent, fault))
+        }
+    }
+}
+
+/// What a body part-way through that faulted leaves owed: its timer waits its
+/// interval again, as one whose body faulted at once does; a hook in front of
+/// a restored body hands its place to that body, which an edit re-enabling
+/// the instance resumes.
+fn release(
+    progress: &mut Progress,
+    pending: Pending,
+    program: &Program,
+    behavior: &str,
+    host: &mut Host,
+) {
+    match pending.body {
+        Body::Timer { index, rearm } => finish_timer(program, behavior, host, index, rearm),
+        body => finish_hook(progress, &body),
     }
 }
 
@@ -252,12 +313,17 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                         }
                     }
                     Hook::Suspended { cost, machine, why } => {
-                        progress.pending = Some(kept(machine, Body::Load, program, host));
-                        return Outcome::Busy {
-                            spent: spent + cost,
-                            delivered: 0,
-                            starved: why == Suspension::OutOfFuel,
-                        };
+                        let pending = kept(machine, Body::Load, program, host, delta);
+                        return park(
+                            progress,
+                            pending,
+                            (program, behavior, host),
+                            Outcome::Busy {
+                                spent: spent + cost,
+                                delivered: 0,
+                                starved: why == Suspension::OutOfFuel,
+                            },
+                        );
                     }
                 }
             }
@@ -291,12 +357,17 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                 if let Some(restored) = progress.pending.take() {
                     progress.after_load = Some(restored);
                 }
-                progress.pending = Some(kept(machine, Body::Spawn, program, host));
-                return Outcome::Busy {
-                    spent: spent + cost,
-                    delivered: 0,
-                    starved: why == Suspension::OutOfFuel,
-                };
+                let pending = kept(machine, Body::Spawn, program, host, delta);
+                return park(
+                    progress,
+                    pending,
+                    (program, behavior, host),
+                    Outcome::Busy {
+                        spent: spent + cost,
+                        delivered: 0,
+                        starved: why == Suspension::OutOfFuel,
+                    },
+                );
             }
         }
     }
@@ -334,12 +405,17 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                     }
                     // Finishing it owes nothing.
                     Hook::Suspended { cost, machine, why } => {
-                        progress.pending = Some(kept(machine, Body::Sequence, program, host));
-                        return Outcome::Busy {
-                            spent: spent + cost,
-                            delivered: 0,
-                            starved: why == Suspension::OutOfFuel,
-                        };
+                        let pending = kept(machine, Body::Sequence, program, host, delta);
+                        return park(
+                            progress,
+                            pending,
+                            (program, behavior, host),
+                            Outcome::Busy {
+                                spent: spent + cost,
+                                delivered: 0,
+                                starved: why == Suspension::OutOfFuel,
+                            },
+                        );
                     }
                 }
             }
@@ -376,12 +452,17 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                 index: cut.index,
                 rearm: cut.rearm,
             };
-            progress.pending = Some(kept(cut.machine, body, program, host));
-            return Outcome::Busy {
-                spent,
-                delivered: 0,
-                starved: cut.why == Suspension::OutOfFuel,
-            };
+            let pending = kept(cut.machine, body, program, host, delta);
+            return park(
+                progress,
+                pending,
+                (program, behavior, host),
+                Outcome::Busy {
+                    spent,
+                    delivered: 0,
+                    starved: cut.why == Suspension::OutOfFuel,
+                },
+            );
         }
     }
 
@@ -406,15 +487,21 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                         // event now lives in that machine, so it counts as
                         // delivered: putting it back as well would run its
                         // handler a second time once the first one finishes.
-                        if let Some(machine) = done.suspended {
-                            progress.pending = Some(kept(machine, Body::Sequence, program, host));
-                            delivered += 1;
-                        }
-                        return Outcome::Busy {
+                        let busy = |delivered| Outcome::Busy {
                             spent,
                             delivered,
                             starved: why == Suspension::OutOfFuel,
                         };
+                        if let Some(machine) = done.suspended {
+                            let pending = kept(machine, Body::Sequence, program, host, delta);
+                            return park(
+                                progress,
+                                pending,
+                                (program, behavior, host),
+                                busy(delivered + 1),
+                            );
+                        }
+                        return busy(delivered);
                     }
                     Run::Faulted(fault) => return Outcome::faulted(spent, fault),
                 }
@@ -460,16 +547,57 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
             }
         }
         Hook::Suspended { cost, machine, why } => {
-            progress.pending = Some(kept(machine, Body::Update, program, host));
-            return Outcome::Busy {
-                spent: spent + cost,
-                delivered,
-                starved: why == Suspension::OutOfFuel,
-            };
+            let pending = kept(machine, Body::Update, program, host, delta);
+            return park(
+                progress,
+                pending,
+                (program, behavior, host),
+                Outcome::Busy {
+                    spent: spent + cost,
+                    delivered,
+                    starved: why == Suspension::OutOfFuel,
+                },
+            );
         }
     }
 
     Outcome::Completed { spent }
+}
+
+/// Leaves a body that has just stopped part-way for the next turn, once the
+/// watchdog has counted the frame it ran — the frame it started in counts as
+/// any other — and ends the turn with `busy`; or, past the watchdog's last
+/// limit already, with the fault.
+fn park(
+    progress: &mut Progress,
+    mut pending: Pending,
+    (program, behavior, host): (&Program, &str, &mut Host),
+    busy: Outcome,
+) -> Outcome {
+    let ran = std::mem::take(&mut pending.running);
+    if ran > 0.0 {
+        let machine = &pending.machine;
+        let site = || machine.standing(program);
+        match super::watchdog::watch(&mut pending.running, ran, site) {
+            super::watchdog::Watch::Quiet => {}
+            super::watchdog::Watch::Slow => {
+                progress.slow = Some((
+                    super::runtime::member_of(&pending, program),
+                    pending.machine.standing(program),
+                ));
+            }
+            super::watchdog::Watch::Fault(reason) => {
+                let member = super::runtime::member_of(&pending, program);
+                release(progress, pending, program, behavior, host);
+                return Outcome::Faulted {
+                    spent: busy.spent(),
+                    reason: format!("`{member}` {reason}"),
+                };
+            }
+        }
+    }
+    progress.pending = Some(pending);
+    busy
 }
 
 /// Packages a body that has just stopped part-way, with what it asked to wait
@@ -477,11 +605,19 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
 ///
 /// A body stopped with no stated wait resumes next frame: it stopped for fuel,
 /// not for time, and the budget is the thing that will have changed.
-fn kept(machine: Machine, body: Body, program: &Program, host: &mut Host) -> Pending {
+///
+/// A body cut by the fuel has run this frame: the watchdog counts it from
+/// there. One stopped at an `await` has run nothing the wait counts.
+fn kept(machine: Machine, body: Body, program: &Program, host: &mut Host, delta: f32) -> Pending {
+    let (remaining, running) = match host.awaiting.take() {
+        Some(wait) => (wait, 0.0),
+        None => (0.0, delta.max(0.0)),
+    };
     Pending {
         machine,
-        remaining: host.awaiting.take().unwrap_or(0.0),
+        remaining,
         body,
         fingerprint: program.fingerprint(),
+        running,
     }
 }

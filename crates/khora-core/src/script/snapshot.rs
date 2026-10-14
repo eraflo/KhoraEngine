@@ -89,6 +89,10 @@ pub struct PendingSequence {
     pub fingerprint: u64,
     /// Seconds still to wait.
     pub remaining: f32,
+    /// Game seconds the body had run without finishing since it started or
+    /// last came back from an `await` — what the watchdog counts on from.
+    #[serde(default)]
+    pub running: f32,
     /// The frozen machine, in the engine's terms — see [`super::frozen`].
     pub machine: FrozenMachine,
 }

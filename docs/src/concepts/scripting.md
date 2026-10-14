@@ -79,6 +79,73 @@ schedules; `state` confines data and members to a phase of the behavior's life;
 `async` members may `await` a duration. The [reference](../reference/ergon.md)
 lists every construct and what compiles today.
 
+## A system at a glance
+
+A behavior is one entity's logic over time. A **system** is one rule over every
+entity a query matches:
+
+```text
+component Health { float current = 100.0; float max = 100.0; }
+component Regen  { float rate = 2.0; }
+component Shield { float bonus = 1.0; }
+component Player { int team = 0; }
+component Dead   { float since = 0.0; }
+
+system Regeneration {
+    float healed = 0.0;
+
+    void Update(float dt) {
+        foreach (Entity e, ref Health h, Regen r, Shield? s) with Player without Dead {
+            float rate = r.rate;
+            if (var shield = s) { rate += shield.bonus; }
+            float before = h.current;
+            h.current = Min(h.max, h.current + rate * dt);
+            healed += h.current - before;
+            if (h.current >= h.max) { e.Remove(Regen); }
+        }
+    }
+
+    every 10s { Log("regenerating"); }
+}
+```
+
+A system is **a behavior with no subject**. It has fields, `Update`, `every`
+and `after`, methods, `OnLoad` and `OnResumeFailed` — and nothing that would need
+an entity of its own. The checker refuses, at the construct and saying why:
+
+| Refused in a system | Because |
+|---|---|
+| `this`, `Position()`, a free function that reads `Position()` | there is no entity it is attached to — its entities are the rows of its queries |
+| `state`, `become` | what one entity is doing is a behavior's state |
+| `on` handlers | an event is aimed at an entity |
+| `async`, `await` | a wait would be one entity's time; a system's time is `every` and `after` |
+| `OnSpawn`, `OnDespawn` | a system starts with the game, not with an entity |
+| attributes (`[Critical]`, `[Domain(…)]`, …) | none applies to a system yet; its fields live in the `Script` domain |
+
+### Its one entity
+
+Under the hood a system runs **as a behavior instance** — so its fields, its
+timers, its share of fuel, a body cut short, a fault, a hot reload and a game
+save are the behaviors' machinery, not a second one. An instance needs an
+entity, and nobody authors a system's: while the game plays, the
+`script_systems` data system keeps **one entity per system**, known by a named
+identity — `PersistentId::named("system:Regeneration")` — and holding the
+system's component (its fields) and its state companion
+`Regeneration#state`. Both are `Runtime` and resumable:
+
+- **No scene holds it**, whatever the encoding — and Play's snapshot neither, so
+  Stop takes it away. An authored entity that happens to hold a system's
+  component is still the author's.
+- **A game save keeps it**, with its fields and timers; a load finds the entity
+  of that name again instead of making a second.
+- **No script reaches it.** `Regeneration` is not a component a script may
+  `Get`, `Set`, `Add`, `Remove`, `Has` or query: any other holder would be a
+  second instance, run every frame beside the first. A system's fields are its
+  own, named directly.
+- It exists while gameplay runs, and goes when no script declares the system
+  any more. A system imported by several modules runs once a frame — from the
+  module that declares it.
+
 ## One turn
 
 Each frame, each behavior gets a **turn**. A turn runs its steps in a fixed
@@ -95,6 +162,15 @@ instance. A body still under way — waiting on an `await`, or cut short by the
 budget — resumes before anything new starts, so a behavior never runs two
 answers to "what am I doing" at once; and while it is still waiting, nothing
 else of that behavior runs this frame.
+
+### Turns in one order
+
+The frame runs behaviors and systems in **one list**: by module path, then by
+where each is written in its module — a system declared between two behaviors
+takes its turn between theirs — and a behavior's instances in entity order. It
+is the order a reader can check by reading the files; nothing reorders it yet.
+It matters because a script reads what the scripts before it wrote this frame
+([below](#a-script-never-writes-the-world)).
 
 ## Stopping is ordinary
 
@@ -130,6 +206,35 @@ Chase("x" + name)` stores the text, not a reference to it. Frame memory is one
 for the whole run and counts the frames, so text kept past its frame by any
 other route fails to read — it never reads what a later frame put in its
 place.
+
+### A body that never finishes
+
+Fuel bounds a frame, not a body. A loop with no `await` — `while (true) { … }`
+in `Update` — is cut by fuel, resumes next frame, is cut again, and never
+finishes; and while it stands there nothing else of its behavior runs. The
+**watchdog** bounds the body. Per instance, it counts the game time the body
+under way has spent *running* without finishing:
+
+- a frame in which the body ran — it started or was resumed, spent fuel and was
+  cut — adds that frame's delta, and so does a frame its behavior sits out
+  repaying fuel *that body* overdrew, counted as it passes: that budget was
+  spent in advance. A paused game, at a delta of zero, adds nothing;
+- a frame it waits on an `await` adds nothing — that is waiting, not running —
+  and neither does a frame its instance did not run for any other reason: a
+  frame with no fuel for scripts, another instance's debt, disabled, or not
+  playing;
+- resuming from an `await` starts the count again from zero; finishing ends it.
+
+Every body counts — `Update`, a timer, an `async` member, `OnSpawn`, `OnLoad`,
+`OnResumeFailed` — in behaviors and systems alike. At `WATCHDOG_WARN`, **10 s**,
+the body is reported once — a warning naming the entity, the behavior, the
+member and the site it stands at, and an entry in the lane's report. At
+`WATCHDOG_FAULT`, **60 s**, it **faults** like any fault: the body is dropped
+— a timer's waits its interval again, and a body a hook stood in front of is
+next — the instance disabled, and the fault recorded in its state companion
+under the code it ran, so an edit to its module re-enables it. The count is
+saved with the body under way, so a save and a load do not reset it, and a hot
+reload carries it, whatever the edit made of where the body stood.
 
 ## Degrading defers whole behaviors
 
@@ -206,6 +311,92 @@ nothing the turn wrote of the old one. A field the turn only read is not a write
 of it, and each lost write is reported once, with every write that meant to set
 the field counted.
 
+## Queries and sweeps
+
+`foreach (…)` with no `in` is a **query**: its bindings name what every row
+holds, and its body runs once per row — a **sweep**.
+
+```text
+foreach (Entity e, ref Health h, Regen r, Shield? s) with Player without Dead { … }
+```
+
+| Part | A row… |
+|---|---|
+| `Entity e` | binds the row's entity — anywhere in the list, once |
+| `Regen r` | holds a `Regen`; `r` is a copy of it |
+| `Shield? s` | may hold a `Shield`; `s` is a copy, or `null` — it never filters |
+| `ref Health h` | holds a `Health`; `h` is a copy written back at the row's end — in a system only |
+| `with Player` | holds a `Player`, not read |
+| `without Dead` | holds no `Dead` |
+
+**Outside a system, a query is read-only.** A behavior may sweep — a census, a
+search for the nearest foe — but binds without `ref`, and writes another
+entity's component with `e.Set(…)`, as any script does: writing rows in place is
+what a system is for. A system in turn may read a behavior's component in a
+query, never `ref` it: a behavior's fields are written by its own turn or by a
+`Set`, and its turn builds on the `Set`s queued before it — a column write it
+never read would break the frame's [one write order](#a-script-never-writes-the-world).
+Every component a query names, filters included, joins the program's reads, so
+the frame projects it.
+
+<div class="kp-figure-frame">
+
+{{#include ../images/scripting/sweep.svg}}
+
+</div>
+
+### The rows are taken once
+
+When the sweep starts, the query takes its rows: the entities holding every
+component bound without `?` and every `with`, and none of the `without`, **in
+entity order**, from the frame's working set — what the frame projected, with the
+adds, removals and writes the frame's scripts have queued so far. The list is
+held by the machine, so a structural change the body makes — `e.Remove(Regen)`,
+`e.Add(Dead { })` — is a command, and leaves the sweep alone. Each row is
+**checked again** when it is reached: one an earlier row's body took out of the
+query is skipped. An entity spawned this frame is not among the rows — it exists
+from the frame's end; a despawned one keeps its rows until then, as it keeps its
+components. Taking the rows visits the holders of the rarest component the query
+requires, so it costs what the query matches, not what the scene holds. A query
+run again — inside a loop, or next frame — takes its rows again.
+
+### `ref`: written where the row ends
+
+A `ref` binding is a copy like the others, except that its fields may be
+assigned — `h.current += 1.0` — and are written back; the binding itself is
+never reassigned. Where the row ends — after the body's last statement, where a
+`continue` lands, before a `break` or a `return` leaves the sweep — the fields
+that **differ** from the row as it was read are written:
+
+- **into the working set, at once** — a later row, a later sweep of the same
+  run, and every script after it in the frame read the new value;
+- **into the run's pending batch** for that component and that set of fields.
+
+A batch leaves as **one column write** (`WriteColumn`) — early, before any later
+`Set`, `Add` or `Remove` of that component in the run, and in any case when the
+run stops, however it stops: finished, cut by fuel, faulted. No batch crosses a
+frame or a save, and the run's writes reach the `World` in the order they were
+made: ten thousand rows writing `current` are one command, and a run writing
+`Health`, then `Regen`, then `Health` again leaves each field as it last wrote
+it. A row left as it was read writes nothing; a field the row did not change
+keeps whatever another script set this frame. Rows that change another set of
+fields start a batch of their own, and a fault keeps the rows ended before it.
+
+### A sweep short of fuel
+
+A sweep stops like any body — at a safepoint: the head of the next row, or a
+statement inside one, even part-way through a row. The rows it ended leave with
+the run; next frame the machine resumes exactly where it stopped, on its row,
+over the list it took, every later row checked against the working set of the
+frame it is reached in. Each row is written once. The body keeps the `dt` it was
+called with, the delta of the frame its pass began in. The list and the position
+are locals of the frame, so a game save freezes a sweep part-way like any body,
+and an edit [rebuilds](#a-body-part-way-through-in-tiers) it at its site.
+
+GORNA prices a system by its rows: a system is one instance however many rows it
+sweeps, so the script agent estimates 2 µs per instance plus 0.2 µs per row the
+frame's queries took the frame before.
+
 ## An event is never delivered in the frame it was raised
 
 One behavior tells another something; the other hears it next frame.
@@ -249,6 +440,10 @@ That is what lets a save made today load into the script as it is next month.
 
 After a restore, `OnLoad` runs first; the restored body waits behind it.
 
+A system is saved the same way, on [its one entity](#its-one-entity): the save
+holds that entity, its fields and its companion — its timers, a sweep it was
+part-way through, a fault. A scene never does.
+
 ## Edits while running
 
 Hot-reload replaces a module's program while the game runs. Two things must
@@ -286,6 +481,15 @@ and an entity arriving then spawns under the new code. A behavior moved to
 another module is carried there at its next turn, by the same rules, and an
 instance carried while starved of fuel still has its record — what a save
 reads — brought up to the new code that frame.
+
+A system is carried by the same rules: its fields by name, a sweep cut
+part-way rebuilt at its site in the edited body. An edit may also change what a
+name *is*. A behavior turned into a system runs once a frame on the system's
+entity; the entities that held the behavior keep their rows as data and run
+nothing, and an authored one stays in the scene. A system turned back into a
+behavior gives up its entity, and the behavior's holders run again from their
+rows. A system renamed is a new system: the old name's entity goes, and the new
+one starts from its defaults.
 
 ### A body part-way through, in tiers
 
@@ -333,7 +537,8 @@ The split follows [CLAD](./clad.md) exactly, and it did not always:
 |---|---|---|
 | The language and VM | `khora-script` | Depends on `khora-core` and the macros only, so the compiler and VM are testable without booting an engine |
 | The scripting world (programs, live instances, pending mail, last report, measured rate) | `Runtime::services`, as `Arc<Mutex<ScriptRuntime>>` | It is subsystem state, not strategy state — the same place the physics provider lives |
-| The work (reloads, delivery, running behaviors, measuring) | `BudgetedScriptLane` | Lanes execute |
+| The work (reloads, delivery, running behaviors and systems, measuring) | `BudgetedScriptLane` | Lanes execute |
+| A system's one entity | the `script_systems` data system (`khora-data`) | Structure is the data layer's; a lane never spawns |
 | Choosing a lane for a budget | `ScriptAgent` | Agents are strategists and hold nothing else |
 
 The agent used to own all of it. What that cost was not correctness but reach:

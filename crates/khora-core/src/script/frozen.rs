@@ -234,6 +234,7 @@ mod tests {
         PendingSequence {
             fingerprint: 0xDEAD_BEEF_0123_4567,
             remaining: 0.75,
+            running: 0.0,
             machine,
         }
     }
