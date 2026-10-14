@@ -395,6 +395,16 @@ impl Checker {
     /// rooted at it, or an array of it grown or shrunk: refused, with the write
     /// that was meant. `true` when `target` is one.
     pub(super) fn refuse_copy_write(&mut self, target: &Expr) -> bool {
+        // A system's `ref` binding is written back to its row.
+        if let Expr::Ident { name, .. } = root_of(target) {
+            if self
+                .scopes
+                .lookup(name)
+                .is_some_and(|binding| binding.query == Some(true))
+            {
+                return false;
+            }
+        }
         let mut place = target;
         while let Expr::Field { object, .. } | Expr::Index { object, .. } = place {
             let held = self

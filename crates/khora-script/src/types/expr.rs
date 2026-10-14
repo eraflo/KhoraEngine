@@ -65,6 +65,14 @@ impl Checker {
             // the API is written, without a conversion nobody would expect to
             // need.
             Expr::This(span) => {
+                if self.system.is_some() {
+                    self.error_note(
+                        "`this` names the entity a behavior is attached to, and a system has none",
+                        *span,
+                        "a system's entities are the rows of its queries — bind one with `Entity e`",
+                    );
+                    return Ty::Error;
+                }
                 if context.owner.is_none() {
                     // A free function has no subject. Refused here rather than
                     // faulting at run time, which is the difference between a
@@ -350,83 +358,26 @@ impl Checker {
         }
     }
 
-    fn check_assign(
-        &mut self,
-        target: &Expr,
-        op: Option<BinaryOp>,
-        value: &Expr,
-        span: Span,
-        context: &Context,
-    ) -> Ty {
-        if !is_assignable_target(target) {
-            self.error_note(
-                "this cannot be assigned to",
-                target.span(),
-                "only a variable, a field or an element may appear on the left of `=`",
-            );
-            self.check_expr(value, context);
-            return Ty::Error;
-        }
-
-        let target_ty = self.check_expr(target, context);
-        let value_ty = self.check_expr(value, context);
-        if self.refuse_copy_write(target) {
-            return Ty::Error;
-        }
-
-        // Some places can be read and not written.
-        if let Expr::Field { object, name, span } = target {
-            let receiver = self
-                .types
-                .get(&(std::ptr::from_ref(&**object) as usize))
-                .cloned()
-                .unwrap_or(Ty::Error);
-            match receiver {
-                Ty::Array(_) | Ty::Str if name == "Length" => {
-                    self.error_note(
-                        "`Length` is read-only",
-                        *span,
-                        "it counts what the value holds; change the value to change it",
-                    );
-                    return Ty::Error;
-                }
-                Ty::Engine(engine) => {
-                    self.error_note(
-                        format!("a `{engine}`'s components are read-only"),
-                        *span,
-                        format!("build a new one — `{engine}(…)` — and assign it"),
-                    );
-                    return Ty::Error;
-                }
-                _ => {}
-            }
-        }
-
-        match op {
-            // A target already reported says nothing about the operation.
-            Some(_) if matches!(target_ty, Ty::Error) => {}
-            // `a += b` must mean what `a = a + b` means, overloads included.
-            Some(op) => {
-                let result =
-                    if let Some(overloaded) = self.overloaded(op, &target_ty, &value_ty, span) {
-                        overloaded
-                    } else {
-                        self.arithmetic(op, &target_ty, &value_ty, span)
-                    };
-                self.expect_assignable(&target_ty, &result, span);
-            }
-            None => self.expect_assignable(&target_ty, &value_ty, value.span()),
-        }
-
-        target_ty
-    }
-
     fn check_call(&mut self, callee: &Expr, args: &[Expr], span: Span, context: &Context) -> Ty {
         // Free functions and engine functions are callable by name; an engine
         // operation on an entity is called on it, and its free form refused.
         if let Expr::Ident { name, .. } = callee {
             if name == "Spawn" && !self.functions.contains_key(name) {
                 return self.check_spawn(args, span, context);
+            }
+            if self.system.is_some()
+                && crate::native::world::SUBJECT_NATIVES.contains(&name.as_str())
+                && !self.functions.contains_key(name)
+            {
+                self.error_note(
+                    format!("`{name}()` reads the entity a behavior is attached to, and a system has none"),
+                    span,
+                    "a system's entities are the rows of its queries — bind one with `Entity e`",
+                );
+                for argument in args {
+                    self.check_expr(argument, context);
+                }
+                return Ty::Error;
             }
             if !self.functions.contains_key(name)
                 && self.refuse_free_form(name, args, span, context)
@@ -585,6 +536,14 @@ impl Checker {
     fn check_await(&mut self, operand: &Expr, span: Span, context: &Context) -> Ty {
         let ty = self.check_expr(operand, context);
 
+        if !context.allows_await && self.system.is_some() {
+            self.error_note(
+                "`await` is not allowed in a system",
+                span,
+                "a system's time is `every` and `after`: a wait would be one entity's",
+            );
+            return Ty::Error;
+        }
         if !context.allows_await {
             self.error_note(
                 format!("`await` is not allowed in `{}`", context.member),
@@ -655,14 +614,6 @@ impl Checker {
         }
         self.error(format!("{what} needs a bool, found `{}`", ty.name()), span);
     }
-}
-
-/// Whether an expression denotes a place that can be written to.
-fn is_assignable_target(expr: &Expr) -> bool {
-    matches!(
-        expr,
-        Expr::Ident { .. } | Expr::Field { .. } | Expr::Index { .. }
-    )
 }
 
 /// Whether `ty` holds a part nothing has said anything about — the element of

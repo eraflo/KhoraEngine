@@ -72,6 +72,9 @@ impl Parser {
             );
         }
 
+        if self.check_keyword(Keyword::System) {
+            return Ok(Item::System(self.parse_behavior(Vec::new())?));
+        }
         if self.check_keyword(Keyword::Struct) {
             return Ok(Item::Struct(self.parse_struct()?));
         }
@@ -81,7 +84,7 @@ impl Parser {
 
         Err(self.error_with_note(
             "expected a declaration",
-            "a file may declare `behavior`, `struct`, `component` or `fn`, and start with `import`",
+            "a file may declare `behavior`, `system`, `struct`, `component` or `fn`, and start with `import`",
         ))
     }
 
@@ -247,8 +250,8 @@ impl Parser {
 
     pub(super) fn parse_behavior(&mut self, attributes: Vec<Attribute>) -> Parse<BehaviorDecl> {
         let start = self.span();
-        self.advance(); // `behavior`
-        let (name, name_span) = self.expect_ident("a behavior name")?;
+        self.advance(); // `behavior` or `system`
+        let (name, name_span) = self.expect_ident("a name")?;
         self.expect(TokenKind::LBrace, "`{` to open the behavior body")?;
         let members = self.parse_members();
         let end = self.expect(TokenKind::RBrace, "`}` to close the behavior body")?;

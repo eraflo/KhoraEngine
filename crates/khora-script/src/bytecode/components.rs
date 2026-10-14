@@ -148,13 +148,7 @@ impl Compiler {
     /// `entity.Get(C)` and `entity.Has(C)`; the component joins the
     /// program's read set, which decides what the frame projects.
     fn compile_read(&mut self, copy: bool, object: &Expr, component: &str) -> (Reg, Shape) {
-        if let Err(at) = self
-            .program
-            .reads
-            .binary_search_by(|known| known.as_str().cmp(component))
-        {
-            self.program.reads.insert(at, component.to_owned());
-        }
+        self.record_read(component);
         let mark = self.registers.mark();
         let entity = self.registers.temp();
         self.place(object, entity);
@@ -180,6 +174,17 @@ impl Compiler {
                 component: name,
             });
             (dst, Shape::Other)
+        }
+    }
+
+    /// Adds `component` to the program's read set, sorted, each once.
+    pub(super) fn record_read(&mut self, component: &str) {
+        if let Err(at) = self
+            .program
+            .reads
+            .binary_search_by(|known| known.as_str().cmp(component))
+        {
+            self.program.reads.insert(at, component.to_owned());
         }
     }
 

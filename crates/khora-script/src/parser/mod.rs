@@ -236,6 +236,7 @@ impl Parser {
                 self.peek(),
                 TokenKind::Keyword(
                     Keyword::Behavior
+                        | Keyword::System
                         | Keyword::Struct
                         | Keyword::Component
                         | Keyword::Fn

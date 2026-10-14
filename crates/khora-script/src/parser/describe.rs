@@ -37,6 +37,8 @@ pub(super) fn describe(kind: &TokenKind) -> String {
 fn keyword_text(keyword: Keyword) -> &'static str {
     match keyword {
         Keyword::Behavior => "behavior",
+        Keyword::System => "system",
+        Keyword::Ref => "ref",
         Keyword::State => "state",
         Keyword::Become => "become",
         Keyword::On => "on",

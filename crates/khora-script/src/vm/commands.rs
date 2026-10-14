@@ -99,6 +99,37 @@ impl Machine {
                 let name = program.string(component).ok_or(Fault::BadString)?;
                 self.write(dst, Value::Bool(host.components.has(name, entity)))?;
             }
+            Instruction::QueryRows { dst, query } => {
+                let shape = program.query(query).ok_or(Fault::BadString)?;
+                let all: Vec<&str> = shape.all.iter().map(String::as_str).collect();
+                let none: Vec<&str> = shape.none.iter().map(String::as_str).collect();
+                let rows = host
+                    .components
+                    .matching(&all, &none)
+                    .into_iter()
+                    .map(Value::Entity)
+                    .collect();
+                let handle = host
+                    .arena
+                    .alloc(crate::arena::Object::Array(rows))
+                    .map_err(|_| Fault::ArenaFull)?;
+                self.write(dst, Value::Obj(super::ObjRef::Arena(handle)))?;
+            }
+            Instruction::QueryHolds {
+                dst, entity, query, ..
+            } => {
+                let entity = self.entity_at(entity)?;
+                let shape = program.query(query).ok_or(Fault::BadString)?;
+                let holds = shape
+                    .all
+                    .iter()
+                    .all(|name| host.components.has(name, entity))
+                    && !shape
+                        .none
+                        .iter()
+                        .any(|name| host.components.has(name, entity));
+                self.write(dst, Value::Bool(holds))?;
+            }
             Instruction::RemoveComponent { entity, component } => {
                 let entity = self.entity_at(entity)?;
                 let name = program.string(component).ok_or(Fault::BadString)?;

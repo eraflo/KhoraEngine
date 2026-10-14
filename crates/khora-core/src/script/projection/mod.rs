@@ -93,6 +93,11 @@ impl ProjectedComponent {
         self.index.len()
     }
 
+    /// Every live holder, in no particular order.
+    pub fn entities(&self) -> impl Iterator<Item = EntityId> + '_ {
+        self.index.keys().copied()
+    }
+
     /// The component's default row.
     pub fn default_row(&self) -> Option<&ScriptValue> {
         self.default.as_ref()
@@ -211,6 +216,66 @@ impl FrameComponents {
                 .component(name)
                 .is_some_and(|component| component.has(entity)),
         }
+    }
+
+    /// The entities holding every component of `all` and none of `none`, in
+    /// entity order — the rows of a query, as this frame's scripts see them.
+    ///
+    /// The candidates are the holders of the component of `all` the fewest
+    /// entities hold ([`scan_cost`](Self::scan_cost) of them); an empty `all`
+    /// matches nothing, as the working set does not know every entity.
+    pub fn matching(&self, all: &[&str], none: &[&str]) -> Vec<EntityId> {
+        let Some(driver) = self.driver(all) else {
+            return Vec::new();
+        };
+        let mut rows: Vec<EntityId> = self
+            .holders_of(driver)
+            .filter(|&entity| {
+                all.iter().all(|name| self.has(name, entity))
+                    && !none.iter().any(|name| self.has(name, entity))
+            })
+            .collect();
+        rows.sort_by_key(|entity| (entity.index, entity.generation));
+        rows.dedup();
+        rows
+    }
+
+    /// How many candidates [`matching`](Self::matching) visits for `all`: the
+    /// holders, projected or added this frame, of the component of `all` the
+    /// fewest entities hold.
+    pub fn scan_cost(&self, all: &[&str]) -> usize {
+        self.driver(all)
+            .map_or(0, |driver| self.holders_of(driver).count())
+    }
+
+    /// The component of `all` with the fewest candidates.
+    fn driver<'a>(&self, all: &[&'a str]) -> Option<&'a str> {
+        all.iter()
+            .copied()
+            .min_by_key(|name| self.holders_of(name).count())
+    }
+
+    /// The candidate holders of `name`: its projected holders and the
+    /// entities this frame added it to — some may have lost it since.
+    fn holders_of<'s>(&'s self, name: &'s str) -> impl Iterator<Item = EntityId> + 's {
+        let projected = self
+            .projection
+            .component(name)
+            .into_iter()
+            .flat_map(ProjectedComponent::entities);
+        let added = self
+            .overlay
+            .iter()
+            .filter(move |((component, entity), written)| {
+                component.as_str() == name
+                    && written.is_some()
+                    && !self
+                        .projection
+                        .component(name)
+                        .is_some_and(|projected| projected.has(*entity))
+            })
+            .map(|((_, entity), _)| *entity);
+        projected.chain(added)
     }
 
     /// Takes a command a script queued into the working set, as the frame

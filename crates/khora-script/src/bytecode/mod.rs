@@ -55,6 +55,7 @@ pub mod keys;
 mod methods;
 mod objects;
 mod operators;
+mod query;
 pub mod registers;
 pub mod sites;
 pub mod stmt;
@@ -324,7 +325,7 @@ impl Compiler {
                     );
                     index += 1;
                 }
-                Item::Behavior(decl) => {
+                Item::Behavior(decl) | Item::System(decl) => {
                     for member in &decl.members {
                         // A state's members are functions too, emitted after
                         // the behavior's own. Counting only the behavior's was
@@ -392,7 +393,7 @@ impl Compiler {
                 Item::Function(decl) => {
                     self.compile_body(&decl.name, &decl.params, &decl.body);
                 }
-                Item::Behavior(decl) => self.compile_behavior(decl),
+                Item::Behavior(decl) | Item::System(decl) => self.compile_behavior(decl),
                 Item::Struct(_) | Item::Component(_) => {}
             }
         }

@@ -32,10 +32,12 @@
 //! everything, so one mistake yields one message instead of a cascade.
 
 mod arithmetic;
+mod assign;
 mod calls;
 mod components;
 pub mod expr;
 mod members;
+mod query;
 mod returns;
 pub mod scope;
 pub mod stmt;
@@ -229,6 +231,10 @@ pub struct Checker {
     /// state's while inside one — apart from the free functions they share
     /// [`functions`](Self::functions) with.
     pub method_names: std::collections::HashSet<String>,
+    /// The system being checked: what refuses `this`, a native reading the
+    /// subject, `become` and `await` in it — a system has no entity of its
+    /// own.
+    pub system: Option<String>,
 }
 
 impl Checker {
@@ -247,6 +253,7 @@ impl Checker {
             unready: Vec::new(),
             field_names: Vec::new(),
             method_names: std::collections::HashSet::new(),
+            system: None,
         }
     }
 
@@ -341,6 +348,7 @@ impl Checker {
                 Item::Component(decl) => self.collect_component(decl),
                 Item::Function(decl) => self.collect_function(decl),
                 Item::Behavior(decl) => self.collect_component(&decl.as_component()),
+                Item::System(_) => {}
             }
         }
     }
@@ -489,6 +497,7 @@ impl Checker {
             match item {
                 Item::Function(decl) => self.check_function(decl),
                 Item::Behavior(decl) => self.check_behavior(decl),
+                Item::System(decl) => self.check_system(decl),
                 Item::Struct(decl) => self.check_struct_bodies(decl),
                 Item::Component(decl) => self.check_component_defaults(decl),
             }

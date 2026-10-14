@@ -180,6 +180,13 @@ impl Compiler {
                 body,
                 ..
             } => self.compile_foreach(ty.as_ref(), name, iterable, body),
+            Stmt::Query {
+                bindings,
+                with,
+                without,
+                body,
+                ..
+            } => self.compile_query(bindings, with, without, body),
         }
     }
 

@@ -46,6 +46,9 @@ pub struct Binding {
     pub ty: Ty,
     /// Where it was declared, so a shadowing report can point at both.
     pub span: Span,
+    /// A query's binding — `Some(true)` when `ref`: never reassigned, and
+    /// written through only when `ref`.
+    pub query: Option<bool>,
 }
 
 /// The scope stack.
@@ -73,7 +76,14 @@ impl Scopes {
     /// the branch restores the optional type without any bookkeeping.
     pub fn push_narrowed(&mut self, name: &str, ty: Ty, span: Span) {
         let mut frame = HashMap::new();
-        frame.insert(name.to_owned(), Binding { ty, span });
+        frame.insert(
+            name.to_owned(),
+            Binding {
+                ty,
+                span,
+                query: None,
+            },
+        );
         self.frames.push(frame);
     }
 
@@ -94,6 +104,16 @@ impl Scopes {
     /// same frame* — a redeclaration, which is an error. Shadowing an outer
     /// frame is allowed and returns `None`.
     pub fn declare(&mut self, name: &str, ty: Ty, span: Span) -> Option<Span> {
+        self.bind(name, ty, span, None)
+    }
+
+    /// Binds a query's `name` in the innermost frame, written through when
+    /// `write` — as [`declare`](Self::declare) otherwise.
+    pub fn declare_query(&mut self, name: &str, ty: Ty, span: Span, write: bool) -> Option<Span> {
+        self.bind(name, ty, span, Some(write))
+    }
+
+    fn bind(&mut self, name: &str, ty: Ty, span: Span, query: Option<bool>) -> Option<Span> {
         let frame = match self.frames.last_mut() {
             Some(frame) => frame,
             // Cannot happen — `new` opens a frame and `pop` keeps one — but
@@ -104,7 +124,7 @@ impl Scopes {
             }
         };
         let previous = frame.get(name).map(|binding| binding.span);
-        frame.insert(name.to_owned(), Binding { ty, span });
+        frame.insert(name.to_owned(), Binding { ty, span, query });
         previous
     }
 

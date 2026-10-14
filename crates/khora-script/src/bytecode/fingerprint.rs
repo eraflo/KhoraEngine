@@ -119,6 +119,17 @@ impl Hash {
         }
     }
 
+    /// A query, by the components it matches.
+    fn query(&mut self, program: &Program, query: u32) {
+        let shape = program.query(query).cloned().unwrap_or_default();
+        for names in [&shape.all, &shape.none] {
+            self.number(names.len() as u64);
+            for name in names {
+                self.text(name);
+            }
+        }
+    }
+
     /// A struct, by its name — and one of its fields, by its name.
     fn struct_layout(&mut self, program: &Program, layout: u16, slot: Option<u16>) {
         let declared = program.structs.get(usize::from(layout));
@@ -398,6 +409,20 @@ impl Hash {
             } => {
                 self.op("HasComponent", &[*dst, *entity]);
                 self.text(program.string(*component).unwrap_or_default());
+            }
+            I::QueryRows { dst, query } => {
+                self.op("QueryRows", &[*dst]);
+                self.query(program, *query);
+            }
+            I::QueryHolds {
+                dst,
+                entity,
+                query,
+                count,
+            } => {
+                self.op("QueryHolds", &[*dst, *entity]);
+                self.number(u64::from(*count));
+                self.query(program, *query);
             }
             I::RemoveComponent { entity, component } => {
                 self.op("RemoveComponent", &[*entity]);

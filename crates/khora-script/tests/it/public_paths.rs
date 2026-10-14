@@ -147,6 +147,7 @@ fn item_variants(x: &khora_script::ast::Item) {
         khora_script::ast::Item::Component(..) => {}
         khora_script::ast::Item::Function(..) => {}
         khora_script::ast::Item::Behavior(..) => {}
+        khora_script::ast::Item::System(..) => {}
     }
 }
 
@@ -326,6 +327,7 @@ fn stmt_variants(x: &khora_script::ast::stmt::Stmt) {
         khora_script::ast::stmt::Stmt::While { .. } => {}
         khora_script::ast::stmt::Stmt::For { .. } => {}
         khora_script::ast::stmt::Stmt::Foreach { .. } => {}
+        khora_script::ast::stmt::Stmt::Query { .. } => {}
         khora_script::ast::stmt::Stmt::Return { .. } => {}
         khora_script::ast::stmt::Stmt::Break(..) => {}
         khora_script::ast::stmt::Stmt::Continue(..) => {}
@@ -424,6 +426,8 @@ fn lexed_fields(x: &khora_script::lexer::Lexed) {
 fn keyword_variants(x: &khora_script::lexer::token::Keyword) {
     match x {
         khora_script::lexer::token::Keyword::Behavior => {}
+        khora_script::lexer::token::Keyword::System => {}
+        khora_script::lexer::token::Keyword::Ref => {}
         khora_script::lexer::token::Keyword::State => {}
         khora_script::lexer::token::Keyword::Become => {}
         khora_script::lexer::token::Keyword::On => {}
@@ -743,6 +747,8 @@ fn instruction_variants(x: &khora_script::vm::instruction::Instruction) {
         khora_script::vm::instruction::Instruction::WriteComponent { .. } => {}
         khora_script::vm::instruction::Instruction::GetComponent { .. } => {}
         khora_script::vm::instruction::Instruction::HasComponent { .. } => {}
+        khora_script::vm::instruction::Instruction::QueryRows { .. } => {}
+        khora_script::vm::instruction::Instruction::QueryHolds { .. } => {}
         khora_script::vm::instruction::Instruction::RemoveComponent { .. } => {}
         khora_script::vm::instruction::Instruction::SpawnEntity { .. } => {}
         khora_script::vm::instruction::Instruction::Await { .. } => {}

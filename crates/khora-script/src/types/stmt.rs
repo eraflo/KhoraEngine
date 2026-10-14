@@ -113,6 +113,14 @@ impl Checker {
                 span,
             } => self.check_foreach(ty.as_ref(), name, iterable, body, *span, context),
 
+            Stmt::Query {
+                bindings,
+                with,
+                without,
+                body,
+                span,
+            } => self.check_query(bindings, with, without, body, *span, context),
+
             Stmt::Return { value, span } => {
                 let actual = match value {
                     Some(expr) => self.check_expr(expr, context),
@@ -348,6 +356,14 @@ impl Checker {
             self.check_expr(argument, context);
         }
 
+        if self.system.is_some() {
+            self.error_note(
+                "`become` has nowhere to go in a system: a system has no states",
+                span,
+                "what one entity is doing is a behavior's state",
+            );
+            return;
+        }
         if context.states.is_empty() {
             self.error_note(
                 "`become` is only valid inside a behavior with states",

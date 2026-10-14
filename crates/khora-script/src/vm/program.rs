@@ -296,6 +296,27 @@ pub struct Program {
     /// — sorted by name: what the engine registers for it.
     #[serde(default)]
     pub declared: Vec<DeclaredComponent>,
+    /// What each query statement matches, addressed by index.
+    #[serde(default)]
+    pub queries: Vec<QueryShape>,
+}
+
+/// What a query matches: the entities holding every component of
+/// [`all`](Self::all) and none of [`none`](Self::none).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct QueryShape {
+    /// The components every row holds: its non-optional bindings, then its
+    /// `with`, in the order written.
+    pub all: Vec<String>,
+    /// Its `without`, in the order written.
+    pub none: Vec<String>,
+}
+
+impl QueryShape {
+    /// How many components a row is checked against.
+    pub fn width(&self) -> usize {
+        self.all.len() + self.none.len()
+    }
 }
 
 /// A component a script declares: what the engine needs to store it.
@@ -380,6 +401,11 @@ impl Program {
     /// The index of the function named `name`.
     pub fn index_of(&self, name: &str) -> Option<usize> {
         self.functions.iter().position(|f| f.name == name)
+    }
+
+    /// The query at `index`.
+    pub fn query(&self, index: u32) -> Option<&QueryShape> {
+        self.queries.get(index as usize)
     }
 
     /// The literal at `index`.

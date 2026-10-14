@@ -53,7 +53,7 @@ mod tests;
 pub use instruction::{Instruction, Reg, WriteMode};
 pub use program::{
     BehaviorLayout, DeclaredComponent, DeclaredField, DeclaredKind, Function, Patch, Program,
-    StateLayout, StructLayout, TimerKind, TimerLayout,
+    QueryShape, StateLayout, StructLayout, TimerKind, TimerLayout,
 };
 pub use resume::{resume, Abandoned, ResumeTier};
 pub use site::{Site, SiteKind, SiteLocal};
@@ -415,7 +415,7 @@ impl Machine {
                     Some(native) => native.cost,
                     None => return self.fault(Fault::UnknownNative { index: function }),
                 },
-                _ => match self.sized_cost(&instruction, host) {
+                _ => match self.sized_cost(&instruction, program, host) {
                     // A sized operation is its own checkpoint: it does not
                     // start when the fuel left cannot pay for it — unless it is
                     // the first thing this run does, so every run progresses.
@@ -736,6 +736,8 @@ impl Machine {
             Instruction::WriteComponent { .. }
             | Instruction::GetComponent { .. }
             | Instruction::HasComponent { .. }
+            | Instruction::QueryRows { .. }
+            | Instruction::QueryHolds { .. }
             | Instruction::RemoveComponent { .. }
             | Instruction::SpawnEntity { .. } => self.step_command(instruction, program, host),
 

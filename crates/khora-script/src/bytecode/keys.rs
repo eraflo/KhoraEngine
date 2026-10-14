@@ -190,6 +190,30 @@ impl Key {
                 self.tag(12);
                 "block"
             }
+            // Its own kind, apart from an array `foreach`: the header is what
+            // a row binds — each binding's access, type and name — and what
+            // filters the rows.
+            Stmt::Query {
+                bindings,
+                with,
+                without,
+                ..
+            } => {
+                self.tag(13);
+                self.bits(bindings.len() as u64);
+                for binding in bindings {
+                    self.tag(u8::from(binding.write));
+                    self.text(&type_name(&binding.ty));
+                    self.text(&binding.name);
+                }
+                for names in [with, without] {
+                    self.bits(names.len() as u64);
+                    for (name, _) in names {
+                        self.text(name);
+                    }
+                }
+                "query"
+            }
         }
     }
 

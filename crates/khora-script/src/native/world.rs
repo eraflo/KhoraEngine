@@ -45,6 +45,10 @@ use super::{NativeContext, NativeError};
 
 // ─── Reading ────────────────────────────────────────────────────────────────
 
+/// The natives reading the entity a behavior is attached to — refused in a
+/// system, which has none.
+pub const SUBJECT_NATIVES: &[&str] = &["Position"];
+
 /// Where this entity is, as the frame projected it.
 ///
 /// The value the frame *started* with. A `Translate` queued a moment ago has not

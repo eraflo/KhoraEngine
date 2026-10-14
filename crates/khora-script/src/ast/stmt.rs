@@ -90,6 +90,21 @@ pub enum Stmt {
         /// The whole statement.
         span: Span,
     },
+    /// `foreach (Entity e, ref Health h, Regen r) with Player without Dead {
+    /// … }` — a query: every entity holding the components it binds and
+    /// those it names after `with`, holding none named after `without`.
+    Query {
+        /// What each row binds, in the order written.
+        bindings: Vec<QueryBinding>,
+        /// Components a row must hold, not read.
+        with: Vec<(String, Span)>,
+        /// Components a row must not hold.
+        without: Vec<(String, Span)>,
+        /// Body, run once per row.
+        body: Block,
+        /// The whole statement.
+        span: Span,
+    },
     /// `return;` or `return expr;`
     Return {
         /// The returned value, if any.
@@ -136,6 +151,7 @@ impl Stmt {
             | Self::While { span, .. }
             | Self::For { span, .. }
             | Self::Foreach { span, .. }
+            | Self::Query { span, .. }
             | Self::Return { span, .. }
             | Self::Become { span, .. }
             | Self::Match { span, .. } => *span,
@@ -184,4 +200,18 @@ impl Pattern {
             Self::Binding { span, .. } => *span,
         }
     }
+}
+
+/// One binding of a query: the row's entity, or a copy of one of its
+/// components — optional when its type is `T?`, written back when `ref`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct QueryBinding {
+    /// `Entity`, a component, or a component made optional.
+    pub ty: TypeRef,
+    /// `ref`: the copy is written back to the row.
+    pub write: bool,
+    /// The binding's name.
+    pub name: String,
+    /// The whole binding.
+    pub span: Span,
 }

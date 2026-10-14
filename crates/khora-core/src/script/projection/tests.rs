@@ -362,3 +362,113 @@ fn a_column_write_follows_the_removals_and_adds_before_it() {
     assert_eq!(frame.get("Health", entity(1)), None);
     assert_eq!(frame.get("Health", entity(2)), Some(health(9, 50)));
 }
+
+/// `Health` held by entities 9, 2 and 5; `Dead` by 5.
+fn census() -> FrameComponents {
+    let holders = [
+        (entity(9), health(9, 9)),
+        (entity(2), health(2, 2)),
+        (entity(5), health(5, 5)),
+    ];
+    let health_column = ProjectedComponent::new(
+        ComponentName::new("Health"),
+        vec![Box::new(Rows(
+            holders.iter().map(|(_, row)| row.clone()).collect(),
+        ))],
+        holders
+            .iter()
+            .enumerate()
+            .map(|(row, (entity, _))| (*entity, (0, row as u32)))
+            .collect(),
+        Some(health(100, 100)),
+    );
+    let dead = ProjectedComponent::new(
+        ComponentName::new("Dead"),
+        vec![Box::new(Rows(vec![fields(&[])]))],
+        HashMap::from([(entity(5), (0, 0))]),
+        Some(fields(&[])),
+    );
+    FrameComponents::new(Arc::new(ComponentProjection::new(vec![
+        health_column,
+        dead,
+    ])))
+}
+
+#[test]
+fn matching_lists_the_holders_in_entity_order() {
+    let frame = census();
+    assert_eq!(
+        frame.matching(&["Health"], &[]),
+        [entity(2), entity(5), entity(9)]
+    );
+    assert_eq!(
+        frame.matching(&["Health"], &["Dead"]),
+        [entity(2), entity(9)]
+    );
+    assert_eq!(frame.matching(&["Health", "Dead"], &[]), [entity(5)]);
+    assert_eq!(
+        frame.scan_cost(&["Health", "Dead"]),
+        1,
+        "the fewer holders drive"
+    );
+}
+
+#[test]
+fn matching_follows_this_frames_adds_and_removes() {
+    let mut frame = census();
+    frame.observe(&WorldCommand::AddComponent {
+        entity: entity(4),
+        component: ComponentName::new("Health"),
+        value: fields(&[]),
+    });
+    frame.observe(&WorldCommand::RemoveComponent {
+        entity: entity(9),
+        component: ComponentName::new("Health"),
+    });
+    frame.observe(&WorldCommand::RemoveComponent {
+        entity: entity(5),
+        component: ComponentName::new("Dead"),
+    });
+    assert_eq!(
+        frame.matching(&["Health"], &["Dead"]),
+        [entity(2), entity(4), entity(5)]
+    );
+}
+
+#[test]
+fn matching_nothing_required_or_unprojected_is_empty() {
+    let frame = census();
+    assert!(frame.matching(&[], &["Dead"]).is_empty());
+    assert!(frame.matching(&["Health", "Ghost"], &[]).is_empty());
+    assert_eq!(frame.scan_cost(&["Ghost"]), 0);
+}
+
+/// **Each entity is one row, however the frame got it there**: a holder
+/// taken out and put back, an entity given the component then rid of it, a
+/// recycled index holding it under a new generation — each candidate is
+/// listed, and counted by `scan_cost`, once.
+#[test]
+fn matching_lists_each_entity_once_across_removes_and_adds() {
+    let mut frame = census();
+    frame.observe(&remove(entity(2)));
+    frame.observe(&add(entity(2), fields(&[])));
+    frame.observe(&add(entity(4), fields(&[])));
+    frame.observe(&remove(entity(4)));
+    assert_eq!(
+        frame.matching(&["Health"], &[]),
+        [entity(2), entity(5), entity(9)]
+    );
+    assert_eq!(frame.scan_cost(&["Health"]), 3);
+
+    let recycled = EntityId {
+        index: 2,
+        generation: 2,
+    };
+    frame.observe(&add(recycled, fields(&[])));
+    assert_eq!(
+        frame.matching(&["Health"], &[]),
+        [entity(2), recycled, entity(5), entity(9)],
+        "in entity order, generation after index"
+    );
+    assert_eq!(frame.scan_cost(&["Health"]), 4);
+}

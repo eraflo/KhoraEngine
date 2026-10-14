@@ -42,7 +42,7 @@ pub use decl::{
     HandlerDecl, Import, MethodDecl, OperatorDecl, OverloadableOp, Param, StateDecl, StructDecl,
 };
 pub use expr::{BinaryOp, Expr, UnaryOp};
-pub use stmt::{Block, MatchArm, Pattern, Stmt};
+pub use stmt::{Block, MatchArm, Pattern, QueryBinding, Stmt};
 pub use types::TypeRef;
 
 use crate::diagnostics::Span;
@@ -68,6 +68,9 @@ pub enum Item {
     Function(FunctionDecl),
     /// `behavior Guard { … }`
     Behavior(BehaviorDecl),
+    /// `system Regeneration { … }` — a behavior with no entity of its own:
+    /// one rule over the entities its queries match.
+    System(BehaviorDecl),
 }
 
 impl Item {
@@ -76,7 +79,7 @@ impl Item {
         match self {
             Self::Struct(decl) | Self::Component(decl) => &decl.name,
             Self::Function(decl) => &decl.name,
-            Self::Behavior(decl) => &decl.name,
+            Self::Behavior(decl) | Self::System(decl) => &decl.name,
         }
     }
 
@@ -85,7 +88,7 @@ impl Item {
         match self {
             Self::Struct(decl) | Self::Component(decl) => decl.name_span,
             Self::Function(decl) => decl.name_span,
-            Self::Behavior(decl) => decl.name_span,
+            Self::Behavior(decl) | Self::System(decl) => decl.name_span,
         }
     }
 }

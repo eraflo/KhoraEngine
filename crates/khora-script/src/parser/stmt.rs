@@ -245,14 +245,28 @@ impl Parser {
         self.advance();
         self.expect(TokenKind::LParen, "`(` after `foreach`")?;
 
+        // `ref`, or a binding followed by `,` or `)` rather than `in`: a query.
+        if self.check_keyword(Keyword::Ref) {
+            return self.parse_query(start, None);
+        }
+        let first = self.span();
         let ty = if self.eat_keyword(Keyword::Var) {
             None
         } else {
             Some(self.parse_type()?)
         };
-        let (name, _) = self.expect_ident("a loop variable")?;
+        let (name, name_span) = self.expect_ident("a loop variable")?;
 
         if !self.eat_keyword(Keyword::In) {
+            if let (Some(ty), TokenKind::Comma | TokenKind::RParen) = (&ty, self.peek()) {
+                let binding = crate::ast::QueryBinding {
+                    ty: ty.clone(),
+                    write: false,
+                    name,
+                    span: first.to(name_span),
+                };
+                return self.parse_query(start, Some(binding));
+            }
             return Err(self.error_here("expected `in` after the loop variable"));
         }
 
@@ -268,6 +282,61 @@ impl Parser {
             body,
             span,
         })
+    }
+
+    /// The rest of a query, `first` binding read already when one was.
+    fn parse_query(
+        &mut self,
+        start: crate::diagnostics::Span,
+        first: Option<crate::ast::QueryBinding>,
+    ) -> Parse<Stmt> {
+        let mut bindings: Vec<crate::ast::QueryBinding> = first.into_iter().collect();
+        if bindings.is_empty() || self.eat(&TokenKind::Comma) {
+            loop {
+                let at = self.span();
+                let write = self.eat_keyword(Keyword::Ref);
+                let ty = self.parse_type()?;
+                let (name, name_span) = self.expect_ident("a binding name")?;
+                bindings.push(crate::ast::QueryBinding {
+                    ty,
+                    write,
+                    name,
+                    span: at.to(name_span),
+                });
+                if !self.eat(&TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+        self.expect(TokenKind::RParen, "`)` after the query's bindings")?;
+        let with = self.parse_query_filter("with")?;
+        let without = self.parse_query_filter("without")?;
+        let body = self.parse_block_or_statement()?;
+        let span = start.to(body.span);
+        Ok(Stmt::Query {
+            bindings,
+            with,
+            without,
+            body,
+            span,
+        })
+    }
+
+    /// `with A, B` or `without A, B` after a query's bindings — words only
+    /// there, never reserved.
+    fn parse_query_filter(&mut self, word: &str) -> Parse<Vec<(String, crate::diagnostics::Span)>> {
+        if !matches!(self.peek(), TokenKind::Ident(name) if name == word) {
+            return Ok(Vec::new());
+        }
+        self.advance();
+        let mut names = Vec::new();
+        loop {
+            names.push(self.expect_ident("a component's name")?);
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+        }
+        Ok(names)
     }
 
     pub(super) fn parse_return(&mut self) -> Parse<Stmt> {

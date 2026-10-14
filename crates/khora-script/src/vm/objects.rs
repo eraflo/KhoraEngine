@@ -45,8 +45,18 @@ impl Machine {
     /// and the value it writes was already paid for, as it was loaded, copied
     /// or built in the same run. Charging it again would let a run overdraw by
     /// a size no static bound knows.
-    pub(super) fn sized_cost(&self, instruction: &Instruction, host: &Host) -> Option<u64> {
+    pub(super) fn sized_cost(
+        &self,
+        instruction: &Instruction,
+        program: &Program,
+        host: &Host,
+    ) -> Option<u64> {
         let size = match *instruction {
+            Instruction::QueryRows { query, .. } => {
+                let shape = program.query(query)?;
+                let all: Vec<&str> = shape.all.iter().map(String::as_str).collect();
+                host.components.scan_cost(&all)
+            }
             Instruction::Copy { src, .. } => host.arena.size(self.read(src).ok()?),
             Instruction::LoadField { slot, .. } => match host.fields.get(slot as usize)? {
                 Persisted::Owned(owned) if owned.is_object() => owned.size(),

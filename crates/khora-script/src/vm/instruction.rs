@@ -394,6 +394,32 @@ pub enum Instruction {
         component: u32,
     },
 
+    /// The start of a query's sweep: the rows of
+    /// [`Program::queries`](super::Program::queries)`[query]` as this frame's
+    /// scripts see them — its entities in entity order — as a new array.
+    ///
+    /// Charged by the VM for the candidates it visits.
+    QueryRows {
+        /// Where the array goes.
+        dst: Reg,
+        /// Which query.
+        query: u32,
+    },
+
+    /// Whether `entity` still matches
+    /// [`Program::queries`](super::Program::queries)`[query]`: a row that the
+    /// sweep's earlier bodies took out of the query is skipped when reached.
+    QueryHolds {
+        /// Where the answer goes.
+        dst: Reg,
+        /// The row's entity.
+        entity: Reg,
+        /// Which query.
+        query: u32,
+        /// How many components the row is checked against: what it costs.
+        count: u16,
+    },
+
     /// `entity.Remove(C)`: queues the removal of the component named by
     /// [`Program::strings`](super::Program::strings)`[component]`.
     RemoveComponent {
@@ -603,6 +629,7 @@ impl Instruction {
             | Self::NewStruct { count, .. }
             | Self::WriteComponent { count, .. }
             | Self::GetComponent { count, .. }
+            | Self::QueryHolds { count, .. }
             | Self::SpawnEntity { count, .. } => 1 + u64::from(*count),
             Self::Become { writes, .. } => 1 + u64::from(*writes),
             _ => 1,

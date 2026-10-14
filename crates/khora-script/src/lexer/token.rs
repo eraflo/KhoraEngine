@@ -138,6 +138,10 @@ pub enum TokenKind {
 pub enum Keyword {
     /// `behavior`
     Behavior,
+    /// `system`
+    System,
+    /// `ref`
+    Ref,
     /// `state`
     State,
     /// `become`
@@ -207,6 +211,8 @@ impl Keyword {
     pub(super) fn from_word(word: &str) -> Option<Self> {
         Some(match word {
             "behavior" => Self::Behavior,
+            "system" => Self::System,
+            "ref" => Self::Ref,
             "state" => Self::State,
             "become" => Self::Become,
             "on" => Self::On,
