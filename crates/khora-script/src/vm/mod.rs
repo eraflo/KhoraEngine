@@ -44,6 +44,7 @@ pub mod instruction;
 mod objects;
 pub mod program;
 pub mod resume;
+mod rows;
 pub mod site;
 pub mod value;
 
@@ -238,6 +239,10 @@ pub struct Machine {
     /// [`held::Origins`].
     #[serde(skip)]
     origins: held::Origins,
+    /// The `ref` rows the current run has written and not yet sent — always
+    /// empty between runs.
+    #[serde(skip)]
+    rows: rows::PendingRows,
 }
 
 impl Machine {
@@ -268,6 +273,7 @@ impl Machine {
             arguments: args.to_vec(),
             held: Vec::new(),
             origins: held::Origins::default(),
+            rows: Default::default(),
         })
     }
 
@@ -333,6 +339,8 @@ impl Machine {
             }
         }
         let outcome = self.run_inner(program, host, &mut remaining, &mut overdraft);
+        // However the run stopped, what it wrote leaves with it.
+        self.send_rows(host, None);
         // And out again: the arena it built text in is emptied before the
         // machine next runs, and may be saved before then.
         if matches!(outcome, Run::Suspended(_)) {
@@ -740,6 +748,7 @@ impl Machine {
             | Instruction::QueryHolds { .. }
             | Instruction::RemoveComponent { .. }
             | Instruction::SpawnEntity { .. } => self.step_command(instruction, program, host),
+            Instruction::WriteRow { .. } => self.step_write_row(instruction, program, host),
 
             Instruction::Concat { dst, lhs, rhs } => {
                 let left = self.read(lhs)?;

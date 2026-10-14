@@ -38,6 +38,10 @@ const CREATED: u64 = 1 << 63;
 /// ever: changing it would re-key every instance in every saved scene.
 const WITHIN: uuid::Uuid = uuid::Uuid::from_u128(0x6b68_6f72_615f_7769_7468_696e_5f69_6430);
 
+/// The namespace named ids are derived in. Fixed for ever: changing it would
+/// re-key every entity the engine keeps one of in every saved game.
+const NAMED: uuid::Uuid = uuid::Uuid::from_u128(0x6b68_6f72_615f_6e61_6d65_645f_6964_3031);
+
 /// An entity's identity within the scene or save that records it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PersistentId(u64);
@@ -62,6 +66,13 @@ impl PersistentId {
         bytes[..8].copy_from_slice(&instance.0.to_le_bytes());
         bytes[8..].copy_from_slice(&inner.0.to_le_bytes());
         Self::authored(uuid::Uuid::new_v5(&WITHIN, &bytes).as_u64_pair().0)
+    }
+
+    /// The identity named by `text`: authored, the same in every world and
+    /// every build, and different for every text — the id of an entity the
+    /// engine keeps one of, such as a system's (`"system:Regeneration"`).
+    pub fn named(text: &str) -> PersistentId {
+        Self::authored(uuid::Uuid::new_v5(&NAMED, text.as_bytes()).as_u64_pair().0)
     }
 
     /// The `n`-th identity of the created namespace.
@@ -244,5 +255,56 @@ mod tests {
         }
         assert!(PersistentId::from_bits(TOP_BIT | 3).is_created());
         assert!(!PersistentId::from_bits(3).is_created());
+    }
+
+    /// **A named identity is the same wherever it is asked for, and authored**:
+    /// the id of an entity the engine keeps one of — a system's — found again
+    /// in every world, every session and every build by its text alone, and
+    /// never mistaken for one the game numbered as it ran.
+    #[test]
+    fn a_named_id_is_stable_authored_and_distinct_per_text() {
+        let regeneration = PersistentId::named("system:Regeneration");
+        assert_eq!(regeneration, PersistentId::named("system:Regeneration"));
+        assert!(
+            !regeneration.is_created(),
+            "{regeneration:?} reads as created"
+        );
+        assert_eq!(regeneration.to_bits() & TOP_BIT, 0);
+
+        let mut seen = std::collections::HashSet::new();
+        for text in [
+            "",
+            "system:Regeneration",
+            "system:regeneration",
+            "system:Regeneration ",
+            "system:Spawner",
+            "Regeneration",
+            "system:",
+        ] {
+            let id = PersistentId::named(text);
+            assert!(!id.is_created(), "named({text:?}) reads as created");
+            assert!(
+                seen.insert(id),
+                "named({text:?}) collides with another text"
+            );
+        }
+        for n in 0..256 {
+            let id = PersistentId::named(&format!("system:S{n}"));
+            assert!(seen.insert(id), "named(\"system:S{n}\") collides");
+        }
+    }
+
+    /// **Named identities have a namespace of their own**: a text whose bytes
+    /// are the very bytes a prefab member's id is derived from does not name
+    /// that member.
+    #[test]
+    fn a_named_id_is_not_derived_in_the_prefab_namespace() {
+        let half = u64::from_le_bytes(*b"aaaaaaaa");
+        let instance = PersistentId::authored(half);
+        let inner = PersistentId::authored(half);
+        assert_ne!(
+            PersistentId::named("aaaaaaaaaaaaaaaa"),
+            PersistentId::within(instance, inner)
+        );
     }
 }

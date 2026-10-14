@@ -48,17 +48,18 @@ pub fn state_companion(behavior: &str) -> String {
 /// given twice.
 pub fn report_script_behaviors(resolved: &Resolved, engine: &[String]) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
-    for (_, decl) in script_behaviors(resolved) {
+    for (_, decl, declared) in script_behaviors(resolved) {
         if engine.contains(&decl.name) {
+            let what = declared.word();
             diagnostics.push(
                 Diagnostic::error(
                     format!(
-                        "`{}` is an engine component. Choose another name for the behavior.",
+                        "`{}` is an engine component. Choose another name for the {what}.",
                         decl.name
                     ),
                     decl.name_span,
                 )
-                .with_note("a behavior is a component: its name is unique among every component the engine stores"),
+                .with_note(format!("a {what} is a component: its name is unique among every component the engine stores")),
             );
         }
         report_domain(&decl.attributes, &mut diagnostics);
@@ -131,11 +132,19 @@ fn report_domain(attributes: &[Attribute], diagnostics: &mut Vec<Diagnostic>) {
     }
 }
 
-/// The two components each behavior of the project's own modules is: its
-/// authored fields, and its state companion.
+/// The two components each behavior and system of the project's own modules
+/// is: its fields, and its state companion. Each carries the item's place
+/// among the module's behaviors and systems, in source order: the order they
+/// run in.
 pub fn declared_behaviors(resolved: &Resolved, program: &Program) -> Vec<DeclaredComponent> {
     script_behaviors(resolved)
-        .flat_map(|(module, decl)| {
+        .flat_map(|(module, decl, declared)| {
+            let order = declared.order;
+            let kind = if declared.system {
+                DeclaredKind::System
+            } else {
+                DeclaredKind::Behavior
+            };
             [
                 DeclaredComponent {
                     name: decl.name.clone(),
@@ -145,7 +154,8 @@ pub fn declared_behaviors(resolved: &Resolved, program: &Program) -> Vec<Declare
                         .enumerate()
                         .map(|(slot, field)| declared_field(field, slot, &decl.name, program))
                         .collect(),
-                    kind: DeclaredKind::Behavior,
+                    kind,
+                    order,
                 },
                 DeclaredComponent {
                     name: state_companion(&decl.name),
@@ -155,14 +165,38 @@ pub fn declared_behaviors(resolved: &Resolved, program: &Program) -> Vec<Declare
                     kind: DeclaredKind::BehaviorState {
                         behavior: decl.name.clone(),
                     },
+                    order,
                 },
             ]
         })
         .collect()
 }
 
-/// Every `behavior` written outside the engine's module, with its module.
-fn script_behaviors(resolved: &Resolved) -> impl Iterator<Item = (&ResolvedModule, &BehaviorDecl)> {
+/// What a behavior-shaped item of a module is.
+#[derive(Clone, Copy)]
+struct Declared {
+    /// A `system` rather than a `behavior`.
+    system: bool,
+    /// Its place among the module's behaviors and systems, in source order.
+    order: u32,
+}
+
+impl Declared {
+    /// What an author calls it.
+    fn word(self) -> &'static str {
+        if self.system {
+            "system"
+        } else {
+            "behavior"
+        }
+    }
+}
+
+/// Every `behavior` and `system` written outside the engine's module, with its
+/// module.
+fn script_behaviors(
+    resolved: &Resolved,
+) -> impl Iterator<Item = (&ResolvedModule, &BehaviorDecl, Declared)> {
     resolved
         .modules
         .iter()
@@ -172,9 +206,15 @@ fn script_behaviors(resolved: &Resolved) -> impl Iterator<Item = (&ResolvedModul
                 .module
                 .items
                 .iter()
-                .filter_map(move |item| match item {
-                    Item::Behavior(decl) => Some((module, decl)),
+                .filter_map(|item| match item {
+                    Item::Behavior(decl) => Some((decl, false)),
+                    Item::System(decl) => Some((decl, true)),
                     _ => None,
+                })
+                .enumerate()
+                .map(move |(order, (decl, system))| {
+                    let order = u32::try_from(order).unwrap_or(u32::MAX);
+                    (module, decl, Declared { system, order })
                 })
         })
 }

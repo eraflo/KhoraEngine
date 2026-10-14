@@ -337,6 +337,20 @@ impl ComponentRegistry {
         }
     }
 
+    /// Records what keeps component `key`: scenes, by its provenance, and
+    /// game saves, when resumable.
+    pub(crate) fn set_provenance(
+        &mut self,
+        key: ComponentKey,
+        provenance: ComponentProvenance,
+        resumable: bool,
+    ) {
+        if let Some(vtable) = self.vtables.get_mut(&key) {
+            vtable.provenance = provenance;
+            vtable.resumable = resumable;
+        }
+    }
+
     /// Records which module's script declares component `key` now.
     pub(crate) fn set_declared_by(&mut self, key: ComponentKey, module: Option<String>) {
         if let Some(vtable) = self.vtables.get_mut(&key) {

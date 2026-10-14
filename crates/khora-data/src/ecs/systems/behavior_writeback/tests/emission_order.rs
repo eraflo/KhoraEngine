@@ -139,6 +139,7 @@ fn declare_guard(world: &mut World) -> (ComponentKey, ComponentKey) {
         guard,
         Some(ScriptRole::Behavior {
             module: "ai/guard.erg".to_owned(),
+            order: 0,
         }),
     );
     let companion = register(

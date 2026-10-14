@@ -78,6 +78,9 @@ pub struct Host {
     /// Set once by the lane from the view, for the frame: every behavior reads
     /// the same working set, and each one's writes are in it for the next.
     pub components: khora_core::script::FrameComponents,
+    /// How many rows this frame's queries took: what their sweeps cost the
+    /// frame, for the budget's next estimate.
+    pub swept: usize,
 }
 
 impl Default for Host {
@@ -105,6 +108,7 @@ impl Host {
             input: Default::default(),
             outbox: EventQueue::new(),
             components: Default::default(),
+            swept: 0,
         }
     }
 

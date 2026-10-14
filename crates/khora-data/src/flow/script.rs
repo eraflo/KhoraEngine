@@ -288,6 +288,7 @@ mod tests {
             key,
             Some(crate::ecs::ScriptRole::Behavior {
                 module: module.to_owned(),
+                order: 0,
             }),
         );
         world.set_declared_by(key, Some(module.to_owned()));

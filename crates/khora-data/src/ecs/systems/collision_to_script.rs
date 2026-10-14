@@ -273,6 +273,7 @@ mod tests {
             "Guard",
             Some(ScriptRole::Behavior {
                 module: "ai/guard.erg".to_owned(),
+                order: 0,
             }),
         )
     }
@@ -344,6 +345,7 @@ mod tests {
             "Door",
             Some(ScriptRole::Behavior {
                 module: "props/door.erg".to_owned(),
+                order: 0,
             }),
         );
         let one = holding(&mut world, guard);
@@ -421,6 +423,7 @@ mod tests {
             "Door",
             Some(ScriptRole::Behavior {
                 module: "props/door.erg".to_owned(),
+                order: 0,
             }),
         );
         let both = holding(&mut world, guard);

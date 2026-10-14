@@ -166,6 +166,10 @@ fn is_behavior(world: &World, component: &str) -> bool {
         .key_named(component)
         .and_then(|key| world.components().vtable(key))
         .is_some_and(|vtable| {
-            matches!(vtable.script, Some(crate::ecs::ScriptRole::Behavior { .. }))
+            vtable
+                .script
+                .as_ref()
+                .and_then(crate::ecs::ScriptRole::runs)
+                .is_some()
         })
 }

@@ -20,12 +20,27 @@
 //! carries on from the row it stood on, and a structural change the body
 //! makes is a command that leaves the sweep alone. Each row is checked again
 //! when it is reached: one an earlier row's body took out of the query is
-//! skipped. Its bindings are copies, as `Get` makes them.
+//! skipped. Its bindings are copies, as `Get` makes them; a system's `ref`
+//! copy is written back where the row ends — where `continue` lands, and
+//! before a `break` or a `return` leaves the sweep.
 
 use super::keys::type_name;
 use super::{shape_of, Compiler, Shape};
 use crate::ast::{Block, QueryBinding, TypeRef};
-use crate::vm::{Instruction, QueryShape, SiteKind, Value};
+use crate::vm::{Instruction, QueryShape, Reg, SiteKind, Value};
+
+/// What ends a row of a query being compiled: its `ref` copies written back.
+#[derive(Debug, Clone)]
+pub(super) struct RowWrites {
+    /// How many loops are open around the query's body, the query's included
+    /// — a `break` at this depth leaves the sweep.
+    depth: usize,
+    /// The local holding the row's entity.
+    entity: Reg,
+    /// Each `ref` binding: its copy, the copy as read, its component's name
+    /// as a string index, and how many fields it has.
+    writes: Vec<(Reg, Reg, u32, u16)>,
+}
 
 impl Compiler {
     /// Compiles a query statement.
@@ -121,6 +136,24 @@ impl Compiler {
                 self.declare_local(&binding.name, shape_of(&binding.ty), type_name(&binding.ty))
             })
             .collect();
+        // Each `ref` binding's copy as read, and the row's entity, for the
+        // write at the row's end.
+        let written: Vec<(usize, Reg, &str)> = bindings
+            .iter()
+            .enumerate()
+            .filter(|(_, binding)| binding.write)
+            .filter_map(|(at, binding)| {
+                let (component, _) = bound_component(&binding.ty)?;
+                let original = self.declare_local(
+                    &format!("#o{}", binding.name),
+                    Shape::Object,
+                    type_name(&binding.ty),
+                );
+                Some((at, original, component))
+            })
+            .collect();
+        let row_entity = (!written.is_empty())
+            .then(|| self.declare_local("#e", Shape::Other, "Entity".to_owned()));
         self.naming.leave_branch();
         let mark = self.registers.mark();
         let entity = self.registers.temp();
@@ -150,24 +183,49 @@ impl Compiler {
                 }
                 Some((component, _)) => {
                     let component_index = self.intern(component);
-                    let fields = self
-                        .component_decls
-                        .get(component)
-                        .map_or(0, |decl| decl.fields.len());
+                    let fields = self.field_count(component);
                     self.emit(Instruction::GetComponent {
                         dst: local,
                         entity,
                         component: component_index,
-                        count: fields as u16,
+                        count: fields,
                     });
                 }
             }
         }
+        let mut row = RowWrites {
+            depth: self.loop_depth(),
+            entity: row_entity.unwrap_or(entity),
+            writes: Vec::new(),
+        };
+        for &(at, original, component) in &written {
+            let component_index = self.intern(component);
+            let fields = self.field_count(component);
+            self.emit(Instruction::GetComponent {
+                dst: original,
+                entity,
+                component: component_index,
+                count: fields,
+            });
+            row.writes
+                .push((locals[at], original, component_index, fields));
+        }
+        if let Some(local) = row_entity {
+            self.emit(Instruction::Move {
+                dst: local,
+                src: entity,
+            });
+        }
         self.registers.release_to(mark);
+        self.row_writes.push(row);
         self.compile_statements(&body.statements);
+        let context = self.leave_loop_body();
+        // Where the row ends: the body's last statement, or a `continue`.
+        if let Some(row) = self.row_writes.pop() {
+            self.emit_row_writes(&row);
+        }
         self.close_scope(inner);
         self.naming.leave_branch();
-        let context = self.leave_loop_body();
 
         // A row the query no longer holds goes straight to the next.
         self.patch_to_here(skip);
@@ -183,6 +241,48 @@ impl Compiler {
         self.patch_to_here(exit);
         self.exit_loop(context);
         self.close_scope(scope);
+    }
+}
+
+impl Compiler {
+    /// How many fields `component` has.
+    fn field_count(&self, component: &str) -> u16 {
+        self.component_decls
+            .get(component)
+            .map_or(0, |decl| decl.fields.len() as u16)
+    }
+
+    /// Writes back the `ref` copies of `row`.
+    fn emit_row_writes(&mut self, row: &RowWrites) {
+        for &(copy, original, component, count) in &row.writes {
+            self.emit(Instruction::WriteRow {
+                entity: row.entity,
+                copy,
+                original,
+                component,
+                count,
+            });
+        }
+    }
+
+    /// Before a `break`: the row of the sweep it leaves, when it leaves one.
+    pub(super) fn end_row_for_break(&mut self) {
+        let depth = self.loop_depth();
+        if let Some(row) = self
+            .row_writes
+            .last()
+            .filter(|row| row.depth == depth)
+            .cloned()
+        {
+            self.emit_row_writes(&row);
+        }
+    }
+
+    /// Before a `return`: the row of every sweep it leaves, innermost first.
+    pub(super) fn end_rows_for_return(&mut self) {
+        for row in self.row_writes.clone().iter().rev() {
+            self.emit_row_writes(row);
+        }
     }
 }
 

@@ -268,7 +268,10 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
     // hot reload keeps it: an edit to the script is not a new entity, and a
     // guard should not announce itself again because its author changed a
     // number.
-    if !progress.spawned {
+    // A system's entity is the engine's: it never spawns as an instance does,
+    // so no farewell is ever owed to it, whatever the name becomes.
+    let system = program.layout(behavior).is_some_and(|layout| layout.system);
+    if !progress.spawned && !system {
         // Marked before it runs: a cut `OnSpawn` finishes through `pending`,
         // and must not be called a second time.
         progress.spawned = true;

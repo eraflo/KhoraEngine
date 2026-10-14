@@ -749,6 +749,7 @@ fn instruction_variants(x: &khora_script::vm::instruction::Instruction) {
         khora_script::vm::instruction::Instruction::HasComponent { .. } => {}
         khora_script::vm::instruction::Instruction::QueryRows { .. } => {}
         khora_script::vm::instruction::Instruction::QueryHolds { .. } => {}
+        khora_script::vm::instruction::Instruction::WriteRow { .. } => {}
         khora_script::vm::instruction::Instruction::RemoveComponent { .. } => {}
         khora_script::vm::instruction::Instruction::SpawnEntity { .. } => {}
         khora_script::vm::instruction::Instruction::Await { .. } => {}

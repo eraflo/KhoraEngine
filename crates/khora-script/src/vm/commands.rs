@@ -50,6 +50,8 @@ impl Machine {
             } => {
                 let entity = self.entity_at(entity)?;
                 let (component, value) = self.patch_value(program, host, patch, base)?;
+                // Rows written earlier in the run go first.
+                self.send_rows(host, Some(component.as_str()));
                 let command = match mode {
                     WriteMode::Set => WorldCommand::SetComponent {
                         entity,
@@ -108,7 +110,8 @@ impl Machine {
                     .matching(&all, &none)
                     .into_iter()
                     .map(Value::Entity)
-                    .collect();
+                    .collect::<Vec<_>>();
+                host.swept += rows.len();
                 let handle = host
                     .arena
                     .alloc(crate::arena::Object::Array(rows))
@@ -137,6 +140,7 @@ impl Machine {
                     entity,
                     component: ComponentName::new(name),
                 };
+                self.send_rows(host, Some(name));
                 host.components.observe(&command);
                 host.commands.push(command);
             }
@@ -175,7 +179,10 @@ impl Machine {
     }
 
     /// The entity in `register`.
-    fn entity_at(&self, register: Reg) -> Result<khora_core::ecs::entity::EntityId, Fault> {
+    pub(super) fn entity_at(
+        &self,
+        register: Reg,
+    ) -> Result<khora_core::ecs::entity::EntityId, Fault> {
         match self.read(register)? {
             Value::Entity(entity) => Ok(entity),
             other => Err(mismatch("Entity", other)),

@@ -29,13 +29,26 @@ use khora_core::script::ScriptValue;
 
 use super::companion::companion_snapshot;
 use super::script::{ScriptArrival, ScriptInstance, ScriptProgram, ScriptView};
-use crate::ecs::{ComponentKey, Transform, World};
+use crate::ecs::systems::script_systems::singleton_id;
+use crate::ecs::BehaviorComponent;
+use crate::ecs::{ComponentKey, ScriptRole, Transform, World};
 
 /// What separates a behavior's name from its state companion's.
 const STATE_SUFFIX: &str = "#state";
 
 /// Instances, by entity and behavior.
 type Pairs = HashSet<(EntityId, String)>;
+
+/// Whether `entity`'s row of `behavior` is an instance a program runs: any
+/// holder's of a behavior, only its own entity's of a system — an entity that
+/// held a behavior become a system holds data, not an instance.
+fn runs_on(world: &World, behavior: &BehaviorComponent<'_>, entity: EntityId) -> bool {
+    let system = world
+        .components()
+        .vtable(behavior.key)
+        .is_some_and(|vtable| matches!(vtable.script, Some(ScriptRole::System { .. })));
+    !system || world.entity_with_id(singleton_id(behavior.name)) == Some(entity)
+}
 
 /// Every `(entity, behavior)` a component attaches, and those whose entity
 /// holds the behavior's state companion too.
@@ -47,6 +60,9 @@ pub(super) fn attached(world: &World) -> (Pairs, Pairs) {
             .components()
             .key_named(&format!("{}{STATE_SUFFIX}", behavior.name));
         for entity in world.holders(behavior.key) {
+            if !runs_on(world, &behavior, entity) {
+                continue;
+            }
             let pair = (entity, behavior.name.to_owned());
             if companion.is_some_and(|key| world.row(entity, key).is_some()) {
                 with_state.insert(pair.clone());
@@ -81,6 +97,7 @@ pub(super) fn project_behaviors(
             .components()
             .key_named(&format!("{}{STATE_SUFFIX}", behavior.name));
         let mut rows = world.declared_rows(behavior.key);
+        rows.retain(|(entity, _)| runs_on(world, &behavior, *entity));
         rows.sort_by_key(|(entity, _)| (entity.index, entity.generation));
         for (entity, fields) in rows {
             let arrival = newcomers

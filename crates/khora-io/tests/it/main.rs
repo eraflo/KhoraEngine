@@ -29,3 +29,4 @@ mod scene_files;
 mod script_components;
 mod shipped_scripts;
 mod snapshots;
+mod system_components;

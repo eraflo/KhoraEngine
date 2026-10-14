@@ -83,4 +83,7 @@ pub struct ScriptRunReport {
     /// The component rows the frame's view projected for scripts to read —
     /// what the reads cost, made visible.
     pub projected_rows: usize,
+    /// The rows the frame's queries took: the work of its systems' sweeps,
+    /// which the instance count alone does not price.
+    pub swept_rows: usize,
 }

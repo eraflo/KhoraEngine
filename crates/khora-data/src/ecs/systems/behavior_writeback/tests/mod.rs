@@ -72,6 +72,7 @@ fn declare_behavior(world: &mut World, module: &str, name: &str) -> (ComponentKe
         behavior,
         Some(ScriptRole::Behavior {
             module: module.to_owned(),
+            order: 0,
         }),
     );
     let companion = register(

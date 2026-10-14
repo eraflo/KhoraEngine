@@ -40,6 +40,7 @@ fn behavior(world: &mut World, module: &str, name: &str) -> ComponentKey {
         key,
         Some(ScriptRole::Behavior {
             module: module.to_owned(),
+            order: 0,
         }),
     );
     key

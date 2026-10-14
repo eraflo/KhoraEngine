@@ -266,6 +266,11 @@ fn apply_one(
             DeclaredKind::Component => None,
             DeclaredKind::Behavior => Some(ScriptRole::Behavior {
                 module: module.to_owned(),
+                order: component.order,
+            }),
+            DeclaredKind::System => Some(ScriptRole::System {
+                module: module.to_owned(),
+                order: component.order,
             }),
             DeclaredKind::BehaviorState { behavior } => Some(ScriptRole::BehaviorState {
                 behavior: behavior.clone(),
@@ -291,19 +296,24 @@ fn apply_layout(
             return;
         }
     };
+    // A behavior's state companion is what the engine writes while the
+    // behavior runs, and a system's fields are its own entity's: never in a
+    // scene, always in a game save.
+    let engine_kept = matches!(
+        component.kind,
+        DeclaredKind::BehaviorState { .. } | DeclaredKind::System
+    );
+    let provenance = if engine_kept {
+        ComponentProvenance::Runtime
+    } else {
+        ComponentProvenance::Authored
+    };
     let Some(key) = world.components().key_named(name) else {
-        // A behavior's state companion is what the engine writes while the
-        // behavior runs: never in a scene, always in a game save.
-        let state = matches!(component.kind, DeclaredKind::BehaviorState { .. });
         match world.register_runtime_component(RuntimeComponentDecl {
             name: name.clone(),
             domain: component.domain,
-            provenance: if state {
-                ComponentProvenance::Runtime
-            } else {
-                ComponentProvenance::Authored
-            },
-            resumable: state,
+            provenance,
+            resumable: engine_kept,
             layout,
         }) {
             Ok(_) => report.registered.push(name.clone()),
@@ -314,13 +324,26 @@ fn apply_layout(
     let Some(vtable) = world.components().vtable(key) else {
         return;
     };
-    let Some(current) = vtable.columns.packed() else {
+    if vtable.columns.packed().is_none() {
         log::error!("`{name}` is a Rust component: a script cannot declare it");
         return;
-    };
+    }
     if !state.owner.contains_key(name) {
         report.adopted.push(name.clone());
     }
+    // A name that changed kind — a behavior become a system — is kept as its
+    // new kind is.
+    if vtable.provenance != provenance || vtable.resumable != engine_kept {
+        if let Err(error) = world.set_provenance(key, provenance, engine_kept) {
+            log::error!("`{name}` cannot change what keeps it: {error}");
+        }
+    }
+    let Some(vtable) = world.components().vtable(key) else {
+        return;
+    };
+    let Some(current) = vtable.columns.packed() else {
+        return;
+    };
     let (domain, changed) = (vtable.domain, !current.same_as(&layout));
     if changed {
         match world.relayout(key, layout) {

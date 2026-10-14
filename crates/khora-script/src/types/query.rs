@@ -20,9 +20,24 @@
 //! native reading it — or belongs to one entity's time — a state, `become`,
 //! an event, `async` — is refused at the construct, saying a system has none.
 
+use std::collections::{HashMap, HashSet};
+
 use super::{Checker, Context, Ty};
 use crate::ast::{BehaviorDecl, BehaviorMember, Block, QueryBinding, TypeRef};
 use crate::diagnostics::Span;
+
+/// The calls among free functions, and those of systems to free functions:
+/// a free function reading the subject — itself or through those it calls —
+/// is refused where a system calls it.
+#[derive(Debug, Default)]
+pub struct SubjectCalls {
+    /// Each free function's calls to free functions.
+    calls: HashMap<String, Vec<String>>,
+    /// The free functions calling a native that reads the subject, with it.
+    reads: HashMap<String, String>,
+    /// Each call a system makes to a free function: callee, call.
+    from_systems: Vec<(String, Span)>,
+}
 
 /// How a query names a component.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -82,6 +97,49 @@ impl Checker {
         let outer = self.system.replace(decl.name.clone());
         self.check_behavior(decl);
         self.system = outer;
+    }
+
+    /// Records a call to `name` at `span`, for [`report_subject_calls`].
+    ///
+    /// [`report_subject_calls`]: Self::report_subject_calls
+    pub(super) fn note_call(&mut self, name: &str, span: Span) {
+        let free = self.free_functions.contains(name) && !self.method_names.contains(name);
+        if let Some(caller) = self.free_function.clone() {
+            if free {
+                self.subject_calls
+                    .calls
+                    .entry(caller)
+                    .or_default()
+                    .push(name.to_owned());
+            } else if crate::native::world::SUBJECT_NATIVES.contains(&name) {
+                self.subject_calls
+                    .reads
+                    .entry(caller)
+                    .or_insert_with(|| name.to_owned());
+            }
+        } else if self.system.is_some() && free {
+            self.subject_calls
+                .from_systems
+                .push((name.to_owned(), span));
+        }
+    }
+
+    /// Refuses each call a system makes to a free function that reads the
+    /// subject, itself or through any chain of free functions.
+    pub(super) fn report_subject_calls(&mut self) {
+        let calls = std::mem::take(&mut self.subject_calls);
+        for (callee, span) in &calls.from_systems {
+            let Some(native) = reading(&calls, callee) else {
+                continue;
+            };
+            self.error_note(
+                format!(
+                    "`{callee}` reads the entity a behavior is attached to through `{native}()`, and a system has none"
+                ),
+                *span,
+                "a system's entities are the rows of its queries — pass the function an `Entity`",
+            );
+        }
     }
 
     /// `foreach (Entity e, ref Health h, Regen? r) with A without B { … }`.
@@ -271,4 +329,23 @@ fn kind(optional: bool) -> Named {
     } else {
         Named::Required
     }
+}
+
+/// The subject-reading native `function` reaches, itself or through the free
+/// functions it calls — each followed once, so a cycle ends.
+fn reading<'c>(calls: &'c SubjectCalls, function: &str) -> Option<&'c str> {
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut next = vec![function];
+    while let Some(current) = next.pop() {
+        if !seen.insert(current) {
+            continue;
+        }
+        if let Some(native) = calls.reads.get(current) {
+            return Some(native);
+        }
+        if let Some(callees) = calls.calls.get(current) {
+            next.extend(callees.iter().map(String::as_str));
+        }
+    }
+    None
 }

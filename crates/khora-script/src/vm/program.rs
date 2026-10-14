@@ -141,6 +141,10 @@ pub struct BehaviorLayout {
     /// gives a running one.
     #[serde(default)]
     pub defaults: Vec<crate::arena::Owned>,
+    /// Whether a `system` declares it — a behavior with no subject, run on an
+    /// entity of its own that never spawns as an instance does.
+    #[serde(default)]
+    pub system: bool,
 }
 
 impl BehaviorLayout {
@@ -335,6 +339,10 @@ pub struct DeclaredComponent {
     /// components declares only components.
     #[serde(default)]
     pub kind: DeclaredKind,
+    /// Where its item sits among the behaviors and systems of its module, in
+    /// source order: what behaviors and systems run by, after their module.
+    #[serde(default)]
+    pub order: u32,
 }
 
 /// What a [`DeclaredComponent`] stands for.
@@ -345,6 +353,8 @@ pub enum DeclaredKind {
     Component,
     /// A `behavior`'s authored fields.
     Behavior,
+    /// A `system`'s fields, held by its one runtime entity.
+    System,
     /// The state the engine keeps for a behavior's instance: its state, state
     /// data, timers, pending sequence and lifecycle.
     BehaviorState {

@@ -413,6 +413,30 @@ impl World {
         self.storage.registry.set_declared_by(key, module);
     }
 
+    /// Gives declared component `key` a new provenance — whether scenes keep
+    /// it — and says whether a game save does: what a name changing kind on a
+    /// reload takes. Its rows are relaid out for what the provenance keeps.
+    pub fn set_provenance(
+        &mut self,
+        key: ComponentKey,
+        provenance: ComponentProvenance,
+        resumable: bool,
+    ) -> Result<(), RegisterError> {
+        let Some(layout) = self
+            .storage
+            .registry
+            .vtable(key)
+            .and_then(|vtable| vtable.columns.packed())
+            .cloned()
+        else {
+            return Err(RegisterError::Unknown(key));
+        };
+        self.storage
+            .registry
+            .set_provenance(key, provenance, resumable);
+        self.relayout(key, layout).map(|_| ())
+    }
+
     /// Moves a declared component to `domain`: every row of it goes to its
     /// entity's page of the new domain, values intact.
     pub fn move_component_domain(
@@ -557,7 +581,7 @@ impl World {
             .vtable(key)
             .map(|vtable| &vtable.script)
         {
-            Some(Some(crate::ecs::ScriptRole::Behavior { .. })) => self
+            Some(Some(role)) if role.runs().is_some() => self
                 .storage
                 .registry
                 .vtable(key)

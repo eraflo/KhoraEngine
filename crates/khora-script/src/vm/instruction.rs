@@ -420,6 +420,23 @@ pub enum Instruction {
         count: u16,
     },
 
+    /// The end of a `ref` binding's row: the fields of `copy` that differ
+    /// from `original` are written into the frame's working set at once and
+    /// into the run's pending batch for the component named by
+    /// [`Program::strings`](super::Program::strings)`[component]`.
+    WriteRow {
+        /// The row's entity.
+        entity: Reg,
+        /// The binding's copy, as the body left it.
+        copy: Reg,
+        /// The copy as the row was read.
+        original: Reg,
+        /// The component's name, as a string index.
+        component: u32,
+        /// How many fields the component has: what the comparison costs.
+        count: u16,
+    },
+
     /// `entity.Remove(C)`: queues the removal of the component named by
     /// [`Program::strings`](super::Program::strings)`[component]`.
     RemoveComponent {
@@ -630,6 +647,7 @@ impl Instruction {
             | Self::WriteComponent { count, .. }
             | Self::GetComponent { count, .. }
             | Self::QueryHolds { count, .. }
+            | Self::WriteRow { count, .. }
             | Self::SpawnEntity { count, .. } => 1 + u64::from(*count),
             Self::Become { writes, .. } => 1 + u64::from(*writes),
             _ => 1,

@@ -67,7 +67,10 @@ pub(crate) fn declare(world: &mut World, module: &str, program: &Program) {
 }
 
 fn register(world: &mut World, module: &str, component: &DeclaredComponent) {
-    let state = matches!(component.kind, DeclaredKind::BehaviorState { .. });
+    let state = matches!(
+        component.kind,
+        DeclaredKind::BehaviorState { .. } | DeclaredKind::System
+    );
     let layout = PackedLayout::typed(
         component
             .fields
@@ -102,6 +105,11 @@ fn register(world: &mut World, module: &str, component: &DeclaredComponent) {
         DeclaredKind::Component => None,
         DeclaredKind::Behavior => Some(ScriptRole::Behavior {
             module: module.to_owned(),
+            order: component.order,
+        }),
+        DeclaredKind::System => Some(ScriptRole::System {
+            module: module.to_owned(),
+            order: component.order,
         }),
         DeclaredKind::BehaviorState { behavior } => Some(ScriptRole::BehaviorState {
             behavior: behavior.clone(),

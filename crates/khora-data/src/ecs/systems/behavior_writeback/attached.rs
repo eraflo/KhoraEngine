@@ -223,11 +223,13 @@ pub(super) fn drop_orphaned_companions(world: &mut World) {
 /// The component of the behavior named `behavior`, when one is registered.
 fn behavior_key(world: &World, behavior: &str) -> Option<ComponentKey> {
     let key = world.components().key_named(behavior)?;
-    matches!(
-        world.components().vtable(key)?.script,
-        Some(ScriptRole::Behavior { .. })
-    )
-    .then_some(key)
+    world
+        .components()
+        .vtable(key)?
+        .script
+        .as_ref()?
+        .runs()
+        .map(|_| key)
 }
 
 /// One column write of `rows` to the fields `names` of component `key`.

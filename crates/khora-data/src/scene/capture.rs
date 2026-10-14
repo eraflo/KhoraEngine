@@ -77,13 +77,35 @@ impl std::fmt::Display for SaveError {
 
 impl std::error::Error for SaveError {}
 
-/// Every entity of `world` and the components worth saving.
+/// Every entity of `world` but a system's own, and the components worth
+/// saving.
 ///
 /// Listed tree by tree, each parent's children in their `Children` order: a
 /// load derives every list from the order the record names its children in,
 /// so this is what keeps siblings in the order the scene had them.
 pub fn capture_world(world: &World) -> Result<SceneRecord, SaveError> {
-    capture(world, &world_in_tree_order(world), None, Kept::Scene)
+    capture(world, &scene_entities(world), None, Kept::Scene)
+}
+
+/// Every entity a scene holds, in tree order: all of `world`'s but the
+/// systems' own — whatever the encoding.
+pub(super) fn scene_entities(world: &World) -> Vec<EntityId> {
+    // A system's own entity is the engine's, made while the game runs: no
+    // scene holds it — whatever its name is now. An authored entity holding a
+    // system's component is still the author's.
+    let engine_kept: HashSet<PersistentId> = world
+        .components()
+        .iter()
+        .map(|vtable| crate::ecs::systems::script_systems::singleton_id(&vtable.name))
+        .collect();
+    world_in_tree_order(world)
+        .into_iter()
+        .filter(|entity| {
+            world
+                .persistent_id(*entity)
+                .is_none_or(|id| !engine_kept.contains(&id))
+        })
+        .collect()
 }
 
 /// Every entity of `world`, in tree order, and the components a game save

@@ -265,6 +265,7 @@ fn rebuild(frozen: &FrozenMachine, program: &Program) -> Option<Machine> {
         arguments,
         held,
         origins: Default::default(),
+        rows: Default::default(),
     })
 }
 

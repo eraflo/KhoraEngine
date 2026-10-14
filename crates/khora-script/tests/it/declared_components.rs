@@ -116,6 +116,7 @@ fn a_program_lists_the_components_it_declares() {
                     ),
                 ],
                 kind: DeclaredKind::Component,
+                order: 0,
             },
             DeclaredComponent {
                 name: "Shield".to_owned(),
@@ -131,6 +132,7 @@ fn a_program_lists_the_components_it_declares() {
                     field("raised", ErgonType::Bool, ScriptValue::Bool(true)),
                 ],
                 kind: DeclaredKind::Component,
+                order: 0,
             },
         ]
     );

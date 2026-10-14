@@ -162,6 +162,7 @@ impl Compiler {
                         unit
                     }
                 };
+                self.end_rows_for_return();
                 self.emit(Instruction::Return { src });
                 self.registers.release_to(mark);
             }

@@ -95,6 +95,7 @@ pub fn declared_components(resolved: &Resolved, program: &Program) -> Vec<Declar
                 })
                 .collect(),
             kind: DeclaredKind::Component,
+            order: 0,
         })
         .collect();
     declared.sort_by(|a, b| a.name.cmp(&b.name));

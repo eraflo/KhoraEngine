@@ -443,7 +443,8 @@ fn a_behavior_and_its_companion_register_with_their_script_roles() {
     assert_eq!(
         role(&world, "Guard"),
         Some(ScriptRole::Behavior {
-            module: "ai/guard.erg".to_owned()
+            module: "ai/guard.erg".to_owned(),
+            order: 0,
         })
     );
     assert_eq!(
@@ -472,7 +473,8 @@ fn a_refused_behavior_gives_no_role_to_the_component_it_collides_with() {
     assert_eq!(
         role(&world, "Sentry"),
         Some(ScriptRole::Behavior {
-            module: "c.erg".to_owned()
+            module: "c.erg".to_owned(),
+            order: 0,
         })
     );
 }
@@ -530,7 +532,8 @@ fn a_behavior_registered_from_a_save_gains_its_role_when_its_module_declares_it(
     assert_eq!(
         role(&fresh, "Guard"),
         Some(ScriptRole::Behavior {
-            module: "ai/guard.erg".to_owned()
+            module: "ai/guard.erg".to_owned(),
+            order: 0,
         })
     );
     assert_eq!(
@@ -601,7 +604,8 @@ fn pending_declarations_are_registered_with_their_roles() {
     assert_eq!(
         role(&world, "Guard"),
         Some(ScriptRole::Behavior {
-            module: "ai/guard.erg".to_owned()
+            module: "ai/guard.erg".to_owned(),
+            order: 0,
         })
     );
     assert_eq!(

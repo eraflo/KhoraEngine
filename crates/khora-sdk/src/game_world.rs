@@ -229,8 +229,9 @@ impl GameWorld {
         fields: &[(&str, ScriptValue)],
     ) -> Result<(), DeclaredComponentError> {
         // Declared by a script now — not a Rust component, not one only a file
-        // or a script that dropped it declares — and not a behavior's state,
-        // which the engine writes as the behavior runs.
+        // or a script that dropped it declares — and neither a behavior's
+        // state, which the engine writes as the behavior runs, nor a system's
+        // component, which only the system's own entity holds.
         let key = self
             .world
             .components()
@@ -239,7 +240,10 @@ impl GameWorld {
             .filter(|key| {
                 self.world.components().vtable(*key).is_some_and(|vtable| {
                     vtable.declared_by.is_some()
-                        && !matches!(vtable.script, Some(ScriptRole::BehaviorState { .. }))
+                        && !matches!(
+                            vtable.script,
+                            Some(ScriptRole::BehaviorState { .. } | ScriptRole::System { .. })
+                        )
                 })
             })
             .ok_or_else(|| DeclaredComponentError::NotDeclared(name.to_owned()))?;

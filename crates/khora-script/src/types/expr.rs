@@ -379,6 +379,7 @@ impl Checker {
                 }
                 return Ty::Error;
             }
+            self.note_call(name, span);
             if !self.functions.contains_key(name)
                 && self.refuse_free_form(name, args, span, context)
             {

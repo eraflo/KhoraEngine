@@ -79,6 +79,10 @@ impl Default for ScriptAgent {
 /// so this succeeds in practice — but negotiation and status reads run on the
 /// DCC thread, and neither is worth a chance of blocking it. The fallback is
 /// what a caller would see before the first frame anyway.
+/// What one row a query takes costs, about: its check, its copies and a
+/// body of a few statements.
+const PER_ROW: Duration = Duration::from_nanos(200);
+
 fn peek<T>(
     runtime: &Option<Arc<Mutex<ScriptRuntime>>>,
     read: impl FnOnce(&ScriptRuntime) -> T,
@@ -102,6 +106,11 @@ impl Agent for ScriptAgent {
         // against a number that was never true.
         let per_behavior = Duration::from_nanos(2_000);
         let live = peek(&self.runtime, ScriptRuntime::instance_count, 0).max(1) as u32;
+        // A system is one instance however many rows it sweeps: the rows the
+        // last frame's queries took are priced on top.
+        let swept = peek(&self.runtime, |runtime| runtime.last_report().swept_rows, 0);
+        let rows = PER_ROW * u32::try_from(swept).unwrap_or(u32::MAX);
+        let work = per_behavior * live + rows;
 
         NegotiationResponse {
             strategies: vec![
@@ -109,19 +118,19 @@ impl Agent for ScriptAgent {
                 // behaviors that were reached, and the rest wait a frame.
                 StrategyOption {
                     id: StrategyId::LowPower,
-                    estimated_time: per_behavior * live / 4,
+                    estimated_time: work / 4,
                     estimated_vram: 0,
                 },
                 StrategyOption {
                     id: StrategyId::Balanced,
-                    estimated_time: per_behavior * live,
+                    estimated_time: work,
                     estimated_vram: 0,
                 },
                 // Room for every behavior plus the events they raise for each
                 // other, which is where a frame's script work actually peaks.
                 StrategyOption {
                     id: StrategyId::HighPerformance,
-                    estimated_time: per_behavior * live * 2,
+                    estimated_time: work * 2,
                     estimated_vram: 0,
                 },
             ],

@@ -149,6 +149,7 @@ pub(super) fn declare_behavior(
         behavior,
         Some(ScriptRole::Behavior {
             module: module.to_owned(),
+            order: 0,
         }),
     );
     world.set_declared_by(behavior, Some(module.to_owned()));

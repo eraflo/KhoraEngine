@@ -181,6 +181,7 @@ impl Lane for BudgetedScriptLane {
         host.components = khora_core::script::FrameComponents::new(Arc::clone(&view.components));
         let mut report = run_behaviors(view, &events, runtime, &mut host, fuel.0);
         report.projected_rows = view.components.rows();
+        report.swept_rows = host.swept;
         report.raised = host.take_events();
 
         // Handed over together with the arena reset, so no command can

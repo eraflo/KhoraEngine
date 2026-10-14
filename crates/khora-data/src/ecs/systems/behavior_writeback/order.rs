@@ -88,5 +88,5 @@ fn is_behavior(world: &World, component: &str) -> bool {
         .components()
         .key_named(component)
         .and_then(|key| world.components().vtable(key))
-        .is_some_and(|vtable| matches!(vtable.script, Some(ScriptRole::Behavior { .. })))
+        .is_some_and(|vtable| vtable.script.as_ref().and_then(ScriptRole::runs).is_some())
 }

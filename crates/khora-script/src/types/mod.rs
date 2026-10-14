@@ -98,6 +98,7 @@ pub fn check_with(module: &Module, natives: &crate::native::NativeRegistry) -> C
     checker.collect_natives(natives);
     checker.collect(module);
     checker.check_bodies(module);
+    checker.report_subject_calls();
     Checked {
         diagnostics: checker.diagnostics,
         inferred: checker.inferred,
@@ -235,6 +236,14 @@ pub struct Checker {
     /// subject, `become` and `await` in it — a system has no entity of its
     /// own.
     pub system: Option<String>,
+    /// The free function being checked.
+    pub free_function: Option<String>,
+    /// Every free function the module declares.
+    pub free_functions: std::collections::HashSet<String>,
+    /// Who calls what among the free functions, and which read the subject
+    /// themselves: what a system's call is checked against once every body
+    /// is.
+    pub subject_calls: query::SubjectCalls,
 }
 
 impl Checker {
@@ -254,6 +263,9 @@ impl Checker {
             field_names: Vec::new(),
             method_names: std::collections::HashSet::new(),
             system: None,
+            free_function: None,
+            free_functions: std::collections::HashSet::new(),
+            subject_calls: query::SubjectCalls::default(),
         }
     }
 
@@ -346,7 +358,10 @@ impl Checker {
             match item {
                 Item::Struct(decl) => self.collect_struct(decl),
                 Item::Component(decl) => self.collect_component(decl),
-                Item::Function(decl) => self.collect_function(decl),
+                Item::Function(decl) => {
+                    self.free_functions.insert(decl.name.clone());
+                    self.collect_function(decl);
+                }
                 Item::Behavior(decl) => self.collect_component(&decl.as_component()),
                 Item::System(_) => {}
             }
@@ -549,7 +564,9 @@ impl Checker {
         }
         let returns = self.resolve(&decl.return_ty);
         let context = Context::sync(decl.name.clone(), returns.clone());
+        self.free_function = Some(decl.name.clone());
         self.check_block(&decl.body, &context);
+        self.free_function = None;
         self.check_returns(&decl.name, &returns, &decl.body, decl.name_span);
     }
 

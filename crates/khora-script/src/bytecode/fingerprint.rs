@@ -424,6 +424,17 @@ impl Hash {
                 self.number(u64::from(*count));
                 self.query(program, *query);
             }
+            I::WriteRow {
+                entity,
+                copy,
+                original,
+                component,
+                count,
+            } => {
+                self.op("WriteRow", &[*entity, *copy, *original]);
+                self.number(u64::from(*count));
+                self.text(program.string(*component).unwrap_or_default());
+            }
             I::RemoveComponent { entity, component } => {
                 self.op("RemoveComponent", &[*entity]);
                 self.text(program.string(*component).unwrap_or_default());

@@ -26,8 +26,8 @@ use super::World;
 use crate::ecs::ComponentKey;
 use crate::scene::component_registration::registration_for;
 
-/// A component that is a behavior: its key, and the module whose program
-/// runs it.
+/// A component a program runs — a behavior's or a system's: its key, and the
+/// module whose program runs it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BehaviorComponent<'w> {
     /// The component.
@@ -39,25 +39,35 @@ pub struct BehaviorComponent<'w> {
 }
 
 impl World {
-    /// Every registered component that is a behavior
-    /// ([`ScriptRole::Behavior`](crate::ecs::ScriptRole::Behavior)), sorted
-    /// by `(module, name)`. A behavior's state companion, a declared component
-    /// with no role and a Rust component are not behaviors.
+    /// Every registered component a program runs — a behavior
+    /// ([`ScriptRole::Behavior`](crate::ecs::ScriptRole::Behavior)) or a
+    /// system ([`ScriptRole::System`](crate::ecs::ScriptRole::System)) — in
+    /// the order they run: by module, then by their place in it, the name
+    /// breaking a tie. A state companion, a declared component with no role
+    /// and a Rust component are run by nothing.
     pub fn behavior_components(&self) -> Vec<BehaviorComponent<'_>> {
-        let mut behaviors: Vec<BehaviorComponent<'_>> = self
+        let mut behaviors: Vec<(u32, BehaviorComponent<'_>)> = self
             .components()
             .iter()
-            .filter_map(|vtable| match &vtable.script {
-                Some(crate::ecs::ScriptRole::Behavior { module }) => Some(BehaviorComponent {
-                    key: vtable.key,
-                    module,
-                    name: &vtable.name,
-                }),
-                _ => None,
+            .filter_map(|vtable| {
+                let (module, order) = vtable.script.as_ref()?.runs()?;
+                Some((
+                    order,
+                    BehaviorComponent {
+                        key: vtable.key,
+                        module,
+                        name: &vtable.name,
+                    },
+                ))
             })
             .collect();
-        behaviors.sort_by(|a, b| (a.module, a.name).cmp(&(b.module, b.name)));
+        behaviors.sort_by(|(a_order, a), (b_order, b)| {
+            (a.module, a_order, a.name).cmp(&(b.module, b_order, b.name))
+        });
         behaviors
+            .into_iter()
+            .map(|(_, behavior)| behavior)
+            .collect()
     }
 
     /// A projection of the components named `names`: one typed copy of every

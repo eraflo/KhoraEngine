@@ -150,6 +150,7 @@ impl Machine {
             arguments,
             held,
             origins: Default::default(),
+            rows: Default::default(),
         })
     }
 }

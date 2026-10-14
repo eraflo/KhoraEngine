@@ -28,10 +28,35 @@ pub enum ScriptRole {
         /// The module that declares the behavior, relative to the script
         /// root.
         module: String,
+        /// Where the behavior sits among the behaviors and systems of its
+        /// module, in source order.
+        order: u32,
+    },
+    /// The component a system is: its fields, held by the system's one
+    /// runtime entity.
+    System {
+        /// The module that declares the system, relative to the script root.
+        module: String,
+        /// Where the system sits among the behaviors and systems of its
+        /// module, in source order.
+        order: u32,
     },
     /// A behavior's state companion: what the engine keeps of an instance.
     BehaviorState {
         /// The behavior it belongs to, by name.
         behavior: String,
     },
+}
+
+impl ScriptRole {
+    /// The module and the source order of a component a program runs — a
+    /// behavior's or a system's; `None` for a state companion.
+    pub fn runs(&self) -> Option<(&str, u32)> {
+        match self {
+            Self::Behavior { module, order } | Self::System { module, order } => {
+                Some((module, *order))
+            }
+            Self::BehaviorState { .. } => None,
+        }
+    }
 }

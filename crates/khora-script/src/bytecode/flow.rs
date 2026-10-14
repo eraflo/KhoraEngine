@@ -61,6 +61,7 @@ struct Bound<'a> {
 impl Compiler {
     /// `break;` — to the first instruction after the innermost loop.
     pub(super) fn compile_break(&mut self, span: Span) {
+        self.end_row_for_break();
         let jump = self.emit(Instruction::Jump { target: usize::MAX });
         match self.loops.last_mut() {
             Some(context) => context.breaks.push(jump),
@@ -85,6 +86,11 @@ impl Compiler {
                 context.continues.push(jump);
             }
         }
+    }
+
+    /// How many loops are open around the code being compiled.
+    pub(super) fn loop_depth(&self) -> usize {
+        self.loops.len()
     }
 
     /// Starts a loop's body, `continue` landing on `continue_target` when it

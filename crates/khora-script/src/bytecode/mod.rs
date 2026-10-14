@@ -201,6 +201,9 @@ pub struct Compiler {
     /// The loops around the code being compiled, innermost last — what a
     /// `break` or `continue` acts on.
     loops: Vec<flow::LoopContext>,
+    /// The sweeps around the code being compiled, innermost last — what ends
+    /// a row when the body leaves it.
+    row_writes: Vec<query::RowWrites>,
     /// How many of [`locals`](Self::locals) a name may not resolve to: the
     /// locals of the member a `become` is written in, while the entered
     /// state's defaults compile — they are still live, and still recorded at
@@ -248,6 +251,7 @@ impl Compiler {
             behavior_fields: HashMap::new(),
             hidden_locals: 0,
             loops: Vec::new(),
+            row_writes: Vec::new(),
             code: Vec::new(),
             registers: Registers::new(0),
             locals: Vec::new(),
@@ -393,7 +397,8 @@ impl Compiler {
                 Item::Function(decl) => {
                     self.compile_body(&decl.name, &decl.params, &decl.body);
                 }
-                Item::Behavior(decl) | Item::System(decl) => self.compile_behavior(decl),
+                Item::Behavior(decl) => self.compile_behavior(decl, false),
+                Item::System(decl) => self.compile_behavior(decl, true),
                 Item::Struct(_) | Item::Component(_) => {}
             }
         }
@@ -419,6 +424,7 @@ impl Compiler {
         }
 
         self.naming.reset();
+        self.row_writes.clear();
         self.record_entry();
         self.compile_statements(&body.statements);
         if self.registers.overflowed() {

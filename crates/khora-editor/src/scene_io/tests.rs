@@ -254,6 +254,7 @@ fn declare_guard(
             false,
             ScriptRole::Behavior {
                 module: "ai/guard.erg".to_owned(),
+                order: 0,
             },
         ),
         (

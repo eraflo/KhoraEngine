@@ -36,7 +36,7 @@ use khora_core::scene::SceneFile;
 use khora_core::script::{ErgonType, ScriptValue};
 
 use super::apply::{failure, prepare_pages, to_register, LoadFailure, Loaded, PagePlan, Prepared};
-use super::capture::{capture_pages, world_in_tree_order, SaveError, Saved};
+use super::capture::{capture_pages, scene_entities, SaveError, Saved};
 use super::component_registration::{ComponentRegistration, Kept};
 use super::declared::{kind_name, kind_named, nowhere, plan_fields, DeclaredLoad};
 use super::file::{check_format, encoding_of, scene_file};
@@ -61,9 +61,10 @@ const RUST_ENTRY: u8 = 0;
 /// A table entry describing a component declared while the engine runs.
 const DECLARED_ENTRY: u8 = 1;
 
-/// Writes every entity of `world` and its saved components as a snapshot.
+/// Writes every entity a scene of `world` holds and its saved components as
+/// a snapshot.
 pub fn write_snapshot(world: &World) -> Result<SceneFile, SaveError> {
-    let entities = world_in_tree_order(world);
+    let entities = scene_entities(world);
     let (ids, pages) = capture_pages(
         world,
         &entities,

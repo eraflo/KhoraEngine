@@ -31,7 +31,7 @@ impl Compiler {
     /// find it. What makes it a *member* is the field table in scope while it
     /// compiles — which is why the fields are assigned slots first, before any
     /// body is read, so a member can name a field declared below it.
-    pub(super) fn compile_behavior(&mut self, decl: &crate::ast::BehaviorDecl) {
+    pub(super) fn compile_behavior(&mut self, decl: &crate::ast::BehaviorDecl, system: bool) {
         self.fields.clear();
         let mut layout = crate::vm::BehaviorLayout {
             name: decl.name.clone(),
@@ -41,6 +41,7 @@ impl Compiler {
             states: Vec::new(),
             timers: Vec::new(),
             defaults: Vec::new(),
+            system,
         };
         for member in &decl.members {
             if let BehaviorMember::Field(field) = member {
