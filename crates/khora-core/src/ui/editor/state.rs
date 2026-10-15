@@ -206,11 +206,11 @@ pub struct EditorState {
     /// The String is the component type name (e.g., "Camera", "RigidBody").
     pub pending_add_component: Option<(EntityId, String)>,
 
-    /// Registry mapping `type_name` → domain tag for every component the
-    /// engine currently knows about. Populated by `extract_inspected` once
-    /// per frame from the live `World`. Used by the inspector to bucket
-    /// the "+ Add Component" menu by domain without re-querying the world.
-    pub component_domain_registry: std::collections::HashMap<String, u8>,
+    /// What "+ Add Component" offers the inspected entity — Rust components
+    /// and script-declared ones it does not hold, each with its domain and
+    /// what declares it. Filled by `extract_inspected` each frame from the
+    /// live `World`, so the menu never queries the world itself.
+    pub addable_components: Vec<super::declared::AddableComponent>,
 
     // ── Editor workspace ───────────────────────────────
     /// Currently active editing workspace (scene / control plane / …).
@@ -419,6 +419,9 @@ pub struct InspectedEntity {
     /// The prefab instance the entity belongs to, and how it differs from
     /// its prefab — `None` for an entity that is no part of an instance.
     pub prefab: Option<InspectedPrefab>,
+    /// Every component a script declared on this entity, as a typed card —
+    /// read from its layout, not through JSON.
+    pub declared: Vec<super::declared::DeclaredCard>,
 }
 
 /// An inspected entity seen against the prefab of the instance it belongs
@@ -442,6 +445,9 @@ pub struct InspectedPrefab {
     /// The prefab's value of each component the prefab gives the entity, by
     /// type name — what a revert writes back.
     pub prefab_json: Vec<(String, serde_json::Value)>,
+    /// The prefab's fields of each declared component the prefab gives the
+    /// entity, by component name — what a revert writes back.
+    pub prefab_declared: Vec<(String, Vec<(String, crate::script::ScriptValue)>)>,
 }
 
 impl InspectedPrefab {
@@ -536,6 +542,19 @@ pub enum PropertyEdit {
         type_name: String,
         value: serde_json::Value,
     },
+    /// Write one field of the declared component `component` on `entity` —
+    /// all or nothing: a value the field refuses leaves the row as it was.
+    SetDeclaredField {
+        entity: EntityId,
+        component: String,
+        field: String,
+        value: crate::script::ScriptValue,
+    },
+    /// Add the declared component `component` to `entity`, at its defaults.
+    AddDeclared { entity: EntityId, component: String },
+    /// Remove the declared component `component` from `entity` — a
+    /// behavior's state companion along with it.
+    RemoveDeclared { entity: EntityId, component: String },
 }
 
 // ════════════════════════════════════════════════════════

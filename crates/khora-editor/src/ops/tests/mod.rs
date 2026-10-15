@@ -23,6 +23,8 @@ use khora_sdk::khora_data::scene::{
 
 use super::*;
 
+mod declared;
+
 /// Captures the live JSON of a component on `entity` via the inventory
 /// registration — mirrors exactly what the inspector renders, so edits
 /// built on top of it patch the same shape `from_json` consumes.

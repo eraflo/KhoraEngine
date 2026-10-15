@@ -17,6 +17,7 @@
 //! an override.
 
 mod aim;
+mod declared;
 mod inspection;
 mod json_paths;
 mod reverts;

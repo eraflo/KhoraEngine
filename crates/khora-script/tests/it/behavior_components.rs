@@ -332,7 +332,7 @@ fn a_behavior_field_registers_its_constant_default_else_its_zero_else_its_neutra
 
     assert_eq!(field("speed").ty, ErgonType::Float);
     assert_eq!(field("speed").default, ScriptValue::Float(2.0));
-    assert_eq!(field("cooldown").ty, ErgonType::Float);
+    assert_eq!(field("cooldown").ty, ErgonType::Duration);
     assert_eq!(field("cooldown").default, ScriptValue::Float(2.0));
     assert_eq!(field("count").ty, ErgonType::Int);
     assert_eq!(field("count").default, ScriptValue::Int(0));

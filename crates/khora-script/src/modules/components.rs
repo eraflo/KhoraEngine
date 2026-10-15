@@ -244,9 +244,9 @@ pub(super) fn ergon_type(ty: &TypeRef) -> Option<ErgonType> {
         TypeRef::Void | TypeRef::Generic { .. } => return None,
         TypeRef::Optional { inner, .. } => ErgonType::Optional(Box::new(ergon_type(inner)?)),
         TypeRef::Array { element, .. } => ErgonType::Array(Box::new(ergon_type(element)?)),
-        // A duration and an angle are floats a script reads in its own unit.
+        // A duration and an angle keep their unit: stored as floats, they
+        // are typed so — what a tool shows them in.
         TypeRef::Named { name, .. } => match name.as_str() {
-            "Duration" | "Angle" => ErgonType::Float,
             "void" => return None,
             other => ErgonType::parse(other)?,
         },
@@ -279,7 +279,6 @@ pub(super) fn with_struct_fields(
                 .iter()
                 .map(|(field, written)| {
                     let ty = ErgonType::parse(written)
-                        .map(as_stored)
                         .unwrap_or_else(|| ErgonType::named_struct(written.clone()));
                     (field.clone(), with_struct_fields(ty, program, expanding))
                 })
@@ -290,17 +289,6 @@ pub(super) fn with_struct_fields(
                 fields: Some(fields),
             }
         }
-        other => other,
-    }
-}
-
-/// `ty` as the engine stores it: a duration and an angle are floats a script
-/// reads in its own unit.
-pub(super) fn as_stored(ty: ErgonType) -> ErgonType {
-    match ty {
-        ErgonType::Struct { name, .. } if name == "Duration" || name == "Angle" => ErgonType::Float,
-        ErgonType::Optional(inner) => ErgonType::Optional(Box::new(as_stored(*inner))),
-        ErgonType::Array(element) => ErgonType::Array(Box::new(as_stored(*element))),
         other => other,
     }
 }
@@ -316,23 +304,7 @@ fn default_of(program: &Program, component: &str, slot: usize, ty: &TypeRef) -> 
         .and_then(|owned| crate::bridge::from_owned(&owned).ok())
         .unwrap_or(ScriptValue::Null);
     match ergon_type(ty) {
-        Some(ty) => at_type(value, &ty),
+        Some(ty) => ty.widened(value),
         None => value,
-    }
-}
-
-/// `value` as a field of `ty` holds it: an `int` written where a `float` is
-/// declared — inside an optional or an array too — is that float.
-pub(super) fn at_type(value: ScriptValue, ty: &ErgonType) -> ScriptValue {
-    match (ty, value) {
-        (ErgonType::Float, ScriptValue::Int(v)) => ScriptValue::Float(v as f32),
-        (ErgonType::Optional(inner), value) if value != ScriptValue::Null => at_type(value, inner),
-        (ErgonType::Array(element), ScriptValue::Array(items)) => ScriptValue::Array(
-            items
-                .into_iter()
-                .map(|item| at_type(item, element))
-                .collect(),
-        ),
-        (_, value) => value,
     }
 }

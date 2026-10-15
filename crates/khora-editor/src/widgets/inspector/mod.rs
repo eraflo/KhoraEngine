@@ -22,6 +22,7 @@
 pub mod add_component;
 pub mod asset_pane;
 pub mod card;
+pub mod declared;
 pub mod display;
 pub mod header;
 mod instance_band;

@@ -120,6 +120,7 @@ mod prefab_view {
                 name: String::new(),
                 components_json: Vec::new(),
                 prefab: None,
+                declared: Vec::new(),
             }),
             ..EditorState::default()
         };

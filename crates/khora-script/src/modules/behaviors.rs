@@ -27,8 +27,7 @@ use khora_core::ecs::SemanticDomain;
 use khora_core::script::{ErgonType, ScriptValue};
 
 use super::components::{
-    as_stored, at_type, domain_of, ergon_type, known_domains, non_finite, with_struct_fields,
-    DOMAIN,
+    domain_of, ergon_type, known_domains, non_finite, with_struct_fields, DOMAIN,
 };
 use super::{Resolved, ResolvedModule};
 use crate::ast::{Attribute, BehaviorDecl, BehaviorMember, Expr, Field, Item};
@@ -233,13 +232,13 @@ fn fields_of(decl: &BehaviorDecl) -> impl Iterator<Item = &Field> {
 fn declared_field(field: &Field, slot: usize, behavior: &str, program: &Program) -> DeclaredField {
     // A type the storage names no type for — a `Map` — is held as any value.
     let ty = ergon_type(&field.ty).map_or(ErgonType::Any, |ty| {
-        with_struct_fields(as_stored(ty), program, &mut Vec::new())
+        with_struct_fields(ty, program, &mut Vec::new())
     });
     let default = program
         .layout(behavior)
         .and_then(|layout| layout.defaults.get(slot))
         .and_then(|owned| crate::bridge::from_owned(owned).ok())
-        .map(|value| at_type(value, &ty))
+        .map(|value| ty.widened(value))
         .unwrap_or(ScriptValue::Null);
     DeclaredField {
         name: field.name.clone(),

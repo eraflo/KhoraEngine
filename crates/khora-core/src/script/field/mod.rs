@@ -37,6 +37,10 @@ pub enum ErgonType {
     Entity,
     /// An engine type, by its Ergon name: `Vec3`, `Quat`, `Color`.
     Engine(&'static str),
+    /// `Duration` — a time a script reads in its own unit, stored as a float.
+    Duration,
+    /// `Angle` — an angle a script reads in its own unit, stored as a float.
+    Angle,
     /// `T?`
     Optional(Box<ErgonType>),
     /// `T[]`
@@ -92,6 +96,8 @@ impl ErgonType {
             "bool" => Self::Bool,
             "int" => Self::Int,
             "float" => Self::Float,
+            "Duration" => Self::Duration,
+            "Angle" => Self::Angle,
             "string" => Self::Str,
             "Entity" => Self::Entity,
             name => match ENGINE_TYPES.iter().find(|known| **known == name) {
@@ -177,7 +183,10 @@ impl ErgonType {
         match (self, value) {
             (Self::Bool, ScriptValue::Bool(_))
             | (Self::Int, ScriptValue::Int(_))
-            | (Self::Float, ScriptValue::Float(_) | ScriptValue::Int(_))
+            | (
+                Self::Float | Self::Duration | Self::Angle,
+                ScriptValue::Float(_) | ScriptValue::Int(_),
+            )
             | (Self::Str, ScriptValue::Str(_))
             | (Self::Entity, ScriptValue::Entity(_)) => true,
             (Self::Any, _) => true,
@@ -201,6 +210,43 @@ impl ErgonType {
                     .is_some_and(|(_, ty)| ty.admits(value))
             }),
             _ => false,
+        }
+    }
+
+    /// `value` as a field of this type holds it: an `int` written where a
+    /// `float` is declared — a `Duration`, an `Angle`, inside an optional,
+    /// an array or a struct too — is that float. Anything else is kept.
+    pub fn widened(&self, value: ScriptValue) -> ScriptValue {
+        match (self, value) {
+            (Self::Float | Self::Duration | Self::Angle, ScriptValue::Int(v)) => {
+                ScriptValue::Float(v as f32)
+            }
+            (Self::Optional(inner), value) if value != ScriptValue::Null => inner.widened(value),
+            (Self::Array(element), ScriptValue::Array(items)) => ScriptValue::Array(
+                items
+                    .into_iter()
+                    .map(|item| element.widened(item))
+                    .collect(),
+            ),
+            (
+                Self::Struct {
+                    fields: Some(declared),
+                    ..
+                },
+                ScriptValue::Struct(fields),
+            ) => ScriptValue::Struct(
+                fields
+                    .into_iter()
+                    .map(|(name, value)| {
+                        let value = match declared.iter().find(|(known, _)| *known == name) {
+                            Some((_, ty)) => ty.widened(value),
+                            None => value,
+                        };
+                        (name, value)
+                    })
+                    .collect(),
+            ),
+            (_, value) => value,
         }
     }
 }
@@ -235,6 +281,8 @@ impl std::fmt::Display for ErgonType {
             Self::Array(element) => write!(f, "{element}[]"),
             Self::Any => f.write_str("<any>"),
             Self::Struct { name, .. } => f.write_str(name),
+            Self::Duration => f.write_str("Duration"),
+            Self::Angle => f.write_str("Angle"),
         }
     }
 }

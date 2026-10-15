@@ -67,6 +67,23 @@ impl<'a> Marks<'a> {
         }
     }
 
+    /// Marks the row of the top-level field `field`, drawn from `top`, when
+    /// it overrides the prefab's — for a card whose rows are drawn by another
+    /// walker than this one.
+    pub fn mark_field(
+        &mut self,
+        ui: &mut dyn UiBuilder,
+        field: &str,
+        top: [f32; 2],
+        theme: &UiTheme,
+    ) {
+        self.path.push(field.to_owned());
+        if self.covers() {
+            self.mark_row(ui, top, theme);
+        }
+        self.path.pop();
+    }
+
     fn covers(&self) -> bool {
         !self.path.is_empty() && self.overridden.iter().any(|p| p.starts_with(&self.path))
     }

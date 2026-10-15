@@ -298,16 +298,38 @@ impl ColumnSnapshot for PackedColumn {
 }
 
 /// Whether a field's Ergon type changed from `from` to `to` in a way that
-/// leaves its values meaningless — anything but an `int` becoming a `float`.
-/// A field whose type is not known on both sides is judged by its kind.
+/// leaves its values meaningless — anything but an `int` becoming a `float`,
+/// or a `float` becoming a `Duration` or an `Angle` (and back): those are
+/// floats in a unit, stored as floats. A field whose type is not known on
+/// both sides is judged by its kind.
 pub(crate) fn retyped(
     from: Option<&khora_core::script::ErgonType>,
     to: Option<&khora_core::script::ErgonType>,
 ) -> bool {
     use khora_core::script::ErgonType;
-    match (from, to) {
+    match (from.map(stored), to.map(stored)) {
         (Some(ErgonType::Int), Some(ErgonType::Float)) => false,
         (Some(from), Some(to)) => from != to,
         _ => false,
+    }
+}
+
+/// `ty` as its values are stored: a unit's floats as floats.
+fn stored(ty: &khora_core::script::ErgonType) -> khora_core::script::ErgonType {
+    use khora_core::script::ErgonType;
+    match ty {
+        ErgonType::Duration | ErgonType::Angle => ErgonType::Float,
+        ErgonType::Optional(inner) => ErgonType::Optional(Box::new(stored(inner))),
+        ErgonType::Array(element) => ErgonType::Array(Box::new(stored(element))),
+        ErgonType::Struct { name, fields } => ErgonType::Struct {
+            name: name.clone(),
+            fields: fields.as_ref().map(|fields| {
+                fields
+                    .iter()
+                    .map(|(field, ty)| (field.clone(), stored(ty)))
+                    .collect()
+            }),
+        },
+        other => other.clone(),
     }
 }

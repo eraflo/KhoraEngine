@@ -27,7 +27,8 @@ use khora_tool_ui::widgets::{self};
 use crate::ops::prefab_overrides::reverted;
 
 use super::add_component::{is_author_facing, render_add_component};
-use super::card::{render_card, CardPrefab};
+use super::card::{category_for, render_card, CardAction, CardPrefab};
+use super::declared::{render_declared_cards, restored, scene_names};
 use super::display::icon_for_domain_tag;
 use super::instance_band::render_instance_band;
 use super::tag_chips::render_tag_chips;
@@ -90,6 +91,7 @@ impl InspectorTab for PropertiesTab {
 
                 let mut edits: Vec<PropertyEdit> = Vec::new();
                 let prefab = inspected.prefab.as_ref();
+                let names = scene_names(&state_guard.scene_roots);
                 if let Some(prefab) = prefab {
                     render_instance_band(
                         ui_inner,
@@ -114,20 +116,23 @@ impl InspectorTab for PropertiesTab {
                         .map(|prefab| prefab.fields_of(&cj.type_name).to_vec())
                         .unwrap_or_default();
                     let prefab_value = prefab.and_then(|prefab| prefab_value_of(prefab, &title));
-                    let card_prefab = prefab.map(|prefab| CardPrefab {
-                        overrides: overridden.len(),
-                        added: prefab
+                    let added = prefab.is_some_and(|prefab| {
+                        prefab
                             .components
                             .iter()
-                            .any(|component| component.type_name == title && component.added),
-                        prefab_value,
+                            .any(|component| component.type_name == title && component.added)
+                    });
+                    let card_prefab = prefab.map(|_| CardPrefab {
+                        overrides: overridden.len(),
+                        added,
                     });
                     let mut marks = Marks::new(&overridden);
-                    render_card(
+                    let action = render_card(
                         ui_inner,
                         entity,
                         &title,
                         icon,
+                        category_for(&title),
                         None,
                         true, // removable — `is_author_facing` already filtered
                         card_prefab,
@@ -151,6 +156,34 @@ impl InspectorTab for PropertiesTab {
                             type_name: cj.type_name.clone(),
                             value,
                         });
+                    }
+                    match action {
+                        Some(CardAction::Remove) => edits.push(PropertyEdit::RemoveComponent {
+                            entity,
+                            type_name: title.clone(),
+                        }),
+                        // Added by the instance: reverting takes it off.
+                        // Otherwise the prefab's value comes back whole.
+                        Some(CardAction::Revert) => match prefab_value {
+                            Some(value) if !added => edits.push(PropertyEdit::SetComponentJson {
+                                entity,
+                                type_name: title.clone(),
+                                value: value.clone(),
+                            }),
+                            _ => edits.push(PropertyEdit::RemoveComponent {
+                                entity,
+                                type_name: title.clone(),
+                            }),
+                        },
+                        Some(CardAction::Apply) => {
+                            state_guard.pending_prefab_apply = Some((
+                                entity,
+                                PrefabApplyScope::Component {
+                                    type_name: title.clone(),
+                                },
+                            ));
+                        }
+                        None => {}
                     }
                     for action in marks.actions.drain(..) {
                         match action {
@@ -176,15 +209,31 @@ impl InspectorTab for PropertiesTab {
                     }
                 }
 
+                render_declared_cards(
+                    ui_inner,
+                    &inspected,
+                    &names,
+                    card_x,
+                    card_w,
+                    &theme,
+                    &mut state_guard,
+                    &mut edits,
+                );
+
                 // What the prefab gives the entity and the instance took off:
                 // a dim line each, with the way back.
                 if let Some(prefab) = prefab {
-                    for type_name in prefab.removed.iter().filter(|name| is_author_facing(name)) {
-                        if let Some(edit) = render_removed_component(
+                    let shown = |name: &&String| {
+                        is_author_facing(name)
+                            || prefab
+                                .prefab_declared
+                                .iter()
+                                .any(|(known, _)| known == *name)
+                    };
+                    for type_name in prefab.removed.iter().filter(shown) {
+                        edits.extend(render_removed_component(
                             ui_inner, entity, prefab, type_name, card_x, card_w, &theme,
-                        ) {
-                            edits.push(edit);
-                        }
+                        ));
                     }
                 }
 
@@ -212,7 +261,8 @@ fn prefab_value_of<'a>(
 }
 
 /// One component the prefab gives the entity and the instance removed: a dim
-/// line that says so, and restores it on demand. The edit, when asked.
+/// line that says so, and restores it on demand. The edits, when asked — one
+/// for a Rust component, the addition and each field for a declared one.
 #[allow(clippy::too_many_arguments)]
 fn render_removed_component(
     ui: &mut dyn UiBuilder,
@@ -222,7 +272,7 @@ fn render_removed_component(
     x: f32,
     width: f32,
     theme: &UiTheme,
-) -> Option<PropertyEdit> {
+) -> Vec<PropertyEdit> {
     const ROW_H: f32 = 28.0;
     let y = ui.cursor_pos()[1];
     let size = theme.font_size_body;
@@ -272,12 +322,17 @@ fn render_removed_component(
     ui.paint_line([x, end_y], [x + width, end_y], theme.separator, 1.0);
     ui.spacing(6.0);
 
-    let value = prefab_value_of(prefab, type_name)?.clone();
-    hit.clicked.then(|| PropertyEdit::InsertComponentJson {
-        entity,
-        type_name: type_name.to_owned(),
-        value,
-    })
+    if !hit.clicked {
+        return Vec::new();
+    }
+    match prefab_value_of(prefab, type_name) {
+        Some(value) => vec![PropertyEdit::InsertComponentJson {
+            entity,
+            type_name: type_name.to_owned(),
+            value: value.clone(),
+        }],
+        None => restored(entity, type_name, prefab),
+    }
 }
 
 /// Debug tab — undo / redo stack inspection.

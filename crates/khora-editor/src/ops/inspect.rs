@@ -14,7 +14,9 @@
 
 //! The inspector's view of an entity, and applying its edits.
 
+use super::declared::{addable_declared, apply_declared_edit, declared_cards};
 use super::scene_tree::domain_tag;
+use crate::widgets::inspector::add_component::is_author_facing;
 use khora_sdk::editor_ui::*;
 use khora_sdk::khora_data::ecs::HierarchyWrite;
 use khora_sdk::prelude::ecs::*;
@@ -41,23 +43,12 @@ pub fn extract_inspected(world: &GameWorld, state: &mut EditorState) {
     // Collect every component on this entity, captured generically as
     // JSON via the macro-generated `to_json`. The inspector walks this
     // list and renders every entry through a single field-typed walker
-    // — adding a new ECS component costs zero editor code.
-    //
-    // We also populate the global `component_domain_registry` with the
-    // domain of every registered type (regardless of whether this entity
-    // has it) so the "+ Add Component" menu can categorise candidates
-    // without re-querying the world.
+    // — adding a new ECS component costs zero editor code. A component a
+    // script declared has no Rust type: it is read typed, from its layout.
     let inner_world = world.inner_world();
     let mut components_json = Vec::new();
-    state.component_domain_registry.clear();
     for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
         let domain = inner_world.component_domain(reg.type_id).map(domain_tag);
-        if let Some(tag) = domain {
-            state
-                .component_domain_registry
-                .insert(reg.type_name.to_string(), tag);
-        }
-
         let Some(value) = (reg.to_json)(inner_world, entity) else {
             continue;
         };
@@ -73,7 +64,9 @@ pub fn extract_inspected(world: &GameWorld, state: &mut EditorState) {
         name,
         components_json,
         prefab: None,
+        declared: declared_cards(inner_world, entity, state.play_mode != PlayMode::Editing),
     });
+    state.addable_components = addable_components(world, entity);
 }
 
 /// Applies queued property edits back into ECS components.
@@ -182,11 +175,37 @@ pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
                     log::warn!("Failed to apply JSON edit to {}: {}", type_name, e);
                 }
             }
+            edit @ (PropertyEdit::SetDeclaredField { .. }
+            | PropertyEdit::AddDeclared { .. }
+            | PropertyEdit::RemoveDeclared { .. }) => {
+                apply_declared_edit(world.inner_world_mut(), &edit);
+            }
         }
     }
 }
 
-/// Adds a new component to an existing entity by dispatching through the inventory registry.
+/// What "+ Add Component" offers `entity`: every author-facing component of
+/// the world's registry it does not hold — Rust and script-declared alike —
+/// each with its domain and what declares it.
+pub fn addable_components(world: &GameWorld, entity: EntityId) -> Vec<AddableComponent> {
+    let inner = world.inner_world();
+    let mut entries: Vec<AddableComponent> = inventory::iter::<khora_sdk::ComponentRegistration>
+        .into_iter()
+        .filter(|reg| is_author_facing(reg.type_name))
+        .filter(|reg| (reg.to_json)(inner, entity).is_none())
+        .map(|reg| AddableComponent {
+            name: reg.type_name.to_owned(),
+            domain: inner.component_domain(reg.type_id),
+            origin: ComponentOrigin::Rust,
+        })
+        .collect();
+    entries.extend(addable_declared(inner, entity));
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    entries
+}
+
+/// Adds a new component to an existing entity: a Rust one through the
+/// inventory registry, a script-declared one with its defaults.
 pub fn add_component_to_entity(world: &mut GameWorld, entity: EntityId, type_name: &str) {
     for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
         if reg.type_name == type_name {
@@ -198,5 +217,11 @@ pub fn add_component_to_entity(world: &mut GameWorld, entity: EntityId, type_nam
             return;
         }
     }
-    log::warn!("No component registration found for type '{}'", type_name);
+    apply_declared_edit(
+        world.inner_world_mut(),
+        &PropertyEdit::AddDeclared {
+            entity,
+            component: type_name.to_owned(),
+        },
+    );
 }

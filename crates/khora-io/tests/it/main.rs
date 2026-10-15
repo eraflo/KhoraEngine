@@ -42,3 +42,4 @@ mod script_pump_across_roots;
 mod shipped_scripts;
 mod snapshots;
 mod system_components;
+mod unit_typed_declarations;

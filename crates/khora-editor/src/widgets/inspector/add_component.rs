@@ -8,12 +8,13 @@
 
 //! "+ Add Component" menu — bucketed by `SemanticDomain` (live World).
 //!
-//! Walks the inventory of `ComponentRegistration` to enumerate every
-//! component the engine knows about, filters out inherent-on-vessel
-//! components plus those already on the entity, and groups what's left
-//! by domain tag.
+//! Lists what `ops::addable_components` offers the entity — the Rust
+//! components of the inventory and the ones a script declares, minus what
+//! the entity holds — and groups it by domain tag.
 
-use khora_sdk::editor_ui::{EditorState, InspectedEntity, UiBuilder};
+use khora_sdk::editor_ui::{
+    AddableComponent, ComponentOrigin, EditorState, InspectedEntity, UiBuilder,
+};
 use khora_sdk::prelude::ecs::EntityId;
 
 use super::display::category_label_for_tag;
@@ -55,66 +56,63 @@ pub fn is_author_facing(type_name: &str) -> bool {
     khora_sdk::khora_data::scene::provenance_of(type_name).is_some_and(|p| p.is_hand_authorable())
 }
 
-/// Render the "+ Add Component" menu button. Selecting a component
-/// queues `EditorState::pending_add_component` for the next frame.
+/// The file name of a module path, as a menu entry names its script.
+fn module_file(module: &str) -> &str {
+    module.rsplit(['/', '\\']).next().unwrap_or(module)
+}
+
+/// Render the "+ Add Component" menu button from what the entity is offered
+/// ([`EditorState::addable_components`]): grouped by domain, a script's
+/// entry marked with its `.erg`. Selecting one queues
+/// `EditorState::pending_add_component` for the next frame.
 pub fn render_add_component(
     ui: &mut dyn UiBuilder,
     entity: EntityId,
-    inspected: &InspectedEntity,
+    _inspected: &InspectedEntity,
     state: &mut EditorState,
 ) {
-    let mut buckets: std::collections::BTreeMap<u8, Vec<String>> =
+    let mut buckets: std::collections::BTreeMap<Option<u8>, Vec<AddableComponent>> =
         std::collections::BTreeMap::new();
-    let mut other: Vec<String> = Vec::new();
-
-    let already_present: std::collections::HashSet<&str> = inspected
-        .components_json
-        .iter()
-        .map(|c| c.type_name.as_str())
-        .collect();
-
-    for reg in inventory::iter::<khora_sdk::ComponentRegistration> {
-        if !is_author_facing(reg.type_name) {
+    for entry in &state.addable_components {
+        let tag = entry.domain.map(|domain| domain.index() as u8);
+        if tag == Some(UI_DOMAIN_TAG) {
             continue;
         }
-        if already_present.contains(reg.type_name) {
-            continue;
-        }
-        let domain_tag = state.component_domain_registry.get(reg.type_name).copied();
-        if domain_tag == Some(UI_DOMAIN_TAG) {
-            continue;
-        }
-
-        if let Some(tag) = domain_tag {
-            buckets
-                .entry(tag)
-                .or_default()
-                .push(reg.type_name.to_string());
-        } else {
-            other.push(reg.type_name.to_string());
-        }
+        buckets.entry(tag).or_default().push(entry.clone());
     }
+    // Rust components first, then a script's, each set by name.
+    for entries in buckets.values_mut() {
+        entries.sort_by(|a, b| {
+            (a.origin != ComponentOrigin::Rust, &a.name)
+                .cmp(&(b.origin != ComponentOrigin::Rust, &b.name))
+        });
+    }
+
     let pending: std::cell::Cell<Option<String>> = std::cell::Cell::new(None);
     ui.menu_button("+ Add Component", &mut |ui_m| {
-        for (tag, items) in &buckets {
-            if items.is_empty() {
-                continue;
-            }
-            let label = category_label_for_tag(Some(*tag)).to_string();
+        // "Other" — no domain known — comes last.
+        let ordered = buckets
+            .iter()
+            .filter(|(tag, _)| tag.is_some())
+            .chain(buckets.iter().filter(|(tag, _)| tag.is_none()));
+        for (tag, entries) in ordered {
+            let label = category_label_for_tag(*tag).to_string();
             ui_m.menu_button(&label, &mut |ui_s| {
-                for n in items {
-                    if ui_s.button(n) {
-                        pending.set(Some(n.clone()));
-                        ui_s.close_menu();
-                    }
-                }
-            });
-        }
-        if !other.is_empty() {
-            ui_m.menu_button("Other", &mut |ui_s| {
-                for n in &other {
-                    if ui_s.button(n) {
-                        pending.set(Some(n.clone()));
+                for entry in entries {
+                    let clicked = match &entry.origin {
+                        ComponentOrigin::Rust => ui_s.button(&entry.name),
+                        ComponentOrigin::Script { module } => {
+                            let clicked = ui_s.button(&format!(
+                                "{}   \u{00B7} {}",
+                                entry.name,
+                                module_file(module)
+                            ));
+                            ui_s.tooltip_for_last(&format!("Declared by {module}"));
+                            clicked
+                        }
+                    };
+                    if clicked {
+                        pending.set(Some(entry.name.clone()));
                         ui_s.close_menu();
                     }
                 }

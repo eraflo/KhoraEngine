@@ -17,6 +17,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::{PrefabApplyScope, PropertyEdit};
+use khora_sdk::khora_core::script::ScriptValue;
 use khora_sdk::khora_data::ecs::{PrefabInstance, World};
 use khora_sdk::khora_data::scene::{
     apply_to_prefab, instance_of, instantiate_prefab, prefab_world, serialize_prefab,
@@ -25,6 +26,7 @@ use khora_sdk::khora_data::scene::{
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::{serialize_subtree, EditorState, GameWorld};
 
+use crate::ops::declared::{authored_rows, conformed, field_of, field_overrides, rebound_fields};
 use crate::ops::prefab_overrides::{json_overrides, rebound, reverted};
 
 use crate::project_vfs::{ProjectPrefabs, ProjectVfs};
@@ -387,6 +389,70 @@ fn rebased_instances(
                     _ => {}
                 }
             }
+            edits.extend(rebased_declared(world, member, old, twin, &new, now));
+        }
+    }
+    edits
+}
+
+/// [`rebased_instances`] for the declared components of one member: `twin`
+/// in the prefab's `old` expansion, `now` in its `new` one. A field the
+/// member set apart from the old prefab keeps its value; every other takes
+/// the new prefab's.
+fn rebased_declared(
+    world: &World,
+    member: EntityId,
+    old: &World,
+    twin: EntityId,
+    new: &World,
+    now: EntityId,
+) -> Vec<PropertyEdit> {
+    let live = authored_rows(world, member);
+    let was = authored_rows(old, twin);
+    let is = authored_rows(new, now);
+    let mut names: Vec<&String> = live.iter().chain(&was).chain(&is).map(|(n, _)| n).collect();
+    names.sort();
+    names.dedup();
+    let row = |rows: &[(String, Vec<(String, ScriptValue)>)], from: &World, name: &str| {
+        rows.iter()
+            .find(|(known, _)| known == name)
+            .map(|(_, fields)| conformed(world, name, rebound_fields(fields, from, world)))
+    };
+    let mut edits = Vec::new();
+    for name in names {
+        let set = |field: &str, value: &ScriptValue| PropertyEdit::SetDeclaredField {
+            entity: member,
+            component: name.clone(),
+            field: field.to_owned(),
+            value: value.clone(),
+        };
+        match (
+            row(&live, world, name),
+            row(&was, old, name),
+            row(&is, new, name),
+        ) {
+            (Some(live), Some(was), Some(is)) => {
+                let own = field_overrides(&live, &was);
+                for (field, value) in &is {
+                    if !own.contains(field) && field_of(&live, field) != Some(value) {
+                        edits.push(set(field, value));
+                    }
+                }
+            }
+            (None, None, Some(is)) => {
+                edits.push(PropertyEdit::AddDeclared {
+                    entity: member,
+                    component: name.clone(),
+                });
+                edits.extend(is.iter().map(|(field, value)| set(field, value)));
+            }
+            (Some(live), Some(was), None) if field_overrides(&live, &was).is_empty() => {
+                edits.push(PropertyEdit::RemoveDeclared {
+                    entity: member,
+                    component: name.clone(),
+                })
+            }
+            _ => {}
         }
     }
     edits

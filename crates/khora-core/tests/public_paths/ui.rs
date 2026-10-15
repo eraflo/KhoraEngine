@@ -223,7 +223,7 @@ fn editor_state_fields(x: &khora_core::ui::editor::state::EditorState) {
         &x.current_scene_path,
         &x.pending_scene_load,
         &x.pending_add_component,
-        &x.component_domain_registry,
+        &x.addable_components,
         &x.active_mode,
         &x.command_palette_open,
         &x.inspector_card_open,
@@ -269,7 +269,13 @@ fn gizmo_mode_variants(x: &khora_core::ui::editor::state::GizmoMode) {
 }
 
 fn inspected_entity_fields(x: &khora_core::ui::editor::state::InspectedEntity) {
-    let _ = (&x.entity, &x.name, &x.components_json, &x.prefab);
+    let _ = (
+        &x.entity,
+        &x.name,
+        &x.components_json,
+        &x.prefab,
+        &x.declared,
+    );
 }
 
 fn log_entry_fields(x: &khora_core::ui::editor::state::LogEntry) {
@@ -300,6 +306,9 @@ fn property_edit_variants(x: &khora_core::ui::editor::state::PropertyEdit) {
         khora_core::ui::editor::state::PropertyEdit::SetComponentJson { .. } => {}
         khora_core::ui::editor::state::PropertyEdit::RemoveComponent { .. } => {}
         khora_core::ui::editor::state::PropertyEdit::InsertComponentJson { .. } => {}
+        khora_core::ui::editor::state::PropertyEdit::SetDeclaredField { .. } => {}
+        khora_core::ui::editor::state::PropertyEdit::AddDeclared { .. } => {}
+        khora_core::ui::editor::state::PropertyEdit::RemoveDeclared { .. } => {}
     }
 }
 

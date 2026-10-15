@@ -238,6 +238,7 @@ fn the_override_count_and_field_lookup_read_the_view() {
         ],
         removed: vec!["Light".to_owned(), "AudioSource".to_owned()],
         prefab_json: Vec::new(),
+        prefab_declared: Vec::new(),
     };
 
     assert_eq!(view.override_count(), 5);

@@ -18,10 +18,7 @@
 //! destructive-adjacent; the resting state should read as data, not as a
 //! toolbar.
 
-use khora_sdk::editor_ui::{
-    EditorState, FontFamilyHint, Icon, PrefabApplyScope, PropertyEdit, TextAlign, UiBuilder,
-    UiTheme,
-};
+use khora_sdk::editor_ui::{EditorState, FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
 use khora_sdk::prelude::ecs::EntityId;
 use khora_tool_ui::widgets::{
     self, group_header,
@@ -33,16 +30,26 @@ const HEADER_H: f32 = 32.0;
 
 /// How a component stands against the prefab of the instance its entity
 /// belongs to.
-pub struct CardPrefab<'a> {
+pub struct CardPrefab {
     /// How many of its fields override the prefab's.
     pub overrides: usize,
     /// Whether the instance added the component: the prefab does not give it.
     pub added: bool,
-    /// The prefab's value of it, where the prefab gives it.
-    pub prefab_value: Option<&'a serde_json::Value>,
 }
 
-impl CardPrefab<'_> {
+/// What a card's header was asked this frame — the caller turns it into the
+/// edit its component takes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CardAction {
+    /// Take the component off the entity.
+    Remove,
+    /// Bring the prefab's value back — or take an added component off.
+    Revert,
+    /// Write the component into the prefab.
+    Apply,
+}
+
+impl CardPrefab {
     fn differs(&self) -> bool {
         self.added || self.overrides > 0
     }
@@ -95,7 +102,7 @@ fn header_action(
 /// Derived from the type name so a newly-added component is tagged without
 /// anyone having to register it anywhere; unknown components simply carry no
 /// tag rather than a wrong one.
-fn category_for(title: &str) -> &'static str {
+pub fn category_for(title: &str) -> &'static str {
     match title {
         "Transform" | "GlobalTransform" | "Parent" | "Children" => "spatial",
         "MeshRef" | "MaterialRef" | "Visibility" | "Camera" | "Light" => "render",
@@ -106,24 +113,27 @@ fn category_for(title: &str) -> &'static str {
     }
 }
 
-/// Renders one component as a flat collapsible group and calls `body` for its
-/// content. Open/closed state persists in `EditorState::inspector_card_open`,
-/// keyed by entity index + component title.
+/// Renders one component as a flat collapsible group, `category` its
+/// right-aligned tag, and calls `body` for its content. Open/closed state
+/// persists in `EditorState::inspector_card_open`, keyed by entity index +
+/// component title. Returns what the header was asked, if anything.
 #[allow(clippy::too_many_arguments)]
 pub fn render_card(
     ui: &mut dyn UiBuilder,
     entity: EntityId,
     title: &str,
     icon: Icon,
+    category: &str,
     enabled: Option<bool>,
     removable: bool,
-    prefab: Option<CardPrefab<'_>>,
+    prefab: Option<CardPrefab>,
     card_x: f32,
     card_w: f32,
     theme: &UiTheme,
     state: &mut EditorState,
     body: &mut dyn FnMut(&mut dyn UiBuilder),
-) {
+) -> Option<CardAction> {
+    let mut action = None;
     // Keyed on index AND generation: entity slots are recycled, so a key built
     // from the index alone would hand a freshly spawned entity the collapse
     // state of whatever previously occupied that slot.
@@ -136,7 +146,7 @@ pub fn render_card(
     let y = ui.cursor_pos()[1];
     let header = [card_x, y, card_w, HEADER_H];
 
-    let cat = category_for(title);
+    let cat = category;
     let spec = Group::new(title, icon).open(open).category(cat);
     let head = group_header(ui, theme, header, &format!("card-hdr-{card_id}"), spec);
 
@@ -187,14 +197,11 @@ pub fn render_card(
                 theme.error,
                 theme,
             ) {
-                state.pending_edits.push(PropertyEdit::RemoveComponent {
-                    entity,
-                    type_name: title.to_string(),
-                });
+                action = Some(CardAction::Remove);
             }
         }
 
-        if let Some(prefab) = prefab.as_ref().filter(|_| differs) {
+        if differs {
             let rect = [right - size, top, size, size];
             right -= size + 2.0;
             if header_action(
@@ -205,12 +212,7 @@ pub fn render_card(
                 theme.primary,
                 theme,
             ) {
-                state.pending_prefab_apply = Some((
-                    entity,
-                    PrefabApplyScope::Component {
-                        type_name: title.to_string(),
-                    },
-                ));
+                action = Some(CardAction::Apply);
             }
             let rect = [right - size, top, size, size];
             if header_action(
@@ -221,21 +223,7 @@ pub fn render_card(
                 theme.primary,
                 theme,
             ) {
-                // Added by the instance: reverting takes it off. Otherwise
-                // the prefab's value comes back whole.
-                match prefab.prefab_value {
-                    Some(value) if !prefab.added => {
-                        state.pending_edits.push(PropertyEdit::SetComponentJson {
-                            entity,
-                            type_name: title.to_string(),
-                            value: value.clone(),
-                        });
-                    }
-                    _ => state.pending_edits.push(PropertyEdit::RemoveComponent {
-                        entity,
-                        type_name: title.to_string(),
-                    }),
-                }
+                action = Some(CardAction::Revert);
             }
         }
 
@@ -273,6 +261,7 @@ pub fn render_card(
         1.0,
     );
     ui.spacing(6.0);
+    action
 }
 
 #[cfg(test)]

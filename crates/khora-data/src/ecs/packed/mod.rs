@@ -183,12 +183,29 @@ impl PackedLayout {
     }
 
     /// `value` as field `slot` keeps it — `None` when its kind refuses it,
-    /// or its type is known and is another.
+    /// or its type is known and is another. An `int` where the type holds a
+    /// float, at any depth, is kept as that float.
     pub fn admit(&self, slot: usize, value: &ScriptValue) -> Option<ScriptValue> {
         let accepted = self.accept(slot, value)?;
         match self.ty(slot) {
             Some(ty) if !ty.admits(&accepted) => None,
-            _ => Some(accepted),
+            Some(ty) => Some(ty.widened(accepted)),
+            None => Some(accepted),
+        }
+    }
+
+    /// `value`, read from a file written under another declaration, as field
+    /// `slot` holds it — and whether it was widened. Stricter than
+    /// [`admit`](Self::admit): an `int` is taken as a `float` only where it
+    /// converts exactly. What a load reads, and what anything comparing with
+    /// a load must read the same way.
+    pub fn fit(&self, slot: usize, value: &ScriptValue) -> Option<(ScriptValue, bool)> {
+        let kind = self.fields.get(slot)?.kind;
+        match (kind, value) {
+            (FieldKind::Float, ScriptValue::Int(_)) => {
+                Some((FieldKind::Int.widened(kind, value)?, true))
+            }
+            _ => Some((self.admit(slot, value)?, false)),
         }
     }
 
@@ -255,7 +272,8 @@ impl FieldKind {
         match ty {
             ErgonType::Bool => Self::Bool,
             ErgonType::Int => Self::Int,
-            ErgonType::Float => Self::Float,
+            // A time and an angle are floats in their own unit.
+            ErgonType::Float | ErgonType::Duration | ErgonType::Angle => Self::Float,
             ErgonType::Entity => Self::Entity,
             ErgonType::Engine("Vec2") => Self::Vec2,
             ErgonType::Engine("Vec3") => Self::Vec3,

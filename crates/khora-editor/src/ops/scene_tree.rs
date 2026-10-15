@@ -99,6 +99,11 @@ pub fn extract_scene_tree(world: &GameWorld, state: &mut EditorState) {
         let name = world
             .get_component::<Name>(entity)
             .map(|n: &Name| n.as_str().to_owned())
+            .or_else(|| {
+                // A system's one entity has no `Name`: it is known by its system.
+                super::declared::system_of(world.inner_world(), entity)
+                    .map(|system| format!("system:{system}"))
+            })
             .unwrap_or_else(|| format!("Entity {}", entity.index));
 
         let icon = if world.get_component::<Camera>(entity).is_some() {

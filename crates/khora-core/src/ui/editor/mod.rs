@@ -17,6 +17,7 @@
 //! All types here are backend-agnostic. Concrete implementations (egui, etc.)
 //! live in `khora-infra`.
 
+pub mod declared;
 pub mod gizmo;
 pub mod icons;
 pub mod overlay;
@@ -26,6 +27,9 @@ pub mod state;
 pub mod ui_builder;
 pub mod viewport_texture;
 
+pub use declared::{
+    AddableComponent, ComponentOrigin, DeclaredCard, DeclaredCardKind, DeclaredFieldView,
+};
 pub use gizmo::GizmoLineInstance;
 pub use icons::Icon;
 pub use overlay::{EditorOverlay, OverlayError, OverlayScreenDescriptor};

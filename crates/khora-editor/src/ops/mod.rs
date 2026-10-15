@@ -18,6 +18,7 @@ use khora_sdk::editor_ui::*;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::GameWorld;
 
+pub(crate) mod declared;
 mod hierarchy;
 mod inspect;
 pub mod prefab_overrides;
@@ -28,6 +29,8 @@ pub use hierarchy::delete_selection;
 pub use hierarchy::duplicate_entity;
 pub use hierarchy::process_reparents;
 pub use inspect::add_component_to_entity;
+#[cfg_attr(not(test), allow(unused_imports))]
+pub use inspect::addable_components;
 pub use inspect::apply_edits;
 pub use inspect::extract_inspected;
 pub use scene_tree::extract_scene_tree;

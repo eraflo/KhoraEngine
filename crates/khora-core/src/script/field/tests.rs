@@ -347,3 +347,112 @@ fn a_type_admits_only_its_own_values() {
         ErgonType::Engine("Vec3").admits(&ScriptValue::Vec3(crate::math::Vec3::new(0.0, 0.0, 0.0)))
     );
 }
+
+// ─── Units ──────────────────────────────────────────────────────────────────
+
+/// **A duration and an angle are types of their own**, spelled as Ergon
+/// writes them, and read back from that spelling — a file holding a field's
+/// type keeps its unit — not as a struct of that name.
+#[test]
+fn a_duration_and_an_angle_read_back_from_their_spelling() {
+    assert_eq!(ErgonType::Duration.to_string(), "Duration");
+    assert_eq!(ErgonType::Angle.to_string(), "Angle");
+    for ty in [
+        ErgonType::Duration,
+        ErgonType::Angle,
+        ErgonType::Optional(Box::new(ErgonType::Duration)),
+        ErgonType::Array(Box::new(ErgonType::Angle)),
+    ] {
+        assert_eq!(ErgonType::parse(&ty.to_string()), Some(ty.clone()));
+        assert_eq!(ErgonType::parse(&ty.signature()), Some(ty));
+    }
+    assert_eq!(
+        ErgonType::parse("Duration"),
+        Some(ErgonType::Duration),
+        "a duration is no struct named `Duration`"
+    );
+}
+
+/// **A duration and an angle are saved as their spelling** and read back
+/// from it.
+#[test]
+fn a_duration_and_an_angle_are_saved_as_their_spelling() {
+    let ty = ErgonType::Optional(Box::new(ErgonType::Duration));
+    let text = serde_json::to_string(&ty).expect("serializes");
+    assert_eq!(text, "\"Duration?\"");
+    assert_eq!(serde_json::from_str::<ErgonType>(&text).expect("reads"), ty);
+}
+
+/// **A duration and an angle hold a float** — the value they are stored as —
+/// and nothing that is not a number.
+#[test]
+fn a_duration_and_an_angle_admit_a_float() {
+    for ty in [ErgonType::Duration, ErgonType::Angle] {
+        assert!(ty.admits(&ScriptValue::Float(2.5)), "{ty:?} holds a float");
+        assert!(
+            !ty.admits(&ScriptValue::Str("2s".to_owned())),
+            "{ty:?} refuses text"
+        );
+        assert!(
+            !ty.admits(&ScriptValue::Bool(true)),
+            "{ty:?} refuses a bool"
+        );
+    }
+    assert!(ErgonType::Optional(Box::new(ErgonType::Duration)).admits(&ScriptValue::Null));
+}
+
+/// **An `int` where a float is declared is widened at any depth** — inside
+/// an optional, an array, a struct, a struct in a struct — and nothing else
+/// changes: `null`, a field of no float type, a struct whose fields are not
+/// known, a value of type `any`.
+#[test]
+fn an_int_is_widened_where_a_float_is_declared_at_any_depth() {
+    let int = ScriptValue::Int;
+    let float = ScriptValue::Float;
+    let inner = ErgonType::Struct {
+        name: "Fuse".to_owned(),
+        fields: Some(vec![("wait".to_owned(), ErgonType::Duration)]),
+    };
+    let outer = ErgonType::Struct {
+        name: "Bomb".to_owned(),
+        fields: Some(vec![
+            ("fuse".to_owned(), inner),
+            ("count".to_owned(), ErgonType::Int),
+        ]),
+    };
+    let bomb = |wait: ScriptValue| {
+        ScriptValue::Struct(vec![
+            (
+                "fuse".to_owned(),
+                ScriptValue::Struct(vec![("wait".to_owned(), wait)]),
+            ),
+            ("count".to_owned(), int(3)),
+        ])
+    };
+
+    assert_eq!(ErgonType::Angle.widened(int(2)), float(2.0));
+    assert_eq!(
+        ErgonType::Optional(Box::new(ErgonType::Duration)).widened(int(2)),
+        float(2.0)
+    );
+    assert_eq!(
+        ErgonType::Optional(Box::new(ErgonType::Float)).widened(ScriptValue::Null),
+        ScriptValue::Null
+    );
+    assert_eq!(
+        ErgonType::Array(Box::new(ErgonType::Float))
+            .widened(ScriptValue::Array(vec![int(1), float(0.5)])),
+        ScriptValue::Array(vec![float(1.0), float(0.5)])
+    );
+    assert_eq!(outer.widened(bomb(int(4))), bomb(float(4.0)));
+    assert_eq!(ErgonType::Int.widened(int(2)), int(2));
+    assert_eq!(ErgonType::Any.widened(int(2)), int(2));
+    assert_eq!(
+        ErgonType::Struct {
+            name: "Loose".to_owned(),
+            fields: None,
+        }
+        .widened(ScriptValue::Struct(vec![("x".to_owned(), int(1))])),
+        ScriptValue::Struct(vec![("x".to_owned(), int(1))])
+    );
+}

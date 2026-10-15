@@ -16,9 +16,13 @@
 //! override the prefab's, and the prefab's value to revert one to.
 //!
 //! A field is known by its path — the object keys from the component's JSON
-//! root (`["translation", "x"]`, `["light_type", "Point", "range"]`).
+//! root (`["translation", "x"]`, `["light_type", "Point", "range"]`). A
+//! component a script declared is compared field by field, by name: its
+//! path is the field's name alone.
 
+use super::declared::{field_of, field_overrides, paired_rows};
 use khora_sdk::editor_ui::{ComponentOverride, InspectedPrefab, PropertyEdit};
+use khora_sdk::khora_core::script::ScriptValue;
 use khora_sdk::khora_data::ecs::World;
 use khora_sdk::khora_data::scene::{instance_of, prefab_world, InstanceOf, PrefabSource};
 use khora_sdk::prelude::ecs::EntityId;
@@ -257,6 +261,33 @@ pub fn inspect_against(
         }
     }
 
+    let mut prefab_declared = Vec::new();
+    for row in paired_rows(world, entity, scratch, twin) {
+        match (row.live, row.prefab) {
+            (Some(live), Some(prefab)) => {
+                let fields = field_overrides(&live, &prefab);
+                if !fields.is_empty() {
+                    components.push(ComponentOverride {
+                        type_name: row.name.clone(),
+                        added: false,
+                        fields: fields.into_iter().map(|field| vec![field]).collect(),
+                    });
+                }
+                prefab_declared.push((row.name, prefab));
+            }
+            (Some(_), None) => components.push(ComponentOverride {
+                type_name: row.name,
+                added: true,
+                fields: Vec::new(),
+            }),
+            (None, Some(prefab)) => {
+                removed.push(row.name.clone());
+                prefab_declared.push((row.name, prefab));
+            }
+            (None, None) => {}
+        }
+    }
+
     Some(InspectedPrefab {
         root: instance.root,
         prefab: instance.prefab,
@@ -265,6 +296,7 @@ pub fn inspect_against(
         components,
         removed,
         prefab_json,
+        prefab_declared,
     })
 }
 
@@ -319,6 +351,55 @@ pub fn revert_instance(world: &World, instance: &InstanceOf, scratch: &World) ->
                 }),
                 (None, None) => {}
             }
+        }
+        edits.extend(revert_declared(world, member, scratch, twin));
+    }
+    edits
+}
+
+/// The edits that take `member`'s declared components back to `twin`'s, its
+/// counterpart in the prefab's expansion: each field set apart set back, a
+/// component the member added removed, one it removed added with the
+/// prefab's values.
+fn revert_declared(
+    world: &World,
+    member: EntityId,
+    scratch: &World,
+    twin: EntityId,
+) -> Vec<PropertyEdit> {
+    let mut edits = Vec::new();
+    for row in paired_rows(world, member, scratch, twin) {
+        let set = |field: String, value: ScriptValue| PropertyEdit::SetDeclaredField {
+            entity: member,
+            component: row.name.clone(),
+            field,
+            value,
+        };
+        match (&row.live, &row.prefab) {
+            (Some(live), Some(prefab)) => edits.extend(
+                field_overrides(live, prefab)
+                    .into_iter()
+                    .filter_map(|field| {
+                        let value = field_of(prefab, &field)?.clone();
+                        Some(set(field, value))
+                    }),
+            ),
+            (Some(_), None) => edits.push(PropertyEdit::RemoveDeclared {
+                entity: member,
+                component: row.name.clone(),
+            }),
+            (None, Some(prefab)) => {
+                edits.push(PropertyEdit::AddDeclared {
+                    entity: member,
+                    component: row.name.clone(),
+                });
+                edits.extend(
+                    prefab
+                        .iter()
+                        .map(|(field, value)| set(field.clone(), value.clone())),
+                );
+            }
+            (None, None) => {}
         }
     }
     edits

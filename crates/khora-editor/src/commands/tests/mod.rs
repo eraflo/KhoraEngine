@@ -14,8 +14,10 @@
 
 //! Play and Stop through the editor's own commands.
 
+mod play_edits_of_declared_fields;
 mod prefab;
 mod prefab_apply;
+mod prefab_apply_of_declared_fields;
 
 use khora_sdk::prelude::math::Vec3;
 use khora_sdk::SceneFile;

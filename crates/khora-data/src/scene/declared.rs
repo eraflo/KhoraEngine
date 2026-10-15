@@ -566,17 +566,10 @@ impl DeclaredLoad {
     }
 }
 
-/// `value` as field `slot` of `layout` holds it, and whether it was widened:
-/// an `int` taken as a `float` only where it converts exactly, and a value
-/// of another type than the field's — where its type is known — refused.
+/// `value` as field `slot` of `layout` holds it once read, and whether it
+/// was widened — [`PackedLayout::fit`].
 fn fit(layout: &PackedLayout, slot: usize, value: ScriptValue) -> Option<(ScriptValue, bool)> {
-    let kind = layout.fields()[slot].kind;
-    match (kind, &value) {
-        (FieldKind::Float, ScriptValue::Int(_)) => {
-            Some((FieldKind::Int.widened(kind, &value)?, true))
-        }
-        _ => Some((layout.admit(slot, &value)?, false)),
-    }
+    layout.fit(slot, &value)
 }
 
 /// A declared component's row, read: its values by field name, the rest its
