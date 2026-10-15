@@ -38,6 +38,7 @@ behavior Guard {
 | `fn <type> Name(params) { … }` | runs | free functions; called before their declaration and recursively; `this` is refused in them; a name an engine function already has is refused |
 | `behavior Name { … }` | runs | a component of the same name, its fields the behavior's, with a state companion `Name#state`; attached by adding the component (`GameWorld::add_declared_component`). Names are global: two modules declaring one is refused |
 | `system Name { … }` | runs | a behavior with no subject, run once a frame on an entity of its own; see [Systems](#systems). Its name is global like a behavior's |
+| `event Name(params);` | runs | what a raise names and a handler takes; see [Events](#events). Its name is global; `event Name;` carries nothing |
 | `struct Name { … }` | runs — a value type; its field defaults must be constants; operator overloads check but do not compile yet |
 | `[Domain(D)] component Name { … }` | runs — a component the project declares; see [Declaring components](#declaring-components) |
 | `[Domain(D)]` on a behavior | runs — where the behavior's fields are stored (default `Script`) |
@@ -178,7 +179,7 @@ behavior Guard {
     }
     state Chase(Entity foe) {
         int missed = 0;
-        every 1s { foe.Raise("Damaged", 5); }
+        every 1s { foe.Raise(Damaged(5)); }
         after 10s => become Patrol;
     }
 }
@@ -256,7 +257,9 @@ on Spotted(int by) { Attack(); }          // the handler waits with it
 async void Attack() { await 0.5s; Strike(); }
 ```
 
-`await` itself is refused in `Update`, `on` handlers, `every` and `after`.
+`await` itself is refused in `Update`, `on` handlers, `every` and `after`. It
+takes a `Duration` (or a `float` of seconds); anything else is refused —
+awaiting an event is not in the language yet.
 
 ## Expressions
 
@@ -298,7 +301,6 @@ refused with the operation's name and the list of what the type defines.
 | Text | `Log`, `Warn`, `Error` `(string)`; `Length(string) → int` |
 | World — queued, applied at the frame's end | `Position() → Vec3` (own entity, as the frame began); called on an entity `e`: `e.Translate(Vec3)`, `e.SetPosition(Vec3)`, `e.SetRotation(Quat)`, `e.SetScale(Vec3)`, `e.Despawn()`, `e.SetParent(Entity)`, `e.Detach()`; components — see [Writing components](#writing-components) |
 | Input | `Pressed(string action) → bool`, `JustPressed(string) → bool` |
-| Events | `target.Raise(string name, …payload)` |
 | Constructors | `Vec2`, `Vec3`, `Vec4`, `Quat(x, y, z, w)`, `Color(r, g, b, a)` |
 
 A world write is a queued command: `Position()` does not see a `SetPosition` until
@@ -306,7 +308,7 @@ the next frame.
 
 **An operation on an entity is called on it.** Every engine function whose first
 parameter is an `Entity` is written `e.Name(…)` — `this.SetPosition(v)`,
-`enemy.Despawn()`, `target.Raise("Hit", 3)`. The free form `SetPosition(this, v)` is
+`enemy.Despawn()`, `target.Raise(Hit(3))`. The free form `SetPosition(this, v)` is
 refused with its rewrite. `Spawn`, the maths, `Log` and `Pressed` stay free
 functions.
 
@@ -429,19 +431,48 @@ packed column, written and read with `Set`, `Add`, `Remove`, `Spawn`, `Get` and
 ## Events
 
 ```text
-on Damaged(int amount) { health -= amount; }
-void Hurt() { this.Raise("Damaged", 30); }
+event Damaged(int amount, Entity source);
+
+behavior Guard {
+    int health = 100;
+    on Damaged(int amount, Entity source) { health -= amount; }
+}
+
+behavior Spike {
+    on Touched(Entity other) { other.Raise(Damaged(30, this)); }
+}
 ```
 
-- `target.Raise("Name", …)` delivers **next frame**, to the handler named `Name`
-  — the current state's first, then the behavior's.
-- The payload is checked against the handler that receives it: a wrong count is
-  reported, a missing handler is simply not delivered, a despawned target hears
+An event is a **declaration**: its name is its identity, its parameters its
+signature, and both ends are checked against it at compile time.
+
+| Written | Rule |
+|---|---|
+| `event Name(T a, …);` | a top-level item, visible in its module and every module importing it. `event Name;` and `event Name();` carry nothing. Its name is global — refused when another declaration, an engine function or type, a lifecycle hook (`Update`, `OnSpawn`, …), an operation (`Set`, `Get`, `Spawn`, `Raise`, …) or a `__` name has it |
+| a payload | `bool`, `int`, `float`, `string`, `Vec2`, `Vec3`, `Vec4`, `Quat`, `Color`, `Entity`, `Duration`, `Angle`. An optional, an array, a struct, a map or a component is refused at the declaration |
+| `target.Raise(Name(args))` | `target` any `Entity`, in a behavior, a function or a system. The arguments are checked against the declaration — count and types; an `int` is taken where it says `float`, never where it says `Duration` or `Angle` |
+| `Raise("Name", …)` | refused — the message gives the `event` to declare and the raise to write |
+| `Name(args)` elsewhere | refused: an event is raised, not stored |
+| `on Name(T a, …) { … }` | must name an event in scope — a typo is a compile error. It takes **all** of the payload, its types in order (names free), **or none**: `on Name { … }`, `on Name() { … }`, `on Name => …;` |
+| a method or function named like an event | refused — `Name()` would read as the event's construction |
+
+At run time:
+
+- A raise is delivered **next frame**, to the current state's handler, then the
+  behavior's; a behavior with neither is not told; a despawned target hears
   nothing.
-- A payload carries `bool`, `int`, `float`, `string`, `Entity` and the engine
-  types — not `null`, whether a script or the engine raised it.
-- The engine raises `Touched(Entity other)` and `Separated` from collisions:
-  `on Touched(Entity other) { other.Despawn(); }`.
+- Only a declared event is delivered: one the engine sends named like a method
+  or a hook runs nothing.
+- The payload is checked against the event at delivery. One that does not fit —
+  sent by the engine, or queued before a reload changed the event — is
+  **dropped and reported** (a warning in the editor's Problems tab, one line per
+  event); the receiver keeps running.
+- The engine raises `Touched(Entity other)` and `Separated(Entity other)` from
+  collisions. They are declared by the engine, served as `engine/events.erg`
+  and in scope in every module without an import; a script may not declare
+  either name.
+- A play session starting over in the editor drops the last session's
+  undelivered events.
 
 ## Systems
 
@@ -575,6 +606,6 @@ closures, reading `Transform` with `Get` (use `Position()`), reordering systems
 - [Scripting](../concepts/scripting.md) — turns, safepoints, saves, resuming
   after edits.
 - [Glossary](./glossary.md) — safepoint, site, resume tier, system, query, sweep,
-  watchdog, declared component, ScriptProblems.
+  watchdog, declared component, event, ScriptProblems.
 - [Editor — Scripts](./editor.md#07--scripts) — scripts while editing, the
   Problems tab, declared components in the Inspector.

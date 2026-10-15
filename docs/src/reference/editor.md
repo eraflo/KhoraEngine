@@ -208,6 +208,7 @@ note:
 | Registration | warning | a component no module declares any more — kept with its data |
 | Running | error | a faulted instance: its entity, its behavior, the reason |
 | Running | warning | a body still unfinished past the watchdog's warning limit |
+| Running | warning | an event dropped: its payload did not fit the event (sent by the engine, or queued before an edit) — one line per entity, behavior and event |
 
 <div class="kp-figure-frame">
 

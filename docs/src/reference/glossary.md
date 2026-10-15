@@ -157,6 +157,17 @@ entity's logic) and [systems](#system-ergon) (one rule over the rows of a
 `EngineMode::Playing`. See [Scripting](../concepts/scripting.md) and the
 [Ergon reference](./ergon.md).
 
+### Event (Ergon)
+
+What one entity's behavior tells another, declared once —
+`event Damaged(int amount, Entity source);` — and raised by name with its
+payload: `target.Raise(Damaged(3, this))`. The declaration is the event's
+identity and signature: a raise and every `on Damaged(…)` handler are checked
+against it when they compile, and a payload the delivery receives that does not
+fit — from the engine, or queued before an edit — is dropped and reported, never
+a fault of the receiver. Delivered next frame. The engine raises `Touched` and
+`Separated`. See the [Ergon reference](./ergon.md#events).
+
 ### ExecutionPhase / TickPhase
 
 Two distinct ordered-slot enums, easy to confuse:

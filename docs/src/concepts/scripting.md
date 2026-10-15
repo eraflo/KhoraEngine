@@ -49,6 +49,10 @@ sequenceDiagram
 A script declares **behaviors**: state and logic attached to an entity.
 
 ```text
+event Damaged(int amount);
+event Look;
+event Spotted(Entity foe);
+
 behavior Guard {
     int health = 100;
 
@@ -60,21 +64,22 @@ behavior Guard {
     }
 
     state Patrol {
-        every 2s { this.Raise("Look"); }
+        every 2s { this.Raise(Look()); }
         on Spotted(Entity foe) { become Chase(foe); }
     }
 
     state Chase(Entity foe) {
         async void Attack() {
             await 0.5s;           // wind up
-            foe.Raise("Damaged", 10);
+            foe.Raise(Damaged(10));
         }
     }
 }
 ```
 
 Fields hold what the guard *is*; lifecycle members (`OnSpawn`, `Update`, …)
-are called by the engine; `on` handlers answer events; `every` and `after` are
+are called by the engine; `on` handlers answer events, each one declared with
+`event` so that a raise and every handler are checked against it; `every` and `after` are
 schedules; `state` confines data and members to a phase of the behavior's life;
 `async` members may `await` a duration. The [reference](../reference/ergon.md)
 lists every construct and what compiles today.
@@ -420,10 +425,26 @@ Two queues feed one delivery:
 | Source | Route |
 |---|---|
 | Behavior → behavior | waits on the `ScriptRuntime`, never leaves scripting |
-| Engine → behavior (a collision, an input) | a bounded `Channel<ScriptEvent>` the engine fills and the lane drains |
+| Engine → behavior (a collision) | a bounded `Channel<ScriptEvent>` the engine fills and the lane drains |
 
 They stay apart on purpose. Script-to-script mail routed through a shared
 resource would cost two frames of latency and a deck slot nothing else reads.
+
+<div class="kp-figure-frame">
+
+{{#include ../images/scripting/events.svg}}
+
+</div>
+
+An event is **declared** (`event Damaged(int amount);`), and the declaration is
+what both ends answer to: the compiler refuses a raise of an event that does
+not exist or with the wrong payload, and a handler of one, instead of a
+delivery that quietly finds nobody or faults its receiver. What the compiler
+cannot see — the engine's mail, or mail queued before a reload changed the
+event — is checked again at delivery, and a payload that does not fit is
+dropped and reported, the receiver left running. Each program finds its
+handlers in a table it builds once from its declarations; the entity's state
+picks among them as it is delivered.
 
 ## Saved mid-sentence
 
@@ -562,7 +583,7 @@ Two places, not eight: a row in the `script_value_table!` X-macro
 `khora-script::native::engine_types`. Exposing `Vec3` once cost an
 `impl ScriptType`, a hand-written constructor, and an arm in each of four
 converters across three crates — and the copies diverged, so
-`e.Raise("Hit", Vec3(…))` produced a value the delivery side did not know, the
+a raise carrying a `Vec3` produced a value the delivery side did not know, the
 lane treated that as a fault, and the target behavior was disabled for good.
 
 It is deliberately a **declaration and not an attribute**. An attribute belongs

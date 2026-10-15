@@ -90,6 +90,27 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
 - **An event is never delivered in the frame it was raised.** Handling one where it was raised opens a
   cascade with no bound, and a budget that cannot bound the work is not a budget. Script-to-script mail
   waits on `ScriptRuntime`; engine-raised events arrive through `Channel<ScriptEvent>`.
+- **Events are declarations (R1).** `Item::Event(EventDecl)` (`event` is contextual — only at an item's
+  start); checker `types/events.rs` (`collect_engine_events`, `collect_event`, `check_raise`,
+  `check_handler_signature`, `refuse_construction`); a method named like an event is refused
+  (`types/members.rs`). A raise compiles to `Instruction::Raise { entity, event: string idx, base, argc }`
+  (`bytecode/components.rs::compile_raise`, int→float widened by the event's shape; fingerprint hashes
+  the name; cost 4; `vm/commands.rs` bridges each value, `Fault::Unraisable`). There is no `Raise`
+  native any more. `Program.events: Vec<EventSignature>` (engine + declared, sorted) — `bytecode/events.rs`,
+  which also gives `Naming.events` (name → param types) so a raise's statement key carries its event's
+  signature (`keys.rs::statement_key_with`): an edit to the event restarts a frame stopped in that raise
+  instead of rebuilding it with the old payload. Engine events: `khora_core::script::ENGINE_EVENTS`
+  (`TOUCHED`, `SEPARATED`), served as `ENGINE_EVENTS_MODULE` (`engine/events.erg`, resolved last then
+  moved first in `Resolved.modules`; its items are not merged — the checker and the compiler seed them).
+- **Delivery by table.** `dispatch/handlers.rs::HandlerTable` (a `OnceLock` on `Program`, `serde(skip)`,
+  `PartialEq` always true) maps event → behavior → handler function indices, from `program.events` and
+  the names `Behavior.Event` / `Behavior.State.Event`. `deliver`: table (state's, else behavior's) → the
+  event's signature (binary search) → `fitted` (count, `Null`/`Array`/`Struct` = `UnsupportedArgument`,
+  `ErgonType::admits` else `Mismatch`, `widened`) → a parameterless handler gets no arguments → `run`.
+  The lane drops `Mismatch`/`WrongArity`/`UnsupportedArgument` (never a fault), keeps the last reason in
+  `Instance.dropped` (per event) and `running_problems` reports each as a Running warning. A play session
+  starting over (`view.resumed` after `ScriptRuntime::note_frame` saw a frame) discards the last
+  session's script mail and the drained engine channel.
 - **Degrading defers whole behaviors, it does not thin every behavior.** A half-run behavior decides
   from a partial read of the world; a deferred one acts a frame late, which gameplay absorbs.
 - **Adding a type to the language touches two places, not eight** — a row in the `script_value_table!`
