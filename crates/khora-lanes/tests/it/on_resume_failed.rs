@@ -94,7 +94,8 @@ const WAITING: &str = r#"behavior Guard {
                                  if (member == "OnLoad") { lost_load += 1; }
                                  if (member == "Spotted") { lost_spotted += 1; }
                              }
-                         }"#;
+                         }
+                         event Spotted(int by);"#;
 
 /// The same guard with neither `OnLoad` nor `Spotted` left.
 const BARE: &str = r#"behavior Guard {

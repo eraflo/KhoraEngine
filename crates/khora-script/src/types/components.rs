@@ -109,6 +109,7 @@ impl Checker {
                 self.check_removed(args, at, context);
                 return Some(Ty::Void);
             }
+            "Raise" => return Some(self.check_raise(args, at, context)),
             "Get" | "Has" => {
                 let read = self.check_read(name, args, at, context);
                 return Some(match (name, read) {
@@ -474,7 +475,7 @@ fn root_of(expr: &Expr) -> &Expr {
 }
 
 /// `expr` as an author would have written it, for a rewrite in a message.
-fn sketch(expr: &Expr) -> String {
+pub(super) fn sketch(expr: &Expr) -> String {
     match expr {
         Expr::Int { value, .. } => value.to_string(),
         Expr::Float { value, .. } => format!("{value:?}"),
@@ -511,7 +512,7 @@ fn sketch(expr: &Expr) -> String {
 
 /// `expr` as the left of a `.`: an operation is parenthesised, so the rewrite
 /// calls the method on what the author wrote, not on its last operand.
-fn sketch_receiver(expr: &Expr) -> String {
+pub(super) fn sketch_receiver(expr: &Expr) -> String {
     match expr {
         Expr::Binary { .. }
         | Expr::Unary { .. }

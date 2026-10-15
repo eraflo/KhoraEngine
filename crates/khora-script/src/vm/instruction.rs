@@ -446,6 +446,20 @@ pub enum Instruction {
         component: u32,
     },
 
+    /// `target.Raise(E(…))`: queues the event named by
+    /// [`Program::strings`](super::Program::strings)`[event]` on `entity`,
+    /// carrying the `argc` values that follow one another from `base`.
+    Raise {
+        /// The entity told.
+        entity: Reg,
+        /// The event's name, as a string index.
+        event: u32,
+        /// First payload register.
+        base: Reg,
+        /// How many values it carries.
+        argc: u8,
+    },
+
     /// `Spawn(position, C1 { … }, …)`: queues a new entity at `position`
     /// carrying each patch of [`Program::spawns`](super::Program::spawns)`[spawn]`,
     /// whose values follow one another from `base`.
@@ -650,6 +664,8 @@ impl Instruction {
             | Self::WriteRow { count, .. }
             | Self::SpawnEntity { count, .. } => 1 + u64::from(*count),
             Self::Become { writes, .. } => 1 + u64::from(*writes),
+            // What the engine function it replaced was charged.
+            Self::Raise { .. } => 4,
             _ => 1,
         }
     }

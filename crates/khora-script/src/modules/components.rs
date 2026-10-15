@@ -239,7 +239,7 @@ pub(super) fn non_finite(expr: &Expr) -> Option<crate::diagnostics::Span> {
 
 /// What a field type is to the engine's storage. `None` for one it cannot
 /// store (`Map<…>`).
-pub(super) fn ergon_type(ty: &TypeRef) -> Option<ErgonType> {
+pub(crate) fn ergon_type(ty: &TypeRef) -> Option<ErgonType> {
     Some(match ty {
         TypeRef::Void | TypeRef::Generic { .. } => return None,
         TypeRef::Optional { inner, .. } => ErgonType::Optional(Box::new(ergon_type(inner)?)),

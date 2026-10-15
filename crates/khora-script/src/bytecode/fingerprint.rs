@@ -439,6 +439,16 @@ impl Hash {
                 self.op("RemoveComponent", &[*entity]);
                 self.text(program.string(*component).unwrap_or_default());
             }
+            I::Raise {
+                entity,
+                event,
+                base,
+                argc,
+            } => {
+                self.op("Raise", &[*entity, *base]);
+                self.number(u64::from(*argc));
+                self.text(program.string(*event).unwrap_or_default());
+            }
             I::SpawnEntity {
                 position,
                 spawn,

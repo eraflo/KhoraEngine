@@ -155,7 +155,8 @@ const GUARD: &str = "behavior Guard {
                              fired += 1;
                          }
                          on Spotted(int by) { Attack(); }
-                     }";
+                     }
+                     event Spotted(int by);";
 
 fn spotted() -> EventQueue {
     let mut events = EventQueue::new();
@@ -283,7 +284,8 @@ fn a_frozen_save_loaded_into_code_without_its_handler_is_abandoned() {
                           fired += 1;
                       }
                       on Heard(int by) { Attack(); }
-                  }";
+                  }
+                  event Heard(int by);";
 
     let mut runtime = runtime_of(edited);
     let mut host = Host::new();

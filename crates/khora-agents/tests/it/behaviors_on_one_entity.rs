@@ -28,9 +28,11 @@ const BRACED: Project = &[
              int taken = 0;
              int braced = 0;
              async void Brace() { await 1.0s; braced += 1; }
-             on Raise(int by) { Brace(); }
+             on Boost(int by) { Brace(); }
              on Hit(int amount) { taken += amount; }
-         }",
+         }
+         event Boost(int by);
+         event Hit(int amount);",
     ),
     (
         "game/lamp.erg",
@@ -50,7 +52,7 @@ fn an_event_held_for_a_busy_behavior_survives_another_behavior_leaving() {
     attach(&mut session.world, entity, "Lamp", &[]);
     session.frame(0.016);
 
-    session.send(ScriptEvent::new(entity, "Raise").with(ScriptValue::Int(1)));
+    session.send(ScriptEvent::new(entity, "Boost").with(ScriptValue::Int(1)));
     session.frame(0.016);
     session.send(ScriptEvent::new(entity, "Hit").with(ScriptValue::Int(3)));
     session.frame(0.016);

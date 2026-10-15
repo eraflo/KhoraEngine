@@ -130,7 +130,8 @@ const CHASING: &str = r#"behavior Guard {
                              on Spot() { become Chase(4); }
                              state Patrol { int other = 50; }
                              state Chase(int seen) { int Seen() { return seen; } }
-                         }"#;
+                         }
+                         event Spot;"#;
 
 const CHASING_DOUBLED: &str = r#"behavior Guard {
                                      on Spot() { become Chase(4); }
@@ -139,7 +140,8 @@ const CHASING_DOUBLED: &str = r#"behavior Guard {
                                          int doubled = 8;
                                          int Seen() { return seen; }
                                      }
-                                 }"#;
+                                 }
+                                 event Spot;"#;
 
 /// **A datum the edit adds takes its own default, never another state's
 /// datum.** The guard is chasing with `seen = 4`; an edit adds
@@ -197,7 +199,8 @@ fn a_parameter_left_behind_by_a_retype_does_not_hold_another_states_datum() {
                on Spot() { become Chase("x"); }
                state Patrol { float other = 2.5; }
                state Chase(string seen) { }
-           }"#,
+           }
+           event Spot;"#,
     );
     let mut host = Host::new();
     frame(&mut runtime, &mut host, &view(None), &raised("Spot"));
@@ -209,7 +212,8 @@ fn a_parameter_left_behind_by_a_retype_does_not_hold_another_states_datum() {
                    on Spot() { become Chase(4); }
                    state Patrol { float other = 2.5; }
                    state Chase(int seen) { }
-               }"#,
+               }
+               event Spot;"#,
         ),
     );
     frame(&mut runtime, &mut host, &view(None), &EventQueue::new());

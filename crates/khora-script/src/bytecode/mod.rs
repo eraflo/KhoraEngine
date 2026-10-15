@@ -48,6 +48,7 @@
 
 mod behavior;
 mod components;
+mod events;
 pub mod expr;
 mod fingerprint;
 mod flow;
@@ -114,6 +115,7 @@ pub fn compile_with(module: &Module, natives: &crate::native::NativeRegistry) ->
     compiler.types = checked.types;
     compiler.collect_natives(natives);
     compiler.collect_structs(module);
+    compiler.collect_events(module);
     compiler.collect_signatures(module);
     compiler.compile_functions(module);
     fingerprint::seal(&mut compiler.program, natives);
@@ -234,6 +236,9 @@ pub struct Compiler {
     /// The components the program writes, by name — what a write's field is
     /// declared as.
     pub component_decls: HashMap<String, crate::ast::StructDecl>,
+    /// The events in scope, by name: each parameter's shape — what a raise's
+    /// `int` argument is widened to.
+    pub event_shapes: HashMap<String, Vec<Shape>>,
 }
 
 impl Compiler {
@@ -260,6 +265,7 @@ impl Compiler {
             types: HashMap::new(),
             struct_decls: HashMap::new(),
             component_decls: HashMap::new(),
+            event_shapes: HashMap::new(),
         }
     }
 
@@ -386,7 +392,7 @@ impl Compiler {
                         index += 1;
                     }
                 }
-                Item::Struct(_) | Item::Component(_) => {}
+                Item::Struct(_) | Item::Component(_) | Item::Event(_) => {}
             }
         }
     }
@@ -399,7 +405,7 @@ impl Compiler {
                 }
                 Item::Behavior(decl) => self.compile_behavior(decl, false),
                 Item::System(decl) => self.compile_behavior(decl, true),
-                Item::Struct(_) | Item::Component(_) => {}
+                Item::Struct(_) | Item::Component(_) | Item::Event(_) => {}
             }
         }
     }

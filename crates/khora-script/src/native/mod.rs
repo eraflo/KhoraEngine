@@ -43,7 +43,6 @@
 pub mod builtins;
 pub mod convert;
 pub mod engine_types;
-pub mod events;
 pub mod input;
 pub mod operators;
 pub mod ty;
@@ -54,7 +53,6 @@ mod tests;
 
 pub use builtins::builtins;
 pub use convert::ScriptType;
-pub use events::ERGON_RAISE;
 pub use ty::NativeTy;
 
 mod call_context;

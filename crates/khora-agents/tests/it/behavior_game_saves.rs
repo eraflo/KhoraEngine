@@ -32,7 +32,8 @@ const HUNTER: Project = &[(
          int hunts = 0;
          async void Hunt(Entity who) { await 1.0s; struck = who; hunts += 1; }
          on Mark(Entity who) { Hunt(who); }
-     }",
+     }
+     event Mark(Entity who);",
 )];
 
 /// **An entity a suspended sequence holds is remapped by the load.** The

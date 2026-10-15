@@ -38,7 +38,7 @@ pub mod stmt;
 pub mod types;
 
 pub use decl::{
-    AfterDecl, Attribute, BehaviorDecl, BehaviorMember, EveryDecl, Field, FunctionDecl,
+    AfterDecl, Attribute, BehaviorDecl, BehaviorMember, EventDecl, EveryDecl, Field, FunctionDecl,
     HandlerDecl, Import, MethodDecl, OperatorDecl, OverloadableOp, Param, StateDecl, StructDecl,
 };
 pub use expr::{BinaryOp, Expr, UnaryOp};
@@ -71,6 +71,8 @@ pub enum Item {
     /// `system Regeneration { … }` — a behavior with no entity of its own:
     /// one rule over the entities its queries match.
     System(BehaviorDecl),
+    /// `event Damaged(int amount);` — what a raise names and a handler takes.
+    Event(EventDecl),
 }
 
 impl Item {
@@ -80,6 +82,7 @@ impl Item {
             Self::Struct(decl) | Self::Component(decl) => &decl.name,
             Self::Function(decl) => &decl.name,
             Self::Behavior(decl) | Self::System(decl) => &decl.name,
+            Self::Event(decl) => &decl.name,
         }
     }
 
@@ -89,6 +92,7 @@ impl Item {
             Self::Struct(decl) | Self::Component(decl) => decl.name_span,
             Self::Function(decl) => decl.name_span,
             Self::Behavior(decl) | Self::System(decl) => decl.name_span,
+            Self::Event(decl) => decl.name_span,
         }
     }
 }

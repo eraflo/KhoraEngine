@@ -170,7 +170,9 @@ const BEHAVIOR: &str = r#"behavior Guard {
                                   pack.items[0].value = 4;
                               }
                               on Sum() { total = loot.value * 100 + loot.weight * 10 + loot.label.Length + pack.items[0].value * 1000; }
-                          }"#;
+                          }
+                          event Bump;
+                          event Sum;"#;
 
 fn guard() -> String {
     format!("{TYPES}\n{BEHAVIOR}")
@@ -342,7 +344,8 @@ const RENAMED_BEHAVIOR: &str = r#"behavior Guard {
                                       Pack pack = Pack { items: [Loot { value: 2 }], count: 1 };
                                       int total = 0;
                                       on Sum() { total = loot.value * 100 + loot.mass * 10 + loot.label.Length + pack.items[0].value * 1000; }
-                                  }"#;
+                                  }
+                                  event Sum;"#;
 
 /// The guard's `loot` as the renamed struct reads the bumped one.
 fn renamed_loot() -> ScriptValue {
@@ -449,7 +452,8 @@ const ATTACKER: &str = r#"struct Pair { int a; int b = 5; }
                                   total = p.a * 100 + p.b * 10 + l.label.Length;
                               }
                               on Spotted(int by) { Attack(); }
-                          }"#;
+                          }
+                          event Spotted(int by);"#;
 
 /// **A save taken mid-`await` holds the struct.** The frozen register is the
 /// struct by name, and whichever encoding carried the save, a fresh runtime

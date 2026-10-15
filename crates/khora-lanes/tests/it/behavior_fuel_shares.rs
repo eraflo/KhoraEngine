@@ -292,7 +292,8 @@ fn an_event_reaches_each_behavior_of_its_entity_once_under_shares() {
             build(&format!(
                 "behavior {name} {{ int hits = 0; int ticks = 0;
                      void Update(float dt) {{ ticks += 1; }}
-                     on Hit() {{ hits += 1; }} }}"
+                     on Hit() {{ hits += 1; }} }}
+                     event Hit;"
             )),
         );
     }

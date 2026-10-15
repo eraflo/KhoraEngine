@@ -168,7 +168,8 @@ const NESTED: &str = r#"behavior Guard {
                             }
                             on Spotted(int by) { Attack(); }
                             void Other() { }
-                        }"#;
+                        }
+                        event Spotted(int by);"#;
 
 const NESTED_SAID: &str = "abcdabcdxabcd";
 
@@ -232,13 +233,14 @@ fn a_restarted_handler_keeps_its_text_argument() {
             r#"behavior Guard {{
                    string heard = "";
                    async void Pause() {{ await 1.0s; }}
-                   void OnSpawn() {{ this.Raise("Named", "a" + HeldTextTail()); }}
+                   void OnSpawn() {{ this.Raise(Named("a" + HeldTextTail())); }}
                    on Named(string s) {{
                        {pad}
                        Pause();
                        heard = s;
                    }}
-               }}"#
+               }}
+               event Named(string s);"#
         )
     };
     let mut runtime = runtime_of(&source(""));

@@ -280,14 +280,16 @@ fn a_starting_value_computed_in_on_spawn_survives_a_save_and_a_reload() {
 const BEFORE: &str = "behavior Guard {
     int health = 100;
     on Damaged(int amount) { health -= amount; }
-}";
+}
+event Damaged(int amount);";
 
 const AFTER: &str = "behavior Guard {
     int health = 100;
     int armour = 5;
     Vec3 heading;
     on Damaged(int amount) { health -= amount; }
-}";
+}
+event Damaged(int amount);";
 
 /// **A field a reload adds takes its default, without spending fuel**, beside
 /// the fields the reload carried.

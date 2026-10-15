@@ -305,7 +305,8 @@ const ATTACKER: &str = r#"behavior Guard {
                                   said = s;
                               }
                               on Spotted(int by) { Attack(); }
-                          }"#;
+                          }
+                          event Spotted(int by);"#;
 
 /// The attacker, one frame into its attack, and what the lane recorded of it.
 fn attacker_mid_await(source: &str) -> (ScriptRuntime, ScriptSnapshot) {
@@ -395,12 +396,13 @@ fn a_string_argument_survives_the_bodys_suspension_in_an_event_handler() {
         r#"behavior Guard {{
                string heard = "";
                {PAUSE}
-               void OnSpawn() {{ this.Raise("Named", "a" + HeldTextName()); }}
+               void OnSpawn() {{ this.Raise(Named("a" + HeldTextName())); }}
                on Named(string s) {{
                    Pause();
                    heard = s;
                }}
-           }}"#
+           }}
+           event Named(string s);"#
     ));
 
     frames(&mut runtime, None, &[0.0, 0.0, 0.6, 0.6, 0.6]);
@@ -427,7 +429,8 @@ fn a_string_argument_survives_the_bodys_suspension_in_on_resume_failed() {
                async void Attack() {{ await 1.0s; }}
                on Spotted(int by) {{ Attack(); }}
                {hook}
-           }}"#
+           }}
+           event Spotted(int by);"#
     );
     let after = format!(
         r#"behavior Guard {{

@@ -437,7 +437,8 @@ const SHIPPED: &[Row] = &[
     },
     Row {
         construct: "`on`",
-        source: "behavior Guard {
+        source: "event Damaged(int amount);
+                 behavior Guard {
                      int health = 100;
                      on Damaged(int amount) { health -= amount; }
                      int Health() { return health; }
@@ -448,15 +449,65 @@ const SHIPPED: &[Row] = &[
     },
     Row {
         construct: "`Raise`",
-        source: r#"behavior Guard {
+        source: r#"event Damaged(int amount);
+                   behavior Guard {
                        int health = 100;
                        on Damaged(int amount) { health -= amount; }
-                       void Hurt() { this.Raise("Damaged", 30); }
+                       void Hurt() { this.Raise(Damaged(30)); }
                        int Health() { return health; }
                    }"#,
         entry: "Guard.Hurt; deliver; Guard.Health",
         args: &[],
         expect: Expect::Runs(Value::Int(70)),
+    },
+    Row {
+        construct: "`Raise` widening an `int` to the event's `float`",
+        source: r#"event Healed(float amount);
+                   behavior Medic {
+                       float health = 10.0;
+                       on Healed(float amount) { health += amount; }
+                       void Heal() { this.Raise(Healed(5)); }
+                       float Health() { return health; }
+                   }"#,
+        entry: "Medic.Heal; deliver; Medic.Health",
+        args: &[],
+        expect: Expect::Runs(Value::Float(15.0)),
+    },
+    Row {
+        construct: "a handler ignoring its event's payload",
+        source: r#"event Damaged(int amount);
+                   behavior Guard {
+                       int hits = 0;
+                       on Damaged { hits += 1; }
+                       void Hurt() { this.Raise(Damaged(30)); }
+                       int Hits() { return hits; }
+                   }"#,
+        entry: "Guard.Hurt; deliver; Guard.Hits",
+        args: &[],
+        expect: Expect::Runs(Value::Int(1)),
+    },
+    Row {
+        construct: "`Raise` by name",
+        source: r#"behavior Guard {
+                       void Hurt() { this.Raise("Damaged", 30); }
+                   }"#,
+        entry: "Guard.Hurt",
+        args: &[],
+        expect: Expect::Rejected("event Damaged"),
+    },
+    Row {
+        construct: "a handler of an undeclared event",
+        source: "behavior Guard { on Damaged(int amount) { } }",
+        entry: "Guard.Damaged",
+        args: &[Value::Int(1)],
+        expect: Expect::Rejected("no event named `Damaged`"),
+    },
+    Row {
+        construct: "`await` of something other than a duration",
+        source: "behavior Waiter { async void Wait() { await true; } }",
+        entry: "Waiter.Wait",
+        args: &[],
+        expect: Expect::Rejected("`await` takes a duration"),
     },
     // ─── Runtime correctness (spec 02) ──────────────────────────────────────
     Row {
@@ -781,13 +832,14 @@ const SHIPPED: &[Row] = &[
     },
     Row {
         construct: "the free form of `Raise`",
-        source: r#"behavior Guard {
+        source: r#"event Damaged(int amount);
+                   behavior Guard {
                        on Damaged(int amount) { }
-                       void Hurt() { Raise(this, "Damaged", 30); }
+                       void Hurt() { Raise(this, Damaged(30)); }
                    }"#,
         entry: "Guard.Hurt",
         args: &[],
-        expect: Expect::Rejected(r#"Write `this.Raise("Damaged", 30)`"#),
+        expect: Expect::Rejected("Write `this.Raise(Damaged(30))`"),
     },
     Row {
         construct: "`Set`",

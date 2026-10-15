@@ -39,7 +39,8 @@ const BOOSTER_FIRST: Project = &[(
      behavior Runner {
          float speed = 0;
          void Update(float dt) { speed += 1; }
-     }",
+     }
+     event Push(Entity target);",
 )];
 
 /// `Tuner` comes after `Runner`: its `Set` is queued after the runner's
@@ -53,7 +54,8 @@ const TUNER_LAST: Project = &[(
      behavior Tuner {
          int pushes = 0;
          on Push(Entity target) { pushes += 1; target.Set(Runner { speed: 5 }); }
-     }",
+     }
+     event Push(Entity target);",
 )];
 
 // ─── What the frame reported ────────────────────────────────────────────────
@@ -183,7 +185,8 @@ const RUNNER_PUSHES: Project = &[(
          float speed = 0;
          on Push(Entity target) { target.Set(Runner { speed: 5 }); }
          void Update(float dt) { speed += 1; }
-     }",
+     }
+     event Push(Entity target);",
 )];
 
 /// **A `Set` its own turn queued of its own field is read or reported, never
@@ -221,7 +224,8 @@ const READER_BETWEEN: Project = &[(
          float speed = 0;
          int fast = 0;
          void Update(float dt) { if (speed > 4.0) { fast += 1; } }
-     }",
+     }
+     event Push(Entity target);",
 )];
 
 /// **A field the turn only read is no lost write of the turn.** The booster
@@ -302,7 +306,8 @@ const READD_FIRST: Project = &[(
      behavior Runner {
          float speed = 0;
          void Update(float dt) { speed += 1; }
-     }",
+     }
+     event Push(Entity target);",
 )];
 
 /// **A behavior removed and added again before its turn is what the add
@@ -341,7 +346,8 @@ const BOOSTER_READS: Project = &[(
      behavior Runner {
          float speed = 0;
          void Update(float dt) { speed += 1; }
-     }",
+     }
+     event Push(Entity target);",
 )];
 
 /// **Another script reads a behavior's component, and its own `Set` of it.**

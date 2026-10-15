@@ -59,6 +59,7 @@ behavior Guard {
         become Chase;
     }
 }
+event Spotted(int by);
 "#;
 
 /// One guard, restored from `saved` if there is anything to restore.
@@ -275,6 +276,7 @@ behavior Guard {
         Attack();
     }
 }
+event Spotted(int by);
 "#;
 
 /// Starts an attack and stops in the middle of its wind-up.
@@ -333,6 +335,7 @@ fn a_sequence_is_abandoned_when_its_handler_is_gone() {
             Attack();
         }
     }
+    event Seen(int by);
     "#;
 
     let (mut revived, mut host) = reload(edited, saved);
@@ -439,6 +442,7 @@ behavior Guard {
         become Chase;
     }
 }
+event Spotted(int by);
 "#;
 
 /// **Data an edit added to the state a save caught starts at its own
@@ -501,6 +505,7 @@ behavior Guard {
         become Chase;
     }
 }
+event Spotted(int by);
 "#;
 
 /// **Entering the saved state, whatever the slice.** A guard saved chasing,

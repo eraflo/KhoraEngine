@@ -168,7 +168,10 @@ const GUARD: &str = r#"struct Loot { int value; string label = "x"; }
                            }
                            on Lose() { ids.RemoveAt(0); items.RemoveAt(0); }
                            on Sum() { total = ids.Length * 1000 + ids[0] * 100 + items[1].value * 10 + names[2].Length; }
-                       }"#;
+                       }
+                       event Gain(int v);
+                       event Lose;
+                       event Sum;"#;
 
 /// The guard after three gains and a loss: `ids` `[4, 5]`, two loots, three
 /// names — and what the lane recorded then.
@@ -286,7 +289,8 @@ const ATTACKER: &str = r#"behavior Guard {
                                   total = xs.Length * 100 + xs[0] * 10 + xs[1];
                               }
                               on Spotted(int by) { Attack(); }
-                          }"#;
+                          }
+                          event Spotted(int by);"#;
 
 /// **A save taken mid-`await` holds the array the body pushed onto.** The
 /// frozen register is the array's elements, and whichever encoding carried

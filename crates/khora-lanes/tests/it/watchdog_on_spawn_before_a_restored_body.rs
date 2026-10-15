@@ -32,7 +32,8 @@ const GUARD: &str = "behavior Guard {
                          void OnSpawn() { while (spin) { n += 1; } }
                          async void Hold() { await 5s; done = 1; }
                          on Go() { Hold(); }
-                     }";
+                     }
+                     event Go;";
 
 /// The guard with its `OnSpawn` fixed — the edit that answers the fault.
 const GUARD_FIXED: &str = "behavior Guard {
@@ -42,7 +43,8 @@ const GUARD_FIXED: &str = "behavior Guard {
                                void OnSpawn() { n += 1; }
                                async void Hold() { await 5s; done = 1; }
                                on Go() { Hold(); }
-                           }";
+                           }
+                           event Go;";
 
 /// Plenty of fuel for a turn that does not spin.
 const PLENTY: u64 = 1_000_000;

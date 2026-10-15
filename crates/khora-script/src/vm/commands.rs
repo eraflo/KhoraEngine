@@ -144,6 +144,29 @@ impl Machine {
                 host.components.observe(&command);
                 host.commands.push(command);
             }
+            Instruction::Raise {
+                entity,
+                event,
+                base,
+                argc,
+            } => {
+                let target = self.entity_at(entity)?;
+                let name = program.string(event).ok_or(Fault::BadString)?;
+                let mut raised = khora_core::script::ScriptEvent::new(target, name);
+                for offset in 0..Reg::from(argc) {
+                    let value = self.read(base + offset)?;
+                    // Through the one bridge, so what an event carries is
+                    // exactly what a handler can receive.
+                    let carried =
+                        crate::bridge::from_register(value, &program.strings, &host.arena)
+                            .map_err(|why| Fault::Unraisable {
+                                event: name.to_owned(),
+                                why: why.to_string(),
+                            })?;
+                    raised = raised.with(carried);
+                }
+                host.outbox.push(raised);
+            }
             Instruction::SpawnEntity {
                 position,
                 spawn,

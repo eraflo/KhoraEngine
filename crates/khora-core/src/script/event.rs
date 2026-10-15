@@ -58,6 +58,32 @@ impl crate::event::Supersedes for ScriptEvent {
     // events, and a producer that meant to send one should send one.
 }
 
+/// An event the engine raises, declared for scripts as an `event` is: its
+/// name and what it carries — the same signature a script's raise is held to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EngineEvent {
+    /// The name a handler spells.
+    pub name: &'static str,
+    /// What it carries, in order: each parameter's Ergon type, spelled as a
+    /// script writes it, and its name.
+    pub params: &'static [(&'static str, &'static str)],
+}
+
+/// Something started touching the entity: carries the other one.
+pub const TOUCHED: EngineEvent = EngineEvent {
+    name: "Touched",
+    params: &[("Entity", "other")],
+};
+
+/// Something stopped touching the entity: carries the other one.
+pub const SEPARATED: EngineEvent = EngineEvent {
+    name: "Separated",
+    params: &[("Entity", "other")],
+};
+
+/// Every event the engine raises — what scripts handle without declaring.
+pub const ENGINE_EVENTS: &[EngineEvent] = &[TOUCHED, SEPARATED];
+
 /// How many engine-raised events may wait for the scripting agent.
 ///
 /// Nothing coalesces them, so this is a real ceiling rather than a count of

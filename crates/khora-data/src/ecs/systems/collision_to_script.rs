@@ -51,10 +51,10 @@ use khora_core::Runtime;
 use crate::ecs::{DataSystemRegistration, TickPhase, World};
 
 /// What a behavior declares to hear that something started touching it.
-pub const TOUCHED: &str = "Touched";
+pub const TOUCHED: &str = khora_core::script::event::TOUCHED.name;
 
 /// And to hear that it stopped.
-pub const SEPARATED: &str = "Separated";
+pub const SEPARATED: &str = khora_core::script::event::SEPARATED.name;
 
 fn collision_to_script(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
     let Some(collisions) = runtime.resources.get::<Channel<Collision>>() else {

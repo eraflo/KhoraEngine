@@ -63,6 +63,7 @@ impl Compiler {
                 };
                 Some(self.compile_remove(object, component))
             }
+            "Raise" => Some(self.compile_raise(object, args, span)),
             "Get" | "Has" => {
                 let Some(Expr::Ident {
                     name: component, ..
@@ -195,6 +196,57 @@ impl Compiler {
         self.place(object, entity);
         let component = self.intern(component);
         self.emit(Instruction::RemoveComponent { entity, component });
+        self.registers.release_to(mark);
+        self.constant(Value::Unit, Shape::Other)
+    }
+
+    /// `target.Raise(E(args))`: the payload in consecutive registers, an
+    /// `int` given where the event says `float` arriving as that float.
+    fn compile_raise(
+        &mut self,
+        object: &Expr,
+        args: &[Expr],
+        span: crate::diagnostics::Span,
+    ) -> (Reg, Shape) {
+        let Some(Expr::Call { callee, args, .. }) = args.first() else {
+            self.error("`Raise` takes an event", span);
+            return self.constant(Value::Unit, Shape::Other);
+        };
+        let Expr::Ident { name: event, .. } = callee.as_ref() else {
+            self.error("`Raise` takes an event", span);
+            return self.constant(Value::Unit, Shape::Other);
+        };
+        let declared = self.event_shapes.get(event).cloned().unwrap_or_default();
+        let mark = self.registers.mark();
+        let entity = self.registers.temp();
+        self.place(object, entity);
+        let base = self.registers.temp();
+        let slots: Vec<Reg> = std::iter::once(base)
+            .chain((1..args.len()).map(|_| self.registers.temp()))
+            .collect();
+        for (index, (value, slot)) in args.iter().zip(slots).enumerate() {
+            let inner = self.registers.mark();
+            let (register, shape) = self.compile_value(value);
+            if shape == Shape::Int && declared.get(index) == Some(&Shape::Float) {
+                self.emit(Instruction::IntToFloat {
+                    dst: slot,
+                    src: register,
+                });
+            } else if register != slot {
+                self.emit(Instruction::Move {
+                    dst: slot,
+                    src: register,
+                });
+            }
+            self.registers.release_to(inner);
+        }
+        let event = self.intern(event);
+        self.emit(Instruction::Raise {
+            entity,
+            event,
+            base,
+            argc: args.len() as u8,
+        });
         self.registers.release_to(mark);
         self.constant(Value::Unit, Shape::Other)
     }

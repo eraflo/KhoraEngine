@@ -53,7 +53,8 @@ fn a_handler_started_in_a_frame_past_ten_seconds_is_reported() {
     let source = "behavior Listener {
                       int n = 0;
                       on Go() { while (true) { n += 1; } }
-                  }";
+                  }
+                  event Go;";
     let subject = entity(0);
     let mut stage = Stage::new(source, &[(subject, "Listener")]);
     stage.frame_with(15.0, SLICE, &event(subject, "Go"));

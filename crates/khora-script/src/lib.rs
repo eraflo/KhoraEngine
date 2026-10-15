@@ -22,17 +22,17 @@
 //! external scheduler.
 //!
 //! So the virtual machine is **interruptible by construction**. That single
-//! property pays for three separate features:
+//! property pays for two separate features, and leaves room for a third:
 //!
 //! | Reason to suspend | Resumes |
 //! |---|---|
 //! | Out of fuel (the GORNA budget) | as soon as the budget allows |
 //! | `await <duration>` | when it elapses |
-//! | `await <event>` | when it resolves |
 //!
-//! One mechanism, three uses. Declarative time (`every 0.5s`) and `async/await`
-//! are not separate systems bolted on — they are the budget mechanism wearing a
-//! different hat.
+//! Awaiting an event would be the same suspension with another reason; it is
+//! not in the language yet, and `await` takes only a duration. Declarative
+//! time (`every 0.5s`) and `async/await` are not separate systems bolted on —
+//! they are the budget mechanism wearing a different hat.
 //!
 //! ## State of the crate
 //!
@@ -96,3 +96,26 @@ pub use vm::{Function, Instruction, Machine, Program, Run, Suspension, Value};
 /// `import "engine/components.erg";` — the one module a `component` declaration
 /// is accepted from, until scripts can declare their own.
 pub const ENGINE_COMPONENTS_MODULE: &str = "engine/components.erg";
+
+/// The module the engine serves its events from — `Touched`, `Separated`.
+///
+/// Served whatever the loader, and in scope in every module without an
+/// import: a script handles what the engine raises without declaring it.
+pub const ENGINE_EVENTS_MODULE: &str = "engine/events.erg";
+
+/// The source of [`ENGINE_EVENTS_MODULE`]: one `event` per event the engine
+/// raises ([`ENGINE_EVENTS`](khora_core::script::ENGINE_EVENTS)).
+pub fn engine_events_source() -> String {
+    let mut source = String::from(
+        "// The events the engine raises. Served by the engine, never written to disk.\n",
+    );
+    for event in khora_core::script::ENGINE_EVENTS {
+        let params: Vec<String> = event
+            .params
+            .iter()
+            .map(|(ty, name)| format!("{ty} {name}"))
+            .collect();
+        source.push_str(&format!("event {}({});\n", event.name, params.join(", ")));
+    }
+    source
+}

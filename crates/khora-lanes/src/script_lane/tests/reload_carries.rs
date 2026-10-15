@@ -55,6 +55,8 @@ behavior Guard {
         become Chase;
     }
 }
+event Lost(int by);
+event Spotted(int by);
 "#;
 
 /// The guard after an edit that touches neither state nor the countdown: a
@@ -85,6 +87,8 @@ behavior Guard {
         become Chase;
     }
 }
+event Lost(int by);
+event Spotted(int by);
 "#;
 
 /// The guard after an edit that removed `Chase` and added `Search` in its
@@ -110,6 +114,7 @@ behavior Guard {
         become Search;
     }
 }
+event Spotted(int by);
 "#;
 
 /// The guard after an edit that inserted an `every 1.0s` above the existing
@@ -144,6 +149,8 @@ behavior Guard {
         become Chase;
     }
 }
+event Lost(int by);
+event Spotted(int by);
 "#;
 
 fn frame(runtime: &mut ScriptRuntime, host: &mut Host, delta: f32, events: &EventQueue) {
@@ -334,6 +341,8 @@ behavior Guard {
         become Chase;
     }
 }
+event Lost(int by);
+event Spotted(int by);
 "#;
 
 /// The guard after an edit that gave `Chase` a new piece of data, above the
@@ -357,6 +366,8 @@ behavior Guard {
         become Chase;
     }
 }
+event Lost(int by);
+event Spotted(int by);
 "#;
 
 /// **Data the edit added to the current state starts at its own default.**
@@ -458,6 +469,7 @@ behavior Guard {
         become Chase;
     }
 }
+event Spotted(int by);
 "#;
 
 /// **A reload that changes nothing changes nothing.** The same frames, with

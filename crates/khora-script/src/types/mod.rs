@@ -35,6 +35,7 @@ mod arithmetic;
 mod assign;
 mod calls;
 mod components;
+mod events;
 pub mod expr;
 mod members;
 mod query;
@@ -96,6 +97,7 @@ pub fn check(module: &Module) -> Checked {
 pub fn check_with(module: &Module, natives: &crate::native::NativeRegistry) -> Checked {
     let mut checker = Checker::new();
     checker.collect_natives(natives);
+    checker.collect_engine_events();
     checker.collect(module);
     checker.check_bodies(module);
     checker.report_subject_calls();
@@ -199,6 +201,9 @@ pub struct Checker {
     pub components: HashMap<String, components::ComponentInfo>,
     /// Free functions by name.
     pub functions: HashMap<String, FnInfo>,
+    /// Events in scope by name — the program's, its imports' and the
+    /// engine's.
+    pub events: HashMap<String, events::EventInfo>,
     /// Engine functions by name.
     ///
     /// Kept apart from [`functions`](Self::functions) rather than merged into
@@ -252,6 +257,7 @@ impl Checker {
             structs: HashMap::new(),
             components: HashMap::new(),
             functions: HashMap::new(),
+            events: HashMap::new(),
             natives: HashMap::new(),
             behaviors: Vec::new(),
             diagnostics: Vec::new(),
@@ -364,6 +370,7 @@ impl Checker {
                 }
                 Item::Behavior(decl) => self.collect_component(&decl.as_component()),
                 Item::System(_) => {}
+                Item::Event(decl) => self.collect_event(decl),
             }
         }
     }
@@ -515,6 +522,7 @@ impl Checker {
                 Item::System(decl) => self.check_system(decl),
                 Item::Struct(decl) => self.check_struct_bodies(decl),
                 Item::Component(decl) => self.check_component_defaults(decl),
+                Item::Event(_) => {}
             }
         }
     }

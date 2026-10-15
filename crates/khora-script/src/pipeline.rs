@@ -73,9 +73,12 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> CompileOutcome 
     // compiler every declaration before the file that uses it.
     let merged = crate::ast::Module {
         imports: Vec::new(),
+        // The engine's events are known to the checker and the compiler
+        // already; their module is served so it can be read and imported.
         items: resolved
             .modules
             .iter()
+            .filter(|module| module.path != crate::ENGINE_EVENTS_MODULE)
             .flat_map(|module| module.module.items.iter().cloned())
             .collect(),
     };
@@ -137,7 +140,7 @@ mod tests {
     fn a_lone_module_compiles() {
         let loader = MemoryLoader::new().with(
             "guard.erg",
-            "behavior Guard { int health = 100; on Damaged(int by) { health -= by; } }",
+            "behavior Guard { int health = 100; on Damaged(int by) { health -= by; } } event Damaged(int by);",
         );
         let result = compile_module(&loader, "guard.erg");
 

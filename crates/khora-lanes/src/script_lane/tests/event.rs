@@ -31,6 +31,8 @@ use crate::script_lane::{run_behaviors, ScriptRuntime};
 /// Both behaviors live in one module because a module is a compilation unit, not
 /// a namespace for one behavior.
 const COMBAT: &str = r#"
+event Damaged(int amount);
+
 behavior Attacker {
     int swung = 0;
 
@@ -53,12 +55,14 @@ behavior Guard {
 /// A guard that hits itself once when it spawns, so the round trip needs no
 /// second entity.
 const SELF_HITTER: &str = r#"
+event Damaged(int amount);
+
 behavior Guard {
     int health = 100;
     int hits = 0;
 
     void OnSpawn() {
-        this.Raise("Damaged", 25);
+        this.Raise(Damaged(25));
     }
 
     on Damaged(int amount) {
@@ -134,11 +138,13 @@ fn an_event_is_not_delivered_in_the_frame_it_was_raised() {
     let view = one_guard();
     let mut runtime = runtime_of(
         r#"
+        event Damaged(int amount);
+
         behavior Guard {
             int health = 100;
 
-            void OnSpawn() { this.Raise("Damaged", 1); }
-            on Damaged(int amount) { this.Raise("Damaged", 1); }
+            void OnSpawn() { this.Raise(Damaged(1)); }
+            on Damaged(int amount) { this.Raise(Damaged(1)); }
         }
         "#,
     );
@@ -176,9 +182,11 @@ fn raising_an_event_nobody_handles_is_quiet() {
     let view = one_guard();
     let mut runtime = runtime_of(
         r#"
+        event Opened(int by);
+
         behavior Guard {
             int health = 100;
-            void OnSpawn() { this.Raise("Opened", 1); }
+            void OnSpawn() { this.Raise(Opened(1)); }
         }
         "#,
     );
@@ -191,18 +199,19 @@ fn raising_an_event_nobody_handles_is_quiet() {
     assert_eq!(report.faulted, 0);
 }
 
-/// **What the checker cannot catch.** `Raise`'s payload is whatever the handler
-/// declares, and which handler that is depends on the state the target is in
-/// when the event lands — so a mismatch is a delivery-time fault, named, and it
-/// disables that behavior rather than the frame.
+/// **What the checker cannot catch.** An event the engine hands over is not
+/// checked against a declaration, so its payload may not fit the handler — a
+/// delivery-time mismatch, named, and it disables that behavior rather than
+/// the frame.
 #[test]
 fn a_payload_the_handler_cannot_take_faults_at_delivery() {
     let view = one_guard();
     let mut runtime = runtime_of(
         r#"
+        event Damaged(int amount);
+
         behavior Guard {
             int health = 100;
-            void OnSpawn() { this.Raise("Damaged"); }
             on Damaged(int amount) { health -= amount; }
         }
         "#,
@@ -210,7 +219,9 @@ fn a_payload_the_handler_cannot_take_faults_at_delivery() {
     let mut host = Host::new();
 
     run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
-    let raised = host.take_events();
+    // The payload is missing, as only an engine-raised event can leave it.
+    let mut raised = EventQueue::new();
+    raised.push(khora_core::script::ScriptEvent::new(entity(0), "Damaged"));
     let report = run_behaviors(&view, &raised, &mut runtime, &mut host, u64::MAX);
 
     assert_eq!(report.faulted, 1, "the arity mismatch was reported");
@@ -224,6 +235,8 @@ fn a_payload_the_handler_cannot_take_faults_at_delivery() {
 fn one_entity_raises_for_another() {
     let mut runtime = runtime_of(
         r#"
+        event Damaged(int amount);
+
         behavior Attacker {
             int swung = 0;
         }
@@ -294,12 +307,14 @@ fn an_event_can_carry_a_vector() {
     let view = one_guard();
     let mut runtime = runtime_of(
         r#"
+        event Hit(Vec3 where);
+
         behavior Guard {
             Vec3 hit;
             int hits = 0;
 
             void OnSpawn() {
-                this.Raise("Hit", Vec3(1.0, 2.0, 3.0));
+                this.Raise(Hit(Vec3(1.0, 2.0, 3.0)));
             }
 
             on Hit(Vec3 where) {
@@ -332,12 +347,14 @@ fn an_event_can_carry_text() {
     let view = one_guard();
     let mut runtime = runtime_of(
         r#"
+        event Named(string who);
+
         behavior Guard {
             string last;
             int hits = 0;
 
             void OnSpawn() {
-                this.Raise("Named", "boss");
+                this.Raise(Named("boss"));
             }
 
             on Named(string who) {
@@ -356,4 +373,152 @@ fn an_event_can_carry_text() {
     assert_eq!(report.faulted, 0, "the delivery refused the payload");
     assert_eq!(field(&runtime, "Guard", 1), Some(1), "the handler ran");
     assert_eq!(text(&runtime, 0).as_deref(), Some("boss"));
+}
+
+// ─── Typed events, end to end ───────────────────────────────────────────────
+
+/// `source` compiled the way a project compiles it — through the module
+/// pipeline, from a loader serving nothing but that one module — and a
+/// runtime holding it.
+fn project_of(source: &str) -> (ScriptRuntime, khora_script::vm::Program) {
+    let loader = khora_script::MemoryLoader::new().with(MODULE, source);
+    let result = khora_script::compile_module(&loader, MODULE);
+    let errors: Vec<_> = result.diagnostics.iter().filter(|d| d.is_error()).collect();
+    assert!(errors.is_empty(), "should compile: {errors:?}");
+    let program = result.program.expect("a program with no errors");
+    let mut runtime = ScriptRuntime::new();
+    runtime.add_program(MODULE, program.clone());
+    (runtime, program)
+}
+
+/// Whether `host` queued a `SetScale` of `target` to `value`.
+fn scaled(host: &Host, target: khora_core::ecs::entity::EntityId, value: f32) -> bool {
+    host.commands.as_slice().iter().any(|command| {
+        *command
+            == khora_core::script::WorldCommand::SetScale {
+                entity: target,
+                value: khora_core::math::Vec3::new(value, value, value),
+            }
+    })
+}
+
+/// **A declared event, raised by its declaration, reaches its handler the
+/// next frame with its whole payload** — the amount, and the entity it named.
+#[test]
+fn a_typed_raise_reaches_its_handler_next_frame_with_its_payload() {
+    let view = one_guard();
+    let (mut runtime, _) = project_of(
+        r#"
+        event Damaged(int amount, Entity source);
+
+        behavior Guard {
+            int health = 100;
+            int hits = 0;
+
+            void OnSpawn() { this.Raise(Damaged(25, this)); }
+
+            on Damaged(int amount, Entity source) {
+                health -= amount;
+                hits += 1;
+                source.SetScale(Vec3(2.0, 2.0, 2.0));
+            }
+        }
+        "#,
+    );
+    let mut host = Host::new();
+
+    run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
+    let raised = host.take_events();
+    assert_eq!(raised.len(), 1, "one raise: {raised:?}");
+    let event = &raised.as_slice()[0];
+    assert_eq!(event.target, entity(0));
+    assert_eq!(event.name, "Damaged");
+    assert_eq!(
+        event.args,
+        vec![ScriptValue::Int(25), ScriptValue::Entity(entity(0))]
+    );
+    assert_eq!(field(&runtime, "Guard", 1), Some(0), "not this frame");
+
+    let report = run_behaviors(&view, &raised, &mut runtime, &mut host, u64::MAX);
+
+    assert_eq!(report.faulted, 0);
+    assert_eq!(field(&runtime, "Guard", 0), Some(75), "the amount arrived");
+    assert_eq!(field(&runtime, "Guard", 1), Some(1), "exactly once");
+    assert!(
+        scaled(&host, entity(0), 2.0),
+        "the entity arrived: {:?}",
+        host.commands.as_slice()
+    );
+}
+
+/// **A handler with no parameter list hears its event** and ignores the
+/// payload — it is neither skipped nor faulted for the payload it did not
+/// take.
+#[test]
+fn a_handler_with_no_parameters_receives_its_event() {
+    let view = one_guard();
+    let (mut runtime, _) = project_of(
+        r#"
+        event Damaged(int amount);
+
+        behavior Guard {
+            int hits = 0;
+
+            void OnSpawn() { this.Raise(Damaged(25)); }
+
+            on Damaged { hits += 1; }
+        }
+        "#,
+    );
+    let mut host = Host::new();
+
+    run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, u64::MAX);
+    let raised = host.take_events();
+    assert_eq!(raised.len(), 1, "one raise: {raised:?}");
+    let report = run_behaviors(&view, &raised, &mut runtime, &mut host, u64::MAX);
+
+    assert_eq!(report.faulted, 0, "the payload faulted the handler");
+    assert_eq!(field(&runtime, "Guard", 0), Some(1), "the handler ran once");
+}
+
+/// **A contact still reaches a behavior that imports nothing.** `Touched` is
+/// the engine's event — declared by it, in scope without an import — and the
+/// engine raises it by name with the other entity, as `collision_to_script`
+/// does.
+#[test]
+fn touched_reaches_a_behavior_handling_it_without_importing_anything() {
+    let (mut runtime, program) = project_of(
+        r#"
+        behavior Guard {
+            int touches = 0;
+
+            on Touched(Entity other) {
+                touches += 1;
+                other.SetScale(Vec3(3.0, 3.0, 3.0));
+            }
+        }
+        "#,
+    );
+    assert!(
+        program.events.iter().any(|event| event.name == "Touched"
+            && event.params == vec![khora_core::script::ErgonType::Entity]),
+        "the engine declares `Touched(Entity other)`: {:?}",
+        program.events
+    );
+    let mut host = Host::new();
+
+    let mut queue = EventQueue::new();
+    queue.push(
+        khora_core::script::ScriptEvent::new(entity(0), "Touched")
+            .with(ScriptValue::Entity(entity(5))),
+    );
+    let report = run_behaviors(&one_guard(), &queue, &mut runtime, &mut host, u64::MAX);
+
+    assert_eq!(report.faulted, 0);
+    assert_eq!(field(&runtime, "Guard", 0), Some(1), "the handler ran once");
+    assert!(
+        scaled(&host, entity(5), 3.0),
+        "the other entity arrived: {:?}",
+        host.commands.as_slice()
+    );
 }

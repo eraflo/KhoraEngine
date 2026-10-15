@@ -134,6 +134,7 @@ fn update_sees_what_this_frames_events_did() {
             on Damaged(int amount) { health -= amount; }
             void Update(float dt) { seen = health; }
         }
+        event Damaged(int amount);
         "#,
     );
     let mut host = Host::new();
@@ -174,6 +175,7 @@ fn a_states_update_wins_over_the_behaviors_own() {
 
             on Spotted(int by) { become Chase; }
         }
+        event Spotted(int by);
         "#,
     );
     let mut host = Host::new();
@@ -243,6 +245,7 @@ behavior Guard {
         Log("goodbye");
     }
 }
+event Damaged(int amount);
 "#;
 
 /// **Why the farewell runs when the despawn is decided.** A frame later the

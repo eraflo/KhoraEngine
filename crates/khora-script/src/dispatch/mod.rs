@@ -365,11 +365,21 @@ pub fn deliver(
         });
     }
 
+    // The handler runs for the entity the event named, so a native it calls
+    // acts on the right subject — and the state it is in picks the handler.
+    host.entity = Some(event.target);
+
+    // A handler written without parameters takes the event and none of its
+    // payload.
+    let takes_nothing = resolve_member(program, behavior, &event.name, host)
+        .and_then(|name| program.function(&name))
+        .is_some_and(|function| function.arity == 0);
+    let payload: &[ScriptValue] = if takes_nothing { &[] } else { &event.args };
+
     // Through the one bridge, and with the arena, so a handler receives exactly
     // what a raise can carry. The two were separate translations once, and the
     // pair that did not agree is what disabled a behavior for good.
-    let args = event
-        .args
+    let args = payload
         .iter()
         .enumerate()
         .map(|(index, value)| {
@@ -386,10 +396,6 @@ pub fn deliver(
             crate::bridge::to_register(value, &mut host.arena).map_err(|_| refused)
         })
         .collect::<Result<Vec<_>, _>>()?;
-
-    // The handler runs for the entity the event named, so a native it calls
-    // acts on the right subject.
-    host.entity = Some(event.target);
 
     invoke(program, behavior, &event.name, &args, host, fuel)
 }

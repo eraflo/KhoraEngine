@@ -34,13 +34,9 @@ pub struct NativeFn {
     pub cost: u64,
     /// Whether it accepts arguments beyond the declared ones.
     ///
-    /// Almost nothing should. It exists for the calls whose payload the *callee*
-    /// defines rather than the caller — `e.Raise("Damaged", 10)` carries
-    /// whatever the handler declares, and the checker cannot know which handler
-    /// that will be, because the answer depends on the state the entity is in
-    /// when the event arrives. Those arguments are therefore checked at
-    /// delivery, where the handler is finally known, rather than pretended to be
-    /// checked here.
+    /// Nothing the engine exposes is: an argument the checker cannot hold to
+    /// a declared type is one it cannot check. Raising an event, the call that
+    /// once was, is now checked against the event's declaration.
     ///
     /// A native written with `#[ergon_fn]` is never variadic: the macro derives
     /// its signature from typed Rust parameters, which is the whole point.

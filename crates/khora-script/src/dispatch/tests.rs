@@ -86,6 +86,8 @@ behavior Guard {
         health += amount;
     }
 }
+event Damaged(int amount);
+event Healed(int amount);
 "#;
 
 /// `Despawn()` on the running entity — enough to prove an effect leaves a
@@ -407,6 +409,7 @@ fn a_vector_argument_reaches_the_handler() {
 
             on Damaged(Vec3 where) { hit = where; }
         }
+        event Damaged(Vec3 where);
         "#,
     );
     let target = entity(1);
@@ -493,6 +496,7 @@ fn a_slot_the_store_does_not_have_is_not_quietly_a_number() {
                 extra += by;
             }
         }
+        event Ping(int by);
         "#,
     );
 
@@ -544,6 +548,7 @@ fn initialising_gives_an_instance_the_defaults_its_behavior_declares() {
                 seen += by;
             }
         }
+        event Ping(int by);
         "#,
     );
 
@@ -593,10 +598,11 @@ fn a_parameter_shadows_a_field_of_the_same_name() {
         behavior Shadowed {
             int amount = 100;
 
-            on Set(int amount) {
+            on Adjust(int amount) {
                 Log("ignored");
             }
         }
+        event Adjust(int amount);
         "#,
     );
 
@@ -609,7 +615,7 @@ fn a_parameter_shadows_a_field_of_the_same_name() {
     }
     .with_fields(fields);
 
-    let event = ScriptEvent::new(target, "Set").with(ScriptValue::Int(7));
+    let event = ScriptEvent::new(target, "Adjust").with(ScriptValue::Int(7));
     deliver(
         &program,
         "Shadowed",
@@ -640,6 +646,7 @@ fn a_string_field_is_kept_by_value() {
                 label = "boss";
             }
         }
+        event Rename(int unused);
         "#,
     );
 
@@ -711,6 +718,8 @@ mod states {
             health += amount;
         }
     }
+    event Damaged(int amount);
+    event Healed(int amount);
     "#;
 
     fn host_of(program: &Program) -> Host {
@@ -870,6 +879,7 @@ mod states {
                 int health = 100;
                 on Damaged(int amount) { health -= amount; }
             }
+            event Damaged(int amount);
             "#,
         );
         let mut host = Host {
@@ -1109,6 +1119,8 @@ mod state_scoped {
         on Spotted(int by) { become Chase; }
         on Lost(int by) { become Patrol; }
     }
+    event Spotted(int by);
+    event Lost(int by);
     "#;
 
     fn host_of(program: &Program) -> Host {
@@ -1241,6 +1253,7 @@ mod state_scoped {
 
                 on Spotted(int by) { become Chase; }
             }
+            event Spotted(int by);
             "#,
         );
         let mut host = host_of(&program);

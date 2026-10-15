@@ -40,19 +40,27 @@ behavior Guard {
     async void Attack() {
         await 1.0s;
         fired += 1;
-        this.Raise("Resumed");
+        this.Raise(Resumed());
     }
 
     on Spotted(int by) { Attack(); }
-    on Poked(int by) { this.Raise("Heard"); }
+    on Poked(int by) { this.Raise(Heard()); }
 
-    void OnLoad() { this.Raise("Loaded", health); }
-    void OnSpawn() { this.Raise("Spawned"); }
+    void OnLoad() { this.Raise(Loaded(health)); }
+    void OnSpawn() { this.Raise(Spawned()); }
 
-    every 0.5s { this.Raise("Ticked"); }
+    every 0.5s { this.Raise(Ticked()); }
 
-    void Update(float dt) { this.Raise("Updated"); }
+    void Update(float dt) { this.Raise(Updated()); }
 }
+event Spotted(int by);
+event Poked(int by);
+event Loaded(int health);
+event Heard;
+event Resumed;
+event Spawned;
+event Ticked;
+event Updated;
 "#;
 
 /// An attack that waits a second, and an `OnLoad` that waits half a second
@@ -65,22 +73,26 @@ behavior Guard {
     async void Attack() {
         await 1.0s;
         fired += 1;
-        this.Raise("Fired");
+        this.Raise(Fired());
     }
 
     async void Settle() {
         await 0.5s;
         settled += 1;
-        this.Raise("Settled");
+        this.Raise(Settled());
     }
 
     on Spotted(int by) { Attack(); }
 
     void OnLoad() {
-        this.Raise("LoadStarted");
+        this.Raise(LoadStarted());
         Settle();
     }
 }
+event Spotted(int by);
+event Fired;
+event LoadStarted;
+event Settled;
 "#;
 
 /// Ticks every frame, and faults when it is told to divide.
@@ -88,10 +100,12 @@ const FAULTY: &str = r#"
 behavior Guard {
     int zero = 0;
 
-    void Update(float dt) { this.Raise("Ticked"); }
+    void Update(float dt) { this.Raise(Ticked()); }
 
     on Tick(int by) { zero = by / zero; }
 }
+event Tick(int by);
+event Ticked;
 "#;
 
 /// `FAULTY`, fixed: it no longer divides, and the code is not the same length.
@@ -100,10 +114,12 @@ behavior Guard {
     int zero = 0;
     int fixed = 1;
 
-    void Update(float dt) { this.Raise("Ticked"); }
+    void Update(float dt) { this.Raise(Ticked()); }
 
     on Tick(int by) { zero = by; }
 }
+event Tick(int by);
+event Ticked;
 "#;
 
 fn view(delta: f32, arrival: Option<ScriptArrival>) -> ScriptView {
@@ -262,9 +278,11 @@ fn on_load_does_not_run_on_scene_load_or_stop() {
     const ANNOUNCER: &str = r#"
     behavior Guard {
         int health = 100;
-        void OnLoad() { this.Raise("Loaded"); }
-        void OnSpawn() { this.Raise("Spawned"); }
+        void OnLoad() { this.Raise(Loaded()); }
+        void OnSpawn() { this.Raise(Spawned()); }
     }
+    event Loaded;
+    event Spawned;
     "#;
     let mut runtime = runtime_of(ANNOUNCER);
     let mut host = Host::new();
@@ -520,7 +538,8 @@ fn a_spawn_with_no_on_spawn_is_still_recorded() {
 /// writes the fault so a save keeps it.
 #[test]
 fn a_fault_that_cost_nothing_is_still_recorded() {
-    let mut runtime = runtime_of("behavior Guard { on Damaged(int amount) { } }");
+    let mut runtime =
+        runtime_of("behavior Guard { on Damaged(int amount) { } } event Damaged(int amount);");
     let mut host = Host::new();
     frame(&mut runtime, &mut host, &view(0.0, None), &quiet());
 

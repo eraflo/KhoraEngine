@@ -121,10 +121,30 @@ pub fn resolve(entry: &str, loader: &dyn SourceLoader) -> Resolved {
 
     match normalise(entry) {
         Ok(path) => resolver.visit(&path, None),
-        Err(error) => resolver.diagnostics.push(
-            Diagnostic::error(format!("{}: `{entry}`", error.message()), Span::empty(0))
-                .with_note(error.note()),
-        ),
+        Err(error) => {
+            resolver.diagnostics.push(
+                Diagnostic::error(format!("{}: `{entry}`", error.message()), Span::empty(0))
+                    .with_note(error.note()),
+            );
+            // No module was read, so none has anything in scope.
+            return Resolved {
+                modules: resolver.modules,
+                diagnostics: resolver.diagnostics,
+                sources: resolver.sources,
+            };
+        }
+    }
+    // The engine's events are in scope in every module, imported or not: read
+    // last, so the author's files keep their places in the offset space, and
+    // moved ahead of every module, which is where an import would have put it.
+    resolver.visit(crate::ENGINE_EVENTS_MODULE, None);
+    if let Some(at) = resolver
+        .modules
+        .iter()
+        .position(|module| module.path == crate::ENGINE_EVENTS_MODULE)
+    {
+        let events = resolver.modules.remove(at);
+        resolver.modules.insert(0, events);
     }
 
     Resolved {
@@ -173,7 +193,8 @@ impl<'a> Resolver<'a> {
             return;
         }
 
-        let Some(text) = self.loader.load(path) else {
+        let served = (path == crate::ENGINE_EVENTS_MODULE).then(crate::engine_events_source);
+        let Some(text) = served.or_else(|| self.loader.load(path)) else {
             self.diagnostics.push(
                 Diagnostic::error(
                     format!("cannot find module `{path}`"),
@@ -239,6 +260,15 @@ pub fn report_name_clashes(resolved: &Resolved) -> Vec<Diagnostic> {
             match owners.get(item.name()) {
                 // Twice in one module is the checker's to say, as that.
                 Some(first) if *first == resolved_module.path => {}
+                Some(first) if *first == crate::ENGINE_EVENTS_MODULE => clashes.push(
+                    Diagnostic::error(
+                        format!("`{}` is an event the engine raises", item.name()),
+                        item.name_span(),
+                    )
+                    .with_note(
+                        "handle it with `on` — it is declared by the engine and in scope everywhere; choose another name for your own",
+                    ),
+                ),
                 Some(first) => clashes.push(
                     Diagnostic::error(
                         format!(

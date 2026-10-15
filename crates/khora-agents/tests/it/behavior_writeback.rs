@@ -289,7 +289,8 @@ const BRITTLE: Project = &[(
          int ticks = 0;
          void Update(float dt) { ticks += 1; }
          on Damaged(int amount) { hp -= amount; }
-     }",
+     }
+     event Damaged(int amount);",
 )];
 
 /// **A behavior that faults records its fault in its companion**, stamped
@@ -517,7 +518,9 @@ const PACKER: Project = &[(
          on Sum() {
              total = xs[0] + name.Length * 10 + loot.value * 100 + items[0].weight * 1000;
          }
-     }",
+     }
+     event Bump(int by);
+     event Sum;",
 )];
 
 /// **Arrays, text and structs a turn writes reach the behavior's
@@ -645,7 +648,8 @@ const HOT: Project = &[(
          void Update(float dt) { ticks += 1; }
          state Cold { }
          state Burning(float ratio) { }
-     }",
+     }
+     event Heat;",
 )];
 
 /// **A state datum computed infinite does not freeze the state companion.**

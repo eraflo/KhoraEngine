@@ -200,7 +200,8 @@ const COUNTING_BEFORE: Project = &[(
          int version = 1;
          on Hit(int by) { hits += by; }
          void Update(float dt) { ticks += 1; }
-     }",
+     }
+     event Hit(int by);",
 )];
 
 const COUNTING_AFTER: Project = &[(
@@ -217,7 +218,8 @@ const COUNTING_AFTER: Project = &[(
              version = 2;
              if (var b = this.Get(RigidBody)) { mass = b.mass; }
          }
-     }",
+     }
+     event Hit(int by);",
 )];
 
 /// **A reload nobody announced waits, and its module runs nothing
@@ -308,7 +310,9 @@ const WINDING_SOURCE: &str = "behavior Guard {
     state Patrol { }
     state Chase { int missed = 2; }
     on Spotted() { become Chase; }
-}";
+}
+event Strike;
+event Spotted;";
 
 const WINDING: Project = &[("ai/guard.erg", WINDING_SOURCE)];
 
@@ -327,7 +331,10 @@ const WINDING_RETUNED: Project = &[(
          state Chase { int lost = 3; }
          on Ping() { }
          on Spotted() { become Chase; }
-     }",
+     }
+     event Strike;
+     event Ping;
+     event Spotted;",
 )];
 
 /// The guard after an edit that removed `Strike` and `Wind`: a body part-way
@@ -341,7 +348,8 @@ const WINDING_GONE: Project = &[(
          state Patrol { }
          state Chase { int missed = 2; }
          on Spotted() { become Chase; }
-     }",
+     }
+     event Spotted;",
 )];
 
 /// A guard in `Chase`, part-way through `Wind`, its companion holding both.
@@ -493,7 +501,9 @@ const GUARD_IN_A: &str = "behavior Guard {
     on Strike() { Wind(); }
     on Hurt(int by) { health -= by; }
     void OnResumeFailed(string member) { failed += 1; }
-}";
+}
+event Strike;
+event Hurt(int by);";
 
 /// `Guard` as `b.erg` declares it once moved: its fields in another order.
 const GUARD_IN_B: &str = "behavior Guard {
@@ -504,7 +514,9 @@ const GUARD_IN_B: &str = "behavior Guard {
     on Strike() { Wind(); }
     on Hurt(int by) { health -= by; }
     void OnResumeFailed(string member) { failed += 1; }
-}";
+}
+event Strike;
+event Hurt(int by);";
 
 /// `Guard` moved to `b.erg` without the members it was part-way through.
 const GUARD_IN_B_WITHOUT_STRIKE: &str = "behavior Guard {
@@ -513,7 +525,8 @@ const GUARD_IN_B_WITHOUT_STRIKE: &str = "behavior Guard {
     int health = 100;
     on Hurt(int by) { health -= by; }
     void OnResumeFailed(string member) { failed += 1; }
-}";
+}
+event Hurt(int by);";
 
 const NOTHING: &str = "fn void Nothing() { }";
 
@@ -626,7 +639,9 @@ const GUARD_IN_B_WITH_RAGE: &str = "behavior Guard {
     on Strike() { Wind(); }
     on Hurt(int by) { health -= by; }
     void OnResumeFailed(string member) { failed += 1; }
-}";
+}
+event Strike;
+event Hurt(int by);";
 
 const SPLIT_WITH_RAGE: Project = &[("ai/a.erg", NOTHING), ("ai/b.erg", GUARD_IN_B_WITH_RAGE)];
 
@@ -670,7 +685,10 @@ const RESTORED_SOURCE: &str = "behavior Guard {
     state Patrol { }
     state Chase { int missed = 2; on Lost(int by) { missed += by; } }
     on Spotted() { become Chase; }
-}";
+}
+event Strike;
+event Lost(int by);
+event Spotted;";
 
 const RESTORED: Project = &[("ai/guard.erg", RESTORED_SOURCE)];
 
@@ -693,7 +711,11 @@ const RESTORED_EDITED: Project = &[(
          state Chase { int spotted = 4; int missed = 2; on Lost(int by) { missed += by; } }
          on Ping() { }
          on Spotted() { become Chase; }
-     }",
+     }
+     event Strike;
+     event Lost(int by);
+     event Ping;
+     event Spotted;",
 )];
 
 /// **An arrival held across a reload is restored by the code it first runs

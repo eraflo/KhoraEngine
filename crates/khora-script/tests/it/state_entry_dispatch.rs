@@ -15,13 +15,14 @@
 //! Only `become` changes a state from inside a game.
 //!
 //! What entering a state writes is data in the behavior's layout, not a
-//! function compiled beside its members, so an event a script raises under the
-//! name the state entry once had (`__enter`) reaches nothing.
+//! function compiled beside its members, so an event raised under the name the
+//! state entry once had (`__enter`) reaches nothing.
 
 use crate::support::fresh_store;
 use khora_core::ecs::entity::EntityId;
-use khora_script::dispatch::{current_state, deliver, handles, resolve_member};
-use khora_script::{check, compile, lex, parse, Host, Machine, Program, Run};
+use khora_core::script::{ScriptEvent, ScriptValue};
+use khora_script::dispatch::{current_state, deliver, handles};
+use khora_script::{check, compile, lex, parse, Host, Program};
 
 const SUBJECT: EntityId = EntityId {
     index: 1,
@@ -44,16 +45,10 @@ fn build(source: &str) -> Program {
     compiled.program
 }
 
-fn run_to_end(mut machine: Machine, program: &Program, host: &mut Host) {
-    assert_eq!(
-        machine.run(program, host, u64::MAX),
-        Run::Completed,
-        "ran to completion"
-    );
-}
-
-/// A `Patrol` guard raises `"__enter"` on itself with `1`. Nothing handles an
-/// event of that name, so it is not delivered and the guard stays in `Patrol`.
+/// A `Patrol` guard is handed an event named `"__enter"` carrying `1` — as
+/// the engine channel would hand it one; a script cannot name it. Nothing
+/// handles an event of that name, so it is not delivered and the guard stays
+/// in `Patrol`.
 ///
 /// Observed while the state entry was a function: `handles(.., "__enter")`
 /// was true, the event was delivered to the compiler's `Guard.__enter`, and
@@ -62,19 +57,15 @@ fn run_to_end(mut machine: Machine, program: &Program, host: &mut Host) {
 fn an_event_named_like_the_state_entry_is_not_delivered_to_it() {
     let program = build(
         r#"behavior Guard {
-               state Patrol { void Probe() { this.Raise("__enter", 1); } }
+               state Patrol { void Probe() { } }
                state Chase { }
            }"#,
     );
     let mut host = Host::new()
         .with_fields(fresh_store(&program, "Guard"))
         .for_entity(SUBJECT);
-    let probe = resolve_member(&program, "Guard", "Probe", &host).expect("`Probe`");
-    let machine = Machine::new(&program, &probe, &[]).expect("the member");
-    run_to_end(machine, &program, &mut host);
 
-    let events = host.take_events();
-    let raised = events.as_slice().first().expect("one event raised").clone();
+    let raised = ScriptEvent::new(SUBJECT, "__enter").with(ScriptValue::Int(1));
     let delivered = deliver(&program, "Guard", &raised, &mut host, u64::MAX, |id| {
         id == SUBJECT
     });

@@ -92,7 +92,8 @@ fn guard(attack: &str) -> String {
              int extra = 0;
              {attack}
              on Spotted(int by) {{ seen = (by * 2) + Attack(); }}
-         }}"
+         }}
+         event Spotted(int by);"
     )
 }
 

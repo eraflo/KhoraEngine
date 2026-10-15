@@ -165,7 +165,8 @@ fn sorted(mut pairs: Vec<(String, ScriptValue)>) -> Vec<(String, ScriptValue)> {
 const CLEARS_A_FIELD: &str = r#"behavior Guard {
                                     int? best = 4;
                                     on Clear() { best = null; }
-                                }"#;
+                                }
+                                event Clear;"#;
 
 /// **The gap.** `best` set to `null` is saved as `null` and loads as `null`,
 /// whatever the encoding — not as the `4` its declaration gives it.
@@ -212,7 +213,8 @@ const CLEARS_A_STATE_DATUM: &str = r#"behavior Guard {
                                               int? seen = 4;
                                               on Forget() { seen = null; }
                                           }
-                                      }"#;
+                                      }
+                                      event Forget;"#;
 
 /// The same for a state's own data: `seen` cleared inside `Watch` loads as
 /// `null`, not as the `4` entering the state gives it.

@@ -47,6 +47,7 @@ behavior Guard {
         health -= amount;
     }
 }
+event Damaged(int amount);
 "#;
 
 pub(super) fn compile(source: &str) -> Program {
@@ -360,6 +361,7 @@ fn a_faulting_behavior_is_disabled_rather_than_retried() {
             zero = by / zero;
         }
     }
+    event Tick(int by);
     "#;
 
     let mut runtime = ScriptRuntime::new();
@@ -444,6 +446,7 @@ behavior Guard {
         hits += amount;
     }
 }
+event Damaged(int amount);
 "#;
 
 fn damage(entity: EntityId, amount: i64) -> khora_core::script::ScriptEvent {

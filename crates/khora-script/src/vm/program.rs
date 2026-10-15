@@ -303,6 +303,19 @@ pub struct Program {
     /// What each query statement matches, addressed by index.
     #[serde(default)]
     pub queries: Vec<QueryShape>,
+    /// Every event the program knows — its own, the ones it imports and the
+    /// engine's — sorted by name.
+    #[serde(default)]
+    pub events: Vec<EventSignature>,
+}
+
+/// An event's signature: its name and the types of its payload, in order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EventSignature {
+    /// Its name.
+    pub name: String,
+    /// The types of its parameters, in declaration order.
+    pub params: Vec<khora_core::script::ErgonType>,
 }
 
 /// What a query matches: the entities holding every component of

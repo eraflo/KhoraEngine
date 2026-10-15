@@ -32,7 +32,7 @@
 
 use std::collections::HashMap;
 
-use super::keys::statement_key;
+use super::keys::statement_key_with;
 use super::{Compiler, Shape};
 use crate::ast::{BehaviorMember, Stmt};
 use crate::vm::{Reg, Site, SiteKind, SiteLocal, TimerKind};
@@ -49,12 +49,19 @@ pub struct Naming {
     siblings: Vec<HashMap<String, usize>>,
     /// Per open statement, how many of each point it has had.
     points: Vec<HashMap<String, usize>>,
+    /// Each event in scope, by name: its parameter types — part of the key
+    /// of a statement raising it. Kept across functions.
+    pub events: HashMap<String, String>,
 }
 
 impl Naming {
     /// Starts a function.
     pub fn reset(&mut self) {
-        *self = Self::default();
+        let events = std::mem::take(&mut self.events);
+        *self = Self {
+            events,
+            ..Self::default()
+        };
     }
 
     /// The path to the statement being compiled.
@@ -84,7 +91,7 @@ impl Naming {
 
     /// Enters `statement`, naming it among its siblings.
     pub fn enter(&mut self, statement: &Stmt) {
-        let (kind, hash) = statement_key(statement);
+        let (kind, hash) = statement_key_with(statement, &self.events);
         self.enter_step(&format!("{kind}.{hash}"));
     }
 

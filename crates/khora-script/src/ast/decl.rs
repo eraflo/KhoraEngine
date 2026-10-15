@@ -140,6 +140,20 @@ pub struct Param {
     pub span: Span,
 }
 
+/// `event Damaged(int amount, Entity source);` — what a raise names and a
+/// handler takes: its name is its identity, its parameters its signature.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EventDecl {
+    /// Event name.
+    pub name: String,
+    /// Where the name sits.
+    pub name_span: Span,
+    /// What it carries, in order.
+    pub params: Vec<Param>,
+    /// The whole declaration.
+    pub span: Span,
+}
+
 /// `behavior Guard { … }` — the unit attached to an entity.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BehaviorDecl {

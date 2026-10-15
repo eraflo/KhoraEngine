@@ -176,7 +176,9 @@ fn attacker(before_await: &str, after_await: &str, other: &str) -> String {
              }}
              on Spotted(int by) {{ Attack(); }}
              {other}
-         }}"
+         }}
+         event Spotted(int by);
+         event Seen(int by);"
     )
 }
 
@@ -412,7 +414,9 @@ fn watcher(on_resume_failed: &str, handler: &str) -> String {
              }}
              {handler} {{ Attack(); }}
              void OnResumeFailed(string member) {{ {on_resume_failed} }}
-         }}"
+         }}
+         event Spotted(int by);
+         event Seen(int by);"
     )
 }
 
@@ -590,7 +594,9 @@ const ALARMED: &str = "behavior Guard {
                            }
                            on Alarm() { Ring(); }
                            on Spotted(int by) { Ring(); }
-                       }";
+                       }
+                       event Alarm;
+                       event Spotted(int by);";
 
 /// `saved` as a save written before frames named their sites reads: no site,
 /// no function fingerprint and no arguments — the fields absent, so they read

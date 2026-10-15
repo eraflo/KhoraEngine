@@ -105,20 +105,23 @@ const ATTACKER: &str = "behavior Guard {
                                 fired += 1;
                             }
                             on Spotted(int by) { Attack(); }
-                        }";
+                        }
+                        event Spotted(int by);";
 
 /// Another module's `Guard`: same field, different code.
 const OTHER_GUARD: &str = "behavior Guard {
                                int fired = 0;
                                on Spotted(int by) { fired += 10; }
-                           }";
+                           }
+                           event Spotted(int by);";
 
 /// [`OTHER_GUARD`] edited — a method added, so a different program.
 const OTHER_GUARD_EDITED: &str = "behavior Guard {
                                       int fired = 0;
                                       void Idle() { }
                                       on Spotted(int by) { fired += 10; }
-                                  }";
+                                  }
+                                  event Spotted(int by);";
 
 // ─── A reload of one module reaches into another ────────────────────────────
 
@@ -183,7 +186,8 @@ fn a_save_taken_during_a_wait_records_what_is_left_of_it() {
                                          fired += 1;
                                      }
                                      on Spotted(int by) { Attack(); }
-                                 }";
+                                 }
+                                 event Spotted(int by);";
 
     let mut running = ScriptRuntime::new();
     running.add_program(ARMOURY, build(SLOW_ATTACKER));

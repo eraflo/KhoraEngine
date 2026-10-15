@@ -59,6 +59,15 @@ impl Checker {
             match member {
                 BehaviorMember::Method(method) => {
                     self.refuse_reserved(&method.name, method.name_span);
+                    if self.events.contains_key(&method.name) {
+                        // `Hit()` would read as the event's construction, and
+                        // a handler of it would share the method's name.
+                        self.error_note(
+                            format!("`{}` is an event: a method may not have its name", method.name),
+                            method.name_span,
+                            format!("handle the event with `on {}`, or name the method after what it does", method.name),
+                        );
+                    }
                     self.method_names.insert(method.name.clone());
                     let params = method.params.iter().map(|p| self.resolve(&p.ty)).collect();
                     let result = self.resolve(&method.return_ty);
@@ -225,6 +234,7 @@ impl Checker {
                     self.scopes.pop();
                 }
                 BehaviorMember::Handler(handler) => {
+                    self.check_handler_signature(handler);
                     self.scopes.push();
                     for param in &handler.params {
                         let ty = self.resolve(&param.ty);

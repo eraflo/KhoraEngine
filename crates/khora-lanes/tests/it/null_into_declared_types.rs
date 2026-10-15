@@ -154,7 +154,8 @@ fn an_engine_raised_null_never_reaches_an_int_parameter() {
     const SOURCE: &str = r#"behavior Guard {
                                 int last = 0;
                                 on Hurt(int amount) { last = amount; }
-                            }"#;
+                            }
+                            event Hurt(int amount);"#;
     let mut runtime = runtime_of(SOURCE);
     let mut host = Host::new();
     let saved = frame(
@@ -176,12 +177,14 @@ fn an_engine_raised_null_never_reaches_an_int_parameter() {
 const OPTIONAL_BEST: &str = r#"behavior Guard {
                                    int? best = 4;
                                    on Clear() { best = null; }
-                               }"#;
+                               }
+                               event Clear;"#;
 
 const REQUIRED_BEST: &str = r#"behavior Guard {
                                    int best = 4;
                                    on Bump() { best += 1; }
-                               }"#;
+                               }
+                               event Bump;"#;
 
 /// **A hot reload carries `best` by name — but an `int` cannot hold `null`.**
 /// `int? best` cleared, then edited to `int best = 4`: the carried `null` must
@@ -236,7 +239,8 @@ fn a_null_field_crosses_a_reload_that_keeps_it_optional() {
                    int added = 2;
                    int? best = 4;
                    on Clear() { best = null; }
-               }"#,
+               }
+               event Clear;"#,
         ),
     );
     frame(
@@ -298,7 +302,8 @@ fn a_declared_null_state_datum_is_not_what_the_previous_state_left() {
                                 state Rest {
                                     int? z;
                                 }
-                            }"#;
+                            }
+                            event Go;"#;
     let mut runtime = runtime_of(SOURCE);
     let mut host = Host::new();
     let saved = frame(

@@ -43,7 +43,8 @@ const GUARD: &str = r#"behavior Guard {
                                marks[1] = null;
                                spent = [];
                            }
-                       }"#;
+                       }
+                       event Play;"#;
 
 fn build(source: &str) -> Program {
     let lexed = lex(source);

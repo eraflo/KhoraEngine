@@ -38,7 +38,7 @@ fn a_lone_module_resolves() {
     let resolved = resolve("main.erg", &loader);
 
     assert!(!resolved.has_errors(), "{:?}", messages(&resolved));
-    assert_eq!(order(&resolved), vec!["main.erg"]);
+    assert_eq!(order(&resolved), vec!["engine/events.erg", "main.erg"]);
 }
 
 /// Imports come before importers, so a later stage can walk the list forward
@@ -62,7 +62,12 @@ fn modules_arrive_in_dependency_order() {
     assert!(!resolved.has_errors(), "{:?}", messages(&resolved));
     assert_eq!(
         order(&resolved),
-        vec!["math/util.erg", "combat/damage.erg", "main.erg"]
+        vec![
+            "engine/events.erg",
+            "math/util.erg",
+            "combat/damage.erg",
+            "main.erg"
+        ]
     );
 }
 
@@ -98,7 +103,8 @@ fn a_shared_module_is_resolved_once() {
         1,
         "resolved once, got {paths:?}"
     );
-    assert_eq!(paths[0], "shared.erg", "and before both importers");
+    assert_eq!(paths[0], "engine/events.erg", "the engine's events first");
+    assert_eq!(paths[1], "shared.erg", "and before both importers");
 }
 
 /// The milestone. A cycle has no compilation order, and the report names the
@@ -267,7 +273,10 @@ fn paths_are_normalised_before_they_are_compared() {
 
     let resolved = resolve("main.erg", &loader);
     assert!(!resolved.has_errors(), "{:?}", messages(&resolved));
-    assert_eq!(order(&resolved), vec!["ai/steering.erg", "main.erg"]);
+    assert_eq!(
+        order(&resolved),
+        vec!["engine/events.erg", "ai/steering.erg", "main.erg"]
+    );
 }
 
 /// Syntax errors in an imported module surface with the rest, rather than the

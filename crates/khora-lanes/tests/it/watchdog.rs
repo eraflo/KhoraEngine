@@ -85,7 +85,8 @@ fn an_await_resets_the_count_and_its_wait_adds_nothing() {
                           while (true) { WatchdogWall(); }
                       }
                       on Go() { Work(); }
-                  }";
+                  }
+                  event Go;";
     let subject = entity(0);
     let mut stage = Stage::new(source, &[(subject, "Patient")]);
     stage.frame_with(1.0, SLICE, &event(subject, "Go"));
@@ -303,7 +304,8 @@ fn a_spinning_event_handler_is_reported_then_faulted() {
         "behavior Listener {
              int n = 0;
              on Go() { while (true) { n += 1; } }
-         }",
+         }
+         event Go;",
         "Listener",
         "Go",
         |member| member == "Go",
@@ -318,7 +320,8 @@ fn a_spinning_sequence_is_reported_then_faulted() {
              int n = 0;
              async void Work() { await 0.5s; while (true) { n += 1; } }
              on Go() { Work(); }
-         }",
+         }
+         event Go;",
         "Sequencer",
         "Go",
         |member| member == "Go",
@@ -352,7 +355,8 @@ fn a_long_await_is_never_reported_while_a_spinner_beside_it_faults() {
                   behavior Spinner {
                       int n = 0;
                       void Update(float dt) { while (true) { n += 1; } }
-                  }";
+                  }
+                  event Go;";
     let (waiter, spinner) = (entity(0), entity(1));
     let mut stage = Stage::new(source, &[(waiter, "Waiter"), (spinner, "Spinner")]);
     stage.frame_with(1.0, 2_000, &event(waiter, "Go"));
@@ -385,7 +389,8 @@ fn a_loop_awaiting_every_second_runs_for_minutes_unwatched() {
                   behavior Spinner {
                       int n = 0;
                       void Update(float dt) { while (true) { n += 1; } }
-                  }";
+                  }
+                  event Go;";
     let (pulse, spinner) = (entity(0), entity(1));
     let mut stage = Stage::new(source, &[(pulse, "Pulse"), (spinner, "Spinner")]);
     stage.frame_with(1.0, 2_000, &event(pulse, "Go"));
@@ -468,7 +473,8 @@ fn an_await_between_two_long_stretches_resets_the_count() {
                      stage = 2;
                  }}
                  on Go() {{ Work(); }}
-             }}"
+             }}
+             event Go;"
         )
     };
     let patient = stretch("await 1.0s;");

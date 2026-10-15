@@ -53,7 +53,8 @@ behavior Guard {
         speed += 1;
         this.Translate(Vec3(0.0, 1.0, 0.0));
     }
-}";
+}
+event Push(Entity target);";
 
 fn program(source: &str) -> Program {
     let result = compile_module(&MemoryLoader::new().with(MODULE, source), MODULE);

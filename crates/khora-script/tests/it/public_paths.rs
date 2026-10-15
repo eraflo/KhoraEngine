@@ -94,7 +94,6 @@ mod every_pub_mod {
     use khora_script::native::builtins as _;
     use khora_script::native::convert as _;
     use khora_script::native::engine_types as _;
-    use khora_script::native::events as _;
     use khora_script::native::input as _;
     use khora_script::native::ty as _;
     use khora_script::native::world as _;
@@ -148,6 +147,7 @@ fn item_variants(x: &khora_script::ast::Item) {
         khora_script::ast::Item::Function(..) => {}
         khora_script::ast::Item::Behavior(..) => {}
         khora_script::ast::Item::System(..) => {}
+        khora_script::ast::Item::Event(..) => {}
     }
 }
 
@@ -675,6 +675,7 @@ fn fault_variants(x: &khora_script::vm::Fault) {
         khora_script::vm::Fault::BadString => {}
         khora_script::vm::Fault::ArenaFull => {}
         khora_script::vm::Fault::NoSubject => {}
+        khora_script::vm::Fault::Unraisable { .. } => {}
         khora_script::vm::Fault::NativeFailed { .. } => {}
         khora_script::vm::Fault::Unwritable { .. } => {}
         khora_script::vm::Fault::Unreadable { .. } => {}
@@ -751,6 +752,7 @@ fn instruction_variants(x: &khora_script::vm::instruction::Instruction) {
         khora_script::vm::instruction::Instruction::QueryHolds { .. } => {}
         khora_script::vm::instruction::Instruction::WriteRow { .. } => {}
         khora_script::vm::instruction::Instruction::RemoveComponent { .. } => {}
+        khora_script::vm::instruction::Instruction::Raise { .. } => {}
         khora_script::vm::instruction::Instruction::SpawnEntity { .. } => {}
         khora_script::vm::instruction::Instruction::Await { .. } => {}
         khora_script::vm::instruction::Instruction::LoadSelf { .. } => {}
@@ -1742,12 +1744,6 @@ fn module_native_paths_still_resolve() {
     // trait `khora_script::native::convert::ScriptType`: see `script_type_trait_items`
     // trait `khora_script::native::ScriptType`: see `script_type_trait_items`
     // trait `khora_script::ScriptType`: see `script_type_trait_items`
-    let _ = &khora_script::native::events::ERGON_RAISE;
-    let _ = &khora_script::native::ERGON_RAISE;
-    assert!(std::ptr::eq(
-        &khora_script::native::ERGON_RAISE,
-        &khora_script::native::events::ERGON_RAISE
-    ));
     let _ = &khora_script::native::input::ERGON_JUST_PRESSED;
     let _ = &khora_script::native::input::ERGON_PRESSED;
     let _ = type_name::<khora_script::native::ty::NativeTy>();

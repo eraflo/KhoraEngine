@@ -42,6 +42,7 @@ behavior Guard {
         become Chase;
     }
 }
+event Spotted(int by);
 "#;
 
 /// A guard whose attack waits a second before it lands.
@@ -59,6 +60,7 @@ behavior Guard {
         Attack();
     }
 }
+event Spotted(int by);
 "#;
 
 fn view(delta: f32, arrival: Option<ScriptArrival>) -> ScriptView {

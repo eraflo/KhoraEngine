@@ -181,7 +181,8 @@ fn a_void_function_may_end_anywhere() {
              async void Wait() { await 1.0s; }
              state Patrol { void Look() { if (hits > 2) { become Chase; } } }
              state Chase { void Look() { } }
-         }",
+         }
+         event Hit(int n);",
     ];
     for source in sources {
         let found = diagnostics(source);

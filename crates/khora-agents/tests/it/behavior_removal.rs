@@ -185,7 +185,8 @@ const WAITER: Project = &[(
          int landed = 0;
          async void Later() { await 1.0s; landed += 1; }
          on Go() { Later(); }
-     }",
+     }
+     event Go;",
 )];
 
 /// **A behavior removed while it awaits leaves nothing for a save to bring

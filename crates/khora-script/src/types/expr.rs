@@ -365,6 +365,16 @@ impl Checker {
             if name == "Spawn" && !self.functions.contains_key(name) {
                 return self.check_spawn(args, span, context);
             }
+            if self.events.contains_key(name) {
+                for argument in args {
+                    self.check_expr(argument, context);
+                }
+                self.refuse_construction(name, span);
+                return Ty::Error;
+            }
+            if name == "Raise" && !self.functions.contains_key(name) {
+                return self.refuse_free_raise(args, span, context);
+            }
             if self.system.is_some()
                 && crate::native::world::SUBJECT_NATIVES.contains(&name.as_str())
                 && !self.functions.contains_key(name)
@@ -556,11 +566,16 @@ impl Checker {
 
         match ty {
             // Awaiting a duration yields nothing; it is the waiting that
-            // matters.
-            Ty::Duration | Ty::Error => Ty::Void,
-            // Awaiting anything else is a handle whose value is the result.
-            // Until the engine API lands there is nothing more to say.
-            other => other,
+            // matters. A float is a number of seconds.
+            Ty::Duration | Ty::Float | Ty::Error => Ty::Void,
+            other => {
+                self.error_note(
+                    format!("`await` takes a duration, found `{}`", other.name()),
+                    span,
+                    "write `await 0.5s;` — awaiting an event is not supported yet",
+                );
+                Ty::Error
+            }
         }
     }
 

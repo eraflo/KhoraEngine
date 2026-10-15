@@ -60,6 +60,7 @@ behavior Guard {
         Attack();
     }
 }
+event Spotted(int by);
 "#,
 )];
 

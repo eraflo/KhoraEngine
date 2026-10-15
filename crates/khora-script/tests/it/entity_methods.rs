@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! An engine operation whose first parameter is an `Entity` is called **on**
-//! that entity: `this.SetPosition(v)`, `target.Raise("Hit", 3)`,
+//! that entity: `this.SetPosition(v)`, `target.Raise(Hit(3))`,
 //! `enemy.Despawn()`. One spelling — the free form is refused, and the refusal
 //! writes the method form out. `Spawn` has no entity to be called on and stays
 //! a free function. `Set`, `Add`, `Remove`, `Get` and `Has` are the language's
@@ -205,16 +205,17 @@ fn the_free_form_is_refused_with_its_rewrite() {
     );
 }
 
-/// `Raise` is an entity operation too: `target.Raise("Hit", 3)` raises the
+/// `Raise` is an entity operation too: `target.Raise(Hit(3))` raises the
 /// event on `target`, exactly as the free form did, and the free form is
 /// refused with the rewrite.
 #[test]
 fn raise_is_a_method() {
     let program = build(
-        r#"behavior Guard {
-               void Hurt() { this.Raise("Hit", 3); }
+        r#"event Hit(int amount);
+           behavior Guard {
+               void Hurt() { this.Raise(Hit(3)); }
            }
-           fn void Strike(Entity target) { target.Raise("Hit", 3); }"#,
+           fn void Strike(Entity target) { target.Raise(Hit(3)); }"#,
     );
 
     let mut host = run(&program, "Guard.Hurt", &[]);
@@ -231,8 +232,9 @@ fn raise_is_a_method() {
     assert_eq!(raised.as_slice()[0].target, OTHER, "raised on the receiver");
 
     refused_saying(
-        r#"behavior Guard { void Hurt() { Raise(this, "Hit", 3); } }"#,
-        r#"Write `this.Raise("Hit", 3)`"#,
+        r#"event Hit(int amount);
+           behavior Guard { void Hurt() { Raise(this, Hit(3)); } }"#,
+        "Write `this.Raise(Hit(3))`",
     );
 }
 

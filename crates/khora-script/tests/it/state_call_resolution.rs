@@ -98,63 +98,45 @@ fn call(
     finish(machine, program, host, slice)
 }
 
-// ─── A handler is not a method ──────────────────────────────────────────────
+// ─── A handler has no callable namesake ─────────────────────────────────────
 
-/// A state handles `on Hit`. A handler is not callable by name — the checker
-/// never brings it into scope — so inside the state `Hit()` is whatever the
-/// checker resolved it against: the behavior's method, or a free function.
-/// The compiler must call that one, not the handler compiled as
-/// `Guard.Patrol.Hit`.
-#[test]
-fn a_state_handler_does_not_shadow_the_namesake_the_checker_resolved() {
-    let method = build(
-        "behavior Guard {
-             int hits = 0;
-             int Hit() { return 1; }
-             state Patrol {
-                 on Hit(int by) { hits += by; }
-                 int Score() { return Hit(); }
-             }
-         }",
-    );
-    let mut host = instance(&method, "Guard");
-    assert_eq!(
-        call(&method, "Guard", "Score", &[], &mut host, u64::MAX),
-        Value::Int(1),
-        "`Hit()` inside `Patrol` is the behavior's method, not the state's handler"
-    );
-
-    let free = build(
-        "fn int Hit() { return 4; }
-         behavior Guard {
-             int hits = 0;
-             state Patrol {
-                 on Hit(int by) { hits += by; }
-                 int Score() { return Hit(); }
-             }
-         }",
-    );
-    let mut host = instance(&free, "Guard");
-    assert_eq!(
-        call(&free, "Guard", "Score", &[], &mut host, u64::MAX),
-        Value::Int(4),
-        "`Hit()` inside `Patrol` is the free function, not the state's handler"
-    );
+/// Whether the checker refuses `source` with an error naming `` `Hit` ``.
+fn refused_naming_hit(source: &str) -> bool {
+    checker_errors(source).iter().any(|d| {
+        d.message.contains("`Hit`") || d.note.as_deref().is_some_and(|n| n.contains("`Hit`"))
+    })
 }
 
-/// A behavior handles `on Hit`; a free function `Hit()` exists. A handler is
-/// not callable by name, so a member's `Hit()` is the free function — from a
-/// behavior-level member and from inside a state.
+/// **An event's name is global, so no free function shares it.** A handler
+/// `on Hit` can then never shadow a function a call means: `fn int Hit()`
+/// beside `event Hit` is refused, naming `Hit`. Renamed, the function is what
+/// a member's call reaches — from a behavior-level member and from inside a
+/// state.
 #[test]
-fn a_behavior_handler_does_not_shadow_a_free_function_of_its_name() {
+fn a_free_function_named_like_an_event_is_refused() {
+    assert!(
+        refused_naming_hit(
+            "fn int Hit() { return 4; }
+             behavior Guard {
+                 int hits = 0;
+                 on Hit(int by) { hits += by; }
+                 int Outer() { return Hit(); }
+                 state Patrol { int Inner() { return Hit(); } }
+             }
+             event Hit(int by);",
+        ),
+        "a free function named like an event compiled"
+    );
+
     let program = build(
-        "fn int Hit() { return 4; }
+        "fn int Strike() { return 4; }
          behavior Guard {
              int hits = 0;
              on Hit(int by) { hits += by; }
-             int Outer() { return Hit(); }
-             state Patrol { int Inner() { return Hit(); } }
-         }",
+             int Outer() { return Strike(); }
+             state Patrol { int Inner() { return Strike(); } }
+         }
+         event Hit(int by);",
     );
     let mut host = instance(&program, "Guard");
 
@@ -165,6 +147,78 @@ fn a_behavior_handler_does_not_shadow_a_free_function_of_its_name() {
     assert_eq!(
         call(&program, "Guard", "Inner", &[], &mut host, u64::MAX),
         Value::Int(4)
+    );
+}
+
+/// **No method shares an event's name either** — a behavior's or a state's —
+/// or `Hit()` would read as the event's construction. Each is refused naming
+/// `Hit`; renamed, the call inside the state reaches it, not the state's
+/// handler.
+#[test]
+fn a_method_named_like_an_event_is_refused() {
+    assert!(
+        refused_naming_hit(
+            "behavior Guard {
+                 int hits = 0;
+                 int Hit() { return 1; }
+                 state Patrol {
+                     on Hit(int by) { hits += by; }
+                     int Score() { return Hit(); }
+                 }
+             }
+             event Hit(int by);",
+        ),
+        "a behavior method named like an event compiled"
+    );
+    assert!(
+        refused_naming_hit(
+            "behavior Guard {
+                 int hits = 0;
+                 state Patrol {
+                     int Hit() { return 2; }
+                     on Hit(int by) { hits += by; }
+                     int Score() { return Hit(); }
+                 }
+             }
+             event Hit(int by);",
+        ),
+        "a state method named like an event compiled"
+    );
+
+    let method = build(
+        "behavior Guard {
+             int hits = 0;
+             int Base() { return 1; }
+             state Patrol {
+                 on Hit(int by) { hits += by; }
+                 int Score() { return Base(); }
+             }
+         }
+         event Hit(int by);",
+    );
+    let mut host = instance(&method, "Guard");
+    assert_eq!(
+        call(&method, "Guard", "Score", &[], &mut host, u64::MAX),
+        Value::Int(1),
+        "the behavior's method"
+    );
+
+    let state_method = build(
+        "behavior Guard {
+             int hits = 0;
+             state Patrol {
+                 int Bonus() { return 2; }
+                 on Hit(int by) { hits += by; }
+                 int Score() { return Bonus(); }
+             }
+         }
+         event Hit(int by);",
+    );
+    let mut host = instance(&state_method, "Guard");
+    assert_eq!(
+        call(&state_method, "Guard", "Score", &[], &mut host, u64::MAX),
+        Value::Int(2),
+        "the state's method"
     );
 }
 

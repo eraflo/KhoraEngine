@@ -57,6 +57,7 @@ behavior Guard {
         health -= amount;
     }
 }
+event Damaged(int amount);
 "#,
 )];
 

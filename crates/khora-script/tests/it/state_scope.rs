@@ -335,7 +335,8 @@ fn a_behavior_handler_calling_a_states_method_is_refused_by_name() {
              float total = 0.0;
              on Tick(int by) { total += Half(); }
              state Idle { float Half() { return 0.5; } }
-         }",
+         }
+         event Tick(int by);",
         "`Half` belongs to state `Idle`",
     );
     refused_with(
@@ -412,7 +413,8 @@ fn a_state_handler_calls_its_states_method() {
                  on Hit(int by) { hits += by + Bonus(); }
                  int Hits() { return hits; }
              }
-         }",
+         }
+         event Hit(int by);",
     );
     let mut host = instance(&program, "Guard");
     call(

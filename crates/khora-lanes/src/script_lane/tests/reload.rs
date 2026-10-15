@@ -38,6 +38,7 @@ behavior Guard {
         health -= amount;
     }
 }
+event Damaged(int amount);
 "#;
 
 /// The same guard with `health` renamed.
@@ -49,6 +50,7 @@ behavior Guard {
         hp -= amount;
     }
 }
+event Damaged(int amount);
 "#;
 
 /// One guard, already hurt, so a carried value is distinguishable from a
@@ -236,6 +238,7 @@ fn a_reload_re_enables_a_behavior_that_had_faulted() {
             health = amount / zero;
         }
     }
+    event Damaged(int amount);
     "#;
 
     let mut runtime = ScriptRuntime::new();
@@ -460,6 +463,7 @@ mod awaiting {
             hits += 1;
         }
     }
+    event Damaged(int amount);
     "#;
 
     fn view_at(delta: f32) -> ScriptView {

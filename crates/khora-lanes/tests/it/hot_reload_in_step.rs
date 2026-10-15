@@ -156,7 +156,8 @@ const COUNTING: &str = "behavior Guard {
     int hits = 0;
     on Hit(int by) { hits += by; }
     void Update(float dt) { ticks += 1; }
-}";
+}
+event Hit(int by);";
 
 /// The guard after an edit that starts reading `Marker`, which this frame's
 /// view does not project.
@@ -168,7 +169,8 @@ behavior Guard {
     on Hit(int by) { hits += by * 10; }
     void OnSpawn() { greeted = true; }
     void Update(float dt) { ticks += 1; var m = this.Get(Marker); }
-}";
+}
+event Hit(int by);";
 
 /// **While its reload waits, a module's instances take no turn.** The
 /// reload reads a component the view did not project, so it waits a frame;
@@ -298,7 +300,9 @@ const GUARD_IN_A: &str = "behavior Guard {
     on Strike() { Wind(); }
     on Hurt(int by) { health -= by; }
     void OnResumeFailed(string member) { failed += 1; }
-}";
+}
+event Strike;
+event Hurt(int by);";
 
 /// `Guard` as `b.erg` declares it once moved: its fields reordered, its
 /// members as they were.
@@ -310,7 +314,9 @@ const GUARD_IN_B: &str = "behavior Guard {
     on Strike() { Wind(); }
     on Hurt(int by) { health -= by; }
     void OnResumeFailed(string member) { failed += 1; }
-}";
+}
+event Strike;
+event Hurt(int by);";
 
 const NOTHING: &str = "fn void Nothing() { }";
 
@@ -396,14 +402,16 @@ const BROKEN_IN_A: &str = "behavior Guard {
     int health = 100;
     int zero = 0;
     on Hurt(int by) { health = by / zero; }
-}";
+}
+event Hurt(int by);";
 
 /// `Guard` moved to `b.erg`, fixed.
 const FIXED_IN_B: &str = "behavior Guard {
     int zero = 0;
     int health = 100;
     on Hurt(int by) { health -= by; }
-}";
+}
+event Hurt(int by);";
 
 /// **A faulted behavior moved to another module runs again once fixed
 /// there.** An edit is the author's answer to whatever faulted: moving the
@@ -451,7 +459,9 @@ const WINDING: &str = "behavior Guard {
     state Patrol { }
     state Chase { int missed = 2; }
     on Spotted() { become Chase; }
-}";
+}
+event Strike;
+event Spotted;";
 
 /// The guard after an edit that inserts a field and renames the chase's
 /// datum.
@@ -464,7 +474,10 @@ const WINDING_RETUNED: &str = "behavior Guard {
     state Chase { int lost = 3; }
     on Ping() { }
     on Spotted() { become Chase; }
-}";
+}
+event Strike;
+event Ping;
+event Spotted;";
 
 /// **A starved instance a reload carried reports its new state that very
 /// frame.** No fuel reaches it; its wait and its state's data were carried
@@ -507,14 +520,16 @@ const STANDING: &str = "behavior Guard {
     state Patrol { }
     state Chase { int missed = 2; }
     on Spotted() { become Chase; }
-}";
+}
+event Spotted;";
 
 const STANDING_RETUNED: &str = "behavior Guard {
     int hits = 0;
     state Patrol { }
     state Chase { int lost = 3; }
     on Spotted() { become Chase; }
-}";
+}
+event Spotted;";
 
 /// **A quiet instance a reload carried reports its new state too**: it has
 /// nothing to do this frame, yet its state's data are now the new code's.

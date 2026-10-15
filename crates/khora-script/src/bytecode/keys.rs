@@ -24,11 +24,25 @@
 //! Every match below is exhaustive on purpose: a node added to the tree must
 //! decide what it contributes, or two different statements would share a key.
 
+use std::collections::HashMap;
+
 use crate::ast::{BinaryOp, Expr, Pattern, Stmt, TypeRef, UnaryOp};
 
 /// The kind and key of a statement: `("let", "4b1d0a77")`.
 pub fn statement_key(statement: &Stmt) -> (&'static str, String) {
+    statement_key_with(statement, &HashMap::new())
+}
+
+/// [`statement_key`], with each event's signature — `event name → its
+/// parameter types` — hashed where the statement raises it: a raise whose
+/// event changed its payload is another statement, so a frame stopped in it
+/// is not rebuilt with a value of the type the payload had.
+pub fn statement_key_with(
+    statement: &Stmt,
+    signatures: &HashMap<String, String>,
+) -> (&'static str, String) {
     let mut key = Key::new();
+    key.1 = Some(signatures);
     let kind = key.header(statement);
     (kind, key.hex8())
 }
@@ -73,14 +87,15 @@ pub fn type_name(ty: &TypeRef) -> String {
     }
 }
 
-/// A blake3 hash of a syntax tree, spans excluded.
-struct Key(blake3::Hasher);
+/// A blake3 hash of a syntax tree, spans excluded — and the events'
+/// signatures, where known.
+struct Key<'s>(blake3::Hasher, Option<&'s HashMap<String, String>>);
 
-impl Key {
+impl Key<'_> {
     fn new() -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"khora.ergon.statement");
-        Self(hasher)
+        Self(hasher, None)
     }
 
     /// The first four bytes, as eight lowercase hex digits.
@@ -327,6 +342,11 @@ impl Key {
             Expr::Call { callee, args, .. } => {
                 self.tag(14);
                 self.expr(callee);
+                if let (Expr::Ident { name, .. }, Some(signatures)) = (callee.as_ref(), self.1) {
+                    if let Some(signature) = signatures.get(name) {
+                        self.text(signature);
+                    }
+                }
                 self.exprs(args);
             }
             Expr::Field { object, name, .. } => {

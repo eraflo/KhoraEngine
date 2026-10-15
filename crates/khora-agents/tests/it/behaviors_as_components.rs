@@ -145,11 +145,11 @@ fn two_behaviors_run_on_one_entity() {
 const HANDLERS: Project = &[
     (
         "game/shield.erg",
-        "behavior Shield { int taken = 0; on Hit(int amount) { taken += amount; } }",
+        "behavior Shield { int taken = 0; on Hit(int amount) { taken += amount; } } event Hit(int amount);",
     ),
     (
         "game/armor.erg",
-        "behavior Armor { int taken = 0; on Hit(int amount) { taken += amount * 10; } }",
+        "behavior Armor { int taken = 0; on Hit(int amount) { taken += amount * 10; } } event Hit(int amount);",
     ),
     (
         "game/lamp.erg",
@@ -379,7 +379,9 @@ const SENTRY: Project = &[(
          on Spotted(int by) { Attack(); }
          state Calm { }
          state Alert(int level) { int seen = 0; }
-     }",
+     }
+     event Alarm(int level);
+     event Spotted(int by);",
 )];
 
 /// **What a behavior is survives a game save as columns**: taken

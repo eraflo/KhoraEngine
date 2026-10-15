@@ -153,7 +153,9 @@ const GUARD: &str = r#"behavior Guard {
                                names[0] = "b" + ArrayFieldTail();
                            }
                            on Sum() { total = xs[0] + xs[1] + xs[2] + names[0].Length * 100; }
-                       }"#;
+                       }
+                       event Bump;
+                       event Sum;"#;
 
 /// The guard, its fields written by `Bump`, and what the lane recorded.
 fn bumped(source: &str) -> (ScriptRuntime, ScriptSnapshot) {
@@ -240,7 +242,8 @@ const ATTACKER: &str = r#"behavior Guard {
                                   total = xs[0] + xs[1] + xs[2] + names[0].Length * 100;
                               }
                               on Spotted(int by) { Attack(); }
-                          }"#;
+                          }
+                          event Spotted(int by);"#;
 
 /// **A save taken mid-`await` holds the array.** The frozen register is the
 /// array's elements, and whichever encoding carried the save, a fresh runtime

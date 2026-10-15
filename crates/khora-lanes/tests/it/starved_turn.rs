@@ -111,7 +111,8 @@ const GUARD: &str = "behavior Guard {
                          int health = 100;
                          int hits = 0;
                          on Damaged(int amount) { health -= amount; hits += 1; }
-                     }";
+                     }
+                     event Damaged(int amount);";
 
 /// **`OnSpawn` cut short by fuel is never finished.** `call_hook` reports a
 /// suspension as `Ran`, the frame marks the instance spawned, and `OnSpawn` is
@@ -205,7 +206,8 @@ fn a_kept_handler_resumes_into_edited_code_only_where_its_code_is_unchanged() {
                               int hits = 0;
                               void Heal() { health = 999; armour = 999; }
                               on Damaged(int amount) { health -= amount; hits += 1; }
-                          }";
+                          }
+                          event Damaged(int amount);";
     let mut runtime = runtime_of(GUARD);
     let mut host = Host::new();
     let view = view_of("Guard", 0.0, None);
@@ -388,7 +390,8 @@ fn one_instances_wait_is_not_anothers_resume_delay() {
                           StarvedTurnWall();
                           health -= amount;
                       }
-                  }";
+                  }
+                  event Damaged(int amount);";
     let waiter = subject();
     let guard = EntityId {
         index: 1,

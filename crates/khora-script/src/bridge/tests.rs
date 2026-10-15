@@ -208,16 +208,19 @@ fn null_reaches_a_register_as_the_absent_optional() {
 
 /// **An event still refuses it**, now that `null` has a boundary form: the
 /// payload is checked against a handler's `int amount`, which no `null` fits.
-/// Raised from a script, the `Raise` fails and nothing is queued.
+/// A script cannot raise one — the checker holds the payload to the event's
+/// declaration — so the event is built by hand, as the engine would, and its
+/// delivery is refused before the handler runs.
 #[test]
 fn an_event_still_refuses_a_null_payload() {
-    use crate::dispatch::resolve_member;
-    use crate::{check, compile, lex, parse, Host, Machine, Run};
+    use crate::dispatch::{deliver, NotDelivered};
+    use crate::{check, compile, lex, parse, Host};
+    use khora_core::script::ScriptEvent;
 
-    let source = r#"behavior Guard {
-                        int? maybe = null;
-                        on Hurt(int amount) { }
-                        void Shout() { this.Raise("Hurt", maybe); }
+    let source = r#"event Hurt(int amount);
+                    behavior Guard {
+                        int hits = 0;
+                        on Hurt(int amount) { hits += 1; }
                     }"#;
     let lexed = lex(source);
     assert!(lexed.diagnostics.is_empty(), "{:?}", lexed.diagnostics);
@@ -233,28 +236,32 @@ fn an_event_still_refuses_a_null_payload() {
     );
     let program = compiled.program;
 
+    let target = EntityId {
+        index: 1,
+        generation: 1,
+    };
     let layout = program.layout("Guard").expect("a layout");
     let mut host = Host::new()
         .with_fields(layout.fresh_store())
-        .for_entity(EntityId {
-            index: 1,
-            generation: 1,
-        });
+        .for_entity(target);
+    let before = host.fields.clone();
 
-    let shout = resolve_member(&program, "Guard", "Shout", &host).expect("`Shout`");
-    let mut machine = Machine::new(&program, &shout, &[]).expect("the member");
-    let run = machine.run(&program, &mut host, u64::MAX);
+    let event = ScriptEvent::new(target, "Hurt").with(ScriptValue::Null);
+    let refused = deliver(&program, "Guard", &event, &mut host, u64::MAX, |_| true)
+        .expect_err("a `null` payload is refused");
 
-    match run {
-        Run::Faulted(fault) => assert!(
-            format!("{fault:?}").contains("null"),
-            "the refusal names what was refused: {fault:?}"
-        ),
-        other => panic!("raising a `null` payload did not fail: {other:?}"),
-    }
+    assert!(
+        matches!(refused, NotDelivered::UnsupportedArgument { index: 0, .. }),
+        "{refused:?}"
+    );
+    assert!(
+        refused.to_string().contains("null"),
+        "the refusal names what was refused: {refused}"
+    );
+    assert_eq!(host.fields, before, "the handler did not run");
     assert!(
         host.take_events().as_slice().is_empty(),
-        "no event carrying `null` was queued"
+        "nothing was queued"
     );
 }
 

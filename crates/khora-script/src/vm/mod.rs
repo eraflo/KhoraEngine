@@ -53,8 +53,8 @@ mod tests;
 
 pub use instruction::{Instruction, Reg, WriteMode};
 pub use program::{
-    BehaviorLayout, DeclaredComponent, DeclaredField, DeclaredKind, Function, Patch, Program,
-    QueryShape, StateLayout, StructLayout, TimerKind, TimerLayout,
+    BehaviorLayout, DeclaredComponent, DeclaredField, DeclaredKind, EventSignature, Function,
+    Patch, Program, QueryShape, StateLayout, StructLayout, TimerKind, TimerLayout,
 };
 pub use resume::{resume, Abandoned, ResumeTier};
 pub use site::{Site, SiteKind, SiteLocal};
@@ -143,6 +143,14 @@ pub enum Fault {
         field: String,
         /// Why.
         reason: String,
+    },
+    /// A raise whose payload has no form an event carries — a program from
+    /// another build: the checker refuses what the bridge cannot carry.
+    Unraisable {
+        /// The event.
+        event: String,
+        /// Why.
+        why: String,
     },
     /// An engine function refused.
     NativeFailed {
@@ -747,6 +755,7 @@ impl Machine {
             | Instruction::QueryRows { .. }
             | Instruction::QueryHolds { .. }
             | Instruction::RemoveComponent { .. }
+            | Instruction::Raise { .. }
             | Instruction::SpawnEntity { .. } => self.step_command(instruction, program, host),
             Instruction::WriteRow { .. } => self.step_write_row(instruction, program, host),
 

@@ -81,11 +81,37 @@ impl Parser {
         if self.check_keyword(Keyword::Fn) {
             return Ok(Item::Function(self.parse_function()?));
         }
+        // `event` is a word only where a declaration starts — a local or a
+        // parameter may still be called `event`.
+        if matches!(self.peek(), TokenKind::Ident(word) if word == "event")
+            && matches!(self.peek_at(1), TokenKind::Ident(_))
+        {
+            return Ok(Item::Event(self.parse_event()?));
+        }
 
         Err(self.error_with_note(
             "expected a declaration",
-            "a file may declare `behavior`, `system`, `struct`, `component` or `fn`, and start with `import`",
+            "a file may declare `behavior`, `system`, `struct`, `component`, `event` or `fn`, and start with `import`",
         ))
+    }
+
+    /// `event Damaged(int amount);`, `event Opened();` or `event Opened;`.
+    pub(super) fn parse_event(&mut self) -> Parse<EventDecl> {
+        let start = self.span();
+        self.advance(); // `event`
+        let (name, name_span) = self.expect_ident("an event name")?;
+        let params = if self.check(&TokenKind::LParen) {
+            self.parse_params()?
+        } else {
+            Vec::new()
+        };
+        let end = self.expect(TokenKind::Semi, "`;` after the event declaration")?;
+        Ok(EventDecl {
+            name,
+            name_span,
+            params,
+            span: start.to(end),
+        })
     }
 
     pub(super) fn parse_attributes(&mut self) -> Parse<Vec<Attribute>> {

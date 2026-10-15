@@ -225,24 +225,27 @@ const GREETER: &str = r#"behavior Greeter {
                             int greeted = 0;
                             void OnSpawn() {
                                 greeted += 1;
-                                this.Raise("Greeted");
+                                this.Raise(Greeted());
                             }
-                        }"#;
+                        }
+                        event Greeted;"#;
 
 /// Nothing to hold — no field, no state, no countdown — so what it writes back
 /// once it has run is empty but for its lifecycle. Its announcement is
 /// observable only as an event.
 const CHIME: &str = r#"behavior Chime {
-                          void OnSpawn() { this.Raise("Chimed"); }
-                      }"#;
+                          void OnSpawn() { this.Raise(Chimed()); }
+                      }
+                      event Chimed;"#;
 
 /// Announces itself, then walks every frame — so the lane writes its state
 /// every frame.
 const PACER: &str = r#"behavior Pacer {
                           int steps = 0;
-                          void OnSpawn() { this.Raise("Paced"); }
+                          void OnSpawn() { this.Raise(Paced()); }
                           void Update(float dt) { steps += 1; }
-                      }"#;
+                      }
+                      event Paced;"#;
 
 /// An announcement a small slice cuts at the wall: `first` and `Before` happen
 /// before the cut, `second` and `After` after it.
@@ -251,12 +254,14 @@ const HERALD: &str = r#"behavior Herald {
                            int second = 0;
                            void OnSpawn() {
                                first += 1;
-                               this.Raise("Before");
+                               this.Raise(Before());
                                SpawnRecordWall();
                                second += 1;
-                               this.Raise("After");
+                               this.Raise(After());
                            }
-                       }"#;
+                       }
+                       event After;
+                       event Before;"#;
 
 /// Enough for the part of `HERALD`'s `OnSpawn` before the wall, not for the
 /// wall.
@@ -623,8 +628,9 @@ fn a_behavior_added_after_the_save_runs_on_spawn() {
 /// Says goodbye, so a farewell is visible as an event.
 const KEEPER: &str = r#"behavior Keeper {
                            int health = 100;
-                           void OnDespawn() { this.Raise("Gone"); }
-                       }"#;
+                           void OnDespawn() { this.Raise(Gone()); }
+                       }
+                       event Gone;"#;
 
 /// A view of `entities`, each running `Keeper`.
 fn keepers(entities: &[EntityId], resumed: bool) -> ScriptView {

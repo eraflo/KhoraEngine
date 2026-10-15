@@ -340,7 +340,8 @@ const ATTACKER: &str = "behavior Guard {
                                 fired += 1;
                             }
                             on Spotted(int by) { Attack(); }
-                        }";
+                        }
+                        event Spotted(int by);";
 
 /// The same behavior with a field added above `fired`, and the handler that
 /// starts the attack gone: the body that was part-way cannot come back.
@@ -352,7 +353,8 @@ const EDITED_ATTACKER: &str = "behavior Guard {
                                        fired += 1;
                                    }
                                    on Seen(int by) { Attack(); }
-                               }";
+                               }
+                               event Seen(int by);";
 
 /// **A save taken after an edit abandoned a body does not bring it back.** A
 /// guard is waiting inside an attack when the author edits the script,

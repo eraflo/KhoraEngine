@@ -133,7 +133,8 @@ fn a_behavior_first_seen_in_a_starved_frame_has_its_defaults() {
     let source = "behavior Guard {
                       int health = 100;
                       on Damaged(int amount) { health -= amount; }
-                  }";
+                  }
+                  event Damaged(int amount);";
     let mut runtime = runtime_of(source);
     let mut host = Host::new();
 
@@ -183,7 +184,8 @@ fn a_handler_cut_short_by_fuel_is_not_delivered_twice() {
                       int health = 100;
                       int hits = 0;
                       on Damaged(int amount) { health -= amount; hits += 1; }
-                  }";
+                  }
+                  event Damaged(int amount);";
     let mut runtime = runtime_of(source);
     let mut host = Host::new();
     let view = view_of("Guard");
@@ -232,7 +234,8 @@ fn an_awaiting_handler_is_not_delivered_again() {
                           fired += 1;
                       }
                       on Spotted(int by) { Attack(); }
-                  }";
+                  }
+                  event Spotted(int by);";
     let mut runtime = runtime_of(source);
     let mut host = Host::new();
     let mut view = view_of("Guard");
