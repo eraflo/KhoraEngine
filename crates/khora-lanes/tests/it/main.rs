@@ -28,6 +28,7 @@ mod held_text;
 mod hot_reload_in_step;
 mod inventory_fields;
 mod lifecycle_restore;
+mod mail_across_a_play_restart;
 mod nested_array_saves;
 mod null_fields;
 mod null_into_declared_types;

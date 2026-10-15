@@ -533,11 +533,33 @@ fn a_spawn_with_no_on_spawn_is_still_recorded() {
     );
 }
 
-/// **So is a fault that cost nothing.** An event of the wrong shape faults
-/// before any code runs; the instance is disabled all the same, and the lane
+/// **So is a fault in a handler.** The instance is disabled, and the lane
 /// writes the fault so a save keeps it.
 #[test]
-fn a_fault_that_cost_nothing_is_still_recorded() {
+fn a_fault_in_a_handler_is_recorded() {
+    let mut runtime = runtime_of(
+        "behavior Guard { int n = 1; on Damaged(int amount) { n = n / amount; } } \
+         event Damaged(int amount);",
+    );
+    let mut host = Host::new();
+    frame(&mut runtime, &mut host, &view(0.0, None), &quiet());
+
+    let mut dividing = EventQueue::new();
+    dividing.push(ScriptEvent::new(entity(0), "Damaged").with(ScriptValue::Int(0)));
+    let (report, _) = frame(&mut runtime, &mut host, &view(0.0, None), &dividing);
+
+    assert_eq!(report.faulted, 1, "it faulted");
+    let written = recorded(&report);
+    assert!(
+        written.lifecycle.fault.is_some(),
+        "and the fault is written: {written:?}"
+    );
+}
+
+/// **A payload that does not fit writes no fault.** It is dropped before any
+/// code runs, so the instance stays enabled and a save holds no fault for it.
+#[test]
+fn a_payload_that_does_not_fit_records_no_fault() {
     let mut runtime =
         runtime_of("behavior Guard { on Damaged(int amount) { } } event Damaged(int amount);");
     let mut host = Host::new();
@@ -547,11 +569,13 @@ fn a_fault_that_cost_nothing_is_still_recorded() {
     malformed.push(ScriptEvent::new(entity(0), "Damaged"));
     let (report, _) = frame(&mut runtime, &mut host, &view(0.0, None), &malformed);
 
-    assert_eq!(report.faulted, 1, "it faulted");
-    assert_eq!(report.spent, 0, "before any code ran");
-    let written = recorded(&report);
+    assert_eq!(report.faulted, 0, "dropped, not faulted: {report:?}");
     assert!(
-        written.lifecycle.fault.is_some(),
-        "and the fault is written: {written:?}"
+        report
+            .state
+            .iter()
+            .all(|update| update.snapshot.lifecycle.fault.is_none()),
+        "no fault is written: {:?}",
+        report.state
     );
 }

@@ -23,7 +23,10 @@ use std::sync::{Arc, Mutex};
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
-use khora_core::script::{ProblemSeverity, ProblemSource, ScriptProblem, ScriptProblems};
+use khora_core::script::{
+    EventQueue, ProblemSeverity, ProblemSource, ScriptEvent, ScriptProblem, ScriptProblems,
+    ScriptValue,
+};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 use khora_lanes::script_lane::{ScriptRuntime, WATCHDOG_WARN};
@@ -307,6 +310,56 @@ fn a_despawned_slow_bodys_warning_disappears() {
     stage.runtime.retain_live(|_| false);
 
     assert!(engine.report(&mut stage).is_empty());
+}
+
+/// A guard whose health an event moves, counting its frames.
+const HEARING: &str = "behavior Guard {
+                           int health = 100;
+                           int ticks = 0;
+                           void Update(float dt) { ticks += 1; }
+                           on Damaged(int amount) { health -= amount; }
+                       }
+                       event Damaged(int amount);";
+
+/// **An event whose payload does not fit its declaration is a warning**
+/// naming the entity, the behavior, the event, its signature and what came —
+/// reported by `script_problems` under `Running`, while the behavior, not
+/// faulted, keeps running.
+#[test]
+fn a_dropped_event_is_a_warning_naming_entity_behavior_event_and_signature() {
+    let subject = entity(0);
+    let mut stage = Stage::new(HEARING, &[(subject, "Guard")]);
+    stage.frame(1.0, PLENTY);
+
+    let mut wrong = EventQueue::new();
+    wrong.push(ScriptEvent::new(subject, "Damaged").with(ScriptValue::Str("ten".to_owned())));
+    let report = stage.frame_with(1.0, PLENTY, &wrong);
+    assert_eq!(report.faulted, 0, "dropped, not faulted: {report:?}");
+    assert!(!stage.disabled(subject, "Guard"), "still enabled");
+
+    let mut engine = Engine::new();
+    let reported = about(&engine.report(&mut stage), subject);
+
+    assert_eq!(reported.len(), 1, "{reported:?}");
+    let problem = &reported[0];
+    assert_eq!(problem.severity, ProblemSeverity::Warning);
+    assert_eq!(problem.behavior.as_deref(), Some("Guard"));
+    assert_eq!(problem.module.as_deref(), Some(MODULE));
+    assert!(
+        problem.message.contains("Damaged")
+            && problem.message.contains("int")
+            && problem.message.contains("string"),
+        "the event, its signature and what came: {}",
+        problem.message
+    );
+
+    stage.frame(1.0, PLENTY);
+    assert_eq!(
+        stage.int(subject, "Guard", "ticks"),
+        Some(3),
+        "its `Update` ran every frame"
+    );
+    assert_eq!(stage.int(subject, "Guard", "health"), Some(100));
 }
 
 /// **The running report leaves the others alone**: a module's compile error

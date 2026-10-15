@@ -288,15 +288,14 @@ const BRITTLE: Project = &[(
          int hp = 10;
          int ticks = 0;
          void Update(float dt) { ticks += 1; }
-         on Damaged(int amount) { hp -= amount; }
+         on Damaged(int amount) { hp = hp / amount; }
      }
      event Damaged(int amount);",
 )];
 
 /// **A behavior that faults records its fault in its companion**, stamped
-/// with the program it faulted in, and is disabled: `Damaged` without the
-/// amount its handler takes faults at delivery, and the next frames run
-/// nothing of it.
+/// with the program it faulted in, and is disabled: `Damaged(0)` divides by
+/// zero in its handler, and the next frames run nothing of it.
 #[test]
 fn a_behavior_that_faults_records_its_fault_in_the_companion() {
     let mut session = Session::new(World::new(), BRITTLE);
@@ -304,7 +303,7 @@ fn a_behavior_that_faults_records_its_fault_in_the_companion() {
     attach(&mut session.world, brittle, "Brittle", &[]);
     session.frame(0.016);
 
-    session.send(ScriptEvent::new(brittle, "Damaged"));
+    session.send(ScriptEvent::new(brittle, "Damaged").with(ScriptValue::Int(0)));
     session.frame(0.016);
     let ticks = int(&session.world, brittle, "Brittle", "ticks");
     session.frame(0.016);

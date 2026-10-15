@@ -29,10 +29,22 @@
 //!
 //! # What it costs
 //!
-//! One lookup per event, against the program's function table. That is a scan
-//! today, which is right while a program holds tens of functions and a frame
-//! raises tens of events; the shape to change if either grows is the table, not
-//! this.
+//! One lookup per event, in a table each program builds once from its
+//! declared events and the handlers they compiled to ([`HandlerTable`]) — the
+//! code's answer, cached; the entity's state picks among it at delivery. Only
+//! a declared event is in it, so a method or a lifecycle hook is never run by
+//! an event of its name.
+//!
+//! # A payload that does not fit
+//!
+//! The checker holds every script raise to its event's declaration, so a
+//! payload that does not fit came from the engine, or from mail queued before
+//! a reload changed the event. It is refused as a [`NotDelivered::Mismatch`]
+//! — the receiver did nothing wrong, and is not faulted for it.
+
+mod handlers;
+
+pub use handlers::{HandlerTable, Handlers};
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{ScriptEvent, ScriptValue};
@@ -76,6 +88,16 @@ pub enum NotDelivered {
         /// What it was.
         kind: &'static str,
     },
+    /// The payload does not fit the event's declared signature — a count or a
+    /// kind the declaration does not allow.
+    Mismatch {
+        /// The event.
+        event: String,
+        /// Its declared parameter types, in order.
+        expected: Vec<khora_core::script::ErgonType>,
+        /// The kinds of what arrived, in order.
+        got: Vec<&'static str>,
+    },
 }
 
 impl std::fmt::Display for NotDelivered {
@@ -102,6 +124,20 @@ impl std::fmt::Display for NotDelivered {
                 f,
                 "argument {index} is a {kind}, which an event cannot yet carry"
             ),
+            Self::Mismatch {
+                event,
+                expected,
+                got,
+            } => write!(
+                f,
+                "`{event}` carries ({}), but this one carried ({}) — dropped",
+                expected
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                got.join(", ")
+            ),
         }
     }
 }
@@ -118,15 +154,25 @@ pub fn handler_name(behavior: &str, event: &str) -> String {
 
 /// Whether a behavior handles an event, in any state or outside them.
 pub fn handles(program: &Program, behavior: &str, event: &str) -> bool {
-    !is_reserved(event) && program.index_of(&handler_name(behavior, event)).is_some()
-        || !is_reserved(event)
-            && program.layout(behavior).is_some_and(|layout| {
-                layout.states.iter().any(|state| {
-                    program
-                        .index_of(&state_handler_name(behavior, &state.name, event))
-                        .is_some()
-                })
-            })
+    !is_reserved(event) && program.handlers.of(program, behavior, event).is_some()
+}
+
+/// The function handling `event` for the behavior as it stands now — its
+/// current state's handler, else its own — as its index in the program.
+pub fn resolve_handler(
+    program: &Program,
+    behavior: &str,
+    event: &str,
+    host: &Host,
+) -> Option<usize> {
+    if is_reserved(event) {
+        return None;
+    }
+    let handlers = program.handlers.of(program, behavior, event)?;
+    current_state(program, behavior, host)
+        .and_then(|state| handlers.states.get(state))
+        .or(handlers.plain.as_ref())
+        .copied()
 }
 
 /// Whether `event` names something the compiler made rather than a member a
@@ -369,12 +415,25 @@ pub fn deliver(
     // acts on the right subject — and the state it is in picks the handler.
     host.entity = Some(event.target);
 
-    // A handler written without parameters takes the event and none of its
-    // payload.
-    let takes_nothing = resolve_member(program, behavior, &event.name, host)
-        .and_then(|name| program.function(&name))
-        .is_some_and(|function| function.arity == 0);
-    let payload: &[ScriptValue] = if takes_nothing { &[] } else { &event.args };
+    let absent = || NotDelivered::NoHandler {
+        behavior: behavior.to_owned(),
+        event: event.name.clone(),
+    };
+    let handler = resolve_handler(program, behavior, &event.name, host).ok_or_else(absent)?;
+    let function = program.functions.get(handler).ok_or_else(absent)?;
+    // Sorted by name, as the compiler lists them.
+    let signature = program
+        .events
+        .binary_search_by(|known| known.name.as_str().cmp(&event.name))
+        .ok()
+        .and_then(|at| program.events.get(at))
+        .ok_or_else(absent)?;
+
+    // The payload fits the event as declared — an `int` where it says
+    // `float` arriving as that float — or nothing runs. A handler written
+    // without parameters then takes the event and none of it.
+    let payload = fitted(signature, &event.args)?;
+    let payload: &[ScriptValue] = if function.arity == 0 { &[] } else { &payload };
 
     // Through the one bridge, and with the arena, so a handler receives exactly
     // what a raise can carry. The two were separate translations once, and the
@@ -383,21 +442,53 @@ pub fn deliver(
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            let refused = NotDelivered::UnsupportedArgument {
-                index,
-                kind: value.type_name(),
-            };
-            // A handler declares `int amount`, never `int? amount`: a `null`
-            // reaching it would be a value no parameter can be — refused here
-            // as a raise from a script is.
-            if matches!(value, ScriptValue::Null) {
-                return Err(refused);
-            }
-            crate::bridge::to_register(value, &mut host.arena).map_err(|_| refused)
+            crate::bridge::to_register(value, &mut host.arena).map_err(|_| {
+                NotDelivered::UnsupportedArgument {
+                    index,
+                    kind: value.type_name(),
+                }
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    invoke(program, behavior, &event.name, &args, host, fuel)
+    run(program, handler, &args, host, fuel)
+}
+
+/// `args` as the event's declaration takes them, or why not.
+fn fitted(
+    signature: &crate::vm::EventSignature,
+    args: &[ScriptValue],
+) -> Result<Vec<ScriptValue>, NotDelivered> {
+    let mismatch = || NotDelivered::Mismatch {
+        event: signature.name.clone(),
+        expected: signature.params.clone(),
+        got: args.iter().map(ScriptValue::type_name).collect(),
+    };
+    if args.len() != signature.params.len() {
+        return Err(mismatch());
+    }
+    args.iter()
+        .zip(&signature.params)
+        .enumerate()
+        .map(|(index, (value, ty))| {
+            // What no event carries is refused as such before the signature
+            // is read: a list, a struct — and a `null`, since a handler
+            // declares `int amount`, never `int? amount`.
+            if matches!(
+                value,
+                ScriptValue::Null | ScriptValue::Array(_) | ScriptValue::Struct(_)
+            ) {
+                return Err(NotDelivered::UnsupportedArgument {
+                    index,
+                    kind: value.type_name(),
+                });
+            }
+            if !ty.admits(value) {
+                return Err(mismatch());
+            }
+            Ok(ty.widened(value.clone()))
+        })
+        .collect()
 }
 
 /// Runs a member of the behavior, if it declares one under that name.
@@ -423,22 +514,29 @@ pub fn invoke(
     };
 
     let name = resolve_member(program, behavior, member, host).ok_or_else(absent)?;
-    let function = program.function(&name).ok_or_else(absent)?;
+    let index = program.index_of(&name).ok_or_else(absent)?;
+    run(program, index, args, host, fuel)
+}
 
+/// Runs the function at `index` with `args`.
+fn run(
+    program: &Program,
+    index: usize,
+    args: &[Value],
+    host: &mut Host,
+    fuel: u64,
+) -> Result<Delivered, NotDelivered> {
+    let function = &program.functions[index];
+    let wrong_arity = || NotDelivered::WrongArity {
+        handler: function.name.clone(),
+        expected: function.arity,
+        found: args.len(),
+    };
     if function.arity != args.len() {
-        return Err(NotDelivered::WrongArity {
-            handler: name,
-            expected: function.arity,
-            found: args.len(),
-        });
+        return Err(wrong_arity());
     }
 
-    let mut machine =
-        Machine::new(program, &name, args).ok_or_else(|| NotDelivered::WrongArity {
-            handler: name.clone(),
-            expected: function.arity,
-            found: args.len(),
-        })?;
+    let mut machine = Machine::at(program, index, args).ok_or_else(wrong_arity)?;
     let (outcome, spent) = machine.run_counting(program, host, fuel);
 
     // A member that suspended hands its machine back rather than dropping it.

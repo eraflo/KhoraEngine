@@ -259,7 +259,12 @@ impl Machine {
     /// Returns `None` when the function does not exist or the wrong number of
     /// arguments was supplied — a caller error, not a script fault.
     pub fn new(program: &Program, function: &str, args: &[Value]) -> Option<Self> {
-        let index = program.index_of(function)?;
+        Self::at(program, program.index_of(function)?, args)
+    }
+
+    /// [`new`](Self::new), for the function at `index` — what a caller that
+    /// resolved it once already holds.
+    pub fn at(program: &Program, index: usize, args: &[Value]) -> Option<Self> {
         let target = program.functions.get(index)?;
         if args.len() != target.arity {
             return None;

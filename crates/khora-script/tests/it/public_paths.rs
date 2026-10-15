@@ -416,6 +416,7 @@ fn not_delivered_variants(x: &khora_script::dispatch::NotDelivered) {
         khora_script::dispatch::NotDelivered::NoHandler { .. } => {}
         khora_script::dispatch::NotDelivered::WrongArity { .. } => {}
         khora_script::dispatch::NotDelivered::UnsupportedArgument { .. } => {}
+        khora_script::dispatch::NotDelivered::Mismatch { .. } => {}
     }
 }
 

@@ -118,7 +118,7 @@ impl Lane for BudgetedScriptLane {
             .get_ref::<Channel<ScriptReload>>()
             .map(|c| c.drain())
             .unwrap_or_default();
-        let from_engine = ctx
+        let mut from_engine = ctx
             .get_ref::<Channel<ScriptEvent>>()
             .map(|c| c.drain())
             .unwrap_or_default();
@@ -136,6 +136,16 @@ impl Lane for BudgetedScriptLane {
         apply_reloads(runtime, &reloads, &view.components, catalog.as_ref());
         if let Some(catalog) = &catalog {
             publish_reads(runtime, catalog);
+        }
+
+        // A play session starting over starts from its scene: what was raised
+        // in the last one — by scripts, or by the engine since nothing ran —
+        // belongs to a world that is gone, and could reach an entity whose id
+        // was given again. The first session keeps what was sent before it.
+        let played_before = runtime.note_frame();
+        if view.resumed && played_before {
+            runtime.take_pending();
+            from_engine.clear();
         }
 
         // A view that holds nothing while instances are still held has just

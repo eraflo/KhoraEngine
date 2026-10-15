@@ -401,14 +401,25 @@ fn a_faulting_behavior_is_disabled_rather_than_retried() {
 /// One behavior's fault is one behavior's fault.
 #[test]
 fn a_fault_does_not_stop_the_others() {
+    // A guard whose handler divides by what it is handed: a zero is a fault.
+    const SPLITTER: &str = r#"
+    behavior Guard {
+        int health = 100;
+
+        on Damaged(int amount) {
+            health -= 100 / amount;
+        }
+    }
+    event Damaged(int amount);
+    "#;
+
     let view = view_of(3);
-    let mut runtime = runtime_with_guard();
+    let mut runtime = runtime_of(SPLITTER);
     let mut host = Host::new();
 
-    // An event whose handler does not exist on this behavior is ignored; an
-    // event with the wrong shape is a fault for that entity alone.
+    // A handler that faults is a fault for that entity alone.
     let mut events = EventQueue::new();
-    events.push(ScriptEvent::new(entity(0), "Damaged"));
+    events.push(ScriptEvent::new(entity(0), "Damaged").with(ScriptValue::Int(0)));
     for index in 1..3 {
         events.push(ScriptEvent::new(entity(index), "Damaged").with(ScriptValue::Int(10)));
     }

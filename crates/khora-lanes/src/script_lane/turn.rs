@@ -126,6 +126,9 @@ pub(super) struct Progress {
     /// A body this turn found running past the watchdog's first limit: its
     /// member and where it stands.
     pub(super) slow: Option<(String, String)>,
+    /// The events this turn dropped, a payload their handler could not take:
+    /// each event and why.
+    pub(super) dropped: Vec<(String, String)>,
 }
 
 /// `OnLoad` has finished: the body the load restored is the one owed next.
@@ -511,6 +514,17 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
             // Delivered all the same: it was offered and declined, and putting
             // it back would offer it again every frame forever.
             Err(NotDelivered::NoHandler { .. }) => delivered += 1,
+            // A payload its handler cannot take came from the engine, or was
+            // queued before a reload changed the event: the receiver did
+            // nothing wrong. Dropped and reported; it keeps running.
+            Err(
+                why @ (NotDelivered::Mismatch { .. }
+                | NotDelivered::WrongArity { .. }
+                | NotDelivered::UnsupportedArgument { .. }),
+            ) => {
+                progress.dropped.push((event.name.clone(), why.to_string()));
+                delivered += 1;
+            }
             Err(other) => {
                 return Outcome::Faulted {
                     spent,

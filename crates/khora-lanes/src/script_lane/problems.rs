@@ -16,7 +16,9 @@
 //! the scripting world changed, the `Running` source of the project's
 //! [`ScriptProblems`] is rebuilt from it — an error for every instance a fault
 //! disabled, a warning for every body running past the watchdog's first
-//! limit. An instance re-enabled, or gone, leaves the list with it.
+//! limit, and one for every event an instance was sent with a payload its
+//! handler could not take. An instance re-enabled, or gone, leaves the list
+//! with it.
 
 use std::sync::{Arc, Mutex};
 
@@ -25,7 +27,9 @@ use khora_core::script::{ProblemSeverity, ProblemSource, ScriptProblem, ScriptPr
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 
-use super::runtime::{member_of, ScriptRuntime};
+use khora_core::ecs::entity::EntityId;
+
+use super::runtime::{member_of, Instance, ScriptRuntime};
 use super::watchdog::WATCHDOG_WARN;
 
 impl ScriptRuntime {
@@ -36,45 +40,68 @@ impl ScriptRuntime {
             (a.index, a.generation, a_name).cmp(&(b.index, b.generation, b_name))
         });
         held.into_iter()
-            .filter_map(|((entity, behavior), instance)| {
+            .flat_map(|((entity, behavior), instance)| {
                 let module = (!instance.module.is_empty()).then(|| instance.module.clone());
-                let problem = |severity, message: String, note: Option<String>| ScriptProblem {
-                    severity,
+                let dropped = instance.dropped.iter().map(move |(event, why)| ScriptProblem {
+                    severity: ProblemSeverity::Warning,
                     module: module.clone(),
                     line: 0,
                     column: 0,
-                    message,
-                    note,
+                    message: format!("`{behavior}` was sent `{event}` it could not take: {why}"),
+                    note: Some(
+                        "a script's raise is checked against the event; this one came from the engine, or was queued before the event changed".to_owned(),
+                    ),
                     entity: Some(*entity),
                     behavior: Some(behavior.clone()),
-                };
-                if instance.disabled {
-                    let fault = instance.fault.as_ref()?;
-                    return Some(problem(
-                        ProblemSeverity::Error,
-                        format!("`{behavior}` faulted and was disabled: {}", fault.reason),
-                        Some("an edit to its module runs it again".to_owned()),
-                    ));
-                }
-                let pending = instance
-                    .pending
-                    .as_ref()
-                    .filter(|pending| pending.running >= WATCHDOG_WARN)?;
-                let program = self.program(&instance.module)?;
-                Some(problem(
-                    ProblemSeverity::Warning,
-                    format!(
-                        "`{behavior}`'s `{}` has run {:.0} s of game time without finishing — at {}",
-                        member_of(pending, program),
-                        pending.running,
-                        pending.machine.standing(program)
-                    ),
-                    Some(
-                        "a loop with no `await` never ends; the watchdog stops it at 60 s".to_owned(),
-                    ),
-                ))
+                });
+                self.instance_problem(*entity, behavior, instance)
+                    .into_iter()
+                    .chain(dropped)
             })
             .collect()
+    }
+
+    /// An instance's fault or long-running body, if it has one.
+    fn instance_problem(
+        &self,
+        entity: EntityId,
+        behavior: &str,
+        instance: &Instance,
+    ) -> Option<ScriptProblem> {
+        let module = (!instance.module.is_empty()).then(|| instance.module.clone());
+        let problem = |severity, message: String, note: Option<String>| ScriptProblem {
+            severity,
+            module: module.clone(),
+            line: 0,
+            column: 0,
+            message,
+            note,
+            entity: Some(entity),
+            behavior: Some(behavior.to_owned()),
+        };
+        if instance.disabled {
+            let fault = instance.fault.as_ref()?;
+            return Some(problem(
+                ProblemSeverity::Error,
+                format!("`{behavior}` faulted and was disabled: {}", fault.reason),
+                Some("an edit to its module runs it again".to_owned()),
+            ));
+        }
+        let pending = instance
+            .pending
+            .as_ref()
+            .filter(|pending| pending.running >= WATCHDOG_WARN)?;
+        let program = self.program(&instance.module)?;
+        Some(problem(
+            ProblemSeverity::Warning,
+            format!(
+                "`{behavior}`'s `{}` has run {:.0} s of game time without finishing — at {}",
+                member_of(pending, program),
+                pending.running,
+                pending.machine.standing(program)
+            ),
+            Some("a loop with no `await` never ends; the watchdog stops it at 60 s".to_owned()),
+        ))
     }
 }
 

@@ -366,6 +366,7 @@ pub fn run_behaviors(
                 after_load: state.after_load.take(),
                 resume_failed: std::mem::take(&mut state.resume_failed),
                 slow: None,
+                dropped: Vec::new(),
             };
 
             // Brought back by a load as the save had it, it owes nothing: what
@@ -431,6 +432,14 @@ pub fn run_behaviors(
             state.after_load = progress.after_load;
             state.resume_failed = progress.resume_failed;
             state.farewelled |= leaving;
+            for (event, why) in progress.dropped {
+                log::warn!(
+                    "script `{}` on {:?}: `{event}` dropped — {why}",
+                    program.behavior,
+                    instance.entity
+                );
+                state.dropped.insert(event, why);
+            }
 
             let farewell_cost = farewell.unwrap_or(0);
             report.spent += farewell_cost;

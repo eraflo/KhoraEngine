@@ -307,6 +307,10 @@ pub struct Program {
     /// engine's — sorted by name.
     #[serde(default)]
     pub events: Vec<EventSignature>,
+    /// Which function handles each event, built from the above the first
+    /// time a delivery asks — never saved, rebuilt after a program is read.
+    #[serde(skip)]
+    pub handlers: crate::dispatch::HandlerTable,
 }
 
 /// An event's signature: its name and the types of its payload, in order.

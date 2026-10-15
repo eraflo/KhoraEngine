@@ -85,6 +85,7 @@ fn counting_program(limit: i64) -> Program {
         declared: Vec::new(),
         queries: Vec::new(),
         events: Vec::new(),
+        handlers: Default::default(),
     }
 }
 
@@ -138,6 +139,7 @@ fn calling_program() -> Program {
         declared: Vec::new(),
         queries: Vec::new(),
         events: Vec::new(),
+        handlers: Default::default(),
     }
 }
 
@@ -292,6 +294,7 @@ fn float_arithmetic_works_and_stays_float() {
         declared: Vec::new(),
         queries: Vec::new(),
         events: Vec::new(),
+        handlers: Default::default(),
     };
     assert_eq!(run_to_completion(&program, "Half"), Value::Float(1.5));
 }
@@ -332,6 +335,7 @@ fn integer_division_by_zero_faults_but_float_does_not() {
         declared: Vec::new(),
         queries: Vec::new(),
         events: Vec::new(),
+        handlers: Default::default(),
     };
     let mut machine = Machine::new(&int_program, "Bad", &[]).expect("entry exists");
     assert_eq!(
@@ -371,6 +375,7 @@ fn integer_division_by_zero_faults_but_float_does_not() {
         declared: Vec::new(),
         queries: Vec::new(),
         events: Vec::new(),
+        handlers: Default::default(),
     };
     let Value::Float(result) = run_to_completion(&float_program, "Inf") else {
         panic!("expected a float");
@@ -416,6 +421,7 @@ fn large_integers_compare_exactly() {
         declared: Vec::new(),
         queries: Vec::new(),
         events: Vec::new(),
+        handlers: Default::default(),
     };
     assert_eq!(
         run_to_completion(&program, "Compare"),
@@ -453,6 +459,7 @@ fn unbounded_recursion_faults_instead_of_exhausting_memory() {
         declared: Vec::new(),
         queries: Vec::new(),
         events: Vec::new(),
+        handlers: Default::default(),
     };
     let mut machine = Machine::new(&program, "Forever", &[]).expect("entry exists");
     assert_eq!(
@@ -491,6 +498,7 @@ fn yield_suspends_once_and_moves_on() {
         declared: Vec::new(),
         queries: Vec::new(),
         events: Vec::new(),
+        handlers: Default::default(),
     };
 
     let mut machine = Machine::new(&program, "Pause", &[]).expect("entry exists");
@@ -531,6 +539,7 @@ fn falling_off_the_end_completes() {
         declared: Vec::new(),
         queries: Vec::new(),
         events: Vec::new(),
+        handlers: Default::default(),
     };
     let mut machine = Machine::new(&program, "Empty", &[]).expect("entry exists");
     assert_eq!(
@@ -575,6 +584,7 @@ fn faults_report_instead_of_panicking() {
         declared: Vec::new(),
         queries: Vec::new(),
         events: Vec::new(),
+        handlers: Default::default(),
     };
     let mut machine = Machine::new(&bad_register, "Bad", &[]).expect("entry exists");
     assert!(matches!(
@@ -600,6 +610,7 @@ fn faults_report_instead_of_panicking() {
         declared: Vec::new(),
         queries: Vec::new(),
         events: Vec::new(),
+        handlers: Default::default(),
     };
     let mut machine = Machine::new(&bad_jump, "Bad", &[]).expect("entry exists");
     assert_eq!(
@@ -634,6 +645,7 @@ fn faults_report_instead_of_panicking() {
         declared: Vec::new(),
         queries: Vec::new(),
         events: Vec::new(),
+        handlers: Default::default(),
     };
     let mut machine = Machine::new(&bad_type, "Bad", &[]).expect("entry exists");
     assert_eq!(
@@ -700,6 +712,7 @@ fn a_callee_starts_with_clean_registers() {
         declared: Vec::new(),
         queries: Vec::new(),
         events: Vec::new(),
+        handlers: Default::default(),
     };
     assert_eq!(run_to_completion(&program, "Main"), Value::Unit);
 }

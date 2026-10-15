@@ -341,8 +341,9 @@ fn a_behavior_can_be_asked_what_it_handles() {
     assert!(!handles(&program, "Chest", "Damaged"));
 }
 
-/// An event carrying the wrong number of arguments means the script was
-/// compiled against a different definition of it — which the message says.
+/// An event carrying the wrong number of arguments does not fit the event's
+/// declared signature — refused as a mismatch, naming the event and what it
+/// declares, before anything runs.
 #[test]
 fn an_event_with_the_wrong_arity_is_refused() {
     let program = build(GUARD);
@@ -360,8 +361,15 @@ fn an_event_with_the_wrong_arity_is_refused() {
     )
     .expect_err("Damaged takes one argument");
 
-    assert!(matches!(refused, NotDelivered::WrongArity { .. }));
-    assert!(refused.to_string().contains("different definition"));
+    assert!(
+        matches!(refused, NotDelivered::Mismatch { .. }),
+        "{refused:?}"
+    );
+    let said = refused.to_string();
+    assert!(
+        said.contains("Damaged") && said.contains("int"),
+        "the refusal names the event and its signature: {said}"
+    );
     assert_eq!(health(&host), 100, "nothing ran");
 }
 

@@ -52,6 +52,7 @@ mod entity_field_reads;
 mod entity_methods;
 mod ergon_fn;
 mod events_declared;
+mod events_delivered;
 mod events_handled;
 mod events_raised;
 mod field_path_writes_under_fuel;
