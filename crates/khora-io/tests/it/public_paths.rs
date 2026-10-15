@@ -120,7 +120,7 @@ mod every_pub_mod {
 // ---------------------------------------------------------------------------
 
 fn asset_change_event_fields(x: &khora_io::asset::AssetChangeEvent) {
-    let _ = (&x.kind, &x.rel_path, &x.uuid);
+    let _ = (&x.kind, &x.root, &x.rel_path);
 }
 
 fn asset_change_kind_variants(x: &khora_io::asset::AssetChangeKind) {

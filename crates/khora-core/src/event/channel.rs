@@ -253,6 +253,23 @@ impl<T: Supersedes> Channel<T> {
         ring.items.drain(..).collect()
     }
 
+    /// Keeps only the held items `keep` accepts.
+    ///
+    /// For a queue its consumer drains — a reload, a declaration — that the
+    /// sender takes something back from before it is read. A cursor a reader
+    /// holds past a removed item moves by it: such a reader may miss what
+    /// followed, so a channel read by cursor is not withdrawn from.
+    pub fn retain(&self, mut keep: impl FnMut(&T) -> bool) {
+        let Ok(mut ring) = self.ring.write() else {
+            log::error!(
+                "the {} channel is poisoned; nothing is withdrawn",
+                std::any::type_name::<T>()
+            );
+            return;
+        };
+        ring.items.retain(|item| keep(item));
+    }
+
     /// How many sends were lost, since the channel was made.
     ///
     /// Not a diagnostic afterthought: a channel that silently discards is a

@@ -112,28 +112,28 @@ fn main() -> Result<()> {
         let shader_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../crates/khora-infra/src/graphics/shader/shaders");
         if let Ok(shader_dir) = shader_dir.canonicalize() {
-            match khora_sdk::AssetWatcher::new(&shader_dir) {
-                Ok(watcher) => {
-                    runtime.resources.insert(Arc::new(watcher));
-                    log::info!(
-                        "sandbox: watching {} for shader hot-reload",
-                        shader_dir.display()
-                    );
-                }
-                Err(e) => log::warn!(
+            let watched = runtime
+                .resources
+                .get::<Arc<khora_sdk::AssetWatch>>()
+                .map(|watch| watch.watch(&shader_dir));
+            match watched {
+                Some(Ok(())) => log::info!(
+                    "sandbox: watching {} for shader hot-reload",
+                    shader_dir.display()
+                ),
+                Some(Err(e)) => log::warn!(
                     "sandbox: shader hot-reload disabled ({}): {:#}",
                     shader_dir.display(),
                     e
                 ),
+                None => log::warn!("sandbox: the engine holds no AssetWatch"),
             }
         }
 
         // Ergon. Resolved from this crate's compile-time location for the same
         // reason as the shaders above: the sandbox is run from the checkout.
-        //
-        // The watcher slot is already spent on the shader tree, so `mount`
-        // compiles what is there and leaves watching alone — the scripts run,
-        // and editing one takes a restart until the multi-root watcher lands.
+        // Its own root on the engine's watch, beside the shader tree's: both
+        // hot-reload.
         let script_assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
         khora_sdk::scripts::mount(runtime, &script_assets);
     })?;

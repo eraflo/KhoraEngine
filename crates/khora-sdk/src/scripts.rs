@@ -11,122 +11,212 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 //! Pointing the engine at a project's scripts.
 //!
-//! The queues live in the engine bootstrap, for every application. What only
-//! the application knows is **where the scripts are**: a game watches the
+//! The queues live in the engine for every application ([`install`]). What
+//! only the application knows is **where the scripts are**: a game watches the
 //! `assets/` beside its executable, the editor watches whichever project is
-//! open, and a packed runtime watches nothing at all.
-//!
-//! This used to live inside `run_default`, which one binary calls. The editor
-//! and the sandbox therefore ran the scripting agent and its lane over a
-//! program table nothing could fill.
+//! open — and changes it while running — and a packed runtime watches nothing
+//! at all. So mounting and unmounting take the runtime shared, at any frame.
 
-use std::path::Path;
-use std::sync::Arc;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
+use khora_core::script::ScriptCatalog;
 use khora_core::Runtime;
-use khora_io::asset::AssetWatcher;
+use khora_io::asset::AssetWatch;
+use khora_io::script::declarations::{
+    declaration_channel, DeclaredComponents, PendingDeclarations, ScriptDeclarations,
+};
+use khora_io::script::hot_reload::{
+    load_all, load_all_announcing, module_names, reload_channel, PendingReloads,
+};
 
-/// Watches `assets_root` and compiles the scripts already in it.
+/// Where the scripts are found under an assets root.
+const SCRIPT_DIR: &str = "scripts";
+
+/// The modules each mounted root brought in, by root: what an unmount takes
+/// back.
+#[derive(Debug, Default)]
+pub struct MountedScripts(Mutex<BTreeMap<PathBuf, BTreeSet<String>>>);
+
+impl MountedScripts {
+    fn record(&self, root: &Path, modules: impl IntoIterator<Item = String>) {
+        let mut mounted = self.lock();
+        mounted
+            .entry(root.to_path_buf())
+            .or_default()
+            .extend(modules);
+    }
+
+    fn forget(&self, root: &Path) -> BTreeSet<String> {
+        self.lock().remove(root).unwrap_or_default()
+    }
+
+    /// The modules the roots still mounted bring in — recorded at their mount,
+    /// and on disk now.
+    fn others(&self) -> BTreeSet<String> {
+        self.lock()
+            .iter()
+            .flat_map(|(root, recorded)| {
+                recorded
+                    .iter()
+                    .cloned()
+                    .chain(module_names(&root.join(SCRIPT_DIR)))
+            })
+            .collect()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<PathBuf, BTreeSet<String>>> {
+        match self.0.lock() {
+            Ok(mounted) => mounted,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+}
+
+/// Puts what scripting needs into `runtime`, each only where it is absent:
+/// the engine's [`AssetWatch`], the queues of compiled programs and of
+/// declarations, the engine's event channel, the memory of who declares
+/// what, the [`ScriptCatalog`], and the record of what is mounted.
+///
+/// For every application, by the engine — before the application's own
+/// bootstrap runs, so it may mount there, and again at the bootstrap, which
+/// finds them in place. An empty queue costs nothing; a missing one makes a
+/// subsystem that looks wired and is not.
+pub fn install(runtime: &mut Runtime) {
+    let resources = &mut runtime.resources;
+    if resources.get::<Arc<AssetWatch>>().is_none() {
+        resources.insert(Arc::new(AssetWatch::default()));
+    }
+    if resources.get::<PendingReloads>().is_none() {
+        resources.insert(reload_channel());
+    }
+    if resources
+        .get::<khora_core::event::Channel<khora_core::script::ScriptEvent>>()
+        .is_none()
+    {
+        resources.insert(khora_core::script::engine_event_channel());
+    }
+    if resources.get::<PendingDeclarations>().is_none() {
+        resources.insert(declaration_channel());
+    }
+    if resources.get::<Arc<Mutex<DeclaredComponents>>>().is_none() {
+        resources.insert(Arc::new(Mutex::new(DeclaredComponents::default())));
+    }
+    if resources.get::<Arc<ScriptCatalog>>().is_none() {
+        resources.insert(Arc::new(ScriptCatalog::default()));
+    }
+    if resources.get::<Arc<MountedScripts>>().is_none() {
+        resources.insert(Arc::new(MountedScripts::default()));
+    }
+}
+
+/// Mounts the scripts under `assets_root`, at any frame: arms the root on the
+/// engine's `AssetWatch`, compiles every module under `assets_root/scripts`,
+/// sends what they declare and what they compiled to, and announces what each
+/// reads to the `ScriptCatalog`.
 ///
 /// Returns how many modules compiled. Safe to call with a directory that does
 /// not exist — a project without scripts is not an error, and neither is a
 /// packed build with no source tree.
-///
-/// Two things happen here, and they are different:
-///
-/// - **The initial load.** The hot-reload pump reacts to *changes*, so without
-///   this a game starts with no programs and its scripts only begin working
-///   once someone saves a file. It takes the same road a reload does, so a
-///   program reaches the runtime one way rather than two.
-/// - **The watcher**, and only if the slot is free. An `AssetWatcher` derives an
-///   asset's identity from its path relative to **one** root, so a runtime holds
-///   exactly one. An application that already registered one — the sandbox
-///   watches the engine's shader tree — keeps it, and its scripts load without
-///   hot-reload until the multi-root watcher lands.
-pub fn mount(runtime: &mut Runtime, assets_root: &Path) -> usize {
+pub fn mount(runtime: &Runtime, assets_root: &Path) -> usize {
     if !assets_root.is_dir() {
-        log::debug!(
-            "scripts::mount: {} is not a directory — no scripts, no watcher",
+        log::info!(
+            "scripts: {} does not exist — nothing to mount",
             assets_root.display()
         );
         return 0;
     }
-
-    // The watcher only if nobody claimed the slot. An `AssetWatcher` translates
-    // a path against **one** root to derive an asset's identity, so there is
-    // exactly one per runtime today — the sandbox spends its on the engine's
-    // shader tree, which is a legitimate use.
-    //
-    // The initial load below does not need it, and that split matters: it is
-    // what makes a project's scripts *run* everywhere, while hot-reloading them
-    // waits on the multi-root watcher (`docs/plans/2026-08-07_engine-owned-hot-reload.md`).
-    if runtime.resources.get::<Arc<AssetWatcher>>().is_none() {
-        match AssetWatcher::new(assets_root) {
-            Ok(watcher) => {
-                runtime.resources.insert(Arc::new(watcher));
-                log::info!("scripts::mount: watching {}", assets_root.display());
+    // Watched whether or not it holds scripts yet: the first one saved under
+    // it is then compiled as it lands.
+    match runtime.resources.get::<Arc<AssetWatch>>() {
+        Some(watch) => {
+            if let Err(error) = watch.watch(assets_root) {
+                log::warn!(
+                    "scripts: {} is not watched, edits take a restart: {error:#}",
+                    assets_root.display()
+                );
             }
-            Err(e) => log::warn!(
-                "scripts::mount: hot-reload disabled for {}: {:#}",
-                assets_root.display(),
-                e
-            ),
         }
-    } else {
-        log::info!(
-            "scripts::mount: a watcher is already registered — {} is loaded but not watched",
+        None => log::warn!(
+            "scripts: the engine holds no AssetWatch — {} is not watched",
             assets_root.display()
-        );
+        ),
     }
 
-    let script_dir = assets_root.join("scripts");
+    let script_dir = assets_root.join(SCRIPT_DIR);
     if !script_dir.is_dir() {
-        log::info!(
-            "scripts::mount: no {} — nothing to compile yet",
+        return 0;
+    }
+    let (Some(pending), Some(declarations)) = (
+        runtime.resources.get::<PendingReloads>(),
+        runtime.resources.get::<PendingDeclarations>(),
+    ) else {
+        log::error!(
+            "scripts: the engine's script queues are missing — `scripts::install` was not run, so {} cannot load",
             script_dir.display()
         );
         return 0;
+    };
+    if let Some(mounted) = runtime.resources.get::<Arc<MountedScripts>>() {
+        mounted.record(assets_root, module_names(&script_dir));
     }
-
-    // Created here when this is the first thing to need one: a windowing driver
-    // runs the application's bootstrap closure before the engine populates the
-    // runtime, so `mount` legitimately arrives first. The engine's own insert
-    // is conditional for the same reason, and the two meet on whichever ran
-    // earlier.
-    if runtime
-        .resources
-        .get::<khora_io::script::hot_reload::PendingReloads>()
-        .is_none()
-    {
-        runtime
-            .resources
-            .insert(khora_io::script::hot_reload::reload_channel());
-    }
-    if runtime
-        .resources
-        .get::<khora_io::script::declarations::PendingDeclarations>()
-        .is_none()
-    {
-        runtime
-            .resources
-            .insert(khora_io::script::declarations::declaration_channel());
-    }
-    let pending = runtime
-        .resources
-        .get::<khora_io::script::hot_reload::PendingReloads>()
-        .expect("just inserted");
-    let declarations = runtime
-        .resources
-        .get::<khora_io::script::declarations::PendingDeclarations>()
-        .expect("just inserted");
-
-    let loaded = khora_io::script::hot_reload::load_all(&script_dir, pending, declarations);
+    let loaded = match runtime.resources.get::<Arc<ScriptCatalog>>() {
+        Some(catalog) => load_all_announcing(&script_dir, pending, declarations, catalog),
+        None => load_all(&script_dir, pending, declarations),
+    };
     log::info!(
-        "scripts::mount: compiled {loaded} script module(s) from {}",
+        "scripts: {loaded} module(s) loaded from {}",
         script_dir.display()
     );
     loaded
+}
+
+/// Unmounts the scripts under `assets_root`, at any frame: disarms the root,
+/// orphans what its modules declared — kept with its data, as for a deleted
+/// file — withdraws the programs they sent that no lane installed yet, and
+/// forgets what they announced they read.
+pub fn unmount(runtime: &Runtime, assets_root: &Path) {
+    if let Some(watch) = runtime.resources.get::<Arc<AssetWatch>>() {
+        watch.unwatch(assets_root);
+    }
+    // What was mounted, and what is there now: a module saved since the
+    // mount is the root's too.
+    let mounted = runtime.resources.get::<Arc<MountedScripts>>();
+    let mut modules = mounted
+        .map(|mounted| mounted.forget(assets_root))
+        .unwrap_or_default();
+    modules.extend(module_names(&assets_root.join(SCRIPT_DIR)));
+    // A module is known by its path under its script root: one another root
+    // still mounted brings in by the same name is that root's now, and stays.
+    if let Some(mounted) = mounted {
+        let kept = mounted.others();
+        modules.retain(|module| !kept.contains(module));
+    }
+    if modules.is_empty() {
+        return;
+    }
+    if let Some(declarations) = runtime.resources.get::<PendingDeclarations>() {
+        for module in &modules {
+            declarations.send(ScriptDeclarations {
+                module: module.clone(),
+                components: Vec::new(),
+            });
+        }
+    }
+    if let Some(pending) = runtime.resources.get::<PendingReloads>() {
+        pending.retain(|reload| !modules.contains(&reload.module));
+    }
+    if let Some(catalog) = runtime.resources.get::<Arc<ScriptCatalog>>() {
+        for module in &modules {
+            catalog.settle(module);
+        }
+    }
+    log::info!(
+        "scripts: {} module(s) unmounted from {}",
+        modules.len(),
+        assets_root.display()
+    );
 }

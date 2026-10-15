@@ -14,7 +14,7 @@
 
 //! `.erg` hot-reload pump.
 //!
-//! A `PreExtract` data system that drains the [`AssetWatcher`], recompiles every
+//! A `PreExtract` data system that reads the engine's [`AssetWatch`], recompiles every
 //! `.erg` file that changed **and every file that imports it**, and queues the
 //! results for the script agent to pick up next frame.
 //!
@@ -56,6 +56,7 @@ use std::sync::Arc;
 
 use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::OutputDeck;
+use khora_core::script::ScriptCatalog;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 use khora_script::reload::ScriptReload;
@@ -85,7 +86,7 @@ const RELOAD_BACKLOG: usize = 1024;
 pub fn reload_channel() -> PendingReloads {
     Channel::bounded(RELOAD_BACKLOG, WhenFull::DropOldest)
 }
-use crate::asset::AssetWatcher;
+use crate::asset::AssetWatch;
 use crate::script::compile::DiskLoader;
 use crate::script::mirror::PreludeLoader;
 use khora_script::compile_module;
@@ -192,6 +193,27 @@ pub fn load_all(
     pending: &PendingReloads,
     declarations: &PendingDeclarations,
 ) -> usize {
+    load(script_root, pending, declarations, None)
+}
+
+/// [`load_all`], announcing what each compiled module reads to `catalog` — as
+/// the pump does for a module it recompiles — so the flow projects those
+/// components the frame the program lands.
+pub fn load_all_announcing(
+    script_root: &Path,
+    pending: &PendingReloads,
+    declarations: &PendingDeclarations,
+    catalog: &ScriptCatalog,
+) -> usize {
+    load(script_root, pending, declarations, Some(catalog))
+}
+
+fn load(
+    script_root: &Path,
+    pending: &PendingReloads,
+    declarations: &PendingDeclarations,
+    catalog: Option<&ScriptCatalog>,
+) -> usize {
     let loader = PreludeLoader::new(DiskLoader::new(script_root));
     let mut loaded = 0;
     let mut sent = BTreeSet::new();
@@ -201,6 +223,9 @@ pub fn load_all(
         match compiled.program {
             Some(program) => {
                 send_declared(&program, declarations, &mut sent);
+                if let Some(catalog) = catalog {
+                    announce(catalog, &module, &program);
+                }
                 pending.send(ScriptReload { module, program });
                 loaded += 1;
             }
@@ -212,6 +237,11 @@ pub fn load_all(
         }
     }
     loaded
+}
+
+/// The modules under `script_root`, by the path they are known by.
+pub fn module_names(script_root: &Path) -> Vec<String> {
+    modules_under(script_root).into_keys().collect()
 }
 
 /// Every `.erg` module under `root`, each with what it imports.
@@ -251,10 +281,10 @@ fn modules_under(root: &Path) -> BTreeMap<String, Vec<String>> {
 }
 
 fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
-    let Some(watcher) = runtime.resources.get::<Arc<AssetWatcher>>() else {
+    let Some(watch) = runtime.resources.get::<Arc<AssetWatch>>() else {
         return; // No assets dir → no hot-reload, which is the shipping path.
     };
-    let events = watcher.poll_for("script_hot_reload");
+    let events = watch.poll_for("script_hot_reload");
     if events.is_empty() {
         return;
     }
@@ -262,32 +292,42 @@ fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
         return;
     };
 
-    // One script root per batch: the convention says a project keeps its
-    // scripts under one directory, and mixing two would make an import
-    // ambiguous.
-    let mut changed = BTreeSet::new();
-    let mut root = None;
+    // Per script root: the convention says a project keeps its scripts under
+    // one directory, and each watched root is its own — an import never
+    // crosses from one into another.
+    let mut by_root: BTreeMap<std::path::PathBuf, BTreeSet<String>> = BTreeMap::new();
     for event in &events {
         let Some(module) = module_path_of(&event.rel_path) else {
             continue;
         };
-        root.get_or_insert_with(|| script_root_of(&event.rel_path).to_owned());
-        changed.insert(module.to_owned());
+        by_root
+            .entry(event.root.join(script_root_of(&event.rel_path)))
+            .or_default()
+            .insert(module.to_owned());
     }
-    if changed.is_empty() {
-        return;
+    for (script_root, changed) in by_root {
+        recompile(runtime, pending, &script_root, &changed);
     }
+}
 
-    let script_root = watcher.assets_root().join(root.unwrap_or_default());
-    let affected = importers_of(&modules_under(&script_root), &changed);
-    let loader = PreludeLoader::new(DiskLoader::new(&script_root));
+/// Recompiles the modules of `script_root` that `changed` names, and every
+/// module importing one of them.
+fn recompile(
+    runtime: &Runtime,
+    pending: &PendingReloads,
+    script_root: &Path,
+    changed: &BTreeSet<String>,
+) {
+    let affected = importers_of(&modules_under(script_root), changed);
+    let loader = PreludeLoader::new(DiskLoader::new(script_root));
     let declarations = runtime.resources.get::<PendingDeclarations>();
+    let catalog = runtime.resources.get::<Arc<ScriptCatalog>>();
     let mut sent = BTreeSet::new();
 
     // A deleted file declares nothing any more: what it declared is orphaned,
     // kept with its data.
     if let Some(declarations) = declarations {
-        for module in &changed {
+        for module in changed {
             if !script_root.join(module).is_file() {
                 declarations.send(ScriptDeclarations {
                     module: module.clone(),
@@ -325,18 +365,8 @@ fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
                 // projects those components the frame the program lands, and
                 // the program is not held back a frame over rows the World has
                 // already laid out for it.
-                if let Some(catalog) = runtime
-                    .resources
-                    .get::<std::sync::Arc<khora_core::script::ScriptCatalog>>()
-                {
-                    catalog.announce(
-                        module.clone(),
-                        program
-                            .reads
-                            .iter()
-                            .map(|read| khora_core::script::ComponentName::new(read.as_str()))
-                            .collect(),
-                    );
+                if let Some(catalog) = catalog {
+                    announce(catalog, &module, &program);
                 }
                 pending.send(ScriptReload { module, program });
             }
@@ -350,6 +380,19 @@ fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
             }
         }
     }
+}
+
+/// Tells the catalog what `module`'s program reads, ahead of the lane
+/// installing it.
+fn announce(catalog: &ScriptCatalog, module: &str, program: &Program) {
+    catalog.announce(
+        module.to_owned(),
+        program
+            .reads
+            .iter()
+            .map(|read| khora_core::script::ComponentName::new(read.as_str()))
+            .collect(),
+    );
 }
 
 inventory::submit! {

@@ -147,10 +147,10 @@ pub use khora_data::assets::SoundData;
 pub use khora_data::scene::record::LoadReport;
 pub use khora_io::asset::decoders::audio::SymphoniaDecoder;
 pub use khora_io::asset::{
-    AssetChangeEvent, AssetChangeKind, AssetIdRegistry, AssetIo, AssetService, AssetWatcher,
-    AssetWriter, FileLoader, FileSystemResolver, IndexBuilder, MeshDispatcher, PackBuilder,
-    PackHeader, PackLoader, PackOutput, PackProgress, PACK_FORMAT_VERSION, PACK_HEADER_SIZE,
-    PACK_MAGIC,
+    AssetChangeEvent, AssetChangeKind, AssetIdRegistry, AssetIo, AssetService, AssetWatch,
+    AssetWatcher, AssetWriter, FileLoader, FileSystemResolver, IndexBuilder, MeshDispatcher,
+    PackBuilder, PackHeader, PackLoader, PackOutput, PackProgress, PACK_FORMAT_VERSION,
+    PACK_HEADER_SIZE, PACK_MAGIC,
 };
 pub use khora_io::serialization::{SerializationService, SerializationServiceError};
 pub use khora_telemetry::MetricsRegistry;

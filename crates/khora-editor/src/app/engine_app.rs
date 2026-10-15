@@ -67,6 +67,8 @@ impl EngineApp for EditorApp {
             last_frame_time: Instant::now(),
             viewport_override: khora_sdk::khora_data::render::EditorViewportOverride::new(),
             project_vfs: None,
+            asset_watch: Arc::new(khora_sdk::AssetWatch::default()),
+            mounted_scripts: None,
             prefab_view: None,
         }
     }
@@ -127,6 +129,7 @@ impl EngineApp for EditorApp {
 
         commands::process_menu_actions(
             &mut self.project_vfs,
+            &self.asset_watch,
             &self.editor_state,
             &self.command_history,
             world,
@@ -307,6 +310,18 @@ impl EngineApp for EditorApp {
         if let Some(pvfs_arc) = self.project_vfs.as_ref() {
             hot_reload::pump(pvfs_arc, &self.editor_state);
         }
+        // The open project's scripts: mounted as it opens, swapped as another
+        // opens — what they declare registers while editing, what they
+        // compiled to runs at Play.
+        let project = self
+            .project_vfs
+            .as_ref()
+            .and_then(|pvfs| pvfs.lock().ok().map(|pvfs| pvfs.root.clone()));
+        crate::project_scripts::follow_open_project(
+            runtime,
+            &mut self.mounted_scripts,
+            project.as_deref(),
+        );
 
         self.last_view_info = None;
 

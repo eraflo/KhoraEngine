@@ -50,6 +50,7 @@ pub use scene::save_scene_dispatch;
 /// `pending_browse_project_folder` and `pending_menu_action` in turn.
 pub fn process_menu_actions(
     project_vfs: &mut Option<Arc<Mutex<ProjectVfs>>>,
+    asset_watch: &Arc<khora_sdk::AssetWatch>,
     editor_state: &Arc<Mutex<EditorState>>,
     command_history: &Arc<Mutex<CommandHistory>>,
     world: &mut GameWorld,
@@ -61,7 +62,7 @@ pub fn process_menu_actions(
         .unwrap_or(false);
 
     if wants_browse {
-        if let Some(new_pvfs) = browse_and_open_project(editor_state) {
+        if let Some(new_pvfs) = browse_and_open_project(editor_state, asset_watch) {
             *project_vfs = Some(new_pvfs);
         }
     }

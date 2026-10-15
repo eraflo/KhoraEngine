@@ -102,8 +102,9 @@ const GREETER: &str = "behavior Greeter {
 /// A headless engine running `Tool`, its scripts mounted from `root`.
 fn tool_engine(root: Option<&PathBuf>) -> EngineCore<Tool> {
     let mut runtime = Runtime::new();
+    khora_sdk::scripts::install(&mut runtime);
     if let Some(root) = root {
-        khora_sdk::scripts::mount(&mut runtime, root);
+        khora_sdk::scripts::mount(&runtime, root);
     }
     let mut engine = EngineCore::<Tool>::new();
     engine.bootstrap(

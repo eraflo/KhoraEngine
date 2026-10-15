@@ -27,6 +27,7 @@ mod io;
 mod manifest;
 mod pack;
 mod pack_builder;
+mod watch;
 mod watcher;
 
 pub use asset_service::*;
@@ -42,4 +43,5 @@ pub use io::*;
 pub use manifest::*;
 pub use pack::*;
 pub use pack_builder::*;
+pub use watch::*;
 pub use watcher::*;

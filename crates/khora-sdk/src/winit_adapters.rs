@@ -227,6 +227,10 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
         // entries before handing off to the bootstrap closure.
         let mut runtime = khora_core::Runtime::new();
 
+        // Scripting's resources, before the application's closure: an app
+        // mounts its scripts there.
+        crate::scripts::install(&mut runtime);
+
         // PRIMARY_VIEWPORT — engine-wide handle for the primary 3D viewport.
         runtime.resources.insert(PRIMARY_VIEWPORT);
 

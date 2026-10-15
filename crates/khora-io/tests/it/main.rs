@@ -18,15 +18,19 @@
 //! full link of the crate's dependency tree. New integration tests join this
 //! binary as a module instead of adding a file at the root of `tests/`.
 
+mod asset_watch;
+mod asset_watch_root_spellings;
 mod behavior_components;
 mod declared_component_scenes;
 mod game_saves;
 mod game_saves_text_base;
 mod hot_reload_announcements;
+mod hot_reload_from_the_shared_watch;
 mod prefab_scenes;
 mod public_paths;
 mod scene_files;
 mod script_components;
+mod script_pump_across_roots;
 mod shipped_scripts;
 mod snapshots;
 mod system_components;

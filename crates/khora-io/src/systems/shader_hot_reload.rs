@@ -15,7 +15,7 @@
 //! `.wgsl` hot-reload pump.
 //!
 //! A `PreExtract` data system that drains the shader
-//! [`AssetWatcher`] each tick, maps every changed `.wgsl` file to its
+//! [`AssetWatch`] each tick, maps every changed `.wgsl` file to its
 //! logical shader name, hands the new source to the
 //! [`PipelineSystem`](khora_core::renderer::traits::PipelineSystem) backend as
 //! an overlay, and recomposes the affected cached pipelines in place. Lanes
@@ -32,7 +32,7 @@ use khora_core::renderer::traits::{GraphicsDevice, PipelineSystem};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 
-use crate::asset::AssetWatcher;
+use crate::asset::AssetWatch;
 
 /// Root segment every composable shader module path carries.
 const LOGICAL_ROOT: &str = "khora";
@@ -62,10 +62,10 @@ pub fn logical_name_for_shader_path(rel_path: &str) -> Option<String> {
 }
 
 fn shader_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
-    let Some(watcher) = runtime.resources.get::<Arc<AssetWatcher>>() else {
+    let Some(watch) = runtime.resources.get::<Arc<AssetWatch>>() else {
         return; // No assets dir → embedded sources, nothing to pump.
     };
-    let events = watcher.poll_for("shader_hot_reload");
+    let events = watch.poll_for("shader_hot_reload");
     if events.is_empty() {
         return;
     }
@@ -76,13 +76,12 @@ fn shader_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
         return;
     };
 
-    let assets_root = watcher.assets_root();
     let mut changed = false;
     for event in events {
         let Some(logical) = logical_name_for_shader_path(&event.rel_path) else {
             continue; // Not a shader file.
         };
-        let abs = assets_root.join(&event.rel_path);
+        let abs = event.root.join(&event.rel_path);
         match std::fs::read_to_string(&abs) {
             Ok(source) => {
                 pipeline_system.set_overlay_source(&logical, source);

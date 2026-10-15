@@ -81,9 +81,9 @@ fn mounted(
 
     let catalog = Arc::new(ScriptCatalog::default());
     let mut runtime = khora_core::Runtime::default();
-    runtime.resources.insert(Arc::new(
-        khora_io::asset::AssetWatcher::new(assets.path()).expect("watches the assets"),
-    ));
+    let watch = khora_io::asset::AssetWatch::default();
+    watch.watch(assets.path()).expect("watches the assets");
+    runtime.resources.insert(Arc::new(watch));
     runtime.resources.insert(reload_channel());
     runtime.resources.insert(declaration_channel());
     runtime.resources.insert(Arc::clone(&catalog));

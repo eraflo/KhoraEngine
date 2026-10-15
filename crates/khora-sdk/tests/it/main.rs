@@ -27,4 +27,6 @@ mod public_paths;
 mod reload_after_an_emptied_module;
 mod runtime_config_file;
 mod script_catalog;
+mod scripts_mount_sequences;
+mod scripts_mounted_while_running;
 mod system_components;

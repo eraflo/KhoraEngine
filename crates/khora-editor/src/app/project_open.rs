@@ -39,7 +39,11 @@ impl EditorApp {
         // assets directory, builds a stable in-memory UUID index,
         // registers all decoders, and arms the filesystem watcher.
         let metrics = std::sync::Arc::new(khora_sdk::MetricsRegistry::new());
-        let mut pvfs = match ProjectVfs::open(path.clone(), metrics) {
+        let mut pvfs = match ProjectVfs::open_watched(
+            path.clone(),
+            metrics,
+            std::sync::Arc::clone(&self.asset_watch),
+        ) {
             Ok(p) => p,
             Err(e) => {
                 log::error!(

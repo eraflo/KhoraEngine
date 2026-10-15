@@ -16,7 +16,7 @@
 //!
 //! Wraps [`notify::RecommendedWatcher`] (cross-platform — inotify on Linux,
 //! FSEvents on macOS, ReadDirectoryChangesW on Windows) and translates raw
-//! events into [`AssetChangeEvent`]s with pre-computed UUIDs.
+//! events into [`AssetChangeEvent`]s, each naming the root it happened under.
 //!
 //! Each consumer calls [`AssetWatcher::poll_for`] with its own name and reads
 //! the same stream from its own position — the editor's reindex pump, the
@@ -33,10 +33,11 @@
 //! non-blocking via [`AssetWatcher::poll_for`].
 
 use anyhow::{Context, Result};
-use khora_core::asset::{asset_key, AssetUUID};
+use khora_core::asset::asset_key;
 use khora_core::event::{Channel, Supersedes, WhenFull};
 use notify::{recommended_watcher, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::index_builder::should_skip_file;
 
@@ -60,13 +61,20 @@ pub enum AssetChangeKind {
 pub struct AssetChangeEvent {
     /// What happened.
     pub kind: AssetChangeKind,
-    /// Path relative to the watched assets root, forward-slash separated for
-    /// cross-platform UUID stability.
+    /// The root it happened under: `root.join(&rel_path)` is the file. The
+    /// event stands on its own wherever several roots are watched, rather
+    /// than leaving its reader to guess which base to join against.
+    pub root: Arc<Path>,
+    /// Path relative to [`root`](Self::root), forward-slash separated.
     pub rel_path: String,
-    /// UUID derived from `rel_path` via [`AssetUUID::new_v5`]. May not yet
-    /// (or no longer) exist in the [`crate::asset::AssetIndex`] — the
-    /// consumer reconciles by reindex + invalidate as appropriate.
-    pub uuid: AssetUUID,
+}
+
+impl AssetChangeEvent {
+    /// The root this change happened under: `root().join(&rel_path)` is the
+    /// file.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
 }
 
 /// Drains filesystem-change events under a project's `assets/` directory.
@@ -116,7 +124,7 @@ impl AssetWatcher {
         let assets_root = assets_root.into();
         let changes: Channel<AssetChangeEvent> = Channel::bounded(RETAINED, WhenFull::DropOldest);
 
-        let root_for_handler = assets_root.clone();
+        let root_for_handler: Arc<Path> = Arc::from(assets_root.as_path());
         let sink = changes.clone();
         // One save fires several `Modified` for the same path. Remembering only
         // the previous one collapses that burst — they arrive consecutively —
@@ -208,7 +216,7 @@ fn is_immediate_repeat(previous: Option<&AssetChangeEvent>, next: &AssetChangeEv
 fn translate_event(
     kind: &notify::EventKind,
     abs: &Path,
-    assets_root: &Path,
+    assets_root: &Arc<Path>,
 ) -> Option<AssetChangeEvent> {
     use notify::event::{ModifyKind, RenameMode};
     let our_kind = match kind {
@@ -236,13 +244,10 @@ fn translate_event(
     }
 
     let rel = abs.strip_prefix(assets_root).ok()?;
-    let rel_str = asset_key(rel);
-
-    let uuid = AssetUUID::new_v5(&rel_str);
     Some(AssetChangeEvent {
         kind: our_kind,
-        rel_path: rel_str,
-        uuid,
+        root: Arc::clone(assets_root),
+        rel_path: asset_key(rel),
     })
 }
 
@@ -295,8 +300,8 @@ mod repeat_tests {
     fn event(kind: AssetChangeKind, path: &str) -> AssetChangeEvent {
         AssetChangeEvent {
             kind,
+            root: Arc::from(Path::new("assets")),
             rel_path: path.to_owned(),
-            uuid: AssetUUID::new_v5(path),
         }
     }
 

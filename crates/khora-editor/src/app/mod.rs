@@ -102,6 +102,13 @@ pub struct EditorApp {
     /// routes through this. `None` when the editor was launched without
     /// a project (rare; the hub always passes `--project`).
     project_vfs: Option<Arc<Mutex<ProjectVfs>>>,
+    /// The engine's watch over asset trees, which the project's VFS reads its
+    /// changes from beside the script and shader pumps.
+    asset_watch: Arc<khora_sdk::AssetWatch>,
+    /// The assets root whose scripts are mounted — the open project's, once
+    /// [`project_scripts::follow_open_project`](crate::project_scripts) has
+    /// caught up with it.
+    mounted_scripts: Option<std::path::PathBuf>,
     /// The inspected entity's instance and its prefab's values, kept while
     /// the selection and the project's files stay the same.
     prefab_view: Option<PrefabView>,
@@ -109,6 +116,13 @@ pub struct EditorApp {
 
 impl EditorApp {
     fn cache_services(&mut self, runtime: &Runtime) {
+        if let Some(watch) = runtime
+            .resources
+            .get::<Arc<khora_sdk::AssetWatch>>()
+            .cloned()
+        {
+            self.asset_watch = watch;
+        }
         if let Some(camera) = runtime
             .resources
             .get::<std::sync::Arc<std::sync::Mutex<EditorCamera>>>()

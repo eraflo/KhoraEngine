@@ -14,7 +14,7 @@
 
 //! Project-scoped Virtual File System for the editor.
 //!
-//! Wraps the `khora-io` `AssetService` + `AssetWatcher` together with a
+//! Wraps the `khora-io` `AssetService` and a subscription to an `AssetWatch` together with a
 //! `FileLoader` rooted at `<project>/assets/`. This is the single I/O entry
 //! point used by `scene_io`, the asset browser, and any other editor code
 //! that needs to read or write project content.
@@ -22,7 +22,7 @@
 use anyhow::{bail, Context, Result};
 use khora_sdk::khora_core::asset::{asset_key, AssetUUID};
 use khora_sdk::{
-    AssetChangeEvent, AssetIdRegistry, AssetService, AssetWatcher, AssetWriter, FileLoader,
+    AssetChangeEvent, AssetIdRegistry, AssetService, AssetWatch, AssetWriter, FileLoader,
     IndexBuilder, MetricsRegistry,
 };
 use std::{
@@ -42,7 +42,10 @@ pub struct ProjectVfs {
     pub root: PathBuf,
     pub assets_root: PathBuf,
     pub asset_service: AssetService,
-    pub watcher: AssetWatcher,
+    /// Where its changes are read from: the engine's shared watch — one
+    /// subscriber among the script and shader pumps — or, opened on its own,
+    /// a watch of its own.
+    watch: Arc<AssetWatch>,
     file_loader: FileLoader,
     /// Stable-identity registry (`<root>/.khora/asset-registry.ron`). The editor
     /// is the sole writer: file operations freeze/rename/remove entries so an
@@ -58,7 +61,21 @@ impl ProjectVfs {
     /// watcher. Tolerates fresh projects whose `assets/` directory hasn't
     /// been populated yet — the resulting service has zero indexed assets,
     /// which is exactly what the asset browser will show.
+    #[cfg(test)]
     pub fn open(root: PathBuf, metrics: Arc<MetricsRegistry>) -> Result<Self> {
+        Self::open_watched(root, metrics, Arc::new(AssetWatch::default()))
+    }
+
+    /// Opens `<root>/assets/` as [`Self::open`] does, reading its changes
+    /// from the engine's shared `watch` — one subscriber among the script and
+    /// shader pumps — rather than from a watcher of its own.
+    /// [`Self::poll_changes`] then reports the changes under this project's
+    /// assets root only.
+    pub fn open_watched(
+        root: PathBuf,
+        metrics: Arc<MetricsRegistry>,
+        watch: Arc<AssetWatch>,
+    ) -> Result<Self> {
         let assets_root = root.join("assets");
         std::fs::create_dir_all(&assets_root).with_context(|| {
             format!(
@@ -83,8 +100,11 @@ impl ProjectVfs {
         // for scene saves.
         let file_loader = FileLoader::new(&assets_root);
 
-        let watcher = AssetWatcher::new(&assets_root)
-            .context("Failed to start asset watcher (filesystem hot reload)")?;
+        // Armed here too — watching is idempotent — so a project opened on
+        // its own still hears its files.
+        watch
+            .watch(&assets_root)
+            .context("Failed to watch the project's assets (filesystem hot reload)")?;
 
         log::info!(
             "ProjectVfs opened: {} assets indexed under {}, watcher armed.",
@@ -96,7 +116,7 @@ impl ProjectVfs {
             root,
             assets_root,
             asset_service,
-            watcher,
+            watch,
             file_loader,
             registry,
             generation: std::sync::atomic::AtomicU64::new(0),
@@ -326,7 +346,15 @@ impl ProjectVfs {
     /// Drains pending hot-reload events. Convenience wrapper so callers
     /// don't need to reach through `pvfs.watcher`.
     pub fn poll_changes(&self) -> Vec<AssetChangeEvent> {
-        self.watcher.poll_for("editor_vfs")
+        let own = self.assets_root.canonicalize().ok();
+        self.watch
+            .poll_for("editor_vfs")
+            .into_iter()
+            .filter(|event| {
+                *event.root == *self.assets_root
+                    || own.is_some() && event.root.canonicalize().ok() == own
+            })
+            .collect()
     }
 }
 

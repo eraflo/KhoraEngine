@@ -204,73 +204,14 @@ impl<A: EngineApp> EngineCore<A> {
             Arc::new(Mutex::new(khora_lanes::script_lane::ScriptRuntime::new()));
         runtime.services.insert(script_runtime);
 
-        // The two queues that feed it, inserted for **every** application
-        // rather than by one binary's launcher.
-        //
-        // They used to live in `run_default`, which only `khora-runtime` calls.
-        // The editor and the sandbox therefore ran the scripting agent and its
-        // lane over a runtime whose program table could never be filled — a
-        // correct `.erg` on a correct entity produced no behaviour and no
-        // message. An empty channel costs nothing; not having one costs a
-        // subsystem that looks wired and is not.
-        //
-        // Filling them is the application's job, because the root to watch is
-        // the exe's `assets/` for a game and the open project for the editor.
-        // See `khora_sdk::scripts::mount`.
-        // Inserted only if absent. A windowing driver runs the application's
-        // bootstrap closure *before* this, and an app that mounted its scripts
-        // there has already filled this queue — overwriting it with a fresh one
-        // would drop every program compiled at startup, silently.
-        if runtime
-            .resources
-            .get::<khora_io::script::hot_reload::PendingReloads>()
-            .is_none()
-        {
-            runtime
-                .resources
-                .insert(khora_io::script::hot_reload::reload_channel());
-        }
-        if runtime
-            .resources
-            .get::<khora_core::event::Channel<khora_core::script::ScriptEvent>>()
-            .is_none()
-        {
-            runtime
-                .resources
-                .insert(khora_core::script::engine_event_channel());
-        }
-        // The components the scripts declare: sent by the compile path,
-        // registered at the frame boundary in every mode, with the memory of
-        // which module declares each.
-        if runtime
-            .resources
-            .get::<khora_io::script::declarations::PendingDeclarations>()
-            .is_none()
-        {
-            runtime
-                .resources
-                .insert(khora_io::script::declarations::declaration_channel());
-        }
-        if runtime
-            .resources
-            .get::<std::sync::Arc<std::sync::Mutex<khora_io::script::declarations::DeclaredComponents>>>()
-            .is_none()
-        {
-            runtime.resources.insert(std::sync::Arc::new(std::sync::Mutex::new(
-                khora_io::script::declarations::DeclaredComponents::default(),
-            )));
-        }
-        // What the loaded scripts read: written by the script lane, read by the
-        // script flow to project only those components.
-        if runtime
-            .resources
-            .get::<std::sync::Arc<khora_core::script::ScriptCatalog>>()
-            .is_none()
-        {
-            runtime.resources.insert(std::sync::Arc::new(
-                khora_core::script::ScriptCatalog::default(),
-            ));
-        }
+        // What scripting needs — the engine's `AssetWatch`, the queues that
+        // feed the scripting world, the catalog — for **every** application
+        // rather than by one binary's launcher. A windowing driver installs
+        // them before the application's own bootstrap closure, which may mount
+        // its scripts there; this finds them in place and replaces nothing, so
+        // no program compiled at startup is dropped. Filling them is the
+        // application's job — `khora_sdk::scripts::mount`.
+        crate::scripts::install(&mut runtime);
 
         // Create the game world — reading the shipped prefabs, where the app
         // ships an asset service, so a game saved over a level holding prefab

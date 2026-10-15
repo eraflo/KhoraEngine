@@ -1104,9 +1104,9 @@ fn an_edit_to_an_imported_struct_reaches_the_importers_components() {
     apply_declarations(&mut world, &mut state, &declared.drain());
 
     let mut runtime = khora_core::Runtime::default();
-    runtime.resources.insert(Arc::new(
-        khora_io::asset::AssetWatcher::new(assets.path()).expect("watches the assets"),
-    ));
+    let watch = khora_io::asset::AssetWatch::default();
+    watch.watch(assets.path()).expect("watches the assets");
+    runtime.resources.insert(Arc::new(watch));
     runtime.resources.insert(reload_channel());
     runtime.resources.insert(declared.clone());
     std::fs::write(&shapes, "struct Point { int x; int y = 9; }").expect("edits");

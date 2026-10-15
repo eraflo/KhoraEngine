@@ -149,11 +149,12 @@ pub fn run_build_game(
 /// another project is already loaded.
 pub fn browse_and_open_project(
     editor_state: &Arc<Mutex<EditorState>>,
+    asset_watch: &Arc<khora_sdk::AssetWatch>,
 ) -> Option<Arc<Mutex<ProjectVfs>>> {
     let path = rfd::FileDialog::new().pick_folder()?;
 
     let metrics = std::sync::Arc::new(khora_sdk::MetricsRegistry::new());
-    match ProjectVfs::open(path.clone(), metrics) {
+    match ProjectVfs::open_watched(path.clone(), metrics, Arc::clone(asset_watch)) {
         Ok(pvfs) => {
             let entries = hot_reload::collect_asset_entries(&pvfs);
             let dirs = pvfs.list_dirs();

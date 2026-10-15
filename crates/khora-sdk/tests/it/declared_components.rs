@@ -343,7 +343,8 @@ fn assets_with(module: &str, source: &str) -> PathBuf {
 /// A headless game, its scripts mounted from `root`, its setup run.
 fn game(root: &Path, app: Attaching) -> EngineCore<Attaching> {
     let mut runtime = Runtime::new();
-    khora_sdk::scripts::mount(&mut runtime, root);
+    khora_sdk::scripts::install(&mut runtime);
+    khora_sdk::scripts::mount(&runtime, root);
     let mut engine = EngineCore::<Attaching>::new();
     engine.bootstrap(app, runtime);
     engine
