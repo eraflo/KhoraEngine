@@ -38,6 +38,7 @@ mod resumable_after_edits;
 mod resumable_edges;
 mod resume_tiers;
 mod resume_tiers_encodings;
+mod running_problems;
 mod saved_structs_into_edited_types;
 mod saves;
 mod spawn_scenarios;

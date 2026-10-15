@@ -94,6 +94,16 @@ pub struct AssetWatcher {
     changes: Channel<AssetChangeEvent>,
 }
 
+/// A file as one write left it: when it was last modified, and its length.
+/// Two events seeing the same stamp saw the same write.
+type Stamp = (std::time::SystemTime, u64);
+
+/// `path`'s stamp, when the file can be read.
+fn stamp_of(path: &Path) -> Option<Stamp> {
+    let metadata = std::fs::metadata(path).ok()?;
+    Some((metadata.modified().ok()?, metadata.len()))
+}
+
 /// How many changes are kept for readers that have not caught up.
 ///
 /// Far more than a frame produces — a project-wide reformat is hundreds — and
@@ -127,9 +137,11 @@ impl AssetWatcher {
         let root_for_handler: Arc<Path> = Arc::from(assets_root.as_path());
         let sink = changes.clone();
         // One save fires several `Modified` for the same path. Remembering only
-        // the previous one collapses that burst — they arrive consecutively —
-        // without scanning what is already queued.
-        let mut last: Option<AssetChangeEvent> = None;
+        // the previous one, and the file as it was then, collapses that burst
+        // — they arrive consecutively, the file unchanged between them —
+        // without scanning what is already queued; another save of the file,
+        // however soon, leaves it with another stamp and is a change of its own.
+        let mut last: Option<(AssetChangeEvent, Option<Stamp>)> = None;
 
         let mut watcher = recommended_watcher(move |res: notify::Result<notify::Event>| {
             let event = match res {
@@ -143,10 +155,15 @@ impl AssetWatcher {
                 let Some(change) = translate_event(&event.kind, path, &root_for_handler) else {
                     continue;
                 };
-                if is_immediate_repeat(last.as_ref(), &change) {
+                let stamp = stamp_of(path);
+                let echo = last
+                    .as_ref()
+                    .filter(|(_, before)| stamp.is_some() && *before == stamp)
+                    .map(|(previous, _)| previous);
+                if is_immediate_repeat(echo, &change) {
                     continue;
                 }
-                last = Some(change.clone());
+                last = Some((change.clone(), stamp));
                 sink.send(change);
             }
         })

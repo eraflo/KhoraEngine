@@ -247,12 +247,35 @@ impl EditorPanel for AssetBrowserPanel {
             with_alpha(theme.separator, 0.55),
             1.0,
         );
-        let project_folder = self
+        let (project_folder, script_problems) = self
             .state
             .lock()
             .ok()
-            .and_then(|s| s.project_folder.clone())
+            .map(|s| {
+                (
+                    s.project_folder.clone().unwrap_or_default(),
+                    s.script_problems.clone(),
+                )
+            })
             .unwrap_or_default();
+        // Each script's errors and warnings, for its tile's badge.
+        let counts_of = |rel_path: &str| {
+            crate::panels::problems::view::module_of_asset(rel_path).map(|module| {
+                script_problems
+                    .iter()
+                    .filter(|problem| problem.module.as_deref() == Some(module.as_str()))
+                    .fold((0, 0), |(errors, warnings), problem| {
+                        match problem.severity {
+                            khora_sdk::khora_core::script::ProblemSeverity::Error => {
+                                (errors + 1, warnings)
+                            }
+                            khora_sdk::khora_core::script::ProblemSeverity::Warning => {
+                                (errors, warnings + 1)
+                            }
+                        }
+                    })
+            })
+        };
 
         let search_w = 200.0_f32.min(grid_w * 0.4);
         let search_x = grid_x + grid_w - search_w - 12.0;
@@ -396,6 +419,7 @@ impl EditorPanel for AssetBrowserPanel {
                 &asset.name,
                 asset.asset_type,
                 selected,
+                counts_of(&asset.rel_path).and_then(crate::panels::problems::view::tile_badge),
                 &theme,
             );
             // Every tile is a drag source — the low 32 bits carry the index

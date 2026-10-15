@@ -92,10 +92,15 @@ pub struct DeclaredComponents {
     owner: HashMap<String, String>,
     /// Components a module stopped declaring, kept with their data.
     orphans: BTreeSet<String>,
-    /// Declarations refused because another module owned the name, by
-    /// name: the module and what it declares — its own once the owner stops
-    /// declaring it, as a restart would give it.
-    refused: HashMap<String, (String, DeclaredComponent)>,
+    /// Declarations refused because another module owned the name, by name
+    /// and refused module: what it declares — that module's own once the
+    /// owner stops declaring it, as a restart would give it.
+    refused: BTreeMap<(String, String), DeclaredComponent>,
+    /// Modules an unmount closed: what they declared is orphaned quietly —
+    /// the project they belonged to is no longer the one open.
+    unmounted: BTreeSet<String>,
+    /// Orphans an unmount left: kept, and nothing to tell anyone about.
+    quiet: BTreeSet<String>,
 }
 
 impl DeclaredComponents {
@@ -107,6 +112,51 @@ impl DeclaredComponents {
     /// The module declaring `component`.
     pub fn owner_of(&self, component: &str) -> Option<&str> {
         self.owner.get(component).map(String::as_str)
+    }
+
+    /// Says `modules` are being unmounted: what they declared is orphaned
+    /// with nothing wrong to show — their project is closed.
+    pub fn unmounting(&mut self, modules: impl IntoIterator<Item = String>) {
+        self.unmounted.extend(modules);
+    }
+
+    /// What is wrong with the declarations now, as a tool shows it: every
+    /// name a module is refused because another declares it, and every
+    /// component no module declares any more — but those an unmount left.
+    pub fn standing_problems(&self) -> Vec<khora_core::script::ScriptProblem> {
+        use khora_core::script::{ProblemSeverity, ScriptProblem};
+        let refusals = self.refused.keys().map(|(name, module)| {
+            let owner = self.owner_of(name).unwrap_or("another module");
+            ScriptProblem {
+                severity: ProblemSeverity::Error,
+                module: Some(module.clone()),
+                line: 0,
+                column: 0,
+                message: format!(
+                    "`{name}` is declared by both `{owner}` and `{module}`: it stays as `{owner}` declares it"
+                ),
+                note: Some("a component's name is unique among every component — rename one".to_owned()),
+                entity: None,
+                behavior: None,
+            }
+        });
+        let orphans = self
+            .orphans
+            .iter()
+            .filter(|name| !self.quiet.contains(*name))
+            .map(|name| ScriptProblem {
+            severity: ProblemSeverity::Warning,
+            module: None,
+            line: 0,
+            column: 0,
+            message: format!(
+                "`{name}` is no longer declared by any script: it stays registered with its data, orphaned"
+            ),
+            note: Some("declare it again to adopt it, or remove it from the entities holding it".to_owned()),
+            entity: None,
+            behavior: None,
+        });
+        refusals.chain(orphans).collect()
     }
 }
 
@@ -156,6 +206,10 @@ pub fn apply_declarations(
             let name = component.name.as_str();
             if let DeclaredKind::BehaviorState { behavior } = &component.kind {
                 if refused_here.contains(&behavior.as_str()) {
+                    // Kept with its behavior's refusal: inherited with it.
+                    state
+                        .refused
+                        .insert((name.to_owned(), (*module).to_owned()), component.clone());
                     report.refused.push(name.to_owned());
                     continue;
                 }
@@ -166,16 +220,32 @@ pub fn apply_declarations(
                         .get(owner)
                         .is_none_or(|set| set.iter().any(|kept| kept.name == name))
             });
-            let first = owner.or_else(|| {
-                declared
-                    .get(name)
-                    .map(|(first, _)| *first)
-                    .filter(|first| first != module)
-            });
+            let first: Option<String> = owner
+                .or_else(|| {
+                    declared
+                        .get(name)
+                        .map(|(first, _)| *first)
+                        .filter(|first| first != module)
+                })
+                .map(str::to_owned)
+                // A name freed by this batch goes where a fresh load would
+                // give it: to the first module claiming it — one refused it
+                // earlier, outside this batch, comes before a later one.
+                .or_else(|| {
+                    state
+                        .refused
+                        .keys()
+                        .find(|(refused, earlier)| {
+                            refused == name
+                                && earlier.as_str() < *module
+                                && !sets.contains_key(earlier.as_str())
+                        })
+                        .map(|(_, earlier)| earlier.clone())
+                });
             if let Some(first) = first {
                 state
                     .refused
-                    .insert(name.to_owned(), ((*module).to_owned(), component.clone()));
+                    .insert((name.to_owned(), (*module).to_owned()), component.clone());
                 log::error!(
                     "`{name}` is declared by both `{first}` and `{module}`: it stays as `{first}` declares it — rename one"
                 );
@@ -189,7 +259,7 @@ pub fn apply_declarations(
 
     // A module of the batch that no longer declares a name it was refused
     // gives up its claim.
-    state.refused.retain(|name, (module, _)| {
+    state.refused.retain(|(name, module), _| {
         sets.get(module.as_str())
             .is_none_or(|set| set.iter().any(|kept| kept.name == *name))
     });
@@ -205,7 +275,12 @@ pub fn apply_declarations(
         }
         apply_one(world, state, component, module, &mut report);
         state.orphans.remove(*name);
-        state.refused.remove(*name);
+        state.quiet.remove(*name);
+        // Its own refusal, if it had one, is over; another module's refusal
+        // of the same name stands — refused by this very batch, perhaps.
+        state
+            .refused
+            .remove(&((*name).to_owned(), (*module).to_owned()));
         state.owner.insert((*name).to_owned(), (*module).to_owned());
     }
 
@@ -220,13 +295,27 @@ pub fn apply_declarations(
         .map(|(name, _)| name.clone())
         .collect();
     for name in dropped {
-        state.owner.remove(&name);
+        let closed = state
+            .owner
+            .remove(&name)
+            .is_some_and(|module| state.unmounted.contains(&module));
         // A module refused this name still declares it: it is that module's
-        // now, not an orphan.
-        if let Some((module, component)) = state.refused.remove(&name) {
-            apply_one(world, state, &component, &module, &mut report);
-            state.owner.insert(name, module);
-            continue;
+        // now, not an orphan — the first of them, by module.
+        let heir = state
+            .refused
+            .keys()
+            .find(|(refused, _)| *refused == name)
+            .cloned();
+        if let Some(key) = heir {
+            if let Some(component) = state.refused.remove(&key) {
+                let module = key.1;
+                apply_one(world, state, &component, &module, &mut report);
+                state.owner.insert(name, module);
+                continue;
+            }
+        }
+        if closed {
+            state.quiet.insert(name.clone());
         }
         log::warn!(
             "`{name}` is no longer declared by any script: it stays registered with its data, orphaned"
@@ -236,6 +325,39 @@ pub fn apply_declarations(
         }
         state.orphans.insert(name.clone());
         report.orphaned.push(name);
+    }
+
+    // A behavior inherited takes along its companion, refused with it.
+    let companions: Vec<(String, String)> = state
+        .refused
+        .iter()
+        .filter_map(|((name, module), component)| match &component.kind {
+            DeclaredKind::BehaviorState { behavior }
+                if state.owner.get(behavior) == Some(module) =>
+            {
+                Some((name.clone(), module.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+    for key in companions {
+        if let Some(component) = state.refused.remove(&key) {
+            let (name, module) = key;
+            apply_one(world, state, &component, &module, &mut report);
+            state.orphans.remove(&name);
+            state.quiet.remove(&name);
+            if let Some(key) = world.components().key_named(&name) {
+                world.set_declared_by(key, Some(module.clone()));
+            }
+            state.owner.insert(name, module);
+        }
+    }
+
+    // A module of the batch declaring something is mounted again.
+    for (module, components) in &sets {
+        if !components.is_empty() {
+            state.unmounted.remove(*module);
+        }
     }
 
     for list in [
@@ -400,6 +522,15 @@ pub fn register_pending(world: &mut World, runtime: &Runtime) -> DeclarationRepo
     };
     let mut state = state.lock().unwrap_or_else(|e| e.into_inner());
     let report = apply_declarations(world, &mut state, &batch);
+    if let Some(problems) = runtime
+        .resources
+        .get::<Arc<khora_core::script::ScriptProblems>>()
+    {
+        problems.report(
+            khora_core::script::ProblemSource::Registration,
+            state.standing_problems(),
+        );
+    }
     if !report.registered.is_empty() {
         log::info!(
             "script components registered: {}",

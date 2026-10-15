@@ -56,7 +56,7 @@ use std::sync::Arc;
 
 use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::OutputDeck;
-use khora_core::script::ScriptCatalog;
+use khora_core::script::{ScriptCatalog, ScriptProblems};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 use khora_script::reload::ScriptReload;
@@ -193,19 +193,22 @@ pub fn load_all(
     pending: &PendingReloads,
     declarations: &PendingDeclarations,
 ) -> usize {
-    load(script_root, pending, declarations, None)
+    load(script_root, pending, declarations, None, None)
 }
 
 /// [`load_all`], announcing what each compiled module reads to `catalog` — as
 /// the pump does for a module it recompiles — so the flow projects those
 /// components the frame the program lands.
+///
+/// What each compile found goes to `problems`, located.
 pub fn load_all_announcing(
     script_root: &Path,
     pending: &PendingReloads,
     declarations: &PendingDeclarations,
     catalog: &ScriptCatalog,
+    problems: Option<&ScriptProblems>,
 ) -> usize {
-    load(script_root, pending, declarations, Some(catalog))
+    load(script_root, pending, declarations, Some(catalog), problems)
 }
 
 fn load(
@@ -213,6 +216,7 @@ fn load(
     pending: &PendingReloads,
     declarations: &PendingDeclarations,
     catalog: Option<&ScriptCatalog>,
+    problems: Option<&ScriptProblems>,
 ) -> usize {
     let loader = PreludeLoader::new(DiskLoader::new(script_root));
     let mut loaded = 0;
@@ -220,6 +224,9 @@ fn load(
 
     for module in modules_under(script_root).into_keys() {
         let compiled = compile_module(&loader, &module);
+        if let Some(problems) = problems {
+            crate::script::problems::report_compile(problems, &module, &compiled);
+        }
         match compiled.program {
             Some(program) => {
                 send_declared(&program, declarations, &mut sent);
@@ -273,7 +280,13 @@ fn modules_under(root: &Path) -> BTreeMap<String, Vec<String>> {
             // and how a module is named everywhere else.
             let module = relative.to_string_lossy().replace('\\', "/");
             let imports = std::fs::read_to_string(entry.path())
-                .map(|source| imports_of(&source))
+                .map(|source| {
+                    // As the resolver reads them: `./helper.erg` is `helper.erg`.
+                    imports_of(&source)
+                        .into_iter()
+                        .filter_map(|import| khora_script::modules::normalise(&import).ok())
+                        .collect()
+                })
                 .unwrap_or_default();
             Some((module, imports))
         })
@@ -322,6 +335,7 @@ fn recompile(
     let loader = PreludeLoader::new(DiskLoader::new(script_root));
     let declarations = runtime.resources.get::<PendingDeclarations>();
     let catalog = runtime.resources.get::<Arc<ScriptCatalog>>();
+    let problems = runtime.resources.get::<Arc<ScriptProblems>>();
     let mut sent = BTreeSet::new();
 
     // A deleted file declares nothing any more: what it declared is orphaned,
@@ -338,7 +352,22 @@ fn recompile(
     }
 
     for module in affected {
+        // Deleted, or renamed away: nothing to compile, nothing wrong with it.
+        if !script_root.join(&module).is_file() {
+            if let Some(problems) = problems {
+                problems.report(
+                    khora_core::script::ProblemSource::Compile {
+                        module: module.clone(),
+                    },
+                    Vec::new(),
+                );
+            }
+            continue;
+        }
         let compiled = compile_module(&loader, &module);
+        if let Some(problems) = problems {
+            crate::script::problems::report_compile(problems, &module, &compiled);
+        }
         match compiled.program {
             Some(program) => {
                 log::info!("script hot-reload: recompiled {module}");

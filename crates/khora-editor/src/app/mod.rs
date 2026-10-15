@@ -109,6 +109,8 @@ pub struct EditorApp {
     /// [`project_scripts::follow_open_project`](crate::project_scripts) has
     /// caught up with it.
     mounted_scripts: Option<std::path::PathBuf>,
+    /// What is wrong with the project's scripts, as the engine finds it.
+    script_problems: Option<Arc<khora_sdk::khora_core::script::ScriptProblems>>,
     /// The inspected entity's instance and its prefab's values, kept while
     /// the selection and the project's files stay the same.
     prefab_view: Option<PrefabView>,
@@ -123,6 +125,10 @@ impl EditorApp {
         {
             self.asset_watch = watch;
         }
+        self.script_problems = runtime
+            .resources
+            .get::<Arc<khora_sdk::khora_core::script::ScriptProblems>>()
+            .cloned();
         if let Some(camera) = runtime
             .resources
             .get::<std::sync::Arc<std::sync::Mutex<EditorCamera>>>()
@@ -216,6 +222,13 @@ impl EditorApp {
 
         if let Ok(log_entries) = self.log_handle.lock() {
             state.log_entries.clone_from(&log_entries);
+        }
+        if let Some(problems) = &self.script_problems {
+            let generation = problems.generation();
+            if generation != state.script_problems_generation {
+                state.script_problems = problems.all();
+                state.script_problems_generation = generation;
+            }
         }
 
         let now = Instant::now();

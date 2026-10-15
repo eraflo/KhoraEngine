@@ -117,6 +117,7 @@ pub fn paint_asset_tile(
     name: &str,
     kind: AssetTileKind,
     selected: bool,
+    badge: Option<crate::panels::problems::view::TileBadge>,
     theme: &UiTheme,
 ) -> AssetTileInteraction {
     let [w, h] = size;
@@ -174,6 +175,33 @@ pub fn paint_asset_tile(
         FontFamilyHint::Monospace,
         TextAlign::Right,
     );
+
+    // A script with problems says so on its thumbnail: the severity's own
+    // glyph and how many, on the severity's tint — never the colour alone.
+    if let Some(badge) = badge {
+        let (color, glyph) = match badge.severity {
+            khora_sdk::khora_core::script::ProblemSeverity::Error => (theme.error, Icon::Error),
+            khora_sdk::khora_core::script::ProblemSeverity::Warning => (theme.warning, Icon::Warn),
+        };
+        let count = badge.count.to_string();
+        let digits = ui.measure_text(&count, 10.0, FontFamilyHint::Monospace)[0];
+        let bw = 6.0 + 11.0 + 3.0 + digits + 6.0;
+        let bh = 16.0;
+        let bx = thumb_x + tw - bw - 4.0;
+        let by = thumb_y + 4.0;
+        ui.paint_rect_filled([bx, by], [bw, bh], theme.surface, 8.0);
+        ui.paint_rect_filled([bx, by], [bw, bh], with_alpha(color, 0.22), 8.0);
+        ui.paint_rect_stroke([bx, by], [bw, bh], with_alpha(color, 0.65), 8.0, 1.0);
+        paint::icon(ui, [bx + 6.0, by + 2.5], glyph, 11.0, color);
+        ui.paint_text_styled(
+            [bx + 6.0 + 11.0 + 3.0, by + 2.5],
+            &count,
+            10.0,
+            theme.text,
+            FontFamilyHint::Monospace,
+            TextAlign::Left,
+        );
+    }
 
     // Name (clipped if too long — egui handles eg_text overflow per-character)
     let truncated = if name.chars().count() > 14 {

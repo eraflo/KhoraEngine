@@ -140,6 +140,12 @@ pub struct EditorState {
     // ── Phase 5: Console / Status Bar ──────────────────
     /// Log entries captured by the editor log sink.
     pub log_entries: Vec<LogEntry>,
+    /// What is wrong with the open project's scripts — compile, registration
+    /// and running problems — as the engine's `ScriptProblems` lists them.
+    pub script_problems: Vec<crate::script::ScriptProblem>,
+    /// The `ScriptProblems` generation `script_problems` was copied at: a
+    /// frame where it has not moved copies nothing.
+    pub script_problems_generation: u64,
     /// Status bar data (FPS, entity count, memory).
     pub status: StatusBarData,
     /// Asset entries for the asset browser (populated from the VFS).

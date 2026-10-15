@@ -53,6 +53,11 @@ impl EditorApp {
             Some("khora.editor.asset_browser"),
             DropZone::Center,
         );
+        t.insert(
+            "khora.editor.problems",
+            Some("khora.editor.asset_browser"),
+            DropZone::Center,
+        );
 
         if let Some(id) = hierarchy {
             t.set_ratio(id, 0.18); // hierarchy, of the whole width
@@ -145,6 +150,10 @@ impl EditorApp {
                 brand_theme.clone(),
             )));
             workbench.add_panel(Box::new(ConsolePanel::new(
+                self.editor_state.clone(),
+                brand_theme.clone(),
+            )));
+            workbench.add_panel(Box::new(crate::panels::problems::ProblemsPanel::new(
                 self.editor_state.clone(),
                 brand_theme.clone(),
             )));

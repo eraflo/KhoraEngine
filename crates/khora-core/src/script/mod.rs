@@ -41,6 +41,7 @@ pub mod command;
 pub mod event;
 pub mod field;
 pub mod frozen;
+pub mod problems;
 pub mod projection;
 pub mod snapshot;
 pub mod table;
@@ -58,6 +59,7 @@ pub use command::{ComponentName, WorldCommand, WriteTarget, WriteTargetRef};
 pub use event::{engine_event_channel, EventQueue, ScriptEvent, ENGINE_EVENT_BACKLOG};
 pub use field::{ErgonType, FieldValueError, ScriptField};
 pub use frozen::{FrozenFrame, FrozenLocal, FrozenMachine, FrozenValue, PendingBody};
+pub use problems::{ProblemSeverity, ProblemSource, ScriptProblem, ScriptProblems};
 pub use projection::{ColumnSnapshot, ComponentProjection, FrameComponents, ProjectedComponent};
 pub use snapshot::{
     InstanceLifecycle, PendingSequence, RecordedFault, ScriptSnapshot, TimerRemaining,

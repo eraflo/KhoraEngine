@@ -23,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use khora_core::script::ScriptCatalog;
+use khora_core::script::{ProblemSource, ScriptCatalog, ScriptProblems};
 use khora_core::Runtime;
 use khora_io::asset::AssetWatch;
 use khora_io::script::declarations::{
@@ -32,6 +32,10 @@ use khora_io::script::declarations::{
 use khora_io::script::hot_reload::{
     load_all, load_all_announcing, module_names, reload_channel, PendingReloads,
 };
+
+/// The module the engine serves its components as: a script imports it, and
+/// no project holds it as a file.
+pub const ENGINE_MODULE: &str = khora_io::script::mirror::MIRROR_MODULE;
 
 /// Where the scripts are found under an assets root.
 const SCRIPT_DIR: &str = "scripts";
@@ -108,6 +112,9 @@ pub fn install(runtime: &mut Runtime) {
     if resources.get::<Arc<ScriptCatalog>>().is_none() {
         resources.insert(Arc::new(ScriptCatalog::default()));
     }
+    if resources.get::<Arc<ScriptProblems>>().is_none() {
+        resources.insert(Arc::new(ScriptProblems::default()));
+    }
     if resources.get::<Arc<MountedScripts>>().is_none() {
         resources.insert(Arc::new(MountedScripts::default()));
     }
@@ -164,7 +171,16 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> usize {
         mounted.record(assets_root, module_names(&script_dir));
     }
     let loaded = match runtime.resources.get::<Arc<ScriptCatalog>>() {
-        Some(catalog) => load_all_announcing(&script_dir, pending, declarations, catalog),
+        Some(catalog) => load_all_announcing(
+            &script_dir,
+            pending,
+            declarations,
+            catalog,
+            runtime
+                .resources
+                .get::<Arc<ScriptProblems>>()
+                .map(Arc::as_ref),
+        ),
         None => load_all(&script_dir, pending, declarations),
     };
     log::info!(
@@ -198,6 +214,13 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
     if modules.is_empty() {
         return;
     }
+    // Closed with the project: what they declared is orphaned quietly.
+    if let Some(declared) = runtime.resources.get::<Arc<Mutex<DeclaredComponents>>>() {
+        declared
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unmounting(modules.iter().cloned());
+    }
     if let Some(declarations) = runtime.resources.get::<PendingDeclarations>() {
         for module in &modules {
             declarations.send(ScriptDeclarations {
@@ -212,6 +235,17 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
     if let Some(catalog) = runtime.resources.get::<Arc<ScriptCatalog>>() {
         for module in &modules {
             catalog.settle(module);
+        }
+    }
+    // A module no longer mounted has nothing wrong with it to show.
+    if let Some(problems) = runtime.resources.get::<Arc<ScriptProblems>>() {
+        for module in &modules {
+            problems.report(
+                ProblemSource::Compile {
+                    module: module.clone(),
+                },
+                Vec::new(),
+            );
         }
     }
     log::info!(

@@ -69,6 +69,7 @@ impl EngineApp for EditorApp {
             project_vfs: None,
             asset_watch: Arc::new(khora_sdk::AssetWatch::default()),
             mounted_scripts: None,
+            script_problems: None,
             prefab_view: None,
         }
     }

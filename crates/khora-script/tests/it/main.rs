@@ -85,6 +85,8 @@ mod script_component_declarations;
 mod self_referential_struct_defaults;
 mod sites;
 mod sized_operation_sites;
+mod source_positions;
+mod source_positions_across_the_import_graph;
 mod state_call_resolution;
 mod state_entry_dispatch;
 mod state_scope;

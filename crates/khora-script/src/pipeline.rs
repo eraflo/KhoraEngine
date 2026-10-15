@@ -28,6 +28,7 @@
 
 use crate::diagnostics::Diagnostic;
 use crate::modules::SourceLoader;
+use crate::source_map::SourceMap;
 use crate::vm::Program;
 
 /// What compiling a module produced.
@@ -40,6 +41,9 @@ pub struct CompileOutcome {
     pub program: Option<Program>,
     /// Everything that went wrong, from whichever stage found it.
     pub diagnostics: Vec<Diagnostic>,
+    /// Where each span of the program sits: every diagnostic above is
+    /// located through it, whichever module it points into.
+    pub sources: SourceMap,
 }
 
 impl CompileOutcome {
@@ -61,6 +65,7 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> CompileOutcome 
         return CompileOutcome {
             program: None,
             diagnostics: resolved.diagnostics,
+            sources: resolved.sources.clone(),
         };
     }
 
@@ -88,6 +93,7 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> CompileOutcome 
         return CompileOutcome {
             program: None,
             diagnostics,
+            sources: resolved.sources.clone(),
         };
     }
 
@@ -97,6 +103,7 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> CompileOutcome 
         return CompileOutcome {
             program: None,
             diagnostics,
+            sources: resolved.sources.clone(),
         };
     }
 
@@ -117,6 +124,7 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> CompileOutcome 
     CompileOutcome {
         program: (!failed).then_some(compiled.program),
         diagnostics,
+        sources: resolved.sources.clone(),
     }
 }
 

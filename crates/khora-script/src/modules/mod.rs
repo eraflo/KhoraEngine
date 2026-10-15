@@ -68,6 +68,9 @@ pub struct Resolved {
     pub modules: Vec<ResolvedModule>,
     /// Problems found, across every module walked.
     pub diagnostics: Vec<Diagnostic>,
+    /// Where each module sits in the program's offset space: every span of
+    /// the resolved modules is unique, and locatable through it.
+    pub sources: crate::source_map::SourceMap,
 }
 
 impl Resolved {
@@ -113,6 +116,7 @@ pub fn resolve(entry: &str, loader: &dyn SourceLoader) -> Resolved {
         diagnostics: Vec::new(),
         done: HashSet::new(),
         in_progress: Vec::new(),
+        sources: crate::source_map::SourceMap::default(),
     };
 
     match normalise(entry) {
@@ -126,6 +130,7 @@ pub fn resolve(entry: &str, loader: &dyn SourceLoader) -> Resolved {
     Resolved {
         modules: resolver.modules,
         diagnostics: resolver.diagnostics,
+        sources: resolver.sources,
     }
 }
 
@@ -138,6 +143,8 @@ struct Resolver<'a> {
     /// The chain currently being walked, innermost last. A path reappearing
     /// here is a cycle, and the chain is the report.
     in_progress: Vec<String>,
+    /// Each module read, placed in the program's offset space as it is.
+    sources: crate::source_map::SourceMap,
 }
 
 impl<'a> Resolver<'a> {
@@ -180,7 +187,10 @@ impl<'a> Resolver<'a> {
         };
 
         let source = SourceFile::new(path, text);
-        let lexed = lex(source.text());
+        // Spans offset by where the module sits among the program's, so the
+        // merged tree's spans say which file they point into.
+        let base = self.sources.place(source.clone());
+        let lexed = lex(source.text()).shifted(base);
         self.diagnostics.extend(lexed.diagnostics);
 
         let parsed = parse(lexed.tokens);

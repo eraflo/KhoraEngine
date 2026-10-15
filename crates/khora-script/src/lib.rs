@@ -64,6 +64,7 @@ pub mod native;
 pub mod parser;
 pub mod pipeline;
 pub mod reload;
+pub mod source_map;
 pub mod types;
 pub mod vm;
 
@@ -86,6 +87,7 @@ pub use native::{
 };
 pub use parser::{parse, Parsed};
 pub use pipeline::{compile_module, CompileOutcome};
+pub use source_map::{Location, SourceMap};
 pub use types::{check, Checked, Ty};
 pub use vm::{Function, Instruction, Machine, Program, Run, Suspension, Value};
 

@@ -18,6 +18,7 @@ pub mod asset_browser;
 pub mod command_palette;
 pub mod console;
 pub mod control_plane;
+pub mod problems;
 pub mod properties;
 pub mod scene_tree;
 pub mod viewport;

@@ -20,3 +20,4 @@ pub mod compile;
 pub mod declarations;
 pub mod hot_reload;
 pub mod mirror;
+pub mod problems;

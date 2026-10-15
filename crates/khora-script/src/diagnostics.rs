@@ -54,6 +54,14 @@ impl Span {
         Self { start, end }
     }
 
+    /// This span `by` bytes further along.
+    pub const fn shifted(self, by: u32) -> Self {
+        Self {
+            start: self.start + by,
+            end: self.end + by,
+        }
+    }
+
     /// An empty span at `offset`, for errors that point between characters —
     /// an unexpected end of file, say.
     pub const fn empty(offset: u32) -> Self {
