@@ -272,6 +272,16 @@ Play does not resume anything: every scripted entity arrives fresh and runs
 `OnSpawn`. Stop puts the scene back as it was. A shipped game starts in the mode
 its `EngineApp::initial_mode` says — `Playing` unless it says otherwise.
 
+Not running is not absent. The editor mounts the open project's scripts when it
+opens it, and a save recompiles the module while you edit as while you play. What
+a script **declares** registers at once — the Inspector lists the project's
+components and behaviors, and edits them as typed fields (a `Duration` in
+seconds, an `Angle` in degrees) — and what it **compiled to** waits for Play.
+What goes wrong is not left in the log: compile errors, a component two modules
+declare, a component no module declares any more, a faulted instance and a body
+the watchdog warns about all land in one place, `ScriptProblems`, which the
+editor shows as its **Problems** tab ([Editor — Scripts](../reference/editor.md#07--scripts)).
+
 ## A script never writes the world
 
 Effects are queued as `WorldCommand`s and applied by a data system during

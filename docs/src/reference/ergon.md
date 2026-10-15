@@ -567,13 +567,14 @@ without `?` and every `with`, and none of the `without`.
 
 Maps, methods on structs and arrays (beyond `Push` and `RemoveAt`), struct
 operator overloads at run time, value patterns in `match`, awaiting events,
-closures, reading `Transform` with `Get` (use `Position()`), project components in
-the editor's inspector, reordering systems (`[Before]` / `[After]`), change
-filters in queries, systems running in parallel.
+closures, reading `Transform` with `Get` (use `Position()`), reordering systems
+(`[Before]` / `[After]`), change filters in queries, systems running in parallel.
 
 ## See also
 
 - [Scripting](../concepts/scripting.md) — turns, safepoints, saves, resuming
   after edits.
 - [Glossary](./glossary.md) — safepoint, site, resume tier, system, query, sweep,
-  watchdog.
+  watchdog, declared component, ScriptProblems.
+- [Editor — Scripts](./editor.md#07--scripts) — scripts while editing, the
+  Problems tab, declared components in the Inspector.

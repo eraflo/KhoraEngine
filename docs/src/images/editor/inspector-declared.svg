@@ -1,0 +1,88 @@
+<svg class="kp-figure" viewBox="0 0 760 452" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-decl-title kp-decl-desc">
+  <title id="kp-decl-title">Components a script declares, in the inspector</title>
+  <desc id="kp-decl-desc">The inspector, while playing, showing the entity Lamp. The Lantern card, tagged script, names props/lantern.erg under its title; its fields are Glow 1.5, Cooldown 2.5 seconds, Arc 90 degrees, Target an entity slot naming Gate, and Label none with a Set button. The Guard card, tagged behavior, names ai/guard.erg and holds Speed 3.0. The Guard#state card, tagged state, is written by the engine while playing and shows its State Patrol and Pending none as read-only text.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-cardbg { fill: var(--k-bg-2, #181e2b); }
+    .kp-well { fill: var(--k-bg-3, #1f2636); }
+    .kp-btn { fill: var(--k-bg-3, #1f2636); }
+    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
+    .kp-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 13px; font-weight: 500; }
+    .kp-card-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    .kp-tag { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10px; letter-spacing: 0.04em; }
+    .kp-prov { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+    .kp-prov-sans { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 10.5px; }
+    .kp-field { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+    .kp-mono-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+    .kp-unit { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
+    .kp-item { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
+    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="452"/>
+  <rect class="kp-panel" x="16" y="16" width="404" height="420" rx="6"/>
+  <text class="kp-title" x="32" y="42">Lamp</text>
+  <path class="kp-rule" d="M16,58 H420"/>
+  <!-- Lantern: a script component -->
+  <rect class="kp-cardbg" x="24" y="68" width="388" height="172" rx="4"/>
+  <text class="kp-card-title" x="36" y="88">Lantern</text>
+  <text class="kp-tag" x="400" y="88" text-anchor="end">SCRIPT</text>
+  <text class="kp-prov" x="36" y="106">props/lantern.erg</text>
+  <text class="kp-field" x="50" y="134">Glow</text>
+  <text class="kp-mono" x="150" y="134">1.5</text>
+  <text class="kp-field" x="50" y="158">Cooldown</text>
+  <text class="kp-mono" x="150" y="158">2.5</text>
+  <text class="kp-unit" x="178" y="158">s</text>
+  <text class="kp-field" x="50" y="182">Arc</text>
+  <text class="kp-mono" x="150" y="182">90</text>
+  <text class="kp-unit" x="171" y="182">deg</text>
+  <text class="kp-field" x="50" y="206">Target</text>
+  <rect class="kp-well" x="146" y="192" width="190" height="20" rx="3"/>
+  <text class="kp-item" x="154" y="206">Gate</text>
+  <text class="kp-field" x="50" y="230">Label</text>
+  <text class="kp-dim" x="150" y="230">none</text>
+  <rect class="kp-btn" x="184" y="217" width="34" height="18" rx="3"/>
+  <text class="kp-item" x="192" y="230">Set</text>
+  <!-- Guard: a behavior -->
+  <rect class="kp-cardbg" x="24" y="250" width="388" height="68" rx="4"/>
+  <text class="kp-card-title" x="36" y="270">Guard</text>
+  <text class="kp-tag" x="400" y="270" text-anchor="end">BEHAVIOR</text>
+  <text class="kp-prov" x="36" y="288">ai/guard.erg</text>
+  <text class="kp-field" x="50" y="308">Speed</text>
+  <text class="kp-mono" x="150" y="308">3.0</text>
+  <!-- Guard#state: the engine's, read only -->
+  <rect class="kp-cardbg" x="24" y="328" width="388" height="98" rx="4"/>
+  <text class="kp-card-title" x="36" y="348">Guard#state</text>
+  <text class="kp-tag" x="400" y="348" text-anchor="end">STATE</text>
+  <text class="kp-prov-sans" x="36" y="366">Written by the engine while playing</text>
+  <text class="kp-dim" x="50" y="392">State</text>
+  <text class="kp-mono-dim" x="150" y="392">"Patrol"</text>
+  <text class="kp-dim" x="50" y="414">Pending</text>
+  <text class="kp-mono-dim" x="150" y="414">none</text>
+  <!-- callouts -->
+  <path class="kp-lead" d="M412,102 H442"/>
+  <text class="kp-head" x="448" y="100">where it comes from</text>
+  <text class="kp-label" x="448" y="116">the .erg declaring it; the tag names the part</text>
+  <text class="kp-label" x="448" y="132">it plays: script, behavior, state, system</text>
+  <path class="kp-lead" d="M412,162 C427,162 427,163 442,163"/>
+  <text class="kp-head" x="448" y="166">units</text>
+  <text class="kp-label" x="448" y="182">a Duration in seconds, an Angle in degrees</text>
+  <path class="kp-lead" d="M338,202 H442"/>
+  <text class="kp-head" x="448" y="206">entity slot</text>
+  <text class="kp-label" x="448" y="222">drop an entity from the Hierarchy</text>
+  <path class="kp-lead" d="M220,226 C330,226 330,243 442,243"/>
+  <text class="kp-head" x="448" y="246">optional</text>
+  <text class="kp-label" x="448" y="262">none, and Set; right-click for Set to none</text>
+  <path class="kp-lead" d="M412,272 C427,272 427,288 442,288"/>
+  <text class="kp-head" x="448" y="292">behavior</text>
+  <text class="kp-label" x="448" y="308">its fields, edited like a component's</text>
+  <path class="kp-lead" d="M412,346 H442"/>
+  <text class="kp-head" x="448" y="350">while playing</text>
+  <text class="kp-label" x="448" y="366">a behavior's state, read only — hidden</text>
+  <text class="kp-label" x="448" y="382">while editing</text>
+</svg>

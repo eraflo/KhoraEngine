@@ -122,6 +122,16 @@ guard bounds the fixed-timestep accumulator (see
 [Fixed timestep](#fixed-timestep--interpolation-alpha)). See
 [GORNA](../concepts/gorna.md).
 
+### Declared component (Ergon)
+
+A component a script declares — a `component`, a behavior's fields, a
+behavior's state companion (`Guard#state`), a system's fields — registered in the
+world while the engine runs, with no Rust type behind it. Its fields carry their
+Ergon types (`Duration` and `Angle` included, stored as floats). The editor's
+Inspector draws it as a typed card; a declared component no module declares any
+more is **orphaned**: kept with its data, flagged, never deleted. See
+[Editor — Scripts](./editor.md#07--scripts).
+
 ### EngineMode / PlayMode
 
 **`EngineMode`** decides which agents run in a frame: the scheduler reads the
@@ -357,6 +367,16 @@ column occupies. A record also lists the prefab instances it keeps as links.
 A record is applied back atomically: everything is read and staged before the
 world changes, so a file that fails to load leaves the world untouched. See
 [Serialization](../concepts/serialization.md).
+
+### ScriptProblems / Problems tab
+
+What is wrong with the running project's scripts, in one place: compile
+diagnostics located at `module:line:col`, registration refusals and orphans,
+faulted instances and bodies the [watchdog](#watchdog-ergon) warns about. Each
+source — a module's compile, the registration, the running instances —
+replaces its own list each time it reports, so a clean compile clears its
+module. A `Runtime` resource; the editor shows it as its **Problems** tab and
+as badges on `.erg` tiles. See [Editor — Scripts](./editor.md#07--scripts).
 
 ### SemanticDomain
 

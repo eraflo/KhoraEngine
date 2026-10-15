@@ -16,13 +16,14 @@ The editor application — panels, gizmos, play mode, scene I/O.
 4. Play mode
 5. Scene I/O
 6. Asset browser
-7. Gizmos and selection
-8. Build Game
-9. The Control Plane
-10. For game developers
-11. For engine contributors
-12. Decisions
-13. Open questions
+7. Scripts
+8. Gizmos and selection
+9. Build Game
+10. The Control Plane
+11. For game developers
+12. For engine contributors
+13. Decisions
+14. Open questions
 
 ---
 
@@ -46,7 +47,7 @@ The visual language — colors, typography, panels, voice — is documented in [
 | e  |                                              |          |
 |    |                                              |          |
 +----+----------------------------------------------+----------+
-| Bottom dock: Assets · Console · GORNA stream                |
+| Bottom dock: Assets · Console · Problems · GORNA stream     |
 +--------------------------------------------------------------+
 | Status bar — engine state, FPS, build status                |
 +--------------------------------------------------------------+
@@ -59,7 +60,7 @@ The visual language — colors, typography, panels, voice — is documented in [
 | **Hierarchy** | Tree of entities, left of the viewport |
 | **Viewport** | The 3D scene with floating gizmos |
 | **Inspector** | Components of the selected entity, right of the viewport |
-| **Bottom dock** | Assets browser, console, GORNA stream |
+| **Bottom dock** | Assets browser, console, script problems, GORNA stream |
 | **Status bar** | Engine state, FPS, build status, GORNA pulse |
 
 Full anatomy and pixel-level layout in [Editor design system](../design/editor.md).
@@ -182,7 +183,84 @@ and [Work with prefabs](../how-to/work-with-prefabs.md) for the steps.
 
 > **Rename/move only inside the editor.** The registry freeze happens because the editor mediates the file operation. Renaming or moving an asset from a shell or `git` bypasses that path — see [Troubleshoot](../how-to/troubleshoot.md#assets--vfs).
 
-## 07 — Gizmos and selection
+## 07 — Scripts
+
+The open project's Ergon scripts live under `<project>/assets/` and are part of
+the editor from the moment the project opens — not only once Play is pressed.
+
+**Mounted with the project.** Opening a project mounts its `assets/` folder
+(`khora_sdk::scripts::mount`); opening another unmounts the first, closing
+unmounts. Every `.erg` is compiled and watched: a save recompiles its module,
+while editing as while playing. What the scripts *declare* — components,
+behaviors, systems — registers at once, so the Inspector knows the project's
+components before anything runs. What they *compiled to* waits for Play: no
+script runs while you edit ([Scripts run only while the game
+runs](../concepts/scripting.md#scripts-run-only-while-the-game-runs)).
+
+**Problems.** The **Problems** tab of the bottom dock lists what is wrong with
+the project's scripts, grouped by module, each row `line:col  message` with its
+note:
+
+| Source | Severity | What |
+|---|---|---|
+| Compile | error / warning | a module's diagnostics, located in the module they are in — warnings of a module that compiled too |
+| Registration | error | a component declared by two modules: the one refused, the one keeping it |
+| Registration | warning | a component no module declares any more — kept with its data |
+| Running | error | a faulted instance: its entity, its behavior, the reason |
+| Running | warning | a body still unfinished past the watchdog's warning limit |
+
+<div class="kp-figure-frame">
+
+{{#include ../images/editor/problems-tab.svg}}
+
+</div>
+
+A row with a file opens the `.erg` in the system's editor; a running problem
+selects its entity. The tab's title counts errors and warnings
+(`Problems · 2 errors · 1 warning`), and each `.erg` tile in the Assets panel
+wears a badge: the error glyph and how many errors, or — with warnings only —
+the warning glyph and how many; never the colour alone. A module's problems are
+replaced each time it compiles: a clean compile clears them.
+
+**Declared components in the Inspector.** A component a script declares is a
+card like a Rust component's, read from its declared fields rather than through
+JSON: its fields in declaration order, each drawn by its Ergon type.
+
+| Type | Widget |
+|---|---|
+| `bool` | checkbox |
+| `int`, `float` | scrubber — an `int` stays whole |
+| `Duration` | scrubber in seconds, `s` after it |
+| `Angle` | scrubber in degrees, `deg` after it — stored in radians |
+| `string` | text field |
+| `Vec2`/`Vec3`/`Vec4`, `Quat`, `Color` | one scrubber per axis; a colour swatch |
+| `Entity` | a slot naming the entity — drop one from the Hierarchy |
+| `T?` | the value, or `none` with **Set**; right-click → *Set to none* |
+| `T[]` | a row per item, **+ Add item**; right-click an item to move or remove it |
+| struct | a nested block, a row per field |
+
+<div class="kp-figure-frame">
+
+{{#include ../images/editor/inspector-declared.svg}}
+
+</div>
+
+Under the card's title one quiet line says where it comes from — the `.erg`
+declaring it — and the header's tag names the part it plays: `script`,
+`behavior`, `state`, `system`. An edit writes the row only when the field takes
+the value; a value it refuses is logged and the row stays as it was.
+
+| Situation | What the Inspector shows |
+|---|---|
+| **+ Add Component** | Rust components and the project's declared components and behaviors, grouped by domain, a script's entry marked with its `.erg` — never a behavior's state, a system's fields, or what the entity already holds |
+| A behavior removed | its state companion goes with it |
+| **Playing** | each behavior's state companion (`Guard#state`: state, timers, pending body, fault) as a read-only card; edits change live values, and Stop restores the snapshot |
+| Editing | no state companion — there is no run to show |
+| A system | its one entity is listed in the Hierarchy as `system:Name`; its card is read-only |
+| No module declares it any more | the card stays, flagged in amber, editable and removable — its data is kept until you decide |
+| A prefab instance | declared fields are compared with the prefab's field by field: the same dots, reverts and applies as a Rust component's. The prefab's values are read as the scripts declare the component now, so a field added since the prefab was saved is no override |
+
+## 08 — Gizmos and selection
 
 The viewport has floating gizmos for the selected entity:
 
@@ -194,7 +272,7 @@ Selection is tracked in `EditorState.selection` (a set — multi-select is suppo
 
 Numeric fields in the Inspector are draggable scrubbers — drag horizontally to change a value, modifier keys for precision. No spinner buttons.
 
-## 08 — Build Game
+## 09 — Build Game
 
 `Build → Build Game…` packages the open project for a target OS. The editor picks one of two **strategies** automatically, based on the presence of `<project>/Cargo.toml`:
 
@@ -233,9 +311,9 @@ Run the binary directly — both `khora-runtime` and any project compiled via `k
 
 ### Why two strategies
 
-The choice is **deterministic** (presence of `Cargo.toml` is the contract) and **opt-in** (the user explicitly upgrades a project to native Rust by clicking the hub button). Most projects stay on Strategy A and benefit from trivial cross-platform export. Strategy B is the escape hatch when raw performance, compile-time safety, or new engine primitives are needed. Future scripting (`assets/scripts/`, hot-reloadable, see [Assets](../concepts/assets.md)) plugs into both strategies transparently — scripts are just assets that get packed.
+The choice is **deterministic** (presence of `Cargo.toml` is the contract) and **opt-in** (the user explicitly upgrades a project to native Rust by clicking the hub button). Most projects stay on Strategy A and benefit from trivial cross-platform export. Strategy B is the escape hatch when raw performance, compile-time safety, or new engine primitives are needed. Ergon scripts plug into both strategies transparently — they are assets under `assets/`, packed with the rest (see [Scripting](../concepts/scripting.md)).
 
-## 09 — The Control Plane
+## 10 — The Control Plane
 
 The second Spine mode is the **Control Plane** — a workspace dedicated to the engine's mind.
 
@@ -278,6 +356,10 @@ contributes its agents through `AgentProvider`.
 | `crates/khora-editor/src/scene_io/mod.rs` | Scene save / load via `SerializationService` |
 | `crates/khora-editor/src/gizmo/`, `picking.rs` | Gizmo geometry, drag math and dispatch; viewport picking |
 | `crates/khora-editor/src/project_vfs.rs` | The live asset index — VFS, watcher and identity registry |
+| `crates/khora-editor/src/project_scripts/` | Mounting the open project's scripts, and unmounting them |
+| `crates/khora-editor/src/panels/problems/` | The Problems tab; `view.rs` is its pure view model and the `.erg` tile badge |
+| `crates/khora-editor/src/ops/declared.rs` | Declared components as the Inspector reads and writes them — cards, edits, the add menu, prefab rows |
+| `crates/khora-editor/src/widgets/inspector/declared/` | The declared cards and their typed field widgets |
 
 `EditorState` — selection, mode, pending operations — is **not** in the editor
 crate. It lives in `crates/khora-core/src/ui/editor/state.rs`, with the other

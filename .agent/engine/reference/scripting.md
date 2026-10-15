@@ -193,8 +193,8 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   `Channel<ScriptDeclarations>`; the `script_components` DataSystem (PreExtract, after `script_hot_reload`,
   **every mode**) runs `khora_io::script::declarations::apply_declarations`: register, relayout (a type change
   the storage kind hides is reset via `relayout_resetting`), `move_component_domain`, orphan (never delete),
-  adopt; a second module declaring an owned name is refused (`report.refused`). The editor does not call
-  `scripts::mount` yet — it learns project components only from the scenes it loads.
+  adopt; a second module declaring an owned name is refused (`report.refused`). The editor mounts the open
+  project (see *Scripts in the editor* below), so it knows project components before any scene loads.
 - **The engine's components come from `ENGINE_COMPONENTS_MODULE`** (`engine/components.erg`). The mirror
   emits `component` for hand-authorable provenance except `Transform` (placed by
   `native::world::PLACEMENT`), and `struct` with a `//` reason for the rest.
@@ -318,6 +318,24 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** �
   at the turn (`script_lane/carry.rs::carry_instance`, shared with `ScriptRuntime::reload`); a carried
   instance is `rewritten` and emits its `BehaviorUpdate` that frame even starved or quiet. An instance whose
   arrival is held is neither carried nor recorded: the arrival rebuilds it.
+- **Scripts in the editor (spec 11).** Watching: `khora-io/src/asset/watch.rs::AssetWatch` — many roots
+  (canonical, nested roots refused), one `AssetWatcher` each, `watch`/`unwatch` through `&self`, per-subscriber
+  cursors; `AssetChangeEvent.root`. `khora_sdk::scripts::{install(&mut Runtime), mount(&Runtime, assets),
+  unmount(&Runtime, assets)}` (`MountedScripts`): mount arms the root, compiles every module, sends
+  declarations + programs, announces reads; callable any frame. The editor follows the open project
+  (`khora-editor/src/project_scripts/::follow_open_project`); `ProjectVfs::open_watched` reads the shared
+  watch. Declarations register in every mode; programs wait for Play (only the lane drains them).
+  Positions: `khora-script/src/source_map.rs` — modules laid end to end in one offset space
+  (`Lexed::shifted`), `CompileOutcome.sources.locate(span) -> Location{module, line, column}`. Problems:
+  `khora_core::script::ScriptProblems` (`Arc`, `Runtime.resources`), sources `ProblemSource::{Compile{module},
+  Registration, Running}`, `report(source, list)` replaces a source's list; fed by
+  `khora-io/src/script/problems.rs::report_compile` (per compiled module, diagnostics under the module they
+  are in), `DeclaredComponents::standing_problems` (refused, orphaned) via `script_components`, and the
+  `script_problems` DataSystem (`khora-lanes/src/script_lane/problems.rs`: faulted instances, bodies past
+  `WATCHDOG_WARN`). Units: `ErgonType::{Duration, Angle}` reach the layout (`FieldKind::Float` storage;
+  `retyped` compares stored forms, structs included); `ErgonType::widened` turns an `int` into the float a
+  float-typed field holds at any depth — `PackedLayout::admit` applies it, so scripts and the editor write
+  by one rule. The inspector's side is in [`editor-ui-ux.md`](./editor-ui-ux.md).
 - **One write order.** A behavior is a component other scripts `Set`/`Get`/`Has` (`BehaviorDecl::as_component`);
   `this.Set(<own behavior>)` is refused. A turn starts from the `Set`s of its fields emitted earlier in the
   frame (`state_update::sets_on`); `BehaviorUpdate.read_until` / `emitted_after` = frame commands queued when it

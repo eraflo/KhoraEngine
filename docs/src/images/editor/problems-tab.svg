@@ -1,0 +1,60 @@
+<svg class="kp-figure" viewBox="0 0 760 236" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-prob-title kp-prob-desc">
+  <title id="kp-prob-title">The Problems tab</title>
+  <desc id="kp-prob-desc">The bottom dock with the Problems tab active, titled Problems, 2 errors, 1 warning. Under ai/guard.erg: an error at 12:9, Lantren is not a component; and an error naming the entity Gate, Guard faulted and was disabled: division by zero. Under Not in a script: a warning, Relic is no longer declared by any script, with its note. On the right, the guard.erg tile of the Assets panel wears a badge: the error glyph and 2.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-tile { fill: var(--k-bg-2, #181e2b); }
+    .kp-pill { fill: var(--k-bg-1, #101622); }
+    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-active { stroke: var(--k-silver, #b4cfe2); stroke-width: 1.5; }
+    .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
+    .kp-err { fill: none; stroke: var(--k-red, #e0605a); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .kp-warn { fill: none; stroke: var(--k-amber, #e8a33c); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .kp-glyph { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+    .kp-tab { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-tab-on { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    .kp-module { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
+    .kp-pos { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
+    .kp-msg { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
+    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 10.5px; }
+    .kp-link { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
+    .kp-count { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10px; }
+    .kp-file { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 10.5px; }
+    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="236"/>
+  <rect class="kp-panel" x="16" y="16" width="560" height="204" rx="6"/>
+  <text class="kp-tab" x="32" y="36">Assets</text>
+  <text class="kp-tab" x="86" y="36">Console</text>
+  <text class="kp-tab-on" x="148" y="36">Problems · 2 errors · 1 warning</text>
+  <path class="kp-active" d="M148,45 H334"/>
+  <text class="kp-tab" x="352" y="36">GORNA</text>
+  <path class="kp-rule" d="M16,46 H576"/>
+  <!-- ai/guard.erg -->
+  <text class="kp-module" x="32" y="70">ai/guard.erg</text>
+  <g transform="translate(34,82) scale(0.5)"><circle class="kp-err" cx="12" cy="12" r="10"/><path class="kp-err" d="m15 9-6 6"/><path class="kp-err" d="m9 9 6 6"/></g>
+  <text class="kp-pos" x="56" y="93">12:9</text>
+  <text class="kp-msg" x="96" y="93">`Lantren` is not a component</text>
+  <g transform="translate(34,106) scale(0.5)"><circle class="kp-err" cx="12" cy="12" r="10"/><path class="kp-err" d="m15 9-6 6"/><path class="kp-err" d="m9 9 6 6"/></g>
+  <text class="kp-msg" x="96" y="117">`Guard` faulted and was disabled: division by zero</text>
+  <text class="kp-link" x="560" y="117" text-anchor="end">Gate</text>
+  <!-- not in a script -->
+  <text class="kp-module" x="32" y="150">Not in a script</text>
+  <g transform="translate(34,162) scale(0.5)"><path class="kp-warn" d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path class="kp-warn" d="M12 9v4"/><path class="kp-warn" d="M12 17h.01"/></g>
+  <text class="kp-msg" x="96" y="173">`Relic` is no longer declared by any script</text>
+  <text class="kp-note" x="96" y="191">declare it again to adopt it, or remove it from the entities holding it</text>
+  <!-- the .erg tile -->
+  <rect class="kp-tile" x="600" y="28" width="96" height="96" rx="6"/>
+  <g transform="translate(630,58) scale(1.5)"><path class="kp-glyph" d="m16 18 6-6-6-6"/><path class="kp-glyph" d="m8 6-6 6 6 6"/></g>
+  <rect class="kp-pill" x="652" y="34" width="38" height="16" rx="8"/>
+  <g transform="translate(657,36.5) scale(0.46)"><circle class="kp-err" cx="12" cy="12" r="10"/><path class="kp-err" d="m15 9-6 6"/><path class="kp-err" d="m9 9 6 6"/></g>
+  <text class="kp-count" x="676" y="46">2</text>
+  <text class="kp-file" x="648" y="140" text-anchor="middle">guard.erg</text>
+  <!-- callouts -->
+  <path class="kp-lead" d="M560,121 C580,150 600,170 600,170"/>
+  <text class="kp-head" x="600" y="186">a running problem</text>
+  <text class="kp-label" x="600" y="202">click to select its entity</text>
+</svg>

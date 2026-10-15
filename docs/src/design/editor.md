@@ -185,11 +185,23 @@ Stacked component cards. Each card is collapsible, with a 6 px gold accent on ho
 
 There is no separate "Prefab" tab: the overrides are shown where the values are. See [Prefabs](../concepts/prefabs.md#seeing-and-editing-overrides).
 
+**A component a script declares** is the same card — same header, same hairline, same override marks — drawn from its Ergon types rather than from JSON:
+
+- **Provenance line** — one quiet caption under the title: the declaring `.erg` in mono; "Written by the engine while playing" for a behavior's state; for an orphan, "No script declares *X* any more — its data is kept" in amber (warning), with a tooltip on what to do. Never a banner.
+- **Category tag** — the part it plays, where a Rust card shows its domain: `SCRIPT`, `BEHAVIOR`, `STATE`, `SYSTEM`.
+- **Units** — a `Duration` scrubber is followed by a muted `s`, an `Angle` by `deg`; the unit is text, not a field suffix the scrubber edits.
+- **Optional and lists** — `none` is a muted word with a small **Set**; clearing, moving and removing live in the row's context menu, in words. **+ Add item** closes a list.
+- **Entity slot** — a recessed well (interactive surface) naming the entity; while anything is dragged it takes a 1 px silver stroke, and tints when hovered — the drop target announces itself only when a drop is possible.
+- **Read-only** — a state or system card shows label and value as dim text: nothing that looks editable is.
+- **+ Add Component** — a script's entry reads `Name · file.erg`, its full path in the tooltip; Rust entries first in each domain, then the project's.
+
 ### Viewport (center, fluid)
 The 3D scene. Floating gizmo overlay top-left (move/rotate/scale). Coordinate readout bottom-right in mono. View modes (wireframe, lit, normals) as a floating segmented pill, top-right.
 
 ### Bottom dock (180 px, retractable)
-Tabbed: **Assets** (grid of project files) · **Console** (filtered log) · **GORNA** (engine suggestions). Drag the divider up to expand; collapses to 28 px tab strip.
+Tabbed: **Assets** (grid of project files) · **Console** (filtered log) · **Problems** (the project's script problems) · **GORNA** (engine suggestions). Drag the divider up to expand; collapses to 28 px tab strip.
+
+**Problems** is drawn as the Console is — the same filter pills, the same row grid, the same two severity tints — and the severity is always a glyph as well as a colour. Rows are grouped under their module's path; each reads `line:col  message` in mono, the note dim beneath. The tab title carries the counts (`Problems · 2 errors · 1 warning`); with nothing wrong it is just **Problems**, and the body is a calm empty state rather than a green tick. An `.erg` tile in Assets wears the same glyph and count as a small pill on its thumbnail's corner — errors win over warnings.
 
 ---
 
