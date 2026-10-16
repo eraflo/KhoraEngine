@@ -76,6 +76,8 @@ behavior Guard {
 /// One guard on entity 0.
 fn one_guard() -> ScriptView {
     ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         resumed: false,
         delta_seconds: 0.016,
         input: Default::default(),

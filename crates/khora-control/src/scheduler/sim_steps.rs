@@ -17,7 +17,8 @@
 /// Upper bound on fixed simulation sub-steps run in a single frame. When the
 /// accumulator would demand more, the excess time is dropped (the sim runs
 /// in slow-motion rather than freezing). Bounds worst-case per-frame cost.
-pub(super) const MAX_SIM_STEPS: u32 = 5;
+/// The engine's one cap, which the script lane bounds the steps it owes by.
+pub(super) const MAX_SIM_STEPS: u32 = khora_core::time::MAX_SIM_STEPS;
 
 /// Pure step-count arithmetic for the fixed-timestep accumulator.
 ///

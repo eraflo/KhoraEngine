@@ -42,6 +42,8 @@ impl Checker {
         self.declare_fields(&decl.members);
         self.check_first_state(&decl.members);
         self.check_members(&decl.members, &decl.name, &states, false);
+        self.refuse_waiting_fixed_update(&decl.members);
+        self.member_calls.clear();
 
         // Methods belong to their behavior; leaving them in scope would let the
         // next declaration call them.
@@ -49,6 +51,73 @@ impl Checker {
         self.state_methods.clear();
         self.field_names.clear();
         self.method_names.clear();
+    }
+
+    /// Refuses a `FixedUpdate` that would wait: one that calls, itself or
+    /// through other members, an `async` member — a step that waited would
+    /// not be a step.
+    fn refuse_waiting_fixed_update(&mut self, members: &[BehaviorMember]) {
+        // Every method, by its name qualified with its state's.
+        let mut all: Vec<(String, &crate::ast::MethodDecl)> = Vec::new();
+        for member in members {
+            match member {
+                BehaviorMember::Method(method) => all.push((method.name.clone(), method)),
+                BehaviorMember::State(state) => {
+                    for inner in &state.members {
+                        if let BehaviorMember::Method(method) = inner {
+                            all.push((format!("{}.{}", state.name, method.name), method));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        let asynchronous: std::collections::HashSet<&str> = all
+            .iter()
+            .filter(|(_, method)| method.is_async)
+            .map(|(name, _)| name.as_str())
+            .collect();
+        let fixed = crate::lifecycle::FIXED_UPDATE.name;
+        for (key, method) in all.iter().filter(|(_, method)| method.name == fixed) {
+            // What `FixedUpdate` reaches, call by call.
+            let mut seen: Vec<String> = vec![key.clone()];
+            let mut at = 0;
+            let mut waits = None;
+            while at < seen.len() {
+                let callees: Vec<String> = self
+                    .member_calls
+                    .get(&seen[at])
+                    .map(|callees| callees.iter().cloned().collect())
+                    .unwrap_or_default();
+                for callee in callees {
+                    if asynchronous.contains(callee.as_str()) {
+                        waits.get_or_insert(callee.clone());
+                    }
+                    if !seen.contains(&callee) {
+                        seen.push(callee);
+                    }
+                }
+                at += 1;
+            }
+            if let Some(callee) = waits {
+                let callee = callee.rsplit('.').next().unwrap_or(&callee).to_owned();
+                self.error_note(
+                    format!("`FixedUpdate` may not wait: it calls `{callee}`, which is `async`"),
+                    method.name_span,
+                    "it runs once per fixed step, and a step that waited would not be a step — start the wait from `Update` or a handler",
+                );
+                return;
+            }
+        }
+    }
+
+    /// `name` as [`member_calls`](Self::member_calls) keys it: qualified with
+    /// the state being checked when it is that state's own method.
+    pub(super) fn qualified(&self, name: &str) -> String {
+        match &self.current_state {
+            Some((state, own)) if own.contains(name) => format!("{state}.{name}"),
+            _ => name.to_owned(),
+        }
     }
 
     /// Brings the methods declared directly in `members` into scope, over any
@@ -301,7 +370,17 @@ impl Checker {
                     let outer = self.functions.clone();
                     let outer_methods = self.method_names.clone();
                     self.collect_methods(&state.members);
+                    let own = state
+                        .members
+                        .iter()
+                        .filter_map(|member| match member {
+                            BehaviorMember::Method(method) => Some(method.name.clone()),
+                            _ => None,
+                        })
+                        .collect();
+                    let outer_state = self.current_state.replace((state.name.clone(), own));
                     self.check_members(&state.members, owner, states, true);
+                    self.current_state = outer_state;
                     self.functions = outer;
                     self.method_names = outer_methods;
                     self.field_names.truncate(fields);

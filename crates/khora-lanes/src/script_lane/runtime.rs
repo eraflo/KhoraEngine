@@ -123,6 +123,11 @@ pub struct Instance {
     /// reach, is not lost time.
     pub owed: f32,
 
+    /// The fixed steps its `FixedUpdate` has not been called for yet, each
+    /// the step it was taken at, oldest first, at most the engine's step cap:
+    /// they run first, on its next turn.
+    pub fixed_owed: Vec<f32>,
+
     /// For a rate-limited behavior, the seconds until its next turn is due —
     /// started, the first time it is seen, at a phase its entity decides, so
     /// that its instances spread over the period.
@@ -167,7 +172,8 @@ pub enum Body {
     Sequence,
     /// `OnSpawn`.
     Spawn,
-    /// `Update`.
+    /// A per-frame member: `Update`, or one step's `FixedUpdate` — counted
+    /// when it began, so finishing it completes nothing more.
     Update,
     /// `OnLoad`. Never saved: a load reruns it from the start.
     Load,

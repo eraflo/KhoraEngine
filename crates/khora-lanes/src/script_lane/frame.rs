@@ -23,7 +23,7 @@ use khora_script::native::Host;
 
 use super::arrival::{arrive, Arriving};
 use super::hooks::{despawns_itself, say_goodbye};
-use super::mail::keep;
+use super::mail::{keep, sit_out};
 use super::persistence;
 use super::report::ScriptRunReport;
 use super::runtime::ScriptRuntime;
@@ -175,17 +175,17 @@ pub fn run_behaviors(
 
             // A frame its rate skips: its mail and its time wait for its turn.
             // Not a deferral — it runs as often as it asked.
-            if super::rate::skips(runtime, instance, program, view.delta_seconds) {
-                super::state_update::record_if_rewritten(runtime, instance, program, &mut report);
-                keep(
-                    events,
-                    instance.entity,
-                    0,
-                    several,
-                    &program.behavior,
-                    runtime,
-                    &mut report,
-                );
+            if super::rate::skips(
+                runtime,
+                instance,
+                program,
+                (
+                    view.delta_seconds,
+                    view.fixed_steps,
+                    view.fixed_delta_seconds,
+                ),
+            ) {
+                sit_out(events, instance, program, several, runtime, &mut report);
                 continue;
             }
 
@@ -195,15 +195,8 @@ pub fn run_behaviors(
             // replaced. Deferred, its events kept for the frame it runs.
             if runtime.is_waiting(&program.module) {
                 report.deferred += 1;
-                keep(
-                    events,
-                    instance.entity,
-                    0,
-                    several,
-                    &program.behavior,
-                    runtime,
-                    &mut report,
-                );
+                super::rate::note_sat_out(runtime, instance, program, view.fixed_steps);
+                sit_out(events, instance, program, several, runtime, &mut report);
                 continue;
             }
 
@@ -245,18 +238,11 @@ pub fn run_behaviors(
                 // rotation comes back to it, so every instance moves forward.
                 starved_at.get_or_insert(instance.entity);
                 // Carried into new code this frame, its record follows even
-                // though it does not run: a save in between reads the World.
-                super::state_update::record_if_rewritten(runtime, instance, program, &mut report);
+                // though it does not run: a save in between reads the World —
+                // and so do the fixed steps it now waits for.
+                super::rate::note_sat_out(runtime, instance, program, view.fixed_steps);
                 // The turn never happened, so nothing addressed to it was seen.
-                keep(
-                    events,
-                    instance.entity,
-                    0,
-                    several,
-                    &program.behavior,
-                    runtime,
-                    &mut report,
-                );
+                sit_out(events, instance, program, several, runtime, &mut report);
                 continue;
             }
 
@@ -391,7 +377,7 @@ pub fn run_behaviors(
                 .layout(&program.behavior)
                 .map(|layout| layout.schedule)
                 .unwrap_or_default();
-            let delta = super::rate::take_turn(state, schedule);
+            let (delta, fixed_steps) = super::rate::take_turn(state, schedule);
             let mut progress = Progress {
                 spawned: state.spawned,
                 pending: state.pending.take(),
@@ -400,6 +386,7 @@ pub fn run_behaviors(
                 resume_failed: std::mem::take(&mut state.resume_failed),
                 slow: None,
                 dropped: Vec::new(),
+                fixed_left: fixed_steps,
             };
 
             // Brought back by a load as the save had it, it owes nothing: what
@@ -466,6 +453,13 @@ pub fn run_behaviors(
             state.loading = progress.loading;
             state.after_load = progress.after_load;
             state.resume_failed = progress.resume_failed;
+            // The steps it did not run are owed — unless it faulted: an edit
+            // that runs it again owes it none from before.
+            state.fixed_owed = if matches!(outcome, Outcome::Faulted { .. }) {
+                Vec::new()
+            } else {
+                progress.fixed_left
+            };
             state.farewelled |= leaving;
             for (event, why) in progress.dropped {
                 log::warn!(

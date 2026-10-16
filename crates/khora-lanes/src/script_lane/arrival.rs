@@ -55,10 +55,15 @@ pub(super) fn arrive(
     let fingerprint = program.fingerprint();
     // The time it waited for this first turn, and the phase it waits at, are
     // the frame's, not what it brings.
-    let (waited, until) = (state.owed, state.until);
+    let (waited, steps, until) = (
+        state.owed,
+        std::mem::take(&mut state.fixed_owed),
+        state.until,
+    );
     *state = Instance {
         fields: arriving.store,
         owed: waited,
+        fixed_owed: steps,
         until,
         ..Instance::default()
     };
@@ -67,6 +72,11 @@ pub(super) fn arrive(
     }
     // What it was owed when the save was taken.
     state.owed += arriving.lifecycle.owed;
+    // The steps the save owed first, then the ones taken since.
+    let mut owed = arriving.lifecycle.fixed_owed.clone();
+    owed.append(&mut state.fixed_owed);
+    owed.truncate(khora_core::time::MAX_SIM_STEPS as usize);
+    state.fixed_owed = owed;
     state.spawned = arriving.lifecycle.spawned;
     // Owed before the save, so heard before anything this load adds.
     state.resume_failed = arriving.lifecycle.resume_failed.clone();

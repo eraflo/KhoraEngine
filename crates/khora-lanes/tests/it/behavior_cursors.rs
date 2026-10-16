@@ -56,6 +56,8 @@ fn entity(index: u32) -> EntityId {
 /// flow lists each behavior's instances.
 fn view_of(programs: &[(&str, &str)], instances: &[(u32, u32)]) -> ScriptView {
     ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         resumed: false,
         delta_seconds: 0.016,
         input: Default::default(),

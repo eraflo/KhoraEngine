@@ -54,6 +54,8 @@ fn subject() -> EntityId {
 
 fn view_of(delta: f32, observed: Option<ScriptSnapshot>) -> ScriptView {
     ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         resumed: false,
         delta_seconds: delta,
         input: Default::default(),
@@ -370,6 +372,7 @@ fn a_save_taken_while_on_resume_failed_waits_answers_each_member_once() {
             fault: None,
             resume_failed: vec!["Wander".to_owned(), "Spotted".to_owned()],
             owed: 0.0,
+            fixed_owed: Vec::new(),
         },
         ..ScriptSnapshot::default()
     };

@@ -97,6 +97,11 @@ fn declare_behavior(world: &mut World, module: &str, name: &str) -> (ComponentKe
                 ScriptValue::Array(Vec::new()),
             ),
             field("owed", FieldKind::Float, ScriptValue::Float(0.0)),
+            field(
+                "fixed_owed",
+                FieldKind::Value,
+                ScriptValue::Array(Vec::new()),
+            ),
         ],
     );
     world.set_script_role(
@@ -397,6 +402,7 @@ fn the_lifecycle_reaches_the_companion() {
     let entity = running(&mut world, guard, 100, 5);
     let lifecycle = InstanceLifecycle {
         owed: 0.0,
+        fixed_owed: Vec::new(),
         resume_failed: Vec::new(),
         spawned: true,
         fault: Some(RecordedFault {

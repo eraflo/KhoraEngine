@@ -277,5 +277,10 @@ fn companion_fields() -> Vec<DeclaredField> {
             ScriptValue::Array(Vec::new()),
         ),
         field("owed", ErgonType::Float, ScriptValue::Float(0.0)),
+        field(
+            "fixed_owed",
+            ErgonType::Array(Box::new(ErgonType::Float)),
+            ScriptValue::Array(Vec::new()),
+        ),
     ]
 }

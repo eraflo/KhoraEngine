@@ -55,6 +55,8 @@ fn entity(index: u32) -> EntityId {
 /// projecting no component.
 fn view(module: &str, entities: &[EntityId], delta: f32) -> ScriptView {
     ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         resumed: false,
         delta_seconds: delta,
         input: Default::default(),

@@ -116,6 +116,11 @@ pub struct InstanceLifecycle {
     /// or the fuel could not reach: its next turn is handed them.
     #[serde(default)]
     pub owed: f32,
+    /// The fixed steps its `FixedUpdate` has not been called for yet, each
+    /// the step it was taken at, oldest first, at most the engine's step
+    /// cap: they run first, on its next turn.
+    #[serde(default)]
+    pub fixed_owed: Vec<f32>,
 }
 
 /// A fault that disabled an instance, stamped with the program it faulted in.

@@ -664,6 +664,7 @@ fn every_register_snapshot(target: EntityId) -> khora_core::script::ScriptSnapsh
         }),
         lifecycle: khora_core::script::InstanceLifecycle {
             owed: 0.0,
+            fixed_owed: Vec::new(),
             resume_failed: Vec::new(),
             spawned: true,
             fault: Some(khora_core::script::RecordedFault {

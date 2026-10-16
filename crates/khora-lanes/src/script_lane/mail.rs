@@ -40,6 +40,28 @@ pub(super) fn keep(
     }
 }
 
+/// A frame `instance` does not run: its record follows what it is now owed,
+/// and what it was sent waits for the turn that will listen.
+pub(super) fn sit_out(
+    events: &EventQueue,
+    instance: &khora_data::flow::ScriptInstance,
+    program: &khora_data::flow::ScriptProgram,
+    several: bool,
+    runtime: &mut ScriptRuntime,
+    report: &mut ScriptRunReport,
+) {
+    super::state_update::record_if_rewritten(runtime, instance, program, report);
+    keep(
+        events,
+        instance.entity,
+        0,
+        several,
+        &program.behavior,
+        runtime,
+        report,
+    );
+}
+
 /// Puts back what an instance was never told.
 ///
 /// **Only what it was never told.** A turn that got through three of its five

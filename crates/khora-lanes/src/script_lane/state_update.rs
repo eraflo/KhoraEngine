@@ -61,6 +61,7 @@ pub(super) fn update_of(
         spawned: held.spawned && !spawning_in_front,
         fault: held.fault.clone(),
         owed: held.owed,
+        fixed_owed: held.fixed_owed.clone(),
     };
     let changed = snapshot
         .fields
@@ -130,8 +131,9 @@ pub(super) fn record_if_rewritten(
         return;
     }
     // It did not run: none of what it records was written this frame, and
-    // any `Set` of its fields stands over it.
-    let update = update_of(
+    // any `Set` of its fields stands over it — so no field is written back,
+    // only its state.
+    let mut update = update_of(
         held,
         layout,
         &compiled,
@@ -140,6 +142,7 @@ pub(super) fn record_if_rewritten(
         &instance.row,
         TurnPosition::default(),
     );
+    update.changed.clear();
     runtime
         .instance(instance.entity, &program.behavior)
         .rewritten = false;

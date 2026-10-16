@@ -134,6 +134,10 @@ pub(super) struct Progress {
     /// The events this turn dropped, a payload their handler could not take:
     /// each event and why.
     pub(super) dropped: Vec<(String, String)>,
+    /// The fixed steps this turn is to call `FixedUpdate` for and has not,
+    /// each the step it was taken at: what it hands back, owed to the next
+    /// turn.
+    pub(super) fixed_left: Vec<f32>,
 }
 
 /// `OnLoad` has finished: the body the load restored is the one owed next.
@@ -476,6 +480,11 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
         }
     }
 
+    // Its fixed steps, after its own schedule and before what happens to it.
+    if let Some(outcome) = super::fixed_step::run_steps(call, progress, host, &mut spent) {
+        return outcome;
+    }
+
     // What this instance has been told, so the frame can put back what it has
     // not. Incremented **after** an event is done with, so a handler the budget
     // never reached is offered again next frame rather than skipped.
@@ -589,7 +598,7 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
 /// watchdog has counted the frame it ran — the frame it started in counts as
 /// any other — and ends the turn with `busy`; or, past the watchdog's last
 /// limit already, with the fault.
-fn park(
+pub(super) fn park(
     progress: &mut Progress,
     mut pending: Pending,
     (program, behavior, host): (&Program, &str, &mut Host),
@@ -629,7 +638,7 @@ fn park(
 ///
 /// A body cut by the fuel has run this frame: the watchdog counts it from
 /// there. One stopped at an `await` has run nothing the wait counts.
-fn kept(
+pub(super) fn kept(
     machine: Machine,
     body: Body,
     program: &Program,

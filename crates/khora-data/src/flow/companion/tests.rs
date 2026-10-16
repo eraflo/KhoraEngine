@@ -26,7 +26,7 @@ use crate::ecs::{
 };
 
 /// The companion's fields, in order — the same for every behavior.
-const COMPANION: [&str; 8] = [
+const COMPANION: [&str; 9] = [
     "state",
     "state_fields",
     "timers",
@@ -35,6 +35,7 @@ const COMPANION: [&str; 8] = [
     "fault",
     "resume_failed",
     "owed",
+    "fixed_owed",
 ];
 
 fn entity(index: u32, generation: u32) -> EntityId {
@@ -100,6 +101,7 @@ fn busy() -> ScriptSnapshot {
         }),
         lifecycle: InstanceLifecycle {
             owed: 0.0,
+            fixed_owed: Vec::new(),
             spawned: true,
             fault: Some(RecordedFault {
                 fingerprint: 0xDEAD_BEEF_0123_4567,
@@ -259,6 +261,11 @@ fn a_companion_row_is_stored_and_read_back_by_the_world() {
                     ScriptValue::Array(Vec::new()),
                 ),
                 field("owed", FieldKind::Float, ScriptValue::Float(0.0)),
+                field(
+                    "fixed_owed",
+                    FieldKind::Value,
+                    ScriptValue::Array(Vec::new()),
+                ),
             ])
             .expect("a valid layout"),
         })
@@ -332,4 +339,53 @@ fn a_companion_row_still_holding_an_initialised_flag_reads_back() {
             "`initialised: {flag}`"
         );
     }
+}
+
+/// **The fixed steps an instance is owed round trip through its companion**,
+/// each its own step, oldest first, as a `float[]`: a game saved owing two
+/// steps of 1/120 s and one of 1/30 s loads owing exactly those. A row whose
+/// entries are not steps — zero, negative, not a number, not a float —
+/// owes none of them, and one whose field is not an array owes nothing.
+#[test]
+fn a_companion_row_round_trips_the_fixed_steps_owed() {
+    let owed = vec![1.0 / 120.0, 1.0 / 120.0, 1.0 / 30.0];
+    let mut snapshot = busy();
+    snapshot.lifecycle.fixed_owed = owed.clone();
+
+    let row = companion_row(&snapshot).expect("a row");
+    assert_eq!(
+        value_of(&row, "fixed_owed"),
+        &ScriptValue::Array(owed.iter().map(|step| ScriptValue::Float(*step)).collect())
+    );
+    let back = companion_snapshot(&row).expect("reads back");
+    assert_eq!(back.lifecycle.fixed_owed, owed, "the three steps, in order");
+
+    let with = |value: ScriptValue| -> Vec<(String, ScriptValue)> {
+        row.iter()
+            .cloned()
+            .map(|(name, held)| match name.as_str() {
+                "fixed_owed" => (name, value.clone()),
+                _ => (name, held),
+            })
+            .collect()
+    };
+    let invalid = with(ScriptValue::Array(vec![
+        ScriptValue::Float(0.0),
+        ScriptValue::Float(-0.5),
+        ScriptValue::Float(f32::NAN),
+        ScriptValue::Int(2),
+        ScriptValue::Float(1.0 / 60.0),
+    ]));
+    let back = companion_snapshot(&invalid).expect("reads back");
+    assert_eq!(
+        back.lifecycle.fixed_owed,
+        vec![1.0 / 60.0],
+        "only the one valid step is owed"
+    );
+    let not_an_array = with(ScriptValue::Int(3));
+    let back = companion_snapshot(&not_an_array).expect("reads back");
+    assert!(
+        back.lifecycle.fixed_owed.is_empty(),
+        "a count from an older row owes nothing"
+    );
 }

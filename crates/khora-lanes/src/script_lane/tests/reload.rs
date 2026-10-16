@@ -278,6 +278,8 @@ fn a_scene_value_seeds_the_instance_rather_than_the_declared_default() {
     use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 
     let view = ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         resumed: false,
         delta_seconds: 0.0,
         input: Default::default(),
@@ -323,6 +325,8 @@ fn a_field_the_scene_did_not_save_takes_its_declared_default() {
     let mut host = Host::new();
 
     let view = ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         resumed: false,
         delta_seconds: 0.0,
         input: Default::default(),
@@ -384,6 +388,8 @@ fn a_frames_state_travels_to_the_scene_and_back() {
 
     // A fresh session loads it.
     let view = ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         resumed: false,
         delta_seconds: 0.0,
         input: Default::default(),

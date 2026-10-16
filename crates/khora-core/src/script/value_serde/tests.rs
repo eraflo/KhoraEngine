@@ -463,6 +463,7 @@ fn a_script_snapshot_round_trips() {
         }),
         lifecycle: InstanceLifecycle {
             owed: 0.0,
+            fixed_owed: Vec::new(),
             spawned: true,
             fault: Some(RecordedFault {
                 fingerprint: 0x8000_0000_0000_0001,

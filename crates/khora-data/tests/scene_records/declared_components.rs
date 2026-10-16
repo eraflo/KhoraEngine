@@ -114,6 +114,11 @@ pub(super) fn companion_fields() -> Vec<PackedField> {
             ScriptValue::Array(Vec::new()),
         ),
         field("owed", FieldKind::Float, ScriptValue::Float(0.0)),
+        field(
+            "fixed_owed",
+            FieldKind::Value,
+            ScriptValue::Array(Vec::new()),
+        ),
     ]
 }
 

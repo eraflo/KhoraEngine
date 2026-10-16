@@ -35,6 +35,10 @@ use std::sync::{Arc, RwLock};
 /// Default fixed simulation step — 60 Hz.
 pub const DEFAULT_FIXED_DELTA_SECONDS: f32 = 1.0 / 60.0;
 
+/// Upper bound on the fixed simulation steps one frame runs — and on the
+/// steps a script's `FixedUpdate` may be owed.
+pub const MAX_SIM_STEPS: u32 = 5;
+
 /// Per-frame timing state shared between the simulation and the render path.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Time {
@@ -52,6 +56,8 @@ pub struct Time {
     pub interpolation_alpha: f32,
     /// Monotonic frame counter, incremented once per rendered frame.
     pub frame: u64,
+    /// The fixed simulation steps this frame took, written by the scheduler.
+    pub fixed_steps: u32,
     /// How fast the simulated world runs, against the wall clock.
     ///
     /// `1.0` is real time. `0.0` stops the simulation without stopping the
@@ -83,6 +89,7 @@ impl Default for Time {
             fixed_delta_seconds: DEFAULT_FIXED_DELTA_SECONDS,
             interpolation_alpha: 0.0,
             frame: 0,
+            fixed_steps: 0,
             scale: 1.0,
         }
     }

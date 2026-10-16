@@ -124,6 +124,8 @@ event Ticked;
 
 fn view(delta: f32, arrival: Option<ScriptArrival>) -> ScriptView {
     ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         delta_seconds: delta,
         input: Default::default(),
         components: Default::default(),

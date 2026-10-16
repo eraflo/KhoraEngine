@@ -56,6 +56,17 @@ pub fn companion_row(
             "owed".to_owned(),
             ScriptValue::Float(snapshot.lifecycle.owed),
         ),
+        (
+            "fixed_owed".to_owned(),
+            ScriptValue::Array(
+                snapshot
+                    .lifecycle
+                    .fixed_owed
+                    .iter()
+                    .map(|step| ScriptValue::Float(*step))
+                    .collect(),
+            ),
+        ),
     ])
 }
 
@@ -111,6 +122,16 @@ pub fn companion_snapshot(
             owed: match row.iter().find(|(known, _)| known == "owed") {
                 Some((_, ScriptValue::Float(owed))) => *owed,
                 _ => 0.0,
+            },
+            fixed_owed: match row.iter().find(|(known, _)| known == "fixed_owed") {
+                Some((_, ScriptValue::Array(steps))) => steps
+                    .iter()
+                    .filter_map(|step| match step {
+                        ScriptValue::Float(step) if *step > 0.0 => Some(*step),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
             },
         },
         ..ScriptSnapshot::default()

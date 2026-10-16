@@ -65,6 +65,8 @@ event Spotted(int by);
 
 fn view(delta: f32, arrival: Option<ScriptArrival>) -> ScriptView {
     ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         resumed: false,
         delta_seconds: delta,
         input: Default::default(),

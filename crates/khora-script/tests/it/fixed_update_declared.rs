@@ -187,3 +187,81 @@ fn a_rate_limited_behavior_declaring_fixed_update_is_refused() {
          behavior Mover { float x = 0.0; void Update(float dt) { x += dt; } }",
     );
 }
+
+/// **`FixedUpdate` may not wait through another member either**: calling an
+/// `async` member suspends the caller on its `await`, and a step that waited
+/// would not be a step — so the call is refused as an `async` `FixedUpdate`
+/// is.
+#[test]
+fn a_fixed_update_calling_an_async_member_is_refused() {
+    refused_saying(
+        "behavior Mover {
+             async void Hold() { await 1s; }
+             void FixedUpdate(float dt) { Hold(); }
+         }",
+        &["async", "FixedUpdate"],
+    );
+}
+
+/// **A wait reached through a call cycle is found, and a cycle with no wait
+/// is not one**: `FixedUpdate` calls `Pace`, which calls `Turn`, which calls
+/// `Pace` back and `Hold`, which waits — refused, naming the wait. The same
+/// cycle without `Hold` compiles with nothing to say: the walk ends.
+#[test]
+fn a_wait_reached_through_a_call_cycle_is_refused_and_a_cycle_without_one_compiles() {
+    refused_saying(
+        "behavior Mover {
+             int n = 0;
+             async void Hold() { await 1s; }
+             void Pace() { n += 1; if (n < 3) { Turn(); } }
+             void Turn() { Pace(); Hold(); }
+             void FixedUpdate(float dt) { Pace(); }
+         }",
+        &["FixedUpdate", "Hold", "async"],
+    );
+    compiles_cleanly(
+        "behavior Mover {
+             int n = 0;
+             void Pace() { n += 1; if (n < 3) { Turn(); } }
+             void Turn() { Pace(); }
+             void FixedUpdate(float dt) { Pace(); }
+         }",
+    );
+}
+
+/// **A state's `FixedUpdate` may not wait through the behavior's members**:
+/// in `Walking`, it calls the behavior's `Step`, which calls the behavior's
+/// `async` `Hold`.
+#[test]
+fn a_states_fixed_update_reaching_an_async_behavior_member_is_refused() {
+    refused_saying(
+        "behavior Mover {
+             async void Hold() { await 1s; }
+             void Step() { Hold(); }
+             state Walking {
+                 void FixedUpdate(float dt) { Step(); }
+             }
+         }",
+        &["FixedUpdate", "Hold", "async"],
+    );
+}
+
+/// **A wait is told by the member called, not by its name elsewhere**:
+/// `Resting`'s `FixedUpdate` calls `Resting`'s own `Act`, which does not wait;
+/// that `Walking` has an `async` `Act` of its own is no reason to refuse it.
+#[test]
+fn a_fixed_update_calling_its_states_own_member_is_not_refused_for_another_states_async_one() {
+    compiles_cleanly(
+        "behavior Mover {
+             int n = 0;
+             state Walking {
+                 async void Act() { await 1s; }
+                 void Update(float dt) { Act(); }
+             }
+             state Resting {
+                 void Act() { n += 1; }
+                 void FixedUpdate(float dt) { Act(); }
+             }
+         }",
+    );
+}

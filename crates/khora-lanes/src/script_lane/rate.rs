@@ -42,9 +42,10 @@ pub(super) fn skips(
     runtime: &mut ScriptRuntime,
     instance: &ScriptInstance,
     program: &ScriptProgram,
-    delta: f32,
+    (delta, steps, step): (f32, u32, f32),
 ) -> bool {
     let schedule = schedule_of(runtime, program);
+    let fixed = declares_fixed_update(runtime, program);
     let held = runtime.instance(instance.entity, &program.behavior);
     // Known as its module's from the frame it is first seen, before any turn:
     // what the agent prices it by.
@@ -53,8 +54,22 @@ pub(super) fn skips(
     }
     // A faulted instance is not sitting anything out: an edit that runs it
     // again hands it the frame's time, not the time it lay disabled.
-    if !held.disabled {
+    if held.disabled {
+        // What it was owed before its fault is not the edit's to replay.
+        held.fixed_owed.clear();
+    } else {
         held.owed += delta.max(0.0);
+        // Its `FixedUpdate` steps, as many as the frame took, each the step
+        // it is taken at; what it cannot run waits, up to the engine's cap.
+        // A behavior with no `FixedUpdate` is owed none.
+        if fixed {
+            let cap = khora_core::time::MAX_SIM_STEPS as usize;
+            for _ in 0..steps {
+                if held.fixed_owed.len() < cap {
+                    held.fixed_owed.push(step);
+                }
+            }
+        }
     }
     let Some(period) = period(schedule) else {
         return false;
@@ -94,9 +109,10 @@ pub(super) fn due(
     }
 }
 
-/// A turn is about to run: it is handed what the instance is owed, which is
-/// then nothing; a rate-limited instance's next turn is due a period on.
-pub(super) fn take_turn(held: &mut Instance, schedule: Schedule) -> f32 {
+/// A turn is about to run: it is handed what the instance is owed — its time
+/// and its fixed steps — which is then nothing; a rate-limited instance's
+/// next turn is due a period on.
+pub(super) fn take_turn(held: &mut Instance, schedule: Schedule) -> (f32, Vec<f32>) {
     if let (Some(period), Some(until)) = (period(schedule), held.until.as_mut()) {
         if *until <= DUE_SLACK {
             // The whole periods it is behind, at once: a rate far above the
@@ -110,7 +126,40 @@ pub(super) fn take_turn(held: &mut Instance, schedule: Schedule) -> f32 {
             };
         }
     }
-    std::mem::take(&mut held.owed)
+    (
+        std::mem::take(&mut held.owed),
+        std::mem::take(&mut held.fixed_owed),
+    )
+}
+
+/// Whether a frame that did not run `instance` changed what it is owed in a
+/// way its record must keep: steps its `FixedUpdate` now waits for. Marks it
+/// recorded, so a save in between keeps them.
+pub(super) fn note_sat_out(
+    runtime: &mut ScriptRuntime,
+    instance: &ScriptInstance,
+    program: &ScriptProgram,
+    steps: u32,
+) {
+    if steps > 0 && declares_fixed_update(runtime, program) {
+        runtime
+            .instance(instance.entity, &program.behavior)
+            .rewritten = true;
+    }
+}
+
+/// Whether `program`'s behavior declares a `FixedUpdate`, in itself or in a
+/// state.
+fn declares_fixed_update(runtime: &ScriptRuntime, program: &ScriptProgram) -> bool {
+    let Some(compiled) = runtime.program(&program.module) else {
+        return false;
+    };
+    let own = format!("{}.", program.behavior);
+    let member = format!(".{}", khora_script::lifecycle::FIXED_UPDATE.name);
+    compiled
+        .functions
+        .iter()
+        .any(|function| function.name.starts_with(&own) && function.name.ends_with(&member))
 }
 
 /// The schedule `program`'s behavior declares, as the runtime's program holds

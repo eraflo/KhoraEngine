@@ -105,6 +105,8 @@ fn view(behaviors: &[(&str, &[EntityId])]) -> ScriptView {
         })
         .collect();
     ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         resumed: false,
         delta_seconds: 0.016,
         input: Default::default(),

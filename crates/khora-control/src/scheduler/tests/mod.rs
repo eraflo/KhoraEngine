@@ -16,5 +16,6 @@
 
 mod concurrent_exec;
 mod engine_mode;
+mod published_fixed_steps;
 mod sim_steps;
 mod waves;

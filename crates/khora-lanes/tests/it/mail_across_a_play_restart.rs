@@ -91,6 +91,8 @@ fn guard() -> EntityId {
 /// of a play session.
 fn view(entities: &[EntityId], resumed: bool) -> ScriptView {
     ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         resumed,
         delta_seconds: 0.016,
         input: Default::default(),

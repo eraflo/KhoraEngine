@@ -398,6 +398,11 @@ impl Checker {
                 return Ty::Error;
             }
             self.note_call(name, span);
+            if context.owner.is_some() && self.method_names.contains(name) {
+                let caller = self.qualified(&context.member);
+                let callee = self.qualified(name);
+                self.member_calls.entry(caller).or_default().insert(callee);
+            }
             if !self.functions.contains_key(name)
                 && self.refuse_free_form(name, args, span, context)
             {

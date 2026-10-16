@@ -25,6 +25,8 @@ mod behavior_fuel_shares;
 mod critical_behaviors;
 mod declared_behaviors;
 mod durable_text;
+mod fixed_update_owed;
+mod fixed_update_turns;
 mod frozen_save;
 mod held_text;
 mod hot_reload_in_step;

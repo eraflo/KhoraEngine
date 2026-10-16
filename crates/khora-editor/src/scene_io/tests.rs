@@ -246,6 +246,11 @@ fn declare_guard(
             ScriptValue::Array(Vec::new()),
         ),
         field("owed", FieldKind::Float, ScriptValue::Float(0.0)),
+        field(
+            "fixed_owed",
+            FieldKind::Value,
+            ScriptValue::Array(Vec::new()),
+        ),
     ];
     let state = format!("Guard{STATE_SUFFIX}");
     for (name, fields, resumable, role) in [

@@ -65,6 +65,8 @@ event Spotted(int by);
 /// One guard, restored from `saved` if there is anything to restore.
 fn view(delta: f32, saved: Option<ScriptSnapshot>) -> ScriptView {
     ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         resumed: false,
         delta_seconds: delta,
         input: Default::default(),

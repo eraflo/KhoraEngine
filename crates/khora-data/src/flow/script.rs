@@ -105,6 +105,12 @@ pub struct ScriptView {
     /// `every` and `after` count down.
     pub delta_seconds: f32,
 
+    /// The fixed simulation steps this frame took, as the frame's `Time`
+    /// publishes them: how many times a `FixedUpdate` is called.
+    pub fixed_steps: u32,
+    /// The fixed simulation step, in seconds: what a `FixedUpdate` is given.
+    pub fixed_delta_seconds: f32,
+
     /// Whether this is the first frame of play after frames where gameplay did
     /// not run — an editor's Play, a game back from a tool mode. What left
     /// meanwhile left while nothing was playing: it is forgotten, not bid
@@ -208,12 +214,25 @@ impl Flow for ScriptFlow {
     }
 
     fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
+        // The frame's clock: its delta, and the fixed steps it took for a
+        // script's `FixedUpdate` — none without a clock.
+        let (delta_seconds, fixed_steps, fixed_delta_seconds) = runtime
+            .resources
+            .get::<khora_core::time::SharedTime>()
+            .and_then(|time| {
+                time.read().ok().map(|time| {
+                    (
+                        time.delta_seconds,
+                        time.fixed_steps,
+                        time.fixed_delta_seconds,
+                    )
+                })
+            })
+            .unwrap_or((0.0, 0, 0.0));
         let mut view = ScriptView {
-            delta_seconds: runtime
-                .resources
-                .get::<khora_core::time::SharedTime>()
-                .and_then(|time| time.read().ok().map(|time| time.delta_seconds))
-                .unwrap_or(0.0),
+            delta_seconds,
+            fixed_steps,
+            fixed_delta_seconds,
             // Snapshotted under the lock and released: the lane may run on a
             // pool thread, and handing it anything that borrows the map would
             // hold the lock for the length of a frame's scripting.
@@ -485,6 +504,51 @@ mod tests {
                 .all(|instance| instance.arrival.is_none()),
             "and nobody arrives again"
         );
+    }
+
+    // ─── The fixed clock ─────────────────────────────────────────────────────
+
+    /// A runtime whose frame clock is `time`.
+    fn runtime_at(time: khora_core::time::Time) -> Runtime {
+        let shared: khora_core::time::SharedTime =
+            std::sync::Arc::new(std::sync::RwLock::new(time));
+        let mut runtime = Runtime::default();
+        runtime.resources.insert(shared);
+        runtime
+    }
+
+    /// **The view carries the frame's fixed steps and the fixed step**, as
+    /// the frame's `Time` publishes them: what a behavior's `FixedUpdate` is
+    /// called by — that many times, given that step. A frame of no step says
+    /// so, and so does a host with no clock at all.
+    #[test]
+    fn the_view_carries_the_frames_fixed_steps_and_fixed_delta() {
+        let mut world = World::new();
+        let guard = declare_behavior(&mut world, "ai/guard.erg", "Guard");
+        let entity = world.spawn(Transform::identity());
+        attach_behavior(&mut world, entity, guard, 100);
+
+        let mut time = khora_core::time::Time::with_fixed_delta(1.0 / 120.0);
+        time.delta_seconds = 1.0 / 40.0;
+        time.fixed_steps = 3;
+        let view = frame(&mut ScriptFlow::default(), &world, &runtime_at(time));
+        assert_eq!(
+            (view.fixed_steps, view.fixed_delta_seconds),
+            (3, 1.0 / 120.0),
+            "the frame's three steps of 1/120 s"
+        );
+        assert_eq!(view.delta_seconds, 1.0 / 40.0, "and its delta, as before");
+
+        time.fixed_steps = 0;
+        let still = frame(&mut ScriptFlow::default(), &world, &runtime_at(time));
+        assert_eq!(
+            (still.fixed_steps, still.fixed_delta_seconds),
+            (0, 1.0 / 120.0),
+            "a frame of no step: none, and the step it would be"
+        );
+
+        let unclocked = frame(&mut ScriptFlow::default(), &world, &Runtime::default());
+        assert_eq!(unclocked.fixed_steps, 0, "no clock, no step");
     }
 
     // ─── The components scripts read ────────────────────────────────────────

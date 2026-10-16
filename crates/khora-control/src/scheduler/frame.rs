@@ -90,25 +90,38 @@ impl ExecutionScheduler {
         let dt = dt * simulation_scale(&runtime);
 
         // With no fixed-timestep agent, the simulation isn't decoupled: run
-        // everything exactly once (legacy behaviour) and report alpha 0.
-        let (sim_steps, fixed_delta_for_time) = match fixed_delta {
+        // everything exactly once (legacy behaviour) and report alpha 0. The
+        // steps a script's `FixedUpdate` is called for are still counted, at
+        // the default step and on the scaled clock: no step while paused.
+        let (sim_steps, fixed_delta_for_time, published) = match fixed_delta {
             Some(fd) => {
                 let r = compute_sim_steps(self.sim_accumulator, dt, fd, MAX_SIM_STEPS);
                 self.sim_accumulator = r.new_accumulator;
-                (r, fd)
+                (r, fd, r.steps)
             }
-            None => (
-                SimSteps {
-                    steps: 1,
-                    new_accumulator: 0.0,
-                    alpha: 0.0,
-                },
-                khora_core::time::DEFAULT_FIXED_DELTA_SECONDS,
-            ),
+            None => {
+                let fd = khora_core::time::DEFAULT_FIXED_DELTA_SECONDS;
+                let counted = compute_sim_steps(self.sim_accumulator, dt, fd, MAX_SIM_STEPS);
+                self.sim_accumulator = counted.new_accumulator;
+                (
+                    SimSteps {
+                        steps: 1,
+                        new_accumulator: 0.0,
+                        alpha: 0.0,
+                    },
+                    fd,
+                    counted.steps,
+                )
+            }
         };
 
         // 1c. Publish the per-frame Time resource (read by Flows + game code).
-        self.publish_time(&runtime, dt, fixed_delta_for_time, sim_steps.alpha);
+        self.publish_time(
+            &runtime,
+            dt,
+            (fixed_delta_for_time, published),
+            sim_steps.alpha,
+        );
 
         // 2. Build the per-frame completion map. The scheduler tracks
         //    completion internally — agents do not read it through the
@@ -259,13 +272,20 @@ impl ExecutionScheduler {
     /// Writes the per-frame [`Time`](khora_core::time::Time) into the runtime
     /// resource so Flows and game `update` read the real delta + alpha.
     /// No-op if no `SharedTime` resource is registered.
-    fn publish_time(&self, runtime: &Runtime, dt: f32, fixed_delta: f32, alpha: f32) {
+    fn publish_time(
+        &self,
+        runtime: &Runtime,
+        dt: f32,
+        (fixed_delta, fixed_steps): (f32, u32),
+        alpha: f32,
+    ) {
         let Some(shared) = runtime.resources.get::<khora_core::time::SharedTime>() else {
             return;
         };
         if let Ok(mut time) = shared.write() {
             time.delta_seconds = dt;
             time.fixed_delta_seconds = fixed_delta;
+            time.fixed_steps = fixed_steps;
             time.interpolation_alpha = alpha;
             time.frame = time.frame.wrapping_add(1);
         }

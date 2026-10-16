@@ -55,6 +55,8 @@ fn runtime_holding(program: Program) -> ScriptRuntime {
 /// One guard, standing at `x`, arriving with `arrival`.
 fn view_at(x: f32, arrival: Option<ScriptArrival>) -> ScriptView {
     ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         resumed: false,
         delta_seconds: 0.0,
         input: Default::default(),

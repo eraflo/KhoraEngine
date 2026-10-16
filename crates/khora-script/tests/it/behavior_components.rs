@@ -40,7 +40,7 @@ const ENGINE_NAMES: [&str; 2] = ["RigidBody", "OldBody"];
 /// the any-value ones `<any>`, a spelling no struct name can take — the same
 /// for every behavior. `fault` is any value: a recorded fault carries the
 /// fingerprint of the program it faulted in beside its reason.
-const COMPANION: [(&str, &str); 8] = [
+const COMPANION: [(&str, &str); 9] = [
     ("state", "string?"),
     ("state_fields", "<any>"),
     ("timers", "<any>"),
@@ -49,6 +49,7 @@ const COMPANION: [(&str, &str); 8] = [
     ("fault", "<any>"),
     ("resume_failed", "<any>"),
     ("owed", "float"),
+    ("fixed_owed", "float[]"),
 ];
 
 /// A loader serving `modules` and the engine module, naming the engine's

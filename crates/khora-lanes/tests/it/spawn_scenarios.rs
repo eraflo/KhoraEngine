@@ -69,6 +69,8 @@ fn subject() -> EntityId {
 /// would on the frame it first appears.
 fn view_of(behavior: &str, delta: f32, arrival: Option<ScriptArrival>) -> ScriptView {
     ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         delta_seconds: delta,
         input: Default::default(),
         components: Default::default(),

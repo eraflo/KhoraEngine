@@ -62,6 +62,8 @@ fn subject() -> EntityId {
 
 fn view_of(delta: f32, observed: Option<ScriptSnapshot>) -> ScriptView {
     ScriptView {
+        fixed_steps: 0,
+        fixed_delta_seconds: 0.0,
         resumed: false,
         delta_seconds: delta,
         input: Default::default(),

@@ -237,6 +237,13 @@ pub struct Checker {
     /// state's while inside one — apart from the free functions they share
     /// [`functions`](Self::functions) with.
     pub method_names: std::collections::HashSet<String>,
+    /// The behavior's members each of its members calls, by name — what
+    /// tells whether a call reaches an `async` member and waits.
+    pub member_calls: HashMap<String, std::collections::HashSet<String>>,
+    /// The state being checked, with its own methods: what qualifies a
+    /// member's name in [`member_calls`](Self::member_calls) — two states'
+    /// `Act` are two members.
+    pub current_state: Option<(String, std::collections::HashSet<String>)>,
     /// The system being checked: what refuses `this`, a native reading the
     /// subject, `become` and `await` in it — a system has no entity of its
     /// own.
@@ -268,6 +275,8 @@ impl Checker {
             unready: Vec::new(),
             field_names: Vec::new(),
             method_names: std::collections::HashSet::new(),
+            member_calls: HashMap::new(),
+            current_state: None,
             system: None,
             free_function: None,
             free_functions: std::collections::HashSet::new(),
