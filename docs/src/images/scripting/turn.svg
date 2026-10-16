@@ -1,6 +1,6 @@
-<svg class="kp-figure" viewBox="0 0 760 388" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-turn-title kp-turn-desc">
+<svg class="kp-figure" viewBox="0 0 760 426" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-turn-title kp-turn-desc">
   <title id="kp-turn-title">One behavior's turn in a frame</title>
-  <desc id="kp-turn-desc">A turn runs its steps in order, each only when it applies — its fields exist before the first, built from its defaults, which are data: OnLoad after a save is restored, OnSpawn once per entity, OnResumeFailed when an edit lost a body, the body under way, the timers that are due, the events raised last frame, and finally Update. A body still waiting on an await ends the turn there, and so does running out of fuel at any step.</desc>
+  <desc id="kp-turn-desc">A turn runs its steps in order, each only when it applies — its fields exist before the first, built from its defaults, which are data: OnLoad after a save is restored, OnSpawn once per entity, OnResumeFailed when an edit lost a body, the body under way, the timers that are due, FixedUpdate once per fixed step it is owed, the events raised last frame, and finally Update with the time since its last turn. A body still waiting on an await ends the turn there, and so does running out of fuel at any step.</desc>
   <style>
     .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
     .kp-bg { fill: var(--k-bg-0, #090d17); }
@@ -14,11 +14,11 @@
     .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
     .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
   </style>
-  <rect class="kp-bg" x="0" y="0" width="760" height="388" rx="8"/>
+  <rect class="kp-bg" x="0" y="0" width="760" height="426" rx="8"/>
   <text class="kp-head" x="64" y="30">step</text>
   <text class="kp-head" x="250" y="30">runs when</text>
   <text class="kp-head" x="470" y="30">then</text>
-  <path class="kp-spine" d="M36,52 V352"/>
+  <path class="kp-spine" d="M36,52 V390"/>
   <!-- 1 -->
   <rect class="kp-row" x="52" y="40" width="692" height="34" rx="4"/>
   <circle class="kp-node" cx="36" cy="57" r="5"/>
@@ -60,14 +60,20 @@
   <!-- 7 -->
   <rect class="kp-row" x="52" y="292" width="692" height="34" rx="4"/>
   <circle class="kp-node" cx="36" cy="309" r="5"/>
-  <text class="kp-station" x="64" y="314">events</text>
-  <text class="kp-label" x="250" y="314">something was raised last frame</text>
-  <text class="kp-label" x="470" y="314">its on-handler; never the same frame</text>
+  <text class="kp-station" x="64" y="314">FixedUpdate</text>
+  <text class="kp-label" x="250" y="314">the frame took fixed steps</text>
+  <text class="kp-label" x="470" y="314">once per step, with the step; unreached: owed</text>
   <!-- 8 -->
   <rect class="kp-row" x="52" y="330" width="692" height="34" rx="4"/>
   <circle class="kp-node" cx="36" cy="347" r="5"/>
-  <text class="kp-station" x="64" y="352">Update</text>
-  <text class="kp-label" x="250" y="352">every turn</text>
-  <text class="kp-label" x="470" y="352">last, with the frame's delta</text>
-  <text class="kp-note" x="64" y="380">out of fuel at any step: the turn stops at a safepoint and goes on next frame</text>
+  <text class="kp-station" x="64" y="352">events</text>
+  <text class="kp-label" x="250" y="352">something was raised last frame</text>
+  <text class="kp-label" x="470" y="352">its on-handler; never the same frame</text>
+  <!-- 9 -->
+  <rect class="kp-row" x="52" y="368" width="692" height="34" rx="4"/>
+  <circle class="kp-node" cx="36" cy="385" r="5"/>
+  <text class="kp-station" x="64" y="390">Update</text>
+  <text class="kp-label" x="250" y="390">every turn</text>
+  <text class="kp-label" x="470" y="390">last, with the time since its last turn</text>
+  <text class="kp-note" x="64" y="418">out of fuel at any step: the turn stops at a safepoint and goes on next frame</text>
 </svg>

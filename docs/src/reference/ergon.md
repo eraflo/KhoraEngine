@@ -42,7 +42,7 @@ behavior Guard {
 | `struct Name { … }` | runs — a value type; its field defaults must be constants; operator overloads check but do not compile yet |
 | `[Domain(D)] component Name { … }` | runs — a component the project declares; see [Declaring components](#declaring-components) |
 | `[Domain(D)]` on a behavior | runs — where the behavior's fields are stored (default `Script`) |
-| `[Critical]`, `[Budget(…)]`, `[Rate(…)]` on a behavior | parses — nothing reads them yet; any other attribute is refused |
+| `[Critical]`, `[Budget(…)]`, `[Rate(…)]` on a behavior or a system | runs — how the script lane schedules it; see [Scheduling](#scheduling); any other attribute is refused |
 
 Comments are `// line` and `/* block */`.
 
@@ -54,6 +54,7 @@ Comments are `// line` and `/* block */`.
 | float | `2.0`, `1e-3` | `float` (32-bit) |
 | duration | `2s`, `500ms`, `1.5min` | `Duration`, stored in seconds |
 | angle | `90deg`, `1.57rad` | `Angle`, stored in radians |
+| frequency | `10hz`, `2.5hz` | a rate — only `[Rate(…)]`'s argument; refused as a value |
 | text | `"text"` | `string` |
 | boolean, none | `true`, `false`, `null` | `bool`, `T?` |
 
@@ -159,16 +160,31 @@ these parameters:
 
 | Signature | When |
 |---|---|
-| `void Update(float dt)` | every turn, last, with the frame's delta |
+| `void Update(float dt)` | every turn, last, with the time since its last turn — the frame's delta, or more when a rate or the fuel kept it out of some frames |
 | `void OnSpawn()` | once per entity, ever — a save remembers it ran; a hot reload does not rerun it |
 | `void OnLoad()` | after a game save restored the instance, before anything else; never on a scene load or Stop |
 | `void OnDespawn()` | when the despawn is decided — by `this.Despawn()`, or noticed a frame later |
 | `void OnResumeFailed(string member)` | an edit left nothing of a body part-way through; `member` is e.g. `"OnSpawn"`, `"Chase.Attack"`, `"__every(0.5)"` |
-| `void FixedUpdate(float dt)` | reserved — never called yet; the checker warns |
+| `void FixedUpdate(float dt)` | once per fixed simulation step the frame took, `dt` the step — before events and `Update`; never `async`, and refused if it reaches an `async` member |
 
 See [One turn](../concepts/scripting.md#one-turn) for their order. A
-[system](#systems) takes `Update`, `OnLoad` and `OnResumeFailed`; it has no
-entity to call `OnSpawn` or `OnDespawn` for.
+[system](#systems) takes `Update`, `FixedUpdate`, `OnLoad` and `OnResumeFailed`;
+it has no entity to call `OnSpawn` or `OnDespawn` for.
+
+### `FixedUpdate`
+
+A **fixed clock**, not a physics callback. The engine counts the fixed steps of
+each frame — the physics sub-steps, or the default step (1/60 s) on the game's
+clock when nothing simulates physics — and each turn calls `FixedUpdate` once
+per step, after its own timers and before its events and `Update`:
+
+- every call sees the frame's view of the world, plus the behavior's own writes;
+  its writes reach physics next frame;
+- a step the fuel does not reach is **owed** and runs first next turn, with the
+  step it was taken at (the physics step may change between) — at most five,
+  saved with the instance; a fault drops them;
+- paused, the game's clock stands still: no step, while `Update(0)` still runs;
+- a state's `FixedUpdate` is used while in it, like `Update`.
 
 ## States
 
@@ -428,6 +444,29 @@ packed column, written and read with `Set`, `Add`, `Remove`, `Spawn`, `Get` and
   stops declaring it (orphaned). A world declaring it differently reads the
   scene's fields onto its own by name, and the load report says what it adapted.
 
+## Scheduling
+
+```text
+[Critical] behavior Player { … }          // served first
+[Budget(0.2ms)] behavior Crowd { … }      // never more than 0.2 ms a frame
+[Rate(10hz)] behavior Patrol { … }        // at most ten turns a second
+```
+
+How the script lane schedules a behavior or a system when the frame's budget
+will not cover every one. None of them changes what a turn does — only whether
+it runs this frame, and with how much of the fuel; the run order stays the
+module's.
+
+| Attribute | Means |
+|---|---|
+| `[Critical]` | served first: a turn for each of its instances due this frame, at what a turn of it costs, before the others share the rest — and what nobody else takes. A budget too short goes to the critical behaviors alone; it is never exceeded |
+| `[Budget(d)]` | one positive duration: the most it spends a frame; what it does not take goes to the others |
+| `[Rate(f)]` | one positive frequency: at most `f` turns a second. Its instances spread over the period, each a turn once a period; a frame it skips keeps its mail and is not a deferral. Refused with a `FixedUpdate` |
+
+Each at most once. **No time is lost** to a frame an instance does not run — for
+its rate or for fuel: its next turn is handed all the time since its last, its
+`Update`'s `dt`, its timers and its waits.
+
 ## Events
 
 ```text
@@ -510,7 +549,7 @@ binding may be `ref`.
 | `async` member | a system has no `async` member | a wait would be one entity's time; a system's time is `every` and `after` |
 | `await` | `await` is not allowed in a system | the same |
 | `OnSpawn`, `OnDespawn` | a system has no entity to call `OnSpawn` for | a system starts with the game |
-| `[Critical]`, `[Domain(…)]`, any attribute | attributes only apply to behaviors and components | its fields live in the `Script` domain |
+| `[Domain(…)]`, an unknown attribute | not an attribute of a system | its fields live in the `Script` domain; a system takes `[Critical]`, `[Budget(…)]`, `[Rate(…)]` |
 | a name another declaration, an engine component or its `formerly` has | declared twice, or an engine component | a system is a component: one namespace for all |
 
 A system's component is not one a script reaches: `e.Get(Spawner)`,

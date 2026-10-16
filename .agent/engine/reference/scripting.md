@@ -102,6 +102,27 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   instead of rebuilding it with the old payload. Engine events: `khora_core::script::ENGINE_EVENTS`
   (`TOUCHED`, `SEPARATED`), served as `ENGINE_EVENTS_MODULE` (`engine/events.erg`, resolved last then
   moved first in `Resolved.modules`; its items are not merged — the checker and the compiler seed them).
+- **Scheduling (R2).** Attributes checked in `khora-script/src/modules/schedule.rs` (`[Critical]` no args
+  and no parens — `Attribute.parenthesized`; `[Budget(d)]` one positive Duration; `[Rate(f)]` one positive
+  `hz` literal — `TokenKind::Frequency`/`Expr::Frequency`, refused as a value; once each; on systems too;
+  `[Rate]` + a `FixedUpdate` anywhere refused) and stored as `BehaviorLayout.schedule: Schedule`. Lane:
+  `script_lane/shares.rs` — `Claim{critical, ceiling, instances}`; critical claim = `turn_cost × due
+  instances` (≥ an equal share, ≤ ceiling), reserved before the others are water-filled (`fill`); leftover back
+  to critical; a pool short of the claims goes to critical alone; ceiling = budget × `runtime.rate()`, also
+  bounding `share_end` (`capped`); `too_short`: a turn is not started on less than half of `turn_cost` once one
+  ran. `script_lane/rate.rs` — `skips` accrues `Instance.owed` (time) and `fixed_owed` (steps, only for a
+  behavior declaring `FixedUpdate`), gates a rate by `Instance.until` (phase from the entity, clamped to the
+  period), `due` (asked by the plan), `take_turn` hands both over; a turn's `delta` = owed, watchdog uses
+  `frame_delta`. Owed time and steps saved in `InstanceLifecycle` / the companion (`owed`, `fixed_owed`); a
+  frame an instance does not run records only its state (`record_if_rewritten` clears `changed`). Agent:
+  `weighted_instances(target_latency)`, LowPower ≥ `critical_spent / rate`, "N critical deferred".
+- **`FixedUpdate` (R2).** `Time.fixed_steps` published by the scheduler (`khora-control/src/scheduler/frame.rs`;
+  with no fixed agent the accumulator counts at `DEFAULT_FIXED_DELTA_SECONDS` on the scaled clock; one cap,
+  `khora_core::time::MAX_SIM_STEPS`); `ScriptView.fixed_steps`/`fixed_delta_seconds`. The turn
+  (`script_lane/fixed_step.rs::run_steps`) calls it once per owed step, after the timers and before events and
+  `Update`, each with the step it was taken at (`fixed_owed: Vec<f32>`); a cut step parks as `Body::Update`;
+  a fault drops the owed steps. Never `async`; the checker refuses one reaching an `async` member
+  (`types/members.rs::refuse_waiting_fixed_update`, `Checker.member_calls`, state-qualified names).
 - **Delivery by table.** `dispatch/handlers.rs::HandlerTable` (a `OnceLock` on `Program`, `serde(skip)`,
   `PartialEq` always true) maps event → behavior → handler function indices, from `program.events` and
   the names `Behavior.Event` / `Behavior.State.Event`. `deliver`: table (state's, else behavior's) → the

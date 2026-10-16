@@ -125,7 +125,7 @@ an entity of its own. The checker refuses, at the construct and saying why:
 | `on` handlers | an event is aimed at an entity |
 | `async`, `await` | a wait would be one entity's time; a system's time is `every` and `after` |
 | `OnSpawn`, `OnDespawn` | a system starts with the game, not with an entity |
-| attributes (`[Critical]`, `[Domain(…)]`, …) | none applies to a system yet; its fields live in the `Script` domain |
+| attributes | `[Critical]`, `[Budget(…)]`, `[Rate(…)]` schedule it like a behavior; never `[Domain(…)]` — its fields live in the `Script` domain |
 
 ### Its one entity
 
@@ -252,13 +252,36 @@ the rest.
 world, and a hundred of those is a hundred subtly wrong decisions that no one can
 debug. A deferred behavior acts a frame late, which gameplay absorbs — a frame
 late *is* what a frame is. The one behavior the budget runs out *inside* stops at
-a safepoint and finishes its turn next frame, from where it stopped. The order is
-the scene's, so the same entities are not starved every time.
+a safepoint and finishes its turn next frame, from where it stopped.
+
+Who is deferred is fair, and what the author declared bends it:
+
+- each behavior that can spend has an **equal share** of the frame's fuel, in its
+  fixed order — what one does not spend passes on; a behavior that overdraws at a
+  safepoint repays it from its next shares; each starts from a **cursor**, the
+  first of its instances the last frame had no fuel for, so none is left out
+  every frame; a turn is not started on less than half of what one costs;
+- `[Critical]` claims first, `[Budget(d)]` caps, `[Rate(f)]` thins out turns
+  ([Scheduling](../reference/ergon.md#scheduling));
+- **no time is lost**: a turn is handed all the time since the instance's last,
+  so a timer, a wait or an `Update` integrating `dt` keeps time through the
+  frames it sat out. Adapting the budget changes *when* a behavior runs, never
+  how much game time it sees.
 
 This is why `report_status` reports the share of behaviors that got their turn
 rather than a simple success flag: an agent claiming perfect health while half
 its behaviors were deferred would tell the DCC nothing was wrong at exactly the
 moment something was.
+
+## A fixed clock
+
+`FixedUpdate(float dt)` runs once per fixed simulation step the frame took —
+physics' sub-steps, or the default step on the game's clock — `dt` the step,
+inside the behavior's turn: after its timers, before its events and `Update`.
+It is a clock, not a callback interleaved with physics: every call of a frame
+sees the frame's view of the world, and its writes reach physics next frame.
+Steps the fuel does not reach are owed, each with the step it was taken at, and
+run first next turn; the count a game integrates does not depend on the budget.
 
 ## Scripts run only while the game runs
 

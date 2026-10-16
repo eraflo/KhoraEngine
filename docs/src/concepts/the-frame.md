@@ -230,7 +230,16 @@ All of this timing state lives in one place — the engine's
 [**`Time`**](../reference/glossary.md) resource (`khora_core::time::Time`),
 republished fresh into the runtime each frame before the render phase reads it. It
 carries the real `delta_seconds`, the `fixed_delta_seconds`, the
-`interpolation_alpha`, and a monotonic `frame` counter.
+`interpolation_alpha`, the frame's `fixed_steps`, and a monotonic `frame`
+counter.
+
+`fixed_steps` is what a script's `FixedUpdate` is called for: the sub-steps the
+fixed agents ran, or — with none registered — the steps the accumulator counts
+at the default step on the scaled clock, so a game with no physics still has a
+fixed clock and a paused one takes no step. Scripts run once per frame, after
+the fixed sub-loop, on one view of the world: their `FixedUpdate` is a fixed
+clock, not interleaved with physics, and what it writes reaches physics next
+frame.
 
 ### Why interpolation is render-only
 

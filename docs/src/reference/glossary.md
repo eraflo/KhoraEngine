@@ -193,7 +193,9 @@ current transform by the **interpolation alpha** — the fraction of a fixed ste
 carried past the last whole step, in `[0, 1)`. The alpha is render-only and never
 affects simulation semantics. The clock lives in `khora_core::time::Time`; the
 previous poses live in `khora_core::interpolation::TransformInterpolation` (not in
-the ECS — it carries no game meaning). See [The frame](../concepts/the-frame.md).
+the ECS — it carries no game meaning). The frame's step count is published as
+`Time::fixed_steps`, what a script's `FixedUpdate` is called for. See
+[The frame](../concepts/the-frame.md).
 
 ### Flow
 
@@ -378,6 +380,15 @@ column occupies. A record also lists the prefab instances it keeps as links.
 A record is applied back atomically: everything is read and staged before the
 world changes, so a file that fails to load leaves the world untouched. See
 [Serialization](../concepts/serialization.md).
+
+### Scheduling attributes (Ergon)
+
+`[Critical]`, `[Budget(0.2ms)]` and `[Rate(10hz)]` on a behavior or a system: how
+the script lane shares a frame's fuel when it will not cover every one —
+critical ones claim first, a budget caps, a rate thins out turns. They change
+whether a turn runs this frame, never what it does; and no time is lost to a
+frame an instance sits out, its next turn is handed it. See the
+[Ergon reference](./ergon.md#scheduling).
 
 ### ScriptProblems / Problems tab
 
