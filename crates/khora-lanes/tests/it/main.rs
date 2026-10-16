@@ -19,8 +19,10 @@
 //! binary as a module instead of adding a file at the root of `tests/`.
 
 mod array_fields;
+mod behavior_budgets;
 mod behavior_cursors;
 mod behavior_fuel_shares;
+mod critical_behaviors;
 mod declared_behaviors;
 mod durable_text;
 mod frozen_save;
@@ -35,6 +37,7 @@ mod null_into_declared_types;
 mod on_resume_failed;
 mod overdraft;
 mod public_paths;
+mod rate_limited_behaviors;
 mod resumable_after_edits;
 mod resumable_edges;
 mod resume_tiers;
@@ -42,6 +45,7 @@ mod resume_tiers_encodings;
 mod running_problems;
 mod saved_structs_into_edited_types;
 mod saves;
+mod scheduled_scene;
 mod spawn_scenarios;
 mod starved_turn;
 mod state_entry_across_edits;

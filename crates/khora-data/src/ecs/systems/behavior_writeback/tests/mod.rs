@@ -96,6 +96,7 @@ fn declare_behavior(world: &mut World, module: &str, name: &str) -> (ComponentKe
                 FieldKind::Value,
                 ScriptValue::Array(Vec::new()),
             ),
+            field("owed", FieldKind::Float, ScriptValue::Float(0.0)),
         ],
     );
     world.set_script_role(
@@ -395,6 +396,7 @@ fn the_lifecycle_reaches_the_companion() {
     let (guard, state) = declare_behavior(&mut world, "ai/guard.erg", "Guard");
     let entity = running(&mut world, guard, 100, 5);
     let lifecycle = InstanceLifecycle {
+        owed: 0.0,
         resume_failed: Vec::new(),
         spawned: true,
         fault: Some(RecordedFault {

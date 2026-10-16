@@ -239,6 +239,7 @@ fn engine_types_round_trip() {
             },
         }),
         lifecycle: khora_core::script::InstanceLifecycle {
+            owed: 0.0,
             resume_failed: Vec::new(),
             spawned: true,
             fault: Some(khora_core::script::RecordedFault {

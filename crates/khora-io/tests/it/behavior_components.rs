@@ -35,7 +35,7 @@ const GUARD: &str = "behavior Guard {
 }";
 
 /// The state companion's fields, in order — the same for every behavior.
-const COMPANION_FIELDS: [&str; 7] = [
+const COMPANION_FIELDS: [&str; 8] = [
     "state",
     "state_fields",
     "timers",
@@ -43,6 +43,7 @@ const COMPANION_FIELDS: [&str; 7] = [
     "spawned",
     "fault",
     "resume_failed",
+    "owed",
 ];
 
 /// `module` compiled alone, the engine's mirrors available.

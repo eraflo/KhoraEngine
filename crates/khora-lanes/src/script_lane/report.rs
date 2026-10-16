@@ -101,6 +101,11 @@ pub struct ScriptRunReport {
     /// The rows the frame's queries took: the work of its systems' sweeps,
     /// which the instance count alone does not price.
     pub swept_rows: usize,
+    /// Fuel the `[Critical]` behaviors spent this frame — the least the
+    /// agent asks for, whatever the strategy.
+    pub critical_spent: u64,
+    /// How many `[Critical]` instances this frame had no fuel for.
+    pub critical_deferred: usize,
     /// Bodies this frame found running past the watchdog's first limit.
     pub slow: Vec<Slow>,
 }

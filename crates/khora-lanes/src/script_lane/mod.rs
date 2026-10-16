@@ -48,6 +48,7 @@ mod hooks;
 mod mail;
 pub mod persistence;
 mod problems;
+mod rate;
 mod reload;
 pub mod report;
 pub mod resumption;

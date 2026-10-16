@@ -169,6 +169,7 @@ fn a_restored_entity_deferred_on_its_arrival_frame_still_loads() {
             spawned: true,
             fault: None,
             resume_failed: Vec::new(),
+            owed: 0.0,
         },
         ..ScriptSnapshot::default()
     }

@@ -103,8 +103,13 @@ pub(super) struct Invocation<'a> {
     pub(super) entity: khora_core::ecs::entity::EntityId,
     pub(super) events: &'a EventQueue,
     pub(super) fuel: u64,
-    /// The seconds since the previous frame, for the countdowns.
+    /// The seconds since the instance's last turn — the frame's, or more
+    /// when a rate or the fuel kept it out of some: what its countdowns,
+    /// waits and `Update` are given.
     pub(super) delta: f32,
+    /// The seconds since the previous frame: what the watchdog counts a body
+    /// as running, whatever it was owed.
+    pub(super) frame_delta: f32,
 }
 
 /// Where an instance has got to — what a turn advances.
@@ -166,6 +171,7 @@ fn advance(
         behavior,
         fuel,
         delta,
+        frame_delta,
         ..
     } = *call;
     pending.remaining -= delta;
@@ -227,7 +233,7 @@ fn advance(
                     pending.remaining = 0.0;
                     let machine = &pending.machine;
                     let site = || machine.standing(program);
-                    match super::watchdog::watch(&mut pending.running, delta, site) {
+                    match super::watchdog::watch(&mut pending.running, frame_delta, site) {
                         super::watchdog::Watch::Quiet => {}
                         super::watchdog::Watch::Slow => {
                             progress.slow = Some((
@@ -285,6 +291,7 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
         events,
         fuel,
         delta,
+        frame_delta,
     } = call;
     let call = &call;
     let mut spent = 0;
@@ -316,7 +323,7 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                         }
                     }
                     Hook::Suspended { cost, machine, why } => {
-                        let pending = kept(machine, Body::Load, program, host, delta);
+                        let pending = kept(machine, Body::Load, program, host, frame_delta);
                         return park(
                             progress,
                             pending,
@@ -360,7 +367,7 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                 if let Some(restored) = progress.pending.take() {
                     progress.after_load = Some(restored);
                 }
-                let pending = kept(machine, Body::Spawn, program, host, delta);
+                let pending = kept(machine, Body::Spawn, program, host, frame_delta);
                 return park(
                     progress,
                     pending,
@@ -408,7 +415,7 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                     }
                     // Finishing it owes nothing.
                     Hook::Suspended { cost, machine, why } => {
-                        let pending = kept(machine, Body::Sequence, program, host, delta);
+                        let pending = kept(machine, Body::Sequence, program, host, frame_delta);
                         return park(
                             progress,
                             pending,
@@ -455,7 +462,7 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                 index: cut.index,
                 rearm: cut.rearm,
             };
-            let pending = kept(cut.machine, body, program, host, delta);
+            let pending = kept(cut.machine, body, program, host, frame_delta);
             return park(
                 progress,
                 pending,
@@ -496,7 +503,7 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
                             starved: why == Suspension::OutOfFuel,
                         };
                         if let Some(machine) = done.suspended {
-                            let pending = kept(machine, Body::Sequence, program, host, delta);
+                            let pending = kept(machine, Body::Sequence, program, host, frame_delta);
                             return park(
                                 progress,
                                 pending,
@@ -561,7 +568,7 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
             }
         }
         Hook::Suspended { cost, machine, why } => {
-            let pending = kept(machine, Body::Update, program, host, delta);
+            let pending = kept(machine, Body::Update, program, host, frame_delta);
             return park(
                 progress,
                 pending,
@@ -622,10 +629,16 @@ fn park(
 ///
 /// A body cut by the fuel has run this frame: the watchdog counts it from
 /// there. One stopped at an `await` has run nothing the wait counts.
-fn kept(machine: Machine, body: Body, program: &Program, host: &mut Host, delta: f32) -> Pending {
+fn kept(
+    machine: Machine,
+    body: Body,
+    program: &Program,
+    host: &mut Host,
+    frame_delta: f32,
+) -> Pending {
     let (remaining, running) = match host.awaiting.take() {
         Some(wait) => (wait, 0.0),
-        None => (0.0, delta.max(0.0)),
+        None => (0.0, frame_delta.max(0.0)),
     };
     Pending {
         machine,

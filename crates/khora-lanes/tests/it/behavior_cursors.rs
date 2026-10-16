@@ -255,3 +255,53 @@ fn same_named_behaviors_of_two_modules_get_separate_cursors() {
         assert!(seen.contains(&index), "entity {index} never ran: {seen:?}");
     }
 }
+
+/// `Worker` on entity 0 is `heavy`: its `Update` loops far longer than a
+/// frame's fuel. The others are one increment.
+const WORKERS: &str = "behavior Worker {
+    int heavy = 0;
+    int turns = 0;
+    void Update(float dt) {
+        turns += 1;
+        if (heavy == 1) { int n = 0; while (n < 20000) { n += 1; } }
+    }
+}";
+
+/// **One instance's long body does not keep its siblings out.** Three
+/// `Worker`s; entity 0's `Update` needs dozens of frames of fuel, entities 1
+/// and 2 a few instructions. With fuel for many light turns a frame, the cut
+/// body carries on when the behavior's rotation comes back to it — and in the
+/// meantime the light instances keep taking their turns, rather than waiting
+/// for the heavy one to finish.
+#[test]
+fn a_body_cut_by_fuel_does_not_keep_its_siblings_out_until_it_finishes() {
+    use super::scheduled_scene::{frame as run, int_of, runtime_of, view};
+    use khora_core::script::ScriptValue;
+
+    let module = "workers.erg";
+    let mut scene = view(module, &[("Worker", &[0, 1, 2])], 1.0 / 64.0);
+    scene.instances[0].row = vec![("heavy".to_owned(), ScriptValue::Int(1))];
+    let mut runtime = runtime_of(module, WORKERS);
+
+    let fuel = 2_000;
+    for _ in 0..10 {
+        run(&scene, &mut runtime, fuel);
+    }
+    assert_eq!(
+        int_of(&runtime, module, 0, "Worker", "heavy"),
+        1,
+        "set-up: entity 0 is the heavy one"
+    );
+    assert_eq!(
+        int_of(&runtime, module, 0, "Worker", "turns"),
+        1,
+        "set-up: the heavy body has not finished in ten frames"
+    );
+    for index in [1, 2] {
+        let turns = int_of(&runtime, module, index, "Worker", "turns");
+        assert!(
+            turns >= 3,
+            "entity {index}: a light instance took {turns} turns in ten frames while its sibling's long body ran"
+        );
+    }
+}

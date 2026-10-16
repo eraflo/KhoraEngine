@@ -26,7 +26,7 @@ use crate::ecs::{
 };
 
 /// The companion's fields, in order — the same for every behavior.
-const COMPANION: [&str; 7] = [
+const COMPANION: [&str; 8] = [
     "state",
     "state_fields",
     "timers",
@@ -34,6 +34,7 @@ const COMPANION: [&str; 7] = [
     "spawned",
     "fault",
     "resume_failed",
+    "owed",
 ];
 
 fn entity(index: u32, generation: u32) -> EntityId {
@@ -98,6 +99,7 @@ fn busy() -> ScriptSnapshot {
             },
         }),
         lifecycle: InstanceLifecycle {
+            owed: 0.0,
             spawned: true,
             fault: Some(RecordedFault {
                 fingerprint: 0xDEAD_BEEF_0123_4567,
@@ -256,6 +258,7 @@ fn a_companion_row_is_stored_and_read_back_by_the_world() {
                     FieldKind::Value,
                     ScriptValue::Array(Vec::new()),
                 ),
+                field("owed", FieldKind::Float, ScriptValue::Float(0.0)),
             ])
             .expect("a valid layout"),
         })

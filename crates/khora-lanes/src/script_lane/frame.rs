@@ -115,7 +115,12 @@ pub fn run_behaviors(
             None => granted,
         };
         let spent_before = report.spent;
+        let deferred_before = report.deferred;
+        let share_end = shares::capped(share, share_end, spent_before);
         let mut starved_at: Option<khora_core::ecs::entity::EntityId> = None;
+        // How many of its turns ran this frame: what a turn costs it, and
+        // whether one has run yet.
+        let mut turns: u64 = 0;
         // The last instance to run: the one a behavior's overspending is.
         let mut ran_last: Option<khora_core::ecs::entity::EntityId> = None;
 
@@ -168,6 +173,22 @@ pub fn run_behaviors(
                     .saw(instance.entity, &program.behavior, instance.row.clone());
             }
 
+            // A frame its rate skips: its mail and its time wait for its turn.
+            // Not a deferral — it runs as often as it asked.
+            if super::rate::skips(runtime, instance, program, view.delta_seconds) {
+                super::state_update::record_if_rewritten(runtime, instance, program, &mut report);
+                keep(
+                    events,
+                    instance.entity,
+                    0,
+                    several,
+                    &program.behavior,
+                    runtime,
+                    &mut report,
+                );
+                continue;
+            }
+
             // A module whose new program waits a frame for what it reads runs
             // nothing meanwhile: old code over rows the World has already laid
             // out for the new would spawn a newcomer under the code the author
@@ -190,7 +211,13 @@ pub fn run_behaviors(
             // With fuel left in the frame, a behavior with no program is not
             // starved: it goes on to be counted as unloaded.
             let unloaded = pool > 0 && runtime.program(&program.module).is_none();
-            if remaining == 0 && !unloaded {
+            let short = runtime.shares.too_short(
+                &group_program.module,
+                &group_program.behavior,
+                turns,
+                remaining,
+            );
+            if (remaining == 0 || short) && !unloaded {
                 // A faulted instance would not have run with fuel either.
                 if shares::idle(
                     runtime.peek(instance.entity, &program.behavior),
@@ -359,6 +386,12 @@ pub fn run_behaviors(
             // A wait some earlier body asked for is not this one's: every body that
             // stops takes its own from here.
             host.awaiting = None;
+            // Handed what it is owed: this frame's time and any it sat out.
+            let schedule = compiled
+                .layout(&program.behavior)
+                .map(|layout| layout.schedule)
+                .unwrap_or_default();
+            let delta = super::rate::take_turn(state, schedule);
             let mut progress = Progress {
                 spawned: state.spawned,
                 pending: state.pending.take(),
@@ -389,12 +422,14 @@ pub fn run_behaviors(
                     entity: instance.entity,
                     events,
                     fuel: slice,
-                    delta: view.delta_seconds,
+                    delta,
+                    frame_delta: view.delta_seconds,
                 },
                 &mut progress,
                 host,
             );
             ran_last = Some(instance.entity);
+            turns += 1;
 
             // Its farewell belongs to the frame that *decided* the despawn, not to
             // the one that notices the entity gone: here the entity is still in the
@@ -592,9 +627,13 @@ pub fn run_behaviors(
             &group_program.module,
             &group_program.behavior,
             starved_at,
-            overspent,
+            (report.spent - spent_before, overspent, turns),
             ran_last,
         );
+        if super::rate::schedule_of(runtime, group_program).critical {
+            report.critical_spent += report.spent - spent_before;
+            report.critical_deferred += report.deferred - deferred_before;
+        }
     }
 
     report

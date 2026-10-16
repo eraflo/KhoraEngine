@@ -112,6 +112,10 @@ pub struct InstanceLifecycle {
     /// `OnResumeFailed`, oldest first.
     #[serde(default)]
     pub resume_failed: Vec<String>,
+    /// Game seconds that passed since its last turn — frames a rate skipped
+    /// or the fuel could not reach: its next turn is handed them.
+    #[serde(default)]
+    pub owed: f32,
 }
 
 /// A fault that disabled an instance, stamped with the program it faulted in.

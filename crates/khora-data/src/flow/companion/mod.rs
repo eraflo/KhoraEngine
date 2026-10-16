@@ -52,6 +52,10 @@ pub fn companion_row(
             "resume_failed".to_owned(),
             to_value(&snapshot.lifecycle.resume_failed)?,
         ),
+        (
+            "owed".to_owned(),
+            ScriptValue::Float(snapshot.lifecycle.owed),
+        ),
     ])
 }
 
@@ -103,6 +107,11 @@ pub fn companion_snapshot(
             spawned: flag("spawned")?,
             fault: from_value(field("fault")?)?,
             resume_failed: from_value(field("resume_failed")?)?,
+            // A companion from before owed time was kept owes none.
+            owed: match row.iter().find(|(known, _)| known == "owed") {
+                Some((_, ScriptValue::Float(owed))) => *owed,
+                _ => 0.0,
+            },
         },
         ..ScriptSnapshot::default()
     };

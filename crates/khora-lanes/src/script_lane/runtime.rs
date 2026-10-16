@@ -118,6 +118,16 @@ pub struct Instance {
     /// the carry, whether or not it runs.
     pub rewritten: bool,
 
+    /// Game seconds that passed since its last turn — what its next turn is
+    /// handed as its `delta`: a frame a rate skipped, or the fuel could not
+    /// reach, is not lost time.
+    pub owed: f32,
+
+    /// For a rate-limited behavior, the seconds until its next turn is due —
+    /// started, the first time it is seen, at a phase its entity decides, so
+    /// that its instances spread over the period.
+    pub until: Option<f32>,
+
     /// The events it was sent with a payload its handler could not take —
     /// dropped, not run — by event, the last such delivery's reason: what a
     /// tool shows, one line per event however often it happened.
@@ -519,6 +529,22 @@ impl ScriptRuntime {
     /// How many instances are held.
     pub fn instance_count(&self) -> usize {
         self.instances.len()
+    }
+
+    /// The instances held, each weighed by the share of `frame`-long frames
+    /// it takes a turn in: one for an instance with no rate, `rate × frame`
+    /// for a rate-limited one, never more than one.
+    pub fn weighted_instances(&self, frame: f32) -> f32 {
+        self.instances
+            .iter()
+            .map(|((_, behavior), instance)| {
+                let rate = self
+                    .program(&instance.module)
+                    .and_then(|program| program.layout(behavior))
+                    .and_then(|layout| layout.schedule.rate);
+                rate.map_or(1.0, |rate| (rate * frame).clamp(0.0, 1.0))
+            })
+            .sum()
     }
 }
 

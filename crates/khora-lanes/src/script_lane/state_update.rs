@@ -60,6 +60,7 @@ pub(super) fn update_of(
         resume_failed: held.resume_failed.clone(),
         spawned: held.spawned && !spawning_in_front,
         fault: held.fault.clone(),
+        owed: held.owed,
     };
     let changed = snapshot
         .fields

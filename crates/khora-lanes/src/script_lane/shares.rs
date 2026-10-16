@@ -30,6 +30,14 @@
 //!   that overdrafts every frame cannot keep the next out of every frame;
 //! - a **cursor**, the first of its instances a frame had no fuel for, where
 //!   it starts the next frame.
+//!
+//! What a behavior declares bends the shares, never the order:
+//!
+//! - a `[Critical]` behavior claims first — what it spent last frame, set
+//!   aside before the others share the rest. A pool too short even for that
+//!   goes to the critical behaviors alone; the budget is never exceeded;
+//! - a `[Budget(d)]` behavior is handed no more than its ceiling, `d` at the
+//!   lane's measured rate; what it does not take goes to the others.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -43,11 +51,31 @@ use super::runtime::{Instance, ScriptRuntime};
 /// A behavior, by its module and its name.
 type Behavior = (String, String);
 
+/// What a behavior asks of a frame's planning.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Claim<'a> {
+    /// Its module.
+    pub(super) module: &'a str,
+    /// Its name.
+    pub(super) name: &'a str,
+    /// Whether it can spend this frame.
+    pub(super) spends: bool,
+    /// Whether it is `[Critical]`.
+    pub(super) critical: bool,
+    /// Its `[Budget(…)]`, in fuel: the most it is handed a frame.
+    pub(super) ceiling: Option<u64>,
+    /// How many of its instances can run this frame.
+    pub(super) instances: u64,
+}
+
 /// What one behavior is handed of a frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct Share {
     /// Its share of the frame's fuel.
     pub(super) own: u64,
+    /// The most it may spend this frame, whatever the behaviors before it
+    /// pass on.
+    pub(super) ceiling: Option<u64>,
     /// What of that share goes to its debt — not spent by it, so passed on to
     /// the behaviors after it.
     pub(super) paid: u64,
@@ -65,6 +93,9 @@ pub struct FuelShares {
     rotation: u64,
     /// For each behavior in debt, the instance whose turn overspent.
     debtors: HashMap<Behavior, EntityId>,
+    /// What one turn of each behavior cost, the last frame it ran one — a
+    /// critical one's claim, and the least a turn is started on.
+    turn_cost: HashMap<Behavior, u64>,
 }
 
 impl FuelShares {
@@ -75,37 +106,73 @@ impl FuelShares {
     ///
     /// Forgets what it carried for a behavior not in `behaviors`: a frame with
     /// no instance of it has nowhere for that behavior to start.
-    pub(super) fn plan(
-        &mut self,
-        behaviors: &[(&str, &str, bool)],
-        pool: u64,
-    ) -> Vec<Option<Share>> {
-        self.cursors
-            .retain(|(module, name), _| behaviors.iter().any(|b| (b.0, b.1) == (module, name)));
-        self.debts
-            .retain(|(module, name), _| behaviors.iter().any(|b| (b.0, b.1) == (module, name)));
-        self.debtors
-            .retain(|(module, name), _| behaviors.iter().any(|b| (b.0, b.1) == (module, name)));
+    pub(super) fn plan(&mut self, behaviors: &[Claim<'_>], pool: u64) -> Vec<Option<Share>> {
+        let present = |(module, name): &Behavior| {
+            behaviors
+                .iter()
+                .any(|b| (b.module, b.name) == (module.as_str(), name.as_str()))
+        };
+        self.cursors.retain(|key, _| present(key));
+        self.debts.retain(|key, _| present(key));
+        self.debtors.retain(|key, _| present(key));
+        self.turn_cost.retain(|key, _| present(key));
 
-        let spending = behaviors.iter().filter(|b| b.2).count() as u64;
-        if spending == 0 {
+        let spending: Vec<usize> = (0..behaviors.len())
+            .filter(|&at| behaviors[at].spends)
+            .collect();
+        if spending.is_empty() {
             return vec![None; behaviors.len()];
         }
-        let (base, extra) = (pool / spending, pool % spending);
-        let first = self.rotation % spending;
+        let first = self.rotation;
         self.rotation = self.rotation.wrapping_add(1);
 
-        let mut nth = 0;
-        behaviors
+        // Critical behaviors claim a turn for each of their instances, at
+        // what a turn of theirs cost — never less than an equal share —
+        // before the others share what is left.
+        let (critical, others): (Vec<usize>, Vec<usize>) = spending
             .iter()
-            .map(|&(module, name, spends)| {
-                if !spends {
+            .copied()
+            .partition(|&at| behaviors[at].critical);
+        let equal = pool / spending.len() as u64;
+        let need = |at: usize| {
+            let claim = behaviors[at];
+            let key = (claim.module.to_owned(), claim.name.to_owned());
+            let turns = self
+                .turn_cost
+                .get(&key)
+                .map_or(0, |cost| cost.saturating_mul(claim.instances));
+            let need = turns.max(equal);
+            claim.ceiling.map_or(need, |ceiling| need.min(ceiling))
+        };
+        let needed: u64 = critical.iter().map(|&at| need(at)).sum();
+        let mut own = vec![0u64; behaviors.len()];
+        if needed >= pool {
+            fill(&mut own, &critical, behaviors, pool, first);
+        } else {
+            for &at in &critical {
+                own[at] = need(at);
+            }
+            fill(&mut own, &others, behaviors, pool - needed, first);
+            // What nobody else takes is the critical behaviors' too.
+            let handed: u64 = own.iter().sum();
+            if handed < pool {
+                let mut more = vec![0u64; behaviors.len()];
+                fill(&mut more, &critical, behaviors, pool - handed, first);
+                for &at in &critical {
+                    let ceiling = behaviors[at].ceiling.unwrap_or(u64::MAX);
+                    own[at] = own[at].saturating_add(more[at]).min(ceiling);
+                }
+            }
+        }
+
+        (0..behaviors.len())
+            .map(|at| {
+                let claim = behaviors[at];
+                if !claim.spends {
                     return None;
                 }
-                let turn = (nth + spending - first) % spending;
-                nth += 1;
-                let own = base + u64::from(turn < extra);
-                let key = (module.to_owned(), name.to_owned());
+                let own = own[at];
+                let key = (claim.module.to_owned(), claim.name.to_owned());
                 let debt = self.debts.get(&key).copied().unwrap_or(0);
                 let paid = debt.min(own);
                 let owing = debt > paid;
@@ -115,7 +182,12 @@ impl FuelShares {
                     self.debts.remove(&key);
                     self.debtors.remove(&key);
                 }
-                Some(Share { own, paid, owing })
+                Some(Share {
+                    own,
+                    ceiling: claim.ceiling,
+                    paid,
+                    owing,
+                })
             })
             .collect()
     }
@@ -157,10 +229,13 @@ impl FuelShares {
         module: &str,
         behavior: &str,
         starved_at: Option<EntityId>,
-        overspent: u64,
+        (spent, overspent, turns): (u64, u64, u64),
         debtor: Option<EntityId>,
     ) {
         let key = (module.to_owned(), behavior.to_owned());
+        if let Some(cost) = spent.checked_div(turns) {
+            self.turn_cost.insert(key.clone(), cost);
+        }
         match starved_at {
             Some(entity) => {
                 self.cursors.insert(key.clone(), entity);
@@ -187,11 +262,76 @@ impl FuelShares {
         }
     }
 
+    /// What a turn of `module`'s `behavior` cost, the last frame it ran one;
+    /// nothing before its first.
+    pub(super) fn turn_cost(&self, module: &str, behavior: &str) -> u64 {
+        self.turn_cost
+            .get(&(module.to_owned(), behavior.to_owned()))
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Whether `remaining` is too little to start another turn of
+    /// `module`'s `behavior`, `turns` of it run this frame already: less than
+    /// half of what one costs. An instance always handed the frame's remainder
+    /// would never finish; it starts the next frame instead.
+    pub(super) fn too_short(
+        &self,
+        module: &str,
+        behavior: &str,
+        turns: u64,
+        remaining: u64,
+    ) -> bool {
+        turns > 0 && remaining.saturating_mul(2) < self.turn_cost(module, behavior)
+    }
+
     /// The instance whose overspending `module`'s `behavior` is repaying.
     pub(super) fn debtor(&self, module: &str, behavior: &str) -> Option<EntityId> {
         self.debtors
             .get(&(module.to_owned(), behavior.to_owned()))
             .copied()
+    }
+}
+
+/// The fuel mark a behavior with `share` stops at, starting at `spent_before`:
+/// `share_end`, but a budgeted behavior spends no more than its ceiling,
+/// whatever the behaviors before it passed on.
+pub(super) fn capped(share: Option<Share>, share_end: u64, spent_before: u64) -> u64 {
+    match share.and_then(|share| share.ceiling) {
+        Some(ceiling) => share_end.min(spent_before.saturating_add(ceiling)),
+        None => share_end,
+    }
+}
+
+/// Shares `pool` equally among `members`, each no more than its ceiling —
+/// what a capped one cannot take goes to the others; the units that do not
+/// divide go to each in turn, from `first`, frame after frame.
+fn fill(own: &mut [u64], members: &[usize], behaviors: &[Claim<'_>], pool: u64, first: u64) {
+    let mut open: Vec<usize> = members.to_vec();
+    let mut left = pool;
+    while !open.is_empty() && left > 0 {
+        let count = open.len() as u64;
+        let base = left / count;
+        let capped: Vec<usize> = open
+            .iter()
+            .copied()
+            .filter(|&at| behaviors[at].ceiling.is_some_and(|ceiling| ceiling <= base))
+            .collect();
+        if capped.is_empty() {
+            let extra = left % count;
+            let start = first % count;
+            for (nth, &at) in open.iter().enumerate() {
+                let turn = (nth as u64 + count - start) % count;
+                own[at] = base + u64::from(turn < extra);
+            }
+            return;
+        }
+        for at in capped {
+            let ceiling = behaviors[at].ceiling.unwrap_or(0);
+            own[at] = ceiling;
+            left -= ceiling;
+            open.retain(|&other| other != at);
+        }
     }
 }
 
@@ -222,22 +362,40 @@ pub(super) fn behaviors<'v>(
     // A behavior that cannot spend — no program, or every instance faulted —
     // is handed nothing, rather than a share nobody spends. An instance
     // arriving this frame starts again, and may run.
+    let rate = runtime.rate();
     let spends: Vec<_> = groups
         .iter()
         .map(|(program, members)| {
-            let enabled = members.iter().any(|at| {
-                let instance = &view.instances[*at];
+            let able = |at: &&usize| {
+                let instance = &view.instances[**at];
                 instance.arrival.is_some()
                     || !idle(
                         runtime.peek(instance.entity, &program.behavior),
                         runtime.program(&program.module),
                     )
-            });
-            (
-                program.module.as_str(),
-                program.behavior.as_str(),
-                enabled && runtime.program(&program.module).is_some(),
-            )
+            };
+            let enabled = members.iter().any(|at| able(&at));
+            // What it claims is a turn for each instance that takes one this
+            // frame — a rate-limited one skips most of them.
+            let runnable = members
+                .iter()
+                .filter(able)
+                .filter(|at| {
+                    super::rate::due(runtime, &view.instances[**at], program, view.delta_seconds)
+                })
+                .count() as u64;
+            let schedule = super::rate::schedule_of(runtime, program);
+            Claim {
+                module: program.module.as_str(),
+                name: program.behavior.as_str(),
+                spends: enabled && runtime.program(&program.module).is_some(),
+                critical: schedule.critical,
+                instances: runnable,
+                // Its budget, in the fuel the lane measures a millisecond buys.
+                ceiling: schedule
+                    .budget
+                    .map(|seconds| (f64::from(seconds) * 1000.0 * rate).floor() as u64),
+            }
         })
         .collect();
     let shares = runtime.shares.plan(&spends, pool);

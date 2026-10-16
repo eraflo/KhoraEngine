@@ -99,18 +99,36 @@ impl Agent for ScriptAgent {
         AgentId::Script
     }
 
-    fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
+    fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
         // Priced from what the scene actually holds, not from a table: the same
         // three strategies cost very differently with ten behaviors and with a
         // thousand, and offering a fixed estimate would have the DCC allocate
         // against a number that was never true.
         let per_behavior = Duration::from_nanos(2_000);
-        let live = peek(&self.runtime, ScriptRuntime::instance_count, 0).max(1) as u32;
+        // A rate-limited instance takes a turn in only some frames: priced as
+        // that share of the frame negotiated for.
+        let frame = request.target_latency.as_secs_f32();
+        let live = peek(
+            &self.runtime,
+            |runtime| runtime.weighted_instances(frame),
+            0.0,
+        )
+        .max(1.0);
         // A system is one instance however many rows it sweeps: the rows the
         // last frame's queries took are priced on top.
         let swept = peek(&self.runtime, |runtime| runtime.last_report().swept_rows, 0);
         let rows = PER_ROW * u32::try_from(swept).unwrap_or(u32::MAX);
-        let work = per_behavior * live + rows;
+        let work = per_behavior.mul_f32(live) + rows;
+        // The cheapest strategy still covers what the critical behaviors
+        // spent last frame: they are served first.
+        let critical = peek(
+            &self.runtime,
+            |runtime| {
+                let spent = runtime.last_report().critical_spent as f64;
+                Duration::from_secs_f64(spent / runtime.rate().max(1.0) / 1_000.0)
+            },
+            Duration::ZERO,
+        );
 
         NegotiationResponse {
             strategies: vec![
@@ -118,7 +136,7 @@ impl Agent for ScriptAgent {
                 // behaviors that were reached, and the rest wait a frame.
                 StrategyOption {
                     id: StrategyId::LowPower,
-                    estimated_time: work / 4,
+                    estimated_time: (work / 4).max(critical),
                     estimated_vram: 0,
                 },
                 StrategyOption {
@@ -255,10 +273,18 @@ impl Agent for ScriptAgent {
             // Not "stalled": deferring is the design working, not failing. A
             // behavior that faults is the thing that has actually stopped.
             is_stalled: report.faulted > 0,
-            message: format!(
-                "{} ran, {} deferred, {} faulted, {} component rows projected",
-                report.completed, report.deferred, report.faulted, report.projected_rows
-            ),
+            message: {
+                let mut message = format!(
+                    "{} ran, {} deferred, {} faulted, {} component rows projected",
+                    report.completed, report.deferred, report.faulted, report.projected_rows
+                );
+                // A critical behavior waiting is the one deferral that says the
+                // budget is short of what the game cannot do without.
+                if report.critical_deferred > 0 {
+                    message.push_str(&format!("; {} critical deferred", report.critical_deferred));
+                }
+                message
+            },
         }
     }
 
