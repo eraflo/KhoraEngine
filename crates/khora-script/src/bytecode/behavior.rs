@@ -42,6 +42,7 @@ impl Compiler {
             timers: Vec::new(),
             defaults: Vec::new(),
             system,
+            schedule: crate::modules::schedule::schedule_of(&decl.attributes),
         };
         for member in &decl.members {
             if let BehaviorMember::Field(field) = member {

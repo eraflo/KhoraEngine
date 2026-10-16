@@ -27,6 +27,7 @@ pub(super) fn describe(kind: &TokenKind) -> String {
         TokenKind::Str(_) => "a string".to_owned(),
         TokenKind::Duration(v) => format!("`{v}s`"),
         TokenKind::Angle(_) => "an angle".to_owned(),
+        TokenKind::Frequency(_) => "a frequency".to_owned(),
         TokenKind::Ident(name) => format!("`{name}`"),
         TokenKind::Keyword(k) => format!("`{}`", keyword_text(*k)),
         TokenKind::Eof => "the end of the file".to_owned(),

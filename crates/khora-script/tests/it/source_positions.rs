@@ -66,13 +66,13 @@ fn first_warning(outcome: &CompileOutcome) -> Option<Location> {
         .diagnostics
         .iter()
         .find(|diagnostic| diagnostic.severity == Severity::Warning)
-        .expect("the reserved member is warned about");
+        .expect("the unreachable arm is warned about");
     outcome.sources.locate(warning.span)
 }
 
-/// A behavior with a reserved member the engine does not call yet: a warning
-/// at line 3, column 10, and a program all the same.
-const RESERVED: &str = "behavior Guard {\n    int n = 0;\n    void FixedUpdate(float dt) { }\n}\n";
+/// A behavior whose `match` has an arm nothing reaches: a warning at the `_`
+/// arm, line 3, column 10, and a program all the same.
+const UNREACHABLE_ARM: &str = "behavior Guard {\n    void Update(float dt) { match (n) { int x => { }\n         _ => { } } }\n    int n = 0;\n}\n";
 
 /// **A type error in the entry module** is located at the operand the
 /// checker underlines: line 2, column 16 of `main.erg`.
@@ -266,11 +266,11 @@ fn a_name_clash_is_located_at_the_second_declaration() {
     );
 }
 
-/// **A warning of a program that compiled is located too**: the reserved
-/// `FixedUpdate`, line 3, column 10.
+/// **A warning of a program that compiled is located too**: the unreachable
+/// `_` arm, line 3, column 10.
 #[test]
 fn a_warning_of_a_successful_compile_is_located() {
-    let outcome = compile(&[("main.erg", RESERVED)], "main.erg");
+    let outcome = compile(&[("main.erg", UNREACHABLE_ARM)], "main.erg");
 
     assert!(outcome.succeeded(), "{:?}", outcome.diagnostics);
     assert_eq!(first_warning(&outcome), Some(at("main.erg", 3, 10)));
@@ -282,7 +282,7 @@ fn a_warning_of_a_successful_compile_is_located() {
 fn a_warning_in_an_imported_module_is_located_in_it() {
     let outcome = compile(
         &[
-            ("guard.erg", RESERVED),
+            ("guard.erg", UNREACHABLE_ARM),
             ("main.erg", "import \"guard.erg\";\nfn void Main() { }\n"),
         ],
         "main.erg",

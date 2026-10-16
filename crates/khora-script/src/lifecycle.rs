@@ -102,16 +102,18 @@ pub static ON_RESUME_FAILED: Lifecycle = Lifecycle {
     called: true,
 };
 
-/// `void FixedUpdate(float dt)` — reserved, not yet called.
+/// `void FixedUpdate(float dt)` — once per fixed simulation step the frame
+/// took, `dt` the fixed step.
 ///
-/// It needs a fixed timestep to be called *at*, and the scripting agent
-/// negotiates for frame time rather than declaring one. Listed anyway so an
-/// author who writes it is told it will not run, instead of finding out from a
-/// body that never executes.
+/// A fixed clock, not a physics callback: each turn calls it as many times as
+/// the frame has fixed steps, before its events and `Update`, on the frame's
+/// view of the world — its writes reach physics next frame. A step the fuel
+/// did not reach is owed, and runs first next turn. Never `async`: a step
+/// that waited would not be a step.
 pub static FIXED_UPDATE: Lifecycle = Lifecycle {
     name: "FixedUpdate",
     params: &[Ty::Float],
-    called: false,
+    called: true,
 };
 
 /// Every engine-invoked member.

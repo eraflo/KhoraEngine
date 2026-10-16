@@ -272,14 +272,20 @@ pub(super) fn is_constant(expr: &Expr) -> bool {
         | Expr::Bool { .. }
         | Expr::Null(_)
         | Expr::Duration { .. }
-        | Expr::Angle { .. } => true,
+        | Expr::Angle { .. }
+        // A constant, refused as a value with its own reason.
+        | Expr::Frequency { .. } => true,
         Expr::Unary {
             op: UnaryOp::Neg,
             operand,
             ..
         } => matches!(
             **operand,
-            Expr::Int { .. } | Expr::Float { .. } | Expr::Duration { .. } | Expr::Angle { .. }
+            Expr::Int { .. }
+                | Expr::Float { .. }
+                | Expr::Duration { .. }
+                | Expr::Angle { .. }
+                | Expr::Frequency { .. }
         ),
         Expr::ArrayLit { elements, .. } => elements.iter().all(is_constant),
         Expr::StructLit { fields, .. } => fields.iter().all(|(_, _, value)| is_constant(value)),

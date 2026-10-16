@@ -36,6 +36,7 @@ pub mod behaviors;
 pub mod components;
 pub mod loader;
 pub mod path;
+pub mod schedule;
 
 #[cfg(test)]
 mod tests;

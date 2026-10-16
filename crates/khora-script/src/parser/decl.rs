@@ -65,15 +65,17 @@ impl Parser {
             return Ok(Item::Component(self.parse_component(attributes)?));
         }
 
-        if let Some(attribute) = attributes.first() {
-            self.diagnostics.push(
-                Diagnostic::error("attributes only apply to behaviors and components", attribute.span)
-                    .with_note("`[Critical]`, `[Budget(…)]` and `[Rate(…)]` guide the DCC's arbitration, which schedules behaviors; `[Domain(…)]` places a component's data"),
-            );
+        // A system is scheduled like a behavior: which of its attributes
+        // mean something is the checker's question too.
+        if self.check_keyword(Keyword::System) {
+            return Ok(Item::System(self.parse_behavior(attributes)?));
         }
 
-        if self.check_keyword(Keyword::System) {
-            return Ok(Item::System(self.parse_behavior(Vec::new())?));
+        if let Some(attribute) = attributes.first() {
+            self.diagnostics.push(
+                Diagnostic::error("attributes only apply to behaviors, systems and components", attribute.span)
+                    .with_note("`[Critical]`, `[Budget(…)]` and `[Rate(…)]` tell the script lane how to schedule behaviors and systems; `[Domain(…)]` places a component's data"),
+            );
         }
         if self.check_keyword(Keyword::Struct) {
             return Ok(Item::Struct(self.parse_struct()?));
@@ -122,7 +124,8 @@ impl Parser {
             let (name, _) = self.expect_ident("an attribute name")?;
 
             let mut args = Vec::new();
-            if self.eat(&TokenKind::LParen) {
+            let parenthesized = self.eat(&TokenKind::LParen);
+            if parenthesized {
                 if !self.check(&TokenKind::RParen) {
                     loop {
                         args.push(self.parse_expr()?);
@@ -138,6 +141,7 @@ impl Parser {
             attributes.push(Attribute {
                 name,
                 args,
+                parenthesized,
                 span: start.to(end),
             });
         }

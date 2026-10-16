@@ -199,6 +199,9 @@ pub struct Attribute {
     pub name: String,
     /// Arguments, if any.
     pub args: Vec<Expr>,
+    /// Whether it was written with parentheses — `[Critical()]` is not
+    /// `[Critical]`, though both carry no argument.
+    pub parenthesized: bool,
     /// The whole attribute.
     pub span: Span,
 }

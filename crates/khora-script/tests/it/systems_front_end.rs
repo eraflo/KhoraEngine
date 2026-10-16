@@ -19,8 +19,9 @@
 //! is attached to — `this`, `Position()` — or belongs to one entity's time —
 //! a `state`, `become`, an `on` handler, `async` and `await` — is refused at
 //! the construct, saying a system has none. A system's name lives in the one
-//! namespace components, behaviors and structs share, and takes no
-//! attribute. Inside it a query may `ref` a component, never a behavior's.
+//! namespace components, behaviors and structs share, and takes the
+//! scheduling attributes but no `[Domain]`. Inside it a query may `ref` a
+//! component, never a behavior's.
 
 use khora_script::{
     compile_module, CompileOutcome, Diagnostic, MemoryLoader, ENGINE_COMPONENTS_MODULE,
@@ -272,11 +273,26 @@ fn a_system_shares_one_namespace_with_every_declaration() {
     );
 }
 
-/// **A system takes no attribute — for now**, as a struct takes none: the
-/// attribute is refused at itself, and the system after it is parsed.
+/// **A system takes the scheduling attributes** — `[Critical]`,
+/// `[Budget(…)]`, `[Rate(…)]` — and they compile, alone or together.
 #[test]
-fn attributes_on_a_system_are_refused() {
-    for attribute in ["[Critical]", "[Budget(0.5)]", "[Domain(Physics)]"] {
+fn a_system_takes_the_scheduling_attributes() {
+    for attribute in [
+        "[Critical]",
+        "[Budget(0.5ms)]",
+        "[Rate(10hz)]",
+        "[Critical] [Budget(0.5ms)] [Rate(10hz)]",
+    ] {
+        compiles(&format!("{attribute}\nsystem Sweeper {{ int count = 0; }}"));
+    }
+}
+
+/// **A system's fields live in `Script`, and it takes no other attribute**:
+/// `[Domain(…)]` and an attribute nobody defines are refused at themselves,
+/// and the system after them is parsed.
+#[test]
+fn domain_and_unknown_attributes_on_a_system_are_refused() {
+    for attribute in ["[Domain(Physics)]", "[Fast]"] {
         let main = format!("{attribute}\nsystem Sweeper {{ int count = 0; }}");
         compiles("system Sweeper { int count = 0; }");
         let result = compile(&main);

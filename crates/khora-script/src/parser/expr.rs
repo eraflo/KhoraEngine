@@ -362,6 +362,10 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Angle { value, span })
             }
+            TokenKind::Frequency(value) => {
+                self.advance();
+                Ok(Expr::Frequency { value, span })
+            }
             TokenKind::Keyword(Keyword::True) => {
                 self.advance();
                 Ok(Expr::Bool { value: true, span })

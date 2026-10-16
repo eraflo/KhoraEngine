@@ -297,6 +297,10 @@ impl Key<'_> {
                 self.tag(5);
                 self.bits(u64::from(value.to_bits()));
             }
+            Expr::Frequency { value, .. } => {
+                self.tag(41);
+                self.bits(u64::from(value.to_bits()));
+            }
             Expr::Bool { value, .. } => {
                 self.tag(6);
                 self.tag(u8::from(*value));

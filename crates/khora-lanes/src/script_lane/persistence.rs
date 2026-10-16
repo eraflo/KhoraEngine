@@ -504,6 +504,7 @@ mod tests {
             timers: Vec::new(),
             defaults: Vec::new(),
             system: false,
+            schedule: Default::default(),
         }
     }
 

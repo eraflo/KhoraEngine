@@ -287,7 +287,7 @@ fn every_state_companion_has_the_same_fixed_layout() {
 fn a_behavior_takes_its_domain_beside_the_scheduling_attributes() {
     for domain in SemanticDomain::ALL.iter().copied() {
         let program = build(&format!(
-            "[Critical] [Domain({})] [Budget(0.2ms)] [Rate(10)]
+            "[Critical] [Domain({})] [Budget(0.2ms)] [Rate(10hz)]
              behavior Hover {{ float height = 0.4; }}",
             domain.name()
         ));

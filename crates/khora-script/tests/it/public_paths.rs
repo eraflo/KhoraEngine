@@ -160,7 +160,7 @@ fn after_decl_fields(x: &khora_script::ast::decl::AfterDecl) {
 }
 
 fn attribute_fields(x: &khora_script::ast::decl::Attribute) {
-    let _ = (&x.name, &x.args, &x.span);
+    let _ = (&x.name, &x.args, &x.parenthesized, &x.span);
 }
 
 fn behavior_decl_fields(x: &khora_script::ast::decl::BehaviorDecl) {
@@ -275,6 +275,7 @@ fn expr_variants(x: &khora_script::ast::expr::Expr) {
         khora_script::ast::expr::Expr::Str { .. } => {}
         khora_script::ast::expr::Expr::Duration { .. } => {}
         khora_script::ast::expr::Expr::Angle { .. } => {}
+        khora_script::ast::expr::Expr::Frequency { .. } => {}
         khora_script::ast::expr::Expr::Bool { .. } => {}
         khora_script::ast::expr::Expr::Null(..) => {}
         khora_script::ast::expr::Expr::This(..) => {}
@@ -474,6 +475,7 @@ fn token_kind_variants(x: &khora_script::lexer::token::TokenKind) {
         khora_script::lexer::token::TokenKind::Str(..) => {}
         khora_script::lexer::token::TokenKind::Duration(..) => {}
         khora_script::lexer::token::TokenKind::Angle(..) => {}
+        khora_script::lexer::token::TokenKind::Frequency(..) => {}
         khora_script::lexer::token::TokenKind::Ident(..) => {}
         khora_script::lexer::token::TokenKind::Keyword(..) => {}
         khora_script::lexer::token::TokenKind::LParen => {}

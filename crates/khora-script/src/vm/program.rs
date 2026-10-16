@@ -145,6 +145,21 @@ pub struct BehaviorLayout {
     /// entity of its own that never spawns as an instance does.
     #[serde(default)]
     pub system: bool,
+    /// How the script lane schedules it: `[Critical]`, `[Budget(…)]`,
+    /// `[Rate(…)]` as declared.
+    #[serde(default)]
+    pub schedule: Schedule,
+}
+
+/// The scheduling attributes of a behavior or a system, as declared.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct Schedule {
+    /// `[Critical]`: served first from the frame's fuel, still bounded by it.
+    pub critical: bool,
+    /// `[Budget(d)]`: the per-frame ceiling, in seconds.
+    pub budget: Option<f32>,
+    /// `[Rate(f)]`: how often an instance takes its turn, in hertz.
+    pub rate: Option<f32>,
 }
 
 impl BehaviorLayout {

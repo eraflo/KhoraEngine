@@ -61,7 +61,10 @@ pub fn report_script_behaviors(resolved: &Resolved, engine: &[String]) -> Vec<Di
                 .with_note(format!("a {what} is a component: its name is unique among every component the engine stores")),
             );
         }
-        report_domain(&decl.attributes, &mut diagnostics);
+        if !declared.system {
+            report_domain(&decl.attributes, &mut diagnostics);
+        }
+        super::schedule::report_schedule(decl, declared.system, &mut diagnostics);
         for field in fields_of(decl) {
             if let Some(span) = field.default.as_ref().and_then(non_finite) {
                 diagnostics.push(

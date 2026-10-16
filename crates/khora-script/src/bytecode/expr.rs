@@ -35,6 +35,8 @@ impl Compiler {
             Expr::Duration { value, .. } | Expr::Angle { value, .. } => {
                 self.constant(Value::Float(*value), Shape::Float)
             }
+            // Refused by the checker anywhere a value is computed.
+            Expr::Frequency { value, .. } => self.constant(Value::Float(*value), Shape::Float),
             Expr::Bool { value, .. } => self.constant(Value::Bool(*value), Shape::Other),
             Expr::Null(_) => self.constant(Value::Null, Shape::Other),
             Expr::Str { value, .. } => self.string_constant(value),

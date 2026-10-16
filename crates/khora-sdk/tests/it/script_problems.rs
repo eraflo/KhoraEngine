@@ -58,7 +58,7 @@ const TYPE_ERROR: &str = "fn float Bad() {\n    return Abs(true);\n}\n";
 const PARSE_ERROR: &str = "// a broken helper\nfn void ( ) { }\n";
 
 /// A behavior that compiles with one warning, line 3, column 10.
-const RESERVED: &str = "behavior Guard {\n    int n = 0;\n    void FixedUpdate(float dt) { }\n}\n";
+const UNREACHABLE_ARM: &str = "behavior Guard {\n    void Update(float dt) { match (n) { int x => { }\n         _ => { } } }\n    int n = 0;\n}\n";
 
 /// An `Update` that faults on its first run: an integer divided by zero.
 const DIVIDER: &str = "behavior Divider {
@@ -229,7 +229,7 @@ fn mounting_reports_an_imported_modules_error_under_it_once() {
 /// module is loaded all the same.
 #[test]
 fn mounting_reports_the_warnings_of_a_module_that_compiled() {
-    let assets = Assets::with(&[("guard.erg", RESERVED)]);
+    let assets = Assets::with(&[("guard.erg", UNREACHABLE_ARM)]);
     let engine = tool_engine();
 
     assert_eq!(

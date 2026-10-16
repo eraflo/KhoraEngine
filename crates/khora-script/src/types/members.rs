@@ -117,6 +117,14 @@ impl Checker {
                 ));
         }
 
+        if method.is_async && hook.name == crate::lifecycle::FIXED_UPDATE.name {
+            self.error_note(
+                "`FixedUpdate` may not be `async`",
+                method.name_span,
+                "it runs once per fixed step: a step that waited would not be a step — call an `async` member from `Update` instead",
+            );
+        }
+
         let returns = self.resolve(&method.return_ty);
         if returns != Ty::Void {
             self.error_note(

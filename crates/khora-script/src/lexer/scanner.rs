@@ -225,6 +225,10 @@ impl<'a> Lexer<'a> {
                 Ok(value) => Some(TokenKind::Angle(value * scale)),
                 Err(_) => self.number_error(start, &digits),
             },
+            Some(Unit::Frequency) => match digits.parse::<f32>() {
+                Ok(value) => Some(TokenKind::Frequency(value)),
+                Err(_) => self.number_error(start, &digits),
+            },
             None if seen_dot || seen_exponent => match digits.parse::<f32>() {
                 Ok(value) => Some(TokenKind::Float(value)),
                 Err(_) => self.number_error(start, &digits),
@@ -319,6 +323,7 @@ impl<'a> Lexer<'a> {
             "min" => Unit::Duration(60.0),
             "deg" => Unit::Angle(std::f32::consts::PI / 180.0),
             "rad" => Unit::Angle(1.0),
+            "hz" => Unit::Frequency,
             // Not a unit: leave the cursor alone so it lexes as an identifier.
             // `2x` therefore becomes `2` then `x`, which the parser rejects
             // with a better message than the lexer could give here.
@@ -493,6 +498,8 @@ enum Unit {
     Duration(f32),
     /// To radians.
     Angle(f32),
+    /// Hertz, as written.
+    Frequency,
 }
 
 fn is_ident_start(byte: u8) -> bool {

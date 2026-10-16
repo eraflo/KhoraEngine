@@ -55,6 +55,13 @@ pub enum Expr {
         /// Its span.
         span: Span,
     },
+    /// `10hz` — a rate, meaningful only as `[Rate(…)]`'s argument.
+    Frequency {
+        /// Hertz.
+        value: f32,
+        /// Its span.
+        span: Span,
+    },
     /// `true` / `false`
     Bool {
         /// The value.
@@ -224,6 +231,7 @@ impl Expr {
             | Self::Str { span, .. }
             | Self::Duration { span, .. }
             | Self::Angle { span, .. }
+            | Self::Frequency { span, .. }
             | Self::Bool { span, .. }
             | Self::Ident { span, .. }
             | Self::ArrayLit { span, .. }

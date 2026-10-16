@@ -52,6 +52,14 @@ impl Checker {
             Expr::Str { .. } => Ty::Str,
             Expr::Duration { .. } => Ty::Duration,
             Expr::Angle { .. } => Ty::Angle,
+            Expr::Frequency { span, .. } => {
+                self.error_note(
+                    "a frequency is a rate: it is written in `[Rate(…)]`",
+                    *span,
+                    "`[Rate(10hz)]` on a behavior or a system runs it at most that often; there is no frequency value",
+                );
+                Ty::Error
+            }
             Expr::Bool { .. } => Ty::Bool,
 
             // `null` fits any optional and nothing else. Typing it as an

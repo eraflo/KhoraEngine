@@ -41,7 +41,7 @@ const TYPE_ERROR: &str = "fn float Bad() {\n    return Abs(true);\n}\n";
 const PARSE_ERROR: &str = "// a broken helper\nfn void ( ) { }\n";
 
 /// A behavior that compiles with one warning, line 3, column 10.
-const RESERVED: &str = "behavior Guard {\n    int n = 0;\n    void FixedUpdate(float dt) { }\n}\n";
+const UNREACHABLE_ARM: &str = "behavior Guard {\n    void Update(float dt) { match (n) { int x => { }\n         _ => { } } }\n    int n = 0;\n}\n";
 
 fn data_system(name: &str) -> &'static DataSystemRegistration {
     inventory::iter::<DataSystemRegistration>
@@ -234,7 +234,7 @@ fn a_save_that_compiles_with_a_warning_reports_the_warning() {
     let guard = script(assets.path(), "guard.erg", "behavior Guard { int n = 0; }");
     let pump = Pump::over(assets.path());
 
-    std::fs::write(&guard, RESERVED).expect("saves a reserved member");
+    std::fs::write(&guard, UNREACHABLE_ARM).expect("saves an unreachable arm");
     pump.run_until(|problems| !problems.all().is_empty());
 
     let reported = in_module(&pump.problems, "guard.erg");
@@ -243,7 +243,7 @@ fn a_save_that_compiles_with_a_warning_reports_the_warning() {
     assert_eq!((reported[0].line, reported[0].column), (3, 10));
     assert_eq!(
         reported[0].message,
-        "`FixedUpdate` is reserved but the engine does not call it yet"
+        "this arm is unreachable: an arm above already takes every value it matches"
     );
     assert_eq!(pump.problems.of_module("guard.erg"), (0, 1));
     assert!(

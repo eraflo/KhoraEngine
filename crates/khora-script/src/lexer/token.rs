@@ -45,6 +45,9 @@ pub enum TokenKind {
     Duration(f32),
     /// An angle, **normalised to radians**: `90deg`, `1.57rad`.
     Angle(f32),
+    /// A frequency, in hertz: `10hz` — a rate, written as `[Rate(…)]`'s
+    /// argument.
+    Frequency(f32),
 
     // ── Names ─────────────────────────────────────────
     /// An identifier that is not a keyword.
