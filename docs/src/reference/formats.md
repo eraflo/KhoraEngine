@@ -149,7 +149,7 @@ references as UUIDs, so a snapshot keeps identities exactly as a record does.
 
 On 10 000 entities (a transform and a name each), a snapshot loads in about
 9 ms where the compact record takes about 79 ms
-(`cargo bench -p khora-data --bench scene_load_bench`).
+(`cargo bench -p khora-data --bench data -- "Scene load"`).
 
 ### Compact layout
 

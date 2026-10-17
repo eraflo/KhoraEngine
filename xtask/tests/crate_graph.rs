@@ -117,6 +117,19 @@ fn khora_core_depends_on_no_workspace_crate() {
     );
 }
 
+/// `xtask` depends on no workspace crate: `cargo gate` builds it first, and
+/// an engine crate among its dependencies would compile the whole engine
+/// before the gate's first step — on every change to the engine.
+#[test]
+fn xtask_depends_on_no_workspace_crate() {
+    let graph = CrateGraph::read(&repo_root());
+    assert_eq!(
+        graph.direct("xtask"),
+        BTreeSet::new(),
+        "xtask must depend on no workspace crate: what needs the engine runs as the engine's own binary"
+    );
+}
+
 /// `khora-infra` is a floor tenant, not a top layer: it takes `khora-core`
 /// and nothing else, so the concrete backends moved into it (the tracking
 /// allocator, the mix bus) cannot drag a higher crate down with them.

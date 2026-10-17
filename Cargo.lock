@@ -7140,14 +7140,9 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bincode",
  "clap",
- "khora-core",
- "khora-io",
- "khora-sdk",
  "serde",
  "toml",
- "walkdir",
 ]
 
 [[package]]

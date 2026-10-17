@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, Criterion};
 use khora_data::ecs::{Component, SemanticDomain, World};
 use std::hint::black_box;
 
@@ -52,4 +52,3 @@ fn bench_queries(c: &mut Criterion) {
 }
 
 criterion_group!(benches, bench_queries);
-criterion_main!(benches);

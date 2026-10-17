@@ -326,8 +326,8 @@ a system sweeping ten thousand healths — travel as **one** command, a column
 write: the component and its fields are resolved once, the rows are written page
 by page in memory order, and a row whose entity is gone is skipped and counted
 rather than failing the rest. On 10,000 rows it costs about a sixth of the same
-writes queued one by one (`cargo bench -p khora-data --bench
-script_commands_bench`).
+writes queued one by one (`cargo bench -p khora-data --bench data --
+RigidBody.mass`).
 
 Two writes landing on the same thing in one frame are reported in debug builds —
 the last one wins. They are told apart **per field**: two scripts writing

@@ -4,7 +4,7 @@
 //! writes its `mass` — the per-frame work of a script tuning a field on many
 //! bodies — against the same writes as one `WriteColumn`.
 
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{criterion_group, BatchSize, Criterion};
 use khora_core::math::{Quaternion, Vec3};
 use khora_core::script::{ColumnBatch, CommandBuffer, ComponentName, ScriptValue, WorldCommand};
 use khora_data::ecs::systems::script_commands::apply_all;
@@ -75,4 +75,3 @@ fn bench_write_column(c: &mut Criterion) {
 }
 
 criterion_group!(benches, bench_set_component, bench_write_column);
-criterion_main!(benches);

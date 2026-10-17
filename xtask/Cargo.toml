@@ -9,14 +9,11 @@ license.workspace = true
 name = "xtask"
 path = "src/main.rs"
 
+# No engine crate: `cargo gate` builds xtask before anything else, and an
+# engine dependency would compile the whole engine just to start it. What
+# needs the engine runs as the engine's own binary (`khora-pack`).
 [dependencies]
-khora-core = { path = "../crates/khora-core" }
-khora-io = { path = "../crates/khora-io" }
-khora-sdk = { path = "../crates/khora-sdk" }
-
 clap = { version = "4.5.60", features = ["derive", "cargo"] }
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 toml = "1.1.2"
-walkdir = "2.5.0"
-bincode = { version = "2.0.1", features = ["serde"] }

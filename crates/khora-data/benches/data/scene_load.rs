@@ -16,7 +16,7 @@
 //! (names resolved, fields matched by name) and as a snapshot (positional,
 //! bound to this build's schema). The snapshot is what `FastestLoad` writes.
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, Criterion};
 use khora_core::math::Vec3;
 use khora_data::ecs::{Name, Transform, World};
 use khora_data::scene::snapshot::{prepare_snapshot, write_snapshot};
@@ -66,4 +66,3 @@ fn bench_scene_load(c: &mut Criterion) {
 }
 
 criterion_group!(benches, bench_scene_load);
-criterion_main!(benches);

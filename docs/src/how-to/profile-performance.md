@@ -213,7 +213,7 @@ epoch, so they never invalidate a cached View.
   (`AdaptationMode::Manual`) while you A/B a specific change so adaptation is not a variable (see
   [Debug a frame](./debug-a-frame.md)).
 - **Criterion benches.** The ECS query path has a criterion benchmark
-  (`crates/khora-data/benches/query_bench.rs`): run it with `cargo bench -p khora-data`. The AGDF
+  (`crates/khora-data/benches/data/query.rs`): run it with `cargo bench -p khora-data -- "ECS Queries"`. The AGDF
   layout numbers come from the `layout_bench` *example* ([§4](#agdf--data-layout)), not a criterion
   harness.
 
