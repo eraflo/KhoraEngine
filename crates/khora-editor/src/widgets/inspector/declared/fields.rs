@@ -20,6 +20,7 @@
 //! | `int` / `float`    | drag value (an `int` stays whole) |
 //! | `Duration`         | drag value in seconds, `s` after it |
 //! | `Angle`            | drag value in degrees, `deg` after it — stored in radians |
+//! | ranged number      | the drag value kept inside `[Range(…)]`, a gauge under it |
 //! | `string`           | text field |
 //! | `Vec2/3/4`, `Quat` | one drag value per axis |
 //! | `Color`            | colour swatch |
@@ -29,12 +30,14 @@
 //! | struct             | a collapsing block, a row per field |
 //!
 //! A read-only field — what the engine writes — is the same row as text.
+//! A `[Tooltip(…)]` is said by hovering a number's label, or the control of
+//! any other field.
 
 use std::collections::HashMap;
 
 use khora_sdk::editor_ui::{FontFamilyHint, UiBuilder, UiTheme};
 use khora_sdk::khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
-use khora_sdk::khora_core::script::{ErgonType, ScriptValue};
+use khora_sdk::khora_core::script::{ErgonType, FieldRange, ScriptValue};
 use khora_sdk::prelude::ecs::EntityId;
 use khora_tool_ui::widgets::paint::tint;
 use khora_tool_ui::widgets::{self};
@@ -42,6 +45,8 @@ use khora_tool_ui::widgets::{self};
 use crate::drag_payload::{payload_is_entity, unpack_entity};
 
 use super::super::renderers::humanise;
+use super::hints::range_note;
+use super::ranged::{render_label, render_number, render_read_only_gauge};
 
 /// What a field row needs besides its value: the theme, the names of the
 /// scene's entities, and a stable id for the widgets it allocates.
@@ -52,14 +57,29 @@ pub struct FieldContext<'a> {
     pub names: &'a HashMap<EntityId, String>,
     /// The id the row's own widgets are salted with.
     pub id: String,
+    /// The field's `[Range(…)]`, held by each number it holds.
+    pub range: Option<FieldRange>,
+    /// The field's `[Tooltip(…)]`, said by its own row only.
+    pub tooltip: Option<&'a str>,
 }
 
 impl FieldContext<'_> {
+    /// A field of a struct the row holds: its hints are not the row's.
     fn child(&self, part: &str) -> FieldContext<'_> {
         FieldContext {
             theme: self.theme,
             names: self.names,
             id: format!("{}.{part}", self.id),
+            range: None,
+            tooltip: None,
+        }
+    }
+
+    /// An item of a list the row holds: held to the row's range.
+    fn item(&self, part: &str) -> FieldContext<'_> {
+        FieldContext {
+            range: self.range,
+            ..self.child(part)
         }
     }
 }
@@ -174,11 +194,31 @@ pub fn render_field(
     cx: &FieldContext<'_>,
 ) -> bool {
     let label = humanise(name);
-    if read_only {
+    let changed = if read_only {
         render_read_only(ui, &label, ty, value, cx);
-        return false;
+        false
+    } else {
+        render_editable(ui, &label, ty, value, cx)
+    };
+    if let Some(tooltip) = cx.tooltip.filter(|_| !labels_itself(ty, value, read_only)) {
+        ui.tooltip_for_last(tooltip);
     }
-    render_editable(ui, &label, ty, value, cx)
+    changed
+}
+
+/// Whether the row of a `ty` field holding `value` draws its label with the
+/// field's tooltip: a number's, a read-only scalar's, an empty optional's.
+fn labels_itself(ty: &ErgonType, value: &ScriptValue, read_only: bool) -> bool {
+    match (ty, value) {
+        (_, ScriptValue::Array(items)) if !items.is_empty() => false,
+        (_, ScriptValue::Struct(fields)) if !fields.is_empty() => false,
+        _ if read_only => true,
+        (ErgonType::Optional(_), ScriptValue::Null) => true,
+        (ErgonType::Optional(inner), _) => labels_itself(inner, value, read_only),
+        (ErgonType::Int, ScriptValue::Int(_)) => true,
+        (ErgonType::Float | ErgonType::Duration | ErgonType::Angle, ScriptValue::Float(_)) => true,
+        _ => false,
+    }
 }
 
 fn render_read_only(
@@ -188,41 +228,57 @@ fn render_read_only(
     value: &ScriptValue,
     cx: &FieldContext<'_>,
 ) {
+    // Each row, and whether it is an item — held to the field's range — or
+    // a struct's field, which is not.
     let nested = match value {
         ScriptValue::Array(items) if !items.is_empty() => Some(
             items
                 .iter()
                 .enumerate()
-                .map(|(i, item)| (format!("[{i}]"), item_type(ty), item.clone()))
+                .map(|(i, item)| (format!("[{i}]"), item_type(ty), item.clone(), true))
                 .collect::<Vec<_>>(),
         ),
         ScriptValue::Struct(fields) if !fields.is_empty() => Some(
             fields
                 .iter()
-                .map(|(name, item)| (humanise(name), field_type(ty, name), item.clone()))
+                .map(|(name, item)| (humanise(name), field_type(ty, name), item.clone(), false))
                 .collect(),
         ),
         _ => None,
     };
     match nested {
         Some(rows) => ui.collapsing(label, false, &mut |inner| {
-            for (i, (row_label, row_ty, row_value)) in rows.iter().enumerate() {
-                render_read_only(
-                    inner,
-                    row_label,
-                    row_ty,
-                    row_value,
-                    &cx.child(&i.to_string()),
-                );
+            for (i, (row_label, row_ty, row_value, item)) in rows.iter().enumerate() {
+                let part = i.to_string();
+                let row_cx = if *item {
+                    cx.item(&part)
+                } else {
+                    cx.child(&part)
+                };
+                render_read_only(inner, row_label, row_ty, row_value, &row_cx);
             }
         }),
         None => {
             let text = value_text(value, ty, cx.names);
+            let leaf = item_or_self(ty);
+            let note = cx.range.and_then(|range| range_note(&leaf, value, range));
             ui.horizontal(&mut |row| {
-                row.colored_label(cx.theme.text_dim, label);
-                row.colored_label(cx.theme.text_muted, &text);
+                render_label(row, cx, label, cx.theme.text_dim);
+                match &note {
+                    Some(note) => row.colored_label_with_tooltip(cx.theme.warning, &text, note),
+                    None => row.colored_label(cx.theme.text_muted, &text),
+                }
             });
+            render_read_only_gauge(ui, cx, &leaf, value);
         }
+    }
+}
+
+/// `ty` without the optional around it: what a value it holds is.
+fn item_or_self(ty: &ErgonType) -> ErgonType {
+    match ty {
+        ErgonType::Optional(inner) => item_or_self(inner),
+        other => other.clone(),
     }
 }
 
@@ -300,28 +356,11 @@ fn render_leaf(
     value: &mut ScriptValue,
     cx: &FieldContext<'_>,
 ) -> bool {
+    if let Some(changed) = render_number(ui, label, ty, value, cx) {
+        return changed;
+    }
     match (ty, &mut *value) {
         (ErgonType::Bool, ScriptValue::Bool(b)) => ui.checkbox(b, label),
-        (ErgonType::Int, ScriptValue::Int(i)) => {
-            let mut local = *i as f32;
-            let changed = ui.drag_value_f32(label, &mut local, 0.25);
-            if changed {
-                *i = local.round() as i64;
-            }
-            changed
-        }
-        (ErgonType::Float, ScriptValue::Float(f)) => ui.drag_value_f32(label, f, 0.05),
-        (ErgonType::Duration, ScriptValue::Float(seconds)) => {
-            render_unit(ui, label, seconds, 0.01, "s", cx.theme)
-        }
-        (ErgonType::Angle, ScriptValue::Float(radians)) => {
-            let mut degrees = radians.to_degrees();
-            let changed = render_unit(ui, label, &mut degrees, 0.5, "deg", cx.theme);
-            if changed {
-                *radians = degrees.to_radians();
-            }
-            changed
-        }
         (ErgonType::Str, ScriptValue::Str(text)) => {
             let mut changed = false;
             ui.horizontal(&mut |row| {
@@ -379,23 +418,6 @@ fn render_leaf(
     }
 }
 
-/// A drag value with its unit after it, dim.
-fn render_unit(
-    ui: &mut dyn UiBuilder,
-    label: &str,
-    value: &mut f32,
-    speed: f32,
-    unit: &str,
-    theme: &UiTheme,
-) -> bool {
-    let mut changed = false;
-    ui.horizontal(&mut |row| {
-        changed = row.drag_value_f32(label, value, speed);
-        row.colored_label(theme.text_muted, unit);
-    });
-    changed
-}
-
 /// One drag value per axis, on one row.
 fn render_axes(ui: &mut dyn UiBuilder, label: &str, axes: &mut [f32]) -> bool {
     let mut changed = false;
@@ -422,7 +444,7 @@ fn render_optional(
     if *value == ScriptValue::Null {
         let mut set = false;
         ui.horizontal(&mut |row| {
-            row.label(label);
+            render_label(row, cx, label, cx.theme.text);
             row.colored_label(cx.theme.text_muted, "none");
             set = row.small_button("Set");
         });
@@ -477,7 +499,7 @@ fn render_array(
                 &format!("[{i}]"),
                 inner,
                 item,
-                &cx.child(&i.to_string()),
+                &cx.item(&i.to_string()),
             );
             block.context_menu_last(&mut |menu| {
                 if i > 0 && menu.button("Move up") {

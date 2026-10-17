@@ -146,6 +146,8 @@ pub struct RecordingUiBuilder {
     scroll: f32,
     /// Position reported by `pointer_position`.
     pointer: Option<[f32; 2]>,
+    /// The value each `drag_value_f32`, by label, is dragged to.
+    drags: HashMap<String, f32>,
 }
 
 impl RecordingUiBuilder {
@@ -159,7 +161,15 @@ impl RecordingUiBuilder {
             cursor: [0.0, 0.0],
             scroll: 0.0,
             pointer: None,
+            drags: HashMap::new(),
         }
+    }
+
+    /// Scripts the drag value labelled `label` to be dragged to `to`: it
+    /// writes `to` and reports a change. Chainable.
+    pub fn with_drag(mut self, label: &str, to: f32) -> Self {
+        self.drags.insert(label.to_owned(), to);
+        self
     }
 
     /// Scripts the wheel delta `scroll_delta_in` will report. Chainable.
@@ -499,8 +509,14 @@ impl UiBuilder for RecordingUiBuilder {
         false
     }
 
-    fn drag_value_f32(&mut self, _label: &str, _value: &mut f32, _speed: f32) -> bool {
-        false
+    fn drag_value_f32(&mut self, label: &str, value: &mut f32, _speed: f32) -> bool {
+        match self.drags.get(label) {
+            Some(&to) => {
+                *value = to;
+                true
+            }
+            None => false,
+        }
     }
 
     fn slider_f32(&mut self, _label: &str, _value: &mut f32, _min: f32, _max: f32) -> bool {

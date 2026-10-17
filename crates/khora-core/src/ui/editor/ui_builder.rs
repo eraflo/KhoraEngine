@@ -124,6 +124,35 @@ pub trait UiBuilder {
     /// Draggable `f32` value. Returns `true` when changed.
     fn drag_value_f32(&mut self, label: &str, value: &mut f32, speed: f32) -> bool;
 
+    /// Draggable `f32` value kept between `min` and `max` once edited.
+    /// Returns `true` when changed. A value already outside the bounds is
+    /// shown as it is, and stays as it is until the author edits it.
+    ///
+    /// The default draws [`drag_value_f32`](Self::drag_value_f32) and
+    /// clamps the value only when it changed.
+    fn drag_value_f32_in(
+        &mut self,
+        label: &str,
+        value: &mut f32,
+        speed: f32,
+        min: f32,
+        max: f32,
+    ) -> bool {
+        let changed = self.drag_value_f32(label, value, speed);
+        if changed {
+            // Never `f32::clamp`, which panics on reversed bounds.
+            *value = value.max(min).min(max);
+        }
+        changed
+    }
+
+    /// A label in `color` that says `tooltip` when hovered. The default
+    /// draws the label alone.
+    fn colored_label_with_tooltip(&mut self, color: [f32; 4], text: &str, tooltip: &str) {
+        let _ = tooltip;
+        self.colored_label(color, text);
+    }
+
     /// Slider for `f32`. Returns `true` when changed.
     fn slider_f32(&mut self, label: &str, value: &mut f32, min: f32, max: f32) -> bool;
 

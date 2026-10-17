@@ -413,6 +413,17 @@ impl World {
         self.storage.registry.set_declared_by(key, module);
     }
 
+    /// Records how the inspector presents declared component `key`'s
+    /// fields, as its declaring module gives them — only fields given a
+    /// hint. Never relays the component out: hints are not its layout.
+    pub fn set_field_hints(
+        &mut self,
+        key: ComponentKey,
+        hints: Vec<(String, khora_core::script::FieldHints)>,
+    ) {
+        self.storage.registry.set_field_hints(key, hints);
+    }
+
     /// Gives declared component `key` a new provenance — whether scenes keep
     /// it — and says whether a game save does: what a name changing kind on a
     /// reload takes. Its rows are relaid out for what the provenance keeps.

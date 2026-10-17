@@ -400,6 +400,17 @@ fn apply_one(
         };
         world.set_script_role(key, role);
         world.set_declared_by(key, Some(module.to_owned()));
+        // Every reload, whether or not the layout changed: a hint is not
+        // the layout, and editing one never relays the component out.
+        world.set_field_hints(
+            key,
+            component
+                .fields
+                .iter()
+                .filter(|field| !field.hints.is_empty())
+                .map(|field| (field.name.clone(), field.hints.clone()))
+                .collect(),
+        );
     }
 }
 

@@ -34,6 +34,7 @@ use khora_data::scene::{
 
 mod behavior_components;
 mod decimals;
+mod declared_component_hints;
 mod declared_component_loads;
 mod declared_component_prefabs;
 mod declared_component_saves;

@@ -21,6 +21,8 @@
 //! `script`, `behavior`, `state`, `system`.
 
 mod fields;
+mod hints;
+mod ranged;
 
 use std::collections::HashMap;
 
@@ -190,13 +192,18 @@ pub fn render_declared_cards(
             state,
             &mut |body| {
                 render_provenance(body, card, theme);
-                for field in &card.fields {
+                for (at, field) in card.fields.iter().enumerate() {
+                    if let Some(header) = hints::section_header(field) {
+                        ranged::render_header(body, theme, &header, at == 0);
+                    }
                     let mut value = field.value.clone();
                     let top = body.cursor_pos();
                     let cx = FieldContext {
                         theme,
                         names,
                         id: format!("declared.{}.{}.{}", entity.index, card.name, field.name),
+                        range: field.hints.range,
+                        tooltip: field.hints.tooltip.as_deref(),
                     };
                     if render_field(
                         body,

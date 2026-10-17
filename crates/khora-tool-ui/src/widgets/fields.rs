@@ -421,4 +421,49 @@ mod tests {
         assert_eq!(value[2], 128.0, "and claims the remaining width");
         assert!(ui.painted_text("Position"));
     }
+
+    // A bounded drag value, as a builder without its own draws it: the
+    // plain drag value, kept between its bounds once edited.
+
+    #[test]
+    fn a_bounded_drag_left_alone_keeps_a_value_outside_its_bounds() {
+        let mut ui = RecordingUiBuilder::new(200.0, 20.0);
+        let mut value = 150.0_f32;
+        let changed = ui.drag_value_f32_in("Power", &mut value, 0.5, 0.0, 100.0);
+        assert!(!changed, "nothing was dragged");
+        assert_eq!(value, 150.0, "viewing a value never clamps it");
+    }
+
+    #[test]
+    fn a_bounded_drag_edited_past_its_maximum_stops_at_it() {
+        let mut ui = RecordingUiBuilder::new(200.0, 20.0).with_drag("Power", 130.0);
+        let mut value = 50.0_f32;
+        let changed = ui.drag_value_f32_in("Power", &mut value, 0.5, 0.0, 100.0);
+        assert!(changed);
+        assert_eq!(value, 100.0);
+    }
+
+    #[test]
+    fn a_bounded_drag_edited_below_its_minimum_stops_at_it() {
+        let mut ui = RecordingUiBuilder::new(200.0, 20.0).with_drag("Power", -20.0);
+        let mut value = 50.0_f32;
+        assert!(ui.drag_value_f32_in("Power", &mut value, 0.5, 0.0, 100.0));
+        assert_eq!(value, 0.0);
+    }
+
+    #[test]
+    fn a_bounded_drag_edited_inside_its_bounds_keeps_the_edit() {
+        let mut ui = RecordingUiBuilder::new(200.0, 20.0).with_drag("Power", 60.0);
+        let mut value = 50.0_f32;
+        assert!(ui.drag_value_f32_in("Power", &mut value, 0.5, 0.0, 100.0));
+        assert_eq!(value, 60.0);
+    }
+
+    #[test]
+    fn editing_a_bounded_drag_holding_a_value_outside_brings_it_inside() {
+        let mut ui = RecordingUiBuilder::new(200.0, 20.0).with_drag("Power", 151.0);
+        let mut value = 150.0_f32;
+        assert!(ui.drag_value_f32_in("Power", &mut value, 0.5, 0.0, 100.0));
+        assert_eq!(value, 100.0);
+    }
 }

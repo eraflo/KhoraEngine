@@ -176,6 +176,40 @@ impl UiBuilder for EguiUiBuilder<'_> {
         changed
     }
 
+    fn drag_value_f32_in(
+        &mut self,
+        label: &str,
+        value: &mut f32,
+        speed: f32,
+        min: f32,
+        max: f32,
+    ) -> bool {
+        let inner = self.ui.horizontal(|ui| {
+            ui.label(label);
+            // A value outside the bounds is shown as it is until edited.
+            ui.add(
+                egui::DragValue::new(value)
+                    .speed(speed)
+                    .range(min..=max)
+                    .clamp_existing_to_range(false),
+            )
+        });
+        let changed = inner.inner.changed();
+        self.last_response = Some(inner.inner);
+        // A keyboard step is not clamped by the widget itself: an edit stays
+        // inside the bounds whichever way it came.
+        if changed {
+            *value = value.max(min).min(max);
+        }
+        changed
+    }
+
+    fn colored_label_with_tooltip(&mut self, color: [f32; 4], text: &str, tooltip: &str) {
+        self.ui
+            .colored_label(color_to_egui(color), text)
+            .on_hover_text(tooltip);
+    }
+
     fn slider_f32(&mut self, label: &str, value: &mut f32, min: f32, max: f32) -> bool {
         let r = self.ui.add(egui::Slider::new(value, min..=max).text(label));
         let changed = r.changed();
@@ -284,10 +318,19 @@ impl UiBuilder for EguiUiBuilder<'_> {
 
     fn horizontal(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let vt = self.viewport_textures;
-        self.ui.horizontal(|ui| {
-            let mut nested = EguiUiBuilder::new(ui, vt);
-            f(&mut nested);
-        });
+        // The row's last widget is the last one drawn here: what a tooltip
+        // or a context menu asked for after the row attaches to.
+        let last = self
+            .ui
+            .horizontal(|ui| {
+                let mut nested = EguiUiBuilder::new(ui, vt);
+                f(&mut nested);
+                nested.last_response
+            })
+            .inner;
+        if last.is_some() {
+            self.last_response = last;
+        }
     }
 
     fn vertical(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
@@ -305,12 +348,15 @@ impl UiBuilder for EguiUiBuilder<'_> {
         f: &mut dyn FnMut(&mut dyn UiBuilder),
     ) {
         let vt = self.viewport_textures;
-        egui::CollapsingHeader::new(header)
+        let shown = egui::CollapsingHeader::new(header)
             .default_open(default_open)
             .show(self.ui, |ui| {
                 let mut nested = EguiUiBuilder::new(ui, vt);
                 f(&mut nested);
             });
+        // The block's last widget is its header: what a tooltip or a context
+        // menu asked for after the block attaches to.
+        self.last_response = Some(shown.header_response);
     }
 
     fn indent(&mut self, id: &str, f: &mut dyn FnMut(&mut dyn UiBuilder)) {

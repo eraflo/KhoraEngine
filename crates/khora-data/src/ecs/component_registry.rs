@@ -16,6 +16,7 @@
 
 use crate::ecs::column_ops::RustColumns;
 use crate::ecs::{AnyVec, ColumnMap, ColumnOps, Component, ComponentKey, RegisterError};
+use khora_core::script::FieldHints;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::{
@@ -172,8 +173,22 @@ pub struct ComponentVTable {
     /// component, for one only a file declared, and for one no script
     /// declares any more (an orphan, kept with its data).
     pub declared_by: Option<String>,
+    /// How the inspector presents its fields, by field name — only fields
+    /// given a hint. Editor-only: nothing at run time reads it, and it is
+    /// never part of the layout, a scene or a snapshot.
+    pub field_hints: Vec<(String, FieldHints)>,
     /// What storage does with its columns.
     pub columns: Arc<dyn ColumnOps>,
+}
+
+impl ComponentVTable {
+    /// The hints the field `field` is given, `None` when it is given none.
+    pub fn hints(&self, field: &str) -> Option<&FieldHints> {
+        self.field_hints
+            .iter()
+            .find(|(name, _)| name == field)
+            .map(|(_, hints)| hints)
+    }
 }
 
 impl std::fmt::Debug for ComponentVTable {
@@ -272,6 +287,7 @@ impl ComponentRegistry {
             resumable: false,
             script: None,
             declared_by: None,
+            field_hints: Vec::new(),
             columns: Arc::new(RustColumns::<T>::new()),
         });
         Ok(key)
@@ -315,6 +331,7 @@ impl ComponentRegistry {
             resumable,
             script: None,
             declared_by: None,
+            field_hints: Vec::new(),
             columns,
         });
         Ok(key)
@@ -348,6 +365,13 @@ impl ComponentRegistry {
         if let Some(vtable) = self.vtables.get_mut(&key) {
             vtable.provenance = provenance;
             vtable.resumable = resumable;
+        }
+    }
+
+    /// Records how the inspector presents component `key`'s fields.
+    pub(crate) fn set_field_hints(&mut self, key: ComponentKey, hints: Vec<(String, FieldHints)>) {
+        if let Some(vtable) = self.vtables.get_mut(&key) {
+            vtable.field_hints = hints;
         }
     }
 

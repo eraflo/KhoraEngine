@@ -27,6 +27,7 @@ mod compile_problems_found_by_importers;
 mod compile_problems_located_in_the_engine_mirror;
 mod compile_problems_of_importers_by_any_spelling;
 mod declared_component_scenes;
+mod declared_field_hints;
 mod game_saves;
 mod game_saves_text_base;
 mod hot_reload_announcements;

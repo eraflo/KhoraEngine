@@ -17,6 +17,7 @@
 //! default; never a JSON card.
 
 use khora_sdk::editor_ui::DeclaredCardKind;
+use khora_sdk::khora_core::script::{FieldHints, FieldRange};
 
 use super::*;
 
@@ -139,5 +140,79 @@ fn a_duration_and_an_angle_field_keep_their_type_on_the_card() {
             ("wait", ErgonType::Duration, ScriptValue::Float(0.5)),
             ("turn", ErgonType::Angle, ScriptValue::Float(90.0)),
         ]
+    );
+}
+
+/// **Each field carries the hints its module gives it to the card** — its
+/// range, tooltip and header, as the registry holds them — and a field
+/// given none carries none.
+#[test]
+fn a_card_carries_each_fields_hints_and_none_where_none_are_given() {
+    let mut world = GameWorld::new();
+    let key = lantern(&mut world);
+    let glow = FieldHints {
+        range: Some(FieldRange { min: 0.0, max: 5.0 }),
+        tooltip: Some("How bright it burns".to_owned()),
+        header: Some("Light".to_owned()),
+    };
+    let count = FieldHints {
+        tooltip: Some("Wicks left".to_owned()),
+        ..FieldHints::default()
+    };
+    world.inner_world_mut().set_field_hints(
+        key,
+        vec![
+            ("glow".to_owned(), glow.clone()),
+            ("count".to_owned(), count.clone()),
+        ],
+    );
+    let lamp = world.spawn((Transform::identity(), Name::new("Lamp")));
+    attach(&mut world, lamp, key);
+
+    let inspected = inspect(&world, lamp, PlayMode::Editing);
+    let card = card_of(&inspected, "Lantern");
+    let hints = |name: &str| {
+        card.fields
+            .iter()
+            .find(|field| field.name == name)
+            .map(|field| field.hints.clone())
+            .unwrap_or_else(|| panic!("the card shows `{name}`"))
+    };
+
+    assert_eq!(hints("glow"), glow);
+    assert_eq!(hints("count"), count);
+    for plain in ["lit", "label", "offset", "steps", "loot"] {
+        assert_eq!(
+            hints(plain),
+            FieldHints::default(),
+            "`{plain}` is given none"
+        );
+    }
+}
+
+/// **A behavior's card carries its fields' hints too.**
+#[test]
+fn a_behavior_card_carries_its_fields_hints() {
+    let mut world = GameWorld::new();
+    let (behavior, _) = guard(&mut world);
+    let speed = FieldHints {
+        range: Some(FieldRange { min: 0.5, max: 4.0 }),
+        ..FieldHints::default()
+    };
+    world
+        .inner_world_mut()
+        .set_field_hints(behavior, vec![("speed".to_owned(), speed.clone())]);
+    let sentry = world.spawn((Transform::identity(), Name::new("Sentry")));
+    attach(&mut world, sentry, behavior);
+
+    let inspected = inspect(&world, sentry, PlayMode::Editing);
+    let card = card_of(&inspected, "Guard");
+
+    assert_eq!(
+        card.fields
+            .iter()
+            .map(|field| (field.name.as_str(), field.hints.clone()))
+            .collect::<Vec<_>>(),
+        vec![("speed", speed)]
     );
 }

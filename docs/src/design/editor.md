@@ -193,6 +193,9 @@ There is no separate "Prefab" tab: the overrides are shown where the values are.
 - **Optional and lists** — `none` is a muted word with a small **Set**; clearing, moving and removing live in the row's context menu, in words. **+ Add item** closes a list.
 - **Entity slot** — a recessed well (interactive surface) naming the entity; while anything is dragged it takes a 1 px silver stroke, and tints when hovered — the drop target announces itself only when a drop is possible.
 - **Read-only** — a state or system card shows label and value as dim text: nothing that looks editable is.
+- **Section header** — `[Header("Combat")]` opens a section above its field: the Label role (mono, uppercase, disabled text), with more room above it than below. Never a rule, never a box.
+- **Tooltip** — `[Tooltip("…")]` is said by hovering a number's label, or the control of any other field. Information, not decoration.
+- **Ranged number** — `[Range(min, max)]` keeps the same scrubber, bounded: an edit stays inside the range. Under the row, a 2 px gauge: a separator track, filled in dim text to where the value sits. A value a script or a file wrote outside the range is shown as it is, never changed by being looked at: its gauge turns amber (warning) and hovering the value says why; the first edit brings it back inside.
 - **+ Add Component** — a script's entry reads `Name · file.erg`, its full path in the tooltip; Rust entries first in each domain, then the project's.
 
 ### Viewport (center, fluid)

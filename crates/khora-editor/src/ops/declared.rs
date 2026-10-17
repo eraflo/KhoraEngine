@@ -62,6 +62,7 @@ pub fn declared_cards(world: &World, entity: EntityId, playing: bool) -> Vec<Dec
                     .find(|(name, _)| *name == field.name)
                     .map_or_else(|| field.default.clone(), |(_, value)| value.clone()),
                 default: field.default.clone(),
+                hints: vtable.hints(&field.name).cloned().unwrap_or_default(),
             })
             .collect();
         cards.push(DeclaredCard {

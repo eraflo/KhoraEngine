@@ -60,6 +60,9 @@ pub struct DeclaredFieldView {
     pub value: crate::script::ScriptValue,
     /// What a new row starts with.
     pub default: crate::script::ScriptValue,
+    /// How the inspector presents it: its range, tooltip and section header
+    /// as its declaring module gives them — none when it gives none.
+    pub hints: crate::script::FieldHints,
 }
 
 /// One entry of "+ Add Component": a component the entity may be given.
