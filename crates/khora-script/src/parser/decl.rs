@@ -309,6 +309,25 @@ impl Parser {
     }
 
     pub(super) fn parse_member(&mut self) -> Parse<BehaviorMember> {
+        // Attributes inside a body describe a field to the inspector; before
+        // anything else they say nothing, and the member still parses.
+        let attributes = self.parse_attributes()?;
+        let field_follows = !self.check_keyword(Keyword::State)
+            && !self.check_keyword(Keyword::On)
+            && !self.check_keyword(Keyword::Every)
+            && !self.check_keyword(Keyword::After)
+            && !self.check_keyword(Keyword::Async)
+            && !self.looks_like_method();
+        if field_follows {
+            return Ok(BehaviorMember::Field(self.parse_field_with(attributes)?));
+        }
+        if let Some(attribute) = attributes.first() {
+            self.diagnostics.push(
+                Diagnostic::error("attributes inside a behavior apply to its fields", attribute.span)
+                    .with_note("a field takes `[Range(min, max)]`, `[Tooltip(\"…\")]` and `[Header(\"…\")]`; a behavior's own attributes go before `behavior`"),
+            );
+        }
+
         if self.check_keyword(Keyword::State) {
             return Ok(BehaviorMember::State(self.parse_state()?));
         }
@@ -327,10 +346,7 @@ impl Parser {
 
         // A field and a method both open with a type and a name; the token
         // after tells them apart.
-        if self.looks_like_method() {
-            return Ok(BehaviorMember::Method(self.parse_method(false)?));
-        }
-        Ok(BehaviorMember::Field(self.parse_field()?))
+        Ok(BehaviorMember::Method(self.parse_method(false)?))
     }
 
     /// Whether what follows is `Type Name(` rather than `Type Name;`.
@@ -527,6 +543,12 @@ impl Parser {
     }
 
     pub(super) fn parse_field(&mut self) -> Parse<Field> {
+        let attributes = self.parse_attributes()?;
+        self.parse_field_with(attributes)
+    }
+
+    /// A field whose attributes were read already.
+    fn parse_field_with(&mut self, attributes: Vec<Attribute>) -> Parse<Field> {
         let start = self.span();
         let ty = self.parse_type()?;
         let (name, _) = self.expect_ident("a field name")?;
@@ -542,6 +564,7 @@ impl Parser {
             ty,
             name,
             default,
+            attributes,
             span: start.to(end),
         })
     }

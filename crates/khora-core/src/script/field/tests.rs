@@ -13,7 +13,8 @@
 // limitations under the License.
 
 //! What a Rust field type is to a script: its Ergon spelling, the trip to a
-//! `ScriptValue` and back, and the values a field refuses.
+//! `ScriptValue` and back, and the values a field refuses — and the hints
+//! the inspector presents a script-declared field with.
 //!
 //! The spellings were once decided by parsing the `stringify!` form of a
 //! field's type in the mirror generator; they are pinned here, through the
@@ -22,7 +23,7 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use super::{ErgonType, ScriptField};
+use super::{ErgonType, FieldHints, FieldRange, ScriptField};
 use crate::ecs::entity::EntityId;
 use crate::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 use crate::script::ScriptValue;
@@ -455,4 +456,127 @@ fn an_int_is_widened_where_a_float_is_declared_at_any_depth() {
         .widened(ScriptValue::Struct(vec![("x".to_owned(), int(1))])),
         ScriptValue::Struct(vec![("x".to_owned(), int(1))])
     );
+}
+
+// ─── Inspector hints ────────────────────────────────────────────────────────
+
+fn range(min: f64, max: f64) -> FieldRange {
+    FieldRange { min, max }
+}
+
+/// **A range holds both its bounds**: a value at `min`, at `max` or between
+/// them is inside; one a hair below or above is not.
+#[test]
+fn a_range_contains_its_bounds_and_what_lies_between() {
+    let hp = range(0.0, 100.0);
+    for inside in [0.0, 0.5, 50.0, 100.0] {
+        assert!(hp.contains(inside), "{inside} lies in 0..=100");
+    }
+    for outside in [-0.001, -50.0, 100.001, 150.0] {
+        assert!(!hp.contains(outside), "{outside} lies outside 0..=100");
+    }
+
+    let arc = range(-1.5, 1.5);
+    assert!(arc.contains(-1.5) && arc.contains(0.0) && arc.contains(1.5));
+    assert!(!arc.contains(-1.6) && !arc.contains(1.6));
+}
+
+/// **Clamping brings a value to the nearest bound**, and leaves a value
+/// already inside — a bound included — exactly as it was.
+#[test]
+fn clamping_brings_a_value_back_to_the_nearest_bound() {
+    let hp = range(0.0, 100.0);
+    assert_eq!(hp.clamp(-20.0), 0.0);
+    assert_eq!(hp.clamp(150.0), 100.0);
+    assert_eq!(hp.clamp(42.5), 42.5);
+    assert_eq!(hp.clamp(0.0), 0.0);
+    assert_eq!(hp.clamp(100.0), 100.0);
+
+    let below_zero = range(-10.0, -2.0);
+    assert_eq!(below_zero.clamp(0.0), -2.0);
+    assert_eq!(below_zero.clamp(-30.0), -10.0);
+    assert_eq!(below_zero.clamp(-4.0), -4.0);
+}
+
+/// **The fraction is where a value sits between the bounds**: `0` at the
+/// minimum, `1` at the maximum, linear between — on a range that does not
+/// start at zero too.
+#[test]
+fn the_fraction_is_where_a_value_sits_between_the_bounds() {
+    let hp = range(0.0, 100.0);
+    assert_eq!(hp.fraction(0.0), 0.0);
+    assert_eq!(hp.fraction(100.0), 1.0);
+    assert_eq!(hp.fraction(25.0), 0.25);
+
+    let arc = range(-10.0, 10.0);
+    assert_eq!(arc.fraction(-10.0), 0.0);
+    assert_eq!(arc.fraction(0.0), 0.5);
+    assert_eq!(arc.fraction(5.0), 0.75);
+    assert_eq!(arc.fraction(10.0), 1.0);
+}
+
+/// **The fraction of a value outside the range is clamped** at both ends:
+/// a gauge never draws past its track.
+#[test]
+fn the_fraction_of_a_value_outside_the_range_is_clamped_at_both_ends() {
+    let hp = range(0.0, 100.0);
+    assert_eq!(hp.fraction(-50.0), 0.0);
+    assert_eq!(hp.fraction(150.0), 1.0);
+    assert_eq!(hp.fraction(1e12), 1.0);
+
+    let arc = range(-10.0, 10.0);
+    assert_eq!(arc.fraction(-11.0), 0.0);
+    assert_eq!(arc.fraction(11.0), 1.0);
+}
+
+/// **Hints are empty only when none is given**: the default is empty, and a
+/// range, a tooltip or a header alone is not.
+#[test]
+fn hints_are_empty_only_when_no_hint_is_given() {
+    assert!(FieldHints::default().is_empty());
+
+    let given = [
+        FieldHints {
+            range: Some(range(0.0, 1.0)),
+            ..FieldHints::default()
+        },
+        FieldHints {
+            tooltip: Some("How hard it hits".to_owned()),
+            ..FieldHints::default()
+        },
+        FieldHints {
+            header: Some("Combat".to_owned()),
+            ..FieldHints::default()
+        },
+        FieldHints {
+            range: Some(range(-1.0, 1.0)),
+            tooltip: Some("Lean".to_owned()),
+            header: Some("Motion".to_owned()),
+        },
+    ];
+    for hints in given {
+        assert!(!hints.is_empty(), "{hints:?} gives a hint");
+    }
+}
+
+/// **A float rounded a step past a bound is at it**: `3000ms` is `3.0000002`
+/// seconds and lies within `0s..=3s`; a value clearly past a bound does not.
+#[test]
+fn a_float_rounded_past_a_bound_is_held_at_it() {
+    let cooldown = range(0.0, 3.0);
+    assert!(!cooldown.contains(f64::from(3000.0_f32 * 0.001)));
+    assert!(cooldown.holds(f64::from(3000.0_f32 * 0.001)));
+    assert!(range(0.7, 2.0).holds(f64::from(700.0_f32 * 0.001)));
+    for outside in [3.001, -0.001, 4.0] {
+        assert!(!cooldown.holds(outside), "{outside} lies past 0..=3");
+    }
+}
+
+/// **Clamping never panics**, whatever bounds a damaged file gave: a
+/// reversed or a not-a-number range still yields a value.
+#[test]
+fn clamping_by_damaged_bounds_does_not_panic() {
+    let _ = range(10.0, 0.0).clamp(5.0);
+    let _ = range(f64::NAN, 1.0).clamp(0.5);
+    let _ = range(0.0, f64::NAN).clamp(0.5);
 }

@@ -67,6 +67,7 @@ pub fn report_script_components(resolved: &Resolved, engine: &[String]) -> Vec<D
                 );
             }
             report_field(field, &mut diagnostics);
+            super::inspector::report_field_attributes(field, &mut diagnostics);
         }
     }
     diagnostics
@@ -92,6 +93,7 @@ pub fn declared_components(resolved: &Resolved, program: &Program) -> Vec<Declar
                         |ty| with_struct_fields(ty, program, &mut Vec::new()),
                     ),
                     default: default_of(program, &decl.name, slot, &field.ty),
+                    hints: super::inspector::hints_of(field),
                 })
                 .collect(),
             kind: DeclaredKind::Component,

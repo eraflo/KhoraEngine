@@ -63,6 +63,7 @@ mod held_array_growth;
 mod held_arrays;
 mod held_structs;
 mod held_text;
+mod inspector_attributes;
 mod match_arm_edits;
 mod match_on_a_computed_subject;
 mod narrowed_frames;

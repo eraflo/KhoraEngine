@@ -66,6 +66,7 @@ pub fn report_script_behaviors(resolved: &Resolved, engine: &[String]) -> Vec<Di
         }
         super::schedule::report_schedule(decl, declared.system, &mut diagnostics);
         for field in fields_of(decl) {
+            super::inspector::report_field_attributes(field, &mut diagnostics);
             if let Some(span) = field.default.as_ref().and_then(non_finite) {
                 diagnostics.push(
                     Diagnostic::error("this number is beyond what a float holds", span)
@@ -247,6 +248,7 @@ fn declared_field(field: &Field, slot: usize, behavior: &str, program: &Program)
         name: field.name.clone(),
         ty,
         default,
+        hints: super::inspector::hints_of(field),
     }
 }
 
@@ -258,6 +260,7 @@ fn companion_fields() -> Vec<DeclaredField> {
         name: name.to_owned(),
         ty,
         default,
+        hints: khora_core::script::FieldHints::default(),
     };
     let text = || ErgonType::Optional(Box::new(ErgonType::Str));
     vec![

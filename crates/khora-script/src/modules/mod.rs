@@ -34,6 +34,7 @@
 
 pub mod behaviors;
 pub mod components;
+pub mod inspector;
 pub mod loader;
 pub mod path;
 pub mod schedule;

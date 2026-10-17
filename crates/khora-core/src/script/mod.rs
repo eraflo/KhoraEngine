@@ -59,7 +59,7 @@ pub use command::{ComponentName, WorldCommand, WriteTarget, WriteTargetRef};
 pub use event::{
     engine_event_channel, EngineEvent, EventQueue, ScriptEvent, ENGINE_EVENTS, ENGINE_EVENT_BACKLOG,
 };
-pub use field::{ErgonType, FieldValueError, ScriptField};
+pub use field::{ErgonType, FieldHints, FieldRange, FieldValueError, ScriptField};
 pub use frozen::{FrozenFrame, FrozenLocal, FrozenMachine, FrozenValue, PendingBody};
 pub use problems::{ProblemSeverity, ProblemSource, ScriptProblem, ScriptProblems};
 pub use projection::{ColumnSnapshot, ComponentProjection, FrameComponents, ProjectedComponent};

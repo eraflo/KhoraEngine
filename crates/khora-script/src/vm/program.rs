@@ -405,6 +405,11 @@ pub struct DeclaredField {
     /// What a new row starts with: the declared default, else the type's
     /// zero.
     pub default: khora_core::script::ScriptValue,
+    /// How the inspector presents it: `[Range(…)]`, `[Tooltip(…)]`,
+    /// `[Header(…)]` as written. Editor-only — nothing at run time reads it.
+    /// A program frozen before fields carried hints reads back with none.
+    #[serde(default)]
+    pub hints: khora_core::script::FieldHints,
 }
 
 /// One component write: the component, and the fields it names. A field left

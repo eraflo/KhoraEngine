@@ -57,6 +57,9 @@ pub struct Field {
     pub name: String,
     /// `= expr`, when given.
     pub default: Option<Expr>,
+    /// `[Range(…)]`, `[Tooltip(…)]`, `[Header(…)]` — how the inspector shows
+    /// it; which apply where is the checker's question.
+    pub attributes: Vec<Attribute>,
     /// The whole declaration.
     pub span: Span,
 }

@@ -78,6 +78,7 @@ fn field(name: &str, ty: ErgonType, default: ScriptValue) -> DeclaredField {
         name: name.to_owned(),
         ty,
         default,
+        hints: khora_core::script::FieldHints::default(),
     }
 }
 

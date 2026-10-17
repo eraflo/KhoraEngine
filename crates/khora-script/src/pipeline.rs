@@ -92,6 +92,7 @@ pub fn compile_module(loader: &dyn SourceLoader, entry: &str) -> CompileOutcome 
         &resolved,
         loader.engine_components(),
     ));
+    diagnostics.extend(crate::modules::inspector::report_misplaced(&resolved));
     if crate::diagnostics::has_errors(&diagnostics) {
         return CompileOutcome {
             program: None,
