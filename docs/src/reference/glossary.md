@@ -247,6 +247,12 @@ strategies; under pressure it lowers the multiplier. Memory headroom similarly
 gates whether a layout repack is allowed. See [GORNA](../concepts/gorna.md) and
 [AGDF](../concepts/agdf.md).
 
+### Interpolation (Ergon)
+
+`$"hp: {h.current}"` — a `string` whose holes are shown by their type: `2.0`,
+`2.5s`, `90deg`, `(1.0, 2.0, 3.0)`, `Entity#12`. Built in one allocation. See
+the [Ergon reference](./ergon.md#interpolation).
+
 ### ISA — Intelligent Subsystem Agent
 
 The SAA name for an [Agent](#agent): a semi-autonomous subsystem manager with
@@ -283,6 +289,13 @@ engine-written component skipped, a reference to an entity the file does not hol
 the scene no longer has. None of these is an error and none is silent. A load
 that cannot be adapted — an unknown component type — fails instead, and leaves
 the world as it was. See [Serialization](../concepts/serialization.md).
+
+### Named argument (Ergon)
+
+`Move(3.0, speed: 2.0)` — an argument given by its parameter's name, after the
+positional ones, in any order; a parameter left out takes its constant default.
+Arguments run in the order written. See the
+[Ergon reference](./ergon.md#calls).
 
 ### OnLoad / OnResumeFailed
 

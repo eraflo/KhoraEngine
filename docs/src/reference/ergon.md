@@ -57,6 +57,7 @@ Comments are `// line` and `/* block */`.
 | angle | `90deg`, `1.57rad` | `Angle`, stored in radians |
 | frequency | `10hz`, `2.5hz` | a rate — only `[Rate(…)]`'s argument; refused as a value |
 | text | `"text"` | `string` |
+| interpolated text | `$"hp: {h.current} / {h.max}"` | `string` — see [Interpolation](#interpolation) |
 | boolean, none | `true`, `false`, `null` | `bool`, `T?` |
 
 | Type | Status |
@@ -320,15 +321,87 @@ awaiting an event is not in the language yet.
 |---|---|
 | `* / %`, `+ -`, `< <= > >=`, `== !=`, `&&`, `\|\|`, `!`, unary `-` | runs — C# precedence; `&&`/`\|\|` short-circuit; `int / int` truncates |
 | `c ? a : b` | runs |
-| `"a" + "b"`, `==` on text | runs — text `+` text only: `"hp " + health` is refused |
+| `"a" + "b"`, `s += "b"`, `==` on text | runs — text `+` text only: `"hp " + health` is refused, offering `$"hp {health}"` |
+| `$"…{x}…"` | runs — see [Interpolation](#interpolation) |
 | `(float)x`, `(int)x` | runs — converts: `(float)5` is `5.0`, `(int)2.75` is `2`, `(int)-2.75` is `-2` (toward zero); `(int)` of an infinity, a NaN or a value past `int`'s range faults (`InvalidCast`) rather than saturating |
 | `this` | runs — the behavior's entity; not in free functions |
-| `Name(args)` | runs — functions and natives by bare name |
+| `Name(args)` | runs — functions and natives by bare name; arguments by position, then by name — see [Calls](#calls) |
 | `obj.Method()` | checks |
 | `a ?? b` | runs — `a` unless it is `null`; `b` is evaluated only then. A `float?` falls back to a float even when `b` is written as an int |
 | `[a, b]`, `a[i]`, `a.Length`, `a?.b`, `Name { field: v }` | runs — see [Arrays and structs](#arrays-and-structs) |
 | `new T(…)` | refused — not supported yet; build an engine type with its function, `Vec3(1.0, 2.0, 3.0)` |
 | `entity.Field` | refused — an entity has no fields: a behavior's own fields are named directly, a component is read with `Get` |
+
+## Calls
+
+```text
+fn float Move(float distance, float speed = 1.0, int turns = 0) { … }
+
+Move(3.0);                      // speed 1.0, turns 0
+Move(3.0, turns: 2);            // speed 1.0
+Move(speed: 2.0, distance: 3.0) // any order
+```
+
+Arguments are positional first, then named, in any order. A parameter takes a
+**constant default** — the rule a field's default follows, an engine value of
+numbers included — and one without a default never follows one with. The
+arguments run **in the order written**, whatever order the parameters are
+declared in: `F(b: Mark(2), a: Mark(1))` marks 2 then 1.
+
+| Takes names | By |
+|---|---|
+| a function, a behavior's or a state's method | its parameters |
+| an engine function | its parameters, as [listed](#engine-functions): `Clamp(value: v, low: 0.0, high: 1.0)` |
+| an engine constructor | its components: `Vec3(z: 1.0, x: 0.0, y: 0.0)`, `Color(r:, g:, b:, a:)` |
+| an event's payload | its declaration: `this.Raise(Hit(amount: 3, source: this))` |
+| `become` | the state's parameters: `become Chase(prey: e)` |
+
+`Push`, `RemoveAt`, `Set`, `Add`, `Remove`, `Get`, `Has`, `Raise`'s argument
+itself, `Spawn` and an attribute take their arguments in order, unnamed.
+
+| Refused | Why |
+|---|---|
+| `F(speed: 2.0, 3.0)` | a positional argument cannot follow a named one |
+| `F(1, x: 2)` | `x` is given twice |
+| `F(sped: 2.0)` | `F` has no parameter `sped` — its parameters listed, the near one suggested |
+| `F(turns: 2)` | `F` needs `distance` |
+| `fn F(int x = Base())` | a parameter's default must be a constant |
+| `fn F(int x = 1, int y)` | `y` needs a default: it follows `x`, which has one |
+| a default on `Update`, a handler, an event, a state or an operator | the engine, a raise or `become` gives every value |
+| `become Chase(1, 2)` to `state Chase(int prey)` | `become` is checked against the state's parameters |
+
+## Interpolation
+
+```text
+Log($"{name} has {h.current}/{h.max} hp, cooldown {wait}");
+// "Guard has 40/100 hp, cooldown 2.5s"
+```
+
+`$"…"` is a `string`. Each `{…}` holds one expression, shown by its type:
+
+| Type | Shown as |
+|---|---|
+| `int` | `42` |
+| `float` | its shortest form keeping the point: `2.0`, `0.1`, `1e-7`, `inf`, `NaN` |
+| `Duration` | `2.5s` |
+| `Angle` | in degrees, to a thousandth: `90deg` |
+| `bool`, an empty optional | `true`, `null` |
+| `Vec2`, `Vec3`, `Vec4`, `Quat` | `(1.0, 2.0, 3.0)` |
+| `Color` | `rgba(1.0, 0.5, 0.0, 1.0)` |
+| `Entity` | `Entity#12`, `Entity#12v3` past its first generation |
+| `string` | as it is |
+
+`{{` and `}}` write a brace. A hole may hold a call, a field, another string —
+another `$"…"` too. A ternary in a hole is written in parentheses,
+`{(alive ? "up" : "down")}`. The holes run left to right, and the text is built
+once: one allocation, however many holes.
+
+| Refused | Why |
+|---|---|
+| an array, a struct or a `Map` in a hole | `$"…"` shows numbers, text, flags, engine values and entities — show a part, `{xs.Length}` |
+| `{}`, a lone `}` | an empty hole shows nothing; a `}` is written `}}` |
+| `{a ? b : c}` | write `(a ? b : c)` |
+| a call that returns nothing | the hole has nothing to show |
 
 ## Engine-type arithmetic
 
@@ -350,11 +423,13 @@ refused with the operation's name and the list of what the type defines.
 
 | Area | Functions |
 |---|---|
-| Maths | `Abs`, `Floor`, `Ceil`, `Round`, `Sign`, `Sqrt` (faults below zero) `(float) → float`; `Min`, `Max` `(float, float)`; `Clamp(v, lo, hi)` (faults if `lo > hi`); `Lerp(a, b, t)` (unclamped) |
-| Text | `Log`, `Warn`, `Error` `(string)`; `Length(string) → int` |
-| World — queued, applied at the frame's end | `Position() → Vec3` (own entity, as the frame began); called on an entity `e`: `e.Translate(Vec3)`, `e.SetPosition(Vec3)`, `e.SetRotation(Quat)`, `e.SetScale(Vec3)`, `e.Despawn()`, `e.SetParent(Entity)`, `e.Detach()`; components — see [Writing components](#writing-components) |
-| Input | `Pressed(string action) → bool`, `JustPressed(string) → bool` |
-| Constructors | `Vec2`, `Vec3`, `Vec4`, `Quat(x, y, z, w)`, `Color(r, g, b, a)` |
+| Maths | `Abs(x)`, `Floor(x)`, `Ceil(x)`, `Round(x)`, `Sign(x)`, `Sqrt(x)` (faults below zero) `→ float`; `Min(a, b)`, `Max(a, b)`; `Clamp(value, low, high)` (faults if `low > high`); `Lerp(from, to, t)` (unclamped) |
+| Text | `Log(message)`, `Warn(message)`, `Error(message)`; `Length(text) → int` |
+| World — queued, applied at the frame's end | `Position() → Vec3` (own entity, as the frame began); called on an entity `e`: `e.Translate(delta)`, `e.SetPosition(value)`, `e.SetRotation(value)`, `e.SetScale(value)`, `e.Despawn()`, `e.SetParent(parent)`, `e.Detach()`; components — see [Writing components](#writing-components) |
+| Input | `Pressed(action) → bool`, `JustPressed(action) → bool` |
+| Constructors | `Vec2(x, y)`, `Vec3(x, y, z)`, `Vec4(x, y, z, w)`, `Quat(x, y, z, w)`, `Color(r, g, b, a)` |
+
+The names in parentheses are the parameters' — what a named argument names.
 
 A world write is a queued command: `Position()` does not see a `SetPosition` until
 the next frame.
@@ -595,7 +670,8 @@ are refused as not a component a script writes or binds — another holder would
 be a second instance.
 
 `system` and `ref` are keywords. `with` and `without` are words only after a
-query's parentheses; anywhere else they are ordinary names.
+query's parentheses; anywhere else they are ordinary names — as `on` is one
+only where a handler starts and `event` only where a declaration does.
 
 ## Queries
 
@@ -675,13 +751,15 @@ without `?` and every `with`, and none of the `without`.
 Maps, methods on structs and arrays (beyond `Push` and `RemoveAt`), struct
 operator overloads at run time, value patterns in `match`, awaiting events,
 closures, reading `Transform` with `Get` (use `Position()`), reordering systems
-(`[Before]` / `[After]`), change filters in queries, systems running in parallel.
+(`[Before]` / `[After]`), change filters in queries, systems running in parallel,
+a format in an interpolation's hole (`{x:F2}`), named arguments to `Spawn`.
 
 ## See also
 
 - [Scripting](../concepts/scripting.md) — turns, safepoints, saves, resuming
   after edits.
 - [Glossary](./glossary.md) — safepoint, site, resume tier, system, query, sweep,
-  watchdog, declared component, event, field attributes, ScriptProblems.
+  watchdog, declared component, event, field attributes, named argument,
+  interpolation, ScriptProblems.
 - [Editor — Scripts](./editor.md#07--scripts) — scripts while editing, the
   Problems tab, declared components in the Inspector.

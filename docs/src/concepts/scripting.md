@@ -589,6 +589,19 @@ void OnResumeFailed(string member) {
 The same tiers apply to a game save loaded into edited code, and every resume
 below *exact* is listed in the lane's report — which body, which tier.
 
+A call with named arguments keeps this promise too. Its arguments run in the
+order they are written, each into a register of its own, and only then are
+placed in the order the callee declares its parameters. A turn stopped between
+two of them holds what it evaluated whatever that order is, so an edit that
+reorders the callee's parameters cannot hand one value to the other's name. A
+call that names nothing compiles exactly as it always did.
+
+<div class="kp-figure-frame">
+
+{{#include ../images/scripting/named-arguments.svg}}
+
+</div>
+
 ## Who owns what
 
 The split follows [CLAD](./clad.md) exactly, and it did not always:

@@ -102,6 +102,20 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   instead of rebuilding it with the old payload. Engine events: `khora_core::script::ENGINE_EVENTS`
   (`TOUCHED`, `SEPARATED`), served as `ENGINE_EVENTS_MODULE` (`engine/events.erg`, resolved last then
   moved first in `Resolved.modules`; its items are not merged — the checker and the compiler seed them).
+- **Named arguments and defaults (R7).** `Expr::Call.labels` / `Stmt::Become.labels` (empty = positional,
+  the old bytecode/keys/fingerprints unchanged), `Param.default`. Parsed by `parser/args.rs`; bound by
+  `types/binding.rs::bind_arguments` (positional then named; twice / unknown / missing refused) against
+  `FnInfo.names/defaults` — natives' names are their Rust parameters (`NativeFn.names`, filled by `#[ergon_fn]`
+  and `ergon_type!`), events' their declaration, `become`'s the state's (`state_signatures`). The binding
+  (`Bound::Written | Default(Box<Expr>)`) is recorded by the call's address (`Checked.bindings`, `Rc<[Bound]>`)
+  and lowered by `bytecode/calls.rs::place_bound`: evaluated in source order into held registers, then placed
+  in parameter order — resume-safe. A default is data: checked and compiled with `in_default`, an engine
+  constructor in it a constant. `on` is contextual (`parser/decl.rs::at_handler`).
+- **Interpolation (R7).** `$"…"` lexed by `lexer/interpolated.rs` (`TokenKind::Interpolated(Vec<Piece>)`, holes
+  sub-lexed and shifted), parsed by `parser/interpolated.rs` (a bare ternary refused), checked by
+  `types/interpolated.rs`, compiled by `bytecode/interpolated.rs` into one `Instruction::Format` over a
+  `Program.formats` plan (`vm/display.rs`: `Shown::{Value, Float, Duration, Angle}` chosen from the hole's type,
+  one arena allocation, cost `1 + count`, fingerprinted by plan content, statement-key tag 24).
 - **Inspector attributes (R3).** `[Range(min, max)]`, `[Tooltip("…")]`, `[Header("…")]` on a field
   (`ast::Field.attributes`, read by `parse_field`; before any other behavior member a parse error), checked in
   `khora-script/src/modules/inspector.rs` (bounds of the field's kind, a default — implicit zero and nested
