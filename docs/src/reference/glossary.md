@@ -182,6 +182,15 @@ Two distinct ordered-slot enums, easy to confuse:
   `Maintenance` pass — independent of agent phases. See
   [The frame](../concepts/the-frame.md).
 
+### Field attributes (Ergon)
+
+`[Range(0, 100)]`, `[Tooltip("…")]` and `[Header("…")]` on a field of a
+component, a behavior or a system: how the inspector shows it — the bounds an
+edit stays between, what hovering it says, the section title above it. The
+editor's alone: a script writes outside a range freely, and a value outside it
+is shown in amber, never changed until edited. See the
+[Ergon reference](./ergon.md#field-attributes).
+
 ### Fixed timestep / interpolation alpha
 
 Khora decouples simulation from rendering. The deterministic fixed-timestep

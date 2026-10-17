@@ -1,0 +1,69 @@
+<svg class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-hints-title kp-hints-desc">
+  <title id="kp-hints-title">Field attributes, and the card they give</title>
+  <desc id="kp-hints-desc">On the left, an Ergon component Turret whose fields carry attributes: a Header Combat above power, ranged 0 to 100 with a tooltip; cooldown ranged 0 to 5 seconds; reach ranged 0 to 100. On the right, its card in the inspector: the section header COMBAT; Power 40 with a gauge filled to forty percent and its tooltip How hard it hits shown on hovering its label; Cooldown 2.5 seconds with a gauge half filled; Reach 150, which a script wrote outside its range, with its gauge all amber and the note Outside 0–100: a script or a file wrote it. Editing brings it back inside.</desc>
+  <style>
+    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    .kp-bg { fill: var(--k-bg-0, #090d17); }
+    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-cardbg { fill: var(--k-bg-2, #181e2b); }
+    .kp-code { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11.5px; }
+    .kp-attr { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11.5px; }
+    .kp-card-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    .kp-tag { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10px; letter-spacing: 0.04em; }
+    .kp-prov { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+    .kp-eyebrow { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 9.5px; letter-spacing: 0.06em; }
+    .kp-field { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+    .kp-unit { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
+    .kp-track { fill: var(--k-line, #383d48); }
+    .kp-fill { fill: var(--k-fg-2, #8a9096); }
+    .kp-warn { fill: var(--k-amber, #e0a34a); }
+    .kp-tip { fill: var(--k-bg-3, #1f2636); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    .kp-tip-text { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
+    .kp-tip-warn { fill: var(--k-amber, #e0a34a); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
+    .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="330"/>
+  <!-- the source -->
+  <rect class="kp-panel" x="16" y="16" width="318" height="298" rx="6"/>
+  <text class="kp-code" x="32" y="46">component Turret {</text>
+  <text class="kp-attr" x="48" y="72">[Header("Combat")]</text>
+  <text class="kp-attr" x="48" y="90">[Range(0, 100)]</text>
+  <text class="kp-attr" x="48" y="108">[Tooltip("How hard it hits")]</text>
+  <text class="kp-code" x="48" y="126">int power = 40;</text>
+  <text class="kp-attr" x="48" y="156">[Range(0s, 5s)]</text>
+  <text class="kp-code" x="48" y="174">Duration cooldown = 2.5s;</text>
+  <text class="kp-attr" x="48" y="204">[Range(0, 100)]</text>
+  <text class="kp-code" x="48" y="222">int reach = 30;</text>
+  <text class="kp-code" x="32" y="248">}</text>
+  <text class="kp-prov" x="32" y="282">a script later writes</text>
+  <text class="kp-code" x="32" y="300">this.Set(Turret { reach: 150 });</text>
+  <!-- the card -->
+  <rect class="kp-panel" x="350" y="16" width="394" height="298" rx="6"/>
+  <rect class="kp-cardbg" x="358" y="24" width="378" height="282" rx="4"/>
+  <text class="kp-card-title" x="370" y="44">Turret</text>
+  <text class="kp-tag" x="724" y="44" text-anchor="end">SCRIPT</text>
+  <text class="kp-prov" x="370" y="62">defence/turret.erg</text>
+  <text class="kp-eyebrow" x="384" y="92">COMBAT</text>
+  <text class="kp-field" x="384" y="116">Power</text>
+  <text class="kp-mono" x="470" y="116">40</text>
+  <rect class="kp-track" x="384" y="124" width="336" height="2" rx="1"/>
+  <rect class="kp-fill" x="384" y="124" width="134" height="2" rx="1"/>
+  <text class="kp-field" x="384" y="152">Cooldown</text>
+  <text class="kp-mono" x="470" y="152">2.5</text>
+  <text class="kp-unit" x="496" y="152">s</text>
+  <rect class="kp-track" x="384" y="160" width="336" height="2" rx="1"/>
+  <rect class="kp-fill" x="384" y="160" width="168" height="2" rx="1"/>
+  <text class="kp-field" x="384" y="188">Reach</text>
+  <text class="kp-mono" x="470" y="188">150</text>
+  <rect class="kp-warn" x="384" y="196" width="336" height="2" rx="1"/>
+  <!-- what hovering says -->
+  <path class="kp-lead" d="M418,104 C430,96 452,82 470,80"/>
+  <rect class="kp-tip" x="470" y="68" width="122" height="20" rx="3"/>
+  <text class="kp-tip-text" x="478" y="82">How hard it hits</text>
+  <path class="kp-lead" d="M482,194 C482,212 482,216 482,222"/>
+  <rect class="kp-tip" x="384" y="222" width="336" height="38" rx="3"/>
+  <text class="kp-tip-warn" x="392" y="238">Outside 0–100: a script or a file wrote it.</text>
+  <text class="kp-tip-text" x="392" y="253">Editing brings it back inside.</text>
+  <text class="kp-prov" x="384" y="288">the row keeps 150 until it is edited</text>
+</svg>

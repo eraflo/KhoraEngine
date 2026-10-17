@@ -102,6 +102,15 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   instead of rebuilding it with the old payload. Engine events: `khora_core::script::ENGINE_EVENTS`
   (`TOUCHED`, `SEPARATED`), served as `ENGINE_EVENTS_MODULE` (`engine/events.erg`, resolved last then
   moved first in `Resolved.modules`; its items are not merged — the checker and the compiler seed them).
+- **Inspector attributes (R3).** `[Range(min, max)]`, `[Tooltip("…")]`, `[Header("…")]` on a field
+  (`ast::Field.attributes`, read by `parse_field`; before any other behavior member a parse error), checked in
+  `khora-script/src/modules/inspector.rs` (bounds of the field's kind, a default — implicit zero and nested
+  items included — inside, struct and state fields refused) and carried as `DeclaredField.hints`
+  (`khora_core::script::FieldHints`, range in stored units; `FieldRange::holds` forgives two f32 steps, ints use
+  `contains`). Editor-only: never in `PackedLayout` or `DeclaredRecord`. `apply_one` sets them on the vtable
+  (`field_hints`, `World::set_field_hints`) every reload, so a hint edit never relays out; `declared_cards`
+  hands them to `DeclaredFieldView.hints`; the card draws them in `widgets/inspector/declared/{hints,ranged}.rs`
+  (`UiBuilder::drag_value_f32_in` clamps only an edit).
 - **Scheduling (R2).** Attributes checked in `khora-script/src/modules/schedule.rs` (`[Critical]` no args
   and no parens — `Attribute.parenthesized`; `[Budget(d)]` one positive Duration; `[Rate(f)]` one positive
   `hz` literal — `TokenKind::Frequency`/`Expr::Frequency`, refused as a value; once each; on systems too;

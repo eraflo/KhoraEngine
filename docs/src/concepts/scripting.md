@@ -519,6 +519,12 @@ hold it: `int? best` holding `null`, edited to `int best = 4`, starts at `4` —
 never at a value no author could write. A load into edited code follows the same
 rule.
 
+How the inspector shows a field — its `[Range]`, `[Tooltip]`, `[Header]` — is
+not the field: it is the editor's, read by nothing a script runs. An edit that
+changes only those reaches the inspector at the next reload and leaves every row
+as it was; a range bounds what the inspector edits, never what a script writes,
+so a guard whose script pushes its health past the range keeps that health.
+
 What the guard is *doing* crosses the same way: the state it is in by name, that
 state's data by slot name, each countdown by its schedule's identity. A chasing
 guard is still chasing after the edit, with what is left of its timers; a state

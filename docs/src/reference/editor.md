@@ -246,6 +246,21 @@ JSON: its fields in declaration order, each drawn by its Ergon type.
 
 </div>
 
+A field's [attributes](./ergon.md#field-attributes) change how its row reads,
+never what it holds:
+
+| Attribute | On the row |
+|---|---|
+| `[Header("Combat")]` | a section title above it, small capitals |
+| `[Tooltip("…")]` | said by hovering a number's label, or the control of any other field |
+| `[Range(0, 100)]` | the same scrubber, an edit held inside the range — the keyboard's steps too; a thin gauge under the row. A value a script or a file wrote outside is shown as it is: its gauge turns amber, hovering it says why, and the first edit brings it back inside |
+
+<div class="kp-figure-frame">
+
+{{#include ../images/editor/inspector-field-attributes.svg}}
+
+</div>
+
 Under the card's title one quiet line says where it comes from — the `.erg`
 declaring it — and the header's tag names the part it plays: `script`,
 `behavior`, `state`, `system`. An edit writes the row only when the field takes

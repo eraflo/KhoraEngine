@@ -43,6 +43,7 @@ behavior Guard {
 | `[Domain(D)] component Name { … }` | runs — a component the project declares; see [Declaring components](#declaring-components) |
 | `[Domain(D)]` on a behavior | runs — where the behavior's fields are stored (default `Script`) |
 | `[Critical]`, `[Budget(…)]`, `[Rate(…)]` on a behavior or a system | runs — how the script lane schedules it; see [Scheduling](#scheduling); any other attribute is refused |
+| `[Range(…)]`, `[Tooltip(…)]`, `[Header(…)]` on a field | runs — how the inspector shows it; see [Field attributes](#field-attributes) |
 
 Comments are `// line` and `/* block */`.
 
@@ -135,6 +136,42 @@ starts at its type's neutral value — `int` `0`, `float`, `Duration`, `Angle`
 zero, `Quat` the identity, `Color` white, a struct its own defaults. An `Entity`
 has none: write it `Entity?`, and it starts at `null`. A state's data follows the
 same rule; a value computed on entering a state is a parameter of `become`.
+
+## Field attributes
+
+```text
+component Turret {
+    [Header("Combat")]
+    [Range(0, 100)] [Tooltip("How hard it hits")]
+    int power = 40;
+    [Range(0s, 5s)] Duration cooldown = 2.5s;
+}
+```
+
+How the inspector shows a field of a `component`, a `behavior` or a `system`.
+They are the editor's alone: nothing a script runs reads them, and a range
+bounds the inspector, **never what a script writes**.
+
+| Attribute | Means |
+|---|---|
+| `[Range(min, max)]` | an edit in the inspector stays between the bounds, both included; a gauge under the value shows where it sits. Its bounds are of the field's kind: integers on an `int`, numbers on a `float`, durations on a `Duration` (`[Range(0s, 5s)]`), angles on an `Angle` (`[Range(0deg, 90deg)]`) — on an optional or an array of one, the element's, each item held to it |
+| `[Tooltip("…")]` | what hovering the field says |
+| `[Header("…")]` | a section title above the field |
+
+Each at most once, in any order. A value a script or a file wrote outside the
+range is shown as it is, in amber, and changes only when someone edits it.
+Editing an attribute applies at the next hot reload and never touches a row.
+
+| Refused | Why |
+|---|---|
+| any other attribute on a field | not an attribute of a field |
+| `[Range]` on a `bool`, a `string`, an engine value, an entity or a struct | applies to a number, a duration or an angle |
+| bounds not of the field's kind, or not two | `[Range(0.5, 2)]` on an `int`, `[Range(0, 5)]` on a `Duration` |
+| `min` not below `max`, or not finite | the range is empty |
+| a default outside the range — including the zero a field without one starts at, and any item of an array's | a new row starts at the default: `[Range(1, 10)] int level;` needs `= 1` |
+| a blank `[Tooltip]` or `[Header]`, or not one text | takes one text |
+| an attribute on a `struct`'s field, or a state's | only a component's, a behavior's and a system's fields show in the inspector |
+| an attribute before a method, a handler, `every`, `after` or `state` | attributes inside a behavior apply to its fields |
 
 ## Members
 
@@ -645,6 +682,6 @@ closures, reading `Transform` with `Get` (use `Position()`), reordering systems
 - [Scripting](../concepts/scripting.md) — turns, safepoints, saves, resuming
   after edits.
 - [Glossary](./glossary.md) — safepoint, site, resume tier, system, query, sweep,
-  watchdog, declared component, event, ScriptProblems.
+  watchdog, declared component, event, field attributes, ScriptProblems.
 - [Editor — Scripts](./editor.md#07--scripts) — scripts while editing, the
   Problems tab, declared components in the Inspector.
