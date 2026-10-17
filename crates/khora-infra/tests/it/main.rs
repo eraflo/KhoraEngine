@@ -19,5 +19,6 @@
 //! binary as a module instead of adding a file at the root of `tests/`.
 
 mod bounded_drag_value;
+mod covered_hover;
 mod light_culling_layout;
 mod public_paths;

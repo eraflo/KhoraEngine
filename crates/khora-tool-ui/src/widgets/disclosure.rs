@@ -83,7 +83,8 @@ pub fn group_header(
 
     let out = ui.interact_rect(id_salt, rect);
 
-    if out.hovered {
+    // On the header or on one of its own actions, drawn above it.
+    if out.contains_pointer {
         fill(ui, rect, tint(theme.surface_interactive, 0.35), 0.0);
     }
 
@@ -146,6 +147,31 @@ mod tests {
                 .iter()
                 .any(|c| matches!(c, crate::testing::PaintCall::RectStroke { .. })),
             "component groups are flat — no boxes-in-boxes"
+        );
+    }
+
+    /// **A header stays lit while its own actions are pointed at**: they sit
+    /// above it and take its hover, but the pointer is still on the header.
+    #[test]
+    fn a_header_whose_action_is_pointed_at_stays_lit() {
+        let t = khora_dark();
+        let mut ui = RecordingUiBuilder::new(300.0, 40.0).with_interaction(
+            "transform",
+            Interaction {
+                contains_pointer: true,
+                ..Interaction::default()
+            },
+        );
+        group_header(
+            &mut ui,
+            &t,
+            [0.0, 0.0, 280.0, 32.0],
+            "transform",
+            Group::new("Transform", Icon::Move),
+        );
+        assert!(
+            !ui.rects_filled().is_empty(),
+            "the pointer is on the header, over one of its actions"
         );
     }
 

@@ -191,6 +191,7 @@ impl RecordingUiBuilder {
             id_salt,
             Interaction {
                 hovered: true,
+                contains_pointer: true,
                 pressed: true,
                 ..Interaction::default()
             },
@@ -211,6 +212,7 @@ impl RecordingUiBuilder {
             id_salt,
             Interaction {
                 hovered: true,
+                contains_pointer: true,
                 clicked: true,
                 ..Interaction::default()
             },
@@ -223,6 +225,7 @@ impl RecordingUiBuilder {
             id_salt,
             Interaction {
                 hovered: true,
+                contains_pointer: true,
                 ..Interaction::default()
             },
         )

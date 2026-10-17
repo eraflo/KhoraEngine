@@ -611,6 +611,7 @@ impl UiBuilder for EguiUiBuilder<'_> {
         let response = self.ui.interact(r, id, egui::Sense::click_and_drag());
         let interaction = Interaction {
             hovered: response.hovered(),
+            contains_pointer: response.contains_pointer(),
             clicked: response.clicked(),
             pressed: response.is_pointer_button_down_on(),
             double_clicked: response.double_clicked(),

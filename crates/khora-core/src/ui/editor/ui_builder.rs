@@ -24,8 +24,14 @@ use crate::platform::input::KeyCode;
 /// Result of an [`UiBuilder::interact_rect`] call.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Interaction {
-    /// Pointer is inside the rect this frame.
+    /// The pointer is on this rect, and on nothing drawn above it: what a
+    /// widget tints itself by. A button drawn over the rect takes it.
     pub hovered: bool,
+    /// The pointer is inside the rect this frame, on whatever is drawn above
+    /// it — what a container shows its own controls by. A row's actions,
+    /// revealed while it is pointed at, would otherwise take the row's hover
+    /// as the pointer reached them and vanish.
+    pub contains_pointer: bool,
     /// Primary button was pressed inside the rect this frame.
     pub clicked: bool,
     /// Primary button is currently held inside the rect.

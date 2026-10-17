@@ -165,7 +165,7 @@ pub fn render_card(
     // A quiet note left of the category tag, at rest; the actions take its
     // place on hover, so the header never holds both.
     let differs = prefab.as_ref().is_some_and(CardPrefab::differs);
-    if !head.hovered {
+    if !head.contains_pointer {
         if let Some(note) = prefab.as_ref().and_then(CardPrefab::note) {
             let size = theme.font_size_caption - 1.5;
             ui.paint_text_styled(
@@ -182,7 +182,9 @@ pub fn render_card(
     // ── Row actions, revealed on hover ──
     // Allocated *after* the header so their hit-rects win the click, and laid
     // out to the left of the category tag so they never sit on top of it.
-    if head.hovered {
+    // Shown while the pointer is anywhere on the header — on the actions
+    // too, which take the header's own hover.
+    if head.contains_pointer {
         let size = 22.0;
         let top = y + (HEADER_H - size) * 0.5;
 

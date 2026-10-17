@@ -264,16 +264,12 @@ fn project_card(
 ) -> Interaction {
     // The whole card is the Open affordance. Allocate it first so the icon
     // buttons painted later win the click.
-    let mut card = ui.interact_rect(&format!("hp-card-{idx}"), rect);
-    // The card stays hovered while the pointer is on one of its own buttons:
-    // those sit above it and take its hover, and they are drawn only while
-    // it is hovered — without this they would vanish as the pointer reached
-    // them.
-    card.hovered |= ui
-        .pointer_position()
-        .is_some_and(|[px, py]| inside(rect, px, py));
+    let card = ui.interact_rect(&format!("hp-card-{idx}"), rect);
+    // The card is lit, and shows its actions, while the pointer is anywhere
+    // on it — on those actions too, which take the card's own hover.
+    let pointed = card.contains_pointer;
 
-    let (bg, border) = if card.hovered {
+    let (bg, border) = if pointed {
         (t.surface_elevated, t.border_strong)
     } else {
         (t.surface, t.border)
@@ -289,11 +285,7 @@ fn project_card(
         ui,
         [x + 7.0, cy],
         14.0,
-        if card.hovered {
-            t.primary
-        } else {
-            t.primary_dim
-        },
+        if pointed { t.primary } else { t.primary_dim },
     );
 
     let name_x = x + 24.0;
@@ -345,7 +337,7 @@ fn project_card(
 
     // Row actions replace the timestamp on hover — they are rare, and a card
     // grid should read as content, not as a wall of buttons.
-    if card.hovered {
+    if pointed {
         let bw = 26.0;
         let mut bx = widgets::right(rect) - pad - bw;
 
@@ -423,11 +415,6 @@ fn apply_action(app: &mut HubApp, action: Option<ProjectAction>) {
 }
 
 // ── Destructive confirm ─────────────────────────────────
-
-/// Whether the point `(x, y)` lies within `rect`.
-fn inside(rect: [f32; 4], x: f32, y: f32) -> bool {
-    x >= rect[0] && x < rect[0] + rect[2] && y >= rect[1] && y < rect[1] + rect[3]
-}
 
 fn show_remove_confirm_modal(app: &mut HubApp, ui: &mut dyn UiBuilder, idx: usize) {
     let Some(proj) = app.config.recent_projects.get(idx).cloned() else {
