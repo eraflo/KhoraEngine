@@ -19,9 +19,11 @@
 //! shape is threaded upward rather than recomputed, which keeps the compiler
 //! from re-deriving what the type checker already proved.
 
+use super::calls::CallTarget;
 use super::{Compiler, Shape};
 use crate::ast::{BinaryOp, Expr};
 use crate::diagnostics::Span;
+use crate::types::Bound;
 use crate::vm::{Instruction, Reg, Value};
 
 impl Compiler {
@@ -127,7 +129,20 @@ impl Compiler {
                 (slot, shape)
             }
 
-            Expr::Call { callee, args, span } => self.compile_call(callee, args, *span),
+            Expr::Call { .. }
+                if self.in_default && crate::types::engine_constant(expr).is_some() =>
+            {
+                match super::structs::constant(expr) {
+                    Some(crate::arena::Owned::Scalar(value)) => self.constant(value, Shape::Other),
+                    _ => self.constant(Value::Unit, Shape::Other),
+                }
+            }
+            Expr::Call {
+                callee, args, span, ..
+            } => {
+                let binding = self.binding_of(std::ptr::from_ref(expr) as usize);
+                self.compile_call(callee, args, binding.as_deref(), *span)
+            }
 
             // `v.x` is a call to the accessor the type declared. Lowered here
             // rather than given its own instruction: a component read is an
@@ -421,6 +436,7 @@ impl Compiler {
         &mut self,
         callee: &Expr,
         args: &[Expr],
+        binding: Option<&[Bound]>,
         span: crate::diagnostics::Span,
     ) -> (Reg, Shape) {
         let method = match callee {
@@ -433,7 +449,7 @@ impl Compiler {
                 return done;
             }
             if !optional {
-                if let Some(done) = self.compile_entity_method(object, name, args, span) {
+                if let Some(done) = self.compile_entity_method(object, name, args, binding, span) {
                     return done;
                 }
             }
@@ -445,6 +461,7 @@ impl Compiler {
         if name == "Spawn" && !self.signatures.contains_key(name) {
             return self.compile_spawn(args, span);
         }
+        let written = args;
         let args: Vec<&Expr> = args.iter().collect();
         let args = args.as_slice();
         // A member calls its siblings by their bare name — `Riposte()`, not
@@ -469,6 +486,15 @@ impl Compiler {
                 .and_then(|qualified| self.signatures.get(&qualified).copied())
         });
         if let Some(index) = sibling {
+            if let Some(binding) = binding {
+                return self.emit_bound_call(
+                    CallTarget::Script(index),
+                    name,
+                    None,
+                    written,
+                    binding,
+                );
+            }
             return self.emit_call(CallTarget::Script(index), name, args);
         }
 
@@ -485,94 +511,9 @@ impl Compiler {
             },
         };
 
+        if let Some(binding) = binding {
+            return self.emit_bound_call(target, name, None, written, binding);
+        }
         self.emit_call(target, name, args)
     }
-
-    /// Places the arguments and emits the call.
-    ///
-    /// Split out because a sibling call resolves differently but is emitted
-    /// identically — duplicating the argument placement is exactly how the two
-    /// would drift apart.
-    pub(super) fn emit_call(
-        &mut self,
-        target: CallTarget,
-        name: &str,
-        args: &[&Expr],
-    ) -> (Reg, Shape) {
-        // Arguments must land in *consecutive* registers: the callee's frame
-        // starts at the first of them, so its parameters need no copying.
-        //
-        // Every slot is reserved before any argument is compiled. Reserving as
-        // we go would not work: compiling an argument takes temporaries of its
-        // own, so the next slot would no longer be adjacent.
-        let base = self.registers.temp();
-        let slots: Vec<Reg> = std::iter::once(base)
-            .chain((1..args.len()).map(|_| self.registers.temp()))
-            .collect();
-
-        for (argument, slot) in args.iter().zip(slots) {
-            let mark = self.registers.mark();
-            let (value, _) = self.compile_value(argument);
-            if value != slot {
-                self.emit(Instruction::Move {
-                    dst: slot,
-                    src: value,
-                });
-            }
-            // The argument's own temporaries are done with; the slot itself
-            // sits below the mark and survives.
-            self.registers.release_to(mark);
-        }
-
-        let dst = self.registers.temp();
-        let argc = args.len() as u8;
-        let shape = match target {
-            CallTarget::Script(function) => {
-                self.emit(Instruction::Call {
-                    function,
-                    base,
-                    argc,
-                    dst,
-                });
-                // Named by the callee's compiled name, which a sibling call
-                // spells without its behavior.
-                let callee = self
-                    .signatures
-                    .iter()
-                    .find(|(_, &index)| index == function)
-                    .map_or_else(|| name.to_owned(), |(callee, _)| callee.clone());
-                self.record_return(&callee, base, dst);
-                // By the compiled name too: `returns` is keyed by it, and a
-                // sibling's bare name found nothing — its result's shape was
-                // lost, and every operation on it picked the wrong form.
-                self.returns.get(&callee).copied().unwrap_or(Shape::Other)
-            }
-            CallTarget::Native(function) => {
-                self.emit(Instruction::NativeCall {
-                    function,
-                    base,
-                    argc,
-                    dst,
-                });
-                self.natives
-                    .get(name)
-                    .map(|(_, shape)| *shape)
-                    .unwrap_or(Shape::Other)
-            }
-        };
-        (dst, shape)
-    }
-}
-
-/// Which kind of call a name resolved to.
-///
-/// The two are indistinguishable in the source and must not be at the point of
-/// emission: they address different tables, and a script function's index used
-/// as a native's would call whatever sits at that slot in the registry.
-#[derive(Debug, Clone, Copy)]
-pub(super) enum CallTarget {
-    /// A function compiled from this program.
-    Script(usize),
-    /// A function the host exposes.
-    Native(usize),
 }

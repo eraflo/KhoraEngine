@@ -126,14 +126,12 @@ impl Parser {
             let mut args = Vec::new();
             let parenthesized = self.eat(&TokenKind::LParen);
             if parenthesized {
-                if !self.check(&TokenKind::RParen) {
-                    loop {
-                        args.push(self.parse_expr()?);
-                        if !self.eat(&TokenKind::Comma) {
-                            break;
-                        }
-                    }
-                }
+                let (written, labels) = self.parse_arguments()?;
+                self.refuse_labels(
+                    &labels,
+                    "an attribute's arguments are positional: write them in order, unnamed",
+                );
+                args = written;
                 self.expect(TokenKind::RParen, "`)` after the attribute arguments")?;
             }
 
@@ -313,7 +311,7 @@ impl Parser {
         // anything else they say nothing, and the member still parses.
         let attributes = self.parse_attributes()?;
         let field_follows = !self.check_keyword(Keyword::State)
-            && !self.check_keyword(Keyword::On)
+            && !self.at_handler()
             && !self.check_keyword(Keyword::Every)
             && !self.check_keyword(Keyword::After)
             && !self.check_keyword(Keyword::Async)
@@ -331,7 +329,7 @@ impl Parser {
         if self.check_keyword(Keyword::State) {
             return Ok(BehaviorMember::State(self.parse_state()?));
         }
-        if self.check_keyword(Keyword::On) {
+        if self.at_handler() {
             return Ok(BehaviorMember::Handler(self.parse_handler()?));
         }
         if self.check_keyword(Keyword::Every) {
@@ -418,6 +416,14 @@ impl Parser {
             members,
             span: start.to(end),
         })
+    }
+
+    /// Whether a handler starts here: `on` is a word only where a member
+    /// starts, before an event's name — a parameter, a field or a local may
+    /// still be called `on`.
+    fn at_handler(&self) -> bool {
+        matches!(self.peek(), TokenKind::Ident(word) if word == "on")
+            && matches!(self.peek_at(1), TokenKind::Ident(_))
     }
 
     pub(super) fn parse_handler(&mut self) -> Parse<HandlerDecl> {
@@ -578,10 +584,17 @@ impl Parser {
                 let start = self.span();
                 let ty = self.parse_type()?;
                 let (name, name_span) = self.expect_ident("a parameter name")?;
+                let default = if self.eat(&TokenKind::Assign) {
+                    Some(self.parse_expr()?)
+                } else {
+                    None
+                };
+                let end = default.as_ref().map_or(name_span, Expr::span);
                 params.push(Param {
                     ty,
                     name,
-                    span: start.to(name_span),
+                    default,
+                    span: start.to(end),
                 });
                 if !self.eat(&TokenKind::Comma) {
                     break;

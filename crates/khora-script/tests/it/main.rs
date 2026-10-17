@@ -66,6 +66,7 @@ mod held_text;
 mod inspector_attributes;
 mod match_arm_edits;
 mod match_on_a_computed_subject;
+mod named_arguments;
 mod narrowed_frames;
 mod narrowing_site_names;
 mod operand_types;

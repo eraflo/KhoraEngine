@@ -28,6 +28,9 @@ pub struct NativeFn {
     ///
     /// The exact list, unless [`variadic`](Self::variadic) — then the minimum.
     pub params: &'static [NativeTy],
+    /// What each parameter is called — what a named argument names; empty for
+    /// one that takes its arguments in order only.
+    pub names: &'static [&'static str],
     /// What it gives back.
     pub result: NativeTy,
     /// What one call costs against the frame's fuel.

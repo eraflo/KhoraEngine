@@ -34,6 +34,7 @@ impl Checker {
         let saved = self.functions.clone();
         self.state_methods.clear();
         self.method_names.clear();
+        self.collect_state_signatures(&decl.members);
         self.collect_methods(&decl.members);
 
         // Behavior fields are visible to every member, including inside states.
@@ -51,6 +52,23 @@ impl Checker {
         self.state_methods.clear();
         self.field_names.clear();
         self.method_names.clear();
+        self.state_signatures.clear();
+    }
+
+    /// What each state of a behavior takes, for `become` to be checked
+    /// against — its parameters' defaults refused, `become` giving them all.
+    fn collect_state_signatures(&mut self, members: &[BehaviorMember]) {
+        self.state_signatures.clear();
+        for member in members {
+            if let BehaviorMember::State(state) = member {
+                self.check_param_defaults(&state.params, super::binding::ParamRole::State);
+                let params = state.params.iter().map(|p| self.resolve(&p.ty)).collect();
+                self.state_signatures.insert(
+                    state.name.clone(),
+                    FnInfo::of_params(params, Ty::Void, &state.params),
+                );
+            }
+        }
     }
 
     /// Refuses a `FixedUpdate` that would wait: one that calls, itself or
@@ -138,15 +156,17 @@ impl Checker {
                         );
                     }
                     self.method_names.insert(method.name.clone());
+                    let role = if crate::lifecycle::of(&method.name).is_some() {
+                        super::binding::ParamRole::Lifecycle
+                    } else {
+                        super::binding::ParamRole::Callable
+                    };
+                    self.check_param_defaults(&method.params, role);
                     let params = method.params.iter().map(|p| self.resolve(&p.ty)).collect();
                     let result = self.resolve(&method.return_ty);
                     self.functions.insert(
                         method.name.clone(),
-                        FnInfo {
-                            params,
-                            result,
-                            variadic: false,
-                        },
+                        FnInfo::of_params(params, result, &method.params),
                     );
                 }
                 BehaviorMember::State(state) => {
@@ -311,6 +331,7 @@ impl Checker {
                     self.scopes.pop();
                 }
                 BehaviorMember::Handler(handler) => {
+                    self.check_param_defaults(&handler.params, super::binding::ParamRole::Handler);
                     self.check_handler_signature(handler);
                     self.scopes.push();
                     for param in &handler.params {

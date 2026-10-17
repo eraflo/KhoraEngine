@@ -360,15 +360,9 @@ impl Parser {
         let (state, _) = self.expect_ident("a state name after `become`")?;
 
         let mut args = Vec::new();
+        let mut labels = Vec::new();
         if self.eat(&TokenKind::LParen) {
-            if !self.check(&TokenKind::RParen) {
-                loop {
-                    args.push(self.parse_expr()?);
-                    if !self.eat(&TokenKind::Comma) {
-                        break;
-                    }
-                }
-            }
+            (args, labels) = self.parse_arguments()?;
             self.expect(TokenKind::RParen, "`)` after the state arguments")?;
         }
 
@@ -376,6 +370,7 @@ impl Parser {
         Ok(Stmt::Become {
             state,
             args,
+            labels,
             span: start.to(end),
         })
     }

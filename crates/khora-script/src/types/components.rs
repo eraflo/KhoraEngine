@@ -96,9 +96,18 @@ impl Checker {
         object: &Expr,
         name: &str,
         at: Span,
-        args: &[Expr],
+        call: &super::CallSite<'_>,
         context: &Context,
     ) -> Option<Ty> {
+        let args = call.args;
+        // The operations whose argument is a component, a type or an event:
+        // nothing there is a parameter to name.
+        if matches!(
+            name,
+            "Set" | "Add" | "Remove" | "Raise" | "Get" | "Has" | "Spawn"
+        ) {
+            self.refuse_labels(name, call.labels);
+        }
         match name {
             "Set" | "Add" => {
                 self.refuse_own_component(object, name, args, context);
@@ -136,6 +145,22 @@ impl Checker {
             return None;
         }
         let rest = &info.params[1..];
+        // The receiver is the first parameter: what a call names is the rest.
+        let callee = super::binding::Callee {
+            name,
+            params: rest,
+            names: info.names.get(1..).unwrap_or_default(),
+            defaults: info.defaults.get(1..).unwrap_or_default(),
+        };
+        if info.variadic {
+            self.refuse_labels(name, call.labels);
+        } else if !callee.plain(args, call.labels) {
+            if let Some(bound) = self.bind_arguments(&callee, args, call.labels, call.span, context)
+            {
+                self.bindings.insert(call.at, bound.into());
+            }
+            return Some(info.result);
+        }
         let wrong_arity = if info.variadic {
             args.len() < rest.len()
         } else {

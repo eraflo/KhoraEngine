@@ -432,7 +432,6 @@ fn keyword_variants(x: &khora_script::lexer::token::Keyword) {
         khora_script::lexer::token::Keyword::Ref => {}
         khora_script::lexer::token::Keyword::State => {}
         khora_script::lexer::token::Keyword::Become => {}
-        khora_script::lexer::token::Keyword::On => {}
         khora_script::lexer::token::Keyword::Every => {}
         khora_script::lexer::token::Keyword::After => {}
         khora_script::lexer::token::Keyword::Async => {}
@@ -2178,6 +2177,7 @@ fn ergon_fn_native_fn_literal() -> ::khora_script::native::NativeFn {
     ::khora_script::native::NativeFn {
         name: "GuardLiteral",
         params: &[<f32 as ::khora_script::native::ScriptType>::TY],
+        names: &[],
         result: <f32 as ::khora_script::native::ScriptType>::TY,
         cost: 1,
         variadic: false,

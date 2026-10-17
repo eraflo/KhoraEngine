@@ -35,6 +35,7 @@ impl Compiler {
         object: &Expr,
         name: &str,
         args: &[Expr],
+        binding: Option<&[crate::types::Bound]>,
         span: crate::diagnostics::Span,
     ) -> Option<(Reg, Shape)> {
         if self.type_of(object) != Some(&Ty::Entity) {
@@ -76,8 +77,12 @@ impl Compiler {
             }
             _ => {
                 let (index, _) = self.natives.get(name).copied()?;
+                let target = super::calls::CallTarget::Native(index);
+                if let Some(binding) = binding {
+                    return Some(self.emit_bound_call(target, name, Some(object), args, binding));
+                }
                 let all: Vec<&Expr> = std::iter::once(object).chain(args).collect();
-                Some(self.emit_call(super::expr::CallTarget::Native(index), name, &all))
+                Some(self.emit_call(target, name, &all))
             }
         }
     }
@@ -208,10 +213,11 @@ impl Compiler {
         args: &[Expr],
         span: crate::diagnostics::Span,
     ) -> (Reg, Shape) {
-        let Some(Expr::Call { callee, args, .. }) = args.first() else {
+        let Some(call @ Expr::Call { callee, args, .. }) = args.first() else {
             self.error("`Raise` takes an event", span);
             return self.constant(Value::Unit, Shape::Other);
         };
+        let binding = self.binding_of(std::ptr::from_ref(call) as usize);
         let Expr::Ident { name: event, .. } = callee.as_ref() else {
             self.error("`Raise` takes an event", span);
             return self.constant(Value::Unit, Shape::Other);
@@ -220,6 +226,23 @@ impl Compiler {
         let mark = self.registers.mark();
         let entity = self.registers.temp();
         self.place(object, entity);
+        if let Some(binding) = binding {
+            // Named: evaluated as written, carried in declaration order.
+            let floats: Vec<bool> = declared
+                .iter()
+                .map(|shape| *shape == Shape::Float)
+                .collect();
+            let (base, argc) = self.place_bound(None, args, &binding, &floats);
+            let event = self.intern(event);
+            self.emit(Instruction::Raise {
+                entity,
+                event,
+                base,
+                argc,
+            });
+            self.registers.release_to(mark);
+            return self.constant(Value::Unit, Shape::Other);
+        }
         let base = self.registers.temp();
         let slots: Vec<Reg> = std::iter::once(base)
             .chain((1..args.len()).map(|_| self.registers.temp()))

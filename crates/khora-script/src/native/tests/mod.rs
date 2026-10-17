@@ -20,6 +20,7 @@
 //! for that to happen at all.
 
 mod engine_types;
+mod named_arguments;
 mod world;
 
 use super::{builtins, Host, NativeContext, NativeError, NativeFn, NativeRegistry, NativeTy};
@@ -241,6 +242,7 @@ fn a_native_is_charged_its_own_cost() {
     static EXPENSIVE: NativeFn = NativeFn {
         name: "Expensive",
         params: &[],
+        names: &[],
         result: NativeTy::Float,
         cost: 5_000,
         variadic: false,
@@ -313,6 +315,7 @@ fn replacing_a_function_leaves_every_other_index_alone() {
     static PATCHED: NativeFn = NativeFn {
         name: "Abs",
         params: &[NativeTy::Float],
+        names: &[],
         result: NativeTy::Float,
         cost: 1,
         variadic: false,
@@ -367,6 +370,7 @@ fn a_native_can_queue_an_effect() {
     static NUDGE: NativeFn = NativeFn {
         name: "Nudge",
         params: &[],
+        names: &[],
         result: NativeTy::Void,
         cost: 1,
         variadic: false,
@@ -407,6 +411,7 @@ fn a_native_needing_an_entity_says_so_when_there_is_none() {
     static NEEDS_SUBJECT: NativeFn = NativeFn {
         name: "Nudge",
         params: &[],
+        names: &[],
         result: NativeTy::Void,
         cost: 1,
         variadic: false,

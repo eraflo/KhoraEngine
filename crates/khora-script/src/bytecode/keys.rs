@@ -111,6 +111,18 @@ impl Key<'_> {
     }
 
     /// Length-prefixed, so `ab` + `c` and `a` + `bc` differ.
+    /// The names a call gives its arguments, in the order written — nothing
+    /// for a call that names none, whose key is what it always was.
+    fn labels(&mut self, labels: &[Option<crate::ast::Label>]) {
+        if labels.is_empty() {
+            return;
+        }
+        self.tag(42);
+        for label in labels {
+            self.text(label.as_ref().map_or("", |label| label.name.as_str()));
+        }
+    }
+
     fn text(&mut self, text: &str) {
         self.0.update(&(text.len() as u64).to_le_bytes());
         self.0.update(text.as_bytes());
@@ -187,10 +199,16 @@ impl Key<'_> {
                 self.tag(9);
                 "continue"
             }
-            Stmt::Become { state, args, .. } => {
+            Stmt::Become {
+                state,
+                args,
+                labels,
+                ..
+            } => {
                 self.tag(10);
                 self.text(state);
                 self.exprs(args);
+                self.labels(labels);
                 "become"
             }
             // The subject is the header. Each arm is a branch named by its own
@@ -343,7 +361,12 @@ impl Key<'_> {
                 self.expr(target);
                 self.expr(value);
             }
-            Expr::Call { callee, args, .. } => {
+            Expr::Call {
+                callee,
+                args,
+                labels,
+                ..
+            } => {
                 self.tag(14);
                 self.expr(callee);
                 if let (Expr::Ident { name, .. }, Some(signatures)) = (callee.as_ref(), self.1) {
@@ -352,6 +375,7 @@ impl Key<'_> {
                     }
                 }
                 self.exprs(args);
+                self.labels(labels);
             }
             Expr::Field { object, name, .. } => {
                 self.tag(15);

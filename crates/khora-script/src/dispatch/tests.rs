@@ -98,6 +98,7 @@ fn registry_with_despawn() -> crate::native::NativeRegistry {
     static DESPAWN: NativeFn = NativeFn {
         name: "Despawn",
         params: &[],
+        names: &[],
         result: NativeTy::Void,
         cost: 1,
         variadic: false,

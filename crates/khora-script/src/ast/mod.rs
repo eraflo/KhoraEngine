@@ -39,7 +39,8 @@ pub mod types;
 
 pub use decl::{
     AfterDecl, Attribute, BehaviorDecl, BehaviorMember, EventDecl, EveryDecl, Field, FunctionDecl,
-    HandlerDecl, Import, MethodDecl, OperatorDecl, OverloadableOp, Param, StateDecl, StructDecl,
+    HandlerDecl, Import, Label, MethodDecl, OperatorDecl, OverloadableOp, Param, StateDecl,
+    StructDecl,
 };
 pub use expr::{BinaryOp, Expr, UnaryOp};
 pub use stmt::{Block, MatchArm, Pattern, QueryBinding, Stmt};

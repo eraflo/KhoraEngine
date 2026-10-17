@@ -14,6 +14,7 @@
 
 //! Expressions — the nodes that produce a value.
 
+use super::decl::Label;
 use super::types::TypeRef;
 use crate::diagnostics::Span;
 
@@ -118,12 +119,15 @@ pub enum Expr {
         /// The whole expression.
         span: Span,
     },
-    /// `f(a, b)`
+    /// `f(a, b)`, `f(a, speed: 2.0)`
     Call {
         /// What is called.
         callee: Box<Expr>,
-        /// Arguments.
+        /// Arguments, in the order written.
         args: Vec<Expr>,
+        /// The name each argument is given, beside it — empty when none is
+        /// named, so a positional call is what it always was.
+        labels: Vec<Option<Label>>,
         /// The whole expression.
         span: Span,
     },

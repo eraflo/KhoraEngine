@@ -33,6 +33,7 @@
 
 mod arithmetic;
 mod assign;
+pub mod binding;
 mod calls;
 mod components;
 mod events;
@@ -49,6 +50,8 @@ pub mod ty;
 #[cfg(test)]
 mod tests;
 
+use binding::CallSite;
+pub use binding::{Bound, FnInfo};
 pub use scope::Scopes;
 pub use ty::Ty;
 
@@ -71,6 +74,9 @@ pub struct Checked {
     /// what the compiler asks where a shape cannot say: an element's type, an
     /// array or a struct, which value is copied.
     pub types: HashMap<usize, Ty>,
+    /// How each call naming an argument or leaving one out binds, by the
+    /// call's address in the module checked.
+    pub bindings: HashMap<usize, std::rc::Rc<[Bound]>>,
 }
 
 impl Checked {
@@ -105,6 +111,7 @@ pub fn check_with(module: &Module, natives: &crate::native::NativeRegistry) -> C
         diagnostics: checker.diagnostics,
         inferred: checker.inferred,
         types: checker.types,
+        bindings: checker.bindings,
     }
 }
 
@@ -136,23 +143,6 @@ pub struct OperatorInfo {
     pub params: Vec<Ty>,
     /// Result type.
     pub result: Ty,
-}
-
-/// A callable's signature.
-#[derive(Debug, Clone)]
-pub struct FnInfo {
-    /// Parameter types.
-    ///
-    /// The exact list, unless [`variadic`](Self::variadic) — then the minimum.
-    pub params: Vec<Ty>,
-    /// Return type.
-    pub result: Ty,
-    /// Whether extra arguments are allowed.
-    ///
-    /// Only an engine function can be: a script's own always declares exactly
-    /// what it takes. See [`NativeFn::variadic`](crate::native::NativeFn::variadic)
-    /// for why one would be.
-    pub variadic: bool,
 }
 
 /// Where the checker currently is, which decides what is legal.
@@ -221,6 +211,10 @@ pub struct Checker {
     pub inferred: HashMap<usize, String>,
     /// Every expression's type — see [`Checked::types`].
     pub types: HashMap<usize, Ty>,
+    /// How each call naming an argument or leaving one out binds.
+    pub bindings: HashMap<usize, std::rc::Rc<[Bound]>>,
+    /// The states of the behavior being checked: what `become` fills.
+    pub state_signatures: HashMap<String, FnInfo>,
     /// The states declaring each state method of the behavior being checked:
     /// callable only from inside its state, and named when a call from
     /// anywhere else is refused.
@@ -250,6 +244,9 @@ pub struct Checker {
     pub system: Option<String>,
     /// The free function being checked.
     pub free_function: Option<String>,
+    /// Whether a parameter's default is being checked: data, where an engine
+    /// constructor is the value it names, whatever a scope calls by its name.
+    pub in_default: bool,
     /// Every free function the module declares.
     pub free_functions: std::collections::HashSet<String>,
     /// Who calls what among the free functions, and which read the subject
@@ -271,6 +268,9 @@ impl Checker {
             scopes: Scopes::new(),
             inferred: HashMap::new(),
             types: HashMap::new(),
+            bindings: HashMap::new(),
+            state_signatures: HashMap::new(),
+            in_default: false,
             state_methods: HashMap::new(),
             unready: Vec::new(),
             field_names: Vec::new(),
@@ -481,6 +481,8 @@ impl Checker {
                     params: native.params.iter().map(|p| p.to_ty()).collect(),
                     result: native.result.to_ty(),
                     variadic: native.variadic,
+                    names: native.names.iter().map(|n| (*n).to_owned()).collect(),
+                    defaults: vec![None; native.params.len()],
                 },
             );
         }
@@ -513,11 +515,7 @@ impl Checker {
         }
         self.functions.insert(
             decl.name.clone(),
-            FnInfo {
-                params,
-                result,
-                variadic: false,
-            },
+            FnInfo::of_params(params, result, &decl.params),
         );
     }
 
@@ -539,6 +537,7 @@ impl Checker {
     fn check_struct_bodies(&mut self, decl: &StructDecl) {
         for operator in &decl.operators {
             self.scopes = Scopes::new();
+            self.check_param_defaults(&operator.params, binding::ParamRole::Operator);
             for param in &operator.params {
                 let ty = self.resolve(&param.ty);
                 self.scopes.declare(&param.name, ty, param.span);
@@ -575,6 +574,8 @@ impl Checker {
 
     fn check_function(&mut self, decl: &FunctionDecl) {
         self.scopes = Scopes::new();
+        // Its defaults first, in an empty scope: a default sees no parameter.
+        self.check_param_defaults(&decl.params, binding::ParamRole::Callable);
         for param in &decl.params {
             let ty = self.resolve(&param.ty);
             self.scopes.declare(&param.name, ty, param.span);

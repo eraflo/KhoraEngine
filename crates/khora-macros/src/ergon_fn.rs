@@ -95,6 +95,16 @@ fn expand(function: &ItemFn, options: &Options) -> syn::Result<TokenStream> {
 
     let (wants_context, params) = split_params(function)?;
     let param_types: Vec<&Type> = params.iter().map(|(_, ty)| *ty).collect();
+    // What a script names each parameter by: its Rust name, a leading `_`
+    // (an unused binding) dropped.
+    let param_names: Vec<String> = params
+        .iter()
+        .enumerate()
+        .map(|(index, (pat, _))| match pat {
+            syn::Pat::Ident(ident) => ident.ident.to_string().trim_start_matches('_').to_owned(),
+            _ => format!("arg{index}"),
+        })
+        .collect();
     let bindings: Vec<_> = params
         .iter()
         .enumerate()
@@ -145,6 +155,7 @@ fn expand(function: &ItemFn, options: &Options) -> syn::Result<TokenStream> {
                 params: &[
                     #(<#param_types as ::khora_script::native::ScriptType>::TY),*
                 ],
+                names: &[#(#param_names),*],
                 result: <#result_ty as ::khora_script::native::ScriptType>::TY,
                 cost: #cost,
                 // Never, and not an oversight: the macro's reason to exist is

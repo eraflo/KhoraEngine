@@ -65,6 +65,9 @@ enum Expect {
     Refused(&'static str),
     /// The checker rejects it with a message containing this fragment.
     Rejected(&'static str),
+    /// The lexer or the parser refuses it with a message containing this
+    /// fragment.
+    Unparsed(&'static str),
 }
 
 /// One construct, and what the language does with it.
@@ -969,6 +972,198 @@ const SHIPPED: &[Row] = &[
         args: &[],
         expect: Expect::Rejected("`Loot` is not a component"),
     },
+    // ─── Named arguments and parameter defaults ─────────────────────────────
+    Row {
+        construct: "named arguments in any order",
+        source: "fn int Pair(int a, int b) { return a * 10 + b; }
+                 fn int F() { return Pair(b: 4, a: 3); }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(34)),
+    },
+    Row {
+        construct: "positional arguments, then named ones",
+        source: "fn int Triple(int a, int b, int c) { return a * 100 + b * 10 + c; }
+                 fn int F() { return Triple(1, c: 3, b: 2); }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(123)),
+    },
+    Row {
+        construct: "a parameter default",
+        source: "fn int Move(int x, int speed = 3) { return x * 10 + speed; }
+                 fn int F() { return Move(4); }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(43)),
+    },
+    Row {
+        construct: "a default skipped by naming the parameter after it",
+        source: "fn int Move(int x, int speed = 3, int turns = 5) {
+                     return x * 100 + speed * 10 + turns;
+                 }
+                 fn int F() { return Move(1, turns: 7); }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(137)),
+    },
+    Row {
+        construct: "named arguments evaluated in the order written",
+        source: "behavior Recorder {
+                     int trace = 0;
+                     int Mark(int digit) { trace = trace * 10 + digit; return digit; }
+                     int Pair(int first, int second) { return first * 10 + second; }
+                     int Probe() {
+                         int got = Pair(second: Mark(2), first: Mark(1));
+                         return trace * 100 + got;
+                     }
+                 }",
+        entry: "Recorder.Probe",
+        args: &[],
+        expect: Expect::Runs(Value::Int(2112)),
+    },
+    Row {
+        construct: "a behavior method with a default, called with a name",
+        source: "behavior Car {
+                     int Score(int laps, int bonus = 2) { return laps * 10 + bonus; }
+                     int Probe() { return Score(laps: 4); }
+                 }",
+        entry: "Car.Probe",
+        args: &[],
+        expect: Expect::Runs(Value::Int(42)),
+    },
+    Row {
+        construct: "an engine function's parameters named",
+        source: "fn float F() { return Lerp(t: 0.25, to: 8.0, from: 0.0); }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Float(2.0)),
+    },
+    Row {
+        construct: "an engine constructor's fields named",
+        source: "fn float F() {
+                     Vec3 v = Vec3(z: 3.0, x: 1.0, y: 2.0);
+                     return v.x * 100.0 + v.y * 10.0 + v.z;
+                 }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Float(123.0)),
+    },
+    Row {
+        construct: "an event's payload named",
+        source: "event Struck(int damage, int times);
+                 behavior Guard {
+                     int health = 100;
+                     on Struck(int damage, int times) { health -= damage * times; }
+                     void Hurt() { this.Raise(Struck(times: 2, damage: 7)); }
+                     int Health() { return health; }
+                 }",
+        entry: "Guard.Hurt; deliver; Guard.Health",
+        args: &[],
+        expect: Expect::Runs(Value::Int(86)),
+    },
+    Row {
+        construct: "`become` with its state's data named",
+        source: "behavior Guard {
+                     state Patrol {
+                         void Spot() { become Chase(prey: 7, range: 2); }
+                         int Read() { return 0; }
+                     }
+                     state Chase(int range, int prey) {
+                         int Read() { return prey * 10 + range; }
+                     }
+                 }",
+        entry: "Guard.Spot; Guard.Read",
+        args: &[],
+        expect: Expect::Runs(Value::Int(72)),
+    },
+    Row {
+        construct: "a positional argument after a named one",
+        source: "fn int Pair(int a, int b) { return a + b; }
+                 fn int F() { return Pair(a: 1, 2); }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Unparsed("a positional argument cannot follow a named one"),
+    },
+    Row {
+        construct: "a parameter given twice",
+        source: "fn int Pair(int a, int b) { return a + b; }
+                 fn int F() { return Pair(1, a: 2, b: 3); }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("`a` is given twice"),
+    },
+    Row {
+        construct: "a name the callee does not have",
+        source: "fn int Move(int x, float speed) { return x; }
+                 fn int F() { return Move(1, sped: 2.0); }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("`Move` has no parameter `sped`"),
+    },
+    Row {
+        construct: "a parameter without a default left out",
+        source: "fn int Move(int x, float speed) { return x; }
+                 fn int F() { return Move(x: 1); }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("`Move` needs `speed`"),
+    },
+    Row {
+        construct: "a default that is not a constant",
+        source: "fn int Base() { return 1; }
+                 fn int F(int x = Base()) { return x; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("default must be a constant"),
+    },
+    Row {
+        construct: "a parameter without a default after one with a default",
+        source: "fn int F(int x = 1, int y) { return x + y; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("`y` needs a default: it follows `x`, which has one"),
+    },
+    Row {
+        construct: "a lifecycle method's parameter with a default",
+        source: "behavior Guard { void Update(float dt = 0.016) { } }",
+        entry: "Guard.Update",
+        args: &[],
+        expect: Expect::Rejected("a lifecycle method is called by the engine"),
+    },
+    Row {
+        construct: "a handler's parameter with a default",
+        source: "event Damaged(int amount);
+                 behavior Guard { on Damaged(int amount = 1) { } }",
+        entry: "Guard.Damaged",
+        args: &[],
+        expect: Expect::Rejected("a handler's parameters are its event's payload"),
+    },
+    Row {
+        construct: "an event's parameter with a default",
+        source: "event Damaged(int amount = 1);
+                 fn int F() { return 1; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("an event's payload is given whole when raised"),
+    },
+    Row {
+        construct: "an array method given a name",
+        source: "fn int F() { int[] xs = [1]; xs.Push(value: 2); return xs.Length; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("`Push` takes no named argument"),
+    },
+    Row {
+        construct: "`become` with a value of the wrong type",
+        source: r#"behavior Guard {
+                       state Patrol { void Spot() { become Chase("seven"); } }
+                       state Chase(int prey) { int Prey() { return prey; } }
+                   }"#,
+        entry: "Guard.Spot",
+        args: &[],
+        expect: Expect::Rejected("expected `int`, found `string`"),
+    },
 ];
 
 /// What a spec will change. Each row states the behaviour the spec must
@@ -1013,7 +1208,8 @@ fn meets(expect: &Expect, outcome: &Outcome) -> bool {
     match (expect, outcome) {
         (Expect::Runs(wanted), Outcome::Ran(got)) => wanted == got,
         (Expect::Refused(fragment), Outcome::Refused(messages))
-        | (Expect::Rejected(fragment), Outcome::Rejected(messages)) => {
+        | (Expect::Rejected(fragment), Outcome::Rejected(messages))
+        | (Expect::Unparsed(fragment), Outcome::Unparsed(messages)) => {
             messages.iter().any(|message| message.contains(fragment))
         }
         _ => false,

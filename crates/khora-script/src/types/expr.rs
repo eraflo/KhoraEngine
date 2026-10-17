@@ -46,6 +46,13 @@ impl Checker {
     }
 
     fn check_expr_kind(&mut self, expr: &Expr, context: &Context) -> Ty {
+        // A default is data: `Vec3(1.0, 2.0, 3.0)` there is the value, never a
+        // call a behavior's own `Vec3` method could answer.
+        if self.in_default {
+            if let Some((ty, _)) = super::structs::engine_constant(expr) {
+                return Ty::Engine(ty);
+            }
+        }
         match expr {
             Expr::Int { .. } => Ty::Int,
             Expr::Float { .. } => Ty::Float,
@@ -130,7 +137,20 @@ impl Checker {
                 value,
                 span,
             } => self.check_assign(target, *op, value, *span, context),
-            Expr::Call { callee, args, span } => self.check_call(callee, args, *span, context),
+            Expr::Call {
+                callee,
+                args,
+                labels,
+                span,
+            } => {
+                let call = super::CallSite {
+                    args,
+                    labels,
+                    span: *span,
+                    at: std::ptr::from_ref(expr) as usize,
+                };
+                self.check_call(callee, &call, context)
+            }
             Expr::Field { object, name, span } => {
                 let receiver = self.check_expr(object, context);
                 if receiver == Ty::Entity {
@@ -364,124 +384,6 @@ impl Checker {
                 Ty::Error
             }
         }
-    }
-
-    fn check_call(&mut self, callee: &Expr, args: &[Expr], span: Span, context: &Context) -> Ty {
-        // Free functions and engine functions are callable by name; an engine
-        // operation on an entity is called on it, and its free form refused.
-        if let Expr::Ident { name, .. } = callee {
-            if name == "Spawn" && !self.functions.contains_key(name) {
-                return self.check_spawn(args, span, context);
-            }
-            if self.events.contains_key(name) {
-                for argument in args {
-                    self.check_expr(argument, context);
-                }
-                self.refuse_construction(name, span);
-                return Ty::Error;
-            }
-            if name == "Raise" && !self.functions.contains_key(name) {
-                return self.refuse_free_raise(args, span, context);
-            }
-            if self.system.is_some()
-                && crate::native::world::SUBJECT_NATIVES.contains(&name.as_str())
-                && !self.functions.contains_key(name)
-            {
-                self.error_note(
-                    format!("`{name}()` reads the entity a behavior is attached to, and a system has none"),
-                    span,
-                    "a system's entities are the rows of its queries — bind one with `Entity e`",
-                );
-                for argument in args {
-                    self.check_expr(argument, context);
-                }
-                return Ty::Error;
-            }
-            self.note_call(name, span);
-            if context.owner.is_some() && self.method_names.contains(name) {
-                let caller = self.qualified(&context.member);
-                let callee = self.qualified(name);
-                self.member_calls.entry(caller).or_default().insert(callee);
-            }
-            if !self.functions.contains_key(name)
-                && self.refuse_free_form(name, args, span, context)
-            {
-                return Ty::Error;
-            }
-            // The script's own first, so a host that later exposes a name a
-            // script already uses cannot change what that script means.
-            let known = self
-                .functions
-                .get(name)
-                .or_else(|| self.natives.get(name))
-                .cloned();
-            if let Some(info) = known {
-                let wrong_arity = if info.variadic {
-                    args.len() < info.params.len()
-                } else {
-                    args.len() != info.params.len()
-                };
-                if wrong_arity {
-                    self.error(
-                        format!(
-                            "`{name}` takes {}{} argument{}, found {}",
-                            if info.variadic { "at least " } else { "" },
-                            info.params.len(),
-                            if info.params.len() == 1 { "" } else { "s" },
-                            args.len()
-                        ),
-                        span,
-                    );
-                }
-                for (argument, expected) in args.iter().zip(info.params.iter()) {
-                    let actual = self.check_expr(argument, context);
-                    self.expect_assignable(expected, &actual, argument.span());
-                }
-                // Arguments beyond the declared ones still get checked, so
-                // their own mistakes are reported too.
-                for extra in args.iter().skip(info.params.len()) {
-                    self.check_expr(extra, context);
-                }
-                return info.result;
-            }
-        }
-
-        // Another state's method: out of scope here, and worth saying where it
-        // is rather than that it does not exist.
-        if let Expr::Ident { name, .. } = callee {
-            if let Some(owners) = self.state_methods.get(name).cloned() {
-                let named = owners
-                    .iter()
-                    .map(|state| format!("`{state}`"))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let states = if owners.len() == 1 { "state" } else { "states" };
-                self.error_note(
-                    format!("`{name}` belongs to {states} {named}"),
-                    span,
-                    "it can only be called from inside it",
-                );
-                for argument in args {
-                    self.check_expr(argument, context);
-                }
-                return Ty::Error;
-            }
-        }
-
-        // `entity.Method(…)`: an entity has no methods — a behavior's own are
-        // called by name.
-        if let Some(ty) = self.check_method_call(callee, args, context) {
-            return ty;
-        }
-
-        // Unknown callee: check the arguments so their errors surface, and
-        // yield `Error` without a second complaint about the callee itself —
-        // `check_expr` on the callee has already reported it.
-        self.check_expr(callee, context);
-        for argument in args {
-            self.check_expr(argument, context);
-        }
-        Ty::Error
     }
 
     pub(super) fn check_field(&mut self, receiver: &Ty, name: &str, span: Span) -> Ty {

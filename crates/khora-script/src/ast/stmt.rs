@@ -14,6 +14,7 @@
 
 //! Statements — the nodes that happen in order.
 
+use super::decl::Label;
 use super::expr::Expr;
 use super::types::TypeRef;
 use crate::diagnostics::Span;
@@ -126,6 +127,8 @@ pub enum Stmt {
         state: String,
         /// Arguments for the state's parameters.
         args: Vec<Expr>,
+        /// The name each argument is given — empty when none is named.
+        labels: Vec<Option<Label>>,
         /// The whole statement.
         span: Span,
     },

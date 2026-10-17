@@ -161,7 +161,20 @@ impl Checker {
                 }
             }
 
-            Stmt::Become { state, args, span } => self.check_become(state, args, *span, context),
+            Stmt::Become {
+                state,
+                args,
+                labels,
+                span,
+            } => {
+                let call = super::CallSite {
+                    args,
+                    labels,
+                    span: *span,
+                    at: std::ptr::from_ref(statement) as usize,
+                };
+                self.check_become(state, &call, context);
+            }
 
             Stmt::Match {
                 subject,
@@ -351,9 +364,28 @@ impl Checker {
         self.scopes.pop();
     }
 
-    fn check_become(&mut self, state: &str, args: &[Expr], span: Span, context: &Context) {
-        for argument in args {
-            self.check_expr(argument, context);
+    fn check_become(&mut self, state: &str, call: &super::CallSite<'_>, context: &Context) {
+        let (args, span) = (call.args, call.span);
+        // Its values are the state's parameters, checked as a call's are.
+        match self.state_signatures.get(state).cloned() {
+            Some(info) => {
+                let callee = info.callee(state);
+                if callee.plain(args, call.labels) {
+                    for (argument, expected) in args.iter().zip(&info.params) {
+                        let actual = self.check_expr(argument, context);
+                        self.expect_assignable(expected, &actual, argument.span());
+                    }
+                } else if let Some(bound) =
+                    self.bind_arguments(&callee, args, call.labels, span, context)
+                {
+                    self.bindings.insert(call.at, bound.into());
+                }
+            }
+            None => {
+                for argument in args {
+                    self.check_expr(argument, context);
+                }
+            }
         }
 
         if self.system.is_some() {

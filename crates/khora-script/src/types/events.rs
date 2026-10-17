@@ -30,6 +30,8 @@ use super::{Checker, Context, Ty};
 pub struct EventInfo {
     /// What it carries, in order.
     pub params: Vec<Ty>,
+    /// What each value is called — what a raise may name it by.
+    pub names: Vec<String>,
 }
 
 impl EventInfo {
@@ -65,8 +67,13 @@ impl Checker {
                     .unwrap_or_else(|| panic!("the engine event's `{name}` has a type Ergon names"))
                 })
                 .collect();
+            let names = event
+                .params
+                .iter()
+                .map(|(_, name)| (*name).to_owned())
+                .collect();
             self.events
-                .insert(event.name.to_owned(), EventInfo { params });
+                .insert(event.name.to_owned(), EventInfo { params, names });
         }
     }
 
@@ -128,6 +135,7 @@ impl Checker {
             );
         }
 
+        self.check_param_defaults(&decl.params, super::binding::ParamRole::Event);
         let mut params = Vec::new();
         let mut seen: Vec<&str> = Vec::new();
         for param in &decl.params {
@@ -148,20 +156,27 @@ impl Checker {
             }
             params.push(ty);
         }
-        self.events.insert(name.clone(), EventInfo { params });
+        let names = decl.params.iter().map(|p| p.name.clone()).collect();
+        self.events
+            .insert(name.clone(), EventInfo { params, names });
     }
 
     /// `target.Raise(E(args))`: `E` an event in scope, its arguments its
     /// payload.
     pub(super) fn check_raise(&mut self, args: &[Expr], at: Span, context: &Context) -> Ty {
         let construction = match args {
-            [Expr::Call { callee, args, span }] => match callee.as_ref() {
-                Expr::Ident { name, .. } => Some((name.clone(), args, *span)),
+            [call @ Expr::Call {
+                callee,
+                args,
+                labels,
+                span,
+            }] => match callee.as_ref() {
+                Expr::Ident { name, .. } => Some((name.clone(), args, labels, *span, call)),
                 _ => None,
             },
             _ => None,
         };
-        let Some((event, arguments, span)) = construction else {
+        let Some((event, arguments, labels, span, call)) = construction else {
             if let Some(Expr::Str { value, .. }) = args.first() {
                 self.raise_by_name(value, &args[1..], at, context);
                 return Ty::Void;
@@ -183,6 +198,20 @@ impl Checker {
             self.unknown_event(&event, span);
             return Ty::Void;
         };
+        if !labels.is_empty() {
+            let defaults = vec![None; info.params.len()];
+            let callee = super::binding::Callee {
+                name: &event,
+                params: &info.params,
+                names: &info.names,
+                defaults: &defaults,
+            };
+            if let Some(bound) = self.bind_arguments(&callee, arguments, labels, span, context) {
+                self.bindings
+                    .insert(std::ptr::from_ref(call) as usize, bound.into());
+            }
+            return Ty::Void;
+        }
         if arguments.len() != info.params.len() {
             self.error_note(
                 format!(

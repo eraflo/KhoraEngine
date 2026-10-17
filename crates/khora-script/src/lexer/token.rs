@@ -149,8 +149,6 @@ pub enum Keyword {
     State,
     /// `become`
     Become,
-    /// `on`
-    On,
     /// `every`
     Every,
     /// `after`
@@ -218,7 +216,6 @@ impl Keyword {
             "ref" => Self::Ref,
             "state" => Self::State,
             "become" => Self::Become,
-            "on" => Self::On,
             "every" => Self::Every,
             "after" => Self::After,
             "async" => Self::Async,

@@ -92,6 +92,7 @@ macro_rules! ergon_type {
             static CONSTRUCTOR: NativeFn = NativeFn {
                 name: stringify!($variant),
                 params: &[$(ergon_type!(@float $field)),+],
+                names: &[$(stringify!($field)),+],
                 result: NativeTy::Engine(stringify!($variant)),
                 cost: 1,
                 variadic: false,
@@ -120,6 +121,7 @@ macro_rules! ergon_type {
                     // Unspellable on purpose: only the lowering of `v.x` finds it.
                     name: concat!(stringify!($variant), ".", stringify!($field)),
                     params: &[NativeTy::Engine(stringify!($variant))],
+                    names: &[],
                     result: NativeTy::Float,
                     cost: 1,
                     variadic: false,

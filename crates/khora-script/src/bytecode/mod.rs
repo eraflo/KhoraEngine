@@ -47,6 +47,7 @@
 //! `state`, `become`, `every` and `after` are here.
 
 mod behavior;
+mod calls;
 mod components;
 mod events;
 pub mod expr;
@@ -113,6 +114,7 @@ pub fn compile_with(module: &Module, natives: &crate::native::NativeRegistry) ->
     let checked = crate::types::check_with(module, natives);
     compiler.inferred = checked.inferred;
     compiler.types = checked.types;
+    compiler.bindings = checked.bindings;
     compiler.collect_natives(natives);
     compiler.collect_structs(module);
     compiler.collect_events(module);
@@ -230,6 +232,12 @@ pub struct Compiler {
     /// Every expression's type, from the checker — see
     /// [`Checked::types`](crate::types::Checked::types).
     pub types: HashMap<usize, crate::types::Ty>,
+    /// How each call naming an argument or leaving one out binds, as the
+    /// checker found — keyed by the call's address.
+    pub bindings: HashMap<usize, std::rc::Rc<[crate::types::Bound]>>,
+    /// Whether a parameter's default is being compiled: an engine
+    /// constructor in it is loaded as the value it names.
+    pub in_default: bool,
     /// The structs the module declares, by name — what a literal fills its
     /// fields from.
     pub struct_decls: HashMap<String, crate::ast::StructDecl>,
@@ -263,6 +271,8 @@ impl Compiler {
             naming: sites::Naming::default(),
             inferred: HashMap::new(),
             types: HashMap::new(),
+            bindings: HashMap::new(),
+            in_default: false,
             struct_decls: HashMap::new(),
             component_decls: HashMap::new(),
             event_shapes: HashMap::new(),

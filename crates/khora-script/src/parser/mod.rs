@@ -271,6 +271,7 @@ impl Parser {
     // types, statements and expressions each gets its own file.
 }
 
+mod args;
 mod decl;
 mod describe;
 mod expr;

@@ -42,7 +42,6 @@ fn keyword_text(keyword: Keyword) -> &'static str {
         Keyword::Ref => "ref",
         Keyword::State => "state",
         Keyword::Become => "become",
-        Keyword::On => "on",
         Keyword::Every => "every",
         Keyword::After => "after",
         Keyword::Async => "async",

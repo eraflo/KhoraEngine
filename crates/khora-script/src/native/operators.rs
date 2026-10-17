@@ -58,6 +58,7 @@ macro_rules! operator {
             static OPERATOR: NativeFn = NativeFn {
                 name: $name,
                 params: &[$($param),+],
+                names: &[],
                 result: $result,
                 cost: 1,
                 variadic: false,

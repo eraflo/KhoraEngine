@@ -139,7 +139,18 @@ pub struct Param {
     pub ty: TypeRef,
     /// Parameter name.
     pub name: String,
-    /// The whole parameter.
+    /// `= constant`: what a call that leaves it out passes.
+    pub default: Option<Expr>,
+    /// The whole parameter, its default included.
+    pub span: Span,
+}
+
+/// The name an argument is given at a call: `speed:` in `Move(1, speed: 2)`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Label {
+    /// The parameter it names.
+    pub name: String,
+    /// Where the name is written.
     pub span: Span,
 }
 

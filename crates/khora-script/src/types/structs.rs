@@ -204,14 +204,15 @@ impl Checker {
     }
 }
 
-/// The engine types a constant may construct, with how many numbers each
-/// takes: `Vec3(0.0, 0.0, 1.0)` is data, as `[0.0, 0.0, 1.0]` is.
-pub(crate) const ENGINE_CONSTRUCTORS: [(&str, usize); 5] = [
-    ("Vec2", 2),
-    ("Vec3", 3),
-    ("Vec4", 4),
-    ("Quat", 4),
-    ("Color", 4),
+/// The engine types a constant may construct, with the numbers each takes,
+/// by name: `Vec3(0.0, 0.0, 1.0)` is data, as `[0.0, 0.0, 1.0]` is — and so
+/// is `Vec3(z: 1.0, x: 0.0, y: 0.0)`.
+pub(crate) const ENGINE_CONSTRUCTORS: [(&str, &[&str]); 5] = [
+    ("Vec2", &["x", "y"]),
+    ("Vec3", &["x", "y", "z"]),
+    ("Vec4", &["x", "y", "z", "w"]),
+    ("Quat", &["x", "y", "z", "w"]),
+    ("Color", &["r", "g", "b", "a"]),
 ];
 
 /// The number a constant numeric expression stands for: a literal, or a
@@ -235,19 +236,36 @@ pub(crate) fn constant_number(expr: &Expr) -> Option<f32> {
 /// The engine type `expr` constructs from constant numbers, and those
 /// numbers — `Vec3(0.0, 0.0, 1.0)`.
 pub(crate) fn engine_constant(expr: &Expr) -> Option<(&'static str, Vec<f32>)> {
-    let Expr::Call { callee, args, .. } = expr else {
+    let Expr::Call {
+        callee,
+        args,
+        labels,
+        ..
+    } = expr
+    else {
         return None;
     };
     let Expr::Ident { name, .. } = &**callee else {
         return None;
     };
-    let (ty, arity) = ENGINE_CONSTRUCTORS
+    let (ty, fields) = ENGINE_CONSTRUCTORS
         .iter()
         .find(|(known, _)| known == name)?;
-    if args.len() != *arity {
+    if args.len() != fields.len() {
         return None;
     }
-    Some((ty, args.iter().map(constant_number).collect::<Option<_>>()?))
+    // Each number where its field sits: in order, then by name.
+    let mut numbers: Vec<Option<f32>> = vec![None; fields.len()];
+    for (at, argument) in args.iter().enumerate() {
+        let index = match labels.get(at).and_then(Option::as_ref) {
+            Some(label) => fields.iter().position(|field| *field == label.name)?,
+            None => at,
+        };
+        if numbers[index].replace(constant_number(argument)?).is_some() {
+            return None;
+        }
+    }
+    Some((ty, numbers.into_iter().collect::<Option<_>>()?))
 }
 
 /// Whether `expr` is data: a constant, an engine value of constant numbers,

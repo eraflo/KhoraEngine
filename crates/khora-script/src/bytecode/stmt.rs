@@ -169,7 +169,12 @@ impl Compiler {
 
             Stmt::Block(block) => self.compile_block(block, "body"),
 
-            Stmt::Become { state, args, span } => self.compile_become(state, args, *span),
+            Stmt::Become {
+                state, args, span, ..
+            } => {
+                let binding = self.binding_of(std::ptr::from_ref(statement) as usize);
+                self.compile_become(state, args, binding.as_deref(), *span);
+            }
 
             Stmt::Break(span) => self.compile_break(*span),
             Stmt::Continue(span) => self.compile_continue(*span),
@@ -249,7 +254,13 @@ impl Compiler {
     /// the same convention a call uses — and for the same reason: the values are
     /// copied into the state's slots in one pass, so they have to be adjacent
     /// when it starts.
-    fn compile_become(&mut self, state: &str, args: &[Expr], span: Span) {
+    fn compile_become(
+        &mut self,
+        state: &str,
+        args: &[Expr],
+        binding: Option<&[crate::types::Bound]>,
+        span: Span,
+    ) {
         let Some(layout) = self.behavior.clone() else {
             self.error("`become` is only meaningful inside a behavior", span);
             return;
@@ -261,25 +272,32 @@ impl Compiler {
         };
 
         let mark = self.registers.mark();
-        // Every slot reserved before any argument is compiled: compiling one
-        // takes temporaries of its own, so reserving as we go would leave the
-        // next slot no longer adjacent.
-        let base = self.registers.temp();
-        let slots: Vec<Reg> = std::iter::once(base)
-            .chain((1..args.len()).map(|_| self.registers.temp()))
-            .collect();
+        let (base, argc) = match binding {
+            // Named: evaluated as written, placed as the state declares.
+            Some(binding) => self.place_bound(None, args, binding, &[]),
+            None => {
+                // Every slot reserved before any argument is compiled:
+                // compiling one takes temporaries of its own, so reserving as
+                // we go would leave the next slot no longer adjacent.
+                let base = self.registers.temp();
+                let slots: Vec<Reg> = std::iter::once(base)
+                    .chain((1..args.len()).map(|_| self.registers.temp()))
+                    .collect();
 
-        for (argument, slot) in args.iter().zip(slots) {
-            let inner = self.registers.mark();
-            let (value, _) = self.compile_value(argument);
-            if value != slot {
-                self.emit(Instruction::Move {
-                    dst: slot,
-                    src: value,
-                });
+                for (argument, slot) in args.iter().zip(slots) {
+                    let inner = self.registers.mark();
+                    let (value, _) = self.compile_value(argument);
+                    if value != slot {
+                        self.emit(Instruction::Move {
+                            dst: slot,
+                            src: value,
+                        });
+                    }
+                    self.registers.release_to(inner);
+                }
+                (base, args.len() as u8)
             }
-            self.registers.release_to(inner);
-        }
+        };
 
         let behavior = self
             .program
@@ -295,13 +313,13 @@ impl Compiler {
                 crate::arena::Persisted::Scalar(_) => 1,
             })
             .sum::<usize>()
-            + args.len();
+            + usize::from(argc);
         self.emit(Instruction::Become {
             behavior: behavior as u16,
             writes: u32::try_from(writes).unwrap_or(u32::MAX),
             state: index as u16,
             base,
-            argc: args.len() as u8,
+            argc,
             state_slot: layout.state_slot() as u16,
             data_slot: layout.state_data_slot() as u16,
         });

@@ -278,20 +278,13 @@ impl Parser {
         loop {
             if self.check(&TokenKind::LParen) {
                 self.advance();
-                let mut args = Vec::new();
-                if !self.check(&TokenKind::RParen) {
-                    loop {
-                        args.push(self.parse_expr()?);
-                        if !self.eat(&TokenKind::Comma) {
-                            break;
-                        }
-                    }
-                }
+                let (args, labels) = self.parse_arguments()?;
                 let end = self.expect(TokenKind::RParen, "`)` after the arguments")?;
                 let span = expr.span().to(end);
                 expr = Expr::Call {
                     callee: Box::new(expr),
                     args,
+                    labels,
                     span,
                 };
                 continue;
@@ -394,14 +387,9 @@ impl Parser {
                 let ty = self.parse_type()?;
                 let mut args = Vec::new();
                 if self.eat(&TokenKind::LParen) {
-                    if !self.check(&TokenKind::RParen) {
-                        loop {
-                            args.push(self.parse_expr()?);
-                            if !self.eat(&TokenKind::Comma) {
-                                break;
-                            }
-                        }
-                    }
+                    let (written, labels) = self.parse_arguments()?;
+                    self.refuse_labels(&labels, "`new` takes its arguments in order");
+                    args = written;
                     self.expect(TokenKind::RParen, "`)` after the arguments")?;
                 }
                 let end = self.previous_span();

@@ -29,14 +29,152 @@ use crate::diagnostics::Span;
 const ARRAY_METHODS: &[&str] = &["Push", "RemoveAt"];
 
 impl Checker {
+    pub(super) fn check_call(
+        &mut self,
+        callee: &Expr,
+        call: &super::CallSite<'_>,
+        context: &Context,
+    ) -> Ty {
+        let (args, span) = (call.args, call.span);
+        // Free functions and engine functions are callable by name; an engine
+        // operation on an entity is called on it, and its free form refused.
+        if let Expr::Ident { name, .. } = callee {
+            if name == "Spawn" && !self.functions.contains_key(name) {
+                self.refuse_labels(name, call.labels);
+                return self.check_spawn(args, span, context);
+            }
+            if self.events.contains_key(name) {
+                for argument in args {
+                    self.check_expr(argument, context);
+                }
+                self.refuse_construction(name, span);
+                return Ty::Error;
+            }
+            if name == "Raise" && !self.functions.contains_key(name) {
+                return self.refuse_free_raise(args, span, context);
+            }
+            if self.system.is_some()
+                && crate::native::world::SUBJECT_NATIVES.contains(&name.as_str())
+                && !self.functions.contains_key(name)
+            {
+                self.error_note(
+                    format!("`{name}()` reads the entity a behavior is attached to, and a system has none"),
+                    span,
+                    "a system's entities are the rows of its queries — bind one with `Entity e`",
+                );
+                for argument in args {
+                    self.check_expr(argument, context);
+                }
+                return Ty::Error;
+            }
+            self.note_call(name, span);
+            if context.owner.is_some() && self.method_names.contains(name) {
+                let caller = self.qualified(&context.member);
+                let callee = self.qualified(name);
+                self.member_calls.entry(caller).or_default().insert(callee);
+            }
+            if !self.functions.contains_key(name)
+                && self.refuse_free_form(name, args, span, context)
+            {
+                return Ty::Error;
+            }
+            // The script's own first, so a host that later exposes a name a
+            // script already uses cannot change what that script means.
+            let known = self
+                .functions
+                .get(name)
+                .or_else(|| self.natives.get(name))
+                .cloned();
+            if let Some(info) = known {
+                let callee = info.callee(name);
+                if !info.variadic && !callee.plain(args, call.labels) {
+                    if let Some(bound) =
+                        self.bind_arguments(&callee, args, call.labels, span, context)
+                    {
+                        self.bindings.insert(call.at, bound.into());
+                    }
+                    return info.result;
+                }
+                if info.variadic {
+                    self.refuse_labels(name, call.labels);
+                }
+                let wrong_arity = if info.variadic {
+                    args.len() < info.params.len()
+                } else {
+                    args.len() != info.params.len()
+                };
+                if wrong_arity {
+                    self.error(
+                        format!(
+                            "`{name}` takes {}{} argument{}, found {}",
+                            if info.variadic { "at least " } else { "" },
+                            info.params.len(),
+                            if info.params.len() == 1 { "" } else { "s" },
+                            args.len()
+                        ),
+                        span,
+                    );
+                }
+                for (argument, expected) in args.iter().zip(info.params.iter()) {
+                    let actual = self.check_expr(argument, context);
+                    self.expect_assignable(expected, &actual, argument.span());
+                }
+                // Arguments beyond the declared ones still get checked, so
+                // their own mistakes are reported too.
+                for extra in args.iter().skip(info.params.len()) {
+                    self.check_expr(extra, context);
+                }
+                return info.result;
+            }
+        }
+
+        // Another state's method: out of scope here, and worth saying where it
+        // is rather than that it does not exist.
+        if let Expr::Ident { name, .. } = callee {
+            if let Some(owners) = self.state_methods.get(name).cloned() {
+                let named = owners
+                    .iter()
+                    .map(|state| format!("`{state}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let states = if owners.len() == 1 { "state" } else { "states" };
+                self.error_note(
+                    format!("`{name}` belongs to {states} {named}"),
+                    span,
+                    "it can only be called from inside it",
+                );
+                for argument in args {
+                    self.check_expr(argument, context);
+                }
+                return Ty::Error;
+            }
+        }
+
+        // `entity.Method(…)`: an entity has no methods — a behavior's own are
+        // called by name.
+        if let Some(ty) = self.check_method_call(callee, call, context) {
+            return ty;
+        }
+
+        // Unknown callee: check the arguments so their errors surface, and
+        // yield `Error` without a second complaint about the callee itself —
+        // `check_expr` on the callee has already reported it.
+        self.check_expr(callee, context);
+        for argument in args {
+            self.check_expr(argument, context);
+        }
+        Ty::Error
+    }
+
     /// `object.name(args)` and `object?.name(args)`, or `None` when the callee
     /// is not a method call.
     pub(super) fn check_method_call(
         &mut self,
         callee: &Expr,
-        args: &[Expr],
+        call: &super::CallSite<'_>,
         context: &Context,
     ) -> Option<Ty> {
+        let args = call.args;
         let (object, name, at, optional) = match callee {
             Expr::Field { object, name, span } => (object, name, *span, false),
             Expr::OptionalField { object, name, span } => (object, name, *span, true),
@@ -56,10 +194,11 @@ impl Checker {
             checked
         };
         if let Ty::Array(element) = &receiver {
+            self.refuse_labels(name, call.labels);
             return Some(self.check_array_method(object, name, at, element, args, context));
         }
         if receiver == Ty::Entity && !optional {
-            if let Some(ty) = self.check_entity_method(object, name, at, args, context) {
+            if let Some(ty) = self.check_entity_method(object, name, at, call, context) {
                 return Some(ty);
             }
         }
