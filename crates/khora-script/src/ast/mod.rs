@@ -42,7 +42,7 @@ pub use decl::{
     HandlerDecl, Import, Label, MethodDecl, OperatorDecl, OverloadableOp, Param, StateDecl,
     StructDecl,
 };
-pub use expr::{BinaryOp, Expr, UnaryOp};
+pub use expr::{BinaryOp, Expr, InterpPiece, UnaryOp};
 pub use stmt::{Block, MatchArm, Pattern, QueryBinding, Stmt};
 pub use types::TypeRef;
 

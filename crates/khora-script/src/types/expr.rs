@@ -57,6 +57,7 @@ impl Checker {
             Expr::Int { .. } => Ty::Int,
             Expr::Float { .. } => Ty::Float,
             Expr::Str { .. } => Ty::Str,
+            Expr::Interpolated { pieces, .. } => self.check_interpolated(pieces, context),
             Expr::Duration { .. } => Ty::Duration,
             Expr::Angle { .. } => Ty::Angle,
             Expr::Frequency { span, .. } => {
@@ -291,6 +292,19 @@ impl Checker {
 
         if matches!(left, Ty::Error) || matches!(right, Ty::Error) {
             return Ty::Error;
+        }
+        // Text joins text: a number is never guessed a format for — the
+        // interpolation that shows it is offered instead.
+        if op == BinaryOp::Add && left == Ty::Str && !Ty::Str.accepts(&right) {
+            self.error_note(
+                format!("expected `string`, found `{}`", right.name()),
+                span,
+                format!(
+                    "`+` joins text to text: write `{}`",
+                    super::interpolated::suggested(lhs, rhs)
+                ),
+            );
+            return Ty::Str;
         }
 
         match op {

@@ -273,6 +273,7 @@ fn expr_variants(x: &khora_script::ast::expr::Expr) {
         khora_script::ast::expr::Expr::Int { .. } => {}
         khora_script::ast::expr::Expr::Float { .. } => {}
         khora_script::ast::expr::Expr::Str { .. } => {}
+        khora_script::ast::expr::Expr::Interpolated { .. } => {}
         khora_script::ast::expr::Expr::Duration { .. } => {}
         khora_script::ast::expr::Expr::Angle { .. } => {}
         khora_script::ast::expr::Expr::Frequency { .. } => {}
@@ -472,6 +473,7 @@ fn token_kind_variants(x: &khora_script::lexer::token::TokenKind) {
         khora_script::lexer::token::TokenKind::Int(..) => {}
         khora_script::lexer::token::TokenKind::Float(..) => {}
         khora_script::lexer::token::TokenKind::Str(..) => {}
+        khora_script::lexer::token::TokenKind::Interpolated(..) => {}
         khora_script::lexer::token::TokenKind::Duration(..) => {}
         khora_script::lexer::token::TokenKind::Angle(..) => {}
         khora_script::lexer::token::TokenKind::Frequency(..) => {}
@@ -746,6 +748,7 @@ fn instruction_variants(x: &khora_script::vm::instruction::Instruction) {
         khora_script::vm::instruction::Instruction::WriteBack { .. } => {}
         khora_script::vm::instruction::Instruction::LoadStr { .. } => {}
         khora_script::vm::instruction::Instruction::Concat { .. } => {}
+        khora_script::vm::instruction::Instruction::Format { .. } => {}
         khora_script::vm::instruction::Instruction::NativeCall { .. } => {}
         khora_script::vm::instruction::Instruction::WriteComponent { .. } => {}
         khora_script::vm::instruction::Instruction::GetComponent { .. } => {}

@@ -361,6 +361,21 @@ impl Key<'_> {
                 self.expr(target);
                 self.expr(value);
             }
+            Expr::Interpolated { pieces, .. } => {
+                self.tag(24);
+                for piece in pieces {
+                    match piece {
+                        crate::ast::InterpPiece::Text(text) => {
+                            self.tag(0);
+                            self.text(text);
+                        }
+                        crate::ast::InterpPiece::Hole(hole) => {
+                            self.tag(1);
+                            self.expr(hole);
+                        }
+                    }
+                }
+            }
             Expr::Call {
                 callee,
                 args,

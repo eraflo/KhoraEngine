@@ -38,6 +38,7 @@ mod calls;
 mod components;
 mod events;
 pub mod expr;
+mod interpolated;
 mod members;
 mod query;
 mod returns;

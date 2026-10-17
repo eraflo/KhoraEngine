@@ -31,10 +31,11 @@
 //! skips, and keeps going — one run should report every lexical problem in the
 //! file, not send the author back for another round after each one.
 
+mod interpolated;
 pub mod scanner;
 pub mod token;
 
-pub use token::{Keyword, Token, TokenKind};
+pub use token::{Keyword, Piece, Token, TokenKind};
 
 use self::scanner::Lexer;
 use crate::diagnostics::Diagnostic;
@@ -59,7 +60,7 @@ impl Lexed {
             return self;
         }
         for token in &mut self.tokens {
-            token.span = token.span.shifted(base);
+            shift(token, base);
         }
         for diagnostic in &mut self.diagnostics {
             diagnostic.span = diagnostic.span.shifted(base);
@@ -76,4 +77,20 @@ impl Lexed {
 /// Turns `source` into tokens.
 pub fn lex(source: &str) -> Lexed {
     Lexer::new(source).run()
+}
+
+/// Moves `token` `base` bytes along — and, in an interpolated string, every
+/// token of its holes with it.
+fn shift(token: &mut Token, base: u32) {
+    token.span = token.span.shifted(base);
+    if let TokenKind::Interpolated(pieces) = &mut token.kind {
+        for piece in pieces {
+            if let Piece::Hole { tokens, span } = piece {
+                *span = span.shifted(base);
+                for inner in tokens {
+                    shift(inner, base);
+                }
+            }
+        }
+    }
 }

@@ -91,6 +91,23 @@ impl Checker {
             // A target already reported says nothing about the operation.
             Some(_) if matches!(target_ty, Ty::Error) => {}
             // `a += b` must mean what `a = a + b` means, overloads included.
+            // Text joins text: the interpolation that shows a number is
+            // offered, as for `+`.
+            Some(BinaryOp::Add)
+                if target_ty == Ty::Str
+                    && !matches!(value_ty, Ty::Error)
+                    && !Ty::Str.accepts(&value_ty) =>
+            {
+                self.error_note(
+                    format!("expected `string`, found `{}`", value_ty.name()),
+                    span,
+                    format!(
+                        "`+=` joins text to text: write `{} = {}`",
+                        super::interpolated::spelled_target(target),
+                        super::interpolated::suggested(target, value)
+                    ),
+                );
+            }
             Some(op) => {
                 let result =
                     if let Some(overloaded) = self.overloaded(op, &target_ty, &value_ty, span) {

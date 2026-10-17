@@ -83,19 +83,6 @@ impl Compiler {
                         self.emit(instruction);
                         (dst, Shape::Other)
                     }
-                    // `"a" + "b"` is not an addition. The checker has already
-                    // proved both sides are text; joining them allocates, so it
-                    // gets its own instruction rather than a numeric one that
-                    // would fault at run time.
-                    BinaryOp::Add if left_shape == Shape::Str || right_shape == Shape::Str => {
-                        let dst = self.registers.temp();
-                        self.emit(Instruction::Concat {
-                            dst,
-                            lhs: left,
-                            rhs: right,
-                        });
-                        (dst, Shape::Str)
-                    }
                     _ => self.arithmetic_shaped(op, left, left_shape, right, right_shape),
                 }
             }
@@ -136,6 +123,16 @@ impl Compiler {
                 operand_name(rhs_shape),
             );
             return self.call_operator(&name, &[lhs, rhs], lhs);
+        }
+
+        // `"a" + "b"` is not an addition — nor is `s += "b"`. The checker has
+        // already proved both sides are text; joining them allocates, so it
+        // gets its own instruction rather than a numeric one that would fault
+        // at run time.
+        if op == BinaryOp::Add && (lhs_shape == Shape::Str || rhs_shape == Shape::Str) {
+            let dst = self.registers.temp();
+            self.emit(Instruction::Concat { dst, lhs, rhs });
+            return (dst, Shape::Str);
         }
 
         let dst = self.registers.temp();

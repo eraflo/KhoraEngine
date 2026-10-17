@@ -53,6 +53,7 @@ mod events;
 pub mod expr;
 mod fingerprint;
 mod flow;
+mod interpolated;
 pub mod keys;
 mod methods;
 mod objects;

@@ -307,6 +307,9 @@ pub struct Program {
     /// Every `Spawn`'s components, as patch indices in the order written.
     #[serde(default)]
     pub spawns: Vec<Vec<u32>>,
+    /// Every `$"…"`'s plan: its text and how each hole is shown.
+    #[serde(default)]
+    pub formats: Vec<super::display::FormatPlan>,
     /// Every component this program reads with `Get` or `Has`, sorted, each
     /// once.
     #[serde(default)]

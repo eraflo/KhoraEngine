@@ -368,6 +368,34 @@ impl Hash {
                 self.text(program.string(*index).unwrap_or_default());
             }
             I::Concat { dst, lhs, rhs } => self.op("Concat", &[*dst, *lhs, *rhs]),
+            I::Format {
+                dst,
+                base,
+                count,
+                plan,
+            } => {
+                self.op("Format", &[*dst, *base]);
+                self.number(u64::from(*count));
+                // By what it writes, never by where its plan sits.
+                let plan = program
+                    .formats
+                    .get(*plan as usize)
+                    .cloned()
+                    .unwrap_or_default();
+                self.number(plan.pieces.len() as u64);
+                for piece in &plan.pieces {
+                    match piece {
+                        crate::vm::display::FormatPiece::Text(text) => {
+                            self.number(0);
+                            self.text(text);
+                        }
+                        crate::vm::display::FormatPiece::Hole(shown) => {
+                            self.number(1);
+                            self.text(&format!("{shown:?}"));
+                        }
+                    }
+                }
+            }
             I::NativeCall {
                 function,
                 base,

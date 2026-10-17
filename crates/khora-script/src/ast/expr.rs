@@ -42,6 +42,14 @@ pub enum Expr {
         /// Its span.
         span: Span,
     },
+    /// `$"hp: {h.current} / {h.max}"` — at least one hole: one without is a
+    /// [`Str`](Self::Str).
+    Interpolated {
+        /// Its text and its holes, in order.
+        pieces: Vec<InterpPiece>,
+        /// The whole string.
+        span: Span,
+    },
     /// `2s`, in seconds.
     Duration {
         /// Seconds.
@@ -233,6 +241,7 @@ impl Expr {
             Self::Int { span, .. }
             | Self::Float { span, .. }
             | Self::Str { span, .. }
+            | Self::Interpolated { span, .. }
             | Self::Duration { span, .. }
             | Self::Angle { span, .. }
             | Self::Frequency { span, .. }
@@ -255,6 +264,15 @@ impl Expr {
             Self::Null(span) | Self::This(span) => *span,
         }
     }
+}
+
+/// One part of an interpolated string.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InterpPiece {
+    /// Text shown as it is.
+    Text(String),
+    /// A value shown as text.
+    Hole(Expr),
 }
 
 /// A binary operator.

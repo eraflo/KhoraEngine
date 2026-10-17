@@ -1164,6 +1164,129 @@ const SHIPPED: &[Row] = &[
         args: &[],
         expect: Expect::Rejected("expected `int`, found `string`"),
     },
+    // ─── String interpolation ───────────────────────────────────────────────
+    Row {
+        construct: "string interpolation",
+        source: r#"fn bool F() { int hp = 3; return $"hp: {hp}!" == "hp: 3!"; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(true)),
+    },
+    Row {
+        construct: "an interpolated float keeps its decimal point",
+        source: r#"fn bool F() { float x = 2.0; return $"{x} {0.1}" == "2.0 0.1"; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(true)),
+    },
+    Row {
+        construct: "an interpolated duration and angle show their unit",
+        source: r#"fn bool F() {
+                       Duration d = 2.5s;
+                       Angle a = 90deg;
+                       return $"{d} {a}" == "2.5s 90deg";
+                   }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(true)),
+    },
+    Row {
+        construct: "an interpolated empty optional is `null`",
+        source: r#"fn bool F() { int? n = null; return $"{n}" == "null"; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(true)),
+    },
+    Row {
+        construct: "interpolated engine values",
+        source: r#"fn bool F() {
+                       Vec3 v = Vec3(1.0, 2.0, 3.0);
+                       Color c = Color(1.0, 0.5, 0.0, 1.0);
+                       return $"{v} {c}" == "(1.0, 2.0, 3.0) rgba(1.0, 0.5, 0.0, 1.0)";
+                   }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(true)),
+    },
+    Row {
+        construct: "an interpolated bool and string",
+        source: r#"fn bool F() { string s = "on"; return $"{s}={true}" == "on=true"; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(true)),
+    },
+    Row {
+        construct: "doubled braces in an interpolation",
+        source: r#"fn bool F() { int n = 3; return $"{{{n}}}" == "{3}"; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(true)),
+    },
+    Row {
+        construct: "an interpolation inside a hole",
+        source: r#"fn bool F() { return $"<{$"{1}"}>" == "<1>"; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(true)),
+    },
+    Row {
+        construct: "a call with a string argument inside a hole",
+        source: r#"fn string Exclaim(string s) { return s + "!"; }
+                   fn bool F() { return $"{Exclaim("x")}" == "x!"; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(true)),
+    },
+    Row {
+        construct: "interpolation holes evaluated left to right",
+        source: r#"behavior Recorder {
+                       int trace = 0;
+                       int Mark(int digit) { trace = trace * 10 + digit; return digit; }
+                       int Probe() {
+                           string s = $"{Mark(2)}{Mark(1)}{Mark(3)}";
+                           return s == "213" ? trace : -1;
+                       }
+                   }"#,
+        entry: "Recorder.Probe",
+        args: &[],
+        expect: Expect::Runs(Value::Int(213)),
+    },
+    Row {
+        construct: "an interpolation with no hole",
+        source: r#"fn bool F() { return $"abc" == "abc"; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(true)),
+    },
+    Row {
+        construct: "a lone `}` in an interpolation",
+        source: r#"fn string F() { return $"a } b"; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Unparsed("a `}` in an interpolated string is written `}}`"),
+    },
+    Row {
+        construct: "an unparenthesised ternary in a hole",
+        source: r#"fn string F(bool a, int b, int c) { return $"{a ? b : c}"; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Unparsed("write `(a ? b : c)` inside `{}`"),
+    },
+    Row {
+        construct: "an array in a hole",
+        source: r#"fn string F() { int[] xs = [1]; return $"{xs}"; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("shows numbers, text, flags, engine values and entities"),
+    },
+    Row {
+        construct: "a struct in a hole",
+        source: r#"struct Loot { int value; }
+                   fn string F() { Loot l = Loot { value: 1 }; return $"{l}"; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("shows numbers, text, flags, engine values and entities"),
+    },
 ];
 
 /// What a spec will change. Each row states the behaviour the spec must

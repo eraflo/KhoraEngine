@@ -38,6 +38,7 @@
 //! does.
 
 mod commands;
+pub mod display;
 mod freeze;
 mod held;
 pub mod instruction;
@@ -763,6 +764,13 @@ impl Machine {
             | Instruction::Raise { .. }
             | Instruction::SpawnEntity { .. } => self.step_command(instruction, program, host),
             Instruction::WriteRow { .. } => self.step_write_row(instruction, program, host),
+
+            Instruction::Format {
+                dst, base, plan, ..
+            } => {
+                self.step_format(program, host, dst, base, plan)?;
+                Ok(Step::Next)
+            }
 
             Instruction::Concat { dst, lhs, rhs } => {
                 let left = self.read(lhs)?;

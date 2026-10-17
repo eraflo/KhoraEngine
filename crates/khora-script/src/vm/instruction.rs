@@ -322,6 +322,18 @@ pub enum Instruction {
         /// Index into [`Program::strings`](crate::vm::Program::strings).
         index: u32,
     },
+    /// `$"…"`: the `count` values in `base..base + count` shown as plan
+    /// `plan` says, joined into one new text in the frame arena.
+    Format {
+        /// Where the text goes.
+        dst: Reg,
+        /// The first hole's value.
+        base: Reg,
+        /// How many holes.
+        count: u16,
+        /// Index into [`Program::formats`](crate::vm::Program::formats).
+        plan: u32,
+    },
     /// Joins two strings, allocating the result in the frame arena.
     ///
     /// The result is new text, so unlike a literal it has nowhere to live but
@@ -662,6 +674,7 @@ impl Instruction {
             | Self::GetComponent { count, .. }
             | Self::QueryHolds { count, .. }
             | Self::WriteRow { count, .. }
+            | Self::Format { count, .. }
             | Self::SpawnEntity { count, .. } => 1 + u64::from(*count),
             Self::Become { writes, .. } => 1 + u64::from(*writes),
             // What the engine function it replaced was charged.

@@ -36,11 +36,11 @@ use super::Lexed;
 use crate::diagnostics::{Diagnostic, Span};
 
 pub(super) struct Lexer<'a> {
-    source: &'a str,
-    bytes: &'a [u8],
-    offset: usize,
+    pub(super) source: &'a str,
+    pub(super) bytes: &'a [u8],
+    pub(super) offset: usize,
     tokens: Vec<Token>,
-    diagnostics: Vec<Diagnostic>,
+    pub(super) diagnostics: Vec<Diagnostic>,
 }
 
 impl<'a> Lexer<'a> {
@@ -66,6 +66,8 @@ impl<'a> Lexer<'a> {
                 self.lex_number(start)
             } else if byte == b'"' {
                 self.lex_string(start)
+            } else if byte == b'$' && self.bytes.get(start + 1) == Some(&b'"') {
+                self.lex_interpolated(start)
             } else if is_ident_start(byte) {
                 Some(self.lex_word(start))
             } else {
@@ -92,7 +94,7 @@ impl<'a> Lexer<'a> {
 
     // ── Cursor ────────────────────────────────────────
 
-    fn peek(&self) -> Option<u8> {
+    pub(super) fn peek(&self) -> Option<u8> {
         self.bytes.get(self.offset).copied()
     }
 
@@ -100,7 +102,7 @@ impl<'a> Lexer<'a> {
         self.bytes.get(self.offset + ahead).copied()
     }
 
-    fn bump(&mut self) -> Option<u8> {
+    pub(super) fn bump(&mut self) -> Option<u8> {
         let byte = self.peek()?;
         // Advance by the whole UTF-8 sequence, so a multi-byte character inside
         // a string or comment cannot leave the cursor mid-character.
@@ -375,33 +377,36 @@ impl<'a> Lexer<'a> {
                     );
                     return None;
                 }
-                b'\\' => {
-                    self.offset += 1;
-                    let escape = self.bump();
-                    match escape {
-                        Some(b'n') => text.push('\n'),
-                        Some(b't') => text.push('\t'),
-                        Some(b'r') => text.push('\r'),
-                        Some(b'\\') => text.push('\\'),
-                        Some(b'"') => text.push('"'),
-                        Some(other) => {
-                            self.diagnostics.push(
-                                Diagnostic::error(
-                                    format!("unknown escape `\\{}`", other as char),
-                                    Span::new(self.offset as u32 - 2, self.offset as u32),
-                                )
-                                .with_note("known escapes are \\n \\t \\r \\\\ \\\""),
-                            );
-                        }
-                        None => {}
-                    }
-                }
+                b'\\' => self.escape_into(&mut text),
                 _ => {
                     let from = self.offset;
                     self.bump();
                     text.push_str(&self.source[from..self.offset]);
                 }
             }
+        }
+    }
+
+    /// The escape at the cursor, a `\` and its letter, written into `text`.
+    pub(super) fn escape_into(&mut self, text: &mut String) {
+        self.offset += 1;
+        let escape = self.bump();
+        match escape {
+            Some(b'n') => text.push('\n'),
+            Some(b't') => text.push('\t'),
+            Some(b'r') => text.push('\r'),
+            Some(b'\\') => text.push('\\'),
+            Some(b'"') => text.push('"'),
+            Some(other) => {
+                self.diagnostics.push(
+                    Diagnostic::error(
+                        format!("unknown escape `\\{}`", other as char),
+                        Span::new(self.offset as u32 - 2, self.offset as u32),
+                    )
+                    .with_note("known escapes are \\n \\t \\r \\\\ \\\""),
+                );
+            }
+            None => {}
         }
     }
 
@@ -733,6 +738,26 @@ mod tests {
                 .any(|t| t.kind == TokenKind::Ident("y".into())),
             "tokens after the first error are still produced"
         );
+    }
+
+    /// Only `$"` opens an interpolated string: a `$` anywhere else is still a
+    /// character the language does not have.
+    #[test]
+    fn a_dollar_not_opening_a_string_is_an_unexpected_character() {
+        for source in ["$", "$;", "$ \"a\"", "$x"] {
+            assert_eq!(
+                errors(source),
+                vec!["unexpected character `$`"],
+                "in {source:?}"
+            );
+        }
+    }
+
+    /// `$"` opens a string: no character of it is unexpected.
+    #[test]
+    fn a_dollar_touching_a_quote_opens_an_interpolated_string() {
+        assert_eq!(errors(r#"$"hp {3}""#), Vec::<String>::new());
+        assert_eq!(errors(r#"$"plain""#), Vec::<String>::new());
     }
 
     /// Bitwise operators do not exist; saying so is more useful than

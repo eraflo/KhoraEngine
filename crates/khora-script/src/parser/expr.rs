@@ -347,6 +347,7 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Str { value, span })
             }
+            TokenKind::Interpolated(pieces) => self.parse_interpolated(pieces, span),
             TokenKind::Duration(value) => {
                 self.advance();
                 Ok(Expr::Duration { value, span })

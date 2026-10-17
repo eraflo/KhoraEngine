@@ -64,6 +64,7 @@ mod held_arrays;
 mod held_structs;
 mod held_text;
 mod inspector_attributes;
+mod interpolation;
 mod match_arm_edits;
 mod match_on_a_computed_subject;
 mod named_arguments;

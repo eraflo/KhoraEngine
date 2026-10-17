@@ -28,6 +28,20 @@ pub struct Token {
     pub span: Span,
 }
 
+/// One part of an interpolated string.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Piece {
+    /// Text shown as it is, its escapes and doubled braces resolved.
+    Text(String),
+    /// `{ expr }`: the hole's tokens, ending with `Eof`, where they sit.
+    Hole {
+        /// The expression's tokens.
+        tokens: Vec<Token>,
+        /// The hole, braces included.
+        span: Span,
+    },
+}
+
 /// Every token Ergon recognises.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
@@ -38,6 +52,8 @@ pub enum TokenKind {
     Float(f32),
     /// `"text"`.
     Str(String),
+    /// `$"hp: {hp}"` — its text and its holes, in order.
+    Interpolated(Vec<Piece>),
     /// A duration, **normalised to seconds**: `2s`, `500ms`, `1.5min`.
     ///
     /// Normalising at lex time means the rest of the compiler never has to know

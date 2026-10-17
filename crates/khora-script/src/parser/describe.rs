@@ -25,6 +25,7 @@ pub(super) fn describe(kind: &TokenKind) -> String {
         TokenKind::Int(v) => format!("`{v}`"),
         TokenKind::Float(v) => format!("`{v}`"),
         TokenKind::Str(_) => "a string".to_owned(),
+        TokenKind::Interpolated(_) => "an interpolated string".to_owned(),
         TokenKind::Duration(v) => format!("`{v}s`"),
         TokenKind::Angle(_) => "an angle".to_owned(),
         TokenKind::Frequency(_) => "a frequency".to_owned(),

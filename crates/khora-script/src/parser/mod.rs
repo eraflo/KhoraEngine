@@ -275,6 +275,7 @@ mod args;
 mod decl;
 mod describe;
 mod expr;
+mod interpolated;
 mod stmt;
 mod types;
 

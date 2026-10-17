@@ -211,6 +211,8 @@ impl Compiler {
                 ..
             } => self.compile_ternary(condition, then_value, else_value),
 
+            Expr::Interpolated { pieces, .. } => self.compile_interpolated(pieces),
+
             // Everything else needs the engine bridge to mean anything. A
             // placeholder keeps the program well-formed; the checker has
             // already refused the cases that are genuinely wrong.
