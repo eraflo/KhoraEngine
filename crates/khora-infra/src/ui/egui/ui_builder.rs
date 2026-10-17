@@ -934,7 +934,9 @@ impl EguiUiBuilder<'_> {
         // painter. The egui Window itself sits in `Order::Foreground`
         // so the backdrop must be just *under* it; we use
         // `Order::Middle` so other content sinks below.
-        let screen = ctx.input(|i| i.viewport().inner_rect.unwrap_or(egui::Rect::ZERO));
+        // In the UI's own points: the viewport's `inner_rect` is the window's
+        // place on the desktop, and would dim only part of it.
+        let screen = ctx.content_rect();
         let layer = egui::LayerId::new(
             egui::Order::Middle,
             egui::Id::new(format!("{}_backdrop", id)),
@@ -952,6 +954,11 @@ impl EguiUiBuilder<'_> {
             .collapsible(false)
             .frame(egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::same(0)))
             .show(&ctx, |ui| {
+                // The dialog paints at absolute positions inside its panel and
+                // allocates nothing: claim its size, or the window shrinks to
+                // nothing and its anchor puts its corner — not its centre — at
+                // the centre of the screen.
+                ui.set_min_size(egui::vec2(size[0], size[1]));
                 let mut nested = EguiUiBuilder::new(ui, &vt_clone);
                 f(&mut nested);
             });

@@ -384,6 +384,11 @@ fn main() -> Result<()> {
 ///
 /// Spawns the editor process in the background and returns immediately.
 pub fn launch_editor(editor_binary: &str, project_path: &Path) -> Result<()> {
+    if !Path::new(editor_binary).is_file() {
+        anyhow::bail!(
+            "no editor at '{editor_binary}' — build it with `cargo build -p khora-editor`, or reinstall this engine"
+        );
+    }
     std::process::Command::new(editor_binary)
         .arg("--project")
         .arg(project_path)
@@ -450,5 +455,18 @@ mod tests {
         assert_eq!(sanitize_name("hi/there"), "hithere");
         assert_eq!(sanitize_name("  spaces  "), "spaces");
         assert_eq!(sanitize_name("ok-name_1"), "ok-name_1");
+    }
+
+    /// **A missing editor is named, with how to get one** — not a bare
+    /// "failed to launch": after `target/` is cleaned, the dev engine's
+    /// editor is simply not built.
+    #[test]
+    fn launching_a_missing_editor_says_how_to_build_it() {
+        let missing = std::env::temp_dir().join("khora-no-such-editor.exe");
+        let error = super::launch_editor(&missing.to_string_lossy(), std::path::Path::new("."))
+            .expect_err("there is no editor to launch");
+        let said = format!("{error:#}");
+        assert!(said.contains("no editor at"), "{said}");
+        assert!(said.contains("cargo build -p khora-editor"), "{said}");
     }
 }

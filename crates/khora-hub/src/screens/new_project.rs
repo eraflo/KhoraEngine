@@ -459,6 +459,9 @@ fn create_with_engine(app: &mut HubApp, engine: crate::services::config::EngineI
                     app.banner = Some(crate::state::Banner::error(format!(
                         "Project created, but the editor didn't launch: {e}"
                     )));
+                    // The project exists now: it is on Home, and the form
+                    // would only say its folder is taken.
+                    app.screen = Screen::Home;
                 }
             }
         }
