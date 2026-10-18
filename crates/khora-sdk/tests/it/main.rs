@@ -23,6 +23,7 @@ mod editor_shader_sources;
 mod engine_mode;
 mod game_saves;
 mod mode_to_dcc;
+mod prefab_library;
 mod public_paths;
 mod reload_after_an_emptied_module;
 mod runtime_config_file;

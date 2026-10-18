@@ -43,6 +43,7 @@ mod log_capture;
 mod ops;
 mod panels;
 mod picking;
+mod play_prefabs;
 mod project_scripts;
 mod project_vfs;
 mod scene_io;

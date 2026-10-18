@@ -74,6 +74,7 @@
 
 mod engine;
 mod game_world;
+pub mod prefabs;
 mod run_default;
 mod runtime_config;
 pub mod scripts;
@@ -152,7 +153,9 @@ pub use khora_io::asset::{
     PackBuilder, PackHeader, PackLoader, PackOutput, PackProgress, PACK_FORMAT_VERSION,
     PACK_HEADER_SIZE, PACK_MAGIC,
 };
-pub use khora_io::serialization::{SerializationService, SerializationServiceError};
+pub use khora_io::serialization::{
+    prefab_catalog, read_prefab, SerializationService, SerializationServiceError,
+};
 pub use khora_telemetry::MetricsRegistry;
 
 // Mesh type (used by editor ops)

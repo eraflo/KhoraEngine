@@ -41,6 +41,7 @@ mod events;
 pub mod expr;
 mod interpolated;
 mod members;
+pub(crate) mod prefab_spawn;
 mod query;
 mod returns;
 pub mod scope;

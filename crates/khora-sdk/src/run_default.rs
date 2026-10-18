@@ -373,7 +373,7 @@ mod tests {
     /// The asset types a loose-files project can decode. The editor's
     /// `ProjectVfs` test pins the same list.
     const DECODABLE: &[&str] = &[
-        "audio", "font", "material", "mesh", "script", "shader", "texture",
+        "audio", "font", "material", "mesh", "prefab", "script", "shader", "texture",
     ];
 
     fn fixture_field(name: &str) -> serde_json::Value {

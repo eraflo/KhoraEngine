@@ -148,6 +148,9 @@ fn apply_error_variants(x: &khora_data::ecs::systems::script_commands::ApplyErro
         khora_data::ecs::systems::script_commands::ApplyError::NotAttached { .. } => {}
         khora_data::ecs::systems::script_commands::ApplyError::AlreadyAttached { .. } => {}
         khora_data::ecs::systems::script_commands::ApplyError::UnknownComponent(..) => {}
+        khora_data::ecs::systems::script_commands::ApplyError::Prefab { prefab, reason } => {
+            let _: (&khora_core::asset::AssetUUID, &String) = (prefab, reason);
+        }
         khora_data::ecs::systems::script_commands::ApplyError::WouldCycle { .. } => {}
         khora_data::ecs::systems::script_commands::ApplyError::Rejected { .. } => {}
     }

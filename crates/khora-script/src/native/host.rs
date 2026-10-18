@@ -84,6 +84,9 @@ pub struct Host {
     /// Where a `Spawn` takes its entity's id: the reserver of the world its
     /// commands are for, or one of its own for a program run without a world.
     pub reserver: std::sync::Arc<khora_core::ecs::EntityReserver>,
+    /// The prefabs the project holds, when the host knows them: a prefab
+    /// `Spawn` naming another faults its turn. `None` accepts any.
+    pub prefabs: Option<std::sync::Arc<std::collections::BTreeSet<khora_core::asset::AssetUUID>>>,
 }
 
 impl Default for Host {
@@ -113,6 +116,7 @@ impl Host {
             components: Default::default(),
             swept: 0,
             reserver: std::sync::Arc::new(khora_core::ecs::EntityReserver::new()),
+            prefabs: None,
         }
     }
 
@@ -145,6 +149,16 @@ impl Host {
         reserver: std::sync::Arc<khora_core::ecs::EntityReserver>,
     ) -> Self {
         self.reserver = reserver;
+        self
+    }
+
+    /// Hands the host the prefabs the project holds: a prefab `Spawn` naming
+    /// one it does not hold faults the turn. A host given none accepts any.
+    pub fn with_prefabs(
+        mut self,
+        prefabs: std::sync::Arc<std::collections::BTreeSet<khora_core::asset::AssetUUID>>,
+    ) -> Self {
+        self.prefabs = Some(prefabs);
         self
     }
 

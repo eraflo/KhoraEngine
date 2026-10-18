@@ -133,6 +133,26 @@ impl Machine {
                         .any(|name| host.components.has(name, entity));
                 self.write(dst, Value::Bool(holds))?;
             }
+            Instruction::SetMaterial {
+                entity,
+                material,
+                what,
+            } => {
+                let entity = self.entity_at(entity)?;
+                let material = match self.read(material)? {
+                    Value::Asset(material) => material,
+                    Value::Null => {
+                        let what = program.string(what).unwrap_or("the material");
+                        return Err(Fault::NativeFailed {
+                            name: "SetMaterial",
+                            message: format!("{what} is `null`"),
+                        });
+                    }
+                    other => return Err(mismatch("Material", other)),
+                };
+                host.commands
+                    .push(WorldCommand::SetMaterial { entity, material });
+            }
             Instruction::RemoveComponent { entity, component } => {
                 let entity = self.entity_at(entity)?;
                 let name = program.string(component).ok_or(Fault::BadString)?;
@@ -203,6 +223,73 @@ impl Machine {
                 };
                 // In the working set at once, so `b.Get(…)` reads what the
                 // spawn gave it.
+                host.components.observe(&command);
+                host.commands.push(command);
+            }
+            Instruction::SpawnPrefab {
+                dst,
+                prefab,
+                position,
+                facing,
+                spawn,
+                base,
+                ..
+            } => {
+                let what = || {
+                    program
+                        .spawn_names
+                        .get(spawn as usize)
+                        .filter(|name| !name.is_empty())
+                        .map_or_else(|| "this prefab".to_owned(), String::clone)
+                };
+                let prefab = match self.read(prefab)? {
+                    Value::Asset(prefab) => prefab,
+                    Value::Null => {
+                        return Err(Fault::NoPrefab {
+                            message: format!("{} is `null`", what()),
+                        })
+                    }
+                    other => return Err(mismatch("Prefab", other)),
+                };
+                if host
+                    .prefabs
+                    .as_ref()
+                    .is_some_and(|prefabs| !prefabs.contains(&prefab))
+                {
+                    return Err(Fault::NoPrefab {
+                        message: format!("{} names no prefab", what()),
+                    });
+                }
+                let at = match self.read(position)? {
+                    Value::Vec3(at) => at,
+                    other => return Err(mismatch("Vec3", other)),
+                };
+                let rotation = match self.read(facing)? {
+                    Value::Null => None,
+                    Value::Quat(rotation) => Some(rotation),
+                    other => return Err(mismatch("Quat", other)),
+                };
+                let patches = program.spawns.get(spawn as usize).ok_or(Fault::BadString)?;
+                let mut components = Vec::with_capacity(patches.len());
+                let mut next = base;
+                for &patch in patches {
+                    let width = program
+                        .patches
+                        .get(patch as usize)
+                        .map_or(0, |patch| patch.fields.len());
+                    components.push(self.patch_value(program, host, patch, next)?);
+                    next = next.wrapping_add(width as Reg);
+                }
+                // Reserved last: a spawn that faults takes no id.
+                let entity = host.reserver.reserve();
+                self.write(dst, Value::Entity(entity))?;
+                let command = WorldCommand::SpawnPrefab {
+                    entity,
+                    prefab,
+                    position: at,
+                    rotation,
+                    components,
+                };
                 host.components.observe(&command);
                 host.commands.push(command);
             }

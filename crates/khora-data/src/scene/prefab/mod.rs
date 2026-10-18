@@ -50,11 +50,15 @@ use super::save::{
 use super::scene_record::{InstanceRecord, SceneRecord};
 use crate::ecs::{PrefabInstance, SerializablePrefabInstance, World};
 
+mod catalog;
+mod library;
 mod overrides;
 mod rekey;
 mod siblings;
 mod sources;
 
+pub use catalog::PrefabCatalog;
+pub use library::PrefabLibrary;
 pub use overrides::{apply_to_prefab, instance_of, prefab_world, InstanceOf, PrefabApply};
 use rekey::{members, moved_record, rekeyed};
 use siblings::{children_of, restore_sibling_order};
@@ -487,7 +491,17 @@ pub fn instantiate_prefab(
     prefabs: &dyn PrefabSource,
 ) -> Result<EntityId, LoadFailure> {
     let root = PersistentId::random_authored();
-    let record = SceneRecord {
+    let expanded = expand(&one_instance(root, prefab), prefabs)?;
+    apply(world, &expanded, Identity::Keep)?;
+    world
+        .entity_with_id(root)
+        .ok_or_else(|| failed(format!("the prefab {prefab} brought no root")))
+}
+
+/// A record holding nothing but an instance of `prefab` rooted at `root`,
+/// unchanged from it.
+fn one_instance(root: PersistentId, prefab: AssetUUID) -> SceneRecord {
+    SceneRecord {
         declared: Vec::new(),
         entities: vec![root],
         pages: Vec::new(),
@@ -504,12 +518,40 @@ pub fn instantiate_prefab(
                 before: SceneRecord::default(),
             },
         }],
-    };
-    let expanded = expand(&record, prefabs)?;
-    apply(world, &expanded, Identity::Keep)?;
-    world
-        .entity_with_id(root)
-        .ok_or_else(|| failed(format!("the prefab {prefab} brought no root")))
+    }
+}
+
+/// Brings the prefab known as `prefab` into `world` as a new linked
+/// instance whose root lands at `entity` — an id `world`'s reserver handed
+/// out and nothing committed — with a fresh created identity, its members
+/// keyed within it, and returns every entity of the instance, its root first
+/// where the prefab lists it first. Any other id is refused. On failure
+/// `world` is left as it was.
+pub fn instantiate_prefab_at(
+    world: &mut World,
+    entity: EntityId,
+    prefab: AssetUUID,
+    prefabs: &dyn PrefabSource,
+) -> Result<Vec<EntityId>, LoadFailure> {
+    world.settle_reservations();
+    let reserved = world.nowhere_entity() != Some(entity)
+        && !world.contains(entity)
+        && world.reserver().is_handed(entity);
+    if !reserved {
+        return Err(failed(format!(
+            "{entity:?} is no id this world reserved for a spawn"
+        )));
+    }
+    // A created identity, as every entity the game brings into being has.
+    let root = world.next_created_id();
+    let expanded = expand(&one_instance(root, prefab), prefabs)?;
+    let prepared = super::apply::prepare_at(world, &expanded, (root, entity))?;
+    let made = prepared.reserved();
+    prepared.commit(world, Identity::Keep);
+    // Committed: no spawn may take it again, and the frame's end does not
+    // give it back.
+    world.reserver().take_handed(entity);
+    Ok(made)
 }
 
 /// `root` and everything under it, as the bytes of a scene file. A prefab

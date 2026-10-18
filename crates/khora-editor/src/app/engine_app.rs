@@ -71,6 +71,8 @@ impl EngineApp for EditorApp {
             mounted_scripts: None,
             script_problems: None,
             prefab_view: None,
+            play_prefabs: Arc::default(),
+            prefab_catalog: khora_sdk::khora_data::scene::PrefabCatalog::new(),
         }
     }
 
@@ -323,6 +325,10 @@ impl EngineApp for EditorApp {
             &mut self.mounted_scripts,
             project.as_deref(),
         );
+        // And its prefabs: what a game in play spawns, and what its `Spawn`
+        // is checked against.
+        self.play_prefabs
+            .follow(self.project_vfs.as_ref(), &self.prefab_catalog);
 
         self.last_view_info = None;
 

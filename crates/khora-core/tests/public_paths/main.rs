@@ -888,6 +888,26 @@ fn world_command_variants(x: &khora_core::script::command::WorldCommand) {
         khora_core::script::command::WorldCommand::SetScale { .. } => {}
         khora_core::script::command::WorldCommand::SetParent { .. } => {}
         khora_core::script::command::WorldCommand::Spawn { .. } => {}
+        khora_core::script::command::WorldCommand::SpawnPrefab {
+            entity,
+            prefab,
+            position,
+            rotation,
+            components,
+        } => {
+            let _: &khora_core::ecs::entity::EntityId = entity;
+            let _: &khora_core::asset::AssetUUID = prefab;
+            let _: &khora_core::math::Vec3 = position;
+            let _: &Option<khora_core::math::Quaternion> = rotation;
+            let _: &Vec<(
+                khora_core::script::command::ComponentName,
+                khora_core::script::ScriptValue,
+            )> = components;
+        }
+        khora_core::script::command::WorldCommand::SetMaterial { entity, material } => {
+            let _: &khora_core::ecs::entity::EntityId = entity;
+            let _: &khora_core::asset::AssetUUID = material;
+        }
         khora_core::script::command::WorldCommand::Despawn { .. } => {}
         khora_core::script::command::WorldCommand::SetComponent { .. } => {}
         khora_core::script::command::WorldCommand::AddComponent { .. } => {}
@@ -906,6 +926,7 @@ fn write_target_variants(x: &khora_core::script::command::WriteTarget) {
         khora_core::script::command::WriteTarget::Scale => {}
         khora_core::script::command::WriteTarget::Parent => {}
         khora_core::script::command::WriteTarget::Existence => {}
+        khora_core::script::command::WriteTarget::Material => {}
         khora_core::script::command::WriteTarget::Component(..) => {}
         khora_core::script::command::WriteTarget::Field(component, field) => {
             let _: &khora_core::script::command::ComponentName = component;
@@ -921,6 +942,7 @@ fn write_target_ref_variants(x: &khora_core::script::command::WriteTargetRef<'_>
         khora_core::script::command::WriteTargetRef::Scale => {}
         khora_core::script::command::WriteTargetRef::Parent => {}
         khora_core::script::command::WriteTargetRef::Existence => {}
+        khora_core::script::command::WriteTargetRef::Material => {}
         khora_core::script::command::WriteTargetRef::Component(component) => {
             let _: &&khora_core::script::command::ComponentName = component;
         }

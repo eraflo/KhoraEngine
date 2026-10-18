@@ -435,7 +435,8 @@ fn a_projects_prefabs_are_read_through_its_asset_service() {
     let assets_service =
         AssetService::open_loose_files(project.path(), &registry, Arc::new(MetricsRegistry::new()))
             .expect("the project opens");
-    let prefabs = AssetPrefabs::new(Arc::new(Mutex::new(assets_service)));
+    let assets_service = Arc::new(Mutex::new(assets_service));
+    let prefabs = AssetPrefabs::new(Arc::clone(&assets_service));
     let prefab = AssetUUID::new_v5("prefabs/turret.kprefab");
     assert_eq!(prefabs.prefab(prefab), Ok(turret.record.clone()));
     assert!(
@@ -467,6 +468,11 @@ fn a_projects_prefabs_are_read_through_its_asset_service() {
     assert_eq!(observed(&open()), observed(&level.world));
 
     write_prefab(&renamed_sight(&turret));
+    // What the editor's hot reload does with a changed prefab file.
+    assets_service
+        .lock()
+        .expect("the asset service")
+        .invalidate(&prefab);
     let world = open();
     let sight = entity(&world, PersistentId::within(level.instance, turret.sight));
     assert_eq!(

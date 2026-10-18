@@ -40,8 +40,7 @@ impl Checker {
         // operation on an entity is called on it, and its free form refused.
         if let Expr::Ident { name, .. } = callee {
             if name == "Spawn" && !self.functions.contains_key(name) {
-                self.refuse_labels(name, call.labels);
-                return self.check_spawn(args, span, context);
+                return self.check_any_spawn(args, call.labels, span, context);
             }
             if self.events.contains_key(name) {
                 for argument in args {

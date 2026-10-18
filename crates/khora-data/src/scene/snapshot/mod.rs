@@ -234,6 +234,7 @@ pub fn prepare_snapshot(world: &mut World, file: &SceneFile) -> Result<Prepared,
     let mut prepared = prepare_pages(
         world,
         &snapshot.entities,
+        None,
         plans,
         LoadReport::default(),
         |loaded, page, column, row, references| {

@@ -467,6 +467,11 @@ impl Hash {
                 self.number(u64::from(*count));
                 self.text(program.string(*component).unwrap_or_default());
             }
+            // What a fault calls the material is the local's name: renaming it
+            // changes no code.
+            I::SetMaterial {
+                entity, material, ..
+            } => self.op("SetMaterial", &[*entity, *material]),
             I::RemoveComponent { entity, component } => {
                 self.op("RemoveComponent", &[*entity]);
                 self.text(program.string(*component).unwrap_or_default());
@@ -480,6 +485,27 @@ impl Hash {
                 self.op("Raise", &[*entity, *base]);
                 self.number(u64::from(*argc));
                 self.text(program.string(*event).unwrap_or_default());
+            }
+            I::SpawnPrefab {
+                dst,
+                prefab,
+                position,
+                facing,
+                spawn,
+                base,
+                count,
+            } => {
+                self.op("SpawnPrefab", &[*dst, *prefab, *position, *facing, *base]);
+                self.number(u64::from(*count));
+                let patches = program
+                    .spawns
+                    .get(*spawn as usize)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                self.number(patches.len() as u64);
+                for patch in patches {
+                    self.patch(program, *patch);
+                }
             }
             I::SpawnEntity {
                 dst,

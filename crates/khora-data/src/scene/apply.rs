@@ -37,7 +37,8 @@ use super::component_registration::{
     registration_named, ComponentRegistration, Kept, Staged, StagedComponent,
 };
 use super::declared::{plan, DeclaredLoad};
-use super::record::{EntityRef, LoadReport, RecordError, ReferenceReader, ReportEntry, ReportKind};
+use super::record::{LoadReport, RecordError, ReferenceReader, ReportEntry, ReportKind};
+use super::resolver::Resolver;
 use super::retired::is_retired;
 use super::scene_record::SceneRecord;
 use crate::ecs::{
@@ -99,6 +100,8 @@ pub fn apply(
 pub struct Prepared {
     /// Every recorded entity and the id reserved for it, in record order.
     entities: Vec<(PersistentId, EntityId)>,
+    /// The id reserved before the load, which giving up does not release.
+    given: Option<EntityId>,
     pages: Vec<PreparedPage>,
     /// Values of components declared while the engine runs that this world
     /// keeps in another domain than the file did: attached once the pages
@@ -198,12 +201,31 @@ pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, Load
     prepare_kept(world, record, Kept::Scene)
 }
 
+/// [`prepare`], the entity known as `given.0` landing at `given.1` — an id
+/// reserved before the load, which the load neither reserves nor gives back.
+pub(crate) fn prepare_at(
+    world: &mut World,
+    record: &SceneRecord,
+    given: (PersistentId, EntityId),
+) -> Result<Prepared, LoadFailure> {
+    prepare_given(world, record, Kept::Scene, Some(given))
+}
+
 /// [`prepare`], keeping the components `kept` keeps and skipping, reported,
 /// any other the record holds.
 pub(super) fn prepare_kept(
     world: &mut World,
     record: &SceneRecord,
     kept: Kept,
+) -> Result<Prepared, LoadFailure> {
+    prepare_given(world, record, kept, None)
+}
+
+fn prepare_given(
+    world: &mut World,
+    record: &SceneRecord,
+    kept: Kept,
+    given: Option<(PersistentId, EntityId)>,
 ) -> Result<Prepared, LoadFailure> {
     let mut report = LoadReport::default();
 
@@ -324,6 +346,7 @@ pub(super) fn prepare_kept(
     let mut prepared = prepare_pages(
         world,
         &record.entities,
+        given,
         plans,
         report,
         |loaded, page, column, row, references| {
@@ -364,6 +387,7 @@ pub(super) struct PagePlan<'r> {
 pub(super) fn prepare_pages(
     world: &mut World,
     entities: &[PersistentId],
+    given: Option<(PersistentId, EntityId)>,
     plans: Vec<PagePlan<'_>>,
     mut report: LoadReport,
     mut stage: impl FnMut(
@@ -449,8 +473,12 @@ pub(super) fn prepare_pages(
 
     let reserved: HashMap<PersistentId, EntityId> = entities
         .iter()
-        .map(|id| (*id, world.reserve_entity()))
+        .map(|id| match given {
+            Some((known, entity)) if known == *id => (*id, entity),
+            _ => (*id, world.reserve_entity()),
+        })
         .collect();
+    let given = given.map(|(_, entity)| entity);
     let mut references = Resolver {
         world,
         reserved: &reserved,
@@ -539,13 +567,14 @@ pub(super) fn prepare_pages(
     };
     let (None, Some(hierarchy)) = (&error, hierarchy) else {
         let message = error.unwrap_or_default();
-        for entity in reserved.values() {
+        for entity in reserved.values().filter(|entity| Some(**entity) != given) {
             world.release_reserved(*entity);
         }
         return Err(failure(message, report));
     };
     Ok(Prepared {
         entities: entities.iter().map(|id| (*id, reserved[id])).collect(),
+        given,
         pages,
         moved,
         hierarchy,
@@ -555,6 +584,11 @@ pub(super) fn prepare_pages(
 }
 
 impl Prepared {
+    /// The id reserved for each entity the load brings, in record order.
+    pub(crate) fn reserved(&self) -> Vec<EntityId> {
+        self.entities.iter().map(|(_, entity)| *entity).collect()
+    }
+
     /// The declarations to register when the load commits.
     pub(super) fn set_register(&mut self, register: Vec<RuntimeComponentDecl>) {
         self.register = register;
@@ -643,46 +677,13 @@ impl Prepared {
     /// Gives every reserved id back, adding nothing.
     pub fn abandon(self, world: &mut World) {
         for (_, entity) in self.entities {
-            world.release_reserved(entity);
+            if Some(entity) != self.given {
+                world.release_reserved(entity);
+            }
         }
     }
 }
 
 pub(super) fn failure(message: String, report: LoadReport) -> LoadFailure {
     LoadFailure { message, report }
-}
-
-/// Resolves the references a record holds to the ids reserved for this load.
-struct Resolver<'w, 'r> {
-    world: &'w mut World,
-    reserved: &'r HashMap<PersistentId, EntityId>,
-    /// The entity and component being read, for report entries.
-    current: Option<(PersistentId, Loaded)>,
-    /// The entity the last reference read was bound to, if the load brings
-    /// it — what a `Parent` names.
-    bound: Option<EntityId>,
-    entries: Vec<ReportEntry>,
-}
-
-impl ReferenceReader for Resolver<'_, '_> {
-    fn read_entity(&mut self, reference: EntityRef) -> Result<EntityId, RecordError> {
-        if let EntityRef::Id(id) = reference {
-            if let Some(entity) = self.reserved.get(&id) {
-                self.bound = Some(*entity);
-                return Ok(*entity);
-            }
-        }
-        let (entity, component) = self
-            .current
-            .as_ref()
-            .map(|(id, loaded)| (*id, loaded))
-            .unzip();
-        self.entries.push(ReportEntry {
-            entity,
-            component: component.map(|loaded| loaded.name().to_owned()),
-            path: String::new(),
-            kind: ReportKind::DeadReference,
-        });
-        Ok(self.world.nowhere())
-    }
 }

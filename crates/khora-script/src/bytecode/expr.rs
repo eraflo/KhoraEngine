@@ -138,10 +138,13 @@ impl Compiler {
                 }
             }
             Expr::Call {
-                callee, args, span, ..
+                callee,
+                args,
+                labels,
+                span,
             } => {
                 let binding = self.binding_of(std::ptr::from_ref(expr) as usize);
-                self.compile_call(callee, args, binding.as_deref(), *span)
+                self.compile_call(callee, (args, labels), binding.as_deref(), *span)
             }
 
             // `v.x` is a call to the accessor the type declared. Lowered here
@@ -437,7 +440,7 @@ impl Compiler {
     fn compile_call(
         &mut self,
         callee: &Expr,
-        args: &[Expr],
+        (args, labels): (&[Expr], &[Option<crate::ast::Label>]),
         binding: Option<&[Bound]>,
         span: crate::diagnostics::Span,
     ) -> (Reg, Shape) {
@@ -461,7 +464,7 @@ impl Compiler {
             return self.constant(Value::Unit, Shape::Other);
         };
         if name == "Spawn" && !self.signatures.contains_key(name) {
-            return self.compile_spawn(args, span);
+            return self.compile_spawn(args, labels, span);
         }
         let written = args;
         let args: Vec<&Expr> = args.iter().collect();

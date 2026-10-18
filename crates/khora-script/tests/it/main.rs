@@ -75,6 +75,7 @@ mod operand_types;
 mod optional_array_methods;
 mod optional_array_receivers;
 mod overdraft_bound;
+mod prefab_spawns;
 mod public_paths;
 mod queries_across_an_edit;
 mod queries_in_behaviors;

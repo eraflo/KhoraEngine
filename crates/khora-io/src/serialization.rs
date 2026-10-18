@@ -35,7 +35,7 @@ use khora_data::scene::{
     TextEncoding,
 };
 
-use crate::asset::AssetService;
+use crate::asset::{AssetService, PrefabAsset};
 
 /// Scene format version produced by today's writers.
 pub const CURRENT_SCENE_VERSION: u32 = SCENE_FORMAT_VERSION as u32;
@@ -339,7 +339,8 @@ impl SerializationService {
 }
 
 /// The prefabs of a project, read through its [`AssetService`]: a prefab is
-/// the scene file its asset id names.
+/// the `.kprefab` its asset id names, decoded once and kept until the service
+/// invalidates it.
 pub struct AssetPrefabs {
     assets: Arc<Mutex<AssetService>>,
 }
@@ -353,15 +354,45 @@ impl AssetPrefabs {
 
 impl PrefabSource for AssetPrefabs {
     fn prefab(&self, id: AssetUUID) -> Result<SceneRecord, String> {
-        let bytes = self
+        let mut assets = self
             .assets
             .lock()
-            .map_err(|_| "the asset service is poisoned".to_owned())?
-            .load_raw(&id)
-            .map_err(|error| error.to_string())?;
-        let file = SceneFile::from_bytes(&bytes).map_err(|error| format!("{error:?}"))?;
-        read_scene_file(&file).map_err(|error| error.to_string())
+            .map_err(|_| "the asset service is poisoned".to_owned())?;
+        read_prefab(&mut assets, id)
     }
+}
+
+/// The prefab `id` names in `assets`, decoded once and kept until `assets`
+/// invalidates it — refused when `id` names no asset, or one of another type.
+pub fn read_prefab(assets: &mut AssetService, id: AssetUUID) -> Result<SceneRecord, String> {
+    match assets.index().get_metadata(&id) {
+        Some(metadata) if metadata.asset_type_name == PREFAB => {}
+        Some(metadata) => {
+            return Err(format!(
+                "the asset {id} is a {}, not a prefab",
+                metadata.asset_type_name
+            ))
+        }
+        None => return Err(format!("the project holds no asset {id}")),
+    }
+    let prefab = assets
+        .load::<PrefabAsset>(&id)
+        .map_err(|error| error.to_string())?;
+    Ok(prefab.0.clone())
+}
+
+/// The index type of a prefab.
+const PREFAB: &str = "prefab";
+
+/// The identities of every prefab `assets` indexes: the assets whose index
+/// type is `"prefab"`.
+pub fn prefab_catalog(assets: &AssetService) -> std::collections::BTreeSet<AssetUUID> {
+    assets
+        .index()
+        .iter_all()
+        .filter(|metadata| metadata.asset_type_name == PREFAB)
+        .map(|metadata| metadata.uuid)
+        .collect()
 }
 
 #[cfg(test)]

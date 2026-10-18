@@ -38,6 +38,7 @@
 //! does.
 
 mod commands;
+mod cost;
 pub mod display;
 mod freeze;
 mod held;
@@ -180,6 +181,12 @@ pub enum Fault {
     NotAnObject {
         /// What was found.
         found: &'static str,
+    },
+    /// A `Spawn` named no prefab: `null`, or an identity the project holds
+    /// no prefab by.
+    NoPrefab {
+        /// What is wrong, naming the prefab as the call wrote it.
+        message: String,
     },
 }
 
@@ -761,8 +768,10 @@ impl Machine {
             | Instruction::QueryRows { .. }
             | Instruction::QueryHolds { .. }
             | Instruction::RemoveComponent { .. }
+            | Instruction::SetMaterial { .. }
             | Instruction::Raise { .. }
-            | Instruction::SpawnEntity { .. } => self.step_command(instruction, program, host),
+            | Instruction::SpawnEntity { .. }
+            | Instruction::SpawnPrefab { .. } => self.step_command(instruction, program, host),
             Instruction::WriteRow { .. } => self.step_write_row(instruction, program, host),
 
             Instruction::Format {

@@ -33,6 +33,7 @@ pub mod file;
 pub mod positional;
 pub mod prefab;
 pub mod record;
+mod resolver;
 pub mod retired;
 pub mod save;
 pub mod scene_record;
@@ -53,8 +54,8 @@ pub use encoding::{
 pub use file::{encoding_of, read_scene_file, write_scene_file, SceneFileReadError};
 pub use prefab::{
     apply_to_prefab, collapse, expand, expand_reporting, instance_of, instantiate_prefab,
-    instantiate_subtree, prefab_world, serialize_prefab, serialize_subtree, InstanceOf, NoPrefabs,
-    PrefabApply, PrefabSource,
+    instantiate_prefab_at, instantiate_subtree, prefab_world, serialize_prefab, serialize_subtree,
+    InstanceOf, NoPrefabs, PrefabApply, PrefabCatalog, PrefabLibrary, PrefabSource,
 };
 pub use retired::{is_retired, RetiredComponent};
 pub use save::{

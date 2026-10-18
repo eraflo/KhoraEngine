@@ -98,6 +98,12 @@ impl EntityReserver {
         }
     }
 
+    /// Whether this reserver handed out `id` since the world last settled
+    /// and nothing committed it yet — without forgetting it.
+    pub fn is_handed(&self, id: EntityId) -> bool {
+        self.lock().handed.contains(&id)
+    }
+
     /// Every id handed out and not committed: what the world takes back.
     pub fn take_unspent(&self) -> Vec<EntityId> {
         std::mem::take(&mut self.lock().handed)
@@ -168,6 +174,17 @@ mod tests {
         assert!(reserver.take_handed(handed));
         assert!(!reserver.take_handed(handed));
         assert!(reserver.take_unspent().is_empty());
+    }
+
+    #[test]
+    fn an_id_is_seen_as_handed_until_taken() {
+        let reserver = EntityReserver::new();
+        let handed = reserver.reserve();
+        assert!(reserver.is_handed(handed));
+        assert!(reserver.is_handed(handed), "looking does not forget it");
+        assert!(reserver.take_handed(handed));
+        assert!(!reserver.is_handed(handed));
+        assert!(!reserver.is_handed(id(9, 0)));
     }
 
     #[test]

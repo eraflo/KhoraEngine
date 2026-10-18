@@ -307,6 +307,11 @@ pub struct Program {
     /// Every `Spawn`'s components, as patch indices in the order written.
     #[serde(default)]
     pub spawns: Vec<Vec<u32>>,
+    /// What each prefab `Spawn` calls its prefab in a fault — `` `bullet` ``,
+    /// or "this prefab" — by the spawn's index; empty for a spawn at a
+    /// position.
+    #[serde(default)]
+    pub spawn_names: Vec<String>,
     /// Every `$"…"`'s plan: its text and how each hole is shown.
     #[serde(default)]
     pub formats: Vec<super::display::FormatPlan>,

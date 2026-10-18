@@ -43,6 +43,7 @@
 
 use std::sync::Arc;
 
+use crate::asset::AssetUUID;
 use crate::ecs::entity::EntityId;
 use crate::math::{Quaternion, Vec3};
 
@@ -152,6 +153,27 @@ pub enum WorldCommand {
         /// Everything else it should carry.
         components: Vec<(ComponentName, ScriptValue)>,
     },
+    /// Brings a prefab into the world as a linked instance whose root sits at
+    /// an id reserved in the turn.
+    SpawnPrefab {
+        /// The id reserved for the instance's root.
+        entity: EntityId,
+        /// The prefab, by its asset identity.
+        prefab: AssetUUID,
+        /// Where to place the root.
+        position: Vec3,
+        /// How to orient the root, or `None` to keep the prefab's rotation.
+        rotation: Option<Quaternion>,
+        /// Components merged onto the root's, or added when it has none.
+        components: Vec<(ComponentName, ScriptValue)>,
+    },
+    /// Gives the entity the material `material`.
+    SetMaterial {
+        /// The entity.
+        entity: EntityId,
+        /// The material, by its asset identity.
+        material: AssetUUID,
+    },
     /// Destroys the entity.
     Despawn {
         /// The entity to destroy.
@@ -207,6 +229,8 @@ pub enum WriteTarget {
     Parent,
     /// Whether the entity exists at all.
     Existence,
+    /// The entity's material.
+    Material,
     /// One component's value.
     Component(ComponentName),
     /// One field of one component.
@@ -227,6 +251,8 @@ pub enum WriteTargetRef<'a> {
     Parent,
     /// Whether the entity exists at all.
     Existence,
+    /// The entity's material.
+    Material,
     /// One component's value, whole.
     Component(&'a ComponentName),
     /// One field of one component.
@@ -242,6 +268,7 @@ impl WriteTargetRef<'_> {
             Self::Scale => WriteTarget::Scale,
             Self::Parent => WriteTarget::Parent,
             Self::Existence => WriteTarget::Existence,
+            Self::Material => WriteTarget::Material,
             Self::Component(name) => WriteTarget::Component(name.clone()),
             Self::Field(name, field) => WriteTarget::Field(name.clone(), field.to_owned()),
         }
@@ -256,6 +283,7 @@ impl std::fmt::Display for WriteTarget {
             Self::Scale => f.write_str("scale"),
             Self::Parent => f.write_str("parent"),
             Self::Existence => f.write_str("existence"),
+            Self::Material => f.write_str("material"),
             Self::Component(name) => write!(f, "component {name}"),
             Self::Field(name, field) => write!(f, "component {name} field {field}"),
         }
@@ -265,7 +293,7 @@ impl std::fmt::Display for WriteTarget {
 impl WorldCommand {
     /// The entity the command acts on, if it acts on an existing one.
     ///
-    /// `None` for [`Self::Spawn`], whose subject does not exist yet, and for
+    /// `None` for a spawn, whose subject does not exist yet, and for
     /// [`Self::WriteColumn`], which acts on many.
     pub fn entity(&self) -> Option<EntityId> {
         match self {
@@ -277,8 +305,9 @@ impl WorldCommand {
             | Self::Despawn { entity }
             | Self::SetComponent { entity, .. }
             | Self::AddComponent { entity, .. }
-            | Self::RemoveComponent { entity, .. } => Some(*entity),
-            Self::Spawn { .. } => None,
+            | Self::RemoveComponent { entity, .. }
+            | Self::SetMaterial { entity, .. } => Some(*entity),
+            Self::Spawn { .. } | Self::SpawnPrefab { .. } => None,
             Self::WriteColumn { .. } => None,
         }
     }
@@ -294,6 +323,7 @@ impl WorldCommand {
             Self::SetScale { entity, .. } => f(*entity, WriteTargetRef::Scale),
             Self::SetParent { entity, .. } => f(*entity, WriteTargetRef::Parent),
             Self::Despawn { entity } => f(*entity, WriteTargetRef::Existence),
+            Self::SetMaterial { entity, .. } => f(*entity, WriteTargetRef::Material),
             // A patch overwrites the fields it names, and only those.
             Self::SetComponent {
                 entity,
@@ -327,7 +357,8 @@ impl WorldCommand {
                     }
                 }
             }
-            Self::Translate { .. } | Self::Spawn { .. } => {}
+            // A spawn writes over nothing: its entity did not exist.
+            Self::Translate { .. } | Self::Spawn { .. } | Self::SpawnPrefab { .. } => {}
         }
     }
 }

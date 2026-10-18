@@ -54,6 +54,9 @@ pub struct ProjectVfs {
     /// Moves on every write and every reindex: what was read from the
     /// project's files before is stale once it moves.
     generation: std::sync::atomic::AtomicU64,
+    /// The catalog a script's prefab `Spawn` is checked against, kept to the
+    /// index: refilled at every reindex.
+    prefab_catalog: Option<khora_sdk::khora_data::scene::PrefabCatalog>,
 }
 
 impl ProjectVfs {
@@ -120,7 +123,14 @@ impl ProjectVfs {
             file_loader,
             registry,
             generation: std::sync::atomic::AtomicU64::new(0),
+            prefab_catalog: None,
         })
+    }
+
+    /// Keeps `catalog` to this project's prefabs from now on.
+    pub fn follow_prefab_catalog(&mut self, catalog: khora_sdk::khora_data::scene::PrefabCatalog) {
+        catalog.replace(khora_sdk::prefab_catalog(&self.asset_service));
+        self.prefab_catalog = Some(catalog);
     }
 
     /// Moves on every write and every reindex: what was read from the
@@ -143,6 +153,9 @@ impl ProjectVfs {
             .build_index_bytes()
             .context("Failed to rebuild project asset index")?;
         self.asset_service.reindex(&bytes)?;
+        if let Some(catalog) = &self.prefab_catalog {
+            catalog.replace(khora_sdk::prefab_catalog(&self.asset_service));
+        }
         self.moved_on();
         Ok(())
     }
@@ -460,7 +473,7 @@ mod tests {
     /// mode: the editor and a runtime reading the same project decode the same
     /// assets.
     const DECODABLE: &[&str] = &[
-        "audio", "font", "material", "mesh", "script", "shader", "texture",
+        "audio", "font", "material", "mesh", "prefab", "script", "shader", "texture",
     ];
 
     /// The asset types among [`PROBES`] that `svc` has a decoder for, sorted.

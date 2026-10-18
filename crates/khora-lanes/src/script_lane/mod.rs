@@ -194,6 +194,14 @@ impl Lane for BudgetedScriptLane {
         if let Some(reservations) = ctx.get_ref::<khora_data::flow::ReservationView>() {
             host = host.with_reserver(std::sync::Arc::clone(&reservations.reserver));
         }
+        // A prefab spawn naming none the project holds faults its turn; with
+        // no catalog to check against, any is let through to the applier.
+        if let Some(prefabs) = ctx
+            .get_ref::<khora_data::flow::PrefabCatalogView>()
+            .and_then(|view| view.prefabs.as_ref())
+        {
+            host = host.with_prefabs(std::sync::Arc::clone(prefabs));
+        }
         // Once for the frame, not once per behavior: input is a fact about
         // the frame, and every behavior in it must see the same one.
         host.input = view.input.clone();

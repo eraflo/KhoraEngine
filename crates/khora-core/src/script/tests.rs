@@ -831,3 +831,69 @@ fn mixed_writes_are_counted_one_per_command_and_row() {
         ]
     );
 }
+
+fn prefab_spawn(index: u32) -> WorldCommand {
+    WorldCommand::SpawnPrefab {
+        entity: entity(index),
+        prefab: crate::asset::AssetUUID::from_bytes([0x1a; 16]),
+        position: Vec3::ZERO,
+        rotation: None,
+        components: vec![("Name".into(), ScriptValue::Str("Bullet".to_owned()))],
+    }
+}
+
+/// **A prefab spawn acts on no existing entity**, as a spawn does: the root
+/// it carries is reserved, and nothing lives at it until the boundary
+/// instantiates the prefab there. It overwrites nothing.
+#[test]
+fn a_prefab_spawn_names_no_entity() {
+    let spawn = prefab_spawn(40);
+    assert_eq!(spawn.entity(), None);
+    assert!(targets_of(&spawn).is_empty());
+}
+
+/// Two prefab spawns are two entities, not a lost write.
+#[test]
+fn spawning_a_prefab_twice_is_not_a_conflict() {
+    let mut buffer = CommandBuffer::new();
+    buffer.push(prefab_spawn(40));
+    buffer.push(prefab_spawn(40));
+
+    assert!(buffer.conflicts().is_empty());
+    assert_eq!(buffer.len(), 2);
+}
+
+/// **Setting a material acts on its entity.**
+#[test]
+fn setting_a_material_names_its_entity() {
+    let paint = WorldCommand::SetMaterial {
+        entity: entity(4),
+        material: crate::asset::AssetUUID::from_bytes([0x5a; 16]),
+    };
+    assert_eq!(paint.entity(), Some(entity(4)));
+}
+
+/// **Two materials set on one entity in a frame are a lost write**: one
+/// conflict, on its material — while a material and a position on it are
+/// not.
+#[test]
+fn two_materials_on_one_entity_in_a_frame_conflict() {
+    let paint = |byte: u8| WorldCommand::SetMaterial {
+        entity: entity(4),
+        material: crate::asset::AssetUUID::from_bytes([byte; 16]),
+    };
+    let mut buffer = CommandBuffer::new();
+    buffer.push(paint(0x5a));
+    buffer.push(paint(0x6b));
+    let conflicts = buffer.conflicts();
+    assert_eq!(conflicts.len(), 1, "{conflicts:?}");
+    assert_eq!(conflicts[0].target, WriteTarget::Material);
+
+    let mut buffer = CommandBuffer::new();
+    buffer.push(paint(0x5a));
+    buffer.push(WorldCommand::SetTranslation {
+        entity: entity(4),
+        value: Vec3::ZERO,
+    });
+    assert!(buffer.conflicts().is_empty());
+}

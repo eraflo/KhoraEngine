@@ -687,6 +687,7 @@ fn fault_variants(x: &khora_script::vm::Fault) {
         khora_script::vm::Fault::InvalidCast { .. } => {}
         khora_script::vm::Fault::IndexOutOfRange { .. } => {}
         khora_script::vm::Fault::NotAnObject { .. } => {}
+        khora_script::vm::Fault::NoPrefab { .. } => {}
     }
 }
 
@@ -760,6 +761,8 @@ fn instruction_variants(x: &khora_script::vm::instruction::Instruction) {
         khora_script::vm::instruction::Instruction::RemoveComponent { .. } => {}
         khora_script::vm::instruction::Instruction::Raise { .. } => {}
         khora_script::vm::instruction::Instruction::SpawnEntity { .. } => {}
+        khora_script::vm::instruction::Instruction::SpawnPrefab { .. } => {}
+        khora_script::vm::instruction::Instruction::SetMaterial { .. } => {}
         khora_script::vm::instruction::Instruction::Await { .. } => {}
         khora_script::vm::instruction::Instruction::LoadSelf { .. } => {}
         khora_script::vm::instruction::Instruction::Safepoint => {}

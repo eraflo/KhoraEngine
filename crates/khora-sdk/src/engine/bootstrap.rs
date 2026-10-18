@@ -222,7 +222,10 @@ impl<A: EngineApp> EngineCore<A> {
             .get::<Arc<Mutex<khora_io::asset::AssetService>>>()
             .cloned()
         {
-            game_world.set_prefabs(Arc::new(khora_io::serialization::AssetPrefabs::new(assets)));
+            game_world.set_prefabs(Arc::new(khora_io::serialization::AssetPrefabs::new(
+                assets.clone(),
+            )));
+            crate::prefabs::install(&mut runtime, assets);
         }
 
         // What the scripts mounted above declare, registered before `setup`:

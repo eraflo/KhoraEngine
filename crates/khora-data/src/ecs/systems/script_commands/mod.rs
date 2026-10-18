@@ -44,6 +44,7 @@ mod applied;
 pub use applied::AppliedWrites;
 mod apply;
 mod json;
+mod prefab_spawn;
 
 #[cfg(test)]
 mod tests;
@@ -79,7 +80,7 @@ pub struct ApplyReport {
 /// Applies every queued command as [`apply_all`] does, and reports the rows
 /// of column writes too.
 pub fn apply_all_reporting(world: &mut World, buffer: &CommandBuffer) -> ApplyReport {
-    apply_each(world, buffer, |_, _| {})
+    apply_each(world, buffer, None, |_, _| {})
 }
 
 /// Applies every queued command in order, calling `applied` with the index
@@ -87,6 +88,7 @@ pub fn apply_all_reporting(world: &mut World, buffer: &CommandBuffer) -> ApplyRe
 fn apply_each(
     world: &mut World,
     buffer: &CommandBuffer,
+    prefabs: Option<&dyn crate::scene::PrefabSource>,
     mut applied: impl FnMut(usize, &khora_core::script::WorldCommand),
 ) -> ApplyReport {
     use khora_core::script::WorldCommand;
@@ -106,7 +108,7 @@ fn apply_each(
             log::error!("script command ignored: it names an entity whose spawn was refused");
             continue;
         }
-        match apply::apply(world, command) {
+        match apply::apply_with(world, command, prefabs) {
             Ok(rows) => {
                 applied(index, command);
                 report.applied += 1;
@@ -117,7 +119,8 @@ fn apply_each(
                 match command {
                     // A column write refused whole skips every row it carried.
                     WorldCommand::WriteColumn { batch, .. } => report.rows_skipped += batch.len(),
-                    WorldCommand::Spawn { entity, .. } => refused.push(*entity),
+                    WorldCommand::Spawn { entity, .. }
+                    | WorldCommand::SpawnPrefab { entity, .. } => refused.push(*entity),
                     _ => {}
                 }
                 log::error!("script command ignored: {error}");
@@ -127,16 +130,24 @@ fn apply_each(
     report
 }
 
-fn apply_script_commands(world: &mut World, _runtime: &Runtime, deck: &mut OutputDeck) {
+fn apply_script_commands(world: &mut World, runtime: &Runtime, deck: &mut OutputDeck) {
     // The ids scripts reserved this frame get their slots before anything
     // spawns at them; whatever no spawn used is taken back after — every
     // frame, scripts or not, so no reservation outlives the frame.
     world.settle_reservations();
-    apply_buffer(world, deck);
+    let prefabs = runtime
+        .resources
+        .get::<crate::scene::PrefabLibrary>()
+        .map(|library| &*library.0 as &dyn crate::scene::PrefabSource);
+    apply_buffer(world, deck, prefabs);
     world.release_unspent();
 }
 
-fn apply_buffer(world: &mut World, deck: &mut OutputDeck) {
+fn apply_buffer(
+    world: &mut World,
+    deck: &mut OutputDeck,
+    prefabs: Option<&dyn crate::scene::PrefabSource>,
+) {
     // A lane that did not run — starved of budget, or absent entirely — leaves
     // no slot. Taking one anyway would fabricate an empty batch and count a
     // frame of work that never happened.
@@ -163,7 +174,7 @@ fn apply_buffer(world: &mut World, deck: &mut OutputDeck) {
         }
     }
     let mut applied = AppliedWrites::default();
-    apply_each(world, &buffer, |index, command| {
+    apply_each(world, &buffer, prefabs, |index, command| {
         applied.record(index, command)
     });
     // For the behaviors' writeback, after this: a turn's field a later

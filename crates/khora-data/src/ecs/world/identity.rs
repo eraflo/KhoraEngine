@@ -53,6 +53,15 @@ impl PersistentIds {
         id
     }
 
+    /// The created identity [`Self::assign_created`] would give next, given to
+    /// no one yet: what a load names an entity it brings into being.
+    pub(crate) fn next_created(&self) -> PersistentId {
+        (self.next_created..)
+            .map(PersistentId::created)
+            .find(|candidate| !self.by_id.contains_key(candidate))
+            .unwrap_or_else(|| PersistentId::created(self.next_created))
+    }
+
     /// Forgets a despawned entity.
     pub(crate) fn forget(&mut self, entity: EntityId) {
         if let Some(id) = self.by_entity.remove(&entity) {
@@ -108,6 +117,12 @@ impl World {
             return Some(*id);
         }
         self.contains(entity).then(|| ids.assign_created(entity))
+    }
+
+    /// A created identity no entity holds — the one the next entity numbered
+    /// on first ask would take — given to no one by asking.
+    pub(crate) fn next_created_id(&self) -> PersistentId {
+        self.identity.lock().next_created()
     }
 
     /// The live entity known by `id` — among the entities given an identity.

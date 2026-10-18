@@ -52,6 +52,7 @@ mod prefab_apply;
 mod prefab_apply_references;
 mod prefab_files;
 mod prefab_instances;
+mod prefab_instances_in_play;
 mod prefab_membership;
 mod prefab_overrides;
 mod prefab_refusals;

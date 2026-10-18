@@ -449,6 +449,17 @@ pub enum Instruction {
         count: u16,
     },
 
+    /// `entity.SetMaterial(m)`: queues the material in `material` for the
+    /// entity — a fault, naming it as `what` writes it, when it is `null`.
+    SetMaterial {
+        /// The entity.
+        entity: Reg,
+        /// The material.
+        material: Reg,
+        /// What a fault calls the material — `` `m` `` — as a string constant.
+        what: u32,
+    },
+
     /// `entity.Remove(C)`: queues the removal of the component named by
     /// [`Program::strings`](super::Program::strings)`[component]`.
     RemoveComponent {
@@ -481,6 +492,28 @@ pub enum Instruction {
         dst: Reg,
         /// The new entity's position.
         position: Reg,
+        /// Which spawn.
+        spawn: u32,
+        /// First value register.
+        base: Reg,
+        /// How many fields all its patches name together.
+        count: u16,
+    },
+    /// Spawns an instance of the prefab in `prefab` with its root at
+    /// `position`, facing `facing` — a register holding `Null` when the call
+    /// gave none — merging onto the root each patch of
+    /// [`Program::spawns`](super::Program::spawns)`[spawn]`, whose values
+    /// follow one another from `base`.
+    SpawnPrefab {
+        /// Where the instance root's id goes: reserved now, so what follows
+        /// in the turn can name it.
+        dst: Reg,
+        /// The prefab.
+        prefab: Reg,
+        /// The root's position.
+        position: Reg,
+        /// The root's rotation, or `Null` for the prefab's own.
+        facing: Reg,
         /// Which spawn.
         spawn: u32,
         /// First value register.
@@ -640,51 +673,6 @@ pub enum Instruction {
     Yield,
     /// Stops the program.
     Halt,
-}
-
-impl Instruction {
-    /// Where a run stops when it cannot pay for this one, when that is not
-    /// the instruction itself.
-    pub fn stops_at(&self) -> Option<usize> {
-        match self {
-            Self::RemoveAt {
-                charged: true,
-                from,
-                ..
-            } => Some(*from),
-            _ => None,
-        }
-    }
-
-    /// What running this costs from the fuel budget.
-    ///
-    /// Uniform today, except for a safepoint, which marks a place rather than
-    /// doing work. It is a method rather than a constant because a call and a
-    /// move plainly do not cost the same, and the shape should be here when
-    /// measurement says so — not retrofitted through every call site.
-    ///
-    /// Building an array pays for its elements: a ten-thousand-element literal
-    /// is not one unit of work. An operation whose size only the running
-    /// program knows — `Copy`, a field read or write of an array — is charged
-    /// by the VM when it runs; this is its floor.
-    pub fn cost(&self) -> u64 {
-        match self {
-            Self::Safepoint => 0,
-            Self::NewArray { count, .. }
-            | Self::Extend { count, .. }
-            | Self::NewStruct { count, .. }
-            | Self::WriteComponent { count, .. }
-            | Self::GetComponent { count, .. }
-            | Self::QueryHolds { count, .. }
-            | Self::WriteRow { count, .. }
-            | Self::Format { count, .. }
-            | Self::SpawnEntity { count, .. } => 1 + u64::from(*count),
-            Self::Become { writes, .. } => 1 + u64::from(*writes),
-            // What the engine function it replaced was charged.
-            Self::Raise { .. } => 4,
-            _ => 1,
-        }
-    }
 }
 
 /// What a [`Instruction::WriteComponent`] does to an entity.

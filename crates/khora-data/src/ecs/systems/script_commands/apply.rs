@@ -28,6 +28,7 @@ use crate::ecs::{
     ColumnWriteReport, ComponentKey, FieldWriteError, HierarchyWrite, RowError, Transform, World,
 };
 use crate::scene::component_registration::registration_of;
+use crate::scene::PrefabSource;
 
 use super::json::to_json;
 
@@ -55,6 +56,14 @@ pub enum ApplyError {
     },
     /// No component type goes by that name.
     UnknownComponent(String),
+    /// A prefab could not be brought in: none to read it from, none by that
+    /// identity, or one that does not load.
+    Prefab {
+        /// The prefab.
+        prefab: khora_core::asset::AssetUUID,
+        /// Why.
+        reason: String,
+    },
     /// The parent is already below the child, so the edge would close a loop.
     WouldCycle {
         /// The child being re-parented.
@@ -99,6 +108,7 @@ impl std::fmt::Display for ApplyError {
             Self::UnknownComponent(name) => {
                 write!(f, "no component type is named {name}")
             }
+            Self::Prefab { prefab, reason } => write!(f, "the prefab {prefab}: {reason}"),
             Self::WouldCycle { entity, parent } => write!(
                 f,
                 "entity {}v{} cannot be parented to {}v{} — it is already above it",
@@ -113,14 +123,25 @@ impl std::fmt::Display for ApplyError {
 
 /// Applies one command to the world, and what a column write did with its
 /// rows — nothing, for any other command.
+#[cfg(test)]
 pub(super) fn apply(
     world: &mut World,
     command: &WorldCommand,
 ) -> Result<ColumnWriteReport, ApplyError> {
+    apply_with(world, command, None)
+}
+
+/// [`apply`], a prefab spawn reading its prefab from `prefabs` — refused
+/// where there are none.
+pub(super) fn apply_with(
+    world: &mut World,
+    command: &WorldCommand,
+    prefabs: Option<&dyn PrefabSource>,
+) -> Result<ColumnWriteReport, ApplyError> {
     if let WorldCommand::WriteColumn { component, batch } = command {
         return write_column(world, component.as_str(), batch);
     }
-    apply_one(world, command).map(|()| ColumnWriteReport::default())
+    apply_one(world, command, prefabs).map(|()| ColumnWriteReport::default())
 }
 
 /// A batch's rows, its component and fields resolved once: an unknown
@@ -183,7 +204,11 @@ fn write_column(
 }
 
 /// Applies one command that is not a column write.
-fn apply_one(world: &mut World, command: &WorldCommand) -> Result<(), ApplyError> {
+fn apply_one(
+    world: &mut World,
+    command: &WorldCommand,
+    prefabs: Option<&dyn PrefabSource>,
+) -> Result<(), ApplyError> {
     match command {
         WorldCommand::SetTranslation { entity, value } => {
             transform_mut(world, *entity).map(|t| t.translation = *value)
@@ -226,6 +251,23 @@ fn apply_one(world: &mut World, command: &WorldCommand) -> Result<(), ApplyError
             remove_component(world, *entity, component.as_str())
         }
         WorldCommand::WriteColumn { .. } => unreachable!("a column write is applied whole"),
+        WorldCommand::SpawnPrefab {
+            entity,
+            prefab,
+            position,
+            rotation,
+            components,
+        } => super::prefab_spawn::spawn_prefab(
+            world,
+            prefabs,
+            *entity,
+            *prefab,
+            (*position, *rotation),
+            components,
+        ),
+        WorldCommand::SetMaterial { entity, material } => {
+            super::prefab_spawn::set_material(world, *entity, *material)
+        }
     }
 }
 
@@ -298,7 +340,7 @@ fn spawn(
     Ok(())
 }
 
-fn set_component(
+pub(super) fn set_component(
     world: &mut World,
     entity: EntityId,
     component: &str,
@@ -373,7 +415,7 @@ fn describe(error: &FieldWriteError) -> String {
     }
 }
 
-fn add_component(
+pub(super) fn add_component(
     world: &mut World,
     entity: EntityId,
     component: &str,
@@ -467,7 +509,11 @@ fn write_hierarchy(
 }
 
 /// The key of the component named `component`, on a live entity.
-fn key_of(world: &World, entity: EntityId, component: &str) -> Result<ComponentKey, ApplyError> {
+pub(super) fn key_of(
+    world: &World,
+    entity: EntityId,
+    component: &str,
+) -> Result<ComponentKey, ApplyError> {
     if !world.contains(entity) {
         return Err(ApplyError::NoSuchEntity(entity));
     }

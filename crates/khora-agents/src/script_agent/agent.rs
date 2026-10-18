@@ -227,6 +227,10 @@ impl Agent for ScriptAgent {
         if let Some(reservations) = context.bus.get::<khora_data::flow::ReservationView>() {
             ctx.insert_ref(reservations);
         }
+        // The prefabs a spawn may name, from the same bus.
+        if let Some(prefabs) = context.bus.get::<khora_data::flow::PrefabCatalogView>() {
+            ctx.insert_ref(prefabs);
+        }
         ctx.insert(Fuel(self.fuel));
         // The guard is held for the whole of this call, outliving `ctx`, and
         // the contention declaration is what keeps a concurrent agent out of it.

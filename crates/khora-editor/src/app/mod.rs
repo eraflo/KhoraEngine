@@ -114,6 +114,11 @@ pub struct EditorApp {
     /// The inspected entity's instance and its prefab's values, kept while
     /// the selection and the project's files stay the same.
     prefab_view: Option<PrefabView>,
+    /// The prefabs a game in play spawns from: the open project's.
+    play_prefabs: Arc<crate::play_prefabs::PlayPrefabs>,
+    /// The open project's prefabs, as a script's `Spawn` is checked against
+    /// them — shared with the runtime.
+    prefab_catalog: khora_sdk::khora_data::scene::PrefabCatalog,
 }
 
 impl EditorApp {
@@ -470,6 +475,14 @@ impl AgentProvider for EditorApp {
         // Editor viewport override — RenderFlow reads it as fallback
         // when no scene Camera is active (Editing mode).
         runtime.resources.insert(self.viewport_override.clone());
+        // What a script's prefab `Spawn` reads: the open project's prefabs,
+        // and the catalog its turn is checked against.
+        runtime
+            .resources
+            .insert(khora_sdk::khora_data::scene::PrefabLibrary(
+                self.play_prefabs.clone(),
+            ));
+        runtime.resources.insert(self.prefab_catalog.clone());
     }
 }
 

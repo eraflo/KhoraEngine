@@ -538,7 +538,9 @@ fn a_non_finite_number_is_refused_rather_than_written_as_nothing() {
 
 // ─── Value conversion ───────────────────────────────────────────────────────
 
+mod prefab_spawns;
 mod reserved_spawns;
+mod set_materials;
 
 mod json {
     use super::super::json::to_json;

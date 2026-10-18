@@ -33,6 +33,7 @@ mod game_saves;
 mod game_saves_text_base;
 mod hot_reload_announcements;
 mod hot_reload_from_the_shared_watch;
+mod prefab_assets;
 mod prefab_scenes;
 mod public_paths;
 mod registration_problems;

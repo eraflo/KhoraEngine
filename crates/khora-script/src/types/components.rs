@@ -31,7 +31,8 @@ use crate::diagnostics::Span;
 
 /// The names the language keeps for its operations on an entity: no function
 /// or method may take one.
-pub(crate) const RESERVED: &[&str] = &["Set", "Add", "Remove", "Get", "Has", "Spawn"];
+pub(crate) const RESERVED: &[&str] =
+    &["Set", "Add", "Remove", "Get", "Has", "Spawn", "SetMaterial"];
 
 /// A component a script may write, by field.
 #[derive(Debug, Clone, Default)]
@@ -104,7 +105,7 @@ impl Checker {
         // nothing there is a parameter to name.
         if matches!(
             name,
-            "Set" | "Add" | "Remove" | "Raise" | "Get" | "Has" | "Spawn"
+            "Set" | "Add" | "Remove" | "Raise" | "Get" | "Has" | "Spawn" | "SetMaterial"
         ) {
             self.refuse_labels(name, call.labels);
         }
@@ -119,6 +120,21 @@ impl Checker {
                 return Some(Ty::Void);
             }
             "Raise" => return Some(self.check_raise(args, at, context)),
+            "SetMaterial" => {
+                let [material] = args else {
+                    for argument in args {
+                        self.check_expr(argument, context);
+                    }
+                    self.error("`SetMaterial` takes the material, and nothing else", at);
+                    return Some(Ty::Void);
+                };
+                let found = self.check_expr(material, context);
+                // A `Material?` is taken too: one that is `null` faults the turn.
+                let wanted =
+                    Ty::Optional(Box::new(Ty::Asset(khora_core::asset::AssetKind::Material)));
+                self.expect_assignable(&wanted, &found, material.span());
+                return Some(Ty::Void);
+            }
             "Get" | "Has" => {
                 let read = self.check_read(name, args, at, context);
                 return Some(match (name, read) {
@@ -225,8 +241,15 @@ impl Checker {
         true
     }
 
-    /// `Spawn(Vec3 position, C { … }, …)` — the new entity, named at once.
-    pub(super) fn check_spawn(&mut self, args: &[Expr], span: Span, context: &Context) -> Ty {
+    /// `Spawn(Vec3 position, C { … }, …)` — the new entity, named at once —
+    /// its position's type `checked` when it was already checked.
+    pub(super) fn check_spawn(
+        &mut self,
+        args: &[Expr],
+        checked: Option<Ty>,
+        span: Span,
+        context: &Context,
+    ) -> Ty {
         let Some((position, components)) = args.split_first() else {
             self.error(
                 "`Spawn` takes a position, then the components to attach",
@@ -234,7 +257,7 @@ impl Checker {
             );
             return Ty::Void;
         };
-        let at = self.check_expr(position, context);
+        let at = checked.unwrap_or_else(|| self.check_expr(position, context));
         self.expect_assignable(&Ty::Engine("Vec3"), &at, position.span());
         let mut seen: Vec<&str> = Vec::new();
         for component in components {
@@ -298,7 +321,7 @@ impl Checker {
 
     /// A component literal given to `operation`: every field named exists and
     /// takes its value. Returns the component's name when it is one.
-    fn check_patch<'e>(
+    pub(super) fn check_patch<'e>(
         &mut self,
         expr: &'e Expr,
         operation: &str,

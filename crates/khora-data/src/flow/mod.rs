@@ -44,6 +44,7 @@ pub mod audio;
 mod behaviors;
 pub mod companion;
 pub mod physics;
+pub mod prefab_catalog;
 mod registration;
 pub mod render;
 pub mod reservations;
@@ -56,6 +57,7 @@ pub use audio::{
     AudioFlow, AudioPlaybackUpdate, AudioPlaybackWriteback, AudioSourceSnapshot, AudioView,
 };
 pub use physics::{PhysicsFlow, PhysicsStepResult, PhysicsView};
+pub use prefab_catalog::{PrefabCatalogFlow, PrefabCatalogView};
 pub use registration::*;
 pub use render::RenderFlow;
 pub use reservations::{ReservationFlow, ReservationView};

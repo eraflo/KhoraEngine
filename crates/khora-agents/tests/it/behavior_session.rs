@@ -92,6 +92,16 @@ impl Session {
     /// registered at once — so components can be attached before the first
     /// frame — and every module's program waiting for the lane.
     pub(crate) fn new(world: World, project: Project) -> Self {
+        Self::with_runtime(world, project, |_| {})
+    }
+
+    /// [`Session::new`], with `prepare` adding to the runtime what the
+    /// engine's bootstrap would — a prefab library, a prefab catalog.
+    pub(crate) fn with_runtime(
+        world: World,
+        project: Project,
+        prepare: impl FnOnce(&mut Runtime),
+    ) -> Self {
         let declarations = declaration_channel();
         let reloads = khora_io::script::hot_reload::reload_channel();
         let events = engine_event_channel();
@@ -103,6 +113,7 @@ impl Session {
             .resources
             .insert(Arc::new(Mutex::new(DeclaredComponents::default())));
         runtime.resources.insert(Arc::clone(&catalog));
+        prepare(&mut runtime);
 
         let mut session = Self {
             world,
@@ -157,6 +168,16 @@ impl Session {
                 reserver: self.world.reserver(),
             };
             ctx.insert_ref(&reservations);
+            // The prefabs a spawn may name, as the agent hands them on: the
+            // runtime's catalog, or none to check against.
+            let prefabs = khora_data::flow::PrefabCatalogView {
+                prefabs: self
+                    .runtime
+                    .resources
+                    .get::<khora_data::scene::PrefabCatalog>()
+                    .map(khora_data::scene::PrefabCatalog::snapshot),
+            };
+            ctx.insert_ref(&prefabs);
             ctx.insert(Fuel(self.fuel));
             ctx.insert_slot(&mut self.scripts);
             ctx.insert_slot(&mut deck);

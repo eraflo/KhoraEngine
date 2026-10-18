@@ -391,6 +391,41 @@ impl FrameComponents {
                     self.write((component.clone(), *entity), Some(merged(start, value)));
                 }
             }
+            // A prefab instance's root, as far as the turn knows it: where it
+            // stands, its turn when one is given, and what the call wrote over
+            // each component's default row. The prefab's own values are read
+            // from the frame after, once the instance exists.
+            WorldCommand::SpawnPrefab {
+                entity,
+                position,
+                rotation,
+                components,
+                ..
+            } => {
+                let transform = ComponentName::new("Transform");
+                if let Some(projected) = self.tracked(&transform) {
+                    let start = projected
+                        .default_row()
+                        .cloned()
+                        .unwrap_or(ScriptValue::Struct(Vec::new()));
+                    let mut placed = vec![("translation".to_owned(), ScriptValue::Vec3(*position))];
+                    if let Some(rotation) = rotation {
+                        placed.push(("rotation".to_owned(), ScriptValue::Quat(*rotation)));
+                    }
+                    let placed = ScriptValue::Struct(placed);
+                    self.write((transform, *entity), Some(merged(start, &placed)));
+                }
+                for (component, value) in components {
+                    let Some(projected) = self.tracked(component) else {
+                        continue;
+                    };
+                    let start = projected
+                        .default_row()
+                        .cloned()
+                        .unwrap_or(ScriptValue::Struct(Vec::new()));
+                    self.write((component.clone(), *entity), Some(merged(start, value)));
+                }
+            }
             // Each row a `Set` of the batch's fields, in the batch's order.
             WorldCommand::WriteColumn { component, batch } => {
                 if self.tracked(component).is_none() {

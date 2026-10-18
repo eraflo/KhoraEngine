@@ -599,3 +599,94 @@ fn matching_lists_each_entity_once_across_removes_and_adds() {
     );
     assert_eq!(frame.scan_cost(&["Health"]), 4);
 }
+
+// ─── Prefab spawns ──────────────────────────────────────────────────────────
+
+fn prefab_spawn_at(
+    target: EntityId,
+    position: Vec3,
+    rotation: Option<Quaternion>,
+    components: Vec<(&str, ScriptValue)>,
+) -> WorldCommand {
+    WorldCommand::SpawnPrefab {
+        entity: target,
+        prefab: crate::asset::AssetUUID::from_bytes([0x1a; 16]),
+        position,
+        rotation,
+        components: components
+            .into_iter()
+            .map(|(name, value)| (ComponentName::new(name), value))
+            .collect(),
+    }
+}
+
+/// **A prefab spawn's root holds what the call wrote**, each component from
+/// its default row with the patch over it — and nothing the call did not
+/// write: the prefab's own components are read the next frame.
+#[test]
+fn a_prefab_spawn_attaches_what_the_call_wrote() {
+    let mut frame = spawn_working_set();
+    let root = entity(20);
+
+    frame.observe(&prefab_spawn_at(
+        root,
+        Vec3::new(1.0, 2.0, 3.0),
+        None,
+        vec![("Health", fields(&[("current", ScriptValue::Int(7))]))],
+    ));
+
+    assert!(frame.has("Health", root));
+    assert_eq!(frame.get("Health", root), Some(health(7, 100)));
+    assert!(!frame.has("Health", entity(21)), "no other entity holds it");
+}
+
+/// **A prefab spawn places its root**: its `Transform` holds the spawn's
+/// position, and its rotation when the call gave one.
+#[test]
+fn a_prefab_spawn_places_its_roots_transform() {
+    let mut frame = spawn_working_set();
+    let facing = Quaternion::new(0.0, 1.0, 0.0, 0.0);
+    let (upright, turned) = (entity(20), entity(21));
+
+    frame.observe(&prefab_spawn_at(
+        upright,
+        Vec3::new(1.0, 2.0, 3.0),
+        None,
+        Vec::new(),
+    ));
+    frame.observe(&prefab_spawn_at(
+        turned,
+        Vec3::new(4.0, 5.0, 6.0),
+        Some(facing),
+        Vec::new(),
+    ));
+
+    let placed = frame.get("Transform", upright).expect("placed");
+    assert_eq!(
+        field(&placed, "translation"),
+        Some(ScriptValue::Vec3(Vec3::new(1.0, 2.0, 3.0)))
+    );
+    let placed = frame.get("Transform", turned).expect("placed");
+    assert_eq!(
+        field(&placed, "translation"),
+        Some(ScriptValue::Vec3(Vec3::new(4.0, 5.0, 6.0)))
+    );
+    assert_eq!(field(&placed, "rotation"), Some(ScriptValue::Quat(facing)));
+}
+
+/// **A `Set` after a prefab spawn merges onto what it wrote.**
+#[test]
+fn a_set_after_a_prefab_spawn_merges_onto_what_it_wrote() {
+    let mut frame = spawn_working_set();
+    let root = entity(20);
+
+    frame.observe(&prefab_spawn_at(
+        root,
+        Vec3::ZERO,
+        None,
+        vec![("Health", health(7, 10))],
+    ));
+    frame.observe(&set(root, fields(&[("current", ScriptValue::Int(3))])));
+
+    assert_eq!(frame.get("Health", root), Some(health(3, 10)));
+}

@@ -65,6 +65,13 @@ impl Compiler {
                 Some(self.compile_remove(object, component))
             }
             "Raise" => Some(self.compile_raise(object, args, span)),
+            "SetMaterial" => {
+                let Some(material) = args.first() else {
+                    self.error("`SetMaterial` takes the material", span);
+                    return Some(self.constant(Value::Unit, Shape::Other));
+                };
+                Some(self.compile_set_material(object, material))
+            }
             "Get" | "Has" => {
                 let Some(Expr::Ident {
                     name: component, ..
@@ -87,12 +94,21 @@ impl Compiler {
         }
     }
 
-    /// `Spawn(position, C1 { … }, …)`.
+    /// `Spawn(position, C1 { … }, …)`, or the prefab form when the first
+    /// argument is a prefab.
     pub(super) fn compile_spawn(
         &mut self,
         args: &[Expr],
+        labels: &[Option<crate::ast::Label>],
         span: crate::diagnostics::Span,
     ) -> (Reg, Shape) {
+        if args
+            .first()
+            .and_then(|first| self.type_of(first))
+            .is_some_and(crate::types::prefab_spawn::is_prefab)
+        {
+            return self.compile_prefab_spawn(args, labels, span);
+        }
         let Some((position, components)) = args.split_first() else {
             self.error("`Spawn` takes a position", span);
             return self.constant(Value::Unit, Shape::Other);
@@ -118,8 +134,7 @@ impl Compiler {
             .iter()
             .map(|&(component, fields)| self.component_patch(component, fields))
             .collect();
-        self.program.spawns.push(patches);
-        let spawn = (self.program.spawns.len() - 1) as u32;
+        let spawn = self.push_spawn(patches, String::new());
         self.emit(Instruction::SpawnEntity {
             dst,
             position: at,
@@ -129,6 +144,116 @@ impl Compiler {
         });
         self.registers.release_to(mark);
         (dst, Shape::Other)
+    }
+
+    /// `Spawn(prefab, C1 { … }, …, at: position, facing: rotation)`: every
+    /// argument evaluated in the order written, each into the register the
+    /// instruction reads it from; a missing `facing:` is `null`, the prefab's
+    /// own turn.
+    fn compile_prefab_spawn(
+        &mut self,
+        args: &[Expr],
+        labels: &[Option<crate::ast::Label>],
+        span: crate::diagnostics::Span,
+    ) -> (Reg, Shape) {
+        let label = |at: usize| {
+            labels
+                .get(at)
+                .and_then(Option::as_ref)
+                .map(|label| label.name.as_str())
+        };
+        let Some(prefab) = args.first() else {
+            self.error("`Spawn` of a prefab needs its prefab", span);
+            return self.constant(Value::Unit, Shape::Other);
+        };
+        let mut literals: Vec<Literal<'_>> = Vec::new();
+        for (at, argument) in args.iter().enumerate().skip(1) {
+            if label(at).is_some() {
+                continue;
+            }
+            let Some(component) = literal(argument) else {
+                self.error("`Spawn` takes component literals after its prefab", span);
+                return self.constant(Value::Unit, Shape::Other);
+            };
+            literals.push(component);
+        }
+        if !(1..args.len()).any(|at| label(at) == Some("at")) {
+            self.error("`Spawn` of a prefab needs `at:`", span);
+            return self.constant(Value::Unit, Shape::Other);
+        }
+
+        // The instance's root, named at once: below the mark, it outlives the
+        // spawn's own registers.
+        let dst = self.registers.temp();
+        let mark = self.registers.mark();
+        let held = self.registers.temp();
+        let position = self.registers.temp();
+        let facing = self.registers.temp();
+        let count: usize = literals.iter().map(|(_, fields)| fields.len()).sum();
+        let base = self.registers.temp();
+        let slots: Vec<Reg> = std::iter::once(base)
+            .chain((1..count).map(|_| self.registers.temp()))
+            .collect();
+
+        self.place(prefab, held);
+        let mut fields = slots.into_iter();
+        let mut turned = false;
+        let mut components = literals.iter();
+        for (at, argument) in args.iter().enumerate().skip(1) {
+            match label(at) {
+                Some("at") => self.place(argument, position),
+                Some("facing") => {
+                    self.place(argument, facing);
+                    turned = true;
+                }
+                Some(_) => {}
+                None => {
+                    let Some(&(component, written)) = components.next() else {
+                        continue;
+                    };
+                    for field in written {
+                        if let Some(slot) = fields.next() {
+                            self.compile_literal_field(component, field, slot);
+                        }
+                    }
+                }
+            }
+        }
+        if !turned {
+            self.emit(Instruction::LoadConst {
+                dst: facing,
+                value: Value::Null,
+            });
+        }
+
+        let patches = literals
+            .iter()
+            .map(|&(component, fields)| self.component_patch(component, fields))
+            .collect();
+        let what = match prefab {
+            Expr::Ident { name, .. } => format!("`{name}`"),
+            _ => "this prefab".to_owned(),
+        };
+        let spawn = self.push_spawn(patches, what);
+        self.emit(Instruction::SpawnPrefab {
+            dst,
+            prefab: held,
+            position,
+            facing,
+            spawn,
+            base,
+            count: count as u16,
+        });
+        self.registers.release_to(mark);
+        (dst, Shape::Other)
+    }
+
+    /// Records a spawn's patches — and what a fault calls its prefab — and
+    /// returns its index.
+    fn push_spawn(&mut self, patches: Vec<u32>, what: String) -> u32 {
+        self.program.spawns.push(patches);
+        self.program.spawn_names.push(what);
+        (self.program.spawns.len() - 1) as u32
     }
 
     /// `entity.Set(C { … })` and `entity.Add(C { … })`.
@@ -199,6 +324,27 @@ impl Compiler {
     }
 
     /// `entity.Remove(C)`.
+    /// `entity.SetMaterial(m)`.
+    fn compile_set_material(&mut self, object: &Expr, material: &Expr) -> (Reg, Shape) {
+        let mark = self.registers.mark();
+        let entity = self.registers.temp();
+        self.place(object, entity);
+        let held = self.registers.temp();
+        self.place(material, held);
+        let what = match material {
+            Expr::Ident { name, .. } => format!("`{name}`"),
+            _ => "the material".to_owned(),
+        };
+        let what = self.intern(&what);
+        self.emit(Instruction::SetMaterial {
+            entity,
+            material: held,
+            what,
+        });
+        self.registers.release_to(mark);
+        self.constant(Value::Unit, Shape::Other)
+    }
+
     fn compile_remove(&mut self, object: &Expr, component: &str) -> (Reg, Shape) {
         let mark = self.registers.mark();
         let entity = self.registers.temp();
@@ -291,28 +437,39 @@ impl Compiler {
         let slots: Vec<Reg> = std::iter::once(base)
             .chain((1..count).map(|_| self.registers.temp()))
             .collect();
-        for ((component, (field, _, value)), slot) in fields.zip(slots) {
-            let inner = self.registers.mark();
-            let (register, shape) = self.compile_value(value);
-            let declared = self
-                .component_decls
-                .get(component)
-                .and_then(|decl| decl.fields.iter().find(|known| known.name == *field))
-                .map(|known| super::shape_of(&known.ty));
-            if shape == Shape::Int && declared == Some(Shape::Float) {
-                self.emit(Instruction::IntToFloat {
-                    dst: slot,
-                    src: register,
-                });
-            } else if register != slot {
-                self.emit(Instruction::Move {
-                    dst: slot,
-                    src: register,
-                });
-            }
-            self.registers.release_to(inner);
+        for ((component, field), slot) in fields.zip(slots) {
+            self.compile_literal_field(component, field, slot);
         }
         base
+    }
+
+    /// One field of a component literal into `slot` — an `int` given where
+    /// the component declares a `float` arriving as that float.
+    fn compile_literal_field(
+        &mut self,
+        component: &str,
+        (field, _, value): &(String, crate::diagnostics::Span, Expr),
+        slot: Reg,
+    ) {
+        let inner = self.registers.mark();
+        let (register, shape) = self.compile_value(value);
+        let declared = self
+            .component_decls
+            .get(component)
+            .and_then(|decl| decl.fields.iter().find(|known| known.name == *field))
+            .map(|known| super::shape_of(&known.ty));
+        if shape == Shape::Int && declared == Some(Shape::Float) {
+            self.emit(Instruction::IntToFloat {
+                dst: slot,
+                src: register,
+            });
+        } else if register != slot {
+            self.emit(Instruction::Move {
+                dst: slot,
+                src: register,
+            });
+        }
+        self.registers.release_to(inner);
     }
 
     /// `expr` evaluated into `slot`.
