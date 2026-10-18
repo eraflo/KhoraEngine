@@ -22,6 +22,7 @@
 //! order of what reaches the engine is the test's, not a file watcher's.
 
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use khora_sdk::khora_core::ecs::entity::EntityId;
 use khora_sdk::khora_core::script::ScriptValue;
@@ -148,6 +149,32 @@ impl Game {
         }
     }
 
+    /// Ticks until `done` holds, or panics after a few seconds with `what`.
+    ///
+    /// Not a fixed number of frames: the scripting agent runs on the budget
+    /// the DCC grants it, from its own thread, and a frame of a machine under
+    /// load may come before that budget does — the behavior and the reloads
+    /// it drains then wait for the next one.
+    fn tick_until(&mut self, what: &str, mut done: impl FnMut(&mut Self) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            self.engine.tick();
+            if done(self) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("timed out waiting for {what}");
+    }
+
+    /// How many times `Mover` ran: its `ticks`.
+    fn ticks(&mut self) -> i64 {
+        match self.field("ticks") {
+            Some(ScriptValue::Int(ticks)) => ticks,
+            _ => 0,
+        }
+    }
+
     fn field(&mut self, field: &str) -> Option<ScriptValue> {
         let world = self.engine.game_world_mut()?.inner_world();
         let key = world.components().key_named("Mover")?;
@@ -171,27 +198,27 @@ impl Drop for Game {
 #[test]
 fn a_field_inserted_after_an_emptied_save_keeps_every_value_by_name() {
     let mut game = Game::start();
-    game.engine.tick();
-    assert_eq!(
-        game.field("ticks"),
-        Some(ScriptValue::Int(1)),
-        "`Mover` ran"
-    );
+    // Counted past what a reset to the default could reach in a frame or
+    // two, so a count that started over is told from one carried on.
+    game.tick_until("`Mover` to run three times", |game| game.ticks() >= 3);
+    let before = game.ticks();
 
     game.save("");
     game.engine.tick();
     game.save(MOVER_WITH_EXTRA_FIRST);
-    game.engine.tick();
+    game.tick_until("the module to come back", |game| {
+        game.field("extra") == Some(ScriptValue::Int(7))
+    });
 
-    assert_eq!(game.field("extra"), Some(ScriptValue::Int(7)));
     assert_eq!(
         game.field("speed"),
         Some(ScriptValue::Float(2.0)),
         "the value setup named"
     );
     assert!(
-        matches!(game.field("ticks"), Some(ScriptValue::Int(n)) if n >= 2),
-        "`Mover` runs on, counting from where it was: {:?}",
+        game.ticks() >= before,
+        "`Mover` keeps the count it had, {before}: {:?}",
         game.field("ticks")
     );
+    game.tick_until("`Mover` to run on", |game| game.ticks() > before);
 }
