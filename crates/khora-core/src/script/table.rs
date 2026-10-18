@@ -76,6 +76,7 @@ macro_rules! script_value_table {
             Int    : i64                           ;
             Float  : f32                           ;
             Entity : $crate::ecs::entity::EntityId ;
+            Asset  : $crate::asset::AssetUUID      ;
             Vec2   : $crate::math::Vec2            ;
             Vec3   : $crate::math::Vec3            ;
             Vec4   : $crate::math::Vec4            ;
@@ -124,7 +125,7 @@ mod tests {
     fn the_table_covers_every_regular_variant() {
         assert_eq!(
             NAMES,
-            ["Bool", "Int", "Float", "Entity", "Vec2", "Vec3", "Vec4", "Quat", "Color"]
+            ["Bool", "Int", "Float", "Entity", "Asset", "Vec2", "Vec3", "Vec4", "Quat", "Color"]
         );
         assert_eq!(widths().len(), NAMES.len(), "one width per row");
     }
@@ -134,6 +135,12 @@ mod tests {
     fn the_irregular_variants_are_not_in_the_table() {
         assert!(is_regular(&ScriptValue::Int(0)));
         assert!(is_regular(&ScriptValue::Vec3(crate::math::Vec3::ZERO)));
+        assert!(
+            is_regular(&ScriptValue::Asset(crate::asset::AssetUUID::from_bytes(
+                [7; 16]
+            ))),
+            "an asset reference is a regular value, carried like an entity"
+        );
 
         assert!(!is_regular(&ScriptValue::Unit));
         assert!(!is_regular(&ScriptValue::Str(String::new())));

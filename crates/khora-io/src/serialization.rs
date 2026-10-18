@@ -29,9 +29,9 @@ use khora_data::scene::record::{LoadReport, ReportEntry};
 use khora_data::scene::snapshot::{prepare_snapshot, write_snapshot, SNAPSHOT_ENCODING_ID};
 use khora_data::scene::{
     about_what_loads, capture_save, capture_world, collapse, compose_reporting, encoding_of,
-    expand_reporting, prepare, prepare_game, read_save_file, read_scene_file, write_save_file,
-    write_scene_file, CompactEncoding, Identity, LoadFailure, MsgPackEncoding, NoPrefabs,
-    PrefabSource, Prepared, SaveError, SceneEncoding, SceneFileReadError, SceneRecord,
+    expand_reporting, prepare, prepare_game, read_into, read_save_file, read_scene_file,
+    write_save_file, write_scene_file, CompactEncoding, Identity, LoadFailure, MsgPackEncoding,
+    NoPrefabs, PrefabSource, Prepared, SaveError, SceneEncoding, SceneFileReadError, SceneRecord,
     TextEncoding,
 };
 
@@ -197,7 +197,9 @@ impl SerializationService {
                 .map_err(SerializationServiceError::LoadFailed);
         }
         let record = read_scene_file(file).map_err(SerializationServiceError::ReadFailed)?;
-        let (record, left_out) = Self::expanded(record, prefabs)?;
+        let (record, mut left_out) = read_into(world, record);
+        let (record, expansion) = Self::expanded(record, prefabs)?;
+        left_out.extend(expansion);
         prepare(world, &record)
             .map(|prepared| (prepared, left_out))
             .map_err(SerializationServiceError::LoadFailed)

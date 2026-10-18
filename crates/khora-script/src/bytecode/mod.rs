@@ -587,6 +587,7 @@ pub fn shape_of(ty: &TypeRef) -> Shape {
             "float" | "Duration" | "Angle" => Shape::Float,
             "string" => Shape::Str,
             "bool" | "Entity" => Shape::Other,
+            asset if khora_core::asset::AssetKind::from_ergon_name(asset).is_some() => Shape::Other,
             // Borrowed from the checker's list so the name is `'static`, which
             // is what lets a shape carry it. Any other name the checker let
             // through is a struct.

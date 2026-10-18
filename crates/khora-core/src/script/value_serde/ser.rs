@@ -16,7 +16,7 @@
 
 use serde::ser::{self, Serialize};
 
-use super::{ValueSerdeError, ENTITY_NAME};
+use super::{ValueSerdeError, ASSET_NAME, ENTITY_NAME};
 use crate::ecs::entity::EntityId;
 use crate::script::ScriptValue;
 
@@ -119,10 +119,24 @@ impl ser::Serializer for Writer {
     }
     fn serialize_newtype_struct<T: Serialize + ?Sized>(
         self,
-        _: &'static str,
+        name: &'static str,
         value: &T,
     ) -> Result<ScriptValue, ValueSerdeError> {
-        value.serialize(Writer)
+        let inner = value.serialize(Writer)?;
+        if name != ASSET_NAME {
+            return Ok(inner);
+        }
+        // An asset's identity writes itself as its hyphenated text.
+        match &inner {
+            ScriptValue::Str(text) => text
+                .parse()
+                .map(ScriptValue::Asset)
+                .map_err(|error| ValueSerdeError(format!("an asset identity `{text}`: {error}"))),
+            other => Err(ValueSerdeError(format!(
+                "an asset identity written as {}",
+                other.type_name()
+            ))),
+        }
     }
     fn serialize_newtype_variant<T: Serialize + ?Sized>(
         self,

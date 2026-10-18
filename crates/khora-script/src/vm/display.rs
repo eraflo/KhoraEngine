@@ -27,6 +27,7 @@
 //! | `Vec2/3/4`, `Quat` | `(1.0, 2.0, 3.0)` |
 //! | `Color` | `rgba(1.0, 0.5, 0.0, 1.0)` |
 //! | `Entity` | `Entity#12`, `Entity#12v3` past generation 0 |
+//! | an asset | `Asset#1a2b3c4d`, its identity's first eight hex digits |
 //! | `string` | as it is |
 
 use std::fmt::Write as _;
@@ -149,6 +150,12 @@ pub(crate) fn show(value: Value, shown: Shown, out: &mut String) {
         }
         Value::Entity(entity) => {
             let _ = write!(out, "Entity#{}v{}", entity.index, entity.generation);
+        }
+        Value::Asset(asset) => {
+            out.push_str("Asset#");
+            for byte in &asset.as_bytes()[..4] {
+                let _ = write!(out, "{byte:02x}");
+            }
         }
         // Nothing the checker lets into a hole.
         _ => out.push('?'),

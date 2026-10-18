@@ -87,6 +87,11 @@ impl Owned {
             ("bool", Self::Scalar(Value::Bool(_))) => true,
             ("string", Self::Str(_)) => true,
             ("Entity", Self::Scalar(Value::Entity(_))) => true,
+            (ty, Self::Scalar(Value::Asset(_)))
+                if khora_core::asset::AssetKind::from_ergon_name(ty).is_some() =>
+            {
+                true
+            }
             ("Vec2", Self::Scalar(Value::Vec2(_))) => true,
             ("Vec3", Self::Scalar(Value::Vec3(_))) => true,
             ("Vec4", Self::Scalar(Value::Vec4(_))) => true,

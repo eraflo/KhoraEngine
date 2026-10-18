@@ -640,3 +640,109 @@ fn an_int_too_wide_for_a_float_field_is_reported_dropped() {
         "the report says the value was dropped"
     );
 }
+
+/// `Ammo`, typed, declared with each `(name, type)` of `fields`, every
+/// default `null` or empty.
+fn declare_typed_ammo(world: &mut World, fields: &[(&str, khora_core::script::ErgonType)]) {
+    use khora_data::ecs::{ComponentProvenance, PackedField, PackedLayout, RuntimeComponentDecl};
+    let default = |ty: &khora_core::script::ErgonType| match ty {
+        khora_core::script::ErgonType::Array(_) => ScriptValue::Array(Vec::new()),
+        _ => ScriptValue::Null,
+    };
+    world
+        .register_runtime_component(RuntimeComponentDecl {
+            name: "Ammo".to_owned(),
+            domain: SemanticDomain::Script,
+            provenance: ComponentProvenance::Authored,
+            resumable: false,
+            layout: PackedLayout::typed(
+                fields
+                    .iter()
+                    .map(|(name, ty)| PackedField {
+                        name: (*name).to_owned(),
+                        kind: FieldKind::of(ty),
+                        default: default(ty),
+                    })
+                    .collect(),
+                fields.iter().map(|(_, ty)| ty.clone()).collect(),
+            )
+            .expect("a valid layout"),
+        })
+        .expect("`Ammo` registers");
+}
+
+/// An `int` saved inside an optional, an array or a struct field is kept,
+/// converted, once that `int` became a `float` — as a bare `int` field that
+/// became a `float` keeps its value (`Widened`), and as the language widens
+/// an `int` written into any of them. A load reading the file's declared
+/// types must not take `int?` → `float?` for a change of meaning.
+#[test]
+fn an_int_inside_an_optional_an_array_or_a_struct_widens_onto_a_float_declaration() {
+    use khora_core::script::ErgonType;
+    let optional = |ty: ErgonType| ErgonType::Optional(Box::new(ty));
+    let array = |ty: ErgonType| ErgonType::Array(Box::new(ty));
+    let loot = |ty: ErgonType| ErgonType::Struct {
+        name: "Loot".to_owned(),
+        fields: Some(vec![("n".to_owned(), ty)]),
+    };
+    let mut src = World::new();
+    declare_typed_ammo(
+        &mut src,
+        &[
+            ("spare", optional(ErgonType::Int)),
+            ("clips", array(ErgonType::Int)),
+            ("loot", optional(loot(ErgonType::Int))),
+        ],
+    );
+    let entity = src.spawn(Transform::identity());
+    super::declared_components::attach(
+        &mut src,
+        entity,
+        "Ammo",
+        ScriptValue::Struct(vec![
+            ("spare".into(), ScriptValue::Int(3)),
+            (
+                "clips".into(),
+                ScriptValue::Array(vec![ScriptValue::Int(2)]),
+            ),
+            (
+                "loot".into(),
+                ScriptValue::Struct(vec![("n".into(), ScriptValue::Int(5))]),
+            ),
+        ]),
+    );
+    src.mark_authored(entity).expect("authored");
+    let record = capture_world(&src).expect("captures");
+
+    let mut dst = World::new();
+    declare_typed_ammo(
+        &mut dst,
+        &[
+            ("spare", optional(ErgonType::Float)),
+            ("clips", array(ErgonType::Float)),
+            ("loot", optional(loot(ErgonType::Float))),
+        ],
+    );
+    let applied = apply(&mut dst, &record, Identity::Keep).expect("the scene loads");
+    let (_, entity) = applied.entities[0];
+    let lost: Vec<String> = [
+        ("spare", ScriptValue::Float(3.0)),
+        ("clips", ScriptValue::Array(vec![ScriptValue::Float(2.0)])),
+        (
+            "loot",
+            ScriptValue::Struct(vec![("n".into(), ScriptValue::Float(5.0))]),
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(name, expected)| {
+        let found = field_of(&dst, entity, "Ammo", name);
+        (found != Some(expected.clone()))
+            .then(|| format!("`{name}`: expected {expected:?}, found {found:?}"))
+    })
+    .collect();
+    assert!(
+        lost.is_empty(),
+        "each int converts exactly: {lost:?}; report {:?}",
+        applied.report
+    );
+}

@@ -382,6 +382,9 @@ fn fits(value: &FrozenValue, ty: &str, structs: &[crate::vm::StructLayout]) -> b
             FrozenValue::Literal(_) | FrozenValue::Text(_) | FrozenValue::Expired
         ),
         "Entity" => matches!(value, FrozenValue::Entity(_)),
+        ty if khora_core::asset::AssetKind::from_ergon_name(ty).is_some() => {
+            matches!(value, FrozenValue::Asset(_))
+        }
         "Vec2" => matches!(value, FrozenValue::Vec2(_)),
         "Vec3" => matches!(value, FrozenValue::Vec3(_)),
         "Vec4" => matches!(value, FrozenValue::Vec4(_)),

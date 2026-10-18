@@ -45,6 +45,11 @@ pub enum Value {
     /// and a register already holds more than that — and because an entity
     /// outlives the frame that named it, which the arena's contents do not.
     Entity(EntityId),
+    /// An asset reference: its identity alone, the kind being the type's.
+    ///
+    /// Inline like [`Entity`](Self::Entity): sixteen bytes, what a register
+    /// already holds for a colour.
+    Asset(khora_core::asset::AssetUUID),
     /// Text, wherever it lives.
     Str(StrRef),
     /// A 2D vector.
@@ -244,6 +249,7 @@ impl Value {
             Self::Float(_) => "float",
             Self::Bool(_) => "bool",
             Self::Entity(_) => "Entity",
+            Self::Asset(_) => "asset",
             Self::Str(_) => "string",
             Self::Vec2(_) => "Vec2",
             Self::Vec3(_) => "Vec3",

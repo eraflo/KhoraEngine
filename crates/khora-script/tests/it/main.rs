@@ -26,6 +26,7 @@ mod array_growth_checks;
 mod array_growth_fuel;
 mod array_paths;
 mod arrays;
+mod asset_values;
 mod await_takes_a_duration;
 mod behavior_component_writes;
 mod behavior_components;

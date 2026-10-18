@@ -37,6 +37,7 @@ use serde::{Deserialize, Serialize};
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{ErgonType, ScriptValue};
 
+use super::asset_kinds::{kinds_conflict, value_holds_asset};
 use super::component_registration::{registration_named, Kept, Staged, StagedComponent};
 use super::record::{
     from_record, to_record, EntityRef, Record, RecordError, ReferenceReader, ReferenceWriter,
@@ -361,6 +362,10 @@ pub(crate) struct DeclaredLoad {
     /// The file's fields, in its declaration's order: what a snapshot's
     /// positional row holds.
     file_fields: Vec<String>,
+    /// The fields the world gives another asset kind than the file does: a
+    /// value read for one holding an asset names an asset of the file's kind,
+    /// so the field keeps its default, as a hot reload retyping it would.
+    rekinded_fields: Vec<String>,
     /// The declaration to register when the world has none.
     pub(crate) register: Option<RuntimeComponentDecl>,
     /// Whether it is runtime state a game save keeps and a scene does not.
@@ -429,6 +434,18 @@ pub(crate) fn plan_fields(
         None => None,
     };
     let file_fields = fields.iter().map(|field| field.name.clone()).collect();
+    let rekinded_fields = match &live {
+        Some((_, layout, _)) => fields
+            .iter()
+            .zip(&types)
+            .filter(|(field, ty)| {
+                let live = layout.slot_of(&field.name).and_then(|slot| layout.ty(slot));
+                matches!((ty, live), (Some(file), Some(live)) if kinds_conflict(file, live))
+            })
+            .map(|(field, _)| field.name.clone())
+            .collect(),
+        None => Vec::new(),
+    };
     let (domain, layout, register, resumable) = match live {
         Some((domain, layout, live_resumable)) => (domain, layout, None, live_resumable),
         None => {
@@ -459,6 +476,7 @@ pub(crate) fn plan_fields(
         domain,
         layout,
         file_fields,
+        rekinded_fields,
         register,
         resumable,
     })
@@ -539,6 +557,10 @@ impl DeclaredLoad {
                 entry(&mut report, &field, ReportKind::Dropped);
                 continue;
             };
+            if self.rekinded_fields.contains(&field) && value_holds_asset(&value) {
+                entry(&mut report, &field, ReportKind::Dropped);
+                continue;
+            }
             match fit(&self.layout, slot, value) {
                 Some((value, widened)) => {
                     if widened {

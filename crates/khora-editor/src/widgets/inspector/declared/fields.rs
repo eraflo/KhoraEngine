@@ -109,9 +109,12 @@ pub fn neutral(ty: &ErgonType) -> ScriptValue {
                 .collect(),
         ),
         ErgonType::Struct { fields: None, .. } => ScriptValue::Struct(Vec::new()),
-        ErgonType::Entity | ErgonType::Optional(_) | ErgonType::Engine(_) | ErgonType::Any => {
-            ScriptValue::Null
-        }
+        // An entity and an asset name one thing or none, and none is `null`.
+        ErgonType::Entity
+        | ErgonType::Asset(_)
+        | ErgonType::Optional(_)
+        | ErgonType::Engine(_)
+        | ErgonType::Any => ScriptValue::Null,
     }
 }
 
@@ -160,6 +163,11 @@ pub fn value_text(
         (ScriptValue::Entity(entity), _) => entity_text(*entity, names),
         (ScriptValue::Array(items), _) => format!("{} items", items.len()),
         (ScriptValue::Struct(fields), _) => format!("{} fields", fields.len()),
+        // As a script shows it: the first group of its identity.
+        (ScriptValue::Asset(asset), _) => {
+            let text = asset.to_string();
+            format!("Asset#{}", &text[..8])
+        }
     }
 }
 

@@ -24,6 +24,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 
 use super::{ErgonType, FieldHints, FieldRange, ScriptField};
+use crate::asset::{AssetKind, AssetUUID};
 use crate::ecs::entity::EntityId;
 use crate::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 use crate::script::ScriptValue;
@@ -456,6 +457,135 @@ fn an_int_is_widened_where_a_float_is_declared_at_any_depth() {
         .widened(ScriptValue::Struct(vec![("x".to_owned(), int(1))])),
         ScriptValue::Struct(vec![("x".to_owned(), int(1))])
     );
+}
+
+// ─── Asset references ───────────────────────────────────────────────────────
+
+/// Each asset kind with the spelling Ergon writes its type with.
+const ASSET_SPELLINGS: [(AssetKind, &str); 6] = [
+    (AssetKind::Prefab, "Prefab"),
+    (AssetKind::Sound, "Sound"),
+    (AssetKind::Material, "Material"),
+    (AssetKind::Mesh, "Mesh"),
+    (AssetKind::Texture, "Texture"),
+    (AssetKind::Scene, "Scene"),
+];
+
+fn asset(kind: AssetKind) -> ErgonType {
+    ErgonType::Asset(kind)
+}
+
+/// **Each asset kind reads back from its spelling** as that kind — not as a
+/// struct of that name, which the language would otherwise take it for.
+#[test]
+fn each_asset_kind_reads_back_from_its_spelling() {
+    for (kind, spelling) in ASSET_SPELLINGS {
+        assert_eq!(ErgonType::parse(spelling), Some(asset(kind)), "{spelling}");
+        assert_ne!(
+            ErgonType::parse(spelling),
+            Some(ErgonType::named_struct(spelling)),
+            "`{spelling}` is no struct"
+        );
+    }
+}
+
+/// **An optional asset, an array of assets and an array of optional assets
+/// read back** from their spelling, as any other type's do.
+#[test]
+fn an_optional_and_an_array_of_assets_read_back_from_their_spelling() {
+    assert_eq!(
+        ErgonType::parse("Sound?"),
+        Some(ErgonType::Optional(Box::new(asset(AssetKind::Sound))))
+    );
+    assert_eq!(
+        ErgonType::parse("Mesh[]"),
+        Some(ErgonType::Array(Box::new(asset(AssetKind::Mesh))))
+    );
+    assert_eq!(
+        ErgonType::parse("Texture?[]"),
+        Some(ErgonType::Array(Box::new(ErgonType::Optional(Box::new(
+            asset(AssetKind::Texture)
+        )))))
+    );
+}
+
+/// **An asset type is written as Ergon spells it** — `Display` and the
+/// signature alike, with its `?` and `[]` — and both read back.
+#[test]
+fn an_asset_type_is_written_as_its_spelling() {
+    for (kind, spelling) in ASSET_SPELLINGS {
+        let ty = asset(kind);
+        assert_eq!(ty.to_string(), spelling);
+        assert_eq!(ty.signature(), spelling);
+        let optional = ErgonType::Optional(Box::new(ty.clone()));
+        assert_eq!(optional.to_string(), format!("{spelling}?"));
+        assert_eq!(optional.signature(), format!("{spelling}?"));
+        let array = ErgonType::Array(Box::new(optional.clone()));
+        assert_eq!(array.to_string(), format!("{spelling}?[]"));
+        for written in [ty, optional, array] {
+            assert_eq!(
+                ErgonType::parse(&written.to_string()),
+                Some(written.clone())
+            );
+            assert_eq!(
+                ErgonType::parse(&written.signature()),
+                Some(written.clone())
+            );
+        }
+    }
+}
+
+/// **An asset type is saved as its spelling** — what a declared field's
+/// record keeps — and read back from it.
+#[test]
+fn an_asset_type_is_saved_as_its_spelling() {
+    let ty = ErgonType::Optional(Box::new(asset(AssetKind::Prefab)));
+    let text = serde_json::to_string(&ty).expect("serializes");
+    assert_eq!(text, "\"Prefab?\"");
+    assert_eq!(serde_json::from_str::<ErgonType>(&text).expect("reads"), ty);
+}
+
+/// **An asset type admits an asset reference, whatever its kind** — the kind
+/// is static, never in the value — and nothing else: no entity, no text, no
+/// struct, and no `null` unless the type is optional.
+#[test]
+fn an_asset_type_admits_an_asset_reference_and_nothing_else() {
+    let reference = ScriptValue::Asset(AssetUUID::from_bytes([0x5c; 16]));
+    for (kind, _) in ASSET_SPELLINGS {
+        let ty = asset(kind);
+        assert!(ty.admits(&reference), "{kind:?} admits an asset reference");
+        for other in [
+            ScriptValue::Entity(EntityId {
+                index: 1,
+                generation: 0,
+            }),
+            ScriptValue::Str("bullet.kprefab".to_owned()),
+            ScriptValue::Int(0),
+            ScriptValue::Struct(Vec::new()),
+            ScriptValue::Null,
+        ] {
+            assert!(!ty.admits(&other), "{kind:?} refuses {other:?}");
+        }
+        let optional = ErgonType::Optional(Box::new(ty));
+        assert!(optional.admits(&ScriptValue::Null), "{kind:?}? admits null");
+        assert!(optional.admits(&reference), "{kind:?}? admits a reference");
+    }
+    assert!(
+        ErgonType::Array(Box::new(asset(AssetKind::Mesh)))
+            .admits(&ScriptValue::Array(vec![reference.clone(), reference])),
+        "an array of meshes admits references"
+    );
+}
+
+/// **An asset is no other type's value**: an `Entity` field, a struct field
+/// and a `string` field refuse an asset reference.
+#[test]
+fn another_type_refuses_an_asset_reference() {
+    let reference = ScriptValue::Asset(AssetUUID::from_bytes([0x6d; 16]));
+    assert!(!ErgonType::Entity.admits(&reference));
+    assert!(!ErgonType::Str.admits(&reference));
+    assert!(!ErgonType::named_struct("Prefab").admits(&reference));
+    assert!(!ErgonType::Engine("Vec3").admits(&reference));
 }
 
 // ─── Inspector hints ────────────────────────────────────────────────────────

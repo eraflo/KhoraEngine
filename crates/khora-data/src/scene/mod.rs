@@ -24,6 +24,7 @@ pub mod material_registration;
 pub mod shape;
 
 pub mod apply;
+mod asset_kinds;
 pub mod capture;
 pub mod declared;
 pub mod encoding;
@@ -43,6 +44,7 @@ pub use material_registration::*;
 pub use shape::{ComponentShape, FieldSchema};
 
 pub use apply::{apply, prepare, Applied, Identity, LoadFailure, Prepared};
+pub use asset_kinds::read_into;
 pub use capture::{capture_subtree, capture_world, SaveError};
 pub use declared::{DeclaredFieldRecord, DeclaredRecord};
 pub use encoding::{

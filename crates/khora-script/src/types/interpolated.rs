@@ -58,6 +58,7 @@ fn shown(ty: &Ty) -> bool {
         | Ty::Bool
         | Ty::Str
         | Ty::Entity
+        | Ty::Asset(_)
         | Ty::Error => true,
         Ty::Engine(name) => matches!(*name, "Vec2" | "Vec3" | "Vec4" | "Quat" | "Color"),
         Ty::Optional(inner) => shown(inner),

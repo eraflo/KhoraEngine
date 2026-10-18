@@ -657,6 +657,7 @@ fn ty_variants(x: &khora_script::types::ty::Ty) {
         khora_script::types::ty::Ty::Duration => {}
         khora_script::types::ty::Ty::Angle => {}
         khora_script::types::ty::Ty::Entity => {}
+        khora_script::types::ty::Ty::Asset(..) => {}
         khora_script::types::ty::Ty::Engine(..) => {}
         khora_script::types::ty::Ty::Optional(..) => {}
         khora_script::types::ty::Ty::Array(..) => {}
@@ -817,6 +818,7 @@ fn value_variants(x: &khora_script::vm::value::Value) {
         khora_script::vm::value::Value::Float(..) => {}
         khora_script::vm::value::Value::Bool(..) => {}
         khora_script::vm::value::Value::Entity(..) => {}
+        khora_script::vm::value::Value::Asset(..) => {}
         khora_script::vm::value::Value::Str(..) => {}
         khora_script::vm::value::Value::Vec2(..) => {}
         khora_script::vm::value::Value::Vec3(..) => {}

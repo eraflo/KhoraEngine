@@ -32,6 +32,7 @@ macro_rules! define_samples {
                 ScriptValue::Int(-7),
                 ScriptValue::Float(2.5),
                 ScriptValue::Entity(EntityId { index: 3, generation: 2 }),
+                ScriptValue::Asset(khora_core::asset::AssetUUID::from_bytes([7; 16])),
                 ScriptValue::Vec2(Vec2::new(1.0, 2.0)),
                 ScriptValue::Vec3(Vec3::new(1.0, 2.0, 3.0)),
                 ScriptValue::Vec4(Vec4::new(1.0, 2.0, 3.0, 4.0)),

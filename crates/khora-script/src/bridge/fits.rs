@@ -50,6 +50,9 @@ pub fn fits(value: &ScriptValue, ty: &str) -> bool {
         "bool" => matches!(value, ScriptValue::Bool(_)),
         "string" => matches!(value, ScriptValue::Str(_)),
         "Entity" => matches!(value, ScriptValue::Entity(_)),
+        ty if khora_core::asset::AssetKind::from_ergon_name(ty).is_some() => {
+            matches!(value, ScriptValue::Asset(_))
+        }
         "Vec2" => matches!(value, ScriptValue::Vec2(_)),
         "Vec3" => matches!(value, ScriptValue::Vec3(_)),
         "Vec4" => matches!(value, ScriptValue::Vec4(_)),

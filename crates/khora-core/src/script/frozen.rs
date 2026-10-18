@@ -173,6 +173,9 @@ pub enum FrozenValue {
         /// Each field, by name.
         fields: Vec<(String, FrozenValue)>,
     },
+    /// An asset reference, by its identity. Last, so the variants a binary
+    /// encoding numbers keep their numbers.
+    Asset(crate::asset::AssetUUID),
 }
 
 #[cfg(test)]

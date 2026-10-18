@@ -29,6 +29,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::asset::AssetUUID;
 use crate::ecs::entity::EntityId;
 use crate::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 
@@ -81,6 +82,11 @@ pub enum ScriptValue {
     Struct(Vec<(String, ScriptValue)>),
     /// The absent optional.
     Null,
+    /// An asset reference — `Prefab`, `Sound`, … — by its identity. The kind
+    /// is the field's type, never part of the value.
+    ///
+    /// Last, so the variants a binary encoding numbers keep their numbers.
+    Asset(AssetUUID),
 }
 
 impl ScriptValue {
@@ -118,6 +124,7 @@ impl ScriptValue {
             Self::Quat(_) => "Quat",
             Self::Color(_) => "Color",
             Self::Entity(_) => "Entity",
+            Self::Asset(_) => "asset",
             Self::Array(_) => "array",
             Self::Struct(_) => "struct",
             Self::Null => "null",
@@ -166,6 +173,13 @@ impl ScriptValue {
         Entity,
         EntityId,
         "The value as an `Entity`, if it is one."
+    );
+
+    accessor!(
+        as_asset,
+        Asset,
+        AssetUUID,
+        "The value as an asset reference, if it is one."
     );
 
     /// The value as a string slice, if it is one.

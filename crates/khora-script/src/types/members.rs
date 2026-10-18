@@ -424,7 +424,10 @@ impl Checker {
                 article(ty)
             ),
             span,
-            format!("make it optional (`{}?`): it starts at `null`", ty.name()),
+            match ty {
+                Ty::Asset(kind) => crate::types::ty::asset_field_note(*kind),
+                _ => format!("make it optional (`{}?`): it starts at `null`", ty.name()),
+            },
         );
     }
 }

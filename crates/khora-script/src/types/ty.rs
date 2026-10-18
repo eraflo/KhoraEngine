@@ -54,6 +54,9 @@ pub enum Ty {
     Angle,
     /// An ECS entity handle. Never null — `Entity?` is `Optional(Entity)`.
     Entity,
+    /// An asset reference of one kind — `Prefab`, `Sound`, … Never null, as
+    /// [`Entity`](Self::Entity): `Prefab?` is `Optional(Asset(Prefab))`.
+    Asset(khora_core::asset::AssetKind),
     /// An engine math or handle type: `Vec3`, `Quat`, `Color`, …
     Engine(&'static str),
     /// `T?`
@@ -86,6 +89,16 @@ pub enum Ty {
 /// holds the two together.
 pub const ENGINE_TYPES: &[&str] = &["Vec2", "Vec3", "Vec4", "Quat", "Color"];
 
+/// What a field of a bare asset type is told: there is no asset literal, so
+/// the field has nothing to start at but `null`, and its asset is chosen in
+/// the inspector.
+pub(crate) fn asset_field_note(kind: khora_core::asset::AssetKind) -> String {
+    format!(
+        "make it `{}?` and choose it in the inspector: there is no asset literal, so it starts at `null`",
+        kind.ergon_name()
+    )
+}
+
 impl Ty {
     /// The name to print in a diagnostic.
     pub fn name(&self) -> String {
@@ -98,6 +111,7 @@ impl Ty {
             Self::Duration => "Duration".to_owned(),
             Self::Angle => "Angle".to_owned(),
             Self::Entity => "Entity".to_owned(),
+            Self::Asset(kind) => kind.ergon_name().to_owned(),
             Self::Engine(name) => (*name).to_owned(),
             Self::Optional(inner) => format!("{}?", inner.name()),
             Self::Array(element) => format!("{}[]", element.name()),
@@ -204,7 +218,9 @@ fn named(name: &str, known_struct: &dyn Fn(&str) -> bool) -> Option<Ty> {
         "Angle" => Ty::Angle,
         "Entity" => Ty::Entity,
         other => {
-            if let Some(engine) = ENGINE_TYPES.iter().find(|t| **t == other) {
+            if let Some(kind) = khora_core::asset::AssetKind::from_ergon_name(other) {
+                Ty::Asset(kind)
+            } else if let Some(engine) = ENGINE_TYPES.iter().find(|t| **t == other) {
                 Ty::Engine(engine)
             } else if known_struct(other) {
                 Ty::Struct(other.to_owned())

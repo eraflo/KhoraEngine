@@ -188,6 +188,10 @@ impl Hash {
                 self.number(u64::from(entity.index));
                 self.number(u64::from(entity.generation));
             }
+            Value::Asset(asset) => {
+                self.text("asset");
+                self.0.update(asset.as_bytes());
+            }
             Value::Str(StrRef::Const(index)) => {
                 self.text("str");
                 self.text(program.string(*index).unwrap_or_default());

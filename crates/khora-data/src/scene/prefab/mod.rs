@@ -220,8 +220,12 @@ fn expand_in(
     let mut sources = Vec::new();
     for instance in &record.instances {
         let (base, inside) = prefab_under(instance.prefab, instance.root, prefabs, stack)?;
+        // Read as the record linking to it declares its components: that
+        // record's declarations describe every cell once expanded.
+        let (base, rekinded) = super::asset_kinds::read_as(base, &record.declared);
         let (composed, left_out) = compose_reporting(&base, &instance.delta)?;
         report.extend(inside);
+        report.extend(rekinded);
         report.extend(left_out);
         sources.push(base);
         sources.push(composed.clone());

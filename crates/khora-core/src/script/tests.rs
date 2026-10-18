@@ -285,6 +285,30 @@ fn an_accessor_declines_rather_than_panicking_on_the_wrong_shape() {
     assert_eq!(value.as_entity(), None);
 }
 
+/// **An asset reference is named `asset`**, whatever its kind — the kind is
+/// the field's type, never the value's.
+#[test]
+fn an_asset_value_reports_its_type_as_asset() {
+    let uuid = crate::asset::AssetUUID::from_bytes([0x1a; 16]);
+    assert_eq!(ScriptValue::Asset(uuid).type_name(), "asset");
+}
+
+/// **`as_asset` reads an asset reference back** and declines any other
+/// shape, an entity and `null` included.
+#[test]
+fn as_asset_reads_an_asset_and_declines_the_rest() {
+    let uuid = crate::asset::AssetUUID::from_bytes([0x2b; 16]);
+    assert_eq!(ScriptValue::Asset(uuid).as_asset(), Some(uuid));
+    assert_eq!(ScriptValue::Entity(entity(1)).as_asset(), None);
+    assert_eq!(ScriptValue::Null.as_asset(), None);
+    assert_eq!(ScriptValue::Int(3).as_asset(), None);
+    assert_eq!(
+        ScriptValue::Asset(uuid).as_entity(),
+        None,
+        "an asset is no entity"
+    );
+}
+
 #[test]
 fn a_string_and_an_array_read_back_by_reference() {
     let text = ScriptValue::Str("boss".to_owned());

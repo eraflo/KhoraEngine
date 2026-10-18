@@ -186,6 +186,7 @@ impl Value {
             Self::Float(value) => FrozenValue::Float(value),
             Self::Bool(value) => FrozenValue::Bool(value),
             Self::Entity(entity) => FrozenValue::Entity(entity),
+            Self::Asset(asset) => FrozenValue::Asset(asset),
             Self::Str(StrRef::Const(index)) => {
                 FrozenValue::Literal(program.strings.get(index as usize)?.clone())
             }
@@ -214,6 +215,7 @@ impl Value {
             FrozenValue::Float(value) => Self::Float(*value),
             FrozenValue::Bool(value) => Self::Bool(*value),
             FrozenValue::Entity(entity) => Self::Entity(*entity),
+            FrozenValue::Asset(asset) => Self::Asset(*asset),
             FrozenValue::Literal(text) => {
                 let index = program.strings.iter().position(|known| known == text)?;
                 Self::Str(StrRef::Const(u32::try_from(index).ok()?))

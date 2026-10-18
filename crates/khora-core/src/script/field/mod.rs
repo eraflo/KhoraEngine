@@ -14,6 +14,7 @@
 
 //! What a Rust field type is to a script.
 
+use crate::asset::AssetKind;
 use crate::ecs::entity::EntityId;
 use crate::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 
@@ -38,6 +39,9 @@ pub enum ErgonType {
     Str,
     /// `Entity`
     Entity,
+    /// An asset reference of one kind: `Prefab`, `Sound`, `Material`,
+    /// `Mesh`, `Texture`, `Scene`.
+    Asset(AssetKind),
     /// An engine type, by its Ergon name: `Vec3`, `Quat`, `Color`.
     Engine(&'static str),
     /// `Duration` — a time a script reads in its own unit, stored as a float.
@@ -103,6 +107,9 @@ impl ErgonType {
             "Angle" => Self::Angle,
             "string" => Self::Str,
             "Entity" => Self::Entity,
+            name if AssetKind::from_ergon_name(name).is_some() => {
+                Self::Asset(AssetKind::from_ergon_name(name)?)
+            }
             name => match ENGINE_TYPES.iter().find(|known| **known == name) {
                 Some(known) => Self::Engine(known),
                 None => {
@@ -191,7 +198,9 @@ impl ErgonType {
                 ScriptValue::Float(_) | ScriptValue::Int(_),
             )
             | (Self::Str, ScriptValue::Str(_))
-            | (Self::Entity, ScriptValue::Entity(_)) => true,
+            | (Self::Entity, ScriptValue::Entity(_))
+            // The kind is the field's, never the value's: any reference fits.
+            | (Self::Asset(_), ScriptValue::Asset(_)) => true,
             (Self::Any, _) => true,
             (Self::Engine(name), value) => value.type_name() == *name,
             (Self::Optional(_), ScriptValue::Null) => true,
@@ -279,6 +288,7 @@ impl std::fmt::Display for ErgonType {
             Self::Float => f.write_str("float"),
             Self::Str => f.write_str("string"),
             Self::Entity => f.write_str("Entity"),
+            Self::Asset(kind) => f.write_str(kind.ergon_name()),
             Self::Engine(name) => f.write_str(name),
             Self::Optional(inner) => write!(f, "{inner}?"),
             Self::Array(element) => write!(f, "{element}[]"),

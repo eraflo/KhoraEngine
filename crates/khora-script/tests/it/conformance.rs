@@ -1320,6 +1320,45 @@ const SHIPPED: &[Row] = &[
         args: &[],
         expect: Expect::Rejected("shows numbers, text, flags, engine values and entities"),
     },
+    // ─── Asset references ───────────────────────────────────────────────────
+    Row {
+        construct: "an asset field starts at `null`",
+        source: "behavior Gun {
+                     Prefab? bullet;
+                     bool Unset() { return bullet == null; }
+                 }",
+        entry: "Gun.Unset",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(true)),
+    },
+    Row {
+        construct: "an asset local starts at `null`",
+        source: "fn bool F() { Sound? s; Sound? t = null; return s == t && s == null; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(true)),
+    },
+    Row {
+        construct: "an interpolated empty asset is `null`",
+        source: r#"fn bool F() { Mesh? m = null; return $"{m}" == "null"; }"#,
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Bool(true)),
+    },
+    Row {
+        construct: "a bare asset field",
+        source: "behavior Gun { Prefab bullet; }",
+        entry: "Gun.Update",
+        args: &[],
+        expect: Expect::Rejected("`bullet`"),
+    },
+    Row {
+        construct: "a struct named like an asset kind",
+        source: "struct Texture { int width; }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("`Texture`"),
+    },
 ];
 
 /// What a spec will change. Each row states the behaviour the spec must

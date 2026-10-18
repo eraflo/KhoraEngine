@@ -20,9 +20,12 @@
 //! writes them as script values a column can hold, and reads them back:
 //! a struct becomes a `Struct` of its fields by name, a sequence an `Array`,
 //! an absent `Option` `Null` and a present one its value, an enum variant a
-//! one-field `Struct` named by the variant, and an [`EntityId`] — its serde
+//! one-field `Struct` named by the variant, an [`EntityId`] — its serde
 //! name `khora.EntityId` — a [`ScriptValue::Entity`], so the references a
-//! save remaps are found wherever they sit.
+//! save remaps are found wherever they sit, and an [`AssetUUID`] — its serde
+//! name `khora.AssetUUID` — a [`ScriptValue::Asset`].
+//!
+//! [`AssetUUID`]: crate::asset::AssetUUID
 //!
 //! [`EntityId`]: crate::ecs::entity::EntityId
 
@@ -39,6 +42,9 @@ mod tests;
 /// The serde name an [`EntityId`](crate::ecs::entity::EntityId) is written
 /// under.
 const ENTITY_NAME: &str = "khora.EntityId";
+
+/// The serde name an [`AssetUUID`](crate::asset::AssetUUID) is written under.
+const ASSET_NAME: &str = "khora.AssetUUID";
 
 /// Why a value could not be written as a [`ScriptValue`], or read from one.
 #[derive(Debug, Clone, PartialEq)]

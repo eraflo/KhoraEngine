@@ -16,7 +16,7 @@
 
 use serde::de::{self, DeserializeSeed, IntoDeserializer, Visitor};
 
-use super::{ValueSerdeError, ENTITY_NAME};
+use super::{ValueSerdeError, ASSET_NAME, ENTITY_NAME};
 use crate::script::ScriptValue;
 
 impl de::Error for ValueSerdeError {
@@ -174,10 +174,17 @@ impl<'de> de::Deserializer<'de> for Reader<'de> {
 
     fn deserialize_newtype_struct<V: Visitor<'de>>(
         self,
-        _: &'static str,
+        name: &'static str,
         visitor: V,
     ) -> Result<V::Value, ValueSerdeError> {
-        visitor.visit_newtype_struct(self)
+        match (name, self.0) {
+            // An asset's identity reads itself from its hyphenated text.
+            (ASSET_NAME, ScriptValue::Asset(asset)) => {
+                visitor.visit_newtype_struct(asset.to_string().into_deserializer())
+            }
+            (ASSET_NAME, _) => Err(self.refused("an asset")),
+            _ => visitor.visit_newtype_struct(self),
+        }
     }
 
     fn deserialize_seq<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value, ValueSerdeError> {

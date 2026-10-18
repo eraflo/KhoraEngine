@@ -219,7 +219,10 @@ fn report_field(field: &Field, diagnostics: &mut Vec<Diagnostic>) {
                 field.span,
             )
             .with_note(
-                "write `= …`, or make the field optional (`T?`) so a new row starts at `null`",
+                match khora_core::asset::AssetKind::from_ergon_name(&type_name(&field.ty)) {
+                    Some(kind) => crate::types::ty::asset_field_note(kind),
+                    None => "write `= …`, or make the field optional (`T?`) so a new row starts at `null`".to_owned(),
+                },
             ),
         );
     }

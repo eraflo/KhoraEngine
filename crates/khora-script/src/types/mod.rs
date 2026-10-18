@@ -32,6 +32,7 @@
 //! everything, so one mistake yields one message instead of a cascade.
 
 mod arithmetic;
+mod asset_names;
 mod assign;
 pub mod binding;
 mod calls;
@@ -339,7 +340,9 @@ impl Checker {
     /// order does not decide what compiles.
     fn collect(&mut self, module: &Module) {
         // Struct names first, so a struct may hold another declared later.
-        for item in &module.items {
+        // A name the language gives an asset kind is refused below and never
+        // known as the item's: every `Sound?` still names the asset type.
+        for item in module.items.iter().filter(|item| !Self::asset_named(item)) {
             if let Item::Struct(decl) = item {
                 self.structs.insert(
                     decl.name.clone(),
@@ -371,6 +374,10 @@ impl Checker {
 
         // Now the members, with every struct name already known.
         for item in &module.items {
+            if Self::asset_named(item) {
+                self.refuse_asset_name(item.name(), item.name_span());
+                continue;
+            }
             match item {
                 Item::Struct(decl) => self.collect_struct(decl),
                 Item::Component(decl) => self.collect_component(decl),

@@ -217,6 +217,17 @@ fn alpha_mode_variants(x: &khora_core::asset::AlphaMode) {
     }
 }
 
+fn asset_kind_variants(x: &khora_core::asset::AssetKind) {
+    match x {
+        khora_core::asset::AssetKind::Prefab => {}
+        khora_core::asset::AssetKind::Sound => {}
+        khora_core::asset::AssetKind::Material => {}
+        khora_core::asset::AssetKind::Mesh => {}
+        khora_core::asset::AssetKind::Texture => {}
+        khora_core::asset::AssetKind::Scene => {}
+    }
+}
+
 fn asset_metadata_fields(x: &khora_core::asset::AssetMetadata) {
     let _ = (
         &x.uuid,
@@ -974,6 +985,7 @@ fn frozen_value_variants(x: &khora_core::script::frozen::FrozenValue) {
         khora_core::script::frozen::FrozenValue::Float(..) => {}
         khora_core::script::frozen::FrozenValue::Bool(..) => {}
         khora_core::script::frozen::FrozenValue::Entity(..) => {}
+        khora_core::script::frozen::FrozenValue::Asset(..) => {}
         khora_core::script::frozen::FrozenValue::Literal(..) => {}
         khora_core::script::frozen::FrozenValue::Expired => {}
         khora_core::script::frozen::FrozenValue::Vec2(..) => {}
@@ -1041,6 +1053,7 @@ fn script_value_variants(x: &khora_core::script::value::ScriptValue) {
         khora_core::script::value::ScriptValue::Quat(..) => {}
         khora_core::script::value::ScriptValue::Color(..) => {}
         khora_core::script::value::ScriptValue::Entity(..) => {}
+        khora_core::script::value::ScriptValue::Asset(..) => {}
         khora_core::script::value::ScriptValue::Array(..) => {}
         khora_core::script::value::ScriptValue::Struct(..) => {}
         khora_core::script::value::ScriptValue::Null => {}
@@ -1580,6 +1593,21 @@ fn module_asset_paths_still_resolve() {
     is_default::<khora_core::asset::AlphaMode>();
     is_serialize::<khora_core::asset::AlphaMode>();
     is_deserialize_owned::<khora_core::asset::AlphaMode>();
+    let _ = type_name::<khora_core::asset::AssetKind>();
+    let _ = asset_kind_variants as fn(&khora_core::asset::AssetKind);
+    let _: [khora_core::asset::AssetKind; 6] = khora_core::asset::AssetKind::ALL;
+    let _ = khora_core::asset::AssetKind::ergon_name
+        as fn(khora_core::asset::AssetKind) -> &'static str;
+    let _ = khora_core::asset::AssetKind::index_name
+        as fn(khora_core::asset::AssetKind) -> &'static str;
+    let _ = khora_core::asset::AssetKind::from_ergon_name
+        as fn(&str) -> Option<khora_core::asset::AssetKind>;
+    let _ = khora_core::asset::AssetKind::from_index_name
+        as fn(&str) -> Option<khora_core::asset::AssetKind>;
+    is_debug::<khora_core::asset::AssetKind>();
+    is_clone::<khora_core::asset::AssetKind>();
+    is_copy::<khora_core::asset::AssetKind>();
+    is_partial_eq::<khora_core::asset::AssetKind>();
     // trait `khora_core::asset::AsAny`: see `as_any_trait_items`
     // trait `khora_core::asset::Asset`: see `asset_trait_items`
     let _ = type_name::<khora_core::asset::Handle<khora_core::asset::EmissiveMaterial>>();

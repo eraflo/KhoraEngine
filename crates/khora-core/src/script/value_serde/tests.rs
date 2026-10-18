@@ -15,6 +15,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{from_value, to_value};
+use crate::asset::AssetUUID;
 use crate::ecs::entity::EntityId;
 use crate::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 use crate::script::{
@@ -261,6 +262,88 @@ fn an_entity_round_trips() {
         assert_eq!(round_trip(&id), id);
         assert_eq!(from_value::<EntityId>(&ScriptValue::Entity(id)), Ok(id));
     }
+}
+
+/// A loadout naming the assets it uses: one chosen, one not yet.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct Loadout {
+    bullet: Option<AssetUUID>,
+    hit: Option<AssetUUID>,
+    rounds: u32,
+}
+
+/// **An asset reference is an `Asset`** — not text, not sixteen numbers —
+/// wherever it sits: alone, in a list, in an option, in a struct. Its serde
+/// name `khora.AssetUUID` is what tells it apart, as `khora.EntityId` does an
+/// entity.
+#[test]
+fn an_asset_reference_is_an_asset_value_wherever_it_sits() {
+    let bullet = AssetUUID::from_bytes([0x1a; 16]);
+    assert_eq!(
+        to_value(&bullet).expect("writes"),
+        ScriptValue::Asset(bullet)
+    );
+    assert_eq!(
+        to_value(&vec![bullet]).expect("writes"),
+        ScriptValue::Array(vec![ScriptValue::Asset(bullet)])
+    );
+    assert_eq!(
+        to_value(&Some(bullet)).expect("writes"),
+        ScriptValue::Asset(bullet)
+    );
+    let loadout = Loadout {
+        bullet: Some(bullet),
+        hit: None,
+        rounds: 6,
+    };
+    assert_eq!(
+        to_value(&loadout).expect("writes"),
+        fields(&[
+            ("bullet", ScriptValue::Asset(bullet)),
+            ("hit", ScriptValue::Null),
+            ("rounds", ScriptValue::Int(6)),
+        ])
+    );
+}
+
+/// **An asset reference round trips**, alone and as an optional field of a
+/// struct, chosen or not.
+#[test]
+fn an_asset_reference_round_trips() {
+    for uuid in [
+        AssetUUID::from_bytes([0; 16]),
+        AssetUUID::from_bytes([0xff; 16]),
+        AssetUUID::new_v5("prefabs/bullet.kprefab"),
+    ] {
+        assert_eq!(round_trip(&uuid), uuid);
+        assert_eq!(from_value::<AssetUUID>(&ScriptValue::Asset(uuid)), Ok(uuid));
+        let loadout = Loadout {
+            bullet: Some(uuid),
+            hit: None,
+            rounds: 1,
+        };
+        assert_eq!(round_trip(&loadout), loadout);
+    }
+}
+
+/// **A script value holding an asset round trips** — a state's data may
+/// hold one, alone or named.
+#[test]
+fn a_script_value_holding_an_asset_round_trips() {
+    let value = ScriptValue::Asset(AssetUUID::from_bytes([0x42; 16]));
+    assert_eq!(round_trip(&value), value);
+    let named = vec![("bullet".to_owned(), value)];
+    assert_eq!(round_trip(&named), named);
+}
+
+/// **An asset is read only from an asset value**: an entity, text or a
+/// number is refused where an `AssetUUID` is read, and an asset where an
+/// entity is.
+#[test]
+fn an_asset_is_read_only_from_an_asset_value() {
+    assert!(from_value::<AssetUUID>(&ScriptValue::Entity(entity(1, 0))).is_err());
+    assert!(from_value::<AssetUUID>(&ScriptValue::Int(3)).is_err());
+    assert!(from_value::<EntityId>(&ScriptValue::Asset(AssetUUID::from_bytes([3; 16]))).is_err());
 }
 
 /// **The engine's math types round trip** — a script value already holds
