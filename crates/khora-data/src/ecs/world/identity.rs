@@ -153,7 +153,10 @@ impl World {
     /// An entity id held back for a load: not alive, not handed to anyone
     /// else, until it is spawned or released.
     pub fn reserve_entity(&mut self) -> EntityId {
-        self.entities.reserve()
+        self.settle_reservations();
+        let entity = self.entities.reserve();
+        self.after_allocation();
+        entity
     }
 
     /// Brings a reserved id to life, empty — an entity like a spawned one,

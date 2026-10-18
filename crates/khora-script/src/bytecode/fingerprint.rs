@@ -478,12 +478,13 @@ impl Hash {
                 self.text(program.string(*event).unwrap_or_default());
             }
             I::SpawnEntity {
+                dst,
                 position,
                 spawn,
                 base,
                 count,
             } => {
-                self.op("SpawnEntity", &[*position, *base]);
+                self.op("SpawnEntity", &[*dst, *position, *base]);
                 self.number(u64::from(*count));
                 let patches = program
                     .spawns

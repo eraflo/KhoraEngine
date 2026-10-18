@@ -199,10 +199,11 @@ fn apply_one(world: &mut World, command: &WorldCommand) -> Result<(), ApplyError
         }
         WorldCommand::SetParent { entity, parent } => set_parent(world, *entity, *parent),
         WorldCommand::Spawn {
+            entity,
             position,
             rotation,
             components,
-        } => spawn(world, *position, *rotation, components),
+        } => spawn(world, *entity, *position, *rotation, components),
         WorldCommand::Despawn { entity } => {
             // Recursive, so a guard holding a weapon as a child does not leave
             // the weapon floating where it died.
@@ -274,11 +275,16 @@ fn set_parent(
 
 fn spawn(
     world: &mut World,
+    entity: EntityId,
     position: Vec3,
     rotation: Quaternion,
     components: &[(ComponentName, ScriptValue)],
 ) -> Result<(), ApplyError> {
-    let entity = world.spawn(Transform::new(position, rotation, Vec3::ONE));
+    // At the id the turn reserved, which its later commands already name — or
+    // nowhere: an id this world never handed out, or one already used.
+    if !world.spawn_at(entity, Transform::new(position, rotation, Vec3::ONE)) {
+        return Err(ApplyError::NoSuchEntity(entity));
+    }
 
     // A component that fails to attach leaves a half-built entity, so the spawn
     // is rolled back rather than left in the scene: a projectile with no damage

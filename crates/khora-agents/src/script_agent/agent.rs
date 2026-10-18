@@ -223,6 +223,10 @@ impl Agent for ScriptAgent {
         let mut ctx = LaneContext::new();
         // `view` is borrowed from the LaneBus, read-only for the frame.
         ctx.insert_ref(view);
+        // Where a spawn takes its entity's id, from the same bus.
+        if let Some(reservations) = context.bus.get::<khora_data::flow::ReservationView>() {
+            ctx.insert_ref(reservations);
+        }
         ctx.insert(Fuel(self.fuel));
         // The guard is held for the whole of this call, outliving `ctx`, and
         // the contention declaration is what keeps a concurrent agent out of it.

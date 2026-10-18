@@ -81,6 +81,9 @@ pub struct Host {
     /// How many rows this frame's queries took: what their sweeps cost the
     /// frame, for the budget's next estimate.
     pub swept: usize,
+    /// Where a `Spawn` takes its entity's id: the reserver of the world its
+    /// commands are for, or one of its own for a program run without a world.
+    pub reserver: std::sync::Arc<khora_core::ecs::EntityReserver>,
 }
 
 impl Default for Host {
@@ -109,6 +112,7 @@ impl Host {
             outbox: EventQueue::new(),
             components: Default::default(),
             swept: 0,
+            reserver: std::sync::Arc::new(khora_core::ecs::EntityReserver::new()),
         }
     }
 
@@ -131,6 +135,16 @@ impl Host {
     /// frame, starting its count over, would allow.
     pub fn with_arena(mut self, arena: Arena) -> Self {
         self.arena = arena;
+        self
+    }
+
+    /// Hands the host the reserver of the world its commands are for: a
+    /// `Spawn` takes its entity's id from it.
+    pub fn with_reserver(
+        mut self,
+        reserver: std::sync::Arc<khora_core::ecs::EntityReserver>,
+    ) -> Self {
+        self.reserver = reserver;
         self
     }
 

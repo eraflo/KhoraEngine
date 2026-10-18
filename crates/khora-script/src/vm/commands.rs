@@ -168,6 +168,7 @@ impl Machine {
                 host.outbox.push(raised);
             }
             Instruction::SpawnEntity {
+                dst,
                 position,
                 spawn,
                 base,
@@ -190,11 +191,20 @@ impl Machine {
                 }
                 // Upright: the new entity turns itself in its own `OnSpawn`
                 // when it should face elsewhere.
-                host.commands.push(WorldCommand::Spawn {
+                // Its id now, from the world it is for: what follows in the
+                // turn names it, and the frame's end spawns it there.
+                let entity = host.reserver.reserve();
+                self.write(dst, Value::Entity(entity))?;
+                let command = WorldCommand::Spawn {
+                    entity,
                     position: at,
                     rotation: Quaternion::IDENTITY,
                     components,
-                });
+                };
+                // In the working set at once, so `b.Get(…)` reads what the
+                // spawn gave it.
+                host.components.observe(&command);
+                host.commands.push(command);
             }
             _ => unreachable!("step_command is reached only for component writes"),
         }

@@ -209,6 +209,7 @@ fn conflicts_are_reported_in_a_stable_order() {
 #[test]
 fn spawning_twice_is_not_a_conflict() {
     let spawn = WorldCommand::Spawn {
+        entity: entity(40),
         position: Vec3::ZERO,
         rotation: Quaternion::IDENTITY,
         components: vec![("Name".into(), ScriptValue::Str("Explosion".to_owned()))],
@@ -221,11 +222,12 @@ fn spawning_twice_is_not_a_conflict() {
     assert_eq!(buffer.len(), 2);
 }
 
-/// A spawn has no subject yet — the id does not exist until the boundary
-/// applies it, so the command cannot name one.
+/// A spawn acts on no existing entity: the id it carries is reserved, and
+/// nothing lives at it until the boundary commits it.
 #[test]
 fn a_spawn_names_no_entity() {
     let spawn = WorldCommand::Spawn {
+        entity: entity(40),
         position: Vec3::ZERO,
         rotation: Quaternion::IDENTITY,
         components: vec![("Name".into(), ScriptValue::Str("Explosion".to_owned()))],

@@ -97,6 +97,7 @@ mod sites;
 mod sized_operation_sites;
 mod source_positions;
 mod source_positions_across_the_import_graph;
+mod spawned_entities;
 mod state_call_resolution;
 mod state_entry_dispatch;
 mod state_scope;

@@ -476,6 +476,9 @@ pub enum Instruction {
     /// carrying each patch of [`Program::spawns`](super::Program::spawns)`[spawn]`,
     /// whose values follow one another from `base`.
     SpawnEntity {
+        /// Where the new entity's id goes: reserved now, so what follows in
+        /// the turn can name it.
+        dst: Reg,
         /// The new entity's position.
         position: Reg,
         /// Which spawn.

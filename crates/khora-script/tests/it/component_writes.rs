@@ -270,25 +270,33 @@ fn a_spawn_carries_each_component_patch() {
          }",
     );
 
+    let queued = queued(&program, "Main", &[]);
+    let [WorldCommand::Spawn {
+        position,
+        rotation,
+        components,
+        ..
+    }] = queued.as_slice()
+    else {
+        panic!("one spawn: {queued:?}");
+    };
+    assert_eq!(*position, Vec3::new(1.0, 2.0, 3.0));
+    assert_eq!(*rotation, Quaternion::IDENTITY);
     assert_eq!(
-        queued(&program, "Main", &[]),
-        vec![WorldCommand::Spawn {
-            position: Vec3::new(1.0, 2.0, 3.0),
-            rotation: Quaternion::IDENTITY,
-            components: vec![
-                (
-                    ComponentName::new("RigidBody"),
-                    patch(&[("mass", ScriptValue::Float(3.0))]),
-                ),
-                (
-                    ComponentName::new("Collider"),
-                    patch(&[
-                        ("friction", ScriptValue::Float(0.8)),
-                        ("is_sensor", ScriptValue::Bool(true)),
-                    ]),
-                ),
-            ],
-        }]
+        *components,
+        vec![
+            (
+                ComponentName::new("RigidBody"),
+                patch(&[("mass", ScriptValue::Float(3.0))]),
+            ),
+            (
+                ComponentName::new("Collider"),
+                patch(&[
+                    ("friction", ScriptValue::Float(0.8)),
+                    ("is_sensor", ScriptValue::Bool(true)),
+                ]),
+            ),
+        ]
     );
 }
 

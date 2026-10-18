@@ -142,6 +142,12 @@ impl EventQueue {
         self.events.len()
     }
 
+    /// Drops every event raised after the first `len` — what a turn that
+    /// faulted raised, which no one must hear.
+    pub fn truncate(&mut self, len: usize) {
+        self.events.truncate(len);
+    }
+
     /// Whether none are.
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()

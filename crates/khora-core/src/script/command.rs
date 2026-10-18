@@ -133,12 +133,14 @@ pub enum WorldCommand {
     /// and make this command unapplicable until an asset path exists to resolve
     /// it against.
     ///
-    /// The command carries no way to refer to the entity it creates, and that is
-    /// deliberate: the id does not exist until the boundary applies this, so a
-    /// reference would have to be a promise. The new entity configures itself in
-    /// its own `OnSpawn`, which runs where the id is real — deferred creation is
-    /// livable precisely because that hook exists.
+    /// The entity's id is reserved in the turn that queued this, from the
+    /// world's [`EntityReserver`](crate::ecs::EntityReserver): the script holds
+    /// it at once and configures the entity with the commands that follow. The
+    /// boundary commits the id when every component is accepted, and releases
+    /// it otherwise — a refused spawn never existed.
     Spawn {
+        /// The id reserved for it.
+        entity: EntityId,
         /// Where to place it.
         ///
         /// Typed rather than left to `components` because a spawn always places

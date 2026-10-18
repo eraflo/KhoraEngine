@@ -46,6 +46,7 @@ pub mod companion;
 pub mod physics;
 mod registration;
 pub mod render;
+pub mod reservations;
 pub mod script;
 mod selection;
 pub mod shadow;
@@ -57,6 +58,7 @@ pub use audio::{
 pub use physics::{PhysicsFlow, PhysicsStepResult, PhysicsView};
 pub use registration::*;
 pub use render::RenderFlow;
+pub use reservations::{ReservationFlow, ReservationView};
 pub use script::{ScriptArrival, ScriptFlow, ScriptInstance, ScriptProgram, ScriptView};
 pub use selection::Selection;
 pub use shadow::{ShadowFlow, ShadowMatrices, ShadowView};

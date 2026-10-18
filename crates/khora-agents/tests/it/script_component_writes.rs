@@ -48,11 +48,14 @@ fn build(main: &str) -> Program {
 /// `world`. Returns how many commands were applied.
 fn run_and_apply(world: &mut World, main: &str, member: &str, entity: EntityId) -> usize {
     let program = build(main);
-    let mut host = Host::new().for_entity(entity);
+    let mut host = Host::new()
+        .for_entity(entity)
+        .with_reserver(world.reserver());
     let mut machine = Machine::new(&program, member, &[]).expect("the member exists");
     assert_eq!(machine.run(&program, &mut host, u64::MAX), Run::Completed);
     let queued = host.end_frame();
     assert!(!queued.is_empty(), "the script queued its write");
+    world.settle_reservations();
     apply_all(world, &queued)
 }
 

@@ -112,6 +112,30 @@ impl EntityStore {
         true
     }
 
+    /// Holds back `id`, a fresh index at the end of the store a reserver
+    /// already handed out: its slot, not alive.
+    pub fn hold_fresh(&mut self, id: EntityId) {
+        debug_assert_eq!(id.index as usize, self.entities.len());
+        self.entities.push((id, None));
+        self.reserved.insert(id.index);
+    }
+
+    /// Holds back a recycled id for a reserver — `None` when no index is
+    /// free. Its generation moves on, so it never names what lived there.
+    pub fn reserve_recycled(&mut self) -> Option<EntityId> {
+        let index = self.freed_entities.pop()?;
+        let (id_slot, _) = &mut self.entities[index as usize];
+        id_slot.generation += 1;
+        let id = *id_slot;
+        self.reserved.insert(index);
+        Some(id)
+    }
+
+    /// How many slots the store holds: alive, dead and held back.
+    pub fn slots(&self) -> usize {
+        self.entities.len()
+    }
+
     /// Gives a reserved id back to the free list, never having lived.
     pub fn release_reserved(&mut self, id: EntityId) {
         let held = self

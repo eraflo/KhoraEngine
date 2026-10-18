@@ -22,7 +22,7 @@ use khora_data::flow::ScriptView;
 use khora_script::native::Host;
 
 use super::arrival::{arrive, Arriving};
-use super::hooks::{despawns_itself, say_goodbye};
+use super::hooks::{despawns_itself, say_goodbye, TurnStart};
 use super::mail::{keep, sit_out};
 use super::persistence;
 use super::report::ScriptRunReport;
@@ -398,8 +398,9 @@ pub fn run_behaviors(
             }
 
             // Where this behavior's own commands start, so a `this.Despawn()` it
-            // queues can be told from one an earlier behavior queued.
-            let commands_before = host.commands.len();
+            // queues can be told from one an earlier behavior queued — and where
+            // its events and writes start, so a turn that faults leaves none.
+            let turn = TurnStart::mark(host);
 
             let slice = remaining.min(FUEL_PER_BEHAVIOR);
             let outcome = run_one(
@@ -417,11 +418,14 @@ pub fn run_behaviors(
             );
             ran_last = Some(instance.entity);
             turns += 1;
+            if matches!(outcome, Outcome::Faulted { .. }) {
+                turn.undo(host);
+            }
 
             // Its farewell belongs to the frame that *decided* the despawn, not to
             // the one that notices the entity gone: here the entity is still in the
             // view and still readable, and a frame later it is neither.
-            let leaving = despawns_itself(&host.commands, commands_before, instance.entity);
+            let leaving = despawns_itself(&host.commands, turn.commands, instance.entity);
             let farewell = leaving.then(|| {
                 let left = slice.saturating_sub(outcome.spent());
                 say_goodbye(&compiled, &program.behavior, host, left)

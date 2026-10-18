@@ -132,12 +132,15 @@ fn run(
         .iter()
         .map(|name| ComponentName::new(name.as_str()))
         .collect();
-    let mut host = Host::new().for_entity(entity);
+    let mut host = Host::new()
+        .for_entity(entity)
+        .with_reserver(world.reserver());
     host.components = FrameComponents::new(Arc::new(world.project_components(&names)));
     let mut machine = Machine::new(program, member, args).expect("the member exists");
     assert_eq!(machine.run(program, &mut host, u64::MAX), Run::Completed);
     let result = machine.result();
     let queued = host.end_frame();
+    world.settle_reservations();
     (result, apply_all(world, &queued))
 }
 

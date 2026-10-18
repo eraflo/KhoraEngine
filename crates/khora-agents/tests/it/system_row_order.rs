@@ -235,11 +235,11 @@ const FAULTING: Project = &[
     ),
 ];
 
-/// **A fault keeps the rows ended before it**: the rows before the faulting
-/// one are written, the faulting row and those after it are not, and the
-/// system runs no more.
+/// **A fault mid-sweep leaves no row written**: a turn that faults applies
+/// none of its commands — the rows it ended before the fault included — and
+/// the system runs no more.
 #[test]
-fn a_fault_mid_sweep_keeps_the_rows_ended_before_it() {
+fn a_fault_mid_sweep_leaves_no_row_written() {
     let mut session = SystemSession::new(World::new(), FAULTING);
     let entities = healthy(&mut session, 4);
 
@@ -250,5 +250,5 @@ fn a_fault_mid_sweep_keeps_the_rows_ended_before_it() {
         .iter()
         .map(|&entity| int(&session.world, entity, "Health", "current"))
         .collect();
-    assert_eq!(currents, vec![Some(1), Some(2), Some(2), Some(3)]);
+    assert_eq!(currents, vec![Some(0), Some(1), Some(2), Some(3)]);
 }

@@ -39,6 +39,7 @@ mod identity;
 mod migration;
 mod projection;
 mod queries;
+mod reservations;
 mod runtime;
 
 pub use column_write::ColumnWriteReport;
@@ -80,6 +81,9 @@ pub struct World {
     /// The entity a reference to nothing names, once one is needed — see
     /// [`World::nowhere`].
     nowhere: Option<EntityId>,
+    /// Ids a script reserves in its turn, for this world to commit or take
+    /// back at the frame's end.
+    reserver: std::sync::Arc<khora_core::ecs::EntityReserver>,
     /// Process-unique id of this `World` instance. Folded into Flow cache
     /// keys so a freshly created World (whose epochs restart at zero, e.g.
     /// a play-mode snapshot restore) can never alias a previous World's
@@ -93,7 +97,12 @@ static WORLD_INSTANCE_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic:
 impl World {
     /// (Internal) Allocates a new or recycled `EntityId` and reserves its metadata slot.
     fn create_entity(&mut self) -> EntityId {
-        self.entities.create_entity()
+        // What a script reserved first, so a spawn here never takes an index
+        // a reservation already holds.
+        self.settle_reservations();
+        let entity = self.entities.create_entity();
+        self.after_allocation();
+        entity
     }
 
     /// (Internal) Finds a page suitable for the given `ComponentBundle`, or creates one if none exists.
@@ -173,6 +182,7 @@ impl World {
             domain_epochs: [0; SemanticDomain::COUNT],
             identity: identity::IdentityCell::default(),
             nowhere: None,
+            reserver: std::sync::Arc::new(khora_core::ecs::EntityReserver::new()),
             instance_id: WORLD_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         };
         // Generic and hand-implemented components can't self-register via the

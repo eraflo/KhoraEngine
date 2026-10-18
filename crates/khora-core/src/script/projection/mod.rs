@@ -182,12 +182,19 @@ impl PartialEq for ComponentProjection {
     }
 }
 
+/// One write of the running turn: the key it wrote, and what the overlay held
+/// there before — `None` when it held nothing.
+type Replaced = ((ComponentName, EntityId), Option<Option<ScriptValue>>);
+
 /// The frame's working set: the projection, and what this frame's scripts
 /// wrote over it.
 #[derive(Debug, Default)]
 pub struct FrameComponents {
     projection: Arc<ComponentProjection>,
     overlay: HashMap<(ComponentName, EntityId), Option<ScriptValue>>,
+    /// What each write of the running turn replaced, in order — `None` for a
+    /// key the overlay did not hold — so a turn that faults is undone.
+    journal: Vec<Replaced>,
 }
 
 impl FrameComponents {
@@ -196,7 +203,34 @@ impl FrameComponents {
         Self {
             projection,
             overlay: HashMap::new(),
+            journal: Vec::new(),
         }
+    }
+
+    /// A turn starts: what it writes from here can be undone.
+    pub fn begin_turn(&mut self) {
+        self.journal.clear();
+    }
+
+    /// The turn faulted: every write it made is undone, so no later turn
+    /// reads what the frame's end will never apply.
+    pub fn undo_turn(&mut self) {
+        while let Some((key, before)) = self.journal.pop() {
+            match before {
+                Some(value) => {
+                    self.overlay.insert(key, value);
+                }
+                None => {
+                    self.overlay.remove(&key);
+                }
+            }
+        }
+    }
+
+    /// Writes `value` over `key`, remembering what it replaced.
+    fn write(&mut self, key: (ComponentName, EntityId), value: Option<ScriptValue>) {
+        let before = self.overlay.insert(key.clone(), value);
+        self.journal.push((key, before));
     }
 
     /// `entity`'s copy of component `name` — `None` when it does not hold it.
@@ -296,8 +330,7 @@ impl FrameComponents {
                 else {
                     return;
                 };
-                self.overlay
-                    .insert((component.clone(), *entity), Some(merged(current, value)));
+                self.write((component.clone(), *entity), Some(merged(current, value)));
             }
             WorldCommand::AddComponent {
                 entity,
@@ -314,13 +347,49 @@ impl FrameComponents {
                     .default_row()
                     .cloned()
                     .unwrap_or(ScriptValue::Struct(Vec::new()));
-                self.overlay
-                    .insert((component.clone(), *entity), Some(merged(start, value)));
+                self.write((component.clone(), *entity), Some(merged(start, value)));
             }
             WorldCommand::RemoveComponent { entity, component }
                 if self.tracked(component).is_some() && self.has(component.as_str(), *entity) =>
             {
-                self.overlay.insert((component.clone(), *entity), None);
+                self.write((component.clone(), *entity), None);
+            }
+            // The entity the turn reserved, as the boundary will place it:
+            // its `Transform` at the spawn's position, upright at unit scale
+            // unless turned, and each component it carries from its default
+            // row with the patch over it.
+            WorldCommand::Spawn {
+                entity,
+                position,
+                rotation,
+                components,
+            } => {
+                let transform = ComponentName::new("Transform");
+                if let Some(projected) = self.tracked(&transform) {
+                    let start = projected
+                        .default_row()
+                        .cloned()
+                        .unwrap_or(ScriptValue::Struct(Vec::new()));
+                    let placed = ScriptValue::Struct(vec![
+                        ("translation".to_owned(), ScriptValue::Vec3(*position)),
+                        ("rotation".to_owned(), ScriptValue::Quat(*rotation)),
+                        (
+                            "scale".to_owned(),
+                            ScriptValue::Vec3(crate::math::Vec3::ONE),
+                        ),
+                    ]);
+                    self.write((transform, *entity), Some(merged(start, &placed)));
+                }
+                for (component, value) in components {
+                    let Some(projected) = self.tracked(component) else {
+                        continue;
+                    };
+                    let start = projected
+                        .default_row()
+                        .cloned()
+                        .unwrap_or(ScriptValue::Struct(Vec::new()));
+                    self.write((component.clone(), *entity), Some(merged(start, value)));
+                }
             }
             // Each row a `Set` of the batch's fields, in the batch's order.
             WorldCommand::WriteColumn { component, batch } => {
@@ -339,8 +408,7 @@ impl FrameComponents {
                             .zip(values.iter().cloned())
                             .collect(),
                     );
-                    self.overlay
-                        .insert((component.clone(), entity), Some(merged(current, &patch)));
+                    self.write((component.clone(), entity), Some(merged(current, &patch)));
                 }
             }
             _ => {}

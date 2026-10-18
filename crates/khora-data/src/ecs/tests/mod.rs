@@ -19,6 +19,7 @@ mod declared_names;
 mod domain_moves;
 mod entity_count;
 mod entity_count_unwind;
+mod entity_reservations;
 mod hierarchy;
 mod hierarchy_writers;
 mod query_mut_aliasing;

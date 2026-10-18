@@ -31,6 +31,14 @@ fn world_with_one_entity() -> (World, EntityId) {
     (world, entity)
 }
 
+/// An id reserved from `world`'s reserver and settled, ready for a spawn to
+/// commit.
+fn reserved(world: &mut World) -> EntityId {
+    let entity = world.reserver().reserve();
+    world.settle_reservations();
+    entity
+}
+
 fn translation(world: &World, entity: EntityId) -> Vec3 {
     world
         .get::<Transform>(entity)
@@ -296,10 +304,12 @@ fn despawning_something_already_gone_is_reported_once() {
 #[test]
 fn spawning_places_the_entity_and_attaches_its_components() {
     let mut world = World::new();
+    let entity = reserved(&mut world);
 
     apply(
         &mut world,
         &WorldCommand::Spawn {
+            entity,
             position: Vec3::new(4.0, 5.0, 6.0),
             rotation: Quaternion::IDENTITY,
             components: vec![("Name".into(), ScriptValue::Str("Explosion".to_owned()))],
@@ -322,10 +332,12 @@ fn spawning_places_the_entity_and_attaches_its_components() {
 #[test]
 fn a_spawn_whose_component_fails_leaves_nothing_behind() {
     let mut world = World::new();
+    let entity = reserved(&mut world);
 
     apply(
         &mut world,
         &WorldCommand::Spawn {
+            entity,
             position: Vec3::ZERO,
             rotation: Quaternion::IDENTITY,
             components: vec![
@@ -526,6 +538,8 @@ fn a_non_finite_number_is_refused_rather_than_written_as_nothing() {
 
 // ─── Value conversion ───────────────────────────────────────────────────────
 
+mod reserved_spawns;
+
 mod json {
     use super::super::json::to_json;
     use khora_core::script::ScriptValue;
@@ -686,8 +700,10 @@ mod typed {
         }
     }
 
-    fn spawn_with(components: Vec<(&str, ScriptValue)>) -> WorldCommand {
+    /// A spawn of `components` at an id reserved from `world`.
+    fn spawn_with(world: &mut World, components: Vec<(&str, ScriptValue)>) -> WorldCommand {
         WorldCommand::Spawn {
+            entity: super::reserved(world),
             position: Vec3::ZERO,
             rotation: Quaternion::IDENTITY,
             components: components
@@ -741,14 +757,14 @@ mod typed {
             })
         );
 
-        apply(
+        let spawn = spawn_with(
             &mut world,
-            &spawn_with(vec![(
+            vec![(
                 "Thermostat",
                 fields(&[("label", ScriptValue::Str("porch".to_owned()))]),
-            )]),
-        )
-        .expect("a Thermostat is spawned");
+            )],
+        );
+        apply(&mut world, &spawn).expect("a Thermostat is spawned");
         let porch = world
             .iter_entities()
             .filter_map(|e| world.get::<Thermostat>(e))
@@ -835,14 +851,14 @@ mod typed {
     fn a_non_finite_float_is_refused() {
         let mut world = world();
 
-        let error = apply(
+        let spawn = spawn_with(
             &mut world,
-            &spawn_with(vec![(
+            vec![(
                 "Thermostat",
                 fields(&[("reading", ScriptValue::Float(f32::NAN))]),
-            )]),
-        )
-        .expect_err("NaN is refused");
+            )],
+        );
+        let error = apply(&mut world, &spawn).expect_err("NaN is refused");
         assert!(is_rejected_by(&error, "Thermostat"), "got {error:?}");
         assert_eq!(world.iter_entities().count(), 0, "the spawn rolled back");
 
@@ -1068,11 +1084,11 @@ mod typed {
         assert!(world.row(entity, charge).is_none(), "detached");
 
         let before: Vec<EntityId> = world.iter_entities().collect();
-        apply(
+        let spawn = spawn_with(
             &mut world,
-            &spawn_with(vec![("Charge", fields(&[("amount", ScriptValue::Int(5))]))]),
-        )
-        .expect("a Charge is spawned");
+            vec![("Charge", fields(&[("amount", ScriptValue::Int(5))]))],
+        );
+        apply(&mut world, &spawn).expect("a Charge is spawned");
         let spawned: Vec<EntityId> = world
             .iter_entities()
             .filter(|e| !before.contains(e))
@@ -1950,13 +1966,14 @@ mod column {
 
     /// **A batch lands where the commands before it left each entity.** Of
     /// one buffer: an entity despawned before the batch skips its row — and
-    /// the entity spawned into its recycled slot is not written for it — and
-    /// an entity moved to another page by an `Add` before the batch is
-    /// written in its new page.
+    /// the entity spawned in the same buffer, at the id reserved for it, is
+    /// not written for it — and an entity moved to another page by an `Add`
+    /// before the batch is written in its new page.
     #[test]
     fn a_column_write_lands_after_the_commands_before_it() {
         let mut world = World::new();
         let entities = bodies(&mut world, 3);
+        let spawned = super::reserved(&mut world);
 
         let report = run(
             &mut world,
@@ -1965,6 +1982,7 @@ mod column {
                     entity: entities[0],
                 },
                 WorldCommand::Spawn {
+                    entity: spawned,
                     position: Vec3::ZERO,
                     rotation: khora_core::math::Quaternion::IDENTITY,
                     components: vec![(
@@ -1993,13 +2011,12 @@ mod column {
                 rows_skipped: 1,
             }
         );
-        let recycled: Vec<_> = world
+        let created: Vec<_> = world
             .iter_entities()
             .filter(|e| !entities.contains(e))
             .collect();
-        assert_eq!(recycled.len(), 1);
-        assert_eq!(recycled[0].index, entities[0].index, "the slot was reused");
-        assert_eq!(mass(&world, recycled[0]), 3.0, "written through a stale id");
+        assert_eq!(created, vec![spawned], "the spawn lives at its reserved id");
+        assert_eq!(mass(&world, spawned), 3.0, "written through a stale id");
         assert!(
             world.get::<Collider>(entities[1]).is_some(),
             "the add landed"

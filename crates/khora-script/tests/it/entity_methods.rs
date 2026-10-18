@@ -245,14 +245,18 @@ fn raise_is_a_method() {
 fn spawn_stays_a_free_function() {
     let program = build("fn void Main() { Spawn(Vec3(1.0, 2.0, 3.0)); }");
     let host = run(&program, "Main", &[]);
-    assert_eq!(
-        host.commands.as_slice(),
-        &[WorldCommand::Spawn {
-            position: Vec3::new(1.0, 2.0, 3.0),
-            rotation: Quaternion::IDENTITY,
-            components: Vec::new(),
-        }]
-    );
+    let [WorldCommand::Spawn {
+        position,
+        rotation,
+        components,
+        ..
+    }] = host.commands.as_slice()
+    else {
+        panic!("one spawn: {:?}", host.commands.as_slice());
+    };
+    assert_eq!(*position, Vec3::new(1.0, 2.0, 3.0));
+    assert_eq!(*rotation, Quaternion::IDENTITY);
+    assert!(components.is_empty());
 
     refused_saying(
         "behavior Spawner { void Go() { this.Spawn(Vec3(1.0, 2.0, 3.0)); } }",

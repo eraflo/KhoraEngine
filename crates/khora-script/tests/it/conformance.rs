@@ -894,6 +894,39 @@ const SHIPPED: &[Row] = &[
         expect: Expect::Rejected("`Spawn`"),
     },
     Row {
+        construct: "`Spawn` returns its entity, written to in the same turn",
+        source: "component Health { int current; int max; }
+                 behavior Spawner {
+                     int Go() {
+                         var b = Spawn(Vec3(0.0, 1.0, 0.0), Health { current: 3 });
+                         b.Set(Health { current: 4 });
+                         b.SetPosition(Vec3(1.0, 0.0, 0.0));
+                         return 2;
+                     }
+                 }",
+        entry: "Spawner.Go",
+        args: &[],
+        expect: Expect::Runs(Value::Int(2)),
+    },
+    Row {
+        construct: "`Spawn` as an `Entity`",
+        source: "fn int F() {
+                     Entity e = Spawn(Vec3(0.0, 0.0, 0.0));
+                     Entity? f = Spawn(Vec3(0.0, 0.0, 0.0));
+                     return 1;
+                 }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Runs(Value::Int(1)),
+    },
+    Row {
+        construct: "`Spawn` as a value of another type",
+        source: "fn void F() { int e = Spawn(Vec3(0.0, 0.0, 0.0)); }",
+        entry: "F",
+        args: &[],
+        expect: Expect::Rejected("expected `int`, found `Entity`"),
+    },
+    Row {
         construct: "a component as a variable's type",
         source: "component Health { int current; int max; }
                  fn void F() { Health h; }",

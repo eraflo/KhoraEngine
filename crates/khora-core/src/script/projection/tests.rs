@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use super::{ColumnSnapshot, ComponentProjection, FrameComponents, ProjectedComponent};
 use crate::ecs::entity::EntityId;
-use crate::math::Vec3;
+use crate::math::{Quaternion, Vec3};
 use crate::script::{ColumnBatch, ComponentName, ScriptValue, WorldCommand};
 
 fn entity(index: u32) -> EntityId {
@@ -248,8 +248,9 @@ fn commands_about_other_things_leave_the_working_set_alone() {
         value: Vec3::new(1.0, 0.0, 0.0),
     });
     frame.observe(&WorldCommand::Spawn {
+        entity: entity(40),
         position: Vec3::ZERO,
-        rotation: crate::math::Quaternion::IDENTITY,
+        rotation: Quaternion::IDENTITY,
         components: vec![(ComponentName::new("Health"), health(1, 1))],
     });
 
@@ -259,6 +260,132 @@ fn commands_about_other_things_leave_the_working_set_alone() {
         field(&frame.get("Health", entity(3)).expect("held"), "current"),
         Some(ScriptValue::Int(7))
     );
+}
+
+// ─── Spawns ─────────────────────────────────────────────────────────────────
+
+fn transform(translation: Vec3, rotation: Quaternion) -> ScriptValue {
+    fields(&[
+        ("translation", ScriptValue::Vec3(translation)),
+        ("rotation", ScriptValue::Quat(rotation)),
+        ("scale", ScriptValue::Vec3(Vec3::ONE)),
+    ])
+}
+
+/// A projected component nobody holds yet, with `default` as its default row.
+fn held_by_nobody(name: &str, default: ScriptValue) -> ProjectedComponent {
+    ProjectedComponent::new(
+        ComponentName::new(name),
+        vec![Box::new(Rows(Vec::new()))],
+        HashMap::new(),
+        Some(default),
+    )
+}
+
+/// `Health` and `Transform` read, held by nobody: what an entity holds here is
+/// only what this frame's commands gave it.
+fn spawn_working_set() -> FrameComponents {
+    FrameComponents::new(Arc::new(ComponentProjection::new(vec![
+        held_by_nobody("Health", health(100, 100)),
+        held_by_nobody("Transform", transform(Vec3::ZERO, Quaternion::IDENTITY)),
+    ])))
+}
+
+fn spawn_at(
+    target: EntityId,
+    position: Vec3,
+    components: Vec<(&str, ScriptValue)>,
+) -> WorldCommand {
+    WorldCommand::Spawn {
+        entity: target,
+        position,
+        rotation: Quaternion::IDENTITY,
+        components: components
+            .into_iter()
+            .map(|(name, value)| (ComponentName::new(name), value))
+            .collect(),
+    }
+}
+
+/// **A spawn attaches what it carries**, each component from its default row
+/// with the patch over it — so the entity reserved for it reads its
+/// components in the same turn.
+#[test]
+fn a_spawn_attaches_its_components_from_the_default_row() {
+    let mut frame = spawn_working_set();
+    let spawned = entity(20);
+
+    frame.observe(&spawn_at(
+        spawned,
+        Vec3::new(1.0, 2.0, 3.0),
+        vec![("Health", fields(&[("current", ScriptValue::Int(7))]))],
+    ));
+
+    assert!(frame.has("Health", spawned));
+    assert_eq!(frame.get("Health", spawned), Some(health(7, 100)));
+    assert!(!frame.has("Health", entity(21)), "no other entity holds it");
+}
+
+/// **A spawn places its entity**: its `Transform` holds the spawn's position
+/// and rotation, at unit scale.
+#[test]
+fn a_spawn_places_its_transform() {
+    let mut frame = spawn_working_set();
+    let spawned = entity(20);
+    let facing = Quaternion::new(0.0, 1.0, 0.0, 0.0);
+
+    frame.observe(&WorldCommand::Spawn {
+        entity: spawned,
+        position: Vec3::new(1.0, 2.0, 3.0),
+        rotation: facing,
+        components: Vec::new(),
+    });
+
+    assert!(frame.has("Transform", spawned));
+    let placed = frame.get("Transform", spawned).expect("placed");
+    assert_eq!(
+        field(&placed, "translation"),
+        Some(ScriptValue::Vec3(Vec3::new(1.0, 2.0, 3.0)))
+    );
+    assert_eq!(field(&placed, "rotation"), Some(ScriptValue::Quat(facing)));
+    assert_eq!(field(&placed, "scale"), Some(ScriptValue::Vec3(Vec3::ONE)));
+    assert!(
+        !frame.has("Health", spawned),
+        "a component the spawn does not carry is not attached"
+    );
+}
+
+/// **A `Set` after a spawn merges onto what it spawned**: the fields it names
+/// change, the others keep the spawn's values.
+#[test]
+fn a_set_after_a_spawn_merges_onto_what_it_spawned() {
+    let mut frame = spawn_working_set();
+    let spawned = entity(20);
+
+    frame.observe(&spawn_at(
+        spawned,
+        Vec3::ZERO,
+        vec![("Health", health(7, 10))],
+    ));
+    frame.observe(&set(spawned, fields(&[("current", ScriptValue::Int(3))])));
+
+    assert_eq!(frame.get("Health", spawned), Some(health(3, 10)));
+}
+
+/// A query of the turn finds the entity a spawn made, as it finds one an
+/// `Add` gave the component.
+#[test]
+fn a_spawned_entity_is_matched_in_the_same_frame() {
+    let mut frame = spawn_working_set();
+    let spawned = entity(20);
+
+    frame.observe(&spawn_at(
+        spawned,
+        Vec3::ZERO,
+        vec![("Health", health(7, 10))],
+    ));
+
+    assert_eq!(frame.matching(&["Health"], &[]), [spawned]);
 }
 
 // ─── Column writes ──────────────────────────────────────────────────────────

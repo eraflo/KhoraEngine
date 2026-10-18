@@ -103,6 +103,9 @@ impl Compiler {
             return self.constant(Value::Unit, Shape::Other);
         };
 
+        // The new entity, named at once: below the mark, it outlives the
+        // spawn's own registers.
+        let dst = self.registers.temp();
         let mark = self.registers.mark();
         let at = self.registers.temp();
         self.place(position, at);
@@ -118,13 +121,14 @@ impl Compiler {
         self.program.spawns.push(patches);
         let spawn = (self.program.spawns.len() - 1) as u32;
         self.emit(Instruction::SpawnEntity {
+            dst,
             position: at,
             spawn,
             base,
             count: count as u16,
         });
         self.registers.release_to(mark);
-        self.constant(Value::Unit, Shape::Other)
+        (dst, Shape::Other)
     }
 
     /// `entity.Set(C { … })` and `entity.Add(C { … })`.

@@ -225,7 +225,7 @@ impl Checker {
         true
     }
 
-    /// `Spawn(Vec3 position, C { … }, …)`.
+    /// `Spawn(Vec3 position, C { … }, …)` — the new entity, named at once.
     pub(super) fn check_spawn(&mut self, args: &[Expr], span: Span, context: &Context) -> Ty {
         let Some((position, components)) = args.split_first() else {
             self.error(
@@ -248,7 +248,7 @@ impl Checker {
                 seen.push(name);
             }
         }
-        Ty::Void
+        Ty::Entity
     }
 
     /// The one component literal of `Set` or `Add`.

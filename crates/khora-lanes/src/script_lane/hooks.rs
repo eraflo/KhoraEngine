@@ -51,6 +51,35 @@ pub(super) enum Hook {
 /// A suspension hands the machine back ([`Hook::Suspended`]) for the caller to
 /// keep and resume next turn: a member cut short finishes where it stopped
 /// instead of running again from the top.
+/// Where a turn's commands, events and working-set writes start — what a turn
+/// that faults gives back, so it leaves nothing, as a load that fails leaves
+/// the world as it was.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct TurnStart {
+    /// The first command the turn queues.
+    pub(super) commands: usize,
+    raised: usize,
+}
+
+impl TurnStart {
+    /// Marks where the next turn starts.
+    pub(super) fn mark(host: &mut Host) -> Self {
+        host.components.begin_turn();
+        Self {
+            commands: host.commands.len(),
+            raised: host.outbox.len(),
+        }
+    }
+
+    /// Drops what the turn queued, raised and wrote — a spawn's reserved id
+    /// goes back unspent.
+    pub(super) fn undo(self, host: &mut Host) {
+        host.commands.truncate(self.commands);
+        host.outbox.truncate(self.raised);
+        host.components.undo_turn();
+    }
+}
+
 pub(super) fn call_hook(
     program: &khora_script::vm::Program,
     behavior: &str,
@@ -88,19 +117,22 @@ pub(super) fn call_hook(
 /// Called at the point the despawn is decided rather than performed, which is
 /// the only moment the entity is both doomed and still there. A fault is logged
 /// rather than returned: disabling a behavior that is about to stop existing
-/// would be a status nobody reads.
+/// would be a status nobody reads. A farewell that faults leaves nothing, as
+/// any turn that faults: what it queued, raised and wrote is dropped.
 pub(super) fn say_goodbye(
     program: &khora_script::vm::Program,
     behavior: &str,
     host: &mut Host,
     fuel: u64,
 ) -> u64 {
+    let turn = TurnStart::mark(host);
     match call_hook(program, behavior, &lifecycle::ON_DESPAWN, &[], host, fuel) {
         // The entity is leaving: nothing will resume a farewell cut short.
         Hook::Ran(cost) | Hook::Suspended { cost, .. } => cost,
         Hook::Absent => 0,
         Hook::Faulted { cost, reason } => {
             log::error!("script `{behavior}` faulted in `OnDespawn`: {reason}");
+            turn.undo(host);
             cost
         }
     }

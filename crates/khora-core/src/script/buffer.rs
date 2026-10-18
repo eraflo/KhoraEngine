@@ -86,6 +86,12 @@ impl CommandBuffer {
         self.commands.len()
     }
 
+    /// Drops every command queued after the first `len` — what a turn that
+    /// faulted queued, which the frame's end must not apply.
+    pub fn truncate(&mut self, len: usize) {
+        self.commands.truncate(len);
+    }
+
     /// Whether nothing is queued.
     pub fn is_empty(&self) -> bool {
         self.commands.is_empty()

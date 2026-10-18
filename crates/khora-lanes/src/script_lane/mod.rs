@@ -189,6 +189,11 @@ impl Lane for BudgetedScriptLane {
 
         let clock = Stopwatch::new();
         let mut host = Host::new().with_arena(runtime.take_arena());
+        // A spawn takes its id from the world's reserver; run without one, its
+        // ids are the host's own.
+        if let Some(reservations) = ctx.get_ref::<khora_data::flow::ReservationView>() {
+            host = host.with_reserver(std::sync::Arc::clone(&reservations.reserver));
+        }
         // Once for the frame, not once per behavior: input is a fact about
         // the frame, and every behavior in it must see the same one.
         host.input = view.input.clone();

@@ -89,8 +89,23 @@ fn apply_each(
     buffer: &CommandBuffer,
     mut applied: impl FnMut(usize, &khora_core::script::WorldCommand),
 ) -> ApplyReport {
+    use khora_core::script::WorldCommand;
+
     let mut report = ApplyReport::default();
+    // The spawns refused so far. A turn names the entity it spawns at once, so
+    // what it queued after for that id is meant for an entity that never came
+    // to be — never for a live one that happens to hold the same id. Column
+    // writes are not checked row by row: a spawn the world refuses at its own
+    // id is rolled back, so the id names no live entity, and only a reserver
+    // the world does not own hands out an id a live entity holds.
+    let mut refused: Vec<khora_core::ecs::entity::EntityId> = Vec::new();
     for (index, command) in buffer.iter().enumerate() {
+        let names_refused = command.entity().is_some_and(|e| refused.contains(&e))
+            || matches!(command, WorldCommand::SetParent { parent: Some(p), .. } if refused.contains(p));
+        if names_refused {
+            log::error!("script command ignored: it names an entity whose spawn was refused");
+            continue;
+        }
         match apply::apply(world, command) {
             Ok(rows) => {
                 applied(index, command);
@@ -99,9 +114,11 @@ fn apply_each(
                 report.rows_skipped += rows.missing + rows.refused;
             }
             Err(error) => {
-                // A column write refused whole skips every row it carried.
-                if let khora_core::script::WorldCommand::WriteColumn { batch, .. } = command {
-                    report.rows_skipped += batch.len();
+                match command {
+                    // A column write refused whole skips every row it carried.
+                    WorldCommand::WriteColumn { batch, .. } => report.rows_skipped += batch.len(),
+                    WorldCommand::Spawn { entity, .. } => refused.push(*entity),
+                    _ => {}
                 }
                 log::error!("script command ignored: {error}");
             }
@@ -111,6 +128,15 @@ fn apply_each(
 }
 
 fn apply_script_commands(world: &mut World, _runtime: &Runtime, deck: &mut OutputDeck) {
+    // The ids scripts reserved this frame get their slots before anything
+    // spawns at them; whatever no spawn used is taken back after — every
+    // frame, scripts or not, so no reservation outlives the frame.
+    world.settle_reservations();
+    apply_buffer(world, deck);
+    world.release_unspent();
+}
+
+fn apply_buffer(world: &mut World, deck: &mut OutputDeck) {
     // A lane that did not run — starved of budget, or absent entirely — leaves
     // no slot. Taking one anyway would fabricate an empty batch and count a
     // frame of work that never happened.

@@ -152,6 +152,11 @@ impl Session {
         {
             let mut ctx = LaneContext::new();
             ctx.insert_ref(&view);
+            // Where a spawn takes its entity's id, as the agent hands it on.
+            let reservations = khora_data::flow::ReservationView {
+                reserver: self.world.reserver(),
+            };
+            ctx.insert_ref(&reservations);
             ctx.insert(Fuel(self.fuel));
             ctx.insert_slot(&mut self.scripts);
             ctx.insert_slot(&mut deck);
