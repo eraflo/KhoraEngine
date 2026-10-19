@@ -450,6 +450,21 @@ impl UiBuilder for EguiUiBuilder<'_> {
         }
     }
 
+    fn menu_on_click_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        // A clone, as for the context menu: the response stays the last one.
+        // A click inside — into a search field, say — keeps it open; a pick
+        // closes it itself.
+        if let Some(response) = self.last_response.clone() {
+            let vt = self.viewport_textures;
+            egui::Popup::menu(&response)
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+                .show(|ui| {
+                    let mut nested = EguiUiBuilder::new(ui, vt);
+                    f(&mut nested);
+                });
+        }
+    }
+
     fn context_menu_panel(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         // Allocate remaining space at the bottom of the scroll area so the
         // context-menu target does not overlap earlier interactive widgets
@@ -689,6 +704,13 @@ impl UiBuilder for EguiUiBuilder<'_> {
                 response.dnd_set_drag_payload::<u64>(payload);
             }
         }
+    }
+
+    fn dnd_hover_payload(&self) -> Option<u64> {
+        self.last_response
+            .as_ref()
+            .and_then(|r| r.dnd_hover_payload::<u64>())
+            .map(|payload| *payload)
     }
 
     fn dnd_take_drop_payload(&mut self) -> Option<u64> {

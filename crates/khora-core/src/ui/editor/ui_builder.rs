@@ -497,6 +497,18 @@ pub trait UiBuilder {
         None
     }
 
+    /// The `u64` payload of a drag hovering the **last interacted region**,
+    /// read but not taken: a drop there still delivers it. Default: `None`.
+    fn dnd_hover_payload(&self) -> Option<u64> {
+        None
+    }
+
+    /// A menu that opens on a primary click on the last widget or interacted
+    /// region, and closes on a pick or a click outside. Default: no-op.
+    fn menu_on_click_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let _ = f;
+    }
+
     /// Current pointer (cursor) position in window-space `[x, y]`, or `None`
     /// when the pointer is outside the window or unknown. Drop targets use this
     /// to place a dropped item where the cursor released (e.g. unproject the

@@ -33,6 +33,7 @@ use super::hints::{
 };
 use super::{kind_tag, provenance_line, restored, reverted, scene_names};
 
+mod asset_slot;
 mod rendering;
 
 /// Edits as they print — `PropertyEdit` is compared by what it says.
@@ -107,19 +108,20 @@ fn lantern_prefab(added: bool) -> InspectedPrefab {
 fn a_duration_reads_in_seconds_and_an_angle_in_degrees() {
     let names = HashMap::new();
     assert_eq!(
-        value_text(&ScriptValue::Float(1.5), &ErgonType::Duration, &names),
+        value_text(&ScriptValue::Float(1.5), &ErgonType::Duration, &names, &[]),
         "1.5 s"
     );
     assert_eq!(
         value_text(
             &ScriptValue::Float(std::f32::consts::FRAC_PI_2),
             &ErgonType::Angle,
-            &names
+            &names,
+            &[]
         ),
         "90 deg"
     );
     assert_eq!(
-        value_text(&ScriptValue::Float(2.0), &ErgonType::Float, &names),
+        value_text(&ScriptValue::Float(2.0), &ErgonType::Float, &names, &[]),
         "2"
     );
 }
@@ -128,9 +130,12 @@ fn a_duration_reads_in_seconds_and_an_angle_in_degrees() {
 fn an_optional_reads_none_or_its_value() {
     let names = HashMap::new();
     let optional = ErgonType::Optional(Box::new(ErgonType::Duration));
-    assert_eq!(value_text(&ScriptValue::Null, &optional, &names), "none");
     assert_eq!(
-        value_text(&ScriptValue::Float(3.0), &optional, &names),
+        value_text(&ScriptValue::Null, &optional, &names, &[]),
+        "none"
+    );
+    assert_eq!(
+        value_text(&ScriptValue::Float(3.0), &optional, &names, &[]),
         "3 s"
     );
 }
@@ -139,11 +144,21 @@ fn an_optional_reads_none_or_its_value() {
 fn an_entity_reads_by_its_name_or_its_index() {
     let names = HashMap::from([(entity(4), "Gate".to_owned())]);
     assert_eq!(
-        value_text(&ScriptValue::Entity(entity(4)), &ErgonType::Entity, &names),
+        value_text(
+            &ScriptValue::Entity(entity(4)),
+            &ErgonType::Entity,
+            &names,
+            &[]
+        ),
         "Gate"
     );
     assert_eq!(
-        value_text(&ScriptValue::Entity(entity(9)), &ErgonType::Entity, &names),
+        value_text(
+            &ScriptValue::Entity(entity(9)),
+            &ErgonType::Entity,
+            &names,
+            &[]
+        ),
         "Entity 9"
     );
 }

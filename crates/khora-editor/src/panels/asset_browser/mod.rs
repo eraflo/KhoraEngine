@@ -46,6 +46,8 @@ use naming::{entity_display_name, sanitize_for_filename};
 mod folder_tree;
 mod naming;
 mod panel;
+#[cfg(test)]
+mod tests;
 
 const HEADER_HEIGHT: f32 = 34.0;
 
@@ -251,6 +253,37 @@ impl AssetBrowserPanel {
             self.current_folder = Some(String::new());
             self.expanded_folders.insert(String::new(), true);
         }
+    }
+
+    /// Shows the asset an inspector slot asked to reveal: its folder opened
+    /// and expanded down to it, its tile selected with no filter hiding it,
+    /// and the inspector on it — as a click on the tile does.
+    fn follow_reveal(&mut self) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let Some(path) = state.pending_reveal_asset.take() else {
+            return;
+        };
+        let Some(i) = self.flat.iter().position(|asset| asset.rel_path == path) else {
+            log::debug!("Asset browser: nothing to reveal at '{path}'");
+            return;
+        };
+        let folder = self.flat[i].folder.clone();
+        self.expanded_folders.insert(String::new(), true);
+        let mut at = folder.as_str();
+        while !at.is_empty() {
+            self.expanded_folders.insert(at.to_owned(), true);
+            at = at.rfind('/').map_or("", |p| &at[..p]);
+        }
+        self.current_folder = Some(folder);
+        self.search_filter.clear();
+        self.selected_filter = None;
+        self.selected_index = Some(i);
+        state.inspected_asset_path = Some(path);
+        state.selected_asset = Some(i);
+        state.clear_selection();
+        state.inspected = None;
     }
 
     /// Resolves a forward-slash path under `assets/` to an absolute OS path,

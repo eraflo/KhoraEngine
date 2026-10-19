@@ -33,9 +33,10 @@
 //! A `[Tooltip(…)]` is said by hovering a number's label, or the control of
 //! any other field.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
-use khora_sdk::editor_ui::{FontFamilyHint, UiBuilder, UiTheme};
+use khora_sdk::editor_ui::{AssetEntry, FontFamilyHint, UiBuilder, UiTheme};
 use khora_sdk::khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
 use khora_sdk::khora_core::script::{ErgonType, FieldRange, ScriptValue};
 use khora_sdk::prelude::ecs::EntityId;
@@ -45,6 +46,7 @@ use khora_tool_ui::widgets::{self};
 use crate::drag_payload::{payload_is_entity, unpack_entity};
 
 use super::super::renderers::humanise;
+use super::asset_slot::{asset_text, pick_asset, render_asset, SlotMemory};
 use super::hints::range_note;
 use super::ranged::{render_label, render_number, render_read_only_gauge};
 
@@ -61,6 +63,15 @@ pub struct FieldContext<'a> {
     pub range: Option<FieldRange>,
     /// The field's `[Tooltip(…)]`, said by its own row only.
     pub tooltip: Option<&'a str>,
+    /// The project's assets, as the asset browser lists them — what an asset
+    /// slot names and offers.
+    pub assets: &'a [AssetEntry],
+    /// The epoch `assets` was read at: an asset drag stamped with another
+    /// one names an entry of an older list.
+    pub asset_epoch: u64,
+    /// Where the asset slots keep what outlives the frame — the picker's
+    /// query, an asset to reveal. `None`: nothing outlives it.
+    pub memory: Option<&'a RefCell<SlotMemory>>,
 }
 
 impl FieldContext<'_> {
@@ -72,6 +83,9 @@ impl FieldContext<'_> {
             id: format!("{}.{part}", self.id),
             range: None,
             tooltip: None,
+            assets: self.assets,
+            asset_epoch: self.asset_epoch,
+            memory: self.memory,
         }
     }
 
@@ -119,11 +133,13 @@ pub fn neutral(ty: &ErgonType) -> ScriptValue {
 }
 
 /// `value` as one line of text, read the way its type reads: a duration in
-/// seconds, an angle in degrees, an entity by its name.
+/// seconds, an angle in degrees, an entity by its name, an asset by the
+/// name of the entry of `assets` holding it.
 pub fn value_text(
     value: &ScriptValue,
     ty: &ErgonType,
     names: &HashMap<EntityId, String>,
+    assets: &[AssetEntry],
 ) -> String {
     match (value, ty) {
         (ScriptValue::Null, _) => "none".to_owned(),
@@ -131,7 +147,7 @@ pub fn value_text(
         (ScriptValue::Float(radians), ErgonType::Angle) => {
             format!("{} deg", trim(radians.to_degrees()))
         }
-        (_, ErgonType::Optional(inner)) => value_text(value, inner, names),
+        (_, ErgonType::Optional(inner)) => value_text(value, inner, names, assets),
         (ScriptValue::Unit, _) => "()".to_owned(),
         (ScriptValue::Bool(b), _) => b.to_string(),
         (ScriptValue::Int(i), _) => i.to_string(),
@@ -163,11 +179,7 @@ pub fn value_text(
         (ScriptValue::Entity(entity), _) => entity_text(*entity, names),
         (ScriptValue::Array(items), _) => format!("{} items", items.len()),
         (ScriptValue::Struct(fields), _) => format!("{} fields", fields.len()),
-        // As a script shows it: the first group of its identity.
-        (ScriptValue::Asset(asset), _) => {
-            let text = asset.to_string();
-            format!("Asset#{}", &text[..8])
-        }
+        (ScriptValue::Asset(asset), _) => asset_text(*asset, assets),
     }
 }
 
@@ -267,7 +279,7 @@ fn render_read_only(
             }
         }),
         None => {
-            let text = value_text(value, ty, cx.names);
+            let text = value_text(value, ty, cx.names, cx.assets);
             let leaf = item_or_self(ty);
             let note = cx.range.and_then(|range| range_note(&leaf, value, range));
             ui.horizontal(&mut |row| {
@@ -352,6 +364,7 @@ fn render_editable(
         ErgonType::Array(inner) => render_array(ui, label, inner, value, cx),
         ErgonType::Struct { .. } => render_struct(ui, label, ty, value, cx),
         ErgonType::Entity => render_entity(ui, label, value, false, cx),
+        ErgonType::Asset(kind) => render_asset(ui, label, *kind, value, false, cx),
         _ => render_leaf(ui, label, ty, value, cx),
     }
 }
@@ -449,6 +462,10 @@ fn render_optional(
     if *inner == ErgonType::Entity {
         return render_entity(ui, label, value, true, cx);
     }
+    // An asset slot shows its own `none`, and is set by a drop or a pick.
+    if let ErgonType::Asset(kind) = inner {
+        return render_asset(ui, label, *kind, value, true, cx);
+    }
     if *value == ScriptValue::Null {
         let mut set = false;
         ui.horizontal(&mut |row| {
@@ -524,7 +541,21 @@ fn render_array(
                 }
             });
         }
-        if block.small_button("+ Add item") {
+        if let ErgonType::Asset(kind) = inner {
+            // An asset item is picked: a neutral one would name no asset.
+            block.small_button("+ Add item");
+            let mut picked = None;
+            block.menu_on_click_last(&mut |menu| {
+                picked = pick_asset(menu, *kind, None, true, cx);
+                if picked.is_some() {
+                    menu.close_menu();
+                }
+            });
+            if let Some(uuid) = picked {
+                items.push(ScriptValue::Asset(uuid));
+                changed = true;
+            }
+        } else if block.small_button("+ Add item") {
             items.push(neutral(inner));
             changed = true;
         }

@@ -20,10 +20,12 @@
 //! declares it any more. The category tag names the part it plays:
 //! `script`, `behavior`, `state`, `system`.
 
+mod asset_slot;
 mod fields;
 mod hints;
 mod ranged;
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use khora_sdk::editor_ui::{
@@ -36,6 +38,7 @@ use khora_sdk::prelude::ecs::EntityId;
 use super::card::{render_card, CardAction, CardPrefab};
 use super::display::icon_for_domain_tag;
 use super::walker::{FieldAction, Marks};
+use asset_slot::SlotMemory;
 use fields::{render_field, FieldContext};
 
 /// The tag a card's header carries for the part its component plays.
@@ -163,6 +166,19 @@ pub fn render_declared_cards(
 ) {
     let entity = inspected.entity;
     let prefab = inspected.prefab.as_ref();
+    // What every asset slot of the cards names and offers: the browser's
+    // list as it stands this frame, and the epoch a drag of it is stamped
+    // with.
+    let assets = if inspected.declared.is_empty() {
+        Vec::new()
+    } else {
+        state.asset_entries.clone()
+    };
+    let asset_epoch = state.asset_epoch;
+    let memory = RefCell::new(SlotMemory {
+        query: std::mem::take(&mut state.asset_picker_query),
+        reveal: None,
+    });
     for card in &inspected.declared {
         let overridden: Vec<Vec<String>> = prefab
             .map(|prefab| prefab.fields_of(&card.name).to_vec())
@@ -204,6 +220,9 @@ pub fn render_declared_cards(
                         id: format!("declared.{}.{}.{}", entity.index, card.name, field.name),
                         range: field.hints.range,
                         tooltip: field.hints.tooltip.as_deref(),
+                        assets: &assets,
+                        asset_epoch,
+                        memory: Some(&memory),
                     };
                     if render_field(
                         body,
@@ -275,6 +294,11 @@ pub fn render_declared_cards(
             }
             None => {}
         }
+    }
+    let memory = memory.into_inner();
+    state.asset_picker_query = memory.query;
+    if let Some(path) = memory.reveal {
+        state.pending_reveal_asset = Some(path);
     }
 }
 

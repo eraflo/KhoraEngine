@@ -174,6 +174,13 @@ pub struct EditorState {
     /// Inspector switches to asset-metadata mode (Phase 5). Cleared
     /// when an entity selection is made.
     pub inspected_asset_path: Option<String>,
+    /// The asset an inspector slot asked to reveal, by its forward-slash
+    /// path under `assets/`: the asset browser opens its folder, selects its
+    /// tile and inspects it, as a click on the tile does.
+    pub pending_reveal_asset: Option<String>,
+    /// What the open asset picker filters its entries by — one for every
+    /// slot, since one picker is open at a time.
+    pub asset_picker_query: String,
     /// Pending menu action (e.g. "new_scene", "save", "quit").
     pub pending_menu_action: Option<String>,
     /// Currently set project folder (used for asset scanning).
@@ -640,4 +647,7 @@ pub struct AssetEntry {
     pub asset_type: String,
     /// Source path (for display purposes).
     pub source_path: String,
+    /// The asset's identity, as the index resolved it through the project's
+    /// identity registry — what a reference to it stores.
+    pub uuid: AssetUUID,
 }

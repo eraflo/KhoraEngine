@@ -17,6 +17,10 @@
 //! egui one does, a "last widget" a tooltip attaches to: a widget sets it, a
 //! label does not, a row hands its last widget to its parent, a collapsing
 //! block keeps its own.
+//!
+//! The builder also plays what the pointer brings — a drag over the region
+//! drawn, a drop on it, a menu opened, a button clicked — for the slots that
+//! answer them.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -30,7 +34,7 @@ use super::super::fields::{render_field, FieldContext};
 
 /// What the builder was asked to draw, in order.
 #[derive(Debug, Clone, PartialEq)]
-enum Drawn {
+pub(super) enum Drawn {
     /// A widget, numbered in drawing order.
     Widget(usize),
     /// A tooltip attached to the last widget, if any.
@@ -43,24 +47,177 @@ enum Drawn {
     },
     /// A filled rect, in `color`.
     Fill([f32; 4]),
+    /// A stroked rect, in `color`, `thickness` wide.
+    Stroke { color: [f32; 4], thickness: f32 },
+    /// Painted text, in `color`, in the font `family`.
+    Text {
+        text: String,
+        color: [f32; 4],
+        family: FontFamilyHint,
+    },
+    /// A button — or a selectable label, a menu's button — saying `text`.
+    Button(String),
+    /// A single-line text field.
+    TextField,
+    /// A scroll area opened; what it holds follows.
+    Scroll,
+}
+
+/// What the pointer brings this frame, shared by every builder nested in
+/// the frame's.
+#[derive(Default)]
+pub(super) struct Input {
+    /// A drag is in flight.
+    pub dragging: bool,
+    /// The payload of a drag hovering the region drawn.
+    pub hover: Option<u64>,
+    /// The payload released on the region drawn — the first to take it has it.
+    pub drop: Option<u64>,
+    /// The pointer is on every region drawn: it hovers it, and is inside it.
+    pub pointer_on: bool,
+    /// A menu a primary click opens (`menu_on_click_last`) is open.
+    pub click_menu_open: bool,
+    /// A context menu is open.
+    pub context_menu_open: bool,
+    /// What the author clicks: every button whose text holds one of these.
+    pub clicks: Vec<String>,
 }
 
 #[derive(Default)]
-struct Spy {
+pub(super) struct Spy {
     drawn: Rc<RefCell<Vec<Drawn>>>,
     next: Rc<RefCell<usize>>,
+    input: Rc<RefCell<Input>>,
     last: Option<usize>,
     cursor: [f32; 2],
 }
 
 impl Spy {
+    /// A builder the pointer brings `input` to.
+    pub(super) fn with(input: Input) -> Spy {
+        Spy {
+            input: Rc::new(RefCell::new(input)),
+            ..Spy::default()
+        }
+    }
+
     fn nested(&self) -> Spy {
         Spy {
             drawn: Rc::clone(&self.drawn),
             next: Rc::clone(&self.next),
+            input: Rc::clone(&self.input),
             last: None,
             cursor: self.cursor,
         }
+    }
+
+    /// Draws a button saying `text`; whether the author clicks it.
+    fn button_drawn(&mut self, text: &str) -> bool {
+        self.widget();
+        self.drawn.borrow_mut().push(Drawn::Button(text.to_owned()));
+        self.input
+            .borrow()
+            .clicks
+            .iter()
+            .any(|click| text.contains(click.as_str()))
+    }
+
+    /// Everything drawn, in order.
+    pub(super) fn drawn(&self) -> Vec<Drawn> {
+        self.drawn.borrow().clone()
+    }
+
+    /// The text of every button drawn, in order.
+    pub(super) fn buttons(&self) -> Vec<String> {
+        self.drawn
+            .borrow()
+            .iter()
+            .filter_map(|drawn| match drawn {
+                Drawn::Button(text) => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Every text drawn to be read — a label's, a painted one's, not an
+    /// icon's — and its colour.
+    pub(super) fn texts(&self) -> Vec<(String, [f32; 4])> {
+        self.drawn
+            .borrow()
+            .iter()
+            .filter_map(|drawn| match drawn {
+                Drawn::Label { text, color, .. } => Some((text.clone(), *color)),
+                Drawn::Text {
+                    text,
+                    color,
+                    family,
+                } if *family != FontFamilyHint::Icons => Some((text.clone(), *color)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Every icon glyph painted, and its colour.
+    pub(super) fn glyphs(&self) -> Vec<(String, [f32; 4])> {
+        self.drawn
+            .borrow()
+            .iter()
+            .filter_map(|drawn| match drawn {
+                Drawn::Text {
+                    text,
+                    color,
+                    family: FontFamilyHint::Icons,
+                } => Some((text.clone(), *color)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// How many rects were stroked.
+    pub(super) fn strokes(&self) -> usize {
+        self.drawn
+            .borrow()
+            .iter()
+            .filter(|drawn| matches!(drawn, Drawn::Stroke { .. }))
+            .count()
+    }
+
+    /// The colour of every rect filled.
+    pub(super) fn fills(&self) -> Vec<[f32; 4]> {
+        self.drawn
+            .borrow()
+            .iter()
+            .filter_map(|drawn| match drawn {
+                Drawn::Fill(color) => Some(*color),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Every tooltip said — attached to a widget, or held by a label.
+    pub(super) fn said_tooltips(&self) -> Vec<String> {
+        self.drawn
+            .borrow()
+            .iter()
+            .filter_map(|drawn| match drawn {
+                Drawn::Tooltip { text, .. } => Some(text.clone()),
+                Drawn::Label {
+                    tooltip: Some(text),
+                    ..
+                } => Some(text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Whether a single-line text field was drawn.
+    pub(super) fn has_text_field(&self) -> bool {
+        self.drawn.borrow().contains(&Drawn::TextField)
+    }
+
+    /// The drop no one took.
+    pub(super) fn drop_left(&self) -> Option<u64> {
+        self.input.borrow().drop
     }
 
     fn widget(&mut self) {
@@ -116,25 +273,68 @@ impl UiBuilder for Spy {
     fn paint_rect_filled(&mut self, _min: [f32; 2], _size: [f32; 2], color: [f32; 4], _r: f32) {
         self.drawn.borrow_mut().push(Drawn::Fill(color));
     }
-    fn paint_rect_stroke(&mut self, _: [f32; 2], _: [f32; 2], _: [f32; 4], _: f32, _: f32) {}
+    fn paint_rect_stroke(&mut self, _: [f32; 2], _: [f32; 2], color: [f32; 4], _: f32, w: f32) {
+        self.drawn.borrow_mut().push(Drawn::Stroke {
+            color,
+            thickness: w,
+        });
+    }
     fn paint_line(&mut self, _: [f32; 2], _: [f32; 2], _: [f32; 4], _: f32) {}
     fn paint_circle_filled(&mut self, _: [f32; 2], _: f32, _: [f32; 4]) {}
     fn paint_circle_stroke(&mut self, _: [f32; 2], _: f32, _: [f32; 4], _: f32) {}
-    fn paint_text(&mut self, _: [f32; 2], _: [f32; 4], _: &str) {}
+    fn paint_text(&mut self, _: [f32; 2], color: [f32; 4], text: &str) {
+        self.drawn.borrow_mut().push(Drawn::Text {
+            text: text.to_owned(),
+            color,
+            family: FontFamilyHint::Proportional,
+        });
+    }
     fn paint_text_styled(
         &mut self,
         _: [f32; 2],
-        _: &str,
+        text: &str,
         _: f32,
-        _: [f32; 4],
-        _: FontFamilyHint,
+        color: [f32; 4],
+        family: FontFamilyHint,
         _: TextAlign,
     ) {
+        self.drawn.borrow_mut().push(Drawn::Text {
+            text: text.to_owned(),
+            color,
+            family,
+        });
     }
     fn paint_path_filled(&mut self, _: &[[f32; 2]], _: [f32; 4]) {}
     fn interact_rect(&mut self, _id_salt: &str, _rect: [f32; 4]) -> Interaction {
         self.widget();
-        Interaction::default()
+        let on = self.input.borrow().pointer_on;
+        Interaction {
+            hovered: on,
+            contains_pointer: on,
+            ..Interaction::default()
+        }
+    }
+    fn is_drag_active(&self) -> bool {
+        self.input.borrow().dragging
+    }
+    fn dnd_hover_payload(&self) -> Option<u64> {
+        self.input.borrow().hover
+    }
+    fn dnd_take_drop_payload(&mut self) -> Option<u64> {
+        self.input.borrow_mut().drop.take()
+    }
+    fn menu_on_click_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let open = self.input.borrow().click_menu_open;
+        if open {
+            let mut menu = self.nested();
+            f(&mut menu);
+        }
+    }
+    fn menu_button(&mut self, text: &str, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        if self.button_drawn(text) {
+            let mut menu = self.nested();
+            f(&mut menu);
+        }
     }
     fn region_at(&mut self, _: &str, _: [f32; 4], f: &mut dyn FnMut(&mut dyn UiBuilder)) {
         let mut nested = self.nested();
@@ -178,21 +378,17 @@ impl UiBuilder for Spy {
     fn monospace(&mut self, text: &str) {
         self.label_drawn(text, [1.0; 4], None);
     }
-    fn button(&mut self, _: &str) -> bool {
-        self.widget();
-        false
+    fn button(&mut self, text: &str) -> bool {
+        self.button_drawn(text)
     }
-    fn small_button(&mut self, _: &str) -> bool {
-        self.widget();
-        false
+    fn small_button(&mut self, text: &str) -> bool {
+        self.button_drawn(text)
     }
-    fn selectable_label(&mut self, _: bool, _: &str) -> bool {
-        self.widget();
-        false
+    fn selectable_label(&mut self, _: bool, text: &str) -> bool {
+        self.button_drawn(text)
     }
-    fn selectable_label_double_clicked(&mut self, _: bool, _: &str) -> bool {
-        self.widget();
-        false
+    fn selectable_label_double_clicked(&mut self, _: bool, text: &str) -> bool {
+        self.button_drawn(text)
     }
     fn checkbox(&mut self, _: &mut bool, _: &str) -> bool {
         self.widget();
@@ -208,6 +404,7 @@ impl UiBuilder for Spy {
     }
     fn text_edit_singleline(&mut self, _: &mut String) -> bool {
         self.widget();
+        self.drawn.borrow_mut().push(Drawn::TextField);
         false
     }
     fn vec3_editor(&mut self, _: &str, _: &mut [f32; 3], _: f32) -> bool {
@@ -248,6 +445,7 @@ impl UiBuilder for Spy {
         self.cursor = nested.cursor;
     }
     fn scroll_area(&mut self, _: &str, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        self.drawn.borrow_mut().push(Drawn::Scroll);
         let mut nested = self.nested();
         f(&mut nested);
     }
@@ -273,7 +471,13 @@ impl UiBuilder for Spy {
     fn is_last_item_escape_pressed(&self) -> bool {
         false
     }
-    fn context_menu_last(&mut self, _: &mut dyn FnMut(&mut dyn UiBuilder)) {}
+    fn context_menu_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        let open = self.input.borrow().context_menu_open;
+        if open {
+            let mut menu = self.nested();
+            f(&mut menu);
+        }
+    }
     fn tooltip_for_last(&mut self, text: &str) {
         self.drawn.borrow_mut().push(Drawn::Tooltip {
             on: self.last,
@@ -297,6 +501,9 @@ fn context<'a>(
         id: "declared.1.Stats.field".to_owned(),
         range,
         tooltip,
+        assets: &[],
+        asset_epoch: 0,
+        memory: None,
     }
 }
 

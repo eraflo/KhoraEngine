@@ -20,5 +20,7 @@
 
 mod bounded_drag_value;
 mod covered_hover;
+mod dnd_hover_payload;
 mod light_culling_layout;
+mod menu_on_click;
 mod public_paths;

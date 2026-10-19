@@ -91,7 +91,9 @@ pub fn collect_asset_entries(pvfs: &ProjectVfs) -> Vec<AssetEntry> {
         .index()
         .iter_all()
         .map(|m| {
-            let rel_str = m.source_path.to_string_lossy().to_string();
+            // Forward slashes whatever the platform: the browser's folders,
+            // the identity registry and the project VFS all name an asset so.
+            let rel_str = m.source_path.to_string_lossy().replace('\\', "/");
             let name = m
                 .source_path
                 .file_name()
@@ -101,7 +103,66 @@ pub fn collect_asset_entries(pvfs: &ProjectVfs) -> Vec<AssetEntry> {
                 name,
                 asset_type: m.asset_type_name.clone(),
                 source_path: rel_str,
+                uuid: m.uuid,
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use khora_sdk::khora_core::asset::AssetUUID;
+    use khora_sdk::{AssetIdRegistry, MetricsRegistry};
+
+    use super::collect_asset_entries;
+    use crate::project_vfs::ProjectVfs;
+
+    /// **Each entry carries the identity the index gave its asset** — the one
+    /// the registry froze for a renamed file, the path's own for the others:
+    /// what a reference to the asset stores.
+    #[test]
+    fn each_asset_entry_carries_the_identity_the_index_resolved() -> anyhow::Result<()> {
+        let root = std::env::temp_dir().join(format!(
+            "khora-editor-asset-entry-uuid-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            std::fs::remove_dir_all(&root)?;
+        }
+        let prefabs = root.join("assets").join("prefabs");
+        std::fs::create_dir_all(&prefabs)?;
+        std::fs::write(prefabs.join("bullet.kprefab"), b"prefab bytes")?;
+        std::fs::write(prefabs.join("rocket.kprefab"), b"prefab bytes")?;
+
+        // `rocket` was renamed from `missile`: it keeps the identity it had.
+        let frozen = AssetUUID::new_v5("prefabs/missile.kprefab");
+        let mut registry = AssetIdRegistry::load(&root);
+        registry.freeze("prefabs/rocket.kprefab", frozen);
+        registry.save()?;
+
+        let entries = ProjectVfs::open(root.clone(), Arc::new(MetricsRegistry::new()))
+            .map(|pvfs| collect_asset_entries(&pvfs));
+        let _ = std::fs::remove_dir_all(&root);
+        let entries = entries?;
+
+        let uuid_of = |path: &str| {
+            entries
+                .iter()
+                .find(|entry| entry.source_path.replace('\\', "/") == path)
+                .map(|entry| entry.uuid)
+        };
+        assert_eq!(
+            uuid_of("prefabs/bullet.kprefab"),
+            Some(AssetUUID::new_v5("prefabs/bullet.kprefab")),
+            "an asset never renamed is named by its path: {entries:?}"
+        );
+        assert_eq!(
+            uuid_of("prefabs/rocket.kprefab"),
+            Some(frozen),
+            "a renamed asset keeps the identity the registry froze: {entries:?}"
+        );
+        Ok(())
+    }
 }

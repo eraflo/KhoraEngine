@@ -20,6 +20,7 @@
 //! `paint_*`, `interact_rect`, etc. — so they compose cleanly without
 //! relying on egui's auto-layout.
 
+pub mod asset_kind;
 pub mod brand;
 pub mod enum_variants;
 pub mod inspector;

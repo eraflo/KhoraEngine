@@ -175,7 +175,7 @@ fn panel_location_variants(x: &khora_core::ui::editor::panel::PanelLocation) {
 }
 
 fn asset_entry_fields(x: &khora_core::ui::editor::state::AssetEntry) {
-    let _ = (&x.name, &x.asset_type, &x.source_path);
+    let _ = (&x.name, &x.asset_type, &x.source_path, &x.uuid);
 }
 
 fn component_json_fields(x: &khora_core::ui::editor::state::ComponentJson) {
@@ -723,6 +723,8 @@ mod trait_items {
         let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::interact_rect;
         let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::dnd_attach_drag_payload;
         let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::dnd_take_drop_payload;
+        let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::dnd_hover_payload;
+        let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::menu_on_click_last;
         let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::pointer_position;
         let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::is_drag_active;
         let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::inline_text_field;
