@@ -2663,6 +2663,7 @@ dependencies = [
  "anyhow",
  "env_logger",
  "inventory",
+ "khora-script",
  "khora-sdk",
  "khora-tool-ui",
  "log",

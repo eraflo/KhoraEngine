@@ -22,6 +22,7 @@ use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 
 use super::naming::ensure_extension;
+use super::new_script::paint_new_script_tile;
 use super::{
     AssetBrowserPanel, FlatAsset, HEADER_HEIGHT, SIDEBAR_WIDTH, TILE_GAP, TILE_SIZE, TOOLBAR_HEIGHT,
 };
@@ -72,6 +73,7 @@ impl EditorPanel for AssetBrowserPanel {
         let mut header_delete_selected = false;
         let mut header_filter_pick: Option<Option<AssetTileKind>> = None;
         let mut header_new_folder = false;
+        let mut header_new_script = false;
         let mut header_reveal_project = false;
         let mut ax = px + pw - 8.0;
         for (icon, salt) in [
@@ -109,6 +111,10 @@ impl EditorPanel for AssetBrowserPanel {
                             header_new_folder = true;
                             menu.close_menu();
                         }
+                        if menu.button("New Script") {
+                            header_new_script = true;
+                            menu.close_menu();
+                        }
                         if menu.button("Reveal Project in Explorer") {
                             header_reveal_project = true;
                             menu.close_menu();
@@ -132,6 +138,10 @@ impl EditorPanel for AssetBrowserPanel {
         if header_new_folder {
             let parent = self.current_folder.clone().unwrap_or_default();
             self.queue_new_folder(&parent);
+        }
+        if header_new_script {
+            let from = self.current_folder.clone().unwrap_or_default();
+            self.start_new_script(&from);
         }
         if header_reveal_project {
             self.reveal_project();
@@ -357,10 +367,15 @@ impl EditorPanel for AssetBrowserPanel {
         // response as the drop target above; per-tile menus (registered later,
         // on top) take precedence when the cursor is over a tile.
         let mut bg_new_folder = false;
+        let mut bg_new_script = false;
         let mut bg_reveal_current = false;
         ui.context_menu_last(&mut |menu| {
             if menu.button("New Folder") {
                 bg_new_folder = true;
+                menu.close_menu();
+            }
+            if menu.button("New Script") {
+                bg_new_script = true;
                 menu.close_menu();
             }
             if menu.button("Reveal Current Folder") {
@@ -368,6 +383,9 @@ impl EditorPanel for AssetBrowserPanel {
                 menu.close_menu();
             }
         });
+        // Started once the grid no longer holds the asset list borrowed.
+        let start_script_from =
+            bg_new_script.then(|| self.current_folder.clone().unwrap_or_default());
         if bg_new_folder || bg_reveal_current {
             let cur = self.current_folder.clone().unwrap_or_default();
             if bg_new_folder {
@@ -395,15 +413,28 @@ impl EditorPanel for AssetBrowserPanel {
         // its own origin and clipping — same shape as the Console and the
         // Hierarchy.
         let grid_view = [grid_inner_x, grid_inner_y, grid_inner_w, drop_h];
-        let rows_total = visible.len().div_ceil(cols.max(1)) as f32;
+        // A script being named takes the first slot; the tiles follow it.
+        let lead = usize::from(self.new_script.is_some());
+        let rows_total = (visible.len() + lead).div_ceil(cols.max(1)) as f32;
         let grid_content_h = rows_total * (tile_h + TILE_GAP);
         self.grid_scroll.update(ui, grid_view, grid_content_h);
         ui.push_clip_rect(grid_view);
         let grid_origin_y = grid_inner_y - self.grid_scroll.offset();
 
+        let new_script_file = self.new_script_file_name();
+        let new_script_event = paint_new_script_tile(
+            ui,
+            [grid_inner_x, grid_origin_y],
+            [TILE_SIZE, tile_h],
+            &theme,
+            self.new_script.as_mut(),
+            &mut self.rename_focus_pending,
+            new_script_file.as_deref(),
+        );
+
         for (i, (orig_idx, asset)) in visible.iter().enumerate() {
-            let col = i % cols;
-            let row = i / cols;
+            let col = (i + lead) % cols;
+            let row = (i + lead) / cols;
             let tx = grid_inner_x + col as f32 * (TILE_SIZE + TILE_GAP);
             let ty = grid_origin_y + row as f32 * (tile_h + TILE_GAP);
             // Skip whole rows scrolled out of view rather than painting them
@@ -568,7 +599,7 @@ impl EditorPanel for AssetBrowserPanel {
             }
         }
 
-        if visible.is_empty() {
+        if visible.is_empty() && self.new_script.is_none() {
             ui.paint_text_styled(
                 [grid_inner_x + grid_inner_w * 0.5, grid_inner_y + 60.0],
                 "No assets match the current filter.",
@@ -587,10 +618,10 @@ impl EditorPanel for AssetBrowserPanel {
                 .iter()
                 .position(|(oi, _)| *oi == rename_idx)
                 .map(|pos| {
-                    let col = pos % cols;
-                    let row = pos / cols;
+                    let col = (pos + lead) % cols;
+                    let row = (pos + lead) / cols;
                     let tx = grid_inner_x + col as f32 * (TILE_SIZE + TILE_GAP);
-                    let ty = grid_inner_y + row as f32 * (tile_h + TILE_GAP);
+                    let ty = grid_origin_y + row as f32 * (tile_h + TILE_GAP);
                     [tx + 3.0, ty + TILE_SIZE - 2.0, TILE_SIZE - 6.0, 20.0]
                 });
             // Snapshot the asset before taking the `&mut` buffer borrow.
@@ -629,6 +660,14 @@ impl EditorPanel for AssetBrowserPanel {
                 // The tile was filtered out or removed — abandon the rename.
                 _ => self.renaming_index = None,
             }
+        }
+        match new_script_event {
+            InlineEditEvent::Committed => self.commit_new_script(),
+            InlineEditEvent::Cancelled => self.cancel_new_script(),
+            _ => {}
+        }
+        if let Some(from) = start_script_from {
+            self.start_new_script(&from);
         }
 
         let search_filter_ref = &mut self.search_filter;

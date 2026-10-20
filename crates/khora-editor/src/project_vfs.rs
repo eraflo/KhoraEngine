@@ -328,6 +328,38 @@ impl ProjectVfs {
         Ok(new_rel)
     }
 
+    /// Creates a new file at `rel` (forward-slash under `assets/`) holding
+    /// `bytes`, its folders too. Refuses an existing file, an empty path, and any
+    /// `..` / `.` / empty segment or absolute path. Rebuilds the index.
+    pub fn create_asset(&mut self, rel: &str, bytes: &[u8]) -> Result<()> {
+        // `abs_of` drops empty segments and joins the rest as they are, so the
+        // path is checked here: a `..`, a drive or a backslash would put the
+        // file somewhere other than where the author was shown.
+        let stays_under_assets = !rel.is_empty()
+            && rel.split('/').all(|segment| {
+                !matches!(segment, "" | "." | "..") && !segment.contains(['\\', ':'])
+            });
+        if !stays_under_assets {
+            bail!("Not a path under assets/: '{rel}'");
+        }
+        let abs = self.abs_of(rel);
+        if let Some(parent) = abs.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create {}", parent.display()))?;
+        }
+        // `create_new` refuses an existing file in the same call that opens it,
+        // so nothing an author wrote is ever replaced.
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&abs)
+            .with_context(|| format!("Failed to create {}", abs.display()))?;
+        std::io::Write::write_all(&mut file, bytes)
+            .with_context(|| format!("Failed to write {}", abs.display()))?;
+        drop(file);
+        self.rebuild_index()
+    }
+
     /// Lists every directory under `assets/` as forward-slash relative paths
     /// (sorted, excluding the root). The VFS only indexes files, so empty
     /// folders — including freshly created ones — are only visible through this.
@@ -561,6 +593,127 @@ mod tests {
 
         assert_eq!(by_frozen.as_deref(), Some(&b"scene bytes"[..]));
         assert!(!by_path, "indexed under its path-derived UUID");
+        Ok(())
+    }
+
+    /// A project directory under the temp folder, with an `assets/` folder,
+    /// removed when the test ends — panicking or not.
+    struct TempProject(PathBuf);
+
+    impl TempProject {
+        fn new(name: &str) -> Result<Self> {
+            let root = std::env::temp_dir().join(format!(
+                "khora-editor-create-asset-{name}-{}",
+                std::process::id()
+            ));
+            if root.exists() {
+                std::fs::remove_dir_all(&root)?;
+            }
+            std::fs::create_dir_all(root.join("assets"))?;
+            Ok(Self(root))
+        }
+
+        fn open(&self) -> Result<ProjectVfs> {
+            ProjectVfs::open(self.0.clone(), Arc::new(MetricsRegistry::new()))
+        }
+    }
+
+    impl Drop for TempProject {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn create_asset_writes_the_file_and_its_folders_and_indexes_it() -> Result<()> {
+        let project = TempProject::new("writes")?;
+        let mut pvfs = project.open()?;
+
+        pvfs.create_asset("scripts/ai/Player.erg", b"behavior Player { }")?;
+
+        let written = project
+            .0
+            .join("assets")
+            .join("scripts")
+            .join("ai")
+            .join("Player.erg");
+        assert_eq!(std::fs::read(&written)?, b"behavior Player { }");
+        let listed = crate::hot_reload::collect_asset_entries(&pvfs);
+        assert!(
+            listed
+                .iter()
+                .any(|entry| entry.source_path == "scripts/ai/Player.erg"),
+            "the index does not list the new file: {listed:?}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn create_asset_refuses_an_existing_file_and_leaves_its_bytes() -> Result<()> {
+        let project = TempProject::new("existing")?;
+        let scripts = project.0.join("assets").join("scripts");
+        std::fs::create_dir_all(&scripts)?;
+        std::fs::write(scripts.join("Player.erg"), b"what the author wrote")?;
+        let mut pvfs = project.open()?;
+
+        let created = pvfs.create_asset("scripts/Player.erg", b"a template");
+
+        assert!(created.is_err(), "an existing file is overwritten");
+        assert_eq!(
+            std::fs::read(scripts.join("Player.erg"))?,
+            b"what the author wrote"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn create_asset_refuses_a_path_that_is_empty_or_leaves_or_bends_assets() -> Result<()> {
+        let project = TempProject::new("refused")?;
+        let outside = std::env::temp_dir().join(format!(
+            "khora-editor-create-asset-outside-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&outside);
+        let absolute = outside.join("absolute.erg");
+        let absolute_fwd = absolute.to_string_lossy().replace('\\', "/");
+        let mut pvfs = project.open()?;
+
+        let refused = [
+            "",
+            "../escape.erg",
+            "a/../b.erg",
+            "./here.erg",
+            "a//b.erg",
+            "a/",
+            "/rooted.erg",
+            absolute_fwd.as_str(),
+        ]
+        .map(|rel| (rel.to_owned(), pvfs.create_asset(rel, b"bytes").is_err()));
+        let absolute_written = absolute.exists();
+        let _ = std::fs::remove_dir_all(&outside);
+
+        for (rel, was_refused) in &refused {
+            assert!(was_refused, "`{rel}` was accepted");
+        }
+        assert!(
+            !absolute_written,
+            "{} was written by an absolute path",
+            absolute.display()
+        );
+        let assets = project.0.join("assets");
+        for written in [
+            project.0.join("escape.erg"),
+            assets.join("b.erg"),
+            assets.join("a"),
+            assets.join("here.erg"),
+            assets.join("rooted.erg"),
+        ] {
+            assert!(
+                !written.exists(),
+                "{} was written by a refused path",
+                written.display()
+            );
+        }
         Ok(())
     }
 }

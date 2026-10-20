@@ -155,7 +155,7 @@ pub(crate) fn tile_badge(counts: (usize, usize)) -> Option<TileBadge> {
 }
 
 /// Where a project keeps its scripts, under its assets root.
-const SCRIPT_DIR: &str = "scripts";
+pub(crate) const SCRIPT_DIR: &str = "scripts";
 
 /// The module an asset at `rel_path` (under the assets root) is known by,
 /// `None` when it is not an `.erg` file.

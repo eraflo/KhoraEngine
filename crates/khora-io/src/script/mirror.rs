@@ -130,7 +130,7 @@ impl<L: SourceLoader> SourceLoader for PreludeLoader<L> {
 /// component's, sorted: the complete list — the mirror leaves some out, the
 /// registrations do not. A retired name stays the engine's: a script
 /// declaring it would read an old file's cells of the type that was removed.
-fn engine_component_names() -> &'static [String] {
+pub fn engine_component_names() -> &'static [String] {
     static NAMES: OnceLock<Vec<String>> = OnceLock::new();
     NAMES.get_or_init(|| {
         let mut names: Vec<String> = inventory::iter::<ComponentRegistration>

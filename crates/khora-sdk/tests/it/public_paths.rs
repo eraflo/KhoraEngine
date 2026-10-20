@@ -969,6 +969,7 @@ fn module_crate_root_paths_still_resolve() {
 #[test]
 fn module_scripts_paths_still_resolve() {
     let _ = khora_sdk::scripts::mount;
+    let _ = khora_sdk::scripts::is_engine_name;
 }
 
 #[test]

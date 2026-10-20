@@ -306,6 +306,9 @@ pub struct EditorState {
     pub pending_delete_asset: Option<String>,
     /// Duplicate an asset next to itself: forward-slash relative path.
     pub pending_duplicate_asset: Option<String>,
+    /// Create an Ergon script: `(rel_path, source)`, forward-slash under
+    /// `assets/`. Never overwrites a file. Consumed next frame.
+    pub pending_create_script: Option<(String, String)>,
     /// Spawn a mesh asset into the scene: `(rel_path, [x,y,z] world point,
     /// optional parent entity)`. Set by dragging a mesh tile onto the viewport
     /// (parent `None`) or a hierarchy row (parent = that entity); drained into a

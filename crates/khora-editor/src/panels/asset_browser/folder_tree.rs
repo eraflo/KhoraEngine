@@ -29,6 +29,8 @@ use crate::drag_payload::unpack_asset_drag;
 enum FolderAction {
     /// Create a "New Folder" child under this folder (`""` = assets root).
     NewFolder(String),
+    /// Start naming a new script made from this folder.
+    NewScript(String),
     /// Send this folder to the OS recycle bin.
     Delete(String),
     /// Open this folder in the OS file explorer.
@@ -155,6 +157,7 @@ impl AssetBrowserPanel {
         for action in actions {
             match action {
                 FolderAction::NewFolder(parent) => self.queue_new_folder(&parent),
+                FolderAction::NewScript(from) => self.start_new_script(&from),
                 FolderAction::Delete(rel) => {
                     self.confirm_delete = Some((rel, true));
                 }
@@ -258,6 +261,10 @@ impl AssetBrowserPanel {
             ui.context_menu_last(&mut |menu| {
                 if menu.button("New Folder") {
                     actions.push(FolderAction::NewFolder(full.clone()));
+                    menu.close_menu();
+                }
+                if menu.button("New Script") {
+                    actions.push(FolderAction::NewScript(full.clone()));
                     menu.close_menu();
                 }
                 if allow_edit && menu.button("Rename") {

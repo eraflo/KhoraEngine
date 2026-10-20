@@ -53,16 +53,18 @@ fn refresh_asset_cache(pvfs_arc: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mut
     }
 }
 
-/// Drains the asset-explorer file operations (new folder / rename / move /
-/// delete-to-trash / duplicate). Each routes through [`ProjectVfs`], which keeps
-/// the identity registry consistent so references survive renames and moves.
+/// Drains the asset-explorer file operations (new folder / new script / rename /
+/// move / delete-to-trash / duplicate). Each routes through [`ProjectVfs`], which
+/// keeps the identity registry consistent so references survive renames and
+/// moves. A script written is then revealed, so the browser selects it.
 pub fn process_pending_asset_file_ops(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
-    let (create, rename, move_op, delete, duplicate) = match editor_state.lock() {
+    let (create, script, rename, move_op, delete, duplicate) = match editor_state.lock() {
         Ok(mut s) => (
             s.pending_create_folder.take(),
+            s.pending_create_script.take(),
             s.pending_rename_asset.take(),
             s.pending_move_asset.take(),
             s.pending_delete_asset.take(),
@@ -71,6 +73,7 @@ pub fn process_pending_asset_file_ops(
         Err(_) => return,
     };
     if create.is_none()
+        && script.is_none()
         && rename.is_none()
         && move_op.is_none()
         && delete.is_none()
@@ -83,6 +86,7 @@ pub fn process_pending_asset_file_ops(
         return;
     };
 
+    let mut written_script = None;
     {
         let Ok(mut pvfs) = pvfs_arc.lock() else {
             log::error!("Asset file op: project VFS mutex poisoned");
@@ -92,6 +96,15 @@ pub fn process_pending_asset_file_ops(
             match pvfs.create_folder(&dir) {
                 Ok(()) => log::info!("Created folder '{dir}'"),
                 Err(e) => log::error!("Create folder '{dir}' failed: {e:#}"),
+            }
+        }
+        if let Some((rel, source)) = script {
+            match pvfs.create_asset(&rel, source.as_bytes()) {
+                Ok(()) => {
+                    log::info!("Created script '{rel}'");
+                    written_script = Some(rel);
+                }
+                Err(e) => log::error!("Create script '{rel}' failed: {e:#}"),
             }
         }
         if let Some((old, new)) = rename {
@@ -121,6 +134,11 @@ pub fn process_pending_asset_file_ops(
     }
 
     refresh_asset_cache(pvfs_arc, editor_state);
+    if let Some(rel) = written_script {
+        if let Ok(mut s) = editor_state.lock() {
+            s.pending_reveal_asset = Some(rel);
+        }
+    }
 }
 
 /// Drains [`EditorState::pending_spawn_mesh_asset`]: spawns a `MeshRef::Asset`

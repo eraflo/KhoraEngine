@@ -48,5 +48,28 @@ pub(crate) fn follow_open_project(
     Some(loaded)
 }
 
+/// Opens the script at `path` for its author: in the app the system gives
+/// `.erg` files, or — when the system has none and says so — in its own text
+/// editor, so a script is never one the author cannot open. Windows asks which
+/// app to use rather than failing, so its fallback is only for a refusal.
+pub(crate) fn open_script(path: &Path) -> std::io::Result<()> {
+    open::that(path).or_else(|error| match TEXT_EDITOR {
+        Some(editor) => {
+            log::info!("no app opens {}: trying {editor} ({error})", path.display());
+            open::with(path, editor)
+        }
+        None => Err(error),
+    })
+}
+
+/// The text editor every installation of the system has, if it has one.
+const TEXT_EDITOR: Option<&str> = if cfg!(target_os = "windows") {
+    Some("notepad")
+} else if cfg!(target_os = "macos") {
+    Some("TextEdit")
+} else {
+    None
+};
+
 #[cfg(test)]
 mod tests;

@@ -367,7 +367,7 @@ impl EditorPanel for ProblemsPanel {
             Some(ProblemAction::OpenModule(module)) => {
                 let Some(project) = project else { return };
                 let file = view::module_file(&Path::new(&project).join("assets"), &module);
-                if let Err(error) = open::that(&file) {
+                if let Err(error) = crate::project_scripts::open_script(&file) {
                     log::warn!("could not open {}: {error}", file.display());
                 }
             }

@@ -45,6 +45,7 @@ use naming::{entity_display_name, sanitize_for_filename};
 
 mod folder_tree;
 mod naming;
+mod new_script;
 mod panel;
 #[cfg(test)]
 mod tests;
@@ -116,6 +117,8 @@ pub struct AssetBrowserPanel {
     confirm_delete: Option<(String, bool)>,
     /// How far the tile grid is scrolled.
     grid_scroll: khora_tool_ui::widgets::ScrollState,
+    /// The script being named on its placeholder tile, not yet written.
+    new_script: Option<new_script::NewScript>,
 }
 
 impl AssetBrowserPanel {
@@ -138,6 +141,7 @@ impl AssetBrowserPanel {
             expanded_folders: std::collections::HashMap::new(),
             confirm_delete: None,
             grid_scroll: khora_tool_ui::widgets::ScrollState::default(),
+            new_script: None,
         }
     }
 
@@ -211,6 +215,7 @@ impl AssetBrowserPanel {
                 self.selected_index = None;
                 self.renaming_index = None;
                 self.renaming_folder = None;
+                self.new_script = None;
                 self.current_folder = None;
             }
             return;
@@ -465,7 +470,11 @@ impl AssetBrowserPanel {
                     log::info!("Asset browser: spawning prefab '{}'", asset.rel_path);
                 }
             }
-            ActivationKind::OpenExternal { abs_path } => match open::that(&abs_path) {
+            ActivationKind::OpenExternal { abs_path } => match if asset.type_name == "script" {
+                crate::project_scripts::open_script(std::path::Path::new(&abs_path))
+            } else {
+                open::that(&abs_path)
+            } {
                 Ok(()) => log::info!(
                     "Asset browser: opened '{}' in OS-default application",
                     asset.rel_path

@@ -21,6 +21,7 @@
 mod declared_components;
 mod editor_shader_sources;
 mod engine_mode;
+mod engine_names;
 mod game_saves;
 mod mode_to_dcc;
 mod prefab_library;

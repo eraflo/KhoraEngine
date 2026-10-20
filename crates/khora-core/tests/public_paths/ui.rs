@@ -244,6 +244,7 @@ fn editor_state_fields(x: &khora_core::ui::editor::state::EditorState) {
         &x.pending_move_asset,
         &x.pending_delete_asset,
         &x.pending_duplicate_asset,
+        &x.pending_create_script,
         &x.pending_spawn_mesh_asset,
         &x.pending_assign_texture,
     );

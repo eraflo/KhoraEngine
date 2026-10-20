@@ -152,9 +152,9 @@ The Assets panel in the bottom dock is a real file explorer over `<project>/asse
 | **Left-click** | Selects a tile. |
 | **Double-click** | Opens / activates it (a `.kscene` loads, other types open). |
 | **Right-click a file tile** | Context menu: Open, Reveal in Explorer, Rename (inline), Duplicate, Delete, plus "Assign to selected" for materials. |
-| **Right-click a folder** | New Folder, Rename, Delete, Reveal. |
-| **Right-click empty space** | New Folder, Reveal Current Folder, Refresh. |
-| **Header buttons** | More (menu), Trash (delete selected), Filter (category menu). |
+| **Right-click a folder** | New Folder, New Script, Rename, Delete, Reveal. |
+| **Right-click empty space** | New Folder, New Script, Reveal Current Folder. |
+| **Header buttons** | More (New Folder, New Script, Reveal Project in Explorer), Trash (delete selected), Filter (category menu). |
 
 Empty folders are shown, so **New Folder** produces a usable target immediately. **Delete goes to the OS recycle bin** (via the `trash` crate), so a mistaken delete is reversible from the system trash rather than lost.
 
@@ -196,6 +196,22 @@ behaviors, systems — registers at once, so the Inspector knows the project's
 components before anything runs. What they *compiled to* waits for Play: no
 script runs while you edit ([Scripts run only while the game
 runs](../concepts/scripting.md#scripts-run-only-while-the-game-runs)).
+
+**New Script.** *New Script* — in the Assets panel's empty-space, folder and
+*More* menus — makes a script from the editor. The name comes first: a Script
+tile appears in the first slot with a name field, and nothing is written until
+it is committed (Enter, or a click elsewhere); Escape makes nothing. The name
+typed becomes the behavior's, as an Ergon name — `my player` is `MyPlayer` —
+and the tile's thumbnail shows the file it will write before you commit. A name
+another `.erg` of the project already uses, or one the engine keeps — a
+component's such as `Camera`, an asset kind's such as `Sound` — gets a number
+(`Camera2`). The file
+goes in the current folder when that is `scripts/` or under it, otherwise in
+`scripts/` — the folder the project's scripts are compiled from — and the panel
+opens there. It starts as a behavior that compiles, its parts commented, and an
+existing file is never written over. Once written, it is selected, and the
+watch compiles it like any save; double-click opens it in the system's editor
+for `.erg` files.
 
 **Problems.** The **Problems** tab of the bottom dock lists what is wrong with
 the project's scripts, grouped by module, each row `line:col  message` with its
