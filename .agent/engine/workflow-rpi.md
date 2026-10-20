@@ -21,8 +21,11 @@ Research ──► Plan ──► Implement ──► compact back into the plan
 
 1. **Research** — [`skills/research-codebase`](./skills/research-codebase/SKILL.md). Dispatch the read-only
    research subagents (`knowledge-locator`, `codebase-locator`, `codebase-analyzer`,
-   `codebase-pattern-finder`) to understand *how it works today*. Output → `docs/research/AAAA-MM-JJ_topic.md`.
-   **Human reviews the research** (cheapest place to catch a wrong mental model).
+   `codebase-pattern-finder`) to understand *how it works today*, and research on the web how others solved
+   the problem (prior art), then propose designs. Output → `docs/research/AAAA-MM-JJ_topic.md`.
+   **Human reviews the research** (cheapest place to catch a wrong mental model). A design to validate is
+   presented to the owner as a **published artifact page with simple step-through animations**, not as
+   the markdown file alone — see the research skill's *Design review page*.
 2. **Plan** — [`skills/create-plan`](./skills/create-plan/SKILL.md). Turn the research into a precise,
    phase-by-phase plan. Output → `docs/plans/descriptive-name.md`. **Human reviews the plan.**
 3. **Implement** — [`skills/implement-plan`](./skills/implement-plan/SKILL.md), per phase:
