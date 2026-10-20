@@ -16,10 +16,18 @@
 
 use crate::asset::Asset;
 use crate::math::{Aabb, Vec2, Vec3, Vec4};
-use crate::renderer::api::pipeline::{PrimitiveTopology, VertexAttributeDescriptor};
+use crate::renderer::api::pipeline::{
+    PrimitiveTopology, VertexAttributeDescriptor, VertexBufferLayoutDescriptor, VertexFormat,
+    VertexStepMode,
+};
 use crate::renderer::api::resource::{BufferId, IndexFormat};
+use std::borrow::Cow;
 
 /// Represents a complete mesh with vertex data and indices.
+///
+/// The attributes are what the source provided; the GPU vertex every mesh is
+/// uploaded as is fixed by the engine ([`Mesh::VERTEX_ATTRIBUTES`]), so an
+/// absent attribute is filled with its default when the buffer is built.
 #[derive(Debug)]
 pub struct Mesh {
     /// Vertex positions
@@ -30,7 +38,7 @@ pub struct Mesh {
     pub tex_coords: Option<Vec<Vec2>>,
     /// Vertex tangents (for normal mapping)
     pub tangents: Option<Vec<Vec4>>,
-    /// Vertex colors
+    /// Vertex colors, linear RGBA
     pub colors: Option<Vec<Vec4>>,
     /// Index data for primitive assembly
     pub indices: Option<Vec<u32>>,
@@ -38,107 +46,140 @@ pub struct Mesh {
     pub primitive_type: PrimitiveTopology,
     /// Axis-aligned bounding box
     pub bounding_box: Aabb,
-    /// Vertex format layout
-    pub vertex_layout: Vec<VertexAttributeDescriptor>,
 }
 
 // Implement the core Asset trait for Mesh
 impl Asset for Mesh {}
 
 impl Mesh {
-    /// Calculates the stride of a single vertex in bytes based on the vertex layout.
-    pub fn vertex_size(&self) -> usize {
-        self.vertex_layout
-            .iter()
-            .map(|attr| attr.format.size())
-            .sum()
+    /// Byte size of one vertex in every mesh vertex buffer.
+    pub const VERTEX_STRIDE: u64 = 48;
+
+    /// The engine's mesh vertex: what [`Mesh::create_vertex_buffer`] writes and
+    /// every mesh pipeline declares. Location 0 position, 1 normal, 2 UV,
+    /// 3 linear RGBA colour.
+    pub const VERTEX_ATTRIBUTES: &'static [VertexAttributeDescriptor] = &[
+        VertexAttributeDescriptor {
+            shader_location: 0,
+            format: VertexFormat::Float32x3,
+            offset: 0,
+        },
+        VertexAttributeDescriptor {
+            shader_location: 1,
+            format: VertexFormat::Float32x3,
+            offset: 12,
+        },
+        VertexAttributeDescriptor {
+            shader_location: 2,
+            format: VertexFormat::Float32x2,
+            offset: 24,
+        },
+        VertexAttributeDescriptor {
+            shader_location: 3,
+            format: VertexFormat::Float32x4,
+            offset: 32,
+        },
+    ];
+
+    /// The vertex buffer layout every mesh pipeline binds.
+    pub fn vertex_buffer_layout() -> VertexBufferLayoutDescriptor<'static> {
+        VertexBufferLayoutDescriptor {
+            array_stride: Self::VERTEX_STRIDE,
+            step_mode: VertexStepMode::Vertex,
+            attributes: Cow::Borrowed(Self::VERTEX_ATTRIBUTES),
+        }
     }
 
-    /// Creates an interleaved vertex buffer from the mesh data, ready for GPU upload.
+    /// Creates the interleaved vertex buffer of this mesh, ready for GPU upload.
     ///
-    /// This function converts the struct-of-arrays (SoA) data layout of the `Mesh` struct
-    /// into an array-of-structs (AoS) layout in a raw byte buffer. The exact memory
-    /// layout is dictated by the `vertex_layout` field.
+    /// Always [`Mesh::VERTEX_STRIDE`] bytes per position, laid out as
+    /// [`Mesh::VERTEX_ATTRIBUTES`]. An absent attribute, or the part of one
+    /// shorter than `positions`, takes its default: normal `(0, 1, 0)`,
+    /// UV `(0, 0)`, colour opaque white.
     pub fn create_vertex_buffer(&self) -> Vec<u8> {
-        let vertex_count = self.positions.len();
-        if vertex_count == 0 {
-            return Vec::new();
+        let stride = Self::VERTEX_STRIDE as usize;
+        let mut buffer = Vec::with_capacity(self.positions.len() * stride);
+        for (i, position) in self.positions.iter().enumerate() {
+            let normal = attribute_at(&self.normals, i, Vec3::Y);
+            let uv = attribute_at(&self.tex_coords, i, Vec2::ZERO);
+            let color = attribute_at(&self.colors, i, Vec4::ONE);
+            buffer.extend_from_slice(bytemuck::bytes_of(position));
+            buffer.extend_from_slice(bytemuck::bytes_of(&normal));
+            buffer.extend_from_slice(bytemuck::bytes_of(&uv));
+            buffer.extend_from_slice(bytemuck::bytes_of(&color));
         }
-
-        let vertex_size = self.vertex_size();
-        let mut buffer = vec![0u8; vertex_count * vertex_size];
-
-        // --- Process each attribute type one by one ---
-
-        // Positions (Attribute 0 - Mandatory)
-        if let Some(pos_attr) = self.vertex_layout.iter().find(|a| a.shader_location == 0) {
-            for (i, position) in self.positions.iter().enumerate().take(vertex_count) {
-                let vertex_start = i * vertex_size;
-                let attribute_offset = vertex_start + pos_attr.offset as usize;
-                let data_bytes = bytemuck::bytes_of(position);
-                buffer[attribute_offset..attribute_offset + data_bytes.len()]
-                    .copy_from_slice(data_bytes);
-            }
-        }
-
-        // Normals (Attribute 1 - Optional)
-        if let (Some(normals), Some(normal_attr)) = (
-            &self.normals,
-            self.vertex_layout.iter().find(|a| a.shader_location == 1),
-        ) {
-            for (i, normal) in normals.iter().enumerate().take(vertex_count) {
-                let vertex_start = i * vertex_size;
-                let attribute_offset = vertex_start + normal_attr.offset as usize;
-                let data_bytes = bytemuck::bytes_of(normal);
-                buffer[attribute_offset..attribute_offset + data_bytes.len()]
-                    .copy_from_slice(data_bytes);
-            }
-        }
-
-        // Texture Coordinates (Attribute 2 - Optional)
-        if let (Some(tex_coords), Some(uv_attr)) = (
-            &self.tex_coords,
-            self.vertex_layout.iter().find(|a| a.shader_location == 2),
-        ) {
-            for (i, tex_coord) in tex_coords.iter().enumerate().take(vertex_count) {
-                let vertex_start = i * vertex_size;
-                let attribute_offset = vertex_start + uv_attr.offset as usize;
-                let data_bytes = bytemuck::bytes_of(tex_coord);
-                buffer[attribute_offset..attribute_offset + data_bytes.len()]
-                    .copy_from_slice(data_bytes);
-            }
-        }
-
-        // Tangents (Attribute 3 - Optional)
-        if let (Some(tangents), Some(tangent_attr)) = (
-            &self.tangents,
-            self.vertex_layout.iter().find(|a| a.shader_location == 3),
-        ) {
-            for (i, tangent) in tangents.iter().enumerate().take(vertex_count) {
-                let vertex_start = i * vertex_size;
-                let attribute_offset = vertex_start + tangent_attr.offset as usize;
-                let data_bytes = bytemuck::bytes_of(tangent);
-                buffer[attribute_offset..attribute_offset + data_bytes.len()]
-                    .copy_from_slice(data_bytes);
-            }
-        }
-
-        // Colors (Attribute 4 - Optional)
-        if let (Some(colors), Some(color_attr)) = (
-            &self.colors,
-            self.vertex_layout.iter().find(|a| a.shader_location == 4),
-        ) {
-            for (i, color) in colors.iter().enumerate().take(vertex_count) {
-                let vertex_start = i * vertex_size;
-                let attribute_offset = vertex_start + color_attr.offset as usize;
-                let data_bytes = bytemuck::bytes_of(color);
-                buffer[attribute_offset..attribute_offset + data_bytes.len()]
-                    .copy_from_slice(data_bytes);
-            }
-        }
-
         buffer
     }
+
+    /// Gives a triangle-list mesh without normals flat normals.
+    ///
+    /// Each triangle gets its own three vertices carrying the face normal
+    /// (counter-clockwise front); every other attribute is duplicated along,
+    /// and the indices become `0..3n`. A degenerate triangle gets `(0, 1, 0)`.
+    /// Does nothing when the mesh already has normals or is not a triangle list.
+    pub fn generate_flat_normals(&mut self) {
+        if self.normals.is_some() || self.primitive_type != PrimitiveTopology::TriangleList {
+            return;
+        }
+        let corners: Vec<u32> = match &self.indices {
+            Some(indices) => indices.clone(),
+            None => (0..self.positions.len() as u32).collect(),
+        };
+        // A trailing partial triangle is not drawn, nor is one with a corner
+        // past the positions; both are dropped whole.
+        let count = self.positions.len();
+        let corners: Vec<usize> = corners
+            .chunks_exact(3)
+            .filter(|triangle| triangle.iter().all(|&c| (c as usize) < count))
+            .flatten()
+            .map(|&c| c as usize)
+            .collect();
+
+        let mut normals = Vec::with_capacity(corners.len());
+        for triangle in corners.chunks_exact(3) {
+            let [a, b, c] = [
+                self.positions[triangle[0]],
+                self.positions[triangle[1]],
+                self.positions[triangle[2]],
+            ];
+            // No tolerance on the length: a millimetre triangle has a tiny
+            // cross product that is still its face direction.
+            let cross = (b - a).cross(c - a);
+            let length = cross.length();
+            let face = if length > 0.0 && length.is_finite() {
+                cross * (1.0 / length)
+            } else {
+                Vec3::Y
+            };
+            normals.extend([face; 3]);
+        }
+
+        self.positions = corners.iter().map(|&c| self.positions[c]).collect();
+        self.tex_coords = unweld(&self.tex_coords, &corners);
+        self.tangents = unweld(&self.tangents, &corners);
+        self.colors = unweld(&self.colors, &corners);
+        self.normals = Some(normals);
+        self.indices = Some((0..self.positions.len() as u32).collect());
+    }
+}
+
+/// The value of an optional per-vertex attribute at `index`, or `default`
+/// when the attribute is absent or shorter than the positions.
+fn attribute_at<T: Copy>(attribute: &Option<Vec<T>>, index: usize, default: T) -> T {
+    attribute
+        .as_ref()
+        .and_then(|values| values.get(index).copied())
+        .unwrap_or(default)
+}
+
+/// One value per corner, read from a per-vertex attribute.
+fn unweld<T: Copy>(attribute: &Option<Vec<T>>, corners: &[usize]) -> Option<Vec<T>> {
+    attribute.as_ref().map(|values| {
+        corners
+            .iter()
+            .map_while(|&c| values.get(c).copied())
+            .collect()
+    })
 }
 
 /// A GPU-ready representation of a mesh, containing buffer IDs and draw parameters.
@@ -156,3 +197,6 @@ pub struct GpuMesh {
 }
 
 impl Asset for GpuMesh {}
+
+#[cfg(test)]
+mod tests;

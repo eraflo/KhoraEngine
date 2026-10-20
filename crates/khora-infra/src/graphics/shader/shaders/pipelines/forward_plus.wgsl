@@ -47,6 +47,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     out.clip_position = camera.view_projection * world_pos;
     out.normal = normalize((model.normal_matrix * vec4<f32>(input.normal, 0.0)).xyz);
     out.uv = input.uv;
+    out.color = input.color;
     return out;
 }
 
@@ -148,7 +149,8 @@ fn calculate_light_contribution(
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let base = sample_albedo(input.uv);
+    // glTF: the vertex colour multiplies the base colour.
+    let base = sample_albedo(input.uv) * input.color;
     // Alpha-mask discard: pbr_factors.z is the cutoff (0 for Opaque/Blend, so
     // the test never fires for them).
     let out_alpha = material.base_color.a * base.a;

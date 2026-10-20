@@ -19,8 +19,7 @@ use anyhow::{Context, Result};
 use khora_core::math::geometry::Aabb;
 use khora_core::math::{Vec2, Vec3};
 use khora_core::renderer::api::gpu_scene::Mesh;
-use khora_core::renderer::api::pipeline::enums::{PrimitiveTopology, VertexFormat};
-use khora_core::renderer::api::pipeline::VertexAttributeDescriptor;
+use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
 use std::error::Error;
 
 use crate::asset::AssetDecoder;
@@ -90,32 +89,7 @@ impl AssetDecoder<Mesh> for ObjDecoder {
         )
         .unwrap_or(Aabb::INVALID);
 
-        let mut vertex_layout = vec![VertexAttributeDescriptor {
-            shader_location: 0,
-            format: VertexFormat::Float32x3,
-            offset: 0,
-        }];
-
-        let mut next_location = 1;
-        if normals.is_some() {
-            vertex_layout.push(VertexAttributeDescriptor {
-                shader_location: next_location,
-                format: VertexFormat::Float32x3,
-                offset: std::mem::size_of::<Vec3>() as u64,
-            });
-            next_location += 1;
-        }
-
-        if tex_coords.is_some() {
-            vertex_layout.push(VertexAttributeDescriptor {
-                shader_location: next_location,
-                format: VertexFormat::Float32x2,
-                offset: (std::mem::size_of::<Vec3>() * (1 + normals.as_ref().map_or(0, |_| 1)))
-                    as u64,
-            });
-        }
-
-        Ok(Mesh {
+        let mut decoded = Mesh {
             positions,
             normals,
             tex_coords,
@@ -124,7 +98,9 @@ impl AssetDecoder<Mesh> for ObjDecoder {
             indices: Some(mesh.indices.clone()),
             primitive_type: PrimitiveTopology::TriangleList,
             bounding_box,
-            vertex_layout,
-        })
+        };
+        // A file without normals is shaded flat.
+        decoded.generate_flat_normals();
+        Ok(decoded)
     }
 }

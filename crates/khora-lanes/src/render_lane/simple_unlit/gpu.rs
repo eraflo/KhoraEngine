@@ -73,15 +73,14 @@ fn unlit_material_layout_entries() -> Vec<khora_core::renderer::api::command::Bi
 /// the `PipelineSystem`. Camera is the canonical layout; model + material are
 /// bespoke inline layouts shared with the lane's ring buffers.
 fn pipeline_spec(device: &dyn khora_core::renderer::GraphicsDevice) -> PipelineSpec {
-    use khora_core::renderer::api::pipeline::enums::{
-        CompareFunction, VertexFormat, VertexStepMode,
-    };
+    use khora_core::renderer::api::gpu_scene::Mesh;
+    use khora_core::renderer::api::pipeline::enums::CompareFunction;
     use khora_core::renderer::api::pipeline::state::{
         ColorWrites, DepthBiasState, StencilFaceState,
     };
     use khora_core::renderer::api::pipeline::{
         ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
-        PrimitiveStateDescriptor, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
+        PrimitiveStateDescriptor,
     };
     use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
     use std::borrow::Cow;
@@ -101,27 +100,7 @@ fn pipeline_spec(device: &dyn khora_core::renderer::GraphicsDevice) -> PipelineS
                 entries: Cow::Owned(unlit_material_layout_entries()),
             },
         ],
-        vertex_buffers: vec![VertexBufferLayoutDescriptor {
-            array_stride: 32,
-            step_mode: VertexStepMode::Vertex,
-            attributes: Cow::Owned(vec![
-                VertexAttributeDescriptor {
-                    format: VertexFormat::Float32x3,
-                    offset: 0,
-                    shader_location: 0,
-                },
-                VertexAttributeDescriptor {
-                    format: VertexFormat::Float32x3,
-                    offset: 12,
-                    shader_location: 1,
-                },
-                VertexAttributeDescriptor {
-                    format: VertexFormat::Float32x2,
-                    offset: 24,
-                    shader_location: 2,
-                },
-            ]),
-        }],
+        vertex_buffers: vec![Mesh::vertex_buffer_layout()],
         vs_entry: "vs_main",
         fs_entry: Some("fs_main"),
         primitive: PrimitiveStateDescriptor {
@@ -255,5 +234,16 @@ impl SimpleUnlitLane {
         if let Some(ring) = self.material_ring.lock().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simple_unlit_pipeline_binds_the_mesh_vertex() {
+        let spec = pipeline_spec(&crate::test_support::SpecOnlyDevice);
+        crate::test_support::assert_binds_the_mesh_vertex(&spec);
     }
 }

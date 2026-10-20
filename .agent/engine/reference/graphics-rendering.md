@@ -19,6 +19,8 @@ HDR/tone mapping, post-processing, GPU occupancy and synchronization (no Vulkan 
 - **Exactly 4 bind groups** (Frame/Object/Material/Lighting). New lighting features add bindings to group 3, never a 5th group. Shadow bindings fixed at group-3 indices 1/2/3.
 - WGSL only, as `.wgsl` files under `khora-infra/src/graphics/shader/shaders/`, composed by the `PipelineSystem` backend — never inline shader strings, never runtime FS reads.
 - GPU resources via typed IDs (`TextureId`, `BufferId`, `PipelineId`) — never raw wgpu handles in public APIs. No `unwrap()` on GPU paths.
+- **One mesh vertex.** Every mesh is uploaded as `Mesh::VERTEX_ATTRIBUTES` (`khora-core/src/renderer/api/gpu_scene/mesh.rs`): position, normal, UV, linear RGBA colour — 48 bytes, absent attributes filled (normal +Y, UV 0, colour white). Every mesh pipeline binds `Mesh::vertex_buffer_layout()`; never write a stride or an attribute list by hand. The WGSL mirror is `lib/std/vertex.wgsl`. The vertex colour multiplies the base colour (glTF). A future attribute that only some passes need (skin joints/weights, UV1) goes in a second vertex buffer, not in this one.
+- Decoders normalise: a glTF decoded as a `Mesh` is its default scene as one mesh (node transforms baked, strips/fans → lists, flat normals when NORMAL is absent).
 - For any visual-design decision (editor look, debug viz style), use `/impeccable`.
 
 Use codegraph to trace lane↔shader↔backend wiring before editing.

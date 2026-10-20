@@ -287,3 +287,165 @@ fn hot_reload_of_text_wgsl_is_not_a_failed_lib_recompose() {
         }
     }
 }
+
+/// Number of components a mesh vertex format feeds to the shader.
+fn vertex_format_components(format: khora_core::renderer::api::pipeline::VertexFormat) -> u32 {
+    use khora_core::renderer::api::pipeline::VertexFormat as F;
+    match format {
+        F::Float32 | F::Uint32 | F::Sint32 => 1,
+        F::Float32x2 | F::Uint32x2 | F::Sint32x2 => 2,
+        F::Float32x3 | F::Uint32x3 | F::Sint32x3 => 3,
+        F::Float32x4 | F::Uint32x4 | F::Sint32x4 => 4,
+        other => panic!("mesh vertex format {other:?} has no component count here"),
+    }
+}
+
+/// Number of components of a shader input type (scalar = 1, vecN = N).
+fn shader_input_components(module: &naga::Module, ty: naga::Handle<naga::Type>) -> u32 {
+    match module.types[ty].inner {
+        naga::TypeInner::Scalar(_) => 1,
+        naga::TypeInner::Vector { size, .. } => size as u32,
+        ref other => panic!("vertex input of unexpected type {other:?}"),
+    }
+}
+
+/// One `@location` input of a vertex entry point, and whether the entry point
+/// reads it.
+struct VertexLocationInput {
+    location: u32,
+    components: u32,
+    read: bool,
+}
+
+/// Every `@location(n)` input of the `vs_main` entry point — direct arguments
+/// and members of struct arguments — with whether the function body reads it.
+fn vs_main_location_inputs(module: &naga::Module) -> Vec<VertexLocationInput> {
+    let entry = module
+        .entry_points
+        .iter()
+        .find(|e| e.stage == naga::ShaderStage::Vertex && e.name == "vs_main")
+        .expect("vs_main vertex entry point");
+    let function = &entry.function;
+    let argument_handles = |arg: u32| {
+        function
+            .expressions
+            .iter()
+            .filter(move |(_, e)| matches!(e, naga::Expression::FunctionArgument(i) if *i == arg))
+            .map(|(h, _)| h)
+            .collect::<Vec<_>>()
+    };
+    let mut inputs = Vec::new();
+    for (arg_index, argument) in function.arguments.iter().enumerate() {
+        let arg_index = arg_index as u32;
+        match (&argument.binding, &module.types[argument.ty].inner) {
+            (Some(naga::Binding::Location { location, .. }), _) => {
+                inputs.push(VertexLocationInput {
+                    location: *location,
+                    components: shader_input_components(module, argument.ty),
+                    read: !argument_handles(arg_index).is_empty(),
+                })
+            }
+            (None, naga::TypeInner::Struct { members, .. }) => {
+                let bases = argument_handles(arg_index);
+                for (member_index, member) in members.iter().enumerate() {
+                    if let Some(naga::Binding::Location { location, .. }) = member.binding {
+                        let read = function.expressions.iter().any(|(_, e)| {
+                            matches!(e, naga::Expression::AccessIndex { base, index }
+                                if *index == member_index as u32 && bases.contains(base))
+                        });
+                        inputs.push(VertexLocationInput {
+                            location,
+                            components: shader_input_components(module, member.ty),
+                            read,
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    inputs
+}
+
+fn compose_pipeline(name: &str) -> naga::Module {
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    let mut inner = sys.inner.lock().unwrap();
+    let defs = inner.base_defs.clone();
+    let source = *inner.pipelines.get(name).expect("pipeline registered");
+    let patched = inject_float_defs(source);
+    inner
+        .composer
+        .make_naga_module(NagaModuleDescriptor {
+            source: &patched,
+            file_path: name,
+            shader_defs: defs,
+            shader_type: ShaderType::Wgsl,
+            ..Default::default()
+        })
+        .unwrap_or_else(|e| panic!("compose {name}: {e}"))
+}
+
+/// Every pipeline that draws a `Mesh` vertex buffer.
+const MESH_PIPELINES: [&str; 6] = [
+    "khora::pipelines::standard_pbr",
+    "khora::pipelines::lit_forward",
+    "khora::pipelines::forward_plus",
+    "khora::pipelines::unlit",
+    "khora::pipelines::wireframe",
+    "khora::pipelines::shadow_pass",
+];
+
+/// A mesh pipeline's vertex shader may only ask for attributes the engine
+/// mesh vertex provides, each with the width the buffer holds — otherwise the
+/// pipeline either fails to build or reads garbage.
+#[test]
+fn mesh_pipeline_vertex_inputs_are_in_the_mesh_vertex() {
+    use khora_core::renderer::api::gpu_scene::Mesh;
+    for name in MESH_PIPELINES {
+        let module = compose_pipeline(name);
+        let inputs = vs_main_location_inputs(&module);
+        assert!(!inputs.is_empty(), "{name}: vs_main has no vertex input");
+        for input in inputs {
+            let attribute = Mesh::VERTEX_ATTRIBUTES
+                .iter()
+                .find(|a| a.shader_location == input.location)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{name}: vs_main reads @location({}) which the mesh vertex does not provide",
+                        input.location
+                    )
+                });
+            assert_eq!(
+                input.components,
+                vertex_format_components(attribute.format),
+                "{name}: @location({}) width differs from the mesh vertex ({:?})",
+                input.location,
+                attribute.format
+            );
+        }
+    }
+}
+
+/// The lit and unlit mesh pipelines take the vertex colour (location 3) and
+/// use it: a mesh coloured per vertex must not render white.
+#[test]
+fn coloured_mesh_pipelines_read_the_vertex_colour() {
+    for name in [
+        "khora::pipelines::standard_pbr",
+        "khora::pipelines::lit_forward",
+        "khora::pipelines::forward_plus",
+        "khora::pipelines::unlit",
+    ] {
+        let module = compose_pipeline(name);
+        let inputs = vs_main_location_inputs(&module);
+        let colour = inputs
+            .iter()
+            .find(|i| i.location == 3)
+            .unwrap_or_else(|| panic!("{name}: vs_main declares no @location(3) colour input"));
+        assert_eq!(colour.components, 4, "{name}: vertex colour must be a vec4");
+        assert!(
+            colour.read,
+            "{name}: vs_main declares the vertex colour but never reads it"
+        );
+    }
+}

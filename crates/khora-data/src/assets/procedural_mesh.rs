@@ -18,9 +18,7 @@
 use crate::ecs::ProceduralMeshKind;
 use khora_core::math::{Aabb, Vec2, Vec3};
 use khora_core::renderer::api::gpu_scene::Mesh;
-use khora_core::renderer::api::pipeline::{
-    PrimitiveTopology, VertexAttributeDescriptor, VertexFormat,
-};
+use khora_core::renderer::api::pipeline::PrimitiveTopology;
 
 /// Reconstructs a procedural [`Mesh`] from its kind and parameters.
 ///
@@ -34,26 +32,6 @@ pub fn reconstruct_procedural_mesh(kind: ProceduralMeshKind, params: [f32; 4]) -
         ProceduralMeshKind::Plane => create_plane(params[0], params[1]),
         ProceduralMeshKind::Sphere => create_sphere(params[0], params[1] as u32, params[2] as u32),
     }
-}
-
-fn default_vertex_layout() -> Vec<VertexAttributeDescriptor> {
-    vec![
-        VertexAttributeDescriptor {
-            shader_location: 0,
-            format: VertexFormat::Float32x3,
-            offset: 0,
-        },
-        VertexAttributeDescriptor {
-            shader_location: 1,
-            format: VertexFormat::Float32x3,
-            offset: 12,
-        },
-        VertexAttributeDescriptor {
-            shader_location: 2,
-            format: VertexFormat::Float32x2,
-            offset: 24,
-        },
-    ]
 }
 
 /// Builds a flat XZ plane primitive of the given size at height `y`.
@@ -90,7 +68,6 @@ pub fn create_plane(size: f32, y: f32) -> Mesh {
         indices: Some(indices),
         primitive_type: PrimitiveTopology::TriangleList,
         bounding_box: Aabb::from_min_max(Vec3::new(-half, y, -half), Vec3::new(half, y, half)),
-        vertex_layout: default_vertex_layout(),
     }
 }
 
@@ -181,7 +158,6 @@ pub fn create_cube(size: f32) -> Mesh {
             Vec3::new(-half, -half, -half),
             Vec3::new(half, half, half),
         ),
-        vertex_layout: default_vertex_layout(),
     }
 }
 
@@ -237,7 +213,6 @@ pub fn create_sphere(radius: f32, segments: u32, rings: u32) -> Mesh {
             Vec3::new(-radius, -radius, -radius),
             Vec3::new(radius, radius, radius),
         ),
-        vertex_layout: default_vertex_layout(),
     }
 }
 

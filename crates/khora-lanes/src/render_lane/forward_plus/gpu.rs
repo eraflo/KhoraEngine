@@ -151,15 +151,14 @@ pub(super) fn render_pipeline_spec(
     double_sided: bool,
     blend: bool,
 ) -> PipelineSpec {
-    use khora_core::renderer::api::pipeline::enums::{
-        CompareFunction, CullMode, VertexFormat, VertexStepMode,
-    };
+    use khora_core::renderer::api::gpu_scene::Mesh;
+    use khora_core::renderer::api::pipeline::enums::{CompareFunction, CullMode};
     use khora_core::renderer::api::pipeline::state::{
         BlendStateDescriptor, ColorWrites, DepthBiasState, StencilFaceState,
     };
     use khora_core::renderer::api::pipeline::{
         ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
-        PrimitiveStateDescriptor, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
+        PrimitiveStateDescriptor,
     };
     use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
     use std::borrow::Cow;
@@ -180,27 +179,7 @@ pub(super) fn render_pipeline_spec(
                 entries: Cow::Owned(fp_lighting_layout_entries()),
             },
         ],
-        vertex_buffers: vec![VertexBufferLayoutDescriptor {
-            array_stride: 32,
-            step_mode: VertexStepMode::Vertex,
-            attributes: Cow::Owned(vec![
-                VertexAttributeDescriptor {
-                    format: VertexFormat::Float32x3,
-                    offset: 0,
-                    shader_location: 0,
-                },
-                VertexAttributeDescriptor {
-                    format: VertexFormat::Float32x3,
-                    offset: 12,
-                    shader_location: 1,
-                },
-                VertexAttributeDescriptor {
-                    format: VertexFormat::Float32x2,
-                    offset: 24,
-                    shader_location: 2,
-                },
-            ]),
-        }],
+        vertex_buffers: vec![Mesh::vertex_buffer_layout()],
         vs_entry: "vs_main",
         fs_entry: Some("fs_main"),
         primitive: PrimitiveStateDescriptor {

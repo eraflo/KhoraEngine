@@ -35,3 +35,6 @@ pub use dispatcher::MeshDispatcher;
 pub use gltf::GltfDecoder;
 pub use obj::ObjDecoder;
 pub use resource_resolver::*;
+
+#[cfg(test)]
+mod tests;

@@ -427,13 +427,12 @@ fn shadow_model_layout_entries() -> Vec<khora_core::renderer::api::command::Bind
 /// The declarative depth-only pipeline spec for the shadow pass — built each
 /// call, deduped by the `PipelineSystem`. No fragment / color state.
 fn shadow_pipeline_spec() -> khora_core::renderer::api::pipeline::PipelineSpec {
-    use khora_core::renderer::api::pipeline::enums::{
-        CompareFunction, PrimitiveTopology, VertexFormat, VertexStepMode,
-    };
+    use khora_core::renderer::api::gpu_scene::Mesh;
+    use khora_core::renderer::api::pipeline::enums::{CompareFunction, PrimitiveTopology};
     use khora_core::renderer::api::pipeline::state::{DepthBiasState, StencilFaceState};
     use khora_core::renderer::api::pipeline::{
         DepthStencilStateDescriptor, LayoutSpec, MultisampleStateDescriptor, PipelineSpec,
-        PrimitiveStateDescriptor, VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
+        PrimitiveStateDescriptor,
     };
     use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
     use khora_core::renderer::api::shader::ShaderVariantKey;
@@ -453,15 +452,7 @@ fn shadow_pipeline_spec() -> khora_core::renderer::api::pipeline::PipelineSpec {
                 entries: Cow::Owned(shadow_model_layout_entries()),
             },
         ],
-        vertex_buffers: vec![VertexBufferLayoutDescriptor {
-            array_stride: 32,
-            step_mode: VertexStepMode::Vertex,
-            attributes: Cow::Owned(vec![VertexAttributeDescriptor {
-                format: VertexFormat::Float32x3,
-                offset: 0,
-                shader_location: 0,
-            }]),
-        }],
+        vertex_buffers: vec![Mesh::vertex_buffer_layout()],
         vs_entry: "vs_main",
         fs_entry: None,
         primitive: PrimitiveStateDescriptor {
@@ -488,5 +479,15 @@ fn shadow_pipeline_spec() -> khora_core::renderer::api::pipeline::PipelineSpec {
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shadow_pass_pipeline_binds_the_mesh_vertex() {
+        crate::test_support::assert_binds_the_mesh_vertex(&shadow_pipeline_spec());
     }
 }

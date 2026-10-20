@@ -976,7 +976,6 @@ fn mesh_fields(x: &khora_core::renderer::api::gpu_scene::mesh::Mesh) {
         &x.indices,
         &x.primitive_type,
         &x.bounding_box,
-        &x.vertex_layout,
     );
 }
 
@@ -2830,7 +2829,10 @@ fn module_renderer_paths_still_resolve() {
         PhantomData::<khora_core::renderer::api::gpu_scene::mesh::Mesh>,
     );
     let _ = mesh_fields as fn(&khora_core::renderer::api::gpu_scene::mesh::Mesh);
-    let _ = khora_core::renderer::api::gpu_scene::mesh::Mesh::vertex_size;
+    let _ = khora_core::renderer::api::gpu_scene::mesh::Mesh::VERTEX_STRIDE;
+    let _ = khora_core::renderer::api::gpu_scene::mesh::Mesh::VERTEX_ATTRIBUTES;
+    let _ = khora_core::renderer::api::gpu_scene::mesh::Mesh::vertex_buffer_layout;
+    let _ = khora_core::renderer::api::gpu_scene::mesh::Mesh::generate_flat_normals;
     let _ = khora_core::renderer::api::gpu_scene::mesh::Mesh::create_vertex_buffer;
     is_debug::<khora_core::renderer::api::gpu_scene::mesh::Mesh>();
     is_asset::<khora_core::renderer::api::gpu_scene::mesh::Mesh>();

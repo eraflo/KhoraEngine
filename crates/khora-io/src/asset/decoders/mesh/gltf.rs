@@ -13,16 +13,19 @@
 // limitations under the License.
 
 //! GLTF mesh decoder with support for both embedded and external resources.
+//!
+//! A glTF file decoded as a [`Mesh`] is its default scene as one mesh: every
+//! node's primitives, placed by the node hierarchy, merged into one vertex
+//! and index list.
 
 use super::GltfResourceResolver;
 use anyhow::Result;
 use base64::Engine;
-use gltf::{mesh::Reader, Buffer};
+use gltf::{mesh::Mode, Buffer};
 use khora_core::math::geometry::Aabb;
-use khora_core::math::{Vec2, Vec3, Vec4};
+use khora_core::math::{Mat3, Mat4, Vec2, Vec3, Vec4};
 use khora_core::renderer::api::gpu_scene::Mesh;
-use khora_core::renderer::api::pipeline::enums::{PrimitiveTopology, VertexFormat};
-use khora_core::renderer::api::pipeline::VertexAttributeDescriptor;
+use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
 use std::{error::Error, sync::Arc};
 
 use crate::asset::AssetDecoder;
@@ -49,51 +52,35 @@ impl AssetDecoder<Mesh> for GltfDecoder {
             .load_buffer_data(&gltf, &*self.resolver)
             .map_err(|e| format!("Failed to load GLTF buffer data: {}", e))?;
 
-        let mesh = gltf
-            .document
-            .meshes()
-            .next()
-            .ok_or("No meshes found in GLTF file")?;
-        let primitive = mesh
-            .primitives()
-            .next()
-            .ok_or("No primitives found in mesh")?;
+        let placed = placed_meshes(&gltf.document)?;
+        let mut primitives = Vec::new();
+        for (mesh, world) in &placed {
+            for primitive in mesh.primitives() {
+                primitives.push(read_primitive(&primitive, world, &buffer_data)?);
+            }
+        }
 
-        let get_buffer_data = |buffer: Buffer<'_>| Some(buffer_data[buffer.index()].as_slice());
-        let reader = primitive.reader(get_buffer_data);
-
-        let positions = self.extract_positions(&reader)?;
-        let normals = self.extract_normals(&reader);
-        let tex_coords = self.extract_tex_coords(&reader);
-        let tangents = self.extract_tangents(&reader);
-        let colors = self.extract_colors(&reader);
-        let indices = self.extract_indices(&reader);
-
-        let bounding_box = {
-            let bb = primitive.bounding_box();
-            let min = Vec3::new(bb.min[0], bb.min[1], bb.min[2]);
-            let max = Vec3::new(bb.max[0], bb.max[1], bb.max[2]);
-            Aabb::from_min_max(min, max)
+        let triangles = primitives
+            .iter()
+            .filter(|p| p.topology == PrimitiveTopology::TriangleList)
+            .count();
+        let kept: Vec<Primitive> = if triangles > 0 {
+            let skipped = primitives.len() - triangles;
+            if skipped > 0 {
+                log::warn!(
+                    "glTF: {skipped} line/point primitive(s) beside triangles are not \
+                     part of the mesh"
+                );
+            }
+            primitives
+                .into_iter()
+                .filter(|p| p.topology == PrimitiveTopology::TriangleList)
+                .collect()
+        } else {
+            primitives.into_iter().take(1).collect()
         };
 
-        let vertex_layout = self.build_vertex_layout(
-            normals.is_some(),
-            tex_coords.is_some(),
-            tangents.is_some(),
-            colors.is_some(),
-        );
-
-        Ok(Mesh {
-            positions,
-            normals,
-            tex_coords,
-            tangents,
-            colors,
-            indices,
-            primitive_type: self.map_primitive_type(primitive.mode()),
-            bounding_box,
-            vertex_layout,
-        })
+        merge(kept)
     }
 }
 
@@ -139,129 +126,276 @@ impl GltfDecoder {
             Err(format!("Unsupported data URI format: {}", uri).into())
         }
     }
+}
 
-    fn extract_positions<'a, 's, F>(
-        &self,
-        reader: &Reader<'a, 's, F>,
-    ) -> Result<Vec<Vec3>, Box<dyn Error + Send + Sync>>
-    where
-        F: Clone + Fn(Buffer<'a>) -> Option<&'s [u8]>,
-    {
-        reader
-            .read_positions()
-            .map(|iter| iter.map(|[x, y, z]| Vec3::new(x, y, z)).collect())
-            .ok_or_else(|| "Vertex positions attribute not found".into())
+/// Every mesh the file shows, with the world transform of the node showing
+/// it: the default scene (else the first one), walked depth first; a file
+/// without any scene shows each of its meshes once, untransformed.
+///
+/// glTF requires the node hierarchy to be disjoint trees; a node reached
+/// twice (a cycle, or a node with two parents) fails the decode. The walk is
+/// iterative, so a deep hierarchy cannot overflow the stack.
+fn placed_meshes(
+    document: &gltf::Document,
+) -> Result<Vec<(gltf::Mesh<'_>, Mat4)>, Box<dyn Error + Send + Sync>> {
+    let Some(scene) = document
+        .default_scene()
+        .or_else(|| document.scenes().next())
+    else {
+        return Ok(document
+            .meshes()
+            .map(|mesh| (mesh, Mat4::IDENTITY))
+            .collect());
+    };
+
+    let mut placed = Vec::new();
+    let mut reached = vec![false; document.nodes().len()];
+    // Children are pushed last-first, so they pop in file order.
+    let mut pending: Vec<(gltf::Node<'_>, Mat4)> =
+        scene.nodes().map(|node| (node, Mat4::IDENTITY)).collect();
+    pending.reverse();
+    while let Some((node, parent)) = pending.pop() {
+        let seen = reached
+            .get_mut(node.index())
+            .ok_or("glTF node index out of range")?;
+        if std::mem::replace(seen, true) {
+            return Err(format!(
+                "glTF node {} is reached twice: the node hierarchy is not a tree",
+                node.index()
+            )
+            .into());
+        }
+        let world = parent * local_matrix(&node);
+        if let Some(mesh) = node.mesh() {
+            placed.push((mesh, world));
+        }
+        let first_child = pending.len();
+        pending.extend(node.children().map(|child| (child, world)));
+        pending[first_child..].reverse();
+    }
+    Ok(placed)
+}
+
+/// The node's local transform (TRS or matrix), column-major.
+fn local_matrix(node: &gltf::Node<'_>) -> Mat4 {
+    let [c0, c1, c2, c3] = node.transform().matrix();
+    Mat4::from_cols(
+        Vec4::new(c0[0], c0[1], c0[2], c0[3]),
+        Vec4::new(c1[0], c1[1], c1[2], c1[3]),
+        Vec4::new(c2[0], c2[1], c2[2], c2[3]),
+        Vec4::new(c3[0], c3[1], c3[2], c3[3]),
+    )
+}
+
+/// The matrix that carries normals through `world`: the cofactor matrix of
+/// its 3×3 part, i.e. det · M⁻ᵀ, signed so a mirror keeps normals pointing
+/// out. Unlike the inverse it needs no tolerance on the determinant, so a
+/// centimetre-scaled node still rotates its normals.
+fn normal_matrix(world: &Mat4) -> Mat3 {
+    let [a, b, c] = [
+        world.cols[0].truncate(),
+        world.cols[1].truncate(),
+        world.cols[2].truncate(),
+    ];
+    let sign = if a.dot(b.cross(c)) < 0.0 { -1.0 } else { 1.0 };
+    Mat3::from_cols(b.cross(c) * sign, c.cross(a) * sign, a.cross(b) * sign)
+}
+
+/// `v` scaled to unit length, or `fallback` when it has none. No tolerance:
+/// a normal through a tiny scale is short but still a direction.
+fn unit_or(v: Vec3, fallback: Vec3) -> Vec3 {
+    let length = v.length();
+    if length > 0.0 && length.is_finite() {
+        v * (1.0 / length)
+    } else {
+        fallback
+    }
+}
+
+/// One glTF primitive read into the engine's frame: transformed, indexed,
+/// as a list topology, with normals.
+struct Primitive {
+    positions: Vec<Vec3>,
+    normals: Vec<Vec3>,
+    tex_coords: Option<Vec<Vec2>>,
+    colors: Option<Vec<Vec4>>,
+    indices: Vec<u32>,
+    topology: PrimitiveTopology,
+}
+
+fn read_primitive(
+    primitive: &gltf::Primitive<'_>,
+    world: &Mat4,
+    buffer_data: &[Vec<u8>],
+) -> Result<Primitive, Box<dyn Error + Send + Sync>> {
+    let reader =
+        primitive.reader(|buffer: Buffer<'_>| buffer_data.get(buffer.index()).map(Vec::as_slice));
+
+    let positions: Vec<Vec3> = reader
+        .read_positions()
+        .ok_or("Vertex positions attribute not found")?
+        .map(|[x, y, z]| world.transform_point(Vec3::new(x, y, z)))
+        .collect();
+    let count = positions.len() as u32;
+    let normal_matrix = normal_matrix(world);
+    let normals: Option<Vec<Vec3>> = reader.read_normals().map(|iter| {
+        iter.map(|[x, y, z]| unit_or(normal_matrix * Vec3::new(x, y, z), Vec3::Y))
+            .collect()
+    });
+    let tex_coords = reader
+        .read_tex_coords(0)
+        .map(|iter| iter.into_f32().map(|[u, v]| Vec2::new(u, v)).collect());
+    let colors = reader.read_colors(0).map(|iter| {
+        iter.into_rgba_f32()
+            .map(|[r, g, b, a]| Vec4::new(r, g, b, a))
+            .collect()
+    });
+    // glTF requires every attribute of a primitive to have one value per
+    // vertex; a file that breaks this would shift values onto other vertices.
+    let counts = [
+        ("NORMAL", normals.as_ref().map(Vec::len)),
+        ("TEXCOORD_0", tex_coords.as_ref().map(Vec::len)),
+        ("COLOR_0", colors.as_ref().map(Vec::len)),
+    ];
+    for (name, len) in counts {
+        if let Some(len) = len.filter(|&len| len != positions.len()) {
+            return Err(format!(
+                "glTF {name} has {len} values for {} vertices",
+                positions.len()
+            )
+            .into());
+        }
+    }
+    let indices: Vec<u32> = match reader.read_indices() {
+        Some(indices) => indices.into_u32().collect(),
+        None => (0..count).collect(),
+    };
+    if let Some(&bad) = indices.iter().find(|&&i| i >= count) {
+        return Err(format!("glTF index {bad} out of range for {count} vertices").into());
     }
 
-    fn extract_normals<'a, 's, F>(&self, reader: &Reader<'a, 's, F>) -> Option<Vec<Vec3>>
-    where
-        F: Clone + Fn(Buffer<'a>) -> Option<&'s [u8]>,
-    {
-        reader
-            .read_normals()
-            .map(|iter| iter.map(|[x, y, z]| Vec3::new(x, y, z)).collect())
+    let (mut indices, topology) = match primitive.mode() {
+        Mode::Triangles => (indices, PrimitiveTopology::TriangleList),
+        Mode::TriangleStrip => (strip_to_list(&indices), PrimitiveTopology::TriangleList),
+        Mode::TriangleFan => (fan_to_list(&indices), PrimitiveTopology::TriangleList),
+        Mode::Lines => (indices, PrimitiveTopology::LineList),
+        Mode::LineStrip => (indices, PrimitiveTopology::LineStrip),
+        // Line loops are drawn as a strip closed back onto its first vertex.
+        Mode::LineLoop => {
+            let mut closed = indices;
+            if let Some(&first) = closed.first() {
+                closed.push(first);
+            }
+            (closed, PrimitiveTopology::LineStrip)
+        }
+        Mode::Points => (indices, PrimitiveTopology::PointList),
+    };
+    if topology == PrimitiveTopology::TriangleList {
+        indices.truncate(indices.len() - indices.len() % 3);
+        // A mirroring transform turns counter-clockwise faces clockwise.
+        if world.determinant() < 0.0 {
+            for triangle in indices.chunks_exact_mut(3) {
+                triangle.swap(1, 2);
+            }
+        }
     }
 
-    fn extract_tex_coords<'a, 's, F>(&self, reader: &Reader<'a, 's, F>) -> Option<Vec<Vec2>>
-    where
-        F: Clone + Fn(Buffer<'a>) -> Option<&'s [u8]>,
-    {
-        reader
-            .read_tex_coords(0)
-            .map(|iter| iter.into_f32().map(|[x, y]| Vec2::new(x, y)).collect())
-    }
+    let mut mesh = Mesh {
+        positions,
+        normals,
+        tex_coords,
+        tangents: None,
+        colors,
+        indices: Some(indices),
+        primitive_type: topology,
+        bounding_box: Aabb::INVALID,
+    };
+    // glTF: a primitive without normals is shaded flat.
+    mesh.generate_flat_normals();
+    let vertex_count = mesh.positions.len();
+    Ok(Primitive {
+        normals: mesh.normals.unwrap_or_else(|| vec![Vec3::Y; vertex_count]),
+        positions: mesh.positions,
+        tex_coords: mesh.tex_coords,
+        colors: mesh.colors,
+        indices: mesh.indices.unwrap_or_default(),
+        topology,
+    })
+}
 
-    fn extract_tangents<'a, 's, F>(&self, reader: &Reader<'a, 's, F>) -> Option<Vec<Vec4>>
-    where
-        F: Clone + Fn(Buffer<'a>) -> Option<&'s [u8]>,
-    {
-        reader
-            .read_tangents()
-            .map(|iter| iter.map(|[x, y, z, w]| Vec4::new(x, y, z, w)).collect())
-    }
-
-    fn extract_colors<'a, 's, F>(&self, reader: &Reader<'a, 's, F>) -> Option<Vec<Vec4>>
-    where
-        F: Clone + Fn(Buffer<'a>) -> Option<&'s [u8]>,
-    {
-        reader.read_colors(0).map(|iter| {
-            iter.into_rgba_f32()
-                .map(|[r, g, b, a]| Vec4::new(r, g, b, a))
-                .collect()
+/// Triangle list of a strip: every triangle after the first alternates its
+/// winding, so odd ones swap their first two corners to stay counter-clockwise.
+fn strip_to_list(strip: &[u32]) -> Vec<u32> {
+    strip
+        .windows(3)
+        .enumerate()
+        .flat_map(|(i, w)| {
+            if i % 2 == 0 {
+                [w[0], w[1], w[2]]
+            } else {
+                [w[1], w[0], w[2]]
+            }
         })
+        .collect()
+}
+
+/// Triangle list of a fan: every triangle shares the first corner.
+fn fan_to_list(fan: &[u32]) -> Vec<u32> {
+    match fan.split_first() {
+        Some((&hub, rim)) => rim.windows(2).flat_map(|w| [hub, w[0], w[1]]).collect(),
+        None => Vec::new(),
     }
+}
 
-    fn extract_indices<'a, 's, F>(&self, reader: &Reader<'a, 's, F>) -> Option<Vec<u32>>
-    where
-        F: Clone + Fn(Buffer<'a>) -> Option<&'s [u8]>,
-    {
-        reader.read_indices().map(|iter| iter.into_u32().collect())
-    }
+/// Concatenates primitives of one topology into one mesh. An attribute some
+/// primitives carry and others don't is filled with its default for the
+/// others: UV `(0, 0)`, colour opaque white.
+fn merge(primitives: Vec<Primitive>) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
+    let topology = primitives
+        .first()
+        .map(|p| p.topology)
+        .ok_or("No meshes found in GLTF file")?;
+    let any_uv = primitives.iter().any(|p| p.tex_coords.is_some());
+    let any_color = primitives.iter().any(|p| p.colors.is_some());
 
-    fn build_vertex_layout(
-        &self,
-        has_normals: bool,
-        has_tex_coords: bool,
-        has_tangents: bool,
-        has_colors: bool,
-    ) -> Vec<VertexAttributeDescriptor> {
-        let mut layout = Vec::new();
-        let mut shader_location = 0;
-        let mut offset = 0;
-
-        layout.push(VertexAttributeDescriptor {
-            shader_location,
-            format: VertexFormat::Float32x3,
-            offset: offset as u64,
-        });
-        shader_location += 1;
-        offset += std::mem::size_of::<Vec3>();
-
-        if has_normals {
-            layout.push(VertexAttributeDescriptor {
-                shader_location,
-                format: VertexFormat::Float32x3,
-                offset: offset as u64,
-            });
-            shader_location += 1;
-            offset += std::mem::size_of::<Vec3>();
+    let mut positions = Vec::new();
+    let mut normals = Vec::new();
+    let mut tex_coords = Vec::new();
+    let mut colors = Vec::new();
+    let mut indices = Vec::new();
+    for primitive in primitives {
+        let base = positions.len() as u32;
+        let count = primitive.positions.len();
+        indices.extend(primitive.indices.iter().map(|&i| base + i));
+        positions.extend(primitive.positions);
+        normals.extend(primitive.normals);
+        if any_uv {
+            tex_coords.extend(aligned(primitive.tex_coords, count, Vec2::ZERO));
         }
-        if has_tex_coords {
-            layout.push(VertexAttributeDescriptor {
-                shader_location,
-                format: VertexFormat::Float32x2,
-                offset: offset as u64,
-            });
-            shader_location += 1;
-            offset += std::mem::size_of::<Vec2>();
-        }
-        if has_tangents {
-            layout.push(VertexAttributeDescriptor {
-                shader_location,
-                format: VertexFormat::Float32x4,
-                offset: offset as u64,
-            });
-            shader_location += 1;
-            offset += std::mem::size_of::<Vec4>();
-        }
-        if has_colors {
-            layout.push(VertexAttributeDescriptor {
-                shader_location,
-                format: VertexFormat::Float32x4,
-                offset: offset as u64,
-            });
-        }
-        layout
-    }
-
-    fn map_primitive_type(&self, mode: gltf::mesh::Mode) -> PrimitiveTopology {
-        match mode {
-            gltf::mesh::Mode::Triangles => PrimitiveTopology::TriangleList,
-            gltf::mesh::Mode::TriangleStrip => PrimitiveTopology::TriangleStrip,
-            gltf::mesh::Mode::Lines => PrimitiveTopology::LineList,
-            gltf::mesh::Mode::LineStrip => PrimitiveTopology::LineStrip,
-            gltf::mesh::Mode::Points => PrimitiveTopology::PointList,
-            _ => PrimitiveTopology::TriangleList,
+        if any_color {
+            colors.extend(aligned(primitive.colors, count, Vec4::ONE));
         }
     }
+    if positions.is_empty() {
+        return Err("GLTF file has no vertex positions".into());
+    }
+
+    let bounding_box = Aabb::from_points(&positions).unwrap_or(Aabb::INVALID);
+    Ok(Mesh {
+        positions,
+        normals: Some(normals),
+        tex_coords: any_uv.then_some(tex_coords),
+        tangents: None,
+        colors: any_color.then_some(colors),
+        indices: Some(indices),
+        primitive_type: topology,
+        bounding_box,
+    })
+}
+
+/// Exactly `count` values: the attribute's own, then `default`.
+fn aligned<T: Copy>(values: Option<Vec<T>>, count: usize, default: T) -> Vec<T> {
+    let mut values = values.unwrap_or_default();
+    values.resize(count, default);
+    values
 }

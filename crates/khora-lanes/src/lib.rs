@@ -26,3 +26,6 @@ pub mod script_lane;
 pub mod shadow_lane;
 pub mod skybox_lane;
 pub mod ui_lane;
+
+#[cfg(test)]
+pub(crate) mod test_support;

@@ -204,16 +204,14 @@ fn wireframe_uniform_layout_entries(
 fn wireframe_pipeline_spec(
     device: &dyn khora_core::renderer::GraphicsDevice,
 ) -> khora_core::renderer::api::pipeline::PipelineSpec {
-    use khora_core::renderer::api::pipeline::enums::{
-        CompareFunction, VertexFormat, VertexStepMode,
-    };
+    use khora_core::renderer::api::gpu_scene::Mesh;
+    use khora_core::renderer::api::pipeline::enums::CompareFunction;
     use khora_core::renderer::api::pipeline::state::{
         BlendStateDescriptor, ColorWrites, DepthBiasState, StencilFaceState,
     };
     use khora_core::renderer::api::pipeline::{
         ColorTargetStateDescriptor, DepthStencilStateDescriptor, LayoutKey, LayoutSpec,
         MultisampleStateDescriptor, PipelineSpec, PrimitiveStateDescriptor,
-        VertexAttributeDescriptor, VertexBufferLayoutDescriptor,
     };
     use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
     use khora_core::renderer::api::shader::ShaderVariantKey;
@@ -237,22 +235,7 @@ fn wireframe_pipeline_spec(
                 entries: Cow::Owned(wireframe_uniform_layout_entries(ShaderStageFlags::FRAGMENT)),
             },
         ],
-        vertex_buffers: vec![VertexBufferLayoutDescriptor {
-            array_stride: 32,
-            step_mode: VertexStepMode::Vertex,
-            attributes: Cow::Owned(vec![
-                VertexAttributeDescriptor {
-                    format: VertexFormat::Float32x3,
-                    offset: 0,
-                    shader_location: 0,
-                },
-                VertexAttributeDescriptor {
-                    format: VertexFormat::Float32x3,
-                    offset: 12,
-                    shader_location: 1,
-                },
-            ]),
-        }],
+        vertex_buffers: vec![Mesh::vertex_buffer_layout()],
         vs_entry: "vs_main",
         fs_entry: Some("fs_main"),
         primitive: PrimitiveStateDescriptor::default(),
@@ -533,5 +516,11 @@ mod tests {
     fn wireframe_material_uniforms_is_std140_sized() {
         assert_eq!(std::mem::size_of::<WireframeMaterialUniforms>(), 32);
         assert_eq!(std::mem::align_of::<WireframeMaterialUniforms>(), 16);
+    }
+
+    #[test]
+    fn wireframe_pipeline_binds_the_mesh_vertex() {
+        let spec = wireframe_pipeline_spec(&crate::test_support::SpecOnlyDevice);
+        crate::test_support::assert_binds_the_mesh_vertex(&spec);
     }
 }
