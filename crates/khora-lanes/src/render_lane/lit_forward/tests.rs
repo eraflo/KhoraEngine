@@ -249,12 +249,12 @@ fn test_get_pipeline_for_material() {
 #[test]
 fn lit_forward_pipeline_binds_the_mesh_vertex_for_every_material_state() {
     use khora_core::renderer::api::shader::ShaderVariantKey;
-    let device = crate::test_support::SpecOnlyDevice;
+    let device = crate::tests::SpecOnlyDevice;
     for double_sided in [false, true] {
         for blend in [false, true] {
             let spec =
                 super::gpu::pipeline_spec(&device, ShaderVariantKey::empty(), double_sided, blend);
-            crate::test_support::assert_binds_the_mesh_vertex(&spec);
+            crate::tests::assert_binds_the_mesh_vertex(&spec);
         }
     }
 }

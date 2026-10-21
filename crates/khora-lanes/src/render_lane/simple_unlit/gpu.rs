@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn simple_unlit_pipeline_binds_the_mesh_vertex() {
-        let spec = pipeline_spec(&crate::test_support::SpecOnlyDevice);
-        crate::test_support::assert_binds_the_mesh_vertex(&spec);
+        let spec = pipeline_spec(&crate::tests::SpecOnlyDevice);
+        crate::tests::assert_binds_the_mesh_vertex(&spec);
     }
 }

@@ -488,6 +488,6 @@ mod tests {
 
     #[test]
     fn shadow_pass_pipeline_binds_the_mesh_vertex() {
-        crate::test_support::assert_binds_the_mesh_vertex(&shadow_pipeline_spec());
+        crate::tests::assert_binds_the_mesh_vertex(&shadow_pipeline_spec());
     }
 }

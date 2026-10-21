@@ -28,4 +28,4 @@ pub mod skybox_lane;
 pub mod ui_lane;
 
 #[cfg(test)]
-pub(crate) mod test_support;
+pub(crate) mod tests;
