@@ -156,12 +156,15 @@ impl WgpuGraphicsContext {
 
         // --- 3. Configure Surface ---
         let surface_caps = surface.get_capabilities(&adapter);
+        // A surface with no format to offer (a window not shown yet, on some
+        // backends) cannot be configured: an error, never a panic.
         let surface_format = surface_caps
             .formats
             .iter()
             .copied()
             .find(|f| f.is_srgb())
-            .unwrap_or(surface_caps.formats[0]);
+            .or_else(|| surface_caps.formats.first().copied())
+            .ok_or_else(|| anyhow!("The window's surface offers no texture format"))?;
 
         let surface_config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,

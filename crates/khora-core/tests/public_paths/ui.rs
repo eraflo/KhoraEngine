@@ -171,6 +171,7 @@ fn panel_location_variants(x: &khora_core::ui::editor::panel::PanelLocation) {
         khora_core::ui::editor::panel::PanelLocation::StatusBar => {}
         khora_core::ui::editor::panel::PanelLocation::Center => {}
         khora_core::ui::editor::panel::PanelLocation::Floating(..) => {}
+        khora_core::ui::editor::panel::PanelLocation::Cover => {}
     }
 }
 
@@ -361,6 +362,7 @@ fn font_family_hint_variants(x: &khora_core::ui::editor::ui_builder::FontFamilyH
         khora_core::ui::editor::ui_builder::FontFamilyHint::Monospace => {}
         khora_core::ui::editor::ui_builder::FontFamilyHint::Display => {}
         khora_core::ui::editor::ui_builder::FontFamilyHint::Icons => {}
+        khora_core::ui::editor::ui_builder::FontFamilyHint::Wordmark => {}
     }
 }
 
@@ -413,7 +415,13 @@ fn font_handle_variants(x: &khora_core::ui::fonts::FontHandle) {
 }
 
 fn font_pack_fields(x: &khora_core::ui::fonts::FontPack) {
-    let _ = (&x.proportional, &x.monospace, &x.display, &x.icons);
+    let _ = (
+        &x.proportional,
+        &x.monospace,
+        &x.display,
+        &x.icons,
+        &x.wordmark,
+    );
 }
 
 fn named_font_fields(x: &khora_core::ui::fonts::NamedFont) {
@@ -721,6 +729,7 @@ mod trait_items {
         let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::paint_circle_stroke;
         let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::paint_text_styled;
         let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::paint_path_filled;
+        let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::paint_path_filled_radial;
         let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::interact_rect;
         let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::dnd_attach_drag_payload;
         let _ = <T as khora_core::ui::editor::ui_builder::UiBuilder>::dnd_take_drop_payload;

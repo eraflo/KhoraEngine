@@ -185,8 +185,8 @@ pub fn eyebrow(ui: &mut dyn UiBuilder, t: &UiTheme, pos: [f32; 2], label: &str) 
     );
 }
 
-/// Paints left-aligned display (serif) text — screen headings and hero
-/// numerals only. Falls back to the proportional face if Fraunces is absent.
+/// Paints left-aligned display text — screen headings and hero numerals only.
+/// Falls back to the proportional face when no display face is installed.
 #[inline]
 pub fn display(ui: &mut dyn UiBuilder, pos: [f32; 2], s: &str, size: f32, color: Color) {
     ui.paint_text_styled(

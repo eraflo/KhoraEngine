@@ -31,6 +31,10 @@ use crate::{GameWorld, InputEvent};
 
 mod bootstrap;
 mod frame;
+mod startup;
+
+pub use bootstrap::EngineBootstrap;
+pub use startup::{BootStep, FirstBoot, StagedBoot, Startup, StartupProgress, StartupStep};
 
 /// Well-known viewport handle for the primary 3D viewport.
 pub const PRIMARY_VIEWPORT: khora_core::ui::editor::viewport_texture::ViewportTextureHandle =

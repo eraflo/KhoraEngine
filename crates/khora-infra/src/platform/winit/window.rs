@@ -108,8 +108,15 @@ impl WinitWindowBuilder {
         let window_attributes = Window::default_attributes()
             .with_title(self.title)
             .with_inner_size(LogicalSize::new(self.width, self.height))
-            .with_window_icon(self.icon)
+            .with_window_icon(self.icon.clone())
             .with_visible(true);
+        // On Windows the window icon only sets `ICON_SMALL` (the title bar);
+        // the taskbar and Alt+Tab read `ICON_BIG`.
+        #[cfg(target_os = "windows")]
+        let window_attributes = {
+            use winit::platform::windows::WindowAttributesExtWindows;
+            window_attributes.with_taskbar_icon(self.icon)
+        };
 
         let window = event_loop.create_window(window_attributes)?;
 

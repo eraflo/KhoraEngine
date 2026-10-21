@@ -42,7 +42,8 @@ use khora_sdk::khora_data::scene::{instance_of, prefab_world, InstanceOf};
 
 mod engine_app;
 mod layout;
-mod project_open;
+pub(crate) mod project_open;
+mod startup;
 
 #[cfg(test)]
 mod tests;
@@ -119,6 +120,11 @@ pub struct EditorApp {
     /// The open project's prefabs, as a script's `Spawn` is checked against
     /// them — shared with the runtime.
     prefab_catalog: khora_sdk::khora_data::scene::PrefabCatalog,
+    /// The loading screen over the shell while the editor starts; dropped
+    /// once it has faded out.
+    loading: Option<crate::panels::loading::LoadingHandle>,
+    /// Whether the brand theme and typefaces are on the shell already.
+    brand_installed: bool,
 }
 
 impl EditorApp {

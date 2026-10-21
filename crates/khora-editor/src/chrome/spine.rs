@@ -81,10 +81,10 @@ impl EditorPanel for SpinePanel {
         ui.paint_rect_filled([px, py], [pw, ph], theme.surface, 0.0);
         ui.paint_line([px + pw, py], [px + pw, py + ph], theme.border, 1.0);
 
-        // Brand mark — the diamond, no plate around it. The spine is chrome;
+        // Brand mark — the sign, no plate around it. The spine is chrome;
         // it should recede, not compete with the work.
         let cx = px + pw * 0.5;
-        khora_tool_ui::widgets::diamond(ui, [cx, py + 22.0], 18.0, theme.primary);
+        khora_tool_ui::widgets::sign(ui, theme, [cx, py + 22.0], 16.0, 1.0);
 
         // Mode buttons.
         let current = self.current_mode();

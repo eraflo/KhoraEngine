@@ -62,7 +62,9 @@ pub mod disclosure;
 pub mod dock;
 pub mod feedback;
 pub mod fields;
+pub mod film;
 pub mod indicators;
+pub mod loading;
 pub mod mark;
 pub mod modal;
 pub mod nav;
@@ -84,7 +86,8 @@ pub use fields::{
 pub use indicators::{
     health_bar, meter_bar, progress_row, skeleton, sparkline, status_dot, Health,
 };
-pub use mark::{brand_pill, diamond};
+pub use loading::{LoadingScreen, LoadingState};
+pub use mark::{brand_pill, sign, SIGN_NAVY, SIGN_SILVER};
 pub use modal::{confirm_modal, Confirm, ModalChoice};
 pub use nav::{
     breadcrumb, nav_item, panel_tab, radio_card, segmented_tabs, selectable_row, step_rail,

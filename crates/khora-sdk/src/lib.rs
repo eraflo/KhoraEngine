@@ -82,7 +82,10 @@ mod traits;
 mod vessel;
 pub mod winit_adapters;
 
-pub use engine::EngineCore;
+pub use engine::{
+    BootStep, EngineBootstrap, EngineCore, FirstBoot, StagedBoot, Startup, StartupProgress,
+    StartupStep,
+};
 pub use game_world::{DeclaredComponentError, GameWorld};
 pub use run_default::run_default;
 pub use runtime_config::{RuntimeConfig, DEFAULT_SCENE_REL_PATH, RUNTIME_CONFIG_FILE};

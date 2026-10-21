@@ -127,7 +127,7 @@ impl EditorPanel for ViewportPanel {
                 self.paint_tool_pill(ui, min);
                 self.paint_transport_pill(ui, min, [w, h]);
                 self.paint_stats_card(ui, min, [w, h]);
-                self.paint_diamond_watermark(ui, min, [w, h]);
+                self.paint_sign_watermark(ui, min, [w, h]);
                 self.paint_play_mode_indicator(ui, min, [w, h]);
             }
         } else {
@@ -606,23 +606,16 @@ impl ViewportPanel {
         [point.x, point.y, point.z]
     }
 
-    fn paint_diamond_watermark(
+    /// The sign behind an empty viewport, at 5 % opacity.
+    fn paint_sign_watermark(
         &self,
         ui: &mut dyn UiBuilder,
         viewport_min: [f32; 2],
         viewport_size: [f32; 2],
     ) {
-        let theme = &self.theme;
         let cx = viewport_min[0] + viewport_size[0] * 0.5;
         let cy = viewport_min[1] + viewport_size[1] * 0.5;
-        let size = (viewport_size[0].min(viewport_size[1]) * 0.18).clamp(80.0, 220.0);
-        crate::widgets::brand::paint_diamond_outline(
-            ui,
-            cx,
-            cy,
-            size,
-            khora_tool_ui::widgets::with_alpha(theme.primary, 0.06),
-            1.5,
-        );
+        let size = (viewport_size[0].min(viewport_size[1]) * 0.3).clamp(120.0, 320.0);
+        khora_tool_ui::widgets::sign(ui, &self.theme, [cx, cy], size, 0.05);
     }
 }

@@ -10,12 +10,11 @@
 
 use crate::state::Banner;
 use khora_sdk::tool_ui::UiBuilder;
-use khora_tool_ui::brand::khora_dark;
 use khora_tool_ui::widgets::{Tone, banner as toast};
 
 /// Paints the banner. Returns `true` if the user dismissed it.
 pub fn paint_banner(ui: &mut dyn UiBuilder, banner: &Banner) -> bool {
-    let t = khora_dark();
+    let t = crate::ui::theme();
     let r = ui.panel_rect();
 
     let w = (r[2] - 80.0).min(460.0);

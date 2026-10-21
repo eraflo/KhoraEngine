@@ -40,48 +40,10 @@ use khora_core::ui::editor::panel::{EditorPanel, PanelLocation};
 use khora_core::ui::editor::shell::EditorShell;
 use khora_core::ui::editor::state::{EditorState, StatusBarData};
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
-use khora_core::ui::fonts::{FontHandle, FontPack, NamedFont};
+use khora_core::ui::fonts::FontPack;
 use khora_core::ui::UiTheme;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-
-/// Installs each [`NamedFont`] into `definitions`, registering it as the
-/// primary face for `family` (or as a fallback at the front of the list).
-fn install_named(defs: &mut egui::FontDefinitions, family: egui::FontFamily, list: Vec<NamedFont>) {
-    for named in list.into_iter() {
-        let key = named.name.clone();
-        let bytes = match named.data {
-            FontHandle::Static(s) => egui::FontData::from_static(s),
-            FontHandle::Owned(v) => egui::FontData::from_owned(v),
-        };
-        defs.font_data
-            .insert(key.clone(), std::sync::Arc::new(bytes));
-        defs.families
-            .entry(family.clone())
-            .or_default()
-            .insert(0, key);
-    }
-}
-
-/// Appends `fallback`'s font keys after whatever was installed for the named
-/// family, so requesting `FontFamily::Name(name)` always resolves to glyphs
-/// even when no dedicated face was supplied for it.
-fn ensure_family_fallback(
-    defs: &mut egui::FontDefinitions,
-    name: &str,
-    fallback: &egui::FontFamily,
-) {
-    let fallback_keys = defs.families.get(fallback).cloned().unwrap_or_default();
-    let entry = defs
-        .families
-        .entry(egui::FontFamily::Name(name.into()))
-        .or_default();
-    for key in fallback_keys {
-        if !entry.contains(&key) {
-            entry.push(key);
-        }
-    }
-}
 
 /// Fixed-height/width slots — same on every screen.
 const DEFAULT_TOPBAR_HEIGHT: f32 = 32.0;
@@ -135,6 +97,8 @@ pub struct EguiEditorShell {
     status_panels: Vec<Box<dyn EditorPanel>>,
     center_panels: Vec<Box<dyn EditorPanel>>,
     floating_panels: Vec<FloatingEntry>,
+    /// Full-screen panels painted above everything else.
+    cover_panels: Vec<Box<dyn EditorPanel>>,
     theme: UiTheme,
     theme_applied: bool,
     active_bottom_tab: usize,
@@ -160,6 +124,7 @@ impl EguiEditorShell {
             status_panels: Vec::new(),
             center_panels: Vec::new(),
             floating_panels: Vec::new(),
+            cover_panels: Vec::new(),
             theme,
             theme_applied: false,
             active_bottom_tab: 0,
@@ -213,6 +178,7 @@ impl EditorShell for EguiEditorShell {
             PanelLocation::StatusBar => self.status_panels.push(panel),
             PanelLocation::Center => self.center_panels.push(panel),
             PanelLocation::Floating(z) => self.floating_panels.push(FloatingEntry { z, panel }),
+            PanelLocation::Cover => self.cover_panels.push(panel),
         }
         // Keep floating panels sorted bottom-to-top so painting respects z-order.
         if !self.floating_panels.is_empty() {
@@ -236,6 +202,7 @@ impl EditorShell for EguiEditorShell {
             || remove_from(&mut self.bottom_panels)
             || remove_from(&mut self.status_panels)
             || remove_from(&mut self.center_panels)
+            || remove_from(&mut self.cover_panels)
         {
             return true;
         }
@@ -255,35 +222,7 @@ impl EditorShell for EguiEditorShell {
         if fonts.is_empty() {
             return;
         }
-
-        let mut definitions = egui::FontDefinitions::default();
-        install_named(
-            &mut definitions,
-            egui::FontFamily::Proportional,
-            fonts.proportional,
-        );
-        install_named(
-            &mut definitions,
-            egui::FontFamily::Monospace,
-            fonts.monospace,
-        );
-        install_named(
-            &mut definitions,
-            egui::FontFamily::Name("display".into()),
-            fonts.display,
-        );
-        install_named(
-            &mut definitions,
-            egui::FontFamily::Name("icons".into()),
-            fonts.icons,
-        );
-        // Both named families must always resolve: epaint *panics* when text
-        // asks for a `FontFamily::Name` bound to no fonts. The proportional
-        // fallback means a missing Fraunces degrades to Geist and a missing
-        // icon font degrades to tofu — never to a crash.
-        ensure_family_fallback(&mut definitions, "display", &egui::FontFamily::Proportional);
-        ensure_family_fallback(&mut definitions, "icons", &egui::FontFamily::Proportional);
-        self.ctx.set_fonts(definitions);
+        self.ctx.set_fonts(super::fonts::font_definitions(&fonts));
     }
 
     fn set_status(&mut self, data: StatusBarData) {
@@ -299,7 +238,7 @@ impl EditorShell for EguiEditorShell {
         if !self.theme_applied {
             apply_theme(&self.ctx, &self.theme);
             // Snap pixels_per_point to the nearest 0.5 multiple. Fractional
-            // DPI scales (e.g. 1.25) cause Geist glyphs to render at sub-pixel
+            // DPI scales (e.g. 1.25) cause glyphs to render at sub-pixel
             // positions and look soft. Snapping keeps integer scale on most
             // monitors and a clean half-pixel offset on the rest.
             let raw = self
@@ -539,6 +478,26 @@ impl EditorShell for EguiEditorShell {
                 .show(&ctx, |ui| {
                     let mut builder = EguiUiBuilder::new(ui, vt);
                     entry.panel.ui(&mut builder);
+                });
+        }
+
+        // ── Cover (full screen, above everything) ─────
+        // A loading or splash screen: painted last, in the tooltip order above
+        // the floating overlays, over the whole screen, and it allocates that
+        // screen so nothing under it takes a click. It shows at once, without
+        // the fade-in a new area gets by default.
+        let screen = ctx.content_rect();
+        for panel in &mut self.cover_panels {
+            egui::Area::new(egui::Id::new(("editor_cover", panel.id())))
+                .order(egui::Order::Tooltip)
+                .fixed_pos(screen.min)
+                .interactable(true)
+                .fade_in(false)
+                .show(&ctx, |ui| {
+                    ui.allocate_rect(screen, egui::Sense::click());
+                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(screen));
+                    let mut builder = EguiUiBuilder::new(&mut child, vt);
+                    panel.ui(&mut builder);
                 });
         }
     }

@@ -16,8 +16,8 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::khora_core::ui::EditorOverlay;
 use khora_sdk::prelude::*;
-use khora_sdk::run_winit;
 use khora_sdk::winit;
+use khora_sdk::winit_adapters::run_winit_staged;
 use khora_sdk::winit_adapters::WinitWindowProvider;
 use khora_sdk::{
     AudioDevice, AudioMixBus, AudioStream, CpalAudioDevice, DefaultMixBus, EditorShell,
@@ -25,6 +25,7 @@ use khora_sdk::{
     StandardTextRenderer, StreamInfo, TaffyLayoutSystem, TextRenderer, WgpuPipelineSystem,
     WgpuRenderSystem, TEXT_WGSL,
 };
+use khora_sdk::{BootStep, Runtime, StagedBoot};
 
 use crate::app::EditorApp;
 
@@ -51,80 +52,114 @@ pub fn run() -> anyhow::Result<()> {
         .map(|w| w[1].clone());
     let _ = PROJECT_PATH.set(project);
 
-    run_winit::<WinitWindowProvider, EditorApp>(|window, runtime, event_loop_any| {
-        let mut rs = WgpuRenderSystem::new();
-        rs.init(window).expect("renderer init failed");
-        runtime.backends.insert(rs.graphics_device());
-
-        // Build the editor overlay (egui) + shell (dock + panels) so the
-        // editor UI renders on top of the 3D scene each frame.
-        let event_loop = event_loop_any
-            .downcast_ref::<winit::event_loop::ActiveEventLoop>()
-            .expect("editor: bootstrap expects a winit ActiveEventLoop");
-        let theme = khora_sdk::khora_core::ui::UiTheme::default();
-        match rs.create_editor_overlay_and_shell(
-            event_loop,
-            khora_sdk::EGUI_WGSL,
-            theme,
-            khora_sdk::PRIMARY_VIEWPORT,
-        ) {
-            Ok((overlay, shell)) => {
-                let overlay: Box<dyn EditorOverlay> = Box::new(overlay);
-                let shell: Box<dyn EditorShell> = Box::new(shell);
-                runtime.backends.insert(Arc::new(Mutex::new(overlay)));
-                runtime.backends.insert(Arc::new(Mutex::new(shell)));
-                log::info!("editor: overlay + shell created");
+    let boot = StagedBoot {
+        // What a frame needs: the renderer, then the overlay and the shell the
+        // loading screen is painted with.
+        first: Box::new(|window, runtime, event_loop_any| {
+            let mut rs = WgpuRenderSystem::new();
+            if let Err(e) = rs.init(window) {
+                log::error!("editor: renderer init failed: {e:?}");
+                return;
             }
-            Err(e) => {
-                log::error!("editor: failed to create overlay+shell: {e:?}");
+            runtime.backends.insert(rs.graphics_device());
+
+            let Some(event_loop) =
+                event_loop_any.downcast_ref::<winit::event_loop::ActiveEventLoop>()
+            else {
+                log::error!("editor: bootstrap expects a winit ActiveEventLoop");
+                return;
+            };
+            let theme = khora_sdk::khora_core::ui::UiTheme::default();
+            match rs.create_editor_overlay_and_shell(
+                event_loop,
+                khora_sdk::EGUI_WGSL,
+                theme,
+                khora_sdk::PRIMARY_VIEWPORT,
+            ) {
+                Ok((overlay, shell)) => {
+                    let overlay: Box<dyn EditorOverlay> = Box::new(overlay);
+                    let shell: Box<dyn EditorShell> = Box::new(shell);
+                    runtime.backends.insert(Arc::new(Mutex::new(overlay)));
+                    runtime.backends.insert(Arc::new(Mutex::new(shell)));
+                    log::info!("editor: overlay + shell created");
+                }
+                Err(e) => {
+                    log::error!("editor: failed to create overlay+shell: {e:?}");
+                }
             }
-        }
 
-        let rs: Box<dyn RenderSystem> = Box::new(rs);
-        runtime.backends.insert(Arc::new(Mutex::new(rs)));
-
-        // Shader / pipeline backend — wgpu + naga_oil. The app picks the
-        // backend; the engine core consumes it as `Arc<dyn PipelineSystem>`.
-        match WgpuPipelineSystem::new() {
-            Ok(sys) => {
-                let sys: Arc<dyn PipelineSystem> = Arc::new(sys);
-                runtime.resources.insert(sys);
-            }
-            Err(e) => log::error!("pipeline system init failed: {e}"),
-        }
-
-        // Physics — Rapier3D
-        let physics: Box<dyn PhysicsProvider> = Box::new(RapierPhysicsWorld::default());
-        runtime.backends.insert(Arc::new(Mutex::new(physics)));
-
-        // UI layout — Taffy
-        let layout: Box<dyn LayoutSystem> = Box::new(TaffyLayoutSystem::new());
-        runtime.backends.insert(Arc::new(Mutex::new(layout)));
-
-        // Text renderer — StandardTextRenderer
-        let text: Arc<dyn TextRenderer> = Arc::new(StandardTextRenderer::new(TEXT_WGSL.to_owned()));
-        runtime.backends.insert(text);
-
-        // Audio — shared mix bus + CPAL device. The bus is the sole
-        // synchronisation boundary between audio lanes (main thread) and
-        // the backend's hardware callback (RT thread). The opened
-        // AudioStream is stored as a backend handle; dropping it stops
-        // the stream.
-        let stream_info = StreamInfo {
-            channels: 2,
-            sample_rate: 48_000,
-        };
-        let mix_bus: Arc<dyn AudioMixBus> = Arc::new(DefaultMixBus::new(stream_info, 8192));
-        runtime.resources.insert(Arc::clone(&mix_bus));
-        let device: Box<dyn AudioDevice> = Box::new(CpalAudioDevice::new());
-        match device.open(mix_bus) {
-            Ok(stream) => {
-                let stream: Arc<dyn AudioStream> = Arc::from(stream);
-                runtime.backends.insert(stream);
-            }
-            Err(e) => log::error!("audio open failed: {}", e),
-        }
-    })?;
+            let rs: Box<dyn RenderSystem> = Box::new(rs);
+            runtime.backends.insert(Arc::new(Mutex::new(rs)));
+        }),
+        steps: vec![
+            // Shader / pipeline backend — wgpu + naga_oil. Composing the
+            // shader library is pure CPU work, done off the main thread.
+            BootStep::Blocking(Box::new(|_runtime: &Runtime| {
+                Box::new(|| {
+                    let sys = WgpuPipelineSystem::new();
+                    Box::new(move |runtime: &mut Runtime| match sys {
+                        Ok(sys) => {
+                            let sys: Arc<dyn PipelineSystem> = Arc::new(sys);
+                            runtime.resources.insert(sys);
+                        }
+                        Err(e) => log::error!("pipeline system init failed: {e}"),
+                    })
+                })
+            })),
+            // The `--project` folder, scanned off the main thread; `setup`
+            // fills the world from it.
+            BootStep::Blocking(Box::new(|runtime: &Runtime| {
+                let watch = runtime
+                    .resources
+                    .get::<Arc<khora_sdk::AssetWatch>>()
+                    .cloned()
+                    .unwrap_or_default();
+                Box::new(move || {
+                    let opened = crate::app::project_open::read_cli_project(watch);
+                    Box::new(move |runtime: &mut Runtime| {
+                        runtime.resources.insert(Arc::new(
+                            crate::app::project_open::PreparedProject::new(opened),
+                        ));
+                    })
+                })
+            })),
+            // Physics — Rapier3D
+            BootStep::Main(Box::new(|runtime| {
+                let physics: Box<dyn PhysicsProvider> = Box::new(RapierPhysicsWorld::default());
+                runtime.backends.insert(Arc::new(Mutex::new(physics)));
+            })),
+            // UI layout — Taffy; text renderer — StandardTextRenderer
+            BootStep::Main(Box::new(|runtime| {
+                let layout: Box<dyn LayoutSystem> = Box::new(TaffyLayoutSystem::new());
+                runtime.backends.insert(Arc::new(Mutex::new(layout)));
+                let text: Arc<dyn TextRenderer> =
+                    Arc::new(StandardTextRenderer::new(TEXT_WGSL.to_owned()));
+                runtime.backends.insert(text);
+            })),
+            // Audio — shared mix bus + CPAL device. The bus is the sole
+            // synchronisation boundary between audio lanes (main thread) and
+            // the backend's hardware callback (RT thread). The opened
+            // AudioStream is stored as a backend handle; dropping it stops
+            // the stream.
+            BootStep::Main(Box::new(|runtime| {
+                let stream_info = StreamInfo {
+                    channels: 2,
+                    sample_rate: 48_000,
+                };
+                let mix_bus: Arc<dyn AudioMixBus> = Arc::new(DefaultMixBus::new(stream_info, 8192));
+                runtime.resources.insert(Arc::clone(&mix_bus));
+                let device: Box<dyn AudioDevice> = Box::new(CpalAudioDevice::new());
+                match device.open(mix_bus) {
+                    Ok(stream) => {
+                        let stream: Arc<dyn AudioStream> = Arc::from(stream);
+                        runtime.backends.insert(stream);
+                    }
+                    Err(e) => log::error!("audio open failed: {}", e),
+                }
+            })),
+        ],
+    };
+    run_winit_staged::<WinitWindowProvider, EditorApp>(boot)?;
     Ok(())
 }
 
@@ -136,7 +171,7 @@ mod tests {
     #[test]
     fn the_window_icon_is_the_decoded_logo() {
         let icon = super::load_logo_icon();
-        assert_eq!((icon.width, icon.height), (600, 600));
-        assert_eq!(icon.rgba.len(), 600 * 600 * 4);
+        assert_eq!((icon.width, icon.height), (256, 256));
+        assert_eq!(icon.rgba.len(), 256 * 256 * 4);
     }
 }

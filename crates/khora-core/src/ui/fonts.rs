@@ -62,15 +62,22 @@ pub struct FontPack {
     pub proportional: Vec<NamedFont>,
     /// Monospaced faces. The first one becomes the default monospace font.
     pub monospace: Vec<NamedFont>,
-    /// Display / serif faces (Fraunces / …). The first one is exposed by the
+    /// Display faces, for headings. The first one is exposed by the
     /// backend under the family name `"display"` so widgets can reach it via
     /// [`FontFamilyHint::Display`](super::editor::ui_builder::FontFamilyHint::Display).
     /// When empty, the backend aliases `"display"` to the proportional family.
     pub display: Vec<NamedFont>,
-    /// Icon faces (Lucide / Phosphor / …). The first one is exposed by the
+    /// Icon faces. The first one is exposed by the
     /// backend under the family name `"icons"` so widgets can reach it via
     /// [`FontFamilyHint::Icons`](super::editor::ui_builder::FontFamilyHint::Icons).
     pub icons: Vec<NamedFont>,
+    /// Wordmark faces: the widest cut of the text face, for the product
+    /// name itself. The first one is exposed by the backend under the family
+    /// name `"wordmark"` so widgets can reach it via
+    /// [`FontFamilyHint::Wordmark`](super::editor::ui_builder::FontFamilyHint::Wordmark).
+    /// When empty, the backend aliases `"wordmark"` to the display family,
+    /// then to the proportional one.
+    pub wordmark: Vec<NamedFont>,
 }
 
 impl FontPack {
@@ -80,6 +87,35 @@ impl FontPack {
         self.proportional.is_empty()
             && self.monospace.is_empty()
             && self.display.is_empty()
+            && self.wordmark.is_empty()
             && self.icons.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn face(name: &str) -> NamedFont {
+        NamedFont {
+            name: name.to_owned(),
+            data: FontHandle::Static(b"\x00\x01\x00\x00"),
+        }
+    }
+
+    #[test]
+    fn a_pack_with_no_face_is_empty() {
+        assert!(FontPack::default().is_empty());
+    }
+
+    /// A pack that only carries a wordmark face still asks the backend to
+    /// install fonts; otherwise the wordmark would be silently dropped.
+    #[test]
+    fn a_pack_with_only_a_wordmark_face_is_not_empty() {
+        let pack = FontPack {
+            wordmark: vec![face("wordmark-face")],
+            ..FontPack::default()
+        };
+        assert!(!pack.is_empty());
     }
 }

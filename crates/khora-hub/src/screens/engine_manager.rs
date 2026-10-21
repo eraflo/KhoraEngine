@@ -13,7 +13,6 @@ use crate::services::download;
 use crate::services::github;
 use crate::state::Screen;
 use khora_sdk::tool_ui::{FontFamilyHint, Icon, UiBuilder, UiTheme};
-use khora_tool_ui::brand::khora_dark;
 use khora_tool_ui::widgets::{
     self, Button, ButtonKind, Tone, button, card, card_action_slot, chip, empty_state, icon_button,
     paint::{display, fill_stroke, mono, text},
@@ -31,7 +30,7 @@ pub fn show_engine_manager(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         app.engine_manager.fetch_rx = Some(github::fetch_releases_async());
     }
 
-    let t = khora_dark();
+    let t = crate::ui::theme();
     let r = ui.panel_rect();
     let pad = 24.0;
 

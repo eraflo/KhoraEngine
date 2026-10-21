@@ -8,7 +8,7 @@
 
 //! Home — the project grid and the sidebar.
 //!
-//! Cards carry their identity with the brand diamond and a clean border. The
+//! Cards carry their identity with the brand sign and a clean border. The
 //! old left accent-stripe is gone: a coloured bar down the side of a card is
 //! decoration pretending to be information, and with a grid of them it reads
 //! as noise.
@@ -18,10 +18,9 @@ use crate::services::config::RecentProject;
 use crate::state::Screen;
 use crate::ui::format::format_ts;
 use khora_sdk::tool_ui::{FontFamilyHint, Icon, Interaction, UiBuilder, UiTheme};
-use khora_tool_ui::brand::khora_dark;
 use khora_tool_ui::widgets::paint::eyebrow;
 use khora_tool_ui::widgets::{
-    self, Button, ButtonKind, Tone, button, chip, diamond, empty_state, icon_button, nav_item,
+    self, Button, ButtonKind, Tone, button, chip, empty_state, icon_button, nav_item,
     paint::{display, fill_stroke, mono, text, vertical_gradient},
     search_field,
 };
@@ -53,7 +52,7 @@ pub fn show_home(app: &mut HubApp, ui: &mut dyn UiBuilder) {
 // ── Sidebar ─────────────────────────────────────────────
 
 fn show_sidebar(app: &mut HubApp, ui: &mut dyn UiBuilder) {
-    let t = khora_dark();
+    let t = crate::ui::theme();
     let r = ui.panel_rect();
 
     vertical_gradient(ui, r, t.surface, t.background, 8);
@@ -143,7 +142,7 @@ fn show_sidebar(app: &mut HubApp, ui: &mut dyn UiBuilder) {
 // ── Main ────────────────────────────────────────────────
 
 fn show_main(app: &mut HubApp, ui: &mut dyn UiBuilder) {
-    let t = khora_dark();
+    let t = crate::ui::theme();
     let r = ui.panel_rect();
     let pad = 24.0;
 
@@ -279,14 +278,9 @@ fn project_card(
     let pad = 16.0;
     let x = rect[0] + pad;
 
-    // Header: diamond, name, version.
+    // Header: sign, name, version.
     let cy = rect[1] + pad + 7.0;
-    diamond(
-        ui,
-        [x + 7.0, cy],
-        14.0,
-        if pointed { t.primary } else { t.primary_dim },
-    );
+    widgets::sign(ui, t, [x + 7.0, cy], 14.0, if pointed { 1.0 } else { 0.7 });
 
     let name_x = x + 24.0;
     let ver = proj.engine_version.as_str();
@@ -421,7 +415,7 @@ fn show_remove_confirm_modal(app: &mut HubApp, ui: &mut dyn UiBuilder, idx: usiz
         app.home.remove_confirm = None;
         return;
     };
-    let t = khora_dark();
+    let t = crate::ui::theme();
 
     let mut delete = false;
     let mut close = false;

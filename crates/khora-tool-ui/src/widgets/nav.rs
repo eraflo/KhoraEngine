@@ -489,6 +489,49 @@ mod tests {
         assert!(off.circles_filled().is_empty(), "unselected → ring only");
     }
 
+    /// WCAG contrast of the sRGB `fg` alpha-composited onto the opaque `bg`.
+    fn contrast_over(fg: [f32; 4], bg: [f32; 4]) -> f32 {
+        let lin = |c: f32| {
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let lum = |c: [f32; 4]| 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+        let a = fg[3];
+        let fg = [0, 1, 2, 3].map(|i| fg[i] * a + bg[i] * (1.0 - a));
+        let (l1, l2) = (lum(fg), lum(bg));
+        (l1.max(l2) + 0.05) / (l1.min(l2) + 0.05)
+    }
+
+    /// On the light field the selected radio card's meta ("installed",
+    /// "download · 42 MB") is text on the card's brand-tinted fill: it reads at
+    /// WCAG AA (4.5:1) against that fill as actually painted over the panel
+    /// surface.
+    #[test]
+    fn light_selected_radio_card_meta_reads_at_aa_on_its_painted_fill() {
+        let t = crate::brand::khora_light();
+        let mut ui = RecordingUiBuilder::new(300.0, 40.0);
+        radio_card(
+            &mut ui,
+            &t,
+            [0.0, 0.0, 280.0, 38.0],
+            "v070",
+            "0.7.0",
+            "installed",
+            true,
+        );
+        let fill = ui.fill_colors()[0];
+        let fill = [0, 1, 2, 3].map(|i| fill[i] * fill[3] + t.surface[i] * (1.0 - fill[3]));
+        let ink = ui.text_color("installed").expect("the meta is painted");
+        let ratio = contrast_over(ink, fill);
+        assert!(
+            ratio >= 4.5,
+            "selected radio card meta / fill: {ratio:.2} < 4.5 on the light surface"
+        );
+    }
+
     #[test]
     fn step_rail_marks_done_current_and_pending_distinctly() {
         let t = khora_dark();

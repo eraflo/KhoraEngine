@@ -46,7 +46,7 @@ impl ControlPlanePanel {
         // Brand block (left). Width is computed from the actual rendered
         // sub-text so the stats cells start *after* it instead of at a
         // hard-coded 320px (which used to overlap on common screen widths).
-        khora_tool_ui::widgets::diamond(ui, [x + 24.0, y + h * 0.5], 8.0 * 2.0, theme.primary);
+        khora_tool_ui::widgets::sign(ui, theme, [x + 24.0, y + h * 0.5], 16.0, 1.0);
         paint::text(
             ui,
             [x + 40.0, y + 14.0],
@@ -88,12 +88,12 @@ impl ControlPlanePanel {
             TextAlign::Left,
         );
 
-        // Compute brand block width (longest of the two lines + diamond gutter).
+        // Compute brand block width (longest of the two lines + sign gutter).
         let brand_title_w =
             ui.measure_text("Dynamic Context Core", 14.0, FontFamilyHint::Proportional)[0];
         let sub1_w = ui.measure_text(&sub_line1, 10.5, FontFamilyHint::Monospace)[0];
         let sub2_w = ui.measure_text(&sub_line2, 10.5, FontFamilyHint::Monospace)[0];
-        let brand_w = 40.0 + brand_title_w.max(sub1_w).max(sub2_w) + 24.0; // diamond + text + breathing
+        let brand_w = 40.0 + brand_title_w.max(sub1_w).max(sub2_w) + 24.0; // sign + text + breathing
 
         // 5 stats cells (right) — all real values now.
         let stats_x = x + brand_w.max(220.0);

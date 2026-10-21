@@ -19,8 +19,11 @@
 //! binary as a module instead of adding a file at the root of `tests/`.
 
 mod bounded_drag_value;
+mod cover_panel;
 mod covered_hover;
 mod dnd_hover_payload;
+mod gradient_fill;
 mod light_culling_layout;
 mod menu_on_click;
 mod public_paths;
+mod wordmark_font_family;
