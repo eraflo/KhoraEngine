@@ -54,6 +54,12 @@ impl eframe::App for AppAdapter {
         self.inner.update(&mut adapter);
     }
 
+    // The window behind the panels — the blank first frame included — is the
+    // installed theme's panel colour, not eframe's dark default.
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        visuals.panel_fill.to_normalized_gamma_f32()
+    }
+
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.inner.on_exit();
     }

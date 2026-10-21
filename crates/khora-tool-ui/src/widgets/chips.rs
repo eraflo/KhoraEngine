@@ -255,6 +255,53 @@ mod tests {
         assert!(ui.circles_filled().is_empty());
     }
 
+    /// WCAG contrast of the sRGB `fg` alpha-composited onto the opaque `bg`.
+    fn contrast_over(fg: [f32; 4], bg: [f32; 4]) -> f32 {
+        let lin = |c: f32| {
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        let lum = |c: [f32; 4]| 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+        let a = fg[3];
+        let fg = [0, 1, 2, 3].map(|i| fg[i] * a + bg[i] * (1.0 - a));
+        let (l1, l2) = (lum(fg), lum(bg));
+        (l1.max(l2) + 0.05) / (l1.min(l2) + 0.05)
+    }
+
+    /// On the light field a status chip's label is caption text on the chip's
+    /// own tinted plate: it reads at WCAG AA (4.5:1) against the plate as
+    /// actually painted over the panel surface.
+    #[test]
+    fn light_status_chip_label_reads_at_aa_on_its_painted_plate() {
+        let t = crate::brand::khora_light();
+        let mut failures = Vec::new();
+        for tone in [Tone::Success, Tone::Warning, Tone::Error, Tone::Info] {
+            let mut ui = RecordingUiBuilder::new(120.0, 24.0);
+            chip(
+                &mut ui,
+                &t,
+                [0.0, 0.0, 100.0, 18.0],
+                "connected",
+                tone,
+                true,
+            );
+            let plate = ui.fill_colors()[0];
+            let plate = [0, 1, 2, 3].map(|i| plate[i] * plate[3] + t.surface[i] * (1.0 - plate[3]));
+            let ink = ui.text_color("connected").expect("the label is painted");
+            let ratio = contrast_over(ink, plate);
+            if ratio < 4.5 {
+                failures.push(format!("{tone:?} {ratio:.2}"));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "chip label / plate below 4.5:1 on the light surface: {failures:?}"
+        );
+    }
+
     #[test]
     fn filter_pill_off_fades_every_layer() {
         let t = khora_dark();

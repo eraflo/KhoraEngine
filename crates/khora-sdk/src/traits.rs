@@ -168,7 +168,7 @@ pub trait PhaseProvider {
 /// }
 /// impl PhaseProvider for MyGame {}
 /// ```
-pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync {
+pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync + 'static {
     /// Returns the window configuration for the application.
     fn window_config() -> WindowConfig
     where
@@ -231,4 +231,22 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync {
     /// viewport, switch back to the swapchain (`set_render_to_viewport(false)`),
     /// and present a UI overlay (`render_overlay`).
     fn after_agents(&mut self, _world: &mut GameWorld, _runtime: &khora_core::Runtime) {}
+
+    /// Optional: called once when a staged startup begins, as soon as the
+    /// window and the runtime exist and before the engine is assembled. Use to
+    /// put up a loading screen.
+    fn startup_begin(&mut self, _runtime: &khora_core::Runtime) {}
+
+    /// Optional: called for every frame presented while a staged startup is
+    /// under way, with how far it has come. Use to paint the loading screen.
+    fn loading_frame(
+        &mut self,
+        _runtime: &khora_core::Runtime,
+        _progress: crate::engine::StartupProgress,
+    ) {
+    }
+
+    /// Optional: called once when a staged startup is over and the engine runs
+    /// its first real frame next. Use to let the loading screen go.
+    fn startup_ready(&mut self) {}
 }

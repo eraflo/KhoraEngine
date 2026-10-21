@@ -34,100 +34,16 @@
 //! assert_eq!(ui.circles_filled().len(), 1);
 //! ```
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+use khora_core::platform::KeyCode;
 use khora_core::ui::editor::ui_builder::{FontFamilyHint, Interaction, TextAlign};
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
-use khora_core::ui::editor::UiBuilder;
+use khora_core::ui::editor::{LinearGradient, RadialGradient, UiBuilder};
 
-/// One recorded paint or interaction call, in the order the widget made it.
-#[derive(Debug, Clone, PartialEq)]
-pub enum PaintCall {
-    /// A filled rectangle.
-    RectFilled {
-        /// Top-left corner.
-        min: [f32; 2],
-        /// Width / height.
-        size: [f32; 2],
-        /// Fill color.
-        color: [f32; 4],
-        /// Corner radius.
-        rounding: f32,
-    },
-    /// A stroked (outlined) rectangle.
-    RectStroke {
-        /// Top-left corner.
-        min: [f32; 2],
-        /// Width / height.
-        size: [f32; 2],
-        /// Stroke color.
-        color: [f32; 4],
-        /// Corner radius.
-        rounding: f32,
-        /// Stroke width.
-        thickness: f32,
-    },
-    /// A straight line.
-    Line {
-        /// Start point.
-        from: [f32; 2],
-        /// End point.
-        to: [f32; 2],
-        /// Stroke color.
-        color: [f32; 4],
-        /// Stroke width.
-        thickness: f32,
-    },
-    /// A filled circle.
-    CircleFilled {
-        /// Centre point.
-        center: [f32; 2],
-        /// Radius.
-        radius: f32,
-        /// Fill color.
-        color: [f32; 4],
-    },
-    /// A stroked circle.
-    CircleStroke {
-        /// Centre point.
-        center: [f32; 2],
-        /// Radius.
-        radius: f32,
-        /// Stroke color.
-        color: [f32; 4],
-        /// Stroke width.
-        thickness: f32,
-    },
-    /// A run of text.
-    Text {
-        /// Anchor position.
-        pos: [f32; 2],
-        /// The string painted.
-        text: String,
-        /// Font size in points.
-        size: f32,
-        /// Text color.
-        color: [f32; 4],
-        /// Which font family was requested.
-        family: FontFamilyHint,
-        /// Horizontal anchoring.
-        align: TextAlign,
-    },
-    /// A filled polygon.
-    Path {
-        /// Polygon vertices.
-        points: Vec<[f32; 2]>,
-        /// Fill color.
-        color: [f32; 4],
-    },
-    /// A hot region allocated for interaction.
-    Interact {
-        /// The disambiguating salt the widget passed.
-        id_salt: String,
-        /// The rect `[x, y, w, h]` made interactive.
-        rect: [f32; 4],
-    },
-}
+mod paint_call;
+
+pub use paint_call::PaintCall;
 
 /// A [`UiBuilder`] that records paint calls instead of rendering, and can be
 /// scripted to report interactions.
@@ -148,6 +64,10 @@ pub struct RecordingUiBuilder {
     pointer: Option<[f32; 2]>,
     /// The value each `drag_value_f32`, by label, is dragged to.
     drags: HashMap<String, f32>,
+    /// Where a click lands, for every region not scripted by its `id_salt`.
+    click_at: Option<[f32; 2]>,
+    /// The keys reported as pressed this frame.
+    keys: HashSet<KeyCode>,
 }
 
 impl RecordingUiBuilder {
@@ -162,7 +82,26 @@ impl RecordingUiBuilder {
             scroll: 0.0,
             pointer: None,
             drags: HashMap::new(),
+            click_at: None,
+            keys: HashSet::new(),
         }
+    }
+
+    /// Scripts a click at `pos`: every region [`UiBuilder::interact_rect`]
+    /// allocates over `pos` reports hovered + clicked, unless its `id_salt`
+    /// is scripted otherwise. For widgets whose `id_salt` is their own
+    /// business. Chainable.
+    pub fn with_click_at(mut self, pos: [f32; 2]) -> Self {
+        self.click_at = Some(pos);
+        self
+    }
+
+    /// Scripts `key` as pressed this frame: [`UiBuilder::key_pressed`] and
+    /// [`UiBuilder::raw_key_pressed`] report it (the recorder has no text
+    /// field holding focus). Chainable.
+    pub fn with_key(mut self, key: KeyCode) -> Self {
+        self.keys.insert(key);
+        self
     }
 
     /// Scripts the drag value labelled `label` to be dragged to `to`: it
@@ -416,12 +355,48 @@ impl UiBuilder for RecordingUiBuilder {
         });
     }
 
+    fn paint_path_filled_gradient(&mut self, points: &[[f32; 2]], gradient: LinearGradient<'_>) {
+        self.record(PaintCall::PathGradient {
+            points: points.to_vec(),
+            from: gradient.from,
+            to: gradient.to,
+            stops: gradient.stops.to_vec(),
+        });
+    }
+
+    fn paint_path_filled_radial(&mut self, points: &[[f32; 2]], gradient: RadialGradient<'_>) {
+        self.record(PaintCall::PathRadial {
+            points: points.to_vec(),
+            center: gradient.center,
+            radius: gradient.radius,
+            stops: gradient.stops.to_vec(),
+        });
+    }
+
     fn interact_rect(&mut self, id_salt: &str, rect: [f32; 4]) -> Interaction {
         self.record(PaintCall::Interact {
             id_salt: id_salt.to_owned(),
             rect,
         });
-        self.scripted.get(id_salt).copied().unwrap_or_default()
+        if let Some(scripted) = self.scripted.get(id_salt) {
+            return *scripted;
+        }
+        match self.click_at {
+            Some(p)
+                if p[0] >= rect[0]
+                    && p[0] <= rect[0] + rect[2]
+                    && p[1] >= rect[1]
+                    && p[1] <= rect[1] + rect[3] =>
+            {
+                Interaction {
+                    hovered: true,
+                    contains_pointer: true,
+                    clicked: true,
+                    ..Interaction::default()
+                }
+            }
+            _ => Interaction::default(),
+        }
     }
 
     fn region_at(
@@ -607,6 +582,14 @@ impl UiBuilder for RecordingUiBuilder {
         false
     }
 
+    fn key_pressed(&self, key: KeyCode) -> bool {
+        self.keys.contains(&key)
+    }
+
+    fn raw_key_pressed(&self, key: KeyCode) -> bool {
+        self.keys.contains(&key)
+    }
+
     fn context_menu_last(&mut self, _f: &mut dyn FnMut(&mut dyn UiBuilder)) {}
 
     fn viewport_image(
@@ -615,5 +598,73 @@ impl UiBuilder for RecordingUiBuilder {
         _size: [f32; 2],
     ) -> Option<[f32; 2]> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::ui::editor::GradientStop;
+
+    #[test]
+    fn a_radial_fill_is_recorded_with_its_polygon_centre_radius_and_stops() {
+        let stops = [
+            GradientStop {
+                offset: 0.0,
+                color: [1.0, 0.0, 0.0, 1.0],
+            },
+            GradientStop {
+                offset: 1.0,
+                color: [0.0, 0.0, 1.0, 0.5],
+            },
+        ];
+        let points = [[0.0, 0.0], [40.0, 0.0], [20.0, 30.0]];
+        let mut ui = RecordingUiBuilder::new(100.0, 100.0);
+        ui.paint_path_filled_radial(
+            &points,
+            RadialGradient {
+                center: [20.0, 10.0],
+                radius: 25.0,
+                stops: &stops,
+            },
+        );
+        assert_eq!(
+            ui.calls(),
+            &[PaintCall::PathRadial {
+                points: points.to_vec(),
+                center: [20.0, 10.0],
+                radius: 25.0,
+                stops: stops.to_vec(),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_click_at_a_point_clicks_every_region_over_it_and_no_other() {
+        let mut ui = RecordingUiBuilder::new(100.0, 100.0).with_click_at([15.0, 15.0]);
+        assert!(ui.interact_rect("over", [10.0, 10.0, 20.0, 20.0]).clicked);
+        assert!(
+            ui.interact_rect("also over", [0.0, 0.0, 100.0, 100.0])
+                .clicked
+        );
+        assert!(!ui.interact_rect("beside", [40.0, 10.0, 20.0, 20.0]).clicked);
+    }
+
+    #[test]
+    fn a_region_scripted_by_its_salt_ignores_the_click_point() {
+        let mut ui = RecordingUiBuilder::new(100.0, 100.0)
+            .with_click_at([15.0, 15.0])
+            .with_hover("scripted");
+        let i = ui.interact_rect("scripted", [10.0, 10.0, 20.0, 20.0]);
+        assert!(i.hovered && !i.clicked);
+    }
+
+    #[test]
+    fn a_scripted_key_is_pressed_and_no_other() {
+        let ui = RecordingUiBuilder::new(100.0, 100.0).with_key(KeyCode::Escape);
+        assert!(ui.key_pressed(KeyCode::Escape));
+        assert!(ui.raw_key_pressed(KeyCode::Escape));
+        assert!(!ui.key_pressed(KeyCode::Space));
+        assert!(!RecordingUiBuilder::new(1.0, 1.0).key_pressed(KeyCode::Escape));
     }
 }

@@ -25,6 +25,7 @@
 //! viewport handle, paint `UiBuilder`) on top.
 
 pub mod app;
+pub mod color_scheme;
 pub mod editor;
 pub mod fonts;
 pub mod geometry;
@@ -33,6 +34,7 @@ pub mod theme;
 pub mod types;
 
 pub use app::{App, AppContext, AppLifecycle};
+pub use color_scheme::ColorScheme;
 pub use editor::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
 pub use editor::{EditorPanel, EditorShell, PanelLocation, UiBuilder, ViewportTextureHandle};
 pub use fonts::{FontHandle, FontPack, NamedFont};

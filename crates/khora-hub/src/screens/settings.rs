@@ -13,7 +13,6 @@ use crate::services::github::auth;
 use crate::state::AuthState;
 use crate::state::Screen;
 use khora_sdk::tool_ui::{FontFamilyHint, Icon, UiBuilder, UiTheme};
-use khora_tool_ui::brand::khora_dark;
 use khora_tool_ui::widgets::{
     self, Button, ButtonKind, Tone, button, card, card_action_slot, chip,
     paint::{display, fill_stroke, mono, text},
@@ -23,7 +22,7 @@ const CONTENT_W: f32 = 620.0;
 
 /// Renders the settings screen.
 pub fn show_settings(app: &mut HubApp, ui: &mut dyn UiBuilder) {
-    let t = khora_dark();
+    let t = crate::ui::theme();
     let r = ui.panel_rect();
     let pad = 24.0;
 

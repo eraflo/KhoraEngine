@@ -29,3 +29,11 @@ walkdir = "2.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ron = "0.12.0"
+
+[build-dependencies]
+# Embeds the editor's .ico in the Windows executable (build.rs).
+winresource = "0.1"
+
+[dev-dependencies]
+# Widget tests record what the editor's own widgets paint.
+khora-tool-ui = { path = "../khora-tool-ui", features = ["testing"] }

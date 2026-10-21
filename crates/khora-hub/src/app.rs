@@ -15,6 +15,10 @@
 //! `bootstrap` (which wires up `App::update`).
 
 use std::path::PathBuf;
+use std::time::Instant;
+
+use khora_tool_ui::widgets::LoadingScreen;
+use khora_tool_ui::widgets::film::Film;
 
 use crate::services::config::{EngineInstall, HubConfig, RecentProject};
 use crate::services::github;
@@ -33,6 +37,9 @@ pub struct HubApp {
     pub new_project: NewProjectState,
     pub engine_manager: EngineManagerState,
     pub settings: SettingsState,
+    /// The sign film over the hub while it opens, with the clock it plays
+    /// on; gone once it has faded out.
+    pub splash: Option<(LoadingScreen, Instant)>,
 }
 
 impl HubApp {
@@ -70,6 +77,7 @@ impl HubApp {
             banner: None,
             home: HomeState::default(),
             settings,
+            splash: Some((LoadingScreen::new(Film::Sign, 0.0, false), Instant::now())),
         }
     }
 

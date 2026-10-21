@@ -246,12 +246,13 @@ impl EditorPanel for CommandPalettePanel {
         let pad = 18.0;
         let input_y = modal_y + (header_h - 28.0) * 0.5;
 
-        // Diamond
-        khora_tool_ui::widgets::diamond(
+        // The sign, in place of a search glyph
+        khora_tool_ui::widgets::sign(
             ui,
+            &theme,
             [modal_x + pad + 9.0, modal_y + header_h * 0.5],
-            7.0 * 2.0,
-            theme.primary,
+            14.0,
+            1.0,
         );
 
         // Esc kbd chip on right

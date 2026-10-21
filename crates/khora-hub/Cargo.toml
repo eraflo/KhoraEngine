@@ -44,6 +44,10 @@ zip = "8"
 
 # Image decoding (for window icon from PNG)
 
+[build-dependencies]
+# Embeds the hub's .ico in the Windows executable (build.rs).
+winresource = "0.1"
+
 [dev-dependencies]
 # The seeded `main.erg` must compile. A dev-dependency, so the shipped hub
 # still links nothing of the language.

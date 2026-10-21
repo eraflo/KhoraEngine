@@ -325,7 +325,7 @@ What this design does not yet answer, and where the next iteration should go.
 2. **Collaboration cursors.** If two designers edit the same scene, where do their selections live in the gold-only color system? Likely tinted gold variants, but needs exploration.
 3. **Plugin UI.** Third-party plugins need a place to live. Probably the Inspector as additional component cards, but the contract isn't defined.
 4. **Mobile viewer.** Out of scope for v1, but the Spine pattern probably translates well to a tablet-sized viewer.
-5. **Light theme.** Not planned. The deep field is load-bearing for the brand — a light variant would be a different product.
+5. **Light theme.** Not for the editor: the deep field is load-bearing for the brand, and the editor is where the work happens. The hub, the doorway, is the editor's negative — light silver surfaces, navy ink, gold still for *now* — as its icon is the editor's icon inverted.
 
 ---
 

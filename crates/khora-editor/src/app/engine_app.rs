@@ -56,6 +56,8 @@ impl EngineApp for EditorApp {
             command_history,
             log_handle,
             shell: None,
+            loading: None,
+            brand_installed: false,
             overlay: None,
             raw_window: None,
             monitors: None,
@@ -84,7 +86,7 @@ impl EngineApp for EditorApp {
     fn setup(&mut self, world: &mut GameWorld, runtime: &Runtime) {
         self.cache_services(runtime);
         self.register_panels(runtime);
-        self.open_cli_project(world);
+        self.open_cli_project(world, runtime);
         // The editor ground grid (`GridConfig`) is toggled per-frame in
         // `before_agents` based on `PlayMode` — it is editor chrome and
         // must hide in Play / Paused, like the selection gizmos.
@@ -215,6 +217,14 @@ impl EngineApp for EditorApp {
         let consumed_by_egui =
             overlay.handle_window_event((&**raw_window) as &dyn std::any::Any, event);
 
+        // While the loading screen covers the editor, it is the only thing on
+        // screen: egui has the event (a click or Esc there skips the film),
+        // and nothing under the cover — the viewport's picking and camera,
+        // the editor's shortcuts — gets it.
+        if self.loading.is_some() {
+            return true;
+        }
+
         let we = event.downcast_ref::<winit::event::WindowEvent>();
         let Some(we) = we else {
             return consumed_by_egui;
@@ -258,12 +268,25 @@ impl EngineApp for EditorApp {
         consumed_by_egui
     }
 
+    fn startup_begin(&mut self, runtime: &Runtime) {
+        self.begin_startup(runtime);
+    }
+
+    fn loading_frame(&mut self, runtime: &Runtime, _progress: khora_sdk::StartupProgress) {
+        self.paint_loading_frame(runtime);
+    }
+
+    fn startup_ready(&mut self) {
+        self.end_startup();
+    }
+
     fn before_frame(
         &mut self,
         _world: &mut GameWorld,
         runtime: &Runtime,
         window: &dyn KhoraWindow,
     ) {
+        self.drop_finished_loading_screen();
         // Switch the renderer to offscreen-viewport mode BEFORE
         // `begin_render_frame` runs, so the per-frame `FrameContext`
         // receives the viewport color/depth targets (instead of the

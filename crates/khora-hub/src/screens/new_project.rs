@@ -17,7 +17,6 @@ use crate::services::project;
 use crate::state::EngineChoice;
 use crate::state::Screen;
 use khora_sdk::tool_ui::{Icon, UiBuilder, UiTheme};
-use khora_tool_ui::brand::khora_dark;
 use khora_tool_ui::widgets::paint::eyebrow;
 use khora_tool_ui::widgets::{
     self, Button, ButtonKind, StepState, button, checkbox, error_line, field_label, input_frame,
@@ -35,7 +34,7 @@ pub fn show_new_project(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         app.new_project.fetch_rx = Some(github::fetch_releases_async());
     }
 
-    let t = khora_dark();
+    let t = crate::ui::theme();
     let r = ui.panel_rect();
     let pad = 24.0;
 

@@ -102,8 +102,7 @@ impl EditorApp {
 
             // ── Brand identity (theme + typefaces) ─────────
             let brand_theme = khora_tool_ui::khora_dark();
-            shell.set_theme(brand_theme.clone());
-            shell.set_fonts(khora_tool_ui::fonts::brand_fonts());
+            self.install_brand(&mut **shell);
 
             // ── Chrome (top, spine, status bar) ────────────
             shell.register_panel(

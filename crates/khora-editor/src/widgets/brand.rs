@@ -12,40 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Brand-mark painters — the Khora "diamond" shape and its containing pills.
-//!
-//! The filled diamond is `khora_tool_ui::widgets::diamond`; this module adds
-//! the editor-only outline and the brand-pill composite.
+//! The editor's brand pill — the Khora sign, the engine name and the active
+//! project. The sign itself is `khora_tool_ui::widgets::sign`.
 
 use khora_sdk::editor_ui::{FontFamilyHint, TextAlign, UiBuilder, UiTheme};
 
 use khora_tool_ui::widgets::with_alpha;
 
-/// Paints a 4-point diamond (rotated square) outline centered at `(cx, cy)`.
-///
-/// Editor-only: the shared library ships a filled diamond, not an outlined one
-/// (the empty-state used to draw it, but that now uses the shared `empty_state`
-/// widget). Kept here for the few chrome call sites that still want the ring.
-pub fn paint_diamond_outline(
-    ui: &mut dyn UiBuilder,
-    cx: f32,
-    cy: f32,
-    size: f32,
-    color: [f32; 4],
-    thickness: f32,
-) {
-    let top = [cx, cy - size];
-    let right = [cx + size, cy];
-    let bottom = [cx, cy + size];
-    let left = [cx - size, cy];
-    ui.paint_line(top, right, color, thickness);
-    ui.paint_line(right, bottom, color, thickness);
-    ui.paint_line(bottom, left, color, thickness);
-    ui.paint_line(left, top, color, thickness);
-}
-
 /// Paints the editor's branded "pill" (rounded 999 background containing a
-/// diamond, the engine name, a separator and the active project name).
+/// the Khora sign, the engine name, a separator and the active project name).
 ///
 /// Returns the right edge of the pill in screen-space, so the caller can
 /// position the next widget after it.
@@ -69,7 +44,7 @@ pub fn paint_brand_pill(
         theme.font_size_body - 1.0,
         FontFamilyHint::Proportional,
     )[0];
-    let total_w = 18.0 /* diamond */ + 12.0 + engine_w + 14.0 /* sep */ + project_w + 24.0;
+    let total_w = 18.0 /* sign */ + 12.0 + engine_w + 14.0 /* sep */ + project_w + 24.0;
 
     let pad_y = (height - 24.0).max(0.0) * 0.5;
     let pill_h = (height - pad_y * 2.0).max(20.0);
@@ -91,10 +66,8 @@ pub fn paint_brand_pill(
         1.0,
     );
 
-    // Diamond
-    let diamond_cx = pill_x + 14.0;
-    let diamond_cy = pill_y + pill_h * 0.5;
-    khora_tool_ui::widgets::diamond(ui, [diamond_cx, diamond_cy], 6.5 * 2.0, theme.primary);
+    // The sign
+    khora_tool_ui::widgets::sign(ui, theme, [pill_x + 14.0, pill_y + pill_h * 0.5], 12.0, 1.0);
 
     // Engine name
     let text_y = pill_y + (pill_h - theme.font_size_body) * 0.5;
@@ -127,4 +100,31 @@ pub fn paint_brand_pill(
     );
 
     pill_x + total_w
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_tool_ui::brand::khora_dark;
+    use khora_tool_ui::testing::{PaintCall, RecordingUiBuilder};
+
+    #[test]
+    fn brand_pill_paints_the_khora_sign_as_four_gradient_pieces() {
+        let theme = khora_dark();
+        let mut ui = RecordingUiBuilder::new(400.0, 40.0);
+        paint_brand_pill(&mut ui, [0.0, 0.0], 40.0, "Khora", "nightfall", &theme);
+
+        let pieces = ui
+            .calls()
+            .iter()
+            .filter(|c| matches!(c, PaintCall::PathGradient { .. }))
+            .count();
+        assert_eq!(pieces, 4, "the sign is four gradient pieces");
+        assert!(
+            !ui.calls()
+                .iter()
+                .any(|c| matches!(c, PaintCall::Path { .. })),
+            "no flat polygon — the diamond is gone"
+        );
+    }
 }

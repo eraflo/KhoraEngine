@@ -19,13 +19,14 @@ use crate::state::Screen;
 use khora_sdk::tool_ui::{
     self as kui, App, AppContext, UiBuilder, WindowConfigInput, WindowIconInput,
 };
-use khora_tool_ui::khora_dark;
+
+use khora_tool_ui::widgets::LoadingState;
 
 impl App for HubApp {
     fn on_start(&mut self, ctx: &mut dyn AppContext) {
         ctx.set_fonts(&khora_tool_ui::fonts::brand_fonts());
-        // The one canonical Khora theme, shared with the editor.
-        ctx.set_theme(&khora_dark());
+        // The hub's light theme (see `crate::ui::theme`).
+        ctx.set_theme(&crate::ui::theme());
     }
 
     fn update(&mut self, ctx: &mut dyn AppContext) {
@@ -35,8 +36,9 @@ impl App for HubApp {
             ctx.request_repaint();
         }
 
-        let theme = khora_dark();
+        let theme = crate::ui::theme();
         let mut dismiss_banner = false;
+        let mut splash_done = false;
 
         ctx.central(&mut |ui| {
             let r = ui.panel_rect();
@@ -62,17 +64,33 @@ impl App for HubApp {
             {
                 dismiss_banner = true;
             }
+
+            // The sign film covers everything while the hub opens. The hub
+            // has nothing to wait for once it draws, so it is ready at once:
+            // the film finishes its gesture, then fades.
+            if let Some((screen, clock)) = self.splash.as_mut() {
+                let now = clock.elapsed().as_secs_f32();
+                screen.ready(now);
+                let rect = ui.panel_rect();
+                splash_done = screen.paint(ui, rect, now) == LoadingState::Done;
+            }
         });
 
         if dismiss_banner {
             self.banner = None;
         }
+        if splash_done {
+            self.splash = None;
+        } else if self.splash.is_some() {
+            ctx.request_repaint();
+        }
     }
 }
 
-/// The Khora logo as the hub's window icon.
+/// The hub's icon — the app icon with its colours swapped — as its window
+/// icon.
 fn load_logo_icon() -> WindowIconInput {
-    let logo = khora_tool_ui::logo::logo_icon();
+    let logo = khora_tool_ui::logo::hub_logo_icon();
     WindowIconInput {
         rgba: logo.rgba,
         width: logo.width,

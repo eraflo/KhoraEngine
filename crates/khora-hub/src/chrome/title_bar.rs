@@ -12,7 +12,6 @@ use crate::app::HubApp;
 use crate::state::AuthState;
 use crate::state::Screen;
 use khora_sdk::tool_ui::UiBuilder;
-use khora_tool_ui::brand::khora_dark;
 use khora_tool_ui::widgets::{
     self, Button, ButtonKind, Tone, brand_pill, chip, paint::vertical_gradient,
 };
@@ -22,7 +21,7 @@ pub const TITLE_BAR_HEIGHT: f32 = 44.0;
 
 /// Renders the top bar.
 pub fn show_title_bar(app: &mut HubApp, ui: &mut dyn UiBuilder) {
-    let t = khora_dark();
+    let t = crate::ui::theme();
     let r = ui.panel_rect();
 
     // The chrome lifts slightly toward the viewer, so the content below it

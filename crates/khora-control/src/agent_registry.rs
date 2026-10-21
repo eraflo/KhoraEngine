@@ -132,6 +132,29 @@ impl AgentRegistry {
         }
     }
 
+    /// Initializes the agent at `index` in priority order — the order
+    /// [`initialize_all`](Self::initialize_all) walks — and only that one.
+    ///
+    /// Calling it once for every index in `0..len()` is the same as one
+    /// `initialize_all`, spread over as many calls: a tool starting up runs one
+    /// agent's setup per frame so its loading screen keeps moving. Returns
+    /// `false`, and initializes nothing, when `index` is past the last agent.
+    pub fn initialize_one(
+        &self,
+        index: usize,
+        context: &mut khora_core::EngineContext<'_>,
+    ) -> bool {
+        let Some(entry) = self.entries.get(index) else {
+            return false;
+        };
+        if let Ok(mut agent) = entry.agent.lock() {
+            let id = agent.id();
+            agent.on_initialize(context);
+            log::info!("AgentRegistry: Initialized {:?}", id);
+        }
+        true
+    }
+
     /// Executes all agents in priority order.
     ///
     /// Called each frame. Each agent selects the appropriate lanes and
@@ -204,5 +227,167 @@ impl AgentRegistry {
 impl Default for AgentRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::agent::gorna::{
+        AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
+    };
+    use khora_core::lane::{LaneBus, OutputDeck};
+    use khora_core::{EngineContext, Runtime};
+
+    /// The names of the agents initialized so far, in the order they were.
+    type Log = Arc<Mutex<Vec<&'static str>>>;
+
+    /// An agent that writes its name into a shared log when it is initialized.
+    struct Recording {
+        name: &'static str,
+        log: Log,
+    }
+
+    impl Agent for Recording {
+        fn id(&self) -> AgentId {
+            AgentId::Script
+        }
+        fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
+            NegotiationResponse {
+                strategies: vec![],
+                timing_adjustment: None,
+            }
+        }
+        fn apply_budget(&mut self, _b: ResourceBudget) {}
+        fn report_status(&self) -> AgentStatus {
+            AgentStatus {
+                agent_id: AgentId::Script,
+                current_strategy: StrategyId::Balanced,
+                health_score: 1.0,
+                is_stalled: false,
+                message: String::new(),
+            }
+        }
+        fn on_initialize(&mut self, _ctx: &mut EngineContext<'_>) {
+            self.log.lock().expect("the log lock").push(self.name);
+        }
+        fn execute(&mut self, _ctx: &mut EngineContext<'_>) {}
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
+
+    /// A registry holding `agents` (name, priority), registered in that order,
+    /// and the log they write to.
+    fn registry_of(agents: &[(&'static str, f32)]) -> (AgentRegistry, Log) {
+        let log: Log = Arc::new(Mutex::new(Vec::new()));
+        let mut registry = AgentRegistry::new();
+        for &(name, priority) in agents {
+            registry.register(
+                Arc::new(Mutex::new(Recording {
+                    name,
+                    log: Arc::clone(&log),
+                })),
+                priority,
+            );
+        }
+        (registry, log)
+    }
+
+    /// Three agents registered out of priority order: initialization walks
+    /// them highest priority first.
+    const THREE: [(&str, f32); 3] = [("low", 1.0), ("high", 3.0), ("middle", 2.0)];
+
+    fn logged(log: &Log) -> Vec<&'static str> {
+        log.lock().expect("the log lock").clone()
+    }
+
+    #[test]
+    fn initializing_every_index_once_initializes_every_agent_once_in_the_order_of_initialize_all() {
+        let (all_at_once, all_log) = registry_of(&THREE);
+        let (one_by_one, one_log) = registry_of(&THREE);
+        let runtime = Arc::new(Runtime::new());
+        let bus = LaneBus::new();
+
+        let mut deck = OutputDeck::new();
+        all_at_once.initialize_all(&mut EngineContext::for_initialisation(
+            Arc::clone(&runtime),
+            &bus,
+            &mut deck,
+        ));
+
+        for index in 0..one_by_one.len() {
+            let mut deck = OutputDeck::new();
+            let mut ctx = EngineContext::for_initialisation(Arc::clone(&runtime), &bus, &mut deck);
+            assert!(
+                one_by_one.initialize_one(index, &mut ctx),
+                "index {index} names a registered agent"
+            );
+        }
+
+        assert_eq!(logged(&one_log), vec!["high", "middle", "low"]);
+        assert_eq!(
+            logged(&one_log),
+            logged(&all_log),
+            "one agent at a time initializes the same agents, in the same order, as all at once"
+        );
+    }
+
+    #[test]
+    fn initialize_one_past_the_last_agent_returns_false_and_initializes_nothing() {
+        let (registry, log) = registry_of(&THREE);
+        let bus = LaneBus::new();
+        let mut deck = OutputDeck::new();
+        let mut ctx = EngineContext::for_initialisation(Arc::new(Runtime::new()), &bus, &mut deck);
+
+        assert!(!registry.initialize_one(3, &mut ctx), "index 3 of 3 agents");
+        assert!(!registry.initialize_one(usize::MAX, &mut ctx));
+        assert!(logged(&log).is_empty(), "no agent was initialized");
+    }
+
+    #[test]
+    fn initialize_one_on_an_empty_registry_returns_false() {
+        let registry = AgentRegistry::new();
+        let bus = LaneBus::new();
+        let mut deck = OutputDeck::new();
+        let mut ctx = EngineContext::for_initialisation(Arc::new(Runtime::new()), &bus, &mut deck);
+
+        assert!(!registry.initialize_one(0, &mut ctx));
+    }
+
+    #[test]
+    fn initialize_one_leaves_the_later_agents_uninitialized() {
+        let (registry, log) = registry_of(&THREE);
+        let bus = LaneBus::new();
+        let mut deck = OutputDeck::new();
+        let mut ctx = EngineContext::for_initialisation(Arc::new(Runtime::new()), &bus, &mut deck);
+
+        assert!(registry.initialize_one(0, &mut ctx));
+        assert_eq!(
+            logged(&log),
+            vec!["high"],
+            "only the first agent ran its setup"
+        );
+
+        assert!(registry.initialize_one(1, &mut ctx));
+        assert_eq!(
+            logged(&log),
+            vec!["high", "middle"],
+            "the second call initialized the second agent, and only it"
+        );
+    }
+
+    #[test]
+    fn initialize_one_at_a_given_index_initializes_that_agent_alone() {
+        let (registry, log) = registry_of(&THREE);
+        let bus = LaneBus::new();
+        let mut deck = OutputDeck::new();
+        let mut ctx = EngineContext::for_initialisation(Arc::new(Runtime::new()), &bus, &mut deck);
+
+        assert!(registry.initialize_one(2, &mut ctx));
+        assert_eq!(logged(&log), vec!["low"], "index 2 is the lowest priority");
     }
 }

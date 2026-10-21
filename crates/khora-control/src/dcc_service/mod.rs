@@ -280,6 +280,24 @@ impl DccService {
         }
     }
 
+    /// Initializes the registered agent at `index` in priority order, and only
+    /// that one — [`initialize_agents`](Self::initialize_agents) spread over
+    /// as many calls as there are agents ([`agent_count`](Self::agent_count)),
+    /// so a tool can run one agent's setup per frame while it starts.
+    ///
+    /// Returns `false`, and initializes nothing, when `index` is past the last
+    /// agent.
+    pub fn initialize_agent(
+        &self,
+        index: usize,
+        context: &mut khora_core::EngineContext<'_>,
+    ) -> bool {
+        match self.registry.lock() {
+            Ok(registry) => registry.initialize_one(index, context),
+            Err(_) => false,
+        }
+    }
+
     /// Executes all registered agents in priority order.
     ///
     /// Called each frame. Each agent selects the appropriate lanes and

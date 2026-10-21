@@ -16,3 +16,26 @@
 //! helpers that format the hub's own data.
 
 pub mod format;
+
+use khora_sdk::tool_ui::UiTheme;
+
+/// The hub's theme — the one switch every hub surface reads its look from.
+///
+/// The hub is light silver: the negative of the editor, which stays in the
+/// deep field, as the hub's icon is the negative of the editor's.
+pub fn theme() -> UiTheme {
+    khora_tool_ui::brand::khora_light()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_sdk::tool_ui::ColorScheme;
+
+    /// The hub is the editor's negative: a light field, where the editor
+    /// stays dark.
+    #[test]
+    fn hub_theme_is_light() {
+        assert_eq!(theme().scheme, ColorScheme::Light);
+    }
+}

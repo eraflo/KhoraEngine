@@ -14,7 +14,6 @@
 use crate::app::HubApp;
 use crate::state::AuthState;
 use khora_sdk::tool_ui::{FontFamilyHint, UiBuilder};
-use khora_tool_ui::brand::khora_dark;
 use khora_tool_ui::widgets::{self, Health, paint::mono, status_dot};
 
 /// Height of the status bar, in logical points.
@@ -22,7 +21,7 @@ pub const STATUS_HEIGHT: f32 = 26.0;
 
 /// Renders the status bar.
 pub fn show_status_bar(app: &HubApp, ui: &mut dyn UiBuilder) {
-    let t = khora_dark();
+    let t = crate::ui::theme();
     let r = ui.panel_rect();
 
     ui.paint_rect_filled([r[0], r[1]], [r[2], r[3]], t.surface, 0.0);

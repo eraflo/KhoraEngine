@@ -472,3 +472,120 @@ fn test_critical_thermal_clamps_multiplier() {
         "Critical thermal must clamp the multiplier to the safety ceiling, got {multiplier}"
     );
 }
+
+/// An agent that writes its name into a shared log when it is initialized.
+struct InitRecording {
+    name: &'static str,
+    log: std::sync::Arc<std::sync::Mutex<Vec<&'static str>>>,
+}
+
+impl Agent for InitRecording {
+    fn id(&self) -> AgentId {
+        AgentId::Script
+    }
+    fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
+        NegotiationResponse {
+            strategies: vec![],
+            timing_adjustment: None,
+        }
+    }
+    fn apply_budget(&mut self, _: ResourceBudget) {}
+    fn report_status(&self) -> AgentStatus {
+        AgentStatus {
+            agent_id: AgentId::Script,
+            current_strategy: StrategyId::Balanced,
+            health_score: 1.0,
+            is_stalled: false,
+            message: String::new(),
+        }
+    }
+    fn on_initialize(&mut self, _: &mut khora_core::EngineContext<'_>) {
+        self.log.lock().expect("the log lock").push(self.name);
+    }
+    fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+/// A DCC holding three recording agents registered out of priority order,
+/// and the log they write to.
+fn dcc_with_three_recording_agents() -> (
+    DccService,
+    std::sync::Arc<std::sync::Mutex<Vec<&'static str>>>,
+) {
+    let (dcc, _rx) = DccService::new(DccConfig::default());
+    let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    for (name, priority) in [("low", 1.0), ("high", 3.0), ("middle", 2.0)] {
+        dcc.register_agent(
+            std::sync::Arc::new(std::sync::Mutex::new(InitRecording {
+                name,
+                log: std::sync::Arc::clone(&log),
+            })),
+            priority,
+        );
+    }
+    (dcc, log)
+}
+
+#[test]
+fn initialize_agent_over_every_index_initializes_each_agent_once_in_priority_order() {
+    let (dcc, log) = dcc_with_three_recording_agents();
+    let runtime = std::sync::Arc::new(khora_core::Runtime::new());
+    let bus = khora_core::lane::LaneBus::new();
+
+    for index in 0..dcc.agent_count() {
+        let mut deck = khora_core::lane::OutputDeck::new();
+        let mut ctx = khora_core::EngineContext::for_initialisation(
+            std::sync::Arc::clone(&runtime),
+            &bus,
+            &mut deck,
+        );
+        assert!(
+            dcc.initialize_agent(index, &mut ctx),
+            "index {index} names a registered agent"
+        );
+    }
+
+    assert_eq!(
+        *log.lock().expect("the log lock"),
+        vec!["high", "middle", "low"],
+        "every agent initialized once, highest priority first — as initialize_agents does"
+    );
+}
+
+#[test]
+fn initialize_agent_past_the_last_agent_returns_false_and_initializes_nothing() {
+    let (dcc, log) = dcc_with_three_recording_agents();
+    let bus = khora_core::lane::LaneBus::new();
+    let mut deck = khora_core::lane::OutputDeck::new();
+    let mut ctx = khora_core::EngineContext::for_initialisation(
+        std::sync::Arc::new(khora_core::Runtime::new()),
+        &bus,
+        &mut deck,
+    );
+
+    assert!(!dcc.initialize_agent(dcc.agent_count(), &mut ctx));
+    assert!(
+        log.lock().expect("the log lock").is_empty(),
+        "no agent was initialized"
+    );
+}
+
+#[test]
+fn initialize_agent_leaves_the_later_agents_uninitialized() {
+    let (dcc, log) = dcc_with_three_recording_agents();
+    let bus = khora_core::lane::LaneBus::new();
+    let mut deck = khora_core::lane::OutputDeck::new();
+    let mut ctx = khora_core::EngineContext::for_initialisation(
+        std::sync::Arc::new(khora_core::Runtime::new()),
+        &bus,
+        &mut deck,
+    );
+
+    assert!(dcc.initialize_agent(0, &mut ctx));
+    assert_eq!(*log.lock().expect("the log lock"), vec!["high"]);
+}

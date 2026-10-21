@@ -19,7 +19,9 @@
 
 pub mod declared;
 pub mod gizmo;
+pub mod gradient;
 pub mod icons;
+pub mod interaction;
 pub mod overlay;
 pub mod panel;
 pub mod shell;
@@ -31,6 +33,7 @@ pub use declared::{
     AddableComponent, ComponentOrigin, DeclaredCard, DeclaredCardKind, DeclaredFieldView,
 };
 pub use gizmo::GizmoLineInstance;
+pub use gradient::{GradientStop, LinearGradient, RadialGradient};
 pub use icons::Icon;
 pub use overlay::{EditorOverlay, OverlayError, OverlayScreenDescriptor};
 pub use panel::{EditorPanel, PanelLocation};

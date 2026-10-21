@@ -183,6 +183,9 @@ mod trait_items {
         let _ = <T as khora_sdk::EngineApp>::before_frame;
         let _ = <T as khora_sdk::EngineApp>::before_agents;
         let _ = <T as khora_sdk::EngineApp>::after_agents;
+        let _ = <T as khora_sdk::EngineApp>::startup_begin;
+        let _ = <T as khora_sdk::EngineApp>::loading_frame;
+        let _ = <T as khora_sdk::EngineApp>::startup_ready;
     }
 
     fn khora_sdk_layout_system_same<T: ?Sized + khora_sdk::LayoutSystem>() {
@@ -453,6 +456,27 @@ fn module_crate_root_paths_still_resolve() {
     let _ = <khora_sdk::EngineCore<ProbeApp>>::engine_hints;
     let _ = <khora_sdk::EngineCore<ProbeApp>>::shutdown;
     is_default::<khora_sdk::EngineCore<ProbeApp>>();
+    let _ = type_name::<khora_sdk::EngineBootstrap<ProbeApp>>();
+    let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::begin;
+    let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::setup;
+    let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::register;
+    let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::agent_count;
+    let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::initialize_agent;
+    let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::finish;
+    let _ = type_name::<khora_sdk::Startup<()>>();
+    let _ = <khora_sdk::Startup<()>>::new;
+    let _ = <khora_sdk::Startup<()>>::advance;
+    let _ = <khora_sdk::Startup<()>>::is_done;
+    let _ = type_name::<khora_sdk::StartupProgress>();
+    let _ = khora_sdk::StartupProgress { done: 0, total: 0 }.done;
+    let _ = khora_sdk::StartupProgress { done: 0, total: 0 }.total;
+    let _ = khora_sdk::StartupProgress::fraction;
+    is_clone::<khora_sdk::StartupProgress>();
+    is_debug::<khora_sdk::StartupProgress>();
+    let _ = |step: khora_sdk::StartupStep<()>| match step {
+        khora_sdk::StartupStep::Main(_) => {}
+        khora_sdk::StartupStep::Blocking(_) => {}
+    };
     let _ = type_name::<khora_sdk::EngineHint>();
     same_type(
         PhantomData::<khora_sdk::EngineHint>,

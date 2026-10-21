@@ -48,6 +48,9 @@ pub enum PanelLocation {
     /// z-order — higher values draw on top. Used for command palettes,
     /// modal dialogs, etc.
     Floating(i32),
+    /// One full-screen panel painted above everything, taking every click —
+    /// a loading or splash screen. Its panel rect is the whole screen.
+    Cover,
 }
 
 /// A single editor panel that can render itself into a [`UiBuilder`].
@@ -75,7 +78,7 @@ pub trait EditorPanel: Send + Sync {
     /// | `Spine` | Fixed width. |
     /// | `Left`, `Right` | Default width (still resizable by user). |
     /// | `Bottom` | Default height (still resizable by user). |
-    /// | `Center`, `Floating` | Ignored. |
+    /// | `Center`, `Floating`, `Cover` | Ignored. |
     ///
     /// Returning `None` lets the shell pick a sensible default for the slot.
     fn preferred_size(&self) -> Option<f32> {

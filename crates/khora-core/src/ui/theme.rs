@@ -26,9 +26,16 @@
 //! drift. [`Default`] stays a neutral fallback for anything that wants a theme
 //! without pulling in the brand.
 
+pub use super::color_scheme::ColorScheme;
+
 /// Color palette and sizing tokens for any Khora UI surface.
 #[derive(Debug, Clone)]
 pub struct UiTheme {
+    // ── Scheme ───────────────────────────────────────
+    /// Whether the theme is dark or light. Backends pick their base visuals
+    /// from it, so stock widgets the palette does not name still match.
+    pub scheme: ColorScheme,
+
     // ── Surfaces ─────────────────────────────────────
     /// Outermost background (empty regions, behind everything).
     pub background: [f32; 4],
@@ -124,6 +131,8 @@ pub struct UiTheme {
 impl Default for UiTheme {
     fn default() -> Self {
         Self {
+            scheme: ColorScheme::Dark,
+
             // Surfaces
             background: [0.039, 0.039, 0.055, 1.0],
             surface: [0.067, 0.071, 0.090, 1.0],
@@ -176,5 +185,20 @@ impl Default for UiTheme {
             pad_row: 8.0,
             pad_card: 14.0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn color_scheme_defaults_to_dark() {
+        assert_eq!(ColorScheme::default(), ColorScheme::Dark);
+    }
+
+    #[test]
+    fn default_theme_is_dark() {
+        assert_eq!(UiTheme::default().scheme, ColorScheme::Dark);
     }
 }

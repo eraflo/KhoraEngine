@@ -30,7 +30,7 @@
 pub use khora_core::math::{LinearRgba, Rect2D, Vec2};
 pub use khora_core::ui::editor::{FontFamilyHint, Icon, InlineEditEvent, Interaction, TextAlign};
 pub use khora_core::ui::{
-    Align, Align2, App, AppContext, AppLifecycle, CornerRadius, FontHandle, FontPack, Margin,
-    NamedFont, Stroke, UiBuilder, UiTheme,
+    Align, Align2, App, AppContext, AppLifecycle, ColorScheme, CornerRadius, FontHandle, FontPack,
+    Margin, NamedFont, Stroke, UiBuilder, UiTheme,
 };
 pub use khora_infra::ui::egui::app::{run_native, WindowConfigInput, WindowIconInput};

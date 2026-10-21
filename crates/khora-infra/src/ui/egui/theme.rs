@@ -14,7 +14,7 @@
 
 //! Convert [`UiTheme`] to egui [`Visuals`] and apply to an egui context.
 
-use khora_core::ui::UiTheme;
+use khora_core::ui::{ColorScheme, UiTheme};
 
 /// Key under which [`apply_theme`] stashes the X/Y/Z axis colours in the egui
 /// context.
@@ -38,7 +38,16 @@ fn c(color: [f32; 4]) -> egui::Color32 {
 
 /// Applies an [`UiTheme`] to the given egui context.
 pub fn apply_theme(ctx: &egui::Context, theme: &UiTheme) {
-    let mut visuals = egui::Visuals::dark();
+    // The theme's scheme picks egui's base visuals, and pins egui to it so
+    // an OS switch between light and dark cannot swap in stock visuals.
+    // Shadows are lighter on a light surface, where black at full weight
+    // reads as a smudge.
+    let (mut visuals, egui_theme, shadow_weight) = match theme.scheme {
+        ColorScheme::Dark => (egui::Visuals::dark(), egui::Theme::Dark, 1.0),
+        ColorScheme::Light => (egui::Visuals::light(), egui::Theme::Light, 0.35),
+    };
+    ctx.set_theme(egui_theme);
+    let shadow = |alpha: f32| egui::Color32::from_black_alpha((alpha * shadow_weight) as u8);
 
     // ── Surfaces ─────────────────────────────────────
     visuals.panel_fill = c(theme.surface);
@@ -62,14 +71,14 @@ pub fn apply_theme(ctx: &egui::Context, theme: &UiTheme) {
         offset: [0, 8],
         blur: 24,
         spread: 0,
-        color: egui::Color32::from_black_alpha(140),
+        color: shadow(140.0),
     };
     visuals.window_stroke = egui::Stroke::new(1.0_f32, c(theme.border));
     visuals.popup_shadow = egui::Shadow {
         offset: [0, 4],
         blur: 12,
         spread: 0,
-        color: egui::Color32::from_black_alpha(110),
+        color: shadow(110.0),
     };
 
     // ── Widget radii ─────────────────────────────────
@@ -153,4 +162,124 @@ pub fn apply_theme(ctx: &egui::Context, theme: &UiTheme) {
     );
 
     ctx.set_global_style(style);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::ui::ColorScheme;
+
+    /// A light theme: silver surfaces, navy ink, everything else neutral.
+    fn light_theme() -> UiTheme {
+        UiTheme {
+            scheme: ColorScheme::Light,
+            background: [0.875, 0.902, 0.933, 1.0],
+            surface: [0.933, 0.945, 0.961, 1.0],
+            surface_elevated: [0.973, 0.980, 0.988, 1.0],
+            surface_interactive: [0.890, 0.914, 0.941, 1.0],
+            surface_active: [0.827, 0.863, 0.906, 1.0],
+            text: [0.078, 0.106, 0.157, 1.0],
+            text_dim: [0.231, 0.278, 0.349, 1.0],
+            text_inverse: [0.933, 0.945, 0.961, 1.0],
+            primary: [0.114, 0.165, 0.251, 1.0],
+            ..UiTheme::default()
+        }
+    }
+
+    fn dark_theme() -> UiTheme {
+        UiTheme {
+            scheme: ColorScheme::Dark,
+            ..UiTheme::default()
+        }
+    }
+
+    /// `actual` is `color` to within one step per channel, whichever way the
+    /// backend rounds a float to a byte.
+    fn assert_color_is(actual: egui::Color32, color: [f32; 4], what: &str) {
+        let got = actual.to_srgba_unmultiplied();
+        for (i, (g, e)) in got.iter().zip(color).enumerate() {
+            let e = e * 255.0;
+            assert!(
+                (*g as f32 - e).abs() <= 1.0,
+                "{what}: channel {i} is {g}, expected {e:.1} (got {got:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn apply_theme_with_a_light_scheme_installs_light_visuals() {
+        let ctx = egui::Context::default();
+        apply_theme(&ctx, &light_theme());
+        assert!(
+            !ctx.global_style().visuals.dark_mode,
+            "a light theme must not leave egui in dark mode"
+        );
+    }
+
+    #[test]
+    fn apply_theme_with_a_light_scheme_pins_the_light_egui_theme() {
+        let ctx = egui::Context::default();
+        apply_theme(&ctx, &light_theme());
+        assert_eq!(
+            ctx.theme(),
+            egui::Theme::Light,
+            "the OS theme must not swap stock dark visuals in"
+        );
+    }
+
+    #[test]
+    fn apply_theme_with_a_light_scheme_fills_panels_with_the_theme_surface() {
+        let ctx = egui::Context::default();
+        let theme = light_theme();
+        apply_theme(&ctx, &theme);
+        let visuals = &ctx.global_style().visuals;
+        assert!(!visuals.dark_mode, "the light style is the active one");
+        assert_color_is(visuals.panel_fill, theme.surface, "panel_fill");
+    }
+
+    #[test]
+    fn apply_theme_with_a_dark_scheme_installs_dark_visuals() {
+        let ctx = egui::Context::default();
+        let theme = dark_theme();
+        apply_theme(&ctx, &theme);
+        let visuals = &ctx.global_style().visuals;
+        assert!(visuals.dark_mode);
+        assert_eq!(ctx.theme(), egui::Theme::Dark);
+        assert_color_is(visuals.panel_fill, theme.surface, "panel_fill");
+    }
+
+    #[test]
+    fn apply_theme_switches_from_dark_to_light_and_back() {
+        let ctx = egui::Context::default();
+        apply_theme(&ctx, &dark_theme());
+        apply_theme(&ctx, &light_theme());
+        assert!(!ctx.global_style().visuals.dark_mode, "dark → light");
+        apply_theme(&ctx, &dark_theme());
+        assert!(ctx.global_style().visuals.dark_mode, "light → dark");
+    }
+
+    /// Shadows on a light field are softer than in the dark: the same black
+    /// at the same alpha reads as a smudge on silver.
+    #[test]
+    fn apply_theme_with_a_light_scheme_softens_the_shadows() {
+        let dark_ctx = egui::Context::default();
+        apply_theme(&dark_ctx, &dark_theme());
+        let light_ctx = egui::Context::default();
+        apply_theme(&light_ctx, &light_theme());
+
+        let dark = dark_ctx.global_style().visuals.clone();
+        let light = light_ctx.global_style().visuals.clone();
+        assert!(
+            light.window_shadow.color.a() < dark.window_shadow.color.a(),
+            "window shadow: light {} !< dark {}",
+            light.window_shadow.color.a(),
+            dark.window_shadow.color.a()
+        );
+        assert!(
+            light.popup_shadow.color.a() < dark.popup_shadow.color.a(),
+            "popup shadow: light {} !< dark {}",
+            light.popup_shadow.color.a(),
+            dark.popup_shadow.color.a()
+        );
+    }
 }

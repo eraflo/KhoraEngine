@@ -17,7 +17,7 @@
 use khora_core::platform::input::KeyCode;
 use khora_core::ui::editor::ui_builder::{FontFamilyHint, InlineEditEvent, Interaction, TextAlign};
 use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;
-use khora_core::ui::editor::UiBuilder;
+use khora_core::ui::editor::{LinearGradient, RadialGradient, UiBuilder};
 use std::collections::HashMap;
 
 use super::theme::AXIS_COLORS_KEY;
@@ -32,9 +32,14 @@ fn font_id_for(family: FontFamilyHint, size: f32) -> egui::FontId {
         FontFamilyHint::Proportional => egui::FontId::proportional(size),
         FontFamilyHint::Monospace => egui::FontId::monospace(size),
         FontFamilyHint::Display => {
-            egui::FontId::new(size, egui::FontFamily::Name("display".into()))
+            egui::FontId::new(size, egui::FontFamily::Name(super::fonts::DISPLAY.into()))
         }
-        FontFamilyHint::Icons => egui::FontId::new(size, egui::FontFamily::Name("icons".into())),
+        FontFamilyHint::Wordmark => {
+            egui::FontId::new(size, egui::FontFamily::Name(super::fonts::WORDMARK.into()))
+        }
+        FontFamilyHint::Icons => {
+            egui::FontId::new(size, egui::FontFamily::Name(super::fonts::ICONS.into()))
+        }
     }
 }
 
@@ -84,6 +89,25 @@ impl<'a> EguiUiBuilder<'a> {
             last_response: None,
             clip_stack: Vec::new(),
         }
+    }
+
+    /// `points` tessellated as a white, anti-aliased fill: the coverage a
+    /// gradient fill then tints vertex by vertex.
+    fn white_fill(&self, points: &[[f32; 2]]) -> egui::epaint::Mesh {
+        use egui::epaint::{Mesh, PathShape, PathStroke, Tessellator};
+        let ctx = self.ui.ctx();
+        let options = ctx.tessellation_options(|o| *o);
+        // The font texture size only normalises glyph uvs; a filled path has none.
+        let mut tessellator = Tessellator::new(ctx.pixels_per_point(), options, [1, 1], vec![]);
+        let path = PathShape {
+            points: points.iter().map(|p| egui::pos2(p[0], p[1])).collect(),
+            closed: true,
+            fill: egui::Color32::WHITE,
+            stroke: PathStroke::NONE,
+        };
+        let mut mesh = Mesh::default();
+        tessellator.tessellate_path(&path, &mut mesh);
+        mesh
     }
 
     /// A painter on the top foreground layer, clipped only to the whole screen.
@@ -619,6 +643,28 @@ impl UiBuilder for EguiUiBuilder<'_> {
         }));
     }
 
+    fn paint_path_filled_gradient(&mut self, points: &[[f32; 2]], gradient: LinearGradient<'_>) {
+        if points.len() < 3 {
+            return;
+        }
+        let mut mesh = self.white_fill(points);
+        super::gradient_fill::split_at_stops(&mut mesh, &gradient);
+        super::gradient_fill::tint(&mut mesh, &gradient);
+        self.ui.painter().add(egui::Shape::mesh(mesh));
+    }
+
+    fn paint_path_filled_radial(&mut self, points: &[[f32; 2]], gradient: RadialGradient<'_>) {
+        if points.len() < 3 {
+            return;
+        }
+        // Vertex colours interpolate linearly, so the radial field is sampled
+        // on small triangles wherever its colour changes.
+        let mut mesh = self.white_fill(points);
+        super::gradient_fill::subdivide_radial(&mut mesh, &gradient);
+        super::gradient_fill::tint(&mut mesh, &gradient);
+        self.ui.painter().add(egui::Shape::mesh(mesh));
+    }
+
     fn interact_rect(&mut self, id_salt: &str, rect: [f32; 4]) -> Interaction {
         let r =
             egui::Rect::from_min_size(egui::pos2(rect[0], rect[1]), egui::vec2(rect[2], rect[3]));
@@ -1031,5 +1077,80 @@ impl EguiUiBuilder<'_> {
                 let mut nested = EguiUiBuilder::new(ui, &vt_clone);
                 f(&mut nested);
             });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The wordmark hint reaches its own named family, which both font
+    /// installers always bind (to the wordmark face, or to its fallback).
+    #[test]
+    fn wordmark_hint_resolves_to_the_wordmark_family() {
+        assert_eq!(
+            font_id_for(FontFamilyHint::Wordmark, 20.0),
+            egui::FontId::new(20.0, egui::FontFamily::Name("wordmark".into()))
+        );
+    }
+
+    /// Giving the wordmark its own family leaves the display hint where it
+    /// was.
+    #[test]
+    fn display_hint_still_resolves_to_the_display_family() {
+        assert_eq!(
+            font_id_for(FontFamilyHint::Display, 20.0),
+            egui::FontId::new(20.0, egui::FontFamily::Name("display".into()))
+        );
+    }
+
+    /// A small glow painted over a whole 1440 × 900 screen: the colour
+    /// varies only inside the 20-unit disc and is the last stop's
+    /// everywhere else, so the mesh stays the size of a small fill instead
+    /// of growing with the screen area over the square of the radius.
+    #[test]
+    fn a_small_radial_glow_over_a_large_polygon_paints_a_bounded_mesh() {
+        use khora_core::ui::editor::GradientStop;
+        let stops = [
+            GradientStop {
+                offset: 0.0,
+                color: [1.0, 1.0, 1.0, 1.0],
+            },
+            GradientStop {
+                offset: 1.0,
+                color: [1.0, 1.0, 1.0, 0.0],
+            },
+        ];
+        let glow = RadialGradient {
+            center: [720.0, 450.0],
+            radius: 20.0,
+            stops: &stops,
+        };
+        let screen = [[0.0, 0.0], [1440.0, 0.0], [1440.0, 900.0], [0.0, 900.0]];
+        let ctx = egui::Context::default();
+        let textures = HashMap::new();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1440.0, 900.0),
+            )),
+            ..Default::default()
+        };
+        let output = ctx.run_ui(input, |ui| {
+            EguiUiBuilder::new(ui, &textures).paint_path_filled_radial(&screen, glow);
+        });
+        let triangles: usize = output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Mesh(mesh) => Some(mesh.indices.len() / 3),
+                _ => None,
+            })
+            .sum();
+        assert!(triangles > 0, "the glow painted nothing");
+        assert!(
+            triangles <= 50_000,
+            "a 20-unit glow over 1440 x 900 painted {triangles} triangles"
+        );
     }
 }

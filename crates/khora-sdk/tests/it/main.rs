@@ -33,4 +33,5 @@ mod script_problems_after_remount;
 mod script_problems_after_unmount;
 mod scripts_mount_sequences;
 mod scripts_mounted_while_running;
+mod staged_bootstrap;
 mod system_components;
