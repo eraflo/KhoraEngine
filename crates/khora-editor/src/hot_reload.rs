@@ -17,8 +17,8 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::AssetEntry;
-use khora_sdk::AssetChangeKind;
 use khora_sdk::EditorState;
+use khora_sdk::{AssetChangeKind, AssetSource};
 
 use crate::project_vfs::ProjectVfs;
 
@@ -44,6 +44,9 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
                 modified.insert(e.rel_path);
             }
             AssetChangeKind::Created | AssetChangeKind::Removed => {
+                // A file replaced in place (removed, then created) must not
+                // keep serving what was decoded from its former bytes.
+                modified.insert(e.rel_path.clone());
                 log::info!(
                     "Hot reload: {:?} '{}' — full reindex queued",
                     e.kind,
@@ -59,6 +62,10 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
     // cache entry.
     for rel in &modified {
         let uuid = pvfs.resolve_uuid(rel);
+        // A file that can hold parts may have gained or lost some (a
+        // re-exported glTF with another node count, or one whole again after
+        // a broken save): its parts are listed again.
+        needs_reindex |= pvfs.asset_service.may_hold_sub_assets(&uuid);
         let dropped = pvfs.asset_service.invalidate(&uuid);
         log::info!(
             "Hot reload: Modified '{}' (cache dropped: {})",
@@ -94,16 +101,24 @@ pub fn collect_asset_entries(pvfs: &ProjectVfs) -> Vec<AssetEntry> {
             // Forward slashes whatever the platform: the browser's folders,
             // the identity registry and the project VFS all name an asset so.
             let rel_str = m.source_path.to_string_lossy().replace('\\', "/");
-            let name = m
-                .source_path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| rel_str.clone());
+            // A part of a file is named by its label inside the file; the
+            // file is named by its file name.
+            let (name, container) = match m.variants.get("default") {
+                Some(AssetSource::Sub { container, label }) => (label.clone(), Some(*container)),
+                _ => (
+                    m.source_path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| rel_str.clone()),
+                    None,
+                ),
+            };
             AssetEntry {
                 name,
                 asset_type: m.asset_type_name.clone(),
                 source_path: rel_str,
                 uuid: m.uuid,
+                container,
             }
         })
         .collect()
@@ -164,5 +179,189 @@ mod tests {
             "a renamed asset keeps the identity the registry froze: {entries:?}"
         );
         Ok(())
+    }
+
+    const SHIP: &str = "models/ship.gltf";
+    const CRATE: &str = "models/crate.obj";
+
+    /// **Each part of a file is listed as an entry of its own, marked with
+    /// its file**: named by its label, typed by its kind, found at its
+    /// file's path. The file and a mesh file with no parts are marked with
+    /// none.
+    #[test]
+    fn each_part_of_a_file_is_an_entry_marked_with_its_file() {
+        use crate::gltf_fixture::{GltfProject, SHIP_GLTF, TRIANGLE_OBJ};
+
+        let project =
+            GltfProject::with("entries-parts", &[(SHIP, SHIP_GLTF), (CRATE, TRIANGLE_OBJ)]);
+        let entries = collect_asset_entries(&project.vfs.lock().expect("the project"));
+        let ship = project.uuid(SHIP);
+        let of = |uuid: AssetUUID| {
+            entries
+                .iter()
+                .find(|entry| entry.uuid == uuid)
+                .unwrap_or_else(|| panic!("no entry holds {uuid:?}: {entries:?}"))
+        };
+
+        let file = of(ship);
+        assert_eq!(file.container, None, "the file is no part: {file:?}");
+        assert_eq!(file.name, "ship.gltf");
+        let obj = of(project.uuid(CRATE));
+        assert_eq!(obj.container, None, "the OBJ is no part: {obj:?}");
+
+        for (label, kind) in [
+            ("scene", "prefab"),
+            ("scene0", "prefab"),
+            ("mesh0/prim0", "mesh"),
+            ("mesh1/prim0", "mesh"),
+            ("material0", "material"),
+            ("material1", "material"),
+            ("texture0", "texture"),
+        ] {
+            let part = of(AssetUUID::sub_asset(ship, label));
+            assert_eq!(part.container, Some(ship), "{label} is a part of the file");
+            assert_eq!(part.name, label, "a part is named by its label");
+            assert_eq!(part.asset_type, kind, "{label}'s kind");
+            assert_eq!(
+                part.source_path, SHIP,
+                "{label} is found at its file's path"
+            );
+        }
+        let parts = entries
+            .iter()
+            .filter(|entry| entry.container == Some(ship))
+            .count();
+        assert_eq!(parts, 7, "every part of the file, once: {entries:?}");
+        assert!(
+            entries
+                .iter()
+                .all(|entry| entry.container != Some(project.uuid(CRATE))),
+            "the OBJ has no parts"
+        );
+    }
+
+    /// **A glTF saved over with another node lists its new parts once the
+    /// pump has run**: its list of parts changed with its contents, though
+    /// the file was only modified — not created or removed.
+    #[test]
+    fn a_modified_gltf_lists_its_new_parts_after_the_pump() {
+        use std::sync::Mutex;
+        use std::time::{Duration, Instant};
+
+        use khora_sdk::EditorState;
+
+        use super::pump;
+        use crate::gltf_fixture::{GltfProject, ONE_NODE_GLTF, SHIP_GLTF};
+
+        let project = GltfProject::with("hot-reload-parts", &[(SHIP, ONE_NODE_GLTF)]);
+        let ship = project.uuid(SHIP);
+        let mast = AssetUUID::sub_asset(ship, "mesh1/prim0");
+        let entries = collect_asset_entries(&project.vfs.lock().expect("the project"));
+        assert!(
+            !entries.iter().any(|entry| entry.uuid == mast),
+            "the premise: one node, no second mesh: {entries:?}"
+        );
+        let state = Arc::new(Mutex::new(EditorState {
+            project_folder: Some(project.root.to_string_lossy().into_owned()),
+            asset_entries: entries,
+            asset_epoch: 1,
+            ..EditorState::default()
+        }));
+        // The watcher was armed when the project opened; give it a moment.
+        std::thread::sleep(Duration::from_millis(150));
+
+        std::fs::write(project.path(SHIP), SHIP_GLTF).expect("the file is saved over");
+        let listed = |state: &Arc<Mutex<EditorState>>| {
+            state
+                .lock()
+                .expect("the editor state")
+                .asset_entries
+                .iter()
+                .any(|entry| entry.uuid == mast)
+        };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline && !listed(&state) {
+            pump(&project.vfs, &state);
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        let state_now = state.lock().expect("the editor state");
+        assert!(
+            state_now
+                .asset_entries
+                .iter()
+                .any(|entry| entry.uuid == mast),
+            "the second node's mesh is listed: {:?}",
+            state_now
+                .asset_entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert_ne!(state_now.asset_epoch, 1, "the browser is told to rescan");
+    }
+
+    /// **A glTF that could not be read when it was indexed lists its parts
+    /// once it is saved whole**: an exporter caught mid-write leaves a file
+    /// the index lists alone, without parts; the save that completes it is
+    /// a modification, and its parts must appear all the same.
+    #[test]
+    fn a_gltf_saved_whole_after_a_broken_write_lists_its_parts_after_the_pump() {
+        use std::sync::Mutex;
+        use std::time::{Duration, Instant};
+
+        use khora_sdk::EditorState;
+
+        use super::pump;
+        use crate::gltf_fixture::{GltfProject, SHIP_GLTF};
+
+        let half_written = &SHIP_GLTF[..SHIP_GLTF.len() / 2];
+        let project = GltfProject::with("hot-reload-broken-then-whole", &[(SHIP, half_written)]);
+        let ship = project.uuid(SHIP);
+        let scene = AssetUUID::sub_asset(ship, "scene");
+        let entries = collect_asset_entries(&project.vfs.lock().expect("the project"));
+        assert!(
+            entries.iter().any(|entry| entry.uuid == ship),
+            "the premise: the broken file is listed: {entries:?}"
+        );
+        assert!(
+            !entries.iter().any(|entry| entry.container == Some(ship)),
+            "the premise: the broken file has no parts: {entries:?}"
+        );
+        let state = Arc::new(Mutex::new(EditorState {
+            project_folder: Some(project.root.to_string_lossy().into_owned()),
+            asset_entries: entries,
+            asset_epoch: 1,
+            ..EditorState::default()
+        }));
+        // The watcher was armed when the project opened; give it a moment.
+        std::thread::sleep(Duration::from_millis(150));
+
+        std::fs::write(project.path(SHIP), SHIP_GLTF).expect("the file is saved whole");
+        let listed = |state: &Arc<Mutex<EditorState>>| {
+            state
+                .lock()
+                .expect("the editor state")
+                .asset_entries
+                .iter()
+                .any(|entry| entry.uuid == scene)
+        };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline && !listed(&state) {
+            pump(&project.vfs, &state);
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        assert!(
+            listed(&state),
+            "the glTF's scene is listed once the file is whole: {:?}",
+            state
+                .lock()
+                .expect("the editor state")
+                .asset_entries
+                .iter()
+                .map(|entry| entry.name.clone())
+                .collect::<Vec<_>>()
+        );
     }
 }

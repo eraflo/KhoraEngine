@@ -139,8 +139,12 @@ impl Instance {
 fn spawn_turrets(project: &Project, world: &mut GameWorld, count: usize) -> Vec<Instance> {
     let state = Arc::new(Mutex::new(EditorState::default()));
     for _ in 0..count {
-        state.lock().expect("the editor state").pending_prefab_spawn =
-            Some((TURRET.to_owned(), None));
+        let turret = project
+            .vfs
+            .lock()
+            .expect("the project")
+            .resolve_uuid(TURRET);
+        state.lock().expect("the editor state").pending_prefab_spawn = Some((turret, None));
         process_pending_prefab_spawn(Some(&project.vfs), world, &state);
     }
     let instances: Vec<Instance> = world
@@ -514,8 +518,12 @@ fn a_nested_live_instance_takes_an_applied_component() {
         .mark_authored(tower)
         .expect("authored");
     let state = Arc::new(Mutex::new(EditorState::default()));
-    state.lock().expect("the editor state").pending_prefab_spawn =
-        Some((TURRET.to_owned(), Some(tower)));
+    let turret = project
+        .vfs
+        .lock()
+        .expect("the project")
+        .resolve_uuid(TURRET);
+    state.lock().expect("the editor state").pending_prefab_spawn = Some((turret, Some(tower)));
     process_pending_prefab_spawn(Some(&project.vfs), &mut made, &state);
     state
         .lock()
@@ -525,8 +533,12 @@ fn a_nested_live_instance_takes_an_applied_component() {
 
     let mut world = GameWorld::new();
     let turret = spawn_turrets(&project, &mut world, 1).remove(0);
-    state.lock().expect("the editor state").pending_prefab_spawn =
-        Some(("prefabs/tower.kprefab".to_owned(), None));
+    let tower_prefab = project
+        .vfs
+        .lock()
+        .expect("the project")
+        .resolve_uuid("prefabs/tower.kprefab");
+    state.lock().expect("the editor state").pending_prefab_spawn = Some((tower_prefab, None));
     process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
     let nested = world
         .iter_entities()

@@ -225,3 +225,91 @@ pub fn paint_asset_tile(
         hovered: interaction.hovered,
     }
 }
+
+/// Paints the disclosure chip of a tile that holds parts (a glTF file's
+/// scenes, meshes, materials, textures) and reports whether it was clicked.
+///
+/// A neutral pill on the thumbnail's bottom-left corner — the problems
+/// badge holds the top-right, the format glyph the bottom-right: a chevron
+/// (right while closed, down while open) and how many parts. Drawn after
+/// the tile, so the chip takes the click and the tile keeps the rest.
+pub fn paint_parts_chip(
+    ui: &mut dyn UiBuilder,
+    id_salt: &str,
+    tile_origin: [f32; 2],
+    tile_width: f32,
+    count: usize,
+    open: bool,
+    theme: &UiTheme,
+) -> bool {
+    let thumb_x = tile_origin[0] + 4.0;
+    let thumb_y = tile_origin[1] + 4.0;
+    let thumb_h = tile_width - 8.0;
+    let text = count.to_string();
+    let digits = ui.measure_text(&text, 10.0, FontFamilyHint::Monospace)[0];
+    let cw = 5.0 + 10.0 + 3.0 + digits + 6.0;
+    let ch = 16.0;
+    let cx = thumb_x + 4.0;
+    let cy = thumb_y + thumb_h - ch - 4.0;
+    let interaction = ui.interact_rect(id_salt, [cx, cy, cw, ch]);
+    ui.tooltip_for_last(if open {
+        "Hide its parts"
+    } else {
+        "Show its parts"
+    });
+    let stroke = if interaction.hovered {
+        theme.text_dim
+    } else {
+        with_alpha(theme.separator, 0.65)
+    };
+    ui.paint_rect_filled([cx, cy], [cw, ch], theme.surface, 8.0);
+    ui.paint_rect_stroke([cx, cy], [cw, ch], stroke, 8.0, 1.0);
+    paint::icon(
+        ui,
+        [cx + 5.0, cy + 3.0],
+        if open {
+            Icon::ChevronDown
+        } else {
+            Icon::ChevronRight
+        },
+        10.0,
+        theme.text_dim,
+    );
+    ui.paint_text_styled(
+        [cx + 5.0 + 10.0 + 3.0, cy + 2.5],
+        &text,
+        10.0,
+        theme.text,
+        FontFamilyHint::Monospace,
+        TextAlign::Left,
+    );
+    interaction.clicked
+}
+
+/// Paints the quiet band an open file and its parts sit on, one rect per
+/// grid row the run spans: `tiles` are the run's tile rects, in grid order.
+pub fn paint_parts_band(ui: &mut dyn UiBuilder, tiles: &[[f32; 4]], theme: &UiTheme) {
+    let mut row: Option<[f32; 4]> = None;
+    let flush = |ui: &mut dyn UiBuilder, rect: [f32; 4]| {
+        let pad = 3.0;
+        ui.paint_rect_filled(
+            [rect[0] - pad, rect[1] - pad],
+            [rect[2] + 2.0 * pad, rect[3] + 2.0 * pad],
+            with_alpha(theme.surface_elevated, 0.28),
+            8.0,
+        );
+    };
+    for &[x, y, w, h] in tiles {
+        row = match row {
+            Some([rx, ry, _, rh]) if (ry - y).abs() < 0.5 => Some([rx, ry, x + w - rx, rh]),
+            Some(done) => {
+                flush(ui, done);
+                Some([x, y, w, h])
+            }
+            None => Some([x, y, w, h]),
+        };
+    }
+    if let Some(done) = row {
+        flush(ui, done);
+    }
+}

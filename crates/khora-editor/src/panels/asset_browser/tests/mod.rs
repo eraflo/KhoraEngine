@@ -16,3 +16,4 @@
 
 mod new_script;
 mod reveal;
+mod sub_assets;

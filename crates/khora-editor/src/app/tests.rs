@@ -139,8 +139,12 @@ mod prefab_view {
         let project = project("prefab-view-reparent");
         let mut world = GameWorld::new();
         let state = Arc::new(Mutex::new(EditorState::default()));
-        state.lock().expect("the editor state").pending_prefab_spawn =
-            Some(("prefabs/turret.kprefab".to_owned(), None));
+        let turret = project
+            .vfs
+            .lock()
+            .expect("the project")
+            .resolve_uuid("prefabs/turret.kprefab");
+        state.lock().expect("the editor state").pending_prefab_spawn = Some((turret, None));
         process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
         let root = world
             .iter_entities()
@@ -178,8 +182,12 @@ mod prefab_view {
         let project = project("prefab-view-kept");
         let mut world = GameWorld::new();
         let state = Arc::new(Mutex::new(EditorState::default()));
-        state.lock().expect("the editor state").pending_prefab_spawn =
-            Some(("prefabs/turret.kprefab".to_owned(), None));
+        let turret = project
+            .vfs
+            .lock()
+            .expect("the project")
+            .resolve_uuid("prefabs/turret.kprefab");
+        state.lock().expect("the editor state").pending_prefab_spawn = Some((turret, None));
         process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
         let root = world
             .iter_entities()

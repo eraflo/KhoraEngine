@@ -16,26 +16,12 @@
 
 use std::sync::{Arc, Mutex};
 
+use khora_sdk::khora_core::asset::AssetUUID;
 use khora_sdk::prelude::ecs::*;
-use khora_sdk::{EditorState, GameWorld};
+use khora_sdk::{AssetSource, EditorState, GameWorld};
 
 use crate::project_vfs::ProjectVfs;
 use crate::{hot_reload, ops};
-
-/// Resolves a forward-slash relative asset path to its UUID through the open
-/// project's identity registry, falling back to the path-derived default when
-/// no project is open.
-pub(super) fn resolve_asset_uuid(
-    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
-    rel_fwd: &str,
-) -> khora_sdk::khora_core::asset::AssetUUID {
-    if let Some(pvfs_arc) = project_vfs {
-        if let Ok(pvfs) = pvfs_arc.lock() {
-            return pvfs.resolve_uuid(rel_fwd);
-        }
-    }
-    ProjectVfs::uuid_for_rel_path(rel_fwd)
-}
 
 /// Recomputes the asset-browser cache (entries + directories) after a file
 /// operation and bumps the epoch so the panel rescans its flattened view.
@@ -153,11 +139,12 @@ pub fn process_pending_spawn_mesh_asset(
         Ok(mut s) => s.pending_spawn_mesh_asset.take(),
         Err(_) => None,
     };
-    let Some((rel, point, parent)) = pending else {
+    let Some((uuid, point, parent)) = pending else {
         return;
     };
-    let uuid = resolve_asset_uuid(project_vfs, &rel);
-    let entity = ops::spawn_mesh_asset(world, uuid, point, &rel);
+    let name = indexed_asset(project_vfs, uuid)
+        .map_or_else(|| "Mesh".to_owned(), |asset| asset.display_name);
+    let entity = ops::spawn_mesh_asset(world, uuid, point, &name);
     // Parent under the hierarchy row it was dropped on, if any.
     if let Some(parent) = parent {
         world.set_parent(entity, Some(parent));
@@ -165,7 +152,38 @@ pub fn process_pending_spawn_mesh_asset(
     if let Ok(mut s) = editor_state.lock() {
         s.select(entity);
     }
-    log::info!("Spawned mesh '{rel}' as entity {entity:?} at {point:?}");
+    log::info!("Spawned mesh '{name}' as entity {entity:?} at {point:?}");
+}
+
+/// An asset of the open project, as the editor names and dispatches it.
+struct IndexedAsset {
+    /// The index type (`"mesh"`, `"material"`, `"texture"`…).
+    type_name: String,
+    /// The file's stem, followed by the part's label for a part of a file
+    /// (`ship mesh1/prim0`).
+    display_name: String,
+}
+
+/// `uuid` as the open project's index knows it, if it does.
+fn indexed_asset(
+    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    uuid: AssetUUID,
+) -> Option<IndexedAsset> {
+    let pvfs = project_vfs?.lock().ok()?;
+    let metadata = pvfs.asset_service.index().get_metadata(&uuid)?;
+    let stem = metadata
+        .source_path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let display_name = match metadata.variants.get("default") {
+        Some(AssetSource::Sub { label, .. }) => format!("{stem} {label}"),
+        _ => stem,
+    };
+    Some(IndexedAsset {
+        type_name: metadata.asset_type_name.clone(),
+        display_name,
+    })
 }
 
 /// Drains [`EditorState::pending_assign_texture`]: assigns a dropped texture or
@@ -180,27 +198,31 @@ pub fn process_pending_assign_texture(
         Ok(mut s) => s.pending_assign_texture.take(),
         Err(_) => None,
     };
-    let Some((rel, entity)) = pending else {
+    let Some((uuid, entity)) = pending else {
         return;
     };
-    let uuid = resolve_asset_uuid(project_vfs, &rel);
-
-    let ext = rel.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    match ext.as_str() {
-        "kmat" | "mat" => {
+    let Some(asset) = indexed_asset(project_vfs, uuid) else {
+        log::warn!(
+            "Drop of asset {uuid} on entity {entity:?} ignored: the project has no such asset"
+        );
+        return;
+    };
+    let name = &asset.display_name;
+    match asset.type_name.as_str() {
+        "material" => {
             world.add_component(entity, MaterialRef::Asset(uuid));
-            log::info!("Assigned material '{rel}' to entity {entity:?}");
+            log::info!("Assigned material '{name}' to entity {entity:?}");
         }
-        "png" | "jpg" | "jpeg" | "tga" | "bmp" | "hdr" => {
+        "texture" => {
             let std_mat = khora_sdk::prelude::materials::StandardMaterial {
                 base_color_texture: Some(uuid),
                 ..Default::default()
             };
             world.add_component(entity, MaterialRef::inline(Box::new(std_mat)));
-            log::info!("Assigned texture '{rel}' to entity {entity:?} (base color)");
+            log::info!("Assigned texture '{name}' to entity {entity:?} (base color)");
         }
-        _ => {
-            log::warn!("Drop of '{rel}' on entity {entity:?} ignored: not a texture or material")
-        }
+        other => log::warn!(
+            "Drop of '{name}' on entity {entity:?} ignored: a {other}, not a texture or material"
+        ),
     }
 }

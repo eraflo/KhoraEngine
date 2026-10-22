@@ -337,6 +337,9 @@ struct PrefabView {
     key: ViewKey,
     found: Option<(InstanceOf, World)>,
     path: Option<String>,
+    /// Whether the prefab is a part of an imported file, which takes no
+    /// changes.
+    read_only: bool,
 }
 
 /// Sees the inspected entity against its instance's prefab, if it belongs
@@ -370,14 +373,27 @@ fn attach_prefab_view(
                 .ok()
                 .map(|scratch| (instance, scratch))
         });
-        let path = found
+        let (path, read_only) = found
             .as_ref()
-            .and_then(|(instance, _)| pvfs.lock().ok()?.rel_path_of(instance.prefab));
-        *view = Some(PrefabView { key, found, path });
+            .and_then(|(instance, _)| {
+                let vfs = pvfs.lock().ok()?;
+                Some((
+                    vfs.rel_path_of(instance.prefab),
+                    vfs.is_part_of_a_file(instance.prefab),
+                ))
+            })
+            .unwrap_or((None, false));
+        *view = Some(PrefabView {
+            key,
+            found,
+            path,
+            read_only,
+        });
     }
     let Some(PrefabView {
         found: Some((instance, scratch)),
         path,
+        read_only,
         ..
     }) = view.as_ref()
     else {
@@ -386,6 +402,7 @@ fn attach_prefab_view(
     inspected.prefab = inspect_against(world.inner_world(), inspected.entity, instance, scratch)
         .map(|mut prefab| {
             prefab.prefab_path = path.clone();
+            prefab.read_only = *read_only;
             prefab
         });
 }

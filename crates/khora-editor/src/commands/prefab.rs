@@ -190,21 +190,12 @@ pub fn process_pending_prefab_spawn(
         Ok(mut s) => s.pending_prefab_spawn.take(),
         Err(_) => None,
     };
-    let Some((rel, parent)) = pending else {
+    let Some((prefab, parent)) = pending else {
         return;
     };
-
     let Some(pvfs_arc) = project_vfs else {
-        log::warn!("Prefab spawn requested ('{}') but no project is open", rel);
+        log::warn!("Prefab spawn requested ({prefab}) but no project is open");
         return;
-    };
-
-    let prefab = {
-        let Ok(pvfs) = pvfs_arc.lock() else {
-            log::error!("Project VFS mutex poisoned");
-            return;
-        };
-        pvfs.resolve_uuid(&rel)
     };
 
     // Linked: the instance follows its prefab where it was not overridden.
@@ -215,13 +206,12 @@ pub fn process_pending_prefab_spawn(
                 world.set_parent(new_root, Some(parent));
             }
             log::info!(
-                "Prefab '{}' instantiated (root entity index={}{})",
-                rel,
+                "Prefab {prefab} instantiated (root entity index={}{})",
                 new_root.index,
                 if parent.is_some() { ", parented" } else { "" }
             );
         }
-        Err(e) => log::error!("Failed to instantiate prefab '{}': {:?}", rel, e),
+        Err(e) => log::error!("Failed to instantiate prefab {prefab}: {e:?}"),
     }
 }
 
@@ -251,6 +241,20 @@ pub fn process_pending_prefab_apply(
         log::warn!("Apply to prefab ignored: the entity is no part of a prefab instance");
         return;
     };
+    // An imported file (a glTF scene) is never written: the instance keeps
+    // its changes.
+    let read_only = pvfs_arc
+        .lock()
+        .map(|vfs| vfs.is_part_of_a_file(instance.prefab))
+        .unwrap_or(true);
+    if read_only {
+        log::warn!(
+            "Apply to prefab ignored: {} is imported from another file and takes no changes; \
+             they stay on the instance",
+            instance.prefab
+        );
+        return;
+    }
     let what = match scope {
         PrefabApplyScope::Field { type_name, path } => PrefabApply::Field {
             entity,

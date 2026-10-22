@@ -168,6 +168,10 @@ impl AssetBrowserPanel {
                     self.rename_focus_pending = true;
                 }
                 FolderAction::Move { idx, dest } => {
+                    if !self.file_ops_offered(idx) {
+                        log::info!("Asset browser: a part moves with its file, not on its own");
+                        continue;
+                    }
                     if let Some(src) = self.flat.get(idx).map(|a| a.rel_path.clone()) {
                         if let Ok(mut state) = self.state.lock() {
                             state.pending_move_asset = Some((src.clone(), dest.clone()));

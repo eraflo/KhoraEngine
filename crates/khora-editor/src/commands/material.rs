@@ -19,7 +19,6 @@ use std::sync::{Arc, Mutex};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::{EditorState, GameWorld};
 
-use super::asset_ops::resolve_asset_uuid;
 use crate::project_vfs::ProjectVfs;
 
 /// Drains [`EditorState::pending_save_as_material`]: serializes the
@@ -116,10 +115,10 @@ pub fn process_pending_save_as_material(
 }
 
 /// Drains [`EditorState::pending_assign_material`]: sets
-/// `MaterialRef::Asset(uuid)` on every selected entity, where `uuid` is
-/// derived from the chosen `.kmat`'s forward-slash relative path.
+/// `MaterialRef::Asset(uuid)` on every selected entity, `uuid` being the
+/// chosen material's identity.
 pub fn process_pending_assign_material(
-    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
+    _project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
 ) {
@@ -131,19 +130,16 @@ pub fn process_pending_assign_material(
         }
         Err(_) => return,
     };
-    let Some(rel) = rel else {
+    let Some(uuid) = rel else {
         return;
     };
     if targets.is_empty() {
-        log::warn!("Assign material '{rel}' ignored: no entity selected");
+        log::warn!("Assign material {uuid} ignored: no entity selected");
         return;
     }
-
-    // Registry-aware so a renamed `.kmat` resolves to its frozen UUID.
-    let uuid = resolve_asset_uuid(project_vfs, &rel);
     for entity in targets {
         world.add_component(entity, MaterialRef::Asset(uuid));
-        log::info!("Assigned material '{rel}' to entity {entity:?}");
+        log::info!("Assigned material {uuid} to entity {entity:?}");
     }
 }
 

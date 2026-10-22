@@ -36,6 +36,7 @@ pub mod handlers;
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
+use khora_sdk::khora_core::asset::AssetUUID;
 
 use crate::widgets::tile::AssetTileKind;
 use khora_tool_ui::widgets::with_alpha;
@@ -75,6 +76,11 @@ struct FlatAsset {
     folder: String,
     asset_type: AssetTileKind,
     type_name: String,
+    /// The asset's identity, as its index entry gives it.
+    uuid: AssetUUID,
+    /// The file this asset is a part of (a glTF's mesh, material…), if it
+    /// is one: a part is no tile of its folder, it follows its file.
+    container: Option<AssetUUID>,
 }
 
 pub struct AssetBrowserPanel {
@@ -119,6 +125,11 @@ pub struct AssetBrowserPanel {
     grid_scroll: khora_tool_ui::widgets::ScrollState,
     /// The script being named on its placeholder tile, not yet written.
     new_script: Option<new_script::NewScript>,
+    /// The files whose parts the grid shows after their tile. Every file
+    /// starts closed.
+    open_containers: std::collections::HashSet<AssetUUID>,
+    /// The parts of each file, as indices into `flat`, rebuilt with it.
+    parts_by_file: std::collections::HashMap<AssetUUID, Vec<usize>>,
 }
 
 impl AssetBrowserPanel {
@@ -142,6 +153,8 @@ impl AssetBrowserPanel {
             confirm_delete: None,
             grid_scroll: khora_tool_ui::widgets::ScrollState::default(),
             new_script: None,
+            open_containers: std::collections::HashSet::new(),
+            parts_by_file: std::collections::HashMap::new(),
         }
     }
 
@@ -200,7 +213,15 @@ impl AssetBrowserPanel {
                 s.asset_epoch,
                 s.asset_entries
                     .iter()
-                    .map(|e| (e.name.clone(), e.asset_type.clone(), e.source_path.clone()))
+                    .map(|e| {
+                        (
+                            e.name.clone(),
+                            e.asset_type.clone(),
+                            e.source_path.clone(),
+                            e.uuid,
+                            e.container,
+                        )
+                    })
                     .collect::<Vec<_>>(),
                 s.asset_dirs.clone(),
             ),
@@ -210,6 +231,7 @@ impl AssetBrowserPanel {
         if project_folder.is_none() {
             if self.last_epoch.is_some() || !self.flat.is_empty() {
                 self.flat.clear();
+                self.parts_by_file.clear();
                 self.asset_dirs.clear();
                 self.last_epoch = None;
                 self.selected_index = None;
@@ -239,7 +261,7 @@ impl AssetBrowserPanel {
 
         self.flat = entries
             .into_iter()
-            .map(|(name, asset_type_name, rel_path)| {
+            .map(|(name, asset_type_name, rel_path, uuid, container)| {
                 let folder = rel_path
                     .rfind('/')
                     .map(|p| rel_path[..p].to_string())
@@ -250,9 +272,18 @@ impl AssetBrowserPanel {
                     folder,
                     asset_type: tile_kind_for(&asset_type_name),
                     type_name: asset_type_name,
+                    uuid,
+                    container,
                 }
             })
             .collect();
+
+        self.parts_by_file.clear();
+        for (idx, asset) in self.flat.iter().enumerate() {
+            if let Some(file) = asset.container {
+                self.parts_by_file.entry(file).or_default().push(idx);
+            }
+        }
 
         if self.current_folder.is_none() {
             self.current_folder = Some(String::new());
@@ -270,7 +301,12 @@ impl AssetBrowserPanel {
         let Some(path) = state.pending_reveal_asset.take() else {
             return;
         };
-        let Some(i) = self.flat.iter().position(|asset| asset.rel_path == path) else {
+        // The parts of a file share its path: the path reveals the file.
+        let Some(i) = self
+            .flat
+            .iter()
+            .position(|asset| asset.container.is_none() && asset.rel_path == path)
+        else {
             log::debug!("Asset browser: nothing to reveal at '{path}'");
             return;
         };
@@ -289,6 +325,94 @@ impl AssetBrowserPanel {
         state.selected_asset = Some(i);
         state.clear_selection();
         state.inspected = None;
+    }
+
+    /// The tiles of the grid, in order, as indices into `flat` (and so into
+    /// `EditorState::asset_entries`): the assets of the current folder that
+    /// the kind filter and the search keep. A sub-asset is no tile of its
+    /// folder: it follows its file's tile, and only while that file is
+    /// expanded.
+    ///
+    /// The kind filter and the search see a file's parts too: a file shows
+    /// when it or one of its parts is kept, and opened it lists only the
+    /// parts kept (all of them when the search names the file itself).
+    fn grid_tiles(&self) -> Vec<usize> {
+        let filter_text = self.search_filter.to_lowercase();
+        let current_folder = self.current_folder.clone().unwrap_or_default();
+        let kind_kept = |asset: &FlatAsset| {
+            self.selected_filter
+                .is_none_or(|kind| asset.asset_type == kind)
+        };
+        let named = |asset: &FlatAsset| {
+            filter_text.is_empty() || asset.name.to_lowercase().contains(&filter_text)
+        };
+        let mut tiles = Vec::new();
+        for (idx, asset) in self.flat.iter().enumerate() {
+            if asset.container.is_some() {
+                continue;
+            }
+            // When a folder is selected, only show assets that live *within*
+            // it (recursive — `assets/props` matches `assets/props/crates/a.png`).
+            let folder_kept = current_folder.is_empty()
+                || asset.folder == current_folder
+                || asset.folder.starts_with(&format!("{current_folder}/"));
+            if !folder_kept {
+                continue;
+            }
+            let file_named = named(asset);
+            let parts: Vec<usize> = self
+                .parts_of(idx)
+                .iter()
+                .copied()
+                .filter(|&part| kind_kept(&self.flat[part]))
+                .filter(|&part| file_named || named(&self.flat[part]))
+                .collect();
+            let file_kept = kind_kept(asset) && file_named;
+            if !file_kept && parts.is_empty() {
+                continue;
+            }
+            tiles.push(idx);
+            if self.open_containers.contains(&asset.uuid) {
+                tiles.extend(parts);
+            }
+        }
+        tiles
+    }
+
+    /// The parts of the file at `flat[idx]`, in index order.
+    fn parts_of(&self, idx: usize) -> &[usize] {
+        self.flat
+            .get(idx)
+            .and_then(|asset| self.parts_by_file.get(&asset.uuid))
+            .map_or(&[], Vec::as_slice)
+    }
+
+    /// How many sub-assets the file at `flat[idx]` holds — the count its
+    /// disclosure toggle shows. `0` for an asset holding none.
+    fn sub_count(&self, idx: usize) -> usize {
+        self.parts_of(idx).len()
+    }
+
+    /// Opens or closes the file at `flat[idx]`: its sub-assets follow its
+    /// tile in the grid while it is open. Every file starts closed.
+    fn toggle_container(&mut self, idx: usize) {
+        if self.sub_count(idx) == 0 {
+            return;
+        }
+        let Some(file) = self.flat.get(idx).map(|asset| asset.uuid) else {
+            return;
+        };
+        if !self.open_containers.remove(&file) {
+            self.open_containers.insert(file);
+        }
+    }
+
+    /// Whether the tile at `flat[idx]` offers the file operations — rename,
+    /// move, delete, duplicate. A sub-asset does not: it follows its file.
+    fn file_ops_offered(&self, idx: usize) -> bool {
+        self.flat
+            .get(idx)
+            .is_some_and(|asset| asset.container.is_none())
     }
 
     /// Resolves a forward-slash path under `assets/` to an absolute OS path,
@@ -466,8 +590,8 @@ impl AssetBrowserPanel {
             }
             ActivationKind::SpawnPrefab { abs_path: _ } => {
                 if let Ok(mut state) = self.state.lock() {
-                    state.pending_prefab_spawn = Some((asset.rel_path.clone(), None));
-                    log::info!("Asset browser: spawning prefab '{}'", asset.rel_path);
+                    state.pending_prefab_spawn = Some((asset.uuid, None));
+                    log::info!("Asset browser: spawning prefab '{}'", asset.name);
                 }
             }
             ActivationKind::OpenExternal { abs_path } => match if asset.type_name == "script" {

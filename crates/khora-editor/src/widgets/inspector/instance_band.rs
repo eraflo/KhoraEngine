@@ -91,6 +91,10 @@ pub fn render_instance_band(
     // consequential to sit behind an icon nobody can read.
     let mut right = x + width - 10.0;
     for (label, apply) in [("Apply all", true), ("Revert all", false)] {
+        // An imported prefab takes no changes: nothing to apply to.
+        if apply && prefab.read_only {
+            continue;
+        }
         let w = ui.measure_text(label, size, FontFamilyHint::Proportional)[0] + 14.0;
         let rect = [right - w, y + 5.0, w, BAND_H - 10.0];
         right -= w + 4.0;
@@ -131,9 +135,55 @@ fn select_prefab_asset(prefab: &InspectedPrefab, state: &mut EditorState) {
     };
     state.selection.clear();
     state.inspected = None;
-    state.selected_asset = state
-        .asset_entries
-        .iter()
-        .position(|entry| entry.source_path.replace('\\', "/").ends_with(&path));
+    // The parts of a file share its path; the link selects the file.
+    state.selected_asset = state.asset_entries.iter().position(|entry| {
+        entry.container.is_none() && entry.source_path.replace('\\', "/").ends_with(&path)
+    });
     state.inspected_asset_path = Some(path);
+}
+
+#[cfg(test)]
+mod tests {
+    use khora_sdk::editor_ui::{EditorState, InspectedPrefab};
+    use khora_sdk::khora_core::asset::AssetUUID;
+    use khora_sdk::prelude::ecs::EntityId;
+
+    use super::select_prefab_asset;
+    use crate::gltf_fixture::{file_entry, part_entry};
+
+    const SHIP: &str = "models/ship.gltf";
+
+    /// **The band's link to a glTF scene selects the file's tile, never one
+    /// of its parts** — though the parts are found at the file's path, and
+    /// listed before it.
+    #[test]
+    fn the_link_to_a_gltf_scene_selects_the_files_tile_not_a_part() {
+        let mut state = EditorState {
+            asset_entries: vec![
+                part_entry(SHIP, "scene", "prefab"),
+                part_entry(SHIP, "mesh0/prim0", "mesh"),
+                file_entry(SHIP, "mesh"),
+            ],
+            ..EditorState::default()
+        };
+        let prefab = InspectedPrefab {
+            root: EntityId {
+                index: 1,
+                generation: 1,
+            },
+            prefab: AssetUUID::sub_asset(AssetUUID::new_v5(SHIP), "scene"),
+            prefab_path: Some(SHIP.to_owned()),
+            is_root: true,
+            components: Vec::new(),
+            removed: Vec::new(),
+            prefab_json: Vec::new(),
+            prefab_declared: Vec::new(),
+            read_only: false,
+        };
+
+        select_prefab_asset(&prefab, &mut state);
+
+        assert_eq!(state.selected_asset, Some(2), "the file's tile");
+        assert_eq!(state.inspected_asset_path.as_deref(), Some(SHIP));
+    }
 }

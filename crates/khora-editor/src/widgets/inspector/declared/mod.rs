@@ -189,9 +189,11 @@ pub fn render_declared_cards(
                 .components
                 .iter()
                 .any(|component| component.type_name == card.name && component.added),
+            can_apply: !prefab.read_only,
         });
         let icon = icon_for_domain_tag(Some(card.domain.index() as u8));
-        let mut marks = Marks::new(&overridden);
+        let mut marks =
+            Marks::new(&overridden).read_only(prefab.is_some_and(|prefab| prefab.read_only));
         let mut changed: Vec<(String, ScriptValue)> = Vec::new();
         let action = render_card(
             ui,

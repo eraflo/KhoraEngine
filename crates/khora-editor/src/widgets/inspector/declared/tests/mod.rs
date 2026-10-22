@@ -101,6 +101,7 @@ fn lantern_prefab(added: bool) -> InspectedPrefab {
                 ],
             )]
         },
+        read_only: false,
     }
 }
 

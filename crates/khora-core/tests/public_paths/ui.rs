@@ -176,7 +176,13 @@ fn panel_location_variants(x: &khora_core::ui::editor::panel::PanelLocation) {
 }
 
 fn asset_entry_fields(x: &khora_core::ui::editor::state::AssetEntry) {
-    let _ = (&x.name, &x.asset_type, &x.source_path, &x.uuid);
+    let _ = (
+        &x.name,
+        &x.asset_type,
+        &x.source_path,
+        &x.uuid,
+        &x.container,
+    );
 }
 
 fn component_json_fields(x: &khora_core::ui::editor::state::ComponentJson) {
@@ -315,6 +321,7 @@ fn property_edit_variants(x: &khora_core::ui::editor::state::PropertyEdit) {
 }
 
 fn inspected_prefab_fields(x: &khora_core::ui::editor::state::InspectedPrefab) {
+    let _ = &x.read_only;
     let _ = (
         &x.root,
         &x.prefab,

@@ -15,6 +15,7 @@
 //! Play and Stop through the editor's own commands.
 
 mod create_script;
+mod gltf_assets;
 mod play_edits_of_declared_fields;
 mod prefab;
 mod prefab_apply;

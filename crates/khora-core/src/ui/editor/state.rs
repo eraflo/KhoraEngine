@@ -254,13 +254,13 @@ pub struct EditorState {
     /// no file dialog and reuses the entity name as the file stem when
     /// the path ends in `/`.
     pub pending_save_as_prefab_at: Option<(EntityId, String)>,
-    /// Set when the user drops a `.kprefab` tile onto the viewport / hierarchy
-    /// (or activates one from the asset browser). Holds the forward-slash
-    /// relative path under `<project>/assets/` plus an optional parent entity
-    /// (the hierarchy row it was dropped on) so the instantiated root is
-    /// parented under it. Consumed next frame to load the recipe via the asset
-    /// service and call `instantiate_subtree`.
-    pub pending_prefab_spawn: Option<(String, Option<EntityId>)>,
+    /// Set when the user drops a prefab onto the viewport / hierarchy (or
+    /// activates one from the asset browser): a `.kprefab`, a glTF scene
+    /// sub-asset, or a glTF file standing for its default scene. Holds the
+    /// prefab's identity plus an optional parent entity (the hierarchy row it
+    /// was dropped on) so the instantiated root is parented under it. Consumed
+    /// next frame to instantiate the prefab as a linked instance.
+    pub pending_prefab_spawn: Option<(AssetUUID, Option<EntityId>)>,
     /// Set when the user applies an override of the inspected entity to its
     /// prefab: the entity and what of it is applied. Consumed next frame:
     /// the prefab's file is rewritten through the VFS and reindexed.
@@ -280,10 +280,10 @@ pub struct EditorState {
     /// shared, reloadable asset.
     pub pending_save_as_material: Option<(EntityId, String)>,
     /// Set when the user assigns a `.kmat` from the asset browser to the
-    /// current selection. Holds the forward-slash relative path of the
-    /// `.kmat` under `<project>/assets/`. Consumed next frame: each
-    /// selected entity's `MaterialRef` is set to `Asset(uuid)`.
-    pub pending_assign_material: Option<String>,
+    /// current selection. Holds the material's identity — a `.kmat`, or a
+    /// material inside another file, which a path cannot name. Consumed next
+    /// frame: each selected entity's `MaterialRef` is set to `Asset(uuid)`.
+    pub pending_assign_material: Option<AssetUUID>,
 
     // ── Asset explorer: file operations & scene drop ───
     /// Every directory under `assets/` (forward-slash, relative), so the asset
@@ -309,14 +309,17 @@ pub struct EditorState {
     /// Create an Ergon script: `(rel_path, source)`, forward-slash under
     /// `assets/`. Never overwrites a file. Consumed next frame.
     pub pending_create_script: Option<(String, String)>,
-    /// Spawn a mesh asset into the scene: `(rel_path, [x,y,z] world point,
-    /// optional parent entity)`. Set by dragging a mesh tile onto the viewport
-    /// (parent `None`) or a hierarchy row (parent = that entity); drained into a
-    /// `MeshRef::Asset` entity spawn, parented under the target when present.
-    pub pending_spawn_mesh_asset: Option<(String, [f32; 3], Option<EntityId>)>,
+    /// Spawn a mesh asset into the scene: `(mesh identity, [x,y,z] world
+    /// point, optional parent entity)` — a mesh file or a mesh sub-asset. Set
+    /// by dragging a mesh tile onto the viewport (parent `None`) or a hierarchy
+    /// row (parent = that entity); drained into a `MeshRef::Asset` entity
+    /// spawn, parented under the target when present.
+    pub pending_spawn_mesh_asset: Option<(AssetUUID, [f32; 3], Option<EntityId>)>,
     /// Assign a texture/material asset to a specific entity (drag onto an entity
-    /// in the viewport): `(rel_path, entity)`.
-    pub pending_assign_texture: Option<(String, EntityId)>,
+    /// in the viewport): `(asset identity, entity)`. The asset's index type
+    /// decides: a material is referenced, a texture becomes the base colour of
+    /// an inline standard material.
+    pub pending_assign_texture: Option<(AssetUUID, EntityId)>,
 }
 
 impl EditorState {
@@ -458,6 +461,10 @@ pub struct InspectedPrefab {
     /// The prefab's fields of each declared component the prefab gives the
     /// entity, by component name — what a revert writes back.
     pub prefab_declared: Vec<(String, Vec<(String, crate::script::ScriptValue)>)>,
+    /// Whether the prefab takes no changes: it is a part of an imported file
+    /// (a glTF scene), which the editor never writes. Its instance's changes
+    /// stay on the instance; nothing is applied to it.
+    pub read_only: bool,
 }
 
 impl InspectedPrefab {
@@ -653,4 +660,8 @@ pub struct AssetEntry {
     /// The asset's identity, as the index resolved it through the project's
     /// identity registry — what a reference to it stores.
     pub uuid: AssetUUID,
+    /// The file holding this asset when it is a sub-asset (a glTF's mesh,
+    /// material, texture or scene): its `name` is then its label inside the
+    /// file and its `source_path` the file's. `None` for a file of its own.
+    pub container: Option<AssetUUID>,
 }

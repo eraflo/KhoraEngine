@@ -179,24 +179,10 @@ impl ProjectVfs {
         written
     }
 
-    /// Returns the UUID for a relative-path-with-forward-slashes string,
-    /// regardless of whether the path currently exists on disk. Used by
-    /// `scene_io` to look up scenes by canonical path even before a save
-    /// has triggered a reindex.
-    ///
-    /// This is the raw **path-derived default** and ignores the identity
-    /// registry. Prefer [`Self::resolve_uuid`] whenever the asset may have been
-    /// renamed (frozen identity); use this only for paths that cannot have a
-    /// frozen entry (e.g. a file being written for the very first time).
-    pub fn uuid_for_rel_path(rel_path_fwd_slash: &str) -> AssetUUID {
-        AssetUUID::new_v5(rel_path_fwd_slash)
-    }
-
     /// Resolves a forward-slash relative path to its UUID through the identity
     /// registry: the frozen identity if the asset has been renamed, otherwise
-    /// the `new_v5` default. This is the registry-aware counterpart to
-    /// [`Self::uuid_for_rel_path`] and must be used whenever an asset the user
-    /// could have renamed is looked up by path (scene / prefab / material load).
+    /// the `new_v5` default. It must be used whenever an asset the user could
+    /// have renamed is looked up by path (scene / prefab / material load).
     pub fn resolve_uuid(&self, rel_path_fwd_slash: &str) -> AssetUUID {
         self.registry.resolve(rel_path_fwd_slash)
     }
@@ -465,11 +451,29 @@ impl ProjectVfs {
         Some(rel.to_string_lossy().replace('\\', "/"))
     }
 
+    /// Whether `id` names a part of a file (a glTF's scene, mesh,
+    /// material…) rather than a file of its own: it shares its file's path
+    /// and is never written.
+    pub fn is_part_of_a_file(&self, id: AssetUUID) -> bool {
+        self.asset_service
+            .index()
+            .get_metadata(&id)
+            .and_then(|metadata| metadata.variants.get("default"))
+            .is_some_and(|source| matches!(source, khora_sdk::AssetSource::Sub { .. }))
+    }
+
     /// The record of the prefab known as `id`.
+    ///
+    /// A `.kprefab` file is read afresh each time, as the editor rewrites it
+    /// in place; a prefab inside another file (a glTF scene) is decoded
+    /// through the asset service, whose cache the file's hot reload clears.
     pub fn prefab_record(
         &mut self,
         id: AssetUUID,
     ) -> std::result::Result<khora_sdk::khora_data::scene::SceneRecord, String> {
+        if self.is_part_of_a_file(id) {
+            return khora_sdk::read_prefab(&mut self.asset_service, id);
+        }
         let bytes = self
             .asset_service
             .load_raw(&id)
@@ -714,6 +718,68 @@ mod tests {
                 written.display()
             );
         }
+        Ok(())
+    }
+
+    /// A glTF whose one scene shows node `Hull`: a triangle in the default
+    /// material.
+    const ONE_NODE_GLTF: &str = r#"{
+        "asset": { "version": "2.0" },
+        "scene": 0,
+        "scenes": [{ "nodes": [0] }],
+        "nodes": [{ "name": "Hull", "mesh": 0, "translation": [3.0, 0.0, 0.0] }],
+        "meshes": [{ "primitives": [{ "attributes": { "POSITION": 0 } }] }],
+        "buffers": [{
+            "byteLength": 36,
+            "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA"
+        }],
+        "bufferViews": [{ "buffer": 0, "byteLength": 36 }],
+        "accessors": [{
+            "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3",
+            "min": [0.0, 0.0, 0.0], "max": [1.0, 1.0, 0.0]
+        }]
+    }"#;
+
+    /// The editor's prefab source reads a glTF scene sub-asset as the scene's
+    /// record: its root, then the node, showing the file's sub-assets.
+    #[test]
+    fn a_gltf_scene_is_a_prefab_record_of_the_project() -> Result<()> {
+        use khora_sdk::khora_data::ecs::{MeshRef, Name};
+
+        let root = std::env::temp_dir().join(format!(
+            "khora-editor-project-gltf-prefab-{}",
+            std::process::id()
+        ));
+        if root.exists() {
+            std::fs::remove_dir_all(&root)?;
+        }
+        let models = root.join("assets").join("models");
+        std::fs::create_dir_all(&models)?;
+        std::fs::write(models.join("ship.gltf"), ONE_NODE_GLTF)?;
+
+        let file = AssetUUID::new_v5("models/ship.gltf");
+        let scene = AssetUUID::sub_asset(file, "scene");
+        let record = ProjectVfs::open(root.clone(), Arc::new(MetricsRegistry::new()))
+            .map(|mut pvfs| pvfs.prefab_record(scene));
+        let _ = std::fs::remove_dir_all(&root);
+        let record = record?.map_err(|e| anyhow::anyhow!("the scene reads: {e}"))?;
+
+        let mut world = khora_sdk::khora_data::ecs::World::new();
+        khora_sdk::khora_data::scene::apply(
+            &mut world,
+            &record,
+            khora_sdk::khora_data::scene::Identity::Keep,
+        )
+        .map_err(|e| anyhow::anyhow!("the record applies: {e}"))?;
+        assert_eq!(record.entities.len(), 2, "the root and Hull");
+        let hull = world
+            .iter_entities()
+            .find(|e| world.get::<Name>(*e).is_some_and(|n| n.as_str() == "Hull"))
+            .expect("Hull is in the record");
+        assert_eq!(
+            world.get::<MeshRef>(hull).cloned(),
+            Some(MeshRef::Asset(AssetUUID::sub_asset(file, "mesh0/prim0")))
+        );
         Ok(())
     }
 }

@@ -27,6 +27,8 @@ use khora_sdk::editor_ui::*;
 mod drop;
 mod panel;
 mod rows;
+#[cfg(test)]
+mod tests;
 
 const ROW_HEIGHT: f32 = 26.0;
 

@@ -22,6 +22,8 @@ use khora_sdk::editor_ui::*;
 use crate::camera::EditorCamera;
 
 mod overlays;
+#[cfg(test)]
+mod tests;
 
 pub struct ViewportPanel {
     handle: ViewportTextureHandle,
@@ -508,15 +510,18 @@ impl ViewportPanel {
         viewport_min: [f32; 2],
         viewport_size: [f32; 2],
     ) {
-        let rel = entry.source_path.clone();
-        match entry.asset_type.as_str() {
-            "prefab" => {
+        let request = match self.state.lock() {
+            Ok(state) => crate::ops::asset_drop(&state.asset_entries, entry),
+            Err(_) => return,
+        };
+        match request {
+            crate::ops::AssetDrop::Prefab(uuid) => {
                 if let Ok(mut state) = self.state.lock() {
-                    state.pending_prefab_spawn = Some((rel, None));
-                    log::info!("Viewport: prefab '{}' dropped — spawning", entry.name);
+                    state.pending_prefab_spawn = Some((uuid, None));
+                    log::info!("Viewport: '{}' dropped — instantiating", entry.name);
                 }
             }
-            "scene" => {
+            crate::ops::AssetDrop::Scene(rel) => {
                 let abs = self
                     .state
                     .lock()
@@ -542,10 +547,10 @@ impl ViewportPanel {
                     ),
                 }
             }
-            "mesh" => {
+            crate::ops::AssetDrop::Mesh(uuid) => {
                 let point = self.compute_drop_point(ui, viewport_min, viewport_size);
                 if let Ok(mut state) = self.state.lock() {
-                    state.pending_spawn_mesh_asset = Some((rel, point, None));
+                    state.pending_spawn_mesh_asset = Some((uuid, point, None));
                     log::info!(
                         "Viewport: mesh '{}' dropped at [{:.2}, {:.2}, {:.2}]",
                         entry.name,
@@ -555,11 +560,11 @@ impl ViewportPanel {
                     );
                 }
             }
-            "texture" | "material" => {
+            crate::ops::AssetDrop::Assign(uuid) => {
                 if let Ok(mut state) = self.state.lock() {
                     match state.selection.iter().copied().next() {
                         Some(target) => {
-                            state.pending_assign_texture = Some((rel, target));
+                            state.pending_assign_texture = Some((uuid, target));
                             log::info!(
                                 "Viewport: '{}' dropped — assigning to selected entity",
                                 entry.name
@@ -571,7 +576,10 @@ impl ViewportPanel {
                     }
                 }
             }
-            other => log::info!("Viewport: dropped asset type '{other}' is not droppable here"),
+            crate::ops::AssetDrop::Ignored => log::info!(
+                "Viewport: dropped asset type '{}' is not droppable here",
+                entry.asset_type
+            ),
         }
     }
 

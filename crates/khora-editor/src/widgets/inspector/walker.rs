@@ -52,6 +52,9 @@ pub enum FieldAction {
 #[derive(Default)]
 pub struct Marks<'a> {
     overridden: &'a [Vec<String>],
+    /// Whether a marked row offers to apply its field to the prefab: an
+    /// imported prefab takes no changes.
+    no_apply: bool,
     path: Vec<String>,
     /// What the marked rows were asked this frame.
     pub actions: Vec<FieldAction>,
@@ -62,9 +65,17 @@ impl<'a> Marks<'a> {
     pub fn new(overridden: &'a [Vec<String>]) -> Self {
         Self {
             overridden,
+            no_apply: false,
             path: Vec::new(),
             actions: Vec::new(),
         }
+    }
+
+    /// The same marks, offering no Apply when `read_only` — the prefab of
+    /// an imported file.
+    pub fn read_only(mut self, read_only: bool) -> Self {
+        self.no_apply = read_only;
+        self
     }
 
     /// Marks the row of the top-level field `field`, drawn from `top`, when
@@ -116,12 +127,13 @@ impl<'a> Marks<'a> {
             self.actions.push(FieldAction::Revert(path.clone()));
         }
         let actions = &mut self.actions;
+        let no_apply = self.no_apply;
         ui.context_menu_last(&mut |menu| {
             if menu.button("Revert to prefab") {
                 actions.push(FieldAction::Revert(path.clone()));
                 menu.close_menu();
             }
-            if menu.button("Apply to prefab") {
+            if !no_apply && menu.button("Apply to prefab") {
                 actions.push(FieldAction::Apply(path.clone()));
                 menu.close_menu();
             }

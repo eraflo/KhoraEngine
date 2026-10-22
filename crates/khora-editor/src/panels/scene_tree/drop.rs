@@ -16,6 +16,8 @@
 
 use khora_sdk::editor_ui::*;
 
+use crate::ops::AssetDrop;
+
 /// Routes an asset dropped onto the hierarchy to the right `pending_*` action,
 /// mirroring the viewport's drop dispatch. Meshes spawn at the world origin
 /// (a tree has no 3D drop point), prefabs instantiate, scenes load, and a
@@ -28,35 +30,23 @@ pub(super) fn dispatch_asset_drop(
     let Some(entry) = state.asset_entries.get(idx).cloned() else {
         return;
     };
-    let rel = entry.source_path.clone();
-    match entry.asset_type.as_str() {
-        "mesh" => {
+    let under = if target.is_some() {
+        " as child"
+    } else {
+        " at root"
+    };
+    match crate::ops::asset_drop(&state.asset_entries, &entry) {
+        AssetDrop::Mesh(uuid) => {
             // Dropped on a row → parent the new entity under it (Unity/Godot
             // convention); dropped on empty space → spawn at scene root.
-            state.pending_spawn_mesh_asset = Some((rel, [0.0, 0.0, 0.0], target));
-            log::info!(
-                "Hierarchy: mesh '{}' dropped — spawning{}",
-                entry.name,
-                if target.is_some() {
-                    " as child"
-                } else {
-                    " at root"
-                }
-            );
+            state.pending_spawn_mesh_asset = Some((uuid, [0.0, 0.0, 0.0], target));
+            log::info!("Hierarchy: mesh '{}' dropped — spawning{under}", entry.name);
         }
-        "prefab" => {
-            state.pending_prefab_spawn = Some((rel, target));
-            log::info!(
-                "Hierarchy: prefab '{}' dropped — instantiating{}",
-                entry.name,
-                if target.is_some() {
-                    " as child"
-                } else {
-                    " at root"
-                }
-            );
+        AssetDrop::Prefab(uuid) => {
+            state.pending_prefab_spawn = Some((uuid, target));
+            log::info!("Hierarchy: '{}' dropped — instantiating{under}", entry.name);
         }
-        "scene" => {
+        AssetDrop::Scene(rel) => {
             if let Some(pf) = state.project_folder.clone() {
                 let abs = std::path::Path::new(&pf)
                     .join("assets")
@@ -67,13 +57,21 @@ pub(super) fn dispatch_asset_drop(
                 log::warn!("Hierarchy: cannot load scene '{}' — no project folder", rel);
             }
         }
-        "texture" | "material" => match target.or_else(|| state.selection.iter().copied().next()) {
-            Some(entity) => {
-                state.pending_assign_texture = Some((rel, entity));
-                log::info!("Hierarchy: '{}' dropped — assigning to entity", entry.name);
+        AssetDrop::Assign(uuid) => {
+            match target.or_else(|| state.selection.iter().copied().next()) {
+                Some(entity) => {
+                    state.pending_assign_texture = Some((uuid, entity));
+                    log::info!("Hierarchy: '{}' dropped — assigning", entry.name);
+                }
+                None => log::warn!(
+                    "Hierarchy: drop '{}' on a row, or select an entity, to assign it",
+                    entry.name
+                ),
             }
-            None => log::warn!("Hierarchy: drop '{}' on an entity to assign it", entry.name),
-        },
-        other => log::info!("Hierarchy: asset type '{other}' is not droppable here"),
+        }
+        AssetDrop::Ignored => log::info!(
+            "Hierarchy: asset type '{}' is not droppable here",
+            entry.asset_type
+        ),
     }
 }

@@ -35,6 +35,9 @@ pub struct CardPrefab {
     pub overrides: usize,
     /// Whether the instance added the component: the prefab does not give it.
     pub added: bool,
+    /// Whether the prefab takes changes: an imported one (a glTF scene) does
+    /// not, so the card offers no Apply.
+    pub can_apply: bool,
 }
 
 /// What a card's header was asked this frame — the caller turns it into the
@@ -203,7 +206,8 @@ pub fn render_card(
             }
         }
 
-        if differs {
+        let can_apply = prefab.as_ref().is_some_and(|prefab| prefab.can_apply);
+        if differs && can_apply {
             let rect = [right - size, top, size, size];
             right -= size + 2.0;
             if header_action(

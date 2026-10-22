@@ -18,6 +18,7 @@ use khora_sdk::editor_ui::*;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::GameWorld;
 
+mod asset_drop;
 pub(crate) mod declared;
 mod hierarchy;
 mod inspect;
@@ -25,6 +26,7 @@ pub mod prefab_overrides;
 mod scene_tree;
 mod spawn;
 
+pub use asset_drop::{asset_drop, AssetDrop};
 pub use hierarchy::delete_selection;
 pub use hierarchy::duplicate_entity;
 pub use hierarchy::process_reparents;

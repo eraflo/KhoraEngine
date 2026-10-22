@@ -122,11 +122,13 @@ impl InspectorTab for PropertiesTab {
                             .iter()
                             .any(|component| component.type_name == title && component.added)
                     });
-                    let card_prefab = prefab.map(|_| CardPrefab {
+                    let card_prefab = prefab.map(|prefab| CardPrefab {
                         overrides: overridden.len(),
                         added,
+                        can_apply: !prefab.read_only,
                     });
-                    let mut marks = Marks::new(&overridden);
+                    let mut marks = Marks::new(&overridden)
+                        .read_only(prefab.is_some_and(|prefab| prefab.read_only));
                     let action = render_card(
                         ui_inner,
                         entity,

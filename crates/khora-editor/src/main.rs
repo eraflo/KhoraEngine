@@ -37,6 +37,8 @@ mod commands;
 mod drag_payload;
 mod git;
 mod gizmo;
+#[cfg(test)]
+mod gltf_fixture;
 mod hot_reload;
 mod input;
 mod log_capture;

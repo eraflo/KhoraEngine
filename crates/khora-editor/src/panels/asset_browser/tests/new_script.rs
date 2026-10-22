@@ -31,6 +31,7 @@ fn entry(path: &str, asset_type: &str) -> AssetEntry {
         asset_type: asset_type.to_owned(),
         source_path: path.to_owned(),
         uuid: AssetUUID::new_v5(path),
+        container: None,
     }
 }
 

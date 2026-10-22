@@ -149,8 +149,8 @@ fn posts(project: &Project, count: usize) -> (GameWorld, ComponentKey, Vec<Entit
     let key = declare_lantern(world.inner_world_mut());
     let state = Arc::new(Mutex::new(EditorState::default()));
     for _ in 0..count {
-        state.lock().expect("the editor state").pending_prefab_spawn =
-            Some((POST.to_owned(), None));
+        let post = project.vfs.lock().expect("the project").resolve_uuid(POST);
+        state.lock().expect("the editor state").pending_prefab_spawn = Some((post, None));
         process_pending_prefab_spawn(Some(&project.vfs), &mut world, &state);
     }
     let roots: Vec<EntityId> = world

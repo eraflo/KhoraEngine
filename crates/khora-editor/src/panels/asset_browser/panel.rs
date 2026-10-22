@@ -15,6 +15,7 @@
 //! The asset browser as an editor panel: the frame it draws each tick.
 
 use khora_sdk::editor_ui::*;
+use khora_sdk::khora_core::asset::AssetUUID;
 
 use crate::widgets::panel_header::paint_panel_header;
 use crate::widgets::tile::{paint_asset_tile, AssetTileKind};
@@ -128,8 +129,16 @@ impl EditorPanel for AssetBrowserPanel {
             self.selected_filter = pick;
         }
         if header_delete_selected {
-            match self.selected_index.and_then(|i| self.flat.get(i)) {
-                Some(asset) => {
+            match self
+                .selected_index
+                .and_then(|i| self.flat.get(i).map(|a| (i, a)))
+            {
+                // A part goes with its file, never on its own.
+                Some((i, asset)) if !self.file_ops_offered(i) => log::info!(
+                    "Asset browser: '{}' is a part of its file; delete the file instead",
+                    asset.name
+                ),
+                Some((_, asset)) => {
                     self.confirm_delete = Some((asset.rel_path.clone(), false));
                 }
                 None => log::info!("Asset browser: nothing selected to delete"),
@@ -320,28 +329,14 @@ impl EditorPanel for AssetBrowserPanel {
             .max(1.0)
             .floor() as usize;
 
-        let filter_text = self.search_filter.to_lowercase();
-        let current_folder = self.current_folder.clone().unwrap_or_default();
-        let visible: Vec<(usize, &FlatAsset)> = self
-            .flat
+        let visible: Vec<(usize, FlatAsset)> = self
+            .grid_tiles()
+            .into_iter()
+            .map(|idx| (idx, self.flat[idx].clone()))
+            .collect();
+        let part_counts: Vec<usize> = visible
             .iter()
-            .enumerate()
-            .filter(|(_, a)| match self.selected_filter {
-                Some(k) => a.asset_type == k,
-                None => true,
-            })
-            .filter(|(_, a)| {
-                // When a folder is selected, only show assets that live
-                // *within* it (recursive — `assets/props` matches
-                // `assets/props/crates/a.png`).
-                if current_folder.is_empty() {
-                    true
-                } else {
-                    a.folder == current_folder
-                        || a.folder.starts_with(&format!("{}/", current_folder))
-                }
-            })
-            .filter(|(_, a)| filter_text.is_empty() || a.name.to_lowercase().contains(&filter_text))
+            .map(|(idx, _)| self.sub_count(*idx))
             .collect();
 
         // Drop target for entity drags from the scene tree. Registered
@@ -399,7 +394,7 @@ impl EditorPanel for AssetBrowserPanel {
         let tile_h = TILE_SIZE + 22.0;
         let mut to_select: Option<usize> = None;
         let mut to_activate: Option<usize> = None;
-        let mut to_assign_material: Option<String> = None;
+        let mut to_assign_material: Option<(AssetUUID, String)> = None;
         let mut to_reveal: Option<usize> = None;
         let mut to_rename: Option<usize> = None;
         let mut to_duplicate: Option<String> = None;
@@ -420,6 +415,36 @@ impl EditorPanel for AssetBrowserPanel {
         self.grid_scroll.update(ui, grid_view, grid_content_h);
         ui.push_clip_rect(grid_view);
         let grid_origin_y = grid_inner_y - self.grid_scroll.offset();
+        let tile_rect = |i: usize| {
+            [
+                grid_inner_x + (i % cols) as f32 * (TILE_SIZE + TILE_GAP),
+                grid_origin_y + (i / cols) as f32 * (tile_h + TILE_GAP),
+                TILE_SIZE,
+                tile_h,
+            ]
+        };
+
+        // An open file and its parts sit on one band: the run of tiles that
+        // follow it share its identity as their container.
+        let mut run: Vec<[f32; 4]> = Vec::new();
+        let mut run_file: Option<AssetUUID> = None;
+        for (i, (_, asset)) in visible.iter().enumerate() {
+            let file = match asset.container {
+                Some(file) => Some(file),
+                None if self.open_containers.contains(&asset.uuid) => Some(asset.uuid),
+                None => None,
+            };
+            if file != run_file || asset.container.is_none() {
+                crate::widgets::tile::paint_parts_band(ui, &run, &theme);
+                run.clear();
+            }
+            run_file = file;
+            if file.is_some() {
+                run.push(tile_rect(i));
+            }
+        }
+        crate::widgets::tile::paint_parts_band(ui, &run, &theme);
+        let mut to_toggle: Option<usize> = None;
 
         let new_script_file = self.new_script_file_name();
         let new_script_event = paint_new_script_tile(
@@ -481,6 +506,10 @@ impl EditorPanel for AssetBrowserPanel {
             let idx = *orig_idx;
             let rel = asset.rel_path.clone();
             let is_material = asset.type_name == "material";
+            let (uuid, name) = (asset.uuid, asset.name.clone());
+            // A part follows its file: it is renamed, moved, duplicated and
+            // deleted with it, never on its own.
+            let file_ops = asset.container.is_none();
             ui.context_menu_last(&mut |menu| {
                 if menu.button("Open") {
                     to_activate = Some(idx);
@@ -491,8 +520,11 @@ impl EditorPanel for AssetBrowserPanel {
                     menu.close_menu();
                 }
                 if is_material && menu.button("Assign to selected") {
-                    to_assign_material = Some(rel.clone());
+                    to_assign_material = Some((uuid, name.clone()));
                     menu.close_menu();
+                }
+                if !file_ops {
+                    return;
                 }
                 menu.separator();
                 if menu.button("Rename") {
@@ -508,6 +540,19 @@ impl EditorPanel for AssetBrowserPanel {
                     menu.close_menu();
                 }
             });
+            if part_counts[i] > 0
+                && crate::widgets::tile::paint_parts_chip(
+                    ui,
+                    &format!("tile-{}-parts", orig_idx),
+                    [tx, ty],
+                    TILE_SIZE,
+                    part_counts[i],
+                    self.open_containers.contains(&asset.uuid),
+                    &theme,
+                )
+            {
+                to_toggle = Some(*orig_idx);
+            }
             if interaction.double_clicked {
                 to_activate = Some(*orig_idx);
             } else if interaction.clicked {
@@ -534,16 +579,18 @@ impl EditorPanel for AssetBrowserPanel {
         if let Some(entity) = entity_drop {
             self.queue_save_entity_as_prefab(entity);
         }
-        if let Some(rel) = to_assign_material {
+        if let Some(idx) = to_toggle {
+            self.toggle_container(idx);
+        }
+        if let Some((uuid, name)) = to_assign_material {
             if let Ok(mut state) = self.state.lock() {
                 if state.selection.is_empty() {
                     log::warn!(
-                        "Asset browser: assign material '{}' ignored — no entity selected",
-                        rel
+                        "Asset browser: assign material '{name}' ignored — no entity selected"
                     );
                 } else {
-                    state.pending_assign_material = Some(rel.clone());
-                    log::info!("Asset browser: assigning material '{}' to selection", rel);
+                    state.pending_assign_material = Some(uuid);
+                    log::info!("Asset browser: assigning material '{name}' to selection");
                 }
             }
         }

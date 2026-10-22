@@ -297,6 +297,7 @@ pub fn inspect_against(
         removed,
         prefab_json,
         prefab_declared,
+        read_only: false,
     })
 }
 
