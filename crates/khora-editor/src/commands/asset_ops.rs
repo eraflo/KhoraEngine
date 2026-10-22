@@ -170,7 +170,8 @@ fn indexed_asset(
     uuid: AssetUUID,
 ) -> Option<IndexedAsset> {
     let pvfs = project_vfs?.lock().ok()?;
-    let metadata = pvfs.asset_service.index().get_metadata(&uuid)?;
+    let assets = pvfs.assets();
+    let metadata = assets.index().get_metadata(&uuid)?;
     let stem = metadata
         .source_path
         .file_stem()

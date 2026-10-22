@@ -27,8 +27,27 @@ use khora_sdk::{
 };
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex, MutexGuard},
 };
+
+/// An asset service with no asset: what the engine resolves through while
+/// no project is open.
+pub fn no_assets() -> AssetService {
+    let no_index = IndexBuilder::new(Path::new(""))
+        .build_index_bytes()
+        .unwrap_or_default();
+    match AssetService::new(
+        &no_index,
+        Box::new(FileLoader::new(Path::new(""))),
+        Arc::new(MetricsRegistry::new()),
+        None,
+    ) {
+        Ok(service) => service,
+        // An empty index always decodes; were it not to, there would be no
+        // asset to serve either way.
+        Err(e) => panic!("an empty asset index does not decode: {e:#}"),
+    }
+}
 
 /// All project I/O, in one place.
 ///
@@ -41,7 +60,10 @@ use std::{
 pub struct ProjectVfs {
     pub root: PathBuf,
     pub assets_root: PathBuf,
-    pub asset_service: AssetService,
+    /// The project's assets: shared with the engine (see
+    /// [`Self::share_assets`]), so the editor and the frame read one index
+    /// and one cache.
+    asset_service: Arc<Mutex<AssetService>>,
     /// Where its changes are read from: the engine's shared watch — one
     /// subscriber among the script and shader pumps — or, opened on its own,
     /// a watch of its own.
@@ -118,7 +140,7 @@ impl ProjectVfs {
         Ok(Self {
             root,
             assets_root,
-            asset_service,
+            asset_service: Arc::new(Mutex::new(asset_service)),
             watch,
             file_loader,
             registry,
@@ -127,9 +149,34 @@ impl ProjectVfs {
         })
     }
 
+    /// The project's asset service, locked for the length of a statement.
+    pub fn assets(&self) -> MutexGuard<'_, AssetService> {
+        self.asset_service
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Serves this project's assets through `shared` from now on: its
+    /// service moves into `shared`, which the engine holds — the asset
+    /// resolver then loads the meshes, materials and textures the editor's
+    /// entities reference, from the same index and cache the editor reads.
+    pub fn share_assets(&mut self, shared: &Arc<Mutex<AssetService>>) {
+        if Arc::ptr_eq(&self.asset_service, shared) {
+            return;
+        }
+        {
+            let mut own = self.assets();
+            let mut target = shared
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            std::mem::swap(&mut *own, &mut *target);
+        }
+        self.asset_service = Arc::clone(shared);
+    }
+
     /// Keeps `catalog` to this project's prefabs from now on.
     pub fn follow_prefab_catalog(&mut self, catalog: khora_sdk::khora_data::scene::PrefabCatalog) {
-        catalog.replace(khora_sdk::prefab_catalog(&self.asset_service));
+        catalog.replace(khora_sdk::prefab_catalog(&self.assets()));
         self.prefab_catalog = Some(catalog);
     }
 
@@ -152,9 +199,9 @@ impl ProjectVfs {
             .with_registry(&self.registry)
             .build_index_bytes()
             .context("Failed to rebuild project asset index")?;
-        self.asset_service.reindex(&bytes)?;
+        self.assets().reindex(&bytes)?;
         if let Some(catalog) = &self.prefab_catalog {
-            catalog.replace(khora_sdk::prefab_catalog(&self.asset_service));
+            catalog.replace(khora_sdk::prefab_catalog(&self.assets()));
         }
         self.moved_on();
         Ok(())
@@ -446,7 +493,8 @@ impl ProjectVfs {
     /// The file of the asset known as `id`, relative to `assets/`, as the
     /// index knows it.
     pub fn rel_path_of(&self, id: AssetUUID) -> Option<String> {
-        let source = &self.asset_service.index().get_metadata(&id)?.source_path;
+        let assets = self.assets();
+        let source = &assets.index().get_metadata(&id)?.source_path;
         let rel = source.strip_prefix(&self.assets_root).unwrap_or(source);
         Some(rel.to_string_lossy().replace('\\', "/"))
     }
@@ -455,7 +503,7 @@ impl ProjectVfs {
     /// material…) rather than a file of its own: it shares its file's path
     /// and is never written.
     pub fn is_part_of_a_file(&self, id: AssetUUID) -> bool {
-        self.asset_service
+        self.assets()
             .index()
             .get_metadata(&id)
             .and_then(|metadata| metadata.variants.get("default"))
@@ -472,10 +520,10 @@ impl ProjectVfs {
         id: AssetUUID,
     ) -> std::result::Result<khora_sdk::khora_data::scene::SceneRecord, String> {
         if self.is_part_of_a_file(id) {
-            return khora_sdk::read_prefab(&mut self.asset_service, id);
+            return khora_sdk::read_prefab(&mut self.assets(), id);
         }
         let bytes = self
-            .asset_service
+            .assets()
             .load_raw(&id)
             .map_err(|error| format!("{error:#}"))?;
         let file =
@@ -551,7 +599,7 @@ mod tests {
         }
 
         let decodable = ProjectVfs::open(root.clone(), Arc::new(MetricsRegistry::new()))
-            .and_then(|mut pvfs| decodable_types(&mut pvfs.asset_service));
+            .and_then(|pvfs| decodable_types(&mut pvfs.assets()));
         let _ = std::fs::remove_dir_all(&root);
 
         assert_eq!(decodable?, DECODABLE);
@@ -581,10 +629,10 @@ mod tests {
         registry.save()?;
 
         let resolved =
-            ProjectVfs::open(root.clone(), Arc::new(MetricsRegistry::new())).map(|mut pvfs| {
-                let by_frozen = pvfs.asset_service.load_raw(&frozen).ok();
+            ProjectVfs::open(root.clone(), Arc::new(MetricsRegistry::new())).map(|pvfs| {
+                let by_frozen = pvfs.assets().load_raw(&frozen).ok();
                 let by_path = pvfs
-                    .asset_service
+                    .assets()
                     .index()
                     .get_metadata(&khora_sdk::khora_core::asset::AssetUUID::new_v5(
                         "scenes/renamed.kscene",

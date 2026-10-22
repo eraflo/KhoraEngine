@@ -120,6 +120,13 @@ pub struct EditorApp {
     /// The open project's prefabs, as a script's `Spawn` is checked against
     /// them — shared with the runtime.
     prefab_catalog: khora_sdk::khora_data::scene::PrefabCatalog,
+    /// The asset service the engine resolves the scene's asset references
+    /// through — the meshes, materials and textures its entities name. The
+    /// open project serves its assets through it (see
+    /// [`ProjectVfs::share_assets`]); empty while no project is open.
+    ///
+    /// [`ProjectVfs::share_assets`]: crate::project_vfs::ProjectVfs::share_assets
+    shared_assets: Arc<Mutex<khora_sdk::AssetService>>,
     /// The loading screen over the shell while the editor starts; dropped
     /// once it has faded out.
     loading: Option<crate::panels::loading::LoadingHandle>,
@@ -506,6 +513,9 @@ impl AgentProvider for EditorApp {
                 self.play_prefabs.clone(),
             ));
         runtime.resources.insert(self.prefab_catalog.clone());
+        // What the engine's asset resolver loads the scene's meshes,
+        // materials and textures through: the open project's assets.
+        runtime.services.insert(Arc::clone(&self.shared_assets));
     }
 }
 

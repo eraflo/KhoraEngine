@@ -65,14 +65,15 @@ impl PrefabSource for PlayPrefabs {
         // Tried, not waited for: the frame boundary must never stall on — or,
         // on its own thread, deadlock against — an editor action holding the
         // project. A spawn refused here is logged, and nothing is made.
-        let mut pvfs = match open.try_lock() {
+        let pvfs = match open.try_lock() {
             Ok(pvfs) => pvfs,
             Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
             Err(TryLockError::WouldBlock) => {
                 return Err("the project is busy: the editor is reading or writing it".to_owned())
             }
         };
-        khora_sdk::read_prefab(&mut pvfs.asset_service, id)
+        let record = khora_sdk::read_prefab(&mut pvfs.assets(), id);
+        record
     }
 }
 

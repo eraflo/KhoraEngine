@@ -150,7 +150,8 @@ pub fn load_scene_in_project(
     let uuid = pvfs.resolve_uuid(rel_path_fwd_slash);
 
     // Try the existing index first; if absent, reindex once and retry.
-    let bytes = match pvfs.asset_service.load_raw(&uuid) {
+    let indexed = pvfs.assets().load_raw(&uuid);
+    let bytes = match indexed {
         Ok(b) => b,
         Err(_) => {
             if let Err(e) = pvfs.rebuild_index() {
@@ -161,7 +162,8 @@ pub fn load_scene_in_project(
                 );
                 return false;
             }
-            match pvfs.asset_service.load_raw(&uuid) {
+            let reindexed = pvfs.assets().load_raw(&uuid);
+            match reindexed {
                 Ok(b) => b,
                 Err(e) => {
                     log::error!(

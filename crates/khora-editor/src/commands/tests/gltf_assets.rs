@@ -55,9 +55,9 @@ fn named(world: &GameWorld, name: &str) -> EntityId {
 
 /// The material the project decodes for `uuid`.
 fn decoded_material(project: &GltfProject, uuid: AssetUUID) -> StandardMaterial {
-    let mut pvfs = project.vfs.lock().expect("the project");
+    let pvfs = project.vfs.lock().expect("the project");
     let handle = pvfs
-        .asset_service
+        .assets()
         .load::<Box<dyn Material>>(&uuid)
         .unwrap_or_else(|e| panic!("{uuid:?} decodes as a material: {e:#}"));
     let material: &dyn Material = &**handle;
@@ -503,7 +503,7 @@ fn a_gltf_scene_that_cannot_decode_spawns_nothing() {
             .vfs
             .lock()
             .expect("the project")
-            .asset_service
+            .assets()
             .index()
             .get_metadata(&scene)
             .is_some(),

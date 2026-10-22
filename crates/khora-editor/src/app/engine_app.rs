@@ -75,6 +75,7 @@ impl EngineApp for EditorApp {
             prefab_view: None,
             play_prefabs: Arc::default(),
             prefab_catalog: khora_sdk::khora_data::scene::PrefabCatalog::new(),
+            shared_assets: Arc::new(Mutex::new(crate::project_vfs::no_assets())),
         }
     }
 
@@ -352,6 +353,11 @@ impl EngineApp for EditorApp {
         // is checked against.
         self.play_prefabs
             .follow(self.project_vfs.as_ref(), &self.prefab_catalog);
+        // And its assets: the engine resolves the scene's references through
+        // them. A project opened since the last frame moves in here.
+        if let Some(Ok(mut pvfs)) = self.project_vfs.as_ref().map(|pvfs| pvfs.lock()) {
+            pvfs.share_assets(&self.shared_assets);
+        }
 
         self.last_view_info = None;
 

@@ -65,8 +65,8 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
         // A file that can hold parts may have gained or lost some (a
         // re-exported glTF with another node count, or one whole again after
         // a broken save): its parts are listed again.
-        needs_reindex |= pvfs.asset_service.may_hold_sub_assets(&uuid);
-        let dropped = pvfs.asset_service.invalidate(&uuid);
+        needs_reindex |= pvfs.assets().may_hold_sub_assets(&uuid);
+        let dropped = pvfs.assets().invalidate(&uuid);
         log::info!(
             "Hot reload: Modified '{}' (cache dropped: {})",
             rel,
@@ -94,7 +94,7 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
 /// initial project open and when the user browses to a different folder
 /// at runtime.
 pub fn collect_asset_entries(pvfs: &ProjectVfs) -> Vec<AssetEntry> {
-    pvfs.asset_service
+    pvfs.assets()
         .index()
         .iter_all()
         .map(|m| {
