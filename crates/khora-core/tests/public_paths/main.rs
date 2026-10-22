@@ -243,6 +243,7 @@ fn asset_source_variants(x: &khora_core::asset::AssetSource) {
     match x {
         khora_core::asset::AssetSource::Path(..) => {}
         khora_core::asset::AssetSource::Packed { .. } => {}
+        khora_core::asset::AssetSource::Sub { .. } => {}
     }
 }
 
@@ -1661,6 +1662,7 @@ fn module_asset_paths_still_resolve() {
     let _ = type_name::<khora_core::asset::AssetUUID>();
     let _ = khora_core::asset::AssetUUID::new;
     let _ = khora_core::asset::AssetUUID::new_v5;
+    let _ = khora_core::asset::AssetUUID::sub_asset;
     is_debug::<khora_core::asset::AssetUUID>();
     is_clone::<khora_core::asset::AssetUUID>();
     is_copy::<khora_core::asset::AssetUUID>();

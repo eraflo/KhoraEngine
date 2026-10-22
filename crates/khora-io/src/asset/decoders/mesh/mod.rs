@@ -28,11 +28,16 @@
 
 mod dispatcher;
 mod gltf;
+mod gltf_checks;
+mod gltf_container;
+mod gltf_resources;
+mod gltf_scene;
 mod obj;
 mod resource_resolver;
 
 pub use dispatcher::MeshDispatcher;
 pub use gltf::GltfDecoder;
+pub use gltf_container::{list_gltf_sub_assets, GltfContainer};
 pub use obj::ObjDecoder;
 pub use resource_resolver::*;
 

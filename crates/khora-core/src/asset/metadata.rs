@@ -57,6 +57,15 @@ pub enum AssetSource {
         /// `offset + size`.
         compression: CompressionKind,
     },
+    /// The asset lives inside another asset — a mesh, material, texture or
+    /// scene of a glTF file. It has no bytes of its own: they are read from
+    /// `container`'s own source and the asset is extracted by `label`.
+    Sub {
+        /// The uuid of the asset that holds this one.
+        container: AssetUUID,
+        /// The name of this asset inside its container.
+        label: String,
+    },
 }
 
 /// Serializable metadata that describes an asset and its relationships.

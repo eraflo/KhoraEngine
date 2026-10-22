@@ -19,6 +19,10 @@ use uuid::Uuid;
 /// This ensures that UUIDs generated from the same path are always the same.
 const ASSET_NAMESPACE_UUID: Uuid = Uuid::from_u128(0x4a6a81e9_f0d1_4b8f_91a8_7e7a5e0b6b4a);
 
+/// The fixed namespace of sub-asset UUIDs ([`AssetUUID::sub_asset`]), apart from
+/// the path namespace so a label can never collide with a path.
+const SUB_ASSET_NAMESPACE_UUID: Uuid = Uuid::from_u128(0x6b68_6f72_615f_7375_625f_6173_7365_7431);
+
 /// A globally unique, persistent identifier for a logical asset.
 ///
 /// This UUID represents the "idea" of an asset, completely decoupled from its
@@ -76,6 +80,19 @@ impl AssetUUID {
     /// promises is only as stable as the convention that builds its input.
     pub fn new_v5(path_str: &str) -> Self {
         Self(Uuid::new_v5(&ASSET_NAMESPACE_UUID, path_str.as_bytes()))
+    }
+
+    /// The identity of the asset named `label` inside the asset `container`
+    /// (a glTF file's mesh, material, texture or scene).
+    ///
+    /// A version-5 UUID in its own namespace over `container`'s sixteen bytes
+    /// followed by `label`, so it follows the container's identity: a renamed
+    /// file keeps its registry-frozen uuid, and with it every sub uuid.
+    pub fn sub_asset(container: AssetUUID, label: &str) -> AssetUUID {
+        let mut name = Vec::with_capacity(16 + label.len());
+        name.extend_from_slice(container.as_bytes());
+        name.extend_from_slice(label.as_bytes());
+        Self(Uuid::new_v5(&SUB_ASSET_NAMESPACE_UUID, &name))
     }
 }
 
@@ -169,5 +186,61 @@ mod asset_key_tests {
                 AssetUUID::new_v5(&key)
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod sub_asset_uuid_tests {
+    use super::*;
+
+    #[test]
+    fn sub_is_deterministic() {
+        let container = AssetUUID::new_v5("meshes/hero.glb");
+        assert_eq!(
+            AssetUUID::sub_asset(container, "mesh/Body"),
+            AssetUUID::sub_asset(container, "mesh/Body")
+        );
+    }
+
+    #[test]
+    fn sub_differs_per_label() {
+        let container = AssetUUID::new_v5("meshes/hero.glb");
+        assert_ne!(
+            AssetUUID::sub_asset(container, "mesh/Body"),
+            AssetUUID::sub_asset(container, "mesh/Head")
+        );
+        assert_ne!(
+            AssetUUID::sub_asset(container, "mesh/Body"),
+            AssetUUID::sub_asset(container, "")
+        );
+    }
+
+    #[test]
+    fn sub_differs_per_container() {
+        let hero = AssetUUID::new_v5("meshes/hero.glb");
+        let villain = AssetUUID::new_v5("meshes/villain.glb");
+        assert_ne!(
+            AssetUUID::sub_asset(hero, "mesh/Body"),
+            AssetUUID::sub_asset(villain, "mesh/Body")
+        );
+    }
+
+    /// A sub uuid lives in its own namespace: it never collides with the
+    /// path-derived uuid of a file whose key happens to be the same text.
+    #[test]
+    fn sub_differs_from_the_path_uuid_of_the_same_text() {
+        let container = AssetUUID::new_v5("meshes/hero.glb");
+        let label = "mesh/Body";
+        let sub = AssetUUID::sub_asset(container, label);
+        assert_ne!(sub, AssetUUID::new_v5(label));
+        assert_ne!(sub, AssetUUID::new_v5(&format!("{container}{label}")));
+        assert_ne!(sub, AssetUUID::new_v5(&format!("{container}/{label}")));
+        assert_ne!(sub, container);
+    }
+
+    #[test]
+    fn sub_is_a_version_5_uuid() {
+        let sub = AssetUUID::sub_asset(AssetUUID::new_v5("meshes/hero.glb"), "mesh/Body");
+        assert_eq!(sub.as_bytes()[6] >> 4, 5, "the version nibble must be 5");
     }
 }

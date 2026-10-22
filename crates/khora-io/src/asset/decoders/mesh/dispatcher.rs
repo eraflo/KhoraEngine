@@ -23,6 +23,7 @@
 //! to add FBX) and register that instead, without forking `khora-io`.
 
 use std::error::Error;
+use std::path::Path;
 use std::sync::Arc;
 
 use khora_core::renderer::api::gpu_scene::Mesh;
@@ -53,6 +54,11 @@ impl MeshDispatcher {
             gltf: GltfDecoder::new(resolver),
             obj: ObjDecoder,
         }
+    }
+
+    /// Returns true when `bytes` look like a glTF file, binary or JSON.
+    pub(super) fn is_gltf(bytes: &[u8]) -> bool {
+        Self::is_glb(bytes) || Self::looks_like_gltf_json(bytes)
     }
 
     /// Returns true when `bytes` looks like binary glTF (`glTF` magic).
@@ -91,8 +97,18 @@ impl Default for MeshDispatcher {
 
 impl AssetDecoder<Mesh> for MeshDispatcher {
     fn load(&self, bytes: &[u8]) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
-        if Self::is_glb(bytes) || Self::looks_like_gltf_json(bytes) {
-            self.gltf.load(bytes)
+        self.load_at(bytes, Path::new(""))
+    }
+
+    /// A glTF reads its external files relative to `source_path`'s folder;
+    /// an OBJ references none.
+    fn load_at(
+        &self,
+        bytes: &[u8],
+        source_path: &Path,
+    ) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
+        if Self::is_gltf(bytes) {
+            self.gltf.load_at(bytes, source_path)
         } else {
             self.obj.load(bytes)
         }

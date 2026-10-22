@@ -17,6 +17,8 @@
 
 mod gltf_builder;
 mod gltf_decoding;
+mod gltf_scenes;
+mod gltf_sub_assets;
 mod obj_decoding;
 
 use super::{GltfDecoder, NoOpResourceResolver, ObjDecoder};

@@ -16,6 +16,7 @@
 
 use khora_core::asset::Asset;
 use std::error::Error;
+use std::path::Path;
 
 /// A trait for types that can decode a specific kind of asset from raw bytes.
 ///
@@ -24,4 +25,11 @@ use std::error::Error;
 pub trait AssetDecoder<A: Asset> {
     /// Parses a byte slice and converts it into an instance of the asset `A`.
     fn load(&self, bytes: &[u8]) -> Result<A, Box<dyn Error + Send + Sync>>;
+
+    /// Decodes the asset stored at `source_path` (relative to the assets
+    /// root), for formats whose files reference other files next to them.
+    fn load_at(&self, bytes: &[u8], source_path: &Path) -> Result<A, Box<dyn Error + Send + Sync>> {
+        let _ = source_path;
+        self.load(bytes)
+    }
 }

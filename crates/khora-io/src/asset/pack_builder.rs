@@ -195,6 +195,14 @@ impl<'a> PackBuilder<'a> {
             .build_metadata()
             .context("Pack: failed to build asset metadata")?;
         let total = metadata.len();
+        // Progress counts the files streamed into the pack. A sub-asset has
+        // no bytes of its own, so it is not one of them, though it stays in
+        // the index (and in the header's count, which mirrors the index).
+        let streamed_total = metadata
+            .iter()
+            .filter(|meta| !matches!(meta.variants.get("default"), Some(AssetSource::Sub { .. })))
+            .count();
+        let mut streamed = 0usize;
 
         let data_pack_path = self.dest_dir.join("data.pack");
         let mut data_file = File::create(&data_pack_path)
@@ -221,11 +229,15 @@ impl<'a> PackBuilder<'a> {
         };
 
         let mut offset = 0u64;
-        for (idx, meta) in metadata.iter_mut().enumerate() {
+        for meta in metadata.iter_mut() {
             // The default variant is `AssetSource::Path(rel)` from
             // IndexBuilder — extract the rel path before we overwrite it.
             let rel_path = match meta.variants.get("default") {
                 Some(AssetSource::Path(p)) => p.clone(),
+                // A sub-asset has no bytes of its own: it is extracted from
+                // its container, which is packed under its own uuid. Its
+                // entry goes to the packed index as it is.
+                Some(AssetSource::Sub { .. }) => continue,
                 Some(AssetSource::Packed { .. }) => {
                     return Err(anyhow!(
                         "Pack: asset {:?} already has a Packed variant; \
@@ -244,9 +256,10 @@ impl<'a> PackBuilder<'a> {
             let rel_str = asset_key(&rel_path);
             self.send_progress(PackProgress::Started {
                 rel_path: rel_str.clone(),
-                current: idx,
-                total,
+                current: streamed,
+                total: streamed_total,
             });
+            streamed += 1;
 
             let abs = self.assets_root.join(&rel_path);
             let raw = std::fs::read(&abs)
@@ -475,5 +488,220 @@ mod tests {
         // Both files exist but are zero-byte.
         assert!(out.data_pack.exists());
         assert!(out.index_bin.exists());
+    }
+
+    // ── Sub-assets ──────────────────────────────────────────────────────────
+
+    use crate::asset::{AssetContainer, SubAssetEntry, SubAssetListerRegistration};
+    use khora_core::asset::Asset;
+    use std::any::Any;
+
+    /// Index type of the test-only container files packed here (`*.ksubpack`,
+    /// an extension `asset_type_for_extension` buckets as itself).
+    const PACK_CONTAINER_TYPE: &str = "ksubpack";
+
+    /// Lists one sub-asset per non-empty line `"<type> <label>"`.
+    fn list_pack_container(bytes: &[u8]) -> Result<Vec<SubAssetEntry>> {
+        let text = std::str::from_utf8(bytes)?;
+        text.lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                let (type_name, label) = line
+                    .split_once(' ')
+                    .ok_or_else(|| anyhow!("malformed test container line: {line:?}"))?;
+                Ok(SubAssetEntry {
+                    label: label.to_string(),
+                    type_name: type_name.to_string(),
+                })
+            })
+            .collect()
+    }
+
+    inventory::submit! {
+        SubAssetListerRegistration {
+            type_name: PACK_CONTAINER_TYPE,
+            list: list_pack_container,
+        }
+    }
+
+    /// What the test container extracts: its label and the container's text.
+    #[derive(Debug)]
+    struct PackedSub {
+        label: String,
+        text: String,
+    }
+    impl Asset for PackedSub {}
+
+    struct TextContainer;
+
+    impl AssetContainer for TextContainer {
+        fn open(&self, bytes: &[u8], _source_path: &Path) -> Result<Arc<dyn Any + Send + Sync>> {
+            Ok(Arc::new(String::from_utf8(bytes.to_vec())?))
+        }
+
+        fn extract(
+            &self,
+            opened: &(dyn Any + Send + Sync),
+            _container: AssetUUID,
+            label: &str,
+            _type_name: &str,
+        ) -> Result<Box<dyn Any + Send>> {
+            let text = opened
+                .downcast_ref::<String>()
+                .ok_or_else(|| anyhow!("not an opened text container"))?;
+            Ok(Box::new(PackedSub {
+                label: label.to_string(),
+                text: text.clone(),
+            }))
+        }
+    }
+
+    const HERO: &[u8] = b"mesh mesh/Body\nmaterial material/Skin\n";
+
+    fn seed_container_project(root: &Path) {
+        fs::create_dir_all(root.join("models")).unwrap();
+        fs::create_dir_all(root.join("textures")).unwrap();
+        fs::write(root.join("models").join("hero.ksubpack"), HERO).unwrap();
+        fs::write(root.join("textures").join("a.png"), b"PNG-A").unwrap();
+    }
+
+    #[test]
+    fn a_packed_index_keeps_sub_entries_and_packs_their_container_once() {
+        let proj = tempdir().unwrap();
+        let dest = tempdir().unwrap();
+        seed_container_project(proj.path());
+
+        let out = PackBuilder::new(proj.path(), dest.path())
+            .with_manifest(true)
+            .build()
+            .unwrap();
+        assert_eq!(
+            out.pack_bytes(),
+            (HERO.len() + b"PNG-A".len()) as u64,
+            "the container's bytes are packed once, the subs add none"
+        );
+
+        let index_bytes = std::fs::read(&out.index_bin).unwrap();
+        let vfs = AssetIndex::new(&index_bytes).unwrap();
+        assert_eq!(vfs.asset_count(), 4, "two files and two subs");
+
+        let hero = AssetUUID::new_v5("models/hero.ksubpack");
+        assert!(matches!(
+            vfs.get_metadata(&hero).and_then(|m| m.variants.get("default")),
+            Some(AssetSource::Packed { size, .. }) if *size == HERO.len() as u64
+        ));
+        for (label, type_name) in [("mesh/Body", "mesh"), ("material/Skin", "material")] {
+            let sub = vfs
+                .get_metadata(&AssetUUID::sub_asset(hero, label))
+                .unwrap_or_else(|| panic!("sub '{label}' is in the packed index"));
+            assert_eq!(sub.asset_type_name, type_name);
+            match sub.variants.get("default") {
+                Some(AssetSource::Sub {
+                    container,
+                    label: l,
+                }) => {
+                    assert_eq!(*container, hero);
+                    assert_eq!(l, label);
+                }
+                other => panic!("sub '{label}' keeps its Sub source, got {other:?}"),
+            }
+        }
+
+        let manifest_bytes = std::fs::read(out.manifest_bin.as_ref().unwrap()).unwrap();
+        let manifest = PackManifest::decode(&manifest_bytes).unwrap();
+        assert!(manifest.get(&hero).is_some(), "the container is hashed");
+        assert!(
+            manifest
+                .get(&AssetUUID::sub_asset(hero, "mesh/Body"))
+                .is_none(),
+            "a sub has no bytes to hash"
+        );
+    }
+
+    #[test]
+    fn a_packed_project_loads_a_sub_through_its_container() {
+        let proj = tempdir().unwrap();
+        let dest = tempdir().unwrap();
+        seed_container_project(proj.path());
+
+        let out = PackBuilder::new(proj.path(), dest.path())
+            .with_manifest(true)
+            .build()
+            .unwrap();
+
+        let index_bytes = std::fs::read(&out.index_bin).unwrap();
+        let pack_file = std::fs::File::open(&out.data_pack).unwrap();
+        let pack_loader = PackLoader::new(pack_file).expect("valid pack header");
+        let manifest_bytes = std::fs::read(out.manifest_bin.as_ref().unwrap()).unwrap();
+        let manifest = PackManifest::decode(&manifest_bytes).unwrap();
+        let metrics = Arc::new(MetricsRegistry::new());
+        let mut svc =
+            AssetService::new(&index_bytes, Box::new(pack_loader), metrics, Some(manifest))
+                .unwrap();
+        svc.register_container(PACK_CONTAINER_TYPE, TextContainer);
+
+        let hero = AssetUUID::new_v5("models/hero.ksubpack");
+        let body = svc
+            .load::<PackedSub>(&AssetUUID::sub_asset(hero, "mesh/Body"))
+            .unwrap();
+        assert_eq!(body.label, "mesh/Body");
+        assert_eq!(body.text.as_bytes(), HERO);
+
+        let skin = svc
+            .load::<PackedSub>(&AssetUUID::sub_asset(hero, "material/Skin"))
+            .unwrap();
+        assert_eq!(skin.label, "material/Skin");
+
+        // The other assets still round-trip.
+        assert_eq!(
+            svc.load_raw(&AssetUUID::new_v5("textures/a.png")).unwrap(),
+            b"PNG-A"
+        );
+    }
+
+    /// The pack header's count is the sanity check against `index.bin`: it
+    /// counts every index entry, sub entries included.
+    #[test]
+    fn the_pack_header_counts_every_index_entry_with_sub_entries() {
+        let proj = tempdir().unwrap();
+        let dest = tempdir().unwrap();
+        seed_container_project(proj.path());
+
+        let out = PackBuilder::new(proj.path(), dest.path()).build().unwrap();
+        let vfs = AssetIndex::new(&std::fs::read(&out.index_bin).unwrap()).unwrap();
+        let loader = PackLoader::new(std::fs::File::open(&out.data_pack).unwrap()).unwrap();
+        assert_eq!(vfs.asset_count(), 4, "two files and two subs");
+        assert_eq!(loader.header().asset_count, vfs.asset_count() as u32);
+    }
+
+    /// Sub entries have no bytes to stream: the progress bar counts the files
+    /// it streams, one `Started` per file, numbered `0..total`.
+    #[test]
+    fn progress_counts_the_streamed_files_of_a_project_with_sub_entries() {
+        let proj = tempdir().unwrap();
+        let dest = tempdir().unwrap();
+        seed_container_project(proj.path());
+
+        let (tx, rx) = crossbeam_channel::unbounded::<PackProgress>();
+        PackBuilder::new(proj.path(), dest.path())
+            .with_progress(tx)
+            .build()
+            .unwrap();
+
+        let mut currents = Vec::new();
+        let mut totals = Vec::new();
+        while let Ok(ev) = rx.try_recv() {
+            if let PackProgress::Started { current, total, .. } = ev {
+                currents.push(current);
+                totals.push(total);
+            }
+        }
+        assert_eq!(currents.len(), 2, "two files are streamed: {currents:?}");
+        assert_eq!(
+            totals,
+            vec![2, 2],
+            "the total is the number of streamed files"
+        );
+        assert_eq!(currents, vec![0, 1], "files are numbered 0..total");
     }
 }

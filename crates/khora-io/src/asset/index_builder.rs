@@ -38,6 +38,7 @@
 //! makes pre-registry projects and the pack builder agree by construction (the
 //! pack builder loads the same registry, so dev and release resolve identically).
 
+use crate::asset::container::{SubAssetEntry, SubAssetListerRegistration};
 use crate::asset::dependencies::{extract_dependencies, type_has_dependency_extractor};
 use crate::asset::id_registry::AssetIdRegistry;
 use anyhow::{anyhow, Context, Result};
@@ -236,12 +237,20 @@ impl<'a> IndexBuilder<'a> {
             variants.insert("default".to_string(), AssetSource::Path(rel_path.clone()));
             metadata.push(AssetMetadata {
                 uuid,
-                source_path: rel_path,
-                asset_type_name: type_name,
+                source_path: rel_path.clone(),
+                asset_type_name: type_name.clone(),
                 dependencies,
                 variants,
                 tags: Vec::new(),
             });
+            push_sub_assets(
+                &mut metadata,
+                uuid,
+                &rel_fwd,
+                &rel_path,
+                &abs_path,
+                &type_name,
+            );
         }
         Ok(metadata)
     }
@@ -254,6 +263,60 @@ impl<'a> IndexBuilder<'a> {
         bincode::serde::encode_to_vec(&metadata, cfg)
             .map_err(|e| anyhow!("Failed to encode asset index: {}", e))
             .context("IndexBuilder::build_index_bytes")
+    }
+}
+
+/// Appends one entry per sub-asset the listers of `type_name` find in the
+/// file, right after the file's own entry. Only file types with a lister are
+/// read; a lister that fails is logged and leaves the file's own entry alone.
+fn push_sub_assets(
+    metadata: &mut Vec<AssetMetadata>,
+    container: AssetUUID,
+    rel_fwd: &str,
+    rel_path: &Path,
+    abs_path: &Path,
+    type_name: &str,
+) {
+    let mut listers = inventory::iter::<SubAssetListerRegistration>
+        .into_iter()
+        .filter(|lister| lister.type_name == type_name)
+        .peekable();
+    if listers.peek().is_none() {
+        return;
+    }
+    let bytes = match std::fs::read(abs_path) {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            log::warn!("asset index: failed to read '{rel_fwd}' to list its sub-assets: {e}");
+            return;
+        }
+    };
+    for lister in listers {
+        let entries = match (lister.list)(&bytes) {
+            Ok(entries) => entries,
+            Err(e) => {
+                log::warn!("asset index: listing the sub-assets of '{rel_fwd}' failed: {e:#}");
+                continue;
+            }
+        };
+        for SubAssetEntry { label, type_name } in entries {
+            let mut variants = HashMap::with_capacity(1);
+            variants.insert(
+                "default".to_string(),
+                AssetSource::Sub {
+                    container,
+                    label: label.clone(),
+                },
+            );
+            metadata.push(AssetMetadata {
+                uuid: AssetUUID::sub_asset(container, &label),
+                source_path: rel_path.to_path_buf(),
+                asset_type_name: type_name,
+                dependencies: Vec::new(),
+                variants,
+                tags: Vec::new(),
+            });
+        }
     }
 }
 
@@ -503,5 +566,251 @@ mod tests {
             .build_metadata()
             .unwrap();
         assert!(metadata.is_empty());
+    }
+
+    // ── Sub-assets ──────────────────────────────────────────────────────────
+
+    /// Index type of the test-only container files (`*.ksubtest`). The
+    /// extension is unknown to `asset_type_for_extension`, so it falls back to
+    /// its own bucket and no production lister claims it.
+    const TEST_CONTAINER_TYPE: &str = "ksubtest";
+
+    /// Index type of test-only container files whose lister always fails.
+    const FAILING_CONTAINER_TYPE: &str = "ksubfail";
+
+    /// Lists one sub-asset per non-empty line `"<type> <label>"`.
+    fn list_test_container(bytes: &[u8]) -> Result<Vec<crate::asset::SubAssetEntry>> {
+        let text = std::str::from_utf8(bytes)?;
+        text.lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| {
+                let (type_name, label) = line
+                    .split_once(' ')
+                    .ok_or_else(|| anyhow!("malformed test container line: {line:?}"))?;
+                Ok(crate::asset::SubAssetEntry {
+                    label: label.to_string(),
+                    type_name: type_name.to_string(),
+                })
+            })
+            .collect()
+    }
+
+    fn list_failing_container(_bytes: &[u8]) -> Result<Vec<crate::asset::SubAssetEntry>> {
+        Err(anyhow!("this container cannot be listed"))
+    }
+
+    inventory::submit! {
+        crate::asset::SubAssetListerRegistration {
+            type_name: TEST_CONTAINER_TYPE,
+            list: list_test_container,
+        }
+    }
+
+    inventory::submit! {
+        crate::asset::SubAssetListerRegistration {
+            type_name: FAILING_CONTAINER_TYPE,
+            list: list_failing_container,
+        }
+    }
+
+    const HERO_CONTAINER: &[u8] = b"mesh mesh/Body\nmaterial material/Skin\n";
+
+    fn find(metadata: &[AssetMetadata], uuid: AssetUUID) -> &AssetMetadata {
+        metadata
+            .iter()
+            .find(|m| m.uuid == uuid)
+            .unwrap_or_else(|| panic!("no entry with uuid {uuid} in the index"))
+    }
+
+    fn assert_sub_entry(
+        metadata: &[AssetMetadata],
+        container: AssetUUID,
+        container_path: &Path,
+        label: &str,
+        type_name: &str,
+    ) {
+        let sub = find(metadata, AssetUUID::sub_asset(container, label));
+        assert_eq!(sub.asset_type_name, type_name, "type of sub '{label}'");
+        assert_eq!(
+            sub.source_path, container_path,
+            "a sub entry's source path is its container's path"
+        );
+        assert!(sub.dependencies.is_empty(), "sub '{label}' has no deps");
+        assert!(sub.tags.is_empty(), "sub '{label}' has no tags");
+        assert_eq!(sub.variants.len(), 1, "sub '{label}' has one variant");
+        match sub.variants.get("default") {
+            Some(AssetSource::Sub {
+                container: c,
+                label: l,
+            }) => {
+                assert_eq!(*c, container, "sub '{label}' names its container");
+                assert_eq!(l, label, "sub '{label}' carries its label");
+            }
+            other => panic!("sub '{label}' default variant must be Sub, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn index_lists_one_sub_entry_per_listed_sub_asset() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("models")).unwrap();
+        fs::create_dir_all(root.join("textures")).unwrap();
+        fs::write(root.join("models").join("hero.ksubtest"), HERO_CONTAINER).unwrap();
+        // Same text, but a texture: no lister of its type, so no sub entries.
+        fs::write(root.join("textures").join("a.png"), HERO_CONTAINER).unwrap();
+
+        let metadata = IndexBuilder::new(root).build_metadata().unwrap();
+        assert_eq!(
+            metadata.len(),
+            4,
+            "the container, its two subs and the texture: {metadata:#?}"
+        );
+
+        // The file's own entry is unchanged.
+        let rel = Path::new("models").join("hero.ksubtest");
+        let file_uuid = AssetUUID::new_v5("models/hero.ksubtest");
+        let own = find(&metadata, file_uuid);
+        assert_eq!(own.asset_type_name, TEST_CONTAINER_TYPE);
+        assert_eq!(own.source_path, rel);
+        assert!(matches!(
+            own.variants.get("default"),
+            Some(AssetSource::Path(p)) if *p == rel
+        ));
+
+        assert_sub_entry(&metadata, file_uuid, &rel, "mesh/Body", "mesh");
+        assert_sub_entry(&metadata, file_uuid, &rel, "material/Skin", "material");
+
+        let texture = find(&metadata, AssetUUID::new_v5("textures/a.png"));
+        assert_eq!(texture.asset_type_name, "texture");
+    }
+
+    #[test]
+    fn sub_entries_follow_their_file_entry() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("models")).unwrap();
+        fs::write(root.join("models").join("a.ksubtest"), b"mesh mesh/A\n").unwrap();
+        fs::write(root.join("models").join("b.ksubtest"), HERO_CONTAINER).unwrap();
+
+        let metadata = IndexBuilder::new(root).build_metadata().unwrap();
+        let a = AssetUUID::new_v5("models/a.ksubtest");
+        let b = AssetUUID::new_v5("models/b.ksubtest");
+        let order: Vec<AssetUUID> = metadata.iter().map(|m| m.uuid).collect();
+        assert_eq!(order.len(), 5, "two files and three subs: {metadata:#?}");
+        assert_eq!(order[0], a);
+        assert_eq!(order[1], AssetUUID::sub_asset(a, "mesh/A"));
+        assert_eq!(order[2], b);
+        let mut b_subs = vec![order[3], order[4]];
+        b_subs.sort();
+        let mut expected = vec![
+            AssetUUID::sub_asset(b, "mesh/Body"),
+            AssetUUID::sub_asset(b, "material/Skin"),
+        ];
+        expected.sort();
+        assert_eq!(b_subs, expected);
+    }
+
+    /// A rename freezes the file's old uuid in the registry; its sub uuids are
+    /// derived from that frozen uuid, so they survive the rename too.
+    #[test]
+    fn sub_uuids_derive_from_the_registry_frozen_file_uuid() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("models")).unwrap();
+        fs::write(root.join("models").join("hero.ksubtest"), HERO_CONTAINER).unwrap();
+
+        let mut reg = AssetIdRegistry::load(root);
+        let frozen = AssetUUID::new_v5("models/protagonist.ksubtest");
+        reg.freeze("models/hero.ksubtest", frozen);
+
+        let metadata = IndexBuilder::new(root)
+            .with_registry(&reg)
+            .build_metadata()
+            .unwrap();
+        assert_eq!(
+            metadata.len(),
+            3,
+            "the file and its two subs: {metadata:#?}"
+        );
+        let rel = Path::new("models").join("hero.ksubtest");
+        assert_eq!(find(&metadata, frozen).source_path, rel);
+        assert_sub_entry(&metadata, frozen, &rel, "mesh/Body", "mesh");
+        assert_sub_entry(&metadata, frozen, &rel, "material/Skin", "material");
+
+        let path_default = AssetUUID::new_v5("models/hero.ksubtest");
+        assert!(
+            metadata
+                .iter()
+                .all(|m| m.uuid != AssetUUID::sub_asset(path_default, "mesh/Body")),
+            "sub uuids must not derive from the path default once the file is frozen"
+        );
+    }
+
+    #[test]
+    fn a_lister_error_keeps_the_file_entry_and_spares_the_other_files() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("models")).unwrap();
+        fs::write(root.join("models").join("broken.ksubfail"), b"anything").unwrap();
+        fs::write(root.join("models").join("hero.ksubtest"), HERO_CONTAINER).unwrap();
+
+        let metadata = IndexBuilder::new(root)
+            .build_metadata()
+            .expect("a lister error must not abort the index build");
+
+        let broken_rel = Path::new("models").join("broken.ksubfail");
+        let broken = find(&metadata, AssetUUID::new_v5("models/broken.ksubfail"));
+        assert_eq!(broken.asset_type_name, FAILING_CONTAINER_TYPE);
+        assert!(matches!(
+            broken.variants.get("default"),
+            Some(AssetSource::Path(p)) if *p == broken_rel
+        ));
+        assert_eq!(
+            metadata
+                .iter()
+                .filter(|m| m.source_path == broken_rel)
+                .count(),
+            1,
+            "the failing file adds no sub entry"
+        );
+
+        // The next file is still listed.
+        let hero_rel = Path::new("models").join("hero.ksubtest");
+        let hero = AssetUUID::new_v5("models/hero.ksubtest");
+        assert_sub_entry(&metadata, hero, &hero_rel, "mesh/Body", "mesh");
+        assert_sub_entry(&metadata, hero, &hero_rel, "material/Skin", "material");
+        assert_eq!(metadata.len(), 4);
+    }
+
+    #[test]
+    fn an_index_with_sub_entries_is_deterministic() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("models")).unwrap();
+        fs::write(root.join("models").join("hero.ksubtest"), HERO_CONTAINER).unwrap();
+        fs::write(root.join("models").join("villain.ksubtest"), HERO_CONTAINER).unwrap();
+
+        let metadata = IndexBuilder::new(root).build_metadata().unwrap();
+        assert_eq!(metadata.len(), 6, "two files, two subs each: {metadata:#?}");
+
+        let bytes_a = IndexBuilder::new(root).build_index_bytes().unwrap();
+        let bytes_b = IndexBuilder::new(root).build_index_bytes().unwrap();
+        assert_eq!(
+            bytes_a, bytes_b,
+            "two consecutive builds must be byte-equal"
+        );
+
+        // The `Sub` source round-trips through the index encoding.
+        let vfs = AssetIndex::new(&bytes_a).expect("the index with subs decodes");
+        assert_eq!(vfs.asset_count(), 6);
+        let hero = AssetUUID::new_v5("models/hero.ksubtest");
+        let body = vfs
+            .get_metadata(&AssetUUID::sub_asset(hero, "mesh/Body"))
+            .expect("the sub entry survives encoding");
+        assert!(matches!(
+            body.variants.get("default"),
+            Some(AssetSource::Sub { container, label }) if *container == hero && label == "mesh/Body"
+        ));
     }
 }

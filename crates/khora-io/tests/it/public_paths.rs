@@ -71,6 +71,29 @@ fn is_asset_io<T: khora_io::asset::AssetIo>() {}
 fn is_asset_writer<T: khora_io::asset::AssetWriter>() {}
 fn is_clone<T: Clone>() {}
 fn is_collect<T: inventory::Collect>() {}
+
+/// A container that opens nothing, to name the generic container items.
+struct NoContainer;
+
+impl khora_io::asset::AssetContainer for NoContainer {
+    fn open(
+        &self,
+        _bytes: &[u8],
+        _source_path: &std::path::Path,
+    ) -> anyhow::Result<std::sync::Arc<dyn std::any::Any + Send + Sync>> {
+        anyhow::bail!("opens nothing")
+    }
+
+    fn extract(
+        &self,
+        _opened: &(dyn std::any::Any + Send + Sync),
+        _container: khora_core::asset::AssetUUID,
+        _label: &str,
+        _type_name: &str,
+    ) -> anyhow::Result<Box<dyn std::any::Any + Send>> {
+        anyhow::bail!("extracts nothing")
+    }
+}
 fn is_copy<T: Copy>() {}
 fn is_debug<T: std::fmt::Debug>() {}
 fn is_default<T: Default>() {}
@@ -135,6 +158,19 @@ fn decoder_registration_fields(x: &khora_io::asset::DecoderRegistration) {
     let _ = (&x.type_name, &x.register);
 }
 
+fn sub_asset_entry_fields(x: &khora_io::asset::SubAssetEntry) {
+    let _ = (&x.label, &x.type_name);
+}
+
+fn sub_asset_lister_registration_fields(x: &khora_io::asset::SubAssetListerRegistration) {
+    let _ = (&x.type_name, &x.list);
+}
+
+fn asset_container_trait_items<T: khora_io::asset::AssetContainer>() {
+    let _ = T::open;
+    let _ = T::extract;
+}
+
 fn manifest_entry_fields(x: &khora_io::asset::ManifestEntry) {
     let _ = (&x.uuid, &x.blake3, &x.size);
 }
@@ -176,6 +212,7 @@ mod trait_items {
         T: khora_io::asset::AssetDecoder<khora_data::assets::SoundData>,
     >() {
         let _ = <T as khora_io::asset::AssetDecoder<khora_data::assets::SoundData>>::load;
+        let _ = <T as khora_io::asset::AssetDecoder<khora_data::assets::SoundData>>::load_at;
     }
 
     fn asset_io_trait_items<T: khora_io::asset::AssetIo>() {
@@ -283,6 +320,19 @@ fn module_asset_paths_still_resolve() {
     let _ = khora_io::asset::AssetWatcher::poll_for;
     let _ = khora_io::asset::AssetWatcher::dropped;
     // trait `khora_io::asset::AssetWriter`: see `asset_writer_trait_items`
+    let _ = type_name::<khora_io::asset::SubAssetEntry>();
+    let _ = sub_asset_entry_fields as fn(&khora_io::asset::SubAssetEntry);
+    is_debug::<khora_io::asset::SubAssetEntry>();
+    let _ = type_name::<khora_io::asset::SubAssetListerRegistration>();
+    let _ =
+        sub_asset_lister_registration_fields as fn(&khora_io::asset::SubAssetListerRegistration);
+    is_collect::<khora_io::asset::SubAssetListerRegistration>();
+    // trait `khora_io::asset::AssetContainer`: see `asset_container_trait_items`
+    let _ = asset_container_trait_items::<NoContainer>;
+    let _: fn(&str) -> bool = khora_io::asset::type_may_hold_sub_assets;
+    let _ = khora_io::asset::AssetService::may_hold_sub_assets;
+    let _: fn(&mut khora_io::asset::AssetService, &str, NoContainer) =
+        khora_io::asset::AssetService::register_container;
     let _ = type_name::<khora_io::asset::DecoderRegistration>();
     let _ = decoder_registration_fields as fn(&khora_io::asset::DecoderRegistration);
     is_collect::<khora_io::asset::DecoderRegistration>();
@@ -294,6 +344,7 @@ fn module_asset_paths_still_resolve() {
         khora_io::asset::decoders::audio::WavDecoder,
     ) = khora_io::asset::DecoderRegistry::register::<khora_data::assets::SoundData>;
     let _ = khora_io::asset::DecoderRegistry::decode::<khora_data::assets::SoundData>;
+    let _ = khora_io::asset::DecoderRegistry::decode_at::<khora_data::assets::SoundData>;
     let _ = khora_io::asset::EXTENSIONLESS_ASSET_TYPE;
     let _ = type_name::<khora_io::asset::FileLoader>();
     let _: fn(std::path::PathBuf) -> khora_io::asset::FileLoader = khora_io::asset::FileLoader::new;
@@ -317,6 +368,13 @@ fn module_asset_paths_still_resolve() {
         PhantomData::<khora_io::asset::GltfDecoder>,
     );
     let _ = khora_io::asset::GltfDecoder::new;
+    let _: fn(&[u8]) -> anyhow::Result<Vec<khora_io::asset::SubAssetEntry>> =
+        khora_io::asset::list_gltf_sub_assets;
+    let _ = type_name::<khora_io::asset::GltfContainer>();
+    let _ = type_name::<khora_io::asset::decoders::mesh::GltfContainer>();
+    let _: fn(std::path::PathBuf) -> khora_io::asset::GltfContainer =
+        khora_io::asset::GltfContainer::new;
+    let _ = asset_container_trait_items::<khora_io::asset::GltfContainer>;
     is_clone::<khora_io::asset::GltfDecoder>();
     is_asset_decoder_mesh::<khora_io::asset::GltfDecoder>();
     let _ = type_name::<khora_io::asset::IndexBuilder<'static>>();

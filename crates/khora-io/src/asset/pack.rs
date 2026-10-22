@@ -237,6 +237,9 @@ impl AssetIo for PackLoader {
             AssetSource::Path(_) => {
                 bail!("PackLoader does not support Path sources")
             }
+            AssetSource::Sub { container, label } => {
+                bail!("PackLoader: sub-asset '{label}' of {container} has no bytes of its own")
+            }
         }
     }
 }
@@ -345,5 +348,21 @@ mod tests {
             })
             .unwrap();
         assert_eq!(got, payload);
+    }
+
+    /// A sub-asset has no packed bytes of its own; the service reads its
+    /// container's packed entry.
+    #[test]
+    fn load_bytes_refuses_a_sub_source() {
+        let dir = tempdir().unwrap();
+        let mut bytes = valid_header_bytes(1).to_vec();
+        bytes.extend_from_slice(b"PAYLOAD");
+        let f = write_pack(dir.path(), &bytes);
+        let mut loader = PackLoader::new(f).unwrap();
+        let result = loader.load_bytes(&AssetSource::Sub {
+            container: khora_core::asset::AssetUUID::new_v5("models/hero.glb"),
+            label: "mesh/Body".to_string(),
+        });
+        assert!(result.is_err(), "a Sub source has no packed bytes");
     }
 }

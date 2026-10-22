@@ -15,6 +15,7 @@
 //! Asset I/O and decoding services.
 
 mod asset_service;
+mod container;
 mod decoder;
 mod decoder_registry;
 pub mod decoders;
@@ -31,6 +32,7 @@ mod watch;
 mod watcher;
 
 pub use asset_service::*;
+pub use container::*;
 pub use decoder::*;
 pub use decoder_registry::*;
 pub use decoders::*;

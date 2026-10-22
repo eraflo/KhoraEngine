@@ -19,7 +19,7 @@ use anyhow::{anyhow, Result};
 use khora_core::asset::Asset;
 use khora_telemetry::metrics::{CounterHandle, HistogramHandle};
 use khora_telemetry::{MetricsRegistry, ScopedMetricTimer};
-use std::{any::Any, collections::HashMap, sync::Arc};
+use std::{any::Any, collections::HashMap, path::Path, sync::Arc};
 
 /// Inventory entry for an `AssetDecoder` that wants to be auto-registered
 /// against an [`AssetService`] at startup.
@@ -57,15 +57,28 @@ pub struct DecoderRegistration {
 inventory::collect!(DecoderRegistration);
 
 trait AnyDecoder: Send + Sync {
-    fn decode_any(&self, bytes: &[u8], metrics: &DecoderMetrics) -> Result<Box<dyn Any + Send>>;
+    fn decode_any(
+        &self,
+        bytes: &[u8],
+        source_path: &Path,
+        metrics: &DecoderMetrics,
+    ) -> Result<Box<dyn Any + Send>>;
 }
 
 struct DecoderWrapper<A: Asset, L: AssetDecoder<A>>(L, std::marker::PhantomData<A>);
 
 impl<A: Asset, L: AssetDecoder<A> + Send + Sync> AnyDecoder for DecoderWrapper<A, L> {
-    fn decode_any(&self, bytes: &[u8], metrics: &DecoderMetrics) -> Result<Box<dyn Any + Send>> {
+    fn decode_any(
+        &self,
+        bytes: &[u8],
+        source_path: &Path,
+        metrics: &DecoderMetrics,
+    ) -> Result<Box<dyn Any + Send>> {
         let _timer = ScopedMetricTimer::new(&metrics.decode_time_ms);
-        let asset: A = self.0.load(bytes).map_err(|e| anyhow!(e.to_string()))?;
+        let asset: A = self
+            .0
+            .load_at(bytes, source_path)
+            .map_err(|e| anyhow!(e.to_string()))?;
         metrics.assets_decoded_total.increment()?;
         Ok(Box::new(asset))
     }
@@ -123,12 +136,24 @@ impl DecoderRegistry {
 
     /// Decodes an asset of the specified type from raw bytes.
     pub fn decode<A: Asset>(&self, type_name: &str, bytes: &[u8]) -> Result<A> {
+        self.decode_at(type_name, bytes, Path::new(""))
+    }
+
+    /// Decodes an asset of the specified type from the bytes of the file at
+    /// `source_path` (relative to the assets root), for formats that read
+    /// files next to their own.
+    pub fn decode_at<A: Asset>(
+        &self,
+        type_name: &str,
+        bytes: &[u8],
+        source_path: &Path,
+    ) -> Result<A> {
         let decoder = self
             .decoders
             .get(type_name)
             .ok_or_else(|| anyhow!("No decoder registered for asset type '{}'", type_name))?;
 
-        let asset_any = decoder.decode_any(bytes, &self.metrics)?;
+        let asset_any = decoder.decode_any(bytes, source_path, &self.metrics)?;
         let asset_boxed = asset_any.downcast::<A>().map_err(|_| {
             anyhow!(
                 "Decoder for type '{}' returned a different asset type than requested.",

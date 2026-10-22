@@ -53,6 +53,9 @@ impl AssetIo for FileLoader {
             AssetSource::Packed { .. } => {
                 bail!("FileLoader does not support Packed sources")
             }
+            AssetSource::Sub { container, label } => {
+                bail!("FileLoader: sub-asset '{label}' of {container} has no bytes of its own")
+            }
         }
     }
 }
@@ -99,5 +102,17 @@ mod tests {
             .load_bytes(&AssetSource::Path(PathBuf::from("textures/foo.png")))
             .unwrap();
         assert_eq!(bytes, b"PNG");
+    }
+
+    /// A sub-asset has no bytes of its own; the service reads its container.
+    #[test]
+    fn load_bytes_refuses_a_sub_source() {
+        let dir = tempdir().unwrap();
+        let mut reader = FileLoader::new(dir.path());
+        let result = reader.load_bytes(&AssetSource::Sub {
+            container: khora_core::asset::AssetUUID::new_v5("models/hero.glb"),
+            label: "mesh/Body".to_string(),
+        });
+        assert!(result.is_err(), "a Sub source has no file to read");
     }
 }

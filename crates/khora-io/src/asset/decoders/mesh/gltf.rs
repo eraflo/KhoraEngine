@@ -18,15 +18,19 @@
 //! node's primitives, placed by the node hierarchy, merged into one vertex
 //! and index list.
 
+use super::gltf_checks::{check_primitive, MAX_DECODED_VERTICES};
+use super::gltf_resources::load_buffers;
 use super::GltfResourceResolver;
 use anyhow::Result;
-use base64::Engine;
-use gltf::{mesh::Mode, Buffer};
+use gltf::{
+    mesh::{Mode, Semantic},
+    Buffer,
+};
 use khora_core::math::geometry::Aabb;
 use khora_core::math::{Mat3, Mat4, Vec2, Vec3, Vec4};
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
-use std::{error::Error, sync::Arc};
+use std::{error::Error, path::Path, sync::Arc};
 
 use crate::asset::AssetDecoder;
 
@@ -44,18 +48,41 @@ impl GltfDecoder {
 }
 
 impl AssetDecoder<Mesh> for GltfDecoder {
+    /// Decodes a glTF whose external files are named from the assets root.
     fn load(&self, bytes: &[u8]) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
-        let gltf = gltf::Gltf::from_slice(bytes)
-            .map_err(|e| format!("Failed to parse GLTF file: {}", e))?;
+        self.load_at(bytes, Path::new(""))
+    }
 
-        let buffer_data = self
-            .load_buffer_data(&gltf, &*self.resolver)
+    /// Decodes the glTF at `source_path`: its external files are read
+    /// relative to its own folder, as glTF specifies.
+    fn load_at(
+        &self,
+        bytes: &[u8],
+        source_path: &Path,
+    ) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
+        let gltf = parse_gltf(bytes).map_err(|e| format!("Failed to parse GLTF file: {}", e))?;
+
+        let base_dir = source_path.parent().unwrap_or(Path::new(""));
+        let buffer_data = load_buffers(&gltf, &*self.resolver, base_dir)
             .map_err(|e| format!("Failed to load GLTF buffer data: {}", e))?;
 
         let placed = placed_meshes(&gltf.document)?;
         let mut primitives = Vec::new();
+        let mut vertices = 0usize;
         for (mesh, world) in &placed {
             for primitive in mesh.primitives() {
+                // An unwelded primitive (flat normals) has one vertex per index.
+                let count =
+                    |accessor: Option<gltf::Accessor<'_>>| accessor.map_or(0, |a| a.count());
+                vertices = vertices.saturating_add(
+                    count(primitive.get(&Semantic::Positions)).max(count(primitive.indices())),
+                );
+                if vertices > MAX_DECODED_VERTICES {
+                    return Err(format!(
+                        "glTF scene flattens to more than {MAX_DECODED_VERTICES} vertices"
+                    )
+                    .into());
+                }
                 primitives.push(read_primitive(&primitive, world, &buffer_data)?);
             }
         }
@@ -84,48 +111,45 @@ impl AssetDecoder<Mesh> for GltfDecoder {
     }
 }
 
-impl GltfDecoder {
-    fn load_buffer_data(
-        &self,
-        gltf: &gltf::Gltf,
-        resolver: &dyn GltfResourceResolver,
-    ) -> Result<Vec<Vec<u8>>, Box<dyn Error + Send + Sync>> {
-        let mut buffer_data = Vec::new();
-        for buffer in gltf.buffers() {
-            match buffer.source() {
-                gltf::buffer::Source::Bin => {
-                    if let Some(blob) = gltf.blob.as_deref() {
-                        buffer_data.push(blob.to_vec());
-                    } else {
-                        return Err("GLB file references binary chunk but it is missing".into());
-                    }
-                }
-                gltf::buffer::Source::Uri(uri) => {
-                    if uri.starts_with("data:") {
-                        buffer_data.push(self.decode_data_uri(uri)?);
-                    } else {
-                        buffer_data.push(resolver.resolve_buffer(uri)?);
-                    }
+/// Parses and validates a glTF file, binary or JSON, refusing a malformed
+/// one with an error.
+///
+/// `gltf-json`'s validator reads a primitive's `POSITION` accessor by index
+/// without a bounds check, so a file naming an accessor that does not exist
+/// would panic inside it. Those indices are checked here first, and the file
+/// is validated only once they hold.
+pub(super) fn parse_gltf(bytes: &[u8]) -> Result<gltf::Gltf, Box<dyn Error + Send + Sync>> {
+    // The GLB reader subtracts the 12-byte header from the declared length
+    // unchecked.
+    if let Some(header) = bytes.strip_prefix(b"glTF") {
+        let declared = header
+            .get(4..8)
+            .map(|length| u32::from_le_bytes([length[0], length[1], length[2], length[3]]));
+        if declared.is_none_or(|length| length < 12) {
+            return Err("GLB header declares a length shorter than the header itself".into());
+        }
+    }
+    let unchecked = gltf::Gltf::from_slice_without_validation(bytes)?;
+    let blob = unchecked.blob;
+    let root = unchecked.document.into_json();
+    let positions = gltf::json::validation::Checked::Valid(gltf::json::mesh::Semantic::Positions);
+    for (m, mesh) in root.meshes.iter().enumerate() {
+        for (p, primitive) in mesh.primitives.iter().enumerate() {
+            if let Some(accessor) = primitive.attributes.get(&positions) {
+                if accessor.value() >= root.accessors.len() {
+                    return Err(format!(
+                        "glTF mesh {m} primitive {p}: POSITION names accessor {}, but the file \
+                         has {}",
+                        accessor.value(),
+                        root.accessors.len()
+                    )
+                    .into());
                 }
             }
         }
-        Ok(buffer_data)
     }
-
-    fn decode_data_uri(&self, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-        let prefix = "data:application/octet-stream;base64,";
-        if let Some(base64_data) = uri.strip_prefix(prefix) {
-            base64::engine::general_purpose::STANDARD
-                .decode(base64_data)
-                .map_err(Into::into)
-        } else if let Some(base64_data) = uri.strip_prefix("data:application/gltf-buffer;base64,") {
-            base64::engine::general_purpose::STANDARD
-                .decode(base64_data)
-                .map_err(Into::into)
-        } else {
-            Err(format!("Unsupported data URI format: {}", uri).into())
-        }
-    }
+    let document = gltf::Document::from_json(root)?;
+    Ok(gltf::Gltf { document, blob })
 }
 
 /// Every mesh the file shows, with the world transform of the node showing
@@ -214,22 +238,27 @@ fn unit_or(v: Vec3, fallback: Vec3) -> Vec3 {
 
 /// One glTF primitive read into the engine's frame: transformed, indexed,
 /// as a list topology, with normals.
-struct Primitive {
+pub(super) struct Primitive {
     positions: Vec<Vec3>,
     normals: Vec<Vec3>,
     tex_coords: Option<Vec<Vec2>>,
     colors: Option<Vec<Vec4>>,
     indices: Vec<u32>,
-    topology: PrimitiveTopology,
+    pub(super) topology: PrimitiveTopology,
 }
 
-fn read_primitive(
+pub(super) fn read_primitive(
     primitive: &gltf::Primitive<'_>,
     world: &Mat4,
     buffer_data: &[Vec<u8>],
 ) -> Result<Primitive, Box<dyn Error + Send + Sync>> {
+    check_primitive(primitive, buffer_data)?;
     let reader =
         primitive.reader(|buffer: Buffer<'_>| buffer_data.get(buffer.index()).map(Vec::as_slice));
+    // Every accessor was checked to lie inside its buffer, so an attribute
+    // the primitive names but the reader cannot read is a file the checks
+    // missed: refused, never read as absent.
+    let unread = |name: &str| format!("glTF {name} accessor could not be read");
 
     let positions: Vec<Vec3> = reader
         .read_positions()
@@ -242,14 +271,23 @@ fn read_primitive(
         iter.map(|[x, y, z]| unit_or(normal_matrix * Vec3::new(x, y, z), Vec3::Y))
             .collect()
     });
-    let tex_coords = reader
+    if normals.is_none() && primitive.get(&Semantic::Normals).is_some() {
+        return Err(unread("NORMAL").into());
+    }
+    let tex_coords: Option<Vec<Vec2>> = reader
         .read_tex_coords(0)
         .map(|iter| iter.into_f32().map(|[u, v]| Vec2::new(u, v)).collect());
-    let colors = reader.read_colors(0).map(|iter| {
+    if tex_coords.is_none() && primitive.get(&Semantic::TexCoords(0)).is_some() {
+        return Err(unread("TEXCOORD_0").into());
+    }
+    let colors: Option<Vec<Vec4>> = reader.read_colors(0).map(|iter| {
         iter.into_rgba_f32()
             .map(|[r, g, b, a]| Vec4::new(r, g, b, a))
             .collect()
     });
+    if colors.is_none() && primitive.get(&Semantic::Colors(0)).is_some() {
+        return Err(unread("COLOR_0").into());
+    }
     // glTF requires every attribute of a primitive to have one value per
     // vertex; a file that breaks this would shift values onto other vertices.
     let counts = [
@@ -266,9 +304,10 @@ fn read_primitive(
             .into());
         }
     }
-    let indices: Vec<u32> = match reader.read_indices() {
-        Some(indices) => indices.into_u32().collect(),
-        None => (0..count).collect(),
+    let indices: Vec<u32> = match (reader.read_indices(), primitive.indices()) {
+        (Some(indices), _) => indices.into_u32().collect(),
+        (None, Some(_)) => return Err(unread("indices").into()),
+        (None, None) => (0..count).collect(),
     };
     if let Some(&bad) = indices.iter().find(|&&i| i >= count) {
         return Err(format!("glTF index {bad} out of range for {count} vertices").into());
@@ -350,7 +389,7 @@ fn fan_to_list(fan: &[u32]) -> Vec<u32> {
 /// Concatenates primitives of one topology into one mesh. An attribute some
 /// primitives carry and others don't is filled with its default for the
 /// others: UV `(0, 0)`, colour opaque white.
-fn merge(primitives: Vec<Primitive>) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
+pub(super) fn merge(primitives: Vec<Primitive>) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
     let topology = primitives
         .first()
         .map(|p| p.topology)
