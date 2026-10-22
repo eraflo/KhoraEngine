@@ -149,7 +149,7 @@ mod tests {
     use khora_sdk::prelude::ecs::EntityId;
 
     use super::select_prefab_asset;
-    use crate::gltf_fixture::{file_entry, part_entry};
+    use crate::tests::gltf_fixture::{file_entry, part_entry};
 
     const SHIP: &str = "models/ship.gltf";
 

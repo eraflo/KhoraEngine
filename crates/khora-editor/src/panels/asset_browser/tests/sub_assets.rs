@@ -24,8 +24,8 @@ use khora_sdk::editor_ui::{
 };
 
 use super::super::AssetBrowserPanel;
-use crate::gltf_fixture::{file_entry, part_entry, GltfProject, SHIP_GLTF, TRIANGLE_OBJ};
 use crate::hot_reload::collect_asset_entries;
+use crate::tests::gltf_fixture::{file_entry, part_entry, GltfProject, SHIP_GLTF, TRIANGLE_OBJ};
 
 const SHIP: &str = "models/ship.gltf";
 const CRATE: &str = "models/crate.obj";
@@ -393,7 +393,7 @@ fn assigning_a_material_part_from_its_menu_assigns_the_part() {
     use khora_sdk::prelude::ecs::{MaterialRef, Name, Transform};
     use khora_sdk::GameWorld;
 
-    use crate::gltf_fixture::ONE_NODE_GLTF;
+    use crate::tests::gltf_fixture::ONE_NODE_GLTF;
 
     let project = GltfProject::with("browser-assign-material-part", &[(SHIP, ONE_NODE_GLTF)]);
     let entries = collect_asset_entries(&project.vfs.lock().expect("the project"));

@@ -29,7 +29,7 @@ use khora_sdk::ViewportTextureHandle;
 use super::ViewportPanel;
 use crate::camera::EditorCamera;
 use crate::drag_payload::pack_asset_drag;
-use crate::gltf_fixture::{file_entry, part_entry};
+use crate::tests::gltf_fixture::{file_entry, part_entry};
 
 const SHIP: &str = "models/ship.glb";
 const CRATE: &str = "models/crate.obj";

@@ -37,8 +37,6 @@ mod commands;
 mod drag_payload;
 mod git;
 mod gizmo;
-#[cfg(test)]
-mod gltf_fixture;
 mod hot_reload;
 mod input;
 mod log_capture;
@@ -49,6 +47,8 @@ mod play_prefabs;
 mod project_scripts;
 mod project_vfs;
 mod scene_io;
+#[cfg(test)]
+mod tests;
 mod widgets;
 
 fn main() -> anyhow::Result<()> {

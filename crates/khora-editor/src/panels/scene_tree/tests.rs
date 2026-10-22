@@ -21,7 +21,7 @@ use khora_sdk::khora_core::asset::AssetUUID;
 use khora_sdk::prelude::ecs::EntityId;
 
 use super::drop::dispatch_asset_drop;
-use crate::gltf_fixture::{file_entry, part_entry};
+use crate::tests::gltf_fixture::{file_entry, part_entry};
 
 const SHIP: &str = "models/ship.glb";
 const CRATE: &str = "models/crate.obj";

@@ -20,7 +20,7 @@ use khora_sdk::khora_core::asset::{AssetUUID, Material, StandardMaterial};
 use khora_sdk::khora_data::ecs::PrefabInstance;
 
 use super::super::*;
-use crate::gltf_fixture::{GltfProject, HULL_COLOR, MAST_COLOR, SHIP_GLTF, TRIANGLE_OBJ};
+use crate::tests::gltf_fixture::{GltfProject, HULL_COLOR, MAST_COLOR, SHIP_GLTF, TRIANGLE_OBJ};
 
 const SHIP: &str = "models/ship.gltf";
 const CRATE: &str = "models/crate.obj";

@@ -48,6 +48,7 @@ mod folder_tree;
 mod naming;
 mod new_script;
 mod panel;
+mod parts;
 #[cfg(test)]
 mod tests;
 
@@ -325,94 +326,6 @@ impl AssetBrowserPanel {
         state.selected_asset = Some(i);
         state.clear_selection();
         state.inspected = None;
-    }
-
-    /// The tiles of the grid, in order, as indices into `flat` (and so into
-    /// `EditorState::asset_entries`): the assets of the current folder that
-    /// the kind filter and the search keep. A sub-asset is no tile of its
-    /// folder: it follows its file's tile, and only while that file is
-    /// expanded.
-    ///
-    /// The kind filter and the search see a file's parts too: a file shows
-    /// when it or one of its parts is kept, and opened it lists only the
-    /// parts kept (all of them when the search names the file itself).
-    fn grid_tiles(&self) -> Vec<usize> {
-        let filter_text = self.search_filter.to_lowercase();
-        let current_folder = self.current_folder.clone().unwrap_or_default();
-        let kind_kept = |asset: &FlatAsset| {
-            self.selected_filter
-                .is_none_or(|kind| asset.asset_type == kind)
-        };
-        let named = |asset: &FlatAsset| {
-            filter_text.is_empty() || asset.name.to_lowercase().contains(&filter_text)
-        };
-        let mut tiles = Vec::new();
-        for (idx, asset) in self.flat.iter().enumerate() {
-            if asset.container.is_some() {
-                continue;
-            }
-            // When a folder is selected, only show assets that live *within*
-            // it (recursive — `assets/props` matches `assets/props/crates/a.png`).
-            let folder_kept = current_folder.is_empty()
-                || asset.folder == current_folder
-                || asset.folder.starts_with(&format!("{current_folder}/"));
-            if !folder_kept {
-                continue;
-            }
-            let file_named = named(asset);
-            let parts: Vec<usize> = self
-                .parts_of(idx)
-                .iter()
-                .copied()
-                .filter(|&part| kind_kept(&self.flat[part]))
-                .filter(|&part| file_named || named(&self.flat[part]))
-                .collect();
-            let file_kept = kind_kept(asset) && file_named;
-            if !file_kept && parts.is_empty() {
-                continue;
-            }
-            tiles.push(idx);
-            if self.open_containers.contains(&asset.uuid) {
-                tiles.extend(parts);
-            }
-        }
-        tiles
-    }
-
-    /// The parts of the file at `flat[idx]`, in index order.
-    fn parts_of(&self, idx: usize) -> &[usize] {
-        self.flat
-            .get(idx)
-            .and_then(|asset| self.parts_by_file.get(&asset.uuid))
-            .map_or(&[], Vec::as_slice)
-    }
-
-    /// How many sub-assets the file at `flat[idx]` holds — the count its
-    /// disclosure toggle shows. `0` for an asset holding none.
-    fn sub_count(&self, idx: usize) -> usize {
-        self.parts_of(idx).len()
-    }
-
-    /// Opens or closes the file at `flat[idx]`: its sub-assets follow its
-    /// tile in the grid while it is open. Every file starts closed.
-    fn toggle_container(&mut self, idx: usize) {
-        if self.sub_count(idx) == 0 {
-            return;
-        }
-        let Some(file) = self.flat.get(idx).map(|asset| asset.uuid) else {
-            return;
-        };
-        if !self.open_containers.remove(&file) {
-            self.open_containers.insert(file);
-        }
-    }
-
-    /// Whether the tile at `flat[idx]` offers the file operations — rename,
-    /// move, delete, duplicate. A sub-asset does not: it follows its file.
-    fn file_ops_offered(&self, idx: usize) -> bool {
-        self.flat
-            .get(idx)
-            .is_some_and(|asset| asset.container.is_none())
     }
 
     /// Resolves a forward-slash path under `assets/` to an absolute OS path,

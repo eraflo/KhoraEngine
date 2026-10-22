@@ -190,7 +190,7 @@ mod tests {
     /// none.
     #[test]
     fn each_part_of_a_file_is_an_entry_marked_with_its_file() {
-        use crate::gltf_fixture::{GltfProject, SHIP_GLTF, TRIANGLE_OBJ};
+        use crate::tests::gltf_fixture::{GltfProject, SHIP_GLTF, TRIANGLE_OBJ};
 
         let project =
             GltfProject::with("entries-parts", &[(SHIP, SHIP_GLTF), (CRATE, TRIANGLE_OBJ)]);
@@ -251,7 +251,7 @@ mod tests {
         use khora_sdk::EditorState;
 
         use super::pump;
-        use crate::gltf_fixture::{GltfProject, ONE_NODE_GLTF, SHIP_GLTF};
+        use crate::tests::gltf_fixture::{GltfProject, ONE_NODE_GLTF, SHIP_GLTF};
 
         let project = GltfProject::with("hot-reload-parts", &[(SHIP, ONE_NODE_GLTF)]);
         let ship = project.uuid(SHIP);
@@ -313,7 +313,7 @@ mod tests {
         use khora_sdk::EditorState;
 
         use super::pump;
-        use crate::gltf_fixture::{GltfProject, SHIP_GLTF};
+        use crate::tests::gltf_fixture::{GltfProject, SHIP_GLTF};
 
         let half_written = &SHIP_GLTF[..SHIP_GLTF.len() / 2];
         let project = GltfProject::with("hot-reload-broken-then-whole", &[(SHIP, half_written)]);

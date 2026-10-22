@@ -129,20 +129,7 @@ impl EditorPanel for AssetBrowserPanel {
             self.selected_filter = pick;
         }
         if header_delete_selected {
-            match self
-                .selected_index
-                .and_then(|i| self.flat.get(i).map(|a| (i, a)))
-            {
-                // A part goes with its file, never on its own.
-                Some((i, asset)) if !self.file_ops_offered(i) => log::info!(
-                    "Asset browser: '{}' is a part of its file; delete the file instead",
-                    asset.name
-                ),
-                Some((_, asset)) => {
-                    self.confirm_delete = Some((asset.rel_path.clone(), false));
-                }
-                None => log::info!("Asset browser: nothing selected to delete"),
-            }
+            self.ask_to_delete_selected();
         }
         if header_new_folder {
             let parent = self.current_folder.clone().unwrap_or_default();
@@ -334,10 +321,6 @@ impl EditorPanel for AssetBrowserPanel {
             .into_iter()
             .map(|idx| (idx, self.flat[idx].clone()))
             .collect();
-        let part_counts: Vec<usize> = visible
-            .iter()
-            .map(|(idx, _)| self.sub_count(*idx))
-            .collect();
 
         // Drop target for entity drags from the scene tree. Registered
         // *before* the tile loop so the per-tile `interact_rect` calls
@@ -415,35 +398,20 @@ impl EditorPanel for AssetBrowserPanel {
         self.grid_scroll.update(ui, grid_view, grid_content_h);
         ui.push_clip_rect(grid_view);
         let grid_origin_y = grid_inner_y - self.grid_scroll.offset();
-        let tile_rect = |i: usize| {
-            [
-                grid_inner_x + (i % cols) as f32 * (TILE_SIZE + TILE_GAP),
-                grid_origin_y + (i / cols) as f32 * (tile_h + TILE_GAP),
-                TILE_SIZE,
-                tile_h,
-            ]
-        };
-
-        // An open file and its parts sit on one band: the run of tiles that
-        // follow it share its identity as their container.
-        let mut run: Vec<[f32; 4]> = Vec::new();
-        let mut run_file: Option<AssetUUID> = None;
-        for (i, (_, asset)) in visible.iter().enumerate() {
-            let file = match asset.container {
-                Some(file) => Some(file),
-                None if self.open_containers.contains(&asset.uuid) => Some(asset.uuid),
-                None => None,
-            };
-            if file != run_file || asset.container.is_none() {
-                crate::widgets::tile::paint_parts_band(ui, &run, &theme);
-                run.clear();
-            }
-            run_file = file;
-            if file.is_some() {
-                run.push(tile_rect(i));
-            }
-        }
-        crate::widgets::tile::paint_parts_band(ui, &run, &theme);
+        // An open file and its parts sit on one band, behind their tiles.
+        self.paint_part_bands(
+            ui,
+            &visible,
+            |i| {
+                [
+                    grid_inner_x + ((i + lead) % cols) as f32 * (TILE_SIZE + TILE_GAP),
+                    grid_origin_y + ((i + lead) / cols) as f32 * (tile_h + TILE_GAP),
+                    TILE_SIZE,
+                    tile_h,
+                ]
+            },
+            &theme,
+        );
         let mut to_toggle: Option<usize> = None;
 
         let new_script_file = self.new_script_file_name();
@@ -540,17 +508,7 @@ impl EditorPanel for AssetBrowserPanel {
                     menu.close_menu();
                 }
             });
-            if part_counts[i] > 0
-                && crate::widgets::tile::paint_parts_chip(
-                    ui,
-                    &format!("tile-{}-parts", orig_idx),
-                    [tx, ty],
-                    TILE_SIZE,
-                    part_counts[i],
-                    self.open_containers.contains(&asset.uuid),
-                    &theme,
-                )
-            {
+            if self.paint_part_chip(ui, *orig_idx, [tx, ty], &theme) {
                 to_toggle = Some(*orig_idx);
             }
             if interaction.double_clicked {
