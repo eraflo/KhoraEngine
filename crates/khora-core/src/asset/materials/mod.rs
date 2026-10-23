@@ -130,6 +130,22 @@ pub trait Material: Asset + AsAny + MaterialClone {
         None
     }
 
+    /// Returns the UUID of every texture slot that is set, in slot order:
+    /// base colour, metallic-roughness, normal, emissive, occlusion. This is
+    /// the single list of a material's texture slots.
+    fn textures(&self) -> Vec<crate::asset::AssetUUID> {
+        [
+            self.base_color_texture(),
+            self.metallic_roughness_texture(),
+            self.normal_map(),
+            self.emissive_texture(),
+            self.occlusion_map(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    }
+
     /// Returns the material's alpha (transparency) mode. For [`AlphaMode::Mask`]
     /// the contained value is the alpha-cutoff threshold: fragments below it are
     /// discarded. Default implementation is [`AlphaMode::Opaque`].

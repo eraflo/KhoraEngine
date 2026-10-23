@@ -351,15 +351,10 @@ fn material_textures_ready(
     material: &dyn Material,
     cpu_textures: &crate::assets::Assets<CpuTexture>,
 ) -> bool {
-    [
-        material.base_color_texture(),
-        material.metallic_roughness_texture(),
-        material.normal_map(),
-        material.emissive_texture(),
-        material.occlusion_map(),
-    ]
-    .into_iter()
-    .all(|slot| slot.is_none_or(|uuid| cpu_textures.contains(&uuid)))
+    material
+        .textures()
+        .iter()
+        .all(|uuid| cpu_textures.contains(uuid))
 }
 
 /// Builds the [`ShaderVariantKey`] for a material: one `HAS_*` flag per
@@ -618,5 +613,61 @@ mod tests {
             ..Default::default()
         };
         assert!(material_variant(&with_ao).has_flag(flag::HAS_OCCLUSION_MAP));
+    }
+
+    /// A material whose texture list is its own (a type that overrides
+    /// `Material::textures` rather than the per-slot accessors). Readiness
+    /// must follow that list, the single source of a material's textures.
+    #[derive(Clone)]
+    struct ListedTexturesMaterial {
+        textures: Vec<AssetUUID>,
+    }
+
+    impl khora_core::asset::Asset for ListedTexturesMaterial {}
+    impl Material for ListedTexturesMaterial {
+        fn textures(&self) -> Vec<AssetUUID> {
+            self.textures.clone()
+        }
+    }
+
+    fn one_pixel_texture() -> AssetHandle<CpuTexture> {
+        AssetHandle::new(CpuTexture {
+            pixels: vec![255; 4],
+            size: khora_core::math::Extent3D {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            format: khora_core::renderer::api::resource::TextureFormat::Rgba8Unorm,
+            mip_level_count: 1,
+            sample_count: SampleCount::X1,
+            dimension: TextureDimension::D2,
+            usage: TextureUsage::COPY_DST | TextureUsage::TEXTURE_BINDING,
+        })
+    }
+
+    #[test]
+    fn material_textures_ready_waits_on_every_texture_the_material_lists() {
+        let a = AssetUUID::new_v5("textures/a.png");
+        let b = AssetUUID::new_v5("textures/b.png");
+        let material = ListedTexturesMaterial {
+            textures: vec![a, b],
+        };
+        let mut cpu_textures = crate::assets::Assets::<CpuTexture>::new();
+
+        assert!(
+            !material_textures_ready(&material, &cpu_textures),
+            "no listed texture decoded yet"
+        );
+        cpu_textures.insert(a, one_pixel_texture());
+        assert!(
+            !material_textures_ready(&material, &cpu_textures),
+            "one listed texture is still missing"
+        );
+        cpu_textures.insert(b, one_pixel_texture());
+        assert!(
+            material_textures_ready(&material, &cpu_textures),
+            "every listed texture is decoded"
+        );
     }
 }

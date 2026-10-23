@@ -329,4 +329,70 @@ mod tests {
         assert_eq!(cloned.metallic, original.metallic);
         assert_eq!(cloned.roughness, original.roughness);
     }
+
+    #[test]
+    fn textures_lists_every_set_slot_in_slot_order() {
+        let base = AssetUUID::new_v5("textures/base.png");
+        let metallic_roughness = AssetUUID::new_v5("textures/mr.png");
+        let normal = AssetUUID::new_v5("textures/normal.png");
+        let emissive = AssetUUID::new_v5("textures/emissive.png");
+        let occlusion = AssetUUID::new_v5("textures/ao.png");
+        let material = StandardMaterial {
+            base_color_texture: Some(base),
+            metallic_roughness_texture: Some(metallic_roughness),
+            normal_map: Some(normal),
+            emissive_texture: Some(emissive),
+            occlusion_map: Some(occlusion),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            material.textures(),
+            vec![base, metallic_roughness, normal, emissive, occlusion],
+            "base colour, metallic-roughness, normal, emissive, occlusion"
+        );
+    }
+
+    #[test]
+    fn textures_skips_unset_slots_and_keeps_the_order_of_the_rest() {
+        let metallic_roughness = AssetUUID::new_v5("textures/mr.png");
+        let occlusion = AssetUUID::new_v5("textures/ao.png");
+        let material = StandardMaterial {
+            metallic_roughness_texture: Some(metallic_roughness),
+            occlusion_map: Some(occlusion),
+            ..Default::default()
+        };
+
+        assert_eq!(material.textures(), vec![metallic_roughness, occlusion]);
+    }
+
+    #[test]
+    fn textures_is_empty_for_an_untextured_material() {
+        assert!(StandardMaterial::default().textures().is_empty());
+    }
+
+    #[test]
+    fn textures_lists_the_same_uuid_once_per_slot_that_names_it() {
+        // Two slots naming the same image are still two slots; the list
+        // mirrors the slots, it does not deduplicate.
+        let shared = AssetUUID::new_v5("textures/packed.png");
+        let material = StandardMaterial {
+            base_color_texture: Some(shared),
+            emissive_texture: Some(shared),
+            ..Default::default()
+        };
+
+        assert_eq!(material.textures(), vec![shared, shared]);
+    }
+
+    #[test]
+    fn textures_through_a_boxed_material_matches_the_slots() {
+        let normal = AssetUUID::new_v5("textures/normal.png");
+        let boxed: Box<dyn Material> = Box::new(StandardMaterial {
+            normal_map: Some(normal),
+            ..Default::default()
+        });
+
+        assert_eq!(boxed.textures(), vec![normal]);
+    }
 }
