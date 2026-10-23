@@ -27,10 +27,51 @@ fn standard_pbr_pipeline_binds_the_mesh_vertex_for_every_material_state() {
     use khora_core::renderer::api::shader::ShaderVariantKey;
     let device = crate::tests::SpecOnlyDevice;
     for double_sided in [false, true] {
-        for blend in [false, true] {
-            let spec =
-                super::gpu::pipeline_spec(&device, ShaderVariantKey::empty(), double_sided, blend);
-            crate::tests::assert_binds_the_mesh_vertex(&spec);
+        for mirrored in [false, true] {
+            for blend in [false, true] {
+                let spec = super::gpu::pipeline_spec(
+                    &device,
+                    ShaderVariantKey::empty(),
+                    double_sided,
+                    mirrored,
+                    blend,
+                );
+                crate::tests::assert_binds_the_mesh_vertex(&spec);
+            }
         }
     }
+}
+
+/// A double-sided material culls nothing, a mirrored draw culls its front
+/// faces (they wind clockwise on screen), any other draw its back faces.
+#[test]
+fn standard_pbr_pipeline_culls_front_faces_of_mirrored_draws() {
+    use khora_core::renderer::api::shader::ShaderVariantKey;
+    let device = crate::tests::SpecOnlyDevice;
+    crate::tests::assert_culls_by_sidedness_and_mirroring(|double_sided, mirrored, blend| {
+        super::gpu::pipeline_spec(
+            &device,
+            ShaderVariantKey::empty(),
+            double_sided,
+            mirrored,
+            blend,
+        )
+    });
+}
+
+/// Mirrored and plain draws of one material resolve to distinct cached
+/// pipelines.
+#[test]
+fn standard_pbr_mirrored_pipeline_has_its_own_cache_key() {
+    use khora_core::renderer::api::shader::ShaderVariantKey;
+    let device = crate::tests::SpecOnlyDevice;
+    crate::tests::assert_mirrored_pipeline_has_its_own_key(|double_sided, mirrored, blend| {
+        super::gpu::pipeline_spec(
+            &device,
+            ShaderVariantKey::empty(),
+            double_sided,
+            mirrored,
+            blend,
+        )
+    });
 }

@@ -131,12 +131,18 @@ fn extract_meshes(
             None => transform.0,
         };
 
+        // A negative determinant turns the mesh's faces inside out: the lit
+        // lanes cull its front faces instead of its back ones.
+        let [right, up, forward] = [0, 1, 2].map(|i| transform.0.cols[i].truncate());
+        let mirrored = right.dot(up.cross(forward)) < 0.0;
+
         render_world.meshes.push(ExtractedMesh {
             transform,
             cpu_mesh_uuid: gpu_mesh_handle.uuid,
             gpu_mesh: gpu_mesh_handle.handle.clone(),
             material,
             gpu_material,
+            mirrored,
         });
     }
 }
@@ -187,5 +193,186 @@ fn extract_views(world: &World, render_world: &mut RenderWorld) {
             view_proj,
             position,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::asset::{AssetHandle, AssetUUID};
+    use khora_core::math::affine_transform::AffineTransform;
+    use khora_core::math::{Mat3, Quaternion};
+    use khora_core::renderer::api::pipeline::PrimitiveTopology;
+    use khora_core::renderer::api::resource::{BufferId, IndexFormat};
+
+    /// Translation ∘ rotation ∘ scale, the order `Transform::to_mat4` composes.
+    fn trs(translation: Vec3, rotation: Quaternion, scale: Vec3) -> AffineTransform {
+        AffineTransform(
+            Mat4::from_translation(translation)
+                * Mat4::from_quat(rotation)
+                * Mat4::from_scale(scale),
+        )
+    }
+
+    fn scaled(scale: Vec3) -> AffineTransform {
+        trs(Vec3::ZERO, Quaternion::IDENTITY, scale)
+    }
+
+    /// Spawns a drawable entity at `pose` — its global transform plus an
+    /// already-uploaded mesh — and returns the entity and the mesh uuid that
+    /// identifies its extracted draw.
+    fn spawn_drawable(world: &mut World, pose: AffineTransform) -> (EntityId, AssetUUID) {
+        let uuid = AssetUUID::new();
+        let mesh = HandleComponent {
+            handle: AssetHandle::new(GpuMesh {
+                vertex_buffer: BufferId(0),
+                index_buffer: BufferId(0),
+                index_count: 0,
+                index_format: IndexFormat::Uint32,
+                primitive_topology: PrimitiveTopology::TriangleList,
+            }),
+            uuid,
+        };
+        let entity = world.spawn((GlobalTransform(pose), mesh));
+        (entity, uuid)
+    }
+
+    /// The draw extracted for the mesh `uuid`.
+    fn draw_of(render_world: &RenderWorld, uuid: AssetUUID) -> &ExtractedMesh {
+        render_world
+            .meshes
+            .iter()
+            .find(|mesh| mesh.cpu_mesh_uuid == uuid)
+            .expect("every drawable entity is extracted")
+    }
+
+    fn extract(
+        world: &World,
+        alpha: f32,
+        interpolation: Option<&TransformInterpolation>,
+    ) -> RenderWorld {
+        let mut render_world = RenderWorld::new();
+        extract_meshes(world, &mut render_world, alpha, interpolation);
+        render_world
+    }
+
+    fn determinant(transform: &AffineTransform) -> f32 {
+        Mat3::from_mat4(&transform.0).determinant()
+    }
+
+    /// One negative scale axis mirrors the mesh.
+    #[test]
+    fn one_negative_scale_axis_is_extracted_mirrored() {
+        let mut world = World::new();
+        let (_, mirrored_x) = spawn_drawable(&mut world, scaled(Vec3::new(-1.0, 1.0, 1.0)));
+        let (_, mirrored_y) = spawn_drawable(&mut world, scaled(Vec3::new(2.0, -0.5, 3.0)));
+
+        let render_world = extract(&world, 0.0, None);
+
+        assert!(
+            draw_of(&render_world, mirrored_x).mirrored,
+            "-X is a mirror"
+        );
+        assert!(
+            draw_of(&render_world, mirrored_y).mirrored,
+            "-Y is a mirror"
+        );
+    }
+
+    /// A mirror under a rotation is still a mirror: the decision reads the
+    /// determinant of the drawn matrix, not the sign of a matrix element.
+    #[test]
+    fn a_rotated_mirror_is_extracted_mirrored() {
+        let mut world = World::new();
+        let pose = trs(
+            Vec3::new(5.0, -1.0, 2.0),
+            Quaternion::from_axis_angle(Vec3::new(0.2, 1.0, -0.4).normalize(), 2.4),
+            Vec3::new(1.5, 1.5, -1.5),
+        );
+        let (_, uuid) = spawn_drawable(&mut world, pose);
+
+        let render_world = extract(&world, 0.0, None);
+
+        assert!(draw_of(&render_world, uuid).mirrored);
+    }
+
+    /// Three negative axes are a mirror composed with a half-turn: still a
+    /// mirror.
+    #[test]
+    fn three_negative_scale_axes_are_extracted_mirrored() {
+        let mut world = World::new();
+        let (_, uuid) = spawn_drawable(&mut world, scaled(Vec3::new(-1.0, -2.0, -1.0)));
+
+        let render_world = extract(&world, 0.0, None);
+
+        assert!(draw_of(&render_world, uuid).mirrored);
+    }
+
+    /// Only an odd number of negative axes mirrors: none or two (a half-turn)
+    /// keep the winding, beside a one-axis mirror extracted in the same pass.
+    #[test]
+    fn only_an_odd_number_of_negative_scale_axes_is_extracted_mirrored() {
+        let mut world = World::new();
+        let (_, plain) = spawn_drawable(&mut world, scaled(Vec3::new(1.0, 2.0, 0.5)));
+        let (_, two_negative) = spawn_drawable(&mut world, scaled(Vec3::new(-1.0, -1.0, 1.0)));
+        let (_, rotated_two_negative) = spawn_drawable(
+            &mut world,
+            trs(
+                Vec3::ZERO,
+                Quaternion::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 0.7),
+                Vec3::new(1.0, -3.0, -1.0),
+            ),
+        );
+        let (_, one_negative) = spawn_drawable(&mut world, scaled(Vec3::new(1.0, 1.0, -1.0)));
+
+        let render_world = extract(&world, 0.0, None);
+
+        assert!(!draw_of(&render_world, plain).mirrored, "no negative axis");
+        assert!(
+            !draw_of(&render_world, two_negative).mirrored,
+            "two negative axes"
+        );
+        assert!(
+            !draw_of(&render_world, rotated_two_negative).mirrored,
+            "two negative axes under a rotation"
+        );
+        assert!(
+            draw_of(&render_world, one_negative).mirrored,
+            "one negative axis"
+        );
+    }
+
+    /// A mirrored entity that the simulation moved is drawn interpolated
+    /// between its previous and current poses — both mirrored — and the drawn
+    /// pose is still a mirror, and marked so.
+    #[test]
+    fn a_mirrored_entity_extracted_with_interpolation_stays_mirrored() {
+        let mut world = World::new();
+        let previous = trs(
+            Vec3::ZERO,
+            Quaternion::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 0.3),
+            Vec3::new(-1.0, 1.0, 1.0),
+        );
+        let current = trs(
+            Vec3::new(10.0, 0.0, 0.0),
+            Quaternion::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 1.1),
+            Vec3::new(-1.0, 1.0, 1.0),
+        );
+        let (entity, uuid) = spawn_drawable(&mut world, current);
+        let mut interpolation = TransformInterpolation::new();
+        interpolation.record(entity, previous);
+
+        let render_world = extract(&world, 0.5, Some(&interpolation));
+        let draw = draw_of(&render_world, uuid);
+
+        let det = determinant(&draw.transform);
+        assert!(
+            det < 0.0,
+            "the drawn pose lost its mirror (determinant {det})"
+        );
+        assert!(
+            draw.mirrored,
+            "the drawn pose is a mirror but is not marked so"
+        );
     }
 }

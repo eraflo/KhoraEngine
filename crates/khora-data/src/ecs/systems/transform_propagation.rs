@@ -61,7 +61,7 @@ pub fn transform_propagation_system(world: &mut World) {
         world.query_mut::<(EntityId, &Transform, &mut GlobalTransform, Without<Parent>)>()
     {
         global_transform.0 = match simulated.get(&id) {
-            Some(pose) => *pose,
+            Some(pose) => with_authored_scale(pose, transform),
             None => transform.to_mat4().into(),
         };
         queue.push_back(id);
@@ -96,7 +96,7 @@ pub fn transform_propagation_system(world: &mut World) {
             };
             let child_matrix = match simulated.get(&child_id) {
                 // The solver placed it in the world; the parent has no say.
-                Some(pose) => *pose,
+                Some(pose) => with_authored_scale(pose, local_transform),
                 None => (Mat4::from(parent_matrix) * local_transform.to_mat4()).into(),
             };
             // Only enqueue children whose `GlobalTransform` we successfully
@@ -130,6 +130,13 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
     }
+}
+
+/// A solver's pose (where a body is and how it is turned) with the author's
+/// scale, mirror included: a solver moves and turns a body, it never resizes
+/// or unmirrors one.
+fn with_authored_scale(pose: &AffineTransform, transform: &Transform) -> AffineTransform {
+    AffineTransform(Mat4::from(*pose) * Mat4::from_scale(transform.scale))
 }
 
 #[cfg(test)]
@@ -265,6 +272,34 @@ mod tests {
         assert_matrix_approx_eq(
             world.get::<GlobalTransform>(child).unwrap().0.into(),
             Mat4::from_translation(Vec3::new(105.0, 0.0, 0.0)),
+        );
+    }
+
+    /// A solver moves and turns a body; it does not resize it. The scale the
+    /// author gave the body — a mirror included — survives the simulated pose
+    /// on its way to `GlobalTransform`, so a mirrored rigid body is still
+    /// drawn mirrored (and at its size) once physics owns it.
+    #[test]
+    fn a_simulated_body_keeps_its_authored_scale_and_mirror() {
+        let mut world = World::new();
+        let rotation = khora_core::math::Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 0.5);
+        let entity = world.spawn((
+            Transform::new(
+                Vec3::new(0.0, 10.0, 0.0),
+                rotation,
+                Vec3::new(-2.0, 2.0, 2.0),
+            ),
+            GlobalTransform::identity(),
+            SimulatedTransform::from_parts(Vec3::new(0.0, 4.0, 0.0), rotation),
+        ));
+
+        transform_propagation_system(&mut world);
+
+        assert_matrix_approx_eq(
+            world.get::<GlobalTransform>(entity).unwrap().0.into(),
+            Mat4::from_translation(Vec3::new(0.0, 4.0, 0.0))
+                * Mat4::from_quat(rotation)
+                * Mat4::from_scale(Vec3::new(-2.0, 2.0, 2.0)),
         );
     }
 }

@@ -693,6 +693,7 @@ fn extracted_mesh_fields(x: &khora_data::render::ExtractedMesh) {
         &x.gpu_mesh,
         &x.material,
         &x.gpu_material,
+        &x.mirrored,
     );
 }
 

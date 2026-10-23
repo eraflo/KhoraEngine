@@ -87,6 +87,7 @@ fn test_cost_estimation_with_meshes() {
         gpu_mesh: AssetHandle::new(create_test_gpu_mesh(300)),
         material: None,
         gpu_material: None,
+        mirrored: false,
     });
 
     let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -125,6 +126,7 @@ fn test_cost_estimation_with_lights() {
         gpu_mesh: AssetHandle::new(create_test_gpu_mesh(300)),
         material: None,
         gpu_material: None,
+        mirrored: false,
     });
 
     // Add 4 directional lights
@@ -167,6 +169,7 @@ fn test_cost_increases_with_complexity() {
         gpu_mesh: AssetHandle::new(create_test_gpu_mesh(300)),
         material: None,
         gpu_material: None,
+        mirrored: false,
     });
 
     let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -251,10 +254,51 @@ fn lit_forward_pipeline_binds_the_mesh_vertex_for_every_material_state() {
     use khora_core::renderer::api::shader::ShaderVariantKey;
     let device = crate::tests::SpecOnlyDevice;
     for double_sided in [false, true] {
-        for blend in [false, true] {
-            let spec =
-                super::gpu::pipeline_spec(&device, ShaderVariantKey::empty(), double_sided, blend);
-            crate::tests::assert_binds_the_mesh_vertex(&spec);
+        for mirrored in [false, true] {
+            for blend in [false, true] {
+                let spec = super::gpu::pipeline_spec(
+                    &device,
+                    ShaderVariantKey::empty(),
+                    double_sided,
+                    mirrored,
+                    blend,
+                );
+                crate::tests::assert_binds_the_mesh_vertex(&spec);
+            }
         }
     }
+}
+
+/// A double-sided material culls nothing, a mirrored draw culls its front
+/// faces (they wind clockwise on screen), any other draw its back faces.
+#[test]
+fn lit_forward_pipeline_culls_front_faces_of_mirrored_draws() {
+    use khora_core::renderer::api::shader::ShaderVariantKey;
+    let device = crate::tests::SpecOnlyDevice;
+    crate::tests::assert_culls_by_sidedness_and_mirroring(|double_sided, mirrored, blend| {
+        super::gpu::pipeline_spec(
+            &device,
+            ShaderVariantKey::empty(),
+            double_sided,
+            mirrored,
+            blend,
+        )
+    });
+}
+
+/// Mirrored and plain draws of one material resolve to distinct cached
+/// pipelines.
+#[test]
+fn lit_forward_mirrored_pipeline_has_its_own_cache_key() {
+    use khora_core::renderer::api::shader::ShaderVariantKey;
+    let device = crate::tests::SpecOnlyDevice;
+    crate::tests::assert_mirrored_pipeline_has_its_own_key(|double_sided, mirrored, blend| {
+        super::gpu::pipeline_spec(
+            &device,
+            ShaderVariantKey::empty(),
+            double_sided,
+            mirrored,
+            blend,
+        )
+    });
 }

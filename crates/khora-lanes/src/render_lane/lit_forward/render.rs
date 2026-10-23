@@ -325,6 +325,7 @@ impl LitForwardLane {
                             device,
                             gpu_material.variant.clone(),
                             gpu_material.double_sided,
+                            extracted_mesh.mirrored,
                             gpu_material.blend,
                         ),
                     )

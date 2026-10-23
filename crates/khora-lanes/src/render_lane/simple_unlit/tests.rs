@@ -68,6 +68,7 @@ fn test_cost_estimation_triangle_list() {
         gpu_mesh: gpu_mesh_handle,
         material: None,
         gpu_material: None,
+        mirrored: false,
     });
 
     let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -106,6 +107,7 @@ fn test_cost_estimation_triangle_strip() {
         gpu_mesh: gpu_mesh_handle,
         material: None,
         gpu_material: None,
+        mirrored: false,
     });
 
     let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -157,6 +159,7 @@ fn test_cost_estimation_lines_and_points() {
         gpu_mesh: line_mesh_handle,
         material: None,
         gpu_material: None,
+        mirrored: false,
     });
     render_world.meshes.push(ExtractedMesh {
         transform: Default::default(),
@@ -164,6 +167,7 @@ fn test_cost_estimation_lines_and_points() {
         gpu_mesh: point_mesh_handle,
         material: None,
         gpu_material: None,
+        mirrored: false,
     });
 
     let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -223,6 +227,7 @@ fn test_cost_estimation_multiple_meshes() {
         gpu_mesh: AssetHandle::new(create_test_mesh(600)),
         material: None,
         gpu_material: None,
+        mirrored: false,
     });
     render_world.meshes.push(ExtractedMesh {
         transform: Default::default(),
@@ -230,6 +235,7 @@ fn test_cost_estimation_multiple_meshes() {
         gpu_mesh: AssetHandle::new(create_test_mesh(102)),
         material: None,
         gpu_material: None,
+        mirrored: false,
     });
     render_world.meshes.push(ExtractedMesh {
         transform: Default::default(),
@@ -237,6 +243,7 @@ fn test_cost_estimation_multiple_meshes() {
         gpu_mesh: AssetHandle::new(create_test_mesh(150)),
         material: None,
         gpu_material: None,
+        mirrored: false,
     });
 
     let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));
@@ -277,6 +284,7 @@ fn test_cost_estimation_missing_mesh() {
         gpu_mesh: AssetHandle::new(create_test_mesh(300)),
         material: None,
         gpu_material: None,
+        mirrored: false,
     });
 
     let cost = lane.estimate_render_cost(&render_world, &gpu_meshes);
@@ -312,6 +320,7 @@ fn test_cost_estimation_degenerate_triangle_strip() {
         gpu_mesh: handle,
         material: None,
         gpu_material: None,
+        mirrored: false,
     });
 
     let gpu_meshes_lock = Arc::new(RwLock::new(gpu_meshes));

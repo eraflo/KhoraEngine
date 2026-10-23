@@ -45,6 +45,11 @@ pub struct ExtractedMesh {
     /// until the projection has uploaded it, or when the entity carries no
     /// resolved material handle (lit lanes fall back to a default material).
     pub gpu_material: Option<AssetHandle<GpuMaterial>>,
+    /// Whether the drawn world matrix mirrors the mesh: the determinant of
+    /// [`transform`](Self::transform)'s upper 3×3 is negative (an odd number
+    /// of negative scale axes). Its triangles wind the other way on screen,
+    /// so the lit lanes cull front faces instead of back faces for it.
+    pub mirrored: bool,
 }
 
 /// Flat, GPU-friendly representation of a light source.

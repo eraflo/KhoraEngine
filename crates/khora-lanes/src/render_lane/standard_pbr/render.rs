@@ -287,6 +287,7 @@ pub(super) fn render_pbr(
                         device,
                         gpu_material.variant.clone(),
                         gpu_material.double_sided,
+                        extracted_mesh.mirrored,
                         gpu_material.blend,
                     ),
                 )

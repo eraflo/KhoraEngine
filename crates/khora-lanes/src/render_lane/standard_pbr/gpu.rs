@@ -34,10 +34,11 @@ pub(super) fn pipeline_spec(
     device: &dyn khora_core::renderer::GraphicsDevice,
     variant: ShaderVariantKey,
     double_sided: bool,
+    mirrored: bool,
     blend: bool,
 ) -> PipelineSpec {
     use khora_core::renderer::api::gpu_scene::Mesh;
-    use khora_core::renderer::api::pipeline::enums::{CompareFunction, CullMode};
+    use khora_core::renderer::api::pipeline::enums::CompareFunction;
     use khora_core::renderer::api::pipeline::state::{
         BlendStateDescriptor, ColorWrites, DepthBiasState, StencilFaceState,
     };
@@ -64,11 +65,7 @@ pub(super) fn pipeline_spec(
             topology: PrimitiveTopology::TriangleList,
             // Single-sided materials cull back faces; double-sided disable
             // culling. The cull mode is part of the pipeline cache key.
-            cull_mode: if double_sided {
-                None
-            } else {
-                Some(CullMode::Back)
-            },
+            cull_mode: super::super::culling::mesh_cull_mode(double_sided, mirrored),
             ..Default::default()
         },
         depth_stencil: Some(DepthStencilStateDescriptor {
@@ -122,7 +119,7 @@ pub(super) fn init_gpu_resources(
     // `GpuMaterial::variant`.
     let pipeline_id = pipeline_system.pipeline(
         device,
-        &pipeline_spec(device, ShaderVariantKey::empty(), false, false),
+        &pipeline_spec(device, ShaderVariantKey::empty(), false, false, false),
     )?;
 
     let _ = lane.camera_layout.set(camera_layout);

@@ -207,3 +207,55 @@ pub(crate) fn assert_binds_the_mesh_vertex(spec: &PipelineSpec) {
         spec.label
     );
 }
+
+/// Asserts how a lit lane's pipeline culls, given `build(double_sided,
+/// mirrored, blend)`: a double-sided material culls nothing, a mirrored draw
+/// (negative-determinant model matrix, so its triangles wind clockwise on
+/// screen) culls front faces, any other draw culls back faces. The front face
+/// stays counter-clockwise in every case: the mirror is handled by the cull
+/// mode alone, which is already part of the pipeline cache key.
+pub(crate) fn assert_culls_by_sidedness_and_mirroring(
+    build: impl Fn(bool, bool, bool) -> PipelineSpec,
+) {
+    use khora_core::renderer::api::pipeline::enums::{CullMode, FrontFace};
+
+    for blend in [false, true] {
+        for (double_sided, mirrored, expected) in [
+            (false, false, Some(CullMode::Back)),
+            (false, true, Some(CullMode::Front)),
+            (true, false, None),
+            (true, true, None),
+        ] {
+            let spec = build(double_sided, mirrored, blend);
+            assert_eq!(
+                spec.primitive.cull_mode, expected,
+                "{}: cull mode for double_sided={double_sided}, mirrored={mirrored}, blend={blend}",
+                spec.label
+            );
+            assert_eq!(
+                spec.primitive.front_face,
+                FrontFace::Ccw,
+                "{}: front face for double_sided={double_sided}, mirrored={mirrored}, blend={blend}",
+                spec.label
+            );
+        }
+    }
+}
+
+/// Asserts that a mirrored single-sided draw resolves to a different cached
+/// pipeline than the plain one, for opaque and blended materials alike, so
+/// the per-draw sort by pipeline keeps them apart.
+pub(crate) fn assert_mirrored_pipeline_has_its_own_key(
+    build: impl Fn(bool, bool, bool) -> PipelineSpec,
+) {
+    for blend in [false, true] {
+        let plain = build(false, false, blend);
+        let mirrored = build(false, true, blend);
+        assert_ne!(
+            plain.key(),
+            mirrored.key(),
+            "{}: a mirrored draw shares the plain pipeline (blend={blend})",
+            plain.label
+        );
+    }
+}

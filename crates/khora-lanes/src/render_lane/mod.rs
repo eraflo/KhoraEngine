@@ -18,6 +18,7 @@
 //! [`khora_data::render`]. The shadow, overlay, skybox and UI lanes, drawn by
 //! agents of their own, have folders of their own beside this one.
 
+mod culling;
 mod forward_plus;
 mod lit_forward;
 mod recording;
