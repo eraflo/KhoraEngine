@@ -694,7 +694,7 @@ mod tests {
 
     // --- KHR_materials_specular -------------------------------------------
 
-    use crate::gpu::test_device::{BoundEntry, LayoutOnlyPipelines, RecordingDevice};
+    use crate::gpu::tests::device::{BoundEntry, LayoutOnlyPipelines, RecordingDevice};
     use khora_core::renderer::api::resource::TextureFormat;
 
     /// A decoded 8-bit RGBA texture of `width` × `height`, as the image

@@ -353,9 +353,8 @@ mod tests {
     fn variant_of(flags: &[&'static str]) -> ShaderVariantKey {
         flags
             .iter()
-            .fold(ShaderVariantKey::empty(), |variant, name| {
-                variant.flag(*name)
-            })
+            .copied()
+            .fold(ShaderVariantKey::empty(), ShaderVariantKey::flag)
     }
 
     fn layout_bindings(variant: &ShaderVariantKey) -> Vec<u32> {

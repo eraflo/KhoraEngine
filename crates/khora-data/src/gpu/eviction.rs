@@ -411,7 +411,7 @@ mod tests {
 
     #[test]
     fn evicting_a_material_frees_its_specular_maps() {
-        use crate::gpu::test_device::RecordingDevice;
+        use crate::gpu::tests::device::RecordingDevice;
         use khora_core::renderer::api::resource::{TextureId, TextureViewId};
 
         let store = AssetStore::new();
