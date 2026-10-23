@@ -93,4 +93,13 @@ pub trait AssetContainer: Send + Sync + 'static {
         label: &str,
         type_name: &str,
     ) -> anyhow::Result<Box<dyn Any + Send>>;
+
+    /// The files an opened container reads besides its own, as asset keys
+    /// (paths relative to the assets root, forward slashes): a glTF's
+    /// external buffers and images. A change to one of them is a change to
+    /// the container's sub-assets. None by default.
+    fn external_files(&self, opened: &(dyn Any + Send + Sync)) -> Vec<String> {
+        let _ = opened;
+        Vec::new()
+    }
 }

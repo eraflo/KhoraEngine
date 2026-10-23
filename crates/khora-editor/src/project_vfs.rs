@@ -170,6 +170,10 @@ impl ProjectVfs {
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             std::mem::swap(&mut *own, &mut *target);
+            // A uuid is its path unless the registry froze it, so another
+            // project's `textures/a.png` is the same uuid: what the engine
+            // took from the service moving out may be stale now.
+            target.announce_replacing(&own);
         }
         self.asset_service = Arc::clone(shared);
     }
@@ -766,6 +770,48 @@ mod tests {
                 written.display()
             );
         }
+        Ok(())
+    }
+
+    /// The engine holds copies of what the previous project's service served;
+    /// once another project's service moves in under the same uuids (a path
+    /// both projects share), those copies are stale and the engine must hear
+    /// of each one.
+    #[test]
+    fn sharing_another_projects_assets_announces_what_the_previous_one_served() -> Result<()> {
+        const REL: &str = "meshes/a.obj";
+        let first = TempProject::new("share-first")?;
+        let second = TempProject::new("share-second")?;
+        for (project, obj) in [
+            (&first, "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n"),
+            (&second, "v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nf 1 2 3 4\n"),
+        ] {
+            let meshes = project.0.join("assets").join("meshes");
+            std::fs::create_dir_all(&meshes)?;
+            std::fs::write(meshes.join("a.obj"), obj)?;
+        }
+        let mesh = AssetUUID::new_v5(REL);
+        let shared = Arc::new(Mutex::new(no_assets()));
+
+        let mut first_vfs = first.open()?;
+        first_vfs.share_assets(&shared);
+        first_vfs.assets().load::<Mesh>(&mesh)?;
+
+        let mut second_vfs = second.open()?;
+        second_vfs.share_assets(&shared);
+
+        let announced: Vec<AssetUUID> = shared
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .changes()
+            .drain()
+            .into_iter()
+            .map(|change| change.0)
+            .collect();
+        assert!(
+            announced.contains(&mesh),
+            "the mesh the first project served is announced: {announced:?}"
+        );
         Ok(())
     }
 

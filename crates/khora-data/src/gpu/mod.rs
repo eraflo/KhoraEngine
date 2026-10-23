@@ -28,5 +28,5 @@ pub mod projection;
 mod tests;
 
 pub use eviction::AssetEviction;
-pub use ibl::{EnvironmentMap, IblBaker};
+pub use ibl::{EnvironmentMap, IblBaker, IblSource};
 pub use projection::ProjectionRegistry;

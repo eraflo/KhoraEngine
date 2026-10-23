@@ -48,10 +48,10 @@ use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind};
 use khora_core::renderer::api::command::{BindGroupId, BindGroupLayoutId};
 use khora_core::renderer::api::ibl::IblGpuBindings;
 use khora_core::renderer::api::pipeline::RenderPipelineId;
-use khora_core::renderer::api::resource::BufferId;
+use khora_core::renderer::api::resource::{BufferId, TextureViewId};
 use khora_core::renderer::traits::CommandEncoder;
 use khora_data::render::RenderWorld;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// Stable cache label for the group-0 (inverse-VP + camera) layout.
 const SKY_UNIFORM_LAYOUT_LABEL: &str = "skybox_uniform_layout";
@@ -72,8 +72,8 @@ struct SkyUniforms {
 ///
 /// Holds the pipeline, the two bespoke layouts, the per-frame uniform buffer +
 /// its bind group (group 0), and — created lazily once the IBL bake is ready —
-/// the static env-cube bind group (group 1). The env cube is baked once and
-/// never changes, so its bind group is built a single time and cached.
+/// the env-cube bind group (group 1). It is cached with the env cube it binds
+/// and built again when a new bake publishes another cube.
 #[derive(Debug, Default)]
 pub struct SkyboxLane {
     pipeline: OnceLock<RenderPipelineId>,
@@ -81,7 +81,8 @@ pub struct SkyboxLane {
     env_layout: OnceLock<BindGroupLayoutId>,
     sky_buffer: OnceLock<BufferId>,
     sky_bind_group: OnceLock<BindGroupId>,
-    env_bind_group: OnceLock<BindGroupId>,
+    /// The env-cube bind group and the cube view it binds.
+    env_bind_group: Mutex<Option<(TextureViewId, BindGroupId)>>,
 }
 
 // ─── Free functions (CLAD: no inherent methods on the lane struct) ───
@@ -250,16 +251,23 @@ fn skybox_pipeline_spec(
     }
 }
 
-/// Returns the cached env-cube bind group, building it on first use once the
-/// IBL bake has published its bindings. `None` only if the bind group could not
-/// be created.
+/// Returns the env-cube bind group for `ibl`'s env cube: the cached one while
+/// the cube is the same, else a new one (the previous is destroyed — its cube
+/// belongs to a bake that was replaced). `None` only if the bind group could
+/// not be created.
 fn env_bind_group(
     lane: &SkyboxLane,
     device: &dyn khora_core::renderer::GraphicsDevice,
     ibl: &IblGpuBindings,
 ) -> Option<BindGroupId> {
-    if let Some(bg) = lane.env_bind_group.get().copied() {
-        return Some(bg);
+    let mut cached = lane
+        .env_bind_group
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if let Some((cube, bg)) = *cached {
+        if cube == ibl.env_cube {
+            return Some(bg);
+        }
     }
     use khora_core::renderer::api::command::{
         BindGroupDescriptor, BindGroupEntry, BindingResource,
@@ -284,7 +292,11 @@ fn env_bind_group(
         })
         .map_err(|e| log::error!("SkyboxLane: env bind group creation failed: {e:?}"))
         .ok()?;
-    let _ = lane.env_bind_group.set(bg);
+    if let Some((_, stale)) = cached.replace((ibl.env_cube, bg)) {
+        if let Err(e) = device.destroy_bind_group(stale) {
+            log::warn!("SkyboxLane: destroying the previous env bind group failed: {e:?}");
+        }
+    }
     Some(bg)
 }
 
@@ -293,8 +305,8 @@ fn render_skybox(
     lane: &SkyboxLane,
     device: &dyn khora_core::renderer::GraphicsDevice,
     encoder: &mut dyn CommandEncoder,
-    color_target: khora_core::renderer::api::resource::TextureViewId,
-    depth_target: khora_core::renderer::api::resource::TextureViewId,
+    color_target: TextureViewId,
+    depth_target: TextureViewId,
     view: &khora_data::render::ExtractedView,
     ibl: &IblGpuBindings,
 ) {
@@ -459,5 +471,244 @@ mod tests {
         // mat4 (64) + vec4 (16) = 80 bytes, 16-aligned.
         assert_eq!(std::mem::size_of::<SkyUniforms>(), 80);
         assert_eq!(std::mem::align_of::<SkyUniforms>(), 16);
+    }
+
+    /// The IBL bindings of a bake whose environment cube is `env_cube`.
+    fn bake_with_env_cube(env_cube: usize) -> IblGpuBindings {
+        use khora_core::renderer::api::resource::{SamplerId, TextureViewId};
+        IblGpuBindings {
+            env_cube: TextureViewId(env_cube),
+            irradiance_cube: TextureViewId(env_cube + 1000),
+            prefiltered_cube: TextureViewId(env_cube + 2000),
+            brdf_lut: TextureViewId(env_cube + 3000),
+            sampler: SamplerId(env_cube + 4000),
+        }
+    }
+
+    #[test]
+    fn the_env_bind_group_is_rebuilt_when_the_env_cube_changes() {
+        let lane = SkyboxLane::default();
+        lane.env_layout
+            .set(BindGroupLayoutId(7))
+            .expect("the layout is set once");
+        let device = recording_device::RecordingDevice::default();
+
+        let first_bake = bake_with_env_cube(1);
+        let first = env_bind_group(&lane, &device, &first_bake).expect("a bind group");
+        let again = env_bind_group(&lane, &device, &first_bake).expect("a bind group");
+        assert_eq!(first, again, "the same env cube reuses its bind group");
+        assert_eq!(device.created().len(), 1, "one bind group for one env cube");
+        assert!(device.destroyed().is_empty());
+
+        let second_bake = bake_with_env_cube(2);
+        let second = env_bind_group(&lane, &device, &second_bake).expect("a bind group");
+        assert_ne!(first, second, "a re-baked env cube gets a new bind group");
+        assert_eq!(
+            device.created(),
+            vec![(first, first_bake.env_cube), (second, second_bake.env_cube)],
+            "the new bind group binds the new env cube"
+        );
+        assert_eq!(
+            device.destroyed(),
+            vec![first],
+            "the bind group of the previous env cube is destroyed"
+        );
+
+        let still = env_bind_group(&lane, &device, &second_bake).expect("a bind group");
+        assert_eq!(still, second, "the new env cube's bind group is kept");
+        assert_eq!(device.created().len(), 2);
+    }
+
+    /// A `GraphicsDevice` that only creates and destroys bind groups, and
+    /// records which env cube each one binds.
+    mod recording_device {
+        use khora_core::renderer::api::command::{
+            BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutId,
+            BindingResource, CommandBufferId,
+        };
+        use khora_core::renderer::api::device::GraphicsAdapterInfo;
+        use khora_core::renderer::api::pipeline::{
+            ComputePipelineDescriptor, ComputePipelineId, PipelineLayoutDescriptor,
+            PipelineLayoutId, RenderPipelineDescriptor, RenderPipelineId,
+        };
+        use khora_core::renderer::api::resource::{
+            BufferDescriptor, BufferId, SamplerDescriptor, SamplerId, TextureDescriptor,
+            TextureFormat, TextureId, TextureViewDescriptor, TextureViewId,
+        };
+        use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId};
+        use khora_core::renderer::error::ResourceError;
+        use khora_core::renderer::traits::{CommandEncoder, GraphicsDevice};
+        use std::sync::Mutex;
+
+        #[derive(Debug, Default)]
+        pub(super) struct RecordingDevice {
+            created: Mutex<Vec<(BindGroupId, TextureViewId)>>,
+            destroyed: Mutex<Vec<BindGroupId>>,
+        }
+
+        impl RecordingDevice {
+            /// Every bind group created, with the texture view bound at 0.
+            pub(super) fn created(&self) -> Vec<(BindGroupId, TextureViewId)> {
+                self.created.lock().expect("the created lock").clone()
+            }
+
+            /// Every bind group destroyed, in order.
+            pub(super) fn destroyed(&self) -> Vec<BindGroupId> {
+                self.destroyed.lock().expect("the destroyed lock").clone()
+            }
+        }
+
+        impl GraphicsDevice for RecordingDevice {
+            fn create_shader_module(
+                &self,
+                _d: &ShaderModuleDescriptor,
+            ) -> Result<ShaderModuleId, ResourceError> {
+                unreachable!("the env bind group builds no shader")
+            }
+            fn destroy_shader_module(&self, _id: ShaderModuleId) -> Result<(), ResourceError> {
+                unreachable!()
+            }
+            fn create_render_pipeline(
+                &self,
+                _d: &RenderPipelineDescriptor,
+            ) -> Result<RenderPipelineId, ResourceError> {
+                unreachable!()
+            }
+            fn create_pipeline_layout(
+                &self,
+                _d: &PipelineLayoutDescriptor,
+            ) -> Result<PipelineLayoutId, ResourceError> {
+                unreachable!()
+            }
+            fn destroy_render_pipeline(&self, _id: RenderPipelineId) -> Result<(), ResourceError> {
+                unreachable!()
+            }
+            fn create_compute_pipeline(
+                &self,
+                _d: &ComputePipelineDescriptor,
+            ) -> Result<ComputePipelineId, ResourceError> {
+                unreachable!()
+            }
+            fn destroy_compute_pipeline(
+                &self,
+                _id: ComputePipelineId,
+            ) -> Result<(), ResourceError> {
+                unreachable!()
+            }
+            fn create_bind_group_layout(
+                &self,
+                _d: &BindGroupLayoutDescriptor,
+            ) -> Result<BindGroupLayoutId, ResourceError> {
+                unreachable!("the lane's layout is already built")
+            }
+            fn create_bind_group(
+                &self,
+                d: &BindGroupDescriptor,
+            ) -> Result<BindGroupId, ResourceError> {
+                let view = d
+                    .entries
+                    .iter()
+                    .find(|entry| entry.binding == 0)
+                    .and_then(|entry| match entry.resource {
+                        BindingResource::TextureView(view) => Some(view),
+                        _ => None,
+                    })
+                    .expect("the env cube is bound at 0");
+                let mut created = self.created.lock().expect("the created lock");
+                let id = BindGroupId(100 + created.len());
+                created.push((id, view));
+                Ok(id)
+            }
+            fn destroy_bind_group_layout(
+                &self,
+                _id: BindGroupLayoutId,
+            ) -> Result<(), ResourceError> {
+                unreachable!("the lane's layout outlives the env cube")
+            }
+            fn destroy_bind_group(&self, id: BindGroupId) -> Result<(), ResourceError> {
+                self.destroyed.lock().expect("the destroyed lock").push(id);
+                Ok(())
+            }
+            fn create_buffer(&self, _d: &BufferDescriptor) -> Result<BufferId, ResourceError> {
+                unreachable!()
+            }
+            fn create_buffer_with_data(
+                &self,
+                _d: &BufferDescriptor,
+                _data: &[u8],
+            ) -> Result<BufferId, ResourceError> {
+                unreachable!()
+            }
+            fn destroy_buffer(&self, _id: BufferId) -> Result<(), ResourceError> {
+                unreachable!()
+            }
+            fn write_buffer(
+                &self,
+                _id: BufferId,
+                _offset: u64,
+                _data: &[u8],
+            ) -> Result<(), ResourceError> {
+                unreachable!()
+            }
+            fn write_buffer_async<'a>(
+                &'a self,
+                _id: BufferId,
+                _offset: u64,
+                _data: &'a [u8],
+            ) -> Box<dyn std::future::Future<Output = Result<(), ResourceError>> + Send + 'static>
+            {
+                unreachable!()
+            }
+            fn create_texture(&self, _d: &TextureDescriptor) -> Result<TextureId, ResourceError> {
+                unreachable!()
+            }
+            fn destroy_texture(&self, _id: TextureId) -> Result<(), ResourceError> {
+                unreachable!("the env cube belongs to the bake")
+            }
+            fn write_texture(
+                &self,
+                _id: TextureId,
+                _data: &[u8],
+                _bytes_per_row: Option<u32>,
+                _offset: khora_core::math::dimension::Origin3D,
+                _size: khora_core::math::dimension::Extent3D,
+            ) -> Result<(), ResourceError> {
+                unreachable!()
+            }
+            fn create_texture_view(
+                &self,
+                _id: TextureId,
+                _d: &TextureViewDescriptor,
+            ) -> Result<TextureViewId, ResourceError> {
+                unreachable!()
+            }
+            fn destroy_texture_view(&self, _id: TextureViewId) -> Result<(), ResourceError> {
+                unreachable!("the env cube belongs to the bake")
+            }
+            fn create_sampler(&self, _d: &SamplerDescriptor) -> Result<SamplerId, ResourceError> {
+                unreachable!()
+            }
+            fn destroy_sampler(&self, _id: SamplerId) -> Result<(), ResourceError> {
+                unreachable!("the sampler belongs to the bake")
+            }
+            fn create_command_encoder(&self, _label: Option<&str>) -> Box<dyn CommandEncoder> {
+                unreachable!()
+            }
+            fn submit_command_buffer(&self, _command_buffer: CommandBufferId) {
+                unreachable!()
+            }
+            fn get_surface_format(&self) -> Option<TextureFormat> {
+                unreachable!()
+            }
+            fn get_surface_size(&self) -> (u32, u32) {
+                unreachable!()
+            }
+            fn get_adapter_info(&self) -> GraphicsAdapterInfo {
+                unreachable!()
+            }
+            fn supports_feature(&self, _feature_name: &str) -> bool {
+                unreachable!()
+            }
+        }
     }
 }

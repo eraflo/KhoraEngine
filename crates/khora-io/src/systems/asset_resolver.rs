@@ -226,8 +226,9 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
 
 /// Decodes into `textures` every texture `material` names that it does not
 /// hold yet. A texture that fails to load is logged and skipped: the material
-/// waits for it, and it is tried again when the entity's material ref changes.
-fn load_textures(
+/// waits for it, and it is tried again when the entity's material ref changes
+/// or when the texture's file changes (see `asset_reload`).
+pub(super) fn load_textures(
     material: &dyn Material,
     entity: EntityId,
     textures: &std::sync::RwLock<Assets<CpuTexture>>,
@@ -376,7 +377,9 @@ inventory::submit! {
         // (order_hint 1) so resolution precedes both GPU projections within the
         // same PreExtract phase.
         order_hint: -5,
-        runs_after: &[],
+        // A changed asset's copies are replaced before the authored refs are
+        // compared against them.
+        runs_after: &["asset_reload"],
     }
 }
 
@@ -894,8 +897,15 @@ mod tests {
                 }
             }
 
+            /// One engine tick of the asset systems: the copies of changed
+            /// assets are refreshed, then the authored refs are resolved.
             fn tick(&self, world: &mut World) {
                 let mut deck = OutputDeck::default();
+                let asset_reload = inventory::iter::<DataSystemRegistration>
+                    .into_iter()
+                    .find(|system| system.name == "asset_reload")
+                    .expect("`asset_reload` is registered");
+                (asset_reload.run)(world, &self.runtime, &mut deck);
                 asset_resolver_system(world, &self.runtime, &mut deck);
             }
 
@@ -1286,7 +1296,6 @@ mod tests {
         /// `AssetService` cache. A material resolved after that must not be
         /// projected with the image decoded from the file's former bytes.
         #[test]
-        #[ignore = "hot reload does not yet refresh assets already decoded into the AssetStore"]
         fn a_texture_modified_on_disk_is_served_fresh_once_the_material_ref_changes() {
             let tex_path = "textures/repainted.png";
             let tex = AssetUUID::new_v5(tex_path);

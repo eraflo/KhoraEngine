@@ -38,7 +38,7 @@ use khora_core::asset::{AlphaMode, AssetUUID, Material, StandardMaterial};
 use khora_core::math::{LinearRgba, Mat4};
 
 use super::gltf::{merge, parse_gltf, read_primitive};
-use super::gltf_resources::{image_bytes, load_buffers};
+use super::gltf_resources::{image_bytes, load_buffers, resolve_relative_uri};
 use super::gltf_scene::scene_record;
 use super::{FileSystemResolver, GltfResourceResolver, MeshDispatcher};
 use crate::asset::{
@@ -216,6 +216,34 @@ impl AssetContainer for GltfContainer {
                 Ok(Box::new(PrefabAsset(record)))
             }
         }
+    }
+
+    fn external_files(&self, opened: &(dyn Any + Send + Sync)) -> Vec<String> {
+        let Some(opened) = opened.downcast_ref::<OpenedGltf>() else {
+            return Vec::new();
+        };
+        let buffers = opened
+            .document
+            .buffers()
+            .filter_map(|buffer| match buffer.source() {
+                gltf::buffer::Source::Uri(uri) => Some(uri),
+                gltf::buffer::Source::Bin => None,
+            });
+        let images = opened
+            .document
+            .images()
+            .filter_map(|image| match image.source() {
+                gltf::image::Source::Uri { uri, .. } => Some(uri),
+                gltf::image::Source::View { .. } => None,
+            });
+        let mut files: Vec<String> = buffers
+            .chain(images)
+            .filter(|uri| !uri.starts_with("data:"))
+            .filter_map(|uri| resolve_relative_uri(&opened.base_dir, uri).ok())
+            .collect();
+        files.sort();
+        files.dedup();
+        files
     }
 }
 

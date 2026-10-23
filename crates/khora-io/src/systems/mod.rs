@@ -15,5 +15,6 @@
 //! Data systems khora-io registers into the engine tick: resolving asset
 //! handles, and reloading changed shaders.
 
+pub mod asset_reload;
 pub mod asset_resolver;
 pub mod shader_hot_reload;
