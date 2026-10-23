@@ -63,6 +63,7 @@ const DECOY_PIXEL: [u8; 4] = [200, 0, 200, 255];
 
 const KHR_EMISSIVE_STRENGTH: &str = "KHR_materials_emissive_strength";
 const KHR_TEXTURE_TRANSFORM: &str = "KHR_texture_transform";
+const KHR_SPECULAR: &str = "KHR_materials_specular";
 
 fn points(corners: &[[f32; 3]]) -> Vec<Vec3> {
     corners.iter().copied().map(v3).collect()
@@ -885,6 +886,220 @@ fn material_default_has_the_gltf_spec_defaults() {
         "material_default",
     );
     assert_spec_default_material(&m, "material_default");
+}
+
+// ─── KHR_materials_specular ─────────────────────────────────────────────
+
+/// The `KHR_materials_specular` defaults: strength 1, white, untextured.
+fn assert_specular_defaults(material: &StandardMaterial, what: &str) {
+    assert!(
+        close(material.specular, 1.0),
+        "{what}: specular {}",
+        material.specular
+    );
+    assert_rgb(material.specular_color, [1.0, 1.0, 1.0], what);
+    assert_eq!(material.specular_texture, None, "{what}: specular texture");
+    assert_eq!(
+        material.specular_color_texture, None,
+        "{what}: specular colour texture"
+    );
+}
+
+#[test]
+fn specular_factors_and_textures_map_from_khr_materials_specular() {
+    let mut b = GltfBuilder::new();
+    let image = b.image_in_buffer(&png(2, 2, PIXEL), "image/png");
+    let strength = b.texture(image, None);
+    let colour = b.texture(image, None);
+    let tri_a = triangle_primitive(&mut b, &TRI_A);
+    let tri_b = triangle_primitive(&mut b, &TRI_B);
+    let quad = quad_primitive(&mut b);
+    let full = b.material(json!({
+        "extensions": { KHR_SPECULAR: {
+            "specularFactor": 0.3,
+            "specularColorFactor": [0.5, 0.6, 0.7],
+            "specularTexture": { "index": strength },
+            "specularColorTexture": { "index": colour },
+        } },
+    }));
+    let factor_only = b.material(json!({
+        "extensions": { KHR_SPECULAR: { "specularFactor": 0.0 } },
+    }));
+    let plain = b.material(json!({}));
+    b.extension_used(KHR_SPECULAR);
+    single_mesh_file(
+        &mut b,
+        vec![
+            with_material(tri_a, full),
+            with_material(tri_b, factor_only),
+            with_material(quad, plain),
+        ],
+    );
+    let rel = "models/specular.glb";
+    let project = Project::new();
+    project.write(rel, &b.build_glb());
+    let mut svc = project.open();
+
+    let m = load_standard(&mut svc, sub(rel, "material0"), "material0");
+    assert!(close(m.specular, 0.3), "specularFactor: {}", m.specular);
+    assert_rgb(m.specular_color, [0.5, 0.6, 0.7], "specularColorFactor");
+    assert_eq!(
+        m.specular_texture,
+        Some(sub(rel, &format!("texture{strength}"))),
+        "specularTexture names its texture sub-asset"
+    );
+    assert_eq!(
+        m.specular_color_texture,
+        Some(sub(rel, &format!("texture{colour}"))),
+        "specularColorTexture names its texture sub-asset"
+    );
+
+    let factor_only = load_standard(&mut svc, sub(rel, "material1"), "material1");
+    assert!(
+        close(factor_only.specular, 0.0),
+        "a specularFactor of 0 is kept: {}",
+        factor_only.specular
+    );
+    assert_rgb(
+        factor_only.specular_color,
+        [1.0, 1.0, 1.0],
+        "an absent specularColorFactor is white",
+    );
+    assert_eq!(factor_only.specular_texture, None);
+    assert_eq!(factor_only.specular_color_texture, None);
+
+    let plain = load_standard(&mut svc, sub(rel, "material2"), "material2");
+    assert_specular_defaults(&plain, "a material without the extension");
+}
+
+#[test]
+fn material_default_has_the_specular_defaults() {
+    let mut b = GltfBuilder::new();
+    let tri = triangle_primitive(&mut b, &TRI_A);
+    single_mesh_file(&mut b, vec![tri]);
+    let project = Project::new();
+    project.write("models/bare.glb", &b.build_glb());
+    let mut svc = project.open();
+
+    let m = load_standard(
+        &mut svc,
+        sub("models/bare.glb", "material_default"),
+        "material_default",
+    );
+    assert_specular_defaults(&m, "material_default");
+}
+
+thread_local! {
+    static WARNINGS: std::cell::RefCell<Vec<String>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The warnings logged on the thread that logged them, so tests running side
+/// by side do not read each other's.
+struct ThreadWarnings;
+
+impl log::Log for ThreadWarnings {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.level() <= log::Level::Warn
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) {
+            let line = record.args().to_string();
+            WARNINGS.with(|warnings| warnings.borrow_mut().push(line));
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static THREAD_WARNINGS: ThreadWarnings = ThreadWarnings;
+
+/// Starts recording this thread's warnings afresh.
+fn record_warnings() {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        if log::set_logger(&THREAD_WARNINGS).is_ok() {
+            log::set_max_level(log::LevelFilter::Warn);
+        }
+    });
+    WARNINGS.with(|warnings| warnings.borrow_mut().clear());
+}
+
+/// The warnings recorded on this thread since [`record_warnings`].
+fn recorded_warnings() -> Vec<String> {
+    WARNINGS.with(|warnings| warnings.borrow().clone())
+}
+
+/// `KHR_materials_specular` is imported, so opening a file that uses it does
+/// not report it among the extensions left out; an extension that is still
+/// left out, used beside it, is reported (the recorder sees the report).
+#[test]
+fn a_file_using_khr_materials_specular_does_not_report_it_unmapped() {
+    let mut b = GltfBuilder::new();
+    let tri = triangle_primitive(&mut b, &TRI_A);
+    let m = b.material(json!({
+        "extensions": { KHR_SPECULAR: { "specularFactor": 0.5 } },
+    }));
+    b.extension_used(KHR_SPECULAR);
+    b.extension_used(KHR_TEXTURE_TRANSFORM);
+    single_mesh_file(&mut b, vec![with_material(tri, m)]);
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let container = GltfContainer::new(dir.path());
+
+    record_warnings();
+    container
+        .open(&b.build_glb(), Path::new("models/specular_warn.glb"))
+        .unwrap_or_else(|e| panic!("the GLB opens: {e:#}"));
+    let about_file: Vec<String> = recorded_warnings()
+        .into_iter()
+        .filter(|line| line.contains("specular_warn.glb"))
+        .collect();
+
+    assert!(
+        about_file
+            .iter()
+            .any(|line| line.contains(KHR_TEXTURE_TRANSFORM)),
+        "the extension still left out is reported: {about_file:?}"
+    );
+    assert!(
+        !about_file.iter().any(|line| line.contains(KHR_SPECULAR)),
+        "KHR_materials_specular is imported, not reported: {about_file:?}"
+    );
+}
+
+/// A specular texture (strength or colour) on UV set 1 is sampled with UV
+/// set 0, as every other slot is: opening the file says so.
+#[test]
+fn a_specular_texture_on_a_second_uv_set_is_reported() {
+    for slot in ["specularTexture", "specularColorTexture"] {
+        let mut b = GltfBuilder::new();
+        let image = b.image_in_buffer(&png(2, 2, PIXEL), "image/png");
+        let texture = b.texture(image, None);
+        let tri = triangle_primitive(&mut b, &TRI_A);
+        let m = b.material(json!({
+            "extensions": { KHR_SPECULAR: { slot: { "index": texture, "texCoord": 1 } } },
+        }));
+        b.extension_used(KHR_SPECULAR);
+        single_mesh_file(&mut b, vec![with_material(tri, m)]);
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let container = GltfContainer::new(dir.path());
+        let file = format!("models/{slot}_uv1.glb");
+
+        record_warnings();
+        container
+            .open(&b.build_glb(), Path::new(&file))
+            .unwrap_or_else(|e| panic!("the GLB opens: {e:#}"));
+        let about_file: Vec<String> = recorded_warnings()
+            .into_iter()
+            .filter(|line| line.contains(&file))
+            .collect();
+
+        assert!(
+            about_file.iter().any(|line| line.contains("UV set")),
+            "{slot} on UV set 1 is reported: {about_file:?}"
+        );
+    }
 }
 
 /// UV1, a texture transform, a normal scale, an occlusion strength and a

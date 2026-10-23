@@ -24,6 +24,8 @@
 pub mod eviction;
 pub mod ibl;
 pub mod projection;
+#[cfg(test)]
+mod test_device;
 
 pub use eviction::AssetEviction;
 pub use ibl::{EnvironmentMap, IblBaker};

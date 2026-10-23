@@ -67,6 +67,15 @@ pub struct GpuMaterial {
     pub emissive_texture: Option<TextureId>,
     /// Ambient-occlusion texture backing [`occlusion_view`](Self::occlusion_view).
     pub occlusion_texture: Option<TextureId>,
+    /// Specular-strength texture view (alpha channel), if declared.
+    pub specular_view: Option<TextureViewId>,
+    /// Specular-colour texture view (rgb), if declared.
+    pub specular_color_view: Option<TextureViewId>,
+    /// Specular-strength texture backing [`specular_view`](Self::specular_view).
+    pub specular_texture: Option<TextureId>,
+    /// Specular-colour texture backing
+    /// [`specular_color_view`](Self::specular_color_view).
+    pub specular_color_texture: Option<TextureId>,
     /// Filtering sampler shared by all maps (engine-owned; NOT freed on eviction).
     pub sampler: SamplerId,
     /// Prebuilt group-2 bind group bound by lit lanes.
@@ -100,9 +109,47 @@ impl GpuMaterial {
             normal: self.normal_view,
             emissive: self.emissive_view,
             occlusion: self.occlusion_view,
+            specular: self.specular_view,
+            specular_color: self.specular_color_view,
             sampler: self.sampler,
         }
     }
 }
 
 impl Asset for GpuMaterial {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bindings_carry_the_specular_views_the_material_owns() {
+        let material = GpuMaterial {
+            uniform_buffer: BufferId(1),
+            base_color_view: None,
+            metallic_roughness_view: None,
+            normal_view: None,
+            emissive_view: None,
+            occlusion_view: None,
+            base_color_texture: None,
+            metallic_roughness_texture: None,
+            normal_texture: None,
+            emissive_texture: None,
+            occlusion_texture: None,
+            specular_view: Some(TextureViewId(7)),
+            specular_color_view: Some(TextureViewId(8)),
+            specular_texture: Some(TextureId(17)),
+            specular_color_texture: Some(TextureId(18)),
+            sampler: SamplerId(9),
+            bind_group: BindGroupId(2),
+            variant: ShaderVariantKey::empty(),
+            double_sided: false,
+            blend: false,
+        };
+
+        let bindings = material.bindings();
+
+        assert_eq!(bindings.specular, Some(TextureViewId(7)));
+        assert_eq!(bindings.specular_color, Some(TextureViewId(8)));
+    }
+}

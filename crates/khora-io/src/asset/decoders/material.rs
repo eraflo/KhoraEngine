@@ -236,6 +236,45 @@ mod tests {
         assert_eq!(standard.double_sided, original.double_sided);
     }
 
+    /// A `.kmat` written before `KHR_materials_specular` has no specular
+    /// field: it must decode to specular 1 / white (today's image), not 0.
+    #[test]
+    fn a_kmat_without_specular_fields_decodes_to_specular_one_and_white() {
+        let kmat = r#"{
+            "type_name": "StandardMaterial",
+            "material": {
+                "base_color": { "r": 0.1, "g": 0.2, "b": 0.3, "a": 1.0 },
+                "base_color_texture": (),
+                "metallic": 0.75,
+                "roughness": 0.25,
+                "metallic_roughness_texture": (),
+                "normal_map": (),
+                "occlusion_map": (),
+                "emissive": { "r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0 },
+                "emissive_texture": (),
+                "alpha_mode": "Opaque",
+                "alpha_cutoff": 0.5,
+                "double_sided": false,
+            },
+        }"#;
+
+        let material = MaterialDecoder
+            .load(kmat.as_bytes())
+            .expect("a .kmat without specular fields still decodes");
+        let standard = material
+            .as_any()
+            .downcast_ref::<StandardMaterial>()
+            .expect("decoded material should be a StandardMaterial");
+
+        assert_eq!(standard.metallic, 0.75, "the fields it has are kept");
+        assert_eq!(standard.specular, 1.0);
+        assert_eq!(standard.specular_color, LinearRgba::WHITE);
+        assert_eq!(standard.specular_texture, None);
+        assert_eq!(standard.specular_color_texture, None);
+        assert_eq!(material.specular(), 1.0);
+        assert_eq!(material.specular_color(), LinearRgba::WHITE);
+    }
+
     #[test]
     fn unknown_type_name_errors_without_fallback() {
         let kmat = r#"(type_name: "NoSuchMaterial", material: ())"#;

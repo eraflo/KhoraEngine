@@ -294,6 +294,10 @@ fn an_inline_material_of_every_type_round_trips_through_a_snapshot() {
             alpha_mode: AlphaMode::Blend,
             alpha_cutoff: 0.33,
             double_sided: true,
+            specular: 0.4,
+            specular_color: LinearRgba::new(0.9, 0.8, 0.7, 1.0),
+            specular_texture: Some(AssetUUID::new_v5("t/s.png")),
+            specular_color_texture: Some(AssetUUID::new_v5("t/sc.png")),
         }),
         Box::new(UnlitMaterial {
             base_color: color,

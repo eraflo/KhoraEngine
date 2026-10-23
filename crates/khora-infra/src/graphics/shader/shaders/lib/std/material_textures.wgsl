@@ -1,6 +1,6 @@
 #define_import_path khora::std::material_textures
 
-// PBR material textures — group 2, bindings 1..6. Mirrors the Rust
+// PBR material textures — group 2, bindings 1..8. Mirrors the Rust
 // contract in `khora_core::renderer::api::material::bindings`. The
 // uniform at binding 0 lives in `khora::std::material`.
 //
@@ -30,7 +30,13 @@
 #ifdef HAS_OCCLUSION_MAP
 @group(2) @binding(5) var occlusion_tex: texture_2d<f32>;
 #endif
-@group(2) @binding(6) var material_sampler: sampler;
+#ifdef HAS_SPECULAR_MAP
+@group(2) @binding(6) var specular_tex: texture_2d<f32>;
+#endif
+#ifdef HAS_SPECULAR_COLOR_MAP
+@group(2) @binding(7) var specular_color_tex: texture_2d<f32>;
+#endif
+@group(2) @binding(8) var material_sampler: sampler;
 
 // Albedo (sRGB texture decoded to linear by the GPU on sample). Without a
 // base-color map, returns white so the base-color factor passes through.
@@ -70,6 +76,27 @@ fn sample_occlusion(uv: vec2<f32>) -> f32 {
     return textureSample(occlusion_tex, material_sampler, uv).r;
 #else
     return 1.0;
+#endif
+}
+
+// Specular strength (alpha channel, glTF `specularTexture`). Without a map,
+// returns 1.0 so the strength factor passes through.
+fn sample_specular(uv: vec2<f32>) -> f32 {
+#ifdef HAS_SPECULAR_MAP
+    return textureSample(specular_tex, material_sampler, uv).a;
+#else
+    return 1.0;
+#endif
+}
+
+// Specular colour (sRGB texture decoded to linear, glTF
+// `specularColorTexture`). Without a map, returns white so the colour factor
+// passes through.
+fn sample_specular_color(uv: vec2<f32>) -> vec3<f32> {
+#ifdef HAS_SPECULAR_COLOR_MAP
+    return textureSample(specular_color_tex, material_sampler, uv).rgb;
+#else
+    return vec3<f32>(1.0, 1.0, 1.0);
 #endif
 }
 

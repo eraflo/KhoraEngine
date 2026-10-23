@@ -14,6 +14,9 @@ struct MaterialUniforms {
     // [metallic, roughness, alpha_cutoff, _reserved]. Multiplied with the
     // metallic-roughness texture (white fallback ⇒ factors pass through).
     pbr_factors: vec4<f32>,
+    // glTF KHR_materials_specular: rgb = specular colour, a = specular
+    // strength. White and 1 reproduce the plain 4% dielectric reflectance.
+    specular: vec4<f32>,
 };
 
 @group(2) @binding(0)

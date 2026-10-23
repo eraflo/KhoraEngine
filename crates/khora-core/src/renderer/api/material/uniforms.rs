@@ -37,6 +37,8 @@ pub struct MaterialUniforms {
     /// `metallic`/`roughness`; with the white fallback texture these
     /// factors pass through unchanged.
     pub pbr_factors: [f32; 4],
+    /// glTF `KHR_materials_specular`: rgb = specular colour, a = specular strength.
+    pub specular: [f32; 4],
 }
 
 impl MaterialUniforms {

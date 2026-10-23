@@ -130,9 +130,34 @@ pub trait Material: Asset + AsAny + MaterialClone {
         None
     }
 
+    /// Returns the specular strength (glTF `KHR_materials_specular`
+    /// `specularFactor`). Default implementation is `1.0`.
+    fn specular(&self) -> f32 {
+        1.0
+    }
+
+    /// Returns the specular colour (glTF `KHR_materials_specular`
+    /// `specularColorFactor`). Default implementation is white.
+    fn specular_color(&self) -> crate::math::LinearRgba {
+        crate::math::LinearRgba::WHITE
+    }
+
+    /// Returns the UUID of the specular-strength texture (alpha channel), if
+    /// any. Default implementation is `None`.
+    fn specular_texture(&self) -> Option<crate::asset::AssetUUID> {
+        None
+    }
+
+    /// Returns the UUID of the specular-colour texture (rgb), if any.
+    /// Default implementation is `None`.
+    fn specular_color_texture(&self) -> Option<crate::asset::AssetUUID> {
+        None
+    }
+
     /// Returns the UUID of every texture slot that is set, in slot order:
-    /// base colour, metallic-roughness, normal, emissive, occlusion. This is
-    /// the single list of a material's texture slots.
+    /// base colour, metallic-roughness, normal, emissive, occlusion,
+    /// specular, specular colour. This is the single list of a material's
+    /// texture slots.
     fn textures(&self) -> Vec<crate::asset::AssetUUID> {
         [
             self.base_color_texture(),
@@ -140,6 +165,8 @@ pub trait Material: Asset + AsAny + MaterialClone {
             self.normal_map(),
             self.emissive_texture(),
             self.occlusion_map(),
+            self.specular_texture(),
+            self.specular_color_texture(),
         ]
         .into_iter()
         .flatten()

@@ -167,6 +167,7 @@ impl SimpleUnlitLane {
                     emissive: khora_core::math::LinearRgba::BLACK,
                     ambient: khora_core::math::LinearRgba::BLACK,
                     pbr_factors: [0.0, 1.0, 0.5, 0.0],
+                    specular: [1.0, 1.0, 1.0, 1.0],
                 };
 
                 let mat_offset =

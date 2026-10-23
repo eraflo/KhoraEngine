@@ -415,6 +415,8 @@ fn material_gpu_bindings_fields(
         &x.normal,
         &x.emissive,
         &x.occlusion,
+        &x.specular,
+        &x.specular_color,
         &x.sampler,
     );
 }
@@ -885,11 +887,15 @@ fn gpu_material_fields(x: &khora_core::renderer::api::material::gpu_material::Gp
         &x.normal_view,
         &x.emissive_view,
         &x.occlusion_view,
+        &x.specular_view,
+        &x.specular_color_view,
         &x.base_color_texture,
         &x.metallic_roughness_texture,
         &x.normal_texture,
         &x.emissive_texture,
         &x.occlusion_texture,
+        &x.specular_texture,
+        &x.specular_color_texture,
         &x.sampler,
         &x.bind_group,
         &x.variant,
@@ -949,7 +955,13 @@ fn spot_light_uniform_fields(x: &khora_core::renderer::light::uniforms::SpotLigh
 }
 
 fn material_uniforms_fields(x: &khora_core::renderer::api::material::uniforms::MaterialUniforms) {
-    let _ = (&x.base_color, &x.emissive, &x.ambient, &x.pbr_factors);
+    let _ = (
+        &x.base_color,
+        &x.emissive,
+        &x.ambient,
+        &x.pbr_factors,
+        &x.specular,
+    );
 }
 
 fn model_uniforms_fields(x: &khora_core::renderer::api::gpu_scene::model_uniforms::ModelUniforms) {
@@ -1857,6 +1869,8 @@ fn module_renderer_paths_still_resolve() {
     let _ = khora_core::renderer::api::material::bindings::binding::NORMAL_TEXTURE;
     let _ = khora_core::renderer::api::material::bindings::binding::OCCLUSION_TEXTURE;
     let _ = khora_core::renderer::api::material::bindings::binding::SAMPLER;
+    let _ = khora_core::renderer::api::material::bindings::binding::SPECULAR_COLOR_TEXTURE;
+    let _ = khora_core::renderer::api::material::bindings::binding::SPECULAR_TEXTURE;
     let _ = khora_core::renderer::api::material::bindings::fill_material_bind_group_entries;
     let _ = khora_core::renderer::api::material::fill_material_bind_group_entries;
     same_item(
@@ -1868,6 +1882,8 @@ fn module_renderer_paths_still_resolve() {
     let _ = khora_core::renderer::api::material::bindings::flag::HAS_METALLIC_ROUGHNESS_TEXTURE;
     let _ = khora_core::renderer::api::material::bindings::flag::HAS_NORMAL_MAP;
     let _ = khora_core::renderer::api::material::bindings::flag::HAS_OCCLUSION_MAP;
+    let _ = khora_core::renderer::api::material::bindings::flag::HAS_SPECULAR_COLOR_MAP;
+    let _ = khora_core::renderer::api::material::bindings::flag::HAS_SPECULAR_MAP;
     let _ = khora_core::renderer::api::material::bindings::material_bind_group_layout_entries;
     let _ = khora_core::renderer::api::material::material_bind_group_layout_entries;
     same_item(

@@ -149,15 +149,7 @@ fn material_dependencies(bytes: &[u8]) -> Vec<AssetUUID> {
         return Vec::new();
     };
 
-    [
-        material.base_color_texture(),
-        material.metallic_roughness_texture(),
-        material.normal_map(),
-        material.emissive_texture(),
-    ]
-    .into_iter()
-    .flatten()
-    .collect()
+    material.textures()
 }
 
 #[cfg(test)]
@@ -195,6 +187,53 @@ mod tests {
         assert_eq!(deps, expected, "deps must contain both textures, deduped");
         assert_eq!(deps.len(), 2, "the reused texture appears once");
         assert!(deps.windows(2).all(|w| w[0] <= w[1]), "deps must be sorted");
+    }
+
+    #[test]
+    fn material_lists_its_occlusion_and_both_specular_textures() {
+        let occlusion = AssetUUID::new_v5("textures/ao.png");
+        let specular = AssetUUID::new_v5("textures/specular.png");
+        let specular_color = AssetUUID::new_v5("textures/specular_color.png");
+        let material = StandardMaterial {
+            occlusion_map: Some(occlusion),
+            specular_texture: Some(specular),
+            specular_color_texture: Some(specular_color),
+            ..Default::default()
+        };
+
+        let deps =
+            extract_dependencies("material", "materials/m.kmat", &material_to_kmat(&material));
+
+        let mut expected = vec![occlusion, specular, specular_color];
+        expected.sort();
+        assert_eq!(deps, expected, "occlusion, specular and specular colour");
+    }
+
+    #[test]
+    fn material_lists_every_texture_slot_of_a_kmat() {
+        let slots: Vec<AssetUUID> = [
+            "base", "mr", "normal", "emissive", "ao", "specular", "spec_col",
+        ]
+        .iter()
+        .map(|name| AssetUUID::new_v5(&format!("textures/{name}.png")))
+        .collect();
+        let material = StandardMaterial {
+            base_color_texture: Some(slots[0]),
+            metallic_roughness_texture: Some(slots[1]),
+            normal_map: Some(slots[2]),
+            emissive_texture: Some(slots[3]),
+            occlusion_map: Some(slots[4]),
+            specular_texture: Some(slots[5]),
+            specular_color_texture: Some(slots[6]),
+            ..Default::default()
+        };
+
+        let deps =
+            extract_dependencies("material", "materials/m.kmat", &material_to_kmat(&material));
+
+        let mut expected = slots;
+        expected.sort();
+        assert_eq!(deps, expected, "every set slot is a dependency");
     }
 
     #[test]

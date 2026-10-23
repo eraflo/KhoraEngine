@@ -191,6 +191,8 @@ fn destroy_gpu_material(material: &GpuMaterial, device: &dyn GraphicsDevice) {
         material.normal_view,
         material.emissive_view,
         material.occlusion_view,
+        material.specular_view,
+        material.specular_color_view,
     ]
     .into_iter()
     .flatten()
@@ -205,6 +207,8 @@ fn destroy_gpu_material(material: &GpuMaterial, device: &dyn GraphicsDevice) {
         material.normal_texture,
         material.emissive_texture,
         material.occlusion_texture,
+        material.specular_texture,
+        material.specular_color_texture,
     ]
     .into_iter()
     .flatten()
@@ -251,6 +255,10 @@ mod tests {
             normal_texture: None,
             emissive_texture: None,
             occlusion_texture: None,
+            specular_view: None,
+            specular_color_view: None,
+            specular_texture: None,
+            specular_color_texture: None,
             sampler: SamplerId(0),
             bind_group: BindGroupId(0),
             variant: ShaderVariantKey::empty(),
@@ -399,5 +407,40 @@ mod tests {
         assert_eq!(removed.len(), 1);
         assert_eq!(mesh_count(&store), 1);
         assert!(store.store::<GpuMesh>().read().unwrap().contains(&live));
+    }
+
+    #[test]
+    fn evicting_a_material_frees_its_specular_maps() {
+        use crate::gpu::test_device::RecordingDevice;
+        use khora_core::renderer::api::resource::{TextureId, TextureViewId};
+
+        let store = AssetStore::new();
+        let world = World::new();
+        store.store::<GpuMaterial>().write().unwrap().insert(
+            AssetUUID::new(),
+            AssetHandle::new(GpuMaterial {
+                specular_view: Some(TextureViewId(71)),
+                specular_color_view: Some(TextureViewId(72)),
+                specular_texture: Some(TextureId(81)),
+                specular_color_texture: Some(TextureId(82)),
+                ..material_stub()
+            }),
+        );
+        let device = RecordingDevice::default();
+
+        AssetEviction::new().tick(&store, &world, &device);
+
+        assert_eq!(material_count(&store), 0, "the orphan is evicted");
+        let views = device.destroyed_views();
+        let textures = device.destroyed_textures();
+        for view in [TextureViewId(71), TextureViewId(72)] {
+            assert!(views.contains(&view), "{view:?} freed: {views:?}");
+        }
+        for texture in [TextureId(81), TextureId(82)] {
+            assert!(
+                textures.contains(&texture),
+                "{texture:?} freed: {textures:?}"
+            );
+        }
     }
 }

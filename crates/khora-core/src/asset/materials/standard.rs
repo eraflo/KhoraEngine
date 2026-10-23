@@ -141,6 +141,29 @@ pub struct StandardMaterial {
     /// If `false`, back-facing triangles are culled for better performance.
     /// If `true`, both sides of the geometry are rendered.
     pub double_sided: bool,
+
+    /// The strength of the reflection a non-metal shows (glTF
+    /// `KHR_materials_specular` `specularFactor`): it scales the dielectric
+    /// reflectance at normal and at grazing incidence. `1.0` is the usual
+    /// 4% reflectance; `0.0` removes the dielectric reflection.
+    ///
+    /// A material saved before it existed reads `1.0`.
+    #[serde(default = "full_specular")]
+    pub specular: f32,
+
+    /// The colour of a non-metal's reflection at normal incidence (glTF
+    /// `specularColorFactor`), multiplying the 4% base reflectance (clamped to
+    /// 1). White keeps it neutral; values above 1 strengthen it.
+    #[serde(default)]
+    pub specular_color: LinearRgba,
+
+    /// Optional texture whose **alpha** channel multiplies `specular`.
+    #[serde(default)]
+    pub specular_texture: Option<AssetUUID>,
+
+    /// Optional texture whose rgb (sRGB) multiplies `specular_color`.
+    #[serde(default)]
+    pub specular_color_texture: Option<AssetUUID>,
 }
 
 impl Default for StandardMaterial {
@@ -158,8 +181,17 @@ impl Default for StandardMaterial {
             alpha_mode: AlphaMode::Opaque,
             alpha_cutoff: 0.5,
             double_sided: false,
+            specular: 1.0,
+            specular_color: LinearRgba::WHITE,
+            specular_texture: None,
+            specular_color_texture: None,
         }
     }
+}
+
+/// The specular strength of a material saved before the field existed.
+fn full_specular() -> f32 {
+    1.0
 }
 
 impl Asset for StandardMaterial {}
@@ -206,6 +238,22 @@ impl Material for StandardMaterial {
 
     fn double_sided(&self) -> bool {
         self.double_sided
+    }
+
+    fn specular(&self) -> f32 {
+        self.specular
+    }
+
+    fn specular_color(&self) -> LinearRgba {
+        self.specular_color
+    }
+
+    fn specular_texture(&self) -> Option<AssetUUID> {
+        self.specular_texture
+    }
+
+    fn specular_color_texture(&self) -> Option<AssetUUID> {
+        self.specular_color_texture
     }
 }
 
@@ -394,5 +442,131 @@ mod tests {
         });
 
         assert_eq!(boxed.textures(), vec![normal]);
+    }
+
+    // --- KHR_materials_specular -------------------------------------------
+
+    /// A material that overrides nothing: every accessor is the trait default.
+    #[derive(Clone)]
+    struct BareMaterial;
+
+    impl Asset for BareMaterial {}
+    impl Material for BareMaterial {}
+
+    #[test]
+    fn the_trait_defaults_to_specular_one_white_and_no_specular_textures() {
+        let material = BareMaterial;
+        assert_eq!(material.specular(), 1.0);
+        assert_eq!(material.specular_color(), LinearRgba::WHITE);
+        assert_eq!(material.specular_texture(), None);
+        assert_eq!(material.specular_color_texture(), None);
+    }
+
+    #[test]
+    fn a_default_standard_material_has_specular_one_white_and_no_specular_textures() {
+        let material = StandardMaterial::default();
+        assert_eq!(material.specular, 1.0);
+        assert_eq!(material.specular_color, LinearRgba::WHITE);
+        assert!(material.specular_texture.is_none());
+        assert!(material.specular_color_texture.is_none());
+
+        assert_eq!(material.specular(), 1.0);
+        assert_eq!(material.specular_color(), LinearRgba::WHITE);
+        assert_eq!(material.specular_texture(), None);
+        assert_eq!(material.specular_color_texture(), None);
+    }
+
+    #[test]
+    fn a_standard_material_reports_its_specular_fields_through_the_trait() {
+        let strength = AssetUUID::new_v5("textures/specular.png");
+        let colour = AssetUUID::new_v5("textures/specular_color.png");
+        let material = StandardMaterial {
+            specular: 0.25,
+            specular_color: LinearRgba::new(0.5, 0.6, 0.7, 1.0),
+            specular_texture: Some(strength),
+            specular_color_texture: Some(colour),
+            ..Default::default()
+        };
+        let boxed: Box<dyn Material> = Box::new(material);
+
+        assert_eq!(boxed.specular(), 0.25);
+        assert_eq!(boxed.specular_color(), LinearRgba::new(0.5, 0.6, 0.7, 1.0));
+        assert_eq!(boxed.specular_texture(), Some(strength));
+        assert_eq!(boxed.specular_color_texture(), Some(colour));
+    }
+
+    #[test]
+    fn textures_lists_the_specular_slots_after_occlusion() {
+        let base = AssetUUID::new_v5("textures/base.png");
+        let metallic_roughness = AssetUUID::new_v5("textures/mr.png");
+        let normal = AssetUUID::new_v5("textures/normal.png");
+        let emissive = AssetUUID::new_v5("textures/emissive.png");
+        let occlusion = AssetUUID::new_v5("textures/ao.png");
+        let specular = AssetUUID::new_v5("textures/specular.png");
+        let specular_color = AssetUUID::new_v5("textures/specular_color.png");
+        let material = StandardMaterial {
+            base_color_texture: Some(base),
+            metallic_roughness_texture: Some(metallic_roughness),
+            normal_map: Some(normal),
+            emissive_texture: Some(emissive),
+            occlusion_map: Some(occlusion),
+            specular_texture: Some(specular),
+            specular_color_texture: Some(specular_color),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            material.textures(),
+            vec![
+                base,
+                metallic_roughness,
+                normal,
+                emissive,
+                occlusion,
+                specular,
+                specular_color
+            ],
+            "base colour, metallic-roughness, normal, emissive, occlusion, specular, specular colour"
+        );
+    }
+
+    #[test]
+    fn textures_lists_a_lone_specular_colour_texture() {
+        let specular_color = AssetUUID::new_v5("textures/specular_color.png");
+        let material = StandardMaterial {
+            specular_color_texture: Some(specular_color),
+            ..Default::default()
+        };
+
+        assert_eq!(material.textures(), vec![specular_color]);
+    }
+
+    /// A material saved before the specular fields existed has none of them:
+    /// it must read back as specular 1 / white (today's image), not 0 / black.
+    #[test]
+    fn a_standard_material_saved_without_specular_fields_reads_specular_one_and_white() {
+        let mut saved = serde_json::to_value(StandardMaterial {
+            metallic: 0.75,
+            ..Default::default()
+        })
+        .expect("a standard material serializes");
+        let fields = saved.as_object_mut().expect("a struct serializes to a map");
+        for field in [
+            "specular",
+            "specular_color",
+            "specular_texture",
+            "specular_color_texture",
+        ] {
+            fields.remove(field);
+        }
+
+        let material: StandardMaterial = serde_json::from_value(saved)
+            .expect("a standard material without specular fields still reads");
+
+        assert_eq!(material.metallic, 0.75, "the fields it has are kept");
+        assert_eq!(material.specular, 1.0);
+        assert_eq!(material.specular_color, LinearRgba::WHITE);
+        assert_eq!(material.specular_texture, None);
+        assert_eq!(material.specular_color_texture, None);
     }
 }

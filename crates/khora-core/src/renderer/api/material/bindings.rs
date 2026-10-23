@@ -43,8 +43,12 @@ pub mod binding {
     pub const EMISSIVE_TEXTURE: u32 = 4;
     /// Binding slot for the ambient-occlusion texture (red channel) — linear.
     pub const OCCLUSION_TEXTURE: u32 = 5;
+    /// Binding slot for the specular-strength texture (alpha channel) — linear.
+    pub const SPECULAR_TEXTURE: u32 = 6;
+    /// Binding slot for the specular-colour texture (rgb) — sRGB.
+    pub const SPECULAR_COLOR_TEXTURE: u32 = 7;
     /// Binding slot for the filtering sampler shared by all material maps.
-    pub const SAMPLER: u32 = 6;
+    pub const SAMPLER: u32 = 8;
 }
 
 /// Canonical shader-variant flag names for the optional material texture
@@ -64,6 +68,10 @@ pub mod flag {
     pub const HAS_EMISSIVE_TEXTURE: &str = "HAS_EMISSIVE_TEXTURE";
     /// Set when the material declares an ambient-occlusion map.
     pub const HAS_OCCLUSION_MAP: &str = "HAS_OCCLUSION_MAP";
+    /// Set when the material declares a specular-strength texture.
+    pub const HAS_SPECULAR_MAP: &str = "HAS_SPECULAR_MAP";
+    /// Set when the material declares a specular-colour texture.
+    pub const HAS_SPECULAR_COLOR_MAP: &str = "HAS_SPECULAR_COLOR_MAP";
 }
 
 /// Per-material GPU resources composing the group-2 bind group.
@@ -89,14 +97,18 @@ pub struct MaterialGpuBindings {
     pub emissive: Option<TextureViewId>,
     /// Ambient-occlusion texture view, if the material declares one.
     pub occlusion: Option<TextureViewId>,
+    /// Specular-strength texture view, if the material declares one.
+    pub specular: Option<TextureViewId>,
+    /// Specular-colour texture view, if the material declares one.
+    pub specular_color: Option<TextureViewId>,
     /// Filtering sampler shared by all maps.
     pub sampler: SamplerId,
 }
 
-/// Returns the seven [`BindGroupLayoutEntry`] values defining the canonical
+/// Returns the nine [`BindGroupLayoutEntry`] values defining the canonical
 /// group-2 material layout. Created once at bootstrap and referenced by
 /// every lit pipeline and every cached material bind group.
-pub fn material_bind_group_layout_entries() -> [BindGroupLayoutEntry; 7] {
+pub fn material_bind_group_layout_entries() -> [BindGroupLayoutEntry; 9] {
     let texture = |binding: u32| BindGroupLayoutEntry {
         binding,
         visibility: ShaderStageFlags::FRAGMENT,
@@ -121,6 +133,8 @@ pub fn material_bind_group_layout_entries() -> [BindGroupLayoutEntry; 7] {
         texture(binding::NORMAL_TEXTURE),
         texture(binding::EMISSIVE_TEXTURE),
         texture(binding::OCCLUSION_TEXTURE),
+        texture(binding::SPECULAR_TEXTURE),
+        texture(binding::SPECULAR_COLOR_TEXTURE),
         BindGroupLayoutEntry {
             binding: binding::SAMPLER,
             visibility: ShaderStageFlags::FRAGMENT,
@@ -130,9 +144,9 @@ pub fn material_bind_group_layout_entries() -> [BindGroupLayoutEntry; 7] {
 }
 
 /// Returns the group-2 layout entries for a given shader variant: the
-/// uniform at binding 0, the filtering sampler at binding 5, and **only**
+/// uniform at binding 0, the filtering sampler at binding 8, and **only**
 /// the texture bindings whose `HAS_*` flag is set in `variant`. Binding
-/// indices stay fixed (1/2/3/4) so the WGSL `#ifdef`-gated declarations and
+/// indices stay fixed (1 to 7) so the WGSL `#ifdef`-gated declarations and
 /// the cached bind group line up regardless of which textures are present.
 ///
 /// The same `(LayoutKey::Material, variant)` resolves to this layout for
@@ -174,6 +188,12 @@ pub fn material_layout_entries_for_variant(
     if variant.has_flag(flag::HAS_OCCLUSION_MAP) {
         entries.push(texture(binding::OCCLUSION_TEXTURE));
     }
+    if variant.has_flag(flag::HAS_SPECULAR_MAP) {
+        entries.push(texture(binding::SPECULAR_TEXTURE));
+    }
+    if variant.has_flag(flag::HAS_SPECULAR_COLOR_MAP) {
+        entries.push(texture(binding::SPECULAR_COLOR_TEXTURE));
+    }
     entries.push(BindGroupLayoutEntry {
         binding: binding::SAMPLER,
         visibility: ShaderStageFlags::FRAGMENT,
@@ -184,7 +204,7 @@ pub fn material_layout_entries_for_variant(
 
 /// Pushes the material [`BindGroupEntry`] values into `entries`, in binding
 /// order: the uniform at 0, each declared texture at its fixed slot, then
-/// the sampler at 5. Absent textures (`None`) are skipped, so the entries
+/// the sampler at 8. Absent textures (`None`) are skipped, so the entries
 /// match [`material_layout_entries_for_variant`] for the same variant.
 /// Called by the data-layer projection when building a material's cached
 /// bind group.
@@ -221,6 +241,12 @@ pub fn fill_material_bind_group_entries<'a>(
     if let Some(view) = bindings.occlusion {
         entries.push(texture(binding::OCCLUSION_TEXTURE, view));
     }
+    if let Some(view) = bindings.specular {
+        entries.push(texture(binding::SPECULAR_TEXTURE, view));
+    }
+    if let Some(view) = bindings.specular_color {
+        entries.push(texture(binding::SPECULAR_COLOR_TEXTURE, view));
+    }
     entries.push(BindGroupEntry {
         binding: binding::SAMPLER,
         resource: BindingResource::Sampler(bindings.sampler),
@@ -240,42 +266,16 @@ mod tests {
         assert_eq!(binding::NORMAL_TEXTURE, 3);
         assert_eq!(binding::EMISSIVE_TEXTURE, 4);
         assert_eq!(binding::OCCLUSION_TEXTURE, 5);
-        assert_eq!(binding::SAMPLER, 6);
-    }
-
-    #[test]
-    fn layout_entries_cover_seven_bindings_in_order() {
-        let entries = material_bind_group_layout_entries();
-        assert_eq!(entries.len(), 7);
-        for (i, entry) in entries.iter().enumerate() {
-            assert_eq!(entry.binding, i as u32);
-        }
-    }
-
-    #[test]
-    fn fill_bind_group_entries_pushes_seven_in_order() {
-        let bindings = MaterialGpuBindings {
-            uniform_buffer: BufferId(1),
-            base_color: Some(TextureViewId(2)),
-            metallic_roughness: Some(TextureViewId(3)),
-            normal: Some(TextureViewId(4)),
-            emissive: Some(TextureViewId(5)),
-            occlusion: Some(TextureViewId(6)),
-            sampler: SamplerId(7),
-        };
-        let mut entries: Vec<BindGroupEntry> = Vec::new();
-        fill_material_bind_group_entries(&bindings, &mut entries);
-        assert_eq!(entries.len(), 7);
-        for (i, entry) in entries.iter().enumerate() {
-            assert_eq!(entry.binding, i as u32);
-        }
+        assert_eq!(binding::SPECULAR_TEXTURE, 6);
+        assert_eq!(binding::SPECULAR_COLOR_TEXTURE, 7);
+        assert_eq!(binding::SAMPLER, 8);
     }
 
     #[test]
     fn variant_layout_and_entries_agree_for_base_color_only() {
         let variant = ShaderVariantKey::empty().flag(flag::HAS_BASE_COLOR_TEXTURE);
         let layout = material_layout_entries_for_variant(&variant);
-        // uniform@0 + base_color@1 + sampler@5 — no absent textures.
+        // uniform@0 + base_color@1 + sampler@8 — no absent textures.
         assert_eq!(layout.len(), 3);
         assert_eq!(layout[0].binding, binding::MATERIAL_UNIFORMS);
         assert_eq!(layout[1].binding, binding::BASE_COLOR_TEXTURE);
@@ -288,6 +288,8 @@ mod tests {
             normal: None,
             emissive: None,
             occlusion: None,
+            specular: None,
+            specular_color: None,
             sampler: SamplerId(6),
         };
         let mut entries: Vec<BindGroupEntry> = Vec::new();
@@ -310,7 +312,7 @@ mod tests {
     fn occlusion_variant_layout_and_entries_agree() {
         let variant = ShaderVariantKey::empty().flag(flag::HAS_OCCLUSION_MAP);
         let layout = material_layout_entries_for_variant(&variant);
-        // uniform@0 + occlusion@5 + sampler@6 — occlusion binds before the sampler.
+        // uniform@0 + occlusion@5 + sampler@8 — occlusion binds before the sampler.
         assert_eq!(layout.len(), 3);
         assert_eq!(layout[0].binding, binding::MATERIAL_UNIFORMS);
         assert_eq!(layout[1].binding, binding::OCCLUSION_TEXTURE);
@@ -323,6 +325,8 @@ mod tests {
             normal: None,
             emissive: None,
             occlusion: Some(TextureViewId(2)),
+            specular: None,
+            specular_color: None,
             sampler: SamplerId(6),
         };
         let mut entries: Vec<BindGroupEntry> = Vec::new();
@@ -331,5 +335,185 @@ mod tests {
         for (entry, layout_entry) in entries.iter().zip(layout.iter()) {
             assert_eq!(entry.binding, layout_entry.binding);
         }
+    }
+
+    // --- KHR_materials_specular -------------------------------------------
+
+    /// Every texture flag, in binding order.
+    const EVERY_FLAG: [&str; 7] = [
+        flag::HAS_BASE_COLOR_TEXTURE,
+        flag::HAS_METALLIC_ROUGHNESS_TEXTURE,
+        flag::HAS_NORMAL_MAP,
+        flag::HAS_EMISSIVE_TEXTURE,
+        flag::HAS_OCCLUSION_MAP,
+        flag::HAS_SPECULAR_MAP,
+        flag::HAS_SPECULAR_COLOR_MAP,
+    ];
+
+    fn variant_of(flags: &[&'static str]) -> ShaderVariantKey {
+        flags
+            .iter()
+            .fold(ShaderVariantKey::empty(), |variant, name| {
+                variant.flag(*name)
+            })
+    }
+
+    fn layout_bindings(variant: &ShaderVariantKey) -> Vec<u32> {
+        material_layout_entries_for_variant(variant)
+            .iter()
+            .map(|entry| entry.binding)
+            .collect()
+    }
+
+    fn filled_bindings(bindings: &MaterialGpuBindings) -> Vec<u32> {
+        let mut entries: Vec<BindGroupEntry> = Vec::new();
+        fill_material_bind_group_entries(bindings, &mut entries);
+        entries.iter().map(|entry| entry.binding).collect()
+    }
+
+    /// Bindings with only the uniform and the sampler; the caller sets the
+    /// texture views it declares.
+    fn bare_bindings() -> MaterialGpuBindings {
+        MaterialGpuBindings {
+            uniform_buffer: BufferId(1),
+            base_color: None,
+            metallic_roughness: None,
+            normal: None,
+            emissive: None,
+            occlusion: None,
+            specular: None,
+            specular_color: None,
+            sampler: SamplerId(99),
+        }
+    }
+
+    #[test]
+    fn the_specular_maps_bind_at_six_and_seven_and_the_sampler_at_eight() {
+        assert_eq!(binding::SPECULAR_TEXTURE, 6);
+        assert_eq!(binding::SPECULAR_COLOR_TEXTURE, 7);
+        assert_eq!(binding::SAMPLER, 8);
+    }
+
+    #[test]
+    fn the_full_material_layout_covers_nine_bindings_in_order() {
+        let entries: Vec<BindGroupLayoutEntry> =
+            material_bind_group_layout_entries().into_iter().collect();
+        let bindings: Vec<u32> = entries.iter().map(|entry| entry.binding).collect();
+        assert_eq!(bindings, (0..9).collect::<Vec<u32>>());
+        assert!(matches!(entries[0].ty, BindingType::Buffer { .. }));
+        for entry in &entries[1..8] {
+            assert!(
+                matches!(entry.ty, BindingType::Texture { .. }),
+                "binding {} is a texture",
+                entry.binding
+            );
+        }
+        assert!(matches!(entries[8].ty, BindingType::Sampler(_)));
+    }
+
+    #[test]
+    fn the_specular_maps_are_filterable_2d_textures_the_fragment_samples() {
+        let variant = variant_of(&[flag::HAS_SPECULAR_MAP, flag::HAS_SPECULAR_COLOR_MAP]);
+        let layout = material_layout_entries_for_variant(&variant);
+        for slot in [binding::SPECULAR_TEXTURE, binding::SPECULAR_COLOR_TEXTURE] {
+            let entry = layout
+                .iter()
+                .find(|entry| entry.binding == slot)
+                .unwrap_or_else(|| panic!("binding {slot} is in the layout"));
+            assert_eq!(entry.visibility, ShaderStageFlags::FRAGMENT);
+            assert!(
+                matches!(
+                    entry.ty,
+                    BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: true },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    }
+                ),
+                "binding {slot}: {:?}",
+                entry.ty
+            );
+        }
+    }
+
+    #[test]
+    fn filling_every_slot_pushes_nine_entries_with_the_specular_views_at_six_and_seven() {
+        let bindings = MaterialGpuBindings {
+            uniform_buffer: BufferId(1),
+            base_color: Some(TextureViewId(2)),
+            metallic_roughness: Some(TextureViewId(3)),
+            normal: Some(TextureViewId(4)),
+            emissive: Some(TextureViewId(5)),
+            occlusion: Some(TextureViewId(6)),
+            specular: Some(TextureViewId(7)),
+            specular_color: Some(TextureViewId(8)),
+            sampler: SamplerId(9),
+        };
+        let mut entries: Vec<BindGroupEntry> = Vec::new();
+        fill_material_bind_group_entries(&bindings, &mut entries);
+
+        let slots: Vec<u32> = entries.iter().map(|entry| entry.binding).collect();
+        assert_eq!(slots, (0..9).collect::<Vec<u32>>());
+        assert!(matches!(
+            entries[6].resource,
+            BindingResource::TextureView(TextureViewId(7))
+        ));
+        assert!(matches!(
+            entries[7].resource,
+            BindingResource::TextureView(TextureViewId(8))
+        ));
+        assert!(matches!(
+            entries[8].resource,
+            BindingResource::Sampler(SamplerId(9))
+        ));
+    }
+
+    #[test]
+    fn a_specular_map_alone_lays_out_the_uniform_the_map_and_the_sampler() {
+        let variant = variant_of(&[flag::HAS_SPECULAR_MAP]);
+        assert_eq!(layout_bindings(&variant), vec![0, 6, 8]);
+
+        let bindings = MaterialGpuBindings {
+            specular: Some(TextureViewId(2)),
+            ..bare_bindings()
+        };
+        assert_eq!(filled_bindings(&bindings), layout_bindings(&variant));
+    }
+
+    #[test]
+    fn a_specular_colour_map_alone_lays_out_the_uniform_the_map_and_the_sampler() {
+        let variant = variant_of(&[flag::HAS_SPECULAR_COLOR_MAP]);
+        assert_eq!(layout_bindings(&variant), vec![0, 7, 8]);
+
+        let bindings = MaterialGpuBindings {
+            specular_color: Some(TextureViewId(2)),
+            ..bare_bindings()
+        };
+        assert_eq!(filled_bindings(&bindings), layout_bindings(&variant));
+    }
+
+    #[test]
+    fn every_flag_lays_out_all_nine_bindings_as_the_filled_entries_do() {
+        let variant = variant_of(&EVERY_FLAG);
+        assert_eq!(layout_bindings(&variant), (0..9).collect::<Vec<u32>>());
+
+        let bindings = MaterialGpuBindings {
+            base_color: Some(TextureViewId(2)),
+            metallic_roughness: Some(TextureViewId(3)),
+            normal: Some(TextureViewId(4)),
+            emissive: Some(TextureViewId(5)),
+            occlusion: Some(TextureViewId(6)),
+            specular: Some(TextureViewId(7)),
+            specular_color: Some(TextureViewId(8)),
+            ..bare_bindings()
+        };
+        assert_eq!(filled_bindings(&bindings), layout_bindings(&variant));
+    }
+
+    #[test]
+    fn no_flag_lays_out_the_uniform_and_the_sampler_at_eight() {
+        let variant = ShaderVariantKey::empty();
+        assert_eq!(layout_bindings(&variant), vec![0, 8]);
+        assert_eq!(filled_bindings(&bare_bindings()), vec![0, 8]);
     }
 }

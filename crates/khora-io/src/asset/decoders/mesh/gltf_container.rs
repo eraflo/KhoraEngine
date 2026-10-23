@@ -48,7 +48,7 @@ use crate::asset::{
 
 /// The glTF extensions whose data the sub-assets carry. Any other extension a
 /// file uses is reported once when the file is opened.
-const MAPPED_EXTENSIONS: &[&str] = &["KHR_materials_emissive_strength"];
+const MAPPED_EXTENSIONS: &[&str] = &["KHR_materials_emissive_strength", "KHR_materials_specular"];
 
 /// Lists the sub-assets of a glTF file from its JSON alone: no buffer or image
 /// is read. Bytes that are not glTF (an OBJ) have none.
@@ -299,6 +299,10 @@ fn standard_material(material: &gltf::Material<'_>, container: AssetUUID) -> Sta
         gltf::material::AlphaMode::Mask => AlphaMode::Mask(alpha_cutoff),
         gltf::material::AlphaMode::Blend => AlphaMode::Blend,
     };
+    let specular = material.specular();
+    let [sr, sg, sb] = specular
+        .as_ref()
+        .map_or([1.0; 3], |specular| specular.specular_color_factor());
     StandardMaterial {
         base_color: LinearRgba::new(r, g, b, a),
         base_color_texture: pbr
@@ -322,6 +326,18 @@ fn standard_material(material: &gltf::Material<'_>, container: AssetUUID) -> Sta
         alpha_mode,
         alpha_cutoff,
         double_sided: material.double_sided(),
+        specular: specular
+            .as_ref()
+            .map_or(1.0, |specular| specular.specular_factor()),
+        specular_color: LinearRgba::new(sr, sg, sb, 1.0),
+        specular_texture: specular
+            .as_ref()
+            .and_then(|specular| specular.specular_texture())
+            .and_then(|info| texture(info.texture().index())),
+        specular_color_texture: specular
+            .as_ref()
+            .and_then(|specular| specular.specular_color_texture())
+            .and_then(|info| texture(info.texture().index())),
     }
 }
 
@@ -341,6 +357,10 @@ fn default_material() -> StandardMaterial {
         alpha_mode: AlphaMode::Opaque,
         alpha_cutoff: 0.5,
         double_sided: false,
+        specular: 1.0,
+        specular_color: LinearRgba::WHITE,
+        specular_texture: None,
+        specular_color_texture: None,
     }
 }
 
@@ -374,7 +394,19 @@ fn warn_unmapped_features(document: &gltf::Document, source_path: &Path) {
                 .map(|occlusion| occlusion.tex_coord()),
             material.emissive_texture().map(|info| info.tex_coord()),
         ];
-        second_uv_set |= tex_coords.into_iter().flatten().any(|set| set != 0);
+        let specular_tex_coords = material.specular().map(|specular| {
+            [
+                specular.specular_texture().map(|info| info.tex_coord()),
+                specular
+                    .specular_color_texture()
+                    .map(|info| info.tex_coord()),
+            ]
+        });
+        second_uv_set |= tex_coords
+            .into_iter()
+            .chain(specular_tex_coords.into_iter().flatten())
+            .flatten()
+            .any(|set| set != 0);
         scaled_normal |= material
             .normal_texture()
             .is_some_and(|normal| normal.scale() != 1.0);

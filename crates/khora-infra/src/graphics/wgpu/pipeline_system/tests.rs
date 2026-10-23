@@ -449,3 +449,540 @@ fn coloured_mesh_pipelines_read_the_vertex_colour() {
         );
     }
 }
+
+// ─── KHR_materials_specular ─────────────────────────────────────────────
+
+/// The three lit pipelines: the ones that shade with the material.
+const LIT_PIPELINES: [&str; 3] = [
+    "khora::pipelines::lit_forward",
+    "khora::pipelines::forward_plus",
+    "khora::pipelines::standard_pbr",
+];
+
+/// The group-2 binding of each material texture flag.
+fn material_texture_flags() -> [(&'static str, u32); 7] {
+    use khora_core::renderer::api::material::bindings::flag;
+    [
+        (flag::HAS_BASE_COLOR_TEXTURE, 1),
+        (flag::HAS_METALLIC_ROUGHNESS_TEXTURE, 2),
+        (flag::HAS_NORMAL_MAP, 3),
+        (flag::HAS_EMISSIVE_TEXTURE, 4),
+        (flag::HAS_OCCLUSION_MAP, 5),
+        (flag::HAS_SPECULAR_MAP, 6),
+        (flag::HAS_SPECULAR_COLOR_MAP, 7),
+    ]
+}
+
+/// Composes and validates pipeline `name` under the material `flags`.
+fn compose_with_flags(
+    sys: &WgpuPipelineSystem,
+    name: &str,
+    flags: &[&'static str],
+) -> naga::Module {
+    let mut inner = sys.inner.lock().unwrap();
+    let variant = flags
+        .iter()
+        .fold(ShaderVariantKey::empty(), |variant, flag| {
+            variant.flag(flag)
+        });
+    let mut defs = inner.base_defs.clone();
+    for (k, v) in variant.defs() {
+        if let ShaderDefScalar::Bool(b) = v {
+            defs.insert((*k).to_string(), ShaderDefValue::Bool(*b));
+        }
+    }
+    let source = *inner.pipelines.get(name).expect("pipeline registered");
+    let patched = inject_float_defs(source);
+    let module = inner
+        .composer
+        .make_naga_module(NagaModuleDescriptor {
+            source: &patched,
+            file_path: name,
+            shader_defs: defs,
+            shader_type: ShaderType::Wgsl,
+            ..Default::default()
+        })
+        .unwrap_or_else(|e| panic!("compose {name} ({flags:?}): {e}"));
+    Validator::new(ValidationFlags::all(), Capabilities::all())
+        .validate(&module)
+        .unwrap_or_else(|e| panic!("validate {name} ({flags:?}): {e:?}"));
+    module
+}
+
+/// The module's group-2 globals, by binding.
+fn material_globals(
+    module: &naga::Module,
+) -> std::collections::BTreeMap<u32, naga::Handle<naga::GlobalVariable>> {
+    module
+        .global_variables
+        .iter()
+        .filter_map(|(handle, global)| match global.binding {
+            Some(naga::ResourceBinding { group: 2, binding }) => Some((binding, handle)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A function's name without naga_oil's module decoration.
+fn undecorated(name: &str) -> &str {
+    name.split("X_naga_oil_mod_X").next().unwrap_or(name)
+}
+
+fn function_named<'m>(module: &'m naga::Module, name: &str) -> Option<&'m naga::Function> {
+    module
+        .functions
+        .iter()
+        .map(|(_, function)| function)
+        .find(|function| function.name.as_deref().map(undecorated) == Some(name))
+}
+
+fn fs_main(module: &naga::Module) -> &naga::Function {
+    &module
+        .entry_points
+        .iter()
+        .find(|e| e.stage == naga::ShaderStage::Fragment && e.name == "fs_main")
+        .expect("fs_main fragment entry point")
+        .function
+}
+
+/// Whether `function`, or a function it calls for a value, has an expression
+/// matching `found`.
+fn reaches(
+    module: &naga::Module,
+    function: &naga::Function,
+    found: &dyn Fn(&naga::Function, &naga::Expression) -> bool,
+    seen: &mut HashSet<naga::Handle<naga::Function>>,
+) -> bool {
+    function.expressions.iter().any(|(_, expression)| {
+        found(function, expression)
+            || match expression {
+                naga::Expression::CallResult(callee) => {
+                    seen.insert(*callee) && reaches(module, &module.functions[*callee], found, seen)
+                }
+                _ => false,
+            }
+    })
+}
+
+/// Whether `fs_main` reads `global`, directly or through the functions it calls.
+fn fragment_reads_global(
+    module: &naga::Module,
+    global: naga::Handle<naga::GlobalVariable>,
+) -> bool {
+    let found = |_: &naga::Function, e: &naga::Expression| matches!(e, naga::Expression::GlobalVariable(g) if *g == global);
+    reaches(module, fs_main(module), &found, &mut HashSet::new())
+}
+
+/// Whether `expression` of `function` is `global` (or a load of it).
+fn is_global(
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+    global: naga::Handle<naga::GlobalVariable>,
+) -> bool {
+    match function.expressions[expression] {
+        naga::Expression::GlobalVariable(g) => g == global,
+        naga::Expression::Load { pointer } => is_global(function, pointer, global),
+        _ => false,
+    }
+}
+
+/// Whether `fs_main` reads member `member` of the struct `global`, directly or
+/// through the functions it calls.
+fn fragment_reads_member(
+    module: &naga::Module,
+    global: naga::Handle<naga::GlobalVariable>,
+    member: u32,
+) -> bool {
+    let found = |function: &naga::Function, e: &naga::Expression| {
+        matches!(e, naga::Expression::AccessIndex { base, index }
+            if *index == member && is_global(function, *base, global))
+    };
+    reaches(module, fs_main(module), &found, &mut HashSet::new())
+}
+
+/// Each specular map is declared, at its binding, exactly when its flag is
+/// set, and the fragment samples it then; the sampler sits at 8 in every
+/// variant. Each new flag alone, every flag together, and none.
+#[test]
+fn lit_pipelines_bind_and_sample_each_specular_map_only_under_its_flag() {
+    use khora_core::renderer::api::material::bindings::flag;
+
+    let every_flag: Vec<&'static str> = material_texture_flags()
+        .iter()
+        .map(|(flag, _)| *flag)
+        .collect();
+    let variants: [Vec<&'static str>; 4] = [
+        vec![],
+        vec![flag::HAS_SPECULAR_MAP],
+        vec![flag::HAS_SPECULAR_COLOR_MAP],
+        every_flag,
+    ];
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    for name in LIT_PIPELINES {
+        for flags in &variants {
+            let module = compose_with_flags(&sys, name, flags);
+            let globals = material_globals(&module);
+            let what = format!(
+                "{name} {flags:?}: group 2 = {:?}",
+                globals.keys().collect::<Vec<_>>()
+            );
+
+            // naga_oil drops the globals a variant never reads, so the sampler
+            // is only in a module that samples some map; wherever it is, it is
+            // at binding 8 and nowhere else.
+            for (binding, global) in &globals {
+                let is_sampler = matches!(
+                    module.types[module.global_variables[*global].ty].inner,
+                    naga::TypeInner::Sampler { .. }
+                );
+                assert_eq!(
+                    is_sampler,
+                    *binding == 8,
+                    "{what}: the sampler belongs at binding 8, found binding {binding}"
+                );
+            }
+            if !flags.is_empty() {
+                assert!(
+                    globals.contains_key(&8),
+                    "{what}: a variant sampling a map has no sampler at binding 8"
+                );
+            }
+
+            for (flag, binding) in material_texture_flags() {
+                let set = flags.contains(&flag);
+                match globals.get(&binding) {
+                    Some(texture) if set => {
+                        assert!(
+                            matches!(
+                                module.types[module.global_variables[*texture].ty].inner,
+                                naga::TypeInner::Image { .. }
+                            ),
+                            "{what}: binding {binding} ({flag}) is not a texture"
+                        );
+                        assert!(
+                            fragment_reads_global(&module, *texture),
+                            "{what}: fs_main never samples {flag} at binding {binding}"
+                        );
+                    }
+                    None if set => panic!("{what}: {flag} set but nothing at binding {binding}"),
+                    Some(_) => panic!("{what}: binding {binding} declared without {flag}"),
+                    None => {}
+                }
+            }
+
+            let sampled_textures = module
+                .global_variables
+                .iter()
+                .filter(|(_, g)| matches!(module.types[g.ty].inner, naga::TypeInner::Image { .. }))
+                .count();
+            assert!(
+                sampled_textures <= 16,
+                "{what}: {sampled_textures} sampled textures, over the 16 per stage"
+            );
+        }
+    }
+}
+
+/// The WGSL `MaterialUniforms` is the Rust one byte for byte: 80 bytes, the
+/// specular vec4 at 64, after `pbr_factors`.
+#[test]
+fn the_wgsl_material_uniforms_mirror_the_rust_layout() {
+    use khora_core::renderer::api::material::MaterialUniforms;
+
+    assert_eq!(std::mem::size_of::<MaterialUniforms>(), 80);
+    assert_eq!(std::mem::offset_of!(MaterialUniforms, pbr_factors), 48);
+    assert_eq!(std::mem::offset_of!(MaterialUniforms, specular), 64);
+
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    for name in LIT_PIPELINES {
+        let module = compose_with_flags(&sys, name, &[]);
+        let uniform = *material_globals(&module)
+            .get(&0)
+            .unwrap_or_else(|| panic!("{name}: no material uniform at binding 0"));
+        let naga::TypeInner::Struct { ref members, span } =
+            module.types[module.global_variables[uniform].ty].inner
+        else {
+            panic!("{name}: the material uniform is not a struct");
+        };
+        assert_eq!(
+            span as usize,
+            std::mem::size_of::<MaterialUniforms>(),
+            "{name}: WGSL MaterialUniforms size"
+        );
+        let member = |field: &str| {
+            members
+                .iter()
+                .find(|m| m.name.as_deref() == Some(field))
+                .unwrap_or_else(|| panic!("{name}: MaterialUniforms has no `{field}`"))
+        };
+        assert_eq!(
+            member("pbr_factors").offset as usize,
+            std::mem::offset_of!(MaterialUniforms, pbr_factors),
+            "{name}: pbr_factors offset"
+        );
+        let specular = member("specular");
+        assert_eq!(
+            specular.offset as usize,
+            std::mem::offset_of!(MaterialUniforms, specular),
+            "{name}: specular offset"
+        );
+        assert!(
+            matches!(
+                module.types[specular.ty].inner,
+                naga::TypeInner::Vector {
+                    size: naga::VectorSize::Quad,
+                    scalar: naga::Scalar::F32
+                }
+            ),
+            "{name}: specular is a vec4<f32>"
+        );
+    }
+}
+
+/// Every lit fragment shades with the material's specular colour and
+/// strength, with or without specular maps.
+#[test]
+fn lit_fragments_read_the_material_specular_factors() {
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    for name in LIT_PIPELINES {
+        let module = compose_with_flags(&sys, name, &[]);
+        let uniform = *material_globals(&module)
+            .get(&0)
+            .unwrap_or_else(|| panic!("{name}: no material uniform at binding 0"));
+        let naga::TypeInner::Struct { ref members, .. } =
+            module.types[module.global_variables[uniform].ty].inner
+        else {
+            panic!("{name}: the material uniform is not a struct");
+        };
+        let specular = members
+            .iter()
+            .position(|m| m.name.as_deref() == Some("specular"))
+            .unwrap_or_else(|| panic!("{name}: MaterialUniforms has no `specular`"));
+        assert!(
+            fragment_reads_member(&module, uniform, specular as u32),
+            "{name}: fs_main never reads material.specular"
+        );
+    }
+}
+
+/// The shared Fresnel term takes the F90 the specular strength sets:
+/// `fresnel_schlick(cos, f0, f90)`.
+#[test]
+fn fresnel_schlick_takes_an_f90() {
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    for name in LIT_PIPELINES {
+        let module = compose_with_flags(&sys, name, &[]);
+        let fresnel = function_named(&module, "fresnel_schlick")
+            .unwrap_or_else(|| panic!("{name}: no fresnel_schlick in the composed module"));
+        assert_eq!(
+            fresnel.arguments.len(),
+            3,
+            "{name}: fresnel_schlick(cos_theta, f0, f90)"
+        );
+    }
+}
+
+/// `sample_specular` reads the strength map as a scalar,
+/// `sample_specular_color` the colour map as rgb.
+#[test]
+fn material_textures_sample_specular_as_a_scalar_and_specular_colour_as_rgb() {
+    use khora_core::renderer::api::material::bindings::flag;
+
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    for name in LIT_PIPELINES {
+        let module = compose_with_flags(
+            &sys,
+            name,
+            &[flag::HAS_SPECULAR_MAP, flag::HAS_SPECULAR_COLOR_MAP],
+        );
+        let result = |function: &str| {
+            let found = function_named(&module, function)
+                .unwrap_or_else(|| panic!("{name}: no {function} in the composed module"));
+            let result = found
+                .result
+                .as_ref()
+                .unwrap_or_else(|| panic!("{name}: {function} returns nothing"));
+            module.types[result.ty].inner.clone()
+        };
+        assert!(
+            matches!(
+                result("sample_specular"),
+                naga::TypeInner::Scalar(naga::Scalar::F32)
+            ),
+            "{name}: sample_specular returns an f32"
+        );
+        assert!(
+            matches!(
+                result("sample_specular_color"),
+                naga::TypeInner::Vector {
+                    size: naga::VectorSize::Tri,
+                    scalar: naga::Scalar::F32
+                }
+            ),
+            "{name}: sample_specular_color returns a vec3<f32>"
+        );
+    }
+}
+
+/// Each call's result expression, with the arguments it was called with.
+type Calls =
+    std::collections::HashMap<naga::Handle<naga::Expression>, Vec<naga::Handle<naga::Expression>>>;
+
+/// The `Call` statements of `block`, nested blocks included: each call's
+/// result expression with the arguments it was computed from.
+fn call_arguments(block: &naga::Block, calls: &mut Calls) {
+    for statement in block.iter() {
+        match statement {
+            naga::Statement::Call {
+                arguments,
+                result: Some(result),
+                ..
+            } => {
+                calls.insert(*result, arguments.clone());
+            }
+            naga::Statement::Block(inner) => call_arguments(inner, calls),
+            naga::Statement::If { accept, reject, .. } => {
+                call_arguments(accept, calls);
+                call_arguments(reject, calls);
+            }
+            naga::Statement::Loop {
+                body, continuing, ..
+            } => {
+                call_arguments(body, calls);
+                call_arguments(continuing, calls);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The expressions `expression` is computed from, a call's result included
+/// (through the arguments it was called with).
+fn operands(
+    function: &naga::Function,
+    calls: &Calls,
+    expression: naga::Handle<naga::Expression>,
+) -> Vec<naga::Handle<naga::Expression>> {
+    use naga::Expression as E;
+    match &function.expressions[expression] {
+        E::Binary { left, right, .. } => vec![*left, *right],
+        E::Unary { expr, .. } | E::Splat { value: expr, .. } | E::Load { pointer: expr } => {
+            vec![*expr]
+        }
+        E::AccessIndex { base, .. } => vec![*base],
+        E::Access { base, index } => vec![*base, *index],
+        E::Swizzle { vector, .. } => vec![*vector],
+        E::Compose { components, .. } => components.clone(),
+        E::Math {
+            arg,
+            arg1,
+            arg2,
+            arg3,
+            ..
+        } => [Some(*arg), *arg1, *arg2, *arg3]
+            .into_iter()
+            .flatten()
+            .collect(),
+        E::Select {
+            condition,
+            accept,
+            reject,
+        } => vec![*condition, *accept, *reject],
+        E::As { expr, .. } => vec![*expr],
+        E::CallResult(_) => calls.get(&expression).cloned().unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+/// Whether `expression` is computed, at any depth, from `found`.
+fn computed_from(
+    function: &naga::Function,
+    calls: &Calls,
+    expression: naga::Handle<naga::Expression>,
+    found: &dyn Fn(naga::Handle<naga::Expression>) -> bool,
+) -> bool {
+    found(expression)
+        || operands(function, calls, expression)
+            .into_iter()
+            .any(|operand| computed_from(function, calls, operand, found))
+}
+
+/// Whether `expression` reaches `target` along some path that is never
+/// multiplied by a value computed from `weight`.
+fn reaches_unweighted(
+    function: &naga::Function,
+    calls: &Calls,
+    expression: naga::Handle<naga::Expression>,
+    target: &dyn Fn(naga::Handle<naga::Expression>) -> bool,
+    weight: &dyn Fn(naga::Handle<naga::Expression>) -> bool,
+) -> bool {
+    if target(expression) {
+        return true;
+    }
+    // A product weights the paths through one factor by the other factor.
+    if let naga::Expression::Binary {
+        op: naga::BinaryOperator::Multiply,
+        left,
+        right,
+    } = function.expressions[expression]
+    {
+        let through = |factor, other| {
+            !computed_from(function, calls, other, weight)
+                && reaches_unweighted(function, calls, factor, target, weight)
+        };
+        return through(left, right) || through(right, left);
+    }
+    operands(function, calls, expression)
+        .into_iter()
+        .any(|operand| reaches_unweighted(function, calls, operand, target, weight))
+}
+
+/// A specular strength of 0 removes a non-metal's reflection, the
+/// environment's included: in the split-sum `f0·A + f90·B`, the LUT's bias
+/// `B` (`brdf.y`) is scaled by the grazing reflectance as the scale is, so no
+/// path carries `brdf.y` to the ambient result without a factor computed
+/// from the dielectric reflectance. At the default strength that factor is
+/// exactly 1, so today's image is unchanged.
+#[test]
+fn the_ibl_split_sum_bias_is_scaled_by_the_specular_strength() {
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    for name in LIT_PIPELINES {
+        let module = compose_with_flags(&sys, name, &[]);
+        let ibl = function_named(&module, "ibl_ambient")
+            .unwrap_or_else(|| panic!("{name}: no ibl_ambient in the composed module"));
+        let argument = |wanted: &str| {
+            ibl.arguments
+                .iter()
+                .position(|a| a.name.as_deref() == Some(wanted))
+                .unwrap_or_else(|| panic!("{name}: ibl_ambient has no `{wanted}` argument"))
+                as u32
+        };
+        let (brdf, dielectric) = (argument("brdf"), argument("dielectric"));
+        let mut calls = std::collections::HashMap::new();
+        call_arguments(&ibl.body, &mut calls);
+
+        let is_bias = |e: naga::Handle<naga::Expression>| {
+            matches!(ibl.expressions[e], naga::Expression::AccessIndex { base, index: 1 }
+                if matches!(ibl.expressions[base], naga::Expression::FunctionArgument(i) if i == brdf))
+        };
+        let is_dielectric = |e: naga::Handle<naga::Expression>| matches!(ibl.expressions[e], naga::Expression::FunctionArgument(i) if i == dielectric);
+        let result = ibl
+            .body
+            .iter()
+            .find_map(|statement| match statement {
+                naga::Statement::Return { value: Some(value) } => Some(*value),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{name}: ibl_ambient returns nothing"));
+
+        assert!(
+            computed_from(ibl, &calls, result, &is_bias),
+            "{name}: ibl_ambient does not read the LUT bias brdf.y at all"
+        );
+        assert!(
+            !reaches_unweighted(ibl, &calls, result, &is_bias, &is_dielectric),
+            "{name}: the LUT bias brdf.y reaches the ambient unscaled by the specular \
+             strength — a dielectric of specular 0 still reflects prefiltered * brdf.y"
+        );
+    }
+}

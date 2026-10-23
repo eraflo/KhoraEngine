@@ -272,6 +272,10 @@ fn standard_material_fields(x: &khora_core::asset::StandardMaterial) {
         &x.alpha_mode,
         &x.alpha_cutoff,
         &x.double_sided,
+        &x.specular,
+        &x.specular_color,
+        &x.specular_texture,
+        &x.specular_color_texture,
     );
 }
 
@@ -1259,6 +1263,13 @@ mod trait_items {
         let _ = <T as khora_core::asset::Material>::occlusion_map;
         let _ = <T as khora_core::asset::Material>::alpha_mode;
         let _ = <T as khora_core::asset::Material>::double_sided;
+    }
+
+    fn material_trait_specular_items<T: khora_core::asset::Material>() {
+        let _ = <T as khora_core::asset::Material>::specular;
+        let _ = <T as khora_core::asset::Material>::specular_color;
+        let _ = <T as khora_core::asset::Material>::specular_texture;
+        let _ = <T as khora_core::asset::Material>::specular_color_texture;
     }
 
     fn material_clone_trait_items<T: khora_core::asset::MaterialClone>() {

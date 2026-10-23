@@ -14,14 +14,14 @@
 #import khora::std::model::model
 #import khora::std::vertex::{VertexInput, VertexOutput}
 #import khora::std::material::material
-#import khora::std::material_textures::{sample_albedo, sample_metallic_roughness, sample_emissive, sample_occlusion}
+#import khora::std::material_textures::{sample_albedo, sample_metallic_roughness, sample_emissive, sample_occlusion, sample_specular, sample_specular_color}
 #ifdef HAS_NORMAL_MAP
 #import khora::std::material_textures::apply_normal_map
 #endif
 #import khora::lighting::structs::{DirectionalLight, PointLight, SpotLight}
 #import khora::lighting::uniforms::lights
 #import khora::lighting::attenuation::{calculate_attenuation, calculate_spot_attenuation}
-#import khora::lighting::pbr::{cook_torrance, tonemap_reinhard, ibl_ambient, IBL_MAX_MIP}
+#import khora::lighting::pbr::{cook_torrance, dielectric_specular, tonemap_reinhard, ibl_ambient, IBL_MAX_MIP}
 #import khora::shadow::sample_2d::sample_shadow_pcf
 #import khora::shadow::sample_cube::sample_point_shadow
 
@@ -53,6 +53,7 @@ fn calculate_directional_lights(
     albedo: vec3<f32>,
     metallic: f32,
     roughness: f32,
+    dielectric: vec4<f32>,
 ) -> vec3<f32> {
     var result = vec3<f32>(0.0);
     for (var i = 0u; i < lights.num_directional_lights && i < #{MAX_DIRECTIONAL_LIGHTS}u; i++) {
@@ -67,7 +68,7 @@ fn calculate_directional_lights(
             light.shadow_params.z,
         );
         let radiance = light.color.rgb * light.color.a;
-        result += cook_torrance(n, v, l, albedo, metallic, roughness, radiance) * shadow;
+        result += cook_torrance(n, v, l, albedo, metallic, roughness, dielectric, radiance) * shadow;
     }
     return result;
 }
@@ -79,6 +80,7 @@ fn calculate_point_lights(
     albedo: vec3<f32>,
     metallic: f32,
     roughness: f32,
+    dielectric: vec4<f32>,
 ) -> vec3<f32> {
     var result = vec3<f32>(0.0);
     for (var i = 0u; i < lights.num_point_lights && i < #{MAX_POINT_LIGHTS}u; i++) {
@@ -92,7 +94,7 @@ fn calculate_point_lights(
         let attenuation = calculate_attenuation(distance, light.position.w);
         let shadow = sample_point_shadow(light, world_position, n);
         let radiance = light.color.rgb * light.color.a * attenuation;
-        result += cook_torrance(n, v, l, albedo, metallic, roughness, radiance) * shadow;
+        result += cook_torrance(n, v, l, albedo, metallic, roughness, dielectric, radiance) * shadow;
     }
     return result;
 }
@@ -104,6 +106,7 @@ fn calculate_spot_lights(
     albedo: vec3<f32>,
     metallic: f32,
     roughness: f32,
+    dielectric: vec4<f32>,
 ) -> vec3<f32> {
     var result = vec3<f32>(0.0);
     for (var i = 0u; i < lights.num_spot_lights && i < #{MAX_SPOT_LIGHTS}u; i++) {
@@ -134,7 +137,7 @@ fn calculate_spot_lights(
             light.shadow_params.z,
         );
         let radiance = light.color.rgb * light.color.a * total_attenuation;
-        result += cook_torrance(n, v, l, albedo, metallic, roughness, radiance) * shadow;
+        result += cook_torrance(n, v, l, albedo, metallic, roughness, dielectric, radiance) * shadow;
     }
     return result;
 }
@@ -155,6 +158,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let mr = sample_metallic_roughness(input.uv);
     let metallic = clamp(material.pbr_factors.x * mr.x, 0.0, 1.0);
     let roughness = clamp(material.pbr_factors.y * mr.y, 0.05, 1.0);
+    // glTF KHR_materials_specular: the dielectric reflectance and its weight.
+    let dielectric = dielectric_specular(
+        material.specular.rgb * sample_specular_color(input.uv),
+        material.specular.a * sample_specular(input.uv),
+    );
     // Geometric normal, perturbed by the tangent-space normal map only for
     // materials whose variant declares one (`HAS_NORMAL_MAP`).
     let geometric_normal = normalize(input.normal);
@@ -173,10 +181,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let refl = reflect(-v, n);
     let prefiltered = textureSampleLevel(ibl_prefiltered, ibl_sampler, refl, roughness * IBL_MAX_MIP).rgb;
     let brdf = textureSampleLevel(ibl_brdf_lut, ibl_sampler, vec2<f32>(max(dot(n, v), 0.0), roughness), 0.0).rg;
-    var color = ibl_ambient(n, v, albedo, metallic, roughness, ao, irradiance, prefiltered, brdf);
-    color += calculate_directional_lights(input.world_position, n, v, albedo, metallic, roughness);
-    color += calculate_point_lights(input.world_position, n, v, albedo, metallic, roughness);
-    color += calculate_spot_lights(input.world_position, n, v, albedo, metallic, roughness);
+    var color = ibl_ambient(n, v, albedo, metallic, roughness, dielectric, ao, irradiance, prefiltered, brdf);
+    color += calculate_directional_lights(input.world_position, n, v, albedo, metallic, roughness, dielectric);
+    color += calculate_point_lights(input.world_position, n, v, albedo, metallic, roughness, dielectric);
+    color += calculate_spot_lights(input.world_position, n, v, albedo, metallic, roughness, dielectric);
     color += material.emissive * sample_emissive(input.uv);
 
     color = tonemap_reinhard(color);

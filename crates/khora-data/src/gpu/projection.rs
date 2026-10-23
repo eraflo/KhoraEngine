@@ -378,6 +378,12 @@ fn material_variant(material: &dyn Material) -> ShaderVariantKey {
     if material.occlusion_map().is_some() {
         variant = variant.flag(flag::HAS_OCCLUSION_MAP);
     }
+    if material.specular_texture().is_some() {
+        variant = variant.flag(flag::HAS_SPECULAR_MAP);
+    }
+    if material.specular_color_texture().is_some() {
+        variant = variant.flag(flag::HAS_SPECULAR_COLOR_MAP);
+    }
     variant
 }
 
@@ -413,6 +419,10 @@ impl MaterialProjector<'_> {
                 alpha_mask_cutoff(material.alpha_mode()),
                 0.0,
             ],
+            specular: {
+                let color = material.specular_color();
+                [color.r, color.g, color.b, material.specular()]
+            },
         };
 
         // Color maps decode as sRGB; data maps (normal, metallic-roughness)
@@ -428,6 +438,11 @@ impl MaterialProjector<'_> {
         let emissive = self.resolve_texture(material.emissive_texture(), Srgb, cpu_textures)?;
         // AO is a linear data map (red channel = occlusion), never sRGB.
         let occlusion = self.resolve_texture(material.occlusion_map(), Linear, cpu_textures)?;
+        // Specular strength is a data map (alpha channel); its colour is a
+        // colour, decoded as sRGB.
+        let specular = self.resolve_texture(material.specular_texture(), Linear, cpu_textures)?;
+        let specular_color =
+            self.resolve_texture(material.specular_color_texture(), Srgb, cpu_textures)?;
 
         let uniform_buffer = self
             .device
@@ -450,6 +465,8 @@ impl MaterialProjector<'_> {
             normal: normal.map(|(_, view)| view),
             emissive: emissive.map(|(_, view)| view),
             occlusion: occlusion.map(|(_, view)| view),
+            specular: specular.map(|(_, view)| view),
+            specular_color: specular_color.map(|(_, view)| view),
             sampler: self.sampler,
         };
 
@@ -462,7 +479,7 @@ impl MaterialProjector<'_> {
             .map_err(|e| log::error!("material group-2 layout resolution failed: {e:?}"))
             .ok()?;
 
-        let mut entries = Vec::with_capacity(7);
+        let mut entries = Vec::with_capacity(9);
         fill_material_bind_group_entries(&bindings, &mut entries);
         let bind_group = self
             .device
@@ -486,6 +503,10 @@ impl MaterialProjector<'_> {
             normal_texture: normal.map(|(texture, _)| texture),
             emissive_texture: emissive.map(|(texture, _)| texture),
             occlusion_texture: occlusion.map(|(texture, _)| texture),
+            specular_view: specular.map(|(_, view)| view),
+            specular_color_view: specular_color.map(|(_, view)| view),
+            specular_texture: specular.map(|(texture, _)| texture),
+            specular_color_texture: specular_color.map(|(texture, _)| texture),
             sampler: self.sampler,
             bind_group,
             variant,
@@ -668,6 +689,203 @@ mod tests {
         assert!(
             material_textures_ready(&material, &cpu_textures),
             "every listed texture is decoded"
+        );
+    }
+
+    // --- KHR_materials_specular -------------------------------------------
+
+    use crate::gpu::test_device::{BoundEntry, LayoutOnlyPipelines, RecordingDevice};
+    use khora_core::renderer::api::resource::TextureFormat;
+
+    /// A decoded 8-bit RGBA texture of `width` × `height`, as the image
+    /// decoder hands it over (the material slot picks its colour space).
+    fn rgba8_texture(width: u32, height: u32) -> AssetHandle<CpuTexture> {
+        AssetHandle::new(CpuTexture {
+            pixels: vec![255; (width * height * 4) as usize],
+            size: khora_core::math::Extent3D {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            format: TextureFormat::Rgba8Unorm,
+            mip_level_count: 1,
+            sample_count: SampleCount::X1,
+            dimension: TextureDimension::D2,
+            usage: TextureUsage::COPY_DST | TextureUsage::TEXTURE_BINDING,
+        })
+    }
+
+    /// Projects `material` on a recording device.
+    fn project(
+        material: &dyn Material,
+        cpu_textures: &crate::assets::Assets<CpuTexture>,
+        device: &RecordingDevice,
+    ) -> GpuMaterial {
+        let pipelines = LayoutOnlyPipelines;
+        let projector = MaterialProjector {
+            device,
+            pipeline_system: &pipelines,
+            sampler: SamplerId(1000),
+        };
+        projector
+            .build_gpu_material(material, cpu_textures)
+            .expect("the material projects")
+    }
+
+    /// The `MaterialUniforms` the projection uploaded (its one data buffer).
+    fn uploaded_uniforms(device: &RecordingDevice) -> MaterialUniforms {
+        let buffers = device.buffers_with_data();
+        assert_eq!(buffers.len(), 1, "one uniform buffer per material");
+        assert_eq!(
+            buffers[0].len(),
+            std::mem::size_of::<MaterialUniforms>(),
+            "the uniform buffer holds a whole MaterialUniforms"
+        );
+        bytemuck::pod_read_unaligned(&buffers[0])
+    }
+
+    #[test]
+    fn material_variant_sets_each_specular_flag_when_its_map_is_declared() {
+        let plain = StandardMaterial::default();
+        assert!(!material_variant(&plain).has_flag(flag::HAS_SPECULAR_MAP));
+        assert!(!material_variant(&plain).has_flag(flag::HAS_SPECULAR_COLOR_MAP));
+
+        let strength = StandardMaterial {
+            specular_texture: Some(AssetUUID::new_v5("textures/specular.png")),
+            ..Default::default()
+        };
+        assert!(material_variant(&strength).has_flag(flag::HAS_SPECULAR_MAP));
+        assert!(!material_variant(&strength).has_flag(flag::HAS_SPECULAR_COLOR_MAP));
+
+        let colour = StandardMaterial {
+            specular_color_texture: Some(AssetUUID::new_v5("textures/specular_color.png")),
+            ..Default::default()
+        };
+        assert!(!material_variant(&colour).has_flag(flag::HAS_SPECULAR_MAP));
+        assert!(material_variant(&colour).has_flag(flag::HAS_SPECULAR_COLOR_MAP));
+    }
+
+    #[test]
+    fn the_projection_writes_the_specular_colour_and_strength_into_the_uniform() {
+        let material = StandardMaterial {
+            specular: 0.25,
+            specular_color: LinearRgba::new(0.5, 0.6, 0.7, 1.0),
+            ..Default::default()
+        };
+        let device = RecordingDevice::default();
+        project(&material, &crate::assets::Assets::new(), &device);
+
+        assert_eq!(
+            uploaded_uniforms(&device).specular,
+            [0.5, 0.6, 0.7, 0.25],
+            "rgb = specular colour, a = specular strength"
+        );
+    }
+
+    #[test]
+    fn the_projection_writes_specular_one_and_white_for_a_default_material() {
+        let device = RecordingDevice::default();
+        project(
+            &StandardMaterial::default(),
+            &crate::assets::Assets::new(),
+            &device,
+        );
+
+        assert_eq!(uploaded_uniforms(&device).specular, [1.0, 1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn the_specular_map_uploads_linear_and_the_specular_colour_map_srgb() {
+        // Told apart by size: the strength map is 1×1, the colour map 2×1.
+        let strength = AssetUUID::new_v5("textures/specular.png");
+        let colour = AssetUUID::new_v5("textures/specular_color.png");
+        let mut cpu_textures = crate::assets::Assets::<CpuTexture>::new();
+        cpu_textures.insert(strength, rgba8_texture(1, 1));
+        cpu_textures.insert(colour, rgba8_texture(2, 1));
+        let material = StandardMaterial {
+            specular_texture: Some(strength),
+            specular_color_texture: Some(colour),
+            ..Default::default()
+        };
+        let device = RecordingDevice::default();
+        project(&material, &cpu_textures, &device);
+
+        let uploaded = device.textures();
+        let format_of = |width: u32| {
+            uploaded
+                .iter()
+                .find(|texture| texture.size.width == width)
+                .map(|texture| texture.format)
+                .unwrap_or_else(|| panic!("a {width}×1 texture is uploaded: {uploaded:?}"))
+        };
+        assert_eq!(
+            format_of(1),
+            TextureFormat::Rgba8Unorm,
+            "the specular strength map is data: linear"
+        );
+        assert_eq!(
+            format_of(2),
+            TextureFormat::Rgba8UnormSrgb,
+            "the specular colour map is a colour: sRGB"
+        );
+    }
+
+    #[test]
+    fn a_projected_material_binds_and_owns_its_specular_maps() {
+        let strength = AssetUUID::new_v5("textures/specular.png");
+        let colour = AssetUUID::new_v5("textures/specular_color.png");
+        let mut cpu_textures = crate::assets::Assets::<CpuTexture>::new();
+        cpu_textures.insert(strength, rgba8_texture(1, 1));
+        cpu_textures.insert(colour, rgba8_texture(2, 1));
+        let material = StandardMaterial {
+            specular_texture: Some(strength),
+            specular_color_texture: Some(colour),
+            ..Default::default()
+        };
+        let device = RecordingDevice::default();
+        let gpu = project(&material, &cpu_textures, &device);
+
+        assert!(gpu.variant.has_flag(flag::HAS_SPECULAR_MAP));
+        assert!(gpu.variant.has_flag(flag::HAS_SPECULAR_COLOR_MAP));
+
+        let specular_view = gpu.specular_view.expect("the specular map has a view");
+        let specular_color_view = gpu
+            .specular_color_view
+            .expect("the specular colour map has a view");
+        assert_eq!(
+            device.texture_of_view(specular_view),
+            gpu.specular_texture,
+            "the material owns the texture behind its specular view"
+        );
+        assert_eq!(
+            device.texture_of_view(specular_color_view),
+            gpu.specular_color_texture,
+            "the material owns the texture behind its specular colour view"
+        );
+
+        let bind_groups = device.bind_groups();
+        assert_eq!(bind_groups.len(), 1, "one bind group per material");
+        assert_eq!(
+            bind_groups[0],
+            vec![
+                BoundEntry {
+                    binding: 0,
+                    view: None
+                },
+                BoundEntry {
+                    binding: 6,
+                    view: Some(specular_view)
+                },
+                BoundEntry {
+                    binding: 7,
+                    view: Some(specular_color_view)
+                },
+                BoundEntry {
+                    binding: 8,
+                    view: None
+                },
+            ],
+            "uniform, specular at 6, specular colour at 7, sampler at 8"
         );
     }
 }

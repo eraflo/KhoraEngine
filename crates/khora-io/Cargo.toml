@@ -33,7 +33,11 @@ image = "0.25.9"
 
 # Mesh handling
 tobj = "4.0"
-gltf = { version = "1.0", features = ["import", "KHR_materials_emissive_strength"] }
+gltf = { version = "1.0", features = [
+    "import",
+    "KHR_materials_emissive_strength",
+    "KHR_materials_specular",
+] }
 
 # Audio
 hound = "3.5"
