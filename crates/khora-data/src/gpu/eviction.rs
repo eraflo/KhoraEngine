@@ -61,6 +61,12 @@ const DEFAULT_MAX_PER_FRAME: usize = 16;
 pub struct AssetEviction {
     max_per_frame: usize,
     last_evicted_count: usize,
+    /// GPU meshes taken out of the cache while still referenced (their
+    /// asset changed), freed at the next tick.
+    retired_meshes: Vec<AssetHandle<GpuMesh>>,
+    /// GPU materials taken out of the cache while still referenced, freed
+    /// at the next tick.
+    retired_materials: Vec<AssetHandle<GpuMaterial>>,
 }
 
 impl AssetEviction {
@@ -69,6 +75,8 @@ impl AssetEviction {
         Self {
             max_per_frame: DEFAULT_MAX_PER_FRAME,
             last_evicted_count: 0,
+            retired_meshes: Vec::new(),
+            retired_materials: Vec::new(),
         }
     }
 
@@ -77,18 +85,33 @@ impl AssetEviction {
         Self {
             max_per_frame,
             last_evicted_count: 0,
+            retired_meshes: Vec::new(),
+            retired_materials: Vec::new(),
         }
     }
 
-    /// Runs one frame of eviction, sharing `max_per_frame` across materials
-    /// then meshes. Orphans beyond the budget stay cached for the next frame —
-    /// harmless, since an orphaned entry is simply not yet reclaimed.
+    /// Runs one frame of eviction: frees everything [`retire`](Self::retire)d
+    /// since the last tick, then shares `max_per_frame` across orphaned
+    /// materials then meshes. Orphans beyond the budget stay cached for the
+    /// next frame — harmless, since an orphaned entry is simply not yet
+    /// reclaimed. Retired entries are outside the budget: they were named,
+    /// not discovered, and are already out of the cache.
     pub fn tick(&mut self, store: &AssetStore, world: &World, device: &dyn GraphicsDevice) {
         self.last_evicted_count = 0;
+        for handle in self.retired_materials.drain(..) {
+            destroy_gpu_material(&handle, device);
+            self.last_evicted_count += 1;
+        }
+        for handle in self.retired_meshes.drain(..) {
+            destroy_gpu_mesh(&handle, device);
+            self.last_evicted_count += 1;
+        }
+
         let mut remaining = self.max_per_frame;
         if remaining == 0 {
             return;
         }
+        let retired = self.last_evicted_count;
 
         let materials = take_orphans::<GpuMaterial>(store, world, remaining);
         for handle in &materials {
@@ -105,12 +128,42 @@ impl AssetEviction {
             self.last_evicted_count += meshes.len();
         }
 
-        if self.last_evicted_count > 0 {
+        if self.last_evicted_count > retired {
             log::trace!(
                 "AssetEviction: reclaimed {} orphaned GPU asset(s)",
-                self.last_evicted_count
+                self.last_evicted_count - retired
             );
         }
+    }
+
+    /// Takes the GPU projection of `uuid` out of the `GpuMesh` and
+    /// `GpuMaterial` caches and queues whatever was there for teardown.
+    ///
+    /// The projection re-projects any entity left without its GPU handle;
+    /// the old resources are freed at the next [`tick`](Self::tick), after
+    /// the render that may still read them.
+    pub fn retire(&mut self, store: &AssetStore, uuid: &AssetUUID) {
+        if let Some(mesh) = store
+            .store::<GpuMesh>()
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(uuid)
+        {
+            self.retired_meshes.push(mesh);
+        }
+        if let Some(material) = store
+            .store::<GpuMaterial>()
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(uuid)
+        {
+            self.retired_materials.push(material);
+        }
+    }
+
+    /// Number of retired GPU assets waiting for the next [`tick`](Self::tick).
+    pub fn retired_count(&self) -> usize {
+        self.retired_meshes.len() + self.retired_materials.len()
     }
 
     /// Number of GPU assets evicted in the last [`tick`](Self::tick).
@@ -399,5 +452,312 @@ mod tests {
         assert_eq!(removed.len(), 1);
         assert_eq!(mesh_count(&store), 1);
         assert!(store.store::<GpuMesh>().read().unwrap().contains(&live));
+    }
+
+    // ── Retirement ──────────────────────────────────────────────────────────
+
+    use khora_core::renderer::api::command::{
+        BindGroupDescriptor, BindGroupLayoutDescriptor, BindGroupLayoutId, CommandBufferId,
+    };
+    use khora_core::renderer::api::device::GraphicsAdapterInfo;
+    use khora_core::renderer::api::pipeline::{
+        ComputePipelineDescriptor, ComputePipelineId, PipelineLayoutDescriptor, PipelineLayoutId,
+        RenderPipelineDescriptor, RenderPipelineId,
+    };
+    use khora_core::renderer::api::resource::{
+        BufferDescriptor, SamplerDescriptor, TextureDescriptor, TextureFormat, TextureId,
+        TextureViewDescriptor, TextureViewId,
+    };
+    use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId};
+    use khora_core::renderer::error::ResourceError;
+    use khora_core::renderer::traits::CommandEncoder;
+    use std::sync::Mutex;
+
+    /// A device that only records what it was asked to destroy.
+    #[derive(Debug, Default)]
+    struct DestroyRecorder {
+        buffers: Mutex<Vec<BufferId>>,
+        textures: Mutex<Vec<TextureId>>,
+        views: Mutex<Vec<TextureViewId>>,
+        bind_groups: Mutex<Vec<BindGroupId>>,
+    }
+
+    impl DestroyRecorder {
+        fn buffers(&self) -> HashSet<BufferId> {
+            self.buffers.lock().unwrap().iter().copied().collect()
+        }
+        fn buffer_destroys(&self) -> usize {
+            self.buffers.lock().unwrap().len()
+        }
+        fn textures(&self) -> Vec<TextureId> {
+            self.textures.lock().unwrap().clone()
+        }
+        fn views(&self) -> Vec<TextureViewId> {
+            self.views.lock().unwrap().clone()
+        }
+        fn bind_groups(&self) -> Vec<BindGroupId> {
+            self.bind_groups.lock().unwrap().clone()
+        }
+    }
+
+    impl GraphicsDevice for DestroyRecorder {
+        fn create_shader_module(
+            &self,
+            _d: &ShaderModuleDescriptor,
+        ) -> Result<ShaderModuleId, ResourceError> {
+            unreachable!("eviction creates nothing")
+        }
+        fn destroy_shader_module(&self, _id: ShaderModuleId) -> Result<(), ResourceError> {
+            unreachable!("eviction frees no shader")
+        }
+        fn create_render_pipeline(
+            &self,
+            _d: &RenderPipelineDescriptor,
+        ) -> Result<RenderPipelineId, ResourceError> {
+            unreachable!("eviction creates nothing")
+        }
+        fn create_pipeline_layout(
+            &self,
+            _d: &PipelineLayoutDescriptor,
+        ) -> Result<PipelineLayoutId, ResourceError> {
+            unreachable!("eviction creates nothing")
+        }
+        fn destroy_render_pipeline(&self, _id: RenderPipelineId) -> Result<(), ResourceError> {
+            unreachable!("eviction frees no pipeline")
+        }
+        fn create_compute_pipeline(
+            &self,
+            _d: &ComputePipelineDescriptor,
+        ) -> Result<ComputePipelineId, ResourceError> {
+            unreachable!("eviction creates nothing")
+        }
+        fn destroy_compute_pipeline(&self, _id: ComputePipelineId) -> Result<(), ResourceError> {
+            unreachable!("eviction frees no pipeline")
+        }
+        fn create_bind_group_layout(
+            &self,
+            _d: &BindGroupLayoutDescriptor,
+        ) -> Result<BindGroupLayoutId, ResourceError> {
+            unreachable!("eviction creates nothing")
+        }
+        fn create_bind_group(
+            &self,
+            _d: &BindGroupDescriptor,
+        ) -> Result<BindGroupId, ResourceError> {
+            unreachable!("eviction creates nothing")
+        }
+        fn destroy_bind_group_layout(&self, _id: BindGroupLayoutId) -> Result<(), ResourceError> {
+            unreachable!("eviction frees no layout")
+        }
+        fn destroy_bind_group(&self, id: BindGroupId) -> Result<(), ResourceError> {
+            self.bind_groups.lock().unwrap().push(id);
+            Ok(())
+        }
+        fn create_buffer(&self, _d: &BufferDescriptor) -> Result<BufferId, ResourceError> {
+            unreachable!("eviction creates nothing")
+        }
+        fn create_buffer_with_data(
+            &self,
+            _d: &BufferDescriptor,
+            _data: &[u8],
+        ) -> Result<BufferId, ResourceError> {
+            unreachable!("eviction creates nothing")
+        }
+        fn destroy_buffer(&self, id: BufferId) -> Result<(), ResourceError> {
+            self.buffers.lock().unwrap().push(id);
+            Ok(())
+        }
+        fn write_buffer(
+            &self,
+            _id: BufferId,
+            _offset: u64,
+            _data: &[u8],
+        ) -> Result<(), ResourceError> {
+            unreachable!("eviction writes nothing")
+        }
+        fn write_buffer_async<'a>(
+            &'a self,
+            _id: BufferId,
+            _offset: u64,
+            _data: &'a [u8],
+        ) -> Box<dyn std::future::Future<Output = Result<(), ResourceError>> + Send + 'static>
+        {
+            unreachable!("eviction writes nothing")
+        }
+        fn create_texture(&self, _d: &TextureDescriptor) -> Result<TextureId, ResourceError> {
+            unreachable!("eviction creates nothing")
+        }
+        fn destroy_texture(&self, id: TextureId) -> Result<(), ResourceError> {
+            self.textures.lock().unwrap().push(id);
+            Ok(())
+        }
+        fn write_texture(
+            &self,
+            _id: TextureId,
+            _data: &[u8],
+            _bytes_per_row: Option<u32>,
+            _offset: khora_core::math::dimension::Origin3D,
+            _size: khora_core::math::dimension::Extent3D,
+        ) -> Result<(), ResourceError> {
+            unreachable!("eviction writes nothing")
+        }
+        fn create_texture_view(
+            &self,
+            _id: TextureId,
+            _d: &TextureViewDescriptor,
+        ) -> Result<TextureViewId, ResourceError> {
+            unreachable!("eviction creates nothing")
+        }
+        fn destroy_texture_view(&self, id: TextureViewId) -> Result<(), ResourceError> {
+            self.views.lock().unwrap().push(id);
+            Ok(())
+        }
+        fn create_sampler(&self, _d: &SamplerDescriptor) -> Result<SamplerId, ResourceError> {
+            unreachable!("eviction creates nothing")
+        }
+        fn destroy_sampler(&self, _id: SamplerId) -> Result<(), ResourceError> {
+            unreachable!("the shared sampler is never freed by eviction")
+        }
+        fn create_command_encoder(&self, _label: Option<&str>) -> Box<dyn CommandEncoder> {
+            unreachable!("eviction records no commands")
+        }
+        fn submit_command_buffer(&self, _command_buffer: CommandBufferId) {
+            unreachable!("eviction submits nothing")
+        }
+        fn get_surface_format(&self) -> Option<TextureFormat> {
+            unreachable!("eviction reads no surface")
+        }
+        fn get_surface_size(&self) -> (u32, u32) {
+            unreachable!("eviction reads no surface")
+        }
+        fn get_adapter_info(&self) -> GraphicsAdapterInfo {
+            unreachable!("eviction reads no adapter")
+        }
+        fn supports_feature(&self, _feature_name: &str) -> bool {
+            unreachable!("eviction reads no feature")
+        }
+    }
+
+    /// A material owning a uniform buffer, a bind group and one texture with
+    /// its view, each id distinct from every other stub's.
+    fn textured_material(base: usize) -> GpuMaterial {
+        GpuMaterial {
+            uniform_buffer: BufferId(base),
+            bind_group: BindGroupId(base + 1),
+            base_color_texture: Some(TextureId(base + 2)),
+            base_color_view: Some(TextureViewId(base + 3)),
+            ..material_stub()
+        }
+    }
+
+    fn mesh_with_buffers(vertex: usize, index: usize) -> GpuMesh {
+        GpuMesh {
+            vertex_buffer: BufferId(vertex),
+            index_buffer: BufferId(index),
+            ..mesh_stub()
+        }
+    }
+
+    #[test]
+    fn retiring_takes_the_projection_out_of_the_caches() {
+        let store = AssetStore::new();
+        let uuid = AssetUUID::new();
+        let other = AssetUUID::new();
+        cache_mesh(&store, uuid);
+        cache_material(&store, uuid);
+        cache_material(&store, other);
+        let mut eviction = AssetEviction::new();
+
+        eviction.retire(&store, &uuid);
+
+        assert!(!store.store::<GpuMesh>().read().unwrap().contains(&uuid));
+        assert!(!store.store::<GpuMaterial>().read().unwrap().contains(&uuid));
+        assert!(
+            store
+                .store::<GpuMaterial>()
+                .read()
+                .unwrap()
+                .contains(&other),
+            "another asset's projection stays cached"
+        );
+        assert_eq!(eviction.retired_count(), 2, "the mesh and the material");
+    }
+
+    #[test]
+    fn retiring_an_uncached_uuid_queues_nothing() {
+        let store = AssetStore::new();
+        let cached = AssetUUID::new();
+        cache_mesh(&store, cached);
+        let mut eviction = AssetEviction::new();
+
+        eviction.retire(&store, &AssetUUID::new());
+
+        assert_eq!(eviction.retired_count(), 0);
+        assert_eq!(mesh_count(&store), 1, "nothing else leaves the cache");
+    }
+
+    /// The retired projection is freed even though entities still name its
+    /// uuid: they wait for a fresh projection, not for the old resources.
+    #[test]
+    fn tick_frees_the_retired_resources() {
+        let store = AssetStore::new();
+        let mut world = World::new();
+        let uuid = AssetUUID::new();
+        store
+            .store::<GpuMaterial>()
+            .write()
+            .unwrap()
+            .insert(uuid, AssetHandle::new(textured_material(10)));
+        store
+            .store::<GpuMesh>()
+            .write()
+            .unwrap()
+            .insert(uuid, AssetHandle::new(mesh_with_buffers(20, 21)));
+        spawn_material_ref(&mut world, uuid);
+        spawn_mesh_ref(&mut world, uuid);
+        let mut eviction = AssetEviction::new();
+        let device = DestroyRecorder::default();
+
+        eviction.retire(&store, &uuid);
+        eviction.tick(&store, &world, &device);
+
+        assert_eq!(
+            device.buffers(),
+            HashSet::from([BufferId(10), BufferId(20), BufferId(21)]),
+            "the material's uniform buffer and the mesh's two buffers"
+        );
+        assert_eq!(device.bind_groups(), vec![BindGroupId(11)]);
+        assert_eq!(device.textures(), vec![TextureId(12)]);
+        assert_eq!(device.views(), vec![TextureViewId(13)]);
+        assert_eq!(eviction.retired_count(), 0, "nothing is freed twice");
+        assert_eq!(eviction.last_evicted_count(), 2);
+    }
+
+    #[test]
+    fn retired_resources_are_freed_beyond_the_orphan_budget() {
+        let store = AssetStore::new();
+        let world = World::new();
+        let mut eviction = AssetEviction::with_budget(1);
+        let uuids: Vec<AssetUUID> = (0..3).map(|_| AssetUUID::new()).collect();
+        for (i, uuid) in uuids.iter().enumerate() {
+            store.store::<GpuMesh>().write().unwrap().insert(
+                *uuid,
+                AssetHandle::new(mesh_with_buffers(100 + 2 * i, 101 + 2 * i)),
+            );
+        }
+        for uuid in &uuids {
+            eviction.retire(&store, uuid);
+        }
+        let device = DestroyRecorder::default();
+
+        eviction.tick(&store, &world, &device);
+
+        assert_eq!(
+            device.buffer_destroys(),
+            6,
+            "the three retired meshes are all freed in one tick"
+        );
+        assert_eq!(eviction.retired_count(), 0);
+        assert_eq!(eviction.last_evicted_count(), 3);
     }
 }

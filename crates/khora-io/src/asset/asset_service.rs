@@ -20,14 +20,17 @@
 use std::any::{Any, TypeId};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use anyhow::{anyhow, Context, Result};
 use khora_core::asset::{Asset, AssetHandle, AssetSource, AssetUUID};
+use khora_core::event::{Channel, WhenFull};
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_data::assets::{Assets, SoundData};
 use khora_telemetry::MetricsRegistry;
 
+use super::change::{AssetChanged, CHANGE_BACKLOG};
 use super::container::AssetContainer;
 use super::decoder_registry::DecoderRegistry;
 use super::decoders::audio::SymphoniaDecoder;
@@ -83,10 +86,36 @@ pub struct AssetService {
     /// Each opened container, by the container file's uuid: opened once,
     /// shared by every sub-asset extracted from it.
     opened: HashMap<AssetUUID, Arc<dyn Any + Send + Sync>>,
-    /// The sub-assets cached from each container, by the container file's
-    /// uuid, so invalidating the container drops them even once a new index
-    /// no longer lists them.
-    cached_subs: HashMap<AssetUUID, HashSet<AssetUUID>>,
+    /// Every sub-asset ever served from each container, by the container
+    /// file's uuid. Never emptied: invalidating the container drops and
+    /// announces each of them, even once a new index no longer lists them
+    /// and even after a reload of the container failed.
+    served_subs: HashMap<AssetUUID, HashSet<AssetUUID>>,
+    /// Every asset [`load`](Self::load) ever decoded: what the engine may
+    /// hold a copy of.
+    served: HashSet<AssetUUID>,
+    /// The assets whose bytes changed, for the engine to replace its copies.
+    changes: Channel<AssetChanged>,
+    /// Set when `changes` dropped an announcement it had no room for.
+    changes_lost: AtomicBool,
+    /// What the services this one replaced served and it has not served
+    /// since: the engine may still hold their copies, which are no last good
+    /// copy of this service's assets.
+    inherited: Mutex<HashSet<AssetUUID>>,
+    /// The files, by asset key, each opened container reads besides its
+    /// own: a change to one of them is a change to the container. Kept
+    /// across invalidations, like `served_subs`.
+    external_files: HashMap<AssetUUID, Vec<String>>,
+}
+
+/// Sends `AssetChanged(uuid)` on `changes`, noting in `lost` if the full
+/// stream dropped one to make room.
+fn announce(changes: &Channel<AssetChanged>, lost: &AtomicBool, uuid: AssetUUID) {
+    let dropped = changes.dropped();
+    changes.send(AssetChanged(uuid));
+    if changes.dropped() != dropped {
+        lost.store(true, Ordering::Relaxed);
+    }
 }
 
 impl AssetService {
@@ -113,7 +142,12 @@ impl AssetService {
             manifest,
             containers: HashMap::new(),
             opened: HashMap::new(),
-            cached_subs: HashMap::new(),
+            served_subs: HashMap::new(),
+            served: HashSet::new(),
+            changes: Channel::bounded(CHANGE_BACKLOG, WhenFull::DropOldest),
+            changes_lost: AtomicBool::new(false),
+            inherited: Mutex::new(HashSet::new()),
+            external_files: HashMap::new(),
         })
     }
 
@@ -226,8 +260,10 @@ impl AssetService {
         // VFS lookup → IO → Decode → Store
         let (asset, container) = self.decode_uncached::<A>(uuid)?;
         if let Some(container) = container {
-            self.cached_subs.entry(container).or_default().insert(*uuid);
+            self.served_subs.entry(container).or_default().insert(*uuid);
         }
+        self.served.insert(*uuid);
+        self.inherited_mut().remove(uuid);
         let handle = AssetHandle::new(asset);
         self.storages
             .get_mut(&type_id)
@@ -264,9 +300,64 @@ impl AssetService {
             m.verify(uuid, &bytes)
                 .context("Asset integrity check failed")?;
         }
-        self.decoders
-            .decode_at::<A>(&metadata.asset_type_name, &bytes, &metadata.source_path)
-            .map(|asset| (asset, None))
+        let asset = self.decoders.decode_at::<A>(
+            &metadata.asset_type_name,
+            &bytes,
+            &metadata.source_path,
+        )?;
+        // A container file decoded whole (a glTF as one mesh) reads the same
+        // files beside it as its parts do: a change to one of them is a
+        // change to it.
+        if let Some(opener) = self.containers.get(&metadata.asset_type_name) {
+            if let Ok(opened) = opener.open(&bytes, &metadata.source_path) {
+                self.external_files
+                    .insert(*uuid, opener.external_files(opened.as_ref()));
+            }
+        }
+        Ok((asset, None))
+    }
+
+    /// The container file `container` and what opens it, opened once and
+    /// cached until it is invalidated. Each opening records the other files
+    /// it reads.
+    fn open_container(
+        &mut self,
+        container: AssetUUID,
+    ) -> Result<(Arc<dyn AssetContainer>, Arc<dyn Any + Send + Sync>)> {
+        let container_meta = self
+            .index
+            .get_metadata(&container)
+            .ok_or_else(|| anyhow!("its container {container} is not in the VFS"))?;
+        let opener = self
+            .containers
+            .get(&container_meta.asset_type_name)
+            .cloned()
+            .ok_or_else(|| {
+                anyhow!(
+                    "no container registered for '{}' files",
+                    container_meta.asset_type_name
+                )
+            })?;
+        if let Some(opened) = self.opened.get(&container) {
+            return Ok((opener, opened.clone()));
+        }
+
+        let source = container_meta
+            .variants
+            .get("default")
+            .ok_or_else(|| anyhow!("container {container} has no 'default' variant"))?;
+        let bytes = self.io.load_bytes(source)?;
+        if let Some(m) = &self.manifest {
+            m.verify(&container, &bytes)
+                .context("Asset integrity check failed")?;
+        }
+        let opened = opener
+            .open(&bytes, &container_meta.source_path)
+            .with_context(|| format!("opening container {container}"))?;
+        self.external_files
+            .insert(container, opener.external_files(opened.as_ref()));
+        self.opened.insert(container, opened.clone());
+        Ok((opener, opened))
     }
 
     /// Extracts the sub-asset `label` (index type `type_name`) from the
@@ -277,40 +368,9 @@ impl AssetService {
         label: &str,
         type_name: &str,
     ) -> Result<A> {
-        let container_meta = self.index.get_metadata(&container).ok_or_else(|| {
-            anyhow!("sub-asset '{label}': its container {container} is not in the VFS")
-        })?;
-        let opener = self
-            .containers
-            .get(&container_meta.asset_type_name)
-            .cloned()
-            .ok_or_else(|| {
-                anyhow!(
-                    "sub-asset '{label}': no container registered for '{}' files",
-                    container_meta.asset_type_name
-                )
-            })?;
-
-        let opened = match self.opened.get(&container) {
-            Some(opened) => opened.clone(),
-            None => {
-                let source = container_meta
-                    .variants
-                    .get("default")
-                    .ok_or_else(|| anyhow!("container {container} has no 'default' variant"))?;
-                let bytes = self.io.load_bytes(source)?;
-                if let Some(m) = &self.manifest {
-                    m.verify(&container, &bytes)
-                        .context("Asset integrity check failed")?;
-                }
-                let opened = opener
-                    .open(&bytes, &container_meta.source_path)
-                    .with_context(|| format!("opening container {container}"))?;
-                self.opened.insert(container, opened.clone());
-                opened
-            }
-        };
-
+        let (opener, opened) = self
+            .open_container(container)
+            .with_context(|| format!("sub-asset '{label}'"))?;
         let extracted = opener
             .extract(opened.as_ref(), container, label, type_name)
             .with_context(|| format!("extracting '{label}' from {container}"))?;
@@ -356,23 +416,134 @@ impl AssetService {
     /// readers don't see a half-loaded replacement).
     ///
     /// Invalidating a container file also drops its opened container and
-    /// every cached sub-asset extracted from it.
+    /// every sub-asset extracted from it.
+    ///
+    /// `uuid` and every sub-asset it served are announced on
+    /// [`changes`](Self::changes) whether or not anything was cached: after
+    /// a reload that failed, the service holds nothing while the engine
+    /// still holds the last good copy, which the next change must reach.
+    ///
+    /// A container that reads `uuid`'s file besides its own (a glTF's `.bin`
+    /// or image beside it) is invalidated with it.
     pub fn invalidate(&mut self, uuid: &AssetUUID) -> bool {
+        let mut any = false;
+        let mut pending = vec![*uuid];
+        let mut seen = HashSet::new();
+        while let Some(file) = pending.pop() {
+            if !seen.insert(file) {
+                continue;
+            }
+            any |= self.invalidate_file(&file);
+            // A file the index does not list yet (created since the last
+            // reindex) is known only by its uuid, the one its path gives.
+            let key = self
+                .index
+                .get_metadata(&file)
+                .map(|metadata| khora_core::asset::asset_key(&metadata.source_path));
+            let names_file = |external: &String| {
+                key.as_ref() == Some(external) || AssetUUID::new_v5(external) == file
+            };
+            pending.extend(
+                self.external_files
+                    .iter()
+                    .filter(|(_, files)| files.iter().any(names_file))
+                    .map(|(container, _)| *container),
+            );
+        }
+        any
+    }
+
+    /// Drops and announces `uuid` and every sub-asset it served.
+    fn invalidate_file(&mut self, uuid: &AssetUUID) -> bool {
         let mut any = self.opened.remove(uuid).is_some();
-        let subs: Vec<AssetUUID> = self
-            .cached_subs
-            .remove(uuid)
-            .into_iter()
-            .flatten()
-            .collect();
-        for target in std::iter::once(uuid).chain(subs.iter()) {
+        let subs = self.served_subs.get(uuid);
+        for target in std::iter::once(uuid).chain(subs.into_iter().flatten()) {
             for storage in self.storages.values_mut() {
                 if storage.remove_uuid(target) {
                     any = true;
                 }
             }
+            announce(&self.changes, &self.changes_lost, *target);
         }
         any
+    }
+
+    /// Whether `uuid` is no longer part of the project: it is not indexed
+    /// and, for a sub-asset, its container is gone too, or opens and no
+    /// longer holds it.
+    ///
+    /// A sub-asset whose container is indexed but does not open (a file
+    /// caught mid-write, indexed without its parts) is not gone: its file
+    /// is read again when it changes.
+    pub fn is_gone(&mut self, uuid: &AssetUUID) -> bool {
+        if self.index.get_metadata(uuid).is_some() {
+            return false;
+        }
+        let container = self
+            .served_subs
+            .iter()
+            .find(|(_, subs)| subs.contains(uuid))
+            .map(|(container, _)| *container);
+        let Some(container) = container else {
+            return true;
+        };
+        if self.index.get_metadata(&container).is_none() {
+            return true;
+        }
+        self.open_container(container).is_ok()
+    }
+
+    /// Serves `handle` for `uuid` until `uuid` is invalidated again: the
+    /// last good copy of an asset whose current bytes did not decode, so a
+    /// reference resolved meanwhile shows what the engine already shows.
+    ///
+    /// Refused (returns `false`) for a copy a replaced service served, which
+    /// is no copy of this service's asset.
+    pub fn keep<A: Asset>(&mut self, uuid: &AssetUUID, handle: AssetHandle<A>) -> bool {
+        if self.inherited_mut().contains(uuid) {
+            return false;
+        }
+        let storage = self
+            .storages
+            .entry(TypeId::of::<A>())
+            .or_insert_with(|| Box::new(Assets::<A>::new()));
+        if let Some(assets) = storage.as_any_mut().downcast_mut::<Assets<A>>() {
+            assets.insert(*uuid, handle);
+            self.served.insert(*uuid);
+            return true;
+        }
+        false
+    }
+
+    /// The inherited set, poisoning ignored: it holds plain uuids.
+    fn inherited_mut(&self) -> std::sync::MutexGuard<'_, HashSet<AssetUUID>> {
+        self.inherited
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Takes every asset announced since the last call, for the engine to
+    /// replace its copies. If the stream overflowed since, the announcements
+    /// it lost cannot be told apart, so every asset this service ever served
+    /// is returned.
+    ///
+    /// The stream's single consumer is the `asset_reload` DataSystem.
+    pub fn take_changes(&self) -> HashSet<AssetUUID> {
+        let mut changed: HashSet<AssetUUID> = self
+            .changes
+            .drain()
+            .into_iter()
+            .map(|AssetChanged(uuid)| uuid)
+            .collect();
+        if self.changes_lost.swap(false, Ordering::Relaxed) {
+            log::warn!(
+                "AssetService: more than {CHANGE_BACKLOG} assets changed at once; every asset \
+                 served is reloaded"
+            );
+            changed.extend(self.served.iter().copied());
+            changed.extend(self.inherited_mut().iter().copied());
+        }
+        changed
     }
 
     /// Atomically replaces the inner `AssetIndex` with a freshly
@@ -385,6 +556,35 @@ impl AssetService {
             AssetIndex::new(index_bytes).context("Failed to decode replacement VFS index bytes")?;
         self.index = new_index;
         Ok(())
+    }
+
+    /// The stream of assets whose bytes changed: every [`invalidate`](Self::invalidate)
+    /// sends the invalidated uuid and each part it served.
+    ///
+    /// Drained by its single consumer, the `asset_reload` DataSystem.
+    pub fn changes(&self) -> &Channel<AssetChanged> {
+        &self.changes
+    }
+
+    /// Announces, on this service's [`changes`](Self::changes), every asset
+    /// `outgoing` ever served: this service replaces it, so the copies the
+    /// engine took from it may be stale.
+    ///
+    /// What `outgoing` served (and what it inherited in turn) is inherited:
+    /// a stream overflow still names it, and it is never kept as a last good
+    /// copy of this service's asset.
+    pub fn announce_replacing(&self, outgoing: &AssetService) {
+        let mut replaced: HashSet<AssetUUID> = outgoing.inherited_mut().clone();
+        replaced.extend(outgoing.served.iter().copied());
+        for uuid in &replaced {
+            announce(&self.changes, &self.changes_lost, *uuid);
+        }
+        let mut inherited = self.inherited_mut();
+        inherited.extend(
+            replaced
+                .into_iter()
+                .filter(|uuid| !self.served.contains(uuid)),
+        );
     }
 
     /// Returns the total number of assets loaded so far.
@@ -987,5 +1187,256 @@ mod tests {
         );
         assert!(svc.load::<TestMesh>(&orphan).is_err());
         assert_eq!(opens.load(Ordering::SeqCst), 0);
+    }
+
+    // ── Change announcements ────────────────────────────────────────────────
+
+    use crate::asset::{AssetChanged, AssetDecoder};
+    use std::sync::Mutex;
+
+    /// Mock IO over a file map the test keeps a handle to, so it can rewrite
+    /// a file's bytes after the service took the IO.
+    struct SharedIo {
+        files: Arc<Mutex<HashMap<std::path::PathBuf, Vec<u8>>>>,
+    }
+    impl AssetIo for SharedIo {
+        fn load_bytes(&mut self, source: &AssetSource) -> Result<Vec<u8>> {
+            match source {
+                AssetSource::Path(rel) => self
+                    .files
+                    .lock()
+                    .unwrap()
+                    .get(rel)
+                    .cloned()
+                    .ok_or_else(|| anyhow!("not in mock: {:?}", rel)),
+                other => Err(anyhow!("the shared mock only serves paths: {other:?}")),
+            }
+        }
+    }
+
+    /// Index type of the test's plain (non-container) files.
+    const NOTE_TYPE: &str = "ktestnote";
+    const NOTE_PATH: &str = "notes/readme.ktestnote";
+
+    fn note() -> AssetUUID {
+        AssetUUID::new_v5(NOTE_PATH)
+    }
+
+    /// What the note decoder produces: the file's text.
+    #[derive(Debug)]
+    struct TestNote {
+        #[allow(dead_code)]
+        text: String,
+    }
+    impl Asset for TestNote {}
+
+    struct NoteDecoder;
+    impl AssetDecoder<TestNote> for NoteDecoder {
+        fn load(
+            &self,
+            bytes: &[u8],
+        ) -> std::result::Result<TestNote, Box<dyn std::error::Error + Send + Sync>> {
+            Ok(TestNote {
+                text: String::from_utf8(bytes.to_vec())?,
+            })
+        }
+    }
+
+    /// A service over the container index plus one plain note, reading its
+    /// bytes from `files`, with the counting container and the note decoder
+    /// registered.
+    fn shared_service(files: Arc<Mutex<HashMap<std::path::PathBuf, Vec<u8>>>>) -> AssetService {
+        let mut note_entry = file_entry(note(), NOTE_PATH);
+        note_entry.asset_type_name = NOTE_TYPE.to_string();
+        let metadata = vec![
+            file_entry(hero(), HERO_PATH),
+            sub_entry(hero_body(), hero(), HERO_PATH, "mesh/Body", "mesh"),
+            sub_entry(hero_skin(), hero(), HERO_PATH, "material/Skin", "material"),
+            file_entry(villain(), VILLAIN_PATH),
+            sub_entry(villain_body(), villain(), VILLAIN_PATH, "mesh/Body", "mesh"),
+            note_entry,
+        ];
+        let index = bincode::serde::encode_to_vec(&metadata, bincode::config::standard()).unwrap();
+        let mut svc = AssetService::new(
+            &index,
+            Box::new(SharedIo { files }),
+            Arc::new(MetricsRegistry::new()),
+            None,
+        )
+        .unwrap();
+        svc.register_container(
+            CONTAINER_TYPE,
+            CountingContainer {
+                opens: Arc::new(AtomicUsize::new(0)),
+            },
+        );
+        svc.register_decoder::<TestNote>(NOTE_TYPE, NoteDecoder);
+        svc
+    }
+
+    fn shared_files() -> Arc<Mutex<HashMap<std::path::PathBuf, Vec<u8>>>> {
+        let mut files = container_files(HERO_BYTES);
+        files.insert(std::path::PathBuf::from(NOTE_PATH), b"hello".to_vec());
+        Arc::new(Mutex::new(files))
+    }
+
+    fn drained_set(svc: &AssetService) -> HashSet<AssetUUID> {
+        svc.changes().drain().into_iter().map(|c| c.0).collect()
+    }
+
+    #[test]
+    fn invalidating_an_asset_announces_it() {
+        let mut svc = shared_service(shared_files());
+        svc.load::<TestNote>(&note()).unwrap();
+
+        svc.invalidate(&note());
+
+        assert_eq!(svc.changes().drain(), vec![AssetChanged(note())]);
+    }
+
+    #[test]
+    fn invalidating_an_asset_nothing_cached_still_announces_it() {
+        let mut svc = shared_service(shared_files());
+
+        assert!(
+            !svc.invalidate(&note()),
+            "a never-loaded asset has nothing to drop"
+        );
+
+        assert_eq!(
+            svc.changes().drain(),
+            vec![AssetChanged(note())],
+            "a copy of it may still live outside the service"
+        );
+    }
+
+    #[test]
+    fn two_invalidations_before_a_drain_announce_once() {
+        let mut svc = shared_service(shared_files());
+        svc.load::<TestNote>(&note()).unwrap();
+
+        svc.invalidate(&note());
+        svc.invalidate(&note());
+
+        assert_eq!(svc.changes().drain(), vec![AssetChanged(note())]);
+    }
+
+    #[test]
+    fn invalidating_a_container_announces_each_part_it_served() {
+        let mut svc = shared_service(shared_files());
+        svc.load::<TestMesh>(&hero_body()).unwrap();
+        svc.load::<TestMaterial>(&hero_skin()).unwrap();
+        svc.load::<TestMesh>(&villain_body()).unwrap();
+
+        svc.invalidate(&hero());
+
+        let announced = svc.changes().drain();
+        assert_eq!(announced.len(), 3, "no uuid twice: {announced:?}");
+        assert_eq!(
+            announced.into_iter().map(|c| c.0).collect::<HashSet<_>>(),
+            HashSet::from([hero(), hero_body(), hero_skin()]),
+            "the container and each of its parts, not another container's"
+        );
+    }
+
+    /// A reload that fails leaves the parts unserved for a moment; the next
+    /// invalidation of the container must still name them, since the engine
+    /// still holds the copies it took before.
+    #[test]
+    fn a_container_still_announces_its_parts_after_a_failed_reload() {
+        let files = shared_files();
+        let mut svc = shared_service(files.clone());
+        svc.load::<TestMesh>(&hero_body()).unwrap();
+        svc.invalidate(&hero());
+        assert_eq!(
+            drained_set(&svc),
+            HashSet::from([hero(), hero_body()]),
+            "the first invalidation names the container and its part"
+        );
+
+        // The re-exported file is broken: the container no longer opens.
+        files
+            .lock()
+            .unwrap()
+            .insert(std::path::PathBuf::from(HERO_PATH), vec![0xFF, 0xFE, 0xFD]);
+        assert!(svc.load::<TestMesh>(&hero_body()).is_err());
+
+        svc.invalidate(&hero());
+
+        assert_eq!(
+            drained_set(&svc),
+            HashSet::from([hero(), hero_body()]),
+            "the part is announced again after the failed reload"
+        );
+    }
+
+    #[test]
+    fn announce_replacing_names_every_asset_the_outgoing_service_served() {
+        let mut outgoing = shared_service(shared_files());
+        outgoing.load::<TestNote>(&note()).unwrap();
+        outgoing.load::<TestMesh>(&hero_body()).unwrap();
+
+        let incoming = shared_service(shared_files());
+        incoming.announce_replacing(&outgoing);
+
+        assert_eq!(
+            drained_set(&incoming),
+            HashSet::from([note(), hero_body()]),
+            "the incoming service announces what the outgoing one served"
+        );
+        assert!(
+            outgoing.changes().drain().is_empty(),
+            "the outgoing service's own stream is not the one written to"
+        );
+    }
+
+    /// A project that served more assets than the stream holds is replaced:
+    /// the announcements that do not fit are lost, and what the incoming
+    /// service hands the engine must still name every asset the outgoing one
+    /// served, since the engine holds a copy of each.
+    #[test]
+    fn a_replacement_overflowing_the_stream_still_names_everything_the_outgoing_service_served() {
+        let count = CHANGE_BACKLOG + 1;
+        let paths: Vec<String> = (0..count).map(|i| format!("notes/{i}.ktestnote")).collect();
+        let mut files = HashMap::new();
+        let metadata: Vec<AssetMetadata> = paths
+            .iter()
+            .map(|path| {
+                files.insert(std::path::PathBuf::from(path), b"note".to_vec());
+                let mut entry = file_entry(AssetUUID::new_v5(path), path);
+                entry.asset_type_name = NOTE_TYPE.to_string();
+                entry
+            })
+            .collect();
+        let index = bincode::serde::encode_to_vec(&metadata, bincode::config::standard()).unwrap();
+        let mut outgoing = AssetService::new(
+            &index,
+            Box::new(SharedIo {
+                files: Arc::new(Mutex::new(files)),
+            }),
+            Arc::new(MetricsRegistry::new()),
+            None,
+        )
+        .unwrap();
+        outgoing.register_decoder::<TestNote>(NOTE_TYPE, NoteDecoder);
+        for path in &paths {
+            outgoing.load::<TestNote>(&AssetUUID::new_v5(path)).unwrap();
+        }
+
+        let incoming = shared_service(shared_files());
+        incoming.announce_replacing(&outgoing);
+        let taken = incoming.take_changes();
+
+        let missing: Vec<&String> = paths
+            .iter()
+            .filter(|path| !taken.contains(&AssetUUID::new_v5(path)))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "every asset the outgoing service served is handed over: {} of {count} missing, \
+             e.g. {:?}",
+            missing.len(),
+            missing.first()
+        );
     }
 }

@@ -22,7 +22,7 @@ use super::pipelines::{
 use super::resources::{
     create_brdf_lut, create_cube, create_equirect_sampler, create_face_basis_buffers,
     create_ibl_sampler, create_mip_cube, create_prefilter_basis_buffers, uniform_entry,
-    upload_equirect, IblResources,
+    upload_equirect, BakeObjects, IblResources,
 };
 use super::{
     ENV_FACE_SIZE, EQUIRECT_LAYOUT, FACE_BASIS_LAYOUT, IRRADIANCE_FACE_SIZE, IRRADIANCE_LAYOUT,
@@ -34,7 +34,7 @@ use khora_core::renderer::api::command::{
     RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
 };
 use khora_core::renderer::api::ibl::IblGpuBindings;
-use khora_core::renderer::api::resource::{BufferId, SamplerId, TextureId, TextureViewId};
+use khora_core::renderer::api::resource::{BufferId, SamplerId, TextureViewId};
 use khora_core::renderer::error::RenderError;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
@@ -45,18 +45,44 @@ use khora_core::renderer::GraphicsDevice;
 /// The env cube is filled either by projecting an authored equirectangular map
 /// (`env_source`) or by the procedural sky. Everything downstream reads the
 /// cube and is identical in both cases.
+///
+/// A bake that fails partway frees every object it had created.
 pub(super) fn bake(
     device: &dyn GraphicsDevice,
     pipeline_system: &dyn PipelineSystem,
     sun: Vec3,
     env_source: Option<&khora_core::renderer::api::resource::CpuTexture>,
 ) -> Result<IblResources, RenderError> {
-    let env = create_cube(device, ENV_FACE_SIZE, "IBL Env")?;
-    let irradiance = create_cube(device, IRRADIANCE_FACE_SIZE, "IBL Irradiance")?;
-    let (prefilter_texture, prefilter_view) =
-        create_mip_cube(device, PREFILTER_FACE_SIZE, PREFILTER_MIPS, "IBL Prefilter")?;
-    let (brdf_texture, brdf_view) = create_brdf_lut(device)?;
-    let sampler = create_ibl_sampler(device)?;
+    let mut objects = BakeObjects::default();
+    match record_bake(device, pipeline_system, sun, env_source, &mut objects) {
+        Ok(bindings) => Ok(IblResources { bindings, objects }),
+        Err(e) => {
+            objects.destroy(device);
+            Err(e)
+        }
+    }
+}
+
+/// Creates the bake's objects — each recorded in `objects` as it is made —
+/// and submits its passes. Returns the bindings the lit lanes read.
+fn record_bake(
+    device: &dyn GraphicsDevice,
+    pipeline_system: &dyn PipelineSystem,
+    sun: Vec3,
+    env_source: Option<&khora_core::renderer::api::resource::CpuTexture>,
+    objects: &mut BakeObjects,
+) -> Result<IblGpuBindings, RenderError> {
+    let env = create_cube(device, ENV_FACE_SIZE, "IBL Env", objects)?;
+    let irradiance = create_cube(device, IRRADIANCE_FACE_SIZE, "IBL Irradiance", objects)?;
+    let (_, prefilter_view) = create_mip_cube(
+        device,
+        PREFILTER_FACE_SIZE,
+        PREFILTER_MIPS,
+        "IBL Prefilter",
+        objects,
+    )?;
+    let (_, brdf_view) = create_brdf_lut(device, objects)?;
+    let sampler = create_ibl_sampler(device, objects)?;
 
     // Pipelines + inline layouts.
     let irr_pipeline = pipeline_system.pipeline(device, &irradiance_pipeline_spec())?;
@@ -67,18 +93,18 @@ pub(super) fn bake(
         pipeline_system.inline_layout(device, PREFILTER_LAYOUT, &irradiance_layout_entries())?;
     let brdf_pipeline = pipeline_system.pipeline(device, &brdf_pipeline_spec())?;
 
-    let sky_bufs = create_face_basis_buffers(device, sun)?;
-    let irr_bufs = create_face_basis_buffers(device, sun)?;
+    let sky_bufs = create_face_basis_buffers(device, sun, objects)?;
+    let irr_bufs = create_face_basis_buffers(device, sun, objects)?;
 
     // Environment source — an authored equirectangular map when the scene
     // supplies one, else the procedural sky. Both paths write the same six env
-    // cube faces with the same per-face basis uniforms.
-    let mut equirect_keep: Option<(TextureId, TextureViewId)> = None;
+    // cube faces with the same per-face basis uniforms. The equirect source is
+    // only read during the bake, but it must outlive the submission that
+    // samples it, so it is recorded with the rest.
     let (env_pipeline, env_bgs) = match env_source {
         Some(cpu) => {
-            let (texture, view) = upload_equirect(device, cpu)?;
-            equirect_keep = Some((texture, view));
-            let equirect_sampler = create_equirect_sampler(device)?;
+            let (_, view) = upload_equirect(device, cpu, objects)?;
+            let equirect_sampler = create_equirect_sampler(device, objects)?;
             let pipeline = pipeline_system.pipeline(device, &equirect_pipeline_spec())?;
             let layout = pipeline_system.inline_layout(
                 device,
@@ -93,6 +119,7 @@ pub(super) fn bake(
                     view,
                     equirect_sampler,
                     *buf,
+                    objects,
                 )?);
             }
             log::info!(
@@ -109,11 +136,13 @@ pub(super) fn bake(
                 pipeline_system.inline_layout(device, FACE_BASIS_LAYOUT, &[uniform_entry(0)])?;
             let mut bgs = Vec::with_capacity(6);
             for buf in &sky_bufs {
-                bgs.push(device.create_bind_group(&BindGroupDescriptor {
+                let bg = device.create_bind_group(&BindGroupDescriptor {
                     label: Some("IBL Sky Face BG"),
                     layout,
                     entries: &[uniform_bg_entry(0, *buf)],
-                })?);
+                })?;
+                objects.bind_groups.push(bg);
+                bgs.push(bg);
             }
             (pipeline, bgs)
         }
@@ -127,15 +156,15 @@ pub(super) fn bake(
             env.cube_view,
             sampler,
             *buf,
+            objects,
         )?);
     }
     // Prefilter bind groups — one per (mip, face); roughness rises with the mip.
-    let mut pre_bufs: Vec<BufferId> = Vec::with_capacity((PREFILTER_MIPS * 6) as usize);
     let mut pre_bgs = Vec::with_capacity((PREFILTER_MIPS * 6) as usize);
     for mip in 0..PREFILTER_MIPS {
         // Roughness spans [0, 1] across the mip chain (PREFILTER_MIPS >= 2).
         let roughness = mip as f32 / (PREFILTER_MIPS - 1) as f32;
-        let bufs = create_prefilter_basis_buffers(device, roughness)?;
+        let bufs = create_prefilter_basis_buffers(device, roughness, objects)?;
         for buf in &bufs {
             pre_bgs.push(sampled_texture_bind_group(
                 device,
@@ -143,9 +172,9 @@ pub(super) fn bake(
                 env.cube_view,
                 sampler,
                 *buf,
+                objects,
             )?);
         }
-        pre_bufs.extend(bufs);
     }
 
     // Submission 1: sky → env cube. The convolution + prefilter SAMPLE the env
@@ -225,43 +254,12 @@ pub(super) fn bake(
         None => log::error!("IBL: filter bake encoder finish returned None; skipping submit"),
     }
 
-    let bindings = IblGpuBindings {
+    Ok(IblGpuBindings {
         env_cube: env.cube_view,
         irradiance_cube: irradiance.cube_view,
         prefiltered_cube: prefilter_view,
         brdf_lut: brdf_view,
         sampler,
-    };
-
-    let mut keep_views = vec![
-        env.cube_view,
-        irradiance.cube_view,
-        prefilter_view,
-        brdf_view,
-    ];
-    keep_views.extend(env.face_views);
-    keep_views.extend(irradiance.face_views);
-    let mut keep_textures = vec![
-        env.texture,
-        irradiance.texture,
-        prefilter_texture,
-        brdf_texture,
-    ];
-    // The equirect source is only read during the bake, but it must outlive the
-    // submission that samples it.
-    if let Some((texture, view)) = equirect_keep {
-        keep_textures.push(texture);
-        keep_views.push(view);
-    }
-    let mut keep_buffers = sky_bufs;
-    keep_buffers.extend(irr_bufs);
-    keep_buffers.extend(pre_bufs);
-
-    Ok(IblResources {
-        bindings,
-        _keep_textures: keep_textures,
-        _keep_views: keep_views,
-        _keep_buffers: keep_buffers,
     })
 }
 
@@ -325,8 +323,9 @@ fn sampled_texture_bind_group(
     source_view: TextureViewId,
     sampler: SamplerId,
     basis_buffer: BufferId,
+    objects: &mut BakeObjects,
 ) -> Result<khora_core::renderer::api::command::BindGroupId, RenderError> {
-    device
+    let bind_group = device
         .create_bind_group(&BindGroupDescriptor {
             label: Some("IBL Texture-Sample BG"),
             layout,
@@ -344,5 +343,7 @@ fn sampled_texture_bind_group(
                 uniform_bg_entry(2, basis_buffer),
             ],
         })
-        .map_err(RenderError::ResourceError)
+        .map_err(RenderError::ResourceError)?;
+    objects.bind_groups.push(bind_group);
+    Ok(bind_group)
 }

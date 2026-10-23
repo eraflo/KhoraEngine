@@ -20,7 +20,7 @@ use std::borrow::Cow;
 use super::{BRDF_LUT_SIZE, DEFAULT_SUN_DIRECTION, IBL_FORMAT};
 use khora_core::math::{Extent3D, Vec3};
 use khora_core::renderer::api::command::{
-    BindGroupLayoutEntry, BindingType, BufferBindingType, TextureViewDimension,
+    BindGroupId, BindGroupLayoutEntry, BindingType, BufferBindingType, TextureViewDimension,
 };
 use khora_core::renderer::api::ibl::IblGpuBindings;
 use khora_core::renderer::api::resource::SampleCount;
@@ -95,22 +95,73 @@ pub(super) const FACE_BASES: [FaceBasisUniform; 6] = [
     }, // -Z
 ];
 
-/// A color cubemap plus the views the bake needs: one `Cube` view for sampling
-/// and one `D2` render-target view per face.
+/// The views of a color cubemap the bake needs (the texture itself is recorded
+/// in the bake's objects): one `Cube` view for sampling and one `D2`
+/// render-target view per face.
 pub(super) struct Cube {
-    pub(super) texture: TextureId,
     pub(super) cube_view: TextureViewId,
     pub(super) face_views: Vec<TextureViewId>,
 }
 
-/// The baked IBL resources. The `_keep_*` vectors retain GPU handles for
-/// lifetime (the bake submission reads them asynchronously, and the cubes are
-/// sampled every frame); they are freed together on shutdown (future).
+/// Every GPU object one bake creates, recorded as each one is made: a bake
+/// that fails partway frees what it made, and a bake another replaces frees
+/// all of it.
+#[derive(Default)]
+pub(super) struct BakeObjects {
+    pub(super) textures: Vec<TextureId>,
+    pub(super) views: Vec<TextureViewId>,
+    pub(super) buffers: Vec<BufferId>,
+    pub(super) bind_groups: Vec<BindGroupId>,
+    pub(super) samplers: Vec<SamplerId>,
+}
+
+impl BakeObjects {
+    /// Frees every recorded object. Work already submitted that reads them
+    /// completes first (the backend defers the release); teardown errors are
+    /// logged, never fatal.
+    pub(super) fn destroy(&self, device: &dyn GraphicsDevice) {
+        for &bind_group in &self.bind_groups {
+            if let Err(e) = device.destroy_bind_group(bind_group) {
+                log::warn!("IBL: destroy_bind_group failed: {e:?}");
+            }
+        }
+        for &view in &self.views {
+            if let Err(e) = device.destroy_texture_view(view) {
+                log::warn!("IBL: destroy_texture_view failed: {e:?}");
+            }
+        }
+        for &texture in &self.textures {
+            if let Err(e) = device.destroy_texture(texture) {
+                log::warn!("IBL: destroy_texture failed: {e:?}");
+            }
+        }
+        for &buffer in &self.buffers {
+            if let Err(e) = device.destroy_buffer(buffer) {
+                log::warn!("IBL: destroy_buffer failed: {e:?}");
+            }
+        }
+        for &sampler in &self.samplers {
+            if let Err(e) = device.destroy_sampler(sampler) {
+                log::warn!("IBL: destroy_sampler failed: {e:?}");
+            }
+        }
+    }
+}
+
+/// A finished bake: the bindings the lit lanes read, and every GPU object it
+/// created. They live as long as the bake is the current one (the bake
+/// submission reads them asynchronously, and the cubes are sampled every
+/// frame) and are freed together when another bake replaces it.
 pub(super) struct IblResources {
     pub(super) bindings: IblGpuBindings,
-    pub(super) _keep_textures: Vec<TextureId>,
-    pub(super) _keep_views: Vec<TextureViewId>,
-    pub(super) _keep_buffers: Vec<BufferId>,
+    pub(super) objects: BakeObjects,
+}
+
+impl IblResources {
+    /// Frees every GPU object of this bake (see [`BakeObjects::destroy`]).
+    pub(super) fn destroy(&self, device: &dyn GraphicsDevice) {
+        self.objects.destroy(device);
+    }
 }
 
 /// Normalizes `dir`, falling back to [`DEFAULT_SUN_DIRECTION`] when it is
@@ -130,6 +181,7 @@ pub(super) fn create_cube(
     device: &dyn GraphicsDevice,
     face_size: u32,
     label: &str,
+    objects: &mut BakeObjects,
 ) -> Result<Cube, RenderError> {
     let texture = device.create_texture(&TextureDescriptor {
         label: Some(Cow::Owned(format!("{label} Texture"))),
@@ -145,6 +197,7 @@ pub(super) fn create_cube(
         usage: TextureUsage::RENDER_ATTACHMENT | TextureUsage::TEXTURE_BINDING,
         view_formats: Cow::Borrowed(&[]),
     })?;
+    objects.textures.push(texture);
     let cube_view = device.create_texture_view(
         texture,
         &TextureViewDescriptor {
@@ -158,9 +211,10 @@ pub(super) fn create_cube(
             array_layer_count: Some(6),
         },
     )?;
+    objects.views.push(cube_view);
     let mut face_views = Vec::with_capacity(6);
     for face in 0..6u32 {
-        face_views.push(device.create_texture_view(
+        let face_view = device.create_texture_view(
             texture,
             &TextureViewDescriptor {
                 label: Some(Cow::Owned(format!("{label} Face [{face}]"))),
@@ -172,10 +226,11 @@ pub(super) fn create_cube(
                 base_array_layer: face,
                 array_layer_count: Some(1),
             },
-        )?);
+        )?;
+        objects.views.push(face_view);
+        face_views.push(face_view);
     }
     Ok(Cube {
-        texture,
         cube_view,
         face_views,
     })
@@ -199,12 +254,13 @@ pub(super) fn uniform_entry(binding: u32) -> BindGroupLayoutEntry {
 pub(super) fn create_face_basis_buffers(
     device: &dyn GraphicsDevice,
     sun: Vec3,
+    objects: &mut BakeObjects,
 ) -> Result<Vec<BufferId>, RenderError> {
     let mut buffers = Vec::with_capacity(6);
     for (face, basis) in FACE_BASES.iter().enumerate() {
         let mut b = *basis;
         b.sun = [sun.x, sun.y, sun.z, 0.0];
-        buffers.push(device.create_buffer_with_data(
+        let buffer = device.create_buffer_with_data(
             &BufferDescriptor {
                 label: Some(Cow::Owned(format!("IBL Face Basis [{face}]"))),
                 size: std::mem::size_of::<FaceBasisUniform>() as u64,
@@ -212,7 +268,9 @@ pub(super) fn create_face_basis_buffers(
                 mapped_at_creation: false,
             },
             bytemuck::bytes_of(&b),
-        )?);
+        )?;
+        objects.buffers.push(buffer);
+        buffers.push(buffer);
     }
     Ok(buffers)
 }
@@ -220,8 +278,11 @@ pub(super) fn create_face_basis_buffers(
 /// The filtering sampler shared by the IBL cubes + LUT: trilinear, edge-clamped
 /// (no cube-face seams), LOD range wide enough for the future prefiltered mip
 /// chain.
-pub(super) fn create_ibl_sampler(device: &dyn GraphicsDevice) -> Result<SamplerId, RenderError> {
-    device
+pub(super) fn create_ibl_sampler(
+    device: &dyn GraphicsDevice,
+    objects: &mut BakeObjects,
+) -> Result<SamplerId, RenderError> {
+    let sampler = device
         .create_sampler(&SamplerDescriptor {
             label: Some(Cow::Borrowed("ibl_sampler")),
             address_mode_u: AddressMode::ClampToEdge,
@@ -236,7 +297,9 @@ pub(super) fn create_ibl_sampler(device: &dyn GraphicsDevice) -> Result<SamplerI
             anisotropy_clamp: 1,
             border_color: None,
         })
-        .map_err(RenderError::ResourceError)
+        .map_err(RenderError::ResourceError)?;
+    objects.samplers.push(sampler);
+    Ok(sampler)
 }
 
 /// Creates a mipmapped color cubemap (6 layers, `mips` levels) with a `Cube`
@@ -249,6 +312,7 @@ pub(super) fn create_mip_cube(
     face_size: u32,
     mips: u32,
     label: &str,
+    objects: &mut BakeObjects,
 ) -> Result<(TextureId, TextureViewId), RenderError> {
     let texture = device.create_texture(&TextureDescriptor {
         label: Some(Cow::Owned(format!("{label} Texture"))),
@@ -264,6 +328,7 @@ pub(super) fn create_mip_cube(
         usage: TextureUsage::RENDER_ATTACHMENT | TextureUsage::TEXTURE_BINDING,
         view_formats: Cow::Borrowed(&[]),
     })?;
+    objects.textures.push(texture);
     let cube_view = device.create_texture_view(
         texture,
         &TextureViewDescriptor {
@@ -277,6 +342,7 @@ pub(super) fn create_mip_cube(
             array_layer_count: Some(6),
         },
     )?;
+    objects.views.push(cube_view);
     Ok((texture, cube_view))
 }
 
@@ -284,6 +350,7 @@ pub(super) fn create_mip_cube(
 /// and a view; the contents are produced by the BRDF integration pass.
 pub(super) fn create_brdf_lut(
     device: &dyn GraphicsDevice,
+    objects: &mut BakeObjects,
 ) -> Result<(TextureId, TextureViewId), RenderError> {
     let texture = device.create_texture(&TextureDescriptor {
         label: Some(Cow::Borrowed("IBL BRDF LUT")),
@@ -299,6 +366,7 @@ pub(super) fn create_brdf_lut(
         usage: TextureUsage::RENDER_ATTACHMENT | TextureUsage::TEXTURE_BINDING,
         view_formats: Cow::Borrowed(&[]),
     })?;
+    objects.textures.push(texture);
     let view = device.create_texture_view(
         texture,
         &TextureViewDescriptor {
@@ -312,6 +380,7 @@ pub(super) fn create_brdf_lut(
             array_layer_count: Some(1),
         },
     )?;
+    objects.views.push(view);
     Ok((texture, view))
 }
 
@@ -320,12 +389,13 @@ pub(super) fn create_brdf_lut(
 pub(super) fn create_prefilter_basis_buffers(
     device: &dyn GraphicsDevice,
     roughness: f32,
+    objects: &mut BakeObjects,
 ) -> Result<Vec<BufferId>, RenderError> {
     let mut buffers = Vec::with_capacity(6);
     for (face, basis) in FACE_BASES.iter().enumerate() {
         let mut b = *basis;
         b.forward[3] = roughness;
-        buffers.push(device.create_buffer_with_data(
+        let buffer = device.create_buffer_with_data(
             &BufferDescriptor {
                 label: Some(Cow::Owned(format!(
                     "IBL Prefilter Basis [r={roughness:.2} f={face}]"
@@ -335,7 +405,9 @@ pub(super) fn create_prefilter_basis_buffers(
                 mapped_at_creation: false,
             },
             bytemuck::bytes_of(&b),
-        )?);
+        )?;
+        objects.buffers.push(buffer);
+        buffers.push(buffer);
     }
     Ok(buffers)
 }
@@ -344,8 +416,9 @@ pub(super) fn create_prefilter_basis_buffers(
 /// seamless in u), latitude clamps at the poles. Linear filtering, mip 0 only.
 pub(super) fn create_equirect_sampler(
     device: &dyn GraphicsDevice,
+    objects: &mut BakeObjects,
 ) -> Result<SamplerId, RenderError> {
-    device
+    let sampler = device
         .create_sampler(&SamplerDescriptor {
             label: Some(Cow::Borrowed("ibl_equirect_sampler")),
             address_mode_u: AddressMode::Repeat,
@@ -360,7 +433,9 @@ pub(super) fn create_equirect_sampler(
             anisotropy_clamp: 1,
             border_color: None,
         })
-        .map_err(RenderError::ResourceError)
+        .map_err(RenderError::ResourceError)?;
+    objects.samplers.push(sampler);
+    Ok(sampler)
 }
 
 /// Uploads a decoded equirectangular environment map and returns its texture +
@@ -372,6 +447,7 @@ pub(super) fn create_equirect_sampler(
 pub(super) fn upload_equirect(
     device: &dyn GraphicsDevice,
     cpu: &khora_core::renderer::api::resource::CpuTexture,
+    objects: &mut BakeObjects,
 ) -> Result<(TextureId, TextureViewId), RenderError> {
     use khora_core::math::Origin3D;
 
@@ -385,6 +461,7 @@ pub(super) fn upload_equirect(
         usage: TextureUsage::TEXTURE_BINDING | TextureUsage::COPY_DST,
         view_formats: Cow::Borrowed(&[]),
     })?;
+    objects.textures.push(texture);
     device.write_texture(
         texture,
         &cpu.pixels,
@@ -405,5 +482,6 @@ pub(super) fn upload_equirect(
             array_layer_count: Some(1),
         },
     )?;
+    objects.views.push(view);
     Ok((texture, view))
 }
