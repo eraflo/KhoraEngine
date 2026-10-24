@@ -18,6 +18,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::math::{Mat4, Quaternion, Vec3, Vec4};
 
+/// A basis axis shorter than this fraction of the longest one is flattened:
+/// [`AffineTransform::rotation`] rebuilds it from the two others, or gives
+/// up when two are flattened.
+const RELATIVE_DEGENERACY: f32 = 1e-6;
+
 /// Represents a 3D affine transformation (translation, rotation, scale).
 ///
 /// This is a semantic wrapper around a `Mat4` that guarantees the matrix
@@ -329,8 +334,18 @@ impl AffineTransform {
     /// a quarter turn comes out as ~74°). A mirrored basis (negative
     /// determinant) has no rotation that reproduces it; the mirror is put on
     /// the first axis, consistent with [`scale`](Self::scale) reporting
-    /// magnitudes. A degenerate basis (a zero-length column) has no rotation
-    /// to recover and yields the identity.
+    /// magnitudes.
+    ///
+    /// How small a scale is never matters, only how the axes compare: an
+    /// axis is flattened when it is shorter than a millionth of the longest.
+    /// One flattened axis is rebuilt as the right-handed cross product of
+    /// the two others, so a transform squashed flat keeps its rotation. While
+    /// the flattened axis keeps a direction, a mirror is read from it and put
+    /// on the first axis as above; an axis scaled to exactly zero has none,
+    /// and a mirror on the surviving axes then turns into a half turn. Two
+    /// or more flattened axes, two parallel
+    /// survivors, or a non-finite basis leave no rotation to recover and
+    /// yield the identity.
     ///
     /// # Example
     ///
@@ -346,17 +361,64 @@ impl AffineTransform {
     /// ```
     #[inline]
     pub fn rotation(&self) -> Quaternion {
-        let (right, up, forward) = (self.right(), self.up(), self.forward());
-        let lengths = [right.length(), up.length(), forward.length()];
-        if lengths.iter().any(|length| *length <= crate::math::EPSILON) {
+        let mut axes = [self.right(), self.up(), self.forward()];
+        let components = axes.iter().flat_map(|axis| [axis.x, axis.y, axis.z]);
+        if components.clone().any(|c| !c.is_finite()) {
             return Quaternion::IDENTITY;
         }
-        let mut right = right / lengths[0];
-        let up = up / lengths[1];
-        let forward = forward / lengths[2];
-        if right.cross(up).dot(forward) < 0.0 {
-            right = -right;
+        // Measured against its own largest component, the basis neither
+        // underflows when squared nor meets an absolute threshold: a
+        // millimetre node keeps its rotation like a metre one.
+        let largest = components.fold(0.0f32, |largest, c| largest.max(c.abs()));
+        if largest == 0.0 {
+            return Quaternion::IDENTITY;
         }
+        // Component by component: `Vec3 / f32` multiplies by the reciprocal,
+        // which is infinite for a subnormal `largest`.
+        for axis in &mut axes {
+            *axis = Vec3::new(axis.x / largest, axis.y / largest, axis.z / largest);
+        }
+        let lengths = axes.map(|axis| axis.length());
+        let longest = lengths[0].max(lengths[1]).max(lengths[2]);
+        let flat = lengths.map(|length| length <= RELATIVE_DEGENERACY * longest);
+        match flat.iter().filter(|&&is_flat| is_flat).count() {
+            0 => {
+                for (axis, length) in axes.iter_mut().zip(lengths) {
+                    *axis = *axis / length;
+                }
+                if axes[0].cross(axes[1]).dot(axes[2]) < 0.0 {
+                    axes[0] = -axes[0];
+                }
+            }
+            1 => {
+                let missing = flat.iter().position(|&is_flat| is_flat).unwrap_or(0);
+                // A basis flattened along one axis still carries its rotation
+                // in the two others; the lost one is their right-handed cross
+                // product (right = up × forward, up = forward × right,
+                // forward = right × up).
+                let (next, after) = ((missing + 1) % 3, (missing + 2) % 3);
+                let rebuilt = axes[next].cross(axes[after]);
+                let rebuilt_length = rebuilt.length();
+                if rebuilt_length <= RELATIVE_DEGENERACY * lengths[next] * lengths[after] {
+                    return Quaternion::IDENTITY;
+                }
+                // A short axis still points somewhere: if it points against
+                // the rebuilt one the basis is mirrored, and the mirror goes
+                // to the first axis as it does for an unflattened basis — so
+                // a mirrored pose does not turn over as an axis shrinks. Only
+                // an axis scaled to exactly zero leaves the mirror unknown.
+                let mirrored = rebuilt.dot(axes[missing]) < 0.0;
+                axes[missing] = rebuilt / rebuilt_length;
+                axes[next] = axes[next] / lengths[next];
+                axes[after] = axes[after] / lengths[after];
+                if mirrored && missing != 0 {
+                    axes[missing] = -axes[missing];
+                    axes[0] = -axes[0];
+                }
+            }
+            _ => return Quaternion::IDENTITY,
+        }
+        let [right, up, forward] = axes;
         let basis = Mat4::from_cols(
             Vec4::new(right.x, right.y, right.z, 0.0),
             Vec4::new(up.x, up.y, up.z, 0.0),
@@ -559,10 +621,34 @@ mod rotation_tests {
 
     /// The angle, in degrees, of the rotation that takes `a` to `b`.
     ///
-    /// `q` and `-q` are the same rotation, hence the absolute dot product.
+    /// Read from the relative rotation `d = a⁻¹·b` as
+    /// `2·atan2(|d.xyz|, |d.w|)`: unlike `acos` of a dot product — whose
+    /// f32 resolution near 1 is ~0.04° — it resolves tiny angles, so a 0.01°
+    /// difference is told apart from none. `q` and `-q` are the same
+    /// rotation, hence `|d.w|`.
     fn angle_between_degrees(a: Quaternion, b: Quaternion) -> f32 {
-        let dot = a.normalize().dot(b.normalize()).abs().min(1.0);
-        (2.0 * dot.acos()).to_degrees()
+        let d = a.normalize().conjugate() * b.normalize();
+        let vector = (d.x * d.x + d.y * d.y + d.z * d.z).sqrt();
+        (2.0 * vector.atan2(d.w.abs())).to_degrees()
+    }
+
+    /// The angle helper resolves a hundredth of a degree, reads `q` and `-q`
+    /// as the same rotation, and measures a half turn as 180°.
+    #[test]
+    fn the_angle_between_two_rotations_resolves_a_hundredth_of_a_degree() {
+        let base = oblique_rotation();
+        let axis = Vec3::new(-0.3, 0.4, 1.0).normalize();
+        assert!(angle_between_degrees(base, base) < 1e-4);
+        let negated = Quaternion::new(-base.x, -base.y, -base.z, -base.w);
+        assert!(angle_between_degrees(base, negated) < 1e-4);
+        for degrees in [0.01f32, 0.005, 1.0, 90.0, 180.0] {
+            let turned = base * Quaternion::from_axis_angle(axis, degrees.to_radians());
+            let measured = angle_between_degrees(base, turned);
+            assert!(
+                (measured - degrees).abs() < 1e-3 * degrees.max(1.0),
+                "a {degrees}° turn measured as {measured}°"
+            );
+        }
     }
 
     /// Translation ∘ rotation ∘ scale, the order `Transform::to_mat4` composes.
@@ -676,21 +762,317 @@ mod rotation_tests {
         assert_unit_and_finite(transform.rotation());
     }
 
-    /// A flattened transform (one basis column of length zero) has no rotation
-    /// to recover; it reads as the identity rather than whatever the
-    /// conversion makes of a degenerate basis.
-    #[test]
-    fn rotation_of_a_degenerate_scale_is_the_identity() {
-        let yaw = Quaternion::from_axis_angle(Vec3::Y, PI / 2.0);
-        let transform = trs(Vec3::ZERO, yaw, Vec3::new(0.0, 1.0, 1.0));
+    /// The oblique rotation the robustness tests below recover: no basis
+    /// column lies on a world axis, so no component of the answer is free.
+    fn oblique_rotation() -> Quaternion {
+        Quaternion::from_axis_angle(Vec3::new(1.0, 2.0, -0.5).normalize(), 1.1)
+    }
 
+    /// Asserts `transform.rotation()` is a unit, finite quaternion within
+    /// 0.01° of `expected`.
+    fn assert_rotation_is(transform: AffineTransform, expected: Quaternion, what: &str) {
         let extracted = transform.rotation();
-
         assert_unit_and_finite(extracted);
-        let error = angle_between_degrees(extracted, Quaternion::IDENTITY);
+        let error = angle_between_degrees(extracted, expected);
         assert!(
             error < 0.01,
-            "a zero-length column has no rotation to recover; got {error}° ({extracted:?})"
+            "{what}: off by {error}° ({extracted:?} where {expected:?} was expected)"
         );
+    }
+
+    /// A millimetre asset nested in a centimetre node has a 1e-6 uniform
+    /// scale. Every column still carries the rotation exactly (direction
+    /// precision is relative to the column's own length), so the rotation is
+    /// recovered, not dropped to the identity by an absolute length threshold.
+    #[test]
+    fn rotation_under_a_tiny_uniform_scale_is_that_rotation() {
+        let rotation = oblique_rotation();
+        assert_rotation_is(
+            trs(
+                Vec3::new(2.0, -1.0, 0.5),
+                rotation,
+                Vec3::new(1e-6, 1e-6, 1e-6),
+            ),
+            rotation,
+            "uniform scale 1e-6",
+        );
+    }
+
+    /// A tiny non-uniform scale is the same case: the columns are compared to
+    /// each other, not to an absolute length.
+    #[test]
+    fn rotation_under_a_tiny_non_uniform_scale_is_that_rotation() {
+        let rotation = oblique_rotation();
+        assert_rotation_is(
+            trs(Vec3::ZERO, rotation, Vec3::new(1e-6, 3e-6, 2e-6)),
+            rotation,
+            "non-uniform scale (1e-6, 3e-6, 2e-6)",
+        );
+    }
+
+    /// A 1e-20 scale is well inside f32's normal range, but squaring its
+    /// components to measure a length underflows. The basis is rescaled before
+    /// it is measured, so the rotation still comes out.
+    #[test]
+    fn rotation_under_a_scale_whose_squared_length_underflows_is_that_rotation() {
+        let rotation = oblique_rotation();
+        assert_rotation_is(
+            trs(Vec3::ZERO, rotation, Vec3::new(1e-20, 1e-20, 1e-20)),
+            rotation,
+            "uniform scale 1e-20",
+        );
+    }
+
+    /// Flattening one axis to zero loses that column, not the rotation: the
+    /// missing axis is the right-handed cross product of the two others.
+    /// Holds for each of the three axes, whatever the survivors' lengths.
+    #[test]
+    fn rotation_with_one_flattened_axis_is_that_rotation() {
+        let rotation = oblique_rotation();
+        for scale in [
+            Vec3::new(0.0, 1.0, 1.0),
+            Vec3::new(1.0, 0.0, 1.0),
+            Vec3::new(1.0, 1.0, 0.0),
+            Vec3::new(0.0, 2.0, 0.5),
+            Vec3::new(3.0, 0.0, 0.25),
+            Vec3::new(0.5, 4.0, 0.0),
+        ] {
+            assert_rotation_is(
+                trs(Vec3::new(-3.0, 1.0, 2.0), rotation, scale),
+                rotation,
+                &format!("one flattened axis, scale {scale:?}"),
+            );
+        }
+    }
+
+    /// An axis ten million times shorter than the longest one counts as
+    /// flattened too (the tolerance is relative) and is rebuilt from the two
+    /// others.
+    #[test]
+    fn rotation_with_one_nearly_flattened_axis_is_that_rotation() {
+        let rotation = oblique_rotation();
+        for scale in [
+            Vec3::new(1e-7, 1.0, 1.0),
+            Vec3::new(1.0, 1e-7, 1.0),
+            Vec3::new(1.0, 1.0, 1e-7),
+        ] {
+            assert_rotation_is(
+                trs(Vec3::ZERO, rotation, scale),
+                rotation,
+                &format!("one nearly flattened axis, scale {scale:?}"),
+            );
+        }
+    }
+
+    /// A flattened axis next to a mirrored one still gives a usable rotation:
+    /// unit and finite, never a NaN handed to a solver.
+    #[test]
+    fn rotation_with_a_flattened_and_a_mirrored_axis_is_a_unit_finite_quaternion() {
+        let rotation = oblique_rotation();
+        for scale in [
+            Vec3::new(-1.0, 1.0, 0.0),
+            Vec3::new(0.0, -2.0, 1.0),
+            Vec3::new(1.0, 0.0, -0.5),
+            Vec3::new(-1.0, -1.0, 0.0),
+        ] {
+            assert_unit_and_finite(trs(Vec3::ZERO, rotation, scale).rotation());
+        }
+    }
+
+    /// Two flattened axes leave a single line: the twist around it is
+    /// undefined, so there is no rotation to recover and the answer is the
+    /// identity.
+    #[test]
+    fn rotation_with_two_flattened_axes_is_the_identity() {
+        let rotation = oblique_rotation();
+        for scale in [
+            Vec3::new(0.0, 0.0, 1.0),
+            Vec3::new(0.0, 2.0, 0.0),
+            Vec3::new(3.0, 0.0, 0.0),
+        ] {
+            assert_rotation_is(
+                trs(Vec3::ZERO, rotation, scale),
+                Quaternion::IDENTITY,
+                &format!("two flattened axes, scale {scale:?}"),
+            );
+        }
+    }
+
+    /// A transform flattened to a point (all three axes zero) has no rotation
+    /// and reads as the identity.
+    #[test]
+    fn rotation_with_all_axes_flattened_is_the_identity() {
+        assert_rotation_is(
+            trs(Vec3::new(1.0, 2.0, 3.0), oblique_rotation(), Vec3::ZERO),
+            Quaternion::IDENTITY,
+            "all three axes flattened",
+        );
+    }
+
+    /// One flattened column and two surviving columns that are parallel span
+    /// a line, not a plane: the missing axis cannot be rebuilt, so the answer
+    /// is the identity.
+    #[test]
+    fn rotation_with_one_flattened_axis_and_two_parallel_survivors_is_the_identity() {
+        let transform = AffineTransform(Mat4::from_cols(
+            Vec4::new(1.0, 2.0, 0.5, 0.0),
+            Vec4::new(-2.0, -4.0, -1.0, 0.0),
+            Vec4::new(0.0, 0.0, 0.0, 0.0),
+            Vec4::new(0.0, 0.0, 0.0, 1.0),
+        ));
+        assert_rotation_is(
+            transform,
+            Quaternion::IDENTITY,
+            "parallel survivors around a flattened axis",
+        );
+    }
+
+    /// A basis carrying a NaN or an infinity has no rotation to read: the
+    /// answer is the identity, finite, rather than a NaN that spreads to every
+    /// consumer.
+    #[test]
+    fn rotation_of_a_non_finite_basis_is_the_identity() {
+        let cases = [
+            (
+                "NaN in the right column",
+                Vec4::new(f32::NAN, 0.0, 0.0, 0.0),
+                Vec4::new(0.0, 1.0, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, 1.0, 0.0),
+            ),
+            (
+                "NaN in the forward column",
+                Vec4::new(0.0, 0.0, -1.0, 0.0),
+                Vec4::new(0.0, 1.0, 0.0, 0.0),
+                Vec4::new(1.0, f32::NAN, 0.0, 0.0),
+            ),
+            (
+                "+inf in the up column",
+                Vec4::new(1.0, 0.0, 0.0, 0.0),
+                Vec4::new(0.0, f32::INFINITY, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, 1.0, 0.0),
+            ),
+            (
+                "-inf in the right column",
+                Vec4::new(f32::NEG_INFINITY, 0.0, 0.0, 0.0),
+                Vec4::new(0.0, 1.0, 0.0, 0.0),
+                Vec4::new(0.0, 0.0, 1.0, 0.0),
+            ),
+        ];
+        for (what, right, up, forward) in cases {
+            let transform = AffineTransform(Mat4::from_cols(
+                right,
+                up,
+                forward,
+                Vec4::new(0.0, 0.0, 0.0, 1.0),
+            ));
+            assert_rotation_is(transform, Quaternion::IDENTITY, what);
+        }
+    }
+
+    /// A basis whose largest component is subnormal (below `1 / f32::MAX`,
+    /// about 2.9e-39) still carries its rotation: its columns are compared to
+    /// each other, never to an absolute size, so the rotation comes out.
+    #[test]
+    fn rotation_under_a_subnormal_uniform_scale_is_that_rotation() {
+        let rotation = oblique_rotation();
+        for scale in [1e-39f32, 1e-40] {
+            assert_rotation_is(
+                trs(Vec3::ZERO, rotation, Vec3::new(scale, scale, scale)),
+                rotation,
+                &format!("uniform scale {scale:e}"),
+            );
+        }
+    }
+
+    /// A scale whose squared column length overflows f32 (1e30² is past
+    /// `f32::MAX`) is the mirror image of the underflow case: the basis is
+    /// rescaled before it is measured, so the rotation still comes out.
+    #[test]
+    fn rotation_under_a_scale_whose_squared_length_overflows_is_that_rotation() {
+        let rotation = oblique_rotation();
+        for scale in [
+            Vec3::new(1e30, 1e30, 1e30),
+            Vec3::new(1e30, 2e30, 3e30),
+            Vec3::new(3e38, 3e38, 3e38),
+            Vec3::new(1e30, 1e30, 0.0),
+        ] {
+            assert_rotation_is(
+                trs(Vec3::ZERO, rotation, scale),
+                rotation,
+                &format!("huge scale {scale:?}"),
+            );
+        }
+    }
+
+    /// Rotations at and near a half turn take the quaternion conversion off
+    /// its positive-trace branch; with one axis flattened and rebuilt, each
+    /// branch still returns the rotation.
+    #[test]
+    fn rotation_near_a_half_turn_with_one_flattened_axis_is_that_rotation() {
+        let axis = Vec3::new(1.0, 2.0, -0.5).normalize();
+        for angle in [PI - 1e-3, PI, PI + 0.3, 2.0] {
+            let rotation = Quaternion::from_axis_angle(axis, angle);
+            for scale in [
+                Vec3::new(0.0, 1.0, 2.0),
+                Vec3::new(1.5, 0.0, 1.0),
+                Vec3::new(1.0, 0.5, 0.0),
+            ] {
+                // Compared through the axes it turns: the angle between two
+                // quaternions is too coarse in f32 (one ulp of their dot
+                // product is ~0.02°) to resolve a near half turn.
+                let extracted = trs(Vec3::ZERO, rotation, scale).rotation();
+                assert_unit_and_finite(extracted);
+                for axis in [Vec3::X, Vec3::Y, Vec3::Z] {
+                    let error = (extracted * axis - rotation * axis).length();
+                    assert!(
+                        error < 1e-5,
+                        "angle {angle}, scale {scale:?}: {axis:?} turned to {:?} where \
+                         {:?} was expected",
+                        extracted * axis,
+                        rotation * axis
+                    );
+                }
+            }
+        }
+    }
+
+    /// A mirrored transform whose third axis shrinks keeps the rotation it
+    /// had: the shrinking column still carries its direction (and so the
+    /// basis its handedness) until it is exactly zero, so crossing the
+    /// flattening tolerance must not turn the rotation over by a half turn.
+    #[test]
+    fn rotation_of_a_mirrored_transform_does_not_turn_over_as_an_axis_nearly_flattens() {
+        let rotation = oblique_rotation();
+        for (above, below) in [
+            (Vec3::new(-1.0, 1.0, 1e-5), Vec3::new(-1.0, 1.0, 1e-7)),
+            (Vec3::new(1.0, -1.0, 1e-5), Vec3::new(1.0, -1.0, 1e-7)),
+            (Vec3::new(1.0, 1.0, -1e-5), Vec3::new(1.0, 1.0, -1e-7)),
+        ] {
+            let before = trs(Vec3::ZERO, rotation, above).rotation();
+            let after = trs(Vec3::ZERO, rotation, below).rotation();
+            let jump = angle_between_degrees(before, after);
+            assert!(
+                jump < 0.01,
+                "scale {above:?} -> {below:?} turned the rotation by {jump}° \
+                 ({before:?} -> {after:?})"
+            );
+        }
+    }
+
+    /// A rank-deficient basis with no short column — a rotated child under a
+    /// parent flattened on Z, whose three columns all lie in one plane — is
+    /// not a rotation, but what comes out is still a usable one: unit and
+    /// finite, never a NaN handed to a solver.
+    #[test]
+    fn rotation_of_a_planar_basis_with_no_short_column_is_a_unit_finite_quaternion() {
+        let flattened_parent = Mat4::from_scale(Vec3::new(1.0, 1.0, 0.0));
+        for child in [
+            oblique_rotation(),
+            Quaternion::from_axis_angle(Vec3::X, PI / 4.0),
+            Quaternion::from_axis_angle(Vec3::new(0.0, 1.0, 1.0).normalize(), PI),
+        ] {
+            let transform = AffineTransform(flattened_parent * Mat4::from_quat(child));
+            assert_unit_and_finite(transform.rotation());
+        }
     }
 }
