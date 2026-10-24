@@ -63,4 +63,5 @@ mod watchdog_on_spawn_before_a_restored_body;
 mod watchdog_restored;
 mod watchdog_stage;
 mod watchdog_timers;
+mod withdrawn_modules;
 mod writes_earlier_in_the_frame;

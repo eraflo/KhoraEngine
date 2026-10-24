@@ -476,6 +476,14 @@ impl ScriptRuntime {
         reports
     }
 
+    /// Takes `module` out of the runtime: its program, and any version of it
+    /// waiting for a frame. Its instances stay, fields and all, for the module
+    /// coming back.
+    pub fn withdraw(&mut self, module: &str) {
+        self.programs.remove(module);
+        self.deferred.retain(|reload| reload.module != module);
+    }
+
     /// The program compiled from `module`.
     ///
     /// Handed out as the `Arc` rather than a borrow so a caller can keep it

@@ -14,12 +14,13 @@
 
 //! What is wrong with the project's scripts, for a tool to show.
 //!
-//! Three places find a problem and none of them can see the others: the
+//! Four places find a problem and none of them can see the others: the
 //! compile path (a module that does not compile, or compiles with warnings),
 //! the registration of what modules declare (a name two modules declare, a
-//! declaration deleted), and the script lane (an instance that faulted, a body
-//! that runs too long). Each reports its own list here, already located, and
-//! replaces it each time it reports.
+//! declaration deleted), the script lane (an instance that faulted, a body
+//! that runs too long), and the scan of an assets root for `.erg` files that
+//! sit outside its `scripts/` folder and so are never compiled. Each reports
+//! its own list here, already located, and replaces it each time it reports.
 
 use crate::ecs::entity::EntityId;
 
@@ -44,6 +45,12 @@ pub enum ProblemSource {
     Registration,
     /// The instances running.
     Running,
+    /// The scan of an assets root for `.erg` files outside its `scripts/`
+    /// folder — files that are never compiled.
+    Placement {
+        /// The assets root scanned, as it was mounted.
+        root: std::path::PathBuf,
+    },
 }
 
 /// One problem, located.

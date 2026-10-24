@@ -301,12 +301,15 @@ Play does not resume anything: every scripted entity arrives fresh and runs
 its `EngineApp::initial_mode` says — `Playing` unless it says otherwise.
 
 Not running is not absent. The editor mounts the open project's scripts when it
-opens it, and a save recompiles the module while you edit as while you play. What
+opens it, and a save recompiles the module while you edit as while you play.
+Scripts live in one folder, `assets/scripts/`: a module is named by its path
+from there, and imports are written from there. An `.erg` saved anywhere else
+is not a script — not at startup, not on a save — and says so. What
 a script **declares** registers at once — the Inspector lists the project's
 components and behaviors, and edits them as typed fields (a `Duration` in
 seconds, an `Angle` in degrees) — and what it **compiled to** waits for Play.
-What goes wrong is not left in the log: compile errors, a component two modules
-declare, a component no module declares any more, a faulted instance and a body
+What goes wrong is not left in the log: an `.erg` outside `scripts/`, compile
+errors, a component two modules declare, a component no module declares any more, a faulted instance and a body
 the watchdog warns about all land in one place, `ScriptProblems`, which the
 editor shows as its **Problems** tab ([Editor — Scripts](../reference/editor.md#07--scripts)).
 
@@ -502,6 +505,12 @@ part-way through, a fault. A scene never does.
 
 Hot-reload replaces a module's program while the game runs. Two things must
 survive it: what each instance *is*, and what each instance is *doing*.
+
+A module can also go: its file deleted, its folder moved out of `scripts/`,
+its project closed. Its program leaves with it — nothing keeps running code
+whose file is gone — and every instance of it stops, says so in Problems, and
+keeps its fields. When the module comes back, by a move or an undo, its
+instances carry those fields across as for any edit.
 
 ### Fields, by name
 

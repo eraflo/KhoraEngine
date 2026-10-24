@@ -178,7 +178,7 @@ impl SystemSession {
             .send(declared_in(module, &program));
         self.reloads.send(ScriptReload {
             module: module.to_owned(),
-            program,
+            program: Some(program),
         });
     }
 }

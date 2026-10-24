@@ -51,7 +51,7 @@
 //! shipping path.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use khora_core::event::{Channel, WhenFull};
@@ -64,7 +64,7 @@ use khora_script::vm::Program;
 
 use crate::script::declarations::{PendingDeclarations, ScriptDeclarations};
 
-use khora_script::modules::{imports_of, EXTENSION};
+use khora_script::modules::imports_of;
 
 /// Where this pump leaves what it recompiled, for the scripting agent to drain.
 ///
@@ -86,34 +86,109 @@ const RELOAD_BACKLOG: usize = 1024;
 pub fn reload_channel() -> PendingReloads {
     Channel::bounded(RELOAD_BACKLOG, WhenFull::DropOldest)
 }
-use crate::asset::AssetWatch;
+
+/// Queues `module`'s withdrawal: the module is gone — its file deleted, moved
+/// out of the script folder, or its root unmounted — and its program leaves
+/// the runtime, queued or installed. It supersedes a reload of the module
+/// still waiting, as a later reload supersedes it.
+pub fn withdraw(pending: &PendingReloads, module: &str) {
+    pending.send(ScriptReload {
+        module: module.to_owned(),
+        program: None,
+    });
+}
+use crate::asset::{AssetChangeKind, AssetWatch};
 use crate::script::compile::DiskLoader;
 use crate::script::mirror::PreludeLoader;
 use khora_script::compile_module;
 
-/// The script root as a directory name, relative to the assets directory.
-///
-/// The same rule the asset index applies when it turns an import into a UUID,
-/// borrowed rather than restated: a second copy of a convention is a convention
-/// that can drift. The index concatenates its answer onto an import and wants
-/// the trailing slash; this joins it as a path component and does not.
-fn script_root_of(rel_path: &str) -> &str {
-    crate::asset::dependencies::script_root(rel_path).trim_end_matches('/')
+use crate::script::layout::{
+    exists_exactly, is_file_exactly, is_module_file, is_script_file, module_of, script_dir,
+    SCRIPT_DIR,
+};
+use crate::script::mounted::MountedScripts;
+
+/// Whether a change at `rel_path` under `root` can change which Ergon files
+/// are misplaced there: an Ergon file's, a folder's that `arrived`, or one
+/// that is gone. A folder moved or deleted carries its files with it and
+/// reports only itself, and once it is gone nothing tells it from a file —
+/// `props.v2/` is named like one — so whatever is no longer there is taken as
+/// possibly one. A folder merely modified is what a save inside it reports,
+/// and moves nothing.
+fn may_move_a_script(root: &Path, rel_path: &str, arrived: bool) -> bool {
+    is_script_file(rel_path)
+        || !exists_exactly(root, rel_path)
+        || (arrived && root.join(rel_path).is_dir())
 }
 
-/// The module path an `.erg` file is known by: its path under the script root.
-fn module_path_of(rel_path: &str) -> Option<&str> {
-    if !rel_path
-        .strip_suffix(EXTENSION)
-        .is_some_and(|stem| stem.ends_with('.'))
-    {
-        return None;
+/// What the modules inside the folder at `rel_path` (under the assets root)
+/// start with, when it is the script folder or a folder in it: nothing for
+/// the script folder itself, whose modules go by their own names; `ai/` for
+/// `scripts/ai`. `None` for any other folder.
+fn module_prefix_of_folder(rel_path: &str) -> Option<String> {
+    match rel_path.strip_prefix(SCRIPT_DIR)? {
+        "" => Some(String::new()),
+        rest => rest
+            .strip_prefix('/')
+            .filter(|inside| !inside.is_empty())
+            .map(|inside| format!("{inside}/")),
     }
-    let root = script_root_of(rel_path);
-    if root.is_empty() {
-        return Some(rel_path);
+}
+
+/// The recorded modules of `root` a folder at `rel_path` (under it) held, when
+/// that folder is the script folder or one inside it and is gone now: each
+/// whose file is no longer there. A folder deleted, or moved out, reports
+/// only itself — its modules are known from the record alone.
+fn modules_gone_with(mounted: Option<&MountedScripts>, root: &Path, rel_path: &str) -> Vec<String> {
+    let Some(mounted) = mounted else {
+        return Vec::new();
+    };
+    let Some(prefix) = module_prefix_of_folder(rel_path) else {
+        return Vec::new();
+    };
+    if exists_exactly(root, rel_path) {
+        return Vec::new();
     }
-    rel_path.strip_prefix(root)?.strip_prefix('/')
+    mounted
+        .modules_of(root)
+        .into_iter()
+        .filter(|module| module.starts_with(&prefix) && !is_on_disk(root, module))
+        .collect()
+}
+
+/// Whether `module`'s file is under `root`'s script folder, spelled as the
+/// module goes by — a file renamed to another case is gone under its old
+/// name, whatever the file system thinks of case.
+fn is_on_disk(root: &Path, module: &str) -> bool {
+    is_file_exactly(root, &format!("{SCRIPT_DIR}/{module}"))
+}
+
+/// Another mounted root whose script folder holds `module`, when `root`'s no
+/// longer does. Modules are known by name across roots, so one gone from a
+/// root another still provides is that root's now — as an unmount keeps it.
+fn other_provider(mounted: Option<&MountedScripts>, root: &Path, module: &str) -> Option<PathBuf> {
+    let here = std::path::absolute(root).unwrap_or_else(|_| root.to_path_buf());
+    mounted?
+        .roots()
+        .into_iter()
+        .find(|other| *other != here && is_on_disk(other, module))
+}
+
+/// The modules a folder at `rel_path` (under the assets root) holds, when it
+/// is a folder now under the script folder: a folder moved in reports only
+/// itself, and its scripts must compile as surely as a file saved there.
+fn modules_of_folder(root: &Path, rel_path: &str) -> Vec<String> {
+    let Some(prefix) = module_prefix_of_folder(rel_path) else {
+        return Vec::new();
+    };
+    let folder = root.join(rel_path);
+    if !folder.is_dir() {
+        return Vec::new();
+    }
+    module_names(&folder)
+        .into_iter()
+        .map(|module| format!("{prefix}{module}"))
+        .collect()
 }
 
 /// Every module in `imports` that reaches one of `changed`, transitively.
@@ -233,7 +308,10 @@ fn load(
                 if let Some(catalog) = catalog {
                     announce(catalog, &module, &program);
                 }
-                pending.send(ScriptReload { module, program });
+                pending.send(ScriptReload {
+                    module,
+                    program: Some(program),
+                });
                 loaded += 1;
             }
             None => {
@@ -267,18 +345,15 @@ fn modules_under(root: &Path) -> BTreeMap<String, Vec<String>> {
         .follow_links(false)
         .into_iter()
         .filter_map(Result::ok)
-        .filter(|entry| {
-            entry.file_type().is_file()
-                && entry
-                    .path()
-                    .extension()
-                    .is_some_and(|ext| ext.eq_ignore_ascii_case(EXTENSION))
-        })
+        .filter(|entry| entry.file_type().is_file())
         .filter_map(|entry| {
             let relative = entry.path().strip_prefix(root).ok()?;
             // Forward slashes, because that is how an `import` writes a path
             // and how a module is named everywhere else.
             let module = relative.to_string_lossy().replace('\\', "/");
+            if !is_module_file(&module) {
+                return None;
+            }
             let imports = std::fs::read_to_string(entry.path())
                 .map(|source| {
                     // As the resolver reads them: `./helper.erg` is `helper.erg`.
@@ -304,34 +379,79 @@ fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
     let Some(pending) = runtime.resources.get::<PendingReloads>() else {
         return;
     };
+    let mounted = runtime
+        .resources
+        .get::<Arc<MountedScripts>>()
+        .map(Arc::as_ref);
 
-    // Per script root: the convention says a project keeps its scripts under
-    // one directory, and each watched root is its own — an import never
-    // crosses from one into another.
+    // Per watched root: each holds its scripts in its own script folder, and
+    // an import never crosses from one into another. A change outside that
+    // folder compiles nothing — it may only add, move or take away an `.erg`
+    // that is not a script, which the root's list of them then shows.
     let mut by_root: BTreeMap<std::path::PathBuf, BTreeSet<String>> = BTreeMap::new();
+    let mut rescan: BTreeSet<std::path::PathBuf> = BTreeSet::new();
     for event in &events {
-        let Some(module) = module_path_of(&event.rel_path) else {
-            continue;
+        // A folder that arrives brings its scripts; one merely modified —
+        // which is what a save inside it also reports — brings nothing new.
+        let arrived = event.kind == AssetChangeKind::Created;
+        let changed = match module_of(&event.rel_path) {
+            Some(module) => vec![module.to_owned()],
+            None if arrived => modules_of_folder(&event.root, &event.rel_path),
+            // A folder gone from the script folder — deleted, or moved out —
+            // reports only itself: what it held is known from the record.
+            None => modules_gone_with(mounted, &event.root, &event.rel_path),
         };
-        by_root
-            .entry(event.root.join(script_root_of(&event.rel_path)))
-            .or_default()
-            .insert(module.to_owned());
+        if !changed.is_empty() {
+            by_root
+                .entry(event.root.to_path_buf())
+                .or_default()
+                .extend(changed);
+        }
+        if module_of(&event.rel_path).is_none()
+            && may_move_a_script(&event.root, &event.rel_path, arrived)
+        {
+            rescan.insert(event.root.to_path_buf());
+        }
     }
-    for (script_root, changed) in by_root {
-        recompile(runtime, pending, &script_root, &changed);
+    // A module gone from one root that another mounted root still provides
+    // is that root's change: its copy compiles in, rather than the module
+    // being withdrawn from under it.
+    let mut by_provider: BTreeMap<PathBuf, BTreeSet<String>> = BTreeMap::new();
+    for (root, changed) in by_root {
+        for module in changed {
+            let provider = (!is_on_disk(&root, &module))
+                .then(|| other_provider(mounted, &root, &module))
+                .flatten()
+                .unwrap_or_else(|| root.clone());
+            by_provider.entry(provider).or_default().insert(module);
+        }
+    }
+    for (root, changed) in by_provider {
+        recompile(runtime, pending, mounted, &root, &changed);
+    }
+    if let Some(problems) = runtime.resources.get::<Arc<ScriptProblems>>() {
+        for root in rescan {
+            crate::script::problems::report_misplaced(problems, &root);
+        }
     }
 }
 
-/// Recompiles the modules of `script_root` that `changed` names, and every
-/// module importing one of them.
+/// Recompiles the modules of the assets root `root` that `changed` names, and
+/// every module importing one of them; withdraws those whose file is gone.
 fn recompile(
     runtime: &Runtime,
     pending: &PendingReloads,
-    script_root: &Path,
+    mounted: Option<&MountedScripts>,
+    root: &Path,
     changed: &BTreeSet<String>,
 ) {
-    let affected = importers_of(&modules_under(script_root), changed);
+    let script_root = &root.join(SCRIPT_DIR);
+    // The folder spelled exactly: a `Scripts/` holds no modules, so every one
+    // changed under it is gone.
+    let on_disk = script_dir(root)
+        .map(|dir| modules_under(&dir))
+        .unwrap_or_default();
+    let affected = importers_of(&on_disk, changed);
     let loader = PreludeLoader::new(DiskLoader::new(script_root));
     let declarations = runtime.resources.get::<PendingDeclarations>();
     let catalog = runtime.resources.get::<Arc<ScriptCatalog>>();
@@ -342,7 +462,7 @@ fn recompile(
     // kept with its data.
     if let Some(declarations) = declarations {
         for module in changed {
-            if !script_root.join(module).is_file() {
+            if !is_on_disk(root, module) {
                 declarations.send(ScriptDeclarations {
                     module: module.clone(),
                     components: Vec::new(),
@@ -352,8 +472,10 @@ fn recompile(
     }
 
     for module in affected {
-        // Deleted, or renamed away: nothing to compile, nothing wrong with it.
-        if !script_root.join(&module).is_file() {
+        // Deleted, or moved away: nothing to compile, nothing wrong with it —
+        // and nothing to run. Its program leaves the runtime, rather than
+        // keep running code whose file is gone.
+        if !is_on_disk(root, &module) {
             if let Some(problems) = problems {
                 problems.report(
                     khora_core::script::ProblemSource::Compile {
@@ -362,7 +484,17 @@ fn recompile(
                     Vec::new(),
                 );
             }
+            if let Some(mounted) = mounted {
+                mounted.forget_module(root, &module);
+            }
+            log::info!("script hot-reload: {module} is gone, its program withdrawn");
+            withdraw(pending, &module);
             continue;
+        }
+        // Known from now on, compiled or not, so a folder that later takes it
+        // away takes its program — or its errors — with it.
+        if let Some(mounted) = mounted {
+            mounted.record_module(root, &module);
         }
         let compiled = compile_module(&loader, &module);
         if let Some(problems) = problems {
@@ -397,7 +529,10 @@ fn recompile(
                 if let Some(catalog) = catalog {
                     announce(catalog, &module, &program);
                 }
-                pending.send(ScriptReload { module, program });
+                pending.send(ScriptReload {
+                    module,
+                    program: Some(program),
+                });
             }
             None => {
                 // Kept running rather than replaced. A save mid-edit usually
@@ -438,25 +573,8 @@ inventory::submit! {
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_module_path_drops_the_script_root() {
-        assert_eq!(
-            module_path_of("scripts/ai/guard.erg"),
-            Some("ai/guard.erg"),
-            "an import names it without the root"
-        );
-    }
-
-    #[test]
-    fn a_script_at_the_top_level_is_its_own_path() {
-        assert_eq!(module_path_of("guard.erg"), Some("guard.erg"));
-    }
-
-    #[test]
-    fn a_file_that_is_not_ergon_is_not_a_module() {
-        assert_eq!(module_path_of("textures/wood.png"), None);
-        assert_eq!(module_path_of("shaders/lit.wgsl"), None);
-    }
+    // Which file is which module is `crate::script::layout`'s answer, and is
+    // pinned there.
 
     /// **The reason importers are recompiled too.** Reloading only the edited
     /// file leaves every importer running code built against the old version.
@@ -724,5 +842,23 @@ mod load_tests {
             0
         );
         assert!(pending.is_empty());
+    }
+
+    /// **A withdrawal is the module's last word in the queue**: a reload
+    /// still waiting for it never installs.
+    #[test]
+    fn a_withdrawal_replaces_a_reload_still_queued() {
+        let pending = reload_channel();
+        pending.send(ScriptReload {
+            module: "ai/guard.erg".to_owned(),
+            program: Some(khora_script::vm::Program::default()),
+        });
+
+        withdraw(&pending, "ai/guard.erg");
+
+        let queued = pending.drain();
+        assert_eq!(queued.len(), 1);
+        assert_eq!(queued[0].module, "ai/guard.erg");
+        assert!(queued[0].program.is_none());
     }
 }

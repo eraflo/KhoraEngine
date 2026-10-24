@@ -105,7 +105,7 @@ impl Stage {
     fn reload(&self, module: &str, source: &str) {
         self.reloads.send(ScriptReload {
             module: module.to_owned(),
-            program: program(module, source),
+            program: Some(program(module, source)),
         });
     }
 

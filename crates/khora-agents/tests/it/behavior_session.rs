@@ -130,7 +130,7 @@ impl Session {
             declarations.send(declarations_of(project, module));
             session.reloads.send(ScriptReload {
                 module: module.to_owned(),
-                program: compile(project, module),
+                program: Some(compile(project, module)),
             });
         }
         session.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
@@ -231,7 +231,7 @@ impl Session {
             .send(declared_in(module, &program));
         self.reloads.send(ScriptReload {
             module: module.to_owned(),
-            program,
+            program: Some(program),
         });
     }
 

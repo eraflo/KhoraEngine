@@ -268,7 +268,7 @@ fn a_behavior_adds_and_reads_a_component_its_project_declares() {
     declarations.send(health_declarations());
     reloads.send(ScriptReload {
         module: MEDIC_MODULE.to_owned(),
-        program: compile(MEDIC_MODULE),
+        program: Some(compile(MEDIC_MODULE)),
     });
 
     let mut frames = 0;

@@ -23,7 +23,7 @@ contract.
     ├── meshes/            # gltf, glb, obj, fbx
     ├── audio/             # wav, ogg, mp3, flac
     ├── shaders/           # wgsl, hlsl, glsl
-    └── scripts/           # Ergon modules, *.erg — main.erg is seeded
+    └── scripts/           # Ergon modules, **/*.erg — the only folder compiled; main.erg is seeded
 ```
 
 The hub creates every folder in this tree, even when empty, so the editor's asset
@@ -56,7 +56,7 @@ lifecycle:
 |------|----------|-------------|------------|----------------|
 | 1. Engine built-ins | `khora-sdk` (linked into every binary) | n/a — engine is pre-compiled | no | pre-built per target |
 | 2. Native Rust | `src/` + `Cargo.toml` (opt-in) | `cargo build --release` | no, requires rebuild | host-only in v1 |
-| 3. Scripts | `assets/scripts/*.erg` | by the engine, at startup — no toolchain | via the project's asset watcher | universal |
+| 3. Scripts | `assets/scripts/**/*.erg` (an `.erg` elsewhere is reported, not compiled) | by the engine, at startup — no toolchain | via the project's asset watcher | universal |
 
 Tier 1 supplies the primitives (`Transform`, `Camera`, `Light`, `Mesh`, ECS
 plumbing). Tier 2 extends them with custom Rust types when you need raw access to

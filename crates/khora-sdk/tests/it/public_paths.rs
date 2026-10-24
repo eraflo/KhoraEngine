@@ -994,6 +994,21 @@ fn module_crate_root_paths_still_resolve() {
 fn module_scripts_paths_still_resolve() {
     let _ = khora_sdk::scripts::mount;
     let _ = khora_sdk::scripts::is_engine_name;
+    let _: &str = khora_sdk::scripts::SCRIPT_DIR;
+    let _: fn(&str) -> bool = khora_sdk::scripts::is_script_file;
+    let _: for<'a> fn(&'a str) -> Option<&'a str> = khora_sdk::scripts::module_of;
+    same_item(
+        &khora_sdk::scripts::is_script_file,
+        &khora_io::script::layout::is_script_file,
+    );
+    same_item(
+        &khora_sdk::scripts::module_of,
+        &khora_io::script::layout::module_of,
+    );
+    same_type(
+        PhantomData::<khora_sdk::scripts::MountedScripts>,
+        PhantomData::<khora_io::script::mounted::MountedScripts>,
+    );
 }
 
 #[test]

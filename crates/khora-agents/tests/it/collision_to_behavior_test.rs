@@ -129,7 +129,7 @@ fn a_touched_event_reaches_the_behavior_that_declared_the_handler() {
     let reloads = reload_channel();
     reloads.send(ScriptReload {
         module: MODULE.to_owned(),
-        program: compile(GUARD),
+        program: Some(compile(GUARD)),
     });
     let mut runtime_with_reload = Runtime::default();
     // The scripting world, as `EngineBuilder` registers it. The agent

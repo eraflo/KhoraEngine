@@ -138,7 +138,7 @@ impl Session {
         self.declarations.send(declared_in(MODULE, &program));
         self.reloads.send(ScriptReload {
             module: MODULE.to_owned(),
-            program,
+            program: Some(program),
         });
     }
 

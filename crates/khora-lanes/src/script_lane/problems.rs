@@ -79,6 +79,24 @@ impl ScriptRuntime {
             entity: Some(entity),
             behavior: Some(behavior.to_owned()),
         };
+        // Its module left the runtime — the file deleted, moved out of the
+        // script folder, its root unmounted — and no version of it waits: the
+        // instance is skipped each frame, and would be in silence.
+        if !instance.module.is_empty()
+            && self.program(&instance.module).is_none()
+            && !self.is_waiting(&instance.module)
+        {
+            return Some(problem(
+                ProblemSeverity::Error,
+                format!(
+                    "`{behavior}` does not run: its module `{}` is not loaded",
+                    instance.module
+                ),
+                Some(
+                    "its file is gone or did not compile — bring it back under `scripts/`, fix what is listed for it, or take the behavior off the entity; its fields are kept".to_owned(),
+                ),
+            ));
+        }
         if instance.disabled {
             let fault = instance.fault.as_ref()?;
             return Some(problem(

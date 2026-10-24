@@ -17,6 +17,7 @@
 //! tab's title, a badge where the worst problem wins, and where a click goes.
 
 mod engine_mirror_rows;
+mod misplaced_script_tiles;
 
 use std::path::Path;
 
