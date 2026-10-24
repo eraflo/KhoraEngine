@@ -107,7 +107,9 @@ mod every_pub_mod {
     use khora_io::script as _;
     use khora_io::script::compile as _;
     use khora_io::script::hot_reload as _;
+    use khora_io::script::layout as _;
     use khora_io::script::mirror as _;
+    use khora_io::script::mounted as _;
     use khora_io::serialization as _;
     use khora_io::systems as _;
     use khora_io::systems::asset_resolver as _;
@@ -631,6 +633,39 @@ fn module_script_hot_reload_paths_still_resolve() {
 }
 
 #[test]
+fn module_script_layout_paths_still_resolve() {
+    let _: &str = khora_io::script::layout::SCRIPT_DIR;
+    let _: fn(&str) -> bool = khora_io::script::layout::is_script_file;
+    let _: for<'a> fn(&'a str) -> Option<&'a str> = khora_io::script::layout::module_of;
+    let _: fn(&std::path::Path) -> Option<std::path::PathBuf> =
+        khora_io::script::layout::script_dir;
+    let _: fn(&std::path::Path) -> Vec<String> = khora_io::script::layout::misplaced;
+}
+
+#[test]
+fn module_script_mounted_paths_still_resolve() {
+    let _ = type_name::<khora_io::script::mounted::MountedScripts>();
+    is_debug::<khora_io::script::mounted::MountedScripts>();
+    is_default::<khora_io::script::mounted::MountedScripts>();
+    let _ = |mounted: &khora_io::script::mounted::MountedScripts| {
+        mounted.record(std::path::Path::new("assets"), Vec::<String>::new())
+    };
+    let _ = khora_io::script::mounted::MountedScripts::forget;
+    let _ = khora_io::script::mounted::MountedScripts::record_module;
+    let _ = khora_io::script::mounted::MountedScripts::forget_module;
+    let _ = khora_io::script::mounted::MountedScripts::modules_of;
+    let _ = khora_io::script::mounted::MountedScripts::others;
+}
+
+#[test]
+fn module_script_problems_paths_still_resolve() {
+    let _: fn(&str) -> khora_core::script::ScriptProblem =
+        khora_io::script::problems::misplaced_problem;
+    let _: fn(&khora_core::script::ScriptProblems, &std::path::Path) =
+        khora_io::script::problems::report_misplaced;
+}
+
+#[test]
 fn module_script_mirror_paths_still_resolve() {
     let _ = khora_io::script::mirror::MIRROR_MODULE;
     let _ = type_name::<khora_io::script::mirror::PreludeLoader<khora_script::MemoryLoader>>();
@@ -712,5 +747,8 @@ mod paths_used_by_other_crates {
     use khora_io::script::hot_reload::load_all as _; // khora-sdk
     use khora_io::script::hot_reload::reload_channel as _; // khora-agents, khora-sdk
     use khora_io::script::hot_reload::PendingReloads as _; // khora-sdk
+    use khora_io::script::layout::is_script_file as _; // khora-sdk
+    use khora_io::script::layout::module_of as _; // khora-sdk
+    use khora_io::script::layout::SCRIPT_DIR as _; // khora-sdk
     use khora_io::serialization::SerializationService as _; // khora-sdk
 }

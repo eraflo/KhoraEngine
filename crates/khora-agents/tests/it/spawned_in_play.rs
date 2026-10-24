@@ -271,7 +271,7 @@ fn a_spawn_through_the_scripting_agent_takes_its_id_from_the_worlds_reserver() {
     let reloads = reload_channel();
     reloads.send(ScriptReload {
         module: MODULE.to_owned(),
-        program: khora_script::compile(&parsed.module).program,
+        program: Some(khora_script::compile(&parsed.module).program),
     });
     let mut runtime = Runtime::default();
     runtime.services.insert(Arc::new(std::sync::Mutex::new(

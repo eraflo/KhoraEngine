@@ -51,32 +51,6 @@ pub fn type_has_dependency_extractor(asset_type: &str) -> bool {
     matches!(asset_type, "material" | "script")
 }
 
-/// The script root a `.erg` file lives under, as a prefix to join imports to.
-///
-/// An `import` is written relative to the project's script root, not to the
-/// importing file — `"combat/damage.erg"` means the same thing wherever it is
-/// written, which is what lets a file be moved without rewriting the files that
-/// import it.
-///
-/// The root is taken to be the **first path segment** of the script's own
-/// location: `scripts/ai/guard.erg` is rooted at `scripts/`, and its imports
-/// resolve under that. Derived rather than configured, because a configured
-/// root is one more thing that can disagree with where the files actually are —
-/// and a project that keeps its scripts directly under `assets/` gets an empty
-/// root, which is the right answer for it.
-///
-/// **The trailing slash is part of the answer**, so the result concatenates
-/// straight onto an import. The hot-reload pump wants the same segment as a
-/// directory name and trims it; that trim is the whole difference between the
-/// two uses, and it is one character in one place rather than a second copy of
-/// this rule that can drift from it.
-pub(crate) fn script_root(path: &str) -> &str {
-    match path.find('/') {
-        Some(index) => &path[..=index],
-        None => "",
-    }
-}
-
 /// Extracts the direct asset dependencies encoded in `bytes`, dispatching on
 /// the canonical `asset_type` name.
 ///
@@ -127,10 +101,17 @@ fn script_dependencies(path: &str, bytes: &[u8]) -> Vec<AssetUUID> {
         return Vec::new();
     };
 
-    let root = script_root(path);
+    // An `import` is written from the script folder, not from the importing
+    // file — `"combat/damage.erg"` means the same thing wherever it is written,
+    // which lets a file move without rewriting its importers. An `.erg` outside
+    // that folder is no script: it imports nothing, because nothing compiles it.
+    if crate::script::layout::module_of(path).is_none() {
+        return Vec::new();
+    }
+    let root = crate::script::layout::SCRIPT_DIR;
     khora_script::modules::imports_of(source)
         .into_iter()
-        .map(|import| AssetUUID::new_v5(&format!("{root}{import}")))
+        .map(|import| AssetUUID::new_v5(&format!("{root}/{import}")))
         .collect()
 }
 
@@ -258,14 +239,42 @@ mod script_tests {
         assert_eq!(shallow, vec![AssetUUID::new_v5("scripts/shared.erg")]);
     }
 
-    /// A project keeping its scripts directly under `assets/` has an empty
-    /// root, which is the right answer for it.
+    /// **A file at the top of the assets is no script**: it is never compiled,
+    /// so what it imports is no edge for hot-reload to walk.
     #[test]
-    fn a_script_at_the_top_level_roots_at_nothing() {
+    fn an_erg_at_the_top_level_has_no_edges() {
         let source = br#"import "helper.erg"; fn void Main() { }"#;
         let deps = extract_dependencies("script", "guard.erg", source);
 
-        assert_eq!(deps, vec![AssetUUID::new_v5("helper.erg")]);
+        assert!(deps.is_empty(), "{deps:?}");
+    }
+
+    /// **An `.erg` outside `scripts/` has no edges** — under another folder,
+    /// under a script folder spelled in another case, or under a `scripts`
+    /// folder below another one.
+    #[test]
+    fn an_erg_outside_the_script_folder_has_no_edges() {
+        let source = br#"import "helper.erg"; fn void Main() { }"#;
+
+        for path in [
+            "props/x.erg",
+            "Scripts/x.erg",
+            "scriptsextra/x.erg",
+            "props/scripts/x.erg",
+        ] {
+            let deps = extract_dependencies("script", path, source);
+            assert!(deps.is_empty(), "{path}: {deps:?}");
+        }
+    }
+
+    /// A module's extension is `.erg` in lower case: a file in place spelled
+    /// `.ERG` is no module — nothing compiles it — and imports nothing.
+    #[test]
+    fn a_file_in_place_with_a_capital_extension_has_no_edges() {
+        let source = br#"import "combat/damage.erg"; fn void Main() { }"#;
+        let deps = extract_dependencies("script", "scripts/ai/Guard.ERG", source);
+
+        assert!(deps.is_empty(), "{deps:?}");
     }
 
     #[test]

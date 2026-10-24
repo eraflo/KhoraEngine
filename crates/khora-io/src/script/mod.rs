@@ -13,11 +13,15 @@
 // limitations under the License.
 
 //! Ergon scripts on the I/O side: reading modules from disk ([`compile`]),
-//! mirroring components into Ergon declarations ([`mirror`]), and reloading a
-//! changed file ([`hot_reload`]).
+//! mirroring components into Ergon declarations ([`mirror`]), reloading a
+//! changed file ([`hot_reload`]), telling which `.erg` files are scripts
+//! ([`layout`]), and remembering which modules each mounted root brought in
+//! ([`mounted`]).
 
 pub mod compile;
 pub mod declarations;
 pub mod hot_reload;
+pub mod layout;
 pub mod mirror;
+pub mod mounted;
 pub mod problems;

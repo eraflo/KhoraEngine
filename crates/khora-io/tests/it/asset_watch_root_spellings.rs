@@ -202,3 +202,36 @@ fn a_root_named_in_another_case_is_the_same_root_where_case_is_ignored() {
     watch.unwatch(&assets);
     assert!(watch.roots().is_empty(), "{:?}", watch.roots());
 }
+
+/// **A root is known by its first name, under any spelling**: whatever is kept
+/// per root keys on the name the watch reports changes under, not on the
+/// spelling a caller happens to hold — or one folder gets two entries.
+#[test]
+fn a_root_answers_to_its_first_name_under_any_spelling() {
+    let scratch = Scratch::new("named-root");
+    let watch = AssetWatch::default();
+    watch.watch(scratch.path()).expect("watches the root");
+
+    assert_eq!(
+        watch.named(scratch.path()).as_deref(),
+        Some(scratch.path()),
+        "the name it was armed by"
+    );
+    assert_eq!(
+        watch.named(&relative_from_cwd(scratch.path())).as_deref(),
+        Some(scratch.path()),
+        "another spelling of the same folder"
+    );
+}
+
+/// A folder that is not watched has no name in the watch.
+#[test]
+fn a_root_not_watched_has_no_name() {
+    let scratch = Scratch::new("unnamed-root");
+    let watch = AssetWatch::default();
+
+    assert_eq!(watch.named(scratch.path()), None);
+    watch.watch(scratch.path()).expect("watches the root");
+    watch.unwatch(scratch.path());
+    assert_eq!(watch.named(scratch.path()), None, "unwatched");
+}

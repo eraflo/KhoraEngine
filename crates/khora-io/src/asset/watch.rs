@@ -89,6 +89,18 @@ impl AssetWatch {
         });
     }
 
+    /// The name the root `root` is watched by — as it was first named — when
+    /// `root` is that name or another spelling of the same folder. What the
+    /// changes under it carry, made absolute: whatever is kept per root must
+    /// be kept under this name, or one folder ends up with two entries.
+    pub fn named(&self, root: &Path) -> Option<PathBuf> {
+        let resolved = root.canonicalize().ok();
+        self.lock()
+            .iter()
+            .find(|watched| watched.named == root || resolved.as_ref() == Some(&watched.resolved))
+            .map(|watched| watched.named.clone())
+    }
+
     /// Everything `subscriber` has not yet seen, on every watched root.
     pub fn poll_for(&self, subscriber: &'static str) -> Vec<AssetChangeEvent> {
         self.lock()

@@ -291,7 +291,7 @@ fn the_scripting_agent_hands_its_lane_the_prefab_catalog() {
         let reloads = reload_channel();
         reloads.send(ScriptReload {
             module: MODULE.to_owned(),
-            program: khora_script::compile(&parsed.module).program,
+            program: Some(khora_script::compile(&parsed.module).program),
         });
         let mut runtime = Runtime::default();
         runtime.services.insert(

@@ -43,8 +43,20 @@ pub(crate) fn apply_reloads(
     let mut waiting = runtime.take_deferred();
     waiting.retain(|kept| !reloads.iter().any(|newer| newer.module == kept.module));
     for reload in waiting.into_iter().chain(reloads.iter().cloned()) {
-        let unprojected = reload
-            .program
+        // Gone — its file deleted, moved out of the script folder, or its
+        // root unmounted: nothing keeps running code whose file is not there.
+        let Some(program) = reload.program.as_ref() else {
+            runtime.withdraw(&reload.module);
+            log::info!(
+                "hot-reload: `{}` is gone, its instances stop",
+                reload.module
+            );
+            if let Some(catalog) = catalog {
+                catalog.settle(&reload.module);
+            }
+            continue;
+        };
+        let unprojected = program
             .reads
             .iter()
             .any(|read| projected.component(read).is_none());
@@ -60,7 +72,11 @@ pub(crate) fn apply_reloads(
 }
 
 fn apply(runtime: &mut ScriptRuntime, reload: &ScriptReload) {
-    for report in runtime.reload(&reload.module, reload.program.clone()) {
+    let Some(program) = reload.program.clone() else {
+        runtime.withdraw(&reload.module);
+        return;
+    };
+    for report in runtime.reload(&reload.module, program) {
         if report.lost_anything() {
             log::warn!(
                 "hot-reload: `{}` lost {} — a renamed field keeps no value",
@@ -91,7 +107,8 @@ pub(crate) fn publish_reads(runtime: &ScriptRuntime, catalog: &ScriptCatalog) {
             runtime
                 .deferred()
                 .iter()
-                .flat_map(|reload| reload.program.reads.iter()),
+                .flat_map(|reload| reload.program.iter())
+                .flat_map(|program| program.reads.iter()),
         )
         .map(|read| ComponentName::new(read.as_str()))
         .collect();

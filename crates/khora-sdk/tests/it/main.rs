@@ -33,4 +33,6 @@ mod script_problems_after_remount;
 mod script_problems_after_unmount;
 mod scripts_mount_sequences;
 mod scripts_mounted_while_running;
+mod scripts_outside_the_script_folder;
+mod scripts_unmounted_after_play;
 mod system_components;

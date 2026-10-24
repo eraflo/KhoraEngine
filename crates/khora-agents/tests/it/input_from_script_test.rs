@@ -147,7 +147,7 @@ fn wired() -> (Arc<Runtime>, Channel<InputEvent>, ScriptAgent) {
     let reloads = reload_channel();
     reloads.send(ScriptReload {
         module: MODULE.to_owned(),
-        program: compile(PLAYER),
+        program: Some(compile(PLAYER)),
     });
 
     let mut runtime = Runtime::default();

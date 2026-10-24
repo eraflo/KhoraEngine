@@ -102,7 +102,7 @@ fn a_queued_reload_reaches_the_agent() {
     let reloads = reload_channel();
     reloads.send(ScriptReload {
         module: "ai/guard.erg".to_owned(),
-        program: Program::default(),
+        program: Some(Program::default()),
     });
 
     let mut runtime = Runtime::default();
@@ -220,7 +220,7 @@ fn an_agent_that_declared_nothing_reaches_neither() {
     let reloads = reload_channel();
     reloads.send(ScriptReload {
         module: "ai/guard.erg".to_owned(),
-        program: Program::default(),
+        program: Some(Program::default()),
     });
     let events = engine_event_channel();
     events.send(ScriptEvent {

@@ -19,7 +19,6 @@
 //! open — and changes it while running — and a packed runtime watches nothing
 //! at all. So mounting and unmounting take the runtime shared, at any frame.
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -30,55 +29,16 @@ use khora_io::script::declarations::{
     declaration_channel, DeclaredComponents, PendingDeclarations, ScriptDeclarations,
 };
 use khora_io::script::hot_reload::{
-    load_all, load_all_announcing, module_names, reload_channel, PendingReloads,
+    load_all, load_all_announcing, module_names, reload_channel, withdraw, PendingReloads,
 };
+use khora_io::script::layout::script_dir;
 
 /// The module the engine serves its components as: a script imports it, and
 /// no project holds it as a file.
 pub const ENGINE_MODULE: &str = khora_io::script::mirror::MIRROR_MODULE;
 
-/// Where the scripts are found under an assets root.
-const SCRIPT_DIR: &str = "scripts";
-
-/// The modules each mounted root brought in, by root: what an unmount takes
-/// back.
-#[derive(Debug, Default)]
-pub struct MountedScripts(Mutex<BTreeMap<PathBuf, BTreeSet<String>>>);
-
-impl MountedScripts {
-    fn record(&self, root: &Path, modules: impl IntoIterator<Item = String>) {
-        let mut mounted = self.lock();
-        mounted
-            .entry(root.to_path_buf())
-            .or_default()
-            .extend(modules);
-    }
-
-    fn forget(&self, root: &Path) -> BTreeSet<String> {
-        self.lock().remove(root).unwrap_or_default()
-    }
-
-    /// The modules the roots still mounted bring in — recorded at their mount,
-    /// and on disk now.
-    fn others(&self) -> BTreeSet<String> {
-        self.lock()
-            .iter()
-            .flat_map(|(root, recorded)| {
-                recorded
-                    .iter()
-                    .cloned()
-                    .chain(module_names(&root.join(SCRIPT_DIR)))
-            })
-            .collect()
-    }
-
-    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<PathBuf, BTreeSet<String>>> {
-        match self.0.lock() {
-            Ok(mounted) => mounted,
-            Err(poisoned) => poisoned.into_inner(),
-        }
-    }
-}
+pub use khora_io::script::layout::{is_script_file, module_of, SCRIPT_DIR};
+pub use khora_io::script::mounted::MountedScripts;
 
 /// Puts what scripting needs into `runtime`, each only where it is absent:
 /// the engine's [`AssetWatch`], the queues of compiled programs and of
@@ -121,9 +81,10 @@ pub fn install(runtime: &mut Runtime) {
 }
 
 /// Mounts the scripts under `assets_root`, at any frame: arms the root on the
-/// engine's `AssetWatch`, compiles every module under `assets_root/scripts`,
-/// sends what they declare and what they compiled to, and announces what each
-/// reads to the `ScriptCatalog`.
+/// engine's `AssetWatch`, reports every `.erg` outside its [`SCRIPT_DIR`] to
+/// the `ScriptProblems` — never compiled — then compiles every module under
+/// `assets_root/scripts`, sends what they declare and what they compiled to,
+/// and announces what each reads to the `ScriptCatalog`.
 ///
 /// Returns how many modules compiled. Safe to call with a directory that does
 /// not exist — a project without scripts is not an error, and neither is a
@@ -153,10 +114,18 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> usize {
         ),
     }
 
-    let script_dir = assets_root.join(SCRIPT_DIR);
-    if !script_dir.is_dir() {
-        return 0;
+    // What will not run is said before anything compiles, and whether or not
+    // the root has a script folder at all: a project whose only script sits in
+    // the wrong folder is the one most in need of being told.
+    // Under the name the watch knows the root by — the one its changes carry —
+    // so the pump's rescans replace this list rather than start a second one.
+    if let Some(problems) = runtime.resources.get::<Arc<ScriptProblems>>() {
+        khora_io::script::problems::report_misplaced(problems, &watched_name(runtime, assets_root));
     }
+
+    let Some(script_dir) = script_dir(assets_root) else {
+        return 0;
+    };
     let (Some(pending), Some(declarations)) = (
         runtime.resources.get::<PendingReloads>(),
         runtime.resources.get::<PendingDeclarations>(),
@@ -167,8 +136,13 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> usize {
         );
         return 0;
     };
+    // Under the root's name as the pump hears of it, so a folder later taken
+    // out of the script folder is known to have held these.
     if let Some(mounted) = runtime.resources.get::<Arc<MountedScripts>>() {
-        mounted.record(assets_root, module_names(&script_dir));
+        mounted.record(
+            &watched_name(runtime, assets_root),
+            module_names(&script_dir),
+        );
     }
     let loaded = match runtime.resources.get::<Arc<ScriptCatalog>>() {
         Some(catalog) => load_all_announcing(
@@ -190,11 +164,24 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> usize {
     loaded
 }
 
+/// The name the engine's watch knows `assets_root` by — the root as first
+/// named, whichever spelling of the folder is given now — or `assets_root`
+/// itself when it is not watched.
+fn watched_name(runtime: &Runtime, assets_root: &Path) -> PathBuf {
+    runtime
+        .resources
+        .get::<Arc<AssetWatch>>()
+        .and_then(|watch| watch.named(assets_root))
+        .unwrap_or_else(|| assets_root.to_path_buf())
+}
+
 /// Unmounts the scripts under `assets_root`, at any frame: disarms the root,
 /// orphans what its modules declared — kept with its data, as for a deleted
-/// file — withdraws the programs they sent that no lane installed yet, and
-/// forgets what they announced they read.
+/// file — withdraws their programs, queued or already installed, so none of
+/// them runs again, and forgets what they announced they read.
 pub fn unmount(runtime: &Runtime, assets_root: &Path) {
+    // Read before the watch forgets it: the name the mount reported under.
+    let named = watched_name(runtime, assets_root);
     if let Some(watch) = runtime.resources.get::<Arc<AssetWatch>>() {
         watch.unwatch(assets_root);
     }
@@ -202,9 +189,23 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
     // mount is the root's too.
     let mounted = runtime.resources.get::<Arc<MountedScripts>>();
     let mut modules = mounted
-        .map(|mounted| mounted.forget(assets_root))
+        .map(|mounted| {
+            let mut modules = mounted.forget(&named);
+            modules.extend(mounted.forget(assets_root));
+            modules
+        })
         .unwrap_or_default();
-    modules.extend(module_names(&assets_root.join(SCRIPT_DIR)));
+    if let Some(dir) = script_dir(assets_root) {
+        modules.extend(module_names(&dir));
+    }
+    // The files it held outside its script folder are no longer the
+    // project's to show.
+    if let Some(problems) = runtime.resources.get::<Arc<ScriptProblems>>() {
+        khora_io::script::problems::clear_misplaced(problems, &named);
+        if named != assets_root {
+            khora_io::script::problems::clear_misplaced(problems, assets_root);
+        }
+    }
     // A module is known by its path under its script root: one another root
     // still mounted brings in by the same name is that root's now, and stays.
     if let Some(mounted) = mounted {
@@ -229,8 +230,13 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
             });
         }
     }
+    // A withdrawal supersedes a reload still queued for the module, and
+    // takes an installed program out of the runtime: a closed project's
+    // scripts stop, whether or not the game ran them yet.
     if let Some(pending) = runtime.resources.get::<PendingReloads>() {
-        pending.retain(|reload| !modules.contains(&reload.module));
+        for module in &modules {
+            withdraw(pending, module);
+        }
     }
     if let Some(catalog) = runtime.resources.get::<Arc<ScriptCatalog>>() {
         for module in &modules {

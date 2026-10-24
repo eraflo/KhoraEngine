@@ -185,12 +185,20 @@ and [Work with prefabs](../how-to/work-with-prefabs.md) for the steps.
 
 ## 07 — Scripts
 
-The open project's Ergon scripts live under `<project>/assets/` and are part of
-the editor from the moment the project opens — not only once Play is pressed.
+The open project's Ergon scripts live under `<project>/assets/scripts/` and are
+part of the editor from the moment the project opens — not only once Play is
+pressed.
+
+**One folder.** A script is an `.erg` file under `assets/scripts/` — the folder
+and the extension spelled exactly so, lower case, on every system. Its module
+is its path from there (`scripts/ai/guard.erg` is `ai/guard.erg`), and every
+`import` is written from there too. An `.erg` anywhere else — or one spelled
+`.ERG` — is not a script: it is never compiled, and the Problems tab lists it
+with what to do (move it, or rename it).
 
 **Mounted with the project.** Opening a project mounts its `assets/` folder
 (`khora_sdk::scripts::mount`); opening another unmounts the first, closing
-unmounts. Every `.erg` is compiled and watched: a save recompiles its module,
+unmounts. Every script is compiled and watched: a save recompiles its module,
 while editing as while playing. What the scripts *declare* — components,
 behaviors, systems — registers at once, so the Inspector knows the project's
 components before anything runs. What they *compiled to* waits for Play: no
@@ -203,10 +211,12 @@ note:
 
 | Source | Severity | What |
 |---|---|---|
+| Placement | error | an `.erg` outside `scripts/`, or spelled `.ERG`: not compiled — the note says where to move it, or what to rename (a `Scripts/` folder, a `.ERG` extension) |
 | Compile | error / warning | a module's diagnostics, located in the module they are in — warnings of a module that compiled too |
 | Registration | error | a component declared by two modules: the one refused, the one keeping it |
 | Registration | warning | a component no module declares any more — kept with its data |
 | Running | error | a faulted instance: its entity, its behavior, the reason |
+| Running | error | an instance whose module is gone — its file deleted, moved out of `scripts/`, or its project closed: it does not run, and keeps its fields until the module comes back |
 | Running | warning | a body still unfinished past the watchdog's warning limit |
 | Running | warning | an event dropped: its payload did not fit the event (sent by the engine, or queued before an edit) — one line per entity, behavior and event |
 
@@ -220,8 +230,10 @@ A row with a file opens the `.erg` in the system's editor; a running problem
 selects its entity. The tab's title counts errors and warnings
 (`Problems · 2 errors · 1 warning`), and each `.erg` tile in the Assets panel
 wears a badge: the error glyph and how many errors, or — with warnings only —
-the warning glyph and how many; never the colour alone. A module's problems are
-replaced each time it compiles: a clean compile clears them.
+the warning glyph and how many; never the colour alone — an `.erg` outside
+`scripts/` wears one error. A module's problems are replaced each time it
+compiles: a clean compile clears them; moving a misplaced file into `scripts/`
+clears its row.
 
 **Declared components in the Inspector.** A component a script declares is a
 card like a Rust component's, read from its declared fields rather than through

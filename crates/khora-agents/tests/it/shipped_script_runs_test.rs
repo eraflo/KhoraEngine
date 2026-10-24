@@ -74,7 +74,7 @@ fn wired() -> Option<Arc<Runtime>> {
     let reloads = khora_io::script::hot_reload::reload_channel();
     reloads.send(ScriptReload {
         module: MODULE.to_owned(),
-        program,
+        program: Some(program),
     });
 
     let mut runtime = Runtime::default();

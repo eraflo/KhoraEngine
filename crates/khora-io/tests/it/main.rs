@@ -33,6 +33,8 @@ mod game_saves;
 mod game_saves_text_base;
 mod hot_reload_announcements;
 mod hot_reload_from_the_shared_watch;
+mod hot_reload_of_misplaced_scripts;
+mod hot_reload_of_removed_scripts;
 mod prefab_assets;
 mod prefab_scenes;
 mod public_paths;

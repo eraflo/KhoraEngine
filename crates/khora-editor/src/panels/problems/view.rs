@@ -154,20 +154,39 @@ pub(crate) fn tile_badge(counts: (usize, usize)) -> Option<TileBadge> {
     }
 }
 
-/// Where a project keeps its scripts, under its assets root.
-const SCRIPT_DIR: &str = "scripts";
+/// Where a project keeps its scripts, under its assets root — the engine's
+/// one rule, not a copy of it.
+pub(crate) const SCRIPT_DIR: &str = khora_sdk::scripts::SCRIPT_DIR;
 
 /// The module an asset at `rel_path` (under the assets root) is known by,
-/// `None` when it is not an `.erg` file.
+/// `None` when it is no script: not an `.erg` file, or one outside the script
+/// folder.
 pub(crate) fn module_of_asset(rel_path: &str) -> Option<String> {
     let path = rel_path.replace('\\', "/");
-    if !path.ends_with(".erg") {
-        return None;
-    }
+    khora_sdk::scripts::module_of(&path).map(str::to_owned)
+}
+
+/// What the tile of the asset at `rel_path` (under the assets root) counts,
+/// as (errors, warnings): a script's are its module's in `problems`; a
+/// misplaced `.erg` — one outside the script folder, never compiled — has its
+/// one error; any other file has no count.
+pub(crate) fn script_tile_counts(
+    rel_path: &str,
+    problems: &[ScriptProblem],
+) -> Option<(usize, usize)> {
+    let Some(module) = module_of_asset(rel_path) else {
+        return khora_sdk::scripts::is_script_file(rel_path).then_some((1, 0));
+    };
     Some(
-        path.strip_prefix(&format!("{SCRIPT_DIR}/"))
-            .unwrap_or(&path)
-            .to_owned(),
+        problems
+            .iter()
+            .filter(|problem| problem.module.as_deref() == Some(module.as_str()))
+            .fold((0, 0), |(errors, warnings), problem| {
+                match problem.severity {
+                    ProblemSeverity::Error => (errors + 1, warnings),
+                    ProblemSeverity::Warning => (errors, warnings + 1),
+                }
+            }),
     )
 }
 

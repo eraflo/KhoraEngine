@@ -259,23 +259,10 @@ impl EditorPanel for AssetBrowserPanel {
                 )
             })
             .unwrap_or_default();
-        // Each script's errors and warnings, for its tile's badge.
+        // Each `.erg`'s errors and warnings — a misplaced one's error too —
+        // for its tile's badge.
         let counts_of = |rel_path: &str| {
-            crate::panels::problems::view::module_of_asset(rel_path).map(|module| {
-                script_problems
-                    .iter()
-                    .filter(|problem| problem.module.as_deref() == Some(module.as_str()))
-                    .fold((0, 0), |(errors, warnings), problem| {
-                        match problem.severity {
-                            khora_sdk::khora_core::script::ProblemSeverity::Error => {
-                                (errors + 1, warnings)
-                            }
-                            khora_sdk::khora_core::script::ProblemSeverity::Warning => {
-                                (errors, warnings + 1)
-                            }
-                        }
-                    })
-            })
+            crate::panels::problems::view::script_tile_counts(rel_path, &script_problems)
         };
 
         let search_w = 200.0_f32.min(grid_w * 0.4);

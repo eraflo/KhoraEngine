@@ -25,13 +25,14 @@ use khora_core::event::Supersedes;
 
 use crate::vm::Program;
 
-/// One module that finished recompiling.
+/// One module that finished recompiling, or that is gone.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScriptReload {
     /// The module's path, which is its identity in the runtime.
     pub module: String,
-    /// What it compiled to.
-    pub program: Program,
+    /// What it compiled to — or `None`: the module is gone, and its program
+    /// leaves the runtime.
+    pub program: Option<Program>,
 }
 
 impl Supersedes for ScriptReload {
@@ -53,7 +54,14 @@ mod tests {
     fn reload(module: &str) -> ScriptReload {
         ScriptReload {
             module: module.to_owned(),
-            program: Program::default(),
+            program: Some(Program::default()),
+        }
+    }
+
+    fn withdrawal(module: &str) -> ScriptReload {
+        ScriptReload {
+            module: module.to_owned(),
+            program: None,
         }
     }
 
@@ -63,12 +71,55 @@ mod tests {
         pending.send(reload("ai/guard.erg"));
 
         let mut newer = reload("ai/guard.erg");
-        newer.program.strings.push("second".to_owned());
+        if let Some(program) = newer.program.as_mut() {
+            program.strings.push("second".to_owned());
+        }
         pending.send(newer);
 
         let drained = pending.drain();
         assert_eq!(drained.len(), 1);
-        assert_eq!(drained[0].program.strings, vec!["second"]);
+        assert_eq!(
+            drained[0]
+                .program
+                .as_ref()
+                .map(|program| program.strings.clone()),
+            Some(vec!["second".to_owned()])
+        );
+    }
+
+    /// A file deleted after it was saved, before a frame drained the queue:
+    /// the frame withdraws the module rather than install what was deleted.
+    #[test]
+    fn a_withdrawal_supersedes_a_queued_reload_of_its_module() {
+        let pending = Channel::bounded(8, WhenFull::DropOldest);
+        pending.send(reload("ai/guard.erg"));
+        pending.send(withdrawal("ai/guard.erg"));
+
+        assert_eq!(pending.drain(), vec![withdrawal("ai/guard.erg")]);
+    }
+
+    /// A file deleted then brought back before a frame drained the queue:
+    /// the frame installs what came back.
+    #[test]
+    fn a_reload_supersedes_a_queued_withdrawal_of_its_module() {
+        let pending = Channel::bounded(8, WhenFull::DropOldest);
+        pending.send(withdrawal("ai/guard.erg"));
+        pending.send(reload("ai/guard.erg"));
+
+        assert_eq!(pending.drain(), vec![reload("ai/guard.erg")]);
+    }
+
+    /// Withdrawing one module leaves another's queued reload in place.
+    #[test]
+    fn a_withdrawal_leaves_another_modules_reload_queued() {
+        let pending = Channel::bounded(8, WhenFull::DropOldest);
+        pending.send(reload("loot/chest.erg"));
+        pending.send(withdrawal("ai/guard.erg"));
+
+        assert_eq!(
+            pending.drain(),
+            vec![reload("loot/chest.erg"), withdrawal("ai/guard.erg")]
+        );
     }
 
     #[test]
