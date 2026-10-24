@@ -60,9 +60,10 @@ pub fn transform_propagation_system(world: &mut World) {
     for (id, transform, global_transform, _) in
         world.query_mut::<(EntityId, &Transform, &mut GlobalTransform, Without<Parent>)>()
     {
+        let placed: AffineTransform = transform.to_mat4().into();
         global_transform.0 = match simulated.get(&id) {
-            Some(pose) => with_authored_scale(pose, transform),
-            None => transform.to_mat4().into(),
+            Some(pose) => with_scale_of(pose, &placed),
+            None => placed,
         };
         queue.push_back(id);
     }
@@ -94,10 +95,13 @@ pub fn transform_propagation_system(world: &mut World) {
             let Some(local_transform) = world.get::<Transform>(child_id) else {
                 continue;
             };
+            let placed: AffineTransform =
+                (Mat4::from(parent_matrix) * local_transform.to_mat4()).into();
             let child_matrix = match simulated.get(&child_id) {
-                // The solver placed it in the world; the parent has no say.
-                Some(pose) => with_authored_scale(pose, local_transform),
-                None => (Mat4::from(parent_matrix) * local_transform.to_mat4()).into(),
+                // The solver placed it in the world; the parent has no say in
+                // where — only in how big, which a solver never decides.
+                Some(pose) => with_scale_of(pose, &placed),
+                None => placed,
             };
             // Only enqueue children whose `GlobalTransform` we successfully
             // wrote — that's the invariant the next iteration of this loop
@@ -108,6 +112,22 @@ pub fn transform_propagation_system(world: &mut World) {
             }
         }
     }
+}
+
+/// A simulated pose, sized as the authored hierarchy sizes the entity.
+///
+/// A provider reports where a body is and how it is turned — never its size,
+/// so the pose alone would draw a body scaled 2 at scale 1 from its first
+/// simulated frame. The scale is the one the unsimulated composition gives
+/// (`placed`), so a scaled ancestor still sizes a simulated child. A mirror
+/// goes on the first axis, where [`AffineTransform::rotation`] — and so the
+/// pose the provider was given — leaves it.
+fn with_scale_of(pose: &AffineTransform, placed: &AffineTransform) -> AffineTransform {
+    let mut scale = placed.scale();
+    if Mat4::from(*placed).determinant() < 0.0 {
+        scale.x = -scale.x;
+    }
+    (Mat4::from(*pose) * Mat4::from_scale(scale)).into()
 }
 
 /// Wrapper to match the `DataSystemRegistration::run` signature
@@ -130,13 +150,6 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
     }
-}
-
-/// A solver's pose (where a body is and how it is turned) with the author's
-/// scale, mirror included: a solver moves and turns a body, it never resizes
-/// or unmirrors one.
-fn with_authored_scale(pose: &AffineTransform, transform: &Transform) -> AffineTransform {
-    AffineTransform(Mat4::from(*pose) * Mat4::from_scale(transform.scale))
 }
 
 #[cfg(test)]
@@ -249,6 +262,96 @@ mod tests {
         assert_matrix_approx_eq(
             world.get::<GlobalTransform>(entity).unwrap().0.into(),
             Mat4::from_translation(Vec3::new(0.0, 4.0, 0.0)),
+        );
+    }
+
+    /// **A simulated body rendered at scale 1.** A solver gives a pose —
+    /// translation and rotation — and never a size; the size is the author's.
+    /// Taking the simulated pose whole as the world matrix dropped the
+    /// `Transform`'s scale from the first simulated frame on.
+    #[test]
+    fn a_simulated_root_keeps_its_authored_scale() {
+        let mut world = World::new();
+        let rotation = khora_core::math::Quat::from_axis_angle(Vec3::new(0.0, 1.0, 0.0), 0.5);
+        let entity = world.spawn((
+            Transform::new(
+                Vec3::new(0.0, 10.0, 0.0),
+                khora_core::math::Quat::IDENTITY,
+                Vec3::new(2.0, 2.0, 2.0),
+            ),
+            GlobalTransform::identity(),
+            SimulatedTransform::from_parts(Vec3::new(0.0, 4.0, 0.0), rotation),
+        ));
+
+        transform_propagation_system(&mut world);
+
+        assert_matrix_approx_eq(
+            world.get::<GlobalTransform>(entity).unwrap().0.into(),
+            Mat4::from_translation(Vec3::new(0.0, 4.0, 0.0))
+                * Mat4::from_quat(rotation)
+                * Mat4::from_scale(Vec3::new(2.0, 2.0, 2.0)),
+        );
+    }
+
+    /// A simulated child takes the scale the hierarchy would have given it —
+    /// its parent's world scale times its own — while its position stays the
+    /// solver's: the parent's scale reaches the size, never the placement.
+    #[test]
+    fn a_simulated_child_inherits_its_parents_scale_but_not_its_placement() {
+        let mut world = World::new();
+        let parent = world.spawn((
+            Transform::new(
+                Vec3::new(100.0, 0.0, 0.0),
+                khora_core::math::Quat::IDENTITY,
+                Vec3::new(3.0, 3.0, 3.0),
+            ),
+            GlobalTransform::identity(),
+        ));
+        let child = world.spawn((
+            Transform::from_translation(Vec3::new(5.0, 0.0, 0.0)),
+            GlobalTransform::identity(),
+            Parent(parent),
+            SimulatedTransform::from_parts(
+                Vec3::new(1.0, 2.0, 3.0),
+                khora_core::math::Quat::IDENTITY,
+            ),
+        ));
+
+        transform_propagation_system(&mut world);
+
+        let global = world.get::<GlobalTransform>(child).unwrap().0;
+        assert_matrix_approx_eq(
+            global.into(),
+            Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0))
+                * Mat4::from_scale(Vec3::new(3.0, 3.0, 3.0)),
+        );
+    }
+
+    /// A mirror is part of the authored size, not of the pose: a simulated root
+    /// authored with scale (−1, 1, 1) is drawn mirrored, as its unsimulated
+    /// composition would draw it.
+    #[test]
+    fn a_simulated_root_keeps_its_authored_mirror() {
+        let mut world = World::new();
+        let entity = world.spawn((
+            Transform::new(
+                Vec3::new(0.0, 10.0, 0.0),
+                khora_core::math::Quat::IDENTITY,
+                Vec3::new(-1.0, 1.0, 1.0),
+            ),
+            GlobalTransform::identity(),
+            SimulatedTransform::from_parts(
+                Vec3::new(0.0, 4.0, 0.0),
+                khora_core::math::Quat::IDENTITY,
+            ),
+        ));
+
+        transform_propagation_system(&mut world);
+
+        assert_matrix_approx_eq(
+            world.get::<GlobalTransform>(entity).unwrap().0.into(),
+            Mat4::from_translation(Vec3::new(0.0, 4.0, 0.0))
+                * Mat4::from_scale(Vec3::new(-1.0, 1.0, 1.0)),
         );
     }
 

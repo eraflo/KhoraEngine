@@ -49,6 +49,7 @@ mod script_defined_components;
 mod script_delivery_test;
 mod shipped_script_runs_test;
 mod spawned_in_play;
+mod stacked_bodies;
 mod system_budget;
 mod system_kind_changes;
 mod system_kind_round_trips;

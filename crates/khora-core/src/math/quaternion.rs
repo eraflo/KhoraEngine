@@ -105,7 +105,10 @@ impl Quaternion {
 
     /// Creates a quaternion from a 4x4 rotation matrix.
     ///
-    /// This method only considers the upper 3x3 part of the matrix for the conversion.
+    /// This method only considers the upper 3x3 part of the matrix for the conversion,
+    /// and that 3x3 must be **orthonormal** (a pure rotation). A scaled basis returns a
+    /// unit quaternion with the wrong angle; to read the rotation of a transform that may
+    /// carry scale, use [`AffineTransform::rotation`](crate::math::AffineTransform::rotation).
     #[inline]
     pub fn from_rotation_matrix(m: &Mat4) -> Self {
         let m00 = m.cols[0].x;

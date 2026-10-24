@@ -64,9 +64,16 @@ pub struct ColliderDesc {
     pub owner: Option<crate::ecs::entity::EntityId>,
     /// Parent rigid body to attach to (if any).
     pub parent_body: Option<RigidBodyHandle>,
-    /// Relative or absolute position.
+    /// Position **in the parent body's frame** when `parent_body` is `Some`
+    /// (the zero vector for a collider centred on its body), in the world
+    /// otherwise.
+    ///
+    /// Never the world position of an attached collider: a backend reads it as
+    /// the offset from the body, so a world position sends the shape to
+    /// twice its distance from the origin.
     pub position: Vec3,
-    /// Relative or absolute rotation.
+    /// Rotation in the parent body's frame when `parent_body` is `Some`, in
+    /// the world otherwise — the same rule as `position`.
     pub rotation: Quat,
     /// Shape definition.
     pub shape: ColliderShape,

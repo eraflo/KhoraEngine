@@ -33,6 +33,15 @@ ECS↔physics synchronization.
 - `BodyMotion` (`Runtime`) — the velocity the body *has*, as opposed to `RigidBody::initial_velocity`
   (`Authored`), which is applied once at creation.
 
+A collider attached to a body is described **in its body's frame**: `ColliderDesc.position/rotation`
+is the offset from `parent_body` (zero for a collider on the body's own entity), the world pose only
+for a collider with no body. The Rapier backend writes it with `set_position_wrt_parent`, never
+`set_position`, which would overwrite the world pose the solver derives from the body. Sending a world
+pose for an attached collider put each shape at twice its distance from the origin, and a stack of
+boxes blew apart. Rotations are read with `AffineTransform::rotation()`, which strips scale;
+`Quaternion::from_rotation_matrix` wants an orthonormal basis. A simulated entity keeps its authored
+scale: `transform_propagation` sizes the simulated pose as the hierarchy would.
+
 Moving something is **declared**, not inferred: whoever moves an entity adds the `Teleported` marker,
 and the sync consumes and removes it. The old 1 cm / 1.62° heuristic could not work — drift, a parent
 frame, a sub-step overshoot and a real teleport all produce "the two values differ".

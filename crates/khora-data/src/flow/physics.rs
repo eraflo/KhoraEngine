@@ -38,7 +38,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
-use khora_core::math::Vec3;
+use khora_core::math::{Quat, Vec3};
 use khora_core::physics::{
     ColliderDesc, ColliderHandle, PhysicsProvider, RigidBodyDesc, RigidBodyHandle,
 };
@@ -291,21 +291,30 @@ fn build_collider_desc(
     rb_map: &HashMap<EntityId, RigidBodyHandle>,
 ) -> ColliderDesc {
     let (parent_handle, parent_id) = find_parent_body(entity_id, parent_map, rb_map);
-    let mut pos = transform.0.translation();
-    let mut rot = transform.0.rotation();
 
-    if let Some(p_id) = parent_id {
-        if p_id != entity_id {
-            if let Some(p_global) = parent_transforms.get(&p_id) {
-                if let Some(inv_p) = p_global.0.inverse() {
-                    let local = inv_p.0 * transform.0 .0;
-                    let local_t = khora_core::math::AffineTransform(local);
-                    pos = local_t.translation();
-                    rot = local_t.rotation();
-                }
+    // An attached collider is described in its body's frame — the provider
+    // reads the pose as the offset from the body. Sending the world pose here,
+    // as the common case (collider and body on one entity) used to, put every
+    // shape at twice its distance from the origin.
+    let (pos, rot) = match parent_id {
+        // Centred on the body it belongs to.
+        Some(body_id) if body_id == entity_id => (Vec3::ZERO, Quat::IDENTITY),
+        // On a descendant: the rigid offset from the body. Rotations are read
+        // scale-free and the offset in world units, because the provider's
+        // body carries no scale for a scaled ancestor to leak into.
+        Some(body_id) => match parent_transforms.get(&body_id) {
+            Some(body) => {
+                let to_body = body.0.rotation().inverse();
+                (
+                    to_body * (transform.0.translation() - body.0.translation()),
+                    to_body * transform.0.rotation(),
+                )
             }
-        }
-    }
+            None => (Vec3::ZERO, Quat::IDENTITY),
+        },
+        // No body: a standalone collider lives in the world.
+        None => (transform.0.translation(), transform.0.rotation()),
+    };
 
     ColliderDesc {
         // The entity travels with the collider into the backend, so a contact

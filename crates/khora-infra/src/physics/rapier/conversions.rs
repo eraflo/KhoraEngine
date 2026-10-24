@@ -28,5 +28,5 @@ pub fn from_rapier_vec(v: Vector) -> Vec3 {
 }
 
 pub fn from_rapier_quat(q: Rotation) -> Quat {
-    Quat::new(q.w, q.x, q.y, q.z)
+    Quat::new(q.x, q.y, q.z, q.w)
 }

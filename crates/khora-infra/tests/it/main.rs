@@ -26,4 +26,6 @@ mod gradient_fill;
 mod light_culling_layout;
 mod menu_on_click;
 mod public_paths;
+mod rapier_attached_colliders;
+mod rapier_body_rotation;
 mod wordmark_font_family;

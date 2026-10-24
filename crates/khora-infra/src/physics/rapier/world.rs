@@ -121,7 +121,10 @@ impl PhysicsProvider for RapierPhysicsWorld {
             &mut self.collider_set,
             &mut self.impulse_joint_set,
             &mut self.multibody_joint_set,
-            true,
+            // Detached, not destroyed: the collider belongs to an entity, which
+            // may outlive its body and still hold the handle. A collider no
+            // entity holds is removed on its own.
+            false,
         );
     }
 
@@ -232,9 +235,38 @@ impl PhysicsProvider for RapierPhysicsWorld {
 
     fn update_collider_properties(&mut self, handle: ColliderHandle, desc: ColliderDesc) {
         let cl_handle = to_rapier_cl_handle(handle);
+        // The body it hangs from first: an entity given a `RigidBody` after its
+        // `Collider`, or losing it, changes the frame the pose below is read in.
+        let parent = desc.parent_body.map(to_rapier_rb_handle);
+        if self
+            .collider_set
+            .get(cl_handle)
+            .is_some_and(|cl| cl.parent() != parent)
+        {
+            self.collider_set
+                .set_parent(cl_handle, parent, &mut self.rigid_body_set);
+        }
         if let Some(cl) = self.collider_set.get_mut(cl_handle) {
-            cl.set_translation(to_rapier_vec(desc.position));
-            cl.set_rotation(to_rapier_quat(desc.rotation));
+            // An attached collider's pose is its offset from its body, and only
+            // that is written. `set_position` on an attached collider overwrites
+            // the world pose the solver derives from the body, so the contacts of
+            // a step were found at one pose and solved at another — a stack of
+            // boxes gained energy from nowhere and blew apart. Written only when
+            // it differs, so a frame's sync does not flag every collider changed.
+            let pose =
+                Pose::from_parts(to_rapier_vec(desc.position), to_rapier_quat(desc.rotation));
+            match cl.position_wrt_parent() {
+                Some(current) => {
+                    if !same_pose(current, &pose) {
+                        cl.set_position_wrt_parent(pose);
+                    }
+                }
+                None => {
+                    if !same_pose(cl.position(), &pose) {
+                        cl.set_position(pose);
+                    }
+                }
+            }
             cl.set_active_events(if desc.active_events {
                 ActiveEvents::COLLISION_EVENTS
             } else {
@@ -342,4 +374,15 @@ impl PhysicsProvider for RapierPhysicsWorld {
             (Vec3::ZERO, false)
         }
     }
+}
+
+/// Whether two poses are the same to within what a frame's sync can produce
+/// from an unchanged authored pose.
+fn same_pose(a: &Pose, b: &Pose) -> bool {
+    const EPS: f32 = 1e-6;
+    // Rotations compared component-wise (either sign: `q` and `-q` are one
+    // rotation). A dot-product test near 1 would hide every turn under ~0.16°,
+    // since `1 - cos(θ/2)` is second-order in `θ`.
+    (a.translation - b.translation).abs().max_element() <= EPS
+        && (a.rotation.abs_diff_eq(b.rotation, EPS) || a.rotation.abs_diff_eq(-b.rotation, EPS))
 }
