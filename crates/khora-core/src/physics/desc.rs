@@ -75,7 +75,9 @@ pub struct ColliderDesc {
     /// Rotation in the parent body's frame when `parent_body` is `Some`, in
     /// the world otherwise — the same rule as `position`.
     pub rotation: Quat,
-    /// Shape definition.
+    /// The shape **at world size**: the authored shape already scaled by the
+    /// entity's world scale. A backend never sees the entity's scale, so a
+    /// shape sent in local units would collide at a size it is not drawn at.
     pub shape: ColliderShape,
     /// Whether to enable collision events for this collider.
     pub active_events: bool,
@@ -83,6 +85,16 @@ pub struct ColliderDesc {
     pub friction: f32,
     /// Restitution (bounciness) coefficient.
     pub restitution: f32,
+    /// Whether the collider is a sensor: it reports what enters and leaves it —
+    /// whatever `active_events` says, since a silent sensor has no purpose —
+    /// but never pushes anything, never stops a character, and adds no mass
+    /// to the body it hangs from.
+    pub is_sensor: bool,
+    /// Whether the collider is a character's: it has no body and is moved by
+    /// the character controller rather than by the solver. A backend must let
+    /// triggers see it, as they see a moving body, though to the solver it is
+    /// as still as the level.
+    pub is_character: bool,
 }
 
 /// Supported collider shapes.

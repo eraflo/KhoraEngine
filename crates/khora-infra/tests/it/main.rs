@@ -28,4 +28,7 @@ mod menu_on_click;
 mod public_paths;
 mod rapier_attached_colliders;
 mod rapier_body_rotation;
+mod rapier_sensor_pairs;
+mod rapier_sensors;
+mod rapier_shape_updates;
 mod wordmark_font_family;

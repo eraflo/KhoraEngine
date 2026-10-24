@@ -33,6 +33,7 @@ pub mod gpu_mesh_sync;
 pub mod ibl_bake;
 pub mod input_map_update;
 pub mod physics_debug_extraction;
+pub mod physics_release;
 pub mod physics_world_writeback;
 pub mod script_commands;
 pub mod script_systems;

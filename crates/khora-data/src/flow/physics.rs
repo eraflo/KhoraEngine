@@ -40,13 +40,13 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
 use khora_core::math::{Quat, Vec3};
 use khora_core::physics::{
-    ColliderDesc, ColliderHandle, PhysicsProvider, RigidBodyDesc, RigidBodyHandle,
+    ColliderDesc, ColliderHandle, ColliderShape, PhysicsProvider, RigidBodyDesc, RigidBodyHandle,
 };
 use khora_core::Runtime;
 
 use crate::ecs::{
-    ActiveEvents, Camera, Collider, DataSystemRegistration, GlobalTransform, Parent,
-    PhysicsMaterial, RigidBody, SemanticDomain, Teleported, TickPhase, World,
+    ActiveEvents, Camera, Collider, DataSystemRegistration, GlobalTransform,
+    KinematicCharacterController, Parent, RigidBody, SemanticDomain, Teleported, TickPhase, World,
 };
 use crate::flow::{Flow, Selection};
 use crate::register_flow;
@@ -245,26 +245,27 @@ fn sync_colliders(
         active_events.insert(id);
     }
 
-    let mut materials = HashMap::new();
-    for (id, mat) in world.query::<(EntityId, &PhysicsMaterial)>() {
-        materials.insert(id, *mat);
+    let mut characters = HashSet::new();
+    for (id, _) in world.query::<(EntityId, &KinematicCharacterController)>() {
+        characters.insert(id);
     }
 
     let query = world.query_mut::<(EntityId, &mut Collider, &GlobalTransform)>();
     for (entity_id, collider, transform) in query {
         let is_active = active_events.contains(&entity_id);
-        let material = materials.get(&entity_id).cloned().unwrap_or_default();
 
-        let desc = build_collider_desc(
+        let mut desc = build_collider_desc(
             entity_id,
             transform,
             collider,
             &parent_map,
             &parent_transforms,
             is_active,
-            &material,
             rb_map,
         );
+        // The controller moves the collider itself; a body, if the entity has
+        // one too, is what the solver moves, and that collider is the body's.
+        desc.is_character = characters.contains(&entity_id) && desc.parent_body.is_none();
 
         let handle = if let Some(handle) = collider.handle {
             provider.update_collider_properties(handle, desc);
@@ -279,7 +280,6 @@ fn sync_colliders(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn build_collider_desc(
     entity_id: EntityId,
     transform: &GlobalTransform,
@@ -287,7 +287,6 @@ fn build_collider_desc(
     parent_map: &HashMap<EntityId, EntityId>,
     parent_transforms: &HashMap<EntityId, GlobalTransform>,
     active_events: bool,
-    material: &PhysicsMaterial,
     rb_map: &HashMap<EntityId, RigidBodyHandle>,
 ) -> ColliderDesc {
     let (parent_handle, parent_id) = find_parent_body(entity_id, parent_map, rb_map);
@@ -324,10 +323,33 @@ fn build_collider_desc(
         parent_body: parent_handle,
         position: pos,
         rotation: rot,
-        shape: collider.shape.clone(),
+        shape: scaled_shape(&collider.shape, transform.0.scale()),
         active_events,
-        friction: material.friction,
-        restitution: material.restitution,
+        friction: collider.friction,
+        restitution: collider.restitution,
+        is_sensor: collider.is_sensor,
+        is_character: false,
+    }
+}
+
+/// An authored shape at the size the entity is drawn at.
+///
+/// A `Collider`'s shape is in the entity's local units, like its mesh, so a
+/// crate scaled 2 collides at twice its authored size. A box scales per axis —
+/// its axes are the entity's. A sphere and a capsule's round section stay
+/// round, so they take the largest scale that reaches them; a scale that skews
+/// (a rotated child of a non-uniformly scaled parent) has no exact form in
+/// these shapes and is read axis by axis, as every engine with primitive
+/// colliders does. `scale` is a length per axis, so a mirror changes nothing.
+fn scaled_shape(shape: &ColliderShape, s: Vec3) -> ColliderShape {
+    match shape {
+        ColliderShape::Box(half) => {
+            ColliderShape::Box(Vec3::new(half.x * s.x, half.y * s.y, half.z * s.z))
+        }
+        ColliderShape::Sphere(radius) => ColliderShape::Sphere(radius * s.max_element()),
+        ColliderShape::Capsule(half_height, radius) => {
+            ColliderShape::Capsule(half_height * s.y, radius * s.x.max(s.z))
+        }
     }
 }
 

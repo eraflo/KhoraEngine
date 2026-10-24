@@ -290,10 +290,6 @@ fn physics_debug_data_fields(x: &khora_data::ecs::PhysicsDebugData) {
     let _ = (&x.vertices, &x.indices, &x.enabled);
 }
 
-fn physics_material_fields(x: &khora_data::ecs::PhysicsMaterial) {
-    let _ = (&x.friction, &x.restitution);
-}
-
 fn rigid_body_fields(x: &khora_data::ecs::RigidBody) {
     let _ = (
         &x.handle,
@@ -1297,13 +1293,6 @@ fn module_ecs_paths_still_resolve() {
     is_component::<khora_data::ecs::PhysicsDebugData>();
     is_debug::<khora_data::ecs::PhysicsDebugData>();
     is_default::<khora_data::ecs::PhysicsDebugData>();
-    let _ = type_name::<khora_data::ecs::PhysicsMaterial>();
-    let _ = physics_material_fields as fn(&khora_data::ecs::PhysicsMaterial);
-    is_clone::<khora_data::ecs::PhysicsMaterial>();
-    is_component::<khora_data::ecs::PhysicsMaterial>();
-    is_copy::<khora_data::ecs::PhysicsMaterial>();
-    is_debug::<khora_data::ecs::PhysicsMaterial>();
-    is_default::<khora_data::ecs::PhysicsMaterial>();
     let _ = type_name::<khora_data::ecs::RigidBody>();
     let _ = rigid_body_fields as fn(&khora_data::ecs::RigidBody);
     let _ = khora_data::ecs::RigidBody::new_dynamic;
@@ -2763,8 +2752,6 @@ fn derive_generated_mirrors_still_resolve() {
     >();
     let _ = type_name::<khora_data::ecs::SerializablePhysicsDebugData>();
     is_from::<khora_data::ecs::PhysicsDebugData, khora_data::ecs::SerializablePhysicsDebugData>();
-    let _ = type_name::<khora_data::ecs::SerializablePhysicsMaterial>();
-    is_from::<khora_data::ecs::PhysicsMaterial, khora_data::ecs::SerializablePhysicsMaterial>();
     let _ = type_name::<khora_data::ecs::SerializableRigidBody>();
     is_from::<khora_data::ecs::RigidBody, khora_data::ecs::SerializableRigidBody>();
     let _ = type_name::<khora_data::ecs::SerializableSimulatedTransform>();

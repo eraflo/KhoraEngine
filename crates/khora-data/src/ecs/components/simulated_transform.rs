@@ -52,9 +52,12 @@ use serde::{Deserialize, Serialize};
 /// The world pose the simulation currently gives an entity.
 ///
 /// Present only while something simulates it. [`transform_propagation`] prefers
-/// it over the authored `Transform` when it is there.
+/// it over the authored `Transform` when it is there; [`physics_release`]
+/// removes it once the entity has neither a body nor a character controller,
+/// handing the pose back to the `Transform`.
 ///
 /// [`transform_propagation`]: crate::ecs::systems::transform_propagation
+/// [`physics_release`]: crate::ecs::systems::physics_release
 #[derive(Debug, Clone, Copy, PartialEq, Component, Serialize, Deserialize)]
 #[component(domain = Spatial, provenance = Runtime)]
 pub struct SimulatedTransform(pub AffineTransform);

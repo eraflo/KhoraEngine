@@ -31,13 +31,13 @@ use khora_core::ui::types::{UiFlexDirection, UiRect, UiVal};
 use crate::ecs::{
     ActiveEvents, AudioListener, AudioSource, BodyMotion, Camera, Children, Collider,
     GlobalTransform, KinematicCharacterController, Light, Name, Parent, PhysicsDebugData,
-    PhysicsMaterial, ProceduralMeshKind, ProjectionType, RigidBody, SerializableActiveEvents,
+    ProceduralMeshKind, ProjectionType, RigidBody, SerializableActiveEvents,
     SerializableAudioListener, SerializableAudioSource, SerializableBodyMotion, SerializableCamera,
     SerializableChildren, SerializableCollider, SerializableGlobalTransform,
     SerializableKinematicCharacterController, SerializableLight, SerializableName,
-    SerializableParent, SerializablePhysicsDebugData, SerializablePhysicsMaterial,
-    SerializableRigidBody, SerializableSimulatedTransform, SerializableTag, SerializableTeleported,
-    SerializableTransform, SimulatedTransform, Tag, Teleported, Transform,
+    SerializableParent, SerializablePhysicsDebugData, SerializableRigidBody,
+    SerializableSimulatedTransform, SerializableTag, SerializableTeleported, SerializableTransform,
+    SimulatedTransform, Tag, Teleported, Transform,
 };
 use crate::ui::{
     SerializableUiBorder, SerializableUiColor, SerializableUiImage, SerializableUiInteraction,
@@ -305,10 +305,6 @@ fn every_persisted_type_round_trips() {
         vertices: vec![Vec3::ZERO, Vec3::ONE, Vec3::X],
         indices: vec![[0, 1], [1, 2]],
         enabled: true,
-    }));
-    assert_round_trips(&SerializablePhysicsMaterial::from(PhysicsMaterial {
-        friction: 0.3,
-        restitution: 0.7,
     }));
 
     // Script, and everything it nests.

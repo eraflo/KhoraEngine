@@ -525,6 +525,8 @@ fn collider_desc_fields(x: &khora_core::physics::ColliderDesc) {
         &x.active_events,
         &x.friction,
         &x.restitution,
+        &x.is_sensor,
+        &x.is_character,
     );
 }
 

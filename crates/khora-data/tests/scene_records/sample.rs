@@ -26,7 +26,7 @@ use khora_core::ui::types::{UiFlexDirection, UiRect, UiVal};
 use khora_data::ecs::{
     ActiveEvents, AudioListener, AudioSource, BodyMotion, Camera, Collider, FieldKind,
     GlobalTransform, KinematicCharacterController, Light, MaterialRef, MeshRef, Name, PackedField,
-    PhysicsMaterial, PrefabInstance, ProceduralMeshKind, RigidBody, Tag, Transform, World,
+    PrefabInstance, ProceduralMeshKind, RigidBody, Tag, Transform, World,
 };
 use khora_data::flow::companion::companion_row;
 use khora_data::ui::{
@@ -221,10 +221,6 @@ pub fn sample_world() -> (World, Sample) {
             restitution: 0.1,
             is_sensor: false,
             ..Collider::default()
-        },
-        PhysicsMaterial {
-            friction: 0.3,
-            restitution: 0.7,
         },
         ActiveEvents,
     ));

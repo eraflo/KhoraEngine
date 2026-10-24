@@ -29,8 +29,8 @@ use khora_core::physics::{CharacterControllerOptions, PhysicsProvider};
 use khora_core::Runtime;
 
 use crate::ecs::{
-    BodyMotion, Collider, DataSystemRegistration, KinematicCharacterController, RigidBody,
-    SimulatedTransform, TickPhase, Transform, World,
+    BodyMotion, Collider, DataSystemRegistration, GlobalTransform, KinematicCharacterController,
+    RigidBody, SimulatedTransform, TickPhase, Transform, World,
 };
 use crate::flow::PhysicsStepResult;
 
@@ -71,6 +71,8 @@ fn physics_world_writeback(world: &mut World, runtime: &Runtime, deck: &mut Outp
 /// so a designer's placement survived exactly until the first frame of physics.
 /// Saving mid-play recorded the fallen pose over it, the inspector showed a
 /// number nobody typed, and a gizmo anchored wherever gravity had left the body.
+/// The one hand-back to `Transform` happens when the simulation lets go of an
+/// entity, in [`physics_release`](crate::ecs::systems::physics_release).
 fn sync_from_provider(world: &mut World, provider: &dyn PhysicsProvider) {
     // Read first, write after: adding a component is a structural change, and
     // an entity simulated for the first time has no `SimulatedTransform` yet.
@@ -135,12 +137,16 @@ fn resolve_characters(world: &mut World, provider: &dyn PhysicsProvider) {
 
     for (id, m, g) in results {
         // The controller's resolved movement is simulation output like any
-        // other, so it lands where the body pose lands. Seeded from the
-        // authored placement on the first frame, because a character with no
-        // rigid body has nothing else to start from.
+        // other, so it lands where the body pose lands. It moves on from
+        // where the character is drawn this frame — the pose its collider was
+        // synced to and the movement was resolved from. Not from its last
+        // simulated pose: a character somebody moved this frame (`Teleported`)
+        // is drawn at the new place, and adding the movement to the old one
+        // snapped it back the next frame. The authored placement only when
+        // nothing has been drawn yet.
         let from = world
-            .get::<SimulatedTransform>(id)
-            .map(|pose| (pose.translation(), pose.rotation()))
+            .get::<GlobalTransform>(id)
+            .map(|drawn| (drawn.0.translation(), drawn.0.rotation()))
             .or_else(|| {
                 world
                     .get::<Transform>(id)

@@ -14,6 +14,7 @@
 
 //! Rapier implementation of the physics provider.
 
+mod collider_aliases;
 mod conversions;
 mod debug;
 mod events;
@@ -107,6 +108,8 @@ mod owner_tests {
             active_events: true,
             friction: 0.5,
             restitution: 0.0,
+            is_sensor: false,
+            is_character: false,
         }
     }
 

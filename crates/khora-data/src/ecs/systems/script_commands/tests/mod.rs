@@ -1296,8 +1296,8 @@ mod column {
     use super::{apply, ApplyError};
     use crate::ecs::systems::script_commands::{apply_all_reporting, ApplyReport};
     use crate::ecs::{
-        Collider, ComponentKey, ComponentProvenance, FieldKind, PackedField, PackedLayout, Parent,
-        PhysicsMaterial, RigidBody, RuntimeComponentDecl, SemanticDomain, Transform, World,
+        ActiveEvents, Collider, ComponentKey, ComponentProvenance, FieldKind, PackedField,
+        PackedLayout, Parent, RigidBody, RuntimeComponentDecl, SemanticDomain, Transform, World,
     };
 
     /// A `component` batch writing `fields`, one row per `(entity, values)`.
@@ -1855,7 +1855,7 @@ mod column {
             let entity = match i % 3 {
                 0 => world.spawn((Transform::identity(), body(1.0))),
                 1 => world.spawn((Transform::identity(), body(1.0), Collider::default())),
-                _ => world.spawn((Transform::identity(), body(1.0), PhysicsMaterial::default())),
+                _ => world.spawn((Transform::identity(), body(1.0), ActiveEvents)),
             };
             entities.push(entity);
         }
@@ -1878,7 +1878,7 @@ mod column {
             assert_eq!(mass(&world, entity), i as f32 * 2.0, "row {i}");
         }
         assert!(world.get::<Collider>(entities[1]).is_some());
-        assert!(world.get::<PhysicsMaterial>(entities[2]).is_some());
+        assert!(world.get::<ActiveEvents>(entities[2]).is_some());
     }
 
     /// **A variable-size field.** A declared `Value` field takes strings of

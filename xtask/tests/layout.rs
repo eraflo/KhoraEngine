@@ -779,8 +779,8 @@ fn docs_pages_are_kebab_case() {
 /// below a Rust `src/` tree; `src/` itself is not a module name.
 ///
 /// A file named after a type it declares is exempt, because "a file is named
-/// after its primary type" comes first: `physics/physics_material.rs` holds
-/// `PhysicsMaterial`, `asset/asset_uuid.rs` would hold `AssetUUID`. "Named after"
+/// after its primary type" comes first: `physics/physics_debug_data.rs` holds
+/// `PhysicsDebugData`, `asset/asset_uuid.rs` would hold `AssetUUID`. "Named after"
 /// means the file stem is the type's snake_case name, acronyms kept whole
 /// (`AssetUUID` → `asset_uuid`). Keyed by the file.
 #[test]
@@ -1957,7 +1957,7 @@ fn snake_case_keeps_acronyms_whole() {
     for (ty, stem) in [
         ("AssetUUID", "asset_uuid"),
         ("TaffyLayoutSystem", "taffy_layout_system"),
-        ("PhysicsMaterial", "physics_material"),
+        ("PhysicsDebugData", "physics_debug_data"),
         ("HTTPServer", "http_server"),
         ("Vec3", "vec3"),
         ("Mat4x4", "mat4x4"),

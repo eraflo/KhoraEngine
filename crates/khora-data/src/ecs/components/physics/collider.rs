@@ -24,13 +24,17 @@ pub struct Collider {
     /// Opaque handle used by the physics provider.
     #[component(skip)]
     pub handle: Option<ColliderHandle>,
-    /// Shape of the collider.
+    /// Shape of the collider, in the entity's local units: it is scaled by the
+    /// entity's world scale, as its mesh is, so it collides at the size it is
+    /// drawn at.
     pub shape: ColliderShape,
-    /// Friction coefficient.
+    /// Friction coefficient of the surface.
     pub friction: f32,
-    /// Restitution (bounciness) coefficient.
+    /// Restitution (bounciness) coefficient of the surface.
     pub restitution: f32,
-    /// Whether this collider is a sensor (does not respond to forces).
+    /// Whether this collider is a sensor: it reports what enters and leaves it
+    /// — with or without `ActiveEvents` — but never pushes anything, never
+    /// stops a character, and adds no mass to its body.
     pub is_sensor: bool,
 }
 

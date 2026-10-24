@@ -19,6 +19,8 @@
 
 mod agent_negotiation_snapshot_test;
 mod asset_loading_test;
+mod authored_physics;
+mod authored_physics_edges;
 mod behavior_budget;
 mod behavior_game_saves;
 mod behavior_hot_reload;

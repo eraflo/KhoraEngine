@@ -59,6 +59,8 @@ fn box_desc(parent_body: Option<RigidBodyHandle>, position: Vec3, half: f32) -> 
         active_events: false,
         friction: 0.5,
         restitution: 0.0,
+        is_sensor: false,
+        is_character: false,
     }
 }
 

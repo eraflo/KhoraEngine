@@ -50,6 +50,8 @@ fn a_collider(owner: EntityId, shape: ColliderShape) -> ColliderDesc {
         active_events: true,
         friction: 0.5,
         restitution: 0.0,
+        is_sensor: false,
+        is_character: false,
     }
 }
 

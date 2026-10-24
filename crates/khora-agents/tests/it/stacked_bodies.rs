@@ -492,12 +492,13 @@ fn top_under(rig: &Rig, x: f32, z: f32) -> Option<f32> {
 
 /// A collider on a **child** entity of a body is described by its rigid offset
 /// in the body's frame: turned by the body's rotation, stretched by the
-/// hierarchy's scale (the offset is in world units), and centred where the
-/// child is drawn.
+/// hierarchy's scale (the offset is in world units), centred where the child
+/// is drawn and as big as it is drawn.
 ///
 /// Body at `(2, 1, 0)`, 90° yaw, scale 2; child at local `(1, 0, 0)`, a box of
-/// half-extent 0.25. The child is drawn at `(2, 1, −2)` — top face 1.25 — and
-/// nothing belongs at the unturned or unscaled offsets.
+/// half-extent 0.25 — 0.5 at the scale the child inherits. The child is drawn
+/// at `(2, 1, −2)` — top face 1.5 — and nothing belongs at the unturned or
+/// unscaled offsets.
 #[test]
 fn a_collider_on_a_child_of_a_turned_scaled_body_sits_where_the_child_is_drawn() {
     use khora_data::ecs::Parent;
@@ -531,8 +532,8 @@ fn a_collider_on_a_child_of_a_turned_scaled_body_sits_where_the_child_is_drawn()
     );
     let top = top_under(&rig, drawn.x, drawn.z);
     assert!(
-        top.is_some_and(|y| (y - 1.25).abs() < 0.01),
-        "the child's box belongs where the child is drawn, top at 1.25; the ray there hit {top:?}"
+        top.is_some_and(|y| (y - 1.5).abs() < 0.01),
+        "the child's box belongs where the child is drawn, at the size it is drawn — half-extent          0.25 × the parent's scale 2, top at 1.5; the ray there hit {top:?}"
     );
     for (x, z, what) in [(2.0, -1.0, "unscaled"), (4.0, 0.0, "unturned")] {
         let stray = top_under(&rig, x, z);
