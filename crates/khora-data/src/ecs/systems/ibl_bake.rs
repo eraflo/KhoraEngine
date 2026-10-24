@@ -41,14 +41,14 @@ use crate::{AssetStore, EnvironmentMap, IblBaker, IblSource};
 /// back to its own default sun).
 ///
 /// The light's travel direction is derived exactly as the render extraction
-/// does it (`rotation * direction`); the sun sits opposite that.
+/// does it (`transform_direction(direction)`); the sun sits opposite that.
 fn sun_direction(world: &World) -> Vec3 {
     for (light, transform) in world.query::<(&Light, &GlobalTransform)>() {
         if !light.enabled {
             continue;
         }
         if let LightType::Directional(dir_light) = &light.light_type {
-            return -(transform.0.rotation() * dir_light.direction);
+            return -transform.0.transform_direction(dir_light.direction);
         }
     }
     Vec3::ZERO
@@ -273,6 +273,44 @@ mod tests {
         assert_eq!(
             bake_decision(&baker, &IblSource::procedural()),
             Decision::Bake
+        );
+    }
+
+    /// The sun the environment is baked with sits exactly opposite the
+    /// direction the render extraction lights the scene with — under a
+    /// stretched parent too, where the light's world direction leans with
+    /// the sheared basis rather than turning with its rotation alone.
+    #[test]
+    fn the_baked_sun_sits_opposite_the_rendered_light_under_a_stretched_parent() {
+        use crate::flow::{Flow, RenderFlow, Selection};
+        use khora_core::math::affine_transform::AffineTransform;
+        use khora_core::math::{Mat4, Quaternion};
+        use khora_core::renderer::light::DirectionalLight;
+
+        let pose = AffineTransform(
+            Mat4::from_scale(Vec3::new(1.0, 3.0, 1.0))
+                * Mat4::from_quat(Quaternion::from_axis_angle(
+                    Vec3::new(1.0, 0.5, -0.3).normalize(),
+                    0.9,
+                )),
+        );
+        let mut world = World::new();
+        world.spawn((
+            GlobalTransform(pose),
+            Light::new(LightType::Directional(DirectionalLight {
+                direction: Vec3::new(0.3, -1.0, 0.2).normalize(),
+                ..DirectionalLight::default()
+            })),
+        ));
+
+        let rendered = RenderFlow.project(&world, &Selection::new(), &Runtime::default());
+        assert_eq!(rendered.lights.len(), 1, "the one light is extracted");
+        let sun = sun_direction(&world);
+        let error = (sun + rendered.lights[0].direction).length();
+        assert!(
+            error < 1e-6,
+            "the sun {sun:?} is not opposite the rendered direction {:?} (off by {error})",
+            rendered.lights[0].direction
         );
     }
 }

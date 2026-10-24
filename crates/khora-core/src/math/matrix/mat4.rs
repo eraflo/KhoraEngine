@@ -517,25 +517,25 @@ impl Mat4 {
             return None;
         }
 
+        // The rows of the inverse of the 3×3 whose columns are c0, c1, c2 are
+        // the cross products of the two other columns over the determinant:
+        // row i dotted with column j is the triple product, det when i = j
+        // and zero otherwise.
         let inv_det3x3 = 1.0 / det3x3;
-        let inv00 = (c1.y * c2.z - c2.y * c1.z) * inv_det3x3;
-        let inv10 = -(c2.y * c0.z - c0.y * c2.z) * inv_det3x3;
-        let inv20 = (c0.y * c1.z - c1.y * c0.z) * inv_det3x3;
-        let inv01 = -(c2.x * c1.z - c1.x * c2.z) * inv_det3x3;
-        let inv11 = (c0.x * c2.z - c2.x * c0.z) * inv_det3x3;
-        let inv21 = -(c1.x * c0.z - c0.x * c1.z) * inv_det3x3;
-        let inv02 = (c1.x * c2.y - c2.x * c1.y) * inv_det3x3;
-        let inv12 = -(c2.x * c0.y - c0.x * c2.y) * inv_det3x3;
-        let inv22 = (c0.x * c1.y - c1.x * c0.y) * inv_det3x3;
-        let inv_tx = -(inv00 * translation.x + inv01 * translation.y + inv02 * translation.z);
-        let inv_ty = -(inv10 * translation.x + inv11 * translation.y + inv12 * translation.z);
-        let inv_tz = -(inv20 * translation.x + inv21 * translation.y + inv22 * translation.z);
+        let row0 = c1.cross(c2) * inv_det3x3;
+        let row1 = c2.cross(c0) * inv_det3x3;
+        let row2 = c0.cross(c1) * inv_det3x3;
+        let inv_translation = -Vec3::new(
+            row0.dot(translation),
+            row1.dot(translation),
+            row2.dot(translation),
+        );
 
         Some(Self::from_cols(
-            Vec4::new(inv00, inv10, inv20, 0.0),
-            Vec4::new(inv01, inv11, inv21, 0.0),
-            Vec4::new(inv02, inv12, inv22, 0.0),
-            Vec4::new(inv_tx, inv_ty, inv_tz, 1.0),
+            Vec4::new(row0.x, row1.x, row2.x, 0.0),
+            Vec4::new(row0.y, row1.y, row2.y, 0.0),
+            Vec4::new(row0.z, row1.z, row2.z, 0.0),
+            Vec4::new(inv_translation.x, inv_translation.y, inv_translation.z, 1.0),
         ))
     }
 

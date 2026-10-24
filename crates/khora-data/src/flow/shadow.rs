@@ -135,8 +135,8 @@ impl Flow for ShadowFlow {
                         continue;
                     };
                     let direction = match &light.light_type {
-                        LightType::Directional(d) => transform.0.rotation() * d.direction,
-                        LightType::Spot(s) => transform.0.rotation() * s.direction,
+                        LightType::Directional(d) => transform.0.transform_direction(d.direction),
+                        LightType::Spot(s) => transform.0.transform_direction(s.direction),
                         LightType::Point(_) => unreachable!(
                             "outer match restricts this arm to Directional/Spot lights"
                         ),

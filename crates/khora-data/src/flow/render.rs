@@ -157,9 +157,11 @@ fn extract_lights(world: &World, render_world: &mut RenderWorld) {
         let position = global_transform.0.translation();
         let direction = match &light_comp.light_type {
             LightType::Directional(dir_light) => {
-                global_transform.0.rotation() * dir_light.direction
+                global_transform.0.transform_direction(dir_light.direction)
             }
-            LightType::Spot(spot_light) => global_transform.0.rotation() * spot_light.direction,
+            LightType::Spot(spot_light) => {
+                global_transform.0.transform_direction(spot_light.direction)
+            }
             LightType::Point(_) => Vec3::ZERO,
         };
 
@@ -373,6 +375,84 @@ mod tests {
         assert!(
             draw.mirrored,
             "the drawn pose is a mirror but is not marked so"
+        );
+    }
+
+    use khora_core::renderer::light::{DirectionalLight, SpotLight};
+
+    /// An obliquely turned light under a parent stretched to three times its
+    /// height: a sheared world basis, whose linear part makes a direction
+    /// lean away from where the rotation alone would turn it.
+    fn light_under_a_stretched_parent() -> AffineTransform {
+        AffineTransform(
+            Mat4::from_scale(Vec3::new(1.0, 3.0, 1.0))
+                * trs(
+                    Vec3::new(2.0, 5.0, -1.0),
+                    Quaternion::from_axis_angle(Vec3::new(1.0, 0.5, -0.3).normalize(), 0.9),
+                    Vec3::ONE,
+                )
+                .0,
+        )
+    }
+
+    /// The direction `RenderFlow` extracts for the one light in `world`.
+    fn extracted_light_direction(world: &World) -> Vec3 {
+        let view = RenderFlow.project(world, &Selection::new(), &Runtime::default());
+        assert_eq!(view.lights.len(), 1, "the one light is extracted");
+        view.lights[0].direction
+    }
+
+    fn assert_direction_close(actual: Vec3, expected: Vec3, what: &str) {
+        let error = (actual - expected).length();
+        assert!(
+            error < 1e-5,
+            "{what}: {actual:?} where {expected:?} was expected (off by {error})"
+        );
+    }
+
+    /// A directional light on an entity under a stretched parent shines
+    /// along its local direction carried by the entity's world basis —
+    /// normalised, leaning as the stretched geometry around it leans — not
+    /// along the rotation alone.
+    #[test]
+    fn a_directional_light_under_a_stretched_parent_shines_along_its_world_direction() {
+        let pose = light_under_a_stretched_parent();
+        let local = Vec3::new(0.3, -1.0, 0.2).normalize();
+        let mut world = World::new();
+        world.spawn((
+            GlobalTransform(pose),
+            Light::new(LightType::Directional(DirectionalLight {
+                direction: local,
+                ..DirectionalLight::default()
+            })),
+        ));
+
+        assert_direction_close(
+            extracted_light_direction(&world),
+            pose.0.transform_vector(local).normalize(),
+            "directional light under a (1, 3, 1) parent",
+        );
+    }
+
+    /// A spot light under the same stretched parent points along its world
+    /// direction too.
+    #[test]
+    fn a_spot_light_under_a_stretched_parent_points_along_its_world_direction() {
+        let pose = light_under_a_stretched_parent();
+        let local = Vec3::new(-0.4, -1.0, 0.6).normalize();
+        let mut world = World::new();
+        world.spawn((
+            GlobalTransform(pose),
+            Light::new(LightType::Spot(SpotLight {
+                direction: local,
+                ..SpotLight::default()
+            })),
+        ));
+
+        assert_direction_close(
+            extracted_light_direction(&world),
+            pose.0.transform_vector(local).normalize(),
+            "spot light under a (1, 3, 1) parent",
         );
     }
 }
