@@ -21,6 +21,8 @@
 
 use std::path::{Path, PathBuf};
 
+use khora_sdk::editor_ui::EditorState;
+use khora_sdk::khora_core::script::ScriptCatalog;
 use khora_sdk::Runtime;
 
 /// Brings the mounted scripts in line with the open project, called each
@@ -46,6 +48,22 @@ pub(crate) fn follow_open_project(
     let loaded = khora_sdk::scripts::mount(runtime, &assets);
     *mounted = Some(assets);
     Some(loaded)
+}
+
+/// Copies the names the scripts declare from `catalog` into `state` when the
+/// catalog's declared generation moved since the last copy — nothing
+/// otherwise. Called each frame, where the script problems are mirrored.
+pub(crate) fn mirror_declared_names(catalog: &ScriptCatalog, state: &mut EditorState) {
+    let generation = catalog.declared_generation();
+    if generation == state.declared_names_generation {
+        return;
+    }
+    state.declared_names = catalog
+        .declared()
+        .iter()
+        .map(|name| name.as_str().to_owned())
+        .collect();
+    state.declared_names_generation = generation;
 }
 
 /// Opens the script at `path` for its author: in the app the system gives

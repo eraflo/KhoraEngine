@@ -131,6 +131,13 @@ pub struct AssetBrowserPanel {
     open_containers: std::collections::HashSet<AssetUUID>,
     /// The parts of each file, as indices into `flat`, rebuilt with it.
     parts_by_file: std::collections::HashMap<AssetUUID, Vec<usize>>,
+    /// Every name the open project's scripts declare, mirrored from
+    /// `EditorState::declared_names`: a new script's name is kept clear of
+    /// them, exactly — Ergon names are exact.
+    declared_names: Vec<String>,
+    /// Last `EditorState::declared_names_generation` `declared_names` was
+    /// copied at; `None` before the first copy.
+    declared_generation: Option<u64>,
 }
 
 impl AssetBrowserPanel {
@@ -156,6 +163,8 @@ impl AssetBrowserPanel {
             new_script: None,
             open_containers: std::collections::HashSet::new(),
             parts_by_file: std::collections::HashMap::new(),
+            declared_names: Vec::new(),
+            declared_generation: None,
         }
     }
 
@@ -205,6 +214,20 @@ impl AssetBrowserPanel {
             }
             khora_tool_ui::widgets::ModalChoice::Pending => {}
         }
+    }
+
+    /// Copies the names the scripts declare from the editor state when their
+    /// generation moved since the last copy — one lock, nothing copied
+    /// otherwise.
+    fn follow_declared_names(&mut self) {
+        let Ok(state) = self.state.lock() else {
+            return;
+        };
+        if self.declared_generation == Some(state.declared_names_generation) {
+            return;
+        }
+        self.declared_names.clone_from(&state.declared_names);
+        self.declared_generation = Some(state.declared_names_generation);
     }
 
     fn rescan_if_needed(&mut self) {

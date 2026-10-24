@@ -179,12 +179,18 @@ impl AssetBrowserPanel {
     /// `name`, or `name2`, `name3`, … — the first neither the engine nor a
     /// script of the project already holds. The engine's names — its
     /// components', its asset kinds' — no script can declare. Behaviour names
-    /// are the project's, whatever folder declares them, and file names differ
-    /// only by case on some systems, so every `.erg` counts, its stem compared
-    /// without case.
+    /// are the project's, whatever folder declares them: a name another script
+    /// declares inside it — a component, a behavior, a system — is taken,
+    /// exactly as Ergon spells it, or the registry would refuse the new one.
+    /// File names differ only by case on some systems, so every `.erg` counts
+    /// too, its stem compared without case.
     fn free_script_name(&self, name: &str) -> String {
         let taken = |candidate: &str| {
             khora_sdk::scripts::is_engine_name(candidate)
+                || self
+                    .declared_names
+                    .iter()
+                    .any(|declared| declared == candidate)
                 || self.flat.iter().any(|asset| {
                     asset.name.rsplit_once('.').is_some_and(|(stem, ext)| {
                         ext.eq_ignore_ascii_case(EXTENSION) && stem.eq_ignore_ascii_case(candidate)

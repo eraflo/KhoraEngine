@@ -203,9 +203,11 @@ tile appears in the first slot with a name field, and nothing is written until
 it is committed (Enter, or a click elsewhere); Escape makes nothing. The name
 typed becomes the behavior's, as an Ergon name — `my player` is `MyPlayer` —
 and the tile's thumbnail shows the file it will write before you commit. A name
-another `.erg` of the project already uses, or one the engine keeps — a
-component's such as `Camera`, an asset kind's such as `Sound` — gets a number
-(`Camera2`). The file
+already taken gets a number (`Camera2`): one another `.erg` of the project uses
+as its file name, one another script declares inside it — `stats.erg` declaring
+`component Health` makes `health` give `Health2` — or one the engine keeps: a
+component's such as `Camera`, an asset kind's such as `Sound`, an event's it
+raises such as `Touched`. The file
 goes in the current folder when that is `scripts/` or under it, otherwise in
 `scripts/` — the folder the project's scripts are compiled from — and the panel
 opens there. It starts as a behavior that compiles, its parts commented, and an

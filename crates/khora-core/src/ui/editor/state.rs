@@ -146,6 +146,14 @@ pub struct EditorState {
     /// The `ScriptProblems` generation `script_problems` was copied at: a
     /// frame where it has not moved copies nothing.
     pub script_problems_generation: u64,
+    /// Every name the open project's scripts declare — components,
+    /// behaviors, systems — sorted, exactly as Ergon spells them: the names a
+    /// new declaration would be refused, as the engine's `ScriptCatalog`
+    /// lists them.
+    pub declared_names: Vec<String>,
+    /// The `ScriptCatalog` declared generation `declared_names` was copied
+    /// at: a frame where it has not moved copies nothing.
+    pub declared_names_generation: u64,
     /// Status bar data (FPS, entity count, memory).
     pub status: StatusBarData,
     /// Asset entries for the asset browser (populated from the VFS).

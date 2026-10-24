@@ -112,6 +112,9 @@ pub struct EditorApp {
     mounted_scripts: Option<std::path::PathBuf>,
     /// What is wrong with the project's scripts, as the engine finds it.
     script_problems: Option<Arc<khora_sdk::khora_core::script::ScriptProblems>>,
+    /// What the project's scripts declare, as the engine lists it — the
+    /// names the panels keep a new script clear of.
+    script_catalog: Option<Arc<khora_sdk::khora_core::script::ScriptCatalog>>,
     /// The inspected entity's instance and its prefab's values, kept while
     /// the selection and the project's files stay the same.
     prefab_view: Option<PrefabView>,
@@ -146,6 +149,10 @@ impl EditorApp {
         self.script_problems = runtime
             .resources
             .get::<Arc<khora_sdk::khora_core::script::ScriptProblems>>()
+            .cloned();
+        self.script_catalog = runtime
+            .resources
+            .get::<Arc<khora_sdk::khora_core::script::ScriptCatalog>>()
             .cloned();
         if let Some(camera) = runtime
             .resources
@@ -247,6 +254,9 @@ impl EditorApp {
                 state.script_problems = problems.all();
                 state.script_problems_generation = generation;
             }
+        }
+        if let Some(catalog) = &self.script_catalog {
+            crate::project_scripts::mirror_declared_names(catalog, &mut state);
         }
 
         let now = Instant::now();

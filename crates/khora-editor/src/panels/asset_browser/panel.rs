@@ -49,6 +49,7 @@ impl EditorPanel for AssetBrowserPanel {
     }
     fn ui(&mut self, ui: &mut dyn UiBuilder) {
         self.rescan_if_needed();
+        self.follow_declared_names();
         self.follow_reveal();
 
         let theme = self.theme.clone();

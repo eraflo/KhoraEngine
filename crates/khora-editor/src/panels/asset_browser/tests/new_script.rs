@@ -508,3 +508,176 @@ fn starting_a_script_scrolls_the_grid_back_to_its_placeholder() {
         "the placeholder in the first slot is scrolled out of view"
     );
 }
+
+// ─── Names other scripts declare ─────────────────────────────────────
+
+/// The editor state saying the open project's scripts declare `names`, at
+/// `generation` — as the editor's mirror of the registry leaves it.
+fn declaring(state: &Arc<Mutex<EditorState>>, names: &[&str], generation: u64) {
+    let mut state = state.lock().expect("state");
+    state.declared_names = names.iter().map(|name| (*name).to_owned()).collect();
+    state.declared_names_generation = generation;
+}
+
+/// A browser over `a_small_project()` that has seen the scripts declare
+/// `names`.
+fn browsing_declared(names: &[&str]) -> (AssetBrowserPanel, Arc<Mutex<EditorState>>) {
+    let (mut panel, state) = browsing(a_small_project());
+    declaring(&state, names, 1);
+    panel.follow_declared_names();
+    (panel, state)
+}
+
+/// **A name another script declares inside it is taken**: `stats.erg`
+/// declaring `component Health` makes `health` give `Health2`, in the
+/// preview and in the file queued, and the source declares `Health2` —
+/// never a second `Health` the registry would refuse.
+#[test]
+fn a_name_another_script_declares_gets_a_number() {
+    let (mut panel, state) = browsing_declared(&["Health"]);
+    panel.start_new_script("scripts");
+    type_name(&mut panel, "health");
+
+    assert_eq!(panel.new_script_file_name().as_deref(), Some("Health2.erg"));
+
+    panel.commit_new_script();
+
+    let (rel, source) = queued(&state).expect("the script is queued");
+    assert_eq!(rel, "scripts/Health2.erg");
+    assert!(
+        source.contains("behavior Health2"),
+        "no `behavior Health2` in:\n{source}"
+    );
+    assert_eq!(source, script_source("Health2"));
+}
+
+/// **Every declared name is skipped**, numbered ones too.
+#[test]
+fn a_numbered_name_another_script_declares_is_skipped_as_well() {
+    let (mut panel, state) = browsing_declared(&["Health", "Health2"]);
+    panel.start_new_script("scripts");
+    type_name(&mut panel, "health");
+
+    assert_eq!(panel.new_script_file_name().as_deref(), Some("Health3.erg"));
+    panel.commit_new_script();
+    assert_eq!(
+        queued(&state).map(|(rel, _)| rel).as_deref(),
+        Some("scripts/Health3.erg")
+    );
+}
+
+/// **The default name is free of declared names too**: a script declaring
+/// `NewScript` makes the placeholder start as `NewScript2`.
+#[test]
+fn the_default_name_skips_a_declared_name() {
+    let (mut panel, state) = browsing_declared(&["NewScript"]);
+
+    panel.start_new_script("scripts");
+
+    assert_eq!(
+        placeholder(&panel).map(|(_, name)| name).as_deref(),
+        Some("NewScript2")
+    );
+    assert_eq!(
+        panel.new_script_file_name().as_deref(),
+        Some("NewScript2.erg")
+    );
+    panel.commit_new_script();
+    assert_eq!(
+        queued(&state).map(|(rel, _)| rel).as_deref(),
+        Some("scripts/NewScript2.erg")
+    );
+}
+
+/// **Ergon names are exact**: a declared `health` does not take `Health` —
+/// unlike a file stem, which is compared without case.
+#[test]
+fn a_declared_name_differing_only_by_case_leaves_the_name_free() {
+    let (mut panel, state) = browsing_declared(&["health"]);
+    panel.start_new_script("scripts");
+    type_name(&mut panel, "health");
+
+    assert_eq!(panel.new_script_file_name().as_deref(), Some("Health.erg"));
+    panel.commit_new_script();
+    assert_eq!(
+        queued(&state).map(|(rel, _)| rel).as_deref(),
+        Some("scripts/Health.erg")
+    );
+}
+
+/// **The browser follows the declared names as they change**: names
+/// declared after it was built are taken from the next follow on.
+#[test]
+fn declared_names_changed_after_the_panel_was_built_are_followed() {
+    let (mut panel, state) = browsing(a_small_project());
+    panel.follow_declared_names();
+    panel.start_new_script("scripts");
+    type_name(&mut panel, "health");
+    assert_eq!(
+        panel.new_script_file_name().as_deref(),
+        Some("Health.erg"),
+        "the premise: nothing declares `Health` yet"
+    );
+
+    declaring(&state, &["Health"], 1);
+    panel.follow_declared_names();
+
+    assert_eq!(panel.new_script_file_name().as_deref(), Some("Health2.erg"));
+
+    declaring(&state, &[], 2);
+    panel.follow_declared_names();
+
+    assert_eq!(
+        panel.new_script_file_name().as_deref(),
+        Some("Health.erg"),
+        "a name no longer declared is free again"
+    );
+}
+
+/// **An engine event's name is the engine's**: `Touched` and `Separated` are
+/// in scope in every module, so a script declaring a behavior by either name
+/// does not compile ("`Touched` is an event the engine raises"). Typing
+/// `touched` must give a name the engine compiles.
+#[test]
+fn a_script_named_like_an_engine_event_still_compiles_in_the_engine() {
+    let mut refused = Vec::new();
+    for typed in ["touched", "separated"] {
+        let (mut panel, state) = browsing(a_small_project());
+        panel.start_new_script("scripts");
+        type_name(&mut panel, typed);
+
+        panel.commit_new_script();
+
+        let (rel, source) = queued(&state).expect("the script is queued");
+        let errors = engine_errors(&rel, &source);
+        if !errors.is_empty() {
+            refused.push(format!("typed `{typed}` → {rel}: {errors:?}"));
+        }
+    }
+    assert!(
+        refused.is_empty(),
+        "the engine refuses the new script:\n{}",
+        refused.join("\n")
+    );
+}
+
+/// **A file stem and a declared name together are skipped**: `Health.erg`
+/// holds the stem `Health`, another script declares `Health2` — `health`
+/// gives `Health3`, the first that is neither.
+#[test]
+fn a_declared_name_after_a_taken_file_stem_is_skipped_too() {
+    let mut project = a_small_project();
+    project.push(entry("scripts/Health.erg", "script"));
+    let (mut panel, state) = browsing(project);
+    declaring(&state, &["Health2"], 1);
+    panel.follow_declared_names();
+    panel.start_new_script("scripts");
+    type_name(&mut panel, "health");
+
+    assert_eq!(panel.new_script_file_name().as_deref(), Some("Health3.erg"));
+    panel.commit_new_script();
+    assert_eq!(
+        queued(&state).map(|(rel, _)| rel).as_deref(),
+        Some("scripts/Health3.erg")
+    );
+}

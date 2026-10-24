@@ -39,13 +39,17 @@ pub const ENGINE_MODULE: &str = khora_io::script::mirror::MIRROR_MODULE;
 
 /// Whether `name` is the engine's, so no script can declare a struct, a
 /// component or a behavior by it: an engine component's — current, former or
-/// retired — or an asset kind's (`Prefab`, `Sound`, …). Exact, as Ergon names
-/// are.
+/// retired — an asset kind's (`Prefab`, `Sound`, …), or an event's the engine
+/// raises (`Touched`, …), which every module has in scope. Exact, as Ergon
+/// names are.
 pub fn is_engine_name(name: &str) -> bool {
     khora_io::script::mirror::engine_component_names()
         .binary_search_by(|known| known.as_str().cmp(name))
         .is_ok()
         || khora_core::asset::AssetKind::from_ergon_name(name).is_some()
+        || khora_core::script::ENGINE_EVENTS
+            .iter()
+            .any(|event| event.name == name)
 }
 
 /// Where the scripts are found under an assets root.
