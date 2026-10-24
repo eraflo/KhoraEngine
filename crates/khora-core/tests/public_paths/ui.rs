@@ -213,6 +213,8 @@ fn editor_state_fields(x: &khora_core::ui::editor::state::EditorState) {
         &x.inspected,
         &x.pending_edits,
         &x.log_entries,
+        &x.declared_names,
+        &x.declared_names_generation,
         &x.status,
         &x.asset_entries,
         &x.viewport_hovered,

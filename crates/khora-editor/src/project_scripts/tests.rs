@@ -25,7 +25,11 @@ use khora_sdk::{
     GameWorld, InputEvent, MetricsRegistry, PhaseProvider, Runtime, WindowConfig,
 };
 
+use khora_sdk::editor_ui::EditorState;
+use khora_sdk::khora_core::script::{ComponentName, ScriptCatalog};
+
 use super::follow_open_project;
+use super::mirror_declared_names;
 use crate::project_vfs::ProjectVfs;
 
 /// An application that edits and does nothing else: the engine the editor
@@ -327,5 +331,130 @@ fn the_project_vfs_reports_only_its_own_projects_changes() {
     assert!(
         !mentions(&read, "stray.png"),
         "the VFS reported another root's change: {read:?}"
+    );
+}
+
+// ─── The names the scripts declare, mirrored for the panels ──────────
+
+fn component_names(list: &[&str]) -> Vec<ComponentName> {
+    list.iter().map(|name| ComponentName::new(*name)).collect()
+}
+
+/// **A new declared set reaches the editor state** — the names as the
+/// catalog holds them, and the generation they were copied at.
+#[test]
+fn mirroring_copies_the_declared_names_when_their_generation_moved() {
+    let catalog = ScriptCatalog::default();
+    catalog.set_declared(component_names(&["Patrol", "Health"]));
+    let mut state = EditorState::default();
+
+    mirror_declared_names(&catalog, &mut state);
+
+    assert_eq!(
+        state.declared_names,
+        vec!["Health".to_owned(), "Patrol".to_owned()]
+    );
+    assert_eq!(
+        state.declared_names_generation,
+        catalog.declared_generation()
+    );
+}
+
+/// **A frame where the generation has not moved copies nothing** — the
+/// state is left exactly as it is.
+#[test]
+fn mirroring_leaves_the_state_alone_when_the_generation_has_not_moved() {
+    let catalog = ScriptCatalog::default();
+    catalog.set_declared(component_names(&["Health"]));
+    let mut state = EditorState {
+        declared_names: vec!["Stale".to_owned()],
+        declared_names_generation: catalog.declared_generation(),
+        ..EditorState::default()
+    };
+
+    mirror_declared_names(&catalog, &mut state);
+
+    assert_eq!(state.declared_names, vec!["Stale".to_owned()]);
+    assert_eq!(
+        state.declared_names_generation,
+        catalog.declared_generation()
+    );
+}
+
+/// **An emptied set is mirrored too** — a closed project leaves no name
+/// taken in the editor.
+#[test]
+fn mirroring_an_emptied_declared_set_empties_the_state() {
+    let catalog = ScriptCatalog::default();
+    catalog.set_declared(component_names(&["Health"]));
+    let mut state = EditorState::default();
+    mirror_declared_names(&catalog, &mut state);
+    assert_eq!(
+        state.declared_names,
+        vec!["Health".to_owned()],
+        "the premise"
+    );
+
+    catalog.set_declared(Vec::new());
+    mirror_declared_names(&catalog, &mut state);
+
+    assert!(
+        state.declared_names.is_empty(),
+        "{:?}",
+        state.declared_names
+    );
+    assert_eq!(
+        state.declared_names_generation,
+        catalog.declared_generation()
+    );
+}
+
+/// **The names an open project's scripts declare reach the editor state
+/// through the engine's own catalog, and leave with the project**: opened,
+/// `Greeter` and `Lantern` are mirrored; another project declaring
+/// `Greeter` from another module takes it over; closed, nothing is left
+/// taken.
+#[test]
+fn the_names_an_open_projects_scripts_declare_follow_the_project() {
+    let first = Project::with(
+        "declared-first",
+        &[("greeter.erg", GREETER), ("lantern.erg", LANTERN)],
+    );
+    let second = Project::with("declared-second", &[("host.erg", GREETER)]);
+    let mut engine = engine();
+    let mut mounted = None;
+    let catalog = engine
+        .runtime()
+        .resources
+        .get::<Arc<ScriptCatalog>>()
+        .cloned()
+        .expect("the engine holds a ScriptCatalog");
+    let mut state = EditorState::default();
+
+    follow_open_project(engine.runtime(), &mut mounted, Some(first.root()));
+    tick_until(&mut engine, "`Greeter` and `Lantern` mirrored", |_| {
+        mirror_declared_names(&catalog, &mut state);
+        state.declared_names == ["Greeter".to_owned(), "Lantern".to_owned()]
+    });
+
+    follow_open_project(engine.runtime(), &mut mounted, Some(second.root()));
+    tick_until(
+        &mut engine,
+        "only `Greeter` mirrored, from the second project",
+        |engine| {
+            mirror_declared_names(&catalog, &mut state);
+            state.declared_names == ["Greeter".to_owned()]
+                && declared_by(engine, "Greeter").as_deref() == Some("host.erg")
+        },
+    );
+
+    follow_open_project(engine.runtime(), &mut mounted, None);
+    tick_until(&mut engine, "no name mirrored once closed", |_| {
+        mirror_declared_names(&catalog, &mut state);
+        state.declared_names.is_empty()
+    });
+    assert_eq!(
+        state.declared_names_generation,
+        catalog.declared_generation()
     );
 }

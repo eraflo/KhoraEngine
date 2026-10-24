@@ -13,7 +13,8 @@
 // limitations under the License.
 
 //! The names a script cannot declare by, as a tool asks before offering one:
-//! the engine's components and the language's asset kinds.
+//! the engine's components, the language's asset kinds and the events the
+//! engine raises.
 
 use khora_sdk::scripts::is_engine_name;
 
@@ -29,6 +30,16 @@ fn an_asset_kinds_name_is_the_engines() {
     for name in ["Prefab", "Sound", "Material", "Mesh", "Texture", "Scene"] {
         assert!(is_engine_name(name), "`{name}`");
     }
+}
+
+/// **An event the engine raises is in every module's scope**, so a script
+/// declaring a behavior by its name does not compile.
+#[test]
+fn an_engine_events_name_is_the_engines() {
+    for event in khora_sdk::khora_core::script::ENGINE_EVENTS {
+        assert!(is_engine_name(event.name), "`{}`", event.name);
+    }
+    assert!(is_engine_name("Touched") && is_engine_name("Separated"));
 }
 
 #[test]

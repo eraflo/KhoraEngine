@@ -29,6 +29,7 @@ mod compile_problems_of_importers_by_any_spelling;
 mod declared_asset_fields;
 mod declared_component_scenes;
 mod declared_field_hints;
+mod declared_names_in_the_catalog;
 mod game_saves;
 mod game_saves_text_base;
 mod hot_reload_announcements;

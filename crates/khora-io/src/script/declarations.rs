@@ -46,6 +46,7 @@ use khora_data::ecs::{
     ComponentProvenance, DataSystemRegistration, FieldKind, PackedField, PackedLayout,
     RuntimeComponentDecl, TickPhase, World,
 };
+use khora_script::modules::behaviors::STATE_SUFFIX;
 use khora_script::vm::{DeclaredComponent, DeclaredKind};
 
 /// The components one module declares, as it last compiled — none when it
@@ -112,6 +113,20 @@ impl DeclaredComponents {
     /// The module declaring `component`.
     pub fn owner_of(&self, component: &str) -> Option<&str> {
         self.owner.get(component).map(String::as_str)
+    }
+
+    /// Every name a module declares now — components, behaviors, systems —
+    /// sorted, each once: the names a new declaration is refused. Neither a
+    /// behavior's `#state` companion nor an orphan is listed.
+    pub fn declared_names(&self) -> Vec<khora_core::script::ComponentName> {
+        let mut names: Vec<_> = self
+            .owner
+            .keys()
+            .filter(|name| !name.ends_with(STATE_SUFFIX))
+            .map(|name| khora_core::script::ComponentName::new(name.as_str()))
+            .collect();
+        names.sort();
+        names
     }
 
     /// Says `modules` are being unmounted: what they declared is orphaned
@@ -541,6 +556,13 @@ pub fn register_pending(world: &mut World, runtime: &Runtime) -> DeclarationRepo
             khora_core::script::ProblemSource::Registration,
             state.standing_problems(),
         );
+    }
+    // The tools that cannot see the registry read what it lists here.
+    if let Some(catalog) = runtime
+        .resources
+        .get::<Arc<khora_core::script::ScriptCatalog>>()
+    {
+        catalog.set_declared(state.declared_names());
     }
     if !report.registered.is_empty() {
         log::info!(

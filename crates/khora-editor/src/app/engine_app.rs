@@ -72,6 +72,7 @@ impl EngineApp for EditorApp {
             asset_watch: Arc::new(khora_sdk::AssetWatch::default()),
             mounted_scripts: None,
             script_problems: None,
+            script_catalog: None,
             prefab_view: None,
             play_prefabs: Arc::default(),
             prefab_catalog: khora_sdk::khora_data::scene::PrefabCatalog::new(),
