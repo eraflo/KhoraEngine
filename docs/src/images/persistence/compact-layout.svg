@@ -1,17 +1,17 @@
-<svg class="kp-figure" viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-cl-title kp-cl-desc">
+<svg id="fig-persistence-compact-layout" class="kp-figure" viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-cl-title kp-cl-desc">
   <title id="kp-cl-title">The compact payload, byte strip by byte strip</title>
   <desc id="kp-cl-desc">The payload starts with a version byte, then the symbol table of every name, then the shape table of every struct and variant, then the persistent ids of the entities, then the pages, then the prefab instances — each a root, a prefab and its differences. Each page lists its components by symbol, its rows by persistent id, then its values column after column. A value is a tag, then a shape or symbol index, then its parts.</desc>
   <style>
-    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
-    .kp-bg { fill: var(--k-bg-0, #090d17); }
-    .kp-seg { fill: var(--k-bg-2, #181e2b); stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-seg-strong { fill: var(--k-bg-3, #1f2636); stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-zoom { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; stroke-dasharray: 3 3; }
-    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
-    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 17px; }
-    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11.5px; font-weight: 500; }
-    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
-    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-persistence-compact-layout { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-persistence-compact-layout .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-persistence-compact-layout .kp-seg { fill: var(--k-bg-2, #181e2b); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-persistence-compact-layout .kp-seg-strong { fill: var(--k-bg-3, #1f2636); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-persistence-compact-layout .kp-zoom { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; stroke-dasharray: 3 3; }
+    #fig-persistence-compact-layout .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-persistence-compact-layout .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-persistence-compact-layout .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; font-weight: 500; }
+    #fig-persistence-compact-layout .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-persistence-compact-layout .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
   </style>
   <rect class="kp-bg" x="0" y="0" width="760" height="300" rx="8"/>
   <text class="kp-station" x="16" y="32">payload</text>

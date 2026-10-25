@@ -1,27 +1,27 @@
-<svg class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-hints-title kp-hints-desc">
+<svg id="fig-editor-inspector-field-attributes" class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-hints-title kp-hints-desc">
   <title id="kp-hints-title">Field attributes, and the card they give</title>
   <desc id="kp-hints-desc">On the left, an Ergon component Turret whose fields carry attributes: a Header Combat above power, ranged 0 to 100 with a tooltip; cooldown ranged 0 to 5 seconds; reach ranged 0 to 100. On the right, its card in the inspector: the section header COMBAT; Power 40 with a gauge filled to forty percent and its tooltip How hard it hits shown on hovering its label; Cooldown 2.5 seconds with a gauge half filled; Reach 150, which a script wrote outside its range, with its gauge all amber and the note Outside 0–100: a script or a file wrote it. Editing brings it back inside.</desc>
   <style>
-    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
-    .kp-bg { fill: var(--k-bg-0, #090d17); }
-    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-cardbg { fill: var(--k-bg-2, #181e2b); }
-    .kp-code { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11.5px; }
-    .kp-attr { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11.5px; }
-    .kp-card-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
-    .kp-tag { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10px; letter-spacing: 0.04em; }
-    .kp-prov { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
-    .kp-eyebrow { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 9.5px; letter-spacing: 0.06em; }
-    .kp-field { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
-    .kp-unit { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
-    .kp-track { fill: var(--k-line, #383d48); }
-    .kp-fill { fill: var(--k-fg-2, #8a9096); }
-    .kp-warn { fill: var(--k-amber, #e0a34a); }
-    .kp-tip { fill: var(--k-bg-3, #1f2636); stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-tip-text { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
-    .kp-tip-warn { fill: var(--k-amber, #e0a34a); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
-    .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
+    #fig-editor-inspector-field-attributes { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-editor-inspector-field-attributes .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-editor-inspector-field-attributes .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-editor-inspector-field-attributes .kp-cardbg { fill: var(--k-bg-2, #181e2b); }
+    #fig-editor-inspector-field-attributes .kp-code { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-editor-inspector-field-attributes .kp-attr { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-editor-inspector-field-attributes .kp-card-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    #fig-editor-inspector-field-attributes .kp-tag { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10px; letter-spacing: 0.04em; }
+    #fig-editor-inspector-field-attributes .kp-prov { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-editor-inspector-field-attributes .kp-eyebrow { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 9.5px; letter-spacing: 0.06em; }
+    #fig-editor-inspector-field-attributes .kp-field { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-editor-inspector-field-attributes .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-editor-inspector-field-attributes .kp-unit { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-editor-inspector-field-attributes .kp-track { fill: var(--k-line, #383d48); }
+    #fig-editor-inspector-field-attributes .kp-fill { fill: var(--k-fg-2, #8a9096); }
+    #fig-editor-inspector-field-attributes .kp-warn { fill: var(--k-amber, #e0a34a); }
+    #fig-editor-inspector-field-attributes .kp-tip { fill: var(--k-bg-3, #1f2636); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-editor-inspector-field-attributes .kp-tip-text { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-editor-inspector-field-attributes .kp-tip-warn { fill: var(--k-amber, #e0a34a); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-editor-inspector-field-attributes .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
   </style>
   <rect class="kp-bg" x="0" y="0" width="760" height="330"/>
   <!-- the source -->

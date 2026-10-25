@@ -1,0 +1,180 @@
+/* ============================================================
+   Khora Engine — figures and step-through figures.
+
+   A figure's own colours and type live in its SVG, every rule scoped to the
+   SVG's id (`#fig-scripting-turn .kp-label`): inlined in a page, an unscoped
+   rule would restyle every other figure there. This file holds only what
+   frames a figure and what the step-through adds.
+   ============================================================ */
+
+/* ---------- A step-through figure ---------- */
+.kp-steps {
+    margin: 1.8rem 0;
+    padding: 0;
+    border-radius: 10px;
+    background: var(--k-bg-0);
+    border: 1px solid var(--k-line-soft);
+    overflow: hidden;
+}
+
+.kp-steps:focus-visible {
+    outline: 2px solid var(--k-silver);
+    outline-offset: 3px;
+}
+
+.kp-steps > .kp-figure,
+.kp-steps > .kp-figure-frame {
+    margin: 0;
+}
+
+.kp-steps .kp-figure-frame {
+    border-radius: 0;
+}
+
+/* The parts a step hides, and the parts a step moves. */
+.kp-steps-ready svg [data-on] {
+    transition: opacity 420ms var(--k-ease);
+}
+
+.kp-steps-ready svg [data-tf] {
+    transition: transform 720ms var(--k-ease), opacity 420ms var(--k-ease);
+}
+
+.kp-steps-ready svg .kp-off {
+    opacity: 0;
+}
+
+/* Before the script runs — or without it — every caption is listed. */
+.kp-steps-text {
+    margin: 0;
+    padding: 14px 20px 16px 42px;
+    color: var(--k-fg-2);
+    font-size: 0.94em;
+    border-top: 1px solid var(--k-line-soft);
+}
+
+.kp-steps-ready .kp-steps-text {
+    display: none;
+}
+
+/* ---------- The bar under the figure ---------- */
+.kp-steps-bar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px 20px;
+    padding: 14px 18px 16px;
+    border-top: 1px solid var(--k-line-soft);
+    background: var(--k-bg-1);
+}
+
+.kp-steps-caption {
+    margin: 0;
+    min-height: 3.1em;
+    color: var(--k-fg-1);
+    font-size: 0.95em;
+    line-height: 1.55;
+    text-wrap: pretty;
+}
+
+.kp-steps-caption code {
+    font-size: 0.9em;
+}
+
+.kp-steps-dots {
+    display: flex;
+    gap: 6px;
+}
+
+.kp-steps-dot,
+.kp-steps-btn {
+    font-family: var(--k-font-sans);
+    color: var(--k-fg-2);
+    background: transparent;
+    border: 1px solid var(--k-line);
+    cursor: pointer;
+    transition: color 150ms var(--k-ease), background 150ms var(--k-ease),
+        border-color 150ms var(--k-ease);
+}
+
+.kp-steps-dot {
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+}
+
+.kp-steps-dot[aria-current="step"] {
+    color: var(--k-bg-0);
+    background: var(--k-silver);
+    border-color: var(--k-silver);
+}
+
+.kp-steps-nav {
+    display: flex;
+    gap: 8px;
+}
+
+.kp-steps-btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.kp-steps-next {
+    color: var(--k-fg-0);
+    border-color: var(--k-silver-dim);
+}
+
+.kp-steps-dot:hover,
+.kp-steps-btn:hover:not(:disabled) {
+    color: var(--k-fg-0);
+    border-color: var(--k-silver);
+    background: var(--k-silver-soft);
+}
+
+.kp-steps-dot[aria-current="step"]:hover {
+    color: var(--k-bg-0);
+    background: var(--k-silver);
+}
+
+.kp-steps-dot:focus-visible,
+.kp-steps-btn:focus-visible {
+    outline: 2px solid var(--k-silver);
+    outline-offset: 2px;
+}
+
+.kp-steps-btn:disabled {
+    color: var(--k-fg-3);
+    border-color: var(--k-line-soft);
+    cursor: default;
+}
+
+@media (max-width: 768px) {
+    .kp-steps-bar {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+    }
+    .kp-steps-caption {
+        grid-row: 1;
+    }
+    .kp-steps-dots {
+        flex-wrap: wrap;
+    }
+    .kp-steps-nav {
+        justify-self: end;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .kp-steps-ready svg [data-on],
+    .kp-steps-ready svg [data-tf],
+    .kp-steps-dot,
+    .kp-steps-btn {
+        transition: none !important;
+    }
+}

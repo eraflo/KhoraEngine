@@ -1,28 +1,28 @@
-<svg class="kp-figure" viewBox="0 0 760 452" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-decl-title kp-decl-desc">
+<svg id="fig-editor-inspector-declared" class="kp-figure" viewBox="0 0 760 452" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-decl-title kp-decl-desc">
   <title id="kp-decl-title">Components a script declares, in the inspector</title>
   <desc id="kp-decl-desc">The inspector, while playing, showing the entity Lamp. The Lantern card, tagged script, names props/lantern.erg under its title; its fields are Glow 1.5, Cooldown 2.5 seconds, Arc 90 degrees, Target an entity slot naming Gate, and Label none with a Set button. The Guard card, tagged behavior, names ai/guard.erg and holds Speed 3.0. The Guard#state card, tagged state, is written by the engine while playing and shows its State Patrol and Pending none as read-only text.</desc>
   <style>
-    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
-    .kp-bg { fill: var(--k-bg-0, #090d17); }
-    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-cardbg { fill: var(--k-bg-2, #181e2b); }
-    .kp-well { fill: var(--k-bg-3, #1f2636); }
-    .kp-btn { fill: var(--k-bg-3, #1f2636); }
-    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
-    .kp-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 13px; font-weight: 500; }
-    .kp-card-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
-    .kp-tag { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10px; letter-spacing: 0.04em; }
-    .kp-prov { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
-    .kp-prov-sans { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 10.5px; }
-    .kp-field { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
-    .kp-mono-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
-    .kp-unit { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
-    .kp-item { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
-    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
-    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-editor-inspector-declared { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-editor-inspector-declared .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-editor-inspector-declared .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-editor-inspector-declared .kp-cardbg { fill: var(--k-bg-2, #181e2b); }
+    #fig-editor-inspector-declared .kp-well { fill: var(--k-bg-3, #1f2636); }
+    #fig-editor-inspector-declared .kp-btn { fill: var(--k-bg-3, #1f2636); }
+    #fig-editor-inspector-declared .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-editor-inspector-declared .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
+    #fig-editor-inspector-declared .kp-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 13px; font-weight: 500; }
+    #fig-editor-inspector-declared .kp-card-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    #fig-editor-inspector-declared .kp-tag { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10px; letter-spacing: 0.04em; }
+    #fig-editor-inspector-declared .kp-prov { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-editor-inspector-declared .kp-prov-sans { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 10.5px; }
+    #fig-editor-inspector-declared .kp-field { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-editor-inspector-declared .kp-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-editor-inspector-declared .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-editor-inspector-declared .kp-mono-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-editor-inspector-declared .kp-unit { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-editor-inspector-declared .kp-item { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-editor-inspector-declared .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    #fig-editor-inspector-declared .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
   </style>
   <rect class="kp-bg" x="0" y="0" width="760" height="452"/>
   <rect class="kp-panel" x="16" y="16" width="404" height="420" rx="6"/>

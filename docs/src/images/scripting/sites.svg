@@ -1,19 +1,19 @@
-<svg class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-sites-title kp-sites-desc">
+<svg id="fig-scripting-sites" class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-sites-title kp-sites-desc">
   <title id="kp-sites-title">Where a body can stop, and what each place is called</title>
   <desc id="kp-sites-desc">An async method, line by line. A filled marker shows a safepoint, where a run that has spent its fuel stops: the entry, the start of each statement, the loop's head. A hollow marker shows a place a frame stands after an await or a call returns. Each place has a name built from the statements around it: their kind and a short hash of what they say, so a line added above leaves the names below unchanged.</desc>
   <style>
-    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
-    .kp-bg { fill: var(--k-bg-0, #090d17); }
-    .kp-code { fill: var(--k-bg-1, #101622); }
-    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-safe { fill: var(--k-silver, #b4cfe2); }
-    .kp-stand { fill: var(--k-bg-0, #090d17); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
-    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
-    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
-    .kp-kw { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
-    .kp-site { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
-    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
-    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-scripting-sites { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-scripting-sites .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-scripting-sites .kp-code { fill: var(--k-bg-1, #101622); }
+    #fig-scripting-sites .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-scripting-sites .kp-safe { fill: var(--k-silver, #b4cfe2); }
+    #fig-scripting-sites .kp-stand { fill: var(--k-bg-0, #090d17); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    #fig-scripting-sites .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-scripting-sites .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-scripting-sites .kp-kw { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-scripting-sites .kp-site { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-scripting-sites .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    #fig-scripting-sites .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
   </style>
   <rect class="kp-bg" x="0" y="0" width="760" height="330" rx="8"/>
   <text class="kp-head" x="40" y="30">code</text>

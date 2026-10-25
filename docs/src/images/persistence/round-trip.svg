@@ -1,23 +1,23 @@
-<svg class="kp-figure" viewBox="0 0 760 268" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-rt-title kp-rt-desc">
+<svg id="fig-persistence-round-trip" class="kp-figure" viewBox="0 0 760 268" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-rt-title kp-rt-desc">
   <title id="kp-rt-title">A save and a load are one path</title>
   <desc id="kp-rt-desc">The world's pages are captured into a scene record, which an encoding writes as a scene file. Reading the file decodes the same record, which prepare and commit bring back into a world, atomically, with a report.</desc>
   <style>
-    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
-    .kp-bg { fill: var(--k-bg-0, #090d17); }
-    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-cell { fill: var(--k-bg-3, #1f2636); }
-    .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
-    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; }
-    .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
-    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
-    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 19px; }
-    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-verb { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11.5px; }
-    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
-    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
-    .kp-mono-sm { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 9.5px; }
-    .kp-mono-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
-    .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+    #fig-persistence-round-trip { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-persistence-round-trip .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-persistence-round-trip .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-persistence-round-trip .kp-cell { fill: var(--k-bg-3, #1f2636); }
+    #fig-persistence-round-trip .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
+    #fig-persistence-round-trip .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; }
+    #fig-persistence-round-trip .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    #fig-persistence-round-trip .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-persistence-round-trip .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 19px; }
+    #fig-persistence-round-trip .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-persistence-round-trip .kp-verb { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-persistence-round-trip .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-persistence-round-trip .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-persistence-round-trip .kp-mono-sm { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 9.5px; }
+    #fig-persistence-round-trip .kp-mono-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-persistence-round-trip .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
   </style>
   <defs>
     <marker id="kp-rt-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">

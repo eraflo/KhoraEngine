@@ -8,7 +8,8 @@ title = "Khora Engine Documentation"
 site-url = "/KhoraEngine/"
 default-theme = "ayu"
 preferred-dark-theme = "ayu"
-additional-css = ["theme/custom.css"]
+additional-css = ["theme/custom.css", "theme/figures.css", "theme/home.css"]
+additional-js = ["mermaid-init.js", "theme/steps.js"]
 git-repository-url = "https://github.com/eraflo/KhoraEngine"
 edit-url-template = "https://github.com/eraflo/KhoraEngine/edit/main/docs/{path}"
 
@@ -16,7 +17,9 @@ edit-url-template = "https://github.com/eraflo/KhoraEngine/edit/main/docs/{path}
 enable = true
 level = 0
 
-# Mermaid diagrams render client-side via mermaid-init.js.
+# Mermaid diagrams render client-side via mermaid-init.js, which loads the
+# library from a CDN when CI's `mdbook-mermaid install` has not put
+# `mermaid.min.js` beside it.
 #
 # We do NOT use mdbook-mermaid 0.17 as a preprocessor — its stdin/JSON
 # handling is broken on this Windows + mdbook 0.4.52 setup
@@ -31,3 +34,4 @@ level = 0
 
 [output.html.redirect]
 "/open_questions.html" = "open-questions.html"
+"/concepts/scripting.html" = "scripting/index.html"

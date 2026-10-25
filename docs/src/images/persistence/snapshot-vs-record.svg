@@ -1,21 +1,21 @@
-<svg class="kp-figure" viewBox="0 0 760 318" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-sr-title kp-sr-desc">
+<svg id="fig-persistence-snapshot-vs-record" class="kp-figure" viewBox="0 0 760 318" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-sr-title kp-sr-desc">
   <title id="kp-sr-title">One Transform, as a record and as a snapshot</title>
   <desc id="kp-sr-desc">A record holds a Transform under its field names; a load matches each name against today's code and adapts what differs. A snapshot holds the same values by position, with no names; it lists the component's schema fingerprint once, and a load that finds the same fingerprint reads the values straight in order.</desc>
   <style>
-    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
-    .kp-bg { fill: var(--k-bg-0, #090d17); }
-    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-cell { fill: var(--k-bg-3, #1f2636); }
-    .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
-    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; }
-    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
-    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 18px; }
-    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
-    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
-    .kp-mono-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
-    .kp-mono-sm { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 9.5px; }
-    .kp-verb { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-persistence-snapshot-vs-record { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-persistence-snapshot-vs-record .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-persistence-snapshot-vs-record .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-persistence-snapshot-vs-record .kp-cell { fill: var(--k-bg-3, #1f2636); }
+    #fig-persistence-snapshot-vs-record .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
+    #fig-persistence-snapshot-vs-record .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; fill: none; }
+    #fig-persistence-snapshot-vs-record .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-persistence-snapshot-vs-record .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 18px; }
+    #fig-persistence-snapshot-vs-record .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-persistence-snapshot-vs-record .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    #fig-persistence-snapshot-vs-record .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-persistence-snapshot-vs-record .kp-mono-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-persistence-snapshot-vs-record .kp-mono-sm { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 9.5px; }
+    #fig-persistence-snapshot-vs-record .kp-verb { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
   </style>
   <rect class="kp-bg" x="0" y="0" width="760" height="318" rx="8"/>
   <!-- left: the record -->

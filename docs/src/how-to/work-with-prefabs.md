@@ -85,6 +85,38 @@ The instance band names the prefab — "Instance of `guard.kprefab`", or "Part o
 an instance of" on a member. Click the name to select the prefab in the Asset
 Browser.
 
+## Spawn one from a script
+
+A script holds a prefab in a field and spawns it while the game runs:
+
+```text
+behavior Gun {
+    Prefab? bullet;   // chosen in the Inspector
+    void Update(float dt) {
+        if (JustPressed("fire")) {
+            Spawn(bullet, Damage { amount: 3 }, at: Position());
+        }
+    }
+}
+```
+
+1. Select the entity with the `Gun`. Its `bullet` field is an asset slot,
+   reading `none — drop a prefab`.
+2. Drag a `.kprefab` from the Asset Browser onto the slot — or click the slot
+   and pick one. Only a prefab lights it.
+3. Press Play.
+
+`Spawn` places a **linked** instance, its root at `at:`; `facing:` turns it, and
+without it the root keeps the prefab's rotation and scale. A component given in
+the call merges onto the root's. The entity it returns is the instance's root,
+named at once — the turn can keep it, `Set` it, `Raise` on it. A slot left at
+`none`, or a prefab removed from the project, faults the turn, and the turn then
+applies nothing. See [Writing components](../reference/ergon.md#writing-components).
+
+An instance spawned in play is gone at Stop, like everything play made. A game
+save keeps it as entities with their link; how a save keeps such instances, and
+whether they follow a later edit of the prefab, is being redesigned.
+
 ## Load scenes that link to prefabs from code
 
 A scene saved with instances holds links, so whatever loads it must be able to
@@ -105,9 +137,6 @@ files.
 
 A service made with `SerializationService::new()` reads no prefabs: it refuses
 a scene that links to one, and leaves the world untouched.
-
-Placing a prefab from game code while the game runs has no SDK call yet; the
-editor is where instances are made today.
 
 ## When something goes wrong
 

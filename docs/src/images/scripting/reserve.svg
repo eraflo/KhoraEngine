@@ -1,0 +1,84 @@
+<svg id="fig-scripting-reserve" class="kp-figure" viewBox="0 0 760 372" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-reserve-title kp-reserve-desc">
+  <title id="kp-reserve-title">An entity reserved in the turn, settled at the frame's end</title>
+  <desc id="kp-reserve-desc">In the turn, Spawn takes an id from the world's reserver: the entity is not alive yet, but the script names it at once, queues writes after the spawn and reads them back in the same turn. When the turn ends, finished or cut short, its commands stay; when it faults, none of them stay and its ids go back unspent. At the frame's end, Maintenance settles the ids counted past the store's end into reserved slots, applies the commands in order — committing the id when every component is accepted, releasing it when one is refused, so the spawn never existed — and releases every id handed out but never committed, which a later use takes with a new generation.</desc>
+  <style>
+    #fig-scripting-reserve { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-scripting-reserve .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-scripting-reserve .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-scripting-reserve .kp-spine { stroke: var(--k-line, #383d48); stroke-width: 1.25; fill: none; }
+    #fig-scripting-reserve .kp-thread { stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; fill: none; stroke-dasharray: 4 4; }
+    #fig-scripting-reserve .kp-chip { fill: var(--k-bg-0, #090d17); stroke: var(--k-gold, #e4b65c); stroke-width: 1.25; }
+    #fig-scripting-reserve .kp-chip-text { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-scripting-reserve .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 16px; }
+    #fig-scripting-reserve .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    #fig-scripting-reserve .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-scripting-reserve .kp-code { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-scripting-reserve .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="372" rx="8"/>
+  <!-- In the turn -->
+  <text class="kp-head" x="24" y="30">in the turn — the script lane</text>
+  <g data-on="1 2 3 4 5 6">
+    <rect class="kp-card" x="24" y="42" width="228" height="112" rx="5"/>
+    <text class="kp-station" x="38" y="68">reserve</text>
+    <rect class="kp-chip" x="190" y="54" width="48" height="20" rx="10"/>
+    <text class="kp-chip-text" x="200" y="68">#412</text>
+    <text class="kp-code" x="38" y="94">var b = Spawn(bullet, at: p)</text>
+    <text class="kp-label" x="38" y="118">takes an id — not alive yet</text>
+    <text class="kp-label" x="38" y="138">b names it from now on</text>
+  </g>
+  <g data-on="2 3 4 5 6">
+    <path class="kp-spine" d="M252,98 H266"/>
+    <rect class="kp-card" x="266" y="42" width="228" height="112" rx="5"/>
+    <text class="kp-station" x="280" y="68">use</text>
+    <text class="kp-code" x="280" y="94">b.Get(Damage)</text>
+    <text class="kp-label" x="280" y="118">what it was spawned with,</text>
+    <text class="kp-label" x="280" y="138">and read back in the same turn</text>
+  </g>
+  <g data-on="3 4 5 6">
+    <path class="kp-spine" d="M494,98 H508"/>
+    <rect class="kp-card" x="508" y="42" width="228" height="112" rx="5"/>
+    <text class="kp-station" x="522" y="68">the turn ends</text>
+    <text class="kp-label" x="522" y="90">finished or cut short:</text>
+    <text class="kp-label" x="522" y="108">all it queued stays</text>
+    <text class="kp-label" x="522" y="128">faulted: none of it stays —</text>
+    <text class="kp-label" x="522" y="145">its ids go back unspent</text>
+  </g>
+  <!-- The thread down to Maintenance -->
+  <g data-on="4 5 6">
+    <path class="kp-spine" d="M380,154 V196"/>
+    <text class="kp-note" x="392" y="184">commands, in the order queued</text>
+  </g>
+  <!-- At the frame's end -->
+  <g data-on="4 5 6">
+    <text class="kp-head" x="24" y="190">at the frame's end — Maintenance</text>
+    <rect class="kp-card" x="24" y="202" width="228" height="112" rx="5"/>
+    <text class="kp-station" x="38" y="228">settle</text>
+    <text class="kp-label" x="38" y="254">ids counted past the store's end</text>
+    <text class="kp-label" x="38" y="274">become reserved slots</text>
+  </g>
+  <g data-on="5 6">
+    <path class="kp-spine" d="M252,258 H266"/>
+    <rect class="kp-card" x="266" y="202" width="228" height="112" rx="5"/>
+    <text class="kp-station" x="280" y="228">apply, in order</text>
+    <rect class="kp-chip" x="432" y="214" width="48" height="20" rx="10"/>
+    <text class="kp-chip-text" x="442" y="228">#412</text>
+    <text class="kp-label" x="280" y="254">all accepted: the id is committed</text>
+    <text class="kp-label" x="280" y="274">one refused: it is released —</text>
+    <text class="kp-label" x="280" y="292">the spawn never existed</text>
+  </g>
+  <g data-on="6">
+    <path class="kp-spine" d="M494,258 H508"/>
+    <rect class="kp-card" x="508" y="202" width="228" height="112" rx="5"/>
+    <text class="kp-station" x="522" y="228">release the unspent</text>
+    <text class="kp-label" x="522" y="254">handed out, never committed:</text>
+    <text class="kp-label" x="522" y="274">back to the store, and reused</text>
+    <text class="kp-label" x="522" y="292">with a new generation</text>
+  </g>
+  <!-- One id, followed -->
+  <g data-on="5 6">
+    <path class="kp-thread" d="M238,64 H259 V166 H456 V214"/>
+  </g>
+  <text class="kp-note" x="24" y="346">a reservation never fails for lack of ids, and none outlives the frame —</text>
+  <text class="kp-note" x="24" y="362">every frame is settled, whether its scripts queued anything or not</text>
+</svg>

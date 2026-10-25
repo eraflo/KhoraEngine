@@ -1,20 +1,20 @@
-<svg class="kp-figure" viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-report-title kp-report-desc">
+<svg id="fig-persistence-load-report" class="kp-figure" viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-report-title kp-report-desc">
   <title id="kp-report-title">An old save read by today's code, and the report the load returns</title>
   <desc id="kp-report-desc">The save was written when the guard's Stats had hp, a 32-bit speed and a mood, the torch had a Glow component, and an arrow targeted an entity the save does not hold. Today's Stats calls hp health, formerly hp, holds speed as a 64-bit float, has gained armor with a default of 5 and lost mood; Glow is declared retired. The load reads all of it and reports each adaptation: health renamed from hp, speed widened, armor defaulted, mood dropped, Glow retired, the arrow's target a dead reference.</desc>
   <style>
-    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
-    .kp-bg { fill: var(--k-bg-0, #090d17); }
-    .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-card-out { fill: var(--k-bg-1, #101622); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
-    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
-    .kp-arrow { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
-    .kp-tip { fill: var(--k-silver-dim, #809db2); }
-    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 17px; }
-    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-kind { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
-    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
-    .kp-key { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-persistence-load-report { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-persistence-load-report .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-persistence-load-report .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-persistence-load-report .kp-card-out { fill: var(--k-bg-1, #101622); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    #fig-persistence-load-report .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-persistence-load-report .kp-arrow { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    #fig-persistence-load-report .kp-tip { fill: var(--k-silver-dim, #809db2); }
+    #fig-persistence-load-report .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-persistence-load-report .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-persistence-load-report .kp-kind { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-persistence-load-report .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-persistence-load-report .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-persistence-load-report .kp-key { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
   </style>
   <rect class="kp-bg" x="0" y="0" width="760" height="300" rx="8"/>
   <!-- the save -->

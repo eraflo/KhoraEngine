@@ -1,30 +1,30 @@
-<svg class="kp-figure" viewBox="0 0 760 392" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-insp-title kp-insp-desc">
+<svg id="fig-editor-inspector-prefab" class="kp-figure" viewBox="0 0 760 392" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-insp-title kp-insp-desc">
   <title id="kp-insp-title">The inspector on a prefab instance</title>
   <desc id="kp-insp-desc">The inspector showing guard A, an instance of guard.kprefab. A band under the header names the prefab and offers Apply all and Revert all. The Transform card notes one override, the Stats card two. Each overriding field has a silver dot at its left and a revert arrow at its right end; right-clicking a field offers Revert to prefab and Apply to prefab. The prefab's Light, removed on this instance, shows as a removed row with a Restore button.</desc>
   <style>
-    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
-    .kp-bg { fill: var(--k-bg-0, #090d17); }
-    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-cardbg { fill: var(--k-bg-2, #181e2b); }
-    .kp-ghost { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 3 3; }
-    .kp-btn { fill: var(--k-bg-3, #1f2636); }
-    .kp-menu { fill: var(--k-bg-2, #181e2b); stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
-    .kp-dot { fill: var(--k-silver, #b4cfe2); }
-    .kp-icon { fill: none; stroke: var(--k-fg-2, #8a9096); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .kp-icon-brand { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
-    .kp-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 13px; font-weight: 500; }
-    .kp-card-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
-    .kp-field { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-link { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-badge { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
-    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
-    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
-    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-item { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-editor-inspector-prefab { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-editor-inspector-prefab .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-editor-inspector-prefab .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-editor-inspector-prefab .kp-cardbg { fill: var(--k-bg-2, #181e2b); }
+    #fig-editor-inspector-prefab .kp-ghost { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 3 3; }
+    #fig-editor-inspector-prefab .kp-btn { fill: var(--k-bg-3, #1f2636); }
+    #fig-editor-inspector-prefab .kp-menu { fill: var(--k-bg-2, #181e2b); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-editor-inspector-prefab .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-editor-inspector-prefab .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
+    #fig-editor-inspector-prefab .kp-dot { fill: var(--k-silver, #b4cfe2); }
+    #fig-editor-inspector-prefab .kp-icon { fill: none; stroke: var(--k-fg-2, #8a9096); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    #fig-editor-inspector-prefab .kp-icon-brand { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    #fig-editor-inspector-prefab .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-editor-inspector-prefab .kp-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 13px; font-weight: 500; }
+    #fig-editor-inspector-prefab .kp-card-title { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    #fig-editor-inspector-prefab .kp-field { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-editor-inspector-prefab .kp-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-editor-inspector-prefab .kp-link { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-editor-inspector-prefab .kp-badge { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-editor-inspector-prefab .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-editor-inspector-prefab .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    #fig-editor-inspector-prefab .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-editor-inspector-prefab .kp-item { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
   </style>
   <rect class="kp-bg" x="0" y="0" width="760" height="392" rx="8"/>
   <rect class="kp-panel" x="16" y="16" width="404" height="330" rx="6"/>

@@ -1,29 +1,29 @@
-<svg class="kp-figure" viewBox="0 0 760 236" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-prob-title kp-prob-desc">
+<svg id="fig-editor-problems-tab" class="kp-figure" viewBox="0 0 760 236" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-prob-title kp-prob-desc">
   <title id="kp-prob-title">The Problems tab</title>
   <desc id="kp-prob-desc">The bottom dock with the Problems tab active, titled Problems, 2 errors, 1 warning. Under ai/guard.erg: an error at 12:9, Lantren is not a component; and an error naming the entity Gate, Guard faulted and was disabled: division by zero. Under Not in a script: a warning, Relic is no longer declared by any script, with its note. On the right, the guard.erg tile of the Assets panel wears a badge: the error glyph and 2.</desc>
   <style>
-    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
-    .kp-bg { fill: var(--k-bg-0, #090d17); }
-    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-tile { fill: var(--k-bg-2, #181e2b); }
-    .kp-pill { fill: var(--k-bg-1, #101622); }
-    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-active { stroke: var(--k-silver, #b4cfe2); stroke-width: 1.5; }
-    .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
-    .kp-err { fill: none; stroke: var(--k-red, #e0605a); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .kp-warn { fill: none; stroke: var(--k-amber, #e8a33c); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-    .kp-glyph { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-    .kp-tab { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-tab-on { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
-    .kp-module { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
-    .kp-pos { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
-    .kp-msg { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
-    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 10.5px; }
-    .kp-link { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
-    .kp-count { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10px; }
-    .kp-file { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 10.5px; }
-    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
-    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-editor-problems-tab { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-editor-problems-tab .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-editor-problems-tab .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-editor-problems-tab .kp-tile { fill: var(--k-bg-2, #181e2b); }
+    #fig-editor-problems-tab .kp-pill { fill: var(--k-bg-1, #101622); }
+    #fig-editor-problems-tab .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-editor-problems-tab .kp-active { stroke: var(--k-silver, #b4cfe2); stroke-width: 1.5; }
+    #fig-editor-problems-tab .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
+    #fig-editor-problems-tab .kp-err { fill: none; stroke: var(--k-red, #e0605a); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    #fig-editor-problems-tab .kp-warn { fill: none; stroke: var(--k-amber, #e8a33c); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    #fig-editor-problems-tab .kp-glyph { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+    #fig-editor-problems-tab .kp-tab { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-editor-problems-tab .kp-tab-on { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    #fig-editor-problems-tab .kp-module { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-editor-problems-tab .kp-pos { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-editor-problems-tab .kp-msg { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-editor-problems-tab .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 10.5px; }
+    #fig-editor-problems-tab .kp-link { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-editor-problems-tab .kp-count { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10px; }
+    #fig-editor-problems-tab .kp-file { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 10.5px; }
+    #fig-editor-problems-tab .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    #fig-editor-problems-tab .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
   </style>
   <rect class="kp-bg" x="0" y="0" width="760" height="236"/>
   <rect class="kp-panel" x="16" y="16" width="560" height="204" rx="6"/>

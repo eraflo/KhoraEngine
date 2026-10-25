@@ -1,23 +1,23 @@
-<svg class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-pr-title kp-pr-desc">
+<svg id="fig-persistence-page-to-record" class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-pr-title kp-pr-desc">
   <title id="kp-pr-title">A page in memory and the page record it becomes</title>
   <desc id="kp-pr-desc">A component page holds a row per entity and a column per component. Capture keeps the live rows and the saved components, writes each entity as its persistent id and each column under its component's name; the derived GlobalTransform column is left out. Commit builds the row back into its final page.</desc>
   <style>
-    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
-    .kp-bg { fill: var(--k-bg-0, #090d17); }
-    .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-cell { fill: var(--k-bg-3, #1f2636); }
-    .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
-    .kp-ghost { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 3 3; }
-    .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
-    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
-    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 18px; }
-    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
-    .kp-verb { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11.5px; }
-    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
-    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
-    .kp-mono-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 11px; }
-    .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
+    #fig-persistence-page-to-record { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-persistence-page-to-record .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-persistence-page-to-record .kp-panel { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-persistence-page-to-record .kp-cell { fill: var(--k-bg-3, #1f2636); }
+    #fig-persistence-page-to-record .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
+    #fig-persistence-page-to-record .kp-ghost { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 3 3; }
+    #fig-persistence-page-to-record .kp-flow { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; fill: none; }
+    #fig-persistence-page-to-record .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-persistence-page-to-record .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 18px; }
+    #fig-persistence-page-to-record .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-persistence-page-to-record .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    #fig-persistence-page-to-record .kp-verb { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-persistence-page-to-record .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-persistence-page-to-record .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-persistence-page-to-record .kp-mono-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-persistence-page-to-record .kp-arrowhead { fill: var(--k-silver-dim, #809db2); }
   </style>
   <defs>
     <marker id="kp-pr-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">

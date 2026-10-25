@@ -1,21 +1,21 @@
-<svg class="kp-figure" viewBox="0 0 760 312" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-merge-title kp-merge-desc">
+<svg id="fig-persistence-three-way-merge" class="kp-figure" viewBox="0 0 760 312" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-merge-title kp-merge-desc">
   <title id="kp-merge-title">Loading a game save: a three-way merge, field by field</title>
   <desc id="kp-merge-desc">One component of a guard, four fields. For each field the load compares the scene's value when the save was taken with the game's value. Health and armor were changed by the game, so they load as the game left them, armor even though the author changed it too. Speed and label were left alone by the game, so they follow the scene as it is now, with the author's later edits.</desc>
   <style>
-    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
-    .kp-bg { fill: var(--k-bg-0, #090d17); }
-    .kp-cell { fill: var(--k-bg-3, #1f2636); }
-    .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
-    .kp-out { fill: var(--k-bg-1, #101622); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
-    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
-    .kp-thread { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
-    .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
-    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
-    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
-    .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; font-weight: 600; }
-    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-persistence-three-way-merge { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-persistence-three-way-merge .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-persistence-three-way-merge .kp-cell { fill: var(--k-bg-3, #1f2636); }
+    #fig-persistence-three-way-merge .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
+    #fig-persistence-three-way-merge .kp-out { fill: var(--k-bg-1, #101622); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    #fig-persistence-three-way-merge .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-persistence-three-way-merge .kp-thread { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-persistence-three-way-merge .kp-rule { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-persistence-three-way-merge .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    #fig-persistence-three-way-merge .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-persistence-three-way-merge .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-persistence-three-way-merge .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-persistence-three-way-merge .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; font-weight: 600; }
+    #fig-persistence-three-way-merge .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
   </style>
   <rect class="kp-bg" x="0" y="0" width="760" height="312" rx="8"/>
   <text class="kp-station" x="16" y="34">Guard · Stats</text>

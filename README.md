@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="docs/src/logos/logo_round.png" alt="Khora Engine" width="220">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/src/logos/khora-sign.svg">
+    <img src="docs/src/logos/khora-sign-navy.svg" alt="Khora Engine: a square cut along a K" width="160">
+  </picture>
 </p>
 
 <h1 align="center">Khora Engine</h1>

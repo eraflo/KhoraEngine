@@ -32,7 +32,7 @@ browser can surface the canonical categories from day one.
 The first time the editor opens a project, it writes
 `assets/scenes/default.kscene` (a Main Camera + a Directional Light) so the user
 has a viable scene to start from. See
-[`scene_io.rs`](../../../crates/khora-editor/src/scene_io/mod.rs).
+[`scene_io.rs`](https://github.com/eraflo/KhoraEngine/blob/main/crates/khora-editor/src/scene_io/mod.rs).
 
 Two kinds of file have no folder of their own:
 
@@ -61,10 +61,10 @@ lifecycle:
 Tier 1 supplies the primitives (`Transform`, `Camera`, `Light`, `Mesh`, ECS
 plumbing). Tier 2 extends them with custom Rust types when you need raw access to
 internal APIs or compile-time guarantees. Tier 3 sits on top: gameplay logic
-written in [Ergon](../concepts/scripting.md), compiled by the engine itself and
+written in [Ergon](../concepts/scripting/index.md), compiled by the engine itself and
 hot-reloadable at runtime — no Rust recompile to iterate. A behavior suspended
 mid-body when its script is edited resumes in the new code where it can; see
-[Scripting](../concepts/scripting.md).
+[Scripting](../concepts/scripting/index.md).
 
 A game can ship with any subset. **Tier 2 is opt-in**: a fresh project from the
 hub has no `Cargo.toml` (its `src/` folder is created empty). Most games start
@@ -102,10 +102,10 @@ its body with a custom `EngineApp` impl.
 | `created_at` | `u64` | Unix epoch seconds at creation | Informational; not used for runtime logic. |
 
 The descriptor type is `ProjectDescriptor` in
-[`crates/khora-hub/src/services/project.rs`](../../../crates/khora-hub/src/services/project.rs) — private to the hub today, but
+[`crates/khora-hub/src/services/project.rs`](https://github.com/eraflo/KhoraEngine/blob/main/crates/khora-hub/src/services/project.rs) — private to the hub today, but
 the JSON shape is the public contract. The editor reads `name` and
 `engine_version` at startup
-([`crates/khora-editor/src/main.rs`](../../../crates/khora-editor/src/main.rs),
+([`crates/khora-editor/src/main.rs`](https://github.com/eraflo/KhoraEngine/blob/main/crates/khora-editor/src/main.rs),
 `setup`); other fields are ignored. Future fields are additive — old editors keep
 working.
 
@@ -123,7 +123,7 @@ so older project files keep working.
 
 The asset browser categorises files by extension. The mapping is
 `asset_type_for_extension` in
-[`crates/khora-io/src/asset/index_builder.rs`](../../../crates/khora-io/src/asset/index_builder.rs)
+[`crates/khora-io/src/asset/index_builder.rs`](https://github.com/eraflo/KhoraEngine/blob/main/crates/khora-io/src/asset/index_builder.rs)
 — it is the engine's, not the editor's, so a packed build classifies identically.
 
 | Type | Recognised extensions |

@@ -1,0 +1,53 @@
+<svg id="fig-brand-sign" class="kp-figure" viewBox="0 0 760 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-sign-title kp-sign-desc">
+  <title id="kp-sign-title">The Khora sign, step by step</title>
+  <desc id="kp-sign-desc">A plain square. A vertical cut through its centre, O. Two cuts at 45 degrees from O to the two right-hand corners. The four pieces do not move: the K is the empty gap between them, a fine cut of the same width everywhere. The rectangle on the left is a door: it swings open onto the light behind.</desc>
+  <style>
+    #fig-brand-sign { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-brand-sign .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-brand-sign .kp-plate { fill: url(#kp-sign-silver); }
+    #fig-brand-sign .kp-light { fill: url(#kp-sign-light); }
+    #fig-brand-sign .kp-gap { fill: var(--k-gold, #e4b65c); }
+    #fig-brand-sign .kp-guide { stroke: var(--k-gold, #e4b65c); stroke-width: 1.2; fill: none; }
+    #fig-brand-sign .kp-dot { fill: var(--k-gold, #e4b65c); }
+    #fig-brand-sign .kp-label { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-brand-sign .kp-note { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 13px; }
+    #fig-brand-sign .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 15px; font-weight: 500; }
+    #fig-brand-sign .kp-door { transform-box: fill-box; transform-origin: left center; }
+  </style>
+  <defs>
+    <linearGradient id="kp-sign-silver" gradientUnits="userSpaceOnUse" x1="126" y1="66" x2="374" y2="314"><stop offset="0" stop-color="#f1f5f9"/><stop offset="0.5" stop-color="#bccbdb"/><stop offset="1" stop-color="#7d94ad"/></linearGradient>
+    <radialGradient id="kp-sign-light" gradientUnits="userSpaceOnUse" cx="250" cy="190" r="186"><stop offset="0" stop-color="#f0cf86"/><stop offset="0.5" stop-color="#e7be68"/><stop offset="1" stop-color="#c99a45"/></radialGradient>
+  </defs>
+  <rect class="kp-bg" width="760" height="380"/>
+  <!-- the light behind the door -->
+  <rect class="kp-light" x="126" y="66" width="248" height="248" data-on="5"/>
+  <!-- step 1: the whole square -->
+  <polygon class="kp-plate" points="126,66 374,66 374,314 126,314" data-on="1"/>
+  <!-- step 2: one vertical cut -->
+  <g data-on="2"><polygon class="kp-plate" points="126,66 245.66,66 245.66,314 126,314"/><polygon class="kp-plate" points="254.34,66 374,66 374,314 254.34,314"/></g>
+  <!-- steps 3 to 5: the four pieces; the left one is the door -->
+  <g data-on="3 4 5"><polygon class="kp-plate" points="254.34,66 367.86,66 254.34,179.52"/><polygon class="kp-plate" points="256.14,190 374,72.14 374,307.86"/><polygon class="kp-plate" points="254.34,314 254.34,200.48 367.86,314"/></g>
+  <polygon class="kp-plate kp-door" points="126,66 245.66,66 245.66,314 126,314" data-on="3 4 5" data-tf="5:scaleX(0.34) skewY(-7deg)"/>
+  <!-- step 4: the gap is the K -->
+  <g class="kp-gap" data-on="4"><polygon points="245.66,66 254.34,66 254.34,314 245.66,314"/><polygon points="254.34,179.52 367.86,66 374,72.14 256.14,190"/><polygon points="254.34,200.48 256.14,190 374,307.86 367.86,314"/><polygon points="254.34,179.52 256.14,190 254.34,200.48"/></g>
+  <!-- the guides -->
+  <g data-on="1 2 3">
+    <circle class="kp-dot" cx="250" cy="190" r="3.5"/>
+    <text class="kp-label" x="228" y="182">O</text>
+  </g>
+  <line class="kp-guide" x1="250" y1="51.12" x2="250" y2="328.88" data-on="2"/>
+  <g data-on="3">
+    <line class="kp-guide" x1="250" y1="190" x2="382.68" y2="57.32"/>
+    <line class="kp-guide" x1="250" y1="190" x2="382.68" y2="322.68"/>
+    <path class="kp-guide" d="M285.96 190 A35.96 35.96 0 0 0 275.42 164.58"/>
+    <path class="kp-guide" d="M285.96 190 A35.96 35.96 0 0 1 275.42 215.42"/>
+    <text class="kp-label" x="293.4" y="181.32">45°</text>
+    <text class="kp-label" x="293.4" y="208.6">45°</text>
+  </g>
+  <!-- the words beside it -->
+  <g data-on="1"><text class="kp-name" x="470" y="160">A square</text><text class="kp-note" x="470" y="184">The chôra: the place that receives.</text></g>
+  <g data-on="2"><text class="kp-name" x="470" y="160">One cut, through O</text><text class="kp-note" x="470" y="184">A vertical through the centre.</text></g>
+  <g data-on="3"><text class="kp-name" x="470" y="160">Two cuts at 45°</text><text class="kp-note" x="470" y="184">From O to the two right-hand corners.</text></g>
+  <g data-on="4"><text class="kp-name" x="470" y="160">The K is the gap</text><text class="kp-note" x="470" y="184">14 on a side of 400, at every size.</text></g>
+  <g data-on="5"><text class="kp-name" x="470" y="160">The left half is a door</text><text class="kp-note" x="470" y="184">It opens onto the light behind.</text></g>
+</svg>

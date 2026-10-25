@@ -75,7 +75,10 @@ scene's value now — and decides field by field:
 - a field the **game left alone** follows the scene as it is now, so the
   author's later edit reaches every save;
 - an entity the save **created** is added; one it **destroyed** stays gone;
-  a component it **removed** stays removed.
+  a component it **removed** stays removed. A prefab instance a script
+  [spawned](./scripting/writing.md#an-entity-named-before-it-exists) is saved as the
+  entities it made, with its link, and loads as the prefab was when the save was
+  taken — how a save keeps such instances is being redesigned.
 
 Two cases cannot be merged, and the load says so in its report instead of
 failing:
@@ -99,7 +102,7 @@ themselves **resumable**:
 A Rust component says so with `#[component(provenance = Runtime, resumable)]`;
 none does today. The resumable kinds are declared while the engine runs: a
 behavior's state companion, `Guard#state`, registered `Runtime` and resumable
-beside the `Guard` its script declares; and a [system](./scripting.md#a-system-at-a-glance)'s
+beside the `Guard` its script declares; and a [system](./scripting/behaviors-and-systems.md#a-system-at-a-glance)'s
 component with its companion, `Regeneration` and `Regeneration#state`.
 
 A save keeps every resumable component of every entity it holds. A behavior's
@@ -107,7 +110,7 @@ fields are merged like everything else — they live in its component, compared
 field by field with the scene — so a field the game never changed takes the
 author's edit made since, and a field the game changed keeps the game's value.
 That is how a guard saved half-way through an attack loads half-way through it:
-its [state companion](./scripting.md#saved-mid-sentence) carries its state, its
+its [state companion](./scripting/saves-and-edits.md#saved-mid-sentence) carries its state, its
 timers' remaining time, the machine stopped at its `await`, and the facts of its
 life — whether it has spawned, whether it faulted and under which code.
 
@@ -172,5 +175,5 @@ against, so a loader can find the right scene file before loading.
 - [Serialization](./serialization.md) — records by name, persistent ids, the
   load report, encodings.
 - [Prefabs](./prefabs.md) — the other kind of difference a file can hold.
-- [Scripting](./scripting.md) — what a script's saved state is, and how a body
+- [Scripting](./scripting/index.md) — what a script's saved state is, and how a body
   resumes after an edit.

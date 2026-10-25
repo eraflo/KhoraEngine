@@ -97,34 +97,52 @@
         nodeBorder:     '#3d456b',
     };
 
+    // CI's `mdbook-mermaid install` ships `mermaid.min.js` beside this file; a
+    // local build has none, and loads the same version from a CDN instead.
+    const MERMAID_CDN = 'https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.min.js';
+
+    function withMermaid(then) {
+        if (typeof mermaid !== 'undefined') {
+            then();
+            return;
+        }
+        const script = document.createElement('script');
+        script.src = MERMAID_CDN;
+        script.onload = then;
+        script.onerror = () => console.warn('Mermaid could not be loaded from ' + MERMAID_CDN);
+        document.head.appendChild(script);
+    }
+
     function init() {
         rewriteMermaidBlocks();
+        if (!document.querySelector('pre.mermaid')) return;
 
-        if (typeof mermaid === 'undefined') return;
+        withMermaid(() => {
+            const config = isDark
+                ? {
+                    startOnLoad: false,
+                    theme: 'base',
+                    themeVariables: khoraDarkTheme,
+                    fontFamily: "'Geist', 'Inter', system-ui, sans-serif",
+                    fontSize: '13px',
+                    flowchart: {
+                        curve: 'basis',
+                        padding: 12,
+                    },
+                    sequence: {
+                        actorMargin: 60,
+                        boxMargin: 8,
+                        messageAlign: 'center',
+                    },
+                }
+                : {
+                    startOnLoad: false,
+                    theme: 'default',
+                };
 
-        const config = isDark
-            ? {
-                startOnLoad: true,
-                theme: 'base',
-                themeVariables: khoraDarkTheme,
-                fontFamily: "'Geist', 'Inter', system-ui, sans-serif",
-                fontSize: '13px',
-                flowchart: {
-                    curve: 'basis',
-                    padding: 12,
-                },
-                sequence: {
-                    actorMargin: 60,
-                    boxMargin: 8,
-                    messageAlign: 'center',
-                },
-            }
-            : {
-                startOnLoad: true,
-                theme: 'default',
-            };
-
-        mermaid.initialize(config);
+            mermaid.initialize(config);
+            mermaid.run({ querySelector: 'pre.mermaid' });
+        });
     }
 
     if (document.readyState === 'loading') {

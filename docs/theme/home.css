@@ -1,0 +1,240 @@
+/* ============================================================
+   Khora Engine — the landing page (home.md).
+   Same world as the rest of the book: navy surfaces, silver structure,
+   gold for the one thread the hero figure follows — the frame's limit.
+   ============================================================ */
+
+.content main:has(.kp-home) {
+    max-width: 1040px;
+}
+
+.kp-home {
+    padding-top: 28px;
+}
+
+/* ---------- Hero ---------- */
+.kp-hero {
+    max-width: 760px;
+    margin: 0 0 36px;
+}
+
+.content main .kp-hero-title {
+    font-family: var(--k-font-display);
+    font-stretch: var(--k-display-stretch);
+    font-size: clamp(2.6rem, 6vw, 4.4rem);
+    font-weight: 400;
+    line-height: 1.02;
+    letter-spacing: -0.03em;
+    color: var(--k-fg-0);
+    margin: 0 0 22px;
+    text-wrap: balance;
+}
+
+.content main .kp-hero-title em {
+    font-style: italic;
+    font-weight: 300;
+    color: var(--k-silver);
+}
+
+.kp-hero-lede {
+    font-size: 1.22em;
+    line-height: 1.6;
+    color: var(--k-fg-1);
+    max-width: 60ch;
+    margin: 0 0 26px;
+    text-wrap: pretty;
+}
+
+.kp-hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0;
+}
+
+.content main a.kp-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: 1px solid var(--k-silver-dim);
+    color: var(--k-fg-0);
+    font-weight: 500;
+    font-size: 15px;
+    text-decoration: none;
+    transition: background 150ms var(--k-ease), border-color 150ms var(--k-ease),
+        color 150ms var(--k-ease);
+}
+
+.content main a.kp-btn:hover {
+    border-color: var(--k-silver);
+    background: var(--k-silver-soft);
+    text-decoration: none;
+}
+
+.content main a.kp-btn-primary {
+    background: var(--k-silver);
+    border-color: var(--k-silver);
+    color: var(--k-bg-0);
+}
+
+.content main a.kp-btn-primary:hover {
+    background: var(--k-fg-0);
+    border-color: var(--k-fg-0);
+    color: var(--k-bg-0);
+}
+
+.content main a.kp-btn:focus-visible {
+    outline: 2px solid var(--k-silver);
+    outline-offset: 3px;
+}
+
+.kp-hero-figure {
+    margin: 0 0 72px;
+}
+
+/* ---------- Where do you start ---------- */
+.kp-doors,
+.kp-ideas,
+.kp-hurry {
+    margin: 0 0 72px;
+}
+
+.content main .kp-home h2 {
+    font-size: 2em;
+    margin: 0 0 18px;
+}
+
+.kp-door-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--k-line-soft);
+}
+
+.kp-door-list li {
+    margin: 0;
+    border-bottom: 1px solid var(--k-line-soft);
+}
+
+.content main .kp-door-list a {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr) 24px;
+    align-items: center;
+    gap: 8px 32px;
+    padding: 22px 8px;
+    color: var(--k-fg-1);
+    text-decoration: none;
+    border-bottom: none;
+    transition: background 150ms var(--k-ease);
+}
+
+.content main .kp-door-list a:hover {
+    background: var(--k-silver-soft);
+    text-decoration: none;
+}
+
+.content main .kp-door-list a:focus-visible {
+    outline: 2px solid var(--k-silver);
+    outline-offset: -2px;
+}
+
+.kp-door-who {
+    font-family: var(--k-font-display);
+    font-stretch: var(--k-display-stretch);
+    font-style: italic;
+    font-size: 1.45em;
+    line-height: 1.2;
+    color: var(--k-fg-0);
+}
+
+.kp-door-what {
+    color: var(--k-fg-2);
+    font-size: 0.98em;
+    line-height: 1.55;
+}
+
+.kp-door-arrow {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: var(--k-silver-dim);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform 200ms var(--k-ease), stroke 150ms var(--k-ease);
+}
+
+.kp-door-list a:hover .kp-door-arrow {
+    stroke: var(--k-silver);
+    transform: translateX(4px);
+}
+
+/* ---------- What makes it different ---------- */
+.kp-ideas {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0 40px;
+}
+
+.kp-ideas h2 {
+    grid-column: 1 / -1;
+}
+
+.kp-idea {
+    padding-top: 18px;
+    border-top: 1px solid var(--k-line);
+}
+
+.content main .kp-idea h3 {
+    font-family: var(--k-font-display);
+    font-stretch: var(--k-display-stretch);
+    font-weight: 400;
+    font-size: 1.35em;
+    line-height: 1.2;
+    color: var(--k-fg-0);
+    margin: 0 0 10px;
+}
+
+.kp-idea p {
+    color: var(--k-fg-2);
+    margin: 0 0 12px;
+}
+
+/* ---------- Building from source ---------- */
+.kp-hurry {
+    max-width: 640px;
+}
+
+.kp-hurry p {
+    color: var(--k-fg-2);
+}
+
+@media (max-width: 860px) {
+    .kp-ideas {
+        grid-template-columns: 1fr;
+        gap: 28px;
+    }
+    .content main .kp-door-list a {
+        grid-template-columns: minmax(0, 1fr) 24px;
+    }
+    .kp-door-who {
+        grid-column: 1;
+    }
+    .kp-door-what {
+        grid-column: 1;
+        grid-row: 2;
+    }
+    .kp-door-arrow {
+        grid-row: 1 / 3;
+        grid-column: 2;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .kp-door-arrow,
+    .content main a.kp-btn,
+    .content main .kp-door-list a {
+        transition: none;
+    }
+}

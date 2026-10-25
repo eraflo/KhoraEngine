@@ -18,7 +18,7 @@ use khora_sdk::khora_data::ecs::AudioListener;
 use khora_sdk::prelude::ecs::Camera;
 use khora_sdk::prelude::math::Vec3;
 
-let camera = Camera::new_perspective(std::f32::consts::FRAC_PI_4, 16.0 / 9.0, 0.1, 1000.0);
+let camera = Camera::new_perspective(std::f32::consts::FRAC_PI_4, 0.1, 1000.0);
 khora_sdk::Vessel::at(world, Vec3::new(0.0, 2.0, 10.0))
     .with_component(camera)
     .with_component(AudioListener)

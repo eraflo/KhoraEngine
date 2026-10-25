@@ -51,14 +51,69 @@ The base palette is near-monochrome (deep blue-black + warm silver). Color is re
 ## 02 — Brand & identity
 
 ### The mark
-A faceted diamond of four kite shapes — the four cardinal architectural pillars of Khora (Renderer · Agents · Assets · Editor) folded into a single shape. Read as a gem (precision, value), a compass rose (orientation), or a pulse diamond (the engine's heartbeat).
+A square, cut along a K. One cut runs straight down through the centre, O; two more run at 45° from O to the two right-hand corners. The square falls into a rectangle and three right-angled triangles — and the pieces never move. **The K is the empty gap between them**: one fine cut, 14 on a side of 400, the same width at every size.
+
+Khora is named after the *chôra*, Plato's receptacle: the place that holds whatever comes to be, without being any of it. The mark is that place — a plain square that becomes a letter only where it is open. And its left half is a door: in motion, it swings open onto the light behind.
+
+<figure class="kp-steps">
+<div class="kp-figure-frame">
+
+{{#include ../images/brand/the-sign.svg}}
+
+</div>
+<ol class="kp-steps-text">
+<li><strong>A square.</strong> Nothing yet: the place that receives.</li>
+<li><strong>One cut, through the centre.</strong> A vertical through O splits it into two equal halves.</li>
+<li><strong>Two cuts at 45°.</strong> From O to the two right-hand corners: three triangles on the right, a rectangle on the left.</li>
+<li><strong>The K is the gap.</strong> The pieces stay where they are; the letter is the space between them, drawn in gold here.</li>
+<li><strong>The left half is a door.</strong> It opens onto the light that was behind the square all along.</li>
+</ol>
+</figure>
+
+### Colours
+The sign has one shape and four finishes. Gold is never its everyday colour: gold means *now*, and in the mark it is the light behind the door.
+
+| Finish | Use | File |
+|---|---|---|
+| Polished silver — `#f1f5f9` → `#bccbdb` → `#7d94ad`, top-left to bottom-right | on dark surfaces: the editor, the hub, these docs | [`khora-sign.svg`](../logos/khora-sign.svg) |
+| Navy — `#141b28` | on light surfaces, print | [`khora-sign-navy.svg`](../logos/khora-sign-navy.svg) |
+| Gold — `#e3b04b` | one-colour uses on dark: a stamp, a splash | [`khora-sign-gold.svg`](../logos/khora-sign-gold.svg) |
+| Silver on a navy tile | app icon, avatar, favicon | [`khora-icon.svg`](../logos/khora-icon.svg) |
+
+<div class="kp-brand-row">
+<img src="../logos/khora-sign.svg" alt="The sign in polished silver" width="96" height="96">
+<span class="kp-brand-light"><img src="../logos/khora-sign-navy.svg" alt="The sign in navy, on a light surface" width="96" height="96"></span>
+<img src="../logos/khora-sign-gold.svg" alt="The sign in gold" width="96" height="96">
+<img src="../logos/khora-icon.svg" alt="The app icon: the silver sign on a navy tile" width="96" height="96">
+</div>
+
+### The name
+**KHORA** is set in Archivo Expanded, weight 300, spaced wide (0.5 em). Two lockups, both kept:
+
+- **Beside** — the sign, then KHORA with `ENGINE · ΧΩΡΑ` under it in IBM Plex Mono. For headers, title bars, anything wider than tall.
+- **Below** — the sign, KHORA under it, a short gold rule, then `ΧΩΡΑ`. For splash screens, covers, anything centred.
+
+<div class="kp-brand-row">
+<div class="kp-lockup kp-lockup-beside"><img src="../logos/khora-sign.svg" alt="" width="64" height="64"><div><div class="kp-lockup-word">KHORA</div><div class="kp-lockup-sub">ENGINE · ΧΩΡΑ</div></div></div>
+<div class="kp-lockup kp-lockup-below"><img src="../logos/khora-sign.svg" alt="" width="72" height="72"><div class="kp-lockup-word">KHORA</div><div class="kp-lockup-rule"></div><div class="kp-lockup-sub">ΧΩΡΑ</div></div>
+</div>
+
+At 16 px the two 45° cuts do not survive the pixel grid: a favicon or a tray icon needs the sign redrawn by hand, pixel by pixel. Until then, the icon tile stands in.
+
+### In motion
+The sign has two films, and both tell the same story: a light that was always behind the square.
+
+- **The sign** — the frame is traced, the silver square appears whole; a round hole opens at the joint, exactly as wide as the cut, and the cuts run out of it to the edges. The pieces then trade space in opposed pairs — left against right, top against bottom — so the K keeps its width, a negotiation that never overruns, while a gold glow pulses behind the cut. The left rectangle swings open like a door onto a square of light, and shuts; the light goes out, and only then do the cuts close back into O.
+- **The door** — the plate stands on a floor, seen in perspective, whole. A hole opens at the joint, light wells up inside it, then runs to the edges and draws the K, casting it in gold on the floor. Someone behind kicks the door open, stands in the light, and walks back into it. The light breathes in — dust is drawn into the doorway and the draught pulls the door half shut, twice — and breathes out. The door closes, the light goes out, the pieces close up, and the plate is whole again.
+
+The first film is short enough for a loading screen; the second is for a splash or a page header. With reduced motion, each shows one still frame.
 
 ### Where the mark lives
 - **Title bar** — small, in the brand pill, before `KhoraEngine`
-- **Spine top** — slightly larger with a subtle glow, anchoring the mode rail
+- **Spine top** — slightly larger, anchoring the mode rail
 - **Empty viewport** — giant watermark at 5% opacity behind the grid
 - **Command palette** — replaces the search-icon glyph
-- **Status bar** — small leading glyph, slow pulse on async work
+- **Status bar** — small leading glyph; the cut glows faintly gold while async work runs
 
 ### Mood
 Not industrial. Not playful. *Instrumental* — like a workshop where every tool has earned its hook on the wall.
@@ -98,22 +153,22 @@ Text and icons sit in a warm, slightly desaturated silver. Cooler grays read as 
 
 ## 04 — Typography
 
-Three families, each with one job. No more.
+One family for words, one for code — the logo's own. No more.
 
-### The trio
-- **Geist** — Sans for UI, labels, body. Designed for software interfaces; neutral but not generic.
-- **Geist Mono** — Code, telemetry, paths, numbers. Pairs perfectly with Geist Sans.
-- **Fraunces** — Display only. Editorial serif with optical sizing — used for hero titles and section emphasis. Adds gravity without ceremony.
+### The pair
+- **Archivo** — The logo's family, and every word on screen: UI, labels, body. A grotesque with a width axis, so one family covers the quiet text and the wide title.
+- **Archivo, wider** — Display: hero titles and section titles, light weight, at 112% width. The name KHORA is the same family at its widest, 125%.
+- **IBM Plex Mono** — Code, telemetry, paths, numbers; and `ΧΩΡΑ` under the name.
 
 ### The scale
 | Role | Sample | Spec |
 |---|---|---|
-| Hero | *An editor that thinks.* | Fraunces 56, opsz 144, italic |
-| H2 | Color system | Fraunces 32, regular |
-| H3 | Section title | Geist 18, weight 600 |
-| Body | Default reading text | Geist 14, line-height 1.6 |
-| Label | EXECUTION TIMING | Geist Mono 11, uppercase, letter-spacing 0.08em |
-| Engine | `khora-agents · 7.04 / 16.67ms` | Geist Mono 12 |
+| Hero | *An editor that thinks.* | Archivo 56, width 112%, weight 300, italic |
+| H2 | Color system | Archivo 32, width 112%, weight 300 |
+| H3 | Section title | Archivo 18, weight 600 |
+| Body | Default reading text | Archivo 14, line-height 1.6 |
+| Label | EXECUTION TIMING | IBM Plex Mono 11, uppercase, letter-spacing 0.08em |
+| Engine | `khora-agents · 7.04 / 16.67ms` | IBM Plex Mono 12 |
 
 ### Voice & microcopy
 The editor talks back. How it talks matters. We aim for **plainspoken with technical precision** — never marketing, never apologetic, never cute.
@@ -138,7 +193,7 @@ The editor talks back. How it talks matters. We aim for **plainspoken with techn
 - **No exclamation marks.** The work is serious. Praise feels condescending; warnings shout louder when written calmly.
 - **Sentence case for everything.** Title Case is for documents and brand names; UI strings are sentences.
 - **Verbs in the user's voice.** Buttons say `Apply`, not `Applying`. The user is the agent.
-- **No emoji in product UI.** The diamond is the only mark.
+- **No emoji in product UI.** The sign is the only mark.
 
 ---
 
@@ -214,7 +269,7 @@ Tabbed: **Assets** (grid of project files) · **Console** (filtered log) · **Pr
 The viewport is the most important rectangle in the editor. Everything else exists to serve it.
 
 ### Empty state
-A subtle 5% diamond watermark, centered. Above it, a single line of microcopy: *"Drag assets here, or press ⌘N for a new entity."* Nothing else.
+A subtle 5% watermark of the sign, centered. Above it, a single line of microcopy: *"Drag assets here, or press ⌘N for a new entity."* Nothing else.
 
 ### Active state
 - **Grid** — 1m primary lines at 10% opacity; 0.1m secondary at 4%. Origin marked with thin gold cross.
@@ -235,15 +290,15 @@ Drag any numeric field horizontally to scrub. No arrows. No spinners. The cursor
 Press `⌘K`. The editor's most important keyboard shortcut.
 
 ### Layout
-A centered modal, ~640 px wide, 60% viewport height max. Top: search field with diamond glyph leading. Below: results in a flat ranked list, OR a **quadrant view** if the query is empty.
+A centered modal, ~640 px wide, 60% viewport height max. Top: search field with the sign as its leading glyph. Below: results in a flat ranked list, OR a **quadrant view** if the query is empty.
 
 ### Quadrant view (empty query)
 Four boxes, equal weight: **Recent** · **Suggested** (from GORNA) · **Modes** · **Tools**. Each shows three to five items. Hover lights the box gold; arrow keys move between quadrants then between items.
 
 ### Result item
-- Diamond glyph (action type) — 12 px, fg-3
-- Label — Geist 14
-- Path or category — Geist Mono 11, fg-3
+- Action-type glyph — 12 px, fg-3
+- Label — Archivo 14
+- Path or category — IBM Plex Mono 11, fg-3
 - Shortcut — right-aligned, mono 11, kbd-styled
 
 The currently-selected result has a gold left bar (3 px) and bg-3 background. Enter activates; Esc closes.
@@ -305,7 +360,7 @@ Choices we made, and what we said no to.
 - **A 48 px Spine instead of a 220 px sidebar.** Saves real estate; mode-switching is a one-tap operation, not a navigation tree.
 - **Mode-first layouts.** Opinionated defaults beat infinite customization for 95% of users.
 - **OKLCH color throughout.** Better perceptual uniformity, future-proof, browsers ship it.
-- **Fraunces for display only.** Adds editorial gravity to a tool category dominated by all-sans interfaces.
+- **The logo's type everywhere.** Archivo and IBM Plex Mono in the editor, the hub, the docs and the site: the name and the interface speak in one voice, and a wider Archivo gives titles their weight without a second family.
 - **The Control Plane as a Mode.** Engine internals are not a popup or a tab — they're a workspace.
 
 ### We said no to

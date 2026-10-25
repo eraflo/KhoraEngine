@@ -1,49 +1,61 @@
-<svg class="kp-figure" viewBox="0 0 760 344" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-events-title kp-events-desc">
+<svg id="fig-scripting-events" class="kp-figure" viewBox="0 0 760 344" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-events-title kp-events-desc">
   <title id="kp-events-title">One declaration, both ends checked against it</title>
   <desc id="kp-events-desc">The declaration event Damaged(int amount, Entity source) sits at the top. Below it, on the left, a raise, foe.Raise(Damaged(10, this)), is checked when it compiles: the event exists, the count and the types of its arguments, an int taken as a float. On the right, a handler, on Damaged(int a, Entity s), is checked when it compiles: it takes all of the payload in order, or none of it. The raise reaches the handler next frame, found in a table each program builds once. At delivery a payload that fits runs the current state's handler, else the behavior's; one that does not fit, from the engine or queued before an edit, is dropped and reported in the Problems tab, and the receiver keeps running.</desc>
   <style>
-    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
-    .kp-bg { fill: var(--k-bg-0, #090d17); }
-    .kp-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-decl { fill: var(--k-bg-1, #101622); stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
-    .kp-panel { fill: var(--k-bg-2, #181e2b); }
-    .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
-    .kp-flow { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 1.5; }
-    .kp-tip { fill: var(--k-silver-dim, #809db2); }
-    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
-    .kp-kw { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
-    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
-    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11px; }
+    #fig-scripting-events { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-scripting-events .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-scripting-events .kp-box { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-scripting-events .kp-decl { fill: var(--k-bg-1, #101622); stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-scripting-events .kp-panel { fill: var(--k-bg-2, #181e2b); }
+    #fig-scripting-events .kp-lead { fill: none; stroke: var(--k-fg-3, #5d646c); stroke-width: 1; }
+    #fig-scripting-events .kp-flow { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 1.5; }
+    #fig-scripting-events .kp-tip { fill: var(--k-silver-dim, #809db2); }
+    #fig-scripting-events .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-scripting-events .kp-kw { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-scripting-events .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    #fig-scripting-events .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-scripting-events .kp-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
   </style>
   <rect class="kp-bg" x="0" y="0" width="760" height="344" rx="8"/>
   <!-- the declaration -->
-  <text class="kp-head" x="380" y="26" text-anchor="middle">the declaration</text>
-  <rect class="kp-decl" x="190" y="36" width="380" height="40" rx="6"/>
-  <text class="kp-kw" x="208" y="61">event</text>
-  <text class="kp-mono" x="252" y="61">Damaged(int amount, Entity source);</text>
+  <g data-on="1 2 3 4">
+    <text class="kp-head" x="380" y="26" text-anchor="middle">the declaration</text>
+    <rect class="kp-decl" x="190" y="36" width="380" height="40" rx="6"/>
+    <text class="kp-kw" x="208" y="61">event</text>
+    <text class="kp-mono" x="252" y="61">Damaged(int amount, Entity source);</text>
+  </g>
   <!-- checked against it -->
-  <path class="kp-lead" d="M260,76 C260,112 166,112 166,148"/>
-  <path class="kp-lead" d="M500,76 C500,112 594,112 594,148"/>
+  <g data-on="2 3 4">
+    <path class="kp-lead" d="M260,76 C260,112 166,112 166,148"/>
+    <path class="kp-lead" d="M500,76 C500,112 594,112 594,148"/>
+  </g>
   <!-- the raise -->
-  <rect class="kp-box" x="16" y="148" width="300" height="44" rx="6"/>
-  <text class="kp-mono" x="32" y="175">foe.Raise(Damaged(10, this));</text>
+  <g data-on="2 3 4">
+    <rect class="kp-box" x="16" y="148" width="300" height="44" rx="6"/>
+    <text class="kp-mono" x="32" y="175">foe.Raise(Damaged(10, this));</text>
+  </g>
   <!-- the handler -->
-  <rect class="kp-box" x="444" y="148" width="300" height="44" rx="6"/>
-  <text class="kp-kw" x="460" y="175">on</text>
-  <text class="kp-mono" x="482" y="175">Damaged(int a, Entity s) { … }</text>
-  <text class="kp-label" x="24" y="214">checked when it compiles: the event exists,</text>
-  <text class="kp-label" x="24" y="230">its count, its types (an int taken as a float)</text>
-  <text class="kp-label" x="452" y="214">checked when it compiles: all of the payload,</text>
-  <text class="kp-label" x="452" y="230">its types in order — or none of it</text>
+  <g data-on="2 3 4">
+    <rect class="kp-box" x="444" y="148" width="300" height="44" rx="6"/>
+    <text class="kp-kw" x="460" y="175">on</text>
+    <text class="kp-mono" x="482" y="175">Damaged(int a, Entity s) { … }</text>
+    <text class="kp-label" x="24" y="214">checked when it compiles: the event exists,</text>
+    <text class="kp-label" x="24" y="230">its count, its types (an int taken as a float)</text>
+    <text class="kp-label" x="452" y="214">checked when it compiles: all of the payload,</text>
+    <text class="kp-label" x="452" y="230">its types in order — or none of it</text>
+  </g>
   <!-- delivery -->
-  <path class="kp-flow" d="M316,170 H436"/>
-  <path class="kp-tip" d="M436,165 L444,170 L436,175 Z"/>
-  <text class="kp-dim" x="380" y="160" text-anchor="middle">next frame</text>
-  <text class="kp-dim" x="380" y="188" text-anchor="middle">by table</text>
+  <g data-on="3 4">
+    <path class="kp-flow" d="M316,170 H436"/>
+    <path class="kp-tip" d="M436,165 L444,170 L436,175 Z"/>
+    <text class="kp-dim" x="380" y="160" text-anchor="middle">next frame</text>
+    <text class="kp-dim" x="380" y="188" text-anchor="middle">by table</text>
+  </g>
   <!-- at delivery -->
-  <rect class="kp-panel" x="16" y="246" width="728" height="84" rx="6"/>
-  <text class="kp-head" x="32" y="270">at delivery</text>
-  <text class="kp-label" x="32" y="292">fits → the current state's handler, else the behavior's; one written without parameters ignores the payload</text>
-  <text class="kp-label" x="32" y="314">does not fit — the engine's mail, or queued before an edit → dropped, a warning in Problems; the receiver keeps running</text>
+  <g data-on="4">
+    <rect class="kp-panel" x="16" y="246" width="728" height="84" rx="6"/>
+    <text class="kp-head" x="32" y="270">at delivery</text>
+    <text class="kp-label" x="32" y="292">fits → the current state's handler, else the behavior's; one written without parameters ignores the payload</text>
+    <text class="kp-label" x="32" y="314">does not fit — the engine's mail, or queued before an edit → dropped, a warning in Problems; the receiver keeps running</text>
+  </g>
 </svg>

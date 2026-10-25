@@ -1,0 +1,99 @@
+<svg id="fig-home-negotiated-frame" class="kp-figure" viewBox="0 0 760 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-negotiated-title kp-negotiated-desc">
+  <title id="kp-negotiated-title">One frame, negotiated</title>
+  <desc id="kp-negotiated-desc">A frame has a time budget, 16.7 milliseconds at sixty frames a second. Rendering, physics, scripts and audio each ask for a share, and together they fit. Then the laptop heats up, and the budget shrinks to 13 milliseconds: the same work no longer fits. The parts renegotiate — rendering draws its shadows at a lower resolution, scripts put a few behaviors off by one frame — and everything fits again. The game keeps its frame rate.</desc>
+  <style>
+    #fig-home-negotiated-frame { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-home-negotiated-frame .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-home-negotiated-frame .kp-track { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-home-negotiated-frame .kp-block { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-home-negotiated-frame .kp-block-lead { fill: oklch(0.32 0.04 245); stroke: var(--k-silver, #b4cfe2); stroke-width: 1; }
+    #fig-home-negotiated-frame .kp-over { fill: oklch(0.78 0.14 70 / 0.16); stroke: var(--k-amber, #e8a33d); stroke-width: 1; stroke-dasharray: 3 3; }
+    #fig-home-negotiated-frame .kp-limit { stroke: var(--k-gold, #e4b65c); stroke-width: 2; }
+    #fig-home-negotiated-frame .kp-limit-text { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-home-negotiated-frame .kp-gauge { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-home-negotiated-frame .kp-cool { fill: var(--k-silver-dim, #809db2); }
+    #fig-home-negotiated-frame .kp-hot { fill: var(--k-amber, #e8a33d); }
+    #fig-home-negotiated-frame .kp-tick { fill: var(--k-silver-dim, #809db2); }
+    #fig-home-negotiated-frame .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; font-weight: 500; }
+    #fig-home-negotiated-frame .kp-how { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-home-negotiated-frame .kp-warn { fill: var(--k-amber, #e8a33d); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-home-negotiated-frame .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    #fig-home-negotiated-frame .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="330" rx="10"/>
+  <text class="kp-head" x="40" y="44">one frame</text>
+  <text class="kp-note" x="40" y="62">what the engine may spend before the next picture is due</text>
+  <!-- the frame's track -->
+  <rect class="kp-track" x="40" y="96" width="600" height="72" rx="6"/>
+  <!-- what each part asks for -->
+  <g data-on="2 3">
+    <rect class="kp-block-lead" x="46" y="102" width="290" height="60" rx="4"/>
+    <text class="kp-name" x="58" y="126">Render</text>
+    <text class="kp-how" x="58" y="146">shadows 2048 px</text>
+  </g>
+  <g data-on="2 3 4 5" data-tf="4:translate(-76px, 0)">
+    <rect class="kp-block" x="340" y="102" width="116" height="60" rx="4"/>
+    <text class="kp-name" x="352" y="126">Physics</text>
+    <text class="kp-how" x="352" y="146">every contact</text>
+  </g>
+  <g data-on="2 3">
+    <rect class="kp-block" x="460" y="102" width="92" height="60" rx="4"/>
+    <text class="kp-name" x="472" y="126">Scripts</text>
+    <text class="kp-how" x="472" y="146">every turn</text>
+  </g>
+  <g data-on="2 3 4 5" data-tf="4:translate(-108px, 0)">
+    <rect class="kp-block" x="556" y="102" width="56" height="60" rx="4"/>
+    <text class="kp-name" x="566" y="126">Audio</text>
+  </g>
+  <!-- what they settle on -->
+  <g data-on="4 5">
+    <rect class="kp-block-lead" x="46" y="102" width="214" height="60" rx="4"/>
+    <text class="kp-name" x="58" y="126">Render</text>
+    <text class="kp-how" x="58" y="146">shadows 1024 px</text>
+    <rect class="kp-block" x="384" y="102" width="60" height="60" rx="4"/>
+    <text class="kp-name" x="394" y="126">Scripts</text>
+    <text class="kp-how" x="394" y="146">3 later</text>
+  </g>
+  <!-- what no longer fits -->
+  <g data-on="3">
+    <rect class="kp-over" x="520" y="96" width="120" height="72" rx="0"/>
+    <text class="kp-warn" x="526" y="196">no longer fits</text>
+  </g>
+  <!-- the limit -->
+  <g data-tf="3:translate(-120px, 0)">
+    <line class="kp-limit" x1="640" y1="82" x2="640" y2="182"/>
+  </g>
+  <text class="kp-limit-text" x="598" y="76" data-on="1 2">16.7 ms</text>
+  <text class="kp-limit-text" x="486" y="76" data-on="3 4 5">13 ms — the laptop is hot</text>
+  <!-- the machine's heat -->
+  <text class="kp-head" x="686" y="44">heat</text>
+  <rect class="kp-gauge" x="694" y="58" width="22" height="110" rx="11"/>
+  <rect class="kp-cool" x="699" y="128" width="12" height="35" rx="6" data-on="1 2"/>
+  <rect class="kp-hot" x="699" y="70" width="12" height="93" rx="6" data-on="3 4 5"/>
+  <!-- the game, frame after frame -->
+  <text class="kp-head" x="40" y="242">the game</text>
+  <g class="kp-tick">
+    <rect x="40" y="256" width="22" height="22" rx="4"/>
+    <rect x="68" y="256" width="22" height="22" rx="4"/>
+    <rect x="96" y="256" width="22" height="22" rx="4"/>
+    <rect x="124" y="256" width="22" height="22" rx="4"/>
+  </g>
+  <g class="kp-tick" data-on="2 3 4 5">
+    <rect x="152" y="256" width="22" height="22" rx="4"/>
+    <rect x="180" y="256" width="22" height="22" rx="4"/>
+    <rect x="208" y="256" width="22" height="22" rx="4"/>
+  </g>
+  <g class="kp-tick" data-on="4 5">
+    <rect x="236" y="256" width="22" height="22" rx="4"/>
+    <rect x="264" y="256" width="22" height="22" rx="4"/>
+    <rect x="292" y="256" width="22" height="22" rx="4"/>
+  </g>
+  <g class="kp-tick" data-on="5">
+    <rect x="320" y="256" width="22" height="22" rx="4"/>
+    <rect x="348" y="256" width="22" height="22" rx="4"/>
+    <rect x="376" y="256" width="22" height="22" rx="4"/>
+    <rect x="404" y="256" width="22" height="22" rx="4"/>
+  </g>
+  <text class="kp-note" x="40" y="304" data-on="1 2 3 4">a new picture every 16.7 ms</text>
+  <text class="kp-note" x="40" y="304" data-on="5">still 60 pictures a second — nothing stuttered</text>
+</svg>

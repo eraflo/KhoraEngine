@@ -1,20 +1,20 @@
-<svg class="kp-figure" viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-id-title kp-id-desc">
+<svg id="fig-persistence-persistent-id" class="kp-figure" viewBox="0 0 760 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-id-title kp-id-desc">
   <title id="kp-id-title">The 64 bits of a persistent id</title>
   <desc id="kp-id-desc">The top bit names the namespace. Zero: an authored entity, whose remaining 63 bits are random, chosen once and kept by every save. Also zero: a member of a prefab instance, whose bits are derived from the instance root's id and the member's id in the prefab, the same on every load and different for every instance. One: an entity created without an author, whose remaining bits are a number the world gives the first time something needs the entity's identity.</desc>
   <style>
-    .kp-figure { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
-    .kp-bg { fill: var(--k-bg-0, #090d17); }
-    .kp-cell { fill: var(--k-bg-3, #1f2636); }
-    .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
-    .kp-bit { fill: var(--k-bg-1, #101622); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
-    .kp-tick { stroke: var(--k-line, #383d48); stroke-width: 1; }
-    .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
-    .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Fraunces', Georgia, serif); font-style: italic; font-size: 17px; }
-    .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; }
-    .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Geist', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
-    .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 10.5px; }
-    .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 12px; }
-    .kp-bitval { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'Geist Mono', ui-monospace, monospace); font-size: 15px; font-weight: 600; }
+    #fig-persistence-persistent-id { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-persistence-persistent-id .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-persistence-persistent-id .kp-cell { fill: var(--k-bg-3, #1f2636); }
+    #fig-persistence-persistent-id .kp-cell-soft { fill: var(--k-bg-2, #181e2b); }
+    #fig-persistence-persistent-id .kp-bit { fill: var(--k-bg-1, #101622); stroke: var(--k-silver-dim, #809db2); stroke-width: 1.25; }
+    #fig-persistence-persistent-id .kp-tick { stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-persistence-persistent-id .kp-sel { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 1.5; }
+    #fig-persistence-persistent-id .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-persistence-persistent-id .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-persistence-persistent-id .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; font-weight: 500; }
+    #fig-persistence-persistent-id .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+    #fig-persistence-persistent-id .kp-mono { fill: var(--k-fg-1, #bfc5ca); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 12px; }
+    #fig-persistence-persistent-id .kp-bitval { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 15px; font-weight: 600; }
   </style>
   <rect class="kp-bg" x="0" y="0" width="760" height="320" rx="8"/>
   <!-- bit ruler -->

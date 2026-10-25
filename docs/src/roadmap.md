@@ -95,7 +95,7 @@ The item said *evaluate and choose a scripting language*. The evaluation
 concluded that none of the candidates could be told to stop: Lua's debug hooks
 and Wasmtime's fuel interrupt, but interruption is an error path in both, and a
 budget needs stopping to be ordinary. So Khora has its own — **Ergon**
-([concept page](./concepts/scripting.md), `khora-script`).
+([concept page](./concepts/scripting/index.md), `khora-script`).
 
 - ~~#168 Evaluate and choose a scripting language~~ — evaluated, none fit; see above
 - ~~#169 Implement scripting backend and bindings~~ — lexer, parser, bytecode, VM,

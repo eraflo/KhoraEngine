@@ -39,6 +39,15 @@ Overlay, Physics, UI, Audio, and Script (the last registered for
 `EngineMode::Playing` only). See [Agents and Lanes](../concepts/agents-and-lanes.md). Also
 called an **ISA** (Intelligent Subsystem Agent).
 
+### Asset reference (Ergon)
+
+A value naming an asset by its identity (`AssetUUID`), never its path, typed by
+its kind: `Prefab`, `Sound`, `Material`, `Mesh`, `Texture`, `Scene`. A field
+holding one is optional — `Prefab? bullet;` — and is chosen in the Inspector's
+asset slot. A script compares it, passes it, and hands it to what uses its kind:
+`Spawn(bullet, at: p)`, `e.SetMaterial(m)`. See
+[Ergon — values and types](./ergon.md#values-and-types).
+
 ### Channel&lt;T&gt;
 
 The engine's one reusable one-way queue, in `khora-core::event`. Two axes and
@@ -154,7 +163,7 @@ budget converted from the time GORNA allocated, and degrades by deferring whole
 behaviors rather than thinning every one. A script declares behaviors (one
 entity's logic) and [systems](#system-ergon) (one rule over the rows of a
 [query](#query-ergon)). Scripts run only in
-`EngineMode::Playing`. See [Scripting](../concepts/scripting.md) and the
+`EngineMode::Playing`. See [Scripting](../concepts/scripting/index.md) and the
 [Ergon reference](./ergon.md).
 
 ### Event (Ergon)
@@ -334,7 +343,8 @@ link plus its differences rather than as whole entities. Loading expands the
 prefab as it is now, so a prefab edit reaches every instance. An **override** is
 one of those differences — a field value that differs, a component added or
 removed. The editor's inspector marks overrides, reverts them, and applies a
-field, a component or the whole instance's overrides back into the prefab. See [Prefabs](../concepts/prefabs.md) and
+field, a component or the whole instance's overrides back into the prefab. A
+script places one while the game runs with `Spawn(prefab, at: p)`. See [Prefabs](../concepts/prefabs.md) and
 [How-to: work with prefabs](../how-to/work-with-prefabs.md).
 
 ### Query (Ergon)
@@ -345,7 +355,7 @@ component bound without `?` and every `with`, and none of the `without`. Each
 binding is a copy of the row's component (`T?` is `null` where the row lacks
 it); only a [`ref` binding](#ref-binding-ergon), in a system, is written back.
 Outside a system a query is read-only. Every component it names joins the
-program's reads. See [Scripting](../concepts/scripting.md#queries-and-sweeps)
+program's reads. See [Scripting](../concepts/scripting/queries.md#queries-and-sweeps)
 and the [Ergon reference](./ergon.md#queries).
 
 ### `ref` binding (Ergon)
@@ -357,6 +367,14 @@ assign; where the row ends — after the body, where a `continue` lands, before 
 read are written into the frame's working set at once and into the run's
 pending batch, which leaves as one `WriteColumn` per component and set of fields,
 in the order the run wrote them. See [Sweep](#sweep-ergon).
+
+### Reserved entity / EntityReserver
+
+An entity id a script's turn takes before the entity exists: `Spawn` returns it
+at once, so the turn can keep it and queue writes on it. The world's
+`EntityReserver` hands ids out without a lock; Maintenance commits each one a
+spawn accepted and releases the rest, every frame — an index reused gets a new
+generation. See [Scripting](../concepts/scripting/writing.md#an-entity-named-before-it-exists).
 
 ### ResourceBudget
 
@@ -393,7 +411,7 @@ after a call returns. Fuel is checked only there, so a machine stopped for fuel
 always stands at a place the compiler named, with no half-evaluated expression in
 its registers. Between two safepoints a run may spend past its budget — charged
 as an overdraft — but never around a loop, because every back edge lands on one.
-See [Scripting](../concepts/scripting.md).
+See [Scripting](../concepts/scripting/index.md).
 
 ### Scene record / SceneRecord
 
@@ -479,7 +497,7 @@ sweep alone; each row is checked again when reached and skipped if it no longer
 matches. A sweep short of fuel stops at a safepoint like any body, even
 part-way through a row, and resumes next frame on that row; the rows it ended
 leave with the run, each written once. See
-[Scripting](../concepts/scripting.md#queries-and-sweeps).
+[Scripting](../concepts/scripting/queries.md#queries-and-sweeps).
 
 ### System (Ergon)
 
@@ -492,7 +510,7 @@ while the game plays, known by the [named id](#persistentid) `system:Name`,
 holding the system's component and its state companion, both `Runtime` and
 resumable: never in a scene or a snapshot, kept by a game save. Behaviors and
 systems take their turns in one list, by module path, then source order. See
-[Scripting](../concepts/scripting.md#a-system-at-a-glance).
+[Scripting](../concepts/scripting/behaviors-and-systems.md#a-system-at-a-glance).
 
 ### Vessel
 
@@ -520,7 +538,7 @@ any other reason, adds nothing; resuming from an `await` restarts the count). At
 `WATCHDOG_WARN` (10 s) it is reported once, naming the member and its site; at
 `WATCHDOG_FAULT` (60 s) the instance faults like any fault — disabled until an
 edit to its module. The count is saved with the body. See
-[Scripting](../concepts/scripting.md#a-body-that-never-finishes).
+[Scripting](../concepts/scripting/turns.md#a-body-that-never-finishes).
 
 ---
 

@@ -67,7 +67,6 @@ fn setup(&mut self, world: &mut GameWorld, runtime: &Runtime) {
         khora_sdk::Vessel::at(world, Vec3::new(0.0, 2.0, 10.0))
             .with_component(ecs::Camera::new_perspective(
                 std::f32::consts::FRAC_PI_4,
-                16.0 / 9.0,
                 0.1,
                 1000.0,
             ))

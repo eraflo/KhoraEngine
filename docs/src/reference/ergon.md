@@ -3,7 +3,7 @@
 The Ergon language as it compiles and runs **today**: every construct, with an
 example, and an honest line on what parses but does not run yet. For how a
 script runs inside a frame — turns, safepoints, saves, edits — see
-[Scripting](../concepts/scripting.md).
+[Scripting](../concepts/scripting/index.md).
 
 Each construct is marked:
 
@@ -67,6 +67,7 @@ Comments are `// line` and `/* block */`.
 | `Duration`, `Angle` | runs — distinct from `float` and from each other; `2s + 500ms` is `2.5s`, `2s + 90deg` is refused |
 | `T?` | runs — holds a value or `null`; one declared without a value starts `null`; `a ?? b`, `?.`, `if (var x = opt)`, `while (var x = opt)` and `match` unwrap it |
 | `T[]` | runs — `[1, 2, 3]`, `xs[i]`, `xs.Length`, `foreach`, `xs.Push(v)`, `xs.RemoveAt(i)`; one declared without a value starts `[]` |
+| `Prefab`, `Sound`, `Material`, `Mesh`, `Texture`, `Scene` | runs — a reference to an asset of that kind, by its identity, never its path; no literal: a field is `Prefab?`, chosen in the inspector; `==` / `!=` between two of one kind and against `null`, nothing else; shown in `$"…"` as `Asset#` and the first eight hex digits of its identity |
 | `Map<K, V>` | checks — no literal, no indexing |
 
 The one implicit conversion: an `int` where a `float` is expected. A
@@ -135,7 +136,10 @@ computed — `home = Position();` — is set in `OnSpawn`. Without a default, a 
 starts at its type's neutral value — `int` `0`, `float`, `Duration`, `Angle`
 `0.0`, `bool` `false`, `string` `""`, `T?` `null`, `T[]` `[]`, `Vec2`/`Vec3`/`Vec4`
 zero, `Quat` the identity, `Color` white, a struct its own defaults. An `Entity`
-has none: write it `Entity?`, and it starts at `null`. A state's data follows the
+has none: write it `Entity?`, and it starts at `null`. Nor has an asset: write
+`Prefab? bullet;` — or `Sound?`, `Material?`, … — and choose it in the
+inspector's asset slot; it starts at `null`. The six kinds' names belong to the
+language: `struct Prefab { … }` is refused. A state's data follows the
 same rule; a value computed on entering a state is a parameter of `become`.
 
 ## Field attributes
@@ -205,7 +209,7 @@ these parameters:
 | `void OnResumeFailed(string member)` | an edit left nothing of a body part-way through; `member` is e.g. `"OnSpawn"`, `"Chase.Attack"`, `"__every(0.5)"` |
 | `void FixedUpdate(float dt)` | once per fixed simulation step the frame took, `dt` the step — before events and `Update`; never `async`, and refused if it reaches an `async` member |
 
-See [One turn](../concepts/scripting.md#one-turn) for their order. A
+See [One turn](../concepts/scripting/turns.md#one-turn) for their order. A
 [system](#systems) takes `Update`, `FixedUpdate`, `OnLoad` and `OnResumeFailed`;
 it has no entity to call `OnSpawn` or `OnDespawn` for.
 
@@ -425,7 +429,7 @@ refused with the operation's name and the list of what the type defines.
 |---|---|
 | Maths | `Abs(x)`, `Floor(x)`, `Ceil(x)`, `Round(x)`, `Sign(x)`, `Sqrt(x)` (faults below zero) `→ float`; `Min(a, b)`, `Max(a, b)`; `Clamp(value, low, high)` (faults if `low > high`); `Lerp(from, to, t)` (unclamped) |
 | Text | `Log(message)`, `Warn(message)`, `Error(message)`; `Length(text) → int` |
-| World — queued, applied at the frame's end | `Position() → Vec3` (own entity, as the frame began); called on an entity `e`: `e.Translate(delta)`, `e.SetPosition(value)`, `e.SetRotation(value)`, `e.SetScale(value)`, `e.Despawn()`, `e.SetParent(parent)`, `e.Detach()`; components — see [Writing components](#writing-components) |
+| World — queued, applied at the frame's end | `Position() → Vec3` (own entity, as the frame began); called on an entity `e`: `e.Translate(delta)`, `e.SetPosition(value)`, `e.SetRotation(value)`, `e.SetScale(value)`, `e.Despawn()`, `e.SetParent(parent)`, `e.Detach()`, `e.SetMaterial(m)`; `Spawn(…)` and components — see [Writing components](#writing-components) |
 | Input | `Pressed(action) → bool`, `JustPressed(action) → bool` |
 | Constructors | `Vec2(x, y)`, `Vec3(x, y, z)`, `Vec4(x, y, z, w)`, `Quat(x, y, z, w)`, `Color(r, g, b, a)` |
 
@@ -456,6 +460,15 @@ behavior Anchor {
 behavior Spawner {
     every 2s { Spawn(Position(), AudioSource { volume: 0.5 }); }
 }
+
+behavior Turret {
+    Prefab? shell;
+    Material? hot;
+    every 1s {
+        var s = Spawn(shell, RigidBody { mass: 2.0 }, at: Position() + Vec3(0.0, 1.0, 0.0));
+        s.SetMaterial(hot);
+    }
+}
 ```
 
 | Write | Does | Refused |
@@ -463,7 +476,9 @@ behavior Spawner {
 | `e.Set(C { field: v, … })` | writes the fields named; the others keep their values | at the frame's end, when `e` has no `C` |
 | `e.Add(C { field: v, … })` | attaches `C` with its defaults, then writes the fields named | at the frame's end, when `e` already has a `C` |
 | `e.Remove(C)` | detaches `C` | at the frame's end, when `e` has no `C` |
-| `Spawn(Vec3 position, C1 { … }, …)` | a new entity at `position`, upright, carrying each component | the whole spawn, when one component refuses its value — no entity is left behind |
+| `Spawn(Vec3 position, C1 { … }, …) → Entity` | a new entity at `position`, upright, carrying each component | the whole spawn, when one component refuses its value — no entity is left behind |
+| `Spawn(prefab, C1 { … }, …, at: p, facing: q) → Entity` | a linked instance of `prefab`, its root at `p`; `facing:` turns it, else it keeps the prefab's rotation and scale; each component given merges onto the root's, or is added | the whole instance, when a component refuses its value; a `null` prefab, or one the project does not hold, faults the turn |
+| `e.SetMaterial(m)` | gives `e` the material `m`, loaded before it is drawn | a `null` `m` faults the turn |
 
 - The components a script writes are those `engine/components.erg` declares with
   `component` — the ones an author may add in the editor — and the project's own
@@ -474,10 +489,26 @@ behavior Spawner {
 - A component literal is a *patch*: it appears only as the argument of `Set`, `Add`
   or `Spawn`, and its fields are evaluated in the order written. A component is not
   a type — `RigidBody r;` is refused.
-- Each write costs `1 +` the number of fields it names. `Spawn` returns nothing:
-  the new entity configures itself in its own `OnSpawn`.
-- `Set`, `Add`, `Remove`, `Get`, `Has` and `Spawn` are reserved: no function or
-  method may take one of these names.
+- Each write costs `1 +` the number of fields it names, a spawn `1 +` the number
+  of components it gives.
+- **`Spawn` returns the entity.** Its id is reserved in the turn: the entity is
+  not alive until the frame's end, but what the turn queues after the spawn names
+  it, and `b.Get(C)` / `b.Has(C)` read what it was spawned with and written since.
+  A prefab's own components are read from the next frame. Kept in a field, the
+  entity is the same one next frame; a refused spawn leaves an id no entity ever
+  holds. See [Scripting: an entity named before it exists](../concepts/scripting/writing.md#an-entity-named-before-it-exists).
+- In the prefab form the prefab comes first, unnamed, then the components, then
+  `at:` (required, a `Vec3`) and `facing:` (a `Quat`); any other label is refused.
+  For a strict add or replace, use the verbs on the entity it returns:
+  `s.Add(C { … })` refuses a component the prefab has, `s.Remove(C)` then
+  `s.Add(C { … })` replaces it whole.
+- An instance spawned in play is saved in a game save flattened, with its link:
+  it reloads as the prefab was when it was saved. How a save keeps such instances
+  is being redesigned.
+- **A turn that faults applies nothing** of what it queued in that frame — its
+  writes, spawns, removals and events — and the ids it reserved go back unspent.
+- `Set`, `Add`, `Remove`, `Get`, `Has`, `Spawn` and `SetMaterial` are reserved: no
+  function or method may take one of these names.
 
 ## Reading components
 
@@ -645,7 +676,7 @@ system Spawner {
 A `system` is a behavior with no subject: one rule over the entities its
 [queries](#queries) match, run once a frame while the game plays, on an entity
 of its own that no scene holds and a game save keeps
-([its one entity](../concepts/scripting.md#its-one-entity)). Its members are a
+([its one entity](../concepts/scripting/behaviors-and-systems.md#its-one-entity)). Its members are a
 behavior's — fields, `Update`, `OnLoad`, `OnResumeFailed`, `every`, `after`,
 methods — and its fields are named directly. In its queries, and only there, a
 binding may be `ref`.
@@ -719,7 +750,7 @@ without `?` and every `with`, and none of the `without`.
   `continue` lands, before a `break` or a `return` leaves the sweep: its changed
   fields reach the working set at once and leave as one column write per
   component and set of fields, in the order the run made them. See
-  [Queries and sweeps](../concepts/scripting.md#queries-and-sweeps).
+  [Queries and sweeps](../concepts/scripting/queries.md#queries-and-sweeps).
 - `break`, `continue` and `return` act as in any loop; a query inside a query
   sweeps its rows once per outer row.
 - **Cost**: taking the rows `1 +` the candidates visited (the holders of the
@@ -752,13 +783,15 @@ Maps, methods on structs and arrays (beyond `Push` and `RemoveAt`), struct
 operator overloads at run time, value patterns in `match`, awaiting events,
 closures, reading `Transform` with `Get` (use `Position()`), reordering systems
 (`[Before]` / `[After]`), change filters in queries, systems running in parallel,
-a format in an interpolation's hole (`{x:F2}`), named arguments to `Spawn`.
+a format in an interpolation's hole (`{x:F2}`), named arguments to the position
+form of `Spawn`, playing a `Sound` (it comes with the audio work), loading a
+`Scene`, spawning a `Mesh`.
 
 ## See also
 
-- [Scripting](../concepts/scripting.md) — turns, safepoints, saves, resuming
+- [Scripting](../concepts/scripting/index.md) — turns, safepoints, saves, resuming
   after edits.
-- [Glossary](./glossary.md) — safepoint, site, resume tier, system, query, sweep,
+- [Glossary](./glossary.md) — asset reference, reserved entity, safepoint, site, resume tier, system, query, sweep,
   watchdog, declared component, event, field attributes, named argument,
   interpolation, ScriptProblems.
 - [Editor — Scripts](./editor.md#07--scripts) — scripts while editing, the

@@ -114,7 +114,6 @@ fn setup(&mut self, world: &mut GameWorld, _runtime: &Runtime) {
     // A perspective camera, pulled back and turned to look into the scene.
     let camera = ecs::Camera::new_perspective(
         std::f32::consts::FRAC_PI_4, // 45° vertical FOV
-        16.0 / 9.0,                  // aspect ratio
         0.1,                         // near plane
         1000.0,                      // far plane
     );

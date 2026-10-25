@@ -203,7 +203,7 @@ while editing as while playing. What the scripts *declare* — components,
 behaviors, systems — registers at once, so the Inspector knows the project's
 components before anything runs. What they *compiled to* waits for Play: no
 script runs while you edit ([Scripts run only while the game
-runs](../concepts/scripting.md#scripts-run-only-while-the-game-runs)).
+runs](../concepts/scripting/turns.md#scripts-run-only-while-the-game-runs)).
 
 **New Script.** *New Script* — in the Assets panel's empty-space, folder and
 *More* menus — makes a script from the editor. The name comes first: a Script
@@ -266,8 +266,9 @@ JSON: its fields in declaration order, each drawn by its Ergon type.
 | `string` | text field |
 | `Vec2`/`Vec3`/`Vec4`, `Quat`, `Color` | one scrubber per axis; a colour swatch |
 | `Entity` | a slot naming the entity — drop one from the Hierarchy |
-| `T?` | the value, or `none` with **Set**; right-click → *Set to none* |
-| `T[]` | a row per item, **+ Add item**; right-click an item to move or remove it |
+| `Prefab`, `Sound`, `Material`, `Mesh`, `Texture`, `Scene` | a slot naming the asset, its folder beside it — drop one of that kind from the Asset Browser, or click it to pick one; right-click → *Choose…*, *Reveal in Assets*; an asset gone from the project reads `missing · …` in amber |
+| `T?` | the value, or `none` with **Set** (an asset or entity slot shows its own `none`); right-click → *Set to none* |
+| `T[]` | a row per item, **+ Add item** (for assets, it opens the picker); right-click an item to move or remove it |
 | struct | a nested block, a row per field |
 
 <div class="kp-figure-frame">
@@ -357,7 +358,7 @@ Run the binary directly — both `khora-runtime` and any project compiled via `k
 
 ### Why two strategies
 
-The choice is **deterministic** (presence of `Cargo.toml` is the contract) and **opt-in** (the user explicitly upgrades a project to native Rust by clicking the hub button). Most projects stay on Strategy A and benefit from trivial cross-platform export. Strategy B is the escape hatch when raw performance, compile-time safety, or new engine primitives are needed. Ergon scripts plug into both strategies transparently — they are assets under `assets/`, packed with the rest (see [Scripting](../concepts/scripting.md)).
+The choice is **deterministic** (presence of `Cargo.toml` is the contract) and **opt-in** (the user explicitly upgrades a project to native Rust by clicking the hub button). Most projects stay on Strategy A and benefit from trivial cross-platform export. Strategy B is the escape hatch when raw performance, compile-time safety, or new engine primitives are needed. Ergon scripts plug into both strategies transparently — they are assets under `assets/`, packed with the rest (see [Scripting](../concepts/scripting/index.md)).
 
 ## 10 — The Control Plane
 
