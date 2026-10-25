@@ -512,8 +512,10 @@ pub(crate) fn read_words(device: &wgpu::Device, buffer: &wgpu::Buffer) -> Vec<u3
     let words = buffer
         .slice(..)
         .get_mapped_range()
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     buffer.unmap();
     words

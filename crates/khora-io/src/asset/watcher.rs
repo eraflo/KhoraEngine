@@ -260,6 +260,17 @@ fn translate_event(
         // will pick up the new path on the subsequent Create event anyway.
         notify::EventKind::Modify(ModifyKind::Name(RenameMode::From)) => AssetChangeKind::Removed,
         notify::EventKind::Modify(ModifyKind::Name(RenameMode::To)) => AssetChangeKind::Created,
+        // A rename reported without its side — macOS gives `Any` for each
+        // path of a move, Windows may give `Both` with the two paths — is
+        // told apart by what is on disk now: the path still there is where
+        // the file went, the other where it was.
+        notify::EventKind::Modify(ModifyKind::Name(_)) => {
+            if abs.exists() {
+                AssetChangeKind::Created
+            } else {
+                AssetChangeKind::Removed
+            }
+        }
         notify::EventKind::Modify(_) => AssetChangeKind::Modified,
         // Access / Any / Other: not interesting for hot-reload.
         _ => return None,
@@ -392,6 +403,26 @@ mod repeat_tests {
 
         assert_eq!(change.rel_path, "scripts/guard.erg");
         assert_eq!(change.root(), &*named);
+    }
+
+    /// A rename that does not say which side a path is on is read from the
+    /// disk: the path that exists is where the file went, the one that does
+    /// not is where it came from.
+    #[test]
+    fn a_rename_without_its_side_is_read_from_the_disk() {
+        let dir = tempfile::tempdir().expect("a temp dir");
+        let root: Arc<Path> = Arc::from(dir.path());
+        std::fs::write(dir.path().join("there.erg"), "behavior B {}").expect("writes");
+        use notify::event::{ModifyKind, RenameMode};
+        let rename = notify::EventKind::Modify(ModifyKind::Name(RenameMode::Any));
+
+        let arrived = translate_event(&rename, &dir.path().join("there.erg"), &root, None)
+            .expect("a change under the root");
+        let left = translate_event(&rename, &dir.path().join("gone.erg"), &root, None)
+            .expect("a change under the root");
+
+        assert_eq!(arrived.kind, AssetChangeKind::Created);
+        assert_eq!(left.kind, AssetChangeKind::Removed);
     }
 
     /// Under neither name, a path is not a change of this root.

@@ -480,8 +480,10 @@ fn falloffs(samples: &[SpotSample]) -> Option<Vec<f32>> {
     let values = readback
         .slice(..)
         .get_mapped_range()
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
         .collect();
     readback.unmap();
     Some(values)
