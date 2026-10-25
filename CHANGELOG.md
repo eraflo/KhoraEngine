@@ -1,3 +1,14 @@
+## [0.8.1](https://github.com/eraflo/KhoraEngine/compare/v0.8.0...v0.8.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* **deps:** clear the cargo-deny advisories; the hub's extraction is stricter ([a118bbd](https://github.com/eraflo/KhoraEngine/commit/a118bbd93fef4efb5c034fc4e33905f044d8dfca))
+* **docs:** the landing page is the site's front page ([c0d8d81](https://github.com/eraflo/KhoraEngine/commit/c0d8d81d5125c819ce3f62d317eda947fedf4a42))
+* **docs:** the landing page reads well on a phone ([7d20d3a](https://github.com/eraflo/KhoraEngine/commit/7d20d3a20ee22cef360c71e4df7d71c26ce2570f))
+* **io:** one root keeps one name on Linux and macOS ([debca8e](https://github.com/eraflo/KhoraEngine/commit/debca8ed29d9c9063eaf274cafd8ee0f8810c40f))
+* **lint:** satisfy Clippy 1.99 ([9db6307](https://github.com/eraflo/KhoraEngine/commit/9db6307a7772780448333b1f1cb5eb3145e6070f))
+
 ## [0.6.4](https://github.com/eraflo/KhoraEngine/compare/v0.6.3...v0.6.4) (2026-05-05)
 
 
