@@ -1,0 +1,232 @@
+<div class="kp-landing">
+
+<header class="kp-l-bar">
+<div class="kp-l-inner">
+<a class="kp-l-mark" href="{root}home.html" aria-label="Khora, documentation home"><svg class="kp-l-mark-sign" viewBox="-200 -200 400 400" aria-hidden="true"><defs><linearGradient id="kp-l-silver" gradientUnits="userSpaceOnUse" x1="-200" y1="-200" x2="200" y2="200"><stop offset="0" stop-color="#f1f5f9"/><stop offset="0.5" stop-color="#bccbdb"/><stop offset="1" stop-color="#7d94ad"/></linearGradient></defs><g fill="url(#kp-l-silver)"><polygon points="-200,-200 -7,-200 -7,200 -200,200"/><polygon points="7,-200 190.1,-200 7,-16.9"/><polygon points="9.9,0 200,-190.1 200,190.1"/><polygon points="7,200 7,16.9 190.1,200"/></g></svg><span class="kp-l-mark-word">KHORA</span></a>
+<nav class="kp-l-nav" aria-label="Documentation">
+<a href="{root}tutorials/start-from-zero.html">Start</a>
+<a href="{root}concepts/index.html">Learn</a>
+<a href="{root}reference/index.html">Reference</a>
+<a href="https://github.com/eraflo/KhoraEngine">GitHub</a>
+</nav>
+<a class="kp-l-btn kp-l-btn-main" href="{root}tutorials/start-from-zero.html">Start from zero</a>
+</div>
+</header>
+
+<section class="kp-l-move" data-frames="{chess_frames}" data-pattern="{img}chess/frame_{n}.jpg" aria-label="One frame, negotiated">
+<div class="kp-l-stage">
+<img class="kp-l-poster" src="{img}chess/frame_000.jpg" alt="A chess board on a wooden table in a forest clearing, rendered in real time by Khora; one gold knight is about to move.">
+<canvas aria-hidden="true"></canvas>
+<div class="kp-l-shade"></div>
+
+<div class="kp-l-copy">
+<div class="kp-l-inner">
+
+<div class="kp-l-beat is-on" data-from="0" data-to="0.14">
+<h1 class="kp-l-title">Every frame,<em>negotiated.</em></h1>
+<p class="kp-l-lede">Khora is a free, open-source game engine written in Rust. Sixty times a second, its parts agree on how to share the frame, so your game keeps its pace on any machine.</p>
+<div class="kp-l-actions">
+<a class="kp-l-btn kp-l-btn-main" href="{root}tutorials/start-from-zero.html">Start from zero <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></a>
+<a class="kp-l-btn" href="{root}concepts/saa.html">How it works</a>
+</div>
+</div>
+
+<div class="kp-l-beat" data-from="0.18" data-to="0.36">
+<p class="kp-l-say">Each part of the engine <em>knows several ways</em> to do its job.</p>
+<p class="kp-l-say-sub">Drawing the picture, simulating physics, mixing sound, running your scripts: each is an agent with a few strategies, and it knows what each one costs.</p>
+</div>
+
+<div class="kp-l-beat" data-from="0.36" data-to="0.52">
+<p class="kp-l-say">A conductor <em>deals out the frame.</em></p>
+<p class="kp-l-say-sub">A frame lasts 16.7 milliseconds. The conductor watches frame time, heat and battery. Each agent asks for a share, and the conductor settles what each one gets.</p>
+</div>
+
+<div class="kp-l-beat" data-from="0.52" data-to="0.74">
+<p class="kp-l-say">When the machine runs hot, <em>the budget shrinks.</em></p>
+<p class="kp-l-say-sub">The agents renegotiate. Shadows drop a resolution; a few scripts finish one frame later. The game itself never changes, only the way the engine draws and runs it.</p>
+</div>
+
+<div class="kp-l-beat" data-from="0.78" data-to="1.01">
+<p class="kp-l-say">You write the game. <em>Khora keeps the pace.</em></p>
+<div class="kp-l-actions" style="margin-top:26px">
+<a class="kp-l-btn kp-l-btn-main" href="{root}tutorials/start-from-zero.html">Start from zero <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></a>
+</div>
+</div>
+
+</div>
+</div>
+
+<aside class="kp-l-clock" aria-label="One frame's budget, illustrated">
+<div class="kp-l-clock-head"><span>One frame · illustrated</span><span class="kp-l-clock-budget">16.7 ms</span></div>
+<div class="kp-l-track">
+<span data-part="render" style="background:oklch(0.84 0.04 240)"></span>
+<span data-part="physics" style="background:oklch(0.66 0.045 240)"></span>
+<span data-part="scripts" style="background:oklch(0.55 0.05 245)"></span>
+<span data-part="audio" style="background:oklch(0.45 0.04 250)"></span>
+<span class="kp-l-limit"></span>
+</div>
+<ul class="kp-l-rows">
+<li><i style="background:oklch(0.84 0.04 240)"></i><span>Rendering <small>render agent</small></span><b data-ms="render">7.1 ms</b></li>
+<li><i style="background:oklch(0.66 0.045 240)"></i><span>Physics <small>physics agent</small></span><b data-ms="physics">2.4 ms</b></li>
+<li><i style="background:oklch(0.55 0.05 245)"></i><span>Scripts <small>Ergon</small></span><b data-ms="scripts">1.8 ms</b></li>
+<li><i style="background:oklch(0.45 0.04 250)"></i><span>Audio <small>audio agent</small></span><b data-ms="audio">0.6 ms</b></li>
+</ul>
+<div class="kp-l-heat"><span>heat</span><div class="kp-l-heat-bar"><span></span></div></div>
+<p class="kp-l-clock-note">shadows 2048 px · every script on time</p>
+</aside>
+
+<div class="kp-l-scroll-hint" aria-hidden="true">Scroll <i></i></div>
+</div>
+</section>
+
+<section class="kp-l-wide" aria-labelledby="kp-l-valley-title">
+<figure class="kp-l-reel kp-l-reel-wide" data-frames="{valley_frames}" data-pattern="{img}valley/frame_{n}.jpg" data-fps="8">
+<img src="{img}valley/frame_000.jpg" alt="A valley of fruit trees and pines under snowy mountains, the camera gliding over it, rendered by Khora." loading="lazy">
+</figure>
+<div class="kp-l-inner kp-l-wide-copy">
+<p class="kp-l-kicker">Data · CRPECS</p>
+<h2 class="kp-l-h2" id="kp-l-valley-title">{valley_entities} entities. <em>One pass.</em></h2>
+<p class="kp-l-intro">Every tree, rock, flower and blade of grass in this valley is an entity. Khora stores them in pages grouped by what they mean. The renderer reads only the pages it needs and sweeps them straight through, every frame.</p>
+<a class="kp-l-btn" href="{root}concepts/ecs.html">How Khora stores a world <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></a>
+</div>
+</section>
+
+<section class="kp-l-section" aria-labelledby="kp-l-ergon-title">
+<div class="kp-l-inner kp-l-ergon">
+<div>
+<p class="kp-l-kicker">Scripts · Ergon</p>
+<h2 class="kp-l-h2" id="kp-l-ergon-title">Twenty lights, <em>one behavior.</em></h2>
+<p class="kp-l-intro" style="margin-bottom:0">Ergon is Khora's language for gameplay. Each firefly here carries the same small behavior, which moves it every frame. If a frame runs out of time, a script pauses at a safe place and picks up there on the next frame, even after you edit its code while the game runs.</p>
+<pre class="kp-l-code" aria-label="firefly.erg, excerpt"><span class="k">behavior</span> Firefly {
+    <span class="c">// centre, reach and speed on each axis</span>
+    <span class="k">float</span> cx = <span class="s">0.0</span>;  <span class="c">// … cz, rx … rz, sx … sz</span>
+    <span class="k">float</span> t = <span class="s">0.0</span>;
+
+    <span class="k">void</span> Update(<span class="k">float</span> dt) {
+        t += dt;
+        <span class="k">this</span>.SetPosition(<span class="k">Vec3</span>(
+            cx + rx * Wave(t * sx),
+            cy + ry * Wave(t * sy),
+            cz + rz * Wave(t * sz)));
+    }
+}</pre>
+<div class="kp-l-actions" style="margin-top:28px">
+<a class="kp-l-btn" href="{root}concepts/scripting/index.html">Your first script <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></a>
+</div>
+</div>
+<figure class="kp-l-reel" data-frames="{fireflies_frames}" data-pattern="{img}fireflies/frame_{n}.jpg" data-fps="10">
+<img src="{img}fireflies/frame_000.jpg" alt="Fireflies drifting through a forest at night, each one a light moved by an Ergon script, rendered by Khora." loading="lazy">
+</figure>
+</div>
+</section>
+
+<section class="kp-l-section" aria-labelledby="kp-l-physics-title">
+<div class="kp-l-inner kp-l-physics">
+<figure class="kp-l-reel" data-frames="{physics_frames}" data-pattern="{img}physics/frame_{n}.jpg" data-fps="12" data-mode="forward">
+<img src="{img}physics/frame_000.jpg" alt="A tower of forty-five wooden crates in a forest clearing; a boulder thrown from the side knocks it down and the crates tumble across the grass, simulated and rendered by Khora." loading="lazy">
+</figure>
+<div>
+<p class="kp-l-kicker">Physics · Rapier</p>
+<h2 class="kp-l-h2" id="kp-l-physics-title">Forty-five crates. <em>One boulder.</em></h2>
+<p class="kp-l-intro">Every crate is a rigid body with its own collider. The boulder is thrown, the tower gives way, and the pieces collide, tumble and come to rest, each step of the simulation run inside the share of the frame that physics was given.</p>
+<a class="kp-l-btn" href="{root}concepts/physics.html">How physics works <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></a>
+</div>
+</div>
+</section>
+
+<section class="kp-l-section" aria-labelledby="kp-l-parts-title">
+<div class="kp-l-inner">
+<p class="kp-l-kicker">Inside the engine</p>
+<h2 class="kp-l-h2" id="kp-l-parts-title">The parts, <em>and what they do.</em></h2>
+<p class="kp-l-intro">Each big part of Khora does one job and knows more than one way to do it. Every row opens the page that explains it from the start.</p>
+<ul class="kp-l-cast">
+<li><a href="{root}concepts/gorna.html"><span class="kp-l-piece">The conductor</span><span class="kp-l-role">Budgets<small>DCC · GORNA</small></span><span class="kp-l-does">Watches frame time, heat, battery and memory, and deals out each frame's budget among the agents.</span></a></li>
+<li><a href="{root}concepts/rendering.html"><span class="kp-l-piece">Rendering</span><span class="kp-l-role">The picture<small>render agent · lanes · wgpu</small></span><span class="kp-l-does">Physically based light, shadows and sky. When the budget shrinks, it switches to a cheaper way of drawing the frame.</span></a></li>
+<li><a href="{root}concepts/physics.html"><span class="kp-l-piece">Physics</span><span class="kp-l-role">Things that move<small>rigid bodies · colliders</small></span><span class="kp-l-does">Bodies fall, collide and come to rest, stepped forward inside their share of the frame.</span></a></li>
+<li><a href="{root}concepts/audio.html"><span class="kp-l-piece">Audio</span><span class="kp-l-role">Sound in space<small>spatial mixing</small></span><span class="kp-l-does">Every sound is placed where it comes from. When time runs short, the quietest voices drop out before you could hear a glitch.</span></a></li>
+<li><a href="{root}concepts/scripting/index.html"><span class="kp-l-piece">Ergon</span><span class="kp-l-role">Your scripts<small>language · VM · hot reload</small></span><span class="kp-l-does">Gameplay code that pauses at a safe point when its time is up, and resumes on the next frame exactly where it stopped.</span></a></li>
+<li><a href="{root}concepts/ecs.html"><span class="kp-l-piece">CRPECS</span><span class="kp-l-role">Your world's data<small>entities · components</small></span><span class="kp-l-does">Entities stored in pages by what they mean, so each part of the engine reads only what it needs.</span></a></li>
+<li><a href="{root}concepts/saves.html"><span class="kp-l-piece">Saves</span><span class="kp-l-role">Scenes and progress<small>records · game saves</small></span><span class="kp-l-does">Scenes are saved as records you can read. A game save keeps only what changed, and a failed load leaves the world exactly as it was.</span></a></li>
+</ul>
+</div>
+</section>
+
+<section class="kp-l-section" aria-labelledby="kp-l-doors-title">
+<div class="kp-l-inner">
+<h2 class="kp-l-h2" id="kp-l-doors-title">Where do <em>you</em> start?</h2>
+<p class="kp-l-intro">Everyone arrives knowing something different. Pick the door that sounds like you.</p>
+<ul class="kp-l-doors">
+<li><a href="{root}tutorials/start-from-zero.html"><span class="kp-l-door-who">I have never made a game</span><span class="kp-l-door-what">Install Khora, open your first project and put something on screen. No programming needed.</span><span class="kp-l-door-go">Start from zero <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></span></a></li>
+<li><a href="{root}tutorials/coming-from-another-engine.html"><span class="kp-l-door-who">I make games in Unity, Godot or Unreal</span><span class="kp-l-door-what">What you already know, in Khora's words, and the two ideas that are new.</span><span class="kp-l-door-go">Coming from another engine <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></span></a></li>
+<li><a href="{root}concepts/saa.html"><span class="kp-l-door-who">I want to understand how it works</span><span class="kp-l-door-what">Why an engine would negotiate with itself, and how every part is built around that.</span><span class="kp-l-door-go">The big idea <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></span></a></li>
+<li><a href="{root}contributing/setup.html"><span class="kp-l-door-who">I want to work on the engine</span><span class="kp-l-door-what">Build it from source, run its tests, find your way around its crates.</span><span class="kp-l-door-go">Get set up <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></span></a></li>
+</ul>
+</div>
+</section>
+
+<section class="kp-l-end" aria-labelledby="kp-l-end-title">
+<img src="{img}valley/frame_{valley_last}.jpg" alt="" loading="lazy">
+<div class="kp-l-inner">
+<h2 class="kp-l-h2" id="kp-l-end-title">You write the game.<br><em>Khora keeps the pace.</em></h2>
+<div class="kp-l-actions" style="margin-top:32px">
+<a class="kp-l-btn kp-l-btn-main" href="{root}tutorials/start-from-zero.html">Start from zero <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></a>
+<a class="kp-l-btn" href="https://github.com/eraflo/KhoraEngine">Source on GitHub</a>
+</div>
+</div>
+</section>
+
+<footer class="kp-l-foot">
+<div class="kp-l-inner">
+<div class="kp-l-foot-top">
+<div class="kp-l-foot-brand">
+<a class="kp-l-foot-sign" href="{root}home.html" aria-label="Khora, documentation home"><svg class="kp-l-sign-mark" viewBox="-200 -200 400 400" aria-hidden="true"><g fill="url(#kp-l-silver)"><polygon points="-200,-200 -7,-200 -7,200 -200,200"/><polygon points="7,-200 190.1,-200 7,-16.9"/><polygon points="9.9,0 200,-190.1 200,190.1"/><polygon points="7,200 7,16.9 190.1,200"/></g></svg><span class="kp-l-foot-name"><span class="kp-l-sign-word">KHORA</span><span class="kp-l-sign-sub">ENGINE · ΧΩΡΑ</span></span></a>
+<p class="kp-l-foot-line">A game engine that negotiates every frame, so your game keeps its pace on any machine.</p>
+<a class="kp-l-foot-start" href="{root}tutorials/start-from-zero.html">Start from zero <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h13M13 6l6 6-6 6"/></svg></a>
+</div>
+<nav class="kp-l-foot-cols" aria-label="Site">
+<div>
+<p class="kp-l-foot-head">Learn</p>
+<ul>
+<li><a href="{root}tutorials/start-from-zero.html">Start from zero</a></li>
+<li><a href="{root}tutorials/your-first-game.html">Your first game</a></li>
+<li><a href="{root}concepts/scripting/index.html">Scripting with Ergon</a></li>
+<li><a href="{root}tutorials/coming-from-another-engine.html">Coming from another engine</a></li>
+</ul>
+</div>
+<div>
+<p class="kp-l-foot-head">Understand</p>
+<ul>
+<li><a href="{root}concepts/saa.html">The big idea</a></li>
+<li><a href="{root}concepts/the-frame.html">One frame, step by step</a></li>
+<li><a href="{root}concepts/gorna.html">How the parts negotiate</a></li>
+<li><a href="{root}reference/glossary.html">Glossary</a></li>
+</ul>
+</div>
+<div>
+<p class="kp-l-foot-head">Reference</p>
+<ul>
+<li><a href="{root}how-to/index.html">How-to guides</a></li>
+<li><a href="{root}reference/sdk.html">The SDK</a></li>
+<li><a href="{root}reference/ergon.html">The Ergon language</a></li>
+<li><a href="{root}faq.html">Questions</a></li>
+</ul>
+</div>
+<div>
+<p class="kp-l-foot-head">Project</p>
+<ul>
+<li><a href="https://github.com/eraflo/KhoraEngine">Source on GitHub</a></li>
+<li><a href="{root}contributing/index.html">Contributing</a></li>
+<li><a href="{root}roadmap.html">Roadmap</a></li>
+<li><a href="{root}design/editor.html">Design system</a></li>
+</ul>
+</div>
+</nav>
+</div>
+<div class="kp-l-foot-fine">
+<p>Free and open source, under the <a href="https://github.com/eraflo/KhoraEngine/blob/main/LICENSE">Apache 2.0 licence</a>. Written in Rust.</p>
+<p>Every image on this page was rendered in real time by Khora, in scenes built for it. Chess set: Stylized Casual Chess Set (CC0). Trees, rocks and props: Polytope Studio's low-poly environment set. The mountains are generated.</p>
+</div>
+</div>
+</footer>
+
+</div>
