@@ -41,6 +41,7 @@ pub const RAD_TO_DEG: f32 = 180.0 / PI;
 // --- Declare Sub-Modules ---
 
 pub mod affine_transform;
+mod basis;
 pub mod color;
 pub mod cube;
 pub mod dimension;
