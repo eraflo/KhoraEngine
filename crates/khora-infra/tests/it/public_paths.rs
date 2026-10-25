@@ -378,6 +378,7 @@ fn module_graphics_text_paths_still_resolve() {
         as fn(&khora_infra::graphics::text::standard::StandardTextLayout);
     is_text_layout::<khora_infra::graphics::text::standard::StandardTextLayout>();
     let _ = type_name::<khora_infra::graphics::text::standard::StandardTextRenderer>();
+    let _ = khora_infra::graphics::text::standard::text_projection;
     let _ = type_name::<khora_infra::graphics::text::StandardTextRenderer>();
     let _ = type_name::<khora_infra::graphics::StandardTextRenderer>();
     let _ = type_name::<khora_infra::StandardTextRenderer>();

@@ -14,7 +14,7 @@
 
 use super::custom::pixel_font;
 use khora_core::asset::{font::Font, AssetUUID, Handle};
-use khora_core::math::{LinearRgba, Vec2, Vec4};
+use khora_core::math::{Extent2D, LinearRgba, Mat4, Vec2, Vec4};
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutDescriptor,
     BindGroupLayoutEntry, BindGroupLayoutId, BindingResource, BindingType, BufferBinding, LoadOp,
@@ -29,9 +29,10 @@ use khora_core::renderer::api::resource::{
     MipmapFilterMode, SampleCount, SamplerDescriptor, SamplerId, TextureFormat, TextureViewId,
 };
 use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderSourceData};
-use khora_core::renderer::api::text::{TextLayout, TextRenderer};
+use khora_core::renderer::api::text::{FontFace, TextLayout, TextRenderer};
 use khora_core::renderer::api::util::ShaderStageFlags;
 use khora_core::renderer::api::util::TextureAtlas;
+use khora_core::renderer::error::ResourceError;
 use khora_core::renderer::traits::CommandEncoder;
 use khora_core::renderer::GraphicsDevice;
 use std::any::Any;
@@ -57,9 +58,9 @@ pub struct StandardTextLayout {
     pub size: Vec2,
     /// Individual glyph positions.
     pub glyph_positions: Vec<(u32, Vec2)>,
-    /// Handle to the font.
-    pub font_handle: Handle<Font>,
-    /// UUID of the font asset.
+    /// The font asset the text names; `None` for the built-in face.
+    pub font_handle: Option<Handle<Font>>,
+    /// The id of the face ([`Font::BUILT_IN`] for the built-in face).
     pub font_uuid: AssetUUID,
     /// Rendered font size.
     pub font_size: f32,
@@ -84,13 +85,70 @@ struct TextGpuResources {
     sampler: SamplerId,
     atlas: TextureAtlas,
     bind_group: BindGroupId,
-    vertex_buffer: BufferId,
-    index_buffer: BufferId,
+    uniform_buffer: BufferId,
+    vertex_buffer: GrowableBuffer,
+    index_buffer: GrowableBuffer,
 }
+
+/// A GPU buffer that is replaced by a bigger one when a frame needs more
+/// room than it has.
+struct GrowableBuffer {
+    id: BufferId,
+    capacity: u64,
+    usage: BufferUsage,
+    label: &'static str,
+}
+
+impl GrowableBuffer {
+    fn new(
+        device: &dyn GraphicsDevice,
+        label: &'static str,
+        capacity: u64,
+        usage: BufferUsage,
+    ) -> Result<Self, ResourceError> {
+        let id = device.create_buffer(&BufferDescriptor {
+            label: Some(Cow::Borrowed(label)),
+            size: capacity,
+            usage,
+            mapped_at_creation: false,
+        })?;
+        Ok(Self {
+            id,
+            capacity,
+            usage,
+            label,
+        })
+    }
+
+    /// Makes room for `len` bytes: a buffer too small is replaced by one of
+    /// the next power of two at least `len`, and the old one is destroyed.
+    fn ensure(&mut self, device: &dyn GraphicsDevice, len: u64) -> Result<(), ResourceError> {
+        if len <= self.capacity {
+            return Ok(());
+        }
+        let grown = Self::new(device, self.label, len.next_power_of_two(), self.usage)?;
+        let outgrown = std::mem::replace(self, grown);
+        if let Err(e) = device.destroy_buffer(outgrown.id) {
+            log::warn!(
+                "StandardTextRenderer: destroying the outgrown {} failed: {e}",
+                self.label
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Initial room of the vertex buffer: 2048 vertices, 512 glyphs.
+const INITIAL_VERTEX_BYTES: u64 = 64 * 1024;
+/// Initial room of the index buffer: 3072 `u32` indices, 512 glyphs.
+const INITIAL_INDEX_BYTES: u64 = 12 * 1024;
 
 /// A "maison" (home-made) text renderer that is backend-agnostic.
 pub struct StandardTextRenderer {
-    glyph_cache: Mutex<HashMap<(AssetUUID, char, u32), GlyphData>>, // (font_uuid, char, size_fixed)
+    /// Each character's place in the atlas. Keyed by the character alone:
+    /// every face and size is drawn from the same built-in bitmap, so one
+    /// upload serves them all and the atlas never fills with copies.
+    glyph_cache: Mutex<HashMap<char, GlyphData>>,
     queue: Mutex<Vec<QueuedText>>,
     gpu_resources: Mutex<Option<TextGpuResources>>,
     shader_source: String,
@@ -108,6 +166,23 @@ struct GlyphData {
     pub uv_max: Vec2,
     #[allow(dead_code)]
     pub size: Vec2,
+}
+
+/// The orthographic projection that maps text pixel coordinates of `target`
+/// (origin top-left, y down) to clip space: pixel `(0, 0)` to `(-1, 1)` and
+/// `(width, height)` to `(1, -1)`. `None` when a side is zero.
+pub fn text_projection(target: Extent2D) -> Option<Mat4> {
+    if target.width == 0 || target.height == 0 {
+        return None;
+    }
+    Some(Mat4::orthographic_rh_zo(
+        0.0,
+        target.width as f32,
+        target.height as f32,
+        0.0,
+        0.0,
+        1.0,
+    ))
 }
 
 impl StandardTextRenderer {
@@ -256,12 +331,11 @@ impl StandardTextRenderer {
             border_color: None,
         })?;
 
-        // Global uniform for projection (managed elsewhere or here?)
-        // For simplicity, we create a small uniform for the view_proj in the SDK if needed,
-        // but here we just need a buffer.
+        // The projection of the target being drawn into, rewritten on every
+        // flush.
         let uniform_buffer = device.create_buffer(&BufferDescriptor {
             label: Some(Cow::Borrowed("text_uniforms")),
-            size: 64, // Mat4
+            size: std::mem::size_of::<Mat4>() as u64,
             usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
             mapped_at_creation: false,
         })?;
@@ -292,19 +366,18 @@ impl StandardTextRenderer {
             ],
         })?;
 
-        let vertex_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some(Cow::Borrowed("text_vertices")),
-            size: 1024 * 64, // 64KB for vertices
-            usage: BufferUsage::VERTEX | BufferUsage::COPY_DST,
-            mapped_at_creation: false,
-        })?;
-
-        let index_buffer = device.create_buffer(&BufferDescriptor {
-            label: Some(Cow::Borrowed("text_indices")),
-            size: 1024 * 32, // 32KB for indices
-            usage: BufferUsage::INDEX | BufferUsage::COPY_DST,
-            mapped_at_creation: false,
-        })?;
+        let vertex_buffer = GrowableBuffer::new(
+            device,
+            "text_vertices",
+            INITIAL_VERTEX_BYTES,
+            BufferUsage::VERTEX | BufferUsage::COPY_DST,
+        )?;
+        let index_buffer = GrowableBuffer::new(
+            device,
+            "text_indices",
+            INITIAL_INDEX_BYTES,
+            BufferUsage::INDEX | BufferUsage::COPY_DST,
+        )?;
 
         Ok(TextGpuResources {
             pipeline,
@@ -312,6 +385,7 @@ impl StandardTextRenderer {
             sampler,
             atlas,
             bind_group,
+            uniform_buffer,
             vertex_buffer,
             index_buffer,
         })
@@ -322,11 +396,16 @@ impl TextRenderer for StandardTextRenderer {
     fn layout_text(
         &self,
         text: &str,
-        font: &Handle<Font>,
-        font_id: AssetUUID,
+        face: FontFace<'_>,
         font_size: f32,
         _max_width: Option<f32>,
     ) -> Box<dyn TextLayout> {
+        // Every face is drawn with the built-in glyphs: the bytes of a font
+        // asset are not rasterised yet.
+        let font_handle = match face {
+            FontFace::BuiltIn => None,
+            FontFace::Asset { font, .. } => Some(font.clone()),
+        };
         let mut glyph_positions = Vec::new();
         let mut cursor_x = 0.0;
 
@@ -341,8 +420,8 @@ impl TextRenderer for StandardTextRenderer {
         Box::new(StandardTextLayout {
             size: Vec2::new(cursor_x, char_height),
             glyph_positions,
-            font_handle: font.clone(),
-            font_uuid: font_id,
+            font_handle,
+            font_uuid: face.uuid(),
             font_size,
         })
     }
@@ -369,101 +448,119 @@ impl TextRenderer for StandardTextRenderer {
         device: &dyn GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
         color_target: &TextureViewId,
+        target: Extent2D,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // The queue is taken whole: whatever happens below, the next frame
+        // starts from an empty one.
+        let queue = std::mem::take(
+            &mut *self
+                .queue
+                .lock()
+                .map_err(|_| "TextRenderer::flush: queue lock poisoned")?,
+        );
+        if queue.is_empty() {
+            return Ok(());
+        }
+        // A target without area has no pixel to draw on.
+        let Some(projection) = text_projection(target) else {
+            return Ok(());
+        };
+
         let mut resources_lock = self
             .gpu_resources
             .lock()
             .map_err(|_| "TextRenderer::flush: gpu_resources lock poisoned")?;
-        if resources_lock.is_none() {
-            *resources_lock = Some(self.init_resources(device)?);
-        }
-        let res = resources_lock.as_mut().unwrap();
+        let res = match &mut *resources_lock {
+            Some(res) => res,
+            empty => empty.insert(self.init_resources(device)?),
+        };
 
-        let mut queue = self
-            .queue
-            .lock()
-            .map_err(|_| "TextRenderer::flush: queue lock poisoned")?;
-        if queue.is_empty() {
+        // 1. Prepare Vertex/Index Data
+        let mut vertices: Vec<TextVertex> = Vec::new();
+        let mut indices: Vec<u32> = Vec::new();
+        {
+            let mut cache = self
+                .glyph_cache
+                .lock()
+                .map_err(|_| "TextRenderer::flush: glyph cache lock poisoned")?;
+
+            for item in &queue {
+                for (c_u32, g_pos) in &item.layout.glyph_positions {
+                    let c = char::from_u32(*c_u32).unwrap_or('?');
+
+                    // Get or rasterize glyph
+                    let glyph = if let Some(g) = cache.get(&c) {
+                        *g
+                    } else if let Some((w, h, pixels)) = self.rasterize_glyph(c) {
+                        if let Some(rect) = res.atlas.allocate_and_upload(device, w, h, &pixels, 1)
+                        {
+                            let g = GlyphData {
+                                uv_min: rect.min,
+                                uv_max: rect.max,
+                                size: Vec2::new(w as f32, h as f32),
+                            };
+                            cache.insert(c, g);
+                            g
+                        } else {
+                            continue; // Atlas full
+                        }
+                    } else {
+                        continue; // Raster fail
+                    };
+
+                    let p = item.pos + *g_pos;
+                    let s = item.layout.font_size;
+                    let uv_min = glyph.uv_min;
+                    let uv_max = glyph.uv_max;
+                    let color = item.color.to_array();
+                    let base = vertices.len() as u32;
+
+                    // Quad: (TL, TR, BR, BL)
+                    vertices.push(TextVertex {
+                        pos: p.to_array(),
+                        uv: [uv_min.x, uv_min.y],
+                        color,
+                    });
+                    vertices.push(TextVertex {
+                        pos: (p + Vec2::new(s * 0.6, 0.0)).to_array(),
+                        uv: [uv_max.x, uv_min.y],
+                        color,
+                    });
+                    vertices.push(TextVertex {
+                        pos: (p + Vec2::new(s * 0.6, s)).to_array(),
+                        uv: [uv_max.x, uv_max.y],
+                        color,
+                    });
+                    vertices.push(TextVertex {
+                        pos: (p + Vec2::new(0.0, s)).to_array(),
+                        uv: [uv_min.x, uv_max.y],
+                        color,
+                    });
+
+                    indices.extend_from_slice(&[
+                        base,
+                        base + 1,
+                        base + 2,
+                        base,
+                        base + 2,
+                        base + 3,
+                    ]);
+                }
+            }
+        }
+        if indices.is_empty() {
             return Ok(());
         }
 
-        // 1. Prepare Vertex/Index Data
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-        let mut vert_offset = 0;
-
-        for item in queue.iter() {
-            let font_uuid = item.layout.font_uuid;
-            let font_size_fixed = (item.layout.font_size * 10.0) as u32;
-
-            for (c_u32, g_pos) in &item.layout.glyph_positions {
-                let c = char::from_u32(*c_u32).unwrap_or('?');
-                let cache_key = (font_uuid, c, font_size_fixed);
-
-                // Get or rasterize glyph
-                let mut cache = self
-                    .glyph_cache
-                    .lock()
-                    .map_err(|_| "TextRenderer::flush: glyph cache lock poisoned")?;
-                let glyph = if let Some(g) = cache.get(&cache_key) {
-                    *g
-                } else if let Some((w, h, pixels)) = self.rasterize_glyph(c) {
-                    if let Some(rect) = res.atlas.allocate_and_upload(device, w, h, &pixels, 1) {
-                        let g = GlyphData {
-                            uv_min: rect.min,
-                            uv_max: rect.max,
-                            size: Vec2::new(w as f32, h as f32),
-                        };
-                        cache.insert(cache_key, g);
-                        g
-                    } else {
-                        continue; // Atlas full
-                    }
-                } else {
-                    continue; // Raster fail
-                };
-
-                let p = item.pos + *g_pos;
-                let s = item.layout.font_size;
-                let uv_min = glyph.uv_min;
-                let uv_max = glyph.uv_max;
-
-                // Quad: (TL, TR, BR, BL)
-                vertices.push(TextVertex {
-                    pos: p.to_array(),
-                    uv: [uv_min.x, uv_min.y],
-                    color: item.color.to_array(),
-                });
-                vertices.push(TextVertex {
-                    pos: (p + Vec2::new(s * 0.6, 0.0)).to_array(),
-                    uv: [uv_max.x, uv_min.y],
-                    color: item.color.to_array(),
-                });
-                vertices.push(TextVertex {
-                    pos: (p + Vec2::new(s * 0.6, s)).to_array(),
-                    uv: [uv_max.x, uv_max.y],
-                    color: item.color.to_array(),
-                });
-                vertices.push(TextVertex {
-                    pos: (p + Vec2::new(0.0, s)).to_array(),
-                    uv: [uv_min.x, uv_max.y],
-                    color: item.color.to_array(),
-                });
-
-                indices.push(vert_offset);
-                indices.push(vert_offset + 1);
-                indices.push(vert_offset + 2);
-                indices.push(vert_offset);
-                indices.push(vert_offset + 2);
-                indices.push(vert_offset + 3);
-
-                vert_offset += 4;
-            }
-        }
-
         // 2. Upload Data
-        device.write_buffer(res.vertex_buffer, 0, bytemuck::cast_slice(&vertices))?;
-        device.write_buffer(res.index_buffer, 0, bytemuck::cast_slice(&indices))?;
+        let vertex_bytes: &[u8] = bytemuck::cast_slice(&vertices);
+        let index_bytes: &[u8] = bytemuck::cast_slice(&indices);
+        res.vertex_buffer
+            .ensure(device, vertex_bytes.len() as u64)?;
+        res.index_buffer.ensure(device, index_bytes.len() as u64)?;
+        device.write_buffer(res.uniform_buffer, 0, bytemuck::bytes_of(&projection))?;
+        device.write_buffer(res.vertex_buffer.id, 0, vertex_bytes)?;
+        device.write_buffer(res.index_buffer.id, 0, index_bytes)?;
 
         // 3. Render Pass
         let attachment = RenderPassColorAttachment {
@@ -486,13 +583,10 @@ impl TextRenderer for StandardTextRenderer {
 
         pass.set_pipeline(&res.pipeline);
         pass.set_bind_group(0, &res.bind_group, &[]);
-        pass.set_vertex_buffer(0, &res.vertex_buffer, 0);
-        pass.set_index_buffer(&res.index_buffer, 0, IndexFormat::Uint16);
+        pass.set_vertex_buffer(0, &res.vertex_buffer.id, 0);
+        pass.set_index_buffer(&res.index_buffer.id, 0, IndexFormat::Uint32);
         pass.draw_indexed(0..(indices.len() as u32), 0, 0..1);
 
-        drop(pass);
-
-        queue.clear();
         Ok(())
     }
 }

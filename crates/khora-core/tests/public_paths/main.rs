@@ -1747,6 +1747,10 @@ fn module_asset_paths_still_resolve() {
     is_serialize::<khora_core::asset::font::Font>();
     is_deserialize_owned::<khora_core::asset::font::Font>();
     is_asset::<khora_core::asset::font::Font>();
+    let _: khora_core::asset::AssetUUID = khora_core::asset::font::Font::BUILT_IN;
+    let _ = type_name::<khora_core::renderer::api::text::FontFace<'static>>();
+    is_copy::<khora_core::renderer::api::text::FontFace<'static>>();
+    let _ = khora_core::renderer::api::text::FontFace::uuid;
     let _ = type_name::<khora_core::asset::script::ScriptModule>();
     let _ = type_name::<khora_core::asset::ScriptModule>();
     same_type(

@@ -16,6 +16,7 @@
 
 use std::{any::TypeId, collections::HashSet};
 
+use khora_core::asset::font::Font;
 use khora_core::asset::Material;
 use khora_core::ecs::entity::EntityId;
 use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
@@ -194,6 +195,7 @@ impl World {
         world.register_component::<HandleComponent<GpuMesh>>(SemanticDomain::Render);
         world.register_component::<HandleComponent<GpuMaterial>>(SemanticDomain::Render);
         world.register_component::<HandleComponent<Box<dyn Material>>>(SemanticDomain::Render);
+        world.register_component::<HandleComponent<Font>>(SemanticDomain::Ui);
         world.register_component::<MaterialRef>(SemanticDomain::Render);
         world.register_component::<MeshRef>(SemanticDomain::Render);
 

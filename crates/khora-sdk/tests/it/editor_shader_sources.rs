@@ -86,7 +86,7 @@ fn text_wgsl_is_the_text_shader_and_validates() {
     assert_eq!(entry_points, vs_fs());
     assert_eq!(
         bindings,
-        owned(&[("globals", 0, 0), ("t_diffuse", 1, 0), ("s_diffuse", 1, 1)])
+        owned(&[("globals", 0, 0), ("t_diffuse", 0, 1), ("s_diffuse", 0, 2)])
     );
 }
 

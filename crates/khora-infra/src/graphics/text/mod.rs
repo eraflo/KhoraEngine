@@ -19,3 +19,6 @@ pub mod custom;
 pub mod standard;
 
 pub use standard::StandardTextRenderer;
+
+#[cfg(test)]
+mod tests;

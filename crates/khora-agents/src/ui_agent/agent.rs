@@ -26,11 +26,13 @@ use khora_core::agent::{
 use khora_core::engine_context::EngineContext;
 use khora_core::lane::{ColorTarget, ColorTargetSize, Lane, LaneContext};
 use khora_core::renderer::api::frame::FrameContext;
+use khora_core::renderer::api::resource::CpuTexture;
 use khora_core::renderer::api::text::TextRenderer;
 use khora_core::renderer::GraphicsDevice;
 use khora_data::assets::Assets;
 use khora_data::render::{PassContribution, PassDescriptor, ResourceId, UiPassSlot};
 use khora_data::ui::{UiAtlasMap, UiImageAtlas, UiScene};
+use khora_data::AssetStore;
 use khora_lanes::ui_lane::UiRenderLane;
 
 /// The agent responsible for the UI subsystem (`LaneKind::Ui`).
@@ -71,7 +73,7 @@ impl Agent for UiAgent {
             .reading::<Arc<FrameContext>>()
             .reading::<Arc<UiImageAtlas>>()
             .reading::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
-            .reading::<Arc<RwLock<Assets<khora_core::renderer::api::resource::CpuTexture>>>>()
+            .reading::<AssetStore>()
             .reading::<Arc<dyn GraphicsDevice>>()
             .reading::<Arc<dyn TextRenderer>>()
     }
@@ -156,10 +158,11 @@ impl Agent for UiAgent {
             return;
         };
 
-        let textures: Option<Arc<RwLock<Assets<khora_core::renderer::api::resource::CpuTexture>>>> =
-            context
-                .resource::<Arc<RwLock<Assets<khora_core::renderer::api::resource::CpuTexture>>>>()
-                .map(|arc| (*arc).clone());
+        // UI images are decoded into the shared asset store by the asset
+        // resolver.
+        let textures: Option<Arc<RwLock<Assets<CpuTexture>>>> = context
+            .resource::<AssetStore>()
+            .map(|store| store.store::<CpuTexture>());
 
         let text_renderer: Option<Arc<dyn TextRenderer>> = context
             .resource::<Arc<dyn TextRenderer>>()
@@ -335,5 +338,23 @@ mod lane_registration_tests {
             .map(|lane| (lane.strategy_name(), lane.lane_kind()))
             .collect();
         assert_eq!(lanes, [("UiRender", LaneKind::Render)]);
+    }
+}
+
+#[cfg(test)]
+mod ui_texture_source_tests {
+    use super::*;
+    use khora_data::AssetStore;
+
+    /// UI images are decoded into the shared `AssetStore`; the agent reads
+    /// them there, so it must declare that read to the scheduler.
+    #[test]
+    fn the_ui_agent_declares_it_reads_the_asset_store() {
+        assert!(
+            UiAgent::default()
+                .contention()
+                .may_reach(std::any::TypeId::of::<AssetStore>()),
+            "UiAgent reads UI image textures from the AssetStore"
+        );
     }
 }

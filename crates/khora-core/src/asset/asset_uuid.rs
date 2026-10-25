@@ -56,7 +56,7 @@ impl std::str::FromStr for AssetUUID {
 
 impl AssetUUID {
     /// The identity whose sixteen bytes are `bytes`.
-    pub fn from_bytes(bytes: [u8; 16]) -> Self {
+    pub const fn from_bytes(bytes: [u8; 16]) -> Self {
         Self(Uuid::from_bytes(bytes))
     }
 

@@ -7,8 +7,9 @@ Taffy-backed, ECS-driven UI components.
 > ([Spawn entities and move them](./spawn-and-transform.md)). UI runs through the
 > `LayoutSystem` backend your app wired in the bootstrap (Taffy, as the sandbox does).
 >
-> **Note.** The `UiAgent` runs in **editor mode** today; in-game (play-mode) UI is on the
-> roadmap. The components below are the stable vocabulary either way.
+> The `UiAgent` draws the UI over whatever image the frame renders into: the game window,
+> or the editor's viewport. UI positions and sizes are pixels of that image, origin
+> top-left.
 
 ## Where the UI types live
 
@@ -57,8 +58,13 @@ let panel = world.spawn((
 
 ## Add text
 
-`UiText` holds the string, a font UUID, a pixel size, and an RGBA color. Spawn it as a
-child node and parent it under the panel:
+`UiText` holds the string, a font, a pixel size, and an RGBA color. The default font,
+`Font::BUILT_IN`, is the text renderer's built-in face and needs no asset. Any other
+font is a font asset named by its UUID: it is loaded when the text first appears, and the
+text is drawn once it has loaded. A font that fails to load is reported in the log, and
+the text is not drawn in another face. (The standard text renderer does not rasterise font
+files yet: it draws every font with its built-in glyphs.) Spawn the text as a child node
+and parent it under the panel:
 
 ```rust
 use khora_sdk::khora_data::ui::{UiNode, UiText};

@@ -18,3 +18,4 @@
 pub mod asset_reload;
 pub mod asset_resolver;
 pub mod shader_hot_reload;
+mod ui_asset_resolver;

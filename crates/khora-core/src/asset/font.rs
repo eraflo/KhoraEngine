@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::Asset;
+use super::{Asset, AssetUUID};
 use serde::{Deserialize, Serialize};
 
 /// A font asset containing raw font data (TTF/OTF).
@@ -22,6 +22,12 @@ pub struct Font {
     pub name: String,
     /// The raw bytes of the font file.
     pub data: Vec<u8>,
+}
+
+impl Font {
+    /// The fixed, well-known id of the text renderer's built-in face. A text
+    /// naming it needs no font asset.
+    pub const BUILT_IN: AssetUUID = AssetUUID::from_bytes(*b"khora:font:built");
 }
 
 impl Asset for Font {}

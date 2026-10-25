@@ -14,6 +14,7 @@
 
 //! UI components for the Khora Engine.
 
+use khora_core::asset::font::Font;
 use khora_core::asset::AssetUUID;
 use khora_core::math::{Vec2, Vec4};
 pub use khora_core::ui::types::{UiFlexDirection, UiRect, UiVal};
@@ -243,7 +244,8 @@ pub struct UiInteraction {
 pub struct UiText {
     /// The string to display.
     pub content: String,
-    /// The font asset ID.
+    /// The font: [`Font::BUILT_IN`] (the default) for the text renderer's
+    /// built-in face, or the id of a font asset.
     pub font: AssetUUID,
     /// Font size in pixels.
     pub size: f32,
@@ -267,9 +269,20 @@ impl Default for UiText {
     fn default() -> Self {
         Self {
             content: String::new(),
-            font: AssetUUID::default(),
+            font: Font::BUILT_IN,
             size: 16.0,
             color: Vec4::new(0.0, 0.0, 0.0, 1.0), // Black
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::asset::font::Font;
+
+    #[test]
+    fn a_default_text_uses_the_built_in_font() {
+        assert_eq!(UiText::default().font, Font::BUILT_IN);
     }
 }

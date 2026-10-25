@@ -15,7 +15,7 @@
 //! Abstract interfaces and types for text rendering.
 
 use crate::asset::{font::Font, AssetUUID, Handle};
-use crate::math::{Vec2, Vec4};
+use crate::math::{Extent2D, Vec2, Vec4};
 use crate::renderer::{api::resource::TextureViewId, traits::CommandEncoder, GraphicsDevice};
 use std::any::Any;
 
@@ -31,20 +31,45 @@ pub trait TextLayout: Send + Sync {
     fn as_any(&self) -> &dyn Any;
 }
 
+/// The face a text is laid out with.
+#[derive(Clone, Copy)]
+pub enum FontFace<'a> {
+    /// The text renderer's built-in face; it needs no font asset. Its id is
+    /// [`Font::BUILT_IN`].
+    BuiltIn,
+    /// A loaded font asset.
+    Asset {
+        /// The id of the font asset.
+        uuid: AssetUUID,
+        /// The loaded font.
+        font: &'a Handle<Font>,
+    },
+}
+
+impl FontFace<'_> {
+    /// The id of this face: [`Font::BUILT_IN`] for the built-in face, the
+    /// asset's id otherwise.
+    pub fn uuid(&self) -> AssetUUID {
+        match self {
+            Self::BuiltIn => Font::BUILT_IN,
+            Self::Asset { uuid, .. } => *uuid,
+        }
+    }
+}
+
 /// A service responsible for laying out and rendering text.
 ///
 /// This trait decouples the high-level UI rendering from specific text layout
 /// and rasterization engines. Concrete implementations in `khora-infra`
 /// may use libraries like `glyphon`, `glyph_brush`, or custom "maison" solutions.
 pub trait TextRenderer: Send + Sync {
-    /// Computes the layout for a string with the specified font and size.
+    /// Computes the layout for a string with the specified face and size.
     ///
     /// The returned [`TextLayout`] can then be queued for rendering.
     fn layout_text(
         &self,
         text: &str,
-        font: &Handle<Font>,
-        font_id: AssetUUID,
+        face: FontFace<'_>,
         font_size: f32,
         max_width: Option<f32>,
     ) -> Box<dyn TextLayout>;
@@ -54,7 +79,11 @@ pub trait TextRenderer: Send + Sync {
     /// The text is not rendered immediately but batch-processed during [`flush`].
     fn queue_text(&self, layout: &dyn TextLayout, pos: Vec2, color: Vec4, z_index: i32);
 
-    /// Renders all queued text and updates the glyph cache.
+    /// Renders all queued text into `color_target` and updates the glyph cache.
+    ///
+    /// `target` is the size of `color_target` in pixels: queued positions are
+    /// pixels of it, origin top-left, y down. A target without area draws
+    /// nothing, empties the queue and returns `Ok(())`.
     ///
     /// This should be called once per frame, usually within a specialized render pass.
     fn flush(
@@ -62,5 +91,27 @@ pub trait TextRenderer: Send + Sync {
         device: &dyn GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
         color_target: &TextureViewId,
+        target: Extent2D,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::asset::AssetHandle;
+
+    #[test]
+    fn the_built_in_face_is_named_by_the_built_in_font_id() {
+        assert_eq!(FontFace::BuiltIn.uuid(), Font::BUILT_IN);
+    }
+
+    #[test]
+    fn an_asset_face_is_named_by_its_asset_id() {
+        let uuid = AssetUUID::new();
+        let font = AssetHandle::new(Font {
+            name: "Body".to_owned(),
+            data: vec![1, 2, 3],
+        });
+        assert_eq!(FontFace::Asset { uuid, font: &font }.uuid(), uuid);
+    }
 }

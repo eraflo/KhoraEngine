@@ -323,12 +323,11 @@ impl Lane for UiRenderLane {
             });
         }
 
-        if instances.is_empty() {
-            return Ok(());
-        }
+        // A frame without quads skips the quad pass, never its text.
+        let draws_quads = !instances.is_empty();
 
         // 3. Upload Instance Data
-        if let Some(buffer_id) = self.instance_buffer.get().copied() {
+        if let (true, Some(buffer_id)) = (draws_quads, self.instance_buffer.get().copied()) {
             device
                 .write_buffer(buffer_id, 0, bytemuck::cast_slice(&instances))
                 .map_err(|e| LaneError::ExecutionFailed(Box::new(e)))?;
@@ -386,7 +385,8 @@ impl Lane for UiRenderLane {
         }
 
         // 5. Render Pass — lock-free reads via OnceLock.
-        if let (Some(pipeline_id), Some(g_bg), Some(i_bg)) = (
+        if let (true, Some(pipeline_id), Some(g_bg), Some(i_bg)) = (
+            draws_quads,
             self.pipeline.get().copied(),
             self.global_bind_group.get().copied(),
             self.instance_bind_group.get().copied(),
@@ -427,7 +427,7 @@ impl Lane for UiRenderLane {
             for text in &ui_scene.texts {
                 tr.queue_text(text.layout.as_ref(), text.pos, text.color, text.z_index);
             }
-            tr.flush(device.as_ref(), encoder, &color_target)
+            tr.flush(device.as_ref(), encoder, &color_target, target)
                 .map_err(LaneError::ExecutionFailed)?;
         }
 

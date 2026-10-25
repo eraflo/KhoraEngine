@@ -106,6 +106,11 @@ pub struct AssetService {
     /// own: a change to one of them is a change to the container. Kept
     /// across invalidations, like `served_subs`.
     external_files: HashMap<AssetUUID, Vec<String>>,
+    /// The assets whose last [`load`](Self::load) failed. Forgotten as soon
+    /// as any asset changes or the index is replaced: whatever made a load
+    /// fail (a broken file, a missing part) can only be fixed by such a
+    /// change, so it is the moment to try again.
+    failed: HashSet<AssetUUID>,
 }
 
 /// Sends `AssetChanged(uuid)` on `changes`, noting in `lost` if the full
@@ -148,6 +153,7 @@ impl AssetService {
             changes_lost: AtomicBool::new(false),
             inherited: Mutex::new(HashSet::new()),
             external_files: HashMap::new(),
+            failed: HashSet::new(),
         })
     }
 
@@ -258,7 +264,14 @@ impl AssetService {
         }
 
         // VFS lookup → IO → Decode → Store
-        let (asset, container) = self.decode_uncached::<A>(uuid)?;
+        let (asset, container) = match self.decode_uncached::<A>(uuid) {
+            Ok(decoded) => decoded,
+            Err(e) => {
+                self.failed.insert(*uuid);
+                return Err(e);
+            }
+        };
+        self.failed.remove(uuid);
         if let Some(container) = container {
             self.served_subs.entry(container).or_default().insert(*uuid);
         }
@@ -426,6 +439,7 @@ impl AssetService {
     /// A container that reads `uuid`'s file besides its own (a glTF's `.bin`
     /// or image beside it) is invalidated with it.
     pub fn invalidate(&mut self, uuid: &AssetUUID) -> bool {
+        self.failed.clear();
         let mut any = false;
         let mut pending = vec![*uuid];
         let mut seen = HashSet::new();
@@ -555,6 +569,7 @@ impl AssetService {
         let new_index =
             AssetIndex::new(index_bytes).context("Failed to decode replacement VFS index bytes")?;
         self.index = new_index;
+        self.failed.clear();
         Ok(())
     }
 
@@ -585,6 +600,14 @@ impl AssetService {
                 .into_iter()
                 .filter(|uuid| !self.served.contains(uuid)),
         );
+    }
+
+    /// Whether the last [`load`](Self::load) of `uuid` failed and nothing
+    /// changed since (no asset invalidated, no new index): loading it again
+    /// would fail the same way. Callers that resolve references every tick
+    /// skip such an asset instead of reading it again.
+    pub fn has_failed(&self, uuid: &AssetUUID) -> bool {
+        self.failed.contains(uuid)
     }
 
     /// Returns the total number of assets loaded so far.
@@ -709,6 +732,37 @@ mod tests {
         )
         .unwrap();
         assert!(!svc.invalidate(&AssetUUID::new_v5("missing")));
+    }
+
+    #[test]
+    fn a_failed_load_is_remembered_until_an_asset_changes_or_the_index_is_replaced() {
+        let dir = tempdir().unwrap();
+        let bytes = IndexBuilder::new(dir.path()).build_index_bytes().unwrap();
+        let mut svc = AssetService::new(
+            &bytes,
+            Box::new(MockIo {
+                files: HashMap::new(),
+            }),
+            Arc::new(MetricsRegistry::new()),
+            None,
+        )
+        .unwrap();
+        let missing = AssetUUID::new_v5("missing");
+        assert!(!svc.has_failed(&missing), "never tried");
+
+        assert!(svc
+            .load::<khora_core::renderer::api::resource::CpuTexture>(&missing)
+            .is_err());
+        assert!(svc.has_failed(&missing));
+
+        svc.invalidate(&AssetUUID::new_v5("another"));
+        assert!(!svc.has_failed(&missing), "any change forgets the failure");
+
+        assert!(svc
+            .load::<khora_core::renderer::api::resource::CpuTexture>(&missing)
+            .is_err());
+        svc.reindex(&bytes).unwrap();
+        assert!(!svc.has_failed(&missing), "a new index forgets the failure");
     }
 
     #[test]
