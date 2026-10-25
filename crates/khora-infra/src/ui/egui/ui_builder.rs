@@ -401,6 +401,10 @@ impl UiBuilder for EguiUiBuilder<'_> {
             });
     }
 
+    fn pixels_per_point(&self) -> f32 {
+        self.ui.ctx().pixels_per_point()
+    }
+
     fn viewport_image(
         &mut self,
         handle: ViewportTextureHandle,

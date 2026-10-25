@@ -20,7 +20,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_core::lane::OutputDeck;
-use khora_core::script::ScriptProblems;
+use khora_core::problems::Problems;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
 use khora_io::script::declarations::{
@@ -66,7 +66,7 @@ fn register(world: &mut World, runtime: &Runtime, batch: Vec<ScriptDeclarations>
     (data_system("script_components").run)(world, runtime, &mut OutputDeck::new());
 }
 
-fn runtime_with(problems: &Arc<ScriptProblems>) -> Runtime {
+fn runtime_with(problems: &Arc<Problems>) -> Runtime {
     let mut runtime = Runtime::default();
     runtime.resources.insert(declaration_channel());
     runtime
@@ -80,7 +80,7 @@ fn runtime_with(problems: &Arc<ScriptProblems>) -> Runtime {
 /// `c.erg` are both refused it.
 #[test]
 fn each_of_two_modules_refused_the_same_name_in_one_batch_has_its_error() {
-    let problems = Arc::new(ScriptProblems::default());
+    let problems = Arc::new(Problems::default());
     let runtime = runtime_with(&problems);
     let mut world = World::new();
 
@@ -102,7 +102,7 @@ fn each_of_two_modules_refused_the_same_name_in_one_batch_has_its_error() {
 /// error stays.
 #[test]
 fn a_second_module_refused_the_same_name_leaves_the_first_ones_error() {
-    let problems = Arc::new(ScriptProblems::default());
+    let problems = Arc::new(Problems::default());
     let runtime = runtime_with(&problems);
     let mut world = World::new();
     register(

@@ -136,11 +136,17 @@ impl Read {
                 .map_err(|failure| unreadable(&save.before, failure))?;
         // A reference to an entity no record holds is read as it was written,
         // and the load reports it where it lands; everything else the reading
-        // adapted is gone from the values the merge sees.
+        // adapted is gone from the values the merge sees. An unusable value is
+        // judged on what the merge composes, not on any one record: the load
+        // that stages the composed value reports it, once — a value one record
+        // holds broken may be fixed by another.
         let report: Vec<ReportEntry> = [base_report, changes_report, before_report]
             .into_iter()
             .flat_map(|read| read.entries)
-            .filter(|entry| entry.kind != ReportKind::DeadReference)
+            .filter(|entry| {
+                entry.kind != ReportKind::DeadReference
+                    && !matches!(entry.kind, ReportKind::Unusable { .. })
+            })
             .collect();
         // A name the save wrote is read as today's: a component renamed since
         // is the same component.

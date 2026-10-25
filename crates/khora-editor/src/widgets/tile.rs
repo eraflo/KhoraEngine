@@ -180,8 +180,10 @@ pub fn paint_asset_tile(
     // glyph and how many, on the severity's tint — never the colour alone.
     if let Some(badge) = badge {
         let (color, glyph) = match badge.severity {
-            khora_sdk::khora_core::script::ProblemSeverity::Error => (theme.error, Icon::Error),
-            khora_sdk::khora_core::script::ProblemSeverity::Warning => (theme.warning, Icon::Warn),
+            khora_sdk::khora_core::problems::ProblemSeverity::Error => (theme.error, Icon::Error),
+            khora_sdk::khora_core::problems::ProblemSeverity::Warning => {
+                (theme.warning, Icon::Warn)
+            }
         };
         let count = badge.count.to_string();
         let digits = ui.measure_text(&count, 10.0, FontFamilyHint::Monospace)[0];

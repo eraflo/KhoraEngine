@@ -19,7 +19,7 @@ use std::borrow::Cow;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind};
-use khora_core::math::{Mat4, Vec4};
+use khora_core::math::{Extent2D, Mat4, Vec4};
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutEntry, BindGroupLayoutId,
     BindingResource, BindingType, BufferBinding, BufferBindingType, LoadOp, Operations,
@@ -267,10 +267,17 @@ impl Lane for UiRenderLane {
             .get::<khora_core::lane::ColorTarget>()
             .ok_or(LaneError::missing("ColorTarget"))?
             .0;
+        let target = ctx
+            .get::<khora_core::lane::ColorTargetSize>()
+            .ok_or(LaneError::missing("ColorTargetSize"))?
+            .0;
 
-        // 1. Update Projection Matrix
-        let (width, height) = ui_scene.surface_size;
-        let projection = Mat4::orthographic_rh_zo(0.0, width as f32, height as f32, 0.0, 0.0, 1.0);
+        // 1. Update Projection Matrix — UI pixels are pixels of the image
+        // this frame draws into (the window, or the editor's viewport). A
+        // target without area (a minimised window) has nothing to draw on.
+        let Some(projection) = ui_projection(target) else {
+            return Ok(());
+        };
 
         if let Some(buffer_id) = self.projection_buffer.get().copied() {
             device
@@ -438,6 +445,22 @@ impl Lane for UiRenderLane {
 
 // ─── Free functions (CLAD: declarative spec + bespoke layouts) ───
 
+/// The orthographic projection that maps UI pixel coordinates of `target`
+/// (origin top-left, y down) to clip space; `None` when a side is zero.
+pub(crate) fn ui_projection(target: Extent2D) -> Option<Mat4> {
+    if target.width == 0 || target.height == 0 {
+        return None;
+    }
+    Some(Mat4::orthographic_rh_zo(
+        0.0,
+        target.width as f32,
+        target.height as f32,
+        0.0,
+        0.0,
+        1.0,
+    ))
+}
+
 /// Stable cache label for the UI global uniform layout (set 0).
 const UI_GLOBAL_LAYOUT_LABEL: &str = "ui_global_layout";
 /// Stable cache label for the UI instance storage layout (set 1).
@@ -542,3 +565,6 @@ fn ui_pipeline_spec(
         },
     }
 }
+
+#[cfg(test)]
+mod tests;

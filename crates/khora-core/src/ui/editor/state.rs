@@ -141,11 +141,22 @@ pub struct EditorState {
     /// Log entries captured by the editor log sink.
     pub log_entries: Vec<LogEntry>,
     /// What is wrong with the open project's scripts — compile, registration
-    /// and running problems — as the engine's `ScriptProblems` lists them.
-    pub script_problems: Vec<crate::script::ScriptProblem>,
-    /// The `ScriptProblems` generation `script_problems` was copied at: a
+    /// and running problems — as the engine's `Problems` lists them.
+    pub problems: Vec<crate::problems::Problem>,
+    /// The `Problems` generation `problems` was copied at: a
     /// frame where it has not moved copies nothing.
-    pub script_problems_generation: u64,
+    pub problems_generation: u64,
+    /// What the scene load just done adapted, as problems, waiting for the
+    /// app to report them as the `Load` source; `Some(empty)` clears it (a
+    /// new scene).
+    pub pending_load_problems: Option<Vec<crate::problems::Problem>>,
+    /// The last load's problems as they were handed over — kept so a Stop,
+    /// which respawns every entity, can point them at the restored ones.
+    pub load_problems: Vec<crate::problems::Problem>,
+    /// The problems the components' own checks find in the world as it is
+    /// now (the `Data` source): what the inspector shows under a field. A
+    /// load's report says what *was* loaded, and may be fixed since.
+    pub data_problems: Vec<crate::problems::Problem>,
     /// Every name the open project's scripts declare — components,
     /// behaviors, systems — sorted, exactly as Ergon spells them: the names a
     /// new declaration would be refused, as the engine's `ScriptCatalog`
@@ -166,8 +177,9 @@ pub struct EditorState {
     /// code that reads input handlers should prefer `viewport_screen_rect`
     /// + the live cursor position.
     pub viewport_hovered: bool,
-    /// Screen-space rect of the 3D viewport image (`[x, y, w, h]` in pixels)
-    /// for the current frame. `None` when the editor isn't in Scene mode or
+    /// Screen-space rect of the 3D viewport image (`[x, y, w, h]` in physical
+    /// pixels, the unit of the platform cursor) for the current frame; the
+    /// viewport render target is sized from it. `None` when the editor isn't in Scene mode or
     /// the viewport hasn't been laid out yet. Used by the input pipeline to
     /// decide if a mouse event lives over the viewport — checked against
     /// the live cursor position so it doesn't suffer from the
@@ -206,6 +218,10 @@ pub struct EditorState {
     // ── Phase 7: Play Mode ─────────────────────────────
     /// Current play mode (Editing / Playing / Paused).
     pub play_mode: PlayMode,
+    /// The active camera that renders nothing while playing — its entity and
+    /// what is wrong with it — for the viewport to say so over the image;
+    /// `None` when the game's camera renders or no game runs.
+    pub broken_play_camera: Option<(EntityId, String)>,
     /// Serialised snapshot of the scene taken when entering play mode.
     /// Restored when the user presses Stop.
     pub scene_snapshot: Option<Vec<u8>>,

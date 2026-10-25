@@ -56,16 +56,16 @@ fn culling_uniforms_match_the_wgsl_struct_layout() {
             offset_of!(CullingUniformsData, view_projection),
         ),
         (
-            "inverse_projection",
-            offset_of!(CullingUniformsData, inverse_projection),
-        ),
-        (
             "screen_dimensions",
             offset_of!(CullingUniformsData, screen_dimensions),
         ),
         ("tile_count", offset_of!(CullingUniformsData, tile_count)),
         ("num_lights", offset_of!(CullingUniformsData, num_lights)),
         ("tile_size", offset_of!(CullingUniformsData, tile_size)),
+        (
+            "max_lights_per_tile",
+            offset_of!(CullingUniformsData, max_lights_per_tile),
+        ),
         ("_padding", offset_of!(CullingUniformsData, _padding)),
     ]
     .into_iter()
@@ -80,4 +80,28 @@ fn culling_uniforms_match_the_wgsl_struct_layout() {
 #[test]
 fn culling_uniforms_fill_whole_16_byte_rows() {
     assert_eq!(size_of::<CullingUniformsData>() % 16, 0);
+}
+
+/// The renderer uploads `GpuLight`s back to back into the buffer the shader
+/// reads as `array<GpuLight>`: light `i` is found only if the shader's array
+/// stride is the size of the Rust struct.
+#[test]
+fn culling_light_array_stride_matches_gpu_light() {
+    let module = naga::front::wgsl::parse_str(LIGHT_CULLING_WGSL)
+        .unwrap_or_else(|e| panic!("light_culling.wgsl does not parse: {e}"));
+    let (_, global) = module
+        .global_variables
+        .iter()
+        .find(|(_, var)| var.name.as_deref() == Some("lights"))
+        .expect("light_culling.wgsl declares `lights`");
+    let stride = match &module.types[global.ty].inner {
+        naga::TypeInner::Array { stride, .. } => *stride,
+        other => panic!("`lights` is not an array: {other:?}"),
+    };
+    assert_eq!(
+        stride,
+        size_of::<khora_core::renderer::GpuLight>() as u32,
+        "light_culling.wgsl reads lights {stride} bytes apart; the renderer writes them {} bytes apart",
+        size_of::<khora_core::renderer::GpuLight>()
+    );
 }

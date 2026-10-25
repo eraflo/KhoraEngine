@@ -12,15 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What is wrong with the project's scripts, for a tool to show.
+//! What is wrong with the project, for a tool to show.
 //!
-//! Four places find a problem and none of them can see the others: the
-//! compile path (a module that does not compile, or compiles with warnings),
-//! the registration of what modules declare (a name two modules declare, a
-//! declaration deleted), the script lane (an instance that faulted, a body
-//! that runs too long), and the scan of an assets root for `.erg` files that
-//! sit outside its `scripts/` folder and so are never compiled. Each reports
-//! its own list here, already located, and replaces it each time it reports.
+//! Several places find a problem and none of them can see the others. For
+//! scripts: the compile path (a module that does not compile, or compiles
+//! with warnings), the registration of what modules declare (a name two
+//! modules declare, a declaration deleted), the script lane (an instance that
+//! faulted, a body that runs too long), and the scan of an assets root for
+//! `.erg` files that sit outside its `scripts/` folder and so are never
+//! compiled. For the scene's data: the components' own checks (a camera whose
+//! near plane sits at its eye), and what the last scene load had to adapt.
+//! Each reports its own list here, already located, and replaces it each time
+//! it reports.
 
 use crate::ecs::entity::EntityId;
 
@@ -51,11 +54,15 @@ pub enum ProblemSource {
         /// The assets root scanned, as it was mounted.
         root: std::path::PathBuf,
     },
+    /// The components' own checks, run on the world as it is now.
+    Data,
+    /// What the last scene load reported.
+    Load,
 }
 
 /// One problem, located.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScriptProblem {
+pub struct Problem {
     /// Error or warning.
     pub severity: ProblemSeverity,
     /// The module it is in, when it is in one.
@@ -72,23 +79,28 @@ pub struct ScriptProblem {
     pub entity: Option<EntityId>,
     /// The behavior it happened in, for a running problem.
     pub behavior: Option<String>,
+    /// The component it is about, for a problem in the scene's data.
+    pub component: Option<String>,
+    /// The field of that component, as the dotted path of its serialized
+    /// form (`z_near`, `projection.Perspective.fov_y_radians`).
+    pub field: Option<String>,
 }
 
 /// Every source's problems. Shared as an `Arc` in the runtime's resources.
 #[derive(Debug, Default)]
-pub struct ScriptProblems(std::sync::RwLock<Held>);
+pub struct Problems(std::sync::RwLock<Held>);
 
 /// What is held: each source's list, and how many changes there were.
 #[derive(Debug, Default)]
 struct Held {
-    by_source: std::collections::HashMap<ProblemSource, Vec<ScriptProblem>>,
+    by_source: std::collections::HashMap<ProblemSource, Vec<Problem>>,
     generation: u64,
 }
 
-impl ScriptProblems {
+impl Problems {
     /// Replaces what `source` reported last with `problems`; an empty list
     /// clears it.
-    pub fn report(&self, source: ProblemSource, problems: Vec<ScriptProblem>) {
+    pub fn report(&self, source: ProblemSource, problems: Vec<Problem>) {
         let mut held = match self.0.write() {
             Ok(held) => held,
             Err(poisoned) => poisoned.into_inner(),
@@ -108,26 +120,47 @@ impl ScriptProblems {
         held.generation += 1;
     }
 
-    /// Every problem of every source: errors first, then by module, line and
-    /// column — each once, though two compiles may both find one in a module
-    /// they share.
-    pub fn all(&self) -> Vec<ScriptProblem> {
+    /// Every problem of every source: errors first, then by module, line,
+    /// column, component and field — each once, though two compiles may both
+    /// find one in a module they share.
+    pub fn all(&self) -> Vec<Problem> {
         let held = match self.0.read() {
             Ok(held) => held,
             Err(poisoned) => poisoned.into_inner(),
         };
-        let mut all: Vec<ScriptProblem> = held.by_source.values().flatten().cloned().collect();
+        let mut all: Vec<Problem> = held.by_source.values().flatten().cloned().collect();
         all.sort_by(|a, b| {
-            (rank(a.severity), &a.module, a.line, a.column, &a.message).cmp(&(
-                rank(b.severity),
-                &b.module,
-                b.line,
-                b.column,
-                &b.message,
-            ))
+            (
+                rank(a.severity),
+                &a.module,
+                a.line,
+                a.column,
+                &a.component,
+                &a.field,
+                &a.message,
+            )
+                .cmp(&(
+                    rank(b.severity),
+                    &b.module,
+                    b.line,
+                    b.column,
+                    &b.component,
+                    &b.field,
+                    &b.message,
+                ))
         });
         all.dedup();
         all
+    }
+
+    /// What `source` reported last, as it reported it; empty when it holds
+    /// nothing.
+    pub fn of_source(&self, source: &ProblemSource) -> Vec<Problem> {
+        let held = match self.0.read() {
+            Ok(held) => held,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        held.by_source.get(source).cloned().unwrap_or_default()
     }
 
     /// How many errors and warnings are located in `module`.
@@ -178,8 +211,8 @@ mod tests {
         line: u32,
         column: u32,
         message: &str,
-    ) -> ScriptProblem {
-        ScriptProblem {
+    ) -> Problem {
+        Problem {
             severity,
             module: Some(module.to_owned()),
             line,
@@ -188,25 +221,27 @@ mod tests {
             note: None,
             entity: None,
             behavior: None,
+            component: None,
+            field: None,
         }
     }
 
-    fn error(module: &str, line: u32, column: u32, message: &str) -> ScriptProblem {
+    fn error(module: &str, line: u32, column: u32, message: &str) -> Problem {
         problem(ProblemSeverity::Error, module, line, column, message)
     }
 
-    fn warning(module: &str, line: u32, column: u32, message: &str) -> ScriptProblem {
+    fn warning(module: &str, line: u32, column: u32, message: &str) -> Problem {
         problem(ProblemSeverity::Warning, module, line, column, message)
     }
 
-    fn messages(problems: &ScriptProblems) -> Vec<String> {
+    fn messages(problems: &Problems) -> Vec<String> {
         problems.all().into_iter().map(|p| p.message).collect()
     }
 
     /// Nothing reported, nothing held.
     #[test]
     fn nothing_reported_holds_no_problem() {
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
 
         assert!(problems.all().is_empty());
         assert_eq!(problems.of_module("guard.erg"), (0, 0));
@@ -215,7 +250,7 @@ mod tests {
     /// **What a source reports is what is held**, every field as given.
     #[test]
     fn a_reported_problem_is_held_as_given() {
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
         let mut reported = error("guard.erg", 3, 7, "expected `float`, found `bool`");
         reported.note = Some("a bool is not a float".to_owned());
 
@@ -228,7 +263,7 @@ mod tests {
     /// with another error has that error, not both.
     #[test]
     fn a_report_replaces_what_the_same_source_reported_before() {
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
         problems.report(compile("guard.erg"), vec![error("guard.erg", 3, 7, "old")]);
 
         problems.report(compile("guard.erg"), vec![error("guard.erg", 9, 1, "new")]);
@@ -240,7 +275,7 @@ mod tests {
     /// module with no problem.
     #[test]
     fn an_empty_report_clears_the_source() {
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
         problems.report(
             compile("guard.erg"),
             vec![error("guard.erg", 3, 7, "broken")],
@@ -256,7 +291,7 @@ mod tests {
     /// module's errors, the registration's and the running ones alone.
     #[test]
     fn a_report_leaves_every_other_source_alone() {
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
         problems.report(
             compile("guard.erg"),
             vec![error("guard.erg", 1, 1, "guard")],
@@ -282,7 +317,7 @@ mod tests {
     /// order the sources reported in.
     #[test]
     fn all_lists_errors_first_then_by_module_line_and_column() {
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
         problems.report(
             compile("b.erg"),
             vec![
@@ -317,7 +352,7 @@ mod tests {
     /// source found them — a fault in it counts as surely as a type error.
     #[test]
     fn of_module_counts_the_errors_and_warnings_located_in_it() {
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
         problems.report(
             compile("guard.erg"),
             vec![
@@ -339,7 +374,7 @@ mod tests {
     /// A problem in no module is in no module's count.
     #[test]
     fn a_problem_without_a_module_counts_for_none() {
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
         let mut orphan = warning("x", 0, 0, "`Health` is declared by no module");
         orphan.module = None;
         problems.report(ProblemSource::Registration, vec![orphan]);
@@ -353,7 +388,7 @@ mod tests {
     /// replacement, a clearing.
     #[test]
     fn the_generation_moves_on_every_change() {
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
         let start = problems.generation();
 
         problems.report(compile("guard.erg"), vec![error("guard.erg", 1, 1, "one")]);
@@ -373,7 +408,7 @@ mod tests {
     /// every frame does.
     #[test]
     fn the_generation_stays_when_a_report_changes_nothing() {
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
         let start = problems.generation();
         problems.report(ProblemSource::Running, Vec::new());
         assert_eq!(
@@ -386,5 +421,36 @@ mod tests {
         let reported = problems.generation();
         problems.report(compile("guard.erg"), vec![error("guard.erg", 1, 1, "one")]);
         assert_eq!(problems.generation(), reported, "the same list again");
+    }
+
+    /// A problem in the scene's data: no module, a component and its field.
+    fn data_problem(component: &str, field: &str, message: &str) -> Problem {
+        Problem {
+            severity: ProblemSeverity::Error,
+            module: None,
+            line: 0,
+            column: 0,
+            message: message.to_owned(),
+            note: None,
+            entity: None,
+            behavior: None,
+            component: Some(component.to_owned()),
+            field: Some(field.to_owned()),
+        }
+    }
+
+    /// **The data checks and the running instances each own their list**:
+    /// the data source clearing its own leaves the running problem held.
+    #[test]
+    fn sources_replace_only_their_own_problems() {
+        let problems = Problems::default();
+        let a = data_problem("Camera", "z_near", "near must be greater than 0 (it is 0)");
+        let b = error("guard.erg", 0, 0, "faulted");
+
+        problems.report(ProblemSource::Data, vec![a]);
+        problems.report(ProblemSource::Running, vec![b.clone()]);
+        problems.report(ProblemSource::Data, Vec::new());
+
+        assert_eq!(problems.all(), vec![b]);
     }
 }

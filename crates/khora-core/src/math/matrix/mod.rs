@@ -16,11 +16,24 @@
 
 use super::{Quaternion, Vec2, Vec3, Vec4, EPSILON};
 
+mod cube;
 mod mat3;
 mod mat4;
 
 pub use mat3::Mat3;
 pub use mat4::Mat4;
+
+/// Whether a matrix with determinant `det` is invertible, `scale` being the
+/// product of its column lengths — by Hadamard's inequality the largest
+/// magnitude `det` can reach. The ratio is scale-free: it says how far the
+/// columns are from lying in a lower-dimensional space, whatever their size.
+/// A NaN or an infinity anywhere fails the comparison, and so does a
+/// determinant so small (subnormal) that its reciprocal overflows: the
+/// inverse would hold infinities.
+#[inline]
+pub(crate) fn is_invertible(det: f32, scale: f32) -> bool {
+    det.is_finite() && scale.is_finite() && det.abs() > EPSILON * scale && (1.0 / det).is_finite()
+}
 
 #[cfg(test)]
 mod tests;

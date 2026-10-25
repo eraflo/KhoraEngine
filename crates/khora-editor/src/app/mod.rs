@@ -111,7 +111,7 @@ pub struct EditorApp {
     /// caught up with it.
     mounted_scripts: Option<std::path::PathBuf>,
     /// What is wrong with the project's scripts, as the engine finds it.
-    script_problems: Option<Arc<khora_sdk::khora_core::script::ScriptProblems>>,
+    problems: Option<Arc<khora_sdk::khora_core::problems::Problems>>,
     /// What the project's scripts declare, as the engine lists it — the
     /// names the panels keep a new script clear of.
     script_catalog: Option<Arc<khora_sdk::khora_core::script::ScriptCatalog>>,
@@ -146,9 +146,9 @@ impl EditorApp {
         {
             self.asset_watch = watch;
         }
-        self.script_problems = runtime
+        self.problems = runtime
             .resources
-            .get::<Arc<khora_sdk::khora_core::script::ScriptProblems>>()
+            .get::<Arc<khora_sdk::khora_core::problems::Problems>>()
             .cloned();
         self.script_catalog = runtime
             .resources
@@ -248,11 +248,16 @@ impl EditorApp {
         if let Ok(log_entries) = self.log_handle.lock() {
             state.log_entries.clone_from(&log_entries);
         }
-        if let Some(problems) = &self.script_problems {
+        if let Some(problems) = &self.problems {
+            if let Some(load) = state.pending_load_problems.take() {
+                problems.report(khora_sdk::khora_core::problems::ProblemSource::Load, load);
+            }
             let generation = problems.generation();
-            if generation != state.script_problems_generation {
-                state.script_problems = problems.all();
-                state.script_problems_generation = generation;
+            if generation != state.problems_generation {
+                state.problems = problems.all();
+                state.data_problems =
+                    problems.of_source(&khora_sdk::khora_core::problems::ProblemSource::Data);
+                state.problems_generation = generation;
             }
         }
         if let Some(catalog) = &self.script_catalog {

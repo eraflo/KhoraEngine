@@ -57,7 +57,7 @@ mod tests;
 pub use de::{from_record, ReferenceReader};
 pub(crate) use diff::same;
 pub use diff::{diff, patch};
-pub use report::{resolve, LoadReport, ReportEntry, ReportKind};
+pub use report::{resolve, unusable_entries, LoadReport, ReportEntry, ReportKind};
 pub use ser::{to_record, ReferenceWriter};
 pub use value::{EntityRef, Record, VariantPayload};
 

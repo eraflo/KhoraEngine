@@ -33,6 +33,7 @@ use khora_data::scene::{
 };
 
 mod behavior_components;
+mod camera_aspect_fields;
 mod decimals;
 mod declared_component_hints;
 mod declared_component_loads;
@@ -76,6 +77,7 @@ mod snapshot_refusals;
 mod snapshot_schema;
 mod stack_depth;
 mod subtree;
+mod unusable_values;
 
 /// The `crate::ecs` the derive expands against.
 mod ecs {

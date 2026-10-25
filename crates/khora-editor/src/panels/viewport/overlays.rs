@@ -12,13 +12,66 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Overlays drawn over the viewport: the camera preview and the axis gizmo.
+//! Overlays drawn over the viewport: the camera preview, the axis gizmo, and
+//! what a game camera that renders nothing says over the empty picture.
 
 use super::ViewportPanel;
 use khora_sdk::editor_ui::*;
 use khora_sdk::prelude::math::Vec3;
 
 impl ViewportPanel {
+    /// While the game plays through a camera whose values make no image, says
+    /// so over the empty picture: which camera, what is wrong, and where the
+    /// problem is listed — rather than a black viewport and no reason.
+    pub(super) fn paint_broken_play_camera(
+        &self,
+        ui: &mut dyn UiBuilder,
+        viewport_min: [f32; 2],
+        viewport_size: [f32; 2],
+    ) {
+        let (name, message) = {
+            let Ok(state) = self.state.lock() else {
+                return;
+            };
+            if state.play_mode == PlayMode::Editing {
+                return;
+            }
+            let Some((entity, message)) = state.broken_play_camera.clone() else {
+                return;
+            };
+            let name = node_name(&state.scene_roots, entity)
+                .unwrap_or_else(|| format!("Entity {}", entity.index));
+            (name, message)
+        };
+        let w = 420.0_f32.min(viewport_size[0] - 32.0);
+        let h = 120.0_f32.min(viewport_size[1] - 64.0);
+        if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        let rect = [
+            viewport_min[0] + (viewport_size[0] - w) * 0.5,
+            viewport_min[1] + (viewport_size[1] - h) * 0.5,
+            w,
+            h,
+        ];
+        // A card of its own: the picture behind it is whatever clear colour
+        // the game left, which the empty state's text was not drawn for.
+        ui.paint_rect_filled(
+            [rect[0], rect[1]],
+            [rect[2], rect[3]],
+            khora_tool_ui::widgets::with_alpha(self.theme.surface_elevated, 0.94),
+            self.theme.radius_lg,
+        );
+        khora_tool_ui::widgets::empty_state(
+            ui,
+            &self.theme,
+            rect,
+            Icon::Camera,
+            &format!("“{name}” renders nothing"),
+            &format!("{message} · See Problems"),
+        );
+    }
+
     pub(super) fn paint_camera_preview(
         &self,
         ui: &mut dyn UiBuilder,
@@ -215,4 +268,15 @@ impl ViewportPanel {
             show_labels,
         );
     }
+}
+
+/// The name `scene_roots` gives `entity`, searching every level.
+fn node_name(nodes: &[SceneNode], entity: khora_sdk::prelude::ecs::EntityId) -> Option<String> {
+    nodes.iter().find_map(|node| {
+        if node.entity == entity {
+            Some(node.name.clone())
+        } else {
+            node_name(&node.children, entity)
+        }
+    })
 }

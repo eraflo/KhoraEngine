@@ -23,6 +23,7 @@
 //! | Key                          | Meaning                                      |
 //! |------------------------------|----------------------------------------------|
 //! | [`ColorTarget`]              | Texture view to render colour into            |
+//! | [`ColorTargetSize`]          | Size in pixels of the colour target           |
 //! | [`DepthTarget`]              | Texture view for depth testing                |
 //! | [`ClearColor`]               | Framebuffer clear colour                      |
 //! | [`ShadowAtlasView`]          | Shadow atlas view written by shadow lanes     |
@@ -51,6 +52,26 @@ use crate::renderer::api::resource::{SamplerId, TextureViewId};
 /// Color render target for the current frame.
 #[derive(Debug, Clone, Copy)]
 pub struct ColorTarget(pub TextureViewId);
+
+/// Size, in pixels, of the colour target the current frame renders into —
+/// the swapchain, or the editor's offscreen viewport.
+///
+/// A camera's aspect is the shape of the image it fills, so readers take it
+/// from here every frame rather than from the camera.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ColorTargetSize(pub crate::math::Extent2D);
+
+impl ColorTargetSize {
+    /// The target's aspect ratio, width over height; `1.0` when either side
+    /// is zero (a minimised window has no shape to follow).
+    pub fn aspect(&self) -> f32 {
+        let crate::math::Extent2D { width, height } = self.0;
+        if width == 0 || height == 0 {
+            return 1.0;
+        }
+        width as f32 / height as f32
+    }
+}
 
 /// Depth render target for the current frame.
 #[derive(Debug, Clone, Copy)]
@@ -81,3 +102,32 @@ pub struct ShadowComparisonSampler(pub SamplerId);
 /// Fixed timestep for the current physics step.
 #[derive(Debug, Clone, Copy)]
 pub struct PhysicsDeltaTime(pub f32);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::math::Extent2D;
+
+    fn size(width: u32, height: u32) -> ColorTargetSize {
+        ColorTargetSize(Extent2D { width, height })
+    }
+
+    /// The aspect of a target is its width over its height: a 1024×768
+    /// window is 4:3.
+    #[test]
+    fn a_color_target_aspect_is_width_over_height() {
+        assert_eq!(size(1024, 768).aspect(), 4.0 / 3.0);
+        assert_eq!(size(1920, 1080).aspect(), 16.0 / 9.0);
+        assert_eq!(size(800, 800).aspect(), 1.0);
+        assert_eq!(size(768, 1024).aspect(), 0.75);
+    }
+
+    /// A target with no width or no height (a minimised window) has no
+    /// shape to follow; its aspect is 1, never 0, infinite or NaN.
+    #[test]
+    fn a_color_target_with_a_zero_side_has_aspect_one() {
+        assert_eq!(size(0, 768).aspect(), 1.0);
+        assert_eq!(size(1024, 0).aspect(), 1.0);
+        assert_eq!(size(0, 0).aspect(), 1.0);
+    }
+}

@@ -16,13 +16,15 @@
 //! `line:col  message`, the entity named for a running problem, counts in the
 //! tab's title, a badge where the worst problem wins, and where a click goes.
 
+mod component_rows;
 mod engine_mirror_rows;
+mod load_report;
 mod misplaced_script_tiles;
 
 use std::path::Path;
 
 use khora_sdk::khora_core::ecs::entity::EntityId;
-use khora_sdk::khora_core::script::{ProblemSeverity, ScriptProblem};
+use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
 
 use super::view::{
     grouped, module_file, module_of_asset, row_action, tab_title, tile_badge, ProblemAction,
@@ -35,8 +37,8 @@ fn problem(
     line: u32,
     column: u32,
     message: &str,
-) -> ScriptProblem {
-    ScriptProblem {
+) -> Problem {
+    Problem {
         severity,
         module: module.map(str::to_owned),
         line,
@@ -45,14 +47,16 @@ fn problem(
         note: None,
         entity: None,
         behavior: None,
+        component: None,
+        field: None,
     }
 }
 
-fn error(module: &str, line: u32, column: u32, message: &str) -> ScriptProblem {
+fn error(module: &str, line: u32, column: u32, message: &str) -> Problem {
     problem(ProblemSeverity::Error, Some(module), line, column, message)
 }
 
-fn warning(module: &str, line: u32, column: u32, message: &str) -> ScriptProblem {
+fn warning(module: &str, line: u32, column: u32, message: &str) -> Problem {
     problem(
         ProblemSeverity::Warning,
         Some(module),
@@ -63,8 +67,8 @@ fn warning(module: &str, line: u32, column: u32, message: &str) -> ScriptProblem
 }
 
 /// A running problem: `behavior` on `entity` faulted, in `module`.
-fn faulted(module: &str, entity: EntityId, behavior: &str, reason: &str) -> ScriptProblem {
-    ScriptProblem {
+fn faulted(module: &str, entity: EntityId, behavior: &str, reason: &str) -> Problem {
+    Problem {
         entity: Some(entity),
         behavior: Some(behavior.to_owned()),
         ..problem(ProblemSeverity::Error, Some(module), 0, 0, reason)

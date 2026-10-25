@@ -14,7 +14,7 @@
 
 //! **What is wrong with the running instances, reported** (Ergon spec 11):
 //! the `script_problems` data system rebuilds the `Running` source of the
-//! runtime's `ScriptProblems` from the `ScriptRuntime` service — an error for
+//! runtime's `Problems` from the `ScriptRuntime` service — an error for
 //! every instance disabled by a fault (entity, behavior, the fault's reason),
 //! a warning for every body running past `WATCHDOG_WARN` (entity, behavior,
 //! member, site). An instance re-enabled or gone leaves the list.
@@ -23,10 +23,8 @@ use std::sync::{Arc, Mutex};
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
-use khora_core::script::{
-    EventQueue, ProblemSeverity, ProblemSource, ScriptEvent, ScriptProblem, ScriptProblems,
-    ScriptValue,
-};
+use khora_core::problems::{Problem, ProblemSeverity, ProblemSource, Problems};
+use khora_core::script::{EventQueue, ScriptEvent, ScriptValue};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 use khora_lanes::script_lane::{ScriptRuntime, WATCHDOG_WARN};
@@ -80,14 +78,14 @@ fn data_system(name: &str) -> &'static DataSystemRegistration {
 struct Engine {
     runtime: Runtime,
     shared: Arc<Mutex<ScriptRuntime>>,
-    problems: Arc<ScriptProblems>,
+    problems: Arc<Problems>,
     world: World,
 }
 
 impl Engine {
     fn new() -> Self {
         let shared = Arc::new(Mutex::new(ScriptRuntime::new()));
-        let problems = Arc::new(ScriptProblems::default());
+        let problems = Arc::new(Problems::default());
         let mut runtime = Runtime::default();
         runtime.services.insert(Arc::clone(&shared));
         runtime.resources.insert(Arc::clone(&problems));
@@ -101,7 +99,7 @@ impl Engine {
 
     /// Runs `script_problems` over the scripting world `stage` ran — lent to
     /// the engine's service for the run — and returns every problem held.
-    fn report(&mut self, stage: &mut Stage) -> Vec<ScriptProblem> {
+    fn report(&mut self, stage: &mut Stage) -> Vec<Problem> {
         std::mem::swap(
             &mut *self.shared.lock().expect("uncontended"),
             &mut stage.runtime,
@@ -120,7 +118,7 @@ impl Engine {
 }
 
 /// The problems held about `subject`.
-fn about(problems: &[ScriptProblem], subject: EntityId) -> Vec<ScriptProblem> {
+fn about(problems: &[Problem], subject: EntityId) -> Vec<Problem> {
     problems
         .iter()
         .filter(|problem| problem.entity == Some(subject))
@@ -374,7 +372,7 @@ fn the_running_report_leaves_compile_problems_alone() {
         ProblemSource::Compile {
             module: "other.erg".to_owned(),
         },
-        vec![ScriptProblem {
+        vec![Problem {
             severity: ProblemSeverity::Error,
             module: Some("other.erg".to_owned()),
             line: 2,
@@ -383,6 +381,8 @@ fn the_running_report_leaves_compile_problems_alone() {
             note: None,
             entity: None,
             behavior: None,
+            component: None,
+            field: None,
         }],
     );
 

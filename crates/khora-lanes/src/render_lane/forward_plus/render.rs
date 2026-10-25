@@ -18,7 +18,9 @@ use super::g3;
 use khora_data::render::RenderWorld;
 
 use super::gpu::render_pipeline_spec;
+use super::tile_grid::TileGrid;
 use super::ForwardPlusLane;
+use khora_core::math::Extent2D;
 use khora_core::renderer::api::command::{
     ComputePassDescriptor, LoadOp, Operations, RenderPassColorAttachment,
     RenderPassDepthStencilAttachment, RenderPassDescriptor, StoreOp,
@@ -43,6 +45,7 @@ impl ForwardPlusLane {
         encoder: &mut dyn CommandEncoder,
         transparent_encoder: Option<&mut dyn CommandEncoder>,
         render_ctx: &RenderContext,
+        target: Extent2D,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
     ) {
         let mut resources =
@@ -99,18 +102,18 @@ impl ForwardPlusLane {
             return;
         };
 
-        // 3. Prepare Tile Info (sent to Group 3)
+        // 3. The tile grid of the image this frame renders into. The light
+        // lists grow with it before anything indexes them.
+        let config = self.tile_config;
+        let grid = TileGrid::new(&config, target);
+        if let Err(e) = resources.ensure_tile_buffers(device, &config, &grid) {
+            log::error!("ForwardPlusLane::render: light list allocation failed: {e:?}");
+            return;
+        }
+
+        // Prepare Tile Info (sent to Group 3)
         if let Some(tile_buffer) = resources.tile_info_buffer {
-            let config = self.tile_config;
-            let (width, height) = self.screen_size;
-            let num_tiles_x = width.div_ceil(config.tile_size.pixels());
-            let num_tiles_y = height.div_ceil(config.tile_size.pixels());
-            let tile_info = [
-                num_tiles_x,
-                num_tiles_y,
-                config.tile_size.pixels(),
-                config.max_lights_per_tile,
-            ];
+            let tile_info = grid.tile_info(config.max_lights_per_tile);
             if let Err(e) = device.write_buffer(tile_buffer, 0, bytemuck::cast_slice(&tile_info)) {
                 log::error!("ForwardPlusLane::render: tile info buffer write failed: {e:?}");
             }
@@ -126,9 +129,20 @@ impl ForwardPlusLane {
         // `shadow_far_plane` = perspective far plane used by the shadow
         // pass (matches `ShadowEntry::Cube.far_plane`).
         use khora_core::renderer::api::shadow::ShadowEntry;
+        // The light buffer holds a fixed number of lights; the ones past it
+        // are not shaded (the culling pass is told only the lights it holds).
+        let capacity = super::gpu::LIGHT_BUFFER_CAPACITY;
+        if render_world.lights.len() > capacity {
+            log::warn!(
+                "ForwardPlusLane: {} lights in the scene, the light buffer holds {capacity}; \
+                 the rest are not shaded",
+                render_world.lights.len()
+            );
+        }
         let lights: Vec<_> = render_world
             .lights
             .iter()
+            .take(capacity)
             .enumerate()
             .map(|(i, l)| {
                 let mut gl = khora_core::renderer::GpuLight::from_parts(
@@ -167,6 +181,7 @@ impl ForwardPlusLane {
         let shadow_view_projs: Vec<[[f32; 4]; 4]> = render_world
             .lights
             .iter()
+            .take(capacity)
             .enumerate()
             .map(|(i, _)| match shadow_entries.get(i) {
                 Some(ShadowEntry::Atlas2D { view_proj, .. }) => view_proj.to_cols_array_2d(),
@@ -188,21 +203,14 @@ impl ForwardPlusLane {
 
         // Prepare and write Culling Uniforms
         if let Some(culling_buffer) = resources.culling_uniforms_buffer {
-            let config = self.tile_config;
-            let (width, height) = self.screen_size;
-            let num_tiles_x = width.div_ceil(config.tile_size.pixels());
-            let num_tiles_y = height.div_ceil(config.tile_size.pixels());
-
-            let inv_vp = view.view_proj.inverse().unwrap_or_default();
-
             let culling_data = khora_core::renderer::light::CullingUniformsData {
                 view_projection: view.view_proj.to_cols_array_2d(),
-                inverse_projection: inv_vp.to_cols_array_2d(),
-                screen_dimensions: [width as f32, height as f32],
-                tile_count: [num_tiles_x, num_tiles_y],
+                screen_dimensions: grid.screen_dimensions(),
+                tile_count: [grid.tiles_x, grid.tiles_y],
                 num_lights: lights.len() as u32,
-                tile_size: config.tile_size.pixels(),
-                _padding: [0.0; 2],
+                tile_size: grid.tile_size,
+                max_lights_per_tile: config.max_lights_per_tile,
+                _padding: 0,
             };
 
             if let Err(e) =
@@ -212,22 +220,19 @@ impl ForwardPlusLane {
             }
         }
 
-        // Run Culling Compute Pass
-        if let (Some(culling_pipeline), Some(culling_bg)) =
-            (resources.culling_pipeline, resources.culling_bind_group)
-        {
+        // Run Culling Compute Pass — one workgroup per tile.
+        if let (Some(culling_pipeline), Some(culling_bg), true) = (
+            resources.culling_pipeline,
+            resources.culling_bind_group,
+            grid.total() > 0,
+        ) {
             let mut compute_pass = encoder.begin_compute_pass(&ComputePassDescriptor {
                 label: Some("Forward+ Light Culling Pass"),
                 timestamp_writes: None,
             });
             compute_pass.set_pipeline(&culling_pipeline);
             compute_pass.set_bind_group(0, &culling_bg, &[]);
-
-            let config = self.tile_config;
-            let (width, height) = self.screen_size;
-            let num_tiles_x = width.div_ceil(config.tile_size.pixels());
-            let num_tiles_y = height.div_ceil(config.tile_size.pixels());
-            compute_pass.dispatch_workgroups(num_tiles_x, num_tiles_y, 1);
+            compute_pass.dispatch_workgroups(grid.tiles_x, grid.tiles_y, 1);
         }
 
         // 5. Prepare Per-Mesh Data (Dynamic Uniforms). Opaque draws batch by

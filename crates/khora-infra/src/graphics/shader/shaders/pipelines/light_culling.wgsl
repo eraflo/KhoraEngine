@@ -1,29 +1,41 @@
 // Light Culling Compute Shader for Forward+ Rendering
-// 
-// This shader performs tile-based light culling by:
-// 1. Computing the frustum for each screen tile
-// 2. Testing each light against the tile frustum
-// 3. Building a per-tile light index list
 //
-// Workgroup size: 16x16 threads = 256 threads per tile
-// Each workgroup processes one screen tile
+// One workgroup per screen tile. Each tile is the part of the camera's view
+// volume that projects into its pixels: four side planes through the tile's
+// edges, closed by the camera's near and far planes. Every light whose sphere
+// of influence reaches inside all six planes is listed for the tile; the
+// Forward+ fragment shader then shades a pixel with its tile's list only.
+//
+// The planes are extracted from the view-projection matrix (Gribb & Hartmann):
+// with `clip = M * p`, a world point is right of the NDC line `x = x0` iff
+// `dot(row0 - x0 * row3, p) >= 0`. They are therefore world-space planes, exact
+// for perspective and orthographic cameras alike, and the lights are tested
+// at their world positions.
+//
+// Tiles follow the framebuffer convention the fragment shader reads them
+// with: tile row 0 is the TOP of the image (pixel y grows downward, NDC y
+// grows upward).
+//
+// Workgroup size: 16x16 = 256 threads sharing the tile's light loop; the
+// tile's size in pixels comes from the uniforms and is independent of it.
 
 // --- Uniforms and Buffers ---
 
 struct LightCullingUniforms {
     view_projection: mat4x4<f32>,
-    inverse_projection: mat4x4<f32>,
     screen_dimensions: vec2<f32>,
     tile_count: vec2<u32>,
     num_lights: u32,
     tile_size: u32,
-    _padding: vec2<f32>,
+    max_lights_per_tile: u32,
+    _padding: u32,
 };
 
 @group(0) @binding(0)
 var<uniform> uniforms: LightCullingUniforms;
 
-// GPU-friendly light structure (64 bytes)
+// The unified light structure — the layout of `GpuLight` in Rust and in
+// `forward_plus.wgsl`. Culling reads the position, range and type only.
 struct GpuLight {
     position: vec3<f32>,
     range: f32,
@@ -33,93 +45,90 @@ struct GpuLight {
     light_type: u32,      // 0 = directional, 1 = point, 2 = spot
     inner_cone_cos: f32,
     outer_cone_cos: f32,
-    _padding: vec2<f32>,
+    shadow_map_index: i32,
+    shadow_bias: f32,
+    shadow_normal_bias: f32,
+    shadow_far_plane: f32,
 };
 
 @group(0) @binding(1)
 var<storage, read> lights: array<GpuLight>;
 
-// Output: Per-tile light indices
-// Format: For tile at (x, y), offset = (y * tiles_x + x) * max_lights_per_tile
+// Output: per-tile light indices.
+// Tile `t` owns slots `[t * MAX_LIGHTS_PER_TILE, (t + 1) * MAX_LIGHTS_PER_TILE)`.
 @group(0) @binding(2)
 var<storage, read_write> light_index_list: array<u32>;
 
-// Output: Per-tile (offset, count) pairs
-// Format: light_grid[tile_index * 2] = offset, light_grid[tile_index * 2 + 1] = count
+// Output: per-tile (offset, count) pairs.
+// light_grid[t * 2] = offset, light_grid[t * 2 + 1] = count
 @group(0) @binding(3)
 var<storage, read_write> light_grid: array<atomic<u32>>;
 
 // --- Workgroup Shared Memory ---
 
-const TILE_SIZE: u32 = 16u;
+// Slots per tile in `light_index_list`: the most lights a tile can list.
+// Mirrored in Rust as `CULLING_SHADER_LIGHTS_PER_TILE`.
 const MAX_LIGHTS_PER_TILE: u32 = 128u;
 
 var<workgroup> shared_light_count: atomic<u32>;
 var<workgroup> shared_light_indices: array<u32, 128u>;
-var<workgroup> tile_frustum_planes: array<vec4<f32>, 4>;  // Left, Right, Top, Bottom
-var<workgroup> tile_min_z: atomic<u32>;
-var<workgroup> tile_max_z: atomic<u32>;
+// Left, right, bottom, top, near, far — normalised, normals pointing inward.
+var<workgroup> tile_planes: array<vec4<f32>, 6>;
 
 // --- Helper Functions ---
 
-// Custom implementation of bitcast for u32 to f32
-fn bitcast_f32(v: u32) -> f32 {
-    if (v == 0u) {
-        return 0.0;
+// Row `i` of a column-major matrix.
+fn matrix_row(m: mat4x4<f32>, i: u32) -> vec4<f32> {
+    return vec4<f32>(m[0][i], m[1][i], m[2][i], m[3][i]);
+}
+
+// Scales a plane so its normal is a unit vector, making `dot(n, p) + d` a
+// signed distance. A degenerate plane (no normal) is returned as one every
+// point is inside of, so it never culls and never yields NaN.
+fn normalize_plane(plane: vec4<f32>) -> vec4<f32> {
+    let len = length(plane.xyz);
+    if (len < 1e-12) {
+        return vec4<f32>(0.0, 0.0, 0.0, 1.0);
     }
-    var sign: f32 = 1.0;
-    if ((v & 0x80000000u) != 0u) {
-        sign = -1.0;
+    return plane / len;
+}
+
+// The six planes of tile (tile_x, tile_y), in world space.
+fn tile_plane(index: u32, tile_x: u32, tile_y: u32) -> vec4<f32> {
+    let size = f32(uniforms.tile_size);
+    let dims = uniforms.screen_dimensions;
+    // Pixel edges of the tile, then NDC: x right, y up (row 0 is the top).
+    let x0 = f32(tile_x) * size / dims.x * 2.0 - 1.0;
+    let x1 = f32(tile_x + 1u) * size / dims.x * 2.0 - 1.0;
+    let y_top = 1.0 - f32(tile_y) * size / dims.y * 2.0;
+    let y_bottom = 1.0 - f32(tile_y + 1u) * size / dims.y * 2.0;
+
+    let m = uniforms.view_projection;
+    let r0 = matrix_row(m, 0u);
+    let r1 = matrix_row(m, 1u);
+    let r2 = matrix_row(m, 2u);
+    let r3 = matrix_row(m, 3u);
+
+    var plane: vec4<f32>;
+    switch (index) {
+        case 0u: { plane = r0 - x0 * r3; }        // left:   x >= x0 * w
+        case 1u: { plane = x1 * r3 - r0; }        // right:  x <= x1 * w
+        case 2u: { plane = r1 - y_bottom * r3; }  // bottom: y >= y_bottom * w
+        case 3u: { plane = y_top * r3 - r1; }     // top:    y <= y_top * w
+        case 4u: { plane = r2; }                  // near:   z >= 0 (depth 0..1)
+        default: { plane = r3 - r2; }             // far:    z <= w
     }
-    let exponent = f32((v >> 23u) & 0xFFu) - 127.0;
-    let mantissa = 1.0 + f32(v & 0x7FFFFFu) / 8388608.0;
-    return sign * mantissa * exp2(exponent);
+    return normalize_plane(plane);
 }
 
-// Convert clip-space NDC to view-space position
-fn ndc_to_view(ndc: vec3<f32>) -> vec3<f32> {
-    let clip = vec4<f32>(ndc, 1.0);
-    let view = uniforms.inverse_projection * clip;
-    return view.xyz / view.w;
-}
-
-// Create a frustum plane from 3 points (counter-clockwise order)
-fn create_plane(p0: vec3<f32>, p1: vec3<f32>, p2: vec3<f32>) -> vec4<f32> {
-    let v0 = p1 - p0;
-    let v1 = p2 - p0;
-    let normal = normalize(cross(v0, v1));
-    let d = -dot(normal, p0);
-    return vec4<f32>(normal, d);
-}
-
-// Test if a sphere intersects a plane (returns positive if in front)
-fn sphere_plane_distance(center: vec3<f32>, plane: vec4<f32>) -> f32 {
-    return dot(center, plane.xyz) + plane.w;
-}
-
-// Test if a light sphere intersects the tile frustum
-fn light_intersects_tile(light_pos_view: vec3<f32>, light_range: f32) -> bool {
-    // Check against all 4 frustum planes
-    for (var i = 0u; i < 4u; i++) {
-        let distance = sphere_plane_distance(light_pos_view, tile_frustum_planes[i]);
-        if (distance < -light_range) {
-            return false;  // Completely outside this plane
+// Whether a sphere reaches inside every plane of the tile.
+fn sphere_in_tile(center: vec3<f32>, radius: f32) -> bool {
+    for (var i = 0u; i < 6u; i++) {
+        let plane = tile_planes[i];
+        if (dot(plane.xyz, center) + plane.w < -radius) {
+            return false;
         }
     }
-    
-    // Check against depth range (z is negative in view space)
-    let min_z_f = bitcast_f32(atomicLoad(&tile_min_z));
-    let max_z_f = bitcast_f32(atomicLoad(&tile_max_z));
-    
-    // Light is too far (z more negative than max depth)
-    if (light_pos_view.z + light_range < -max_z_f) {
-        return false;
-    }
-    // Light is too close (z less negative than min depth)
-    if (light_pos_view.z - light_range > -min_z_f) {
-        return false;
-    }
-    
     return true;
 }
 
@@ -127,106 +136,58 @@ fn light_intersects_tile(light_pos_view: vec3<f32>, light_range: f32) -> bool {
 
 @compute @workgroup_size(16, 16, 1)
 fn cs_main(
-    @builtin(global_invocation_id) global_id: vec3<u32>,
-    @builtin(local_invocation_id) local_id: vec3<u32>,
     @builtin(local_invocation_index) local_index: u32,
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
 ) {
     let tile_x = workgroup_id.x;
     let tile_y = workgroup_id.y;
     let tile_index = tile_y * uniforms.tile_count.x + tile_x;
-    
-    // Initialize shared memory (first thread only)
+
     if (local_index == 0u) {
-        atomicExchange(&shared_light_count, 0u);
-        atomicExchange(&tile_min_z, 0x3F800000u);  // Near = 1.0f (bit pattern)
-        atomicExchange(&tile_max_z, 0u);           // Far = 0.0f (bit pattern)
+        atomicStore(&shared_light_count, 0u);
     }
-    
-    // Construct tile frustum planes (first 4 threads)
-    if (local_index < 4u) {
-        // Calculate tile corners in NDC (-1 to 1)
-        let tile_min_ndc = vec2<f32>(
-            f32(tile_x * TILE_SIZE) / uniforms.screen_dimensions.x * 2.0 - 1.0,
-            f32(tile_y * TILE_SIZE) / uniforms.screen_dimensions.y * 2.0 - 1.0
-        );
-        let tile_max_ndc = vec2<f32>(
-            f32((tile_x + 1u) * TILE_SIZE) / uniforms.screen_dimensions.x * 2.0 - 1.0,
-            f32((tile_y + 1u) * TILE_SIZE) / uniforms.screen_dimensions.y * 2.0 - 1.0
-        );
-        
-        // Convert corners to view space (at near plane z = 1.0 in NDC)
-        let tl = ndc_to_view(vec3<f32>(tile_min_ndc.x, tile_max_ndc.y, 1.0));
-        let tr = ndc_to_view(vec3<f32>(tile_max_ndc.x, tile_max_ndc.y, 1.0));
-        let bl = ndc_to_view(vec3<f32>(tile_min_ndc.x, tile_min_ndc.y, 1.0));
-        let br = ndc_to_view(vec3<f32>(tile_max_ndc.x, tile_min_ndc.y, 1.0));
-        let origin = vec3<f32>(0.0, 0.0, 0.0);
-        
-        // Create frustum planes (normals pointing inward)
-        switch (local_index) {
-            case 0u: { tile_frustum_planes[0] = create_plane(origin, tl, bl); }  // Left
-            case 1u: { tile_frustum_planes[1] = create_plane(origin, br, tr); }  // Right
-            case 2u: { tile_frustum_planes[2] = create_plane(origin, tr, tl); }  // Top
-            case 3u: { tile_frustum_planes[3] = create_plane(origin, bl, br); }  // Bottom
-            default: {}
-        }
+    if (local_index < 6u) {
+        tile_planes[local_index] = tile_plane(local_index, tile_x, tile_y);
     }
-    
+
     workgroupBarrier();
-    
+
+    // The configured budget, never past the slots a tile owns.
+    let cap = min(uniforms.max_lights_per_tile, MAX_LIGHTS_PER_TILE);
+
     // --- Light Culling ---
-    // Each thread processes multiple lights in a strided pattern
-    let lights_per_thread = (uniforms.num_lights + 255u) / 256u;
-    
-    for (var i = 0u; i < lights_per_thread; i++) {
-        let light_index = local_index + i * 256u;
-        
-        if (light_index >= uniforms.num_lights) {
-            break;
-        }
-        
+    // Each thread tests every 256th light — of those the buffer really holds:
+    // past its end a read is zeros, which would pass for a directional light.
+    let num_lights = min(uniforms.num_lights, arrayLength(&lights));
+    for (var light_index = local_index; light_index < num_lights; light_index += 256u) {
         let light = lights[light_index];
-        
-        // Transform light position to view space
-        let light_world_pos = vec4<f32>(light.position, 1.0);
-        let light_clip_pos = uniforms.view_projection * light_world_pos;
-        let light_view_pos = ndc_to_view(light_clip_pos.xyz / light_clip_pos.w);
-        
-        // Directional lights always affect all tiles
+
+        // Directional lights reach everywhere; point and spot lights are
+        // bounded by their range (a spot's cone lies inside that sphere).
         var affects_tile = light.light_type == 0u;
-        
-        // Point and spot lights need frustum test
-        if (light.light_type != 0u) {
-            affects_tile = light_intersects_tile(light_view_pos, light.range);
+        if (!affects_tile) {
+            affects_tile = sphere_in_tile(light.position, light.range);
         }
-        
+
         if (affects_tile) {
             let slot = atomicAdd(&shared_light_count, 1u);
-            if (slot < MAX_LIGHTS_PER_TILE) {
+            if (slot < cap) {
                 shared_light_indices[slot] = light_index;
             }
         }
     }
-    
+
     workgroupBarrier();
-    
+
     // --- Write Results ---
-    // First thread writes the light grid entry
-    if (local_index == 0u) {
-        let count = min(atomicLoad(&shared_light_count), MAX_LIGHTS_PER_TILE);
-        let offset = tile_index * MAX_LIGHTS_PER_TILE;
-        
-        // Store offset and count in light_grid
-        atomicExchange(&light_grid[tile_index * 2u], offset);
-        atomicExchange(&light_grid[tile_index * 2u + 1u], count);
-    }
-    
-    workgroupBarrier();
-    
-    // All threads write their portion of light indices
-    let count = min(atomicLoad(&shared_light_count), MAX_LIGHTS_PER_TILE);
+    let count = min(atomicLoad(&shared_light_count), cap);
     let base_offset = tile_index * MAX_LIGHTS_PER_TILE;
-    
+
+    if (local_index == 0u) {
+        atomicStore(&light_grid[tile_index * 2u], base_offset);
+        atomicStore(&light_grid[tile_index * 2u + 1u], count);
+    }
+
     for (var i = local_index; i < count; i += 256u) {
         light_index_list[base_offset + i] = shared_light_indices[i];
     }

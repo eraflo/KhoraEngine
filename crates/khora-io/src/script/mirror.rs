@@ -526,6 +526,16 @@ mod tests {
         assert!(source.contains("float z_near;"));
     }
 
+    /// A camera's aspect is the shape of the image it fills, not a field of
+    /// the camera: the mirror offers scripts no `aspect_ratio` to read or
+    /// write.
+    #[test]
+    fn the_camera_mirror_has_no_aspect_ratio() {
+        let source = mirror_source();
+        assert!(source.contains("float z_far;"), "got:\n{source}");
+        assert!(!source.contains("aspect_ratio"), "got:\n{source}");
+    }
+
     /// An enum component says it is not mirrored, rather than appearing as a
     /// component with no fields — which would be a different, false claim.
     #[test]
@@ -788,6 +798,7 @@ mod tests {
                 _ => None,
             },
             script_default: || None,
+            check: None,
         };
 
         let mirrored = declaration(&registration);

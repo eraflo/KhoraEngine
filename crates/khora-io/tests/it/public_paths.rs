@@ -717,9 +717,9 @@ fn module_script_mounted_paths_still_resolve() {
 
 #[test]
 fn module_script_problems_paths_still_resolve() {
-    let _: fn(&str) -> khora_core::script::ScriptProblem =
+    let _: fn(&str) -> khora_core::problems::Problem =
         khora_io::script::problems::misplaced_problem;
-    let _: fn(&khora_core::script::ScriptProblems, &std::path::Path) =
+    let _: fn(&khora_core::problems::Problems, &std::path::Path) =
         khora_io::script::problems::report_misplaced;
 }
 

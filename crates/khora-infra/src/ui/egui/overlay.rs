@@ -37,10 +37,14 @@ pub struct EguiFrameRenderState {
     pub encoder: Option<wgpu::CommandEncoder>,
     /// The swapchain texture view to render onto (owned).
     pub target_view: wgpu::TextureView,
-    /// Physical width in pixels.
+    /// Width of `target_view`, in physical pixels.
     pub width_px: u32,
-    /// Physical height in pixels.
+    /// Height of `target_view`, in physical pixels.
     pub height_px: u32,
+    /// Registered textures whose view changed since the last frame (a
+    /// resized viewport target): each id is re-pointed at its new view
+    /// before anything is painted, so this frame already shows it.
+    pub retargets: Vec<(egui::TextureId, wgpu::TextureView)>,
 }
 
 /// Egui-based editor overlay implementation.
@@ -51,8 +55,6 @@ pub struct EguiOverlay {
     ctx: egui::Context,
     winit_state: egui_winit::State,
     renderer: EguiWgpuRenderer,
-    /// Current screen descriptor.
-    screen: OverlayScreenDescriptor,
 }
 
 impl EguiOverlay {
@@ -86,11 +88,6 @@ impl EguiOverlay {
             ctx,
             winit_state,
             renderer,
-            screen: OverlayScreenDescriptor {
-                width_px: 1,
-                height_px: 1,
-                scale_factor: 1.0,
-            },
         }
     }
 
@@ -138,8 +135,9 @@ impl EditorOverlay for EguiOverlay {
         response.consumed
     }
 
-    fn begin_frame(&mut self, window: &dyn Any, screen: OverlayScreenDescriptor) {
-        self.screen = screen;
+    fn begin_frame(&mut self, window: &dyn Any, _screen: OverlayScreenDescriptor) {
+        // egui reads the window's size and scale from winit itself; the size
+        // drawn at is the target's, handed over in `EguiFrameRenderState`.
         if let Some(winit_window) = window.downcast_ref::<winit::window::Window>() {
             let raw_input = self.winit_state.take_egui_input(winit_window);
             self.ctx.begin_pass(raw_input);
@@ -174,6 +172,9 @@ impl EditorOverlay for EguiOverlay {
         // Update textures
         self.renderer
             .update_textures(&gc.device, &gc.queue, &textures_delta);
+        for (id, view) in state.retargets.drain(..) {
+            self.renderer.update_external_texture(&gc.device, id, &view);
+        }
 
         // Get a mutable reference to the encoder
         let encoder = state
@@ -187,8 +188,10 @@ impl EditorOverlay for EguiOverlay {
             queue: &gc.queue,
             encoder,
             target_view: &state.target_view,
-            width_px: self.screen.width_px,
-            height_px: self.screen.height_px,
+            // The texture actually drawn on, which can lag the window while a
+            // resize settles.
+            width_px: state.width_px,
+            height_px: state.height_px,
         };
 
         self.renderer

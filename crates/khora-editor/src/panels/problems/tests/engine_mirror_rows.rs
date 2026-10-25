@@ -17,7 +17,7 @@
 //! project's `assets/scripts/`, so a row there must not send the system to
 //! open a path that does not exist.
 
-use khora_sdk::khora_core::script::{ProblemSeverity, ScriptProblem};
+use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
 
 use crate::panels::problems::view::{row_action, ProblemAction};
 
@@ -27,7 +27,7 @@ const ENGINE_MIRROR: &str = "engine/components.erg";
 
 #[test]
 fn a_problem_in_the_engine_mirror_does_not_open_a_project_file() {
-    let problem = ScriptProblem {
+    let problem = Problem {
         severity: ProblemSeverity::Error,
         module: Some(ENGINE_MIRROR.to_owned()),
         line: 3,
@@ -37,6 +37,8 @@ fn a_problem_in_the_engine_mirror_does_not_open_a_project_file() {
         note: None,
         entity: None,
         behavior: None,
+        component: None,
+        field: None,
     };
 
     assert_ne!(

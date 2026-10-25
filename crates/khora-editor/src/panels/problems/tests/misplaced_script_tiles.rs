@@ -17,12 +17,12 @@
 //! module's counts; an `.erg` anywhere else is no module — it is never
 //! compiled — and wears the one error the Problems tab lists for it.
 
-use khora_sdk::khora_core::script::{ProblemSeverity, ScriptProblem};
+use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
 
 use crate::panels::problems::view::{module_of_asset, script_tile_counts};
 
-fn problem(severity: ProblemSeverity, module: &str, message: &str) -> ScriptProblem {
-    ScriptProblem {
+fn problem(severity: ProblemSeverity, module: &str, message: &str) -> Problem {
+    Problem {
         severity,
         module: Some(module.to_owned()),
         line: 1,
@@ -31,13 +31,15 @@ fn problem(severity: ProblemSeverity, module: &str, message: &str) -> ScriptProb
         note: None,
         entity: None,
         behavior: None,
+        component: None,
+        field: None,
     }
 }
 
 /// `ai/guard.erg` with an error and two warnings, `lantern.erg` — the name
 /// a misplaced `props/lantern.erg` would take under another rule — with an
 /// error, and another module with one.
-fn reported() -> Vec<ScriptProblem> {
+fn reported() -> Vec<Problem> {
     vec![
         problem(ProblemSeverity::Error, "ai/guard.erg", "one"),
         problem(ProblemSeverity::Warning, "ai/guard.erg", "two"),

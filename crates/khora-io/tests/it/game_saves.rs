@@ -411,3 +411,92 @@ fn load_game_reports_a_value_the_save_could_not_hold() {
         "the guard keeps its `Guard`"
     );
 }
+
+/// The camera of a scene, played: the world as played, the base scene's
+/// file, and the camera's identity. The scene's camera is `scene`; the run
+/// leaves it `played`.
+fn played_camera(
+    scene: khora_data::ecs::Camera,
+    played: khora_data::ecs::Camera,
+) -> (World, SceneFile, PersistentId) {
+    let service = SerializationService::new();
+    let mut world = World::new();
+    let eye = world.spawn((Transform::identity(), Name::new("Eye"), scene));
+    world.mark_authored(eye).expect("authored");
+    let base_file = service
+        .save_world(&world, SerializationGoal::EditorInterchange)
+        .expect("the scene saves");
+    let id = world.persistent_id(eye).expect("an id");
+    *world
+        .get_mut::<khora_data::ecs::Camera>(eye)
+        .expect("a camera") = played;
+    (world, base_file, id)
+}
+
+/// The `Unusable` entries of `report`.
+fn unusable(report: &khora_data::scene::record::LoadReport) -> Vec<String> {
+    report
+        .entries
+        .iter()
+        .filter(|entry| {
+            matches!(
+                entry.kind,
+                khora_data::scene::record::ReportKind::Unusable { .. }
+            )
+        })
+        .map(ToString::to_string)
+        .collect()
+}
+
+/// A game that left its camera's near plane at 0 loads with the 0 kept, and
+/// the report says so once — not once per record the merge read it from.
+#[test]
+fn load_game_reports_an_unusable_camera_once() {
+    use khora_data::ecs::Camera;
+    let service = SerializationService::new();
+    let broken = Camera::new_perspective(1.0, 0.0, 100.0);
+    let (world, base_file, eye) = played_camera(Camera::default_perspective(), broken);
+    let save = service
+        .save_game(
+            &world,
+            AssetUUID::new_v5("scenes/eye.kscene"),
+            &base_file,
+            SerializationGoal::EditorInterchange,
+        )
+        .expect("the game saves");
+
+    let mut loaded = World::new();
+    let report = service
+        .load_game(&mut loaded, &save, &base_file)
+        .expect("the game loads");
+
+    assert_eq!(loaded.get::<Camera>(twin(&loaded, eye)), Some(&broken));
+    assert_eq!(unusable(&report).len(), 1, "{:#?}", unusable(&report));
+}
+
+/// A scene whose camera's near plane is 0, played by a game that moved it
+/// to 0.1: the game loads with a usable camera, and the report holds
+/// nothing unusable — what the scene held before the game is not loaded.
+#[test]
+fn load_game_reports_nothing_unusable_of_a_camera_the_game_fixed() {
+    use khora_data::ecs::Camera;
+    let service = SerializationService::new();
+    let fixed = Camera::new_perspective(1.0, 0.1, 100.0);
+    let (world, base_file, eye) = played_camera(Camera::new_perspective(1.0, 0.0, 100.0), fixed);
+    let save = service
+        .save_game(
+            &world,
+            AssetUUID::new_v5("scenes/eye.kscene"),
+            &base_file,
+            SerializationGoal::EditorInterchange,
+        )
+        .expect("the game saves");
+
+    let mut loaded = World::new();
+    let report = service
+        .load_game(&mut loaded, &save, &base_file)
+        .expect("the game loads");
+
+    assert_eq!(loaded.get::<Camera>(twin(&loaded, eye)), Some(&fixed));
+    assert!(unusable(&report).is_empty(), "{:#?}", unusable(&report));
+}

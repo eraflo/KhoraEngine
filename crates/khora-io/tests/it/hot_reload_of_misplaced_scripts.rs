@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use khora_core::lane::OutputDeck;
-use khora_core::script::{ProblemSeverity, ScriptProblem, ScriptProblems};
+use khora_core::problems::{Problem, ProblemSeverity, Problems};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
 use khora_io::asset::AssetWatch;
@@ -47,7 +47,7 @@ fn data_system(name: &str) -> &'static DataSystemRegistration {
 /// root that holds an empty `scripts/` folder.
 struct Pump {
     runtime: Runtime,
-    problems: Arc<ScriptProblems>,
+    problems: Arc<Problems>,
     _watch: Arc<AssetWatch>,
 }
 
@@ -57,7 +57,7 @@ impl Pump {
         std::fs::create_dir_all(assets.join("props")).expect("another folder");
         let watch = Arc::new(AssetWatch::default());
         watch.watch(assets).expect("watches the root");
-        let problems = Arc::new(ScriptProblems::default());
+        let problems = Arc::new(Problems::default());
         let mut runtime = Runtime::default();
         runtime.resources.insert(Arc::clone(&watch));
         runtime.resources.insert(reload_channel());
@@ -75,7 +75,7 @@ impl Pump {
     /// sent so far, or the wait ran out; returns the modules sent.
     fn run_until(
         &self,
-        mut done: impl FnMut(&ScriptProblems, &BTreeSet<String>) -> bool,
+        mut done: impl FnMut(&Problems, &BTreeSet<String>) -> bool,
     ) -> BTreeSet<String> {
         let system = data_system("script_hot_reload");
         let mut world = World::new();
@@ -103,7 +103,7 @@ impl Pump {
 
 /// The problems in no module naming `rel_path`: what a misplaced file is
 /// reported as.
-fn misplaced(problems: &ScriptProblems, rel_path: &str) -> Vec<ScriptProblem> {
+fn misplaced(problems: &Problems, rel_path: &str) -> Vec<Problem> {
     problems
         .all()
         .into_iter()

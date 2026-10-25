@@ -153,7 +153,6 @@ pub trait PhaseProvider {
 ///     fn setup(&mut self, world: &mut GameWorld, _runtime: &Runtime) {
 ///         world.spawn_camera(ecs::Camera::new_perspective(
 ///             std::f32::consts::FRAC_PI_4,
-///             16.0 / 9.0,
 ///             0.1,
 ///             1000.0,
 ///         ));

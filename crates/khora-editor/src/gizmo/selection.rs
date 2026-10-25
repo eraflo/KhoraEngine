@@ -18,7 +18,7 @@
 use super::interact::{perpendiculars, GizmoAxis, GizmoBasis};
 use khora_sdk::editor_ui::gizmo::GizmoLineInstance;
 use khora_sdk::editor_ui::GizmoMode;
-use khora_sdk::khora_core::math::{Mat4, Vec3};
+use khora_sdk::khora_core::math::{Mat4, Vec3, Vec4};
 use khora_sdk::khora_core::renderer::api::resource::view::ViewInfo;
 
 /// Fraction of the viewport's half-height a manipulator arm spans.
@@ -208,61 +208,49 @@ fn rotate_handles(pivot: Vec3, basis: &GizmoBasis, size: f32) -> Vec<GizmoLineIn
     lines
 }
 
-/// Generates a wireframe camera frustum at the given transform.
+/// Generates the wireframe of the volume `projection` sees, placed by
+/// `transform`: the NDC corners `(±1, ±1, 0)` (near) and `(±1, ±1, 1)` (far)
+/// unprojected through `projection`'s inverse — 12 edges (near ring, far ring,
+/// four rails). Exact for perspective and orthographic alike. A projection
+/// that cannot be inverted draws nothing.
 pub fn camera_frustum(
     transform: &Mat4,
-    fov_y: f32,
-    aspect: f32,
-    near: f32,
-    far: f32,
+    projection: &Mat4,
     color: [f32; 4],
 ) -> Vec<GizmoLineInstance> {
-    let half_h_near = (fov_y * 0.5).tan() * near;
-    let half_w_near = half_h_near * aspect;
-    let half_h_far = (fov_y * 0.5).tan() * far;
-    let half_w_far = half_h_far * aspect;
+    let Some(inverse) = projection.inverse() else {
+        return Vec::new();
+    };
+    let corner = |x: f32, y: f32, z: f32| {
+        let p = inverse * Vec4::new(x, y, z, 1.0);
+        transform.transform_point(p.truncate() / p.w)
+    };
+    let ring = |z: f32| {
+        [
+            corner(-1.0, -1.0, z),
+            corner(1.0, -1.0, z),
+            corner(1.0, 1.0, z),
+            corner(-1.0, 1.0, z),
+        ]
+    };
+    let near = ring(0.0);
+    let far = ring(1.0);
+    // A volume reaching infinity (an infinite far plane) has no edge to draw.
+    if near
+        .iter()
+        .chain(&far)
+        .any(|c| !(c.x.is_finite() && c.y.is_finite() && c.z.is_finite()))
+    {
+        return Vec::new();
+    }
 
-    let near_corners = [
-        Vec3::new(-half_w_near, -half_h_near, -near),
-        Vec3::new(half_w_near, -half_h_near, -near),
-        Vec3::new(half_w_near, half_h_near, -near),
-        Vec3::new(-half_w_near, half_h_near, -near),
-    ];
-    let far_corners = [
-        Vec3::new(-half_w_far, -half_h_far, -far),
-        Vec3::new(half_w_far, -half_h_far, -far),
-        Vec3::new(half_w_far, half_h_far, -far),
-        Vec3::new(-half_w_far, half_h_far, -far),
-    ];
-
-    let mut lines = Vec::with_capacity(16);
-
+    let mut lines = Vec::with_capacity(12);
     for i in 0..4 {
         let j = (i + 1) % 4;
-        lines.push(GizmoLineInstance::new(
-            transform.transform_point(near_corners[i]),
-            transform.transform_point(near_corners[j]),
-            color,
-        ));
+        lines.push(GizmoLineInstance::new(near[i], near[j], color));
+        lines.push(GizmoLineInstance::new(far[i], far[j], color));
+        lines.push(GizmoLineInstance::new(near[i], far[i], color));
     }
-
-    for i in 0..4 {
-        let j = (i + 1) % 4;
-        lines.push(GizmoLineInstance::new(
-            transform.transform_point(far_corners[i]),
-            transform.transform_point(far_corners[j]),
-            color,
-        ));
-    }
-
-    for i in 0..4 {
-        lines.push(GizmoLineInstance::new(
-            transform.transform_point(near_corners[i]),
-            transform.transform_point(far_corners[i]),
-            color,
-        ));
-    }
-
     lines
 }
 
@@ -376,18 +364,10 @@ pub fn generate_selection_gizmos(
                     [0.5, 0.5, 0.6, 1.0],
                 ));
             }
-            GizmoKind::Camera {
-                fov_y,
-                aspect,
-                near,
-                far,
-            } => {
+            GizmoKind::Camera { projection } => {
                 lines.extend(camera_frustum(
                     transform,
-                    *fov_y,
-                    *aspect,
-                    *near,
-                    *far,
+                    projection,
                     [0.35, 0.63, 0.97, 1.0],
                 ));
             }
@@ -399,12 +379,15 @@ pub fn generate_selection_gizmos(
                 ));
             }
             GizmoKind::PointLight { radius } => {
-                lines.extend(wireframe_sphere(
-                    transform,
-                    *radius,
-                    12,
-                    [1.0, 0.7, 0.3, 1.0],
-                ));
+                let sphere = wireframe_sphere(transform, *radius, 12, [1.0, 0.7, 0.3, 1.0]);
+                // A range too large for its entity's scale reaches infinity:
+                // no sphere rather than lines to nowhere.
+                if sphere
+                    .iter()
+                    .all(|line| line.start.iter().chain(&line.end).all(|v| v.is_finite()))
+                {
+                    lines.extend(sphere);
+                }
             }
             GizmoKind::Audio => {
                 lines.extend(wireframe_sphere(transform, 0.4, 8, [0.7, 0.3, 1.0, 1.0]));
@@ -438,14 +421,9 @@ pub enum GizmoKind {
     Empty,
     /// Camera entity — frustum wireframe.
     Camera {
-        /// Vertical field of view, in radians.
-        fov_y: f32,
-        /// Width / height ratio of the projection.
-        aspect: f32,
-        /// Distance to the near clip plane.
-        near: f32,
-        /// Distance to the far clip plane.
-        far: f32,
+        /// The camera's projection (view to clip space), at the aspect of
+        /// the image it would fill.
+        projection: Mat4,
     },
     /// Directional light — arrow icon.
     DirectionalLight,
@@ -458,4 +436,150 @@ pub enum GizmoKind {
     Audio,
     /// Entity with a mesh — highlighted cube.
     Mesh,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const COLOR: [f32; 4] = [0.35, 0.63, 0.97, 1.0];
+
+    fn point(p: [f32; 4]) -> Vec3 {
+        Vec3::new(p[0], p[1], p[2])
+    }
+
+    fn close(a: Vec3, b: Vec3) -> bool {
+        (a - b).length() < 1e-3
+    }
+
+    /// The eight corners of a view volume, near ring then far ring, each
+    /// paired with its NDC signs `(x, y, near = 0 / far = 1)`.
+    fn corners(
+        half_near: (f32, f32),
+        near: f32,
+        half_far: (f32, f32),
+        far: f32,
+    ) -> Vec<(Vec3, (i8, i8, i8))> {
+        let mut out = Vec::new();
+        for (depth, (hw, hh), z) in [(0, half_near, -near), (1, half_far, -far)] {
+            for sx in [-1_i8, 1] {
+                for sy in [-1_i8, 1] {
+                    out.push((
+                        Vec3::new(hw * sx as f32, hh * sy as f32, z),
+                        (sx, sy, depth),
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    /// The corner `p` stands for, if any.
+    fn corner_of(p: Vec3, corners: &[(Vec3, (i8, i8, i8))]) -> Option<(i8, i8, i8)> {
+        corners
+            .iter()
+            .find(|(c, _)| close(*c, p))
+            .map(|(_, label)| *label)
+    }
+
+    /// `lines` is the box over `corners`: twelve edges, every endpoint one of
+    /// the corners, every corner reached, and every edge joining two corners
+    /// that differ in exactly one of x, y or depth (a ring side or a rail).
+    fn assert_is_the_box_over(lines: &[GizmoLineInstance], corners: &[(Vec3, (i8, i8, i8))]) {
+        assert_eq!(lines.len(), 12, "a frustum is twelve edges");
+        let mut reached = vec![0_u32; corners.len()];
+        for line in lines {
+            let (start, end) = (point(line.start), point(line.end));
+            let a = corner_of(start, corners)
+                .unwrap_or_else(|| panic!("{start:?} is not a corner of the volume"));
+            let b = corner_of(end, corners)
+                .unwrap_or_else(|| panic!("{end:?} is not a corner of the volume"));
+            let differ = (a.0 != b.0) as u32 + (a.1 != b.1) as u32 + (a.2 != b.2) as u32;
+            assert_eq!(
+                differ, 1,
+                "the edge {start:?} → {end:?} is not a ring side or a rail"
+            );
+            for p in [start, end] {
+                let i = corners
+                    .iter()
+                    .position(|(c, _)| close(*c, p))
+                    .expect("a corner");
+                reached[i] += 1;
+            }
+        }
+        for ((corner, _), edges) in corners.iter().zip(reached) {
+            assert_eq!(edges, 3, "three edges meet at the corner {corner:?}");
+        }
+    }
+
+    /// Fov 90°, aspect 2, near 1, far 10: the far half-height is
+    /// `tan(45°)·10 = 10`, its half-width `20`; the near plane is ten times
+    /// smaller. The camera looks down −Z.
+    #[test]
+    fn a_perspective_frustum_spans_its_near_and_far_planes() {
+        let projection = Mat4::perspective_rh_zo(std::f32::consts::FRAC_PI_2, 2.0, 1.0, 10.0);
+        let lines = camera_frustum(&Mat4::IDENTITY, &projection, COLOR);
+        assert_is_the_box_over(&lines, &corners((2.0, 1.0), 1.0, (20.0, 10.0), 10.0));
+    }
+
+    /// An orthographic volume is a box: the near and far rings are the same
+    /// size, `(±4, ±2)`, at −near and −far.
+    #[test]
+    fn an_orthographic_frustum_is_a_box_between_its_clip_planes() {
+        let projection = Mat4::orthographic_rh_zo(-4.0, 4.0, -2.0, 2.0, 0.5, 5.0);
+        let lines = camera_frustum(&Mat4::IDENTITY, &projection, COLOR);
+        assert_is_the_box_over(&lines, &corners((4.0, 2.0), 0.5, (4.0, 2.0), 5.0));
+    }
+
+    #[test]
+    fn a_translated_frustum_moves_every_endpoint_by_the_translation() {
+        let offset = Vec3::new(3.0, -2.0, 7.0);
+        let projection = Mat4::perspective_rh_zo(std::f32::consts::FRAC_PI_2, 2.0, 1.0, 10.0);
+        let lines = camera_frustum(&Mat4::from_translation(offset), &projection, COLOR);
+        let moved: Vec<_> = corners((2.0, 1.0), 1.0, (20.0, 10.0), 10.0)
+            .into_iter()
+            .map(|(c, label)| (c + offset, label))
+            .collect();
+        assert_is_the_box_over(&lines, &moved);
+    }
+
+    #[test]
+    fn every_frustum_edge_has_the_given_color() {
+        let projection = Mat4::orthographic_rh_zo(-4.0, 4.0, -2.0, 2.0, 0.5, 5.0);
+        let color = [0.1, 0.2, 0.3, 0.4];
+        let lines = camera_frustum(&Mat4::IDENTITY, &projection, color);
+        assert_eq!(lines.len(), 12);
+        assert!(lines.iter().all(|line| line.color == color));
+    }
+
+    #[test]
+    fn a_projection_that_cannot_be_inverted_draws_no_frustum() {
+        assert!(camera_frustum(&Mat4::IDENTITY, &Mat4::ZERO, COLOR).is_empty());
+    }
+
+    /// An orthographic camera with no depth (near = far) or no extent
+    /// (height 0) projects through infinities: there is no volume to draw,
+    /// and no line may reach the GPU with a non-finite endpoint.
+    #[test]
+    fn a_volume_without_depth_or_extent_draws_no_line_to_infinity() {
+        for (what, projection) in [
+            (
+                "near = far",
+                Mat4::orthographic_rh_zo(-4.0, 4.0, -2.0, 2.0, 5.0, 5.0),
+            ),
+            (
+                "zero height",
+                Mat4::orthographic_rh_zo(0.0, 0.0, 0.0, 0.0, 0.5, 5.0),
+            ),
+        ] {
+            let lines = camera_frustum(&Mat4::IDENTITY, &projection, COLOR);
+            assert!(
+                lines
+                    .iter()
+                    .flat_map(|line| line.start.into_iter().chain(line.end))
+                    .all(f32::is_finite),
+                "{what}: a frustum line has a non-finite endpoint"
+            );
+        }
+    }
 }

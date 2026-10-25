@@ -48,6 +48,7 @@ use crate::render_lane::ShaderComplexity;
 use khora_data::render::RenderWorld;
 
 use khora_core::asset::Material;
+use khora_core::math::Extent2D;
 use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
 use khora_core::renderer::api::pipeline::RenderPipelineId;
@@ -59,8 +60,10 @@ use std::sync::RwLock;
 mod gpu;
 mod gpu_resources;
 mod render;
+mod tile_grid;
 
 pub use gpu_resources::ForwardPlusGpuResources;
+use tile_grid::TileGrid;
 
 // --- Cost Estimation Constants ---
 
@@ -78,6 +81,15 @@ const PER_TILE_COST: f32 = 0.0001;
 
 /// Cost factor per light-tile intersection test.
 const LIGHT_TILE_TEST_COST: f32 = 0.00001;
+
+/// The colour target the cost model assumes when its context carries no
+/// [`ColorTargetSize`](khora_core::lane::ColorTargetSize) — GORNA negotiates
+/// on the DCC thread, outside any frame. It only weighs the estimate; the
+/// tiles actually culled always follow the frame's real target.
+const COST_REFERENCE_TARGET: Extent2D = Extent2D {
+    width: 1920,
+    height: 1080,
+};
 
 /// Binding indices inside the group-3 *lighting* bind group, mirroring
 /// `forward_plus.wgsl`. Bindings 1/2/3 belong to the shared shadow
@@ -116,9 +128,6 @@ pub struct ForwardPlusLane {
     /// Shader complexity for cost estimation.
     pub shader_complexity: ShaderComplexity,
 
-    /// Current screen dimensions (for tile count calculation).
-    screen_size: (u32, u32),
-
     /// GPU resources for compute and render passes.
     pub gpu_resources: std::sync::Mutex<ForwardPlusGpuResources>,
 
@@ -133,7 +142,6 @@ impl Default for ForwardPlusLane {
         Self {
             tile_config: ForwardPlusTileConfig::default(),
             shader_complexity: ShaderComplexity::SimpleLit,
-            screen_size: (1920, 1080),
             gpu_resources: std::sync::Mutex::new(ForwardPlusGpuResources::default()),
             pipeline_system: std::sync::OnceLock::new(),
         }
@@ -171,24 +179,19 @@ impl ForwardPlusLane {
         }
     }
 
-    /// Updates the screen size used for tile calculations.
+    /// The number of tiles across and down a colour target of `target` pixels.
     ///
-    /// This should be called when the window is resized to recalculate
-    /// tile counts and buffer sizes.
-    pub fn set_screen_size(&mut self, width: u32, height: u32) {
-        self.screen_size = (width, height);
+    /// The lane cuts whatever image the frame renders into — the window or
+    /// the editor's viewport — so the grid is derived from the frame's
+    /// [`ColorTargetSize`](khora_core::lane::ColorTargetSize), never stored.
+    pub fn tile_count(&self, target: Extent2D) -> (u32, u32) {
+        let grid = TileGrid::new(&self.tile_config, target);
+        (grid.tiles_x, grid.tiles_y)
     }
 
-    /// Calculates the number of tiles in each dimension.
-    pub fn tile_count(&self) -> (u32, u32) {
-        self.tile_config
-            .tile_dimensions(self.screen_size.0, self.screen_size.1)
-    }
-
-    /// Calculates the total number of tiles on screen.
-    pub fn total_tiles(&self) -> u32 {
-        let (tiles_x, tiles_y) = self.tile_count();
-        tiles_x * tiles_y
+    /// The total number of tiles on a colour target of `target` pixels.
+    pub fn total_tiles(&self, target: Extent2D) -> u32 {
+        TileGrid::new(&self.tile_config, target).total()
     }
 
     /// Returns the effective number of lights in the scene.
@@ -201,9 +204,10 @@ impl ForwardPlusLane {
             + render_world.spot_light_count()
     }
 
-    /// Estimates the cost of the compute pass (light culling).
-    fn compute_pass_cost(&self, render_world: &RenderWorld) -> f32 {
-        let total_tiles = self.total_tiles() as f32;
+    /// Estimates the cost of the compute pass (light culling) on a colour
+    /// target of `target` pixels.
+    fn compute_pass_cost(&self, render_world: &RenderWorld, target: Extent2D) -> f32 {
+        let total_tiles = self.total_tiles(target) as f32;
         let light_count = self.effective_light_count(render_world) as f32;
 
         // Compute pass cost = overhead + per-tile cost + light-tile tests
@@ -256,7 +260,10 @@ impl khora_core::lane::Lane for ForwardPlusLane {
             Some(arc) => arc,
             None => return 1.0,
         };
-        self.estimate_render_cost(render_world, gpu_meshes)
+        let target = ctx
+            .get::<khora_core::lane::ColorTargetSize>()
+            .map_or(COST_REFERENCE_TARGET, |size| size.0);
+        self.estimate_render_cost(render_world, gpu_meshes, target)
     }
 
     fn on_initialize(
@@ -318,6 +325,11 @@ impl khora_core::lane::Lane for ForwardPlusLane {
             .get::<khora_core::lane::ClearColor>()
             .ok_or(LaneError::missing("ClearColor"))?
             .0;
+        // The tile grid is cut from the image this frame renders into.
+        let target = ctx
+            .get::<khora_core::lane::ColorTargetSize>()
+            .ok_or(LaneError::missing("ColorTargetSize"))?
+            .0;
 
         let render_ctx = khora_core::renderer::api::frame::RenderContext::new(
             &color_target,
@@ -355,6 +367,7 @@ impl khora_core::lane::Lane for ForwardPlusLane {
                 .as_deref_mut()
                 .map(|encoder| encoder as &mut dyn CommandEncoder),
             &render_ctx,
+            target,
             &gpu_meshes,
         );
         Ok(())
@@ -397,6 +410,7 @@ impl ForwardPlusLane {
         &self,
         render_world: &RenderWorld,
         gpu_meshes: &RwLock<Assets<GpuMesh>>,
+        target: Extent2D,
     ) -> f32 {
         let gpu_mesh_assets = crate::lock_or_log!(
             gpu_meshes.read(),
@@ -436,7 +450,7 @@ impl ForwardPlusLane {
         let shader_multiplier = self.shader_complexity.cost_multiplier();
 
         // Compute pass overhead
-        let compute_cost = self.compute_pass_cost(render_world);
+        let compute_cost = self.compute_pass_cost(render_world, target);
 
         // Per-fragment light factor (sublinear for Forward+)
         let light_factor = self.fragment_light_factor(render_world);

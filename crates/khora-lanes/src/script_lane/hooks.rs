@@ -46,11 +46,6 @@ pub(super) enum Hook {
     },
 }
 
-/// Calls a lifecycle member, if the behavior declares one.
-///
-/// A suspension hands the machine back ([`Hook::Suspended`]) for the caller to
-/// keep and resume next turn: a member cut short finishes where it stopped
-/// instead of running again from the top.
 /// Where a turn's commands, events and working-set writes start — what a turn
 /// that faults gives back, so it leaves nothing, as a load that fails leaves
 /// the world as it was.
@@ -80,6 +75,11 @@ impl TurnStart {
     }
 }
 
+/// Calls a lifecycle member, if the behavior declares one.
+///
+/// A suspension hands the machine back ([`Hook::Suspended`]) for the caller to
+/// keep and resume next turn: a member cut short finishes where it stopped
+/// instead of running again from the top.
 pub(super) fn call_hook(
     program: &khora_script::vm::Program,
     behavior: &str,

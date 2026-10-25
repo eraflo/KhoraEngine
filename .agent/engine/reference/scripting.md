@@ -392,8 +392,8 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** â
   watch. Declarations register in every mode; programs wait for Play (only the lane drains them).
   Positions: `khora-script/src/source_map.rs` â€” modules laid end to end in one offset space
   (`Lexed::shifted`), `CompileOutcome.sources.locate(span) -> Location{module, line, column}`. Problems:
-  `khora_core::script::ScriptProblems` (`Arc`, `Runtime.resources`), sources `ProblemSource::{Compile{module},
-  Registration, Running}`, `report(source, list)` replaces a source's list; fed by
+  `khora_core::problems::Problems` (`Arc`, `Runtime.resources`; scripts are some of its sources), sources
+  `ProblemSource::{Compile{module}, Registration, Running, Placement{root}, Data, Load}`, `report(source, list)` replaces a source's list; fed by
   `khora-io/src/script/problems.rs::report_compile` (per compiled module, diagnostics under the module they
   are in), `DeclaredComponents::standing_problems` (refused, orphaned) via `script_components`, and the
   `script_problems` DataSystem (`khora-lanes/src/script_lane/problems.rs`: faulted instances, bodies past

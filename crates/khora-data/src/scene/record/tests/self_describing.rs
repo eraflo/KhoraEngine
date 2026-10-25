@@ -355,14 +355,11 @@ fn every_persisted_type_survives_the_self_describing_form() {
     assert_self_describes(&SerializableAudioListener::from(AudioListener));
     assert_self_describes(&SerializableCamera::from(Camera::default_perspective()));
     assert_self_describes(&SerializableCamera::from(Camera::new_orthographic(
-        640.0, 480.0, -1.0, 250.0,
+        480.0, -1.0, 250.0,
     )));
     for projection in [
         ProjectionType::Perspective { fov_y_radians: 1.2 },
-        ProjectionType::Orthographic {
-            width: 16.0,
-            height: 9.0,
-        },
+        ProjectionType::Orthographic { height: 9.0 },
     ] {
         assert_self_describes(&projection);
     }

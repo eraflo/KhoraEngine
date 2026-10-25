@@ -28,7 +28,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use khora_core::lane::OutputDeck;
-use khora_core::script::ScriptProblems;
+use khora_core::problems::Problems;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
 use khora_io::asset::AssetWatch;
@@ -90,9 +90,7 @@ impl Pump {
         runtime.resources.insert(Arc::clone(&watch));
         runtime.resources.insert(reload_channel());
         runtime.resources.insert(declaration_channel());
-        runtime
-            .resources
-            .insert(Arc::new(ScriptProblems::default()));
+        runtime.resources.insert(Arc::new(Problems::default()));
         runtime.resources.insert(Arc::clone(&mounted));
         std::thread::sleep(Duration::from_millis(150));
         Self {
@@ -374,7 +372,7 @@ fn moving_out_a_folder_clears_the_errors_of_a_module_that_never_compiled() {
     let problems = Arc::clone(
         pump.runtime
             .resources
-            .get::<Arc<ScriptProblems>>()
+            .get::<Arc<Problems>>()
             .expect("the problems"),
     );
     std::fs::create_dir_all(assets.path().join("scripts/ai")).expect("a folder");

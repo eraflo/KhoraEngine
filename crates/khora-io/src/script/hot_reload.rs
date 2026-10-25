@@ -56,7 +56,8 @@ use std::sync::Arc;
 
 use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::OutputDeck;
-use khora_core::script::{ScriptCatalog, ScriptProblems};
+use khora_core::problems::Problems;
+use khora_core::script::ScriptCatalog;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 use khora_script::reload::ScriptReload;
@@ -281,7 +282,7 @@ pub fn load_all_announcing(
     pending: &PendingReloads,
     declarations: &PendingDeclarations,
     catalog: &ScriptCatalog,
-    problems: Option<&ScriptProblems>,
+    problems: Option<&Problems>,
 ) -> usize {
     load(script_root, pending, declarations, Some(catalog), problems)
 }
@@ -291,7 +292,7 @@ fn load(
     pending: &PendingReloads,
     declarations: &PendingDeclarations,
     catalog: Option<&ScriptCatalog>,
-    problems: Option<&ScriptProblems>,
+    problems: Option<&Problems>,
 ) -> usize {
     let loader = PreludeLoader::new(DiskLoader::new(script_root));
     let mut loaded = 0;
@@ -429,7 +430,7 @@ fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut O
     for (root, changed) in by_provider {
         recompile(runtime, pending, mounted, &root, &changed);
     }
-    if let Some(problems) = runtime.resources.get::<Arc<ScriptProblems>>() {
+    if let Some(problems) = runtime.resources.get::<Arc<Problems>>() {
         for root in rescan {
             crate::script::problems::report_misplaced(problems, &root);
         }
@@ -455,7 +456,7 @@ fn recompile(
     let loader = PreludeLoader::new(DiskLoader::new(script_root));
     let declarations = runtime.resources.get::<PendingDeclarations>();
     let catalog = runtime.resources.get::<Arc<ScriptCatalog>>();
-    let problems = runtime.resources.get::<Arc<ScriptProblems>>();
+    let problems = runtime.resources.get::<Arc<Problems>>();
     let mut sent = BTreeSet::new();
 
     // A deleted file declares nothing any more: what it declared is orphaned,
@@ -478,7 +479,7 @@ fn recompile(
         if !is_on_disk(root, &module) {
             if let Some(problems) = problems {
                 problems.report(
-                    khora_core::script::ProblemSource::Compile {
+                    khora_core::problems::ProblemSource::Compile {
                         module: module.clone(),
                     },
                     Vec::new(),

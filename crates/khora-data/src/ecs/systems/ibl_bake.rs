@@ -33,25 +33,24 @@ use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 
-use crate::ecs::{DataSystemRegistration, GlobalTransform, Light, TickPhase, World};
+use crate::ecs::{DataSystemRegistration, TickPhase, World};
+#[cfg(test)]
+use crate::ecs::{GlobalTransform, Light};
 use crate::{AssetStore, EnvironmentMap, IblBaker, IblSource};
 
-/// Returns the world-space direction **toward** the scene's first enabled
-/// directional light, or `Vec3::ZERO` when there is none (the bake then falls
-/// back to its own default sun).
+/// Returns the world-space unit direction **toward** the scene's first
+/// directional light that shines ([`shining_lights`](crate::render::shining_lights)),
+/// or `Vec3::ZERO` when there is none (the bake then falls back to its own
+/// default sun).
 ///
-/// The light's travel direction is derived exactly as the render extraction
-/// does it (`transform_direction(direction)`); the sun sits opposite that.
+/// The light's travel direction is the one the render extraction publishes;
+/// the sun sits opposite that. A first sun whose values make no light never
+/// hides a second one, nor poisons the sky.
 fn sun_direction(world: &World) -> Vec3 {
-    for (light, transform) in world.query::<(&Light, &GlobalTransform)>() {
-        if !light.enabled {
-            continue;
-        }
-        if let LightType::Directional(dir_light) = &light.light_type {
-            return -transform.0.transform_direction(dir_light.direction);
-        }
-    }
-    Vec3::ZERO
+    crate::render::shining_lights(world)
+        .into_iter()
+        .find(|shining| matches!(shining.light.light_type, LightType::Directional(_)))
+        .map_or(Vec3::ZERO, |sun| -sun.direction)
 }
 
 /// What one tick of the bake does with the scene's current environment source.
@@ -311,6 +310,39 @@ mod tests {
             error < 1e-6,
             "the sun {sun:?} is not opposite the rendered direction {:?} (off by {error})",
             rendered.lights[0].direction
+        );
+    }
+
+    /// A first sun pointing nowhere (an infinite direction) does not hide the
+    /// valid sun after it: the sky is baked toward the second — its
+    /// direction negated, unit.
+    #[test]
+    fn the_sky_takes_the_first_sun_that_shines() {
+        use khora_core::renderer::light::DirectionalLight;
+
+        let second = Vec3::new(0.3, -1.0, 0.2);
+        let mut world = World::new();
+        world.spawn((
+            GlobalTransform::identity(),
+            Light::new(LightType::Directional(DirectionalLight {
+                direction: Vec3::new(f32::INFINITY, -1.0, 0.0),
+                ..DirectionalLight::default()
+            })),
+        ));
+        world.spawn((
+            GlobalTransform::identity(),
+            Light::new(LightType::Directional(DirectionalLight {
+                direction: second,
+                ..DirectionalLight::default()
+            })),
+        ));
+
+        let sun = sun_direction(&world);
+
+        let expected = -second.normalize();
+        assert!(
+            (sun - expected).length() < 1e-6,
+            "the sky is baked toward {sun:?}, not toward the second sun {expected:?}"
         );
     }
 }

@@ -189,13 +189,7 @@ fn projection_type_variants(x: &khora_data::ecs::ProjectionType) {
 }
 
 fn camera_fields(x: &khora_data::ecs::Camera) {
-    let _ = (
-        &x.projection,
-        &x.aspect_ratio,
-        &x.z_near,
-        &x.z_far,
-        &x.is_active,
-    );
+    let _ = (&x.projection, &x.z_near, &x.z_far, &x.is_active);
 }
 
 fn children_fields(x: &khora_data::ecs::Children) {
@@ -806,7 +800,7 @@ fn ui_atlas_map_fields(x: &khora_data::ui::UiAtlasMap) {
 }
 
 fn ui_scene_fields(x: &khora_data::ui::UiScene) {
-    let _ = (&x.nodes, &x.texts, &x.surface_size);
+    let _ = (&x.nodes, &x.texts);
 }
 
 // ---------------------------------------------------------------------------
@@ -1169,7 +1163,6 @@ fn module_ecs_paths_still_resolve() {
     let _ = khora_data::ecs::Camera::default_perspective;
     let _ = khora_data::ecs::Camera::default_orthographic;
     let _ = khora_data::ecs::Camera::projection_matrix;
-    let _ = khora_data::ecs::Camera::set_aspect_ratio;
     is_clone::<khora_data::ecs::Camera>();
     is_component::<khora_data::ecs::Camera>();
     is_copy::<khora_data::ecs::Camera>();
@@ -1983,6 +1976,8 @@ fn module_render_paths_still_resolve() {
     let _ = type_name::<khora_data::render::ShadowResult>();
     let _ = khora_data::render::extract_active_camera_view;
     let _ = khora_data::render::primary_view;
+    let _ = khora_data::render::target_aspect;
+    let _: f32 = khora_data::render::FALLBACK_ASPECT;
 }
 
 fn record_error_fields(x: &khora_data::scene::record::RecordError) {
@@ -2065,6 +2060,9 @@ fn report_kind_variants(x: &khora_data::scene::record::ReportKind) {
         khora_data::scene::record::ReportKind::NotSaved => {}
         khora_data::scene::record::ReportKind::DeadReference => {}
         khora_data::scene::record::ReportKind::RemovedFromScene => {}
+        khora_data::scene::record::ReportKind::Unusable { message } => {
+            let _ = message;
+        }
     }
 }
 
@@ -2124,6 +2122,7 @@ fn module_scene_record_paths_still_resolve() {
     let _ = khora_data::scene::record::to_record::<khora_core::ecs::entity::EntityId>;
     let _ = khora_data::scene::record::from_record::<khora_core::ecs::entity::EntityId>;
     let _ = khora_data::scene::record::resolve::<khora_core::ecs::entity::EntityId>;
+    let _ = khora_data::scene::record::unusable_entries;
 }
 
 fn scene_record_fields(x: &khora_data::scene::SceneRecord) {
@@ -2695,6 +2694,7 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ = type_name::<khora_data::render::WireframeConfig>(); // khora-lanes
     let _ = khora_data::render::WireframeConfig::default; // khora-sdk
     let _ = khora_data::render::extract_active_camera_view; // khora-agents, khora-editor
+    let _: f32 = khora_data::render::FALLBACK_ASPECT; // khora-agents
     let _ = khora_data::render::submit_frame_graph; // khora-io
     let _ = type_name::<khora_data::scene::ComponentRegistration>(); // khora-io, khora-sdk
     let _ = type_name::<khora_data::scene::ComponentShape>(); // khora-io

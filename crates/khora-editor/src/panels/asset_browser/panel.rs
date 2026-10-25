@@ -255,22 +255,21 @@ impl EditorPanel for AssetBrowserPanel {
             with_alpha(theme.separator, 0.55),
             1.0,
         );
-        let (project_folder, script_problems) = self
+        let (project_folder, problems) = self
             .state
             .lock()
             .ok()
             .map(|s| {
                 (
                     s.project_folder.clone().unwrap_or_default(),
-                    s.script_problems.clone(),
+                    s.problems.clone(),
                 )
             })
             .unwrap_or_default();
         // Each `.erg`'s errors and warnings — a misplaced one's error too —
         // for its tile's badge.
-        let counts_of = |rel_path: &str| {
-            crate::panels::problems::view::script_tile_counts(rel_path, &script_problems)
-        };
+        let counts_of =
+            |rel_path: &str| crate::panels::problems::view::script_tile_counts(rel_path, &problems);
 
         let search_w = 200.0_f32.min(grid_w * 0.4);
         let search_x = grid_x + grid_w - search_w - 12.0;

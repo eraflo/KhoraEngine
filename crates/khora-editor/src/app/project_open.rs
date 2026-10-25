@@ -142,7 +142,18 @@ impl EditorApp {
 
         // Auto-load (or create) the default scene through the VFS so the
         // new file shows up in the next index.
-        scene_io::auto_load_or_create_default_scene(&mut pvfs, world);
+        // What the load adapted goes to the Problems tab, not the log alone.
+        if let Some(report) = scene_io::auto_load_or_create_default_scene(&mut pvfs, world) {
+            if let Some(problems) = runtime
+                .resources
+                .get::<Arc<khora_sdk::khora_core::problems::Problems>>()
+            {
+                scene_io::report_load(problems, world.inner_world(), &report);
+            }
+            if let Ok(mut state) = self.editor_state.lock() {
+                state.load_problems = scene_io::load_problems(world.inner_world(), &report);
+            }
+        }
 
         // Refresh the asset browser cache after the potential
         // default-scene seed.

@@ -32,6 +32,10 @@ use std::sync::OnceLock;
 pub type ColumnToSnapshotFn =
     fn(&dyn AnyVec, usize, &mut Vec<u8>, &mut dyn ReferenceWriter) -> Result<(), RecordError>;
 
+/// Runs a component's own check over every value of it in a world — see
+/// [`ComponentRegistration::check`].
+pub type CheckFn = fn(&World) -> Vec<(EntityId, crate::ecs::FieldProblem)>;
+
 /// Registration entry for a serializable component type.
 ///
 /// Each component that derives `Component` submits an entry via
@@ -133,6 +137,11 @@ pub struct ComponentRegistration {
     /// The component's default, as a script reads it — what a script's `Add`
     /// starts from, before its own fields. `None` for one a script cannot read.
     pub script_default: fn() -> Option<khora_core::script::ScriptValue>,
+    /// The component's own check (`#[component(check = …)]`) run over every
+    /// value of it in a world: each field whose value the engine cannot use,
+    /// with the entity holding it. `None` for a component that declares no
+    /// check. Reads only — a check never rewrites a value.
+    pub check: Option<CheckFn>,
 }
 
 inventory::collect!(ComponentRegistration);
@@ -498,7 +507,7 @@ mod tests {
             Transform::from_translation(Vec3::new(1.5, -2.0, 3.25)),
             GlobalTransform::at_position(Vec3::new(1.5, -2.0, 3.25)),
             Name::new("Fixture"),
-            Camera::new_perspective(std::f32::consts::FRAC_PI_3, 1.5, 0.05, 500.0),
+            Camera::new_perspective(std::f32::consts::FRAC_PI_3, 0.05, 500.0),
             Light::point(),
             AudioSource::default(),
             crate::ecs::AudioListener,

@@ -16,7 +16,7 @@
 //! spec 11): the mirror is served by the engine, never a file under the
 //! script root, so a problem a tool lists there has no file to open.
 
-use khora_core::script::ScriptProblems;
+use khora_core::problems::Problems;
 use khora_io::script::mirror::{PreludeLoader, MIRROR_MODULE};
 use khora_io::script::problems::report_compile;
 use khora_script::{compile_module, MemoryLoader};
@@ -33,7 +33,7 @@ fn a_clash_with_the_engine_mirror_is_located_in_the_mirror() {
             .with("helper.erg", "struct Transform { int x; }\n")
             .with("main.erg", &main),
     );
-    let problems = ScriptProblems::default();
+    let problems = Problems::default();
 
     report_compile(&problems, "main.erg", &compile_module(&loader, "main.erg"));
 

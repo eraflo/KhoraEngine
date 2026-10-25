@@ -207,6 +207,169 @@ fn test_mat3_index_out_of_bounds() {
     let _ = m[3]; // Should panic
 }
 
+/// A rotation shrunk to 1/100 (determinant 1e-6) is still a well-shaped basis and inverts.
+#[test]
+fn mat3_inverse_inverts_a_uniformly_shrunk_basis() {
+    let m = Mat3::from_rotation_z(PI / 3.0) * Mat3::from_scale(Vec3::new(0.01, 0.01, 0.01));
+    let inv = m
+        .inverse()
+        .expect("a uniformly shrunk rotation is invertible");
+    let product = m * inv;
+    // The identity's entries are 1, so an absolute tolerance is a relative one here.
+    for col in 0..3 {
+        for row in 0..3 {
+            let expected = if col == row { 1.0 } else { 0.0 };
+            assert!(
+                crate::math::approx_eq_eps(product.cols[col][row], expected, 1e-4),
+                "m * inv at col {col} row {row} is {}, expected {expected}",
+                product.cols[col][row]
+            );
+        }
+    }
+}
+
+/// Three columns of length 1000 lying almost in one plane (relative determinant 1e-12)
+/// are refused, even though their raw determinant (1e-3) is above any fixed epsilon.
+#[test]
+fn mat3_inverse_refuses_a_large_flattened_basis() {
+    // c2 = 0.6 * c0 + 0.8 * c1 + a 1e-9 step out of the plane: |c2| = 1000.
+    let m = Mat3::from_cols(
+        Vec3::new(1000.0, 0.0, 0.0),
+        Vec3::new(0.0, 1000.0, 0.0),
+        Vec3::new(600.0, 800.0, 1e-9),
+    );
+    let det = m.determinant();
+    assert!(
+        det.abs() > EPSILON,
+        "the case must have a raw determinant above the absolute epsilon, got {det}"
+    );
+    assert!(
+        m.inverse().is_none(),
+        "a flattened basis must not invert, got {:?}",
+        m.inverse()
+    );
+}
+
+/// A matrix holding a NaN or an infinity has no inverse.
+#[test]
+fn mat3_inverse_refuses_nan_and_infinity() {
+    for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        let mut m = Mat3::IDENTITY;
+        m.cols[1].y = bad;
+        assert!(
+            m.inverse().is_none(),
+            "{bad} on the diagonal: got {:?}",
+            m.inverse()
+        );
+        let mut m = Mat3::IDENTITY;
+        m.cols[2].x = bad;
+        assert!(
+            m.inverse().is_none(),
+            "{bad} off the diagonal: got {:?}",
+            m.inverse()
+        );
+    }
+}
+
+/// The zero matrix has no inverse.
+#[test]
+fn mat3_inverse_still_refuses_the_zero_matrix() {
+    assert!(Mat3::ZERO.inverse().is_none());
+}
+
+/// Bases whose determinant is subnormal (a uniformly tiny scale, one axis squashed to 1e-40,
+/// a tiny mirror) either have no inverse or one whose every entry is finite.
+#[test]
+fn mat3_inverse_of_a_subnormal_determinant_never_holds_a_nan_or_an_infinity() {
+    let cases = [
+        (
+            "uniform 1e-13",
+            Mat3::from_scale(Vec3::new(1e-13, 1e-13, 1e-13)),
+        ),
+        (
+            "squashed 1e-20, 1e-20, 1",
+            Mat3::from_scale(Vec3::new(1e-20, 1e-20, 1.0)),
+        ),
+        (
+            "one axis 1e-40",
+            Mat3::from_scale(Vec3::new(1e-40, 1.0, 1.0)),
+        ),
+        (
+            "mirrored 1e-13",
+            Mat3::from_rotation_z(0.7) * Mat3::from_scale(Vec3::new(-1e-13, 1e-13, 1e-13)),
+        ),
+    ];
+    for (what, m) in cases {
+        if let Some(inv) = m.inverse() {
+            for col in 0..3 {
+                for row in 0..3 {
+                    assert!(
+                        inv.cols[col][row].is_finite(),
+                        "{what}: det {}, inverse entry at col {col} row {row} is {}",
+                        m.determinant(),
+                        inv.cols[col][row]
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// `Mat3::inverse` and `Mat4::affine_inverse` judge the same 3x3 basis the same way, and
+/// agree on its inverse: rotated, mirrored, shrunk, grown, flattened.
+#[test]
+fn mat3_inverse_agrees_with_the_affine_inverse_of_the_same_basis() {
+    let rotation = Mat3::from_rotation_z(0.7) * Mat3::from_rotation_x(-1.1);
+    let cases = [
+        ("rotated", rotation),
+        (
+            "mirrored",
+            rotation * Mat3::from_scale(Vec3::new(-2.0, 0.5, 3.0)),
+        ),
+        (
+            "shrunk",
+            rotation * Mat3::from_scale(Vec3::new(1e-3, 1e-3, 1e-3)),
+        ),
+        (
+            "grown",
+            rotation * Mat3::from_scale(Vec3::new(1e4, 1e4, 1e4)),
+        ),
+        (
+            "squashed",
+            rotation * Mat3::from_scale(Vec3::new(1.0, 1.0, 1e-4)),
+        ),
+        (
+            "flattened",
+            Mat3::from_cols(
+                Vec3::new(1000.0, 0.0, 0.0),
+                Vec3::new(0.0, 1000.0, 0.0),
+                Vec3::new(600.0, 800.0, 1e-9),
+            ),
+        ),
+        ("zero", Mat3::ZERO),
+    ];
+    for (what, m) in cases {
+        let three = m.inverse();
+        let affine = m.to_mat4().affine_inverse().map(|a| Mat3::from_mat4(&a));
+        assert_eq!(
+            three.is_some(),
+            affine.is_some(),
+            "{what}: {three:?} vs {affine:?}"
+        );
+        if let (Some(a), Some(b)) = (three, affine) {
+            for col in 0..3 {
+                for row in 0..3 {
+                    let (x, y) = (a.cols[col][row], b.cols[col][row]);
+                    assert!(
+                        (x - y).abs() <= 1e-5 * x.abs().max(y.abs()).max(1e-30),
+                        "{what}: col {col} row {row}: {x} vs {y}"
+                    );
+                }
+            }
+        }
+    }
+}
+
 // --- End of Mat3 Tests ---
 
 // --- Tests for Mat4 ---
@@ -353,6 +516,64 @@ fn test_inverse() {
         singular.inverse().is_none(),
         "Singular matrix inverse should be None"
     );
+}
+
+#[test]
+fn an_orthographic_projection_of_a_large_view_inverts() {
+    // 1920 x 1080 world units, depth -1..1000: every entry but one is tiny, so
+    // the determinant (~1e-9) is far below any fixed threshold.
+    let m = Mat4::orthographic_rh_zo(-960.0, 960.0, -540.0, 540.0, -1.0, 1000.0);
+    let inv = m.inverse().expect("a well-shaped projection inverts");
+    let corner = inv * Vec4::new(-1.0, -1.0, 0.0, 1.0);
+    let corner = corner.truncate() / corner.w;
+    let expected = Vec3::new(-960.0, -540.0, 1.0);
+    // Relative to the view's size: f32 carries ~7 digits of 960.
+    assert!(
+        (corner - expected).length() < 1e-3,
+        "{corner:?} != {expected:?}"
+    );
+}
+
+#[test]
+fn a_uniformly_shrunk_transform_inverts() {
+    let m = Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0))
+        * Mat4::from_scale(Vec3::new(1e-3, 1e-3, 1e-3));
+    let inv = m.inverse().expect("a shrunk transform is still invertible");
+    assert!(mat4_approx_eq(m * inv, Mat4::IDENTITY));
+    let affine = m
+        .affine_inverse()
+        .expect("its affine inverse exists as well");
+    assert!(mat4_approx_eq(m * affine, Mat4::IDENTITY));
+}
+
+#[test]
+fn a_matrix_holding_a_non_finite_entry_has_no_inverse() {
+    let mut m = Mat4::IDENTITY;
+    m.cols[2].z = f32::NAN;
+    assert!(m.inverse().is_none(), "NaN");
+    m.cols[2].z = f32::INFINITY;
+    assert!(m.inverse().is_none(), "infinity");
+}
+
+/// A transform squashed to a subnormal determinant either has no inverse or one whose every
+/// entry is finite, through `inverse` and `affine_inverse` alike.
+#[test]
+fn a_squashed_transform_never_inverts_to_a_nan_or_an_infinity() {
+    let cases = [
+        ("uniform 1e-13", Vec3::new(1e-13, 1e-13, 1e-13)),
+        ("one axis 1e-40", Vec3::new(1e-40, 1.0, 1.0)),
+    ];
+    for (what, scale) in cases {
+        let m = Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0)) * Mat4::from_scale(scale);
+        for (how, inv) in [
+            ("inverse", m.inverse()),
+            ("affine_inverse", m.affine_inverse()),
+        ] {
+            if let Some(inv) = inv {
+                assert_all_finite(&inv, &format!("{what}, {how}"));
+            }
+        }
+    }
 }
 
 #[test]
@@ -560,6 +781,211 @@ fn cube_face_view_proj_idempotent_with_explicit_lookat() {
                 );
             }
         }
+    }
+}
+
+/// A point light's cube faces are built through `try_cube_face_view_projs`
+/// from its authored range: a range that does not reach past the shadow near
+/// plane (or is not a number) makes no faces, and a usable range makes
+/// exactly the faces `cube_face_view_projs` makes.
+#[test]
+fn try_cube_faces_refuse_a_range_inside_the_shadow_near() {
+    let position = Vec3::new(1.0, 2.0, 3.0);
+    for far in [
+        Mat4::SHADOW_NEAR,
+        0.1,
+        0.05,
+        0.0,
+        -1.0,
+        f32::NAN,
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+    ] {
+        assert_eq!(
+            Mat4::try_cube_face_view_projs(position, far),
+            None,
+            "far {far}"
+        );
+    }
+    for far in [10.0, 0.2, 1000.0] {
+        assert_eq!(
+            Mat4::try_cube_face_view_projs(position, far),
+            Some(Mat4::cube_face_view_projs(position, far)),
+            "far {far}"
+        );
+    }
+}
+
+// --- Projections built from data: the `try_` constructors ---
+
+/// Asserts every entry of `m` is finite.
+fn assert_all_finite(m: &Mat4, what: &str) {
+    for col in 0..4 {
+        for row in 0..4 {
+            assert!(
+                m.cols[col][row].is_finite(),
+                "{what}: entry at col {col} row {row} is {}",
+                m.cols[col][row]
+            );
+        }
+    }
+}
+
+/// For valid planes, `try_perspective_rh_zo` gives exactly what `perspective_rh_zo` gives.
+#[test]
+fn try_perspective_matches_perspective_for_valid_planes() {
+    let cases = [
+        (PI / 4.0, 16.0 / 9.0, 0.1, 100.0),
+        (crate::math::FRAC_PI_2, 1.0, 0.1, 50.0),
+        (1.0, 0.5, 1e-4, 1e6),
+        (3.0, 4.0, 10.0, 10.5),
+        (0.01, 2.0, 0.5, 1.0),
+    ];
+    for (fov, aspect, near, far) in cases {
+        let tried = Mat4::try_perspective_rh_zo(fov, aspect, near, far);
+        assert_eq!(
+            tried,
+            Some(Mat4::perspective_rh_zo(fov, aspect, near, far)),
+            "fov {fov}, aspect {aspect}, near {near}, far {far}"
+        );
+    }
+}
+
+/// A near plane at or behind the eye (0, -0.0, negative) makes no perspective.
+#[test]
+fn try_perspective_refuses_a_near_plane_at_or_behind_the_eye() {
+    for near in [0.0, -0.0, -0.1, -100.0] {
+        assert_eq!(
+            Mat4::try_perspective_rh_zo(PI / 4.0, 16.0 / 9.0, near, 100.0),
+            None,
+            "near {near}"
+        );
+    }
+}
+
+/// A far plane equal to or closer than the near plane makes no perspective.
+#[test]
+fn try_perspective_refuses_a_far_plane_not_beyond_the_near() {
+    for (near, far) in [(1.0, 1.0), (50.0, 10.0), (0.1, 0.05), (0.1, -1.0)] {
+        assert_eq!(
+            Mat4::try_perspective_rh_zo(PI / 4.0, 16.0 / 9.0, near, far),
+            None,
+            "near {near}, far {far}"
+        );
+    }
+}
+
+/// A NaN or an infinity in any of the four inputs (an infinite far included) makes no perspective.
+#[test]
+fn try_perspective_refuses_non_finite_inputs() {
+    let valid = [PI / 4.0, 16.0 / 9.0, 0.1, 100.0];
+    for slot in 0..4 {
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut args = valid;
+            args[slot] = bad;
+            assert_eq!(
+                Mat4::try_perspective_rh_zo(args[0], args[1], args[2], args[3]),
+                None,
+                "input {slot} = {bad}"
+            );
+        }
+    }
+}
+
+/// A field of view that is closed (0), reversed (negative) or at/over a half turn makes no perspective.
+#[test]
+fn try_perspective_refuses_a_closed_or_reversed_field_of_view() {
+    for fov in [0.0, -0.0, -0.1, PI, 4.0] {
+        assert_eq!(
+            Mat4::try_perspective_rh_zo(fov, 16.0 / 9.0, 0.1, 100.0),
+            None,
+            "fov {fov}"
+        );
+    }
+}
+
+/// A zero or negative aspect ratio makes no perspective.
+#[test]
+fn try_perspective_refuses_a_flat_aspect() {
+    for aspect in [0.0, -0.0, -1.0] {
+        assert_eq!(
+            Mat4::try_perspective_rh_zo(PI / 4.0, aspect, 0.1, 100.0),
+            None,
+            "aspect {aspect}"
+        );
+    }
+}
+
+/// A field of view so narrow that the matrix overflows to infinity is refused; a `Some` never holds an infinity.
+#[test]
+fn try_perspective_refuses_a_projection_that_overflows() {
+    assert_eq!(Mat4::try_perspective_rh_zo(1e-38, 0.5, 0.1, 100.0), None);
+    // Across tiny fields of view and narrow aspects, whatever is accepted is finite.
+    for fov in [1e-38, 1e-30, 1e-20, 1e-10, 1e-5] {
+        for aspect in [1e-30, 1e-10, 0.5, 1.0, 1e10] {
+            if let Some(m) = Mat4::try_perspective_rh_zo(fov, aspect, 0.1, 100.0) {
+                assert_all_finite(&m, &format!("fov {fov}, aspect {aspect}"));
+            }
+        }
+    }
+}
+
+/// `perspective_rh_zo` treats its planes as a precondition: a near plane at 0 panics with a
+/// message naming both planes.
+#[test]
+#[should_panic(expected = "near 0, far 100")]
+fn perspective_with_a_near_plane_at_zero_panics_naming_the_planes() {
+    let _ = Mat4::perspective_rh_zo(PI / 4.0, 16.0 / 9.0, 0.0, 100.0);
+}
+
+/// For valid bounds, `try_orthographic_rh_zo` gives exactly what `orthographic_rh_zo` gives,
+/// a near plane behind the eye included.
+#[test]
+fn try_orthographic_matches_orthographic_for_valid_bounds() {
+    let cases = [
+        (-1.0, 1.0, -1.0, 1.0, 0.1, 100.0),
+        (-960.0, 960.0, -540.0, 540.0, -1.0, 1000.0),
+        (0.0, 4.0, 0.0, 3.0, -50.0, -10.0),
+        (-8.0, 8.0, -4.5, 4.5, -1.0, 1.0),
+    ];
+    for (left, right, bottom, top, near, far) in cases {
+        let tried = Mat4::try_orthographic_rh_zo(left, right, bottom, top, near, far);
+        assert_eq!(
+            tried,
+            Some(Mat4::orthographic_rh_zo(
+                left, right, bottom, top, near, far
+            )),
+            "left {left}, right {right}, bottom {bottom}, top {top}, near {near}, far {far}"
+        );
+    }
+}
+
+/// Empty or reversed bounds, an empty or reversed depth range, or a NaN make no orthographic projection.
+#[test]
+fn try_orthographic_refuses_empty_or_reversed_bounds() {
+    let valid = [-1.0, 1.0, -1.0, 1.0, 0.1, 100.0];
+    let mut cases: Vec<(&str, [f32; 6])> = vec![
+        ("right == left", [1.0, 1.0, -1.0, 1.0, 0.1, 100.0]),
+        ("right < left", [1.0, -1.0, -1.0, 1.0, 0.1, 100.0]),
+        ("top == bottom", [-1.0, 1.0, 2.0, 2.0, 0.1, 100.0]),
+        ("top < bottom", [-1.0, 1.0, 1.0, -1.0, 0.1, 100.0]),
+        ("far == near", [-1.0, 1.0, -1.0, 1.0, 5.0, 5.0]),
+        ("far < near", [-1.0, 1.0, -1.0, 1.0, 100.0, 0.1]),
+    ];
+    for slot in 0..6 {
+        let mut args = valid;
+        args[slot] = f32::NAN;
+        cases.push(("NaN", args));
+        let mut args = valid;
+        args[slot] = f32::INFINITY;
+        cases.push(("infinity", args));
+    }
+    for (what, a) in cases {
+        assert_eq!(
+            Mat4::try_orthographic_rh_zo(a[0], a[1], a[2], a[3], a[4], a[5]),
+            None,
+            "{what}: {a:?}"
+        );
     }
 }
 

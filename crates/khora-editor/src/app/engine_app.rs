@@ -71,7 +71,7 @@ impl EngineApp for EditorApp {
             project_vfs: None,
             asset_watch: Arc::new(khora_sdk::AssetWatch::default()),
             mounted_scripts: None,
-            script_problems: None,
+            problems: None,
             script_catalog: None,
             prefab_view: None,
             play_prefabs: Arc::default(),
@@ -327,6 +327,29 @@ impl EngineApp for EditorApp {
                 shell.show_frame();
             }
         }
+
+        // The panel is laid out: the viewport target takes its shape, so the
+        // cameras projected this frame read the panel's real aspect. A hidden
+        // panel asks for nothing and the target keeps its last size.
+        let viewport_rect = self
+            .editor_state
+            .lock()
+            .ok()
+            .and_then(|s| s.viewport_screen_rect);
+        if let (Some(rect), Some(rs_arc)) = (
+            viewport_rect,
+            runtime
+                .backends
+                .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+                .cloned(),
+        ) {
+            if let Ok(mut rs) = rs_arc.lock() {
+                if let Some(wgpu_rs) = rs.as_any_mut().downcast_mut::<WgpuRenderSystem>() {
+                    let (width, height) = crate::panels::viewport::target_size_for(rect);
+                    wgpu_rs.request_viewport_size(width, height);
+                }
+            }
+        }
     }
 
     fn before_agents(&mut self, world: &mut GameWorld, runtime: &Runtime) {
@@ -375,6 +398,17 @@ impl EngineApp for EditorApp {
         };
 
         let (vw, vh) = wgpu_rs.viewport_size();
+        // The shape every camera in this viewport takes — the game camera's
+        // in Play, and the one a selected camera's frustum is drawn at.
+        let viewport_aspect = {
+            use khora_sdk::khora_core::lane::ColorTargetSize;
+            use khora_sdk::khora_core::math::Extent2D;
+            ColorTargetSize(Extent2D {
+                width: vw,
+                height: vh,
+            })
+            .aspect()
+        };
         let play_mode = self
             .editor_state
             .lock()
@@ -382,6 +416,7 @@ impl EngineApp for EditorApp {
             .map(|s| s.play_mode)
             .unwrap_or(PlayMode::Editing);
 
+        let mut broken_play_camera = None;
         let view_info = match play_mode {
             PlayMode::Editing => match self.camera.lock() {
                 Ok(cam) => cam.view_info(vw as f32, vh as f32),
@@ -389,20 +424,44 @@ impl EngineApp for EditorApp {
             },
             PlayMode::Playing | PlayMode::Paused => {
                 use khora_sdk::khora_data::render::extract_active_camera_view;
-                extract_active_camera_view(world.inner_world())
-                    .or_else(|| {
-                        // No active scene camera (shouldn't happen
-                        // because sync_scene_cameras_for_mode promotes
-                        // one) — fall back to the editor cam so the user
-                        // still sees something instead of a blank screen.
-                        self.camera
-                            .lock()
-                            .ok()
-                            .map(|cam| cam.view_info(vw as f32, vh as f32))
-                    })
-                    .unwrap_or_default()
+                // The game camera takes the shape of the viewport it fills.
+                match extract_active_camera_view(world.inner_world(), viewport_aspect) {
+                    Some(Ok(view)) => view,
+                    // The active camera's values make no image: the game
+                    // renders nothing, and the editor camera does not stand
+                    // in for it (the flows ignore the override while a scene
+                    // camera is active).
+                    Some(Err(problem)) => {
+                        // Named over the viewport, so the empty picture says why.
+                        broken_play_camera = world
+                            .inner_world()
+                            .query::<(
+                                khora_sdk::prelude::ecs::EntityId,
+                                &khora_sdk::prelude::ecs::Camera,
+                            )>()
+                            .find(|(_, camera)| camera.is_active)
+                            .map(|(entity, _)| (entity, problem.to_string()));
+                        ViewInfo::default()
+                    }
+                    // No active scene camera (shouldn't happen because
+                    // sync_scene_cameras_for_mode promotes one) — fall back
+                    // to the editor cam so the user still sees something
+                    // instead of a blank screen.
+                    None => self
+                        .camera
+                        .lock()
+                        .ok()
+                        .map(|cam| cam.view_info(vw as f32, vh as f32))
+                        .unwrap_or_default(),
+                }
             }
         };
+
+        if let Ok(mut state) = self.editor_state.lock() {
+            if state.broken_play_camera != broken_play_camera {
+                state.broken_play_camera = broken_play_camera;
+            }
+        }
 
         // Publish the active view into the EditorViewportOverride so
         // RenderFlow can fall back to it when no scene Camera is active
@@ -455,7 +514,7 @@ impl EngineApp for EditorApp {
             if state.play_mode != PlayMode::Editing || state.selection.is_empty() {
                 Vec::new()
             } else {
-                gizmo::collect_gizmo_lines(world, &state, &view_info)
+                gizmo::collect_gizmo_lines(world, &state, &view_info, viewport_aspect)
             }
         } else {
             Vec::new()

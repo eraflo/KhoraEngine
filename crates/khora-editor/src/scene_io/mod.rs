@@ -23,6 +23,7 @@
 
 use crate::project_vfs::{HeldPrefabs, ProjectVfs};
 use khora_sdk::khora_core::asset::asset_key;
+use khora_sdk::khora_core::problems::{Problem, ProblemSeverity, ProblemSource};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::math::{LinearRgba, Vec3};
 use khora_sdk::{GameWorld, SceneFile, SerializationGoal, SerializationService};
@@ -141,11 +142,24 @@ pub fn save_scene_in_project_with_goal(
 /// Loads a scene by its relative path under `<project>/assets/` via the
 /// project's `AssetService::load_raw`. Falls back to a fresh reindex + retry
 /// once if the path isn't yet known to the VFS (e.g. just-saved).
+#[cfg(test)]
 pub fn load_scene_in_project(
     pvfs: &mut ProjectVfs,
     world: &mut GameWorld,
     rel_path_fwd_slash: &str,
 ) -> bool {
+    load_scene_in_project_with_report(pvfs, world, rel_path_fwd_slash).is_some()
+}
+
+/// [`load_scene_in_project`], returning what the load adapted — the
+/// [`LoadReport`] it also logs — or `None` when the scene did not load.
+///
+/// [`LoadReport`]: khora_sdk::khora_data::scene::record::LoadReport
+pub fn load_scene_in_project_with_report(
+    pvfs: &mut ProjectVfs,
+    world: &mut GameWorld,
+    rel_path_fwd_slash: &str,
+) -> Option<khora_sdk::khora_data::scene::record::LoadReport> {
     // Registry-aware: a scene that was renamed keeps its frozen UUID.
     let uuid = pvfs.resolve_uuid(rel_path_fwd_slash);
 
@@ -160,7 +174,7 @@ pub fn load_scene_in_project(
                     rel_path_fwd_slash,
                     e
                 );
-                return false;
+                return None;
             }
             let reindexed = pvfs.assets().load_raw(&uuid);
             match reindexed {
@@ -171,7 +185,7 @@ pub fn load_scene_in_project(
                         rel_path_fwd_slash,
                         e
                     );
-                    return false;
+                    return None;
                 }
             }
         }
@@ -181,7 +195,7 @@ pub fn load_scene_in_project(
         Ok(f) => f,
         Err(e) => {
             log::error!("Invalid scene file '{}': {:?}", rel_path_fwd_slash, e);
-            return false;
+            return None;
         }
     };
 
@@ -200,7 +214,7 @@ pub fn load_scene_in_project(
                 rel_path_fwd_slash,
                 bytes.len()
             );
-            true
+            Some(report)
         }
         Err(e) => {
             log::error!(
@@ -208,20 +222,64 @@ pub fn load_scene_in_project(
                 rel_path_fwd_slash,
                 e
             );
-            false
+            None
         }
     }
 }
 
+/// Puts what a load adapted in `problems`, as the `Load` source's warnings:
+/// each entry's entity found in `world` by its persistent id, its component
+/// and its path as the problem's field. Replaces what the last load
+/// reported; a clean report clears it.
+pub fn report_load(
+    problems: &khora_sdk::khora_core::problems::Problems,
+    world: &khora_sdk::khora_data::ecs::World,
+    report: &khora_sdk::khora_data::scene::record::LoadReport,
+) {
+    problems.report(ProblemSource::Load, load_problems(world, report));
+}
+
+/// What a load adapted, as problems: one `Warning` per entry, on the entity
+/// `world` holds under the entry's persistent id (none when it holds no such
+/// entity), its component, its path as the field, the entry as the message.
+pub fn load_problems(
+    world: &khora_sdk::khora_data::ecs::World,
+    report: &khora_sdk::khora_data::scene::record::LoadReport,
+) -> Vec<Problem> {
+    report
+        .entries
+        .iter()
+        .map(|entry| Problem {
+            severity: ProblemSeverity::Warning,
+            module: None,
+            line: 0,
+            column: 0,
+            message: entry.to_string(),
+            note: None,
+            entity: entry.entity.and_then(|id| world.entity_with_id(id)),
+            behavior: None,
+            component: entry.component.clone(),
+            field: (!entry.path.is_empty()).then(|| entry.path.clone()),
+        })
+        .collect()
+}
+
 /// Auto-loads the project's default scene (`assets/scenes/default.kscene`),
 /// creating it from a Camera + Light template if it doesn't exist yet.
-pub fn auto_load_or_create_default_scene(pvfs: &mut ProjectVfs, world: &mut GameWorld) {
+///
+/// Returns what the load adapted, `None` when nothing was loaded (a scene
+/// created, or one that did not load).
+pub fn auto_load_or_create_default_scene(
+    pvfs: &mut ProjectVfs,
+    world: &mut GameWorld,
+) -> Option<khora_sdk::khora_data::scene::record::LoadReport> {
     let rel = DEFAULT_SCENE_REL;
     let abs = pvfs.assets_root.join(Path::new(rel));
     if abs.exists() {
-        load_scene_in_project(pvfs, world, rel);
+        load_scene_in_project_with_report(pvfs, world, rel)
     } else {
         create_default_scene_in_project(pvfs, world, rel);
+        None
     }
 }
 
@@ -302,14 +360,19 @@ pub fn save_scene_to_path_with_goal(
     }
 }
 
-/// Loads a scene from an absolute path. Used by the "Open..." dialog when
+/// Loads a scene from an absolute path, returning what the load adapted —
+/// the [`LoadReport`](khora_sdk::khora_data::scene::record::LoadReport) it
+/// also logs — or `None` when it did not load. Used by the "Open..." dialog when
 /// the user picks a file outside `<project>/assets/`.
-pub fn load_scene_from_path(world: &mut GameWorld, path: &str) -> bool {
+pub fn load_scene_from_path_with_report(
+    world: &mut GameWorld,
+    path: &str,
+) -> Option<khora_sdk::khora_data::scene::record::LoadReport> {
     let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) => {
             log::error!("Failed to read scene file '{}': {}", path, e);
-            return false;
+            return None;
         }
     };
 
@@ -317,7 +380,7 @@ pub fn load_scene_from_path(world: &mut GameWorld, path: &str) -> bool {
         Ok(file) => file,
         Err(e) => {
             log::error!("Invalid scene file '{}': {:?}", path, e);
-            return false;
+            return None;
         }
     };
 
@@ -330,11 +393,11 @@ pub fn load_scene_from_path(world: &mut GameWorld, path: &str) -> bool {
                 path,
                 bytes.len()
             );
-            true
+            Some(report)
         }
         Err(e) => {
             log::error!("Failed to deserialize scene '{}': {:?}", path, e);
-            false
+            None
         }
     }
 }
@@ -345,7 +408,7 @@ pub fn load_scene_from_path(world: &mut GameWorld, path: &str) -> bool {
 
 /// If `abs_path` lives under `<project>/assets/`, returns the relative path
 /// in forward-slash form ready for [`load_scene_in_project`]. Otherwise
-/// returns `None` — callers should fall back to [`load_scene_from_path`].
+/// returns `None` — callers should fall back to [`load_scene_from_path_with_report`].
 pub fn rel_inside_project(abs_path: &Path, assets_root: &Path) -> Option<String> {
     let rel = abs_path.strip_prefix(assets_root).ok()?;
     Some(asset_key(rel))

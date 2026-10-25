@@ -14,7 +14,7 @@
 
 //! What is wrong with the running instances, for a tool to show: each frame
 //! the scripting world changed, the `Running` source of the project's
-//! [`ScriptProblems`] is rebuilt from it — an error for every instance a fault
+//! [`Problems`] is rebuilt from it — an error for every instance a fault
 //! disabled, a warning for every body running past the watchdog's first
 //! limit, and one for every event an instance was sent with a payload its
 //! handler could not take. An instance re-enabled, or gone, leaves the list
@@ -23,7 +23,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_core::lane::OutputDeck;
-use khora_core::script::{ProblemSeverity, ProblemSource, ScriptProblem, ScriptProblems};
+use khora_core::problems::{Problem, ProblemSeverity, ProblemSource, Problems};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 
@@ -34,7 +34,7 @@ use super::watchdog::WATCHDOG_WARN;
 
 impl ScriptRuntime {
     /// What is wrong with the instances held now, in entity order.
-    pub fn running_problems(&self) -> Vec<ScriptProblem> {
+    pub fn running_problems(&self) -> Vec<Problem> {
         let mut held: Vec<_> = self.instances.iter().collect();
         held.sort_by(|((a, a_name), _), ((b, b_name), _)| {
             (a.index, a.generation, a_name).cmp(&(b.index, b.generation, b_name))
@@ -42,7 +42,7 @@ impl ScriptRuntime {
         held.into_iter()
             .flat_map(|((entity, behavior), instance)| {
                 let module = (!instance.module.is_empty()).then(|| instance.module.clone());
-                let dropped = instance.dropped.iter().map(move |(event, why)| ScriptProblem {
+                let dropped = instance.dropped.iter().map(move |(event, why)| Problem {
                     severity: ProblemSeverity::Warning,
                     module: module.clone(),
                     line: 0,
@@ -53,6 +53,8 @@ impl ScriptRuntime {
                     ),
                     entity: Some(*entity),
                     behavior: Some(behavior.clone()),
+                    component: None,
+                    field: None,
                 });
                 self.instance_problem(*entity, behavior, instance)
                     .into_iter()
@@ -67,9 +69,9 @@ impl ScriptRuntime {
         entity: EntityId,
         behavior: &str,
         instance: &Instance,
-    ) -> Option<ScriptProblem> {
+    ) -> Option<Problem> {
         let module = (!instance.module.is_empty()).then(|| instance.module.clone());
-        let problem = |severity, message: String, note: Option<String>| ScriptProblem {
+        let problem = |severity, message: String, note: Option<String>| Problem {
             severity,
             module: module.clone(),
             line: 0,
@@ -78,6 +80,8 @@ impl ScriptRuntime {
             note,
             entity: Some(entity),
             behavior: Some(behavior.to_owned()),
+            component: None,
+            field: None,
         };
         // Its module left the runtime — the file deleted, moved out of the
         // script folder, its root unmounted — and no version of it waits: the
@@ -124,7 +128,7 @@ impl ScriptRuntime {
 }
 
 fn script_problems(_world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
-    let Some(problems) = runtime.resources.get::<Arc<ScriptProblems>>() else {
+    let Some(problems) = runtime.resources.get::<Arc<Problems>>() else {
         return;
     };
     let Some(scripts) = runtime.services.get::<Arc<Mutex<ScriptRuntime>>>() else {

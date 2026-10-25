@@ -302,7 +302,7 @@ fn a_long_chain_with_shared_ancestors_loads() {
 fn non_finite_floats_round_trip_and_the_marker_reads_in_msgpack() {
     for (z_far, z_near) in [(f32::NAN, -0.0f32), (f32::NEG_INFINITY, 0.1)] {
         let mut src = World::new();
-        let eye = src.spawn(Camera::new_perspective(1.0, 1.0, z_near, z_far));
+        let eye = src.spawn(Camera::new_perspective(1.0, z_near, z_far));
         let id = src.mark_authored(eye).expect("authored");
         for (name, encoding) in every_encoding() {
             let (dst, _) = reload(&src, name, encoding);
@@ -319,7 +319,7 @@ fn non_finite_floats_round_trip_and_the_marker_reads_in_msgpack() {
 
     let mut src = World::new();
     // Every other float exact in an f64: the repacked file holds doubles.
-    let eye = src.spawn(Camera::new_perspective(1.0, 1.0, 0.5, f32::INFINITY));
+    let eye = src.spawn(Camera::new_perspective(1.0, 0.5, f32::INFINITY));
     let id = src.mark_authored(eye).expect("authored");
     let text = TextEncoding
         .encode(&capture_world(&src).expect("captures"))

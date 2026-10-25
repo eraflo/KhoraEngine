@@ -24,7 +24,7 @@ use khora_core::agent::{
     Agent, AgentAccess, AgentImportance, Contention, ExecutionPhase, ExecutionTiming,
 };
 use khora_core::engine_context::EngineContext;
-use khora_core::lane::{ColorTarget, Lane, LaneContext};
+use khora_core::lane::{ColorTarget, ColorTargetSize, Lane, LaneContext};
 use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::api::text::TextRenderer;
 use khora_core::renderer::GraphicsDevice;
@@ -149,6 +149,12 @@ impl Agent for UiAgent {
             log::warn!("UiAgent: ColorTarget missing in FrameContext");
             return;
         };
+        // UI pixels are pixels of the image drawn into: the window, or the
+        // editor's viewport — never assume the swapchain.
+        let Some(target_size) = fctx.get::<ColorTargetSize>().map(|a| *a) else {
+            log::warn!("UiAgent: ColorTargetSize missing in FrameContext");
+            return;
+        };
 
         let textures: Option<Arc<RwLock<Assets<khora_core::renderer::api::resource::CpuTexture>>>> =
             context
@@ -233,6 +239,7 @@ impl Agent for UiAgent {
             // encoder is finished.
             ctx.insert_slot(encoder.as_mut());
             ctx.insert(color_target);
+            ctx.insert(target_size);
 
             if let Err(e) = lane.execute(&mut ctx) {
                 log::error!("UiAgent: UiRenderLane execution failed: {}", e);

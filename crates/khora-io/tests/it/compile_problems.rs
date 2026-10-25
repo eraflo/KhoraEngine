@@ -14,7 +14,7 @@
 
 //! **What the hot-reload pump compiles, it reports** (Ergon spec 11): each
 //! module it recompiles leaves its diagnostics in the runtime's
-//! `ScriptProblems`, located — module, line, column — through the program's
+//! `Problems`, located — module, line, column — through the program's
 //! source map. A diagnostic located in an imported module is reported under
 //! that module, once; the warnings of a module that compiled are reported
 //! too; a save that compiles clean clears what the module had.
@@ -24,7 +24,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use khora_core::lane::OutputDeck;
-use khora_core::script::{ProblemSeverity, ScriptProblem, ScriptProblems};
+use khora_core::problems::{Problem, ProblemSeverity, Problems};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
 use khora_io::asset::AssetWatch;
@@ -54,7 +54,7 @@ fn data_system(name: &str) -> &'static DataSystemRegistration {
 /// root.
 struct Pump {
     runtime: Runtime,
-    problems: Arc<ScriptProblems>,
+    problems: Arc<Problems>,
     _watch: Arc<AssetWatch>,
 }
 
@@ -63,7 +63,7 @@ impl Pump {
     fn over(assets: &Path) -> Self {
         let watch = Arc::new(AssetWatch::default());
         watch.watch(assets).expect("watches the root");
-        let problems = Arc::new(ScriptProblems::default());
+        let problems = Arc::new(Problems::default());
         let mut runtime = Runtime::default();
         runtime.resources.insert(Arc::clone(&watch));
         runtime.resources.insert(reload_channel());
@@ -78,7 +78,7 @@ impl Pump {
     }
 
     /// Runs the pump until `done` holds of the problems, or the wait ran out.
-    fn run_until(&self, mut done: impl FnMut(&ScriptProblems) -> bool) {
+    fn run_until(&self, mut done: impl FnMut(&Problems) -> bool) {
         let system = data_system("script_hot_reload");
         let mut world = World::new();
         let deadline = Instant::now() + MAX_WAIT;
@@ -113,7 +113,7 @@ fn script(assets: &Path, module: &str, source: &str) -> PathBuf {
 }
 
 /// The problems located in `module`.
-fn in_module(problems: &ScriptProblems, module: &str) -> Vec<ScriptProblem> {
+fn in_module(problems: &Problems, module: &str) -> Vec<Problem> {
     problems
         .all()
         .into_iter()
@@ -182,7 +182,7 @@ fn an_imported_modules_error_is_reported_under_it_once() {
     std::fs::write(&helper, PARSE_ERROR).expect("saves a parse error");
     pump.run_until(|problems| problems.of_module("helper.erg").0 > 0);
 
-    let in_helper: Vec<ScriptProblem> = in_module(&pump.problems, "helper.erg")
+    let in_helper: Vec<Problem> = in_module(&pump.problems, "helper.erg")
         .into_iter()
         .filter(|problem| problem.message == "expected a function name, found `(`")
         .collect();

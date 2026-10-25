@@ -358,8 +358,6 @@ fn render_settings_fields(x: &khora_core::renderer::api::device::settings::Rende
         &x.strategy,
         &x.quality_level,
         &x.show_wireframe,
-        &x.resize_debounce_ms,
-        &x.resize_max_pending_frames,
         &x.enable_gpu_timestamps,
     );
 }
@@ -907,11 +905,11 @@ fn gpu_material_fields(x: &khora_core::renderer::api::material::gpu_material::Gp
 fn culling_uniforms_data_fields(x: &khora_core::renderer::light::uniforms::CullingUniformsData) {
     let _ = (
         &x.view_projection,
-        &x.inverse_projection,
         &x.screen_dimensions,
         &x.tile_count,
         &x.num_lights,
         &x.tile_size,
+        &x.max_lights_per_tile,
         &x._padding,
     );
 }
@@ -1231,7 +1229,7 @@ fn spot_light_fields(x: &khora_core::renderer::light::SpotLight) {
 }
 
 fn frame_targets_fields(x: &khora_core::renderer::traits::FrameTargets) {
-    let _ = (&x.color, &x.depth);
+    let _ = (&x.color, &x.depth, &x.size);
 }
 
 // ---------------------------------------------------------------------------

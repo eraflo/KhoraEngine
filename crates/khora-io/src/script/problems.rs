@@ -13,13 +13,13 @@
 // limitations under the License.
 
 //! What compiling a module found, reported to the project's
-//! [`ScriptProblems`] — located through the program's source map, each
+//! [`Problems`] — located through the program's source map, each
 //! problem naming the module it is in — and the `.erg` files an assets root
 //! holds outside its script folder, which are never compiled.
 
 use std::path::Path;
 
-use khora_core::script::{ProblemSeverity, ProblemSource, ScriptProblem, ScriptProblems};
+use khora_core::problems::{Problem, ProblemSeverity, ProblemSource, Problems};
 use khora_script::diagnostics::Severity;
 use khora_script::CompileOutcome;
 
@@ -32,7 +32,7 @@ use crate::script::layout::{misplaced, SCRIPT_DIR};
 /// which may be one `module` imports: compiling that module may find it too,
 /// and the list shows it once; whichever compile found it is the one whose
 /// clean compile takes it back.
-pub fn report_compile(problems: &ScriptProblems, module: &str, outcome: &CompileOutcome) {
+pub fn report_compile(problems: &Problems, module: &str, outcome: &CompileOutcome) {
     let found = outcome
         .diagnostics
         .iter()
@@ -42,7 +42,7 @@ pub fn report_compile(problems: &ScriptProblems, module: &str, outcome: &Compile
                 Some(location) => (location.module, location.line, location.column),
                 None => (module.to_owned(), 0, 0),
             };
-            ScriptProblem {
+            Problem {
                 severity: match diagnostic.severity {
                     Severity::Error => ProblemSeverity::Error,
                     Severity::Warning => ProblemSeverity::Warning,
@@ -54,6 +54,8 @@ pub fn report_compile(problems: &ScriptProblems, module: &str, outcome: &Compile
                 note: diagnostic.note.clone(),
                 entity: None,
                 behavior: None,
+                component: None,
+                field: None,
             }
         })
         .collect();
@@ -71,7 +73,7 @@ pub fn report_compile(problems: &ScriptProblems, module: &str, outcome: &Compile
 /// `scripts/<rel_path>`; when its first folder is `scripts` spelled in another
 /// case, rename that folder `scripts`; when it is in place but spelled `.ERG`,
 /// rename it `.erg`. Every path it suggests ends in `.erg`.
-pub fn misplaced_problem(rel_path: &str) -> ScriptProblem {
+pub fn misplaced_problem(rel_path: &str) -> Problem {
     let first = rel_path.split('/').next().unwrap_or(rel_path);
     let extension = rel_path.rsplit('.').next().unwrap_or_default();
     let fixed = format!(
@@ -106,7 +108,7 @@ pub fn misplaced_problem(rel_path: &str) -> ScriptProblem {
             ),
         )
     };
-    ScriptProblem {
+    Problem {
         severity: ProblemSeverity::Error,
         module: None,
         line: 0,
@@ -115,13 +117,15 @@ pub fn misplaced_problem(rel_path: &str) -> ScriptProblem {
         note: Some(note),
         entity: None,
         behavior: None,
+        component: None,
+        field: None,
     }
 }
 
 /// Reports every `.erg` file under `assets_root` outside its script folder,
 /// under [`ProblemSource::Placement`] for that root — replacing what the root
 /// reported before; none clears it.
-pub fn report_misplaced(problems: &ScriptProblems, assets_root: &Path) {
+pub fn report_misplaced(problems: &Problems, assets_root: &Path) {
     problems.report(
         placement_of(assets_root),
         misplaced(assets_root)
@@ -133,7 +137,7 @@ pub fn report_misplaced(problems: &ScriptProblems, assets_root: &Path) {
 
 /// Takes back what [`report_misplaced`] reported for `assets_root`: the root
 /// is no longer the project's to show.
-pub fn clear_misplaced(problems: &ScriptProblems, assets_root: &Path) {
+pub fn clear_misplaced(problems: &Problems, assets_root: &Path) {
     problems.report(placement_of(assets_root), Vec::new());
 }
 
@@ -158,7 +162,7 @@ mod tests {
     }
 
     /// The problems held in no module that name `rel_path`.
-    fn naming(problems: &ScriptProblems, rel_path: &str) -> Vec<ScriptProblem> {
+    fn naming(problems: &Problems, rel_path: &str) -> Vec<Problem> {
         problems
             .all()
             .into_iter()
@@ -246,7 +250,7 @@ mod tests {
         touch(root.path(), "scripts/main.erg");
         touch(root.path(), "props/lantern.erg");
         touch(root.path(), "guard.erg");
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
 
         report_misplaced(&problems, root.path());
 
@@ -272,7 +276,7 @@ mod tests {
     fn report_misplaced_replaces_what_the_root_reported_before() {
         let root = tempfile::TempDir::new().expect("a temp dir");
         touch(root.path(), "props/lantern.erg");
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
         report_misplaced(&problems, root.path());
         assert_eq!(
             naming(&problems, "props/lantern.erg").len(),
@@ -294,12 +298,12 @@ mod tests {
     fn report_misplaced_with_nothing_misplaced_clears_the_root() {
         let root = tempfile::TempDir::new().expect("a temp dir");
         touch(root.path(), "scripts/main.erg");
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
         problems.report(
             ProblemSource::Placement {
                 root: root.path().to_path_buf(),
             },
-            vec![ScriptProblem {
+            vec![Problem {
                 severity: ProblemSeverity::Error,
                 module: None,
                 line: 0,
@@ -308,6 +312,8 @@ mod tests {
                 note: None,
                 entity: None,
                 behavior: None,
+                component: None,
+                field: None,
             }],
         );
 
@@ -324,12 +330,12 @@ mod tests {
         let second = tempfile::TempDir::new().expect("a temp dir");
         touch(first.path(), "props/lantern.erg");
         touch(second.path(), "props/torch.erg");
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
         problems.report(
             ProblemSource::Compile {
                 module: "main.erg".to_owned(),
             },
-            vec![ScriptProblem {
+            vec![Problem {
                 severity: ProblemSeverity::Warning,
                 module: Some("main.erg".to_owned()),
                 line: 1,
@@ -338,6 +344,8 @@ mod tests {
                 note: None,
                 entity: None,
                 behavior: None,
+                component: None,
+                field: None,
             }],
         );
         report_misplaced(&problems, first.path());
@@ -355,7 +363,7 @@ mod tests {
     #[test]
     fn report_misplaced_over_a_missing_root_reports_nothing() {
         let root = tempfile::TempDir::new().expect("a temp dir");
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
 
         report_misplaced(&problems, &root.path().join("gone"));
 
@@ -369,7 +377,7 @@ mod tests {
         let other = tempfile::TempDir::new().expect("a temp dir");
         touch(root.path(), "props/lantern.erg");
         touch(other.path(), "props/torch.erg");
-        let problems = ScriptProblems::default();
+        let problems = Problems::default();
         report_misplaced(&problems, root.path());
         report_misplaced(&problems, other.path());
 

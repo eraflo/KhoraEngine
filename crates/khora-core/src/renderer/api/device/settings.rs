@@ -23,10 +23,6 @@ pub struct RenderSettings {
     pub quality_level: u32,
     /// If `true`, objects should be rendered in wireframe mode.
     pub show_wireframe: bool,
-    /// The quiet period in milliseconds after a resize event before the surface is reconfigured.
-    pub resize_debounce_ms: u64,
-    /// A fallback number of frames after which a pending resize is forced, even if events are still incoming.
-    pub resize_max_pending_frames: u32,
     /// A runtime toggle to enable/disable GPU timestamp instrumentation for profiling.
     pub enable_gpu_timestamps: bool,
 }
@@ -37,8 +33,6 @@ impl Default for RenderSettings {
             strategy: RenderStrategy::Forward,
             quality_level: 1,
             show_wireframe: false,
-            resize_debounce_ms: 120,
-            resize_max_pending_frames: 10,
             enable_gpu_timestamps: true,
         }
     }

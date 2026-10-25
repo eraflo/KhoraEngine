@@ -8,7 +8,26 @@ Deep history lives in git and `docs/plans/`.
 - **Build**: clean (all crates compile, 0 errors); clippy 0 errors.
 - **Tests**: ~2520 workspace tests, 0 failures. Treat the live `cargo test --workspace` count as truth.
 
-## Latest work (2026-10-04) — Persistence redesign (phases 1–8) + Ergon resume tiers
+## Latest work (2026-10-25) — Unusable component values: kept, shown, never a panic (uncommitted on `dev`)
+- A camera with `z_near <= 0` (or NaN, inf far, fov 0…) used to panic every frame through
+  `Mat4::perspective_rh_zo`'s assert. Now: `Mat4::try_perspective_rh_zo` / `try_orthographic_rh_zo` /
+  `try_cube_face_view_projs` (`khora-core/src/math/matrix/{mat4,cube}.rs`); `Camera::{problems, check}`,
+  `projection_matrix -> Result<Mat4, CameraProblem>`; a broken active camera renders nothing (no other camera,
+  no editor-camera fallback); `Light::check`, ShadowFlow skips a shadow it cannot build.
+- `#[component(check = …)]` (`khora-macros/src/component_check.rs`) → `ComponentRegistration.check`; load reports
+  `ReportKind::Unusable` (value kept, judged on the composed value), the `component_checks` DataSystem reports to
+  `khora_core::problems::Problems` (`ScriptProblems` lifted; sources `Data`, `Load` added).
+- Editor: message under the field (`Marks::with_problems`), Problems tab grouped by component, load report in
+  Problems (`pending_load_problems`, re-mapped at Stop), "renders nothing" overlay in Play; inf/NaN survive the
+  inspector JSON (`scene/inspector_json.rs`, `{"$float": "inf"}`).
+- `Mat3::inverse` uses the shared scale-relative `is_invertible` (also refuses a subnormal determinant).
+- Lights: one list, `render::shining_lights` (enabled, no Error in `Light::check`, finite world position, unit
+  direction) read by RenderFlow, ShadowFlow (indices aligned by construction) and the IBL sun; `Light::check` also
+  covers intensity, colour, their overflowing product and shadow biases; `attenuation.wgsl` cone falloff takes a
+  hard step only when inner == outer (WGSL `smoothstep` undefined there), otherwise exactly smoothstep's.
+- Open: Load `Unusable` and the live Data problem both listed for a loaded broken camera; a `Transform` check.
+
+## Earlier work (2026-10-04) — Persistence redesign (phases 1–8) + Ergon resume tiers
 Commits `4df3d77`…`42434eb` on `dev`. Detail: `reference/ecs-data.md` §Persistence, `reference/scripting.md`.
 - **Records by name** (`khora-data/src/scene/`): a world is a page-shaped `SceneRecord` — components by
   registered name, fields by name, entities by `PersistentId` (`khora-core/src/ecs/persistent_id.rs`:

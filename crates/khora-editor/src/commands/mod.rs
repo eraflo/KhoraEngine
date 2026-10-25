@@ -143,6 +143,9 @@ fn apply_new_scene(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>
         state.clear_entity_references();
         state.play_mode = PlayMode::Editing;
         state.scene_snapshot = None;
+        // A new scene has nothing a load adapted.
+        state.load_problems.clear();
+        state.pending_load_problems = Some(Vec::new());
         log::info!("New scene created (cleared {} entities)", all.len());
     }
 }
@@ -209,9 +212,33 @@ fn apply_stop(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>) {
     if let Ok(mut state) = editor_state.lock() {
         if state.play_mode == PlayMode::Playing || state.play_mode == PlayMode::Paused {
             if let Some(snapshot) = state.scene_snapshot.take() {
+                // The last load's problems name entities the restore is about
+                // to respawn: remember who they are, by persistent identity.
+                let load: Vec<_> = state
+                    .load_problems
+                    .iter()
+                    .map(|problem| {
+                        let id = problem
+                            .entity
+                            .and_then(|entity| world.inner_world().persistent_id(entity));
+                        (id, problem.clone())
+                    })
+                    .collect();
                 drop(state);
                 scene_io::restore_scene(world, &snapshot);
                 if let Ok(mut state) = editor_state.lock() {
+                    let remapped: Vec<_> = load
+                        .into_iter()
+                        .map(|(id, mut problem)| {
+                            if problem.entity.is_some() {
+                                problem.entity =
+                                    id.and_then(|id| world.inner_world().entity_with_id(id));
+                            }
+                            problem
+                        })
+                        .collect();
+                    state.load_problems = remapped.clone();
+                    state.pending_load_problems = Some(remapped);
                     // The restore respawns everything with fresh ids, so any
                     // selection made while playing now names entities that no
                     // longer exist — or, once a slot is recycled, different

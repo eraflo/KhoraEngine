@@ -27,7 +27,6 @@ use std::sync::{Arc, RwLock};
 
 use khora_core::asset::font::Font;
 use khora_core::renderer::api::text::TextRenderer;
-use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 
 use crate::assets::Assets;
@@ -40,9 +39,13 @@ use crate::ui::{ExtractedUiNode, ExtractedUiText, UiScene};
 /// UI presentation Flow.
 ///
 /// Deliberately **uncached** (no `cache_key` override): the projection
-/// depends on the surface size (runtime state) and on font assets that can
-/// hot-reload without any change signal the key could fold in, so a cached
-/// `UiScene` could go stale. It re-projects every tick.
+/// depends on font assets that can hot-reload without any change signal the
+/// key could fold in, so a cached `UiScene` could go stale. It re-projects
+/// every tick.
+///
+/// The size of the image the UI is drawn into is not part of the view: the
+/// UI lane takes it from the frame's `ColorTargetSize`, alongside the target
+/// itself.
 #[derive(Default)]
 pub struct UiFlow;
 
@@ -53,16 +56,7 @@ impl Flow for UiFlow {
     const NAME: &'static str = "ui";
 
     fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
-        let surface_size = runtime
-            .backends
-            .get::<Arc<dyn GraphicsDevice>>()
-            .map(|d| d.get_surface_size())
-            .unwrap_or((0, 0));
-
-        let mut scene = UiScene {
-            surface_size,
-            ..Default::default()
-        };
+        let mut scene = UiScene::default();
 
         extract_nodes(world, &mut scene);
 

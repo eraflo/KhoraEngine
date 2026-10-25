@@ -38,5 +38,6 @@ winresource = "0.1"
 # A new script's template must compile. A dev-dependency, so the shipped
 # editor still links nothing of the language.
 khora-script = { path = "../khora-script" }
-# Widget tests record what the editor's own widgets paint.
+# Widget tests record what the editor's own widgets paint, and the headless
+# `RecordingUiBuilder` lays panels out.
 khora-tool-ui = { path = "../khora-tool-ui", features = ["testing"] }

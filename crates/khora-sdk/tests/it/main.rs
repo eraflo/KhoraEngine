@@ -18,6 +18,7 @@
 //! full link of the crate's dependency tree. New integration tests join this
 //! binary as a module instead of adding a file at the root of `tests/`.
 
+mod camera_aspect_follows_target;
 mod declared_components;
 mod editor_shader_sources;
 mod engine_mode;
@@ -25,6 +26,7 @@ mod engine_names;
 mod game_saves;
 mod mode_to_dcc;
 mod prefab_library;
+mod problems_without_scripts;
 mod public_paths;
 mod reload_after_an_emptied_module;
 mod runtime_config_file;

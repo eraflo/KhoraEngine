@@ -16,6 +16,8 @@
 //! calls for, naming the asset by its identity — a glTF file standing for
 //! its default scene, a part of a file for itself.
 
+mod broken_play_camera;
+
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::{
@@ -311,4 +313,79 @@ fn a_texture_part_dropped_on_the_viewport_is_assigned_to_the_selection() {
         state.pending_assign_texture,
         Some((part("texture0"), selected()))
     );
+}
+
+/// The panel's render-target size, and the rect it records for input.
+mod target_size {
+    use super::super::*;
+    use khora_tool_ui::testing::RecordingUiBuilder;
+
+    /// Lays the viewport panel out once in `ui` and returns the rect it
+    /// recorded for the input pipeline.
+    fn laid_out_rect(mut ui: RecordingUiBuilder) -> Option<[f32; 4]> {
+        let state = Arc::new(Mutex::new(EditorState::default()));
+        let mut panel = ViewportPanel::new(
+            ViewportTextureHandle(1),
+            Arc::clone(&state),
+            Arc::new(Mutex::new(EditorCamera::default())),
+            UiTheme::default(),
+        );
+        panel.ui(&mut ui);
+        let rect = state.lock().expect("the editor state").viewport_screen_rect;
+        rect
+    }
+
+    #[test]
+    fn target_size_rounds_the_panel_size_to_the_nearest_pixel() {
+        assert_eq!(target_size_for([0.0, 0.0, 1199.6, 500.4]), (1200, 500));
+        assert_eq!(target_size_for([35.0, 80.0, 640.6, 359.4]), (641, 359));
+    }
+
+    #[test]
+    fn target_size_ignores_the_panel_position() {
+        assert_eq!(
+            target_size_for([0.0, 0.0, 800.0, 600.0]),
+            target_size_for([412.0, 96.0, 800.0, 600.0])
+        );
+    }
+
+    #[test]
+    fn target_size_of_a_sub_pixel_panel_is_one_pixel() {
+        assert_eq!(target_size_for([10.0, 20.0, 0.3, 0.0]), (1, 1));
+    }
+
+    #[test]
+    fn target_size_of_a_negative_side_is_one_pixel() {
+        assert_eq!(target_size_for([0.0, 0.0, -40.0, 300.0]), (1, 300));
+        assert_eq!(target_size_for([0.0, 0.0, 300.0, -0.7]), (300, 1));
+    }
+
+    #[test]
+    fn target_size_of_a_non_finite_side_is_one_pixel() {
+        assert_eq!(target_size_for([0.0, 0.0, f32::NAN, 500.0]), (1, 500));
+        assert_eq!(target_size_for([0.0, 0.0, 500.0, f32::NAN]), (500, 1));
+        assert_eq!(
+            target_size_for([0.0, 0.0, f32::INFINITY, f32::NEG_INFINITY]),
+            (1, 1)
+        );
+    }
+
+    /// The input pipeline compares the rect to the platform cursor, which is
+    /// in physical pixels: at 1.5 pixels per point a 1200×500-point panel is
+    /// 1800×750 pixels.
+    #[test]
+    fn the_viewport_rect_is_stored_in_physical_pixels() {
+        let ui = RecordingUiBuilder::new(1200.0, 500.0)
+            .with_viewport_image()
+            .with_pixels_per_point(1.5);
+        assert_eq!(laid_out_rect(ui), Some([0.0, 0.0, 1800.0, 750.0]));
+    }
+
+    #[test]
+    fn at_one_pixel_per_point_the_viewport_rect_is_the_panel_size() {
+        let ui = RecordingUiBuilder::new(1200.0, 500.0)
+            .with_viewport_image()
+            .with_pixels_per_point(1.0);
+        assert_eq!(laid_out_rect(ui), Some([0.0, 0.0, 1200.0, 500.0]));
+    }
 }

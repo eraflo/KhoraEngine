@@ -453,6 +453,10 @@ fn color_target_fields(x: &khora_core::lane::context_keys::ColorTarget) {
     let _ = (&x.0,);
 }
 
+fn color_target_size_fields(x: &khora_core::lane::context_keys::ColorTargetSize) {
+    let _ = (&x.0,);
+}
+
 fn depth_target_fields(x: &khora_core::lane::context_keys::DepthTarget) {
     let _ = (&x.0,);
 }
@@ -2075,6 +2079,17 @@ fn module_lane_paths_still_resolve() {
     is_debug::<khora_core::lane::context_keys::ColorTarget>();
     is_clone::<khora_core::lane::context_keys::ColorTarget>();
     is_copy::<khora_core::lane::context_keys::ColorTarget>();
+    let _ = type_name::<khora_core::lane::context_keys::ColorTargetSize>();
+    let _ = type_name::<khora_core::lane::ColorTargetSize>();
+    same_type(
+        PhantomData::<khora_core::lane::ColorTargetSize>,
+        PhantomData::<khora_core::lane::context_keys::ColorTargetSize>,
+    );
+    let _ = color_target_size_fields as fn(&khora_core::lane::context_keys::ColorTargetSize);
+    let _ = khora_core::lane::context_keys::ColorTargetSize::aspect;
+    is_debug::<khora_core::lane::context_keys::ColorTargetSize>();
+    is_clone::<khora_core::lane::context_keys::ColorTargetSize>();
+    is_copy::<khora_core::lane::context_keys::ColorTargetSize>();
     let _ = type_name::<khora_core::lane::context_keys::DepthTarget>();
     let _ = type_name::<khora_core::lane::DepthTarget>();
     same_type(
@@ -3263,6 +3278,7 @@ mod paths_used_by_other_crates {
     use khora_core::lane::lock::write_lock_render as _; // khora-lanes
     use khora_core::lane::ClearColor as _; // khora-agents, khora-lanes, khora-sdk
     use khora_core::lane::ColorTarget as _; // khora-agents, khora-lanes, khora-sdk
+    use khora_core::lane::ColorTargetSize as _; // khora-data, khora-sdk
     use khora_core::lane::DepthTarget as _; // khora-agents, khora-lanes, khora-sdk
     use khora_core::lane::Lane as _; // khora-agents, khora-lanes
     use khora_core::lane::LaneBus as _; // khora-agents, khora-control, khora-data

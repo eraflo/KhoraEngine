@@ -33,8 +33,8 @@ use khora_core::agent::{
     ExecutionPhase, ExecutionTiming,
 };
 use khora_core::lane::{
-    ClearColor, ColorTarget, DepthTarget, LaneContext, LaneKind, LaneRegistry, ShadowAtlasView,
-    ShadowComparisonSampler,
+    ClearColor, ColorTarget, ColorTargetSize, DepthTarget, LaneContext, LaneKind, LaneRegistry,
+    ShadowAtlasView, ShadowComparisonSampler,
 };
 use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::api::gpu_scene::GpuMesh;
@@ -45,7 +45,7 @@ use khora_data::assets::Assets;
 use khora_data::ecs::World;
 use khora_data::render::{
     extract_active_camera_view, PassContribution, PassDescriptor, RenderWorld, ResourceId,
-    ScenePassSlot, TransparentPassSlot,
+    ScenePassSlot, TransparentPassSlot, FALLBACK_ASPECT,
 };
 use khora_data::AssetStore;
 use khora_lanes::render_lane::{ForwardPlusLane, LitForwardLane, SimpleUnlitLane, StandardPbrLane};
@@ -280,13 +280,19 @@ impl Agent for RenderAgent {
             .unwrap_or_else(|| ClearColor(khora_core::math::LinearRgba::new(0.1, 0.1, 0.15, 1.0)));
         let shadow_atlas = fctx.get::<ShadowAtlasView>().map(|a| *a);
         let shadow_sampler = fctx.get::<ShadowComparisonSampler>().map(|a| *a);
+        // The camera's projection takes the shape of the image it fills.
+        let aspect = fctx
+            .get::<ColorTargetSize>()
+            .map_or(FALLBACK_ASPECT, |size| size.aspect());
 
         // Push the active camera view into the render system if present.
         // Camera extraction is read-only, so the agent takes the world by
         // shared reference (`AgentAccess::SharedWorld`) — never `&mut`.
         if let Some(world_any) = context.world_ref() {
             if let Some(world) = world_any.downcast_ref::<World>() {
-                if let Some(view_info) = extract_active_camera_view(world) {
+                // An active camera whose values make no image prepares
+                // nothing: the flows publish no view for it either.
+                if let Some(Ok(view_info)) = extract_active_camera_view(world, aspect) {
                     if let Ok(mut rs) = render_system.lock() {
                         rs.prepare_frame(&view_info);
                     }
@@ -307,6 +313,8 @@ impl Agent for RenderAgent {
         // wherever nothing opaque stood behind it.
         let mut transparent_encoder =
             device.create_command_encoder(Some("Khora Transparent Encoder"));
+        // Lanes that cut the image into tiles size them from the target.
+        let target_size = fctx.get::<ColorTargetSize>().map(|size| *size);
         {
             let mut ctx = LaneContext::new();
             ctx.insert(device.clone());
@@ -328,6 +336,9 @@ impl Agent for RenderAgent {
             // build per-light shadow uniforms.
             ctx.insert_slot(&mut *context.deck);
             ctx.insert(color_target);
+            if let Some(size) = target_size {
+                ctx.insert(size);
+            }
             if let Some(dt) = depth_target {
                 ctx.insert(dt);
             }

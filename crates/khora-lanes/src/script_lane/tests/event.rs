@@ -19,7 +19,8 @@
 //! reached by a test constructing the event by hand.
 
 use khora_core::ecs::entity::EntityId;
-use khora_core::script::{EventQueue, ProblemSeverity, ScriptEvent, ScriptProblem, ScriptValue};
+use khora_core::problems::{Problem, ProblemSeverity};
+use khora_core::script::{EventQueue, ScriptEvent, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_script::arena::Persisted;
 use khora_script::native::Host;
@@ -576,7 +577,7 @@ fn mail(events: &[ScriptEvent]) -> EventQueue {
 }
 
 /// The running problems the runtime holds about `subject`.
-fn problems_about(runtime: &ScriptRuntime, subject: EntityId) -> Vec<ScriptProblem> {
+fn problems_about(runtime: &ScriptRuntime, subject: EntityId) -> Vec<Problem> {
     runtime
         .running_problems()
         .into_iter()

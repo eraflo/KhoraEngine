@@ -106,7 +106,9 @@ orphan rows). `Prepared::abandon` returns the reserved ids. Unknown name → who
 name is `formerly` of a type (reported `Renamed`), declared retired (reported `Retired`), or described by the
 record's own `declared` table — then read onto the world's declaration by name (`Defaulted`/`Dropped`/`Widened`),
 or registered from the file at `commit`. A file declaration named like a Rust component fails the load. The
-`LoadReport` lists every adaptation (`ReportKind`); callers should show it.
+`LoadReport` lists every adaptation (`ReportKind`); callers should show it (the editor puts it in its
+Problems tab as `ProblemSource::Load`). A value a component's own `check` finds unusable is loaded as written
+and reported `Unusable` — judged on the value that lands (a game save's merge or a prefab override may fix it).
 `SerializationService::{load_world, replace_world}` — `replace_world` stages before despawning anything.
 
 **Game saves** (`save.rs`). A scene holds what was authored; a `SaveRecord` holds, against its `base`

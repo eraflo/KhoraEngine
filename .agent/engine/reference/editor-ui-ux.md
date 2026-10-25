@@ -37,7 +37,7 @@ transform gizmos, dock layout, theme, and the egui/Taffy plumbing.
 ## Scripts (Ergon) in the editor
 - Mount: `project_scripts/` (`follow_open_project`, each frame) — `khora_sdk::scripts::mount`/`unmount` of
   `<project>/assets`. Problems tab: `panels/problems/` (`view.rs` = pure view model: `grouped`, `tab_title`,
-  `tile_badge`); `.erg` tile badge in `widgets/tile.rs`; reads `ScriptProblems` (`generation()` to skip
+  `tile_badge`); `.erg` tile badge in `widgets/tile.rs`; reads `khora_core::problems::Problems` (`generation()` to skip
   unchanged frames).
 - Declared components (no Rust type, no JSON): `ops/declared.rs` — `declared_cards` (from
   `ComponentKey::Declared` vtables + `World::declared_row`; `#state` only while playing; state and system

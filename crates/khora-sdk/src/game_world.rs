@@ -62,7 +62,7 @@ pub enum DeclaredComponentError {
 ///
 /// // Spawn a camera.
 /// world.spawn_camera(Camera::new_perspective(
-///     std::f32::consts::FRAC_PI_4, 16.0 / 9.0, 0.1, 1000.0,
+///     std::f32::consts::FRAC_PI_4, 0.1, 1000.0,
 /// ));
 ///
 /// // Spawn an entity from a component bundle.

@@ -12,7 +12,7 @@ loading/saving scenes.
 - Lights: `Light::directional()` / `Light::point()` / `Light::spot()`, configure via `LightType`
   (intensity, range, `shadow_enabled`, bias).
 - Materials: `StandardMaterial` (PBR base_color/roughness/metallic), `UnlitMaterial`, `EmissiveMaterial`.
-- Cameras: `Camera::new_perspective(fov, aspect, near, far)`.
+- Cameras: `Camera::new_perspective(fov, near, far)` — no aspect: it is the shape of the window (or viewport) the camera fills, read every frame.
 - Scenes: `SceneFile` + `SerializationGoal` (picks the encoding, never the content); game saves via
   `GameWorld::{save_game, load_game}`; author visually with `cargo run -p khora-editor`. See
   [`load-scene`](../skills/load-scene/SKILL.md).

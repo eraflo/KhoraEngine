@@ -201,7 +201,7 @@ fn every_persisted_type_round_trips() {
     // Render.
     assert_round_trips(&SerializableCamera::from(Camera::default_perspective()));
     assert_round_trips(&SerializableCamera::from(Camera::new_orthographic(
-        640.0, 480.0, -1.0, 250.0,
+        480.0, -1.0, 250.0,
     )));
     for light_type in [
         LightType::Directional(DirectionalLight {
@@ -231,10 +231,7 @@ fn every_persisted_type_round_trips() {
     assert_round_trips(&SpotLight::default());
     for projection in [
         ProjectionType::Perspective { fov_y_radians: 1.2 },
-        ProjectionType::Orthographic {
-            width: 16.0,
-            height: 9.0,
-        },
+        ProjectionType::Orthographic { height: 9.0 },
     ] {
         assert_round_trips(&projection);
     }

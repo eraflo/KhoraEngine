@@ -36,6 +36,10 @@ const FP_LIGHTING_LAYOUT_LABEL: &str = "forward_plus_lighting_layout";
 /// Stable cache label for the Forward+ compute culling layout.
 const FP_CULLING_LAYOUT_LABEL: &str = "forward_plus_culling_layout";
 
+/// The most lights one frame uploads: the light buffer and its parallel
+/// shadow view-projection buffer hold this many entries each.
+pub(super) const LIGHT_BUFFER_CAPACITY: usize = 1024;
+
 /// Bespoke group-1 (model) layout: a single dynamic-offset uniform buffer.
 fn fp_model_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
     use khora_core::renderer::api::command::{
@@ -238,7 +242,6 @@ impl ForwardPlusLane {
         device: &dyn khora_core::renderer::GraphicsDevice,
         pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
     ) -> Result<(), khora_core::renderer::error::RenderError> {
-        use khora_core::renderer::api::command::{BindGroupDescriptor, BindGroupEntry};
         use khora_core::renderer::api::gpu_scene::ModelUniforms;
         use khora_core::renderer::api::resource::CameraUniformData;
         use std::borrow::Cow;
@@ -284,34 +287,18 @@ impl ForwardPlusLane {
         let light_buffer = device
             .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
                 label: Some(Cow::Borrowed("Forward+ Light Buffer")),
-                size: 64 * 1024,
+                size: (LIGHT_BUFFER_CAPACITY
+                    * std::mem::size_of::<khora_core::renderer::GpuLight>())
+                    as u64,
                 usage: khora_core::renderer::api::resource::BufferUsage::STORAGE
                     | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
                 mapped_at_creation: false,
             })
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
-        // Light Index List
-        let light_index_buffer = device
-            .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
-                label: Some(Cow::Borrowed("Forward+ Light Index Buffer")),
-                size: 120 * 68 * 256 * 4,
-                usage: khora_core::renderer::api::resource::BufferUsage::STORAGE
-                    | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
-                mapped_at_creation: false,
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // Light Grid
-        let light_grid_buffer = device
-            .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
-                label: Some(Cow::Borrowed("Forward+ Light Grid Buffer")),
-                size: 120 * 68 * 2 * 4,
-                usage: khora_core::renderer::api::resource::BufferUsage::STORAGE
-                    | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
-                mapped_at_creation: false,
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        // The per-tile light lists (index + grid) and the culling bind group
+        // over them are sized from the colour target, which is only known
+        // per frame: `render` allocates them (`ensure_tile_buffers`).
 
         // Tile Info Buffer
         let tile_info_buffer = device
@@ -325,12 +312,11 @@ impl ForwardPlusLane {
             .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
 
         // Shadow view-projection matrices (one mat4 per light, indexed
-        // identically to `light_buffer`). 64 KB matches the light buffer
-        // sizing — ~1024 matrices, well above any realistic scene.
+        // identically to `light_buffer`, so as many as it holds).
         let shadow_view_projs_buffer = device
             .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
                 label: Some(Cow::Borrowed("Forward+ Shadow ViewProj Buffer")),
-                size: 64 * 1024,
+                size: (LIGHT_BUFFER_CAPACITY * std::mem::size_of::<[[f32; 4]; 4]>()) as u64,
                 usage: khora_core::renderer::api::resource::BufferUsage::STORAGE
                     | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
                 mapped_at_creation: false,
@@ -375,19 +361,6 @@ impl ForwardPlusLane {
 
         // 4. Bind Groups
 
-        let culling_bg = device
-            .create_bind_group(&BindGroupDescriptor {
-                label: Some("Forward+ Culling Bind Group"),
-                layout: culling_layout,
-                entries: &[
-                    BindGroupEntry::buffer(0, culling_uniforms_buffer, 0, None),
-                    BindGroupEntry::buffer(1, light_buffer, 0, None),
-                    BindGroupEntry::buffer(2, light_index_buffer, 0, None),
-                    BindGroupEntry::buffer(3, light_grid_buffer, 0, None),
-                ],
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
         // The group-3 (lighting) bind group is rebuilt every frame in
         // `render` because it combines the persistent light buffers with
         // the per-frame shadow atlas views — it cannot be cached here.
@@ -401,8 +374,6 @@ impl ForwardPlusLane {
             )
         })?;
         res.light_buffer = Some(light_buffer);
-        res.light_index_buffer = Some(light_index_buffer);
-        res.light_grid_buffer = Some(light_grid_buffer);
         res.tile_info_buffer = Some(tile_info_buffer);
         res.culling_uniforms_buffer = Some(culling_uniforms_buffer);
         res.shadow_view_projs_buffer = Some(shadow_view_projs_buffer);
@@ -413,7 +384,6 @@ impl ForwardPlusLane {
         res.culling_layout = Some(culling_layout);
         res.camera_ring = Some(camera_ring);
         res.model_ring = Some(model_ring);
-        res.culling_bind_group = Some(culling_bg);
         res.culling_pipeline = Some(culling_pipeline);
         res.render_pipeline = Some(pipeline_id);
 
@@ -442,6 +412,10 @@ impl ForwardPlusLane {
         if let Some(id) = resources.light_grid_buffer.take() {
             let _ = device.destroy_buffer(id);
         }
+        if let Some(id) = resources.culling_bind_group.take() {
+            let _ = device.destroy_bind_group(id);
+        }
+        resources.tile_capacity = 0;
         if let Some(id) = resources.culling_uniforms_buffer.take() {
             let _ = device.destroy_buffer(id);
         }

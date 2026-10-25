@@ -14,6 +14,7 @@
 
 use std::sync::Arc;
 
+use crate::math::Extent2D;
 use crate::platform::window::KhoraWindow;
 use crate::renderer::api::device::{GraphicsAdapterInfo, RenderSettings, RenderStats};
 use crate::renderer::api::gpu_scene::RenderObject;
@@ -33,6 +34,9 @@ pub struct FrameTargets {
     pub color: TextureViewId,
     /// Depth attachment, when depth buffering is enabled.
     pub depth: Option<TextureViewId>,
+    /// Size of the colour attachment, in pixels. A camera's projection
+    /// takes its aspect from it: the image a camera fills decides its shape.
+    pub size: Extent2D,
 }
 
 /// A high-level trait representing the entire rendering subsystem.

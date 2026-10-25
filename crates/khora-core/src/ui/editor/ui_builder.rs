@@ -22,51 +22,10 @@ use super::gradient::{flat_fill_point, LinearGradient, RadialGradient};
 use super::viewport_texture::ViewportTextureHandle;
 use crate::platform::input::KeyCode;
 
+pub use super::font_family_hint::FontFamilyHint;
+pub use super::inline_edit_event::InlineEditEvent;
 pub use super::interaction::Interaction;
-
-/// Font family hint passed to [`UiBuilder::paint_text_styled`]. Backends map
-/// each variant to whichever face was registered for that family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FontFamilyHint {
-    /// The default proportional face: text, labels, titles.
-    Proportional,
-    /// The monospaced face: code, paths, numbers.
-    Monospace,
-    /// The display face for screen headings and hero numerals. Falls back to
-    /// the proportional family when the installed pack has none.
-    Display,
-    /// The icon font. Pass single-char codepoints.
-    Icons,
-    /// The widest cut of the text face, for the product name itself. Falls
-    /// back to the display family, then to the proportional one, when the
-    /// installed pack has no wordmark face.
-    Wordmark,
-}
-
-/// Outcome of an [`UiBuilder::inline_text_field`] this frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum InlineEditEvent {
-    /// Still editing (or backend has no real text field).
-    #[default]
-    Idle,
-    /// The text changed this frame (not yet committed).
-    Changed,
-    /// The user confirmed the edit (Enter, or focus lost without Escape).
-    Committed,
-    /// The user cancelled the edit (Escape).
-    Cancelled,
-}
-
-/// Horizontal alignment for [`UiBuilder::paint_text_styled`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TextAlign {
-    /// Anchor at the left edge.
-    Left,
-    /// Anchor at the centre.
-    Center,
-    /// Anchor at the right edge.
-    Right,
-}
+pub use super::text_align::TextAlign;
 
 /// A backend-agnostic, immediate-mode widget builder.
 ///
@@ -680,6 +639,13 @@ pub trait UiBuilder {
     /// to [`panel_rect`](Self::panel_rect).
     fn screen_rect(&self) -> [f32; 4] {
         self.panel_rect()
+    }
+
+    /// Physical pixels per UI point — the factor from every size and position
+    /// this builder reports (points) to the window's pixels, the unit of the
+    /// platform cursor and of render targets. Default: `1.0`.
+    fn pixels_per_point(&self) -> f32 {
+        1.0
     }
 
     // ── Viewport / Images ──────────────────────────────

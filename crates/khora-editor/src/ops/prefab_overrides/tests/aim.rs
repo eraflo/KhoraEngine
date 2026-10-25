@@ -119,5 +119,6 @@ inventory::submit! {
         },
         script_type: <Aim as Component>::script_type,
         script_default: || None,
+        check: None,
     }
 }

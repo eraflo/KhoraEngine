@@ -164,7 +164,7 @@ pub fn sample_world() -> (World, Sample) {
         GlobalTransform::identity(),
         Name::new("Root"),
         tags,
-        Camera::new_perspective(std::f32::consts::FRAC_PI_3, 1.5, 0.05, 500.0),
+        Camera::new_perspective(std::f32::consts::FRAC_PI_3, 0.05, 500.0),
     ));
     add(&mut world, root, AudioListener);
 

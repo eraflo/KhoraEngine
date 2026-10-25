@@ -22,7 +22,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_core::lane::OutputDeck;
-use khora_core::script::{ProblemSeverity, ScriptProblem, ScriptProblems};
+use khora_core::problems::{Problem, ProblemSeverity, Problems};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
 use khora_io::script::declarations::{
@@ -70,14 +70,14 @@ fn nothing(module: &str) -> ScriptDeclarations {
 /// The registration, its memory, and the problems it reports into.
 struct Registration {
     runtime: Runtime,
-    problems: Arc<ScriptProblems>,
+    problems: Arc<Problems>,
     state: Arc<Mutex<DeclaredComponents>>,
     world: World,
 }
 
 impl Registration {
     fn new() -> Self {
-        let problems = Arc::new(ScriptProblems::default());
+        let problems = Arc::new(Problems::default());
         let state = Arc::new(Mutex::new(DeclaredComponents::default()));
         let mut runtime = Runtime::default();
         runtime.resources.insert(declaration_channel());
@@ -165,11 +165,11 @@ impl Registration {
             .collect()
     }
 
-    fn all(&self) -> Vec<ScriptProblem> {
+    fn all(&self) -> Vec<Problem> {
         self.problems.all()
     }
 
-    fn warnings(&self) -> Vec<ScriptProblem> {
+    fn warnings(&self) -> Vec<Problem> {
         self.all()
             .into_iter()
             .filter(|problem| problem.severity == ProblemSeverity::Warning)

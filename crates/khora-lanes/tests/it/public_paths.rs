@@ -98,6 +98,7 @@ fn forward_plus_gpu_resources_fields(x: &khora_lanes::render_lane::ForwardPlusGp
         &x.camera_ring,
         &x.model_ring,
         &x.culling_bind_group,
+        &x.tile_capacity,
         &x.culling_pipeline,
         &x.render_pipeline,
     );
@@ -285,7 +286,6 @@ fn module_render_lane_paths_still_resolve() {
     let _ = khora_lanes::render_lane::ForwardPlusLane::new;
     let _ = khora_lanes::render_lane::ForwardPlusLane::with_config;
     let _ = khora_lanes::render_lane::ForwardPlusLane::with_complexity;
-    let _ = khora_lanes::render_lane::ForwardPlusLane::set_screen_size;
     let _ = khora_lanes::render_lane::ForwardPlusLane::tile_count;
     let _ = khora_lanes::render_lane::ForwardPlusLane::total_tiles;
     let _ = khora_lanes::render_lane::ForwardPlusLane::effective_light_count;

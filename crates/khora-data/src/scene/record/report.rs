@@ -31,6 +31,9 @@ use serde::Serialize;
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
+use khora_core::problems::ProblemSeverity;
+
+use crate::ecs::FieldProblem;
 
 use super::de::read_watched;
 use super::watch::{Event, Node, Step, Tree};
@@ -90,6 +93,13 @@ pub enum ReportKind {
     /// A game save changed an entity its scene no longer has: the scene's
     /// removal wins, and the save's changes to it were dropped.
     RemovedFromScene,
+    /// The value was read and kept as written, but the component's own check
+    /// says the engine cannot use it (a camera whose near plane sits at its
+    /// eye). Nothing was rewritten or refused.
+    Unusable {
+        /// What the check says is wrong, naming the value.
+        message: String,
+    },
 }
 
 impl std::fmt::Display for ReportEntry {
@@ -116,6 +126,7 @@ impl std::fmt::Display for ReportEntry {
             ReportKind::RemovedFromScene => f.write_str(
                 "the save changed an entity the scene no longer has; its changes were dropped",
             )?,
+            ReportKind::Unusable { message } => write!(f, "`{place}` is unusable: {message}")?,
         }
         if let Some(component) = &self.component {
             write!(f, " (component {component}")?;
@@ -128,6 +139,28 @@ impl std::fmt::Display for ReportEntry {
         }
         Ok(())
     }
+}
+
+/// The report entries for what a component's check found in a value just
+/// read: one [`ReportKind::Unusable`] entry per `Error` problem, its `path`
+/// the problem's `field`, carrying the problem's message. A `Warning` is no
+/// entry — the value is usable.
+///
+/// The entries carry paths only; the caller knows the entity and the
+/// component and fills them in, as for [`resolve`].
+pub fn unusable_entries(problems: Vec<FieldProblem>) -> Vec<ReportEntry> {
+    problems
+        .into_iter()
+        .filter(|problem| problem.severity == ProblemSeverity::Error)
+        .map(|problem| {
+            entry(
+                problem.field,
+                ReportKind::Unusable {
+                    message: problem.message,
+                },
+            )
+        })
+        .collect()
 }
 
 /// Reads a `T` from `record` and says what the read adapted.

@@ -26,6 +26,7 @@ pub mod behavior_writeback;
 pub mod capture_previous_transform;
 pub mod collision_dispatch;
 pub mod collision_to_script;
+pub mod component_checks;
 pub mod ecs_maintenance;
 pub mod ensure_global_transform;
 pub mod gpu_material_sync;

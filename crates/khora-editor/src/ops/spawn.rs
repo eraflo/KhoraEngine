@@ -87,8 +87,7 @@ pub fn process_spawns(world: &mut GameWorld, state: &mut EditorState) {
                 Light::directional(),
             )),
             "Camera" => {
-                let cam =
-                    Camera::new_perspective(std::f32::consts::FRAC_PI_4, 16.0 / 9.0, 0.1, 1000.0);
+                let cam = Camera::new_perspective(std::f32::consts::FRAC_PI_4, 0.1, 1000.0);
                 world.spawn((
                     Transform::identity(),
                     GlobalTransform::identity(),

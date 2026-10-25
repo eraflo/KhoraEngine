@@ -85,16 +85,28 @@ pub fn load_scene_dispatch(
     if let Ok(mut state) = editor_state.lock() {
         state.clear_entity_references();
     }
+    let mut loaded = None;
     if let Some(pvfs_arc) = project_vfs {
         if let Ok(mut pvfs) = pvfs_arc.lock() {
             let assets_root = pvfs.assets_root.clone();
             if let Some(rel_fwd) = scene_io::rel_inside_project(abs, &assets_root) {
-                scene_io::load_scene_in_project(&mut pvfs, world, &rel_fwd);
-                return;
+                loaded = Some(scene_io::load_scene_in_project_with_report(
+                    &mut pvfs, world, &rel_fwd,
+                ));
             }
         }
     }
-    scene_io::load_scene_from_path(world, &abs.to_string_lossy());
+    let report = loaded.unwrap_or_else(|| {
+        scene_io::load_scene_from_path_with_report(world, &abs.to_string_lossy())
+    });
+    // What the load adapted goes to the Problems tab, not the log alone.
+    if let Some(report) = report {
+        if let Ok(mut state) = editor_state.lock() {
+            let load = scene_io::load_problems(world.inner_world(), &report);
+            state.load_problems = load.clone();
+            state.pending_load_problems = Some(load);
+        }
+    }
 }
 
 /// Build Game dispatch: packs the project's assets, copies the host-target

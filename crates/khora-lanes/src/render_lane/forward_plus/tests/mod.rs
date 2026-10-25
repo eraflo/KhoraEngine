@@ -40,10 +40,12 @@ fn test_forward_plus_lane_with_config() {
 
 #[test]
 fn test_tile_count_calculation() {
-    let mut lane = ForwardPlusLane::new();
-    lane.set_screen_size(1920, 1080);
+    let lane = ForwardPlusLane::new();
 
-    let (tiles_x, tiles_y) = lane.tile_count();
+    let (tiles_x, tiles_y) = lane.tile_count(khora_core::math::Extent2D {
+        width: 1920,
+        height: 1080,
+    });
     assert_eq!(tiles_x, 120); // 1920 / 16
     assert_eq!(tiles_y, 68); // ceil(1080 / 16)
 }
@@ -115,3 +117,6 @@ fn forward_plus_mirrored_pipeline_has_its_own_cache_key() {
         )
     });
 }
+
+mod tile_buffers;
+mod tile_grid_edges;

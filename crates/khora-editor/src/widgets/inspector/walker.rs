@@ -24,6 +24,7 @@
 //! | `Null`                                | dim "null" label |
 
 use khora_sdk::editor_ui::{Icon, UiBuilder, UiTheme};
+use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
 use khora_tool_ui::widgets::paint::{icon_centered, tint};
 use khora_tool_ui::widgets::{self};
 use serde_json::Value;
@@ -31,8 +32,8 @@ use serde_json::Value;
 use crate::widgets::enum_variants::editable_variants;
 
 use super::renderers::{
-    humanise, is_color, is_quat, is_vec3, render_color, render_number_row, render_numeric_quad,
-    render_numeric_triple, render_quat, render_vec3,
+    humanise, is_color, is_float_marker, is_quat, is_vec3, render_color, render_number_row,
+    render_numeric_quad, render_numeric_triple, render_quat, render_vec3,
 };
 
 /// What a field row asks of its component, beyond its own value.
@@ -56,6 +57,9 @@ pub struct Marks<'a> {
     /// imported prefab takes no changes.
     no_apply: bool,
     path: Vec<String>,
+    /// The component's own problems on this entity, each painted under the
+    /// row of its field.
+    problems: &'a [Problem],
     /// What the marked rows were asked this frame.
     pub actions: Vec<FieldAction>,
 }
@@ -67,6 +71,7 @@ impl<'a> Marks<'a> {
             overridden,
             no_apply: false,
             path: Vec::new(),
+            problems: &[],
             actions: Vec::new(),
         }
     }
@@ -76,6 +81,32 @@ impl<'a> Marks<'a> {
     pub fn read_only(mut self, read_only: bool) -> Self {
         self.no_apply = read_only;
         self
+    }
+
+    /// The same marks, painting under a field's row the message of each of
+    /// `problems` whose `field` is that row's path — the component's own
+    /// problems, as its check found them on this entity.
+    pub fn with_problems(mut self, problems: &'a [Problem]) -> Self {
+        self.problems = problems;
+        self
+    }
+
+    /// Paints, under the row just drawn, the message of each problem in the
+    /// field at the current path. The value itself is never touched.
+    fn show_problems(&self, ui: &mut dyn UiBuilder, theme: &UiTheme) {
+        if self.problems.is_empty() || self.path.is_empty() {
+            return;
+        }
+        let field = self.path.join(".");
+        for problem in self.problems {
+            if problem.field.as_deref() == Some(field.as_str()) {
+                let colour = match problem.severity {
+                    ProblemSeverity::Error => theme.error,
+                    ProblemSeverity::Warning => theme.warning,
+                };
+                ui.colored_label(colour, &problem.message);
+            }
+        }
     }
 
     /// Marks the row of the top-level field `field`, drawn from `top`, when
@@ -201,7 +232,7 @@ fn render_object(
             let inner = map.get_mut(&inner_key).unwrap();
             marks.path.push(inner_key);
             let changed = match inner {
-                Value::Object(m) => render_object(ui, m, theme, marks),
+                Value::Object(m) if !is_float_marker(m) => render_object(ui, m, theme, marks),
                 Value::Null => false,
                 _ => render_field(ui, "value", inner, theme, marks),
             };
@@ -214,7 +245,7 @@ fn render_object(
         ui.colored_label(theme.text_dim, &format!("Variant: {}", key));
         marks.path.push(key);
         let changed = match inner {
-            Value::Object(m) => render_object(ui, m, theme, marks),
+            Value::Object(m) if !is_float_marker(m) => render_object(ui, m, theme, marks),
             Value::Null => false,
             _ => render_field(ui, "value", inner, theme, marks),
         };
@@ -263,6 +294,7 @@ fn render_field(
     if marked {
         marks.mark_row(ui, top, theme);
     }
+    marks.show_problems(ui, theme);
     changed
 }
 
@@ -283,6 +315,9 @@ fn render_field_value(
             changed
         }
         Value::Number(_) => render_number_row(ui, label, value),
+        // An infinity or a NaN, which JSON has no number for: still a number
+        // row, so it can be seen and fixed.
+        Value::Object(map) if is_float_marker(map) => render_number_row(ui, label, value),
         Value::String(s) => {
             let mut local = s.clone();
             let mut changed = false;

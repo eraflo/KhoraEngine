@@ -138,11 +138,11 @@ impl DeclaredComponents {
     /// What is wrong with the declarations now, as a tool shows it: every
     /// name a module is refused because another declares it, and every
     /// component no module declares any more — but those an unmount left.
-    pub fn standing_problems(&self) -> Vec<khora_core::script::ScriptProblem> {
-        use khora_core::script::{ProblemSeverity, ScriptProblem};
+    pub fn standing_problems(&self) -> Vec<khora_core::problems::Problem> {
+        use khora_core::problems::{Problem, ProblemSeverity};
         let refusals = self.refused.keys().map(|(name, module)| {
             let owner = self.owner_of(name).unwrap_or("another module");
-            ScriptProblem {
+            Problem {
                 severity: ProblemSeverity::Error,
                 module: Some(module.clone()),
                 line: 0,
@@ -153,13 +153,15 @@ impl DeclaredComponents {
                 note: Some("a component's name is unique among every component — rename one".to_owned()),
                 entity: None,
                 behavior: None,
+                component: None,
+                field: None,
             }
         });
         let orphans = self
             .orphans
             .iter()
             .filter(|name| !self.quiet.contains(*name))
-            .map(|name| ScriptProblem {
+            .map(|name| Problem {
             severity: ProblemSeverity::Warning,
             module: None,
             line: 0,
@@ -170,6 +172,8 @@ impl DeclaredComponents {
             note: Some("declare it again to adopt it, or remove it from the entities holding it".to_owned()),
             entity: None,
             behavior: None,
+            component: None,
+            field: None,
         });
         refusals.chain(orphans).collect()
     }
@@ -550,10 +554,10 @@ pub fn register_pending(world: &mut World, runtime: &Runtime) -> DeclarationRepo
     let report = apply_declarations(world, &mut state, &batch);
     if let Some(problems) = runtime
         .resources
-        .get::<Arc<khora_core::script::ScriptProblems>>()
+        .get::<Arc<khora_core::problems::Problems>>()
     {
         problems.report(
-            khora_core::script::ProblemSource::Registration,
+            khora_core::problems::ProblemSource::Registration,
             state.standing_problems(),
         );
     }

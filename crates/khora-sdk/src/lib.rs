@@ -45,7 +45,6 @@
 //!         // Spawn a camera looking down the -Z axis.
 //!         let camera = ecs::Camera::new_perspective(
 //!             std::f32::consts::FRAC_PI_4,
-//!             16.0 / 9.0,
 //!             0.1,
 //!             1000.0,
 //!         );

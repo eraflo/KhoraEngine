@@ -46,6 +46,8 @@ mod overlay;
 
 mod render_system;
 
+mod resize_debounce;
+
 /// The concrete, WGPU-based implementation of the [`RenderSystem`](khora_core::renderer::traits::RenderSystem) trait.
 ///
 /// This struct encapsulates all the state necessary to drive rendering with WGPU,
@@ -77,13 +79,10 @@ pub struct WgpuRenderSystem {
     /// Surface texture acquired by `begin_frame()`, consumed by `end_frame()`.
     active_frame_texture: Option<wgpu::SurfaceTexture>,
 
-    // --- Resize Heuristics State ---
-    last_resize_event: Option<Instant>,
-    pending_resize: bool,
-    last_surface_config: Option<Instant>,
-    pending_resize_frames: u32,
-    last_pending_size: Option<(u32, u32)>,
-    stable_size_frame_count: u32,
+    // --- Window resize ---
+    /// The window size the surface should take (`current_width` ×
+    /// `current_height`), until it settles.
+    swapchain_resize: resize_debounce::ResizeDebounce,
 
     // --- Offscreen Viewport ---
     viewport_texture: Option<wgpu::Texture>,
@@ -96,6 +95,12 @@ pub struct WgpuRenderSystem {
     /// `render_to_viewport == true`).
     viewport_color_view_id: Option<khora_core::renderer::api::resource::TextureViewId>,
     viewport_depth_view_id: Option<khora_core::renderer::api::resource::TextureViewId>,
+    /// The size the viewport's panel asks for, until it settles.
+    viewport_resize: resize_debounce::ResizeDebounce,
+    /// The egui texture showing the viewport's colour target.
+    viewport_egui_texture: Option<egui::TextureId>,
+    /// The viewport was rebuilt and egui still shows the old colour view.
+    viewport_rebind_pending: bool,
     /// When true, `begin_frame` returns viewport targets instead of the swapchain
     /// and the engine skips its own present (caller manages the viewport).
     render_to_viewport: bool,
@@ -166,12 +171,7 @@ impl WgpuRenderSystem {
             depth_texture: None,
             depth_texture_view: None,
             active_frame_texture: None,
-            last_resize_event: None,
-            pending_resize: false,
-            last_surface_config: None,
-            pending_resize_frames: 0,
-            last_pending_size: None,
-            stable_size_frame_count: 0,
+            swapchain_resize: resize_debounce::ResizeDebounce::new(),
             viewport_texture: None,
             viewport_view: None,
             viewport_depth_texture: None,
@@ -180,6 +180,9 @@ impl WgpuRenderSystem {
             viewport_height: 0,
             viewport_color_view_id: None,
             viewport_depth_view_id: None,
+            viewport_resize: resize_debounce::ResizeDebounce::new(),
+            viewport_egui_texture: None,
+            viewport_rebind_pending: false,
             render_to_viewport: false,
         }
     }
@@ -375,6 +378,30 @@ impl WgpuRenderSystem {
         }
     }
 
+    /// Reconfigures the surface — and its depth texture — to the window's
+    /// size once that size has settled (see `ResizeDebounce`). Called at the
+    /// start of a frame, before the swapchain is acquired.
+    fn settle_swapchain_size(&mut self, gc: &Arc<Mutex<WgpuGraphicsContext>>) {
+        let configured = match gc.lock() {
+            Ok(gc) => (gc.surface_config.width, gc.surface_config.height),
+            Err(_) => return,
+        };
+        let now = Instant::now();
+        let wanted = (self.current_width, self.current_height);
+        self.swapchain_resize.request(wanted, now);
+        let Some((width, height)) = self.swapchain_resize.poll(configured, now) else {
+            return;
+        };
+        match gc.lock() {
+            Ok(mut gc) => gc.resize(width, height),
+            Err(_) => return,
+        }
+        log::info!("Surface configured to {width}x{height}");
+        if let Err(e) = self.create_depth_texture() {
+            log::warn!("Failed to recreate depth texture after resize: {e:?}");
+        }
+    }
+
     /// Creates or recreates the depth texture for depth buffering.
     ///
     /// This method should be called during initialization and whenever the window is resized.
@@ -541,10 +568,20 @@ impl WgpuRenderSystem {
                         self.current_height,
                         attempt + 1
                     );
+                    let size_changes = (
+                        gc_guard.surface_config.width,
+                        gc_guard.surface_config.height,
+                    ) != (self.current_width, self.current_height);
                     gc_guard.resize(self.current_width, self.current_height);
                     drop(gc_guard);
-                    self.last_surface_config = Some(Instant::now());
-                    self.pending_resize = false;
+                    // The depth attachment must match the surface it is drawn
+                    // with — rebuilt only when the size moved, not on every
+                    // reconfigure of a surface that keeps reporting outdated.
+                    if size_changes {
+                        if let Err(e) = self.create_depth_texture() {
+                            log::warn!("Failed to recreate depth texture after reconfigure: {e:?}");
+                        }
+                    }
                     // Loop to re-acquire on the next iteration.
                     continue;
                 }

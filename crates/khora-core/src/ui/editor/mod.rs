@@ -18,14 +18,17 @@
 //! live in `khora-infra`.
 
 pub mod declared;
+mod font_family_hint;
 pub mod gizmo;
 pub mod gradient;
 pub mod icons;
+mod inline_edit_event;
 pub mod interaction;
 pub mod overlay;
 pub mod panel;
 pub mod shell;
 pub mod state;
+mod text_align;
 pub mod ui_builder;
 pub mod viewport_texture;
 

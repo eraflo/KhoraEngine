@@ -68,6 +68,11 @@ pub struct RecordingUiBuilder {
     click_at: Option<[f32; 2]>,
     /// The keys reported as pressed this frame.
     keys: HashSet<KeyCode>,
+    /// Factor reported by `pixels_per_point`; `None` reports `1.0`.
+    pixels_per_point: Option<f32>,
+    /// Whether `viewport_image` shows the image (at the panel origin) instead
+    /// of reporting `None`.
+    shows_viewport_image: bool,
 }
 
 impl RecordingUiBuilder {
@@ -84,6 +89,8 @@ impl RecordingUiBuilder {
             drags: HashMap::new(),
             click_at: None,
             keys: HashSet::new(),
+            pixels_per_point: None,
+            shows_viewport_image: false,
         }
     }
 
@@ -101,6 +108,21 @@ impl RecordingUiBuilder {
     /// field holding focus). Chainable.
     pub fn with_key(mut self, key: KeyCode) -> Self {
         self.keys.insert(key);
+        self
+    }
+
+    /// Scripts the factor `pixels_per_point` will report — a display scaled
+    /// to `ppp` physical pixels per point. Chainable.
+    pub fn with_pixels_per_point(mut self, ppp: f32) -> Self {
+        self.pixels_per_point = Some(ppp);
+        self
+    }
+
+    /// Makes `viewport_image` show the image at the panel's origin and report
+    /// that origin, as a backend that can display the handle does; without it
+    /// the recorder reports `None`. Chainable.
+    pub fn with_viewport_image(mut self) -> Self {
+        self.shows_viewport_image = true;
         self
     }
 
@@ -592,12 +614,17 @@ impl UiBuilder for RecordingUiBuilder {
 
     fn context_menu_last(&mut self, _f: &mut dyn FnMut(&mut dyn UiBuilder)) {}
 
+    fn pixels_per_point(&self) -> f32 {
+        self.pixels_per_point.unwrap_or(1.0)
+    }
+
     fn viewport_image(
         &mut self,
         _handle: ViewportTextureHandle,
         _size: [f32; 2],
     ) -> Option<[f32; 2]> {
-        None
+        self.shows_viewport_image
+            .then_some([self.panel[0], self.panel[1]])
     }
 }
 

@@ -26,6 +26,7 @@
 
 mod bitset;
 mod bundle;
+mod check;
 mod column_ops;
 pub mod component;
 mod component_key;
@@ -50,6 +51,7 @@ mod world_ext;
 
 pub use bitset::DomainBitset;
 pub use bundle::ComponentBundle;
+pub use check::{check_all, FieldProblem};
 pub use column_ops::{ColumnOps, ColumnSnapshot, FieldWriteError};
 pub use component::Component;
 pub use component_key::{ColumnMap, ComponentKey, KeyHasher};

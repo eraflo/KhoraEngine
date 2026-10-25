@@ -16,6 +16,7 @@
 
 mod create_script;
 mod gltf_assets;
+mod load_problems;
 mod play_edits_of_declared_fields;
 mod prefab;
 mod prefab_apply;

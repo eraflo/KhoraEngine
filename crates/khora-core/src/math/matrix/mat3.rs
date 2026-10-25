@@ -15,7 +15,7 @@
 //! A 3x3 column-major matrix.
 
 use super::mat4::Mat4;
-use super::{Quaternion, Vec2, Vec3, Vec4, EPSILON};
+use super::{is_invertible, Quaternion, Vec2, Vec3, Vec4};
 use std::ops::{Index, IndexMut, Mul};
 
 // --- Mat3 ---
@@ -205,9 +205,13 @@ impl Mat3 {
     }
 
     /// Computes the inverse of the matrix.
+    /// Returns `None` if the matrix is not invertible.
     ///
-    /// If the matrix is not invertible (i.e., its determinant is close to zero),
-    /// this method returns `None`.
+    /// Invertibility is judged relative to the matrix's own scale: the
+    /// determinant is compared with the product of the column lengths (its
+    /// largest possible magnitude), not with a fixed threshold. A uniformly
+    /// shrunk basis inverts; a flattened one, however large, or one holding a
+    /// NaN or an infinity, does not.
     pub fn inverse(&self) -> Option<Self> {
         let c0 = self.cols[0];
         let c1 = self.cols[1];
@@ -217,7 +221,8 @@ impl Mat3 {
         let m20 = c0.y * c1.z - c1.y * c0.z;
         let det = c0.x * m00 + c1.x * m10 + c2.x * m20;
 
-        if det.abs() < EPSILON {
+        let scale = c0.length() * c1.length() * c2.length();
+        if !is_invertible(det, scale) {
             return None;
         }
 

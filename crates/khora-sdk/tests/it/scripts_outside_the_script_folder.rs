@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use khora_io::script::hot_reload::PendingReloads;
-use khora_sdk::khora_core::script::{ProblemSeverity, ScriptProblem, ScriptProblems};
+use khora_sdk::khora_core::problems::{Problem, ProblemSeverity, Problems};
 use khora_sdk::Runtime;
 
 /// A fresh assets root holding each of `files` at its path under the root,
@@ -69,12 +69,12 @@ fn scripting_runtime() -> Runtime {
     runtime
 }
 
-fn problems(runtime: &Runtime) -> Arc<ScriptProblems> {
+fn problems(runtime: &Runtime) -> Arc<Problems> {
     runtime
         .resources
-        .get::<Arc<ScriptProblems>>()
+        .get::<Arc<Problems>>()
         .cloned()
-        .expect("scripting installs the ScriptProblems")
+        .expect("scripting installs the Problems")
 }
 
 /// The modules mount sent to be installed, sorted.
@@ -93,7 +93,7 @@ fn sent(runtime: &Runtime) -> Vec<String> {
 
 /// The problems in no module naming `rel_path`: what a misplaced file is
 /// reported as.
-fn misplaced(runtime: &Runtime, rel_path: &str) -> Vec<ScriptProblem> {
+fn misplaced(runtime: &Runtime, rel_path: &str) -> Vec<Problem> {
     problems(runtime)
         .all()
         .into_iter()

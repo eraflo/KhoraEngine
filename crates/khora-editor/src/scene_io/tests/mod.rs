@@ -14,6 +14,8 @@
 
 //! Play/Stop snapshots and project scene paths.
 
+mod load_report;
+
 use super::*;
 
 /// Regression: snapshot/restore must round-trip the `Name` component.
@@ -82,7 +84,7 @@ fn snapshot_restore_preserves_multiple_components() {
         Transform::from_translation(Vec3::new(0.0, 2.0, 9.0)),
         GlobalTransform::identity(),
         Name::new("Cam"),
-        Camera::new_perspective(std::f32::consts::FRAC_PI_4, 1.5, 0.1, 800.0),
+        Camera::new_perspective(std::f32::consts::FRAC_PI_4, 0.1, 800.0),
     ));
     let _ = cube;
 
@@ -540,7 +542,7 @@ fn the_play_snapshot_never_holds_observed_state() {
 #[test]
 fn default_scene_path_is_the_one_the_runtime_falls_back_to() {
     let runtime_json: serde_json::Value = serde_json::from_str(include_str!(
-        "../../../khora-sdk/tests/fixtures/runtime.json"
+        "../../../../khora-sdk/tests/fixtures/runtime.json"
     ))
     .expect("the fixture is valid JSON");
     assert_eq!(

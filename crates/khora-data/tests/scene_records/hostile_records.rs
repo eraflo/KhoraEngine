@@ -116,7 +116,7 @@ fn a_non_finite_float_survives_every_encoding() {
     let eye = src.spawn((Transform::identity(), Name::new("Eye")));
     src.add_component(
         eye,
-        Camera::new_perspective(std::f32::consts::FRAC_PI_3, 1.5, 0.05, f32::INFINITY),
+        Camera::new_perspective(std::f32::consts::FRAC_PI_3, 0.05, f32::INFINITY),
     )
     .expect("a camera attaches");
     let id = src.mark_authored(eye).expect("authored");
@@ -354,7 +354,7 @@ fn a_parent_recorded_after_its_child_still_lists_it() {
 #[test]
 fn a_parent_without_a_spatial_page_gains_its_children_without_migrating() {
     let mut src = World::new();
-    let p = src.spawn(Camera::new_perspective(1.0, 1.0, 0.1, 10.0));
+    let p = src.spawn(Camera::new_perspective(1.0, 0.1, 10.0));
     let c = src.spawn((Transform::identity(), Name::new("C")));
     assert!(src.set_parent(c, Some(p)));
     let p_id = src.mark_authored(p).unwrap();
@@ -503,7 +503,7 @@ fn a_subtree_with_a_despawned_child_captures_the_live_part() {
 #[test]
 fn a_decimal_beyond_f32_range_is_refused() {
     let mut src = World::new();
-    let eye = src.spawn(Camera::new_perspective(1.0, 1.0, 0.1, 10.0));
+    let eye = src.spawn(Camera::new_perspective(1.0, 0.1, 10.0));
     let id = src.mark_authored(eye).unwrap();
     let record = capture_world(&src).expect("captures");
     let text = String::from_utf8(TextEncoding.encode(&record).unwrap()).unwrap();

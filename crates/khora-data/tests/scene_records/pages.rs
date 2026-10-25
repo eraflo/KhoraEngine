@@ -288,7 +288,7 @@ fn loading_leaves_no_orphan_rows() {
     let eye = src.spawn((Transform::identity(), Name::new("eye")));
     src.add_component(
         eye,
-        Camera::new_perspective(std::f32::consts::FRAC_PI_3, 1.5, 0.05, 500.0),
+        Camera::new_perspective(std::f32::consts::FRAC_PI_3, 0.05, 500.0),
     )
     .expect("a camera attaches");
     // A behavior with no fields, alone on its entity.
@@ -339,7 +339,7 @@ fn an_entity_spanning_two_pages_round_trips() {
     ));
     src.add_component(
         eye,
-        Camera::new_perspective(std::f32::consts::FRAC_PI_3, 1.5, 0.05, 500.0),
+        Camera::new_perspective(std::f32::consts::FRAC_PI_3, 0.05, 500.0),
     )
     .expect("a camera attaches");
     src.spawn((Transform::identity(), Name::new("Plain")));

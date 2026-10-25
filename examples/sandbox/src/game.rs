@@ -76,7 +76,6 @@ impl EngineApp for SandboxGame {
 
         let camera = khora_sdk::prelude::ecs::Camera::new_perspective(
             std::f32::consts::FRAC_PI_4,
-            16.0 / 9.0,
             0.1,
             1000.0,
         );

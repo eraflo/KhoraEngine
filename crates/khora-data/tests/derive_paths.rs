@@ -23,6 +23,8 @@
 //! - `crate::ecs::{ComponentDomainRegistration, ComponentProvenance, SemanticDomain, World}`
 //! - `crate::scene::{ComponentRegistration, ComponentShape, FieldSchema, Staged, StagedValue}`
 //! - `crate::scene::record::{to_record, resolve}`
+//! - `crate::scene::record::unusable_entries` and `crate::ecs::check_all` (with `check = …` only)
+//! - `crate::scene::inspector_json::{to_json, from_json}`
 //!
 //! This test crate rebuilds that `crate::ecs` / `crate::scene` shape out of
 //! `khora_data`'s public paths, so the derive expands here exactly as it does in
@@ -57,7 +59,7 @@ mod ecs {
 
 /// The `crate::scene` the derive expands against.
 mod scene {
-    pub use khora_data::scene::{positional, record, schema};
+    pub use khora_data::scene::{inspector_json, positional, record, schema};
     pub use khora_data::scene::{
         ComponentRegistration, ComponentShape, FieldSchema, Staged, StagedValue,
     };

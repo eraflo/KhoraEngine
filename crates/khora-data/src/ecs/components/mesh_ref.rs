@@ -257,6 +257,7 @@ inventory::submit! {
         // A one-of: no field a script reaches.
         script_type: |_| None,
         script_default: || None,
+        check: None,
     }
 }
 

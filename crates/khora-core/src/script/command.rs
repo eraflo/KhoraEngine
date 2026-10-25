@@ -127,12 +127,8 @@ pub enum WorldCommand {
     },
     /// Creates an entity carrying the given components.
     ///
-    /// The components are named rather than the *prototype* that produced them:
-    /// resolving `Spawn<Explosion>` into a set of components is the compiler's
-    /// job, on the script side, where the prototype's declaration is in scope.
-    /// Naming the prototype here would push that lookup into the frame boundary
-    /// and make this command unapplicable until an asset path exists to resolve
-    /// it against.
+    /// The components are named one by one, as the script wrote them; an
+    /// entity made from a prefab is a [`WorldCommand::SpawnPrefab`].
     ///
     /// The entity's id is reserved in the turn that queued this, from the
     /// world's [`EntityReserver`](crate::ecs::EntityReserver): the script holds

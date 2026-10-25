@@ -22,7 +22,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use khora_sdk::khora_core::agent::EngineMode;
-use khora_sdk::khora_core::script::{ProblemSeverity, ScriptProblems};
+use khora_sdk::khora_core::problems::{ProblemSeverity, Problems};
 use khora_sdk::{
     AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
     Runtime, WindowConfig,
@@ -80,13 +80,13 @@ impl Drop for Assets {
     }
 }
 
-fn problems(engine: &EngineCore<Tool>) -> Arc<ScriptProblems> {
+fn problems(engine: &EngineCore<Tool>) -> Arc<Problems> {
     engine
         .runtime()
         .resources
-        .get::<Arc<ScriptProblems>>()
+        .get::<Arc<Problems>>()
         .cloned()
-        .expect("the engine holds the ScriptProblems")
+        .expect("the engine holds the Problems")
 }
 
 fn registered(engine: &mut EngineCore<Tool>, name: &str) -> bool {

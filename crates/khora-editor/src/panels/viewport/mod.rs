@@ -25,6 +25,21 @@ mod overlays;
 #[cfg(test)]
 mod tests;
 
+/// The viewport target size, in pixels, for a panel rect `[x, y, w, h]` in
+/// physical pixels: `w` × `h` rounded to the nearest pixel, at least 1 on each
+/// side (a non-finite, negative or sub-pixel side gives 1).
+pub(crate) fn target_size_for(rect_px: [f32; 4]) -> (u32, u32) {
+    let side = |v: f32| {
+        let rounded = v.round();
+        if rounded.is_finite() && rounded >= 1.0 {
+            rounded as u32
+        } else {
+            1
+        }
+    };
+    (side(rect_px[2]), side(rect_px[3]))
+}
+
 pub struct ViewportPanel {
     handle: ViewportTextureHandle,
     state: Arc<Mutex<EditorState>>,
@@ -111,9 +126,13 @@ impl EditorPanel for ViewportPanel {
                     }
                 }
                 let mut show_camera_preview = false;
+                // In physical pixels, like the cursor it is hit-tested
+                // against and the render target sized from it.
+                let ppp = ui.pixels_per_point();
                 if let Ok(mut state) = self.state.lock() {
                     state.viewport_hovered = hovered;
-                    state.viewport_screen_rect = Some([min[0], min[1], w, h]);
+                    state.viewport_screen_rect =
+                        Some([min[0] * ppp, min[1] * ppp, w * ppp, h * ppp]);
                     show_camera_preview = Self::has_camera_node(&state.scene_roots);
                 }
 
@@ -131,6 +150,7 @@ impl EditorPanel for ViewportPanel {
                 self.paint_stats_card(ui, min, [w, h]);
                 self.paint_sign_watermark(ui, min, [w, h]);
                 self.paint_play_mode_indicator(ui, min, [w, h]);
+                self.paint_broken_play_camera(ui, min, [w, h]);
             }
         } else {
             ui.label("Viewport (no space)");

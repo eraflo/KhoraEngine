@@ -163,14 +163,54 @@ pub fn render_numeric_quad(
 
 // ─── numeric bridge ─────────────────────────────────────────────────
 
+/// The float a JSON value holds: a number, or the `{"$float": …}` marker
+/// the engine writes for an infinity or a NaN; `0` for anything else.
 pub fn json_to_f32(v: Option<&Value>) -> f32 {
-    v.and_then(|v| v.as_f64()).map(|f| f as f32).unwrap_or(0.0)
+    match v {
+        Some(v) => v
+            .as_f64()
+            .map(|f| f as f32)
+            .or_else(|| float_marker(v))
+            .unwrap_or(0.0),
+        None => 0.0,
+    }
 }
 
+/// `f` as JSON: a number, or the `{"$float": …}` marker for an infinity or
+/// a NaN, which JSON has no number for — never `null`, which the component
+/// would refuse.
 pub fn f32_to_json(f: f32) -> Value {
-    serde_json::Number::from_f64(f as f64)
-        .map(Value::Number)
-        .unwrap_or(Value::Null)
+    let marker = |text: &str| serde_json::json!({ FLOAT_KEY: text });
+    if f.is_nan() {
+        marker("nan")
+    } else if f == f32::INFINITY {
+        marker("inf")
+    } else if f == f32::NEG_INFINITY {
+        marker("-inf")
+    } else {
+        serde_json::Number::from_f64(f as f64)
+            .map(Value::Number)
+            .unwrap_or(Value::Null)
+    }
+}
+
+/// The key of the marker the engine writes for a float JSON has no number
+/// for (`khora_data::scene::inspector_json`).
+const FLOAT_KEY: &str = "$float";
+
+/// Whether `map` is the `{"$float": …}` marker of a float.
+pub fn is_float_marker(map: &serde_json::Map<String, Value>) -> bool {
+    map.len() == 1 && map.get(FLOAT_KEY).is_some_and(Value::is_string)
+}
+
+/// The float of a `{"$float": "inf" | "-inf" | "nan"}` marker.
+fn float_marker(v: &Value) -> Option<f32> {
+    match v.as_object()?.get(FLOAT_KEY)?.as_str()? {
+        "inf" => Some(f32::INFINITY),
+        "-inf" => Some(f32::NEG_INFINITY),
+        "nan" => Some(f32::NAN),
+        _ => None,
+    }
 }
 
 /// `snake_case` → `"Snake Case"` — keeps the inspector readable without

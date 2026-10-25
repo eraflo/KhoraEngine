@@ -30,6 +30,7 @@ pub mod declared;
 pub mod encoding;
 mod entity_refs;
 pub mod file;
+pub mod inspector_json;
 pub mod positional;
 pub mod prefab;
 pub mod record;

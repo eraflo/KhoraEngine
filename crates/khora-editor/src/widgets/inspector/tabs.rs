@@ -127,8 +127,21 @@ impl InspectorTab for PropertiesTab {
                         added,
                         can_apply: !prefab.read_only,
                     });
+                    // The component's own problems on this entity: each
+                    // shown under its field.
+                    let field_problems: Vec<_> = state_guard
+                        .data_problems
+                        .iter()
+                        .filter(|problem| {
+                            problem.module.is_none()
+                                && problem.entity == Some(entity)
+                                && problem.component.as_deref() == Some(cj.type_name.as_str())
+                        })
+                        .cloned()
+                        .collect();
                     let mut marks = Marks::new(&overridden)
-                        .read_only(prefab.is_some_and(|prefab| prefab.read_only));
+                        .read_only(prefab.is_some_and(|prefab| prefab.read_only))
+                        .with_problems(&field_problems);
                     let action = render_card(
                         ui_inner,
                         entity,

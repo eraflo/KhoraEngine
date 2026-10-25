@@ -25,7 +25,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use khora_core::lane::OutputDeck;
-use khora_core::script::{ProblemSeverity, ScriptCatalog, ScriptProblems};
+use khora_core::problems::{ProblemSeverity, Problems};
+use khora_core::script::ScriptCatalog;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
 use khora_io::asset::AssetWatch;
@@ -66,7 +67,7 @@ fn load_then_fix_helper(import: &str) -> (Vec<String>, Vec<String>) {
     );
     let watch = Arc::new(AssetWatch::default());
     watch.watch(assets.path()).expect("watches the root");
-    let problems = Arc::new(ScriptProblems::default());
+    let problems = Arc::new(Problems::default());
     let mut runtime = Runtime::default();
     runtime.resources.insert(Arc::clone(&watch));
     runtime.resources.insert(reload_channel());
@@ -148,7 +149,7 @@ fn a_load_reports_a_missing_import_under_the_importer_at_the_import() {
         "main.erg",
         "// the entry\nimport \"absent.erg\";\nfn void Main() { }\n",
     );
-    let problems = ScriptProblems::default();
+    let problems = Problems::default();
 
     let loaded = load_all_announcing(
         &assets.path().join("scripts"),

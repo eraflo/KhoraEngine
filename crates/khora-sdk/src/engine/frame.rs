@@ -16,7 +16,7 @@
 //! scheduler, the render passes and presentation.
 
 use khora_control::substrate;
-use khora_core::lane::{ClearColor, ColorTarget, DepthTarget};
+use khora_core::lane::{ClearColor, ColorTarget, ColorTargetSize, DepthTarget};
 use khora_core::renderer::traits::RenderSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
@@ -159,7 +159,7 @@ impl<A: EngineApp> EngineCore<A> {
 
     /// Stage 3 — acquire the swapchain via `RenderSystem::begin_frame` and
     /// populate the per-frame [`FrameContext`] with `ColorTarget`,
-    /// `DepthTarget`, and `ClearColor`.
+    /// `ColorTargetSize`, `DepthTarget`, and `ClearColor`.
     ///
     /// Returns `true` when a renderer is present and `begin_frame` succeeded
     /// (driver should later call [`present_frame`](Self::present_frame)).
@@ -186,6 +186,8 @@ impl<A: EngineApp> EngineCore<A> {
             Ok(targets) => {
                 if let Some(fctx) = &fctx {
                     fctx.insert(ColorTarget(targets.color));
+                    // What every camera's projection takes its aspect from.
+                    fctx.insert(ColorTargetSize(targets.size));
                     if let Some(d) = targets.depth {
                         fctx.insert(DepthTarget(d));
                     }

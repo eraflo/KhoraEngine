@@ -24,7 +24,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use khora_core::lane::OutputDeck;
-use khora_core::script::{ScriptCatalog, ScriptProblems};
+use khora_core::problems::Problems;
+use khora_core::script::ScriptCatalog;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
 use khora_io::asset::AssetWatch;
@@ -61,7 +62,7 @@ fn script(assets: &Path, module: &str, source: &str) -> PathBuf {
     path
 }
 
-fn mentions(problems: &ScriptProblems, text: &str) -> bool {
+fn mentions(problems: &Problems, text: &str) -> bool {
     problems
         .all()
         .iter()
@@ -78,7 +79,7 @@ fn a_clash_only_the_importer_finds_survives_the_clashing_modules_own_compile() {
     script(assets.path(), "a.erg", IMPORTS_BOTH);
     script(assets.path(), "b.erg", SHARED_B);
     script(assets.path(), "c.erg", SHARED_C);
-    let problems = ScriptProblems::default();
+    let problems = Problems::default();
     let pending = reload_channel();
     let declarations = declaration_channel();
 
@@ -107,7 +108,7 @@ fn a_clash_only_the_importer_finds_survives_the_clashing_modules_own_compile() {
 /// recompiled.
 #[test]
 fn the_importer_compiling_clean_clears_what_it_found_in_an_imported_module() {
-    let problems = ScriptProblems::default();
+    let problems = Problems::default();
     let clashing = PreludeLoader::new(
         MemoryLoader::new()
             .with("b.erg", SHARED_B)
@@ -152,7 +153,7 @@ fn a_deleted_module_leaves_no_problem_under_its_name() {
     let other = script(assets.path(), "other.erg", "fn void Other() { }\n");
     let watch = Arc::new(AssetWatch::default());
     watch.watch(assets.path()).expect("watches the root");
-    let problems = Arc::new(ScriptProblems::default());
+    let problems = Arc::new(Problems::default());
     let mut runtime = Runtime::default();
     runtime.resources.insert(Arc::clone(&watch));
     runtime.resources.insert(reload_channel());
@@ -199,7 +200,7 @@ fn a_deleted_module_leaves_no_problem_under_its_name() {
 fn a_clash_located_in_the_engine_mirror_clears_once_the_project_is_fixed() {
     let mirror = khora_io::script::mirror::MIRROR_MODULE;
     let main = format!("import \"helper.erg\";\nimport \"{mirror}\";\nfn void Main() {{ }}\n");
-    let problems = ScriptProblems::default();
+    let problems = Problems::default();
     let clashing = PreludeLoader::new(
         MemoryLoader::new()
             .with("helper.erg", "struct Transform { int x; }\n")

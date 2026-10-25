@@ -14,7 +14,7 @@
 
 //! **What the registration refuses or orphans, it reports** (Ergon spec 11):
 //! the `script_components` data system leaves in the runtime's
-//! `ScriptProblems` an error for a component two modules declare — naming
+//! `Problems` an error for a component two modules declare — naming
 //! the component, the module refused and the module keeping it — and a
 //! warning for a component no module declares any more. Each clears once
 //! what caused it is gone.
@@ -22,7 +22,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_core::lane::OutputDeck;
-use khora_core::script::{ProblemSeverity, ScriptProblem, ScriptProblems};
+use khora_core::problems::{Problem, ProblemSeverity, Problems};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
 use khora_io::script::declarations::{
@@ -62,12 +62,12 @@ fn declarations(module: &str, source: &str) -> ScriptDeclarations {
 struct Registration {
     world: World,
     runtime: Runtime,
-    problems: Arc<ScriptProblems>,
+    problems: Arc<Problems>,
 }
 
 impl Registration {
     fn new() -> Self {
-        let problems = Arc::new(ScriptProblems::default());
+        let problems = Arc::new(Problems::default());
         let mut runtime = Runtime::default();
         runtime.resources.insert(declaration_channel());
         runtime
@@ -99,7 +99,7 @@ impl Registration {
     }
 
     /// The problems whose message names `component`.
-    fn naming(&self, component: &str) -> Vec<ScriptProblem> {
+    fn naming(&self, component: &str) -> Vec<Problem> {
         self.problems
             .all()
             .into_iter()

@@ -33,6 +33,7 @@ pub mod math;
 pub mod memory;
 pub mod physics;
 pub mod platform;
+pub mod problems;
 pub mod renderer;
 pub mod runtime;
 pub mod scene;

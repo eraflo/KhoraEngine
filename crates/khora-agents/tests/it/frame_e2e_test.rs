@@ -149,7 +149,7 @@ fn spawn_flow_bus_publishes_render_world() {
 
     let cam_pos = Vec3::new(0.0, 0.0, 5.0);
     world.spawn((
-        Camera::new_perspective(60.0_f32.to_radians(), 16.0 / 9.0, 0.1, 1000.0),
+        Camera::new_perspective(60.0_f32.to_radians(), 0.1, 1000.0),
         GlobalTransform::at_position(cam_pos),
     ));
 
@@ -371,7 +371,7 @@ fn multi_domain_views_are_coherent() {
 
     // Active camera — directional shadows need a camera frustum.
     world.spawn((
-        Camera::new_perspective(60.0_f32.to_radians(), 16.0 / 9.0, 0.1, 1000.0),
+        Camera::new_perspective(60.0_f32.to_radians(), 0.1, 1000.0),
         GlobalTransform::at_position(Vec3::new(0.0, 0.0, 10.0)),
     ));
 
@@ -552,5 +552,77 @@ fn render_flow_without_previous_uses_current_transform() {
     assert!(
         (got - Vec3::new(7.0, 0.0, 0.0)).length() < 1e-4,
         "an entity without a previous transform must render at its current position, got {got:?}"
+    );
+}
+
+// ─── Lights that do not shine leave the light indices aligned ───────────
+
+/// In one Substrate Pass, a shadow-casting light whose values make no light
+/// (a point light of range 0) sits between a shadowed sun and a shadowed
+/// spot: neither `RenderWorld` nor `ShadowView` counts it, and every shadow
+/// matrix is keyed by the index of its own light in `RenderWorld.lights` —
+/// the sun's a single matrix at 0, the spot's a single matrix at 1.
+#[test]
+fn a_light_that_does_not_shine_keeps_render_and_shadow_indices_aligned() {
+    use khora_core::renderer::light::SpotLight;
+
+    let mut world = World::new();
+    let runtime = bare_runtime();
+    world.spawn((
+        Camera::new_perspective(60.0_f32.to_radians(), 0.1, 1000.0),
+        GlobalTransform::at_position(Vec3::new(0.0, 0.0, 10.0)),
+    ));
+    world.spawn((
+        Light::new(LightType::Directional(DirectionalLight {
+            shadow_enabled: true,
+            ..Default::default()
+        })),
+        GlobalTransform::at_position(Vec3::new(0.0, 20.0, 0.0)),
+    ));
+    world.spawn((
+        Light::new(LightType::Point(PointLight {
+            range: 0.0,
+            shadow_enabled: true,
+            ..Default::default()
+        })),
+        GlobalTransform::at_position(Vec3::new(1.0, 2.0, 0.0)),
+    ));
+    let spot_at = Vec3::new(-3.0, 4.0, 1.0);
+    world.spawn((
+        Light::new(LightType::Spot(SpotLight {
+            shadow_enabled: true,
+            ..Default::default()
+        })),
+        GlobalTransform::at_position(spot_at),
+    ));
+    spawn_mesh(&mut world, Vec3::ZERO);
+
+    let bus = run_substrate(&mut world, &runtime);
+    let rw = bus.get::<RenderWorld>().expect("RenderWorld published");
+    let sv = bus.get::<ShadowView>().expect("ShadowView published");
+
+    assert_eq!(rw.lights.len(), 2, "the sun and the spot shine");
+    assert_eq!(
+        sv.light_count,
+        rw.lights.len(),
+        "both views count the same lights"
+    );
+    assert!(matches!(rw.lights[0].light_type, LightType::Directional(_)));
+    assert!(matches!(rw.lights[1].light_type, LightType::Spot(_)));
+    assert_eq!(rw.lights[1].position, spot_at);
+    assert!(
+        matches!(sv.matrices.get(&0), Some(ShadowMatrices::Single(_))),
+        "the sun's shadow at 0: {:?}",
+        sv.matrices.get(&0)
+    );
+    assert!(
+        matches!(sv.matrices.get(&1), Some(ShadowMatrices::Single(_))),
+        "the spot's shadow at 1: {:?}",
+        sv.matrices.get(&1)
+    );
+    assert_eq!(
+        sv.matrices.len(),
+        2,
+        "no shadow keyed past the lights that shine"
     );
 }

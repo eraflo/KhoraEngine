@@ -21,7 +21,8 @@
 use std::sync::{Arc, Mutex};
 
 use khora_core::lane::OutputDeck;
-use khora_core::script::{ComponentName, ScriptCatalog, ScriptProblems};
+use khora_core::problems::Problems;
+use khora_core::script::{ComponentName, ScriptCatalog};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
 use khora_io::script::declarations::{
@@ -82,9 +83,7 @@ impl Engine {
         runtime.resources.insert(declaration_channel());
         let state = Arc::new(Mutex::new(DeclaredComponents::default()));
         runtime.resources.insert(Arc::clone(&state));
-        runtime
-            .resources
-            .insert(Arc::new(ScriptProblems::default()));
+        runtime.resources.insert(Arc::new(Problems::default()));
         if let Some(catalog) = catalog {
             runtime.resources.insert(Arc::clone(catalog));
         }

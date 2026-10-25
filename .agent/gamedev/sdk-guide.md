@@ -63,7 +63,7 @@ Use the `Vessel` builder or the spawn helpers; never poke storage directly.
 
 ```rust
 // A camera entity:
-let cam = Camera::new_perspective(std::f32::consts::FRAC_PI_4, 16.0/9.0, 0.1, 1000.0);
+let cam = Camera::new_perspective(std::f32::consts::FRAC_PI_4, 0.1, 1000.0);
 let player = Vessel::at(world, Vec3::new(0.0, 2.0, 10.0))
     .with_component(cam)
     .with_rotation(Quaternion::from_axis_angle(Vec3::Y, std::f32::consts::PI))

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! **One surface for what is wrong with the scripts** (Ergon spec 11): every
-//! application holds the engine's `ScriptProblems`, and the three places
+//! application holds the engine's `Problems`, and the three places
 //! that find a problem fill it — a mount's compile of every module, the
 //! registration of what they declare, and the instances running once the
 //! game is played. A tool reads them from there, located.
@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use khora_sdk::khora_core::agent::{EngineMode, SharedEngineMode};
-use khora_sdk::khora_core::script::{ProblemSeverity, ScriptProblem, ScriptProblems};
+use khora_sdk::khora_core::problems::{Problem, ProblemSeverity, Problems};
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::{
     AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
@@ -124,17 +124,17 @@ fn tick_until(
 }
 
 /// The engine's problems.
-fn problems(engine: &EngineCore<Tool>) -> Arc<ScriptProblems> {
+fn problems(engine: &EngineCore<Tool>) -> Arc<Problems> {
     engine
         .runtime()
         .resources
-        .get::<Arc<ScriptProblems>>()
+        .get::<Arc<Problems>>()
         .cloned()
-        .expect("the engine holds the ScriptProblems for every application")
+        .expect("the engine holds the Problems for every application")
 }
 
 /// The problems located in `module`.
-fn in_module(engine: &EngineCore<Tool>, module: &str) -> Vec<ScriptProblem> {
+fn in_module(engine: &EngineCore<Tool>, module: &str) -> Vec<Problem> {
     problems(engine)
         .all()
         .into_iter()
@@ -162,13 +162,13 @@ fn play(engine: &EngineCore<Tool>) {
 
 // ─── The surface ────────────────────────────────────────────────────────────
 
-/// **Every application holds the engine's `ScriptProblems`** — put in place
+/// **Every application holds the engine's `Problems`** — put in place
 /// by `scripts::install` with the rest of what scripting needs.
 #[test]
 fn installing_scripting_puts_the_script_problems_in_place() {
     let mut runtime = Runtime::new();
     khora_sdk::scripts::install(&mut runtime);
-    assert!(runtime.resources.get::<Arc<ScriptProblems>>().is_some());
+    assert!(runtime.resources.get::<Arc<Problems>>().is_some());
 
     let engine = tool_engine();
     assert!(
@@ -215,7 +215,7 @@ fn mounting_reports_an_imported_modules_error_under_it_once() {
 
     khora_sdk::scripts::mount(engine.runtime(), assets.path());
 
-    let parse_errors: Vec<ScriptProblem> = problems(&engine)
+    let parse_errors: Vec<Problem> = problems(&engine)
         .all()
         .into_iter()
         .filter(|problem| problem.message == "expected a function name, found `(`")

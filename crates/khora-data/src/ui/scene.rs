@@ -67,8 +67,6 @@ pub struct UiScene {
     pub nodes: Vec<ExtractedUiNode>,
     /// UI text elements to render.
     pub texts: Vec<ExtractedUiText>,
-    /// Surface size at the time of extraction.
-    pub surface_size: (u32, u32),
 }
 
 impl UiScene {

@@ -14,7 +14,7 @@
 
 //! A 4x4 column-major matrix.
 
-use super::{Quaternion, Vec3, Vec4};
+use super::{is_invertible, Quaternion, Vec3, Vec4};
 use serde::{Deserialize, Serialize};
 use std::ops::Mul;
 
@@ -266,6 +266,11 @@ impl Mat4 {
     /// * `aspect_ratio`: Width divided by height of the viewport.
     /// * `z_near`: Distance to the near clipping plane (must be positive).
     /// * `z_far`: Distance to the far clipping plane (must be positive and > `z_near`).
+    ///
+    /// The planes are a precondition: passing others is a programming error
+    /// and panics. Values that come from data — a camera or a light authored
+    /// in a scene, an inspector, a script — go through
+    /// [`Mat4::try_perspective_rh_zo`] instead.
     #[inline]
     pub fn perspective_rh_zo(
         fov_y_radians: f32,
@@ -273,7 +278,21 @@ impl Mat4 {
         z_near: f32,
         z_far: f32,
     ) -> Self {
-        assert!(z_near > 0.0 && z_far > z_near);
+        assert!(
+            z_near > 0.0 && z_far > z_near,
+            "a perspective needs 0 < near < far (near {z_near}, far {z_far})"
+        );
+        Self::perspective_unchecked(fov_y_radians, aspect_ratio, z_near, z_far)
+    }
+
+    /// The perspective of [`Mat4::perspective_rh_zo`], with no check at all.
+    #[inline]
+    fn perspective_unchecked(
+        fov_y_radians: f32,
+        aspect_ratio: f32,
+        z_near: f32,
+        z_far: f32,
+    ) -> Self {
         let tan_half_fovy = (fov_y_radians / 2.0).tan();
         let f = 1.0 / tan_half_fovy;
         let aa = f / aspect_ratio;
@@ -289,7 +308,42 @@ impl Mat4 {
         )
     }
 
+    /// Creates a right-handed perspective projection matrix with a [0, 1] depth
+    /// range (ZO), or `None` when the inputs cannot make one.
+    ///
+    /// The constructor for data — a camera authored in a scene, an inspector,
+    /// a script. It returns `None` unless every input is finite,
+    /// `0 < fov_y_radians < π`, `aspect_ratio > 0`, `0 < z_near < z_far`, and
+    /// every entry of the resulting matrix is finite (a near-zero field of view
+    /// can overflow `f / aspect`). When it returns `Some`, the matrix equals
+    /// [`Mat4::perspective_rh_zo`] for the same inputs.
+    #[inline]
+    pub fn try_perspective_rh_zo(
+        fov_y_radians: f32,
+        aspect_ratio: f32,
+        z_near: f32,
+        z_far: f32,
+    ) -> Option<Self> {
+        let all_finite = [fov_y_radians, aspect_ratio, z_near, z_far]
+            .iter()
+            .all(|v| v.is_finite());
+        let usable = all_finite
+            && fov_y_radians > 0.0
+            && fov_y_radians < std::f32::consts::PI
+            && aspect_ratio > 0.0
+            && z_near > 0.0
+            && z_far > z_near;
+        if !usable {
+            return None;
+        }
+        let m = Self::perspective_unchecked(fov_y_radians, aspect_ratio, z_near, z_far);
+        is_finite(&m).then_some(m)
+    }
+
     /// Creates a right-handed orthographic projection matrix with a [0, 1] depth range (ZO).
+    ///
+    /// Bounds that make no volume (`right == left`, …) give infinite entries;
+    /// values that come from data go through [`Mat4::try_orthographic_rh_zo`].
     #[inline]
     pub fn orthographic_rh_zo(
         left: f32,
@@ -317,6 +371,33 @@ impl Mat4 {
             Vec4::new(0.0, 0.0, cc, 0.0),
             Vec4::new(dd, ee, ff, 1.0),
         )
+    }
+
+    /// Creates a right-handed orthographic projection matrix with a [0, 1]
+    /// depth range (ZO), or `None` when the bounds cannot make one.
+    ///
+    /// The constructor for data. It returns `None` unless every input is
+    /// finite, `right > left`, `top > bottom`, `z_far > z_near` (`z_near` may be
+    /// negative), and every entry of the resulting matrix is finite. When it
+    /// returns `Some`, the matrix equals [`Mat4::orthographic_rh_zo`] for the
+    /// same inputs.
+    #[inline]
+    pub fn try_orthographic_rh_zo(
+        left: f32,
+        right: f32,
+        bottom: f32,
+        top: f32,
+        z_near: f32,
+        z_far: f32,
+    ) -> Option<Self> {
+        let all_finite = [left, right, bottom, top, z_near, z_far]
+            .iter()
+            .all(|v| v.is_finite());
+        if !(all_finite && right > left && top > bottom && z_far > z_near) {
+            return None;
+        }
+        let m = Self::orthographic_rh_zo(left, right, bottom, top, z_near, z_far);
+        is_finite(&m).then_some(m)
     }
 
     /// Creates a right-handed view matrix for a camera looking from `eye` towards `target`.
@@ -351,41 +432,6 @@ impl Mat4 {
             Vec4::new(s.z, u.z, -f.z, 0.0),
             Vec4::new(-eye.dot(s), -eye.dot(u), eye.dot(f), 1.0),
         ))
-    }
-
-    /// View-projection matrix for one face of an omnidirectional cubemap
-    /// rendered from `position`.
-    ///
-    /// Builds a 90°-FOV perspective with `[NEAR, far]` depth range, then a
-    /// look-at matrix using [`CubeFace::forward`](crate::math::CubeFace::forward)
-    /// and [`CubeFace::up`](crate::math::CubeFace::up) in the wgpu cubemap
-    /// convention. The near plane is fixed at `0.1` — the matching
-    /// shader-side depth recompute (used in omnidirectional shadow sampling)
-    /// assumes the same constant.
-    ///
-    /// `far` should be the light's effective range in world units.
-    pub fn cube_face_view_proj(
-        position: crate::math::Vec3,
-        face: crate::math::CubeFace,
-        far: f32,
-    ) -> Mat4 {
-        const NEAR: f32 = 0.1;
-        let proj = Mat4::perspective_rh_zo(crate::math::FRAC_PI_2, 1.0, NEAR, far);
-        let view = Mat4::look_at_rh(position, position + face.forward(), face.up())
-            .unwrap_or(Mat4::IDENTITY);
-        proj * view
-    }
-
-    /// Six view-projection matrices, one per cube face, in
-    /// [`CubeFace::ALL`](crate::math::CubeFace::ALL) order
-    /// (`[+X, -X, +Y, -Y, +Z, -Z]`).
-    ///
-    /// Equivalent to:
-    /// ```ignore
-    /// CubeFace::ALL.map(|f| Mat4::cube_face_view_proj(position, f, far))
-    /// ```
-    pub fn cube_face_view_projs(position: crate::math::Vec3, far: f32) -> [Mat4; 6] {
-        crate::math::CubeFace::ALL.map(|f| Mat4::cube_face_view_proj(position, f, far))
     }
 
     /// Returns the transpose of the matrix, where rows and columns are swapped.
@@ -440,6 +486,13 @@ impl Mat4 {
 
     /// Computes the inverse of the matrix.
     /// Returns `None` if the matrix is not invertible.
+    ///
+    /// Invertibility is judged relative to the matrix's own scale: the
+    /// determinant is compared with the product of the column lengths (its
+    /// largest possible magnitude), not with a fixed threshold. A well-shaped
+    /// matrix with small entries — an orthographic projection of a large view,
+    /// a uniformly shrunk transform — inverts; a degenerate one, or one holding
+    /// a NaN or an infinity, does not.
     pub fn inverse(&self) -> Option<Self> {
         let c0 = self.cols[0];
         let c1 = self.cols[1];
@@ -483,7 +536,8 @@ impl Mat4 {
             + c2.x * (c0.y * c1.z - c1.y * c0.z);
 
         let det = c0.x * a00 + c1.x * a10 + c2.x * a20 + c3.x * a30;
-        if det.abs() < crate::math::EPSILON {
+        let scale = c0.dot(c0).sqrt() * c1.dot(c1).sqrt() * c2.dot(c2).sqrt() * c3.dot(c3).sqrt();
+        if !is_invertible(det, scale) {
             return None;
         }
         let inv_det = 1.0 / det;
@@ -513,7 +567,8 @@ impl Mat4 {
         let det3x3 = c0.x * (c1.y * c2.z - c2.y * c1.z) - c1.x * (c0.y * c2.z - c2.y * c0.z)
             + c2.x * (c0.y * c1.z - c1.y * c0.z);
 
-        if det3x3.abs() < crate::math::EPSILON {
+        let scale = c0.length() * c1.length() * c2.length();
+        if !is_invertible(det3x3, scale) {
             return None;
         }
 
@@ -598,4 +653,12 @@ impl Mul<Vec4> for Mat4 {
     fn mul(self, rhs: Vec4) -> Self::Output {
         self.cols[0] * rhs.x + self.cols[1] * rhs.y + self.cols[2] * rhs.z + self.cols[3] * rhs.w
     }
+}
+
+/// Whether every entry of `m` is finite.
+#[inline]
+fn is_finite(m: &Mat4) -> bool {
+    m.cols
+        .iter()
+        .all(|c| c.x.is_finite() && c.y.is_finite() && c.z.is_finite() && c.w.is_finite())
 }

@@ -15,6 +15,7 @@
 //! This crate provides procedural macros for the Khora Engine.
 
 mod component;
+mod component_check;
 mod ergon_fn;
 mod script_fields;
 
@@ -63,7 +64,7 @@ pub fn ergon_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 /// #[derive(Component)]
 /// pub struct Camera {
 ///     pub projection: ProjectionType,
-///     pub aspect_ratio: f32,
+///     pub z_near: f32,
 /// }
 /// ```
 ///

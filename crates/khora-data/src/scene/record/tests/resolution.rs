@@ -28,6 +28,12 @@ struct Probe {
     third: bool,
 }
 
+/// An enum with a struct variant of more than one field.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+enum Frame {
+    Window { width: f32, height: f32 },
+}
+
 /// A light as it is today; older saves predate `intensity`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Lamp {
@@ -169,17 +175,17 @@ fn fields_resolve_by_name_not_position() {
         )
     );
 
-    let projection = variant(
-        "ProjectionType",
-        "Orthographic",
+    let frame = variant(
+        "Frame",
+        "Window",
         struct_payload(vec![
             ("height", Record::F32(9.0)),
             ("width", Record::F32(16.0)),
         ]),
     );
     assert_eq!(
-        read::<ProjectionType>(&projection),
-        Ok(ProjectionType::Orthographic {
+        read::<Frame>(&frame),
+        Ok(Frame::Window {
             width: 16.0,
             height: 9.0,
         })

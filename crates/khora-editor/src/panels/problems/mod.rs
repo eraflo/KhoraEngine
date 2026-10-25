@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
 use khora_sdk::khora_core::ecs::entity::EntityId;
-use khora_sdk::khora_core::script::ProblemSeverity;
+use khora_sdk::khora_core::problems::ProblemSeverity;
 use khora_tool_ui::widgets::{
     self, empty_state, filter_pill,
     paint::{fill, icon, mono, text},
@@ -130,7 +130,7 @@ impl EditorPanel for ProblemsPanel {
             .ok()
             .map(|s| {
                 (
-                    s.script_problems.clone(),
+                    s.problems.clone(),
                     s.scene_roots.clone(),
                     s.project_folder.clone(),
                 )
@@ -221,7 +221,7 @@ impl EditorPanel for ProblemsPanel {
                         "Nothing matches"
                     },
                     if problems.is_empty() {
-                        "The project's scripts compile, register and run clean."
+                        "The project's scripts and the scene's values are all usable."
                     } else {
                         "Turn a filter back on to see the rest."
                     },
@@ -233,13 +233,7 @@ impl EditorPanel for ProblemsPanel {
         let name_of = |entity: EntityId| name_in(&roots, entity);
         let mut lines = Vec::new();
         for group in grouped(&shown, &name_of) {
-            lines.push(Line::Module(
-                group
-                    .module
-                    .clone()
-                    .unwrap_or_else(|| "Not in a script".to_owned()),
-                group.rows.len(),
-            ));
+            lines.push(Line::Module(group.title(), group.rows.len()));
             for row in group.rows {
                 let (position, message) = split_position(&row.text);
                 lines.push(Line::Problem {

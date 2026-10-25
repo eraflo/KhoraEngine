@@ -18,6 +18,11 @@ explicit-SIMD hot-loop kernels.
 - SIMD kernels own their physical tiling; callers fill from any source. Keep a scalar twin for correctness
   and the tail; assert equivalence in tests.
 - Document non-trivial derivations with the source paper/formula.
+- A constructor with a precondition (`perspective_rh_zo`: `0 < near < far`) asserts it, and has a `try_` twin
+  returning `Option` (`try_perspective_rh_zo`, `try_orthographic_rh_zo`, `try_cube_face_view_projs`) that also
+  refuses a non-finite result. Data authored by a user (a camera, a light) only ever goes through the `try_` form.
+- Invertibility is relative to the matrix's own scale (`is_invertible(det, product of column lengths)`, shared by
+  `Mat3::inverse`, `Mat4::inverse`, `affine_inverse`); a determinant whose reciprocal overflows is refused.
 
 Use codegraph to find every caller before changing a public math signature (it ripples widely).
 

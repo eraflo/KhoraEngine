@@ -154,7 +154,9 @@ impl ForwardPlusTileConfig {
 ///
 /// # Memory Layout
 ///
-/// Total size: 72 bytes (18 × 4-byte fields), padded from 64 after shadow fields were added.
+/// Total size: 80 bytes — 18 4-byte fields, then 8 bytes of padding. WGSL
+/// aligns a struct holding `vec3`s to 16 bytes, so `array<GpuLight>` in the
+/// shaders steps 80 bytes per light; the Rust struct must step the same.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Pod, Zeroable)]
 pub struct GpuLight {
@@ -188,6 +190,9 @@ pub struct GpuLight {
     /// matches `ShadowEntry::Cube.far_plane`). Unused for directional
     /// and spot lights; left at `0.0` in that case.
     pub shadow_far_plane: f32,
+    /// Rounds the struct up to the 16-byte alignment WGSL gives it (it holds
+    /// `vec3`s), so light `i` sits where `array<GpuLight>[i]` reads it.
+    pub _padding: [f32; 2],
 }
 
 impl GpuLight {
@@ -214,6 +219,7 @@ impl GpuLight {
                 shadow_bias: l.shadow_bias,
                 shadow_normal_bias: l.shadow_normal_bias,
                 shadow_far_plane: 0.0,
+                _padding: [0.0; 2],
             },
             super::LightType::Point(l) => Self {
                 position,
@@ -228,6 +234,7 @@ impl GpuLight {
                 shadow_bias: l.shadow_bias,
                 shadow_normal_bias: l.shadow_normal_bias,
                 shadow_far_plane: 0.0,
+                _padding: [0.0; 2],
             },
             super::LightType::Spot(l) => Self {
                 position,
@@ -242,6 +249,7 @@ impl GpuLight {
                 shadow_bias: l.shadow_bias,
                 shadow_normal_bias: l.shadow_normal_bias,
                 shadow_far_plane: 0.0,
+                _padding: [0.0; 2],
             },
         }
     }
@@ -262,6 +270,7 @@ impl Default for GpuLight {
             shadow_bias: 0.01,
             shadow_normal_bias: 0.0,
             shadow_far_plane: 0.0,
+            _padding: [0.0; 2],
         }
     }
 }
@@ -304,9 +313,9 @@ mod tests {
 
     #[test]
     fn test_gpu_light_size_and_alignment() {
-        // GpuLight should be exactly 72 bytes (18 x 4-byte fields)
-        // Updated from 64 after shadow fields (shadow_map_index, shadow_bias, shadow_normal_bias, shadow_far_plane) were added.
-        assert_eq!(std::mem::size_of::<GpuLight>(), 72);
+        // 18 4-byte fields rounded up to WGSL's 16-byte struct alignment —
+        // the stride of `array<GpuLight>` in the shaders.
+        assert_eq!(std::mem::size_of::<GpuLight>(), 80);
     }
 
     #[test]

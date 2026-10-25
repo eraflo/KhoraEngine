@@ -16,7 +16,7 @@
 
 use super::WgpuRenderSystem;
 use crate::graphics::wgpu::profiler::WgpuTimestampProfiler;
-use khora_core::math::LinearRgba;
+use khora_core::math::{Extent2D, LinearRgba};
 use khora_core::platform::window::KhoraWindow;
 use khora_core::renderer::api::command::{
     LoadOp, Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
@@ -30,7 +30,6 @@ use khora_core::renderer::{GraphicsDevice, RenderError};
 use khora_core::telemetry::ResourceMonitor;
 use khora_core::Stopwatch;
 use std::sync::Arc;
-use std::time::Instant;
 use winit::dpi::PhysicalSize;
 
 impl RenderSystem for WgpuRenderSystem {
@@ -46,61 +45,21 @@ impl RenderSystem for WgpuRenderSystem {
 
     fn resize(&mut self, new_width: u32, new_height: u32) {
         if new_width > 0 && new_height > 0 {
-            log::debug!(
-                "WgpuRenderSystem: resize_surface called with W:{new_width}, H:{new_height}"
-            );
-            self.current_width = new_width;
-            self.current_height = new_height;
-            let now = Instant::now();
-            if let Some((lw, lh)) = self.last_pending_size {
-                if lw == new_width && lh == new_height {
-                    self.stable_size_frame_count = self.stable_size_frame_count.saturating_add(1);
-                } else {
-                    self.stable_size_frame_count = 0;
-                }
-            }
-            self.last_pending_size = Some((new_width, new_height));
-
-            let immediate_threshold_ms: u128 = 80;
-            let can_immediate = self
-                .last_surface_config
-                .map(|t| t.elapsed().as_millis() >= immediate_threshold_ms)
-                .unwrap_or(true);
-            let early_stable = self.stable_size_frame_count >= 2
-                && self
-                    .last_surface_config
-                    .map(|t| t.elapsed().as_millis() >= 20)
-                    .unwrap_or(true);
-            if can_immediate || early_stable {
-                let mut did_resize = false;
-                if let Some(gc_arc_mutex) = &self.graphics_context_shared {
-                    if let Ok(mut gc_guard) = gc_arc_mutex.lock() {
-                        gc_guard.resize(self.current_width, self.current_height);
-                        self.last_surface_config = Some(now);
-                        self.pending_resize = false;
-                        self.pending_resize_frames = 0;
-                        did_resize = true;
-                    }
-                }
-                if did_resize {
-                    // Recreate depth texture to match new size (after lock is released)
-                    if let Err(e) = self.create_depth_texture() {
-                        log::warn!("Failed to recreate depth texture during resize: {:?}", e);
-                    }
-                    log::info!(
-                        "WGPUGraphicsContext: Immediate/Early surface configuration to {}x{}",
-                        self.current_width,
-                        self.current_height
-                    );
-                    return;
-                }
-            }
-            self.last_resize_event = Some(now);
-            self.pending_resize = true;
-            self.pending_resize_frames = 0;
+            log::debug!("WgpuRenderSystem: window resized to {new_width}x{new_height}");
+            // Only the wanted size is recorded: the surface follows it at the
+            // start of a frame, once it has settled. A window wider than the
+            // device can render is drawn at the largest size it can.
+            let max = self
+                .graphics_context_shared
+                .as_ref()
+                .and_then(|gc| gc.lock().ok())
+                .map(|gc| gc.device.limits().max_texture_dimension_2d)
+                .unwrap_or(wgpu::Limits::downlevel_defaults().max_texture_dimension_2d);
+            (self.current_width, self.current_height) =
+                super::resize_debounce::clamp_extent((new_width, new_height), max);
         } else {
             log::warn!(
-                "WgpuRenderSystem::resize_surface called with zero size ({new_width}, {new_height}). Ignoring."
+                "WgpuRenderSystem::resize called with zero size ({new_width}, {new_height}). Ignoring."
             );
         }
     }
@@ -146,48 +105,8 @@ impl RenderSystem for WgpuRenderSystem {
             p.try_read_previous_frame();
         }
 
-        // --- Handle Pending Resizes ---
-        let mut resized_this_frame = false;
-        if self.pending_resize {
-            self.pending_resize_frames = self.pending_resize_frames.saturating_add(1);
-            if let Some(t) = self.last_resize_event {
-                let quiet_elapsed = t.elapsed().as_millis();
-                let debounce_quiet_ms = settings.resize_debounce_ms as u128;
-                let max_pending_frames = settings.resize_max_pending_frames;
-                let early_stable = self.stable_size_frame_count >= 3;
-
-                if quiet_elapsed >= debounce_quiet_ms
-                    || self.pending_resize_frames >= max_pending_frames
-                    || early_stable
-                {
-                    if let Ok(mut gc_guard) = gc.lock() {
-                        gc_guard.resize(self.current_width, self.current_height);
-                        self.pending_resize = false;
-                        self.last_surface_config = Some(Instant::now());
-                        self.stable_size_frame_count = 0;
-                        resized_this_frame = true;
-                        log::info!(
-                            "Deferred surface configuration to {}x{}",
-                            self.current_width,
-                            self.current_height
-                        );
-                    }
-                }
-            }
-            if self.pending_resize && !resized_this_frame {
-                return Ok(self.last_frame_stats.clone());
-            }
-        }
-
-        // Recreate depth texture if we just resized
-        if resized_this_frame {
-            if let Err(e) = self.create_depth_texture() {
-                log::warn!(
-                    "Failed to recreate depth texture during deferred resize: {:?}",
-                    e
-                );
-            }
-        }
+        // --- Follow the window's size, once it has settled ---
+        self.settle_swapchain_size(&gc);
 
         // --- 1. Acquire Frame from Swap Chain (resilient) ---
         device.wait_for_last_submission();
@@ -372,36 +291,8 @@ impl RenderSystem for WgpuRenderSystem {
             p.try_read_previous_frame();
         }
 
-        // --- Handle Pending Resizes ---
-        let mut resized_this_frame = false;
-        if self.pending_resize {
-            self.pending_resize_frames = self.pending_resize_frames.saturating_add(1);
-            if let Some(t) = self.last_resize_event {
-                let quiet_elapsed = t.elapsed().as_millis();
-                let debounce_quiet_ms = 120u128;
-                let max_pending_frames = 10u32;
-                let early_stable = self.stable_size_frame_count >= 3;
-
-                if quiet_elapsed >= debounce_quiet_ms
-                    || self.pending_resize_frames >= max_pending_frames
-                    || early_stable
-                {
-                    if let Ok(mut gc_guard) = gc.lock() {
-                        gc_guard.resize(self.current_width, self.current_height);
-                        self.pending_resize = false;
-                        self.last_surface_config = Some(Instant::now());
-                        self.stable_size_frame_count = 0;
-                        resized_this_frame = true;
-                    }
-                }
-            }
-        }
-
-        if resized_this_frame {
-            if let Err(e) = self.create_depth_texture() {
-                log::warn!("Failed to recreate depth texture: {:?}", e);
-            }
-        }
+        // --- Follow the window's size, once it has settled ---
+        self.settle_swapchain_size(&gc);
 
         // --- Acquire swapchain texture (resilient: see acquire_surface_texture) ---
         let output_surface_texture = match self.acquire_surface_texture(&gc)? {
@@ -428,17 +319,31 @@ impl RenderSystem for WgpuRenderSystem {
 
         self.active_frame_texture = Some(output_surface_texture);
 
+        // The editor viewport takes the size its panel asked for, once that
+        // size has settled — before anything is drawn into it this frame.
+        self.settle_viewport_size();
+
         // Compute targets for the engine: choose between swapchain and viewport.
-        let (color, depth) = if self.render_to_viewport {
+        let (color, depth, (width, height)) = if self.render_to_viewport {
             let c = self
                 .viewport_color_view_id
                 .ok_or_else(|| RenderError::Internal("viewport color view not created".into()))?;
-            (c, self.viewport_depth_view_id)
+            (c, self.viewport_depth_view_id, self.viewport_size())
         } else {
-            (target_view_id, self.depth_texture_view)
+            // The configured surface, not the last resize request: while a
+            // resize is debounced the swapchain still has its old size.
+            let surface = gc
+                .lock()
+                .map(|gc| (gc.surface_config.width, gc.surface_config.height))
+                .unwrap_or((self.current_width, self.current_height));
+            (target_view_id, self.depth_texture_view, surface)
         };
 
-        Ok(FrameTargets { color, depth })
+        Ok(FrameTargets {
+            color,
+            depth,
+            size: Extent2D { width, height },
+        })
     }
 
     fn end_frame(&mut self) -> Result<RenderStats, RenderError> {
@@ -467,7 +372,7 @@ impl RenderSystem for WgpuRenderSystem {
     fn render_overlay(
         &mut self,
         overlay: &mut dyn khora_core::ui::EditorOverlay,
-        screen: khora_core::ui::OverlayScreenDescriptor,
+        _screen: khora_core::ui::OverlayScreenDescriptor,
     ) -> Result<(), RenderError> {
         let gc_arc = self
             .graphics_context_shared
@@ -476,7 +381,7 @@ impl RenderSystem for WgpuRenderSystem {
             .clone();
 
         // Create encoder and target view while holding the lock, then release.
-        let (encoder, target_view) = {
+        let (encoder, target_view, (width_px, height_px)) = {
             let gc = gc_arc
                 .lock()
                 .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?;
@@ -489,6 +394,10 @@ impl RenderSystem for WgpuRenderSystem {
             let target_view = surface_tex
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
+            // The overlay covers the texture it is drawn on: while a window
+            // resize is still settling the surface keeps its old size, and the
+            // window's would put scissor rects outside it.
+            let target_size = (surface_tex.texture.width(), surface_tex.texture.height());
 
             let encoder = gc
                 .device
@@ -496,20 +405,28 @@ impl RenderSystem for WgpuRenderSystem {
                     label: Some("egui_overlay_encoder"),
                 });
 
-            (encoder, target_view)
+            (encoder, target_view, target_size)
         }; // gc lock released — overlay will re-acquire it
 
+        let viewport_retarget = self.take_viewport_retarget();
+        let hands_over_viewport = viewport_retarget.is_some();
         let mut render_state = crate::ui::egui::overlay::EguiFrameRenderState {
             graphics_context: gc_arc.clone(),
             encoder: Some(encoder),
             target_view,
-            width_px: screen.width_px,
-            height_px: screen.height_px,
+            width_px,
+            height_px,
+            retargets: viewport_retarget.into_iter().collect(),
         };
 
-        overlay
-            .end_frame_and_render(&mut render_state as &mut dyn std::any::Any)
-            .map_err(|e| RenderError::RenderingFailed(e.to_string()))?;
+        if let Err(e) = overlay.end_frame_and_render(&mut render_state as &mut dyn std::any::Any) {
+            // The panel would keep showing the old texture: hand the new one
+            // over again next frame.
+            if hands_over_viewport {
+                self.viewport_rebind_pending = true;
+            }
+            return Err(RenderError::RenderingFailed(e.to_string()));
+        }
 
         // Submit the encoder
         let encoder = render_state.encoder.take().ok_or_else(|| {

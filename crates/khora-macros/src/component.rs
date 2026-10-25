@@ -294,6 +294,11 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         (domain, provenance, formerly)
     };
 
+    let check_path = match crate::component_check::check_path(&input) {
+        Ok(check) => check,
+        Err(error) => return TokenStream::from(error.to_compile_error()),
+    };
+
     let domain_registration = match &domain_ident {
         Some(domain) => quote! {
             inventory::submit! {
@@ -573,6 +578,9 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
         };
 
     let script_default = crate::script_fields::script_default(name);
+
+    let (stage_check, registration_check) =
+        crate::component_check::check_tokens(name, check_path.as_ref());
     let schema_cell = format_ident!("__KHORA_SCHEMA_OF_{}", name);
     let expanded = quote! {
         #component_impl
@@ -607,11 +615,13 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                     crate::scene::record::to_record(&<#serializable_name>::from(value), references)
                 },
                 stage: |record, references| {
-                    let (s, report) = crate::scene::record::resolve::<#serializable_name>(
+                    let (s, mut report) = crate::scene::record::resolve::<#serializable_name>(
                         record, references,
                     )?;
+                    let value = <#name>::from(s);
+                    #stage_check
                     Ok(crate::scene::Staged {
-                        component: Box::new(crate::scene::StagedValue(<#name>::from(s))),
+                        component: Box::new(crate::scene::StagedValue(value)),
                         report,
                     })
                 },
@@ -658,12 +668,11 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                 },
                 to_json: |world, entity| {
                     world.clone_component::<#name>(entity).and_then(|c| {
-                        serde_json::to_value(<#serializable_name>::from(c)).ok()
+                        crate::scene::inspector_json::to_json(&<#serializable_name>::from(c))
                     })
                 },
                 from_json: |world, entity, value| {
-                    let s: #serializable_name = serde_json::from_value(value.clone())
-                        .map_err(|e| e.to_string())?;
+                    let s: #serializable_name = crate::scene::inspector_json::from_json(value)?;
                     let new_value = <#name>::from(s);
                     // Layout-agnostic write: update in place if present, else add.
                     if !world.set_component(entity, new_value.clone()) {
@@ -682,6 +691,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
                 },
                 script_type: <#name as crate::ecs::component::Component>::script_type,
                 script_default: #script_default,
+                check: #registration_check,
             }
         }
     };

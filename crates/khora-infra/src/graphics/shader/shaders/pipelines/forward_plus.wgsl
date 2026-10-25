@@ -53,7 +53,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 // --- Forward+ Light Data ---
 
-// Unified light structure (matches GpuLight in Rust, 72 bytes).
+// Unified light structure (matches GpuLight in Rust: 72 bytes of fields, 80 with WGSL's 16-byte struct alignment).
 struct GpuLight {
     position: vec3<f32>,
     range: f32,

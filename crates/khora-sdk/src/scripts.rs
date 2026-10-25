@@ -22,7 +22,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use khora_core::script::{ProblemSource, ScriptCatalog, ScriptProblems};
+use khora_core::problems::{ProblemSource, Problems};
+use khora_core::script::ScriptCatalog;
 use khora_core::Runtime;
 use khora_io::asset::AssetWatch;
 use khora_io::script::declarations::{
@@ -58,7 +59,10 @@ pub use khora_io::script::mounted::MountedScripts;
 /// Puts what scripting needs into `runtime`, each only where it is absent:
 /// the engine's [`AssetWatch`], the queues of compiled programs and of
 /// declarations, the engine's event channel, the memory of who declares
-/// what, the [`ScriptCatalog`], and the record of what is mounted.
+/// what, the [`ScriptCatalog`], and the record of what is mounted — and the
+/// engine's [`Problems`] list, which scripts report to among others (the
+/// components' checks, the scene loads), so it is in place whether or not
+/// the application has scripts.
 ///
 /// For every application, by the engine — before the application's own
 /// bootstrap runs, so it may mount there, and again at the bootstrap, which
@@ -87,8 +91,8 @@ pub fn install(runtime: &mut Runtime) {
     if resources.get::<Arc<ScriptCatalog>>().is_none() {
         resources.insert(Arc::new(ScriptCatalog::default()));
     }
-    if resources.get::<Arc<ScriptProblems>>().is_none() {
-        resources.insert(Arc::new(ScriptProblems::default()));
+    if resources.get::<Arc<Problems>>().is_none() {
+        resources.insert(Arc::new(Problems::default()));
     }
     if resources.get::<Arc<MountedScripts>>().is_none() {
         resources.insert(Arc::new(MountedScripts::default()));
@@ -97,7 +101,7 @@ pub fn install(runtime: &mut Runtime) {
 
 /// Mounts the scripts under `assets_root`, at any frame: arms the root on the
 /// engine's `AssetWatch`, reports every `.erg` outside its [`SCRIPT_DIR`] to
-/// the `ScriptProblems` — never compiled — then compiles every module under
+/// the `Problems` — never compiled — then compiles every module under
 /// `assets_root/scripts`, sends what they declare and what they compiled to,
 /// and announces what each reads to the `ScriptCatalog`.
 ///
@@ -134,7 +138,7 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> usize {
     // the wrong folder is the one most in need of being told.
     // Under the name the watch knows the root by — the one its changes carry —
     // so the pump's rescans replace this list rather than start a second one.
-    if let Some(problems) = runtime.resources.get::<Arc<ScriptProblems>>() {
+    if let Some(problems) = runtime.resources.get::<Arc<Problems>>() {
         khora_io::script::problems::report_misplaced(problems, &watched_name(runtime, assets_root));
     }
 
@@ -165,10 +169,7 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> usize {
             pending,
             declarations,
             catalog,
-            runtime
-                .resources
-                .get::<Arc<ScriptProblems>>()
-                .map(Arc::as_ref),
+            runtime.resources.get::<Arc<Problems>>().map(Arc::as_ref),
         ),
         None => load_all(&script_dir, pending, declarations),
     };
@@ -215,7 +216,7 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
     }
     // The files it held outside its script folder are no longer the
     // project's to show.
-    if let Some(problems) = runtime.resources.get::<Arc<ScriptProblems>>() {
+    if let Some(problems) = runtime.resources.get::<Arc<Problems>>() {
         khora_io::script::problems::clear_misplaced(problems, &named);
         if named != assets_root {
             khora_io::script::problems::clear_misplaced(problems, assets_root);
@@ -259,7 +260,7 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
         }
     }
     // A module no longer mounted has nothing wrong with it to show.
-    if let Some(problems) = runtime.resources.get::<Arc<ScriptProblems>>() {
+    if let Some(problems) = runtime.resources.get::<Arc<Problems>>() {
         for module in &modules {
             problems.report(
                 ProblemSource::Compile {

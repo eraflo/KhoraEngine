@@ -95,10 +95,9 @@ pub struct LightingUniforms {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CullingUniformsData {
-    /// The combined view-projection matrix.
+    /// The combined view-projection matrix (world → clip); the shader
+    /// extracts each tile's planes from it.
     pub view_projection: [[f32; 4]; 4],
-    /// The inverse of the view-projection matrix.
-    pub inverse_projection: [[f32; 4]; 4],
     /// The dimensions of the screen in pixels.
     pub screen_dimensions: [f32; 2],
     /// The number of tiles in the X and Y dimensions.
@@ -107,6 +106,8 @@ pub struct CullingUniformsData {
     pub num_lights: u32,
     /// The size of a tile in pixels.
     pub tile_size: u32,
+    /// How many lights a tile may list; the shader clamps it to its stride.
+    pub max_lights_per_tile: u32,
     /// Padding for 16-byte alignment.
-    pub _padding: [f32; 2],
+    pub _padding: u32,
 }

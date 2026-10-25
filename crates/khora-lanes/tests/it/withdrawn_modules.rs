@@ -25,9 +25,8 @@ use std::sync::Arc;
 use khora_core::ecs::entity::EntityId;
 use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::{Lane, LaneContext, OutputDeck};
-use khora_core::script::{
-    ComponentName, ProblemSeverity, ScriptCatalog, ScriptEvent, ScriptProblem, ScriptValue,
-};
+use khora_core::problems::{Problem, ProblemSeverity};
+use khora_core::script::{ComponentName, ScriptCatalog, ScriptEvent, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
 use khora_script::arena::Persisted;
@@ -216,7 +215,7 @@ impl Stage {
 }
 
 /// The running problems held about `subject`.
-fn about(problems: &[ScriptProblem], subject: EntityId) -> Vec<ScriptProblem> {
+fn about(problems: &[Problem], subject: EntityId) -> Vec<Problem> {
     problems
         .iter()
         .filter(|problem| problem.entity == Some(subject))
