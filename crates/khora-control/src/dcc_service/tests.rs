@@ -474,14 +474,16 @@ fn test_critical_thermal_clamps_multiplier() {
 }
 
 /// An agent that writes its name into a shared log when it is initialized.
+/// Each has its own id: the DCC holds one agent per id.
 struct InitRecording {
     name: &'static str,
+    id: AgentId,
     log: std::sync::Arc<std::sync::Mutex<Vec<&'static str>>>,
 }
 
 impl Agent for InitRecording {
     fn id(&self) -> AgentId {
-        AgentId::Script
+        self.id
     }
     fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
         NegotiationResponse {
@@ -492,7 +494,7 @@ impl Agent for InitRecording {
     fn apply_budget(&mut self, _: ResourceBudget) {}
     fn report_status(&self) -> AgentStatus {
         AgentStatus {
-            agent_id: AgentId::Script,
+            agent_id: self.id,
             current_strategy: StrategyId::Balanced,
             health_score: 1.0,
             is_stalled: false,
@@ -519,10 +521,15 @@ fn dcc_with_three_recording_agents() -> (
 ) {
     let (dcc, _rx) = DccService::new(DccConfig::default());
     let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    for (name, priority) in [("low", 1.0), ("high", 3.0), ("middle", 2.0)] {
+    for (name, priority, id) in [
+        ("low", 1.0, AgentId::Script),
+        ("high", 3.0, AgentId::Audio),
+        ("middle", 2.0, AgentId::Ui),
+    ] {
         dcc.register_agent(
             std::sync::Arc::new(std::sync::Mutex::new(InitRecording {
                 name,
+                id,
                 log: std::sync::Arc::clone(&log),
             })),
             priority,

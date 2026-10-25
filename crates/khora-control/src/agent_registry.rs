@@ -266,14 +266,16 @@ mod tests {
     type Log = Arc<Mutex<Vec<&'static str>>>;
 
     /// An agent that writes its name into a shared log when it is initialized.
+    /// Each has its own id: a registry holds one agent per id.
     struct Recording {
         name: &'static str,
+        id: AgentId,
         log: Log,
     }
 
     impl Agent for Recording {
         fn id(&self) -> AgentId {
-            AgentId::Script
+            self.id
         }
         fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
             NegotiationResponse {
@@ -284,7 +286,7 @@ mod tests {
         fn apply_budget(&mut self, _b: ResourceBudget) {}
         fn report_status(&self) -> AgentStatus {
             AgentStatus {
-                agent_id: AgentId::Script,
+                agent_id: self.id,
                 current_strategy: StrategyId::Balanced,
                 health_score: 1.0,
                 is_stalled: false,
@@ -308,10 +310,12 @@ mod tests {
     fn registry_of(agents: &[(&'static str, f32)]) -> (AgentRegistry, Log) {
         let log: Log = Arc::new(Mutex::new(Vec::new()));
         let mut registry = AgentRegistry::new();
-        for &(name, priority) in agents {
+        let ids = [AgentId::Script, AgentId::Audio, AgentId::Ui];
+        for (&(name, priority), &id) in agents.iter().zip(ids.iter()) {
             registry.register(
                 Arc::new(Mutex::new(Recording {
                     name,
+                    id,
                     log: Arc::clone(&log),
                 })),
                 priority,
