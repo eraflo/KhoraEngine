@@ -59,6 +59,14 @@ enum Commands {
     /// available via the `cargo hub-dev` alias from `.cargo/config.toml`.
     HubDev,
 
+    /// Write the landing page at the root of a built book: `site/index.html`,
+    /// its stylesheet, script and frames under `site/landing/`. Run after
+    /// `mdbook build`, e.g. `cargo xtask landing docs/book`.
+    Landing {
+        /// The built book's folder (holding `home.html`).
+        site: std::path::PathBuf,
+    },
+
     /// Commands for asset pipeline management.
     #[clap(subcommand)]
     Assets(AssetCommand),
@@ -96,6 +104,7 @@ fn main() -> Result<()> {
             Commands::Gate => commands::ci::gate()?,
 
             Commands::HubDev => commands::dev::hub_dev()?,
+            Commands::Landing { site } => commands::landing::build(&site)?,
 
             Commands::Assets(command) => match command {
                 AssetCommand::Pack => commands::assets::pack()?,

@@ -12,6 +12,9 @@ human docs aligned with the code.
   `figures.css` + `steps.js` (figures and step-throughs), `home.css` (landing page); Mermaid through
   `docs/mermaid-init.js` (CI's `mermaid.min.js`, else a pinned CDN build).
 - Build: `mdbook build docs/` / `mdbook serve docs/ --open`.
+- Landing page: sources in `docs/landing/` (`page.html` with `{root}`/`{img}`, `landing.css`, `landing.js`,
+  rendered frames under `images/<scene>/`). `cargo xtask landing docs/book` writes it as the site's
+  `index.html` after `mdbook build`; the book's own first page stays `home.html`. `docs.yml` runs both.
 - AI docs: this `.agent/engine/` tree (canonical source for the provider wrappers).
 
 ## Rules

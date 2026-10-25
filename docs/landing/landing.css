@@ -1,0 +1,1010 @@
+/* ============================================================
+   Khora — the landing page.
+   Scenes rendered by the engine. The first, a chess board in a clearing,
+   is scrubbed by the scroll while the copy tells how a frame is shared;
+   the others play as short reels once they come into view.
+   Navy, silver, and gold for the one thing in motion.
+   ============================================================ */
+
+.kp-landing {
+    --l-bg: oklch(0.13 0.02 265);
+    --l-bg-2: oklch(0.17 0.024 265);
+    --l-line: oklch(1 0 0 / 0.08);
+    --l-line-2: oklch(1 0 0 / 0.16);
+    --l-fg: oklch(0.97 0.005 250);
+    --l-fg-2: oklch(0.80 0.012 250);
+    --l-fg-3: oklch(0.62 0.015 250);
+    --l-silver: oklch(0.84 0.04 240);
+    --l-silver-dim: oklch(0.66 0.045 240);
+    --l-gold: oklch(0.80 0.12 82);
+    --l-amber: oklch(0.78 0.14 70);
+    /* The logo's type: Archivo for words (titles a little wider), IBM Plex Mono for code. */
+    --l-display: 'Archivo', system-ui, -apple-system, sans-serif;
+    --l-display-stretch: 112%;
+    --l-sans: 'Archivo', system-ui, -apple-system, sans-serif;
+    --l-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
+    --l-ease: cubic-bezier(0.2, 0, 0, 1);
+    --l-gutter: max(20px, env(safe-area-inset-left, 0px));
+    position: relative;
+    background: var(--l-bg);
+    color: var(--l-fg-2);
+    font-family: var(--l-sans);
+    font-size: 16px;
+    line-height: 1.6;
+}
+
+.kp-landing *,
+.kp-landing *::before,
+.kp-landing *::after {
+    box-sizing: border-box;
+}
+
+/* No weight of its own: a link class (a button, a door) sets its colour. */
+:where(.kp-landing a) {
+    color: inherit;
+}
+
+.kp-landing :focus-visible {
+    outline: 2px solid var(--l-silver);
+    outline-offset: 3px;
+}
+
+.kp-l-inner {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding-left: var(--l-gutter);
+    padding-right: max(20px, env(safe-area-inset-right, 0px));
+}
+
+/* ---------- The bar ---------- */
+.kp-l-bar {
+    position: fixed;
+    inset: 0 0 auto 0;
+    z-index: 20;
+    padding-top: env(safe-area-inset-top, 0px);
+    background: linear-gradient(oklch(0.13 0.02 265 / 0.85), oklch(0.13 0.02 265 / 0));
+    border-bottom: 1px solid transparent;
+    transition: background-color 240ms var(--l-ease), border-color 240ms var(--l-ease);
+}
+
+.kp-l-bar.is-solid {
+    background: oklch(0.13 0.02 265 / 0.94);
+    border-bottom-color: var(--l-line);
+}
+
+.kp-l-bar .kp-l-inner {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    height: 64px;
+}
+
+/* The logo: the sign, and the name in Archivo Expanded, spaced wide. */
+.kp-l-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--l-fg);
+    text-decoration: none;
+}
+
+.kp-l-mark-sign {
+    width: 26px;
+    height: 26px;
+    flex: none;
+}
+
+.kp-l-mark-word,
+.kp-l-sign-word {
+    font-family: var(--l-sans);
+    font-stretch: 125%;
+    font-weight: 300;
+    line-height: 1;
+}
+
+.kp-l-mark-word {
+    font-size: 15px;
+    letter-spacing: 0.42em;
+    margin-right: -0.42em;
+}
+
+/* ---------- The footer ---------- */
+.kp-l-foot {
+    border-top: 1px solid var(--l-line);
+    padding-block: 72px 36px;
+}
+
+.kp-l-foot-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr);
+    gap: 48px;
+}
+
+.kp-l-foot-brand {
+    display: grid;
+    align-content: start;
+    justify-items: start;
+    gap: 18px;
+}
+
+.kp-l-foot-sign {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    color: var(--l-fg);
+    text-decoration: none;
+}
+
+.kp-l-sign-mark {
+    width: 48px;
+    height: 48px;
+    flex: none;
+}
+
+.kp-l-foot-name {
+    display: grid;
+    gap: 9px;
+}
+
+.kp-l-sign-word {
+    font-size: 21px;
+    letter-spacing: 0.5em;
+    margin-right: -0.5em;
+    color: var(--l-fg);
+}
+
+.kp-l-sign-sub {
+    font-family: var(--l-mono);
+    font-size: 10px;
+    letter-spacing: 0.32em;
+    margin-right: -0.32em;
+    color: var(--l-fg-3);
+}
+
+.kp-l-foot-line {
+    margin: 0;
+    max-width: 34ch;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--l-fg-2, var(--l-fg-3));
+}
+
+.kp-l-foot-start {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--l-gold);
+    text-decoration: none;
+}
+
+.kp-l-foot-start svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    transition: transform 150ms var(--l-ease);
+}
+
+.kp-l-foot-start:hover svg {
+    transform: translateX(3px);
+}
+
+.kp-l-foot-cols {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 28px;
+}
+
+.kp-l-foot-head {
+    margin: 0 0 14px;
+    font-family: var(--l-mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--l-fg-3);
+}
+
+.kp-l-foot-cols ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 10px;
+}
+
+.kp-l-foot-cols a,
+.kp-l-foot-fine a {
+    color: var(--l-fg-2, var(--l-fg));
+    text-decoration: none;
+    font-size: 14px;
+    transition: color 150ms var(--l-ease);
+}
+
+.kp-l-foot-cols a:hover,
+.kp-l-foot-fine a:hover {
+    color: var(--l-fg);
+}
+
+.kp-l-foot-cols a:focus-visible,
+.kp-l-foot-sign:focus-visible,
+.kp-l-foot-start:focus-visible {
+    outline: 2px solid var(--l-gold);
+    outline-offset: 3px;
+    border-radius: 2px;
+}
+
+.kp-l-foot-fine {
+    display: grid;
+    gap: 6px;
+    margin-top: 56px;
+    padding-top: 22px;
+    border-top: 1px solid var(--l-line);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--l-fg-3);
+}
+
+.kp-l-foot-fine p {
+    margin: 0;
+    max-width: 92ch;
+}
+
+.kp-l-foot-fine a {
+    font-size: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+    .kp-l-foot-top { grid-template-columns: minmax(0, 1fr); }
+    .kp-l-foot-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.kp-l-nav {
+    display: flex;
+    gap: 22px;
+    margin-left: auto;
+    font-size: 14px;
+}
+
+.kp-l-nav a {
+    color: var(--l-fg-2);
+    text-decoration: none;
+    transition: color 150ms var(--l-ease);
+}
+
+.kp-l-nav a:hover {
+    color: var(--l-fg);
+}
+
+.kp-l-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 20px;
+    border-radius: 999px;
+    border: 1px solid var(--l-line-2);
+    color: var(--l-fg);
+    font-size: 15px;
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 180ms var(--l-ease), border-color 180ms var(--l-ease), color 180ms var(--l-ease);
+}
+
+.kp-l-btn:hover {
+    border-color: var(--l-silver);
+    background: oklch(0.84 0.04 240 / 0.08);
+}
+
+.kp-l-btn-main {
+    background: var(--l-fg);
+    border-color: var(--l-fg);
+    color: var(--l-bg);
+}
+
+.kp-l-btn-main:hover {
+    background: var(--l-silver);
+    border-color: var(--l-silver);
+}
+
+.kp-l-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.kp-l-bar .kp-l-btn {
+    padding: 8px 16px;
+    font-size: 14px;
+}
+
+@media (max-width: 760px) {
+    .kp-l-nav { display: none; }
+    .kp-l-bar .kp-l-btn { margin-left: auto; }
+}
+
+/* ---------- The move: a pinned stage scrubbed by the scroll ---------- */
+.kp-l-move {
+    position: relative;
+    height: 520vh;
+}
+
+.kp-l-stage {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    height: 100svh;
+    overflow: hidden;
+    background: var(--l-bg);
+}
+
+.kp-l-stage canvas,
+.kp-l-stage .kp-l-poster {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.kp-l-stage canvas {
+    display: block;
+}
+
+.kp-l-shade {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    /* The fade to the page's ground is listed first, so it lies over the
+       side shade: the stage ends on exactly the colour the next section
+       starts on. */
+    background:
+        linear-gradient(0deg, var(--l-bg) 0%, oklch(0.13 0.02 265 / 0.85) 14%, oklch(0.13 0.02 265 / 0.4) 32%, oklch(0.13 0.02 265 / 0) 52%),
+        linear-gradient(90deg, oklch(0.10 0.02 265 / 0.82) 0%, oklch(0.10 0.02 265 / 0.35) 42%, oklch(0.10 0.02 265 / 0) 70%);
+}
+
+.kp-l-copy {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: flex-end;
+    padding-bottom: clamp(48px, 10vh, 120px);
+    pointer-events: none;
+}
+
+.kp-l-copy .kp-l-inner {
+    width: 100%;
+}
+
+.kp-l-beat {
+    position: absolute;
+    bottom: clamp(48px, 10vh, 120px);
+    max-width: 640px;
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 600ms var(--l-ease), transform 800ms var(--l-ease);
+    pointer-events: none;
+}
+
+.kp-l-beat.is-on {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+}
+
+.kp-l-title {
+    margin: 0 0 22px;
+    font-family: var(--l-display);
+    font-stretch: var(--l-display-stretch);
+    font-weight: 400;
+    font-size: clamp(3.2rem, 9.5vw, 8.6rem);
+    line-height: 0.92;
+    letter-spacing: -0.035em;
+    color: var(--l-fg);
+}
+
+.kp-l-title em {
+    display: block;
+    font-style: italic;
+    font-weight: 300;
+    color: var(--l-gold);
+}
+
+.kp-l-lede {
+    margin: 0 0 28px;
+    max-width: 34ch;
+    font-size: clamp(1.05rem, 1.6vw, 1.3rem);
+    line-height: 1.5;
+    color: var(--l-fg);
+    text-wrap: pretty;
+}
+
+.kp-l-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.kp-l-say {
+    margin: 0;
+    font-family: var(--l-display);
+    font-stretch: var(--l-display-stretch);
+    font-weight: 400;
+    font-size: clamp(2rem, 4.6vw, 3.9rem);
+    line-height: 1.04;
+    letter-spacing: -0.025em;
+    color: var(--l-fg);
+    text-wrap: balance;
+}
+
+.kp-l-say em {
+    font-style: italic;
+    font-weight: 300;
+    color: var(--l-silver);
+}
+
+.kp-l-say-sub {
+    margin: 18px 0 0;
+    max-width: 44ch;
+    font-size: 1.08rem;
+    color: var(--l-fg-2);
+}
+
+.kp-l-scroll-hint {
+    position: absolute;
+    right: max(20px, env(safe-area-inset-right, 0px));
+    bottom: 28px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--l-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--l-fg-3);
+    transition: opacity 400ms var(--l-ease);
+}
+
+.kp-l-scroll-hint i {
+    display: block;
+    width: 1px;
+    height: 36px;
+    background: linear-gradient(var(--l-fg-3), transparent);
+    animation: kp-l-drip 1.8s var(--l-ease) infinite;
+}
+
+@keyframes kp-l-drip {
+    0% { transform: scaleY(0); transform-origin: top; }
+    50% { transform: scaleY(1); transform-origin: top; }
+    51% { transform: scaleY(1); transform-origin: bottom; }
+    100% { transform: scaleY(0); transform-origin: bottom; }
+}
+
+/* ---------- The clock: the frame's budget, the one gold thread ---------- */
+.kp-l-clock {
+    position: absolute;
+    top: 96px;
+    right: max(20px, env(safe-area-inset-right, 0px));
+    width: min(360px, calc(100% - 40px));
+    padding: 18px 20px 16px;
+    border: 1px solid var(--l-line-2);
+    border-radius: 14px;
+    background: oklch(0.12 0.02 265 / 0.62);
+    backdrop-filter: blur(14px) saturate(1.2);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    opacity: 0;
+    transform: translateY(-12px);
+    transition: opacity 500ms var(--l-ease), transform 700ms var(--l-ease);
+    font-variant-numeric: tabular-nums;
+}
+
+.kp-l-clock.is-on {
+    opacity: 1;
+    transform: none;
+}
+
+.kp-l-clock-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 14px;
+    font-family: var(--l-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--l-fg-3);
+}
+
+.kp-l-clock-budget {
+    font-family: var(--l-mono);
+    font-size: 13px;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--l-gold);
+}
+
+.kp-l-track {
+    position: relative;
+    height: 10px;
+    border-radius: 5px;
+    background: oklch(1 0 0 / 0.06);
+    overflow: hidden;
+}
+
+.kp-l-track span {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-radius: 5px;
+    transition: left 700ms var(--l-ease), width 700ms var(--l-ease);
+}
+
+.kp-l-track .kp-l-limit {
+    width: 2px;
+    border-radius: 0;
+    background: var(--l-gold);
+    transition: left 700ms var(--l-ease);
+}
+
+.kp-l-rows {
+    margin: 14px 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 7px;
+    font-size: 13px;
+}
+
+.kp-l-rows li {
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    color: var(--l-fg-2);
+}
+
+.kp-l-rows i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.kp-l-rows b {
+    font-weight: 500;
+    color: var(--l-fg);
+    font-family: var(--l-mono);
+    font-size: 12px;
+}
+
+.kp-l-rows small {
+    color: var(--l-fg-3);
+    font-size: 12px;
+}
+
+.kp-l-heat {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--l-line);
+    font-size: 12px;
+    color: var(--l-fg-3);
+}
+
+.kp-l-heat-bar {
+    flex: 1;
+    height: 4px;
+    border-radius: 2px;
+    background: oklch(1 0 0 / 0.08);
+    overflow: hidden;
+}
+
+.kp-l-heat-bar span {
+    display: block;
+    height: 100%;
+    width: 20%;
+    background: var(--l-silver-dim);
+    transition: width 700ms var(--l-ease), background 700ms var(--l-ease);
+}
+
+.kp-l-clock.is-hot .kp-l-heat-bar span {
+    width: 86%;
+    background: var(--l-amber);
+}
+
+.kp-l-clock-note {
+    margin: 10px 0 0;
+    font-size: 11px;
+    color: var(--l-fg-3);
+}
+
+@media (max-width: 760px) {
+    .kp-l-clock {
+        top: 72px;
+        padding: 14px 16px 12px;
+    }
+    .kp-l-rows { display: none; }
+}
+
+/* ---------- Sections after the move ---------- */
+.kp-l-section {
+    position: relative;
+    padding-block: clamp(96px, 14vw, 180px);
+    border-top: 1px solid var(--l-line);
+}
+
+.kp-l-h2 {
+    margin: 0 0 18px;
+    font-family: var(--l-display);
+    font-stretch: var(--l-display-stretch);
+    font-weight: 400;
+    font-size: clamp(2.4rem, 5.6vw, 5rem);
+    line-height: 1;
+    letter-spacing: -0.03em;
+    color: var(--l-fg);
+    text-wrap: balance;
+}
+
+.kp-l-h2 em {
+    font-style: italic;
+    font-weight: 300;
+    color: var(--l-silver);
+}
+
+.kp-l-intro {
+    max-width: 52ch;
+    margin: 0 0 clamp(56px, 8vw, 96px);
+    font-size: 1.15rem;
+    color: var(--l-fg-2);
+}
+
+/* The pieces: a cast list, one row per strategist. */
+.kp-l-cast {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--l-line);
+}
+
+.kp-l-cast li {
+    border-bottom: 1px solid var(--l-line);
+}
+
+.kp-l-cast a {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 0.55fr) minmax(0, 1fr) minmax(0, 1.25fr);
+    align-items: center;
+    gap: 16px 40px;
+    padding: 26px 0;
+    text-decoration: none;
+}
+
+.kp-l-piece {
+    font-family: var(--l-display);
+    font-stretch: var(--l-display-stretch);
+    font-style: italic;
+    font-weight: 300;
+    font-size: clamp(2rem, 4vw, 3.4rem);
+    line-height: 1;
+    color: var(--l-fg);
+    transition: color 200ms var(--l-ease), transform 400ms var(--l-ease);
+}
+
+.kp-l-role {
+    font-size: 1.05rem;
+    color: var(--l-fg);
+    font-weight: 500;
+}
+
+.kp-l-role small {
+    display: block;
+    margin-top: 2px;
+    font-family: var(--l-mono);
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--l-fg-3);
+}
+
+.kp-l-does {
+    color: var(--l-fg-2);
+    font-size: 0.98rem;
+}
+
+.kp-l-portrait {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    width: min(340px, 30vw);
+    aspect-ratio: 4 / 5;
+    object-fit: cover;
+    border-radius: 12px;
+    opacity: 0;
+    transform: translate(-24px, -50%) scale(0.96);
+    transition: opacity 260ms var(--l-ease), transform 420ms var(--l-ease);
+    pointer-events: none;
+    box-shadow: 0 30px 60px -20px oklch(0 0 0 / 0.7);
+    z-index: 2;
+}
+
+@media (hover: hover) and (min-width: 900px) {
+    .kp-l-cast a:hover .kp-l-portrait,
+    .kp-l-cast a:focus-visible .kp-l-portrait {
+        opacity: 1;
+        transform: translate(0, -50%) scale(1);
+    }
+    .kp-l-cast a:hover .kp-l-piece {
+        color: var(--l-gold);
+        transform: translateX(10px);
+    }
+    .kp-l-cast a:hover .kp-l-does {
+        opacity: 0.25;
+    }
+    .kp-l-does {
+        transition: opacity 200ms var(--l-ease);
+    }
+}
+
+@media (max-width: 899px) {
+    .kp-l-cast a {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+    }
+}
+
+/* A small label over a heading. */
+.kp-l-kicker {
+    margin: 0 0 18px;
+    font-family: var(--l-mono);
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--l-fg-3);
+}
+
+/* Reels: a rendered sequence that plays while in view. */
+.kp-l-reel {
+    position: relative;
+    margin: 0;
+    overflow: hidden;
+    border-radius: 16px;
+    background: var(--l-bg-2);
+}
+
+.kp-l-reel img,
+.kp-l-reel canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.kp-l-reel canvas {
+    position: absolute;
+    inset: 0;
+}
+
+.kp-l-ergon .kp-l-reel {
+    aspect-ratio: 4 / 5;
+}
+
+/* The valley: full bleed, the copy set over its lower edge. */
+.kp-l-wide {
+    position: relative;
+    /* Overlaps the stage by a pixel: no sub-pixel seam between the two. */
+    margin-top: -1px;
+}
+
+.kp-l-reel-wide {
+    border-radius: 0;
+    background: var(--l-bg);
+    height: min(92vh, 62vw);
+    min-height: 420px;
+}
+
+.kp-l-reel-wide::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 70%;
+    z-index: 1;
+    background: linear-gradient(180deg, var(--l-bg) 0%, var(--l-bg) 8%, oklch(0.13 0.02 265 / 0.82) 28%, oklch(0.13 0.02 265 / 0.45) 55%, oklch(0.13 0.02 265 / 0) 100%);
+    pointer-events: none;
+}
+
+.kp-l-reel-wide::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(0deg, var(--l-bg) 0%, oklch(0.13 0.02 265 / 0.55) 30%, oklch(0.13 0.02 265 / 0) 60%);
+    pointer-events: none;
+}
+
+.kp-l-wide-copy {
+    position: relative;
+    margin-top: clamp(-260px, -18vw, -120px);
+    padding-bottom: clamp(96px, 12vw, 160px);
+}
+
+.kp-l-wide-copy .kp-l-intro {
+    margin-bottom: 32px;
+}
+
+/* Doors */
+.kp-l-doors {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-top: 1px solid var(--l-line);
+    border-left: 1px solid var(--l-line);
+}
+
+.kp-l-doors li {
+    border-right: 1px solid var(--l-line);
+    border-bottom: 1px solid var(--l-line);
+}
+
+.kp-l-doors a {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 260px;
+    padding: 32px 32px 28px;
+    text-decoration: none;
+    transition: background 220ms var(--l-ease);
+}
+
+.kp-l-doors a:hover {
+    background: oklch(0.84 0.04 240 / 0.05);
+}
+
+.kp-l-door-who {
+    font-family: var(--l-display);
+    font-stretch: var(--l-display-stretch);
+    font-size: clamp(1.6rem, 2.6vw, 2.3rem);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    color: var(--l-fg);
+}
+
+.kp-l-door-what {
+    max-width: 40ch;
+    color: var(--l-fg-2);
+}
+
+.kp-l-door-go {
+    margin-top: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: var(--l-silver);
+}
+
+.kp-l-door-go svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform 260ms var(--l-ease);
+}
+
+.kp-l-doors a:hover .kp-l-door-go svg {
+    transform: translateX(6px);
+}
+
+@media (max-width: 760px) {
+    .kp-l-doors { grid-template-columns: 1fr; }
+    .kp-l-doors a { min-height: 0; padding: 26px 22px; }
+}
+
+/* Ergon */
+.kp-l-ergon {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 48px 64px;
+    align-items: center;
+}
+
+.kp-l-ergon figure {
+    margin: 0;
+    position: relative;
+}
+
+.kp-l-code {
+    margin: 28px 0 0;
+    padding: 22px 24px;
+    border: 1px solid var(--l-line-2);
+    border-radius: 12px;
+    background: var(--l-bg-2);
+    font-family: var(--l-mono);
+    font-size: 14px;
+    line-height: 1.75;
+    color: var(--l-fg-2);
+    overflow-x: auto;
+    white-space: pre;
+}
+
+.kp-l-code .k { color: var(--l-silver); }
+.kp-l-code .s { color: var(--l-gold); }
+.kp-l-code .c { color: var(--l-fg-3); }
+
+@media (max-width: 899px) {
+    .kp-l-ergon { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Physics: the reel wide, its words beside it. */
+.kp-l-physics {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 40px 56px;
+    align-items: center;
+}
+
+.kp-l-physics .kp-l-reel {
+    aspect-ratio: 16 / 9;
+}
+
+@media (max-width: 900px) {
+    .kp-l-physics { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Closing */
+.kp-l-end {
+    position: relative;
+    overflow: hidden;
+    padding-block: clamp(120px, 18vw, 240px);
+    border-top: 1px solid var(--l-line);
+}
+
+.kp-l-end img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.42;
+}
+
+.kp-l-end::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, var(--l-bg) 10%, oklch(0.13 0.02 265 / 0.2) 70%);
+}
+
+.kp-l-end .kp-l-inner {
+    position: relative;
+    z-index: 1;
+}
+
+.kp-l-fine {
+    margin: 22px 0 0;
+    font-size: 13px;
+    color: var(--l-fg-3);
+}
+
+
+/* Without motion: the move is a still, its words a column. */
+@media (prefers-reduced-motion: reduce) {
+    .kp-l-move { height: auto; }
+    .kp-l-stage { position: relative; height: 100svh; }
+    .kp-l-beat { transition: none; }
+    .kp-l-scroll-hint i { animation: none; }
+    .kp-l-clock, .kp-l-track span, .kp-l-heat-bar span { transition: none; }
+    .kp-l-reel canvas { display: none; }
+}

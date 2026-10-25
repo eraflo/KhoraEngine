@@ -41,6 +41,11 @@ jobs:
       
       - name: Build mdBook
         run: mdbook build docs -d build/book
+
+      # The landing page takes the site's index.html; the book's first page
+      # stays home.html, where the landing's links lead.
+      - name: Write the landing page
+        run: cargo xtask landing build/book
       
       # --- 3. ASSEMBLE ---
       - name: Assemble final site
