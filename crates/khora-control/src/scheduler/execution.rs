@@ -17,8 +17,8 @@
 
 use super::waves::{build_wave_metas, check_wave_disjoint, partition_waves};
 use super::{
-    are_hard_dependencies_completed, slot_is_fixed, sort_agents, AgentSelection, AgentSlot,
-    ExecutionScheduler,
+    are_hard_dependencies_completed, fixed_slot_id, slot_is_fixed, sort_agents, AgentSelection,
+    AgentSlot, ExecutionScheduler,
 };
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::gorna::{AgentFrameStatus, AgentFrameStatusMap, AgentId};
@@ -55,7 +55,14 @@ impl ExecutionScheduler {
         // the same agent.
         let agents: Vec<AgentSlot> = match selection {
             AgentSelection::All => agents,
-            AgentSelection::FixedOnly => agents.into_iter().filter(slot_is_fixed).collect(),
+            AgentSelection::FixedRound(round) => agents
+                .into_iter()
+                .filter(|slot| {
+                    fixed_slot_id(slot)
+                        .and_then(|id| self.fixed_due.get(&id))
+                        .is_some_and(|&due| due > round)
+                })
+                .collect(),
             AgentSelection::ExcludeFixed => agents
                 .into_iter()
                 .filter(|slot| !slot_is_fixed(slot))

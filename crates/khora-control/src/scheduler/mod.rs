@@ -29,6 +29,7 @@ use khora_core::graph::topological_sort;
 use khora_core::lane::OutputDeck;
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::Runtime;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use waves::{build_wave_metas, partition_waves};
@@ -66,20 +67,28 @@ type AgentSlot = (
 enum AgentSelection {
     /// Every agent in the phase (legacy path — no fixed agent present).
     All,
-    /// Only agents declaring a `fixed_timestep` (the sub-stepped sim agents).
-    FixedOnly,
+    /// The agents declaring a `fixed_timestep` still owed a sub-step at this
+    /// round of the fixed-update sub-loop: round `r` runs every fixed agent
+    /// whose frame owes it more than `r` sub-steps.
+    FixedRound(u32),
     /// Every agent except the fixed-timestep ones (they were sub-stepped).
     ExcludeFixed,
 }
 
 /// Whether the agent in `slot` declares a positive `fixed_timestep`.
 fn slot_is_fixed(slot: &AgentSlot) -> bool {
-    slot.0
-        .lock()
-        .ok()
-        .and_then(|a| a.execution_timing().fixed_timestep)
-        .map(|d| d > Duration::ZERO)
-        .unwrap_or(false)
+    fixed_slot_id(slot).is_some()
+}
+
+/// The id of the agent in `slot` when it declares a positive
+/// `fixed_timestep`, `None` otherwise.
+fn fixed_slot_id(slot: &AgentSlot) -> Option<AgentId> {
+    let agent = slot.0.lock().ok()?;
+    agent
+        .execution_timing()
+        .fixed_timestep
+        .filter(|d| *d > Duration::ZERO)
+        .map(|_| agent.id())
 }
 
 /// The hot-path execution scheduler.
@@ -104,10 +113,20 @@ pub struct ExecutionScheduler {
     /// Wall-clock instant of the previous `run_frame`, used to derive the
     /// real per-frame delta. `None` on the very first frame.
     last_frame_instant: Option<Instant>,
-    /// Carried-over simulation time (seconds) for the fixed-timestep
-    /// accumulator. Each frame the real delta is added and whole
-    /// `fixed_delta` steps are consumed; the remainder stays here.
+    /// Carried-over simulated time (seconds) on the game's clock. Each frame
+    /// the scaled real delta is added and whole ticks of
+    /// [`DEFAULT_FIXED_DELTA_SECONDS`](khora_core::time::DEFAULT_FIXED_DELTA_SECONDS)
+    /// are consumed; the remainder stays here.
     sim_accumulator: f32,
+    /// Per fixed agent, the simulated time (seconds) the game's ticks
+    /// advanced that it has not stepped through yet — less than one of its
+    /// own steps after any frame that ticked. Fed only by ticks, so it never
+    /// holds time the game's clock has not passed. One clock per agent: each
+    /// cuts the same time at its own step.
+    fixed_clocks: HashMap<AgentId, f32>,
+    /// This frame's sub-steps per fixed agent, read by the fixed-update
+    /// sub-loop's [`AgentSelection::FixedRound`].
+    fixed_due: HashMap<AgentId, u32>,
     /// When `true`, each phase runs through the parallel wave executor
     /// ([`execute_agents_parallel`](Self::execute_agents_parallel)); when
     /// `false` (default) agents run sequentially. Off by default: enabling it
@@ -141,6 +160,8 @@ impl ExecutionScheduler {
             frame_counter: 0,
             last_frame_instant: None,
             sim_accumulator: 0.0,
+            fixed_clocks: HashMap::new(),
+            fixed_due: HashMap::new(),
             parallel_execution: false,
             pool: WorkerPool::new(default_pool_size()),
         }

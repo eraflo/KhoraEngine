@@ -15,14 +15,16 @@
 //! The per-frame entry point: fixed-timestep accounting, the phase loop,
 //! and publishing the frame's `Time`.
 
-use super::sim_steps::{compute_sim_steps, SimSteps, MAX_SIM_STEPS};
+use super::sim_steps::{compute_sim_steps, compute_sub_steps, MAX_SIM_STEPS};
 use super::{
     simulation_scale, AgentSelection, ExecutionScheduler, COMPONENT_ACCESS_SAMPLE_PERIOD,
     MAX_FRAME_DELTA_SECONDS,
 };
 use crate::substrate;
 use khora_core::agent::completion::AgentCompletionMap;
-use khora_core::agent::ExecutionPhase;
+use khora_core::agent::completion::CompletionOutcome;
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::{EngineMode, ExecutionPhase};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::Runtime;
@@ -39,24 +41,35 @@ impl ExecutionScheduler {
     ///
     /// Rendering runs at the display's variable rate, but the simulation must
     /// advance in fixed increments to stay frame-rate independent and
-    /// deterministic. The scheduler reconciles the two with an accumulator:
+    /// deterministic. The scheduler reconciles the two with two clocks:
     ///
     /// 1. Measure the real wall-clock delta since the previous frame, clamped
-    ///    to [`MAX_FRAME_DELTA_SECONDS`] (spiral-of-death guard), and add it to
-    ///    `sim_accumulator`.
-    /// 2. The **fixed step** is the smallest `fixed_timestep` declared by any
-    ///    registered agent (a single sim clock — physics owns it via its GORNA
-    ///    strategy). If no agent declares one, the frame degrades to the legacy
-    ///    "everything once per frame" path with no behaviour change.
-    /// 3. Consume whole steps: `steps = floor(accumulator / fixed_delta)`,
-    ///    capped at [`MAX_SIM_STEPS`]; the remainder carries over and yields the
-    ///    render `interpolation_alpha`.
-    /// 4. Run the **fixed-timestep agents** (TRANSFORM-phase physics) `steps`
-    ///    times — a fixed-update sub-loop — so the provider advances N discrete
-    ///    sub-steps. Then run the regular phase loop **once**, excluding the
-    ///    agents already stepped, so OUTPUT-phase render fires a single time.
-    /// 5. Publish the fresh `Time` (delta, fixed_delta, alpha) into the runtime
+    ///    to [`MAX_FRAME_DELTA_SECONDS`] (spiral-of-death guard), scale it by
+    ///    `Time::scale`, and add it to `sim_accumulator`.
+    /// 2. **The game's clock.** Consume whole ticks of
+    ///    [`DEFAULT_FIXED_DELTA_SECONDS`](khora_core::time::DEFAULT_FIXED_DELTA_SECONDS):
+    ///    `ticks = floor(accumulator / tick)`, capped at [`MAX_SIM_STEPS`]; the
+    ///    remainder carries over and yields the render `interpolation_alpha`.
+    ///    This is the only clock game code sees, and nothing below changes it.
+    /// 3. **The fixed agents' sub-clocks.** Each agent declaring a
+    ///    `fixed_timestep` — in practice the physics agent, a precision its
+    ///    GORNA strategy picks — has its own clock: the time the ticks
+    ///    advanced, `ticks × tick`, goes into it, and the agent runs once per
+    ///    whole step of its own that fits — a fixed-update sub-loop — the
+    ///    remainder carried (also across a change of step). Two agents with
+    ///    different steps each see the game's time, cut differently. A frame
+    ///    that took no tick runs no sub-step, so a paused world stays still
+    ///    even when a step changes under it. Then the regular phase loop runs
+    ///    **once**, excluding the agents already stepped, so OUTPUT-phase render
+    ///    fires a single time. If no agent declares a step, every agent runs
+    ///    once a frame, as before.
+    /// 4. Publish the fresh `Time` (delta, tick, ticks, alpha) into the runtime
     ///    resource before the render phase reads it.
+    ///
+    /// Keeping the step off the game's clock is what makes it a precision: a
+    /// coarser or finer step changes how a second is cut, never how many
+    /// seconds pass, how often a script's `FixedUpdate` runs, or how much
+    /// catch-up the cap allows.
     ///
     /// Substrate Flows project once per frame; the GORNA completion map,
     /// budget arbitration, and telemetry all observe each individual agent
@@ -66,13 +79,27 @@ impl ExecutionScheduler {
         self.budget_channel.sync();
         self.frame_start = Instant::now();
 
+        // 1a. Read the frame's mode, once: the one the application set in the
+        //     runtime, or the context's where it set none. Flows read the same
+        //     resource after this, so flows and agents agree on the frame; the
+        //     fixed agents below are the ones this mode runs.
+        let mode = runtime
+            .resources
+            .get::<khora_core::agent::SharedEngineMode>()
+            .and_then(|shared| shared.read().ok().map(|mode| mode.clone()))
+            .unwrap_or_else(|| {
+                let ctx = self.context.read().unwrap_or_else(|e| e.into_inner());
+                ctx.mode.clone()
+            });
+
         // 1b. Real frame delta + fixed-timestep accumulator bookkeeping.
         let now = self.frame_start;
-        let fixed_delta = self.smallest_fixed_delta();
+        let tick = khora_core::time::DEFAULT_FIXED_DELTA_SECONDS;
+        let fixed_steps = self.declared_fixed_steps(&mode);
         let dt = match self.last_frame_instant {
             Some(prev) => now.duration_since(prev).as_secs_f32(),
-            // First frame: advance by exactly one fixed step (no real history).
-            None => fixed_delta.unwrap_or(khora_core::time::DEFAULT_FIXED_DELTA_SECONDS),
+            // First frame: advance by exactly one tick (no real history).
+            None => tick,
         }
         .min(MAX_FRAME_DELTA_SECONDS);
         self.last_frame_instant = Some(now);
@@ -89,39 +116,34 @@ impl ExecutionScheduler {
         // "paused" means.
         let dt = dt * simulation_scale(&runtime);
 
-        // With no fixed-timestep agent, the simulation isn't decoupled: run
-        // everything exactly once (legacy behaviour) and report alpha 0. The
-        // steps a script's `FixedUpdate` is called for are still counted, at
-        // the default step and on the scaled clock: no step while paused.
-        let (sim_steps, fixed_delta_for_time, published) = match fixed_delta {
-            Some(fd) => {
-                let r = compute_sim_steps(self.sim_accumulator, dt, fd, MAX_SIM_STEPS);
-                self.sim_accumulator = r.new_accumulator;
-                (r, fd, r.steps)
-            }
-            None => {
-                let fd = khora_core::time::DEFAULT_FIXED_DELTA_SECONDS;
-                let counted = compute_sim_steps(self.sim_accumulator, dt, fd, MAX_SIM_STEPS);
-                self.sim_accumulator = counted.new_accumulator;
-                (
-                    SimSteps {
-                        steps: 1,
-                        new_accumulator: 0.0,
-                        alpha: 0.0,
-                    },
-                    fd,
-                    counted.steps,
-                )
-            }
-        };
+        // The game's clock: whole ticks, capped, on the scaled clock — no tick
+        // while paused. What a script's `FixedUpdate` is called for, whether or
+        // not any agent sub-steps.
+        let ticks = compute_sim_steps(self.sim_accumulator, dt, tick, MAX_SIM_STEPS);
+        self.sim_accumulator = ticks.new_accumulator;
+
+        // The fixed agents' sub-clocks: exactly the time the ticks advanced,
+        // each cut at its agent's own step. A frame with no tick leaves them
+        // untouched; an agent no longer declaring a step loses its clock.
+        self.fixed_clocks
+            .retain(|id, _| fixed_steps.iter().any(|(fixed, _)| fixed == id));
+        self.fixed_due.clear();
+        let advanced = ticks.steps as f32 * tick;
+        for &(id, step) in &fixed_steps {
+            let clock = self.fixed_clocks.entry(id).or_insert(0.0);
+            let due = if ticks.steps > 0 {
+                let r = compute_sub_steps(*clock, advanced, step);
+                *clock = r.new_accumulator;
+                r.steps
+            } else {
+                0
+            };
+            self.fixed_due.insert(id, due);
+        }
+        let rounds = self.fixed_due.values().copied().max().unwrap_or(0);
 
         // 1c. Publish the per-frame Time resource (read by Flows + game code).
-        self.publish_time(
-            &runtime,
-            dt,
-            (fixed_delta_for_time, published),
-            sim_steps.alpha,
-        );
+        self.publish_time(&runtime, dt, (tick, ticks.steps), ticks.alpha);
 
         // 2. Build the per-frame completion map. The scheduler tracks
         //    completion internally — agents do not read it through the
@@ -133,20 +155,18 @@ impl ExecutionScheduler {
             .all_ids();
         let completion_map = Arc::new(AgentCompletionMap::new(&agent_ids));
 
-        // 3. Read the frame's mode, once: the one the application set in the
-        //    runtime, or the context's where it set none. Flows read the same
-        //    resource after this, so flows and agents agree on the frame.
-        let mode = runtime
-            .resources
-            .get::<khora_core::agent::SharedEngineMode>()
-            .and_then(|shared| shared.read().ok().map(|mode| mode.clone()))
-            .unwrap_or_else(|| {
-                let ctx = self.context.read().unwrap_or_else(|e| e.into_inner());
-                ctx.mode.clone()
-            });
+        // A fixed agent its clock owes no sub-step this frame has done all it
+        // owes: completed, so an agent depending on it — a finer-stepped one
+        // between two of its steps — still runs, rather than being skipped as
+        // if it had failed.
+        for (&id, &due) in &self.fixed_due {
+            if due == 0 {
+                completion_map.mark(id, CompletionOutcome::Completed);
+            }
+        }
 
-        // 3b. Publish how agents will be grouped into concurrent waves this
-        //     frame, so the DCC can budget each wave by its critical path.
+        // 3. Publish how agents will be grouped into concurrent waves this
+        //    frame, so the DCC can budget each wave by its critical path.
         self.emit_wave_plan(&mode);
 
         // 4. Build the per-frame substrate: typed input bus and output deck.
@@ -166,16 +186,17 @@ impl ExecutionScheduler {
         // wave's `Isolated` jobs `'static`. Serial paths deref it to `&LaneBus`.
         let bus = Arc::new(bus);
 
-        // 6. Fixed-update sub-loop. When the simulation is decoupled, the
-        //    fixed-timestep agents advance `steps` discrete sub-steps before
-        //    the once-per-frame phase loop. Each sub-step is a full agent
+        // 6. Fixed-update sub-loop. When an agent declares a fixed step, the
+        //    fixed-timestep agents advance their discrete sub-steps before the
+        //    once-per-frame phase loop, round by round — each round runs every
+        //    fixed agent still owed one. Each sub-step is a full agent
         //    invocation, so the physics provider integrates N times while the
-        //    render pass below fires once. When there is no fixed agent
-        //    (`fixed_delta == None`), `steps` is 1 and these agents simply run
-        //    in their normal phase below — so this loop does nothing.
+        //    render pass below fires once. When there is no fixed agent, every
+        //    agent runs in its normal phase below — so this loop does nothing.
         let phases: Vec<ExecutionPhase> = self.phase_order.clone();
-        if fixed_delta.is_some() {
-            for _ in 0..sim_steps.steps {
+        let has_fixed = !fixed_steps.is_empty();
+        if has_fixed {
+            for round in 0..rounds {
                 for &phase in &phases {
                     self.execute_agents_in_phase(
                         phase,
@@ -185,7 +206,7 @@ impl ExecutionScheduler {
                         &completion_map,
                         &bus,
                         &mut deck,
-                        AgentSelection::FixedOnly,
+                        AgentSelection::FixedRound(round),
                     );
                 }
             }
@@ -194,7 +215,7 @@ impl ExecutionScheduler {
         // Once-per-frame agents. When the sim was sub-stepped above, fixed
         // agents are excluded here so they are not run an extra time; with no
         // fixed agent, every agent runs through this `All` path as before.
-        let selection = if fixed_delta.is_some() {
+        let selection = if has_fixed {
             AgentSelection::ExcludeFixed
         } else {
             AgentSelection::All
@@ -248,25 +269,22 @@ impl ExecutionScheduler {
         }
     }
 
-    /// Smallest `fixed_timestep` (in seconds) declared by any registered
-    /// agent, or `None` if no agent declares one.
-    ///
-    /// A single sim clock is assumed: when several agents declare different
-    /// fixed steps the smallest wins, so every fixed agent is stepped at least
-    /// as often as it asked for. In practice physics is the sole owner.
-    fn smallest_fixed_delta(&self) -> Option<f32> {
-        let registry = self.registry.lock().ok()?;
+    /// Every agent `mode` runs that declares a positive `fixed_timestep`, with
+    /// that step in seconds — read each frame, so a step GORNA changed in
+    /// `apply_budget` takes effect on the next frame. An agent the mode does
+    /// not run keeps no clock: it owes nothing for the time it sat out.
+    fn declared_fixed_steps(&self, mode: &EngineMode) -> Vec<(AgentId, f32)> {
+        let Ok(registry) = self.registry.lock() else {
+            return Vec::new();
+        };
         registry
-            .iter()
+            .iter_for_mode(mode)
             .filter_map(|agent| {
-                agent
-                    .lock()
-                    .ok()
-                    .and_then(|a| a.execution_timing().fixed_timestep)
+                let agent = agent.lock().ok()?;
+                let step = agent.execution_timing().fixed_timestep?.as_secs_f32();
+                (step > 0.0).then(|| (agent.id(), step))
             })
-            .map(|d| d.as_secs_f32())
-            .filter(|d| *d > 0.0)
-            .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .collect()
     }
 
     /// Writes the per-frame [`Time`](khora_core::time::Time) into the runtime

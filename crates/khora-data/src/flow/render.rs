@@ -67,7 +67,8 @@ impl Flow for RenderFlow {
     fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
         let mut rw = RenderWorld::new();
         // Render-only interpolation factor between the previous and current
-        // simulation step (0 when no decoupled sim / no Time resource).
+        // simulation step: the fraction of a game tick carried past the last
+        // whole one (0 with no Time resource).
         let alpha = render_interpolation_alpha(runtime);
         // Engine-owned previous-pose store (resource, not a component): held
         // read-locked across the mesh extraction. Absent in GPU-free tests.
@@ -92,9 +93,11 @@ impl Flow for RenderFlow {
 register_flow!(RenderFlow);
 
 /// Reads the render-interpolation factor published by the scheduler into the
-/// per-frame [`Time`](khora_core::time::Time) resource. Returns `0.0` (no
-/// blend — render at the current transform) when the simulation isn't
-/// decoupled or the resource is absent (e.g. GPU-free Flow tests).
+/// per-frame [`Time`](khora_core::time::Time) resource — the fraction of a
+/// game tick carried past the last whole one, whatever step physics takes.
+/// Returns `0.0` (no blend — render at the current transform) when the
+/// resource is absent (e.g. GPU-free Flow tests). Only simulated bodies have a
+/// previous pose to blend from, so with no physics the factor changes nothing.
 fn render_interpolation_alpha(runtime: &Runtime) -> f32 {
     runtime
         .resources

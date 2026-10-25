@@ -74,6 +74,16 @@ impl AgentRegistry {
         modes: Vec<EngineMode>,
     ) {
         let id = agent.lock().map(|a| a.id()).unwrap_or(AgentId::Asset);
+        // One agent per id: the frame's completion map, the phase ordering,
+        // GORNA's budgets and the fixed agents' clocks are all keyed by it, so
+        // a second agent under a taken id could never be scheduled as itself.
+        if self.all_ids().contains(&id) {
+            log::error!(
+                "AgentRegistry: refused a second agent registered as {:?}; the first stays",
+                id
+            );
+            return;
+        }
         log::info!(
             "AgentRegistry: Registered {:?} (priority={:.2}, modes={:?})",
             id,
@@ -106,6 +116,19 @@ impl AgentRegistry {
     /// Returns an iterator over all agents in priority order (highest first).
     pub fn iter(&self) -> impl Iterator<Item = &Arc<Mutex<dyn Agent>>> {
         self.entries.iter().map(|e| &e.agent)
+    }
+
+    /// Returns an iterator over the agents active in `mode`, in priority
+    /// order (highest first). An agent registered with no modes is active in
+    /// every mode.
+    pub fn iter_for_mode<'a>(
+        &'a self,
+        mode: &'a EngineMode,
+    ) -> impl Iterator<Item = &'a Arc<Mutex<dyn Agent>>> + 'a {
+        self.entries
+            .iter()
+            .filter(move |e| e.active_modes.is_empty() || e.active_modes.contains(mode))
+            .map(|e| &e.agent)
     }
 
     /// Returns the [`AgentId`]s of every registered agent in priority order.

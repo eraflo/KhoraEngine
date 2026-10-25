@@ -146,16 +146,22 @@ The model, per frame:
 2. **Scale, then accumulate.** Multiply the clamped delta by `Time::scale` and
    add it to the accumulator. See *[The simulation clock](#the-simulation-clock)*
    below.
-3. **Consume whole steps.** With the fixed step `fixed_delta` (the smallest
-   `fixed_timestep` any agent declares — in practice the physics agent's, default
-   1/60 s), compute `steps = floor(accumulator / fixed_delta)`, capped at
-   `MAX_SIM_STEPS` (5). The remainder carries over to the next frame.
+3. **Consume whole ticks.** The game's fixed tick `fixed_delta`
+   (`DEFAULT_FIXED_DELTA_SECONDS`, 1/60 s) is the one clock game code sees:
+   `ticks = floor(accumulator / fixed_delta)`, capped at `MAX_SIM_STEPS` (5 ticks,
+   83 ms of simulated time). The remainder carries over to the next frame.
 4. **Derive alpha.** The leftover fraction — `remainder / fixed_delta`, always in
    `[0, 1)` — becomes the render `interpolation_alpha`.
-5. **Run.** Step the fixed-timestep agents exactly `steps` times (a fixed-update
-   sub-loop, each iteration a full agent invocation), then run the regular phase
-   loop **once**, excluding those agents so they are not stepped twice. So
-   physics integrates *N* discrete sub-steps while the render fires exactly once.
+5. **Sub-step the fixed agents.** An agent declaring a `fixed_timestep` — the
+   physics agent, whose step GORNA picks — gets exactly the simulated time the
+   ticks advanced, `ticks × fixed_delta`, in a second accumulator, and runs once per
+   whole step of its own size that fits (a fixed-update sub-loop, each iteration a
+   full agent invocation). Then the regular phase loop runs **once**, excluding
+   those agents so they are not stepped twice. So physics integrates *N* discrete
+   sub-steps while the render fires exactly once.
+
+See *[Precision is not time](#precision-is-not-time)* below for why the two
+clocks are separate.
 
 ### The simulation clock
 
@@ -195,10 +201,12 @@ sequenceDiagram
     participant Sim as Fixed agents (physics)
     participant Render as Render (once/frame)
 
-    Loop->>Acc: += min(real_dt, 0.25 s)
-    Note over Acc: steps = floor(acc / fixed_delta), capped at 5
-    loop steps times
-        Acc->>Sim: step(fixed_delta)
+    Loop->>Acc: += min(real_dt, 0.25 s) × scale
+    Note over Acc: ticks = floor(acc / fixed_delta), capped at 5
+    Acc->>Sim: + ticks × fixed_delta of simulated time
+    Note over Sim: sub-steps = floor(sim_acc / physics step)
+    loop sub-steps times
+        Sim->>Sim: step(physics step)
     end
     Acc->>Loop: alpha = remainder / fixed_delta  (in [0, 1))
     Loop->>Render: render once, blend by alpha
@@ -207,10 +215,13 @@ sequenceDiagram
 The step arithmetic is small and pure — its essence is:
 
 ```rust
-let acc = accumulator + dt;            // dt already clamped to 0.25 s
-let steps = (acc / fixed_delta).floor();    // whole sim steps this frame
+let acc = accumulator + dt;            // dt already clamped to 0.25 s, scaled
+let ticks = (acc / fixed_delta).floor();    // whole game ticks this frame
 // ... capped at MAX_SIM_STEPS, the excess dropped so the accumulator stays bounded
 let alpha = (remainder / fixed_delta).clamp(0.0, 1.0);   // render blend factor
+
+let sim_acc = sim_accumulator + ticks * fixed_delta;   // exactly the ticks' time
+let sub_steps = (sim_acc / physics_step).floor();      // the rest carries over
 ```
 
 **The determinism guarantee** is the payoff: the *same total elapsed time
@@ -220,11 +231,32 @@ step counts. Game logic that must be deterministic therefore never sees a
 variable step. Variable-rate game code instead reads the real delta; render
 smoothing reads the interpolation alpha.
 
-On saturation — when more than `MAX_SIM_STEPS` would be required — the excess
-time is dropped rather than queued. Under sustained overload the simulation runs
-in *slow motion* rather than freezing in an ever-deepening catch-up, and the
-accumulator stays bounded. This is a deliberate trade: a brief slowdown is
-recoverable; a spiral of death is not.
+On saturation — when more than `MAX_SIM_STEPS` ticks would be required — the
+excess time is dropped rather than queued. Under sustained overload (below 12
+frames a second) the simulation runs in *slow motion* rather than freezing in an
+ever-deepening catch-up, and the accumulator stays bounded. This is a deliberate
+trade: a brief slowdown is recoverable; a spiral of death is not. The cap counts
+ticks, so it is the same 83 ms whatever step physics runs at.
+
+### Precision is not time
+
+GORNA picks the physics step — 1/30 s under `LowPower`, 1/60 s `Balanced`,
+1/120 s `HighPerformance` — and that is a choice of **precision**: how finely a
+second is cut, never how many seconds pass. The simulated time is decided once,
+by the ticks; the physics sub-clock only divides it. Whatever the strategy, and
+however often GORNA changes it mid-game, a body falls the same distance in a
+second of real time and stays within one physics step of the game's clock (the
+leftover carries over, even across a change of step).
+
+The two clocks are kept apart on purpose. If the physics step *were* the clock,
+a script's `FixedUpdate` would run 30, 60 or 120 times a second depending on a
+budget decision, and the catch-up cap — counted in steps — would be 166 ms of
+time under one strategy and 42 ms under another, so a slow machine would slow
+the game down only when GORNA chose the precise strategy. Both are the WHAT
+changing with the HOW. Bevy (`Time<Fixed>` + physics substeps), Unity
+(`fixedDeltaTime` as a project setting, a catch-up guard in seconds) and Godot
+(`physics_ticks_per_second`) draw the same line: the game owns the tick,
+precision subdivides it.
 
 All of this timing state lives in one place — the engine's
 [**`Time`**](../reference/glossary.md) resource (`khora_core::time::Time`),
@@ -233,10 +265,10 @@ carries the real `delta_seconds`, the `fixed_delta_seconds`, the
 `interpolation_alpha`, the frame's `fixed_steps`, and a monotonic `frame`
 counter.
 
-`fixed_steps` is what a script's `FixedUpdate` is called for: the sub-steps the
-fixed agents ran, or — with none registered — the steps the accumulator counts
-at the default step on the scaled clock, so a game with no physics still has a
-fixed clock and a paused one takes no step. Scripts run once per frame, after
+`fixed_steps` is what a script's `FixedUpdate` is called for: the game ticks the
+frame took, at `fixed_delta_seconds` each — never the physics sub-steps, so a
+script's cadence does not follow the physics strategy. A game with no physics
+has the same fixed clock, and a paused one takes no tick. Scripts run once per frame, after
 the fixed sub-loop, on one view of the world: their `FixedUpdate` is a fixed
 clock, not interleaved with physics, and what it writes reaches physics next
 frame.

@@ -13,11 +13,13 @@
 // limitations under the License.
 
 //! **The frame's fixed steps are published.** The scheduler writes into the
-//! frame's `Time` how many fixed simulation steps the frame took: with a
-//! fixed-timestep agent registered, exactly the sub-steps it ran; with none,
-//! still counted by the accumulator at the default step, with the time scale
-//! — so a script's `FixedUpdate` keeps a fixed clock whether or not physics is
-//! registered. With no fixed agent, the agents still run once a frame.
+//! frame's `Time` how many ticks of the game's fixed clock the frame took,
+//! counted by the accumulator at the default step, with the time scale —
+//! whether or not a fixed-timestep agent is registered, so a script's
+//! `FixedUpdate` keeps a fixed clock whether or not physics is. A fixed agent
+//! stepping at the tick runs exactly the published count (one stepping at
+//! another size is covered by `physics_step_is_precision`). With no fixed
+//! agent, the agents still run once a frame.
 //!
 //! The frames below are given a wall-clock length by placing the previous
 //! frame's instant that far in the past; a few microseconds are added so the
@@ -230,12 +232,13 @@ fn with_no_fixed_agent_a_long_frame_publishes_at_most_the_step_cap() {
     assert_eq!(MAX_SIM_STEPS, 5);
 }
 
-/// **With a fixed agent, the published count is the sub-steps it ran**: a
-/// 1/30-s frame runs it twice and publishes two, a quarter of a second runs
-/// it the cap's five times and publishes five, and a 1/120-s frame its zero
-/// or one. The agent with no fixed step runs once a frame throughout.
+/// **With a fixed agent stepping at the tick, the published count is the
+/// sub-steps it ran**: a 1/30-s frame runs it twice and publishes two, a
+/// quarter of a second runs it the cap's five times and publishes five, and a
+/// 1/120-s frame its zero or one. The agent with no fixed step runs once a
+/// frame throughout.
 #[test]
-fn with_a_fixed_agent_the_published_steps_are_the_sub_steps_it_ran() {
+fn with_a_fixed_agent_at_the_tick_the_published_steps_are_the_sub_steps_it_ran() {
     let (mut scheduler, counters) = scheduler_of(&[
         (AgentId::Physics, Some(Duration::from_secs_f64(1.0 / 60.0))),
         (AgentId::Script, None),

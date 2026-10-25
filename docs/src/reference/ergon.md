@@ -211,15 +211,15 @@ it has no entity to call `OnSpawn` or `OnDespawn` for.
 
 ### `FixedUpdate`
 
-A **fixed clock**, not a physics callback. The engine counts the fixed steps of
-each frame — the physics sub-steps, or the default step (1/60 s) on the game's
-clock when nothing simulates physics — and each turn calls `FixedUpdate` once
-per step, after its own timers and before its events and `Update`:
+A **fixed clock**, not a physics callback. The engine counts the ticks of the
+game's fixed clock (1/60 s) each frame — the same whether physics runs, and
+whatever step physics sub-steps at — and each turn calls `FixedUpdate` once
+per tick, after its own timers and before its events and `Update`:
 
 - every call sees the frame's view of the world, plus the behavior's own writes;
   its writes reach physics next frame;
 - a step the fuel does not reach is **owed** and runs first next turn, with the
-  step it was taken at (the physics step may change between) — at most five,
+  step it was taken at — at most five,
   saved with the instance; a fault drops them;
 - paused, the game's clock stands still: no step, while `Update(0)` still runs;
 - a state's `FixedUpdate` is used while in it, like `Update`.

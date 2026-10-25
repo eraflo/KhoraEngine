@@ -168,3 +168,129 @@ fn degenerate_fixed_delta_runs_single_step() {
     assert_eq!(r.steps, 1);
     assert_eq!(r.alpha, 0.0);
 }
+
+// The physics sub-clock: `compute_sub_steps` turns the simulated time the
+// gameplay ticks advanced into whole steps of the physics strategy's step.
+
+use crate::scheduler::sim_steps::compute_sub_steps;
+use khora_core::time::DEFAULT_FIXED_DELTA_SECONDS;
+
+const TICK: f32 = DEFAULT_FIXED_DELTA_SECONDS;
+
+/// **A physics step equal to the gameplay tick loses no step**: fed one tick
+/// at a time for ten thousand ticks, it steps exactly once a tick — float
+/// rounding never leaves a tick a hair short of a step.
+#[test]
+fn a_physics_step_equal_to_the_tick_steps_once_a_tick_for_ten_thousand_ticks() {
+    let mut accumulator = 0.0;
+    let mut total = 0u64;
+    for tick in 0..10_000 {
+        let r = compute_sub_steps(accumulator, TICK, TICK);
+        assert_eq!(r.steps, 1, "tick {tick}: one tick of time is one step");
+        accumulator = r.new_accumulator;
+        total += u64::from(r.steps);
+    }
+    assert_eq!(total, 10_000);
+}
+
+/// **Whatever the ticks a frame, a physics step equal to the tick takes one
+/// step a tick**: frames of one to five ticks (`n × tick`, rounded as `f32`)
+/// over ten thousand frames step exactly as many times as they ticked, and
+/// the carried remainder stays below a step.
+#[test]
+fn a_physics_step_equal_to_the_tick_steps_once_per_tick_whatever_the_ticks_a_frame() {
+    let mut accumulator = 0.0;
+    let mut ticked = 0u64;
+    let mut stepped = 0u64;
+    for frame in 0..10_000u32 {
+        let ticks = frame % 5 + 1;
+        let r = compute_sub_steps(accumulator, ticks as f32 * TICK, TICK);
+        assert_eq!(r.steps, ticks, "frame {frame}: {ticks} ticks");
+        accumulator = r.new_accumulator;
+        assert!(
+            (-1e-3 * TICK..TICK).contains(&accumulator),
+            "frame {frame}: the remainder {accumulator} is under a step"
+        );
+        ticked += u64::from(ticks);
+        stepped += u64::from(r.steps);
+    }
+    assert_eq!(stepped, ticked);
+}
+
+/// **A physics step of two ticks steps every other tick and carries the
+/// rest**: the first tick is no step with a whole tick carried, the second
+/// is one step with nothing carried, and so on — five hundred steps in a
+/// thousand ticks.
+#[test]
+fn a_physics_step_of_two_ticks_steps_every_other_tick_carrying_the_remainder() {
+    let step = 2.0 * TICK;
+    let mut accumulator = 0.0;
+    let mut total = 0u32;
+    for tick in 0..1_000u32 {
+        let r = compute_sub_steps(accumulator, TICK, step);
+        let (expected_steps, expected_carry) = if tick % 2 == 0 { (0, TICK) } else { (1, 0.0) };
+        assert_eq!(r.steps, expected_steps, "tick {tick}");
+        assert!(
+            (r.new_accumulator - expected_carry).abs() < 1e-5,
+            "tick {tick}: carried {} instead of {expected_carry}",
+            r.new_accumulator
+        );
+        accumulator = r.new_accumulator;
+        total += r.steps;
+    }
+    assert_eq!(total, 500);
+}
+
+/// **A physics step of half a tick steps twice a tick**, every tick, for a
+/// thousand ticks.
+#[test]
+fn a_physics_step_of_half_a_tick_steps_twice_a_tick() {
+    let step = TICK / 2.0;
+    let mut accumulator = 0.0;
+    let mut total = 0u32;
+    for tick in 0..1_000 {
+        let r = compute_sub_steps(accumulator, TICK, step);
+        assert_eq!(r.steps, 2, "tick {tick}");
+        accumulator = r.new_accumulator;
+        total += r.steps;
+    }
+    assert_eq!(total, 2_000);
+}
+
+/// **The remainder carries across a change of step**: a tick at a two-tick
+/// step leaves a tick owed; the next tick at a half-tick step pays it — four
+/// steps of half a tick for the two ticks of time.
+#[test]
+fn the_remainder_carries_across_a_change_of_step() {
+    let coarse = compute_sub_steps(0.0, TICK, 2.0 * TICK);
+    assert_eq!(coarse.steps, 0, "set-up: a tick short of a two-tick step");
+
+    let fine = compute_sub_steps(coarse.new_accumulator, TICK, TICK / 2.0);
+
+    assert_eq!(fine.steps, 4, "two ticks of time at half a tick a step");
+    assert!(fine.new_accumulator.abs() < 1e-5);
+}
+
+/// **Physics time tracks gameplay time to within one step** for each step
+/// GORNA chooses (1/30, 1/60, 1/120 s, as the scheduler reads them from a
+/// `Duration`): over ten thousand ticks, steps × step is within one step of
+/// ticks × tick.
+#[test]
+fn for_every_gorna_step_physics_time_stays_within_a_step_of_ten_thousand_ticks() {
+    for hz in [30.0, 60.0, 120.0] {
+        let step = std::time::Duration::from_secs_f64(1.0 / hz).as_secs_f32();
+        let mut accumulator = 0.0;
+        let mut stepped = 0u64;
+        for _ in 0..10_000 {
+            let r = compute_sub_steps(accumulator, TICK, step);
+            accumulator = r.new_accumulator;
+            stepped += u64::from(r.steps);
+        }
+        let physics = stepped as f64 * f64::from(step);
+        let gameplay = 10_000.0 * f64::from(TICK);
+        assert!(
+            (physics - gameplay).abs() < f64::from(step),
+            "1/{hz} s: {physics} s of physics for {gameplay} s of ticks"
+        );
+    }
+}

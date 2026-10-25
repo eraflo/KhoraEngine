@@ -275,8 +275,8 @@ moment something was.
 
 ## A fixed clock
 
-`FixedUpdate(float dt)` runs once per fixed simulation step the frame took —
-physics' sub-steps, or the default step on the game's clock — `dt` the step,
+`FixedUpdate(float dt)` runs once per tick of the game's fixed clock the frame
+took — 1/60 s each, whatever precision physics sub-steps at — `dt` the tick,
 inside the behavior's turn: after its timers, before its events and `Update`.
 It is a clock, not a callback interleaved with physics: every call of a frame
 sees the frame's view of the world, and its writes reach physics next frame.

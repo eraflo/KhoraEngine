@@ -108,8 +108,9 @@ would teleport a body back to its authored pose forever.
 Physics steps at a **fixed** timestep, a whole number of times per frame, decoupled
 from the variable render rate. The physics agent does **not** own an accumulator —
 it advertises its step duration and the scheduler drives the cadence: each frame it
-accumulates the clamped real delta, computes how many whole fixed steps fit, and
-invokes the agent that many times. The accumulator arithmetic and the
+hands the agent exactly the simulated time the game's ticks advanced, computes how
+many whole steps of the agent's size fit, and invokes the agent that many times
+(the remainder waits for the next frame). The accumulator arithmetic and the
 spiral-of-death clamp are part of the engine's single frame loop, explained in
 [The frame](./the-frame.md).
 
@@ -121,7 +122,9 @@ simulation drift across machines, so they were considered and rejected.
 The step rate is itself a **GORNA** negotiation surface. Under a healthy budget the
 agent advertises a finer step; under pressure it advertises a coarser one, so the
 scheduler runs fewer sub-steps per frame rather than dropping the frame entirely.
-The transition is graceful — bodies keep their state, only the cadence changes. The
+The transition is graceful — bodies keep their state, only the cadence changes,
+never the simulated time: a second of play is a second of physics under every
+strategy. The
 agent stays a pure strategist: it chooses a step rate given a budget and dispatches
 its lane, nothing more.
 
