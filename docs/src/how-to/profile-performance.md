@@ -93,23 +93,27 @@ stays frame-rate independent and deterministic. The scheduler
 (`compute_sim_steps`).
 
 **Sim steps scale with real dt.** Each frame the real wall-clock delta (clamped to
-`MAX_FRAME_DELTA_SECONDS` = 0.25 s) is added to an accumulator, and whole fixed steps are consumed:
-`steps = floor(accumulator / fixed_delta)`, capped at `MAX_SIM_STEPS` (5). The leftover carries over
-and yields the render `interpolation_alpha`. So a slow frame costs *more* sub-steps (more sim work),
-and a sustained overload clamps to 5 steps and drops the excess (slow-motion, never a freeze — the
-spiral-of-death guard).
+`MAX_FRAME_DELTA_SECONDS` = 0.25 s) is added to an accumulator, and whole game ticks of
+`DEFAULT_FIXED_DELTA_SECONDS` (1/60 s) are consumed: `ticks = floor(accumulator / fixed_delta)`,
+capped at `MAX_SIM_STEPS` (5 ticks, 83 ms). The leftover carries over and yields the render
+`interpolation_alpha`. So a slow frame costs *more* sub-steps (more sim work), and a sustained
+overload clamps to 5 ticks and drops the excess (slow-motion, never a freeze — the spiral-of-death
+guard).
 
-**Picking the fixed step.** The fixed step is the smallest `fixed_timestep` any registered agent
-declares; in practice physics owns it via its GORNA strategy:
+**The physics step is precision, not time.** The time the ticks advanced is handed to the agents
+declaring a `fixed_timestep` — in practice physics, whose step GORNA picks — and they run once per
+whole step of their own size (`compute_sub_steps`), the remainder carried to the next frame:
 
-| Strategy | Fixed step |
-|---|---|
-| LowPower (`Simplified`) | 30 Hz (`1.0 / 30.0`) |
-| Balanced (`Standard`) | 60 Hz (`1.0 / 60.0`) |
-| HighPerformance (`Standard`) | 120 Hz (`1.0 / 120.0`) |
+| Strategy | Physics step | Sub-steps per 60-FPS frame |
+|---|---|---|
+| LowPower (`Simplified`) | 30 Hz (`1.0 / 30.0`) | 1 every other frame |
+| Balanced (`Standard`) | 60 Hz (`1.0 / 60.0`) | 1 |
+| HighPerformance (`Standard`) | 120 Hz (`1.0 / 120.0`) | 2 |
 
-(From `PhysicsAgent::apply_budget`.) With no fixed-timestep agent, the loop degrades to "everything
-once per frame" and `DEFAULT_FIXED_DELTA_SECONDS` (1/60) is reported.
+(From `PhysicsAgent::apply_budget`.) The strategy changes the *cost* of a second of simulation, never
+how many seconds pass: the cap counts game ticks, so a precise strategy does not make a slow machine
+slower, and a script's `FixedUpdate` keeps its 1/60-s cadence. With no fixed-timestep agent, the agents
+run once per frame and the ticks are still counted.
 
 **Visual smoothness is decoupled from sim rate.** Because the renderer interpolates using
 `interpolation_alpha`, a 30 Hz physics step still renders smoothly at the display rate. A finer fixed

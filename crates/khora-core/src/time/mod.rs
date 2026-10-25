@@ -19,8 +19,10 @@
 //! decoupled fixed-timestep simulation and the variable-rate render:
 //!
 //! - The simulation advances in whole [`fixed_delta_seconds`](Time::fixed_delta_seconds)
-//!   steps via an accumulator in the scheduler, so it is frame-rate
-//!   independent (deterministic).
+//!   ticks via an accumulator in the scheduler, so it is frame-rate
+//!   independent (deterministic). The tick is the game's clock: an agent that
+//!   sub-steps finer or coarser (physics, at the precision GORNA picks) cuts the
+//!   ticks' time into its own steps and never changes how much time passes.
 //! - Rendering happens once per frame; to stay smooth between sim steps the
 //!   render path blends the previous and current transforms by
 //!   [`interpolation_alpha`](Time::interpolation_alpha).
@@ -32,11 +34,13 @@
 
 use std::sync::{Arc, RwLock};
 
-/// Default fixed simulation step — 60 Hz.
+/// The game's fixed tick — 60 Hz. The clock a script's `FixedUpdate` runs on
+/// and the simulated time a frame advances in, whatever step physics takes.
 pub const DEFAULT_FIXED_DELTA_SECONDS: f32 = 1.0 / 60.0;
 
-/// Upper bound on the fixed simulation steps one frame runs — and on the
-/// steps a script's `FixedUpdate` may be owed.
+/// Upper bound on the fixed ticks one frame runs — 83 ms of simulated time,
+/// the same under every physics precision — and on the ticks a script's
+/// `FixedUpdate` may be owed.
 pub const MAX_SIM_STEPS: u32 = 5;
 
 /// Per-frame timing state shared between the simulation and the render path.
@@ -47,16 +51,17 @@ pub struct Time {
     /// stall (debugger break, asset hitch). This is the delta game code
     /// should use for variable-rate logic.
     pub delta_seconds: f32,
-    /// The fixed simulation step in seconds — the cadence the deterministic
-    /// fixed-timestep agents (physics) advance at. Defaults to 1/60.
+    /// The game's fixed tick in seconds — what a `FixedUpdate` is given.
+    /// Defaults to 1/60. Not the physics step: physics sub-steps the ticks'
+    /// time at its own precision, which never shows here.
     pub fixed_delta_seconds: f32,
-    /// Render-interpolation factor in `[0, 1)`: the fraction of a fixed step
-    /// the accumulator carries past the last whole sim step. Render-only
-    /// transform blending uses it; it never affects simulation semantics.
+    /// Render-interpolation factor in `[0, 1)`: the fraction of a tick the
+    /// accumulator carries past the last whole tick. Render-only transform
+    /// blending uses it; it never affects simulation semantics.
     pub interpolation_alpha: f32,
     /// Monotonic frame counter, incremented once per rendered frame.
     pub frame: u64,
-    /// The fixed simulation steps this frame took, written by the scheduler.
+    /// The fixed ticks this frame took, written by the scheduler.
     pub fixed_steps: u32,
     /// How fast the simulated world runs, against the wall clock.
     ///

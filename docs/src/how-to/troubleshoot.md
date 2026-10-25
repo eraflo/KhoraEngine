@@ -140,8 +140,8 @@ present in the world. See [Rendering](../concepts/rendering.md).
 
 The simulation runs on a **fixed timestep** decoupled from the display rate. The scheduler
 (`crates/khora-control/src/scheduler/sim_steps.rs`, `compute_sim_steps`) accumulates real frame time and runs
-whole fixed sub-steps; the `PhysicsAgent` (`crates/khora-agents/src/physics_agent/agent.rs`) owns the
-fixed step via its GORNA strategy. See [GORNA](../concepts/gorna.md) and
+whole game ticks of 1/60 s; the `PhysicsAgent` (`crates/khora-agents/src/physics_agent/agent.rs`) picks
+its own sub-step size — precision, not time — via its GORNA strategy. See [GORNA](../concepts/gorna.md) and
 [Profile performance](./profile-performance.md).
 
 ### A body does not move under gravity or forces
@@ -169,9 +169,10 @@ detection is a provider-level concern — see [Physics](../concepts/physics.md).
 ### Simulation slows to slow-motion under a heavy hitch (but never freezes)
 
 **Cause.** The **spiral-of-death guard**, working as designed. The real frame delta fed into the
-accumulator is clamped to `MAX_FRAME_DELTA_SECONDS` (0.25 s), and the number of fixed sub-steps run
-in one frame is capped at `MAX_SIM_STEPS` (5). When a long stall (a debugger break, an asset hitch, a
-window drag) would demand more catch-up steps than the cap, the excess accumulated time is
+accumulator is clamped to `MAX_FRAME_DELTA_SECONDS` (0.25 s), and the number of game ticks run in one
+frame is capped at `MAX_SIM_STEPS` (5 ticks, 83 ms — the same whatever step physics runs at). When a
+long stall (a debugger break, an asset hitch, a window drag) would demand more catch-up than the cap,
+the excess accumulated time is
 **dropped**: the simulation runs in slow-motion for a moment rather than trying to replay seconds of
 physics in one frame and freezing.
 

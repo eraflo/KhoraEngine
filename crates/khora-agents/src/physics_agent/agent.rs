@@ -49,7 +49,10 @@ pub struct PhysicsAgent {
     current_strategy: StrategyId,
     /// Time budget allocated by GORNA.
     time_budget: Duration,
-    /// Fixed timestep for physics simulation.
+    /// The sub-step size GORNA picked — a precision, never a rate of time:
+    /// the scheduler hands the agent the simulated time the game's ticks
+    /// advanced and runs it once per whole step of this size, so a second of
+    /// play is a second of physics under every strategy.
     fixed_timestep: f32,
     /// Shared, scheduler-written per-agent frame metrics, read in
     /// `report_status`; the agent holds no per-frame counters.
@@ -173,9 +176,9 @@ impl Agent for PhysicsAgent {
         // during Maintenance.
         ctx.insert_slot(&mut *context.deck);
 
-        // Both strategies dispatch the same lane today; LowPower simply
-        // tightens the fixed_timestep via apply_budget. A future
-        // `SimplifiedPhysicsLane` strategy could fork here.
+        // Both strategies dispatch the same lane today; LowPower only takes
+        // a coarser step via apply_budget (fewer sub-steps for the same
+        // simulated time). A future `SimplifiedPhysicsLane` could fork here.
         let lane_name = "StandardPhysics";
 
         if let Some(lane) = self.lanes.get(lane_name) {

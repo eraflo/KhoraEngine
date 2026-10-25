@@ -16,6 +16,9 @@
 
 mod concurrent_exec;
 mod engine_mode;
+mod fixed_agent_sub_clocks;
+mod physics_step_is_precision;
+mod physics_time_stays_on_gameplay_time;
 mod published_fixed_steps;
 mod sim_steps;
 mod waves;

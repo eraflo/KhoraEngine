@@ -140,7 +140,7 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   frame an instance does not run records only its state (`record_if_rewritten` clears `changed`). Agent:
   `weighted_instances(target_latency)`, LowPower ≥ `critical_spent / rate`, "N critical deferred".
 - **`FixedUpdate` (R2).** `Time.fixed_steps` published by the scheduler (`khora-control/src/scheduler/frame.rs`;
-  with no fixed agent the accumulator counts at `DEFAULT_FIXED_DELTA_SECONDS` on the scaled clock; one cap,
+  game ticks at `DEFAULT_FIXED_DELTA_SECONDS` on the scaled clock, never the physics sub-steps; one cap,
   `khora_core::time::MAX_SIM_STEPS`); `ScriptView.fixed_steps`/`fixed_delta_seconds`. The turn
   (`script_lane/fixed_step.rs::run_steps`) calls it once per owed step, after the timers and before events and
   `Update`, each with the step it was taken at (`fixed_owed: Vec<f32>`); a cut step parks as `Body::Update`;

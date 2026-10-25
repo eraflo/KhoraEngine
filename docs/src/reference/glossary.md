@@ -193,16 +193,18 @@ is shown in amber, never changed until edited. See the
 
 ### Fixed timestep / interpolation alpha
 
-Khora decouples simulation from rendering. The deterministic fixed-timestep
-agents (physics) advance in whole `fixed_delta_seconds` steps (default 1/60 s)
-driven by an accumulator in the Scheduler, so simulation is frame-rate
-independent; rendering happens once per (variable-rate) frame. To stay smooth
+Khora decouples simulation from rendering. The game's clock advances in whole
+`fixed_delta_seconds` ticks (1/60 s) driven by an accumulator in the Scheduler,
+so simulation is frame-rate independent; rendering happens once per
+(variable-rate) frame. The fixed-timestep agents (physics) cut that simulated
+time into sub-steps of their own size — a precision GORNA picks, which never
+changes how much time passes. To stay smooth
 between sim steps, the render path blends each simulated body's previous and
 current transform by the **interpolation alpha** — the fraction of a fixed step
 carried past the last whole step, in `[0, 1)`. The alpha is render-only and never
 affects simulation semantics. The clock lives in `khora_core::time::Time`; the
 previous poses live in `khora_core::interpolation::TransformInterpolation` (not in
-the ECS — it carries no game meaning). The frame's step count is published as
+the ECS — it carries no game meaning). The frame's tick count is published as
 `Time::fixed_steps`, what a script's `FixedUpdate` is called for. See
 [The frame](../concepts/the-frame.md).
 
