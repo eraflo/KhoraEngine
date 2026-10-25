@@ -701,8 +701,10 @@ fn each_frame_sizes_the_light_lists_and_the_dispatch_from_its_colour_target() {
     assert_eq!(dispatches, vec![(87, 36, 1)]);
     let tile_info_bytes = device.last_write_to(tile_info).expect("tile info written");
     let tile_info_words: Vec<u32> = tile_info_bytes
-        .chunks_exact(4)
-        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
         .collect();
     assert_eq!(tile_info_words, vec![87, 36, 16, 128]);
     let culling: CullingUniformsData = bytemuck::pod_read_unaligned(

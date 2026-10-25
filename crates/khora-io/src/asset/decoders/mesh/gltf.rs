@@ -333,7 +333,7 @@ pub(super) fn read_primitive(
         indices.truncate(indices.len() - indices.len() % 3);
         // A mirroring transform turns counter-clockwise faces clockwise.
         if world.determinant() < 0.0 {
-            for triangle in indices.chunks_exact_mut(3) {
+            for triangle in indices.as_chunks_mut::<3>().0 {
                 triangle.swap(1, 2);
             }
         }

@@ -913,9 +913,7 @@ impl Machine {
         }
         // Registers past the arguments belong to the callee and must not carry
         // whatever the caller left there.
-        for slot in callee_base + argc as usize..needed {
-            self.registers[slot] = Value::Unit;
-        }
+        self.registers[callee_base + argc as usize..needed].fill(Value::Unit);
 
         self.frames.push(Frame {
             function,

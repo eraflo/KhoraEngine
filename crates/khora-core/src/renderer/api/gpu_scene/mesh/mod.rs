@@ -129,14 +129,16 @@ impl Mesh {
         // past the positions; both are dropped whole.
         let count = self.positions.len();
         let corners: Vec<usize> = corners
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .filter(|triangle| triangle.iter().all(|&c| (c as usize) < count))
             .flatten()
             .map(|&c| c as usize)
             .collect();
 
         let mut normals = Vec::with_capacity(corners.len());
-        for triangle in corners.chunks_exact(3) {
+        for triangle in corners.as_chunks::<3>().0 {
             let [a, b, c] = [
                 self.positions[triangle[0]],
                 self.positions[triangle[1]],

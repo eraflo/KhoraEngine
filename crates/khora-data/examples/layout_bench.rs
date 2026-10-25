@@ -248,20 +248,20 @@ fn run_simd_heavy() -> f64 {
     let mut acc = f32x8::splat(0.0);
     let start = Instant::now();
     for _ in 0..K {
-        let xi = x.chunks_exact_mut(LANES);
-        let yi = y.chunks_exact_mut(LANES);
-        let zi = z.chunks_exact_mut(LANES);
-        for ((cx, cy), cz) in xi.zip(yi).zip(zi) {
-            let xv = f32x8::new((&*cx).try_into().unwrap());
-            let yv = f32x8::new((&*cy).try_into().unwrap());
-            let zv = f32x8::new((&*cz).try_into().unwrap());
+        let xi = x.as_chunks_mut::<LANES>().0;
+        let yi = y.as_chunks_mut::<LANES>().0;
+        let zi = z.as_chunks_mut::<LANES>().0;
+        for ((cx, cy), cz) in xi.iter_mut().zip(yi.iter_mut()).zip(zi.iter_mut()) {
+            let xv = f32x8::new(*cx);
+            let yv = f32x8::new(*cy);
+            let zv = f32x8::new(*cz);
             let inv = f32x8::splat(1.0) / (xv * xv + yv * yv + zv * zv).sqrt();
             let xn = xv * inv;
             let yn = yv * inv;
             let zn = zv * inv;
-            cx.copy_from_slice(&xn.to_array());
-            cy.copy_from_slice(&yn.to_array());
-            cz.copy_from_slice(&zn.to_array());
+            *cx = xn.to_array();
+            *cy = yn.to_array();
+            *cz = zn.to_array();
             acc += xn - yn + zn;
         }
     }

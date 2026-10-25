@@ -707,8 +707,10 @@ fn flush_draws_u32_indices_with_the_uint32_format() {
         .expect("the indices are uploaded");
     assert_eq!(bytes.len(), 12 * 4, "twelve indices of four bytes");
     let indices: Vec<u32> = bytes
-        .chunks_exact(4)
-        .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|b| u32::from_le_bytes(*b))
         .collect();
     assert_eq!(indices, [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
 }

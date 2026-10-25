@@ -59,7 +59,7 @@ pub(crate) fn split_at_stops(mesh: &mut egui::epaint::Mesh, gradient: &LinearGra
 fn split_along(mesh: &mut egui::epaint::Mesh, gradient: &LinearGradient<'_>, stop: f32) {
     let indices = std::mem::take(&mut mesh.indices);
     let mut out = Vec::with_capacity(indices.len());
-    for tri in indices.chunks_exact(3) {
+    for tri in indices.as_chunks::<3>().0 {
         let d: [f32; 3] = std::array::from_fn(|k| gradient.offset_at(pos(mesh, tri[k])) - stop);
         let crosses = d.iter().any(|&x| x > STOP_EPSILON) && d.iter().any(|&x| x < -STOP_EPSILON);
         if !crosses {
@@ -225,11 +225,7 @@ pub(crate) fn subdivide_radial(mesh: &mut egui::epaint::Mesh, gradient: &RadialG
 /// a shared edge. A triangle with a non-finite corner is left as it is.
 fn subdivide_by(mesh: &mut egui::epaint::Mesh, limit: impl Fn(&[[f32; 2]; 3]) -> Option<f32>) {
     let mut midpoints = std::collections::HashMap::new();
-    let triangles: Vec<[u32; 3]> = mesh
-        .indices
-        .chunks_exact(3)
-        .map(|t| [t[0], t[1], t[2]])
-        .collect();
+    let triangles: Vec<[u32; 3]> = mesh.indices.as_chunks::<3>().0.to_vec();
     let mut out = Vec::with_capacity(mesh.indices.len());
     for triangle in triangles {
         // Depth-first, so an unsplit mesh keeps its triangle order.
@@ -347,8 +343,8 @@ pub(crate) fn tint<G: GradientField + ?Sized>(mesh: &mut egui::epaint::Mesh, gra
         .iter()
         .map(|v| gradient.color_at([v.pos.x, v.pos.y]))
         .collect();
-    for tri in mesh.indices.chunks_exact(3) {
-        let side = side_of(mesh, gradient, [tri[0], tri[1], tri[2]]);
+    for tri in mesh.indices.as_chunks::<3>().0 {
+        let side = side_of(mesh, gradient, *tri);
         for &i in tri {
             let offset = gradient.offset_at(pos(mesh, i));
             let mut on_edge = gradient

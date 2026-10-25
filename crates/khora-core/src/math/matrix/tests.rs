@@ -216,13 +216,13 @@ fn mat3_inverse_inverts_a_uniformly_shrunk_basis() {
         .expect("a uniformly shrunk rotation is invertible");
     let product = m * inv;
     // The identity's entries are 1, so an absolute tolerance is a relative one here.
-    for col in 0..3 {
+    for (col, column) in product.cols.iter().enumerate().take(3) {
         for row in 0..3 {
             let expected = if col == row { 1.0 } else { 0.0 };
             assert!(
-                crate::math::approx_eq_eps(product.cols[col][row], expected, 1e-4),
+                crate::math::approx_eq_eps(column[row], expected, 1e-4),
                 "m * inv at col {col} row {row} is {}, expected {expected}",
-                product.cols[col][row]
+                column[row]
             );
         }
     }
@@ -301,13 +301,13 @@ fn mat3_inverse_of_a_subnormal_determinant_never_holds_a_nan_or_an_infinity() {
     ];
     for (what, m) in cases {
         if let Some(inv) = m.inverse() {
-            for col in 0..3 {
+            for (col, column) in inv.cols.iter().enumerate().take(3) {
                 for row in 0..3 {
                     assert!(
-                        inv.cols[col][row].is_finite(),
+                        column[row].is_finite(),
                         "{what}: det {}, inverse entry at col {col} row {row} is {}",
                         m.determinant(),
-                        inv.cols[col][row]
+                        column[row]
                     );
                 }
             }
@@ -820,12 +820,12 @@ fn try_cube_faces_refuse_a_range_inside_the_shadow_near() {
 
 /// Asserts every entry of `m` is finite.
 fn assert_all_finite(m: &Mat4, what: &str) {
-    for col in 0..4 {
+    for (col, column) in m.cols.iter().enumerate() {
         for row in 0..4 {
             assert!(
-                m.cols[col][row].is_finite(),
+                column[row].is_finite(),
                 "{what}: entry at col {col} row {row} is {}",
-                m.cols[col][row]
+                column[row]
             );
         }
     }

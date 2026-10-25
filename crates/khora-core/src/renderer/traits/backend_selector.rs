@@ -26,6 +26,9 @@ use async_trait::async_trait;
 ///
 /// A concrete implementation of this trait will live in `khora-infra` and will typically
 /// wrap a library like `wgpu`.
+// `async_trait` marks each boxed future it returns `#[must_use]`, which a
+// future already is.
+#[allow(clippy::double_must_use)]
 #[async_trait]
 pub trait GraphicsBackendSelector<TAdapter> {
     /// The error type returned if backend selection fails.

@@ -16,7 +16,26 @@
 
 use khora_core::memory::*;
 use std::alloc::{GlobalAlloc, Layout, System};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// `counter` moved to what `update` makes of it, when `update` gives a value:
+/// `Ok(previous)`, or `Err(current)` and the counter left as it is. What
+/// `AtomicUsize::fetch_update` does with relaxed orderings — written out, as
+/// that method is deprecated in newer Rust under a name the workspace's
+/// minimum version does not have yet.
+fn checked_update(
+    counter: &AtomicUsize,
+    update: impl Fn(usize) -> Option<usize>,
+) -> Result<usize, usize> {
+    let mut current = counter.load(Ordering::Relaxed);
+    while let Some(next) = update(current) {
+        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(previous) => return Ok(previous),
+            Err(actual) => current = actual,
+        }
+    }
+    Err(current)
+}
 
 /// The size, in bytes, above which an allocation is considered "large".
 const LARGE_ALLOCATION_THRESHOLD: usize = 1024 * 1024; // 1MB
@@ -67,11 +86,9 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
         let ptr = self.inner.alloc(layout);
         if !ptr.is_null() {
             let size = layout.size();
-            let result = CURRENTLY_ALLOCATED_BYTES.fetch_update(
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-                |current| current.checked_add(size),
-            );
+            let result = checked_update(&CURRENTLY_ALLOCATED_BYTES, |current| {
+                current.checked_add(size)
+            });
 
             if let Ok(current_total) = result {
                 let new_total = current_total + size;
@@ -101,11 +118,9 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
     /// The caller must ensure that `ptr` was allocated by this allocator with the same `layout`.
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         let size = layout.size();
-        let result = CURRENTLY_ALLOCATED_BYTES.fetch_update(
-            Ordering::Relaxed,
-            Ordering::Relaxed,
-            |current| current.checked_sub(size),
-        );
+        let result = checked_update(&CURRENTLY_ALLOCATED_BYTES, |current| {
+            current.checked_sub(size)
+        });
 
         if result.is_err() {
             log::error!("Memory tracking counter underflowed during dealloc! Size: {size}");
@@ -126,11 +141,9 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
         let ptr = self.inner.alloc_zeroed(layout);
         if !ptr.is_null() {
             let size = layout.size();
-            let result = CURRENTLY_ALLOCATED_BYTES.fetch_update(
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-                |current| current.checked_add(size),
-            );
+            let result = checked_update(&CURRENTLY_ALLOCATED_BYTES, |current| {
+                current.checked_add(size)
+            });
 
             if let Ok(current_total) = result {
                 let new_total = current_total + size;
@@ -167,20 +180,16 @@ unsafe impl<A: GlobalAlloc> GlobalAlloc for SaaTrackingAllocator<A> {
                 std::cmp::Ordering::Greater => {
                     let additional_bytes = size_diff as usize;
                     BYTES_ALLOCATED_LIFETIME.fetch_add(additional_bytes as u64, Ordering::Relaxed);
-                    CURRENTLY_ALLOCATED_BYTES.fetch_update(
-                        Ordering::Relaxed,
-                        Ordering::Relaxed,
-                        |current| current.checked_add(additional_bytes),
-                    )
+                    checked_update(&CURRENTLY_ALLOCATED_BYTES, |current| {
+                        current.checked_add(additional_bytes)
+                    })
                 }
                 std::cmp::Ordering::Less => {
                     let freed_bytes = (-size_diff) as usize;
                     BYTES_DEALLOCATED_LIFETIME.fetch_add(freed_bytes as u64, Ordering::Relaxed);
-                    CURRENTLY_ALLOCATED_BYTES.fetch_update(
-                        Ordering::Relaxed,
-                        Ordering::Relaxed,
-                        |current| current.checked_sub(freed_bytes),
-                    )
+                    checked_update(&CURRENTLY_ALLOCATED_BYTES, |current| {
+                        current.checked_sub(freed_bytes)
+                    })
                 }
                 std::cmp::Ordering::Equal => Ok(CURRENTLY_ALLOCATED_BYTES.load(Ordering::Relaxed)),
             };
@@ -304,5 +313,21 @@ mod tests {
             allocator.dealloc(large_ptr, large);
         }
         assert_eq!(counters().current, before.current);
+    }
+
+    /// The update lands when it gives a value, and reports what was there.
+    #[test]
+    fn checked_update_moves_the_counter_and_reports_what_was_there() {
+        let counter = AtomicUsize::new(10);
+        assert_eq!(checked_update(&counter, |c| c.checked_add(5)), Ok(10));
+        assert_eq!(counter.load(Ordering::Relaxed), 15);
+    }
+
+    /// An update that gives nothing leaves the counter as it is, and says so.
+    #[test]
+    fn checked_update_that_gives_nothing_leaves_the_counter() {
+        let counter = AtomicUsize::new(3);
+        assert_eq!(checked_update(&counter, |c| c.checked_sub(4)), Err(3));
+        assert_eq!(counter.load(Ordering::Relaxed), 3);
     }
 }
