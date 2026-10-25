@@ -390,7 +390,8 @@
     max-width: 640px;
     opacity: 0;
     transform: translateY(24px);
-    transition: opacity 600ms var(--l-ease), transform 800ms var(--l-ease);
+    /* Leaving is quick, so two lines of copy never sit on each other. */
+    transition: opacity 240ms var(--l-ease), transform 400ms var(--l-ease);
     pointer-events: none;
 }
 
@@ -398,6 +399,8 @@
     opacity: 1;
     transform: none;
     pointer-events: auto;
+    /* Arriving waits for the one before to be gone. */
+    transition: opacity 600ms var(--l-ease) 220ms, transform 800ms var(--l-ease) 220ms;
 }
 
 .kp-l-title {
@@ -839,6 +842,19 @@
     margin-bottom: 32px;
 }
 
+/* On a phone the full-bleed reel would be a tall crop of a wide picture,
+   most of it under its fades: it keeps a landscape shape instead, and the
+   copy only tucks under its lower edge. */
+@media (max-width: 760px) {
+    .kp-l-reel-wide {
+        height: auto;
+        min-height: 0;
+        aspect-ratio: 4 / 3;
+    }
+    .kp-l-reel-wide::before { height: 32%; }
+    .kp-l-wide-copy { margin-top: -56px; }
+}
+
 /* Doors */
 .kp-l-doors {
     list-style: none;
@@ -945,6 +961,10 @@
 
 @media (max-width: 899px) {
     .kp-l-ergon { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 760px) {
+    .kp-l-code { font-size: 12.5px; padding: 18px 16px; }
 }
 
 /* Physics: the reel wide, its words beside it. */
