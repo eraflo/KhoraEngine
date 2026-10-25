@@ -29,6 +29,7 @@ mod io;
 mod manifest;
 mod pack;
 mod pack_builder;
+pub mod root_path;
 mod watch;
 mod watcher;
 

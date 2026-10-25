@@ -168,7 +168,7 @@ fn is_on_disk(root: &Path, module: &str) -> bool {
 /// longer does. Modules are known by name across roots, so one gone from a
 /// root another still provides is that root's now — as an unmount keeps it.
 fn other_provider(mounted: Option<&MountedScripts>, root: &Path, module: &str) -> Option<PathBuf> {
-    let here = std::path::absolute(root).unwrap_or_else(|_| root.to_path_buf());
+    let here = crate::asset::root_path::absolute(root);
     mounted?
         .roots()
         .into_iter()

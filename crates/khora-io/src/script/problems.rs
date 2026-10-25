@@ -146,7 +146,7 @@ pub fn clear_misplaced(problems: &Problems, assets_root: &Path) {
 /// the root and the pump that hears of its changes replace one list, not two.
 fn placement_of(assets_root: &Path) -> ProblemSource {
     ProblemSource::Placement {
-        root: std::path::absolute(assets_root).unwrap_or_else(|_| assets_root.to_path_buf()),
+        root: crate::asset::root_path::absolute(assets_root),
     }
 }
 

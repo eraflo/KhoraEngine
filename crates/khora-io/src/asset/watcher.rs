@@ -135,6 +135,14 @@ impl AssetWatcher {
         let changes: Channel<AssetChangeEvent> = Channel::bounded(RETAINED, WhenFull::DropOldest);
 
         let root_for_handler: Arc<Path> = Arc::from(assets_root.as_path());
+        // The root resolved: some systems report a change under the folder's
+        // real path rather than the name it was watched by (macOS gives
+        // `/private/var/…` for a watch on `/var/…`), and such a change is
+        // still under this root.
+        let resolved_root: Option<PathBuf> = assets_root
+            .canonicalize()
+            .ok()
+            .filter(|resolved| resolved != &assets_root);
         let sink = changes.clone();
         // One save fires several `Modified` for the same path. Remembering only
         // the previous one, and the file as it was then, collapses that burst
@@ -152,7 +160,12 @@ impl AssetWatcher {
                 }
             };
             for path in &event.paths {
-                let Some(change) = translate_event(&event.kind, path, &root_for_handler) else {
+                let Some(change) = translate_event(
+                    &event.kind,
+                    path,
+                    &root_for_handler,
+                    resolved_root.as_deref(),
+                ) else {
                     continue;
                 };
                 let stamp = stamp_of(path);
@@ -234,6 +247,7 @@ fn translate_event(
     kind: &notify::EventKind,
     abs: &Path,
     assets_root: &Arc<Path>,
+    resolved_root: Option<&Path>,
 ) -> Option<AssetChangeEvent> {
     use notify::event::{ModifyKind, RenameMode};
     let our_kind = match kind {
@@ -260,7 +274,10 @@ fn translate_event(
         return None;
     }
 
-    let rel = abs.strip_prefix(assets_root).ok()?;
+    let rel = abs
+        .strip_prefix(assets_root)
+        .ok()
+        .or_else(|| resolved_root.and_then(|resolved| abs.strip_prefix(resolved).ok()))?;
     Some(AssetChangeEvent {
         kind: our_kind,
         root: Arc::clone(assets_root),
@@ -356,6 +373,39 @@ mod repeat_tests {
         let saved = event(AssetChangeKind::Modified, "scripts/guard.erg");
 
         assert!(!is_immediate_repeat(Some(&created), &saved));
+    }
+
+    /// A change reported under the root's real path — macOS names `/var/…`
+    /// by `/private/var/…` — is still under the root, and keeps the root's
+    /// own name.
+    #[test]
+    fn a_change_reported_under_the_real_path_is_under_the_root() {
+        let named: Arc<Path> = Arc::from(Path::new("/var/project/assets"));
+        let real = Path::new("/private/var/project/assets");
+        let change = translate_event(
+            &notify::EventKind::Create(notify::event::CreateKind::File),
+            &real.join("scripts").join("guard.erg"),
+            &named,
+            Some(real),
+        )
+        .expect("a change under the root");
+
+        assert_eq!(change.rel_path, "scripts/guard.erg");
+        assert_eq!(change.root(), &*named);
+    }
+
+    /// Under neither name, a path is not a change of this root.
+    #[test]
+    fn a_path_under_neither_name_is_not_a_change() {
+        let named: Arc<Path> = Arc::from(Path::new("/var/project/assets"));
+        let change = translate_event(
+            &notify::EventKind::Create(notify::event::CreateKind::File),
+            Path::new("/elsewhere/guard.erg"),
+            &named,
+            Some(Path::new("/private/var/project/assets")),
+        );
+
+        assert!(change.is_none());
     }
 
     #[test]

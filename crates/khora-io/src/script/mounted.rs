@@ -91,7 +91,7 @@ impl MountedScripts {
 /// its changes happened under — so a mount naming the root relatively and the
 /// pump hearing of a change under it read and write one record.
 fn key(root: &Path) -> PathBuf {
-    std::path::absolute(root).unwrap_or_else(|_| root.to_path_buf())
+    crate::asset::root_path::absolute(root)
 }
 
 #[cfg(test)]

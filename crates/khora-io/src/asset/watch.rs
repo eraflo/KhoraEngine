@@ -69,8 +69,7 @@ impl AssetWatch {
         }
         // Absolute, as the OS reports the paths it saw: a relative name would
         // match none of them, and every change under it would be dropped.
-        let absolute = std::path::absolute(root)
-            .with_context(|| format!("cannot watch {}", root.display()))?;
+        let absolute = crate::asset::root_path::absolute(root);
         let watcher = AssetWatcher::new(absolute)?;
         roots.push(Watched {
             named: root.to_path_buf(),
