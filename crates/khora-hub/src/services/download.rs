@@ -244,15 +244,18 @@ fn extract_zip(data: &[u8], dest_dir: &std::path::Path) -> anyhow::Result<()> {
 
     for i in 0..archive.len() {
         let mut file = archive.by_index(i).context("Failed to read zip entry")?;
-        let name = file.name().to_owned();
 
-        // Prevent zip-slip: ensure no path traversal
-        if name.contains("..") {
-            log::warn!("Skipping suspicious zip entry: {}", name);
+        // Prevent zip-slip: an entry whose path is absolute or climbs out of
+        // the archive (`..`) has no enclosed name, and is skipped.
+        let Some(relative) = file.enclosed_name() else {
+            log::warn!(
+                "Skipping suspicious zip entry: {}",
+                file.name().unwrap_or_default()
+            );
             continue;
-        }
+        };
 
-        let out_path = dest_dir.join(&name);
+        let out_path = dest_dir.join(relative);
 
         if file.is_dir() {
             std::fs::create_dir_all(&out_path)?;
@@ -270,7 +273,9 @@ fn extract_zip(data: &[u8], dest_dir: &std::path::Path) -> anyhow::Result<()> {
                 use std::os::unix::fs::PermissionsExt;
                 if let Some(mode) = file.unix_mode() {
                     let mut perms = std::fs::metadata(&out_path)?.permissions();
-                    perms.set_mode(mode);
+                    // Only the read/write/execute bits: an archive never
+                    // grants setuid, setgid or sticky on extraction.
+                    perms.set_mode(mode & 0o777);
                     std::fs::set_permissions(&out_path, perms)?;
                 }
             }
@@ -382,5 +387,32 @@ mod tests {
             "zip-slip wrote outside the destination: {}",
             escaped.display()
         );
+    }
+
+    /// An archive's executable bit survives extraction; its setuid, setgid
+    /// and sticky bits never do.
+    #[cfg(unix)]
+    #[test]
+    fn an_extracted_file_keeps_its_permissions_but_never_setuid() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            let options = zip::write::SimpleFileOptions::default().unix_permissions(0o4755);
+            writer
+                .start_file("bin/tool", options)
+                .expect("entry starts");
+            writer.write_all(b"#!/bin/sh\n").expect("entry is writable");
+            writer.finish().expect("archive finishes");
+        }
+        let scratch = Scratch::new("setuid");
+        extract_zip(&cursor.into_inner(), &scratch.0).expect("archive extracts");
+
+        let mode = std::fs::metadata(scratch.0.join("bin").join("tool"))
+            .expect("file was extracted")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o7777, 0o755, "mode was {mode:o}");
     }
 }
