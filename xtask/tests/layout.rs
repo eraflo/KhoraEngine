@@ -504,7 +504,7 @@ fn relative_links_resolve() {
             if is_scratch_doc(&rel(&root, &resolved)) {
                 continue;
             }
-            if !resolved.exists() {
+            if !resolved.exists() && !renders_to(&root, &source, &resolved) {
                 add(
                     &mut violations,
                     source_rel.clone(),
@@ -1428,6 +1428,18 @@ fn read_allowlist(root: &Path) -> (BTreeMap<String, BTreeSet<String>>, Vec<Strin
 // Markdown
 // ---------------------------------------------------------------------------
 
+/// Whether `resolved`, a link from `source` that names no file, is a page the
+/// book renders: inside `docs/src`, mdBook writes `x.md` as `x.html`, and a
+/// link in raw HTML (a landing block, a card) must name the `.html` it will
+/// be, since mdBook rewrites only Markdown links.
+fn renders_to(root: &Path, source: &Path, resolved: &Path) -> bool {
+    let book = root.join("docs").join("src");
+    source.starts_with(&book)
+        && resolved.starts_with(&book)
+        && resolved.extension().is_some_and(|ext| ext == "html")
+        && resolved.with_extension("md").is_file()
+}
+
 fn is_scratch_doc(rel_path: &str) -> bool {
     SCRATCH_DOCS.iter().any(|dir| rel_path.starts_with(dir))
 }
@@ -2012,4 +2024,33 @@ fn dated_log_is_only_the_knowledge_memory() {
     assert!(!is_dated_log(".agent/engine/knowledge/decisions.md"));
     assert!(!is_dated_log(".agent/engine/MEMORY.md"));
     assert!(!is_dated_log("docs/src/knowledge/MEMORY.md"));
+}
+
+/// A book page's `.html` link resolves when the book renders that page from a
+/// `.md` beside it, and only then, and only inside the book.
+#[test]
+fn a_book_link_to_a_rendered_page_resolves() {
+    let root = repo_root();
+    let book = root.join("docs").join("src");
+    let home = book.join("home.md");
+    assert!(renders_to(
+        &root,
+        &home,
+        &book.join("concepts").join("saa.html")
+    ));
+    assert!(!renders_to(
+        &root,
+        &home,
+        &book.join("concepts").join("no-such-page.html")
+    ));
+    assert!(!renders_to(
+        &root,
+        &root.join("README.md"),
+        &book.join("concepts").join("saa.html")
+    ));
+    assert!(!renders_to(
+        &root,
+        &home,
+        &book.join("concepts").join("saa.md")
+    ));
 }
