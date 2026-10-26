@@ -59,6 +59,9 @@ pub struct EngineBootstrap<A: EngineApp> {
     /// One agent per collected family registration, kept typed so the engine
     /// can release their lanes when it stops.
     lane_agents: Vec<Arc<Mutex<LaneAgent>>>,
+    /// The order the scheduler runs the phases in, the lane agents checked
+    /// against it.
+    phase_order: Vec<ExecutionPhase>,
 }
 
 impl<A: EngineApp> EngineBootstrap<A> {
@@ -70,6 +73,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
 
     fn begin_with(app: A, mut runtime: Runtime, input_events: Channel<InputEvent>) -> Self {
         let (dcc, dcc_rx, telemetry, game_world) = populate(&app, &mut runtime, &input_events);
+        let phase_order = phase_order(&app.custom_phases(), &app.removed_phases());
         Self {
             app,
             runtime: Some(runtime),
@@ -80,6 +84,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
             telemetry,
             input_events,
             lane_agents: Vec::new(),
+            phase_order,
         }
     }
 
@@ -100,8 +105,8 @@ impl<A: EngineApp> EngineBootstrap<A> {
         self.app.register_agents(&self.dcc, &mut runtime);
         let shared = Arc::new(runtime);
         register_builtin_agents(&self.dcc);
-        let order = phase_order(&self.app);
-        self.lane_agents = register_lane_agents(&self.dcc, &shared, &order);
+        self.lane_agents = register_lane_agents(&self.dcc, &shared, &self.phase_order);
+        refuse_stranded_agents(&self.dcc, &self.phase_order);
         self.shared = Some(shared);
     }
 
@@ -153,6 +158,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
             telemetry,
             input_events,
             lane_agents,
+            phase_order,
         } = self;
         let runtime_arc = match (shared, runtime) {
             (Some(shared), _) => shared,
@@ -163,7 +169,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
         // Start the DCC background thread AFTER agents are initialized so
         // GORNA does not run health-checks before agents are ready.
         dcc.start(dcc_rx);
-        let scheduler = build_scheduler(&app, &mut dcc, core);
+        let scheduler = build_scheduler(&phase_order, &mut dcc, core);
 
         core.app = Some(app);
         core.game_world = Some(game_world);
@@ -461,16 +467,44 @@ fn register_builtin_agents(dcc: &DccService) {
     );
 }
 
-/// The order the scheduler runs the phases in: the built-in ones, with each of
-/// the app's own phases inserted right after `OUTPUT`.
-fn phase_order<A: EngineApp>(app: &A) -> Vec<ExecutionPhase> {
+/// The order the scheduler runs the phases in: the built-in ones, the app's
+/// own phases after `OUTPUT` and before `FINALIZE` in the order it declared
+/// them, without the phases it removed. A phase declared twice runs once.
+fn phase_order(custom: &[ExecutionPhase], removed: &[ExecutionPhase]) -> Vec<ExecutionPhase> {
     let mut order = ExecutionPhase::DEFAULT_ORDER.to_vec();
-    for phase in app.custom_phases() {
-        if let Some(output) = order.iter().position(|p| *p == ExecutionPhase::OUTPUT) {
-            order.insert(output + 1, phase);
+    let mut at = order
+        .iter()
+        .position(|p| *p == ExecutionPhase::OUTPUT)
+        .map_or(order.len(), |output| output + 1);
+    for phase in custom {
+        if !order.contains(phase) {
+            order.insert(at, *phase);
+            at += 1;
         }
     }
+    order.retain(|phase| !removed.contains(phase));
     order
+}
+
+/// Refuses the boot when a registered agent runs in no phase of `order`: it
+/// would be registered and budgeted, yet never execute.
+fn refuse_stranded_agents(dcc: &DccService, order: &[ExecutionPhase]) {
+    let registry = dcc
+        .agent_registry()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    for agent in registry.iter() {
+        let agent = agent
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let phases = agent.execution_timing().allowed_phases;
+        if !phases.iter().any(|phase| order.contains(phase)) {
+            panic!(
+                "the engine cannot boot: the agent {:?} runs only in {phases:?}, which the app removed",
+                agent.id()
+            );
+        }
+    }
 }
 
 /// One `LaneAgent` per family registration linked into the binary, each
@@ -521,9 +555,9 @@ fn register_lane_agents(
         .collect()
 }
 
-/// The execution scheduler over `dcc`'s agents, with the app's custom phases.
+/// The execution scheduler over `dcc`'s agents, running `phase_order`.
 fn build_scheduler<A: EngineApp>(
-    app: &A,
+    phase_order: &[ExecutionPhase],
     dcc: &mut DccService,
     core: &EngineCore<A>,
 ) -> khora_control::ExecutionScheduler {
@@ -546,9 +580,74 @@ fn build_scheduler<A: EngineApp>(
     scheduler.set_parallel_execution(true);
 
     // The app's own phases, in the order the lane agents were checked against.
-    scheduler.set_phase_order(&phase_order(app));
+    scheduler.set_phase_order(phase_order);
 
     let budget_channel = scheduler.budget_channel().clone();
     dcc.connect_budget_channel(budget_channel);
     scheduler
+}
+
+#[cfg(test)]
+mod tests {
+    use super::phase_order;
+    use khora_core::agent::ExecutionPhase;
+
+    const FIRST: ExecutionPhase = ExecutionPhase::custom(6);
+    const SECOND: ExecutionPhase = ExecutionPhase::custom(7);
+
+    /// A game's own phases run after `OUTPUT` and before `FINALIZE`, in the
+    /// order the game declared them.
+    #[test]
+    fn a_games_phases_run_in_the_order_it_declared_them() {
+        let order = phase_order(&[FIRST, SECOND], &[]);
+
+        assert_eq!(
+            order,
+            vec![
+                ExecutionPhase::INIT,
+                ExecutionPhase::OBSERVE,
+                ExecutionPhase::TRANSFORM,
+                ExecutionPhase::MUTATE,
+                ExecutionPhase::OUTPUT,
+                FIRST,
+                SECOND,
+                ExecutionPhase::FINALIZE,
+            ]
+        );
+    }
+
+    /// A removed phase is not in the order, a built-in one or the game's own.
+    #[test]
+    fn a_removed_phase_leaves_the_order() {
+        let order = phase_order(&[FIRST, SECOND], &[ExecutionPhase::OBSERVE, FIRST]);
+
+        assert!(!order.contains(&ExecutionPhase::OBSERVE));
+        assert!(!order.contains(&FIRST));
+        assert_eq!(
+            order,
+            vec![
+                ExecutionPhase::INIT,
+                ExecutionPhase::TRANSFORM,
+                ExecutionPhase::MUTATE,
+                ExecutionPhase::OUTPUT,
+                SECOND,
+                ExecutionPhase::FINALIZE,
+            ]
+        );
+    }
+
+    /// A phase declared twice, or a built-in phase declared again, runs once.
+    #[test]
+    fn a_phase_declared_twice_runs_once() {
+        let order = phase_order(&[FIRST, FIRST, ExecutionPhase::OBSERVE], &[]);
+
+        assert_eq!(order.iter().filter(|p| **p == FIRST).count(), 1);
+        assert_eq!(
+            order
+                .iter()
+                .filter(|p| **p == ExecutionPhase::OBSERVE)
+                .count(),
+            1
+        );
+    }
 }

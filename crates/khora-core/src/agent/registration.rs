@@ -115,6 +115,14 @@ pub enum BootError {
         /// The second field writing it.
         field: &'static str,
     },
+    /// The family's phase is not in the order the scheduler runs, so its
+    /// agent would never execute.
+    PhaseNotRun {
+        /// The family.
+        family: &'static str,
+        /// Its phase.
+        phase: ExecutionPhase,
+    },
     /// No lane of the family runs on this device.
     NoSupportedLane {
         /// The family.
@@ -186,6 +194,10 @@ impl std::fmt::Display for BootError {
                 f,
                 "`{lane}` of `{family}` writes one deck slot twice (again in `{field}`)"
             ),
+            Self::PhaseNotRun { family, phase } => write!(
+                f,
+                "the family `{family}` runs in the phase {phase}, which the scheduler never runs"
+            ),
             Self::NoSupportedLane { family } => {
                 write!(f, "no lane of the family `{family}` runs on this device")
             }
@@ -217,7 +229,8 @@ impl std::fmt::Display for BootError {
 impl std::error::Error for BootError {}
 
 /// Checks every registration against the others, the runtime and the device:
-/// one agent per family and one family per agent, at least one supported lane
+/// one agent per family and one family per agent, every family in a phase that
+/// runs, at least one supported lane
 /// and one level per family, unique strategy ids within a family, no level of
 /// an `Exact` family that changes the result, no lane locking one entry twice
 /// nor a family writing one slot twice,
@@ -278,6 +291,12 @@ pub fn check_registrations_in(
 
     for (registration, lanes) in registrations.iter().zip(&menus) {
         let family = registration.family_name;
+        if !phase_order.contains(&registration.phase) {
+            return Err(BootError::PhaseNotRun {
+                family,
+                phase: registration.phase,
+            });
+        }
         if lanes.is_empty() {
             return Err(BootError::NoSupportedLane { family });
         }

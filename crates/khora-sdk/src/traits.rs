@@ -92,17 +92,21 @@ pub trait AgentProvider {
 
 /// Allows the application to add custom execution phases to the scheduler.
 ///
-/// By default, the engine uses the standard phase order:
-/// OBSERVE → INPUT → TRANSFORM → SIMULATE → OUTPUT → PRESENT
+/// By default, the engine runs the built-in phases in their order:
+/// INIT → OBSERVE → TRANSFORM → MUTATE → OUTPUT → FINALIZE.
 ///
-/// Applications can insert custom phases (e.g. editor-specific phases).
+/// An application can add phases of its own, which run after OUTPUT and
+/// before FINALIZE in the order it declares them, and remove phases. Removing
+/// the only phase an agent runs in refuses the boot: the agent would never
+/// execute.
 pub trait PhaseProvider {
-    /// Returns additional phases to insert into the scheduler's phase order.
+    /// The application's own phases, in the order they run, after OUTPUT and
+    /// before FINALIZE.
     fn custom_phases(&self) -> Vec<ExecutionPhase> {
         Vec::new()
     }
 
-    /// Returns phases to remove from the default order.
+    /// The phases the scheduler does not run.
     fn removed_phases(&self) -> Vec<ExecutionPhase> {
         Vec::new()
     }

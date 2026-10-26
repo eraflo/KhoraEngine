@@ -22,4 +22,5 @@ mod fixtures;
 mod guards;
 mod inputs;
 mod outputs;
+mod phases;
 mod run;

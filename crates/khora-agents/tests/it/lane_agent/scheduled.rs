@@ -615,7 +615,22 @@ static LATE_EYE: AgentRegistration = khora_core::register_agent! {
 #[test]
 fn a_deck_read_boot_accepts_in_a_custom_phase_sees_its_writer() {
     let runtime = playing();
-    let agents = match lane_agents(&[&FINAL_LIGHT, &LATE_EYE], &runtime, &DeviceCaps::default()) {
+    // The order the SDK builds for a game declaring `LATE`.
+    let order = [
+        ExecutionPhase::INIT,
+        ExecutionPhase::OBSERVE,
+        ExecutionPhase::TRANSFORM,
+        ExecutionPhase::MUTATE,
+        ExecutionPhase::OUTPUT,
+        LATE,
+        ExecutionPhase::FINALIZE,
+    ];
+    let agents = match khora_agents::registered_agent::lane_agents_in(
+        &[&FINAL_LIGHT, &LATE_EYE],
+        &runtime,
+        &DeviceCaps::default(),
+        &order,
+    ) {
         Err(BootError::DeckReadWithoutEarlierWriter { field: "lit", .. }) => return,
         Err(other) => panic!("refused for another reason: {other:?}"),
         Ok(agents) => agents,
@@ -629,8 +644,7 @@ fn a_deck_read_boot_accepts_in_a_custom_phase_sees_its_writer() {
     }
     let mut scheduler =
         ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
-    // The order the SDK builds for a game declaring `LATE`.
-    scheduler.insert_after(ExecutionPhase::OUTPUT, LATE);
+    scheduler.set_phase_order(&order);
     scheduler.run_frame(&mut World::new(), runtime);
 
     assert_eq!(

@@ -33,6 +33,7 @@ mod prefab_library;
 mod problems_without_scripts;
 mod public_paths;
 mod reload_after_an_emptied_module;
+mod removed_phases;
 mod render_doubles;
 mod runtime_config_file;
 mod script_catalog;
