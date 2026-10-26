@@ -158,3 +158,104 @@ fn concurrent_wave_runs_shared_reader_and_isolated_writer() {
         Some(CompletionOutcome::Completed)
     );
 }
+
+/// An `Isolated` agent whose `execute` panics on its pool worker.
+struct Panicking {
+    id: AgentId,
+}
+
+impl Agent for Panicking {
+    fn id(&self) -> AgentId {
+        self.id
+    }
+    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
+        NegotiationResponse {
+            strategies: vec![],
+            timing_adjustment: None,
+        }
+    }
+    fn apply_budget(&mut self, _b: ResourceBudget) {}
+    fn report_status(&self) -> AgentStatus {
+        AgentStatus {
+            agent_id: self.id,
+            current_strategy: StrategyId::Balanced,
+            health_score: 1.0,
+            is_stalled: false,
+            message: String::new(),
+        }
+    }
+    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
+        panic!("an agent that panics on its worker");
+    }
+    fn access(&self) -> AgentAccess {
+        AgentAccess::Isolated
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+/// A panic on a pool worker is the agent's failure, not the frame's: the
+/// agent's completion is still marked — anything waiting on it is released —
+/// but never as `Completed`, and its wave-mates complete as usual.
+///
+/// The panicking agent is dispatched last, so the wave's other job has
+/// already been taken by a worker even when the pool has a single one.
+#[test]
+fn a_panicking_agent_is_reported_as_a_failed_completion() {
+    let scheduler = ExecutionScheduler::new(
+        Arc::new(Mutex::new(AgentRegistry::new())),
+        Arc::new(RwLock::new(Context::default())),
+        &[AgentId::Audio, AgentId::Physics],
+    );
+    let mut world = World::new();
+    let runtime = Arc::new(Runtime::new());
+    let completion = Arc::new(AgentCompletionMap::new(&[AgentId::Audio, AgentId::Physics]));
+    let bus = Arc::new(LaneBus::new());
+    let mut deck = OutputDeck::new();
+
+    let agents: Vec<AgentSlot> = vec![
+        (
+            Arc::new(Mutex::new(MockAgent {
+                id: AgentId::Audio,
+                access: AgentAccess::Isolated,
+                role: Role::IsolatedWriter,
+            })),
+            AgentImportance::Critical,
+            1.0,
+            vec![],
+        ),
+        (
+            Arc::new(Mutex::new(Panicking {
+                id: AgentId::Physics,
+            })),
+            AgentImportance::Critical,
+            0.5,
+            vec![],
+        ),
+    ];
+
+    scheduler.execute_agents_parallel(agents, &mut world, &runtime, &completion, &bus, &mut deck);
+
+    assert!(
+        completion.is_done(AgentId::Physics),
+        "the panicking agent's completion is marked, so nothing waits on it forever"
+    );
+    assert_ne!(
+        completion.outcome(AgentId::Physics),
+        Some(CompletionOutcome::Completed),
+        "a panic is a failed completion, never a completed one"
+    );
+    assert_eq!(
+        completion.outcome(AgentId::Audio),
+        Some(CompletionOutcome::Completed),
+        "the panicking agent's wave-mate completes"
+    );
+    assert!(
+        deck.take::<IsoRan>().ran,
+        "the wave-mate's shard still folds into the deck"
+    );
+}

@@ -156,6 +156,7 @@ fn completion_outcome_variants(x: &khora_core::agent::completion::CompletionOutc
     match x {
         khora_core::agent::completion::CompletionOutcome::Completed => {}
         khora_core::agent::completion::CompletionOutcome::Skipped => {}
+        khora_core::agent::completion::CompletionOutcome::Failed => {}
     }
 }
 
@@ -300,7 +301,7 @@ fn stream_info_fields(x: &khora_core::audio::device::StreamInfo) {
 }
 
 fn engine_context_fields(x: &khora_core::engine_context::EngineContext<'static>) {
-    let _ = (&x.world, &x.runtime, &x.bus, &x.deck);
+    let _ = (&x.world, &x.bus, &x.deck);
 }
 
 fn world_access_variants(x: &khora_core::engine_context::WorldAccess<'static>) {

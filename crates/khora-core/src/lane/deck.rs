@@ -21,8 +21,9 @@
 //! # Visibility contract
 //!
 //! - [`OutputDeck::slot`] returns a `&mut T` for lanes to push into.
-//! - [`OutputDeck::take`] is `pub(crate)` (used by the scheduler to expose
-//!   typed outputs to the engine I/O layer in a controlled way).
+//! - [`OutputDeck::take`] is public so the engine's I/O boundary (the SDK's
+//!   pass submission, the Maintenance DataSystems) can drain typed outputs;
+//!   lanes only ever push.
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
@@ -34,6 +35,11 @@ use std::collections::HashMap;
 /// boundary (submit, present) via [`OutputDeck::take`].
 pub struct OutputDeck {
     slots: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
+    /// The slot types written through [`slot`](Self::slot) since the last
+    /// [`drain_written`](Self::drain_written). The scheduler reads it after
+    /// each agent: to drop what a panicking agent wrote, and (in debug builds)
+    /// to check the writes against what the agent declared.
+    written: Vec<TypeId>,
 }
 
 impl OutputDeck {
@@ -41,6 +47,7 @@ impl OutputDeck {
     pub fn new() -> Self {
         Self {
             slots: HashMap::new(),
+            written: Vec::new(),
         }
     }
 
@@ -50,6 +57,10 @@ impl OutputDeck {
     /// Lanes call this to accumulate outputs (e.g. push command buffers
     /// onto a `Vec`).
     pub fn slot<T: Default + Any + Send + Sync>(&mut self) -> &mut T {
+        let type_id = TypeId::of::<T>();
+        if !self.written.contains(&type_id) {
+            self.written.push(type_id);
+        }
         self.slots
             .entry(TypeId::of::<T>())
             .or_insert_with(|| Box::new(T::default()))
@@ -67,6 +78,31 @@ impl OutputDeck {
             .remove(&TypeId::of::<T>())
             .and_then(|b| b.downcast::<T>().ok().map(|b| *b))
             .unwrap_or_default()
+    }
+
+    /// Reads the slot for type `T`, if one was written this tick.
+    ///
+    /// Unlike [`slot`](Self::slot), reading is not writing: a lane that only
+    /// consumes another domain's output reads it through here, so the
+    /// scheduler's write check does not count it as a writer.
+    pub fn get<T: Any + Send + Sync>(&self) -> Option<&T> {
+        self.slots
+            .get(&TypeId::of::<T>())
+            .and_then(|b| b.downcast_ref::<T>())
+    }
+
+    /// Returns, and forgets, the slot types written through
+    /// [`slot`](Self::slot) since the previous call.
+    pub fn drain_written(&mut self) -> Vec<TypeId> {
+        std::mem::take(&mut self.written)
+    }
+
+    /// Removes the slots of the given types — what a panicking agent wrote,
+    /// so a half-written value never reaches the I/O boundary.
+    pub fn discard(&mut self, types: &[TypeId]) {
+        for type_id in types {
+            self.slots.remove(type_id);
+        }
     }
 
     /// Reports whether a slot of the given type has been written this tick.

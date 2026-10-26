@@ -144,20 +144,28 @@ impl ExecutionScheduler {
             // resource — read here rather than assumed empty, so the serial path
             // enforces exactly what the concurrent one does.
             let permit = agent.lock().map(|a| a.contention()).unwrap_or_default();
-            let mut engine_ctx = EngineContext::for_agent(
-                WorldAccess::Exclusive(world as &mut dyn std::any::Any),
-                Arc::clone(runtime),
-                bus,
-                deck,
-                &permit,
-                Some(agent_id),
-            );
-
+            deck.drain_written();
             let started = Instant::now();
-            if let Ok(mut a) = agent.lock() {
-                a.execute(&mut engine_ctx);
-            }
+            let ran = {
+                let mut engine_ctx = EngineContext::for_agent(
+                    WorldAccess::Exclusive(world as &mut dyn std::any::Any),
+                    Arc::clone(runtime),
+                    bus,
+                    deck,
+                    &permit,
+                    Some(agent_id),
+                );
+                run_guarded(agent_id, || {
+                    if let Ok(mut a) = agent.lock() {
+                        a.execute(&mut engine_ctx);
+                    }
+                })
+            };
             let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+            settle_deck(self, agent_id, &permit, deck, ran);
+            if !ran {
+                agent.clear_poison();
+            }
             record_frame_time(agent_id, elapsed_ms as f32);
             // Observation tunnel: report (n, time) so the DCC can fit this
             // agent's cost model and forecast budget breaches. Best-effort.
@@ -168,7 +176,7 @@ impl ExecutionScheduler {
                     time_ms: elapsed_ms,
                 });
             }
-            completion_map.mark(agent_id, CompletionOutcome::Completed);
+            completion_map.mark(agent_id, outcome_of(ran));
         }
     }
 
@@ -258,22 +266,31 @@ impl ExecutionScheduler {
                     continue;
                 }
                 let permit = metas[idx].contention.clone();
-                let mut engine_ctx = EngineContext::for_agent(
-                    WorldAccess::Exclusive(world as &mut dyn std::any::Any),
-                    Arc::clone(runtime),
-                    bus_ref,
-                    deck,
-                    &permit,
-                    Some(id),
-                );
+                deck.drain_written();
                 let started = Instant::now();
-                if let Ok(mut a) = agent.lock() {
-                    a.execute(&mut engine_ctx);
-                }
+                let ran = {
+                    let mut engine_ctx = EngineContext::for_agent(
+                        WorldAccess::Exclusive(world as &mut dyn std::any::Any),
+                        Arc::clone(runtime),
+                        bus_ref,
+                        deck,
+                        &permit,
+                        Some(id),
+                    );
+                    run_guarded(id, || {
+                        if let Ok(mut a) = agent.lock() {
+                            a.execute(&mut engine_ctx);
+                        }
+                    })
+                };
                 let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+                settle_deck(self, id, &permit, deck, ran);
+                if !ran {
+                    agent.clear_poison();
+                }
                 record_frame_time(id, elapsed_ms as f32);
                 report_cost(id, elapsed_ms);
-                completion_map.mark(id, CompletionOutcome::Completed);
+                completion_map.mark(id, outcome_of(ran));
                 continue;
             }
 
@@ -281,7 +298,11 @@ impl ExecutionScheduler {
             // run them into private shards (declared via `Agent::contention`). A
             // collision is a parallel-eligibility bug: the shards would clash on
             // merge — surface it here, naming the agents, not later on a raw TypeId.
-            check_wave_disjoint(&wave, &metas);
+            let conflicts = check_wave_disjoint(&wave, &metas);
+            debug_assert_eq!(
+                conflicts, 0,
+                "a concurrent wave holds agents whose contentions collide"
+            );
 
             // Concurrent wave. Gate on this thread, then split the survivors:
             // the `Isolated` agents (world-free) run as `'static` jobs on the
@@ -304,7 +325,7 @@ impl ExecutionScheduler {
             // overlaps the inline `SharedWorld` agent below. Each sends back
             // `(idx, id, shard, ms)`; `idx` recovers wave order for a
             // deterministic fold.
-            let (tx, rx) = std::sync::mpsc::channel::<(usize, AgentId, OutputDeck, f64)>();
+            let (tx, rx) = std::sync::mpsc::channel::<PooledRun>();
             let mut isolated_count = 0usize;
             for &idx in runnable
                 .iter()
@@ -323,7 +344,7 @@ impl ExecutionScheduler {
                     let bus_ref: &LaneBus = &bus;
                     let mut shard = OutputDeck::new();
                     let started = Instant::now();
-                    {
+                    let ran = {
                         let mut ctx = EngineContext::for_agent(
                             WorldAccess::None,
                             runtime,
@@ -332,12 +353,26 @@ impl ExecutionScheduler {
                             &permit,
                             Some(id),
                         );
-                        if let Ok(mut a) = agent.lock() {
-                            a.execute(&mut ctx);
-                        }
+                        run_guarded(id, || {
+                            if let Ok(mut a) = agent.lock() {
+                                a.execute(&mut ctx);
+                            }
+                        })
+                    };
+                    if !ran {
+                        agent.clear_poison();
                     }
                     let ms = started.elapsed().as_secs_f64() * 1000.0;
-                    let _ = tx.send((idx, id, shard, ms));
+                    let written = shard.drain_written();
+                    let _ = tx.send(PooledRun {
+                        idx,
+                        id,
+                        shard,
+                        written,
+                        permit,
+                        ms,
+                        ran,
+                    });
                 });
             }
             // Drop our sender so the collector below terminates once the pool
@@ -357,34 +392,47 @@ impl ExecutionScheduler {
             {
                 let id = metas[idx].id.expect("gated runnable has an id");
                 let permit = metas[idx].contention.clone();
-                let mut ctx = EngineContext::for_agent(
-                    WorldAccess::Shared(&*world as &dyn std::any::Any),
-                    Arc::clone(runtime),
-                    bus_ref,
-                    deck,
-                    &permit,
-                    Some(id),
-                );
+                deck.drain_written();
                 let started = Instant::now();
-                if let Ok(mut a) = agents[idx].0.lock() {
-                    a.execute(&mut ctx);
-                }
+                let ran = {
+                    let mut ctx = EngineContext::for_agent(
+                        WorldAccess::Shared(&*world as &dyn std::any::Any),
+                        Arc::clone(runtime),
+                        bus_ref,
+                        deck,
+                        &permit,
+                        Some(id),
+                    );
+                    run_guarded(id, || {
+                        if let Ok(mut a) = agents[idx].0.lock() {
+                            a.execute(&mut ctx);
+                        }
+                    })
+                };
                 let ms = started.elapsed().as_secs_f64() * 1000.0;
+                settle_deck(self, id, &permit, deck, ran);
+                if !ran {
+                    agents[idx].0.clear_poison();
+                }
                 record_frame_time(id, ms as f32);
                 report_cost(id, ms);
-                completion_map.mark(id, CompletionOutcome::Completed);
+                completion_map.mark(id, outcome_of(ran));
             }
 
             // Collect the pooled `Isolated` results and fold their shards in
             // wave (idx) order → deterministic deck contents.
-            let mut results: Vec<(usize, AgentId, OutputDeck, f64)> =
-                rx.iter().take(isolated_count).collect();
-            results.sort_by_key(|(idx, _, _, _)| *idx);
-            for (_, id, shard, ms) in results {
-                deck.merge_from(shard);
-                record_frame_time(id, ms as f32);
-                report_cost(id, ms);
-                completion_map.mark(id, CompletionOutcome::Completed);
+            let mut results: Vec<PooledRun> = rx.iter().take(isolated_count).collect();
+            results.sort_by_key(|run| run.idx);
+            for run in results {
+                self.audit_deck_writes(run.id, &run.permit, run.written);
+                // A panicked agent's shard is half-written: drop it rather
+                // than fold an unknown state into the frame.
+                if run.ran {
+                    deck.merge_from(run.shard);
+                }
+                record_frame_time(run.id, run.ms as f32);
+                report_cost(run.id, run.ms);
+                completion_map.mark(run.id, outcome_of(run.ran));
             }
         }
     }
@@ -392,4 +440,52 @@ impl ExecutionScheduler {
     fn is_under_budget_pressure(&self) -> bool {
         self.frame_start.elapsed() > self.frame_budget
     }
+}
+
+/// What a pooled agent sends back to the wave collector.
+struct PooledRun {
+    /// The agent's index in the wave, to fold shards in a stable order.
+    idx: usize,
+    id: AgentId,
+    shard: OutputDeck,
+    /// The deck slots it wrote (recorded in debug builds only).
+    written: Vec<std::any::TypeId>,
+    permit: khora_core::agent::Contention,
+    ms: f64,
+    /// False when `execute` panicked.
+    ran: bool,
+}
+
+/// Runs an agent's `execute`, turning a panic into `false` so the frame goes
+/// on and the agent is reported as failed instead of taking the thread down.
+fn run_guarded(id: AgentId, execute: impl FnOnce()) -> bool {
+    let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(execute)).is_ok();
+    if !ran {
+        log::error!("agent {id:?} panicked during execute; its outputs for this frame are dropped");
+    }
+    ran
+}
+
+fn outcome_of(ran: bool) -> CompletionOutcome {
+    if ran {
+        CompletionOutcome::Completed
+    } else {
+        CompletionOutcome::Failed
+    }
+}
+
+/// After an agent wrote straight into the frame's deck: checks its writes
+/// against its declaration, and drops them if it panicked.
+fn settle_deck(
+    scheduler: &ExecutionScheduler,
+    id: AgentId,
+    permit: &khora_core::agent::Contention,
+    deck: &mut OutputDeck,
+    ran: bool,
+) {
+    let written = deck.drain_written();
+    if !ran {
+        deck.discard(&written);
+    }
+    scheduler.audit_deck_writes(id, permit, written);
 }

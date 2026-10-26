@@ -138,6 +138,9 @@ pub struct ExecutionScheduler {
     /// joined on drop; runs a wave's `Isolated` agents as `'static` jobs while
     /// its `SharedWorld` agents run inline. See [`WorkerPool`].
     pool: WorkerPool,
+    /// What agents wrote into the deck without declaring it, last frame
+    /// (debug builds only; see [`undeclared_deck_writes`](Self::undeclared_deck_writes)).
+    undeclared_deck_writes: Mutex<Vec<(AgentId, std::any::TypeId)>>,
 }
 
 impl ExecutionScheduler {
@@ -164,6 +167,65 @@ impl ExecutionScheduler {
             fixed_due: HashMap::new(),
             parallel_execution: false,
             pool: WorkerPool::new(default_pool_size()),
+            undeclared_deck_writes: Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Creates a scheduler over the agents of `registry`.
+    ///
+    /// The budget channel gets one entry per agent the registry holds, so an
+    /// agent is budgeted because it is registered — no hand-kept id list can
+    /// forget it.
+    pub fn from_registry(
+        registry: Arc<Mutex<AgentRegistry>>,
+        context: Arc<std::sync::RwLock<Context>>,
+    ) -> Self {
+        let ids: Vec<AgentId> = registry
+            .lock()
+            .map(|registry| {
+                registry
+                    .iter()
+                    .filter_map(|agent| agent.lock().ok().map(|agent| agent.id()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self::new(registry, context, &ids)
+    }
+
+    /// The deck slots agents wrote during the last frame without declaring
+    /// them in their [`Agent::contention`](khora_core::agent::Agent::contention)
+    /// `deck`, each with the agent that wrote it.
+    ///
+    /// Recorded in debug builds only; a release build always returns an empty
+    /// list. Each one is also logged as an error when it is found.
+    pub fn undeclared_deck_writes(&self) -> Vec<(AgentId, std::any::TypeId)> {
+        self.undeclared_deck_writes
+            .lock()
+            .map(|found| found.clone())
+            .unwrap_or_default()
+    }
+
+    /// Compares the deck slots `id` wrote with the ones its contention
+    /// declared, and records (and logs) every one it did not declare.
+    fn audit_deck_writes(
+        &self,
+        id: AgentId,
+        declared: &khora_core::agent::Contention,
+        written: Vec<std::any::TypeId>,
+    ) {
+        if !cfg!(debug_assertions) {
+            return;
+        }
+        for type_id in written {
+            if declared.deck.contains(&type_id) {
+                continue;
+            }
+            log::error!(
+                "agent {id:?} wrote deck slot {type_id:?} without declaring it in its contention"
+            );
+            if let Ok(mut found) = self.undeclared_deck_writes.lock() {
+                found.push((id, type_id));
+            }
         }
     }
 
@@ -361,7 +423,9 @@ fn are_hard_dependencies_completed(
             // from the previous behaviour. Treat conditional deps as active.
             match completion_map.outcome(dep.target) {
                 Some(CompletionOutcome::Completed) => {}
-                Some(CompletionOutcome::Skipped) | None => return false,
+                Some(CompletionOutcome::Skipped | CompletionOutcome::Failed) | None => {
+                    return false
+                }
             }
         }
     }

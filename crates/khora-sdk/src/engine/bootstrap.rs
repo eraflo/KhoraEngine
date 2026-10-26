@@ -452,21 +452,11 @@ fn build_scheduler<A: EngineApp>(
     dcc: &mut DccService,
     core: &EngineCore<A>,
 ) -> khora_control::ExecutionScheduler {
-    // Build scheduler
-    let agent_ids = vec![
-        khora_core::agent::gorna::AgentId::Renderer,
-        khora_core::agent::gorna::AgentId::ShadowRenderer,
-        khora_core::agent::gorna::AgentId::Overlay,
-        khora_core::agent::gorna::AgentId::Skybox,
-        khora_core::agent::gorna::AgentId::Physics,
-        khora_core::agent::gorna::AgentId::Ui,
-        khora_core::agent::gorna::AgentId::Audio,
-        khora_core::agent::gorna::AgentId::Script,
-    ];
-
+    // Every registered agent gets a budget: the built-in ones and the ones the
+    // application registered before them.
     let registry = dcc.agent_registry().clone();
     let mut scheduler =
-        khora_control::ExecutionScheduler::new(registry, core.context.clone(), &agent_ids);
+        khora_control::ExecutionScheduler::from_registry(registry, core.context.clone());
 
     // Connect the read-only observation tunnel: the scheduler publishes
     // per-agent cost samples + per-component access snapshots the DCC's

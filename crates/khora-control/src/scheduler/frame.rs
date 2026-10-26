@@ -78,6 +78,9 @@ impl ExecutionScheduler {
         // 1. Sync budgets from cold thread
         self.budget_channel.sync();
         self.frame_start = Instant::now();
+        if let Ok(mut found) = self.undeclared_deck_writes.lock() {
+            found.clear();
+        }
 
         // 1a. Read the frame's mode, once: the one the application set in the
         //     runtime, or the context's where it set none. Flows read the same

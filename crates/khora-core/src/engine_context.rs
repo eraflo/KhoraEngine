@@ -59,7 +59,11 @@ pub struct EngineContext<'a> {
 
     /// Runtime containers — services (business APIs), backends (trait
     /// impls), resources (shared state).
-    pub runtime: Arc<Runtime>,
+    ///
+    /// Private on purpose: an agent reaches the runtime only through
+    /// [`resource`](Self::resource) and [`locked`](Self::locked), which refuse
+    /// what its contention did not declare.
+    runtime: Arc<Runtime>,
 
     /// Read-only typed bus of [`Flow`](../../../khora_data/flow/index.html)
     /// outputs produced this tick. Lanes consume Views from here.

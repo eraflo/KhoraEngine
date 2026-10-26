@@ -17,7 +17,7 @@
 //! scheduler is enabled — `await` it via [`AgentCompletionMap::wait`].
 
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::Mutex;
 
 use crate::agent::gorna::AgentId;
 use crate::renderer::api::frame::StageHandle;
@@ -32,21 +32,28 @@ pub enum CompletionOutcome {
     Completed,
     /// The agent was skipped (budget pressure, missing dep, etc.).
     Skipped,
+    /// `execute()` panicked. The scheduler caught it: the frame goes on, and
+    /// whatever the agent wrote is dropped.
+    Failed,
 }
 
-/// One entry in the completion map: a level-triggered handle plus a
-/// once-set outcome flag.
+/// One entry in the completion map: a level-triggered handle plus the
+/// outcome recorded for the frame.
 struct AgentCompletion {
     handle: StageHandle<AgentDone>,
-    outcome: OnceLock<CompletionOutcome>,
+    outcome: Mutex<Option<CompletionOutcome>>,
 }
 
 impl AgentCompletion {
     fn new() -> Self {
         Self {
             handle: StageHandle::<AgentDone>::default(),
-            outcome: OnceLock::new(),
+            outcome: Mutex::new(None),
         }
+    }
+
+    fn outcome(&self) -> Option<CompletionOutcome> {
+        *self.outcome.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
@@ -71,12 +78,22 @@ impl AgentCompletionMap {
 
     /// Marks an agent as having finished this frame with the given outcome.
     ///
-    /// Idempotent: subsequent calls for the same agent are no-ops.
+    /// The first outcome sticks, with one exception: [`Failed`] replaces an
+    /// earlier one. An agent that runs several fixed sub-steps in a frame and
+    /// panics on a later one has failed the frame, even though its first
+    /// sub-step completed.
     /// Returns `false` if the agent ID is unknown to this map.
+    ///
+    /// [`Failed`]: CompletionOutcome::Failed
     pub fn mark(&self, id: AgentId, outcome: CompletionOutcome) -> bool {
         match self.entries.get(&id) {
             Some(entry) => {
-                let _ = entry.outcome.set(outcome);
+                {
+                    let mut held = entry.outcome.lock().unwrap_or_else(|e| e.into_inner());
+                    if held.is_none() || outcome == CompletionOutcome::Failed {
+                        *held = Some(outcome);
+                    }
+                }
                 entry.handle.mark_done();
                 true
             }
@@ -87,7 +104,7 @@ impl AgentCompletionMap {
     /// Returns the recorded outcome for `id`, or `None` if the agent has
     /// not yet been marked (or the ID is unknown).
     pub fn outcome(&self, id: AgentId) -> Option<CompletionOutcome> {
-        self.entries.get(&id)?.outcome.get().copied()
+        self.entries.get(&id)?.outcome()
     }
 
     /// Returns `true` if a [`mark`](Self::mark) has been recorded for `id`.
@@ -103,7 +120,7 @@ impl AgentCompletionMap {
     pub async fn wait(&self, id: AgentId) -> Option<CompletionOutcome> {
         let entry = self.entries.get(&id)?;
         entry.handle.wait().await;
-        entry.outcome.get().copied()
+        entry.outcome()
     }
 
     /// Returns all agent IDs tracked by this map (for tests / introspection).

@@ -224,7 +224,9 @@ impl fmt::Debug for LaneContext<'_> {
 /// - **`on_initialize`** is called once when the lane is registered with an agent
 ///   or when the underlying device/context changes.
 /// - **`execute`** is the main entry point, called each frame/tick by the owning agent.
-/// - **`on_shutdown`** is called when the lane is unregistered or the agent shuts down.
+/// - **`on_shutdown`** releases what `on_initialize` built. The engine does not call it
+///   yet: agents have no shutdown hook of their own, so a lane's resources go with the
+///   device when the engine stops.
 ///
 /// ## LaneContext
 ///

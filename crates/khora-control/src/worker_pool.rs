@@ -85,7 +85,13 @@ impl WorkerPool {
                     rx.recv()
                 };
                 match message {
-                    Ok(Message::Run(job)) => job(),
+                    // A panicking job must not take its worker with it: the
+                    // pool would shrink silently, frame after frame.
+                    Ok(Message::Run(job)) => {
+                        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).is_err() {
+                            log::error!("WorkerPool: a job panicked; its worker keeps running");
+                        }
+                    }
                     // Explicit shutdown, or the sender was dropped: exit.
                     Ok(Message::Shutdown) | Err(_) => break,
                 }
@@ -175,6 +181,66 @@ mod tests {
             // Pool drops here: pending jobs finish, workers join.
         }
         assert_eq!(counter.load(Ordering::SeqCst), 12);
+    }
+
+    /// A job that panics costs the pool nothing: the worker that ran it
+    /// survives. Proven by running, after the panic, as many jobs as there are
+    /// workers that each wait until all of them are running at once — which
+    /// only happens if every worker is still alive — then a batch more.
+    #[test]
+    fn a_panicking_job_leaves_the_pool_whole() {
+        use std::time::{Duration, Instant};
+
+        let size = 4;
+        let pool = WorkerPool::new(size);
+
+        let (ran_tx, ran_rx) = mpsc::channel::<()>();
+        pool.submit(move || {
+            let _ = ran_tx.send(());
+            panic!("a job that panics on its worker");
+        });
+        ran_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the panicking job ran");
+
+        let arrived = Arc::new(AtomicUsize::new(0));
+        let (tx, rx) = mpsc::channel::<bool>();
+        for _ in 0..size {
+            let arrived = Arc::clone(&arrived);
+            let tx = tx.clone();
+            pool.submit(move || {
+                arrived.fetch_add(1, Ordering::SeqCst);
+                let deadline = Instant::now() + Duration::from_secs(2);
+                while arrived.load(Ordering::SeqCst) < size && Instant::now() < deadline {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+                let _ = tx.send(arrived.load(Ordering::SeqCst) >= size);
+            });
+        }
+        drop(tx);
+        let together: Vec<bool> = rx.iter().take(size).collect();
+        assert_eq!(
+            together,
+            vec![true; size],
+            "after a panic, all {size} workers must run jobs at once"
+        );
+
+        let (tx, rx) = mpsc::channel::<usize>();
+        let n = 32;
+        for i in 0..n {
+            let tx = tx.clone();
+            pool.submit(move || {
+                let _ = tx.send(i);
+            });
+        }
+        drop(tx);
+        let mut got: Vec<usize> = rx.iter().take(n).collect();
+        got.sort_unstable();
+        assert_eq!(
+            got,
+            (0..n).collect::<Vec<_>>(),
+            "every job after the panic runs"
+        );
     }
 
     #[test]

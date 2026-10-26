@@ -21,9 +21,10 @@
 //!
 //! # Visibility contract
 //!
-//! - [`LaneBus::publish`] is `pub(crate)` (or used through the scheduler / a
-//!   `Flow` runner inside `khora-core`/`khora-control`). Lanes cannot publish.
-//! - [`LaneBus::get`] is the only method exposed to lane code.
+//! - [`LaneBus::publish`] is public so the `Flow` runner in `khora-control`
+//!   can call it, but only Flows publish: lanes never receive a `&mut LaneBus`
+//!   (the bus is frozen behind an `Arc` before agents run).
+//! - [`LaneBus::get`] is what agents use to hand a View to their lane.
 //!
 //! [`Flow`]: ../../../khora_data/flow/index.html
 
@@ -32,8 +33,8 @@ use std::collections::HashMap;
 
 /// Read-only typed bus carrying [`Flow`] outputs to lanes for one tick.
 ///
-/// Lanes access it through [`LaneContext::bus`](super::LaneContext::bus)
-/// and read views via [`LaneBus::get`]. The bus itself is constructed by
+/// An agent reads a view with [`LaneBus::get`] and puts it into its lane's
+/// [`LaneContext`](super::LaneContext). The bus itself is constructed by
 /// the scheduler at the start of each frame and dropped at the end — its
 /// lifetime is strictly tick-scoped.
 ///
