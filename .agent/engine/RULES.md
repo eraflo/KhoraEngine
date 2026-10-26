@@ -34,13 +34,14 @@ and [`security-privacy.md`](./security-privacy.md).
   |---|---|---|
   | floor | `khora-core`, `khora-macros` | nothing |
   | on the floor | `khora-data`, `khora-control`, `khora-script`, `khora-telemetry`, `khora-infra`, `khora-tool-ui` | core (+ `macros` for data/script, + `data` for control) |
-  | middle | `khora-io`, `khora-lanes` | core, data, script, telemetry / core, data, io, script |
-  | strategists | `khora-agents` | everything above, **including `khora-infra`** |
+  | middle | `khora-io`, `khora-lanes` | core, data, script, telemetry / core, data, script |
+  | strategists | `khora-agents` | core, data, lanes, script (`khora-infra` only as a dev-dependency, for tests) |
   | façade | `khora-sdk` | agents, control, core, data, infra, io, lanes, telemetry |
   | apps | `khora-editor`, `khora-hub`, `khora-runtime` | sdk (+ `tool-ui` for editor and hub) |
 
-  The two easy to get backwards: **`khora-agents` depends on `khora-infra`**, not
-  the reverse, and **`khora-infra` depends on `khora-core` only** — it is a floor
+  The two easy to get backwards: **`khora-agents` never depends on `khora-infra`**
+  (agents reach backends through core traits in the `Runtime`), and
+  **`khora-infra` depends on `khora-core` only** — it is a floor
   tenant, not a top layer. Never introduce a cycle; `cargo tree` is the arbiter.
 - Abstract traits live in `khora-core`. Concrete backends live in per-backend subfolders under `khora-infra` (`graphics/wgpu/`, `physics/rapier/`, `audio/cpal/`, `ui/taffy/`, …).
 - Change a `khora-core` trait only when you also update every downstream implementation.

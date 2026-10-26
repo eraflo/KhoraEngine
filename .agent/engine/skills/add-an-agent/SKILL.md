@@ -12,14 +12,18 @@ a GORNA budget. Non-negotiating work uses a service (`AssetService`, `EcsMainten
 ## Steps
 1. Add an `AgentId` variant (priority-ordered) in `crates/khora-core/src/agent/gorna.rs` / `agent/`.
 2. Create `crates/khora-agents/src/<domain>_agent/{mod.rs,agent.rs}`. Implement **only** `Agent` + `Default`:
-   `id`, `negotiate`, `apply_budget`, `report_status`, `on_initialize` (cache services once), `execute`
+   `id`, `negotiate`, `apply_budget`, `report_status`, `on_initialize` (initialise the lanes), `execute`
    (dispatch the lane), `as_any`/`as_any_mut`.
 3. Declare `ExecutionTiming` (allowed phases, default phase, priority, importance, fixed timestep, dependencies),
    `access()` and `contention()` (RULES §5). Engine modes are **not** part of the timing: they are passed at
    registration (step 5).
 4. In `negotiate`, return `NegotiationResponse` options (time, VRAM) per strategy; in `apply_budget`, pick the
-   strategy the arbitrator granted; in `execute`, call `Lane::execute(LaneContext{bus, deck, budget})`.
-5. Register the agent in `crates/khora-sdk/src/engine/bootstrap.rs` next to the existing agents:
+   strategy the arbitrator granted; in `execute`, look services up through `context.resource` / `context.locked`
+   (never `context.runtime`), put what the lane needs into a fresh `LaneContext` (a type map: `insert`,
+   `insert_ref`, `insert_slot`) and call `Lane::execute(&mut ctx)`.
+5. Register the agent. An engine agent goes in `crates/khora-sdk/src/engine/bootstrap.rs` next to the
+   existing agents; a game or host agent goes through `AgentProvider::register_agents` (see
+   `docs/src/how-to/add-an-agent.md`). Both call:
    `dcc.register_agent(agent, priority)` (every mode) or
    `dcc.register_agent_for_mode(agent, priority, vec![EngineMode::Playing])` (only those modes — how
    `ScriptAgent` stays off while the editor edits). The scheduler reads `SharedEngineMode` once per frame.

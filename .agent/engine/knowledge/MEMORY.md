@@ -306,7 +306,7 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la cl�
   group 4 = F+ tile/light data + `shadow_view_projs`. Directional/spot 2D PCF + point-light cube shadows
   → full parity with `LitForwardLane`.
 - **OverlayAgent**: new agent owning post-main-render `LaneKind::Render` lanes, runs in `OUTPUT` after
-  `Renderer` (Hard dep). Lanes run in parallel, order `Grid → Emissive → Wireframe → Gizmo`.
+  `Renderer` (Hard dep). Lanes run in parallel, order `Grid → Wireframe → Gizmo`.
 - **GizmoLane / GridLane**: editor/debug overlays via `Arc<Mutex<…>>` shared runtime resources
   (`SharedGizmoFrame`, `SharedGridConfig`), `LoadOp::Load`. The backend (`khora-infra`) no longer owns
   any render pipeline — the editor is a pure data producer.

@@ -146,15 +146,13 @@ publishes the same View type, the forward lane never notices.
 
 ## The three phases of a lane
 
-A lane's per-frame work is split into `prepare` → `execute` → `cleanup` (with a
-one-shot `on_initialize` at boot). The split is load-bearing, not ceremony:
-`prepare` is read-only extraction (parallelizable across lanes in principle),
-`execute` is the mutating output (single-threaded), and `cleanup` is the seam where
-per-frame state is reset so nothing leaks into the next frame. A lane that leaves
-stale data behind in `cleanup` is a frame-leak waiting to happen. Errors surface as
-a `LaneError` that bubbles to the agent, which can log it and fall back to a cheaper
-strategy — the same `LaneError` is how a degraded frame stays a degraded frame
-rather than a crash.
+A lane has three moments: `on_initialize` once at boot (it builds what lives
+across frames, such as GPU resources), `execute` every frame (the work itself), and
+`on_shutdown` when the engine stops (it releases what `on_initialize` built). There
+is no per-frame `prepare` or `cleanup` hook: everything a lane reads arrives in the
+`LaneContext` its agent filled for that frame, and nothing per-frame survives the
+call. Errors surface as a `LaneError` returned to the agent, which logs it; a lane
+error never crashes the frame.
 
 ## Why this separation exists
 

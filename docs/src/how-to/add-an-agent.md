@@ -17,7 +17,8 @@ An agent struct implements **exactly two traits**: [`Agent`](../concepts/agents-
 `Default`. No `start`/`stop`, no builders, no accessors — those would violate the
 agent contract. Construction is always `Default::default()`. The agent owns **one**
 `LaneKind` and stores only its own GORNA/strategy state; every shared service is
-looked up from the `Runtime` each frame.
+looked up each frame through `context.resource` or `context.locked`, which refuse
+what the agent's `contention()` did not declare.
 
 ```rust
 use std::any::Any;
@@ -138,6 +139,8 @@ negotiable; `Critical` and `Important` always run.
 ```
 
 ## Step 6 — Register the agent via `AgentProvider`
+
+The engine's own agents are registered in `khora-sdk/src/engine/bootstrap.rs`; an agent a game or a host adds goes through this hook instead.
 
 Game and host code register agents through the `AgentProvider::register_agents` hook.
 Wrap the agent in `Arc<Mutex<…>>` and hand it to the DCC with a priority. Use

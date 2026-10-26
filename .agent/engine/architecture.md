@@ -52,7 +52,7 @@ access patterns and self-bounded by a cost/benefit test; the DCC only **observes
 
 ```
 Pass A — Substrate (Scheduler):   DataSystem invariants → Flows publish Views into LaneBus
-Pass B — CLAD descent (Agents):   choose lane by budget → Lane.execute(LaneContext{bus, deck, budget})
+Pass B — CLAD descent (Agents):   choose lane by budget → fill a LaneContext (type map) → Lane.execute(&mut ctx)
 Pass C — I/O boundary (Engine):   drain OutputDeck for submit/present
 ```
 

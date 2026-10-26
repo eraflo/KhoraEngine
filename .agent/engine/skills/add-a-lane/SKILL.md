@@ -10,11 +10,12 @@ A `Lane` is a unit of hot-path work selected by an `Agent` via GORNA. Trait in
 
 ## Steps
 1. Create `crates/khora-lanes/src/<domain>_lane/<name>_lane.rs`. Implement `Lane`:
-   lifecycle (`on_initialize`, `execute`, optional `prepare`/`cleanup`) + strategy metadata
+   lifecycle (`on_initialize`, `execute`, `on_shutdown` — release every GPU resource `on_initialize` created) + strategy metadata
    (`strategy_name`, `lane_kind`, `estimate_cost`).
 2. **Hold only persistent state.** Put init/render bodies in private free functions in the module;
-   the trait impl dispatches to them. Construct via `Default` — no inherent methods (mirrors the agent rule).
-3. **Read inputs from `LaneContext::bus`** (typed `View`), **write outputs into `LaneContext::deck`**.
+   the trait impl dispatches to them. Construct via `Default`.
+3. **Read inputs from the `LaneContext`** the agent filled (the bus `View` it inserted, via `get_ref`),
+   **write outputs into the deck it lent** (`ctx.slot::<OutputDeck>()`).
    Never call `world.query*` from a lane.
 4. If render: name the pipeline (`khora::pipelines::<name>`) in the lane's pipeline spec; respect
    the **4-bind-group** budget (see [`add-a-shader`](../add-a-shader/SKILL.md)).

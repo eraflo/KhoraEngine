@@ -46,8 +46,8 @@ Code style and project conventions. Pairs with [`RULES.md`](./RULES.md).
 ### 3.1 — Adding a new domain
 
 1. **`Flow`** in `khora-data/src/flow/<domain>.rs` — implement `Flow` (read-only `select → project`), define a typed `View`, register with `register_flow!`. A Flow never mutates the World; per-frame maintenance goes in a `DataSystem`.
-2. **`Agent`** in `khora-agents/src/<domain>_agent/` — strict strategist, no per-frame state, invokes its lane with `(bus, deck, budget)` from `EngineContext`.
-3. **`Lane`s** in `khora-lanes/src/<domain>_lane/` — read the `View` from `LaneContext::bus`, write outputs into `LaneContext::deck`. Never call `world.query*`.
+2. **`Agent`** in `khora-agents/src/<domain>_agent/` — strict strategist, no per-frame state. In `execute` it reads the `View` from `EngineContext::bus`, puts what its lane needs into a fresh `LaneContext` (a type map: `insert`, `insert_ref`, `insert_slot` — the deck is lent with `insert_slot`), and calls `Lane::execute`.
+3. **`Lane`s** in `khora-lanes/src/<domain>_lane/` — take their inputs from the `LaneContext` the agent filled (`get`, `get_ref`, `slot`), write outputs into the lent deck. Never call `world.query*`.
 4. The engine drains the relevant typed slot of the `OutputDeck` at the I/O boundary for side-effects (GPU submit, audio flush…).
 
 ## 4 — Components

@@ -2054,3 +2054,312 @@ fn a_book_link_to_a_rendered_page_resolves() {
         &book.join("concepts").join("saa.md")
     ));
 }
+
+// ---------------------------------------------------------------------------
+// The agent and lane contract
+// ---------------------------------------------------------------------------
+
+/// Lanes consume Views from the `LaneBus`; the `World` is the Flows' and the
+/// DataSystems' to read. So no Rust file under `crates/khora-lanes/src` names
+/// `World` as a word outside comments — not in a `use`, not in a signature,
+/// not in a downcast. `RenderWorld` and the like are other words. Keyed by
+/// file and line.
+#[test]
+fn lanes_never_name_world() {
+    let root = repo_root();
+    let mut problems = Vec::new();
+    for path in walk_files(&root.join("crates/khora-lanes/src")) {
+        if !has_extension(&path, "rs") {
+            continue;
+        }
+        let code = strip_rust_comments(&read_text(&path));
+        for (index, line) in code.lines().enumerate() {
+            if names_word(line, "World") {
+                problems.push(format!(
+                    "{}:{}: {}",
+                    rel(&root, &path),
+                    index + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+    problems.sort();
+    assert!(
+        problems.is_empty(),
+        "lanes name the World — a lane reads Views from the bus, the World is the Flows' \
+         and the DataSystems':\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// An agent reaches the runtime through `EngineContext::resource` and
+/// `::locked`, which refuse what its `contention()` did not declare; reading
+/// the context's `runtime` field directly bypasses that check. So no file
+/// under `crates/khora-agents/src` reads `.runtime` on a binding of type
+/// `EngineContext` (a parameter `x: &mut EngineContext`, `x: &EngineContext`,
+/// or a `let x = EngineContext::…`). Keyed by file and line.
+#[test]
+fn agents_never_read_runtime_field() {
+    let root = repo_root();
+    let mut problems = Vec::new();
+    for path in walk_files(&root.join("crates/khora-agents/src")) {
+        if !has_extension(&path, "rs") {
+            continue;
+        }
+        let code = strip_rust_comments(&read_text(&path));
+        for line in runtime_field_reads(&code) {
+            problems.push(format!("{}:{}", rel(&root, &path), line));
+        }
+    }
+    problems.sort();
+    assert!(
+        problems.is_empty(),
+        "agents read EngineContext.runtime directly instead of through `resource` / `locked`:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// `EngineContext.runtime` is private to `khora-core`: `resource` and `locked`
+/// are the only doors, so a `contention()` declaration cannot be bypassed from
+/// another crate.
+#[test]
+fn engine_context_runtime_field_is_private() {
+    let root = repo_root();
+    let path = root.join("crates/khora-core/src/engine_context.rs");
+    let code = strip_rust_comments(&read_text(&path));
+    let public: Vec<String> = code
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| {
+            let line = line.trim_start();
+            line.strip_prefix("pub ")
+                .is_some_and(|rest| rest.trim_start().starts_with("runtime:"))
+        })
+        .map(|(index, line)| format!("{}:{}: {}", rel(&root, &path), index + 1, line.trim()))
+        .collect();
+    assert!(
+        public.is_empty(),
+        "EngineContext.runtime is public; agents must reach the runtime through `resource` \
+         and `locked` only:\n  {}",
+        public.join("\n  ")
+    );
+}
+
+/// `text` with every `//` and `/* */` comment blanked out (doc comments
+/// included), keeping string and character literals and every newline, so
+/// line numbers survive.
+fn strip_rust_comments(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    let blank = |c: char| if c == '\n' { '\n' } else { ' ' };
+    while i < chars.len() {
+        let c = chars[i];
+        let next = chars.get(i + 1).copied();
+        if c == '/' && next == Some('/') {
+            while i < chars.len() && chars[i] != '\n' {
+                out.push(' ');
+                i += 1;
+            }
+        } else if c == '/' && next == Some('*') {
+            let mut depth = 0usize;
+            while i < chars.len() {
+                if chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
+                    depth += 1;
+                    out.push_str("  ");
+                    i += 2;
+                } else if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
+                    depth -= 1;
+                    out.push_str("  ");
+                    i += 2;
+                    if depth == 0 {
+                        break;
+                    }
+                } else {
+                    out.push(blank(chars[i]));
+                    i += 1;
+                }
+            }
+        } else if c == '"' {
+            out.push(c);
+            i += 1;
+            while i < chars.len() && chars[i] != '"' {
+                if chars[i] == '\\' && i + 1 < chars.len() {
+                    out.push(chars[i]);
+                    i += 1;
+                }
+                out.push(chars[i]);
+                i += 1;
+            }
+            if i < chars.len() {
+                out.push('"');
+                i += 1;
+            }
+        } else if c == 'r'
+            && (next == Some('"') || next == Some('#'))
+            && !chars
+                .get(i.wrapping_sub(1))
+                .is_some_and(|p| p.is_alphanumeric() || *p == '_')
+        {
+            // A raw string: r"…", r#"…"#, …
+            let mut j = i + 1;
+            let mut hashes = 0;
+            while chars.get(j) == Some(&'#') {
+                hashes += 1;
+                j += 1;
+            }
+            if chars.get(j) != Some(&'"') {
+                out.push(c);
+                i += 1;
+                continue;
+            }
+            let closing: String = std::iter::once('"')
+                .chain(std::iter::repeat_n('#', hashes))
+                .collect();
+            let body_start = j + 1;
+            let rest: String = chars[body_start..].iter().collect();
+            let end = rest.find(&closing).map_or(chars.len(), |at| {
+                body_start + rest[..at].chars().count() + closing.chars().count()
+            });
+            out.extend(chars[i..end].iter());
+            i = end;
+        } else if c == '\'' {
+            // A character literal ('x', '\n', '\''); otherwise a lifetime.
+            let literal_end = match (next, chars.get(i + 2), chars.get(i + 3)) {
+                // The escaped character sits at `i + 2`; the closing quote follows.
+                (Some('\\'), _, _) => chars
+                    .get(i + 3..)
+                    .and_then(|rest| rest.iter().position(|&ch| ch == '\''))
+                    .map(|at| i + 3 + at + 1),
+                (Some(_), Some('\''), _) => Some(i + 3),
+                _ => None,
+            };
+            match literal_end {
+                Some(end) if end <= chars.len() => {
+                    out.extend(chars[i..end].iter());
+                    i = end;
+                }
+                _ => {
+                    out.push(c);
+                    i += 1;
+                }
+            }
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    out
+}
+
+fn is_ident_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Whether `line` holds `word` as a whole identifier.
+fn names_word(line: &str, word: &str) -> bool {
+    line.match_indices(word).any(|(at, _)| {
+        let before = line[..at].chars().next_back();
+        let after = line[at + word.len()..].chars().next();
+        !before.is_some_and(is_ident_char) && !after.is_some_and(is_ident_char)
+    })
+}
+
+/// The 1-based lines of `code` that read the `runtime` field of a binding
+/// holding an `EngineContext`.
+fn runtime_field_reads(code: &str) -> Vec<usize> {
+    let mut bindings = BTreeSet::new();
+    for (at, _) in code.match_indices("EngineContext") {
+        let before = code[..at].trim_end();
+        // `name: &mut EngineContext` / `name: &EngineContext`
+        let typed = before
+            .strip_suffix("&mut")
+            .or_else(|| before.strip_suffix('&'))
+            .map(str::trim_end)
+            .and_then(|b| b.strip_suffix(':'));
+        // `let [mut] name = EngineContext::…`
+        let built = before.strip_suffix('=');
+        if let Some(prefix) = typed.or(built) {
+            let name: String = prefix
+                .trim_end()
+                .chars()
+                .rev()
+                .take_while(|c| is_ident_char(*c))
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect();
+            if !name.is_empty() && name != "self" {
+                bindings.insert(name);
+            }
+        }
+    }
+
+    let mut lines = BTreeSet::new();
+    for (index, line) in code.lines().enumerate() {
+        for name in &bindings {
+            let access = format!("{name}.runtime");
+            let reads = line.match_indices(&access).any(|(at, _)| {
+                let before = line[..at].chars().next_back();
+                let after = line[at + access.len()..].chars().next();
+                !before.is_some_and(|c| is_ident_char(c) || c == '.')
+                    && !after.is_some_and(|c| is_ident_char(c) || c == '(')
+            });
+            if reads {
+                lines.insert(index + 1);
+            }
+        }
+    }
+    lines.into_iter().collect()
+}
+
+/// The comment stripper keeps code and literals, blanks comments, and keeps
+/// every line where it was.
+#[test]
+fn comment_stripping_keeps_code_and_lines() {
+    let text = "use a::World; // World\n/// World\nlet s = \"// not a comment\"; /* World\n World */ let c = '\"';\nfn f<'a>() {}\n";
+    let code = strip_rust_comments(text);
+    let lines: Vec<&str> = code.lines().collect();
+
+    assert_eq!(lines.len(), 5, "every line survives: {code:?}");
+    assert!(
+        names_word(lines[0], "World"),
+        "code is kept: {:?}",
+        lines[0]
+    );
+    assert!(!lines[0].contains("// World"), "a line comment is blanked");
+    assert!(!names_word(lines[1], "World"), "a doc comment is blanked");
+    assert!(
+        lines[2].contains("\"// not a comment\""),
+        "a string is kept"
+    );
+    assert!(!names_word(lines[2], "World") && !names_word(lines[3], "World"));
+    assert!(lines[3].contains("let c = '\"';"), "a char literal is kept");
+    assert!(
+        lines[4].contains("fn f<'a>() {}"),
+        "a lifetime is not a literal"
+    );
+    assert!(!names_word("RenderWorld and WorldAccess", "World"));
+}
+
+/// The runtime-field detector sees a read through a parameter or a built
+/// context, and ignores an agent's own `runtime` field and other types.
+#[test]
+fn runtime_field_reads_are_seen() {
+    let code = "\
+fn execute(&mut self, context: &mut EngineContext<'_>) {
+    let a = context.runtime.resources.get::<X>();
+    let b = self.runtime.clone();
+    let c = lane_ctx.runtime.clone();
+}
+fn other(ctx: &EngineContext<'_>) {
+    let d = Arc::clone(&ctx.runtime);
+}
+fn built() {
+    let mut engine_ctx = EngineContext::for_agent(a, b, c, d, e, f);
+    let e = engine_ctx.runtime.services.get::<Y>();
+}
+";
+    assert_eq!(runtime_field_reads(code), vec![2, 7, 11]);
+}
