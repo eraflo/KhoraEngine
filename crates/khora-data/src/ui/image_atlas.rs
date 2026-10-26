@@ -23,27 +23,35 @@
 //! without losing the atlas, and the UiAgent code holds no GPU state at
 //! all.
 
-use std::collections::HashMap;
-use std::sync::{Mutex, MutexGuard, RwLock};
+use std::collections::HashSet;
+use std::sync::{Mutex, MutexGuard};
 
 use khora_core::asset::AssetUUID;
 use khora_core::renderer::api::resource::TextureFormat;
 use khora_core::renderer::api::util::{AtlasRect, TextureAtlas};
 use khora_core::renderer::GraphicsDevice;
+use khora_core::residency::Resident;
+
+use crate::residency::ImageOnGpu;
 
 /// Resource holding the UI image atlas (GPU texture) and an
 /// `AssetUUID → AtlasRect` cache mapping each uploaded UI image to its
 /// position inside the atlas.
 ///
-/// Registered in [`khora_core::Resources`] at engine init; the UI agent
-/// allocates the GPU atlas lazily via [`UiImageAtlas::ensure_atlas`] and
-/// then borrows it for upload + render through [`UiImageAtlas::lock_atlas`].
+/// Registered in [`khora_core::Resources`] at engine init. The `image_on_gpu`
+/// residency allocates the GPU atlas lazily via [`UiImageAtlas::ensure_atlas`]
+/// and places every UI image in it before the agents run; the UI agent borrows
+/// the atlas for rendering through [`UiImageAtlas::lock_atlas`] and reads the
+/// rects with [`UiImageAtlas::get_rect`].
 pub struct UiImageAtlas {
     /// GPU texture atlas, allocated lazily on first call to
     /// `ensure_atlas` once a graphics device is available.
     atlas: Mutex<Option<TextureAtlas>>,
-    /// Persistent `AssetUUID → AtlasRect` cache.
-    cache: RwLock<HashMap<AssetUUID, AtlasRect>>,
+    /// Persistent `AssetUUID → AtlasRect` cache: the `image_on_gpu`
+    /// residency's store, which places an image again when its copy changes.
+    residents: Resident<ImageOnGpu>,
+    /// The images the atlas refused, so a refusal is logged once.
+    refused: Mutex<HashSet<AssetUUID>>,
 }
 
 impl UiImageAtlas {
@@ -54,7 +62,8 @@ impl UiImageAtlas {
     pub fn new() -> Self {
         Self {
             atlas: Mutex::new(None),
-            cache: RwLock::new(HashMap::new()),
+            residents: Resident::new(),
+            refused: Mutex::new(HashSet::new()),
         }
     }
 
@@ -101,14 +110,34 @@ impl UiImageAtlas {
 
     /// Returns the `AtlasRect` previously stored for `id`, if any.
     pub fn get_rect(&self, id: &AssetUUID) -> Option<AtlasRect> {
-        self.cache.read().ok().and_then(|m| m.get(id).copied())
+        self.residents.get(id)
     }
 
-    /// Stores `rect` under `id`.
+    /// Stores `rect` under `id`, with no decoded copy behind it: the
+    /// `image_on_gpu` residency places the image again from its source.
     pub fn insert_rect(&self, id: AssetUUID, rect: AtlasRect) {
-        if let Ok(mut m) = self.cache.write() {
-            m.insert(id, rect);
-        }
+        self.residents.insert(id, rect);
+    }
+
+    /// The `image_on_gpu` residency's store of rects.
+    pub fn residents(&self) -> &Resident<ImageOnGpu> {
+        &self.residents
+    }
+
+    /// Records that the atlas refused `id`; `true` the first time.
+    pub(crate) fn note_refusal(&self, id: AssetUUID) -> bool {
+        self.refused
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id)
+    }
+
+    /// Forgets a refusal of `id`, once the image is placed.
+    pub(crate) fn forget_refusal(&self, id: &AssetUUID) {
+        self.refused
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(id);
     }
 
     /// Reports whether the GPU atlas has been initialized.
@@ -118,7 +147,7 @@ impl UiImageAtlas {
 
     /// Returns the number of cache entries.
     pub fn cache_len(&self) -> usize {
-        self.cache.read().map(|m| m.len()).unwrap_or(0)
+        self.residents.len()
     }
 }
 

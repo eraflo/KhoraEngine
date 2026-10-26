@@ -25,7 +25,7 @@ use khora_core::agent::completion::AgentCompletionMap;
 use khora_core::agent::completion::CompletionOutcome;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::{EngineMode, ExecutionPhase};
-use khora_core::lane::{LaneBus, OutputDeck};
+use khora_core::lane::{HostViews, LaneBus, OutputDeck};
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::Runtime;
 use khora_data::ecs::World;
@@ -75,6 +75,19 @@ impl ExecutionScheduler {
     /// budget arbitration, and telemetry all observe each individual agent
     /// invocation (a sub-step counts as a real run, with its own cost sample).
     pub fn run_frame(&mut self, world: &mut World, runtime: Arc<Runtime>) {
+        self.run_frame_with(world, runtime, |_| {});
+    }
+
+    /// [`run_frame`](Self::run_frame), handing `before_agents` the frame's
+    /// bus once the Flows and the host's Views are on it, before any agent
+    /// runs: the host's own work from the frame's Views. The SDK prepares the
+    /// renderer from the camera View there, whatever agents run.
+    pub fn run_frame_with(
+        &mut self,
+        world: &mut World,
+        runtime: Arc<Runtime>,
+        before_agents: impl FnOnce(&LaneBus),
+    ) {
         // 1. Sync budgets from cold thread
         self.budget_channel.sync();
         self.frame_start = Instant::now();
@@ -182,6 +195,11 @@ impl ExecutionScheduler {
         //    into the bus. Flows are read-only projectors — no budget needed
         //    (only agents compete for the frame budget).
         substrate::run_flows(world, &mut bus, &runtime);
+        // Then the Views no Flow produces: the ones the host application set.
+        if let Some(host_views) = runtime.resources.get::<Arc<HostViews>>() {
+            host_views.publish_into(&mut bus);
+        }
+        before_agents(&bus);
 
         // Freeze the bus behind an `Arc` for the rest of the frame. It is
         // strictly read-only from here on (the CLAD descent only reads Views),

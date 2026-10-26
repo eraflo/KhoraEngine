@@ -47,7 +47,9 @@ use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::api::shadow::ShadowFrame;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
-use khora_data::render::RenderWorld;
+use khora_data::render::{
+    PassContribution, PassDescriptor, RenderWorld, ResourceId, ShadowPassSlot,
+};
 use khora_data::AssetStore;
 use khora_lanes::shadow_lane::{LowResShadowsLane, MediumShadowsLane, StandardShadowsLane};
 use khora_lanes::shadow_lane::{
@@ -85,10 +87,14 @@ impl Agent for ShadowAgent {
         AgentAccess::Isolated
     }
 
-    /// Its lane publishes the frame's [`ShadowFrame`] for the lit lanes.
+    /// Its lane publishes the frame's [`ShadowFrame`] for the lit lanes; the
+    /// recorded pass goes to its [`ShadowPassSlot`] for the engine to submit.
     fn contention(&self) -> Contention {
         Contention::none()
-            .writing_deck([std::any::TypeId::of::<ShadowFrame>()])
+            .writing_deck([
+                std::any::TypeId::of::<ShadowFrame>(),
+                std::any::TypeId::of::<ShadowPassSlot>(),
+            ])
             .reading::<AssetStore>()
             .reading::<Arc<FrameContext>>()
             .reading::<AgentFrameStatusMap>()
@@ -258,10 +264,15 @@ impl Agent for ShadowAgent {
             // via Deck, no side-channels).
         }
         let _ = frame_ctx; // kept for any future per-frame resource use
-        if let Some(cmd_buf) = encoder.finish() {
-            device.submit_command_buffer(cmd_buf);
+                           // The engine submits the pass, first in the registered pass order:
+                           // every lit pass samples the atlas it fills.
+        if let Some(command_buffer) = encoder.finish() {
+            context.deck.slot::<ShadowPassSlot>().0 = Some(PassContribution {
+                descriptor: PassDescriptor::new("ShadowPass").writes(ResourceId::ShadowAtlas),
+                command_buffer,
+            });
         } else {
-            log::error!("ShadowAgent: encoder.finish() returned None — skipping shadow submission");
+            log::error!("ShadowAgent: encoder.finish() returned None — skipping the shadow pass");
         }
     }
 

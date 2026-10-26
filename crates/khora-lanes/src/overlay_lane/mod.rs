@@ -22,3 +22,6 @@ mod wireframe;
 pub use gizmo::GizmoLane;
 pub use grid::GridLane;
 pub use wireframe::WireframeLane;
+
+#[cfg(test)]
+mod tests;

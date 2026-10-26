@@ -307,8 +307,8 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la cl�
   → full parity with `LitForwardLane`.
 - **OverlayAgent**: new agent owning post-main-render `LaneKind::Render` lanes, runs in `OUTPUT` after
   `Renderer` (Hard dep). Lanes run in parallel, order `Grid → Wireframe → Gizmo`.
-- **GizmoLane / GridLane**: editor/debug overlays via `Arc<Mutex<…>>` shared runtime resources
-  (`SharedGizmoFrame`, `SharedGridConfig`), `LoadOp::Load`. The backend (`khora-infra`) no longer owns
+- **GizmoLane / GridLane**: editor/debug overlays read host Views from the bus (`GizmoView`,
+  `GridView`, set by the editor in `Arc<HostViews>`), `LoadOp::Load`. The backend (`khora-infra`) no longer owns
   any render pipeline — the editor is a pure data producer.
 - **StandardPbrLane**: alternative `RenderAgent` strategy (Cook-Torrance GGX), shares the
   `khora::std/lighting/shadow` lib modules and the group-3 contract.

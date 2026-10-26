@@ -160,6 +160,12 @@ impl<A: EngineApp> EngineBootstrap<A> {
         core.scheduler = Some(scheduler);
         core.runtime = runtime_arc;
         core.input_events = input_events;
+        // The pass slots are registered at link time, so a cycle among them
+        // is a build defect no frame could recover from.
+        core.passes = match khora_data::render::registered_pass_order() {
+            Ok(order) => order,
+            Err(refusal) => panic!("the engine cannot order its render passes: {refusal}"),
+        };
     }
 }
 
@@ -226,17 +232,13 @@ fn populate<A: EngineApp>(
     // enables the grid via `GridConfig` there. They are standalone
     // `Arc<Mutex<Default>>` with no dependency on later-created
     // resources, so exposing them this early is safe.
-    let gizmo_frame: khora_data::render::SharedGizmoFrame =
-        Arc::new(Mutex::new(khora_data::render::GizmoFrame::default()));
-    runtime.resources.insert(gizmo_frame);
-    // Editor grid — disabled by default; the editor opts in.
-    let grid_config: khora_data::render::SharedGridConfig =
-        Arc::new(Mutex::new(khora_data::render::GridConfig::default()));
-    runtime.resources.insert(grid_config);
-    // Wireframe debug overlay — disabled by default; the editor opts in.
-    let wireframe_config: khora_data::render::SharedWireframeConfig =
-        Arc::new(Mutex::new(khora_data::render::WireframeConfig::default()));
-    runtime.resources.insert(wireframe_config);
+    // Each overlay starts with its empty View: no gizmo line, the grid and
+    // the wireframe off. The editor opts in by setting them again.
+    let host_views = khora_core::lane::HostViews::new();
+    host_views.set(khora_data::render::GizmoView::default());
+    host_views.set(khora_data::render::GridView::default());
+    host_views.set(khora_data::render::WireframeView::default());
+    runtime.resources.insert(Arc::new(host_views));
 
     // ── Data-layer GPU resources ─────────────────────────────────────
     // AssetStore: the single engine-wide store of projected GPU assets

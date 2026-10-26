@@ -18,12 +18,11 @@
 //! [`GridConfig`](super::GridConfig). Only the contract type lives in
 //! `khora-data`; the GPU work is the engine-side `WireframeLane`'s job.
 //!
-//! A host application opts in by enabling this config (shared as an
-//! `Arc<Mutex<WireframeConfig>>` runtime resource). Disabled by default — the
-//! editor drives it from a viewport toggle; the sandbox leaves it off.
+//! A host application opts in by setting an enabled [`WireframeView`] in the
+//! runtime's `HostViews`. Disabled by default — the editor drives it from a
+//! viewport toggle; the sandbox leaves it off.
 
 use khora_core::math::LinearRgba;
-use std::sync::{Arc, Mutex};
 
 /// Wireframe debug-overlay state.
 #[derive(Debug, Clone)]
@@ -47,9 +46,14 @@ impl Default for WireframeConfig {
     }
 }
 
-/// Shared wireframe-overlay config — the host app enables it, `WireframeLane`
-/// reads it.
-pub type SharedWireframeConfig = Arc<Mutex<WireframeConfig>>;
+/// The wireframe overlay as the host application hands it to `WireframeLane`
+/// this frame.
+///
+/// A View on the [`LaneBus`](khora_core::lane::LaneBus), published by the host
+/// through [`HostViews`](khora_core::lane::HostViews) before the agents run.
+/// The engine's own default is the disabled overlay.
+#[derive(Debug, Clone, Default)]
+pub struct WireframeView(pub WireframeConfig);
 
 #[cfg(test)]
 mod tests {

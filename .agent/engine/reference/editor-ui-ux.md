@@ -58,8 +58,9 @@ transform gizmos, dock layout, theme, and the egui/Taffy plumbing.
 - **For every design/UI-UX decision — typography, color, spacing, layout, motion, UX writing — use
   `/impeccable`** (audit/critique/polish). Treat the docs visual language (`docs/src/design/`) as the
   reference and run impeccable's anti-pattern detector before shipping UI.
-- The editor is a **pure data producer**: publish gizmo/grid data into shared runtime resources
-  (`SharedGizmoFrame`, `SharedGridConfig`); the `OverlayAgent` renders it. The backend owns no pipeline.
+- The editor is a **pure data producer**: it sets the overlay Views (`GizmoView`, `GridView`,
+  `WireframeView`) in the runtime's `Arc<HostViews>`; the scheduler publishes them on every frame's bus
+  and the `OverlayAgent` renders them. The backend owns no pipeline.
 - UI layout through the `LayoutSystem` trait — never call Taffy directly from agents.
 - Reach egui only through `khora_sdk::tool_ui` / `editor_ui` — never depend on `egui`/`eframe` directly.
 - The editor runs in `EngineMode::Custom("editor")` while editing; Play/Pause map to `EngineMode::Playing`

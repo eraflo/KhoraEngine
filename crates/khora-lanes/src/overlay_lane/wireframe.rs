@@ -38,7 +38,7 @@ use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::BufferId;
 use khora_core::renderer::traits::CommandEncoder;
 use khora_data::assets::Assets;
-use khora_data::render::{RenderWorld, SharedWireframeConfig, WireframeConfig};
+use khora_data::render::{RenderWorld, WireframeConfig, WireframeView};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
 /// Wireframe material uniform — matches `WireframeMaterialUniforms` in
@@ -436,11 +436,10 @@ impl Lane for WireframeLane {
     }
 
     fn execute(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
-        // Opt-in: a host application enables the shared `WireframeConfig`.
+        // Opt-in: a host application enables the wireframe View.
         // Absent or disabled ⇒ nothing to draw.
-        let config = ctx
-            .get::<SharedWireframeConfig>()
-            .and_then(|cfg| cfg.lock().ok().map(|c| c.clone()));
+        let config: Option<WireframeConfig> =
+            ctx.get_ref::<WireframeView>().map(|view| view.0.clone());
         let Some(config) = config else {
             return Ok(());
         };

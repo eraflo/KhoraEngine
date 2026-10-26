@@ -20,7 +20,8 @@
 //! GORNA strategy to negotiate, no behavior to swap. The submission step
 //! (`submit_frame_graph`) is invoked directly by `EngineCore`.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::cmp::Reverse;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use khora_core::renderer::api::command::CommandBufferId;
@@ -142,6 +143,170 @@ pub struct TransparentPassSlot(pub Option<PassContribution>);
 #[derive(Default)]
 pub struct OverlayPassSlot(pub Option<PassContribution>);
 
+/// Deck slot carrying the shadow-map pass, written by `ShadowAgent`.
+///
+/// Submitted first: every lit pass samples the shadow atlas it fills.
+#[derive(Default)]
+pub struct ShadowPassSlot(pub Option<PassContribution>);
+
+/// One pass slot the engine submits each frame, and what it must follow.
+///
+/// Submitted by `register_pass!(Slot)` or `register_pass!(Slot, after = [A, B])`
+/// through `inventory`; the SDK's submit stage takes every registered slot from
+/// the frame's deck in [`registered_pass_order`].
+#[derive(Debug)]
+pub struct PassRegistration {
+    /// The slot's name, as an error names it.
+    pub name: &'static str,
+    /// The slot's type.
+    pub type_id: fn() -> std::any::TypeId,
+    /// The slots this one is submitted after.
+    pub after: &'static [fn() -> std::any::TypeId],
+    /// Takes this frame's contribution out of the slot.
+    pub take: fn(&mut khora_core::lane::OutputDeck) -> Option<PassContribution>,
+}
+
+inventory::collect!(PassRegistration);
+
+/// The `after` edges of some pass slots make a cycle: no order submits each
+/// after the ones it names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PassOrderError {
+    /// The names of the slots on the cycle.
+    pub cycle: Vec<&'static str>,
+}
+
+impl std::fmt::Display for PassOrderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "the pass slots' `after` edges make a cycle: {} -> {}",
+            self.cycle.join(" -> "),
+            self.cycle.first().copied().unwrap_or_default()
+        )
+    }
+}
+
+impl std::error::Error for PassOrderError {}
+
+/// Orders `passes` so each comes after every slot its `after` names.
+///
+/// A slot named in `after` but absent from `passes` orders nothing. Refuses a
+/// cycle, naming the slots on it.
+///
+/// Slots no edge orders against each other are taken by name, so the order
+/// does not depend on the order the linker happened to collect them in.
+pub fn pass_order<'a>(
+    passes: &[&'a PassRegistration],
+) -> Result<Vec<&'a PassRegistration>, PassOrderError> {
+    let ids: Vec<std::any::TypeId> = passes.iter().map(|pass| (pass.type_id)()).collect();
+    // `before[i]`: the indices of the present slots pass `i` must follow.
+    let before: Vec<Vec<usize>> = passes
+        .iter()
+        .map(|pass| {
+            pass.after
+                .iter()
+                .filter_map(|after| ids.iter().position(|id| *id == after()))
+                .collect()
+        })
+        .collect();
+
+    let mut placed = vec![false; passes.len()];
+    let mut order = Vec::with_capacity(passes.len());
+    while order.len() < passes.len() {
+        let ready = (0..passes.len())
+            .filter(|&i| !placed[i] && before[i].iter().all(|&b| placed[b]))
+            .min_by_key(|&i| passes[i].name);
+        match ready {
+            Some(i) => {
+                placed[i] = true;
+                order.push(passes[i]);
+            }
+            None => {
+                return Err(PassOrderError {
+                    cycle: find_cycle(passes, &before, &placed),
+                })
+            }
+        }
+    }
+    Ok(order)
+}
+
+/// Walks the `after` edges among the slots left unplaced — every one of them
+/// waits on another unplaced slot — until a slot repeats; the walk from its
+/// first visit is the cycle.
+fn find_cycle(
+    passes: &[&PassRegistration],
+    before: &[Vec<usize>],
+    placed: &[bool],
+) -> Vec<&'static str> {
+    let Some(mut at) = (0..passes.len()).find(|&i| !placed[i]) else {
+        return Vec::new();
+    };
+    let mut path: Vec<usize> = Vec::new();
+    loop {
+        if let Some(start) = path.iter().position(|&i| i == at) {
+            return path[start..].iter().map(|&i| passes[i].name).collect();
+        }
+        path.push(at);
+        match before[at].iter().find(|&&b| !placed[b]) {
+            Some(&next) => at = next,
+            None => return path.iter().map(|&i| passes[i].name).collect(),
+        }
+    }
+}
+
+/// [`pass_order`] over every [`PassRegistration`] linked into the binary: the
+/// order the engine submits its passes in, checked once at boot.
+pub fn registered_pass_order() -> Result<Vec<&'static PassRegistration>, PassOrderError> {
+    let passes: Vec<&'static PassRegistration> = inventory::iter::<PassRegistration>().collect();
+    pass_order(&passes)
+}
+
+/// Registers a pass slot the engine submits each frame, after the slots it
+/// names.
+///
+/// ```ignore
+/// register_pass!(ShadowPassSlot);
+/// register_pass!(ScenePassSlot, after = [ShadowPassSlot]);
+/// ```
+///
+/// The slot must be a `Default` deck value holding an
+/// `Option<PassContribution>` in its first field.
+#[macro_export]
+macro_rules! register_pass {
+    ($slot:ty) => {
+        $crate::register_pass!($slot, after = []);
+    };
+    ($slot:ty, after = [$($after:ty),* $(,)?]) => {
+        const _: () = {
+            fn take(
+                deck: &mut khora_core::lane::OutputDeck,
+            ) -> Option<$crate::render::PassContribution> {
+                deck.take::<$slot>().0
+            }
+            inventory::submit! {
+                $crate::render::PassRegistration {
+                    name: stringify!($slot),
+                    type_id: std::any::TypeId::of::<$slot>,
+                    after: &[$(std::any::TypeId::of::<$after>),*],
+                    take,
+                }
+            }
+        };
+    };
+}
+
+// Shadows first: every lit pass samples the atlas they fill. The opaque scene
+// gives the sky the depth it tests against; the blended scene composites over
+// the sky; the UI and the debug overlays go on top.
+register_pass!(ShadowPassSlot);
+register_pass!(ScenePassSlot, after = [ShadowPassSlot]);
+register_pass!(SkyboxPassSlot, after = [ScenePassSlot]);
+register_pass!(TransparentPassSlot, after = [SkyboxPassSlot]);
+register_pass!(UiPassSlot, after = [TransparentPassSlot]);
+register_pass!(OverlayPassSlot, after = [UiPassSlot]);
+
 /// Tag naming the encoder a lane records its transparent draws into.
 ///
 /// A tag because [`LaneContext`](khora_core::lane::LaneContext) is keyed by
@@ -256,10 +421,14 @@ fn sorted_passes(passes: Vec<RecordedPass>) -> Vec<RecordedPass> {
         }
     }
 
-    let mut queue: VecDeque<usize> = (0..n).filter(|&i| in_deg[i] == 0).collect();
+    // Of the passes whose inputs are ready, the earliest inserted goes first:
+    // insertion order is the tie-breaker, so a pass freed late by its reads
+    // still precedes a later-inserted pass freed early.
+    let mut ready: BinaryHeap<Reverse<usize>> =
+        (0..n).filter(|&i| in_deg[i] == 0).map(Reverse).collect();
     let mut order = Vec::with_capacity(n);
     let mut visited: HashSet<usize> = HashSet::new();
-    while let Some(i) = queue.pop_front() {
+    while let Some(Reverse(i)) = ready.pop() {
         if !visited.insert(i) {
             continue;
         }
@@ -267,7 +436,7 @@ fn sorted_passes(passes: Vec<RecordedPass>) -> Vec<RecordedPass> {
         for &j in &adj[i] {
             in_deg[j] -= 1;
             if in_deg[j] == 0 {
-                queue.push_back(j);
+                ready.push(Reverse(j));
             }
         }
     }
@@ -383,6 +552,53 @@ mod tests {
         let pos_b = order.iter().position(|b| *b == buf(2)).unwrap();
         let pos_c = order.iter().position(|b| *b == buf(3)).unwrap();
         assert!(pos_b < pos_c);
+    }
+
+    struct FirstLoopSlot;
+    struct SecondLoopSlot;
+
+    fn take_nothing(_deck: &mut khora_core::lane::OutputDeck) -> Option<PassContribution> {
+        None
+    }
+
+    /// **A pass order with a cycle is refused, naming both slots.** Two slots
+    /// that each declare they come after the other have no order the frame
+    /// could be submitted in; the engine refuses them at boot rather than
+    /// guessing one, and the refusal says which two they are.
+    #[test]
+    fn a_pass_order_cycle_is_refused_at_boot() {
+        static FIRST: PassRegistration = PassRegistration {
+            name: "FirstLoopSlot",
+            type_id: std::any::TypeId::of::<FirstLoopSlot>,
+            after: &[std::any::TypeId::of::<SecondLoopSlot>],
+            take: take_nothing,
+        };
+        static SECOND: PassRegistration = PassRegistration {
+            name: "SecondLoopSlot",
+            type_id: std::any::TypeId::of::<SecondLoopSlot>,
+            after: &[std::any::TypeId::of::<FirstLoopSlot>],
+            take: take_nothing,
+        };
+
+        let refusal = match pass_order(&[&FIRST, &SECOND]) {
+            Ok(order) => panic!(
+                "a cycle was ordered: {:?}",
+                order.iter().map(|pass| pass.name).collect::<Vec<_>>()
+            ),
+            Err(refusal) => refusal,
+        };
+        let message = refusal.to_string();
+        for name in ["FirstLoopSlot", "SecondLoopSlot"] {
+            assert!(
+                refusal.cycle.contains(&name),
+                "the cycle names {name}: {:?}",
+                refusal.cycle
+            );
+            assert!(
+                message.contains(name),
+                "the message names {name}: {message}"
+            );
+        }
     }
 
     #[test]

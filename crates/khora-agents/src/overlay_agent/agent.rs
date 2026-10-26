@@ -85,9 +85,6 @@ impl Agent for OverlayAgent {
             .reading::<Arc<FrameContext>>()
             .reading::<AgentFrameStatusMap>()
             .reading::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
-            .reading::<khora_data::render::SharedGizmoFrame>()
-            .reading::<khora_data::render::SharedGridConfig>()
-            .reading::<khora_data::render::SharedWireframeConfig>()
             .reading::<Arc<dyn GraphicsDevice>>()
     }
 
@@ -195,31 +192,19 @@ impl Agent for OverlayAgent {
             }
             ctx.insert(clear_color);
 
-            // The host application (editor, debug tooling) publishes
-            // gizmo lines into this shared frame. The engine only owns
-            // the mechanism — it never produces the data itself, so the
-            // editor stays a pure consumer of engine APIs (no
-            // engine-internal `EditorAgent`).
-            if let Some(gizmos) = context
-                .resource::<khora_data::render::SharedGizmoFrame>()
-                .cloned()
-            {
-                ctx.insert(gizmos);
+            // The host application (editor, debug tooling) sets the
+            // gizmo, grid and wireframe Views; the frame's bus carries
+            // them. The engine owns the mechanism and never produces the
+            // data itself, so the editor stays a pure consumer of engine
+            // APIs. An absent View draws nothing.
+            if let Some(gizmos) = context.bus.get::<khora_data::render::GizmoView>() {
+                ctx.insert_ref(gizmos);
             }
-            // Editor-grid opt-in — same mechanism: the host app enables
-            // it, `GridLane` consumes it; absent ⇒ no grid.
-            if let Some(grid_cfg) = context
-                .resource::<khora_data::render::SharedGridConfig>()
-                .cloned()
-            {
-                ctx.insert(grid_cfg);
+            if let Some(grid) = context.bus.get::<khora_data::render::GridView>() {
+                ctx.insert_ref(grid);
             }
-            // Wireframe debug overlay — same opt-in mechanism.
-            if let Some(wireframe_cfg) = context
-                .resource::<khora_data::render::SharedWireframeConfig>()
-                .cloned()
-            {
-                ctx.insert(wireframe_cfg);
+            if let Some(wireframe) = context.bus.get::<khora_data::render::WireframeView>() {
+                ctx.insert_ref(wireframe);
             }
 
             // Lent last: the deck borrow is exclusive, so the resource

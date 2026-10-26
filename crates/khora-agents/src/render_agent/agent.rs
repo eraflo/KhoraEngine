@@ -16,12 +16,12 @@
 //!
 //! Per CLAD, an Agent owns exactly one `LaneKind` and stores **only** its
 //! own GORNA/strategy state.  Everything else (the graphics device, the
-//! render system, the GPU mesh cache, the per-frame `RenderWorld`) is
+//! GPU mesh cache, the per-frame `RenderWorld`) is
 //! looked up from the [`ServiceRegistry`] each frame — agents are not
 //! the owners of those resources.
 
 use super::strategy::RenderingStrategy;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use khora_core::agent::gorna::{
@@ -39,13 +39,11 @@ use khora_core::lane::{
 use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::traits::PipelineSystem;
-use khora_core::renderer::{GraphicsDevice, RenderSystem};
+use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 use khora_data::assets::Assets;
-use khora_data::ecs::World;
 use khora_data::render::{
-    extract_active_camera_view, PassContribution, PassDescriptor, RenderWorld, ResourceId,
-    ScenePassSlot, TransparentPassSlot, FALLBACK_ASPECT,
+    PassContribution, PassDescriptor, RenderWorld, ResourceId, ScenePassSlot, TransparentPassSlot,
 };
 use khora_data::AssetStore;
 use khora_lanes::render_lane::{ForwardPlusLane, LitForwardLane, SimpleUnlitLane, StandardPbrLane};
@@ -81,13 +79,11 @@ impl Agent for RenderAgent {
         AgentId::Renderer
     }
 
-    /// Reads the world read-only (active-camera extraction) and writes shared
-    /// render resources (`RenderSystem`, `FrameGraph`), so it takes the world by
-    /// shared reference. The scheduler may run it concurrently with `Isolated`
-    /// agents (which touch disjoint state), never with another shared-resource
-    /// writer in the same wave.
+    /// World-free: the scene comes from the bus's `RenderWorld`, and the
+    /// engine prepares the renderer with the frame's camera before any agent
+    /// runs.
     fn access(&self) -> AgentAccess {
-        AgentAccess::SharedWorld
+        AgentAccess::Isolated
     }
 
     /// Buffers its main scene pass into the [`ScenePassSlot`] deck slot.
@@ -103,7 +99,6 @@ impl Agent for RenderAgent {
             .reading::<Arc<dyn PipelineSystem>>()
             .reading::<khora_data::IblBaker>()
             .reading::<Arc<dyn GraphicsDevice>>()
-            .locking::<Arc<Mutex<Box<dyn RenderSystem>>>>()
     }
 
     fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
@@ -225,11 +220,6 @@ impl Agent for RenderAgent {
         };
         let device: Arc<dyn GraphicsDevice> = (*device_arc).clone();
 
-        let Some(rs_arc) = context.locked::<Arc<Mutex<Box<dyn RenderSystem>>>>() else {
-            return;
-        };
-        let render_system: Arc<Mutex<Box<dyn RenderSystem>>> = (*rs_arc).clone();
-
         let Some(asset_store) = context.resource::<AssetStore>() else {
             return;
         };
@@ -272,26 +262,6 @@ impl Agent for RenderAgent {
             .unwrap_or_else(|| ClearColor(khora_core::math::LinearRgba::new(0.1, 0.1, 0.15, 1.0)));
         let shadow_atlas = fctx.get::<ShadowAtlasView>().map(|a| *a);
         let shadow_sampler = fctx.get::<ShadowComparisonSampler>().map(|a| *a);
-        // The camera's projection takes the shape of the image it fills.
-        let aspect = fctx
-            .get::<ColorTargetSize>()
-            .map_or(FALLBACK_ASPECT, |size| size.aspect());
-
-        // Push the active camera view into the render system if present.
-        // Camera extraction is read-only, so the agent takes the world by
-        // shared reference (`AgentAccess::SharedWorld`) — never `&mut`.
-        if let Some(world_any) = context.world_ref() {
-            if let Some(world) = world_any.downcast_ref::<World>() {
-                // An active camera whose values make no image prepares
-                // nothing: the flows publish no view for it either.
-                if let Some(Ok(view_info)) = extract_active_camera_view(world, aspect) {
-                    if let Ok(mut rs) = render_system.lock() {
-                        rs.prepare_frame(&view_info);
-                    }
-                }
-            }
-        }
-
         let strategy = self.strategy;
         let select_name = lane_name_for_strategy(strategy, render_world);
 

@@ -219,8 +219,15 @@ impl<A: EngineApp> EngineCore<A> {
         let Some(gw) = self.game_world.as_mut() else {
             return;
         };
+        let render_system = self
+            .runtime
+            .backends
+            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+            .cloned();
         if let Some(s) = self.scheduler.as_mut() {
-            s.run_frame(gw.inner_world_mut(), frame_runtime_arc.clone());
+            s.run_frame_with(gw.inner_world_mut(), frame_runtime_arc.clone(), |bus| {
+                prepare_frame(render_system.as_ref(), bus)
+            });
         }
     }
 
@@ -264,34 +271,21 @@ impl<A: EngineApp> EngineCore<A> {
             .get::<SharedFrameGraph>()
             .map(|arc| (*arc).clone());
 
-        // Fold the agents' recorded passes (buffered in the scheduler's deck by
-        // Render/Skybox/Ui/Overlay instead of locking the shared graph) into the
-        // FrameGraph in a fixed layer order — scene, then the skybox background,
-        // then UI, then overlay compositing. The skybox sits right after the
-        // scene (it loads the scene's depth to reject geometry pixels) and
-        // before the debug overlays. The topological sort refines this via the
-        // declared read/write edges; insertion order is the tie-breaker.
+        // Fold the agents' recorded passes (buffered in the scheduler's deck
+        // instead of locking the shared graph) into the FrameGraph in the
+        // order the slots' registrations declare. The topological sort
+        // refines it by the declared read/write edges; insertion order is
+        // the tie-breaker.
         if let (Some(graph), Some(scheduler)) = (&frame_graph, self.scheduler.as_mut()) {
-            use khora_data::render::{
-                OverlayPassSlot, ScenePassSlot, SkyboxPassSlot, TransparentPassSlot, UiPassSlot,
-            };
             let deck = scheduler.deck_mut();
-            let scene = deck.take::<ScenePassSlot>().0;
-            let skybox = deck.take::<SkyboxPassSlot>().0;
-            let transparent = deck.take::<TransparentPassSlot>().0;
-            let ui = deck.take::<UiPassSlot>().0;
-            let overlay = deck.take::<OverlayPassSlot>().0;
-            if scene.is_some()
-                || skybox.is_some()
-                || transparent.is_some()
-                || ui.is_some()
-                || overlay.is_some()
-            {
+            let recorded: Vec<_> = self
+                .passes
+                .iter()
+                .filter_map(|pass| (pass.take)(deck))
+                .collect();
+            if !recorded.is_empty() {
                 if let Ok(mut fg) = graph.lock() {
-                    for pass in [scene, skybox, transparent, ui, overlay]
-                        .into_iter()
-                        .flatten()
-                    {
+                    for pass in recorded {
                         fg.add_pass(pass.descriptor, pass.command_buffer);
                     }
                 } else {
@@ -340,5 +334,29 @@ impl<A: EngineApp> EngineCore<A> {
     pub fn end_render_frame(&mut self, presents: bool) {
         self.submit_passes(presents);
         self.present_frame(presents);
+    }
+}
+
+/// Prepares the renderer with the frame's camera, from the [`CameraView`] the
+/// camera flow put on the bus: once a frame, before any agent records a pass.
+/// An active camera whose values make no image prepares nothing.
+///
+/// [`CameraView`]: khora_data::flow::CameraView
+fn prepare_frame(
+    render_system: Option<&Arc<Mutex<Box<dyn RenderSystem>>>>,
+    bus: &khora_core::lane::LaneBus,
+) {
+    let Some(render_system) = render_system else {
+        return;
+    };
+    let Some(Some(Ok(view))) = bus
+        .get::<khora_data::flow::CameraView>()
+        .map(|camera| camera.view.as_ref())
+    else {
+        return;
+    };
+    match render_system.lock() {
+        Ok(mut render_system) => render_system.prepare_frame(view),
+        Err(_) => log::error!("prepare_frame: RenderSystem mutex poisoned, frame not prepared"),
     }
 }

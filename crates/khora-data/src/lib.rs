@@ -24,6 +24,7 @@ pub mod flow;
 pub mod gpu;
 pub mod physics;
 pub mod render;
+pub mod residency;
 pub mod scene;
 pub mod ui;
 

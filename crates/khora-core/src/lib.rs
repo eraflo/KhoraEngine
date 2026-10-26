@@ -35,6 +35,7 @@ pub mod physics;
 pub mod platform;
 pub mod problems;
 pub mod renderer;
+pub mod residency;
 pub mod runtime;
 pub mod scene;
 pub mod script;

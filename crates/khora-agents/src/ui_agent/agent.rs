@@ -13,7 +13,7 @@
 // limitations under the License.
 
 use std::any::Any;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use khora_core::agent::gorna::{
@@ -26,13 +26,10 @@ use khora_core::agent::{
 use khora_core::engine_context::EngineContext;
 use khora_core::lane::{ColorTarget, ColorTargetSize, Lane, LaneContext};
 use khora_core::renderer::api::frame::FrameContext;
-use khora_core::renderer::api::resource::CpuTexture;
 use khora_core::renderer::api::text::TextRenderer;
 use khora_core::renderer::GraphicsDevice;
-use khora_data::assets::Assets;
 use khora_data::render::{PassContribution, PassDescriptor, ResourceId, UiPassSlot};
 use khora_data::ui::{UiAtlasMap, UiImageAtlas, UiScene};
-use khora_data::AssetStore;
 use khora_lanes::ui_lane::UiRenderLane;
 
 /// The agent responsible for the UI subsystem (`LaneKind::Ui`).
@@ -71,7 +68,6 @@ impl Agent for UiAgent {
             .reading::<Arc<FrameContext>>()
             .locking::<Arc<UiImageAtlas>>()
             .reading::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
-            .reading::<AssetStore>()
             .reading::<Arc<dyn GraphicsDevice>>()
             .reading::<Arc<dyn TextRenderer>>()
     }
@@ -117,15 +113,6 @@ impl Agent for UiAgent {
                 log::error!("UiAgent: Failed to initialize UiRenderLane: {}", e);
             }
         }
-
-        // Lazily allocate the GPU texture atlas inside the UiImageAtlas
-        // resource (one-shot, idempotent).
-        if let (Some(atlas_res), Some(device)) = (
-            context.resource::<Arc<UiImageAtlas>>().cloned(),
-            context.resource::<Arc<dyn GraphicsDevice>>().cloned(),
-        ) {
-            atlas_res.ensure_atlas(device.as_ref());
-        }
     }
 
     fn execute(&mut self, context: &mut EngineContext<'_>) {
@@ -156,57 +143,24 @@ impl Agent for UiAgent {
             return;
         };
 
-        // UI images are decoded into the shared asset store by the asset
-        // resolver.
-        let textures: Option<Arc<RwLock<Assets<CpuTexture>>>> = context
-            .resource::<AssetStore>()
-            .map(|store| store.store::<CpuTexture>());
-
         let text_renderer: Option<Arc<dyn TextRenderer>> = context
             .resource::<Arc<dyn TextRenderer>>()
             .map(|arc| (*arc).clone());
 
-        // The persistent `AssetUUID → AtlasRect` cache and the GPU
-        // texture atlas both live in the `UiImageAtlas` Resource. We
-        // lock the atlas mutex once for the duration of upload + render
-        // so the same `&mut TextureAtlas` is visible to both the
-        // per-image upload loop below and the render lane via
-        // `LaneContext`.
+        // The `image_on_gpu` residency placed every UI image in the
+        // `UiImageAtlas` before the agents ran; the agent reads the rects
+        // and lends the atlas to the lane for this frame's draw. Builds an
+        // immutable per-frame `UiAtlasMap` exposed to the lane through
+        // `LaneContext` (no in-place mutation of the bus-published `UiScene`).
         let atlas_resource: Option<Arc<UiImageAtlas>> =
             context.resource::<Arc<UiImageAtlas>>().cloned();
         let mut atlas_guard = atlas_resource.as_ref().and_then(|r| r.lock_atlas());
 
-        // Resolve per-frame atlas rects for any UI images that aren't yet
-        // in the cache. Builds an immutable per-frame `UiAtlasMap`
-        // exposed to the lane through `LaneContext` (no in-place
-        // mutation of the bus-published `UiScene`).
         let mut atlas_map = UiAtlasMap::new();
-        if let (Some(guard), Some(textures), Some(res)) = (
-            atlas_guard.as_mut(),
-            textures.as_ref(),
-            atlas_resource.as_ref(),
-        ) {
-            if let Some(atlas) = guard.as_mut() {
-                for node in ui_scene.nodes.iter() {
-                    let Some(image) = node.image else { continue };
-                    if let Some(rect) = res.get_rect(&image.texture) {
-                        atlas_map.insert(image.texture, rect);
-                        continue;
-                    }
-                    if let Ok(assets) = textures.read() {
-                        if let Some(cpu_tex) = assets.get(&image.texture) {
-                            if let Some(rect) = atlas.allocate_and_upload(
-                                device.as_ref(),
-                                cpu_tex.size.width,
-                                cpu_tex.size.height,
-                                &cpu_tex.pixels,
-                                cpu_tex.format.bytes_per_pixel(),
-                            ) {
-                                res.insert_rect(image.texture, rect);
-                                atlas_map.insert(image.texture, rect);
-                            }
-                        }
-                    }
+        if let Some(res) = atlas_resource.as_ref() {
+            for image in ui_scene.nodes.iter().filter_map(|node| node.image) {
+                if let Some(rect) = res.get_rect(&image.texture) {
+                    atlas_map.insert(image.texture, rect);
                 }
             }
         }
@@ -344,15 +298,17 @@ mod ui_texture_source_tests {
     use super::*;
     use khora_data::AssetStore;
 
-    /// UI images are decoded into the shared `AssetStore`; the agent reads
-    /// them there, so it must declare that read to the scheduler.
+    /// UI images reach the atlas through the `image_on_gpu` residency,
+    /// before the agents run; the agent never reads the decoded textures, so
+    /// it declares no read of the `AssetStore` (a needless read would
+    /// serialise its wave).
     #[test]
-    fn the_ui_agent_declares_it_reads_the_asset_store() {
+    fn the_ui_agent_leaves_the_asset_store_to_the_residency() {
         assert!(
-            UiAgent::default()
+            !UiAgent::default()
                 .contention()
                 .may_reach(std::any::TypeId::of::<AssetStore>()),
-            "UiAgent reads UI image textures from the AssetStore"
+            "UiAgent reads no texture from the AssetStore"
         );
     }
 }

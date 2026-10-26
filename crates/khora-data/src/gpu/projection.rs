@@ -35,6 +35,7 @@
 
 use crate::assets::AssetStore;
 use crate::ecs::{HandleComponent, MaterialRef, Without, World};
+use crate::residency::MeshOnGpu;
 use khora_core::asset::{AlphaMode, AssetHandle, AssetUUID, Material};
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{LinearRgba, Origin3D};
@@ -46,7 +47,7 @@ use khora_core::renderer::api::material::{
 };
 use khora_core::renderer::api::pipeline::LayoutKey;
 use khora_core::renderer::api::resource::{
-    AddressMode, BufferDescriptor, BufferUsage, CpuTexture, FilterMode, ImageAspect, IndexFormat,
+    AddressMode, BufferDescriptor, BufferUsage, CpuTexture, FilterMode, ImageAspect,
     MipmapFilterMode, SampleCount, SamplerDescriptor, SamplerId, TextureColorSpace,
     TextureDescriptor, TextureDimension, TextureId, TextureUsage, TextureViewDescriptor,
     TextureViewId,
@@ -54,6 +55,7 @@ use khora_core::renderer::api::resource::{
 use khora_core::renderer::api::shader::ShaderVariantKey;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
+use khora_core::residency::Residency;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -107,17 +109,25 @@ impl ProjectionRegistry {
             for (entity_id, mesh_handle_comp, _) in query {
                 let uuid = mesh_handle_comp.uuid;
 
-                // Cache miss: upload to GPU for the first time.
+                // Cache miss: upload to GPU for the first time. A mesh the
+                // device refuses stays untagged and is tried again next frame.
                 if !cache
                     .read()
                     .unwrap_or_else(|e| e.into_inner())
                     .contains(&uuid)
                 {
-                    let gpu_mesh = Self::upload_mesh(mesh_handle_comp, device);
-                    cache
-                        .write()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .insert(uuid, AssetHandle::new(gpu_mesh));
+                    match MeshOnGpu::make(mesh_handle_comp, &mut &*device) {
+                        Ok(gpu_mesh) => {
+                            cache
+                                .write()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .insert(uuid, gpu_mesh);
+                        }
+                        Err(refusal) => {
+                            log::error!("{refusal}");
+                            continue;
+                        }
+                    }
                 }
 
                 // Schedule the ECS component addition.
@@ -140,55 +150,6 @@ impl ProjectionRegistry {
             if let Err(e) = world.add_component(entity_id, component) {
                 log::warn!("projection: attaching GPU handle to {entity_id:?} failed: {e:?}");
             }
-        }
-    }
-
-    /// Uploads a single CPU [`Mesh`] to the GPU and returns the resulting [`GpuMesh`].
-    fn upload_mesh(mesh: &Mesh, device: &dyn GraphicsDevice) -> GpuMesh {
-        // Upload vertex buffer.
-        let vertex_data = mesh.create_vertex_buffer();
-        let vb_desc = BufferDescriptor {
-            label: Some("Mesh Vertex Buffer".into()),
-            size: vertex_data.len() as u64,
-            usage: BufferUsage::VERTEX | BufferUsage::COPY_DST,
-            mapped_at_creation: false,
-        };
-        let vertex_buffer = device
-            .create_buffer_with_data(&vb_desc, &vertex_data)
-            .expect("Failed to create vertex buffer");
-
-        // Upload index buffer (or create an empty placeholder).
-        let (index_buffer, index_count) = if let Some(indices) = &mesh.indices {
-            let index_data = bytemuck::cast_slice(indices);
-            let ib_desc = BufferDescriptor {
-                label: Some("Mesh Index Buffer".into()),
-                size: index_data.len() as u64,
-                usage: BufferUsage::INDEX | BufferUsage::COPY_DST,
-                mapped_at_creation: false,
-            };
-            let buffer = device
-                .create_buffer_with_data(&ib_desc, index_data)
-                .expect("Failed to create index buffer");
-            (buffer, indices.len() as u32)
-        } else {
-            let dummy_desc = BufferDescriptor {
-                label: Some("Empty Index Buffer".into()),
-                size: 0,
-                usage: BufferUsage::INDEX,
-                mapped_at_creation: false,
-            };
-            let buffer = device
-                .create_buffer(&dummy_desc)
-                .expect("Failed to create empty index buffer");
-            (buffer, 0)
-        };
-
-        GpuMesh {
-            vertex_buffer,
-            index_buffer,
-            index_count,
-            index_format: IndexFormat::Uint32,
-            primitive_topology: mesh.primitive_type,
         }
     }
 

@@ -65,6 +65,9 @@ pub struct EngineCore<A: EngineApp> {
     input_events: Channel<InputEvent>,
     /// The engine mode last told to the DCC.
     forwarded_mode: Option<EngineMode>,
+    /// Every registered pass slot, in the order the frame submits them.
+    /// Ordered once at boot, which refuses a cycle in their `after` edges.
+    passes: Vec<&'static khora_data::render::PassRegistration>,
 }
 
 impl<A: EngineApp> EngineCore<A> {
@@ -85,6 +88,7 @@ impl<A: EngineApp> EngineCore<A> {
             runtime: Arc::new(Runtime::new()),
             input_events: khora_core::platform::input_channel(),
             forwarded_mode: None,
+            passes: Vec::new(),
         }
     }
 

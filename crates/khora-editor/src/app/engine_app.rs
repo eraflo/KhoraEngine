@@ -463,50 +463,38 @@ impl EngineApp for EditorApp {
             }
         }
 
-        // Publish the active view into the EditorViewportOverride so
-        // RenderFlow can fall back to it when no scene Camera is active
-        // (Editing mode forces every scene camera inactive). RenderFlow
-        // appends the override to RenderWorld.views during its `project`
-        // step on the next scheduler tick.
-        self.viewport_override
-            .set(Some(khora_sdk::khora_data::render::ExtractedView {
-                view_proj: view_info.view_projection_matrix(),
-                position: view_info.camera_position,
-            }));
-
-        // The viewport clear + ground grid are no longer drawn here:
-        // the scene pass (RenderAgent) clears the viewport, and the grid
-        // is now `GridLane` under `OverlayAgent` (rendered after the
-        // scene). The editor only feeds the camera to the renderer.
-        wgpu_rs.prepare_frame(&view_info);
+        // Publish the viewport camera into the EditorViewportOverride: the
+        // flows fall back to it when no scene Camera is active (Editing mode
+        // forces every scene camera inactive), and the engine prepares the
+        // renderer with it after the flows run, as it would with a scene
+        // camera. The editor never prepares the renderer itself.
+        self.viewport_override.set_camera(Some(view_info.clone()));
 
         // Toggle the editor ground grid per-frame: it is editor chrome,
         // visible only while editing — hide it in Play / Paused (same
         // gating as the selection gizmos below). The engine ships the
         // `GridConfig` slot disabled; the editor drives it.
         let grid_on = matches!(play_mode, PlayMode::Editing);
-        if let Some(grid_cfg) = runtime
+        let host_views = runtime
             .resources
-            .get::<khora_sdk::khora_data::render::SharedGridConfig>()
-        {
-            if let Ok(mut cfg) = grid_cfg.lock() {
-                cfg.enabled = grid_on;
-            }
+            .get::<Arc<khora_sdk::khora_core::lane::HostViews>>()
+            .cloned();
+        if let Some(host_views) = &host_views {
+            host_views.set(khora_sdk::khora_data::render::GridView(
+                khora_sdk::khora_data::render::GridConfig { enabled: grid_on },
+            ));
+            // Wireframe debug overlay — user-toggled (command palette), and
+            // like the grid it is editor chrome, hidden outside Editing mode.
+            host_views.set(khora_sdk::khora_data::render::WireframeView(
+                khora_sdk::khora_data::render::WireframeConfig {
+                    enabled: self.wireframe_enabled && grid_on,
+                    ..Default::default()
+                },
+            ));
         }
 
-        // Wireframe debug overlay — user-toggled (command palette), and like
-        // the grid it is editor chrome, hidden outside Editing mode.
-        if let Some(wf_cfg) = runtime
-            .resources
-            .get::<khora_sdk::khora_data::render::SharedWireframeConfig>()
-        {
-            if let Ok(mut cfg) = wf_cfg.lock() {
-                cfg.enabled = self.wireframe_enabled && grid_on;
-            }
-        }
-
-        // Collect the current selection gizmos and publish them into the
-        // shared `GizmoFrame`. `OverlayAgent`'s `GizmoLane` renders them
+        // Collect the current selection gizmos and set them as the gizmo
+        // View. `OverlayAgent`'s `GizmoLane` renders them
         // during the scheduler's OUTPUT phase — the editor is a pure data
         // producer here, the engine owns the rendering mechanism. Gated
         // on `PlayMode::Editing`: gizmos must not bleed into Play / Paused.
@@ -519,13 +507,10 @@ impl EngineApp for EditorApp {
         } else {
             Vec::new()
         };
-        if let Some(shared) = runtime
-            .resources
-            .get::<khora_sdk::khora_data::render::SharedGizmoFrame>()
-        {
-            if let Ok(mut frame) = shared.lock() {
-                frame.lines = gizmo_lines;
-            }
+        if let Some(host_views) = &host_views {
+            host_views.set(khora_sdk::khora_data::render::GizmoView(
+                khora_sdk::khora_data::render::GizmoFrame { lines: gizmo_lines },
+            ));
         }
 
         self.last_view_info = Some(view_info);

@@ -15,9 +15,9 @@
 //! CPU → GPU mesh sync — uploads any newly-spawned `HandleComponent<Mesh>`
 //! to the device cache and tags the entity with `HandleComponent<GpuMesh>`.
 //!
-//! Runs in [`TickPhase::PreExtract`] so it lands before `RenderFlow`
-//! projects the world. Replaces the previous hardcoded `proj.sync_all`
-//! call in the engine tick.
+//! The [`MeshOnGpu`] residency: runs in `TickPhase::PreExtract`, after the
+//! asset reload and the resolver, so it lands before `RenderFlow` projects
+//! the world.
 
 use std::sync::Arc;
 
@@ -25,7 +25,10 @@ use khora_core::lane::OutputDeck;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 
-use crate::ecs::{DataSystemRegistration, TickPhase, World};
+use khora_core::residency::Residency;
+
+use crate::ecs::World;
+use crate::residency::MeshOnGpu;
 use crate::ProjectionRegistry;
 
 fn gpu_mesh_sync_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
@@ -38,12 +41,4 @@ fn gpu_mesh_sync_system(world: &mut World, runtime: &Runtime, _deck: &mut Output
     proj.sync_all(world, device.as_ref());
 }
 
-inventory::submit! {
-    DataSystemRegistration {
-        name: "gpu_mesh_sync",
-        phase: TickPhase::PreExtract,
-        run: gpu_mesh_sync_system,
-        order_hint: 0,
-        runs_after: &[],
-    }
-}
+crate::register_residency!(name = MeshOnGpu::NAME, run = gpu_mesh_sync_system);

@@ -12,19 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Per-frame gizmo output slot for the
-//! [`OutputDeck`](khora_core::lane::OutputDeck).
+//! Per-frame gizmo lines a host application hands the engine.
 //!
-//! Producers (typically the editor application) push line instances
-//! into `GizmoFrame.lines`; the engine-side `GizmoLane` consumes the
-//! slot and renders the overlay. Empty by default — a frame with no
-//! gizmos triggers no GPU work.
+//! Producers (typically the editor application) set a [`GizmoView`] in the
+//! runtime's `HostViews`; the engine-side `GizmoLane` reads it from the bus
+//! and renders the overlay. Empty by default — a frame with no gizmos
+//! triggers no GPU work.
 //!
-//! Symmetric to the [`ShadowFrame`](khora_core::renderer::api::shadow::ShadowFrame)
-//! pattern: only contract types live in `khora-data`, no GPU code.
+//! Only contract types live in `khora-data`, no GPU code.
 
 use khora_core::ui::editor::GizmoLineInstance;
-use std::sync::{Arc, Mutex};
 
 /// Per-frame gizmo lines published by a host application (editor,
 /// debug tooling) and consumed by the engine's `GizmoLane`.
@@ -51,8 +48,13 @@ impl GizmoFrame {
     }
 }
 
-/// Shared gizmo line container — the host app writes, `GizmoLane` reads.
-pub type SharedGizmoFrame = Arc<Mutex<GizmoFrame>>;
+/// The gizmo lines the host application hands to `GizmoLane` this frame.
+///
+/// A View on the [`LaneBus`](khora_core::lane::LaneBus), published by the host
+/// through [`HostViews`](khora_core::lane::HostViews) before the agents run.
+/// The engine's own default holds no line.
+#[derive(Debug, Clone, Default)]
+pub struct GizmoView(pub GizmoFrame);
 
 #[cfg(test)]
 mod tests {

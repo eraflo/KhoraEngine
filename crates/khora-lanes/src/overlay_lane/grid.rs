@@ -33,7 +33,7 @@ use khora_core::renderer::api::command::{BindGroupId, BindGroupLayoutId};
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::BufferId;
 use khora_core::renderer::traits::CommandEncoder;
-use khora_data::render::{RenderWorld, SharedGridConfig};
+use khora_data::render::{GridView, RenderWorld};
 use std::sync::{Arc, OnceLock};
 
 /// Infinite editor ground-grid overlay lane.
@@ -280,12 +280,9 @@ impl Lane for GridLane {
     }
 
     fn execute(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
-        // The grid is opt-in: a host application enables the shared
-        // `GridConfig`. Absent or disabled ⇒ nothing to draw.
-        let enabled = ctx
-            .get::<SharedGridConfig>()
-            .and_then(|cfg| cfg.lock().ok().map(|c| c.enabled))
-            .unwrap_or(false);
+        // The grid is opt-in: a host application enables the grid View.
+        // Absent or disabled ⇒ nothing to draw.
+        let enabled = ctx.get_ref::<GridView>().is_some_and(|view| view.0.enabled);
         if !enabled {
             return Ok(());
         }

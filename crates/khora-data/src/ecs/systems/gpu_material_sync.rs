@@ -16,9 +16,9 @@
 //! PBR textures + group-2 bind group) to the device cache and tags the
 //! entity with `HandleComponent<GpuMaterial>`.
 //!
-//! Runs in [`TickPhase::PreExtract`], after `gpu_mesh_sync` (so every
-//! rendered entity already has a `HandleComponent<GpuMesh>`) and before
-//! `RenderFlow` projects the world. Decoded CPU textures are read from the
+//! A residency: runs in `TickPhase::PreExtract`, after the asset reload, the
+//! resolver and `gpu_mesh_sync` (so every rendered entity already has a
+//! `HandleComponent<GpuMesh>`), and before `RenderFlow` projects the world. Decoded CPU textures are read from the
 //! shared `Assets<CpuTexture>` sub-store of the [`AssetStore`](crate::assets::AssetStore),
 //! populated by the SDK layer that owns the `AssetService` — this system
 //! performs no asset loading itself, keeping the data layer free of any
@@ -31,7 +31,7 @@ use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 
-use crate::ecs::{DataSystemRegistration, TickPhase, World};
+use crate::ecs::World;
 use crate::ProjectionRegistry;
 
 fn gpu_material_sync_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
@@ -50,12 +50,8 @@ fn gpu_material_sync_system(world: &mut World, runtime: &Runtime, _deck: &mut Ou
     proj.sync_materials(world, device.as_ref(), pipeline_system.as_ref());
 }
 
-inventory::submit! {
-    DataSystemRegistration {
-        name: "gpu_material_sync",
-        phase: TickPhase::PreExtract,
-        run: gpu_material_sync_system,
-        order_hint: 1,
-        runs_after: &["gpu_mesh_sync"],
-    }
-}
+crate::register_residency!(
+    name = "gpu_material_sync",
+    run = gpu_material_sync_system,
+    after = ["gpu_mesh_sync"],
+);

@@ -50,6 +50,7 @@ mod script_component_reads;
 mod script_component_writes;
 mod script_defined_components;
 mod script_delivery_test;
+mod shadows_through_the_frame_graph;
 mod shipped_script_runs_test;
 mod spawned_in_play;
 mod stacked_bodies;

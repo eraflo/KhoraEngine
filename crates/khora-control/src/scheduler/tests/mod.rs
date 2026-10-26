@@ -19,6 +19,7 @@ mod concurrent_exec;
 mod deck_writes;
 mod engine_mode;
 mod fixed_agent_sub_clocks;
+mod host_views;
 mod panicking_agents;
 mod physics_step_is_precision;
 mod physics_time_stays_on_gameplay_time;

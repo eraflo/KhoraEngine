@@ -115,19 +115,21 @@ impl TextureAtlas {
         pixels: &[u8],
         bytes_per_pixel: u32,
     ) -> Option<AtlasRect> {
-        if self.cursor_x + width + self.padding > self.size {
+        // Where the image would go, worked out before anything moves: a
+        // refused image leaves the atlas exactly as it was.
+        let (ax, ay, row_height) = if self.cursor_x + width + self.padding > self.size {
             // New row
-            self.cursor_x = self.padding;
-            self.cursor_y += self.row_height + self.padding;
-            self.row_height = 0;
+            (
+                self.padding,
+                self.cursor_y + self.row_height + self.padding,
+                0,
+            )
+        } else {
+            (self.cursor_x, self.cursor_y, self.row_height)
+        };
+        if ax + width + self.padding > self.size || ay + height + self.padding > self.size {
+            return None; // Does not fit
         }
-
-        if self.cursor_y + height + self.padding > self.size {
-            return None; // Atlas full
-        }
-
-        let ax = self.cursor_x;
-        let ay = self.cursor_y;
 
         // Perform GPU upload
         device
@@ -144,8 +146,9 @@ impl TextureAtlas {
             )
             .ok()?;
 
-        self.cursor_x += width + self.padding;
-        self.row_height = self.row_height.max(height);
+        self.cursor_x = ax + width + self.padding;
+        self.cursor_y = ay;
+        self.row_height = row_height.max(height);
 
         Some(AtlasRect {
             min: Vec2::new(ax as f32 / self.size as f32, ay as f32 / self.size as f32),

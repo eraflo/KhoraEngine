@@ -1910,21 +1910,15 @@ fn module_render_paths_still_resolve() {
     let _ = scene_pass_slot_fields as fn(&khora_data::render::ScenePassSlot);
     is_default::<khora_data::render::ScenePassSlot>();
     let _ = type_name::<khora_data::render::SharedFrameGraph>();
-    let _ = type_name::<khora_data::render::SharedGizmoFrame>();
-    same_type(
-        PhantomData::<khora_data::render::SharedGizmoFrame>,
-        PhantomData::<std::sync::Arc<std::sync::Mutex<khora_data::render::GizmoFrame>>>,
-    );
-    let _ = type_name::<khora_data::render::SharedGridConfig>();
-    same_type(
-        PhantomData::<khora_data::render::SharedGridConfig>,
-        PhantomData::<std::sync::Arc<std::sync::Mutex<khora_data::render::GridConfig>>>,
-    );
-    let _ = type_name::<khora_data::render::SharedWireframeConfig>();
-    same_type(
-        PhantomData::<khora_data::render::SharedWireframeConfig>,
-        PhantomData::<std::sync::Arc<std::sync::Mutex<khora_data::render::WireframeConfig>>>,
-    );
+    let _ = type_name::<khora_data::render::GizmoView>();
+    let _ = khora_data::render::GizmoView
+        as fn(khora_data::render::GizmoFrame) -> khora_data::render::GizmoView;
+    let _ = type_name::<khora_data::render::GridView>();
+    let _ = khora_data::render::GridView
+        as fn(khora_data::render::GridConfig) -> khora_data::render::GridView;
+    let _ = type_name::<khora_data::render::WireframeView>();
+    let _ = khora_data::render::WireframeView
+        as fn(khora_data::render::WireframeConfig) -> khora_data::render::WireframeView;
     let _ = type_name::<khora_data::render::SkyboxPassSlot>();
     let _ = skybox_pass_slot_fields as fn(&khora_data::render::SkyboxPassSlot);
     is_default::<khora_data::render::SkyboxPassSlot>();
@@ -2684,9 +2678,9 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ = type_name::<khora_data::render::ResourceId>(); // khora-agents
     let _ = type_name::<khora_data::render::ScenePassSlot>(); // khora-agents, khora-sdk
     let _ = type_name::<khora_data::render::SharedFrameGraph>(); // khora-sdk
-    let _ = type_name::<khora_data::render::SharedGizmoFrame>(); // khora-agents, khora-editor (as khora_sdk::khora_data::…), khora-lanes, khora-sdk
-    let _ = type_name::<khora_data::render::SharedGridConfig>(); // khora-agents, khora-editor (as khora_sdk::khora_data::…), khora-lanes, khora-sdk
-    let _ = type_name::<khora_data::render::SharedWireframeConfig>(); // khora-agents, khora-editor (as khora_sdk::khora_data::…), khora-lanes, khora-sdk
+    let _ = type_name::<khora_data::render::GizmoView>(); // khora-agents, khora-editor (as khora_sdk::khora_data::…), khora-lanes, khora-sdk
+    let _ = type_name::<khora_data::render::GridView>(); // khora-agents, khora-editor (as khora_sdk::khora_data::…), khora-lanes, khora-sdk
+    let _ = type_name::<khora_data::render::WireframeView>(); // khora-agents, khora-editor (as khora_sdk::khora_data::…), khora-lanes, khora-sdk
     let _ = type_name::<khora_data::render::SkyboxPassSlot>(); // khora-agents, khora-sdk
     let _ = type_name::<khora_data::render::TransparentEncoder>(); // khora-agents, khora-lanes
     let _ = type_name::<khora_data::render::TransparentPassSlot>(); // khora-agents, khora-sdk

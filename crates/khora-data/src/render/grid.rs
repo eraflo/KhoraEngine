@@ -18,11 +18,9 @@
 //! [`GizmoFrame`](super::GizmoFrame), only the contract type lives in
 //! `khora-data` — the GPU work is the engine-side `GridLane`'s job.
 //!
-//! A host application opts into the grid by enabling this config
-//! (shared as an `Arc<Mutex<GridConfig>>` runtime resource). The
-//! sandbox leaves it disabled — no grid; the editor enables it.
-
-use std::sync::{Arc, Mutex};
+//! A host application opts into the grid by setting an enabled
+//! [`GridView`] in the runtime's `HostViews`. The sandbox leaves it
+//! disabled — no grid; the editor enables it.
 
 /// Editor grid overlay state.
 #[derive(Debug, Clone, Default)]
@@ -31,8 +29,13 @@ pub struct GridConfig {
     pub enabled: bool,
 }
 
-/// Shared editor-grid config — the host app enables it, `GridLane` reads it.
-pub type SharedGridConfig = Arc<Mutex<GridConfig>>;
+/// The editor grid as the host application hands it to `GridLane` this frame.
+///
+/// A View on the [`LaneBus`](khora_core::lane::LaneBus), published by the host
+/// through [`HostViews`](khora_core::lane::HostViews) before the agents run.
+/// The engine's own default is the disabled grid.
+#[derive(Debug, Clone, Default)]
+pub struct GridView(pub GridConfig);
 
 #[cfg(test)]
 mod tests {

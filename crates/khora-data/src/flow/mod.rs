@@ -42,6 +42,7 @@
 
 pub mod audio;
 mod behaviors;
+pub mod camera;
 pub mod companion;
 pub mod physics;
 pub mod prefab_catalog;
@@ -56,6 +57,7 @@ pub mod ui;
 pub use audio::{
     AudioFlow, AudioPlaybackUpdate, AudioPlaybackWriteback, AudioSourceSnapshot, AudioView,
 };
+pub use camera::{CameraFlow, CameraView};
 pub use physics::{PhysicsFlow, PhysicsStepResult, PhysicsView};
 pub use prefab_catalog::{PrefabCatalogFlow, PrefabCatalogView};
 pub use registration::*;

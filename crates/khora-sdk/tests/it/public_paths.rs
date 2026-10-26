@@ -1954,9 +1954,9 @@ mod paths_used_by_other_crates {
     use khora_sdk::khora_data::render::extract_active_camera_view as _; // khora-editor
     use khora_sdk::khora_data::render::EditorViewportOverride as _; // khora-editor
     use khora_sdk::khora_data::render::ExtractedView as _; // khora-editor
-    use khora_sdk::khora_data::render::SharedGizmoFrame as _; // khora-editor
-    use khora_sdk::khora_data::render::SharedGridConfig as _; // khora-editor
-    use khora_sdk::khora_data::render::SharedWireframeConfig as _; // khora-editor
+    use khora_sdk::khora_data::render::GizmoView as _; // khora-editor
+    use khora_sdk::khora_data::render::GridView as _; // khora-editor
+    use khora_sdk::khora_data::render::WireframeView as _; // khora-editor
     use khora_sdk::khora_data::scene::material_to_json as _; // khora-editor
     use khora_sdk::khora_data::scene::provenance_of as _; // khora-editor
     use khora_sdk::khora_data::AssetStore as _; // sandbox

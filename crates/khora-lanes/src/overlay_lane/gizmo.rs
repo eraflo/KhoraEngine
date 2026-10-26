@@ -30,7 +30,7 @@ use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::BufferId;
 use khora_core::renderer::traits::CommandEncoder;
 use khora_core::ui::editor::GizmoLineInstance;
-use khora_data::render::{RenderWorld, SharedGizmoFrame};
+use khora_data::render::{GizmoView, RenderWorld};
 use std::sync::{Arc, OnceLock};
 
 /// Maximum number of gizmo line instances the storage buffer holds.
@@ -360,23 +360,15 @@ impl Lane for GizmoLane {
     }
 
     fn execute(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
-        // The shared `GizmoFrame` is published by the host application.
-        // Absent ⇒ no gizmo producer this run ⇒ nothing to draw.
-        let Some(shared) = ctx.get::<SharedGizmoFrame>() else {
+        // The host application sets the gizmo View. Absent or empty ⇒
+        // nothing to draw.
+        let Some(view) = ctx.get_ref::<GizmoView>() else {
             return Ok(());
         };
-        let lines: Vec<GizmoLineInstance> = match shared.lock() {
-            Ok(frame) => {
-                if frame.lines.is_empty() {
-                    return Ok(());
-                }
-                frame.lines.clone()
-            }
-            Err(_) => {
-                log::warn!("GizmoLane: shared GizmoFrame mutex poisoned");
-                return Ok(());
-            }
-        };
+        if view.0.lines.is_empty() {
+            return Ok(());
+        }
+        let lines: Vec<GizmoLineInstance> = view.0.lines.clone();
 
         // Camera comes from the primary extracted view — the editor
         // viewport override is already folded into `RenderWorld.views`

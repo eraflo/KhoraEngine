@@ -33,14 +33,15 @@ mod world;
 
 pub use editor_view::EditorViewportOverride;
 pub use frame_graph::{
-    submit_frame_graph, FrameGraph, OverlayPassSlot, PassContribution, PassDescriptor, ResourceId,
-    ScenePassSlot, SharedFrameGraph, SkyboxPassSlot, TransparentEncoder, TransparentPassSlot,
+    pass_order, registered_pass_order, submit_frame_graph, FrameGraph, OverlayPassSlot,
+    PassContribution, PassDescriptor, PassOrderError, PassRegistration, ResourceId, ScenePassSlot,
+    ShadowPassSlot, SharedFrameGraph, SkyboxPassSlot, TransparentEncoder, TransparentPassSlot,
     UiPassSlot,
 };
-pub use gizmo::{GizmoFrame, SharedGizmoFrame};
-pub use grid::{GridConfig, SharedGridConfig};
+pub use gizmo::{GizmoFrame, GizmoView};
+pub use grid::{GridConfig, GridView};
 pub use shining::{shining_lights, ShiningLight};
-pub use wireframe::{SharedWireframeConfig, WireframeConfig};
+pub use wireframe::{WireframeConfig, WireframeView};
 pub use world::{ExtractedLight, ExtractedMesh, ExtractedView, RenderWorld};
 
 use khora_core::{

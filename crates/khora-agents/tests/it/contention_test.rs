@@ -179,3 +179,15 @@ fn ui_agent_locks_the_atlas() {
         "the atlas is locked, not merely read: it must not also sit under `reads`"
     );
 }
+
+/// The active camera reaches the renderer through the `CameraView` the SDK
+/// prepares the frame from, so the render agent reads the bus and nothing of
+/// the `World`.
+#[test]
+fn render_agent_is_world_free() {
+    assert_eq!(
+        RenderAgent::default().access(),
+        AgentAccess::Isolated,
+        "the render agent no longer reads the World"
+    );
+}

@@ -74,6 +74,8 @@ pub mod context_keys;
 
 pub mod deck;
 
+pub mod host_views;
+
 pub mod lock;
 
 pub mod slot;
@@ -83,6 +85,8 @@ pub use bus::LaneBus;
 pub use context_keys::*;
 
 pub use deck::OutputDeck;
+
+pub use host_views::HostViews;
 
 pub use lock::{
     mutex_lock, mutex_lock_render, read_lock, read_lock_render, write_lock, write_lock_render,
