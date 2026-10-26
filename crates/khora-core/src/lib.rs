@@ -26,6 +26,7 @@ pub mod engine_context;
 
 pub mod ecs;
 pub mod event;
+pub mod gpu;
 pub mod graph;
 pub mod interpolation;
 pub mod lane;

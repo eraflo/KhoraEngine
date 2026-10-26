@@ -126,6 +126,32 @@ impl OutputDeck {
         self.slots.clear();
     }
 
+    /// Moves the slots of `types` out into a deck of their own, as they are —
+    /// what a concurrent wave hands each member: the slots it writes, so a
+    /// slot it grows sub-step after sub-step keeps growing. Nothing is
+    /// recorded as written.
+    pub fn take_slots(&mut self, types: &[TypeId]) -> OutputDeck {
+        let mut taken = OutputDeck::new();
+        for type_id in types {
+            if let Some(value) = self.slots.remove(type_id) {
+                taken.slots.insert(*type_id, value);
+            }
+        }
+        taken
+    }
+
+    /// Moves every slot from `other` into `self`, replacing what `self` held
+    /// in it, and records each as written — how an agent commits what one
+    /// run of its lane wrote into a deck of its own.
+    pub fn commit_from(&mut self, other: OutputDeck) {
+        for (type_id, value) in other.slots {
+            if !self.written.contains(&type_id) {
+                self.written.push(type_id);
+            }
+            self.slots.insert(type_id, value);
+        }
+    }
+
     /// Moves every slot from `other` into `self`.
     ///
     /// Used by the parallel executor to fold a worker's private deck shard back

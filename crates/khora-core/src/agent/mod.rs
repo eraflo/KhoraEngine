@@ -20,6 +20,7 @@ pub mod dependency;
 pub mod execution_phase;
 pub mod gorna;
 pub mod mode;
+pub mod registration;
 pub mod timing;
 
 use crate::agent::gorna::AgentId;
@@ -32,6 +33,7 @@ pub use contention::Contention;
 pub use dependency::{AgentDependency, DependencyCondition, DependencyKind};
 pub use execution_phase::ExecutionPhase;
 pub use mode::{EngineMode, SharedEngineMode};
+pub use registration::{check_registrations, AgentRegistration, BootError};
 pub use timing::{AgentImportance, ExecutionTiming};
 
 /// The foundational interface for an Intelligent Subsystem Agent (ISA).

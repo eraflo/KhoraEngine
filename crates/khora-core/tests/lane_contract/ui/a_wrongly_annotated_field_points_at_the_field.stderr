@@ -1,0 +1,18 @@
+error[E0277]: `#[locked]` takes a lock: the field must be `Locked<'f, T>`, not `&'f Counter`
+ --> tests/lane_contract/ui/a_wrongly_annotated_field_points_at_the_field.rs:8:18
+  |
+8 |     pub counter: &'f Counter,
+  |                  ^^^^^^^^^^^ not a lock
+  |
+  = help: the trait `LockedField<'_>` is not implemented for `&'f Counter`
+  = note: a plain reference is `#[resource]`: a read that takes no lock
+help: the trait `LockedField<'f>` is implemented for `khora_core::lane::io::Locked<'f, T>`
+ --> src/lane/compile_check.rs
+  |
+  | impl<'f, T: ?Sized + Send + 'static> LockedField<'f> for Locked<'f, T> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `locked_field`
+ --> src/lane/compile_check.rs
+  |
+  | pub const fn locked_field<'f, T: LockedField<'f>>() -> InputOps<'f, T> {
+  |                                  ^^^^^^^^^^^^^^^ required by this bound in `locked_field`

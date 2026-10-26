@@ -258,11 +258,8 @@ impl khora_core::lane::Lane for LitForwardLane {
         // the lit render in that case. `entries` is always present
         // (possibly empty).
         let (shadow_entries, shadow_bindings) = ctx
-            .slot::<khora_core::lane::OutputDeck>()
-            .and_then(|s| {
-                s.get::<khora_core::renderer::api::shadow::ShadowFrame>()
-                    .map(|frame| (frame.entries.clone(), frame.bindings))
-            })
+            .get::<khora_core::renderer::api::shadow::ShadowFrame>()
+            .map(|frame| (frame.entries.clone(), frame.bindings))
             .unwrap_or_default();
 
         let ibl_bindings = ctx

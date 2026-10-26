@@ -31,6 +31,8 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
+use super::io::FrameId;
+
 /// Read-only typed bus carrying [`Flow`] outputs to lanes for one tick.
 ///
 /// An agent reads a view with [`LaneBus::get`] and puts it into its lane's
@@ -41,6 +43,10 @@ use std::collections::HashMap;
 /// [`Flow`]: ../../../khora_data/flow/index.html
 pub struct LaneBus {
     views: HashMap<TypeId, Box<dyn Any + Send + Sync>>,
+    /// The frame each view was published in.
+    stamps: HashMap<TypeId, FrameId>,
+    /// The frame views are stamped with now.
+    frame: FrameId,
 }
 
 impl LaneBus {
@@ -48,6 +54,8 @@ impl LaneBus {
     pub fn new() -> Self {
         Self {
             views: HashMap::new(),
+            stamps: HashMap::new(),
+            frame: FrameId::default(),
         }
     }
 
@@ -55,6 +63,7 @@ impl LaneBus {
     /// the same type. Used by `Flow` execution; not callable from lane code.
     pub fn publish<V: Any + Send + Sync>(&mut self, view: V) {
         self.views.insert(TypeId::of::<V>(), Box::new(view));
+        self.stamps.insert(TypeId::of::<V>(), self.frame);
     }
 
     /// Returns a shared reference to a view by type, or `None` if no `Flow`
@@ -84,6 +93,24 @@ impl LaneBus {
     /// when a bus instance is reused rather than reallocated.
     pub fn clear(&mut self) {
         self.views.clear();
+        self.stamps.clear();
+    }
+
+    /// Starts `frame`: every view published from now on is stamped with it.
+    /// The views already published keep the stamp of the frame they were
+    /// published in.
+    pub fn set_frame(&mut self, frame: FrameId) {
+        self.frame = frame;
+    }
+
+    /// The frame views are stamped with now.
+    pub fn frame(&self) -> FrameId {
+        self.frame
+    }
+
+    /// The frame the view of type `V` was published in, or `None` if none was.
+    pub fn stamp_of<V: Any + Send + Sync>(&self) -> Option<FrameId> {
+        self.stamps.get(&TypeId::of::<V>()).copied()
     }
 }
 
@@ -115,6 +142,22 @@ mod tests {
         let mut bus = LaneBus::new();
         bus.publish(TestView { value: 42 });
         assert_eq!(bus.get::<TestView>(), Some(&TestView { value: 42 }));
+    }
+
+    #[test]
+    fn a_view_keeps_the_stamp_of_the_frame_it_was_published_in() {
+        let mut bus = LaneBus::new();
+        bus.set_frame(FrameId(4));
+        bus.publish(TestView { value: 1 });
+        bus.set_frame(FrameId(5));
+        assert_eq!(bus.frame(), FrameId(5));
+        assert_eq!(bus.stamp_of::<TestView>(), Some(FrameId(4)));
+        bus.clear();
+        assert_eq!(
+            bus.stamp_of::<TestView>(),
+            None,
+            "clearing drops the stamps"
+        );
     }
 
     #[test]

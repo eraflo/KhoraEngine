@@ -1,0 +1,13 @@
+# cargo-nextest configuration.
+
+# trybuild builds one scratch crate per test binary, under target/tests/trybuild.
+# nextest runs every test in its own process, so two compile-fail cases started
+# together build that crate at once, and cargo's "waiting for file lock" lines
+# land in the compiler output the cases compare: on a cold build they fail for
+# nothing. One at a time, they share the warm build instead.
+[test-groups]
+trybuild = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'package(khora-core) & binary(lane_contract) & test(/^compile_fail::/)'
+test-group = 'trybuild'

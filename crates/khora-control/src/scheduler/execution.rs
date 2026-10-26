@@ -321,6 +321,28 @@ impl ExecutionScheduler {
                 continue;
             }
 
+            // The wave reads the deck as the earlier phases and waves left it,
+            // frozen, and writes into decks of its own: one shard per pooled
+            // agent, one for the inline agents, each starting with the slots
+            // its agents declare — so a slot an agent grows sub-step after
+            // sub-step keeps what the earlier sub-steps put in it. They are
+            // folded back once every member ran.
+            let mut shards: Vec<Option<OutputDeck>> = metas
+                .iter()
+                .enumerate()
+                .map(|(idx, meta)| {
+                    (runnable.contains(&idx) && meta.access != AgentAccess::SharedWorld)
+                        .then(|| deck.take_slots(&meta.contention.deck))
+                })
+                .collect();
+            let inline_slots: Vec<std::any::TypeId> = runnable
+                .iter()
+                .filter(|&&idx| metas[idx].access == AgentAccess::SharedWorld)
+                .flat_map(|&idx| metas[idx].contention.deck.iter().copied())
+                .collect();
+            let mut inline_deck = deck.take_slots(&inline_slots);
+            let earlier = Arc::new(std::mem::take(deck));
+
             // Dispatch every `Isolated` agent to the pool first, so their work
             // overlaps the inline `SharedWorld` agent below. Each sends back
             // `(idx, id, shard, ms)`; `idx` recovers wave order for a
@@ -339,10 +361,11 @@ impl ExecutionScheduler {
                 // Moved into the job: the closure is `'static`, so the permit
                 // cannot be borrowed from the wave that outlives it.
                 let permit = metas[idx].contention.clone();
+                let earlier = Arc::clone(&earlier);
+                let mut shard = shards[idx].take().unwrap_or_default();
                 isolated_count += 1;
                 self.pool.submit(move || {
                     let bus_ref: &LaneBus = &bus;
-                    let mut shard = OutputDeck::new();
                     let started = Instant::now();
                     let ran = {
                         let mut ctx = EngineContext::for_agent(
@@ -352,7 +375,8 @@ impl ExecutionScheduler {
                             &mut shard,
                             &permit,
                             Some(id),
-                        );
+                        )
+                        .with_earlier_deck(&earlier);
                         run_guarded(id, || {
                             if let Ok(mut a) = agent.lock() {
                                 a.execute(&mut ctx);
@@ -372,6 +396,7 @@ impl ExecutionScheduler {
                         permit,
                         ms,
                         ran,
+                        earlier,
                     });
                 });
             }
@@ -392,17 +417,18 @@ impl ExecutionScheduler {
             {
                 let id = metas[idx].id.expect("gated runnable has an id");
                 let permit = metas[idx].contention.clone();
-                deck.drain_written();
+                inline_deck.drain_written();
                 let started = Instant::now();
                 let ran = {
                     let mut ctx = EngineContext::for_agent(
                         WorldAccess::Shared(&*world as &dyn std::any::Any),
                         Arc::clone(runtime),
                         bus_ref,
-                        deck,
+                        &mut inline_deck,
                         &permit,
                         Some(id),
-                    );
+                    )
+                    .with_earlier_deck(&earlier);
                     run_guarded(id, || {
                         if let Ok(mut a) = agents[idx].0.lock() {
                             a.execute(&mut ctx);
@@ -410,7 +436,7 @@ impl ExecutionScheduler {
                     })
                 };
                 let ms = started.elapsed().as_secs_f64() * 1000.0;
-                settle_deck(self, id, &permit, deck, ran);
+                settle_deck(self, id, &permit, &mut inline_deck, ran);
                 if !ran {
                     agents[idx].0.clear_poison();
                 }
@@ -420,20 +446,35 @@ impl ExecutionScheduler {
             }
 
             // Collect the pooled `Isolated` results and fold their shards in
-            // wave (idx) order → deterministic deck contents.
+            // wave (idx) order → deterministic deck contents. The members
+            // write disjoint slots, so a collision among them is a
+            // parallel-eligibility bug `merge_from` reports.
             let mut results: Vec<PooledRun> = rx.iter().take(isolated_count).collect();
             results.sort_by_key(|run| run.idx);
-            for run in results {
-                self.audit_deck_writes(run.id, &run.permit, run.written);
-                // A panicked agent's shard is half-written: drop it rather
-                // than fold an unknown state into the frame.
-                if run.ran {
-                    deck.merge_from(run.shard);
+            let mut written = inline_deck;
+            for mut run in results {
+                // A panicked agent's writes are half-done: drop them, and keep
+                // the slots it never touched.
+                if !run.ran {
+                    run.shard.discard(&run.written);
                 }
+                self.audit_deck_writes(run.id, &run.permit, run.written);
+                written.merge_from(run.shard);
                 record_frame_time(run.id, run.ms as f32);
                 report_cost(run.id, run.ms);
                 completion_map.mark(run.id, outcome_of(run.ran));
+                drop(run.earlier);
             }
+            // Every job handed its view back with its result, so the wave
+            // holds the only one left.
+            *deck = Arc::try_unwrap(earlier).unwrap_or_else(|_| {
+                log::error!(
+                    "execute_agents_parallel: a pooled job kept its view of the deck; \
+                     the earlier phases' slots are lost for the rest of the frame"
+                );
+                OutputDeck::new()
+            });
+            deck.commit_from(written);
         }
     }
 
@@ -454,6 +495,9 @@ struct PooledRun {
     ms: f64,
     /// False when `execute` panicked.
     ran: bool,
+    /// The job's view of the deck the wave reads, handed back so the wave can
+    /// take the deck back once every job is done.
+    earlier: Arc<OutputDeck>,
 }
 
 /// Runs an agent's `execute`, turning a panic into `false` so the frame goes

@@ -1,0 +1,5 @@
+error: field `positions` names no source: add one of `#[bus]`, `#[frame]`, `#[deck]`, `#[resident]`, `#[resource]`, `#[locked]`, `#[budget]`, `#[scope]`
+ --> tests/lane_contract/ui/a_field_without_a_source_is_an_error.rs:7:9
+  |
+7 |     pub positions: &'f Positions,
+  |         ^^^^^^^^^

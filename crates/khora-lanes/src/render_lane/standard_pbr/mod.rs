@@ -137,11 +137,8 @@ impl khora_core::lane::Lane for StandardPbrLane {
         );
 
         let (shadow_entries, shadow_bindings) = ctx
-            .slot::<khora_core::lane::OutputDeck>()
-            .and_then(|s| {
-                s.get::<khora_core::renderer::api::shadow::ShadowFrame>()
-                    .map(|frame| (frame.entries.clone(), frame.bindings))
-            })
+            .get::<khora_core::renderer::api::shadow::ShadowFrame>()
+            .map(|frame| (frame.entries.clone(), frame.bindings))
             .unwrap_or_default();
 
         // Image-based lighting bindings — baked once at startup, forwarded into

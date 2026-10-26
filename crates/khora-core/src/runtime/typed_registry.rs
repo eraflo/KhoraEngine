@@ -129,6 +129,18 @@ impl<K: RegistryKind> TypedRegistry<K> {
                 .unwrap_or(false)
     }
 
+    /// Reports whether an entry of the type `id` names is registered, walking
+    /// the parent chain — the check a declaration needs, which knows its types
+    /// only by id.
+    #[must_use]
+    pub fn contains_type_id(&self, id: TypeId) -> bool {
+        self.inner.contains_key(&id)
+            || self
+                .parent
+                .as_deref()
+                .is_some_and(|parent| parent.contains_type_id(id))
+    }
+
     /// Number of entries registered locally.
     #[must_use]
     pub fn len(&self) -> usize {
@@ -184,6 +196,16 @@ mod tests {
         assert_eq!(child.get::<Thing>(), Some(&Thing(7)));
         assert!(child.contains::<Thing>());
         assert!(child.is_empty(), "delegation is not local ownership");
+    }
+
+    #[test]
+    fn a_type_id_is_found_locally_and_through_the_parent() {
+        let mut root = Resources::new();
+        root.insert(Thing(1));
+        let child = Resources::with_parent(Arc::new(root));
+
+        assert!(child.contains_type_id(TypeId::of::<Thing>()));
+        assert!(!child.contains_type_id(TypeId::of::<Absent>()));
     }
 
     #[test]

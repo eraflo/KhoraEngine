@@ -68,6 +68,9 @@ pub struct EngineCore<A: EngineApp> {
     /// Every registered pass slot, in the order the frame submits them.
     /// Ordered once at boot, which refuses a cycle in their `after` edges.
     passes: Vec<&'static khora_data::render::PassRegistration>,
+    /// The lane agents, typed, so their lanes are released when the engine
+    /// stops.
+    lane_agents: Vec<Arc<std::sync::Mutex<khora_agents::lane_agent::LaneAgent>>>,
 }
 
 impl<A: EngineApp> EngineCore<A> {
@@ -89,6 +92,7 @@ impl<A: EngineApp> EngineCore<A> {
             input_events: khora_core::platform::input_channel(),
             forwarded_mode: None,
             passes: Vec::new(),
+            lane_agents: Vec::new(),
         }
     }
 
@@ -172,6 +176,24 @@ impl<A: EngineApp> EngineCore<A> {
     /// Note: renderer shutdown is the responsibility of the application,
     /// since the renderer was created and registered by the app's bootstrap closure.
     pub fn shutdown(&mut self) {
+        // Every lane gives back what it built on the device, while the device
+        // is still in the runtime.
+        let device = self
+            .runtime
+            .backends
+            .get::<Arc<dyn khora_core::renderer::GraphicsDevice>>()
+            .cloned();
+        for agent in &self.lane_agents {
+            let mut gpu = match device.as_deref() {
+                Some(device) => khora_core::gpu::GpuSetup::new(device),
+                None => khora_core::gpu::GpuSetup::headless(),
+            };
+            let mut agent = agent
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            khora_agents::lane_agent::shut_down_lanes(&mut agent, &mut gpu);
+        }
+        self.lane_agents.clear();
         if let Some(app) = self.app.as_mut() {
             app.on_shutdown();
         }

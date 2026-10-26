@@ -1,0 +1,5 @@
+error: unknown `#[bus]` argument `valdate`: the only one is `validate`
+ --> tests/lane_contract/ui/an_unknown_attribute_argument_is_an_error.rs:7:11
+  |
+7 |     #[bus(valdate)]
+  |           ^^^^^^^

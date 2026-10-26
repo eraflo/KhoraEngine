@@ -17,6 +17,7 @@
 mod component;
 mod component_check;
 mod ergon_fn;
+mod lane_io;
 mod script_fields;
 
 use proc_macro::TokenStream;
@@ -80,4 +81,39 @@ pub fn ergon_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_derive(Component, attributes(component))]
 pub fn derive_component(input: TokenStream) -> TokenStream {
     component::derive_component(input)
+}
+
+/// Derives `khora_core::lane::io::LaneInputs` for a lane's inputs.
+///
+/// Every field names where it comes from: `#[bus]` (`&'f V`, a View),
+/// `#[frame]` (`Target`, `ClearColor`), `#[deck]` (`Option<&'f T>`, a slot an
+/// earlier phase wrote), `#[resident]` (`&'f Resident<R>`), `#[resource]`
+/// (`&'f T`, read without locking), `#[locked]` (`Locked<'f, T>`), `#[budget]`
+/// (`Budget`) or `#[scope]`. `#[bus(validate)]` and `#[deck(validate)]` run the
+/// value's `Validate` check.
+///
+/// ```ignore
+/// #[derive(LaneInputs)]
+/// struct MixInputs<'f> {
+///     #[bus(validate)]
+///     voices: &'f AudioView,
+///     #[resource]
+///     settings: &'f MixSettings,
+/// }
+/// ```
+#[proc_macro_derive(
+    LaneInputs,
+    attributes(bus, frame, deck, resident, resource, locked, budget, scope)
+)]
+pub fn derive_lane_inputs(input: TokenStream) -> TokenStream {
+    lane_io::derive_lane_inputs(input)
+}
+
+/// Derives `khora_core::lane::io::LaneOutputs` for a family's outputs.
+///
+/// Every field names where it goes: `#[pass]` (`Pass<'f, P>`, GPU commands for
+/// pass slot `P`) or `#[deck]` (an owned value a later phase reads).
+#[proc_macro_derive(LaneOutputs, attributes(pass, deck))]
+pub fn derive_lane_outputs(input: TokenStream) -> TokenStream {
+    lane_io::derive_lane_outputs(input)
 }

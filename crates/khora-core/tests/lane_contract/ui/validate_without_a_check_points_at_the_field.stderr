@@ -1,0 +1,19 @@
+error[E0277]: `validate` checks `Positions` with its `Validate` impl, and `Positions` has none
+ --> tests/lane_contract/ui/validate_without_a_check_points_at_the_field.rs:8:9
+  |
+5 | #[derive(LaneInputs)]
+  |          ---------- required by a bound introduced by this call
+...
+8 |     pub positions: &'f Positions,
+  |         ^^^^^^^^^ no `Validate` impl
+  |
+help: the trait `Validate` is not implemented for `Positions`
+ --> tests/lane_contract/ui/validate_without_a_check_points_at_the_field.rs:3:1
+  |
+3 | pub struct Positions(pub Vec<f32>);
+  | ^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `InputSource::<'f>::validate`
+ --> src/lane/io.rs
+  |
+  |     pub fn validate<V: Validate + ?Sized>(
+  |                        ^^^^^^^^ required by this bound in `InputSource::<'f>::validate`

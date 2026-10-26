@@ -80,6 +80,17 @@ pub mod lock;
 
 pub mod slot;
 
+// The typed contract. Reached by module path while the former `Lane` trait
+// above still holds the name `lane::Lane`.
+pub mod compile_check;
+pub mod contract;
+pub mod cost;
+pub mod erased;
+pub mod family;
+pub mod guard;
+pub mod io;
+pub mod level;
+
 pub use bus::LaneBus;
 
 pub use context_keys::*;

@@ -16,6 +16,7 @@
 
 use crate::agent::gorna::AgentId;
 use crate::agent::Contention;
+use crate::lane::io::InputSource;
 use crate::lane::{LaneBus, OutputDeck};
 use crate::runtime::Runtime;
 use std::any::Any;
@@ -73,6 +74,11 @@ pub struct EngineContext<'a> {
     /// lists, etc.). Drained by the engine at the I/O boundary.
     pub deck: &'a mut OutputDeck,
 
+    /// The deck as the earlier phases and waves left it, when the agent writes
+    /// into a deck of its own (a concurrent wave's shard). `None` when
+    /// [`deck`](Self::deck) is the frame's deck itself.
+    earlier: Option<&'a OutputDeck>,
+
     /// What the running agent declared through
     /// [`Agent::contention`](crate::agent::Agent::contention), stamped here by
     /// the scheduler.
@@ -90,6 +96,14 @@ pub struct EngineContext<'a> {
 }
 
 impl<'a> EngineContext<'a> {
+    /// The source a typed lane fetches its inputs from this frame: the bus,
+    /// the deck the earlier phases wrote, and the runtime — reached only
+    /// through the fields its `LaneInputs` declares, which is what the
+    /// agent's contention is built from.
+    pub fn input_source(&self) -> InputSource<'_> {
+        InputSource::new(self.bus.frame(), self.bus, &self.runtime).with_deck(self.earlier_deck())
+    }
+
     /// Builds the context for one agent's `execute`.
     ///
     /// Takes the agent's declaration rather than reading it back from the
@@ -108,9 +122,24 @@ impl<'a> EngineContext<'a> {
             runtime,
             bus,
             deck,
+            earlier: None,
             permit: Some(permit),
             running,
         }
+    }
+
+    /// The same context, reading the earlier phases' slots from `earlier`
+    /// while it writes into its own deck.
+    pub fn with_earlier_deck(mut self, earlier: &'a OutputDeck) -> Self {
+        self.earlier = Some(earlier);
+        self
+    }
+
+    /// The deck as the earlier phases and waves left it: what an agent reads
+    /// another agent's slots from. The frame's deck itself, unless the agent
+    /// runs in a concurrent wave and writes into a shard.
+    pub fn earlier_deck(&self) -> &OutputDeck {
+        self.earlier.unwrap_or(self.deck)
     }
 
     /// The context for `on_initialize`, before any wave exists.
@@ -130,6 +159,7 @@ impl<'a> EngineContext<'a> {
             runtime,
             bus,
             deck,
+            earlier: None,
             permit: None,
             running: None,
         }

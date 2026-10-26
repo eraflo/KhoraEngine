@@ -25,6 +25,7 @@ mod editor_shader_sources;
 mod engine_mode;
 mod engine_names;
 mod game_saves;
+mod lane_agents_at_boot;
 mod mode_to_dcc;
 mod overlay_host_views;
 mod pass_order;

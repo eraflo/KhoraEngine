@@ -37,6 +37,7 @@ mod frame_e2e_test;
 mod garbage_collector_test;
 mod imported_systems;
 mod input_from_script_test;
+mod lane_agent;
 mod physics_agent_tests;
 mod physics_lane_contacts_test;
 mod prefabs_spawned_in_play;

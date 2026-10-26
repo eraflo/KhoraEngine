@@ -69,4 +69,53 @@ impl Runtime {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// The entry of type `T`, looked for in the resources, then the services,
+    /// then the backends.
+    #[must_use]
+    pub fn look_up<T: Send + Sync + 'static>(&self) -> Option<&T> {
+        self.resources
+            .get::<T>()
+            .or_else(|| self.services.get::<T>())
+            .or_else(|| self.backends.get::<T>())
+    }
+
+    /// Whether any of the three containers holds an entry of the type `id`
+    /// names.
+    #[must_use]
+    pub fn holds(&self, id: std::any::TypeId) -> bool {
+        self.resources.contains_type_id(id)
+            || self.services.contains_type_id(id)
+            || self.backends.contains_type_id(id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::any::TypeId;
+
+    struct InServices(u8);
+    struct InBackends(u8);
+    struct Nowhere;
+
+    #[test]
+    fn look_up_reaches_every_container() {
+        let mut runtime = Runtime::new();
+        runtime.services.insert(InServices(1));
+        runtime.backends.insert(InBackends(2));
+
+        assert_eq!(runtime.look_up::<InServices>().map(|e| e.0), Some(1));
+        assert_eq!(runtime.look_up::<InBackends>().map(|e| e.0), Some(2));
+        assert!(runtime.look_up::<Nowhere>().is_none());
+    }
+
+    #[test]
+    fn holds_names_a_type_by_its_id() {
+        let mut runtime = Runtime::new();
+        runtime.backends.insert(InBackends(0));
+
+        assert!(runtime.holds(TypeId::of::<InBackends>()));
+        assert!(!runtime.holds(TypeId::of::<Nowhere>()));
+    }
 }

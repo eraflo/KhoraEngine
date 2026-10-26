@@ -15,7 +15,11 @@
 //! Assembling the engine: services, agents, lanes and the scheduler, once,
 //! before the first frame.
 
+use khora_agents::lane_agent::LaneAgent;
+use khora_agents::registered_agent::{lane_agents_in, registered_agents};
 use khora_control::{DccConfig, DccService, EngineMode};
+use khora_core::agent::{Agent, ExecutionPhase};
+use khora_core::gpu::DeviceCaps;
 use khora_core::Runtime;
 use khora_data::render::{FrameGraph, SharedFrameGraph};
 use khora_telemetry::TelemetryService;
@@ -52,6 +56,9 @@ pub struct EngineBootstrap<A: EngineApp> {
     dcc_rx: EventReceiver,
     telemetry: TelemetryService,
     input_events: Channel<InputEvent>,
+    /// One agent per collected family registration, kept typed so the engine
+    /// can release their lanes when it stops.
+    lane_agents: Vec<Arc<Mutex<LaneAgent>>>,
 }
 
 impl<A: EngineApp> EngineBootstrap<A> {
@@ -72,6 +79,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
             dcc_rx,
             telemetry,
             input_events,
+            lane_agents: Vec::new(),
         }
     }
 
@@ -90,8 +98,11 @@ impl<A: EngineApp> EngineBootstrap<A> {
             return;
         };
         self.app.register_agents(&self.dcc, &mut runtime);
-        self.shared = Some(Arc::new(runtime));
+        let shared = Arc::new(runtime);
         register_builtin_agents(&self.dcc);
+        let order = phase_order(&self.app);
+        self.lane_agents = register_lane_agents(&self.dcc, &shared, &order);
+        self.shared = Some(shared);
     }
 
     /// The number of registered agents — the indices
@@ -141,6 +152,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
             dcc_rx,
             telemetry,
             input_events,
+            lane_agents,
         } = self;
         let runtime_arc = match (shared, runtime) {
             (Some(shared), _) => shared,
@@ -160,6 +172,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
         core.scheduler = Some(scheduler);
         core.runtime = runtime_arc;
         core.input_events = input_events;
+        core.lane_agents = lane_agents;
         // The pass slots are registered at link time, so a cycle among them
         // is a build defect no frame could recover from.
         core.passes = match khora_data::render::registered_pass_order() {
@@ -448,6 +461,66 @@ fn register_builtin_agents(dcc: &DccService) {
     );
 }
 
+/// The order the scheduler runs the phases in: the built-in ones, with each of
+/// the app's own phases inserted right after `OUTPUT`.
+fn phase_order<A: EngineApp>(app: &A) -> Vec<ExecutionPhase> {
+    let mut order = ExecutionPhase::DEFAULT_ORDER.to_vec();
+    for phase in app.custom_phases() {
+        if let Some(output) = order.iter().position(|p| *p == ExecutionPhase::OUTPUT) {
+            order.insert(output + 1, phase);
+        }
+    }
+    order
+}
+
+/// One `LaneAgent` per family registration linked into the binary, each
+/// registered with `dcc` for its registration's modes.
+///
+/// The registrations are checked together first, against the runtime and the
+/// device. They are fixed when the program is built, so a refused set is a
+/// build defect no frame could recover from: the engine refuses to boot.
+fn register_lane_agents(
+    dcc: &DccService,
+    runtime: &Runtime,
+    phase_order: &[ExecutionPhase],
+) -> Vec<Arc<Mutex<LaneAgent>>> {
+    let registrations = registered_agents();
+    // No family offers a storage-buffer lane yet: the caps are read from the
+    // device once one does.
+    let caps = DeviceCaps::default();
+    let agents = match lane_agents_in(&registrations, runtime, &caps, phase_order) {
+        Ok(agents) => agents,
+        Err(refusal) => panic!("the engine cannot boot its lane agents: {refusal}"),
+    };
+    let taken = dcc
+        .agent_registry()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .all_ids();
+    if let Some(registration) = registrations
+        .iter()
+        .find(|registration| taken.contains(&registration.agent))
+    {
+        panic!(
+            "the engine cannot boot its lane agents: the family `{}` negotiates as {:?}, which another agent already is",
+            registration.family_name, registration.agent
+        );
+    }
+    registrations
+        .iter()
+        .zip(agents)
+        .map(|(registration, agent)| {
+            let agent = Arc::new(Mutex::new(agent));
+            dcc.register_agent_for_mode(
+                agent.clone() as Arc<Mutex<dyn Agent>>,
+                1.0,
+                registration.modes.to_vec(),
+            );
+            agent
+        })
+        .collect()
+}
+
 /// The execution scheduler over `dcc`'s agents, with the app's custom phases.
 fn build_scheduler<A: EngineApp>(
     app: &A,
@@ -472,11 +545,8 @@ fn build_scheduler<A: EngineApp>(
     // pass submission stays deterministic (fixed scene→ui→overlay fold).
     scheduler.set_parallel_execution(true);
 
-    // Inject custom phases from the app
-    let custom_phases = app.custom_phases();
-    for phase in custom_phases {
-        scheduler.insert_after(khora_core::agent::ExecutionPhase::OUTPUT, phase);
-    }
+    // The app's own phases, in the order the lane agents were checked against.
+    scheduler.set_phase_order(&phase_order(app));
 
     let budget_channel = scheduler.budget_channel().clone();
     dcc.connect_budget_channel(budget_channel);

@@ -341,11 +341,8 @@ impl khora_core::lane::Lane for ForwardPlusLane {
         // strategy ran. Mirror of LitForwardLane's pattern — single
         // cross-lane channel.
         let (shadow_entries, shadow_bindings) = ctx
-            .slot::<khora_core::lane::OutputDeck>()
-            .and_then(|s| {
-                s.get::<khora_core::renderer::api::shadow::ShadowFrame>()
-                    .map(|frame| (frame.entries.clone(), frame.bindings))
-            })
+            .get::<khora_core::renderer::api::shadow::ShadowFrame>()
+            .map(|frame| (frame.entries.clone(), frame.bindings))
             .unwrap_or_default();
 
         let ibl_bindings = ctx

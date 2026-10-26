@@ -25,4 +25,5 @@ mod physics_step_is_precision;
 mod physics_time_stays_on_gameplay_time;
 mod published_fixed_steps;
 mod sim_steps;
+mod sub_step_outputs;
 mod waves;

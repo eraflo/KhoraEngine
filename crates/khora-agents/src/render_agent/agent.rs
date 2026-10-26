@@ -262,6 +262,10 @@ impl Agent for RenderAgent {
             .unwrap_or_else(|| ClearColor(khora_core::math::LinearRgba::new(0.1, 0.1, 0.15, 1.0)));
         let shadow_atlas = fctx.get::<ShadowAtlasView>().map(|a| *a);
         let shadow_sampler = fctx.get::<ShadowComparisonSampler>().map(|a| *a);
+        let shadow_frame = context
+            .earlier_deck()
+            .get::<khora_core::renderer::api::shadow::ShadowFrame>()
+            .cloned();
         let strategy = self.strategy;
         let select_name = lane_name_for_strategy(strategy, render_world);
 
@@ -293,10 +297,13 @@ impl Agent for RenderAgent {
             // `render_world` is borrowed from the LaneBus, read-only for the
             // frame.
             ctx.insert_ref(render_world);
-            // The deck is borrowed from EngineContext for this call. Lit lanes read `ShadowEntries`
-            // (written by shadow_pass_lane in OBSERVE) from the deck to
-            // build per-light shadow uniforms.
-            ctx.insert_slot(&mut *context.deck);
+            // Lit lanes build their per-light shadow uniforms from the
+            // `ShadowFrame` the shadow agent wrote in OBSERVE, read from the
+            // deck as the earlier phases left it — the frame's deck, or the
+            // frozen view a concurrent wave reads.
+            if let Some(shadows) = shadow_frame {
+                ctx.insert(shadows);
+            }
             ctx.insert(color_target);
             if let Some(size) = target_size {
                 ctx.insert(size);

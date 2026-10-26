@@ -41,6 +41,11 @@ raw-window-handle = "0.6"
 
 [dev-dependencies]
 criterion = "0.8"
+# The lane derives, tested here against the types they name. A dev
+# dependency only: khora-core ships depending on no workspace crate.
+khora-macros = { path = "../khora-macros" }
+# Compile-fail tests pinning the derive and `register_agent!` diagnostics.
+trybuild = "1.0"
 
 [[bench]]
 name = "channel_bench"

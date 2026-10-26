@@ -1,0 +1,11 @@
+error[E0609]: no field `world` on type `&InputSource<'_>`
+ --> tests/lane_contract/ui/input_source_has_no_world.rs:4:21
+  |
+4 |     let _ = &source.world;
+  |                     ^^^^^ unknown field
+
+error[E0599]: no method named `world` found for reference `&InputSource<'_>` in the current scope
+ --> tests/lane_contract/ui/input_source_has_no_world.rs:8:20
+  |
+8 |     let _ = source.world();
+  |                    ^^^^^ method not found in `&InputSource<'_>`
