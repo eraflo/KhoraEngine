@@ -986,3 +986,714 @@ fn the_ibl_split_sum_bias_is_scaled_by_the_specular_strength() {
         );
     }
 }
+
+// ─── The UI quad's corners, evaluated on the composed vertex shader ─────────
+//
+// The UI lane draws each quad as a four-vertex triangle strip, so vertex `i`
+// of an instance must land on corner (0,0), (1,0), (0,1), (1,1) in that order.
+// Rather than pin the WGSL text (which any equivalent rewrite would break), the
+// composed `vs_main` is run on the CPU by the small evaluator below, for a
+// mock instance at the origin of size 1 whose UVs span [0, 1] and an identity
+// projection: the vertex's UV and its clip-space position are then the corner
+// itself.
+
+/// A value of the vertex-shader evaluator.
+#[derive(Debug, Clone, PartialEq)]
+enum Val {
+    Bool(bool),
+    U32(u32),
+    I32(i32),
+    F32(f32),
+    /// A vector, a matrix (its columns), a struct or a fixed array.
+    Composite(Vec<Val>),
+    /// A runtime-sized array: every element is the same.
+    Repeat(Box<Val>),
+    /// A pointer: a root variable and the indices walked from it.
+    Ptr(Root, Vec<usize>),
+    /// Anything the evaluator does not model (texture samples, …).
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Root {
+    Local(naga::Handle<naga::LocalVariable>),
+    Global(naga::Handle<naga::GlobalVariable>),
+}
+
+/// How a block ended.
+enum Flow {
+    Next,
+    Break,
+    Return(Val),
+}
+
+/// Runs one entry point of a composed module on the CPU, straight-line code
+/// and branches only.
+struct VertexEval<'m> {
+    module: &'m naga::Module,
+    function: &'m naga::Function,
+    args: Vec<Val>,
+    locals: std::collections::HashMap<naga::Handle<naga::LocalVariable>, Val>,
+    globals: std::collections::HashMap<naga::Handle<naga::GlobalVariable>, Val>,
+    cache: std::collections::HashMap<naga::Handle<naga::Expression>, Val>,
+}
+
+fn scalar_zero(kind: naga::ScalarKind) -> Val {
+    match kind {
+        naga::ScalarKind::Float | naga::ScalarKind::AbstractFloat => Val::F32(0.0),
+        naga::ScalarKind::Uint => Val::U32(0),
+        naga::ScalarKind::Sint | naga::ScalarKind::AbstractInt => Val::I32(0),
+        naga::ScalarKind::Bool => Val::Bool(false),
+    }
+}
+
+/// A value of type `ty`: zero everywhere when `mock` is false; otherwise the
+/// mock inputs — matrices are the identity, and a vector named `size` or
+/// `uv_max` is all ones.
+fn value_of(
+    module: &naga::Module,
+    ty: naga::Handle<naga::Type>,
+    name: Option<&str>,
+    mock: bool,
+) -> Val {
+    match &module.types[ty].inner {
+        naga::TypeInner::Scalar(scalar) => scalar_zero(scalar.kind),
+        naga::TypeInner::Vector { size, scalar } => {
+            let ones = mock && matches!(name, Some("size" | "uv_max"));
+            let component = match (ones, scalar_zero(scalar.kind)) {
+                (true, Val::F32(_)) => Val::F32(1.0),
+                (_, zero) => zero,
+            };
+            Val::Composite(vec![component; *size as usize])
+        }
+        naga::TypeInner::Matrix { columns, rows, .. } => Val::Composite(
+            (0..*columns as usize)
+                .map(|c| {
+                    Val::Composite(
+                        (0..*rows as usize)
+                            .map(|r| Val::F32(if mock && r == c { 1.0 } else { 0.0 }))
+                            .collect(),
+                    )
+                })
+                .collect(),
+        ),
+        naga::TypeInner::Struct { members, .. } => Val::Composite(
+            members
+                .iter()
+                .map(|m| value_of(module, m.ty, m.name.as_deref(), mock))
+                .collect(),
+        ),
+        naga::TypeInner::Array { base, size, .. } => match size {
+            naga::ArraySize::Constant(n) => {
+                Val::Composite(vec![value_of(module, *base, None, mock); n.get() as usize])
+            }
+            _ => Val::Repeat(Box::new(value_of(module, *base, None, mock))),
+        },
+        _ => Val::Unknown,
+    }
+}
+
+fn index_into(value: Val, index: usize) -> Val {
+    match value {
+        Val::Ptr(root, mut path) => {
+            path.push(index);
+            Val::Ptr(root, path)
+        }
+        Val::Composite(items) => items.get(index).cloned().unwrap_or(Val::Unknown),
+        Val::Repeat(item) => *item,
+        _ => Val::Unknown,
+    }
+}
+
+fn as_index(value: &Val) -> Option<usize> {
+    match value {
+        Val::U32(i) => Some(*i as usize),
+        Val::I32(i) if *i >= 0 => Some(*i as usize),
+        _ => None,
+    }
+}
+
+fn scalar_binary(op: naga::BinaryOperator, left: &Val, right: &Val) -> Val {
+    use naga::BinaryOperator as B;
+    match (left, right) {
+        (Val::F32(a), Val::F32(b)) => match op {
+            B::Add => Val::F32(a + b),
+            B::Subtract => Val::F32(a - b),
+            B::Multiply => Val::F32(a * b),
+            B::Divide => Val::F32(a / b),
+            B::Equal => Val::Bool(a == b),
+            B::NotEqual => Val::Bool(a != b),
+            B::Less => Val::Bool(a < b),
+            B::LessEqual => Val::Bool(a <= b),
+            B::Greater => Val::Bool(a > b),
+            B::GreaterEqual => Val::Bool(a >= b),
+            _ => Val::Unknown,
+        },
+        (Val::U32(a), Val::U32(b)) => match op {
+            B::Add => Val::U32(a.wrapping_add(*b)),
+            B::Subtract => Val::U32(a.wrapping_sub(*b)),
+            B::Multiply => Val::U32(a.wrapping_mul(*b)),
+            B::Divide if *b != 0 => Val::U32(a / b),
+            B::Modulo if *b != 0 => Val::U32(a % b),
+            B::Equal => Val::Bool(a == b),
+            B::NotEqual => Val::Bool(a != b),
+            B::Less => Val::Bool(a < b),
+            B::LessEqual => Val::Bool(a <= b),
+            B::Greater => Val::Bool(a > b),
+            B::GreaterEqual => Val::Bool(a >= b),
+            B::And => Val::U32(a & b),
+            B::InclusiveOr => Val::U32(a | b),
+            B::ExclusiveOr => Val::U32(a ^ b),
+            B::ShiftLeft => Val::U32(a.wrapping_shl(*b)),
+            B::ShiftRight => Val::U32(a.wrapping_shr(*b)),
+            _ => Val::Unknown,
+        },
+        (Val::I32(a), Val::I32(b)) => match op {
+            B::Add => Val::I32(a.wrapping_add(*b)),
+            B::Subtract => Val::I32(a.wrapping_sub(*b)),
+            B::Multiply => Val::I32(a.wrapping_mul(*b)),
+            B::Divide if *b != 0 => Val::I32(a / b),
+            B::Modulo if *b != 0 => Val::I32(a % b),
+            B::Equal => Val::Bool(a == b),
+            B::NotEqual => Val::Bool(a != b),
+            B::Less => Val::Bool(a < b),
+            B::LessEqual => Val::Bool(a <= b),
+            B::Greater => Val::Bool(a > b),
+            B::GreaterEqual => Val::Bool(a >= b),
+            B::And => Val::I32(a & b),
+            B::InclusiveOr => Val::I32(a | b),
+            B::ExclusiveOr => Val::I32(a ^ b),
+            _ => Val::Unknown,
+        },
+        (Val::I32(a), Val::U32(b)) => match op {
+            B::ShiftLeft => Val::I32(a.wrapping_shl(*b)),
+            B::ShiftRight => Val::I32(a.wrapping_shr(*b)),
+            _ => Val::Unknown,
+        },
+        (Val::Bool(a), Val::Bool(b)) => match op {
+            B::LogicalAnd | B::And => Val::Bool(*a && *b),
+            B::LogicalOr | B::InclusiveOr => Val::Bool(*a || *b),
+            B::Equal => Val::Bool(a == b),
+            B::NotEqual => Val::Bool(a != b),
+            _ => Val::Unknown,
+        },
+        _ => Val::Unknown,
+    }
+}
+
+fn is_matrix(value: &Val) -> bool {
+    matches!(value, Val::Composite(columns) if matches!(columns.first(), Some(Val::Composite(_))))
+}
+
+fn binary(op: naga::BinaryOperator, left: Val, right: Val) -> Val {
+    match (left, right) {
+        (Val::Unknown, _) | (_, Val::Unknown) => Val::Unknown,
+        // matrix × vector: the sum of the columns weighted by the vector.
+        (matrix, Val::Composite(vector))
+            if op == naga::BinaryOperator::Multiply
+                && is_matrix(&matrix)
+                && !vector.iter().any(|v| matches!(v, Val::Composite(_))) =>
+        {
+            let Val::Composite(columns) = matrix else {
+                return Val::Unknown;
+            };
+            let mut sum: Option<Val> = None;
+            for (column, weight) in columns.into_iter().zip(vector) {
+                let term = binary(naga::BinaryOperator::Multiply, column, weight);
+                sum = Some(match sum {
+                    None => term,
+                    Some(acc) => binary(naga::BinaryOperator::Add, acc, term),
+                });
+            }
+            sum.unwrap_or(Val::Unknown)
+        }
+        (Val::Composite(a), Val::Composite(b)) if a.len() == b.len() => Val::Composite(
+            a.into_iter()
+                .zip(b)
+                .map(|(x, y)| binary(op, x, y))
+                .collect(),
+        ),
+        (Val::Composite(a), scalar) => Val::Composite(
+            a.into_iter()
+                .map(|x| binary(op, x, scalar.clone()))
+                .collect(),
+        ),
+        (scalar, Val::Composite(b)) => Val::Composite(
+            b.into_iter()
+                .map(|y| binary(op, scalar.clone(), y))
+                .collect(),
+        ),
+        (a, b) => scalar_binary(op, &a, &b),
+    }
+}
+
+fn cast(value: Val, kind: naga::ScalarKind, convert: bool) -> Val {
+    use naga::ScalarKind as K;
+    match value {
+        Val::Composite(items) => {
+            Val::Composite(items.into_iter().map(|v| cast(v, kind, convert)).collect())
+        }
+        Val::F32(f) => match (kind, convert) {
+            (K::Float, _) => Val::F32(f),
+            (K::Uint, true) => Val::U32(f as u32),
+            (K::Uint, false) => Val::U32(f.to_bits()),
+            (K::Sint, true) => Val::I32(f as i32),
+            (K::Sint, false) => Val::I32(f.to_bits() as i32),
+            (K::Bool, _) => Val::Bool(f != 0.0),
+            _ => Val::Unknown,
+        },
+        Val::U32(u) => match (kind, convert) {
+            (K::Float, true) => Val::F32(u as f32),
+            (K::Float, false) => Val::F32(f32::from_bits(u)),
+            (K::Uint, _) => Val::U32(u),
+            (K::Sint, _) => Val::I32(u as i32),
+            (K::Bool, _) => Val::Bool(u != 0),
+            _ => Val::Unknown,
+        },
+        Val::I32(i) => match (kind, convert) {
+            (K::Float, true) => Val::F32(i as f32),
+            (K::Float, false) => Val::F32(f32::from_bits(i as u32)),
+            (K::Uint, _) => Val::U32(i as u32),
+            (K::Sint, _) => Val::I32(i),
+            (K::Bool, _) => Val::Bool(i != 0),
+            _ => Val::Unknown,
+        },
+        Val::Bool(b) => match kind {
+            K::Float => Val::F32(if b { 1.0 } else { 0.0 }),
+            K::Uint => Val::U32(u32::from(b)),
+            K::Sint => Val::I32(i32::from(b)),
+            K::Bool => Val::Bool(b),
+            _ => Val::Unknown,
+        },
+        _ => Val::Unknown,
+    }
+}
+
+/// `f` applied component by component over up to three operands, broadcasting
+/// a scalar against a vector.
+fn componentwise(args: &[Val], f: &dyn Fn(&[f32]) -> f32) -> Val {
+    let width = args.iter().find_map(|a| match a {
+        Val::Composite(items) => Some(items.len()),
+        _ => None,
+    });
+    let component = |arg: &Val, i: usize| -> Option<f32> {
+        match arg {
+            Val::F32(f) => Some(*f),
+            Val::Composite(items) => match items.get(i) {
+                Some(Val::F32(f)) => Some(*f),
+                _ => None,
+            },
+            _ => None,
+        }
+    };
+    let at = |i: usize| -> Option<Val> {
+        let operands: Option<Vec<f32>> = args.iter().map(|a| component(a, i)).collect();
+        operands.map(|o| Val::F32(f(&o)))
+    };
+    match width {
+        None => at(0).unwrap_or(Val::Unknown),
+        Some(n) => (0..n)
+            .map(at)
+            .collect::<Option<Vec<Val>>>()
+            .map(Val::Composite)
+            .unwrap_or(Val::Unknown),
+    }
+}
+
+impl<'m> VertexEval<'m> {
+    fn new(module: &'m naga::Module, entry: &'m naga::EntryPoint, vertex_index: u32) -> Self {
+        let function = &entry.function;
+        let builtin = |binding: &Option<naga::Binding>| match binding {
+            Some(naga::Binding::BuiltIn(naga::BuiltIn::VertexIndex)) => {
+                Some(Val::U32(vertex_index))
+            }
+            Some(naga::Binding::BuiltIn(naga::BuiltIn::InstanceIndex)) => Some(Val::U32(0)),
+            _ => None,
+        };
+        let args = function
+            .arguments
+            .iter()
+            .map(|arg| match builtin(&arg.binding) {
+                Some(v) => v,
+                None => match &module.types[arg.ty].inner {
+                    naga::TypeInner::Struct { members, .. } => Val::Composite(
+                        members
+                            .iter()
+                            .map(|m| {
+                                builtin(&m.binding)
+                                    .unwrap_or_else(|| value_of(module, m.ty, None, false))
+                            })
+                            .collect(),
+                    ),
+                    _ => value_of(module, arg.ty, None, false),
+                },
+            })
+            .collect();
+        let globals = module
+            .global_variables
+            .iter()
+            .map(|(h, g)| (h, value_of(module, g.ty, g.name.as_deref(), true)))
+            .collect();
+        let mut eval = Self {
+            module,
+            function,
+            args,
+            locals: std::collections::HashMap::new(),
+            globals,
+            cache: std::collections::HashMap::new(),
+        };
+        for (h, local) in function.local_variables.iter() {
+            let value = match local.init {
+                Some(init) => eval.eval(init),
+                None => value_of(module, local.ty, None, false),
+            };
+            eval.locals.insert(h, value);
+        }
+        eval
+    }
+
+    fn read(&self, root: Root, path: &[usize]) -> Val {
+        let mut value = match root {
+            Root::Local(h) => self.locals.get(&h).cloned().unwrap_or(Val::Unknown),
+            Root::Global(h) => self.globals.get(&h).cloned().unwrap_or(Val::Unknown),
+        };
+        for &i in path {
+            value = index_into(value, i);
+        }
+        value
+    }
+
+    fn write(&mut self, pointer: Val, value: Val) {
+        let Val::Ptr(Root::Local(h), path) = pointer else {
+            return;
+        };
+        let Some(mut slot) = self.locals.get_mut(&h) else {
+            return;
+        };
+        for &i in &path {
+            slot = match slot {
+                Val::Composite(items) => match items.get_mut(i) {
+                    Some(item) => item,
+                    None => return,
+                },
+                _ => return,
+            };
+        }
+        *slot = value;
+    }
+
+    fn eval(&mut self, h: naga::Handle<naga::Expression>) -> Val {
+        if let Some(v) = self.cache.get(&h) {
+            return v.clone();
+        }
+        let value = match &self.function.expressions[h] {
+            naga::Expression::Literal(literal) => match *literal {
+                naga::Literal::F32(f) => Val::F32(f),
+                naga::Literal::F64(f) => Val::F32(f as f32),
+                naga::Literal::U32(u) => Val::U32(u),
+                naga::Literal::I32(i) => Val::I32(i),
+                naga::Literal::Bool(b) => Val::Bool(b),
+                naga::Literal::AbstractInt(i) => Val::I32(i as i32),
+                naga::Literal::AbstractFloat(f) => Val::F32(f as f32),
+                _ => Val::Unknown,
+            },
+            naga::Expression::ZeroValue(ty) => value_of(self.module, *ty, None, false),
+            naga::Expression::Compose { ty, components } => {
+                let values: Vec<Val> = components
+                    .clone()
+                    .into_iter()
+                    .map(|c| self.eval(c))
+                    .collect();
+                match &self.module.types[*ty].inner {
+                    // `vec4(v.xy, 0.0, 1.0)`: vector components flatten.
+                    naga::TypeInner::Vector { .. } => Val::Composite(
+                        values
+                            .into_iter()
+                            .flat_map(|v| match v {
+                                Val::Composite(items) => items,
+                                scalar => vec![scalar],
+                            })
+                            .collect(),
+                    ),
+                    _ => Val::Composite(values),
+                }
+            }
+            naga::Expression::Access { base, index } => {
+                let (base, index) = (*base, *index);
+                let base = self.eval(base);
+                match as_index(&self.eval(index)) {
+                    Some(i) => index_into(base, i),
+                    None => Val::Unknown,
+                }
+            }
+            naga::Expression::AccessIndex { base, index } => {
+                let index = *index as usize;
+                let base = self.eval(*base);
+                index_into(base, index)
+            }
+            naga::Expression::Splat { size, value } => {
+                let size = *size as usize;
+                Val::Composite(vec![self.eval(*value); size])
+            }
+            naga::Expression::Swizzle {
+                size,
+                vector,
+                pattern,
+            } => {
+                let (size, pattern) = (*size as usize, *pattern);
+                match self.eval(*vector) {
+                    Val::Composite(items) => Val::Composite(
+                        pattern[..size]
+                            .iter()
+                            .map(|c| items.get(*c as usize).cloned().unwrap_or(Val::Unknown))
+                            .collect(),
+                    ),
+                    _ => Val::Unknown,
+                }
+            }
+            naga::Expression::FunctionArgument(i) => {
+                self.args.get(*i as usize).cloned().unwrap_or(Val::Unknown)
+            }
+            naga::Expression::GlobalVariable(g) => Val::Ptr(Root::Global(*g), Vec::new()),
+            naga::Expression::LocalVariable(l) => Val::Ptr(Root::Local(*l), Vec::new()),
+            naga::Expression::Load { pointer } => match self.eval(*pointer) {
+                Val::Ptr(root, path) => self.read(root, &path),
+                _ => Val::Unknown,
+            },
+            naga::Expression::Unary { op, expr } => {
+                let op = *op;
+                match (op, self.eval(*expr)) {
+                    (naga::UnaryOperator::Negate, Val::F32(f)) => Val::F32(-f),
+                    (naga::UnaryOperator::Negate, Val::I32(i)) => Val::I32(-i),
+                    (naga::UnaryOperator::LogicalNot, Val::Bool(b)) => Val::Bool(!b),
+                    (naga::UnaryOperator::BitwiseNot, Val::U32(u)) => Val::U32(!u),
+                    (naga::UnaryOperator::BitwiseNot, Val::I32(i)) => Val::I32(!i),
+                    _ => Val::Unknown,
+                }
+            }
+            naga::Expression::Binary { op, left, right } => {
+                let (op, left, right) = (*op, *left, *right);
+                let left = self.eval(left);
+                let right = self.eval(right);
+                binary(op, left, right)
+            }
+            naga::Expression::Select {
+                condition,
+                accept,
+                reject,
+            } => {
+                let (condition, accept, reject) = (*condition, *accept, *reject);
+                let condition = self.eval(condition);
+                let accept = self.eval(accept);
+                let reject = self.eval(reject);
+                match (condition, accept, reject) {
+                    (Val::Bool(c), a, r) => {
+                        if c {
+                            a
+                        } else {
+                            r
+                        }
+                    }
+                    (Val::Composite(c), Val::Composite(a), Val::Composite(r)) => Val::Composite(
+                        c.into_iter()
+                            .zip(a.into_iter().zip(r))
+                            .map(|(c, (a, r))| if c == Val::Bool(true) { a } else { r })
+                            .collect(),
+                    ),
+                    _ => Val::Unknown,
+                }
+            }
+            naga::Expression::Math {
+                fun,
+                arg,
+                arg1,
+                arg2,
+                ..
+            } => {
+                let (fun, arg, arg1, arg2) = (*fun, *arg, *arg1, *arg2);
+                let mut args = vec![self.eval(arg)];
+                args.extend(arg1.map(|a| self.eval(a)));
+                args.extend(arg2.map(|a| self.eval(a)));
+                match fun {
+                    naga::MathFunction::Mix => {
+                        componentwise(&args, &|o| o[0] + (o[1] - o[0]) * o[2])
+                    }
+                    naga::MathFunction::Min => componentwise(&args, &|o| o[0].min(o[1])),
+                    naga::MathFunction::Max => componentwise(&args, &|o| o[0].max(o[1])),
+                    naga::MathFunction::Clamp => {
+                        componentwise(&args, &|o| o[0].max(o[1]).min(o[2]))
+                    }
+                    naga::MathFunction::Abs => componentwise(&args, &|o| o[0].abs()),
+                    naga::MathFunction::Floor => componentwise(&args, &|o| o[0].floor()),
+                    naga::MathFunction::Fract => componentwise(&args, &|o| o[0] - o[0].floor()),
+                    _ => Val::Unknown,
+                }
+            }
+            naga::Expression::As {
+                expr,
+                kind,
+                convert,
+            } => {
+                let (kind, convert) = (*kind, convert.is_some());
+                let value = self.eval(*expr);
+                cast(value, kind, convert)
+            }
+            _ => Val::Unknown,
+        };
+        self.cache.insert(h, value.clone());
+        value
+    }
+
+    fn exec(&mut self, block: &'m naga::Block) -> Flow {
+        for statement in block.iter() {
+            match statement {
+                naga::Statement::Emit(range) => {
+                    for h in range.clone() {
+                        self.eval(h);
+                    }
+                }
+                naga::Statement::Block(inner) => match self.exec(inner) {
+                    Flow::Next => {}
+                    other => return other,
+                },
+                naga::Statement::If {
+                    condition,
+                    accept,
+                    reject,
+                } => {
+                    let taken = match self.eval(*condition) {
+                        Val::Bool(true) => accept,
+                        Val::Bool(false) => reject,
+                        other => panic!(
+                            "vs_main branches on a value the evaluator cannot model: {other:?}"
+                        ),
+                    };
+                    match self.exec(taken) {
+                        Flow::Next => {}
+                        other => return other,
+                    }
+                }
+                naga::Statement::Switch { selector, cases } => {
+                    let selected = self.eval(*selector);
+                    let start = cases
+                        .iter()
+                        .position(|case| match (&case.value, &selected) {
+                            (naga::SwitchValue::U32(v), Val::U32(s)) => v == s,
+                            (naga::SwitchValue::I32(v), Val::I32(s)) => v == s,
+                            _ => false,
+                        })
+                        .or_else(|| {
+                            cases
+                                .iter()
+                                .position(|case| case.value == naga::SwitchValue::Default)
+                        });
+                    if let Some(start) = start {
+                        for case in &cases[start..] {
+                            match self.exec(&case.body) {
+                                Flow::Next if case.fall_through => continue,
+                                Flow::Next | Flow::Break => break,
+                                ret @ Flow::Return(_) => return ret,
+                            }
+                        }
+                    }
+                }
+                naga::Statement::Break => return Flow::Break,
+                naga::Statement::Return { value } => {
+                    let value = value.map(|v| self.eval(v)).unwrap_or(Val::Unknown);
+                    return Flow::Return(value);
+                }
+                naga::Statement::Store { pointer, value } => {
+                    let (pointer, value) = (*pointer, *value);
+                    let pointer = self.eval(pointer);
+                    let value = self.eval(value);
+                    self.write(pointer, value);
+                }
+                naga::Statement::Loop { .. } => {
+                    panic!(
+                        "vs_main loops; the evaluator models straight-line code and branches only"
+                    )
+                }
+                naga::Statement::Call { .. } => {
+                    panic!("vs_main calls a function; the evaluator does not follow calls")
+                }
+                _ => {}
+            }
+        }
+        Flow::Next
+    }
+}
+
+fn floats(value: &Val) -> Option<Vec<f32>> {
+    match value {
+        Val::Composite(items) => items
+            .iter()
+            .map(|v| match v {
+                Val::F32(f) => Some(*f),
+                _ => None,
+            })
+            .collect(),
+        _ => None,
+    }
+}
+
+/// The corner `vs_main` of the composed UI pipeline puts vertex `vertex_index`
+/// of a unit quad on: read from its UV (`@location(0)`, with UVs spanning
+/// [0, 1]) and checked against its clip-space position (instance at the origin
+/// of size 1, identity projection), which must agree.
+fn ui_corner(module: &naga::Module, vertex_index: u32) -> (f32, f32) {
+    let entry = module
+        .entry_points
+        .iter()
+        .find(|e| e.stage == naga::ShaderStage::Vertex && e.name == "vs_main")
+        .expect("vs_main vertex entry point");
+    let result = entry
+        .function
+        .result
+        .as_ref()
+        .expect("vs_main returns its vertex");
+    let naga::TypeInner::Struct { members, .. } = &module.types[result.ty].inner else {
+        panic!("vs_main returns a struct of varyings");
+    };
+    let member = |wanted: &dyn Fn(&naga::Binding) -> bool| {
+        members
+            .iter()
+            .position(|m| m.binding.as_ref().is_some_and(wanted))
+    };
+    let uv_at = member(&|b| matches!(b, naga::Binding::Location { location: 0, .. }))
+        .expect("vs_main outputs the quad's UV at location 0");
+    let position_at =
+        member(&|b| matches!(b, naga::Binding::BuiltIn(naga::BuiltIn::Position { .. })))
+            .expect("vs_main outputs a clip position");
+
+    let mut eval = VertexEval::new(module, entry, vertex_index);
+    let Flow::Return(Val::Composite(out)) = eval.exec(&entry.function.body) else {
+        panic!("vertex {vertex_index}: vs_main returned no value the evaluator could read");
+    };
+    let uv = floats(&out[uv_at])
+        .unwrap_or_else(|| panic!("vertex {vertex_index}: the UV is not a float vector"));
+    let clip = floats(&out[position_at]).unwrap_or_else(|| {
+        panic!("vertex {vertex_index}: the clip position is not a float vector")
+    });
+    assert_eq!(
+        (clip[0], clip[1]),
+        (uv[0], uv[1]),
+        "vertex {vertex_index}: the corner the quad is drawn at differs from the corner it samples"
+    );
+    (uv[0], uv[1])
+}
+
+/// The UI lane draws each quad as a four-vertex triangle strip: vertex 0..3
+/// must be (0,0), (1,0), (0,1), (1,1), so that triangles (0,1,2) and (1,2,3)
+/// cover the quad with no gap and no overlap.
+#[test]
+fn ui_shader_corners_follow_strip_order() {
+    let module = compose_pipeline("khora::pipelines::ui");
+
+    let corners: Vec<(f32, f32)> = (0..4).map(|v| ui_corner(&module, v)).collect();
+
+    assert_eq!(
+        corners,
+        [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)],
+        "the UI quad's vertices 0..3 must follow triangle-strip order"
+    );
+}

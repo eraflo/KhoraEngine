@@ -406,6 +406,17 @@ impl Lane for GizmoLane {
         Ok(())
     }
 
+    fn on_shutdown(&self, ctx: &mut LaneContext) {
+        let Some(device) = crate::render_lane::util::release::shutdown_device(ctx) else {
+            return;
+        };
+        let device = device.as_ref();
+        crate::render_lane::util::release::release_bind_group(device, &self.camera_bind_group);
+        crate::render_lane::util::release::release_bind_group(device, &self.storage_bind_group);
+        crate::render_lane::util::release::release_buffer(device, &self.camera_buffer);
+        crate::render_lane::util::release::release_buffer(device, &self.storage_buffer);
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -425,5 +436,12 @@ mod tests {
         assert_eq!(lane.strategy_name(), "Gizmo");
         assert_eq!(lane.lane_kind(), LaneKind::Render);
         assert_eq!(lane.capacity, GIZMO_CAPACITY);
+    }
+
+    /// The gizmo lane owns its vertex and uniform buffers; the layouts and
+    /// pipeline belong to the `PipelineSystem`.
+    #[test]
+    fn gizmo_shutdown_destroys_every_buffer_it_created() {
+        crate::tests::assert_shutdown_destroys_what_it_created(&GizmoLane::default());
     }
 }

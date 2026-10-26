@@ -446,6 +446,22 @@ impl Lane for SkyboxLane {
         Ok(())
     }
 
+    fn on_shutdown(&self, ctx: &mut LaneContext) {
+        let Some(device) = crate::render_lane::util::release::shutdown_device(ctx) else {
+            return;
+        };
+        let device = device.as_ref();
+        if let Some((_, group)) = self.env_bind_group.lock().ok().and_then(|mut g| g.take()) {
+            if let Err(e) = device.destroy_bind_group(group) {
+                log::warn!(
+                    "SkyboxLane shutdown: could not destroy the environment bind group: {e}"
+                );
+            }
+        }
+        crate::render_lane::util::release::release_bind_group(device, &self.sky_bind_group);
+        crate::render_lane::util::release::release_buffer(device, &self.sky_buffer);
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -710,5 +726,12 @@ mod tests {
                 unreachable!()
             }
         }
+    }
+
+    /// The skybox lane owns its uniform buffer, sampler and bind groups; the
+    /// layouts and pipeline belong to the `PipelineSystem`.
+    #[test]
+    fn skybox_shutdown_destroys_every_buffer_it_created() {
+        crate::tests::assert_shutdown_destroys_what_it_created(&SkyboxLane::default());
     }
 }

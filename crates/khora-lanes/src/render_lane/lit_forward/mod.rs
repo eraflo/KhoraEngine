@@ -259,9 +259,9 @@ impl khora_core::lane::Lane for LitForwardLane {
         // (possibly empty).
         let (shadow_entries, shadow_bindings) = ctx
             .slot::<khora_core::lane::OutputDeck>()
-            .map(|mut s| {
-                let frame = s.slot::<khora_core::renderer::api::shadow::ShadowFrame>();
-                (frame.entries.clone(), frame.bindings)
+            .and_then(|s| {
+                s.get::<khora_core::renderer::api::shadow::ShadowFrame>()
+                    .map(|frame| (frame.entries.clone(), frame.bindings))
             })
             .unwrap_or_default();
 

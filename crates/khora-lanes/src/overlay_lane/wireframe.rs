@@ -492,6 +492,20 @@ impl Lane for WireframeLane {
         Ok(())
     }
 
+    fn on_shutdown(&self, ctx: &mut LaneContext) {
+        let Some(device) = crate::render_lane::util::release::shutdown_device(ctx) else {
+            return;
+        };
+        let device = device.as_ref();
+        crate::render_lane::util::release::release_bind_group(device, &self.camera_bind_group);
+        crate::render_lane::util::release::release_bind_group(device, &self.material_bind_group);
+        crate::render_lane::util::release::release_buffer(device, &self.camera_buffer);
+        crate::render_lane::util::release::release_buffer(device, &self.material_buffer);
+        if let Some(ring) = self.model_ring.lock().ok().and_then(|mut g| g.take()) {
+            ring.destroy(device);
+        }
+    }
+
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -522,5 +536,12 @@ mod tests {
     fn wireframe_pipeline_binds_the_mesh_vertex() {
         let spec = wireframe_pipeline_spec(&crate::tests::SpecOnlyDevice);
         crate::tests::assert_binds_the_mesh_vertex(&spec);
+    }
+
+    /// The wireframe lane owns its model ring and its cube buffers; the layouts and
+    /// pipeline belong to the `PipelineSystem`.
+    #[test]
+    fn wireframe_shutdown_destroys_every_buffer_it_created() {
+        crate::tests::assert_shutdown_destroys_what_it_created(&WireframeLane::default());
     }
 }

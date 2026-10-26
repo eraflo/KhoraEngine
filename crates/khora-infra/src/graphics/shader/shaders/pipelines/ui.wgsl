@@ -44,9 +44,9 @@ fn vs_main(
 ) -> VertexOutput {
     let instance = instances[instance_index];
     
-    // Quad vertices: (0,0), (1,0), (1,1), (0,1)
+    // Quad corners in triangle-strip order: (0,0), (1,0), (0,1), (1,1).
     var pos = vec2<f32>(0.0, 0.0);
-    if (vertex_index == 1u || vertex_index == 2u) { pos.x = 1.0; }
+    if (vertex_index == 1u || vertex_index == 3u) { pos.x = 1.0; }
     if (vertex_index == 2u || vertex_index == 3u) { pos.y = 1.0; }
     
     // Remap UV to [uv_min, uv_max]

@@ -422,5 +422,8 @@ impl ForwardPlusLane {
         if let Some(id) = resources.shadow_view_projs_buffer.take() {
             let _ = device.destroy_buffer(id);
         }
+        if let Some(id) = resources.tile_info_buffer.take() {
+            let _ = device.destroy_buffer(id);
+        }
     }
 }

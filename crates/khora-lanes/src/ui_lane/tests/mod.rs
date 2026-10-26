@@ -14,6 +14,8 @@
 
 //! The UI lane's tests.
 
+mod shutdown;
+mod strip_quads;
 mod target_size;
 mod target_size_edges;
 mod text_flush;

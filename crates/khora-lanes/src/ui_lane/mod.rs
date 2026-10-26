@@ -26,8 +26,8 @@ use khora_core::renderer::api::command::{
     RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
 };
 use khora_core::renderer::api::pipeline::{
-    ColorTargetStateDescriptor, ColorWrites, MultisampleStateDescriptor, PrimitiveStateDescriptor,
-    PrimitiveTopology, RenderPipelineId,
+    BlendStateDescriptor, ColorTargetStateDescriptor, ColorWrites, MultisampleStateDescriptor,
+    PrimitiveStateDescriptor, PrimitiveTopology, RenderPipelineId,
 };
 use khora_core::renderer::api::resource::{
     BufferDescriptor, BufferId, BufferUsage, TextureViewDimension, TextureViewId,
@@ -434,6 +434,23 @@ impl Lane for UiRenderLane {
         Ok(())
     }
 
+    fn on_shutdown(&self, ctx: &mut LaneContext) {
+        let Some(device) = crate::render_lane::util::release::shutdown_device(ctx) else {
+            return;
+        };
+        let device = device.as_ref();
+        if let Some((_, group)) = self.atlas_bind_group.lock().ok().and_then(|mut g| g.take()) {
+            if let Err(e) = device.destroy_bind_group(group) {
+                log::warn!("UiRenderLane shutdown: could not destroy the atlas bind group: {e}");
+            }
+        }
+        crate::render_lane::util::release::release_bind_group(device, &self.global_bind_group);
+        crate::render_lane::util::release::release_bind_group(device, &self.instance_bind_group);
+        crate::render_lane::util::release::release_buffer(device, &self.projection_buffer);
+        crate::render_lane::util::release::release_buffer(device, &self.instance_buffer);
+        crate::render_lane::util::release::release_sampler(device, &self.sampler);
+    }
+
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -546,8 +563,9 @@ fn ui_pipeline_spec(
         vertex_buffers: vec![],
         vs_entry: "vs_main",
         fs_entry: Some("fs_main"),
+        // Four corners per instance, drawn as a strip: two triangles per quad.
         primitive: PrimitiveStateDescriptor {
-            topology: PrimitiveTopology::TriangleList,
+            topology: PrimitiveTopology::TriangleStrip,
             ..Default::default()
         },
         depth_stencil: None,
@@ -555,7 +573,9 @@ fn ui_pipeline_spec(
             format: device
                 .get_surface_format()
                 .unwrap_or(TextureFormat::Rgba8UnormSrgb),
-            blend: None,
+            // The shader returns straight (non-premultiplied) alpha for the
+            // rounded corners and borders.
+            blend: Some(BlendStateDescriptor::alpha_blending()),
             write_mask: ColorWrites::ALL,
         }],
         multisample: MultisampleStateDescriptor {

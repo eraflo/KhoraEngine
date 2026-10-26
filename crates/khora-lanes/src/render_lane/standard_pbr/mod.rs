@@ -138,9 +138,9 @@ impl khora_core::lane::Lane for StandardPbrLane {
 
         let (shadow_entries, shadow_bindings) = ctx
             .slot::<khora_core::lane::OutputDeck>()
-            .map(|mut s| {
-                let frame = s.slot::<khora_core::renderer::api::shadow::ShadowFrame>();
-                (frame.entries.clone(), frame.bindings)
+            .and_then(|s| {
+                s.get::<khora_core::renderer::api::shadow::ShadowFrame>()
+                    .map(|frame| (frame.entries.clone(), frame.bindings))
             })
             .unwrap_or_default();
 
@@ -165,6 +165,21 @@ impl khora_core::lane::Lane for StandardPbrLane {
             &gpu_meshes,
         );
         Ok(())
+    }
+
+    fn on_shutdown(&self, ctx: &mut khora_core::lane::LaneContext) {
+        let Some(device) = crate::render_lane::util::release::shutdown_device(ctx) else {
+            return;
+        };
+        let device = device.as_ref();
+        for ring in [&self.camera_ring, &self.lighting_ring] {
+            if let Some(ring) = ring.lock().ok().and_then(|mut g| g.take()) {
+                ring.destroy(device);
+            }
+        }
+        if let Some(ring) = self.model_ring.lock().ok().and_then(|mut g| g.take()) {
+            ring.destroy(device);
+        }
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

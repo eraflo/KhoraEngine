@@ -118,5 +118,12 @@ fn forward_plus_mirrored_pipeline_has_its_own_cache_key() {
     });
 }
 
+mod shutdown;
 mod tile_buffers;
 mod tile_grid_edges;
+
+/// The lane reads the shadow agent's `ShadowFrame`; it writes no deck slot.
+#[test]
+fn forward_plus_reads_the_shadow_frame_without_writing_the_deck() {
+    crate::tests::assert_reading_the_shadow_frame_writes_no_deck_slot(&ForwardPlusLane::new());
+}

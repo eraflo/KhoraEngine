@@ -22,10 +22,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_core::lane::OutputDeck;
 use khora_core::problems::{Problem, ProblemSeverity, ProblemSource, Problems};
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
+use khora_data::ecs::{DataSystemRegistration, TickPhase};
 
 use khora_core::ecs::entity::EntityId;
 
@@ -127,7 +126,9 @@ impl ScriptRuntime {
     }
 }
 
-fn script_problems(_world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+/// Rebuilds the `Running` problems from the scripting world. It reads the
+/// runtime only; the world and the deck it is handed stay untouched.
+fn report_running_problems(runtime: &Runtime) {
     let Some(problems) = runtime.resources.get::<Arc<Problems>>() else {
         return;
     };
@@ -148,7 +149,7 @@ khora_script::inventory::submit! {
         phase: TickPhase::Maintenance,
         // After the writeback: what it reads is the frame's last word.
         order_hint: 40,
-        run: script_problems,
+        run: |_, runtime, _| report_running_problems(runtime),
         runs_after: &["behavior_writeback"],
     }
 }

@@ -75,3 +75,16 @@ fn standard_pbr_mirrored_pipeline_has_its_own_cache_key() {
         )
     });
 }
+
+/// The PBR lane owns its camera, lighting and model rings; the layouts and
+/// pipelines belong to the `PipelineSystem`.
+#[test]
+fn standard_pbr_shutdown_destroys_every_buffer_it_created() {
+    crate::tests::assert_shutdown_destroys_what_it_created(&StandardPbrLane::default());
+}
+
+/// The lane reads the shadow agent's `ShadowFrame`; it writes no deck slot.
+#[test]
+fn standard_pbr_reads_the_shadow_frame_without_writing_the_deck() {
+    crate::tests::assert_reading_the_shadow_frame_writes_no_deck_slot(&StandardPbrLane::default());
+}

@@ -194,5 +194,8 @@ impl LitForwardLane {
         if let Some(ring) = self.lighting_ring.lock().ok().and_then(|mut g| g.take()) {
             ring.destroy(device);
         }
+        if let Some(ring) = self.model_ring.lock().ok().and_then(|mut g| g.take()) {
+            ring.destroy(device);
+        }
     }
 }
