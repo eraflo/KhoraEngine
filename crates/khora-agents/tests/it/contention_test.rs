@@ -21,10 +21,17 @@
 //! that, so they are asserted here.
 
 use khora_agents::{
-    overlay_agent::OverlayAgent, render_agent::RenderAgent, shadow_agent::ShadowAgent,
-    skybox_agent::SkyboxAgent, ui_agent::UiAgent,
+    audio_agent::AudioAgent, overlay_agent::OverlayAgent, physics_agent::PhysicsAgent,
+    render_agent::RenderAgent, shadow_agent::ShadowAgent, skybox_agent::SkyboxAgent,
+    ui_agent::UiAgent,
 };
-use khora_core::agent::Agent;
+use khora_core::agent::{Agent, AgentAccess};
+use khora_core::physics::ContactBatch;
+use khora_core::renderer::api::shadow::ShadowFrame;
+use khora_data::flow::{AudioPlaybackWriteback, PhysicsStepResult};
+use khora_data::ui::UiImageAtlas;
+use std::any::TypeId;
+use std::sync::Arc;
 
 /// **The gain the contract was written for.** Both are `SharedWorld`, both sit
 /// in `OUTPUT`, and the old "at most one `SharedWorld` per wave" rule kept them
@@ -84,4 +91,91 @@ fn each_render_agent_writes_a_slot_of_its_own() {
     unique.dedup();
 
     assert_eq!(unique.len(), slots.len(), "no slot is claimed twice");
+}
+
+// ─── Every deck slot a lane writes is declared by its agent ─────────────────
+//
+// A lane writes through the deck its agent lends it. A slot written but not
+// declared breaks nothing on a serial frame and silently loses one writer's
+// data at the merge of a concurrent wave — so the declaration is pinned here,
+// slot by slot, against what each lane actually writes.
+
+/// `ShadowLane` writes the frame's `ShadowFrame` (`shadow_lane/mod.rs`).
+#[test]
+fn shadow_agent_declares_its_deck_writes() {
+    let deck = ShadowAgent::default().contention().deck;
+
+    assert!(
+        deck.contains(&TypeId::of::<ShadowFrame>()),
+        "the shadow agent's lane writes ShadowFrame; its contention declares {deck:?}"
+    );
+}
+
+/// `SpatialMixingLane` writes `AudioPlaybackWriteback`
+/// (`audio_lane/spatial_mixing.rs`).
+#[test]
+fn audio_agent_declares_its_deck_writes() {
+    let deck = AudioAgent::default().contention().deck;
+
+    assert!(
+        deck.contains(&TypeId::of::<AudioPlaybackWriteback>()),
+        "the audio agent's lane writes AudioPlaybackWriteback; its contention declares {deck:?}"
+    );
+}
+
+/// `StandardPhysicsLane` writes both `PhysicsStepResult` and `ContactBatch`
+/// (`physics_lane/standard.rs`).
+#[test]
+fn physics_agent_declares_its_deck_writes() {
+    let deck = PhysicsAgent::default().contention().deck;
+
+    for (slot, name) in [
+        (TypeId::of::<PhysicsStepResult>(), "PhysicsStepResult"),
+        (TypeId::of::<ContactBatch>(), "ContactBatch"),
+    ] {
+        assert!(
+            deck.contains(&slot),
+            "the physics agent's lane writes {name}; its contention declares {deck:?}"
+        );
+    }
+}
+
+/// None of the three reaches the `World`: shadow and audio read Views from
+/// the bus, and the physics lane only steps the provider (the ECS sync is the
+/// `PhysicsFlow`'s and the writeback a `DataSystem`'s). An agent that declares
+/// more world access than it uses runs alone in its wave for nothing.
+#[test]
+fn world_free_agents_are_isolated() {
+    let agents: [(&str, AgentAccess); 3] = [
+        ("shadow", ShadowAgent::default().access()),
+        ("audio", AudioAgent::default().access()),
+        ("physics", PhysicsAgent::default().access()),
+    ];
+
+    let not_isolated: Vec<_> = agents
+        .iter()
+        .filter(|(_, access)| *access != AgentAccess::Isolated)
+        .collect();
+    assert!(
+        not_isolated.is_empty(),
+        "world-free agents must declare AgentAccess::Isolated; these do not: {not_isolated:?}"
+    );
+}
+
+/// The UI lane uploads glyphs and images into the shared atlas: that is a
+/// lock, and a lock declared as a read lets another agent read a half-written
+/// atlas in the same wave.
+#[test]
+fn ui_agent_locks_the_atlas() {
+    let contention = UiAgent::default().contention();
+    let atlas = TypeId::of::<Arc<UiImageAtlas>>();
+
+    assert!(
+        contention.writes.contains(&atlas),
+        "the UI agent mutates the atlas, so it must declare it under `writes`"
+    );
+    assert!(
+        !contention.reads.contains(&atlas),
+        "the atlas is locked, not merely read: it must not also sit under `reads`"
+    );
 }

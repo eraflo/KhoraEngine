@@ -57,13 +57,11 @@ impl Agent for UiAgent {
         AgentId::Ui
     }
 
-    /// Reads the `LaneBus` and records its own encoder, but mutates the shared
-    /// `UiImageAtlas` (GPU glyph/image uploads). It never touches the `World`,
-    /// but the shared-resource write puts it in the `SharedWorld` tier — the
-    /// scheduler runs at most one such agent per wave (alongside `Isolated`
-    /// agents), so its atlas writes never race another shared-resource writer.
+    /// World-free: it reads the bus and records its own encoder. The atlas it
+    /// uploads into is declared as locked in its contention, so no other agent
+    /// touches it in the same wave.
     fn access(&self) -> AgentAccess {
-        AgentAccess::SharedWorld
+        AgentAccess::Isolated
     }
 
     /// Buffers its pass into the [`UiPassSlot`] deck slot.
@@ -71,7 +69,7 @@ impl Agent for UiAgent {
         Contention::none()
             .writing_deck([std::any::TypeId::of::<UiPassSlot>()])
             .reading::<Arc<FrameContext>>()
-            .reading::<Arc<UiImageAtlas>>()
+            .locking::<Arc<UiImageAtlas>>()
             .reading::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
             .reading::<AssetStore>()
             .reading::<Arc<dyn GraphicsDevice>>()

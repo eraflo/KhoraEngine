@@ -56,9 +56,6 @@ const FORWARD_PLUS_LIGHT_THRESHOLD: usize = 20;
 /// Scale factor converting lane cost units to milliseconds of GPU time.
 const COST_TO_MS_SCALE: f32 = 5.0;
 
-/// Approximate VRAM per mesh in bytes (vertex + index buffers).
-const DEFAULT_VRAM_PER_MESH: u64 = 100 * 1024;
-
 /// The agent responsible for the main render pass (`LaneKind::Render`).
 ///
 /// Holds **only** its own strategy state — every other dependency
@@ -158,11 +155,6 @@ impl Agent for RenderAgent {
             });
         }
 
-        // The mesh-count component of VRAM is included implicitly — agents
-        // no longer own the RenderWorld so we cannot compute it here.  The
-        // arbiter accepts these as worst-case-overhead estimates.
-        let _ = DEFAULT_VRAM_PER_MESH;
-
         NegotiationResponse {
             strategies,
             timing_adjustment: None,
@@ -177,7 +169,7 @@ impl Agent for RenderAgent {
         );
 
         match budget.strategy_id {
-            StrategyId::LowPower => self.strategy = RenderingStrategy::Auto,
+            StrategyId::LowPower => self.strategy = RenderingStrategy::Unlit,
             StrategyId::Balanced => self.strategy = RenderingStrategy::LitForward,
             StrategyId::HighPerformance => self.strategy = RenderingStrategy::ForwardPlus,
             StrategyId::Custom(1) => self.strategy = RenderingStrategy::StandardPbr,
@@ -454,7 +446,7 @@ impl Default for RenderAgent {
 
         Self {
             lanes,
-            strategy: RenderingStrategy::Auto,
+            strategy: RenderingStrategy::LitForward,
             current_strategy: StrategyId::Balanced,
             time_budget: Duration::ZERO,
             frame_status: None,
@@ -538,6 +530,64 @@ mod tests {
         assert_eq!(
             agent.report_status().current_strategy,
             StrategyId::HighPerformance
+        );
+    }
+
+    fn budget_for(strategy_id: StrategyId) -> ResourceBudget {
+        ResourceBudget {
+            strategy_id,
+            time_limit: Duration::from_millis(16),
+            memory_limit: None,
+            extra_params: std::collections::HashMap::new(),
+        }
+    }
+
+    /// A frame the `Auto` heuristic would draw lit: it holds a light.
+    fn lit_world() -> RenderWorld {
+        use khora_core::math::{Mat4, Vec3};
+        use khora_core::renderer::light::{DirectionalLight, LightType};
+        let mut world = RenderWorld::new();
+        world.lights.push(khora_data::render::ExtractedLight {
+            light_type: LightType::Directional(DirectionalLight::default()),
+            position: Vec3::ZERO,
+            direction: Vec3::new(0.0, -1.0, 0.0),
+            shadow_view_proj: Mat4::IDENTITY,
+            shadow_atlas_index: None,
+        });
+        world
+    }
+
+    /// `negotiate` prices `LowPower` as the unlit lane, so the budget that
+    /// grants it must select that lane — whatever the scene holds.
+    #[test]
+    fn render_low_power_is_simple_unlit() {
+        let mut agent = RenderAgent::default();
+        agent.apply_budget(budget_for(StrategyId::LowPower));
+
+        assert_eq!(
+            agent.strategy,
+            RenderingStrategy::Unlit,
+            "LowPower must pin the unlit strategy"
+        );
+        assert_eq!(
+            lane_name_for_strategy(agent.strategy, &lit_world()),
+            "SimpleUnlit",
+            "LowPower must draw with the SimpleUnlit lane, even in a lit scene"
+        );
+    }
+
+    /// A fresh agent reports `current_strategy`; the lane it draws with must be
+    /// the one that strategy's budget would have selected.
+    #[test]
+    fn render_default_strategy_matches_its_current_strategy() {
+        let fresh = RenderAgent::default();
+        let mut budgeted = RenderAgent::default();
+        budgeted.apply_budget(budget_for(fresh.current_strategy));
+
+        assert_eq!(
+            fresh.strategy, budgeted.strategy,
+            "Default's strategy disagrees with the one {:?} selects",
+            fresh.current_strategy
         );
     }
 

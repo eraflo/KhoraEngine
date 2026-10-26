@@ -19,11 +19,13 @@ use khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
 };
-use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{
+    Agent, AgentAccess, AgentImportance, Contention, ExecutionPhase, ExecutionTiming,
+};
 use khora_core::audio::AudioMixBus;
 use khora_core::lane::{LaneContext, LaneRegistry};
 use khora_core::EngineContext;
-use khora_data::flow::AudioView;
+use khora_data::flow::{AudioPlaybackWriteback, AudioView};
 use khora_lanes::audio_lane::SpatialMixingLane;
 
 /// The ISA that orchestrates the audio subsystem.
@@ -59,8 +61,16 @@ impl Agent for AudioAgent {
         AgentId::Audio
     }
 
+    /// World-free: it reads the bus and mixes into the audio device.
+    fn access(&self) -> AgentAccess {
+        AgentAccess::Isolated
+    }
+
+    /// Its lane hands what played back to the writeback DataSystem.
     fn contention(&self) -> Contention {
-        Contention::none().reading::<Arc<dyn AudioMixBus>>()
+        Contention::none()
+            .writing_deck([std::any::TypeId::of::<AudioPlaybackWriteback>()])
+            .reading::<Arc<dyn AudioMixBus>>()
     }
 
     fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {

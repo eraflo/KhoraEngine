@@ -38,10 +38,13 @@ use khora_core::agent::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
     NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
-use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{
+    Agent, AgentAccess, AgentImportance, Contention, ExecutionPhase, ExecutionTiming,
+};
 use khora_core::lane::{LaneContext, LaneRegistry};
 use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::api::gpu_scene::GpuMesh;
+use khora_core::renderer::api::shadow::ShadowFrame;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 use khora_data::render::RenderWorld;
@@ -77,8 +80,15 @@ impl Agent for ShadowAgent {
         AgentId::ShadowRenderer
     }
 
+    /// World-free: it reads the bus and the runtime, never the `World`.
+    fn access(&self) -> AgentAccess {
+        AgentAccess::Isolated
+    }
+
+    /// Its lane publishes the frame's [`ShadowFrame`] for the lit lanes.
     fn contention(&self) -> Contention {
         Contention::none()
+            .writing_deck([std::any::TypeId::of::<ShadowFrame>()])
             .reading::<AssetStore>()
             .reading::<Arc<FrameContext>>()
             .reading::<AgentFrameStatusMap>()

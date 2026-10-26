@@ -73,16 +73,16 @@ impl Default for ScriptAgent {
     }
 }
 
+/// What one row a query takes costs, about: its check, its copies and a
+/// body of a few statements.
+const PER_ROW: Duration = Duration::from_nanos(200);
+
 /// Reads something off the scripting world without blocking.
 ///
 /// `try_lock` rather than `lock`: the guard is only ever held inside `execute`,
 /// so this succeeds in practice — but negotiation and status reads run on the
 /// DCC thread, and neither is worth a chance of blocking it. The fallback is
 /// what a caller would see before the first frame anyway.
-/// What one row a query takes costs, about: its check, its copies and a
-/// body of a few statements.
-const PER_ROW: Duration = Duration::from_nanos(200);
-
 fn peek<T>(
     runtime: &Option<Arc<Mutex<ScriptRuntime>>>,
     read: impl FnOnce(&ScriptRuntime) -> T,

@@ -18,7 +18,6 @@
 //! own GORNA/strategy state.  The shared `PhysicsProvider` is fetched from
 //! the [`ServiceRegistry`] each frame — agents are not the owners.
 
-use super::strategy::PhysicsStrategy;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -26,12 +25,14 @@ use khora_core::agent::gorna::{
     measured_frame_time_ms, AgentFrameStatusMap, AgentId, AgentStatus, NegotiationRequest,
     NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
-use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{
+    Agent, AgentAccess, AgentImportance, Contention, ExecutionPhase, ExecutionTiming,
+};
 use khora_core::lane::PhysicsDeltaTime;
 use khora_core::lane::{LaneContext, LaneRegistry};
-use khora_core::physics::PhysicsProvider;
-use khora_core::{EngineContext, WorldAccess};
-use khora_data::ecs::World;
+use khora_core::physics::{ContactBatch, PhysicsProvider};
+use khora_core::EngineContext;
+use khora_data::flow::PhysicsStepResult;
 use khora_lanes::physics_lane::StandardPhysicsLane;
 
 const COST_TO_MS_SCALE: f32 = 3.0;
@@ -43,8 +44,6 @@ const COST_TO_MS_SCALE: f32 = 3.0;
 pub struct PhysicsAgent {
     /// All physics lanes — the agent's strategies.
     lanes: LaneRegistry,
-    /// Current selected strategy.
-    strategy: PhysicsStrategy,
     /// Current GORNA strategy ID.
     current_strategy: StrategyId,
     /// Time budget allocated by GORNA.
@@ -64,8 +63,19 @@ impl Agent for PhysicsAgent {
         AgentId::Physics
     }
 
+    /// World-free: the lane only steps the provider. The provider is synced
+    /// from the `World` and written back to it by DataSystems.
+    fn access(&self) -> AgentAccess {
+        AgentAccess::Isolated
+    }
+
+    /// The step result and the contacts go to the writeback DataSystem.
     fn contention(&self) -> Contention {
         Contention::none()
+            .writing_deck([
+                std::any::TypeId::of::<PhysicsStepResult>(),
+                std::any::TypeId::of::<ContactBatch>(),
+            ])
             .reading::<AgentFrameStatusMap>()
             .locking::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()
     }
@@ -114,22 +124,18 @@ impl Agent for PhysicsAgent {
 
         match budget.strategy_id {
             StrategyId::LowPower => {
-                self.strategy = PhysicsStrategy::Simplified;
                 self.fixed_timestep = 1.0 / 30.0;
             }
             StrategyId::Balanced => {
-                self.strategy = PhysicsStrategy::Standard;
                 self.fixed_timestep = 1.0 / 60.0;
             }
             StrategyId::HighPerformance => {
-                self.strategy = PhysicsStrategy::Standard;
                 self.fixed_timestep = 1.0 / 120.0;
             }
             StrategyId::Custom(_) => {
                 log::warn!(
                     "PhysicsAgent received unsupported custom strategy. Falling back to Standard."
                 );
-                self.strategy = PhysicsStrategy::Standard;
                 self.fixed_timestep = 1.0 / 60.0;
             }
         }
@@ -150,15 +156,6 @@ impl Agent for PhysicsAgent {
         };
         let provider_arc: Arc<Mutex<Box<dyn PhysicsProvider>>> = (*provider_arc).clone();
 
-        // Matched on the field rather than through `world_mut()`, which would
-        // borrow the whole context: the deck is lent to the lane alongside it.
-        let WorldAccess::Exclusive(world_any) = &mut context.world else {
-            return;
-        };
-        let Some(world) = world_any.downcast_mut::<World>() else {
-            return;
-        };
-
         let mut provider_guard = match provider_arc.lock() {
             Ok(g) => g,
             Err(e) => {
@@ -169,7 +166,6 @@ impl Agent for PhysicsAgent {
 
         let mut ctx = LaneContext::new();
         ctx.insert(PhysicsDeltaTime(self.fixed_timestep));
-        ctx.insert_slot(world);
         ctx.insert_slot(provider_guard.as_mut());
         // Forward the per-frame `OutputDeck` so the lane can publish a
         // `PhysicsStepResult` marker that `physics_world_writeback` reads
@@ -236,7 +232,6 @@ impl Default for PhysicsAgent {
 
         Self {
             lanes,
-            strategy: PhysicsStrategy::Standard,
             current_strategy: StrategyId::Balanced,
             time_budget: Duration::ZERO,
             fixed_timestep: 1.0 / 60.0,
