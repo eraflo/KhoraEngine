@@ -23,8 +23,10 @@ use serde::{Deserialize, Serialize};
 /// This will be managed by the `AudioMixingLane`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlaybackState {
-    /// The current position in the sample data, in samples.
-    pub cursor: f32,
+    /// The current position in the sample data, in frames. An `f64`: an
+    /// `f32` position rounds a block's advance once a track runs past a few
+    /// minutes, and the voice drifts off its rate.
+    pub cursor: f64,
 }
 
 /// An ECS component that makes an entity an emitter of sound.
@@ -40,6 +42,11 @@ pub struct AudioSource {
     pub looping: bool,
     /// Whether the sound should start playing automatically when this component is added.
     pub autoplay: bool,
+    /// How much the source matters when more sources play than the mixer has
+    /// voices for: a higher priority keeps its voice before any lower one,
+    /// however loud. Sources of equal priority are ranked by how loud they
+    /// are at the listener. The default, 128, sits in the middle.
+    pub priority: u8,
     /// The internal playback state. This should be treated as read-only
     /// by most systems outside of the audio engine itself.
     #[component(skip)]
@@ -53,10 +60,14 @@ impl Default for AudioSource {
             volume: 1.0,
             looping: false,
             autoplay: false,
+            priority: DEFAULT_PRIORITY,
             state: None,
         }
     }
 }
+
+/// The priority a source has unless its author gave it another.
+pub const DEFAULT_PRIORITY: u8 = 128;
 
 impl AudioSource {
     /// Creates a new `AudioSource`.
@@ -66,7 +77,24 @@ impl AudioSource {
             volume: 1.0,
             looping: false,
             autoplay: true,
+            priority: DEFAULT_PRIORITY,
             state: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A source an author gave no priority sits in the middle of the range,
+    /// whichever way it was made.
+    #[test]
+    fn a_source_has_the_default_priority_unless_given_one() {
+        assert_eq!(AudioSource::default().priority, DEFAULT_PRIORITY);
+        assert_eq!(
+            AudioSource::new(AssetHandle::dangling()).priority,
+            DEFAULT_PRIORITY
+        );
     }
 }

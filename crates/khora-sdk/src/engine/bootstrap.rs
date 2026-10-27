@@ -253,6 +253,24 @@ fn populate<A: EngineApp>(
     // resources, so exposing them this early is safe.
     // Each overlay starts with its empty View: no gizmo line, the grid and
     // the wireframe off. The editor opts in by setting them again.
+    // The audio family mixes into the shared bus every frame. An application
+    // that opens an audio device installs the bus it hands the device; without
+    // one, the engine keeps a bus of its own, which nothing drains.
+    if !runtime
+        .resources
+        .contains::<Arc<dyn khora_core::audio::AudioMixBus>>()
+    {
+        let mix_bus: Arc<dyn khora_core::audio::AudioMixBus> =
+            Arc::new(khora_infra::DefaultMixBus::new(
+                khora_core::audio::StreamInfo {
+                    channels: 2,
+                    sample_rate: 48_000,
+                },
+                8192,
+            ));
+        runtime.resources.insert(mix_bus);
+    }
+
     let host_views = khora_core::lane::HostViews::new();
     host_views.set(khora_data::render::GizmoView::default());
     host_views.set(khora_data::render::GridView::default());
@@ -447,10 +465,6 @@ fn register_builtin_agents(dcc: &DccService) {
     );
     dcc.register_agent(
         Arc::new(Mutex::new(khora_agents::ui_agent::UiAgent::default())),
-        1.0,
-    );
-    dcc.register_agent(
-        Arc::new(Mutex::new(khora_agents::audio_agent::AudioAgent::default())),
         1.0,
     );
     // Gameplay. Registered like any other consumer, which is the point of

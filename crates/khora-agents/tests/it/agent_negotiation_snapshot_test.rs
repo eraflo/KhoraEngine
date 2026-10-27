@@ -23,7 +23,7 @@
 //! Nothing here needs a GPU: `negotiate` runs on the DCC thread against a stub
 //! scene.
 
-use khora_agents::audio_agent::AudioAgent;
+use khora_agents::lane_agent::lane_agent;
 use khora_agents::overlay_agent::OverlayAgent;
 use khora_agents::physics_agent::PhysicsAgent;
 use khora_agents::render_agent::RenderAgent;
@@ -33,7 +33,10 @@ use khora_agents::skybox_agent::SkyboxAgent;
 use khora_agents::ui_agent::UiAgent;
 use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
 use khora_core::agent::{Agent, EngineMode, ExecutionTiming};
+use khora_core::gpu::DeviceCaps;
 use std::time::Duration;
+
+use crate::audio_family::audio_registration;
 
 const MIB: u64 = 1024 * 1024;
 
@@ -129,10 +132,12 @@ fn physics_agent_offers_three_tiers_from_low_power_up() {
     );
 }
 
+/// The audio family's agent, before any frame: one row per voice level, no
+/// VRAM.
 #[test]
 fn audio_agent_offers_three_tiers_from_low_power_up() {
     assert_eq!(
-        offer(AudioAgent::default()),
+        offer(lane_agent(audio_registration(), &DeviceCaps::default())),
         (
             AgentId::Audio,
             vec![

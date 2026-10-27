@@ -47,7 +47,6 @@ fn is_partial_eq<T: PartialEq>() {}
 
 #[allow(unused_imports)]
 mod every_pub_mod {
-    use khora_agents::audio_agent as _;
     use khora_agents::overlay_agent as _;
     use khora_agents::physics_agent as _;
     use khora_agents::render_agent as _;
@@ -85,13 +84,6 @@ fn shadow_strategy_variants(x: &khora_agents::shadow_agent::ShadowStrategy) {
         khora_agents::shadow_agent::ShadowStrategy::Medium => {}
         khora_agents::shadow_agent::ShadowStrategy::LowRes => {}
     }
-}
-
-#[test]
-fn module_audio_agent_paths_still_resolve() {
-    let _ = type_name::<khora_agents::audio_agent::AudioAgent>();
-    is_default::<khora_agents::audio_agent::AudioAgent>();
-    is_agent::<khora_agents::audio_agent::AudioAgent>();
 }
 
 #[test]
@@ -176,7 +168,6 @@ fn module_ui_agent_paths_still_resolve() {
 
 #[test]
 fn associated_items_used_by_other_crates_still_resolve() {
-    let _ = khora_agents::audio_agent::AudioAgent::default; // khora-sdk
     let _ = khora_agents::overlay_agent::OverlayAgent::default; // khora-sdk
     let _ = khora_agents::physics_agent::PhysicsAgent::default; // khora-sdk
     let _ = khora_agents::render_agent::RenderAgent::default; // khora-sdk

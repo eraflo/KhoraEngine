@@ -55,6 +55,8 @@ pub struct AudioSourceSnapshot {
     pub looping: bool,
     /// Whether the source starts playing on first encounter.
     pub autoplay: bool,
+    /// How much the source matters when it competes for a voice.
+    pub priority: u8,
     /// Current playback state, copied from the component each frame.
     /// Mutations made by the lane go through
     /// [`AudioPlaybackWriteback`].
@@ -132,25 +134,19 @@ impl Flow for AudioFlow {
         // the World. The snapshot copy is cheap because `state` is a
         // small `Option<PlaybackState>` and `handle` is an `Arc`.
         let mut sources = Vec::with_capacity(source_count);
-        for (entity, (source, transform)) in world
-            .query::<(&AudioSource, &GlobalTransform)>()
-            .enumerate()
+        // The entity keys the writeback: the playback update lands on the
+        // source it was made for, whichever sources the View leaves out.
+        for (entity, source, transform) in
+            world.query::<(EntityId, &AudioSource, &GlobalTransform)>()
         {
-            // CRPECS query yields tuples without entity ids today; the
-            // index aligns with `world.iter_entities().filter(...)`. The
-            // mixing lane uses `entity` only as a writeback key — a
-            // stable index across the same frame is sufficient.
-            let _ = entity;
             sources.push(AudioSourceSnapshot {
-                entity: EntityId {
-                    index: entity as u32,
-                    generation: 0,
-                },
+                entity,
                 handle: source.handle.clone(),
                 position: transform.0.translation(),
                 volume: source.volume,
                 looping: source.looping,
                 autoplay: source.autoplay,
+                priority: source.priority,
                 state: source.state.clone(),
             });
         }

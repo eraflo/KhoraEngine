@@ -44,6 +44,8 @@ fn is_default<T: Default>() {}
 fn is_deserialize_owned<T: serde::de::DeserializeOwned>() {}
 fn is_eq<T: Eq>() {}
 fn is_lane<T: khora_core::lane::Lane>() {}
+fn is_lane_family<T: khora_core::lane::family::LaneFamily>() {}
+fn is_typed_lane<T: khora_core::lane::contract::Lane>() {}
 fn is_ord<T: Ord>() {}
 fn is_partial_eq<T: PartialEq>() {}
 fn is_partial_ord<T: PartialOrd>() {}
@@ -242,10 +244,10 @@ fn reload_report_fields(x: &khora_lanes::script_lane::runtime::ReloadReport) {
 #[test]
 fn module_audio_lane_paths_still_resolve() {
     let _ = type_name::<khora_lanes::audio_lane::SpatialMixingLane>();
-    let _ = khora_lanes::audio_lane::SpatialMixingLane::new;
-    let _ = khora_lanes::audio_lane::SpatialMixingLane::mix;
+    let _ = type_name::<khora_lanes::audio_lane::AudioFamily>();
     is_default::<khora_lanes::audio_lane::SpatialMixingLane>();
-    is_lane::<khora_lanes::audio_lane::SpatialMixingLane>();
+    is_typed_lane::<khora_lanes::audio_lane::SpatialMixingLane>();
+    is_lane_family::<khora_lanes::audio_lane::AudioFamily>();
 }
 
 #[test]

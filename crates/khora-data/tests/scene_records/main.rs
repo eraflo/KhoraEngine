@@ -32,6 +32,7 @@ use khora_data::scene::{
     MsgPackEncoding, PageRecord, SceneEncoding, SceneRecord, TextEncoding,
 };
 
+mod audio_source_priority;
 mod behavior_components;
 mod camera_aspect_fields;
 mod decimals;

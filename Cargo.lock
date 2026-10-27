@@ -2771,6 +2771,7 @@ dependencies = [
  "bytemuck",
  "khora-core",
  "khora-data",
+ "khora-macros",
  "khora-script",
  "log",
  "ron",

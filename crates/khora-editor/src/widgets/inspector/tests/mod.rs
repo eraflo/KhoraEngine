@@ -18,6 +18,7 @@
 //! edit.
 
 mod field_problems;
+mod integer_fields;
 mod non_finite_floats;
 
 use khora_sdk::editor_ui::UiTheme;

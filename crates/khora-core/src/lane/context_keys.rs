@@ -37,11 +37,10 @@
 //!
 //! # Audio domain
 //!
-//! Audio lanes consume an [`Arc<dyn AudioMixBus>`](crate::audio::AudioMixBus)
-//! injected directly into the [`LaneContext`](super::LaneContext) by the
-//! [`AudioAgent`](../../../khora_agents/audio_agent). The bus carries its
-//! own [`StreamInfo`](crate::audio::StreamInfo), so no separate context
-//! key is needed.
+//! The audio family's lane reads the [`Arc<dyn AudioMixBus>`](crate::audio::AudioMixBus)
+//! as a `#[resource]` of its typed inputs. The bus carries its own
+//! [`StreamInfo`](crate::audio::StreamInfo), so no separate context key is
+//! needed.
 
 use crate::renderer::api::resource::{SamplerId, TextureViewId};
 

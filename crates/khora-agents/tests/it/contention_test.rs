@@ -21,14 +21,13 @@
 //! that, so they are asserted here.
 
 use khora_agents::{
-    audio_agent::AudioAgent, overlay_agent::OverlayAgent, physics_agent::PhysicsAgent,
-    render_agent::RenderAgent, shadow_agent::ShadowAgent, skybox_agent::SkyboxAgent,
-    ui_agent::UiAgent,
+    overlay_agent::OverlayAgent, physics_agent::PhysicsAgent, render_agent::RenderAgent,
+    shadow_agent::ShadowAgent, skybox_agent::SkyboxAgent, ui_agent::UiAgent,
 };
 use khora_core::agent::{Agent, AgentAccess};
 use khora_core::physics::ContactBatch;
 use khora_core::renderer::api::shadow::ShadowFrame;
-use khora_data::flow::{AudioPlaybackWriteback, PhysicsStepResult};
+use khora_data::flow::PhysicsStepResult;
 use khora_data::ui::UiImageAtlas;
 use std::any::TypeId;
 use std::sync::Arc;
@@ -98,7 +97,8 @@ fn each_render_agent_writes_a_slot_of_its_own() {
 // A lane writes through the deck its agent lends it. A slot written but not
 // declared breaks nothing on a serial frame and silently loses one writer's
 // data at the merge of a concurrent wave — so the declaration is pinned here,
-// slot by slot, against what each lane actually writes.
+// slot by slot, against what each lane actually writes. A family on the typed
+// contract declares its slots through its outputs (audio: `audio_family.rs`).
 
 /// `ShadowLane` writes the frame's `ShadowFrame` (`shadow_lane/mod.rs`).
 #[test]
@@ -108,18 +108,6 @@ fn shadow_agent_declares_its_deck_writes() {
     assert!(
         deck.contains(&TypeId::of::<ShadowFrame>()),
         "the shadow agent's lane writes ShadowFrame; its contention declares {deck:?}"
-    );
-}
-
-/// `SpatialMixingLane` writes `AudioPlaybackWriteback`
-/// (`audio_lane/spatial_mixing.rs`).
-#[test]
-fn audio_agent_declares_its_deck_writes() {
-    let deck = AudioAgent::default().contention().deck;
-
-    assert!(
-        deck.contains(&TypeId::of::<AudioPlaybackWriteback>()),
-        "the audio agent's lane writes AudioPlaybackWriteback; its contention declares {deck:?}"
     );
 }
 
@@ -140,15 +128,15 @@ fn physics_agent_declares_its_deck_writes() {
     }
 }
 
-/// None of the three reaches the `World`: shadow and audio read Views from
-/// the bus, and the physics lane only steps the provider (the ECS sync is the
-/// `PhysicsFlow`'s and the writeback a `DataSystem`'s). An agent that declares
-/// more world access than it uses runs alone in its wave for nothing.
+/// Neither reaches the `World`: shadow reads Views from the bus, and the
+/// physics lane only steps the provider (the ECS sync is the `PhysicsFlow`'s
+/// and the writeback a `DataSystem`'s). An agent that declares more world
+/// access than it uses runs alone in its wave for nothing. The audio family's
+/// agent is pinned in `audio_family.rs`.
 #[test]
 fn world_free_agents_are_isolated() {
-    let agents: [(&str, AgentAccess); 3] = [
+    let agents: [(&str, AgentAccess); 2] = [
         ("shadow", ShadowAgent::default().access()),
-        ("audio", AudioAgent::default().access()),
         ("physics", PhysicsAgent::default().access()),
     ];
 

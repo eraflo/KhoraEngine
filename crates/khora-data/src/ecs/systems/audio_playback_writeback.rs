@@ -35,13 +35,10 @@ fn audio_playback_writeback(world: &mut World, _runtime: &Runtime, deck: &mut Ou
         return;
     }
 
-    // Apply each update to its source. The lane uses the entity's index
-    // (its position in the projected `AudioView::sources`) as the
-    // writeback key, matching the order of `world.query::<&AudioSource>`
-    // — so we match by linear order here too.
-    let mut iter = world.query_mut::<&mut AudioSource>();
+    // Each update names its source: a source the View left out (one with no
+    // transform) or one despawned since is simply not updated.
     for update in drained.updates {
-        if let Some(source) = iter.next() {
+        if let Some(source) = world.get_mut::<AudioSource>(update.entity) {
             source.state = update.new_state;
         }
     }

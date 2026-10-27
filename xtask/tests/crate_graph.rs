@@ -64,7 +64,13 @@ const CLAD_TIERS: &[(&str, &[&str])] = &[
     ),
     (
         "khora-lanes",
-        &["khora-core", "khora-data", "khora-io", "khora-script"],
+        &[
+            "khora-core",
+            "khora-macros",
+            "khora-data",
+            "khora-io",
+            "khora-script",
+        ],
     ),
     // strategists
     (

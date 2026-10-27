@@ -19,6 +19,7 @@
 
 mod agent_negotiation_snapshot_test;
 mod asset_loading_test;
+mod audio_family;
 mod authored_physics;
 mod authored_physics_edges;
 mod behavior_budget;

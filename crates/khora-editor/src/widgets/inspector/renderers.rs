@@ -97,12 +97,40 @@ pub fn render_color(
 }
 
 pub fn render_number_row(ui: &mut dyn UiBuilder, label: &str, value: &mut Value) -> bool {
+    // An integer field (`u8`, `u32`, `i64` …) reads back only as a JSON
+    // integer: it is dragged in whole steps and written whole.
+    if let Some(whole) = integer_of(value) {
+        let mut local = whole as f32;
+        let changed = ui.drag_value_f32(label, &mut local, 0.5);
+        if changed {
+            *value = integer_json(local);
+        }
+        return changed;
+    }
     let mut local = json_to_f32(Some(&*value));
     let changed = ui.drag_value_f32(label, &mut local, 0.05);
     if changed {
         *value = f32_to_json(local);
     }
     changed
+}
+
+/// The integer `value` holds, when it is a JSON integer rather than a float.
+fn integer_of(value: &Value) -> Option<i64> {
+    match value {
+        Value::Number(number) if number.is_u64() || number.is_i64() => number
+            .as_i64()
+            .or_else(|| number.as_u64().map(|n| n.min(i64::MAX as u64) as i64)),
+        _ => None,
+    }
+}
+
+/// `dragged`, rounded, as a JSON integer. JSON cannot tell an unsigned field
+/// from a signed one at zero or above, so nothing is clamped here: a value
+/// the field cannot hold (a negative `u8`, 300 for a `u8`) is refused by the
+/// component when it reads the edit back, and the field keeps its last value.
+fn integer_json(dragged: f32) -> Value {
+    Value::from(dragged.round() as i64)
 }
 
 pub fn render_numeric_triple(ui: &mut dyn UiBuilder, label: &str, arr: &mut [Value]) -> bool {

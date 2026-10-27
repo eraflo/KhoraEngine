@@ -14,6 +14,8 @@
 
 //! Contains lanes for audio processing.
 
+mod audio_family;
 mod spatial_mixing;
 
+pub use audio_family::*;
 pub use spatial_mixing::*;

@@ -12,21 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The Intelligent Subsystem Agent responsible for managing the audio system.
+//! The audio family's agent: its registration, and nothing else.
 //!
-//! Per CLAD the agent owns no hardware state. The audio device is opened
-//! by the application during bootstrap; the resulting [`AudioStream`]
-//! handle and the shared [`AudioMixBus`] live in the runtime. Each frame
-//! the agent reads the per-tick `AudioView` from the `LaneBus`, builds a
-//! `LaneContext` containing the bus + the view + a slot to the
-//! `OutputDeck`, and dispatches its audio lanes (currently only
-//! [`SpatialMixingLane`]). Lanes mix into a staging buffer and push
-//! samples to the bus; the backend's audio callback drains the bus on a
-//! dedicated real-time thread.
+//! The engine boots one [`LaneAgent`](crate::lane_agent::LaneAgent) from it.
+//! The agent offers the [`SpatialMixingLane`]'s three voice levels to GORNA,
+//! fetches the frame's `AudioView` and the shared mix bus, and commits the
+//! playback updates. The audio device is opened by the application during
+//! bootstrap; its stream drains the mix bus on its own real-time thread.
 //!
-//! [`AudioMixBus`]: khora_core::audio::AudioMixBus
 //! [`SpatialMixingLane`]: khora_lanes::audio_lane::SpatialMixingLane
 
 mod agent;
-
-pub use agent::*;

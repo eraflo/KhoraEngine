@@ -34,7 +34,7 @@ and [`security-privacy.md`](./security-privacy.md).
   |---|---|---|
   | floor | `khora-core`, `khora-macros` | nothing |
   | on the floor | `khora-data`, `khora-control`, `khora-script`, `khora-telemetry`, `khora-infra`, `khora-tool-ui` | core (+ `macros` for data/script, + `data` for control) |
-  | middle | `khora-io`, `khora-lanes` | core, data, script, telemetry / core, data, script |
+  | middle | `khora-io`, `khora-lanes` | core, data, script, telemetry / core, macros (the lane derives), data, script |
   | strategists | `khora-agents` | core, data, lanes, script (`khora-infra` only as a dev-dependency, for tests) |
   | façade | `khora-sdk` | agents, control, core, data, infra, io, lanes, telemetry |
   | apps | `khora-editor`, `khora-hub`, `khora-runtime` | sdk (+ `tool-ui` for editor and hub) |
