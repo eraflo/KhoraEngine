@@ -253,10 +253,10 @@ fn module_audio_lane_paths_still_resolve() {
 #[test]
 fn module_physics_lane_paths_still_resolve() {
     let _ = type_name::<khora_lanes::physics_lane::StandardPhysicsLane>();
-    let _ = khora_lanes::physics_lane::StandardPhysicsLane::new;
-    is_debug::<khora_lanes::physics_lane::StandardPhysicsLane>();
+    let _ = type_name::<khora_lanes::physics_lane::PhysicsFamily>();
     is_default::<khora_lanes::physics_lane::StandardPhysicsLane>();
-    is_lane::<khora_lanes::physics_lane::StandardPhysicsLane>();
+    is_typed_lane::<khora_lanes::physics_lane::StandardPhysicsLane>();
+    is_lane_family::<khora_lanes::physics_lane::PhysicsFamily>();
 }
 
 #[test]

@@ -5,10 +5,10 @@ pub struct Positions(pub Vec<f32>);
 
 pub struct Contacts(pub u32);
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Mixed(pub u32);
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Echoed(pub u32);
 
 #[derive(LaneInputs)]

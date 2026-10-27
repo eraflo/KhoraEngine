@@ -15,7 +15,7 @@
 //! Assembling the engine: services, agents, lanes and the scheduler, once,
 //! before the first frame.
 
-use khora_agents::lane_agent::LaneAgent;
+use khora_agents::lane_agent::{set_fixed_step, LaneAgent};
 use khora_agents::registered_agent::{lane_agents_in, registered_agents};
 use khora_control::{DccConfig, DccService, EngineMode};
 use khora_core::agent::{Agent, ExecutionPhase};
@@ -271,6 +271,26 @@ fn populate<A: EngineApp>(
         runtime.resources.insert(mix_bus);
     }
 
+    // The physics family steps the provider every fixed sub-step, at the
+    // game's `physics.step`. An application that brings neither gets the
+    // engine's own: Rapier, at the default step.
+    if runtime
+        .look_up::<Arc<Mutex<Box<dyn khora_core::physics::PhysicsProvider>>>>()
+        .is_none()
+    {
+        let physics: Box<dyn khora_core::physics::PhysicsProvider> =
+            Box::new(khora_infra::physics::rapier::RapierPhysicsWorld::default());
+        runtime.backends.insert(Arc::new(Mutex::new(physics)));
+    }
+    if !runtime
+        .resources
+        .contains::<khora_core::physics::PhysicsSettings>()
+    {
+        runtime
+            .resources
+            .insert(khora_core::physics::PhysicsSettings::default());
+    }
+
     let host_views = khora_core::lane::HostViews::new();
     host_views.set(khora_data::render::GizmoView::default());
     host_views.set(khora_data::render::GridView::default());
@@ -458,12 +478,6 @@ fn register_builtin_agents(dcc: &DccService) {
         1.0,
     );
     dcc.register_agent(
-        Arc::new(Mutex::new(
-            khora_agents::physics_agent::PhysicsAgent::default(),
-        )),
-        1.0,
-    );
-    dcc.register_agent(
         Arc::new(Mutex::new(khora_agents::ui_agent::UiAgent::default())),
         1.0,
     );
@@ -536,10 +550,22 @@ fn register_lane_agents(
     // No family offers a storage-buffer lane yet: the caps are read from the
     // device once one does.
     let caps = DeviceCaps::default();
-    let agents = match lane_agents_in(&registrations, runtime, &caps, phase_order) {
+    let mut agents = match lane_agents_in(&registrations, runtime, &caps, phase_order) {
         Ok(agents) => agents,
         Err(refusal) => panic!("the engine cannot boot its lane agents: {refusal}"),
     };
+    // The physics step is the game's setting, not the registration's default
+    // and never a budget's: the physics family runs at `physics.step`.
+    let physics = runtime
+        .resources
+        .get::<khora_core::physics::PhysicsSettings>()
+        .copied()
+        .unwrap_or_default();
+    for (registration, agent) in registrations.iter().zip(agents.iter_mut()) {
+        if registration.agent == khora_core::agent::gorna::AgentId::Physics {
+            set_fixed_step(agent, physics.step);
+        }
+    }
     let taken = dcc
         .agent_registry()
         .lock()

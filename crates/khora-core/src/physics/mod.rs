@@ -23,6 +23,7 @@ mod debug;
 mod desc;
 mod handle;
 mod query;
+mod settings;
 
 pub use collision::collision_channel;
 pub use collision::Collision;
@@ -40,6 +41,7 @@ pub use handle::RigidBodyHandle;
 pub use handle::SlotId;
 pub use query::CharacterControllerOptions;
 pub use query::RaycastHit;
+pub use settings::PhysicsSettings;
 
 /// Interface contract for any physics engine implementation (e.g., Rapier).
 pub trait PhysicsProvider: Send + Sync {

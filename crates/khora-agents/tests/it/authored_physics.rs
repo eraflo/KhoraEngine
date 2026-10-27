@@ -28,7 +28,7 @@
 //! - **Character teleport.** A character moved by its `Transform` stays where
 //!   it was put.
 
-use khora_agents::physics_agent::PhysicsAgent;
+use khora_agents::lane_agent::LaneAgent;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::engine_context::EngineContext;
@@ -43,6 +43,8 @@ use khora_data::ecs::{
 use khora_infra::physics::rapier::RapierPhysicsWorld;
 use std::sync::{Arc, Mutex};
 
+use crate::physics_family::fixtures::{physics_agent, physics_runtime};
+
 type SharedProvider = Arc<Mutex<Box<dyn PhysicsProvider>>>;
 
 /// Crate edge, in metres.
@@ -52,50 +54,29 @@ const HALF: f32 = SIZE * 0.5;
 /// The reader name this file reads the collision channel under.
 const READER: &str = "authored_physics_test";
 
-/// `on_initialize` reaches backends, which are outside the contract.
-static NOTHING: &khora_core::agent::Contention = &khora_core::agent::Contention {
-    deck: Vec::new(),
-    reads: Vec::new(),
-    writes: Vec::new(),
-};
-
-/// A world, a Rapier provider, an initialised physics agent, and every contact
+/// A world, a Rapier provider, the physics agent, and every contact
 /// the collision channel carried so far.
 struct Rig {
     world: World,
     provider: SharedProvider,
     runtime: Arc<Runtime>,
-    agent: PhysicsAgent,
+    agent: LaneAgent,
     collisions: Channel<Collision>,
     contacts: Vec<Collision>,
 }
 
 impl Rig {
     fn new() -> Self {
-        let mut world = World::new();
+        let world = World::new();
         let provider: SharedProvider =
             Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
         let collisions = khora_core::physics::collision_channel();
         let runtime = {
-            let mut runtime = Runtime::new();
-            runtime.backends.insert(Arc::clone(&provider));
+            let mut runtime = physics_runtime(&provider);
             runtime.resources.insert(collisions.clone());
             Arc::new(runtime)
         };
-        let mut agent = PhysicsAgent::default();
-        {
-            let bus = khora_core::lane::LaneBus::new();
-            let mut deck = khora_core::lane::OutputDeck::new();
-            let mut ctx = EngineContext::for_agent(
-                khora_core::WorldAccess::Exclusive(&mut world as &mut dyn std::any::Any),
-                Arc::clone(&runtime),
-                &bus,
-                &mut deck,
-                NOTHING,
-                None,
-            );
-            agent.on_initialize(&mut ctx);
-        }
+        let agent = physics_agent();
         Self {
             world,
             provider,
@@ -128,7 +109,7 @@ impl Rig {
 
         let permit = self.agent.contention();
         let mut ctx = EngineContext::for_agent(
-            khora_core::WorldAccess::Exclusive(&mut self.world as &mut dyn std::any::Any),
+            khora_core::WorldAccess::None,
             Arc::clone(&self.runtime),
             &bus,
             &mut deck,

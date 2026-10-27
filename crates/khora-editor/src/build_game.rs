@@ -59,6 +59,7 @@
 use crate::project_vfs::ProjectVfs;
 use anyhow::{anyhow, Context, Result};
 use khora_sdk::khora_core::asset::CompressionKind;
+use khora_sdk::khora_core::physics::PhysicsSettings;
 use khora_sdk::{PackBuilder, RuntimeConfig, DEFAULT_SCENE_REL_PATH, RUNTIME_CONFIG_FILE};
 use std::path::{Path, PathBuf};
 
@@ -257,7 +258,7 @@ pub fn build_for_target(
         }
     };
 
-    write_runtime_config(&output_dir, project_name, preset)?;
+    write_runtime_config_with(&output_dir, project_name, preset, pvfs.physics_settings())?;
 
     log::info!(
         "Build Game: staged {} ({} assets, {} bytes packed) via {}",
@@ -431,13 +432,27 @@ fn find_compiled_binary(target_release: &Path, target: BuildTarget) -> Result<Pa
     ))
 }
 
+/// `runtime.json` for a project with the default physics settings.
+#[cfg(test)]
 fn write_runtime_config(output_dir: &Path, project_name: &str, preset: BuildPreset) -> Result<()> {
+    write_runtime_config_with(output_dir, project_name, preset, PhysicsSettings::default())
+}
+
+/// `runtime.json`: what the runtime reads at start-up, the project's physics
+/// settings included.
+fn write_runtime_config_with(
+    output_dir: &Path,
+    project_name: &str,
+    preset: BuildPreset,
+    physics: PhysicsSettings,
+) -> Result<()> {
     let cfg = RuntimeConfig {
         project_name: project_name.to_owned(),
         default_scene: DEFAULT_SCENE_REL_PATH.to_owned(),
         window_title: Some(project_name.to_owned()),
         preset: Some(preset.label().to_owned()),
         verify_integrity: preset.verify_integrity(),
+        physics,
     };
     let cfg_text = serde_json::to_string_pretty(&cfg).context("serialize runtime.json")?;
     std::fs::write(output_dir.join(RUNTIME_CONFIG_FILE), cfg_text)
@@ -686,6 +701,31 @@ mod tests {
         let written: serde_json::Value = serde_json::from_str(&written?)?;
         let expected: serde_json::Value = serde_json::from_str(READ_BY_THE_RUNTIME)?;
         assert_eq!(written, expected);
+        Ok(())
+    }
+
+    /// **A project's physics step reaches the built game.** The editor writes
+    /// the project's `physics` section into `runtime.json`, and the runtime
+    /// reads that step back; a project at the default step writes none.
+    #[test]
+    fn the_runtime_json_carries_the_projects_physics_step_to_the_runtime() -> Result<()> {
+        let a_128th = PhysicsSettings {
+            step: std::time::Duration::from_nanos(7_812_500),
+        };
+        let dir = std::env::temp_dir().join(format!(
+            "khora-editor-runtime-json-physics-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir)?;
+        let written = write_runtime_config_with(&dir, "Khora Demo", BuildPreset::Release, a_128th)
+            .and_then(|()| Ok(std::fs::read_to_string(dir.join("runtime.json"))?));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        let read: RuntimeConfig = serde_json::from_str(&written?)?;
+        assert_eq!(
+            read.physics, a_128th,
+            "the runtime reads the project's step"
+        );
         Ok(())
     }
 }

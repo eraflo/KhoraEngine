@@ -29,6 +29,7 @@ mod lane_agents_at_boot;
 mod mode_to_dcc;
 mod overlay_host_views;
 mod pass_order;
+mod physics_step_setting;
 mod prefab_library;
 mod problems_without_scripts;
 mod public_paths;

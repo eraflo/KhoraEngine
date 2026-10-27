@@ -48,7 +48,6 @@ fn is_partial_eq<T: PartialEq>() {}
 #[allow(unused_imports)]
 mod every_pub_mod {
     use khora_agents::overlay_agent as _;
-    use khora_agents::physics_agent as _;
     use khora_agents::render_agent as _;
     use khora_agents::script_agent as _;
     use khora_agents::shadow_agent as _;
@@ -60,13 +59,6 @@ mod every_pub_mod {
 // Public fields (read through a reference) and enum variants (matched
 // exhaustively). Nothing is constructed.
 // ---------------------------------------------------------------------------
-
-fn physics_strategy_variants(x: &khora_agents::physics_agent::PhysicsStrategy) {
-    match x {
-        khora_agents::physics_agent::PhysicsStrategy::Standard => {}
-        khora_agents::physics_agent::PhysicsStrategy::Simplified => {}
-    }
-}
 
 fn rendering_strategy_variants(x: &khora_agents::render_agent::RenderingStrategy) {
     match x {
@@ -91,21 +83,6 @@ fn module_overlay_agent_paths_still_resolve() {
     let _ = type_name::<khora_agents::overlay_agent::OverlayAgent>();
     is_agent::<khora_agents::overlay_agent::OverlayAgent>();
     is_default::<khora_agents::overlay_agent::OverlayAgent>();
-}
-
-#[test]
-fn module_physics_agent_paths_still_resolve() {
-    let _ = type_name::<khora_agents::physics_agent::PhysicsAgent>();
-    is_agent::<khora_agents::physics_agent::PhysicsAgent>();
-    is_default::<khora_agents::physics_agent::PhysicsAgent>();
-    let _ = type_name::<khora_agents::physics_agent::PhysicsStrategy>();
-    let _ = physics_strategy_variants as fn(&khora_agents::physics_agent::PhysicsStrategy);
-    is_debug::<khora_agents::physics_agent::PhysicsStrategy>();
-    is_clone::<khora_agents::physics_agent::PhysicsStrategy>();
-    is_copy::<khora_agents::physics_agent::PhysicsStrategy>();
-    is_partial_eq::<khora_agents::physics_agent::PhysicsStrategy>();
-    is_eq::<khora_agents::physics_agent::PhysicsStrategy>();
-    is_default::<khora_agents::physics_agent::PhysicsStrategy>();
 }
 
 #[test]
@@ -169,7 +146,6 @@ fn module_ui_agent_paths_still_resolve() {
 #[test]
 fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_agents::overlay_agent::OverlayAgent::default; // khora-sdk
-    let _ = khora_agents::physics_agent::PhysicsAgent::default; // khora-sdk
     let _ = khora_agents::render_agent::RenderAgent::default; // khora-sdk
     let _ = khora_agents::script_agent::ScriptAgent::default; // khora-sdk
     let _ = khora_agents::shadow_agent::ShadowAgent::default; // khora-sdk

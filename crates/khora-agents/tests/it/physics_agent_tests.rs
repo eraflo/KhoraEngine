@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Integration tests for PhysicsAgent.
+//! The physics agent through the whole physics tick, on a real Rapier
+//! provider: the agent the engine boots from the physics family's
+//! registration, run as the scheduler runs it.
 //!
 //! Per CLAUDE.md:
 //!   - `step()` is private — tests drive the agent via `execute()`.
 //!   - Raycast queries call `PhysicsProvider::cast_ray` directly on the
 //!     locked backend.
 
-use khora_agents::physics_agent::PhysicsAgent;
+use khora_agents::lane_agent::LaneAgent;
 use khora_core::agent::Agent;
 use khora_core::engine_context::EngineContext;
 use khora_core::math::Vec3;
@@ -29,15 +31,12 @@ use khora_data::ecs::{RigidBody, Transform, World};
 use khora_infra::physics::rapier::RapierPhysicsWorld;
 use std::sync::{Arc, Mutex};
 
+use crate::physics_family::fixtures::{physics_agent, physics_runtime};
+
 fn make_runtime(
     provider: &Arc<Mutex<Box<dyn khora_core::physics::PhysicsProvider>>>,
 ) -> Arc<Runtime> {
-    let mut runtime = Runtime::new();
-    runtime.backends.insert(Arc::clone(provider));
-    runtime
-        .resources
-        .insert(khora_core::physics::collision_channel());
-    Arc::new(runtime)
+    Arc::new(physics_runtime(provider))
 }
 
 /// Runs the full physics tick `n` times: PreExtract DataSystems
@@ -48,7 +47,7 @@ fn make_runtime(
 ///
 /// Mirrors what `khora-sdk::EngineCore::tick_with_runtime` does in
 /// production but without the renderer / scheduler scaffolding.
-fn step_n(agent: &mut PhysicsAgent, world: &mut World, runtime: &Arc<Runtime>, n: usize) {
+fn step_n(agent: &mut LaneAgent, world: &mut World, runtime: &Arc<Runtime>, n: usize) {
     use khora_control::substrate;
     use khora_core::lane::LaneBus;
 
@@ -75,12 +74,12 @@ fn step_n(agent: &mut PhysicsAgent, world: &mut World, runtime: &Arc<Runtime>, n
         substrate::run_flows(world, &mut bus, runtime);
 
         // CLAD descent — agent invokes the lane (provider.step(dt)).
-        // The agent's own declaration, exactly as the scheduler would stamp
-        // it — a test that granted more would be testing a context the engine
-        // never builds.
+        // The agent's own declaration and no world, exactly as the scheduler
+        // stamps a world-free agent's context — a test that granted more
+        // would be testing a context the engine never builds.
         let permit = agent.contention();
         let mut ctx = EngineContext::for_agent(
-            khora_core::WorldAccess::Exclusive(world as &mut dyn std::any::Any),
+            khora_core::WorldAccess::None,
             Arc::clone(runtime),
             &bus,
             &mut deck,
@@ -114,31 +113,6 @@ fn simulated_y(world: &World, entity: khora_core::ecs::entity::EntityId) -> f32 
         .y
 }
 
-/// Helper to build a fresh `EngineContext` for `on_initialize` calls in tests.
-/// Bus and deck are owned by the caller's stack frame.
-fn make_init_ctx<'a>(
-    world: &'a mut World,
-    runtime: &Arc<Runtime>,
-    bus: &'a khora_core::lane::LaneBus,
-    deck: &'a mut khora_core::lane::OutputDeck,
-) -> EngineContext<'a> {
-    EngineContext::for_agent(
-        khora_core::WorldAccess::Exclusive(world as &mut dyn std::any::Any),
-        Arc::clone(runtime),
-        bus,
-        deck,
-        NOTHING,
-        None,
-    )
-}
-
-/// `on_initialize` reaches backends, which are outside the contract.
-static NOTHING: &khora_core::agent::Contention = &khora_core::agent::Contention {
-    deck: Vec::new(),
-    reads: Vec::new(),
-    writes: Vec::new(),
-};
-
 #[test]
 fn test_physics_gravity_influence() {
     let mut world = World::new();
@@ -146,14 +120,7 @@ fn test_physics_gravity_influence() {
         Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
 
     let runtime = make_runtime(&provider);
-    let mut agent = PhysicsAgent::default();
-
-    {
-        let bus = khora_core::lane::LaneBus::new();
-        let mut deck = khora_core::lane::OutputDeck::new();
-        let mut ctx = make_init_ctx(&mut world, &runtime, &bus, &mut deck);
-        agent.on_initialize(&mut ctx);
-    }
+    let mut agent = physics_agent();
 
     // Spawn a dynamic body at (0, 10, 0).
     let entity = world.spawn((
@@ -195,14 +162,7 @@ fn test_physics_raycast() {
         Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
 
     let runtime = make_runtime(&provider);
-    let mut agent = PhysicsAgent::default();
-
-    {
-        let bus = khora_core::lane::LaneBus::new();
-        let mut deck = khora_core::lane::OutputDeck::new();
-        let mut ctx = make_init_ctx(&mut world, &runtime, &bus, &mut deck);
-        agent.on_initialize(&mut ctx);
-    }
+    let mut agent = physics_agent();
 
     // Add a static box at origin.
     world.spawn((
@@ -241,14 +201,7 @@ fn test_physics_kcc_grounding() {
         Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
 
     let runtime = make_runtime(&provider);
-    let mut agent = PhysicsAgent::default();
-
-    {
-        let bus = khora_core::lane::LaneBus::new();
-        let mut deck = khora_core::lane::OutputDeck::new();
-        let mut ctx = make_init_ctx(&mut world, &runtime, &bus, &mut deck);
-        agent.on_initialize(&mut ctx);
-    }
+    let mut agent = physics_agent();
 
     // Static ground.
     world.spawn((
@@ -300,14 +253,7 @@ fn an_entity_loaded_without_a_global_transform_is_still_simulated() {
     let provider: Arc<Mutex<Box<dyn khora_core::physics::PhysicsProvider>>> =
         Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
     let runtime = make_runtime(&provider);
-    let mut agent = PhysicsAgent::default();
-
-    {
-        let bus = khora_core::lane::LaneBus::new();
-        let mut deck = khora_core::lane::OutputDeck::new();
-        let mut ctx = make_init_ctx(&mut world, &runtime, &bus, &mut deck);
-        agent.on_initialize(&mut ctx);
-    }
+    let mut agent = physics_agent();
 
     // Exactly what the recipe strategy produces: the authored components, and no
     // derived one.
@@ -348,14 +294,7 @@ fn a_declared_move_of_three_millimetres_reaches_the_body() {
     let provider: Arc<Mutex<Box<dyn khora_core::physics::PhysicsProvider>>> =
         Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
     let runtime = make_runtime(&provider);
-    let mut agent = PhysicsAgent::default();
-
-    {
-        let bus = khora_core::lane::LaneBus::new();
-        let mut deck = khora_core::lane::OutputDeck::new();
-        let mut ctx = make_init_ctx(&mut world, &runtime, &bus, &mut deck);
-        agent.on_initialize(&mut ctx);
-    }
+    let mut agent = physics_agent();
 
     let entity = world.spawn((
         Transform::new(Vec3::new(0.0, 10.0, 0.0), Default::default(), Vec3::ONE),
@@ -402,14 +341,7 @@ fn a_falling_body_reports_the_velocity_gravity_gave_it() {
     let provider: Arc<Mutex<Box<dyn khora_core::physics::PhysicsProvider>>> =
         Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
     let runtime = make_runtime(&provider);
-    let mut agent = PhysicsAgent::default();
-
-    {
-        let bus = khora_core::lane::LaneBus::new();
-        let mut deck = khora_core::lane::OutputDeck::new();
-        let mut ctx = make_init_ctx(&mut world, &runtime, &bus, &mut deck);
-        agent.on_initialize(&mut ctx);
-    }
+    let mut agent = physics_agent();
 
     let entity = world.spawn((
         Transform::new(Vec3::new(0.0, 10.0, 0.0), Default::default(), Vec3::ONE),

@@ -15,8 +15,8 @@
 //! Physics debug-render extraction — opt-in DataSystem.
 //!
 //! Lifts the previous `PhysicsDebugLane` (which was registered as a second
-//! lane on `PhysicsAgent` and *replaced* the simulation when active — i.e.
-//! enabling debug overlay also stopped physics) into a side-channel
+//! lane of the physics agent and *replaced* the simulation when active —
+//! i.e. enabling debug overlay also stopped physics) into a side-channel
 //! [`crate::ecs::DataSystem`] that runs in `PostSimulation` *alongside* the
 //! normal physics step. Per CLAD: debug data extraction is a Data-domain
 //! invariant projection, not an alternative agent strategy.

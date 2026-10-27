@@ -274,6 +274,7 @@ pub fn run_default() -> Result<()> {
     );
 
     let verify_integrity = cfg.verify_integrity;
+    let physics_settings = cfg.physics;
     run_winit::<WinitWindowProvider, DefaultRuntimeApp>(move |window, runtime, _event_loop| {
         let mut rs = WgpuRenderSystem::new();
         rs.init(window).expect("renderer init failed");
@@ -291,9 +292,10 @@ pub fn run_default() -> Result<()> {
             Err(e) => log::error!("pipeline system init failed: {e}"),
         }
 
-        // Physics — Rapier3D
+        // Physics — Rapier3D, stepped at the game's `physics.step`.
         let physics: Box<dyn PhysicsProvider> = Box::new(RapierPhysicsWorld::default());
         runtime.backends.insert(Arc::new(Mutex::new(physics)));
+        runtime.resources.insert(physics_settings);
 
         // UI layout — Taffy
         let layout: Box<dyn LayoutSystem> = Box::new(TaffyLayoutSystem::new());

@@ -28,6 +28,8 @@
 //!    new transforms, kinematic results, and collision events back into
 //!    the World during the `Maintenance` phase.
 
+mod physics_family;
 mod standard;
 
-pub use standard::StandardPhysicsLane;
+pub use physics_family::*;
+pub use standard::{PhysicsInputs, StandardPhysicsLane};

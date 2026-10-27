@@ -87,3 +87,45 @@ fn two_deck_slots_of_different_types_both_commit() {
     assert_eq!(deck.get::<MixedFrames>(), Some(&MixedFrames(4)));
     assert_eq!(deck.get::<Contacts>(), Some(&Contacts(9)));
 }
+
+// ─── Where a deck output opens ──────────────────────────────────────────────
+
+/// **A deck output opens on what its slot holds this frame.** A sink seeded
+/// with the frame's deck opens each output on a clone of that slot (so a lane
+/// run once per sub-step adds to what the earlier sub-steps wrote); a slot
+/// the frame does not hold, or a sink with no seed, opens on the default.
+#[test]
+fn a_deck_output_opens_on_what_its_slot_holds_this_frame() {
+    let mut frame = OutputDeck::new();
+    *frame.slot::<Echoes>() = Echoes(3);
+
+    let mut written = OutputDeck::new();
+    let seeded = {
+        let mut sink = OutputSink::new(&mut written).with_seed(&frame);
+        MixedAndContacts::open(&mut sink)
+            .map(|outputs| (outputs.mixed, outputs.contacts))
+            .and_then(|absent| TwiceEchoes::open(&mut sink).map(|echoes| (absent, echoes.first)))
+    };
+    let ((mixed, contacts), echoes) = seeded.expect("deck outputs open");
+    assert_eq!(echoes, Echoes(3), "the slot the frame holds is the opening");
+    assert_eq!(
+        mixed,
+        MixedFrames::default(),
+        "an empty slot opens on its default"
+    );
+    assert_eq!(contacts, Contacts::default());
+    assert_eq!(
+        frame.get::<Echoes>(),
+        Some(&Echoes(3)),
+        "the seed is not taken"
+    );
+
+    let mut unseeded_deck = OutputDeck::new();
+    let mut unseeded = OutputSink::new(&mut unseeded_deck);
+    let opened = TwiceEchoes::open(&mut unseeded).expect("deck outputs open");
+    assert_eq!(
+        opened.first,
+        Echoes::default(),
+        "no seed opens on the default"
+    );
+}

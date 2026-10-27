@@ -128,3 +128,35 @@ fn a_refused_registration_set_builds_no_lane_agent() {
         Ok(agents) => panic!("expected a refusal, got {} agents", agents.len()),
     }
 }
+
+/// **A game's step changes only a fixed-step agent.** `set_fixed_step` moves a
+/// fixed-step agent to the game's step, which the scheduler then reads from
+/// its timing; a zero step is no step and leaves it; an agent that runs every
+/// frame is left running every frame.
+#[test]
+fn a_games_step_changes_only_a_fixed_step_agent() {
+    use khora_agents::lane_agent::{lane_agent, set_fixed_step};
+    use std::time::Duration;
+
+    use super::fixtures::{FIXED_LADDER, FIXED_STEP};
+
+    let game_step = Duration::from_nanos(7_812_500);
+
+    let mut fixed = lane_agent(&FIXED_LADDER, &DeviceCaps::default());
+    set_fixed_step(&mut fixed, Duration::ZERO);
+    assert_eq!(
+        fixed.execution_timing().fixed_timestep,
+        Some(FIXED_STEP),
+        "a zero step leaves the registration's"
+    );
+    set_fixed_step(&mut fixed, game_step);
+    assert_eq!(fixed.execution_timing().fixed_timestep, Some(game_step));
+
+    let mut every_frame = lane_agent(&LADDER, &DeviceCaps::default());
+    set_fixed_step(&mut every_frame, game_step);
+    assert_eq!(
+        every_frame.execution_timing().fixed_timestep,
+        None,
+        "an agent that runs every frame keeps running every frame"
+    );
+}

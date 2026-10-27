@@ -45,6 +45,16 @@ pub(crate) struct OpenedProject {
     entries: Vec<AssetEntry>,
     dirs: Vec<String>,
     git_branch: Option<String>,
+    /// The project's physics settings, which the engine boots its physics
+    /// family at.
+    physics: khora_sdk::khora_core::physics::PhysicsSettings,
+}
+
+impl OpenedProject {
+    /// The project's physics settings.
+    pub(crate) fn physics(&self) -> khora_sdk::khora_core::physics::PhysicsSettings {
+        self.physics
+    }
 }
 
 /// Reads the `--project` folder: scans its assets into a watched VFS and reads
@@ -90,6 +100,7 @@ pub(crate) fn read_cli_project(asset_watch: Arc<khora_sdk::AssetWatch>) -> Optio
     let entries = hot_reload::collect_asset_entries(&pvfs);
     let dirs = pvfs.list_dirs();
     let git_branch = git::read_git_branch(&path);
+    let physics = pvfs.physics_settings();
     Some(OpenedProject {
         path,
         pvfs,
@@ -98,6 +109,7 @@ pub(crate) fn read_cli_project(asset_watch: Arc<khora_sdk::AssetWatch>) -> Optio
         entries,
         dirs,
         git_branch,
+        physics,
     })
 }
 
@@ -120,6 +132,7 @@ impl EditorApp {
             entries,
             dirs,
             git_branch,
+            physics: _,
         } = opened;
 
         if let Ok(mut state) = self.editor_state.lock() {

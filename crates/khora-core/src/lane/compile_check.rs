@@ -30,7 +30,9 @@ use super::context_keys::ClearColor;
 use super::contract::Lane;
 use super::family::LaneFamily;
 use super::guard::{InputRefusal, OutputRefusal, SinkKind, SourceKind};
-use super::io::{Budget, Declaration, InputSource, Locked, OutputSink, Pass, Target, TargetKey};
+use super::io::{
+    Budget, Declaration, FixedStep, InputSource, Locked, OutputSink, Pass, Target, TargetKey,
+};
 use super::LaneError;
 use crate::residency::{Residency, Resident};
 
@@ -183,7 +185,7 @@ impl BudgetField for Budget {
 
 /// A field type `#[frame]` accepts: the frame's `Target` or `ClearColor`.
 #[diagnostic::on_unimplemented(
-    message = "`#[frame]` gives the frame's `Target` or `ClearColor`, not `{Self}`",
+    message = "`#[frame]` gives the frame's `Target`, `ClearColor` or `FixedStep`, not `{Self}`",
     label = "not a frame value"
 )]
 pub trait FrameField: Sized {
@@ -203,6 +205,17 @@ impl FrameField for Target {
     }
     fn target_key(&self) -> Option<TargetKey> {
         Some(self.key)
+    }
+}
+impl FrameField for FixedStep {
+    fn declare(d: &mut Declaration, field: &'static str) {
+        d.read::<FixedStep>(field, SourceKind::Frame);
+    }
+    fn fetch(src: &mut InputSource<'_>, field: &'static str) -> Result<Self, InputRefusal> {
+        src.fixed_step(field)
+    }
+    fn target_key(&self) -> Option<TargetKey> {
+        None
     }
 }
 impl FrameField for ClearColor {
@@ -247,23 +260,24 @@ impl<'f, P: 'static> PassField<'f> for Pass<'f, P> {
 
 /// A field type output `#[deck]` accepts: an owned value a later phase reads.
 #[diagnostic::on_unimplemented(
-    message = "`#[deck]` writes a slot for a later phase: `{Self}` must be owned, `Default`, `Send` and `Sync`",
+    message = "`#[deck]` writes a slot for a later phase: `{Self}` must be owned, `Default`, `Clone`, `Send` and `Sync`",
     label = "not an owned slot value"
 )]
 pub trait DeckOutputField<'f>: Sized {
     /// Declares the slot written.
     fn declare(d: &mut Declaration, field: &'static str);
-    /// Opens the slot's value for one record: its default.
+    /// Opens the slot's value for one record: what it holds this frame, or
+    /// its default.
     fn open(sink: &mut OutputSink<'f>, field: &'static str) -> Result<Self, LaneError>;
     /// Writes the value into its slot.
     fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal>;
 }
-impl<'f, T: Default + Any + Send + Sync> DeckOutputField<'f> for T {
+impl<'f, T: Default + Clone + Any + Send + Sync> DeckOutputField<'f> for T {
     fn declare(d: &mut Declaration, field: &'static str) {
         d.write::<T>(field, SinkKind::Deck);
     }
-    fn open(_sink: &mut OutputSink<'f>, _field: &'static str) -> Result<Self, LaneError> {
-        Ok(T::default())
+    fn open(sink: &mut OutputSink<'f>, _field: &'static str) -> Result<Self, LaneError> {
+        Ok(sink.opening::<T>())
     }
     fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal> {
         sink.put(field, self)

@@ -21,7 +21,7 @@ where
 }
 
 #[derive(LaneOutputs)]
-pub struct SlotOf<T: Default + Any + Send + Sync> {
+pub struct SlotOf<T: Default + Clone + Any + Send + Sync> {
     #[deck]
     pub slot: T,
 }

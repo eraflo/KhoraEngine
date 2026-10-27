@@ -12,35 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The physics lane against a real Rapier world.
+//! The physics lane's contacts, through the agent the engine boots, against a
+//! real Rapier world and against a provider whose contacts are scripted step
+//! by step.
 //!
 //! Here rather than beside the lane because the CLAD descent puts `khora-infra`
 //! *above* `khora-lanes`: a lane knows `PhysicsProvider` and never Rapier. This
 //! crate sees both, so it is where the two can meet.
 //!
-//! The lane is driven directly rather than through an agent. What is under test
-//! is the translation from a backend contact to two entities and out onto the
-//! deck; the agent's fixed-timestep sub-stepping is a separate question with
-//! its own tests.
+//! Each run of the agent is one fixed sub-step; several runs into one deck are
+//! the sub-steps of one frame, as the scheduler runs them.
 
-use khora_core::ecs::entity::EntityId;
-use khora_core::lane::{Lane, LaneContext, OutputDeck, PhysicsDeltaTime};
+use std::sync::{Arc, Mutex};
+
+use khora_core::lane::OutputDeck;
 use khora_core::math::{Quat, Vec3};
 use khora_core::physics::{
-    BodyType, ColliderDesc, ColliderShape, CollisionKind, ContactBatch, PhysicsProvider,
-    RigidBodyDesc,
+    BodyType, ColliderDesc, ColliderHandle, ColliderShape, Collision, CollisionEvent,
+    CollisionKind, ContactBatch, PhysicsProvider, RigidBodyDesc,
 };
 use khora_infra::physics::rapier::RapierPhysicsWorld;
-use khora_lanes::physics_lane::StandardPhysicsLane;
 
-fn entity(index: u32) -> EntityId {
-    EntityId {
-        index,
-        generation: 0,
-    }
-}
+use crate::physics_family::fixtures::{
+    entity, physics_agent, physics_runtime, run_once, ScriptedProvider, SharedProvider,
+};
 
-fn a_collider(owner: EntityId, shape: ColliderShape) -> ColliderDesc {
+fn a_collider(owner: khora_core::ecs::entity::EntityId, shape: ColliderShape) -> ColliderDesc {
     ColliderDesc {
         owner: Some(owner),
         parent_body: None,
@@ -55,98 +52,20 @@ fn a_collider(owner: EntityId, shape: ColliderShape) -> ColliderDesc {
     }
 }
 
-/// A floor, and a ball resting in it.
+/// A dynamic ball overlapping a floor, `floor_owned` saying whether the floor
+/// belongs to an entity.
 ///
 /// Overlapping on purpose, so the contact does not depend on the integrator —
 /// a test that waited for a fall would fail for reasons that have nothing to do
 /// with what it checks. The ball needs a **dynamic parent body**: Rapier reports
 /// no contact between two colliders that both count as fixed, and a collider
 /// with no parent counts as fixed.
-fn a_world_with_a_contact() -> Box<dyn PhysicsProvider> {
-    let mut world = RapierPhysicsWorld::default();
-    world.add_collider(a_collider(
-        entity(0),
-        ColliderShape::Box(Vec3::new(10.0, 0.5, 10.0)),
-    ));
-
-    let body = world.add_body(RigidBodyDesc {
-        body_type: BodyType::Dynamic,
-        position: Vec3::new(0.0, 0.8, 0.0),
-        rotation: Quat::IDENTITY,
-        linear_velocity: Vec3::ZERO,
-        angular_velocity: Vec3::ZERO,
-        mass: 1.0,
-        ccd_enabled: false,
-    });
-    let mut ball = a_collider(entity(1), ColliderShape::Sphere(0.5));
-    ball.parent_body = Some(body);
-    world.add_collider(ball);
-
-    Box::new(world)
-}
-
-fn run(provider: &mut Box<dyn PhysicsProvider>, deck: &mut OutputDeck) {
-    let mut ctx = LaneContext::new();
-    ctx.insert(PhysicsDeltaTime(1.0 / 60.0));
-    ctx.insert_slot(provider.as_mut());
-    ctx.insert_slot(deck);
-    StandardPhysicsLane::new()
-        .execute(&mut ctx)
-        .expect("the lane ran");
-}
-
-/// **What the whole collision path is for.** A contact leaves Rapier naming two
-/// colliders; the lane turns those into the two entities gameplay knows, while
-/// it still holds the provider, and leaves them on the deck.
-///
-/// Before this, every contact Rapier reported was drained into a query that
-/// matched no entity and discarded — every frame, silently.
-#[test]
-fn a_contact_lands_on_the_deck_naming_both_entities() {
-    let mut provider = a_world_with_a_contact();
-    let mut deck = OutputDeck::new();
-
-    run(&mut provider, &mut deck);
-
-    let batch = deck.slot::<ContactBatch>();
-    let started = batch
-        .contacts
-        .iter()
-        .find(|contact| contact.kind == CollisionKind::Started)
-        .expect("the overlap was reported");
-    assert!(
-        [started.a, started.b].contains(&entity(0)) && [started.a, started.b].contains(&entity(1)),
-        "both entities named; got {started:?}"
-    );
-}
-
-/// The agent runs this lane once per fixed sub-step, up to five in a frame.
-/// Replacing the slot rather than extending it would keep only the last
-/// sub-step's contacts and drop the rest without saying so.
-#[test]
-fn several_sub_steps_accumulate_on_one_deck() {
-    let mut provider = a_world_with_a_contact();
-    let mut deck = OutputDeck::new();
-
-    run(&mut provider, &mut deck);
-    let after_one = deck.slot::<ContactBatch>().contacts.len();
-    run(&mut provider, &mut deck);
-
-    assert!(after_one > 0, "the first sub-step reported the contact");
-    assert!(
-        deck.slot::<ContactBatch>().contacts.len() >= after_one,
-        "the second sub-step discarded the first's"
-    );
-}
-
-/// A collider the ECS does not own — a query volume, a tool's probe — has no
-/// entity to name, so the contact is not a gameplay event and is dropped rather
-/// than reported half-resolved.
-#[test]
-fn a_contact_with_an_unowned_collider_is_not_reported() {
+fn a_ball_in_a_floor(floor_owned: bool) -> SharedProvider {
     let mut world = RapierPhysicsWorld::default();
     let mut floor = a_collider(entity(0), ColliderShape::Box(Vec3::new(10.0, 0.5, 10.0)));
-    floor.owner = None;
+    if !floor_owned {
+        floor.owner = None;
+    }
     world.add_collider(floor);
 
     let body = world.add_body(RigidBodyDesc {
@@ -162,10 +81,124 @@ fn a_contact_with_an_unowned_collider_is_not_reported() {
     ball.parent_body = Some(body);
     world.add_collider(ball);
 
-    let mut provider: Box<dyn PhysicsProvider> = Box::new(world);
+    let provider: Box<dyn PhysicsProvider> = Box::new(world);
+    Arc::new(Mutex::new(provider))
+}
+
+/// The contacts on the deck, or none when the slot was never written.
+fn contacts_on(deck: &OutputDeck) -> Vec<Collision> {
+    deck.get::<ContactBatch>()
+        .map(|batch| batch.contacts.clone())
+        .unwrap_or_default()
+}
+
+fn between(kind: CollisionKind, a: u32, b: u32) -> Collision {
+    Collision {
+        kind,
+        a: entity(a),
+        b: entity(b),
+    }
+}
+
+/// **What the whole collision path is for.** A contact leaves Rapier naming two
+/// colliders; the lane turns those into the two entities gameplay knows, while
+/// it still holds the provider, and the agent commits them to the deck.
+///
+/// Before this, every contact Rapier reported was drained into a query that
+/// matched no entity and discarded — every frame, silently.
+#[test]
+fn a_contact_lands_on_the_deck_naming_both_entities() {
+    let runtime = Arc::new(physics_runtime(&a_ball_in_a_floor(true)));
+    let mut agent = physics_agent();
     let mut deck = OutputDeck::new();
 
-    run(&mut provider, &mut deck);
+    run_once(&mut agent, &runtime, &mut deck);
 
-    assert!(deck.slot::<ContactBatch>().contacts.is_empty());
+    let contacts = contacts_on(&deck);
+    let started = contacts
+        .iter()
+        .find(|contact| contact.kind == CollisionKind::Started)
+        .unwrap_or_else(|| panic!("the overlap was reported: {contacts:?}"));
+    assert!(
+        [started.a, started.b].contains(&entity(0)) && [started.a, started.b].contains(&entity(1)),
+        "both entities named; got {started:?}"
+    );
+}
+
+/// **Every sub-step's contacts reach the deck.** A frame runs the agent once
+/// per fixed sub-step, up to five, and each run commits what its lane wrote.
+/// A commit replacing the slot would keep only the last sub-step's contacts
+/// and drop the others without saying so — a hit that began and ended within
+/// one frame would never reach gameplay.
+#[test]
+fn contacts_from_every_sub_step_of_a_frame_reach_the_deck() {
+    let pair = (ColliderHandle(0), ColliderHandle(1));
+    let (provider, _steps) = ScriptedProvider::new(
+        vec![
+            vec![CollisionEvent::Started(pair.0, pair.1)],
+            vec![CollisionEvent::Stopped(pair.0, pair.1)],
+            vec![CollisionEvent::Started(pair.1, pair.0)],
+        ],
+        2,
+    );
+    let runtime = Arc::new(physics_runtime(&provider.shared()));
+    let mut agent = physics_agent();
+    let mut deck = OutputDeck::new();
+
+    for _ in 0..3 {
+        run_once(&mut agent, &runtime, &mut deck);
+    }
+
+    assert_eq!(
+        contacts_on(&deck),
+        vec![
+            between(CollisionKind::Started, 0, 1),
+            between(CollisionKind::Stopped, 0, 1),
+            between(CollisionKind::Started, 1, 0),
+        ],
+        "every sub-step's contact, in the order the steps reported them"
+    );
+}
+
+/// A sub-step that reports no contact leaves the earlier sub-steps' contacts
+/// on the deck: Rapier reports a contact the step it begins, and is silent on
+/// the steps after.
+#[test]
+fn a_quiet_sub_step_keeps_the_contacts_of_the_earlier_ones() {
+    let runtime = Arc::new(physics_runtime(&a_ball_in_a_floor(true)));
+    let mut agent = physics_agent();
+    let mut deck = OutputDeck::new();
+
+    run_once(&mut agent, &runtime, &mut deck);
+    let after_one = contacts_on(&deck);
+    run_once(&mut agent, &runtime, &mut deck);
+    let after_two = contacts_on(&deck);
+
+    assert!(
+        !after_one.is_empty(),
+        "the first sub-step reported the contact"
+    );
+    assert_eq!(
+        after_two.get(..after_one.len()),
+        Some(after_one.as_slice()),
+        "the second sub-step kept the first's contacts: {after_two:?}"
+    );
+}
+
+/// A collider the ECS does not own — a query volume, a tool's probe — has no
+/// entity to name, so the contact is not a gameplay event and is dropped rather
+/// than reported half-resolved. The step still happened, and says so.
+#[test]
+fn a_contact_with_an_unowned_collider_is_not_reported() {
+    let runtime = Arc::new(physics_runtime(&a_ball_in_a_floor(false)));
+    let mut agent = physics_agent();
+    let mut deck = OutputDeck::new();
+
+    run_once(&mut agent, &runtime, &mut deck);
+
+    assert!(
+        deck.contains::<khora_data::flow::PhysicsStepResult>(),
+        "the step ran"
+    );
+    assert!(contacts_on(&deck).is_empty(), "{:?}", contacts_on(&deck));
 }

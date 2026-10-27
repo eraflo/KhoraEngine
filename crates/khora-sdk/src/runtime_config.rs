@@ -16,6 +16,7 @@
 //! the runtime binary, and what [`crate::run_default`] reads at start-up.
 //! One type for both sides, so the writer and the reader cannot drift.
 
+use khora_core::physics::PhysicsSettings;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -50,6 +51,10 @@ pub struct RuntimeConfig {
     /// older packs (without a manifest) keep booting.
     #[serde(default)]
     pub verify_integrity: bool,
+    /// The game's physics settings (`physics.step`). Written only when the
+    /// project sets them; a file without them runs at the defaults.
+    #[serde(default, skip_serializing_if = "PhysicsSettings::is_default")]
+    pub physics: PhysicsSettings,
 }
 
 fn default_project_name() -> String {
@@ -106,6 +111,7 @@ impl RuntimeConfig {
             window_title: None,
             preset: None,
             verify_integrity: false,
+            physics: PhysicsSettings::default(),
         }
     }
 

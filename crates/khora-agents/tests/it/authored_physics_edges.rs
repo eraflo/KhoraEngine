@@ -16,7 +16,7 @@
 //! tick on a real Rapier provider: releases under scaled parents, mirrored
 //! bodies, and a character that loses its collider.
 
-use khora_agents::physics_agent::PhysicsAgent;
+use khora_agents::lane_agent::LaneAgent;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::engine_context::EngineContext;
@@ -30,51 +30,27 @@ use khora_data::ecs::{
 use khora_infra::physics::rapier::RapierPhysicsWorld;
 use std::sync::{Arc, Mutex};
 
+use crate::physics_family::fixtures::{physics_agent, physics_runtime};
+
 type SharedProvider = Arc<Mutex<Box<dyn PhysicsProvider>>>;
 
 /// Half a 0.6 m crate edge.
 const HALF: f32 = 0.3;
 
-static NOTHING: &khora_core::agent::Contention = &khora_core::agent::Contention {
-    deck: Vec::new(),
-    reads: Vec::new(),
-    writes: Vec::new(),
-};
-
-/// A world, a Rapier provider and an initialised physics agent.
+/// A world, a Rapier provider and the physics agent.
 struct Rig {
     world: World,
     runtime: Arc<Runtime>,
-    agent: PhysicsAgent,
+    agent: LaneAgent,
 }
 
 impl Rig {
     fn new() -> Self {
-        let mut world = World::new();
+        let world = World::new();
         let provider: SharedProvider =
             Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default())));
-        let runtime = {
-            let mut runtime = Runtime::new();
-            runtime.backends.insert(Arc::clone(&provider));
-            runtime
-                .resources
-                .insert(khora_core::physics::collision_channel());
-            Arc::new(runtime)
-        };
-        let mut agent = PhysicsAgent::default();
-        {
-            let bus = khora_core::lane::LaneBus::new();
-            let mut deck = khora_core::lane::OutputDeck::new();
-            let mut ctx = EngineContext::for_agent(
-                khora_core::WorldAccess::Exclusive(&mut world as &mut dyn std::any::Any),
-                Arc::clone(&runtime),
-                &bus,
-                &mut deck,
-                NOTHING,
-                None,
-            );
-            agent.on_initialize(&mut ctx);
-        }
+        let runtime = Arc::new(physics_runtime(&provider));
+        let agent = physics_agent();
         Self {
             world,
             runtime,
@@ -100,7 +76,7 @@ impl Rig {
 
         let permit = self.agent.contention();
         let mut ctx = EngineContext::for_agent(
-            khora_core::WorldAccess::Exclusive(&mut self.world as &mut dyn std::any::Any),
+            khora_core::WorldAccess::None,
             Arc::clone(&self.runtime),
             &bus,
             &mut deck,

@@ -38,7 +38,7 @@ use khora_script::reload::ScriptReload;
 /// programs, live instances, the mail behaviors owe each other, the last run's
 /// counters, the measured instruction rate — lives in the
 /// [`Runtime`](khora_core::Runtime) and is locked for the duration of
-/// `execute`, exactly as `PhysicsAgent` locks its provider.
+/// `execute`, exactly as the physics family locks its provider.
 pub struct ScriptAgent {
     /// Every script lane — the agent's strategies.
     lanes: LaneRegistry,
@@ -53,8 +53,7 @@ pub struct ScriptAgent {
     /// A handle, not the thing. [`negotiate`](Agent::negotiate),
     /// [`apply_budget`](Agent::apply_budget) and
     /// [`report_status`](Agent::report_status) all receive no `EngineContext`,
-    /// so what they read has to be reachable without one. `PhysicsAgent` holds
-    /// `AgentFrameStatusMap` for the same reason and in the same shape.
+    /// so what they read has to be reachable without one.
     runtime: Option<Arc<Mutex<ScriptRuntime>>>,
 }
 

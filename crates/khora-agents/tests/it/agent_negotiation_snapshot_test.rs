@@ -25,7 +25,6 @@
 
 use khora_agents::lane_agent::lane_agent;
 use khora_agents::overlay_agent::OverlayAgent;
-use khora_agents::physics_agent::PhysicsAgent;
 use khora_agents::render_agent::RenderAgent;
 use khora_agents::script_agent::ScriptAgent;
 use khora_agents::shadow_agent::ShadowAgent;
@@ -37,6 +36,7 @@ use khora_core::gpu::DeviceCaps;
 use std::time::Duration;
 
 use crate::audio_family::audio_registration;
+use crate::physics_family::fixtures::physics_agent;
 
 const MIB: u64 = 1024 * 1024;
 
@@ -117,18 +117,13 @@ fn ui_agent_offers_one_flat_strategy() {
     );
 }
 
+/// The physics family's agent: one level, which keeps the result, and no
+/// VRAM. Its step is a game setting, so GORNA has no step to choose.
 #[test]
-fn physics_agent_offers_three_tiers_from_low_power_up() {
+fn physics_agent_offers_one_flat_strategy() {
     assert_eq!(
-        offer(PhysicsAgent::default()),
-        (
-            AgentId::Physics,
-            vec![
-                (StrategyId::LowPower, 0),
-                (StrategyId::Balanced, 0),
-                (StrategyId::HighPerformance, 0),
-            ]
-        )
+        offer(physics_agent()),
+        (AgentId::Physics, vec![(StrategyId::Balanced, 0)])
     );
 }
 

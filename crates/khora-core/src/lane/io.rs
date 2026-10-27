@@ -72,6 +72,11 @@ pub struct Target {
     pub key: TargetKey,
 }
 
+/// The simulated time one run of a fixed-step lane advances: its agent's
+/// step, so the lane integrates by exactly the time the scheduler cut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FixedStep(pub Duration);
+
 /// The share of the frame a lane was given.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Budget {
@@ -223,6 +228,7 @@ pub struct InputSource<'f> {
     target: Option<Target>,
     clear_color: Option<ClearColor>,
     budget: Option<Budget>,
+    step: Option<FixedStep>,
     /// When the fetch stops waiting for locks: set by the first lock it
     /// waits for, shared by every later one.
     lock_deadline: Option<Instant>,
@@ -241,6 +247,7 @@ impl<'f> InputSource<'f> {
             target: None,
             clear_color: None,
             budget: None,
+            step: None,
             lock_deadline: None,
             touched: Declaration::default(),
             warnings: Vec::new(),
@@ -262,6 +269,12 @@ impl<'f> InputSource<'f> {
     /// Adds the colour the frame's target is cleared to.
     pub fn with_clear_color(mut self, clear_color: ClearColor) -> Self {
         self.clear_color = Some(clear_color);
+        self
+    }
+
+    /// Adds the step a fixed-step agent runs its lane at.
+    pub fn with_step(mut self, step: FixedStep) -> Self {
+        self.step = Some(step);
         self
     }
 
@@ -392,6 +405,16 @@ impl<'f> InputSource<'f> {
         })
     }
 
+    /// The step the lane's agent runs it at.
+    pub fn fixed_step(&mut self, field: &'static str) -> Result<FixedStep, InputRefusal> {
+        self.touch::<FixedStep>(field, SourceKind::Frame);
+        self.step.ok_or(InputRefusal {
+            field,
+            source: SourceKind::Frame,
+            reason: Reason::Missing,
+        })
+    }
+
     /// The lane's budget, when it has a positive one.
     pub fn budget(&mut self, field: &'static str) -> Result<Budget, InputRefusal> {
         self.touch::<Budget>(field, SourceKind::Budget);
@@ -429,6 +452,8 @@ pub struct OutputSink<'f> {
     deck: &'f mut OutputDeck,
     /// The slot types committed through this sink.
     written: Vec<TypeId>,
+    /// What the slots hold this frame so far, outputs start from.
+    seed: Option<&'f OutputDeck>,
 }
 
 impl<'f> OutputSink<'f> {
@@ -437,7 +462,24 @@ impl<'f> OutputSink<'f> {
         Self {
             deck,
             written: Vec::new(),
+            seed: None,
         }
+    }
+
+    /// The same sink, its deck outputs opening on what `seed` holds this
+    /// frame: a lane run once per fixed sub-step adds to what the earlier
+    /// sub-steps wrote, and one that writes the whole value replaces it.
+    pub fn with_seed(mut self, seed: &'f OutputDeck) -> Self {
+        self.seed = Some(seed);
+        self
+    }
+
+    /// What the slot `T` holds this frame so far, or its default.
+    pub fn opening<T: Default + Clone + Any + Send + Sync>(&self) -> T {
+        self.seed
+            .and_then(|seed| seed.get::<T>())
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Writes `value` into the deck slot `T`. A slot holds one value a frame:

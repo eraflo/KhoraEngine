@@ -30,6 +30,7 @@ use crate::gpu::DeviceCaps;
 use crate::lane::erased::AnyLane;
 use crate::lane::family::Semantics;
 use crate::lane::guard::{SinkKind, SourceKind};
+use crate::lane::io::FixedStep;
 use crate::lane::level::Impact;
 use crate::lane::LaneKind;
 use crate::runtime::Runtime;
@@ -123,6 +124,16 @@ pub enum BootError {
         /// Its phase.
         phase: ExecutionPhase,
     },
+    /// A lane reads the fixed step of a family that runs every frame, which
+    /// no agent gives it: it would be refused on every frame.
+    StepWithoutFixedStep {
+        /// The family.
+        family: &'static str,
+        /// The lane, by type name.
+        lane: &'static str,
+        /// The field reading the step.
+        field: &'static str,
+    },
     /// No lane of the family runs on this device.
     NoSupportedLane {
         /// The family.
@@ -198,6 +209,14 @@ impl std::fmt::Display for BootError {
                 f,
                 "the family `{family}` runs in the phase {phase}, which the scheduler never runs"
             ),
+            Self::StepWithoutFixedStep {
+                family,
+                lane,
+                field,
+            } => write!(
+                f,
+                "`{lane}` of `{family}` reads the fixed step in `{field}`, yet `{family}` runs every frame"
+            ),
             Self::NoSupportedLane { family } => {
                 write!(f, "no lane of the family `{family}` runs on this device")
             }
@@ -232,7 +251,8 @@ impl std::error::Error for BootError {}
 /// one agent per family and one family per agent, every family in a phase that
 /// runs, at least one supported lane
 /// and one level per family, unique strategy ids within a family, no level of
-/// an `Exact` family that changes the result, no lane locking one entry twice
+/// an `Exact` family that changes the result, no lane reading a fixed step its
+/// family does not have, no lane locking one entry twice
 /// nor a family writing one slot twice,
 /// every declared resource and resident held by the runtime, every `#[deck]`
 /// read written by an earlier phase.
@@ -345,6 +365,16 @@ pub fn check_registrations_in(
                         });
                     }
                     locks.push(input.ty);
+                }
+                if input.kind == SourceKind::Frame
+                    && input.ty == TypeId::of::<FixedStep>()
+                    && registration.fixed_step.is_none()
+                {
+                    return Err(BootError::StepWithoutFixedStep {
+                        family,
+                        lane: lane.name(),
+                        field: input.field,
+                    });
                 }
                 match input.kind {
                     SourceKind::Resource | SourceKind::Locked | SourceKind::Resident

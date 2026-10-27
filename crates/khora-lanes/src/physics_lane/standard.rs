@@ -14,54 +14,87 @@
 
 //! The standard physics strategy: one full step of the provider per frame.
 
-use khora_core::physics::{
-    Collision, CollisionEvent, CollisionKind, ContactBatch, PhysicsProvider,
-};
+use std::time::Duration;
 
-/// The standard physics lane for industrial-grade simulation.
+use khora_core::agent::gorna::StrategyId;
+use khora_core::lane::contract::{Lane, LaneReport};
+use khora_core::lane::cost::{Cost, PerDevice};
+use khora_core::lane::io::{FixedStep, Locked};
+use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::LaneError;
+use khora_core::physics::{Collision, CollisionEvent, CollisionKind, PhysicsProvider};
+use khora_data::flow::PhysicsStepResult;
+use khora_macros::LaneInputs;
+
+use super::physics_family::{PhysicsFamily, PhysicsOutputs};
+
+/// The standard physics lane: one step of the provider by the agent's fixed
+/// step, and the contacts that step reported.
 #[derive(Debug, Default)]
 pub struct StandardPhysicsLane;
 
-impl StandardPhysicsLane {
-    /// Creates a new `StandardPhysicsLane`.
-    pub fn new() -> Self {
-        Self
-    }
+/// The one level: a simulation family may not trade its result for time.
+const LEVELS: [Level; 1] = [Level {
+    id: StrategyId::Balanced,
+    name: "standard",
+    impact: Impact::None,
+    memory: PerDevice {
+        cpu: 0,
+        gpu: 0,
+        npu: 0,
+        other: 0,
+    },
+}];
+
+/// What one step costs on the host, as quoted before the backend reports
+/// its own timings.
+const STEP_COST: Duration = Duration::from_micros(500);
+
+/// What the physics lane reads each frame: the provider, locked for the step,
+/// and the step its agent runs it at.
+#[derive(LaneInputs)]
+pub struct PhysicsInputs<'f> {
+    /// The simulation, locked while it steps.
+    #[locked]
+    pub provider: Locked<'f, Box<dyn PhysicsProvider>>,
+    /// The simulated time this step advances.
+    #[frame]
+    pub step: FixedStep,
 }
 
-impl khora_core::lane::Lane for StandardPhysicsLane {
-    fn strategy_name(&self) -> &'static str {
-        "StandardPhysics"
+impl Lane for StandardPhysicsLane {
+    type Family = PhysicsFamily;
+    type Inputs<'f> = PhysicsInputs<'f>;
+
+    fn levels(&self) -> &[Level] {
+        &LEVELS
     }
 
-    fn lane_kind(&self) -> khora_core::lane::LaneKind {
-        khora_core::lane::LaneKind::Physics
+    fn cost(&self, _level: usize, _inputs: &PhysicsInputs<'_>) -> Cost {
+        Cost {
+            time: PerDevice {
+                cpu: STEP_COST,
+                ..PerDevice::default()
+            },
+            ..Cost::default()
+        }
     }
 
-    fn execute(
-        &self,
-        ctx: &mut khora_core::lane::LaneContext,
-    ) -> Result<(), khora_core::lane::LaneError> {
-        use khora_core::lane::{LaneError, OutputDeck};
-
-        let dt = ctx
-            .get::<khora_core::lane::PhysicsDeltaTime>()
-            .ok_or(LaneError::missing("PhysicsDeltaTime"))?
-            .0;
-        let mut provider_guard = ctx
-            .slot::<dyn PhysicsProvider>()
-            .ok_or(LaneError::missing("&mut dyn PhysicsProvider"))?;
-        let provider = &mut *provider_guard;
-
+    fn record(
+        &mut self,
+        _level: usize,
+        inputs: &mut PhysicsInputs<'_>,
+        out: &mut PhysicsOutputs,
+    ) -> Result<LaneReport, LaneError> {
+        let dt = inputs.step.0.as_secs_f32();
+        let provider = &mut **inputs.provider;
         provider.step(dt);
 
         // Resolved here, while the provider is in hand. A contact leaves the
         // backend naming two colliders; everything downstream wants two
         // entities, and asking the provider is `O(1)` per handle because the
-        // owner is stamped on the collider itself. Leaving it to a consumer
-        // would mean handing raw backend handles across the deck and hoping
-        // they still resolve by the time somebody asks.
-        let contacts: Vec<Collision> = provider
+        // owner is stamped on the collider itself.
+        let contacts = provider
             .take_collision_events()
             .into_iter()
             .filter_map(|event| {
@@ -77,30 +110,17 @@ impl khora_core::lane::Lane for StandardPhysicsLane {
                     a: provider.entity_of(first)?,
                     b: provider.entity_of(second)?,
                 })
-            })
-            .collect();
+            });
 
-        // Mark the simulation as having advanced this frame. The
-        // `physics_world_writeback` DataSystem checks this slot and only
-        // pulls fresh transforms from the provider when it's present —
-        // unifying the Lane → Deck → DataSystem pattern across audio and
-        // physics, and avoiding stale writebacks when the agent is paused.
-        if let Some(mut deck) = ctx.slot::<OutputDeck>() {
-            *deck.slot::<khora_data::flow::PhysicsStepResult>() =
-                khora_data::flow::PhysicsStepResult { dt };
-            // Extended, not replaced: the agent runs this lane once per fixed
-            // sub-step and there may be five in a frame, each with contacts of
-            // its own. Replacing would keep only the last sub-step's.
-            deck.slot::<ContactBatch>().contacts.extend(contacts);
-        }
-        Ok(())
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+        // The step marks the simulation as having advanced this frame: the
+        // `physics_world_writeback` DataSystem pulls fresh transforms only
+        // when it is there. The contacts open on what the frame's earlier
+        // sub-steps reported, so every sub-step's reach the game.
+        out.step = PhysicsStepResult { dt };
+        out.contacts.contacts.extend(contacts);
+        Ok(LaneReport {
+            done: 1.0,
+            stalled: false,
+        })
     }
 }

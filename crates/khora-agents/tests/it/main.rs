@@ -40,6 +40,7 @@ mod imported_systems;
 mod input_from_script_test;
 mod lane_agent;
 mod physics_agent_tests;
+mod physics_family;
 mod physics_lane_contacts_test;
 mod prefabs_spawned_in_play;
 mod public_paths;

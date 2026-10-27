@@ -12,21 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Acts as the **[A]gent** for the physics subsystem, fulfilling the role of an ISA.
+//! The physics family's agent: its registration, and nothing else.
 //!
-//! This module provides the high-level, tactical logic for the physics simulation.
-//! It is responsible for configuring and dispatching the various `physics_lanes`
-//! (e.g., broadphase, solver, integration) that perform the actual calculations.
-//!
-//! As an **Intelligent Subsystem Agent (ISA)**, its responsibilities will include:
-//! - Reporting the simulation's performance and resource cost to the DCC.
-//! - Managing multiple strategies, such as switching between a high-precision but
-//!   slow physics solver and a faster, less precise one.
-//! - Adapting simulation parameters (e.g., timestep frequency) based on the budget
-//!   allocated by GORNA to maintain stability or performance.
+//! The engine boots one [`LaneAgent`](crate::lane_agent::LaneAgent) from it, at
+//! the game's `physics.step` ([`PhysicsSettings`](khora_core::physics::PhysicsSettings)).
+//! The family is exact: its one level keeps the simulation's result, and no
+//! GORNA decision changes the step — a step is a game setting, never a budget
+//! lever. Each fixed sub-step, the agent locks the provider, steps it, and
+//! commits the step and its contacts.
 
 mod agent;
-mod strategy;
-
-pub use agent::*;
-pub use strategy::*;

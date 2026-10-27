@@ -117,6 +117,11 @@ pub fn run() -> anyhow::Result<()> {
                 Box::new(move || {
                     let opened = crate::app::project_open::read_cli_project(watch);
                     Box::new(move |runtime: &mut Runtime| {
+                        // The engine boots its physics family at the
+                        // project's `physics.step`.
+                        if let Some(opened) = &opened {
+                            runtime.resources.insert(opened.physics());
+                        }
                         runtime.resources.insert(Arc::new(
                             crate::app::project_open::PreparedProject::new(opened),
                         ));

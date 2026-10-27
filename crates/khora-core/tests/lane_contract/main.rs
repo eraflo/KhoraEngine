@@ -18,6 +18,7 @@
 
 mod boot;
 mod compile_fail;
+mod fixed_step;
 mod fixtures;
 mod guards;
 mod inputs;

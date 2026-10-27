@@ -21,6 +21,7 @@
 
 use anyhow::{bail, Context, Result};
 use khora_sdk::khora_core::asset::{asset_key, AssetUUID};
+use khora_sdk::khora_core::physics::PhysicsSettings;
 use khora_sdk::{
     AssetChangeEvent, AssetIdRegistry, AssetService, AssetWatch, AssetWriter, FileLoader,
     IndexBuilder, MetricsRegistry,
@@ -218,6 +219,22 @@ impl ProjectVfs {
         let text = std::fs::read_to_string(&path)
             .with_context(|| format!("Failed to read {}", path.display()))?;
         serde_json::from_str(&text).with_context(|| format!("Failed to parse {}", path.display()))
+    }
+
+    /// The project's physics settings: the `physics` section of its
+    /// `project.json`, or the defaults when it has none. A section that does
+    /// not read (a zero or negative step) is reported and the defaults kept.
+    pub fn physics_settings(&self) -> PhysicsSettings {
+        let Ok(project) = self.read_project_json() else {
+            return PhysicsSettings::default();
+        };
+        match project.get("physics") {
+            None => PhysicsSettings::default(),
+            Some(section) => serde_json::from_value(section.clone()).unwrap_or_else(|error| {
+                log::warn!("project.json: the `physics` section is ignored: {error}");
+                PhysicsSettings::default()
+            }),
+        }
     }
 
     /// Writes `bytes` to `<root>/assets/<rel_path>`. Creates intermediate
@@ -873,6 +890,43 @@ mod tests {
         assert_eq!(
             world.get::<MeshRef>(hull).cloned(),
             Some(MeshRef::Asset(AssetUUID::sub_asset(file, "mesh0/prim0")))
+        );
+        Ok(())
+    }
+
+    /// **The project's physics step is read from its `project.json`.** A
+    /// `physics` section's step is the project's; a project with no section,
+    /// with no `project.json`, or with a section that does not read (a zero
+    /// step) runs at the default step.
+    #[test]
+    fn the_physics_settings_are_the_physics_section_of_project_json() -> Result<()> {
+        let a_128th = std::time::Duration::from_nanos(7_812_500);
+        let project = TempProject::new("physics-settings")?;
+        let read = |json: Option<&str>| -> Result<PhysicsSettings> {
+            let path = project.0.join("project.json");
+            match json {
+                Some(json) => std::fs::write(&path, json)?,
+                None => {
+                    let _ = std::fs::remove_file(&path);
+                }
+            }
+            Ok(project.open()?.physics_settings())
+        };
+
+        assert_eq!(
+            read(Some(r#"{ "name": "p", "physics": { "step": 0.0078125 } }"#))?.step,
+            a_128th,
+            "the section's step is the project's"
+        );
+        assert_eq!(
+            read(Some(r#"{ "name": "p" }"#))?,
+            PhysicsSettings::default()
+        );
+        assert_eq!(read(None)?, PhysicsSettings::default());
+        assert_eq!(
+            read(Some(r#"{ "name": "p", "physics": { "step": 0 } }"#))?,
+            PhysicsSettings::default(),
+            "a step that does not read leaves the default"
         );
         Ok(())
     }

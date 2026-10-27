@@ -38,7 +38,7 @@ use khora_core::agent::{
 use khora_core::gpu::{DeviceCaps, GpuSetup};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::erased::{AnyLane, RunOutcome};
-use khora_core::lane::io::{Budget, OutputSink};
+use khora_core::lane::io::{Budget, FixedStep, OutputSink};
 use khora_core::lane::OutputDeck;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
@@ -74,6 +74,9 @@ pub struct LaneAgent {
     quotes: Vec<Option<Cost>>,
     /// The time GORNA allowed the agent.
     time_limit: Duration,
+    /// The simulated time one run advances, for a fixed-step family: its
+    /// registration's, or the game's setting. No budget changes it.
+    fixed_step: Option<Duration>,
     /// How long the last run took.
     measured: Option<Duration>,
     /// Whether the last run reported it could not progress.
@@ -129,9 +132,19 @@ pub fn lane_agent(registration: &'static AgentRegistration, caps: &DeviceCaps) -
         menu,
         current: 0,
         time_limit: Duration::ZERO,
+        fixed_step: registration.fixed_step,
         measured: None,
         stalled: false,
         message: String::new(),
+    }
+}
+
+/// Sets the step `agent` runs at, for a fixed-step family: what a game's
+/// setting decides (the physics step) where the registration only gives the
+/// default. A family that runs every frame is left as it is.
+pub fn set_fixed_step(agent: &mut LaneAgent, step: Duration) {
+    if agent.fixed_step.is_some() && !step.is_zero() {
+        agent.fixed_step = Some(step);
     }
 }
 
@@ -311,7 +324,10 @@ impl Agent for LaneAgent {
                     time: self.time_limit,
                 });
             }
-            let mut sink = OutputSink::new(&mut written);
+            if let Some(step) = self.fixed_step {
+                source = source.with_step(FixedStep(step));
+            }
+            let mut sink = OutputSink::new(&mut written).with_seed(context.deck);
             let mut lane = self.lanes[row.lane]
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -338,7 +354,7 @@ impl Agent for LaneAgent {
             allowed_phases: vec![registration.phase],
             default_phase: registration.phase,
             importance: registration.importance,
-            fixed_timestep: registration.fixed_step,
+            fixed_timestep: self.fixed_step,
             dependencies: registration
                 .after
                 .iter()
