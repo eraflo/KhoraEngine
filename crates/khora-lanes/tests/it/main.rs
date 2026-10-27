@@ -50,6 +50,7 @@ mod saved_structs_into_edited_types;
 mod saves;
 mod scheduled_scene;
 mod shadows;
+mod skybox;
 mod spatial_mixing;
 mod spawn_scenarios;
 mod starved_turn;

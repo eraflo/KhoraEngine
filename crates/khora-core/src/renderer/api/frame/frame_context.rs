@@ -178,6 +178,14 @@ impl FrameContext {
             .get::<T>()
     }
 
+    /// Removes the value of type `T`, returning it if one was stored.
+    pub fn remove<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
+        self.data
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove::<T>()
+    }
+
     /// Returns true if a value of type `T` is stored.
     pub fn contains<T: Send + Sync + 'static>(&self) -> bool {
         self.data

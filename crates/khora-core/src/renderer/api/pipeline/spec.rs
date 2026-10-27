@@ -32,7 +32,7 @@ use crate::renderer::api::pipeline::{
     ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
     PrimitiveStateDescriptor, VertexBufferLayoutDescriptor,
 };
-use crate::renderer::api::resource::TextureFormat;
+use crate::renderer::api::resource::{SampleCount, TextureFormat};
 use crate::renderer::api::shader::ShaderVariantKey;
 use crate::renderer::api::util::ShaderStageFlags;
 
@@ -176,16 +176,23 @@ pub struct PipelineSpec {
 }
 
 impl PipelineSpec {
-    /// The cache key: `(shader, variant, first color-target format, cull_mode)`.
-    /// The cull mode is part of the key because it is a rasterizer state baked
-    /// into the pipeline: double-sided vs single-sided materials share a shader,
-    /// variant, and format but need distinct pipelines. Everything else is fixed
-    /// for a given key.
+    /// The cache key: `(shader, variant, first color-target format, depth
+    /// format, samples, cull_mode, blend)`.
+    ///
+    /// The target's formats and sample count are part of the key because a
+    /// lane builds its pipeline for the target it draws into: two targets
+    /// that differ only in depth need distinct pipelines. The cull mode is
+    /// part of it because it is a rasterizer state baked into the pipeline:
+    /// double-sided vs single-sided materials share a shader, variant, and
+    /// format but need distinct pipelines. Everything else is fixed for a
+    /// given key.
     pub fn key(&self) -> PipelineKey {
         PipelineKey {
             shader: self.shader,
             variant: self.variant.clone(),
             color_format: self.color_targets.first().map(|c| c.format),
+            depth_format: self.depth_stencil.as_ref().map(|d| d.format),
+            samples: self.multisample.count,
             cull_mode: self.primitive.cull_mode,
             blend: self
                 .color_targets
@@ -204,6 +211,10 @@ pub struct PipelineKey {
     pub variant: ShaderVariantKey,
     /// First color-target format (None = no color target).
     pub color_format: Option<TextureFormat>,
+    /// Depth attachment format (None = no depth test).
+    pub depth_format: Option<TextureFormat>,
+    /// Samples per pixel.
+    pub samples: SampleCount,
     /// Face-culling mode (double-sided materials render with `None`).
     pub cull_mode: Option<CullMode>,
     /// Whether the first color target blends.
@@ -267,6 +278,8 @@ mod tests {
             shader: "khora::pipelines::standard_pbr",
             variant: ShaderVariantKey::empty(),
             color_format: None,
+            depth_format: None,
+            samples: SampleCount::X1,
             cull_mode: Some(CullMode::Back),
             blend: false,
         };
@@ -286,6 +299,8 @@ mod tests {
             shader: "khora::pipelines::standard_pbr",
             variant: ShaderVariantKey::empty(),
             color_format: None,
+            depth_format: None,
+            samples: SampleCount::X1,
             cull_mode: Some(CullMode::Back),
             blend: false,
         };

@@ -27,7 +27,6 @@ use khora_agents::lane_agent::lane_agent;
 use khora_agents::overlay_agent::OverlayAgent;
 use khora_agents::render_agent::RenderAgent;
 use khora_agents::script_agent::ScriptAgent;
-use khora_agents::skybox_agent::SkyboxAgent;
 use khora_agents::ui_agent::UiAgent;
 use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
 use khora_core::agent::{Agent, EngineMode, ExecutionTiming};
@@ -37,6 +36,7 @@ use std::time::Duration;
 use crate::audio_family::audio_registration;
 use crate::physics_family::fixtures::physics_agent;
 use crate::shadows_family::fixtures::{shadow_agent, LEVEL_MEMORY};
+use crate::skybox_family::fixtures::skybox_agent;
 
 const MIB: u64 = 1024 * 1024;
 
@@ -104,11 +104,13 @@ fn overlay_agent_offers_one_flat_strategy() {
     );
 }
 
+/// The skybox family's agent, before any frame: one `Balanced` row, quoting
+/// the graphics memory of its one level — the 80-byte uniform block.
 #[test]
 fn skybox_agent_offers_one_flat_strategy() {
     assert_eq!(
-        offer(SkyboxAgent::default()),
-        (AgentId::Skybox, vec![(StrategyId::Balanced, 0)])
+        offer(skybox_agent()),
+        (AgentId::Skybox, vec![(StrategyId::Balanced, 80)])
     );
 }
 

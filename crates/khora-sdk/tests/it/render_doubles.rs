@@ -53,6 +53,10 @@ use khora_sdk::khora_core::Runtime;
 #[derive(Debug)]
 pub struct RecordingRenderer {
     size: Extent2D,
+    /// The colour attachment's format.
+    color_format: TextureFormat,
+    /// The depth attachment and its format, when the target has one.
+    depth: Option<(TextureViewId, TextureFormat)>,
     prepared: Arc<Mutex<Vec<ViewInfo>>>,
     stats: RenderStats,
 }
@@ -65,11 +69,25 @@ impl RecordingRenderer {
         (
             Self {
                 size: Extent2D { width, height },
+                color_format: TextureFormat::Rgba8UnormSrgb,
+                depth: None,
                 prepared: Arc::clone(&prepared),
                 stats: RenderStats::default(),
             },
             prepared,
         )
+    }
+
+    /// The same renderer, its colour attachment in `color_format` and its
+    /// depth attachment `depth`, as `(view, format)`.
+    pub fn with_formats(
+        mut self,
+        color_format: TextureFormat,
+        depth: Option<(TextureViewId, TextureFormat)>,
+    ) -> Self {
+        self.color_format = color_format;
+        self.depth = depth;
+        self
     }
 }
 
@@ -112,8 +130,10 @@ impl khora_sdk::RenderSystem for RecordingRenderer {
     fn begin_frame(&mut self) -> Result<FrameTargets, RenderError> {
         Ok(FrameTargets {
             color: TextureViewId(1),
-            depth: None,
+            depth: self.depth.map(|(view, _)| view),
             size: self.size,
+            color_format: self.color_format,
+            depth_format: self.depth.map(|(_, format)| format),
         })
     }
     fn end_frame(&mut self) -> Result<RenderStats, RenderError> {

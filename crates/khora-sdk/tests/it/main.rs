@@ -24,6 +24,7 @@ mod declared_components;
 mod editor_shader_sources;
 mod engine_mode;
 mod engine_names;
+mod frame_target_reaches_lanes;
 mod game_saves;
 mod lane_agents_at_boot;
 mod mode_to_dcc;

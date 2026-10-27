@@ -99,13 +99,6 @@ fn module_script_agent_paths_still_resolve() {
 }
 
 #[test]
-fn module_skybox_agent_paths_still_resolve() {
-    let _ = type_name::<khora_agents::skybox_agent::SkyboxAgent>();
-    is_agent::<khora_agents::skybox_agent::SkyboxAgent>();
-    is_default::<khora_agents::skybox_agent::SkyboxAgent>();
-}
-
-#[test]
 fn module_ui_agent_paths_still_resolve() {
     let _ = type_name::<khora_agents::ui_agent::UiAgent>();
     is_agent::<khora_agents::ui_agent::UiAgent>();
@@ -124,6 +117,5 @@ fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_agents::overlay_agent::OverlayAgent::default; // khora-sdk
     let _ = khora_agents::render_agent::RenderAgent::default; // khora-sdk
     let _ = khora_agents::script_agent::ScriptAgent::default; // khora-sdk
-    let _ = khora_agents::skybox_agent::SkyboxAgent::default; // khora-sdk
     let _ = khora_agents::ui_agent::UiAgent::default; // khora-sdk
 }

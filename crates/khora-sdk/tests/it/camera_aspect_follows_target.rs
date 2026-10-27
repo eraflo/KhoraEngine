@@ -308,11 +308,13 @@ impl khora_sdk::RenderSystem for TargetOfSize {
         khora_sdk::khora_core::renderer::traits::FrameTargets,
         khora_sdk::khora_core::renderer::error::RenderError,
     > {
-        use khora_sdk::khora_core::renderer::api::resource::TextureViewId;
+        use khora_sdk::khora_core::renderer::api::resource::{TextureFormat, TextureViewId};
         Ok(khora_sdk::khora_core::renderer::traits::FrameTargets {
             color: TextureViewId(1),
             depth: None,
             size: self.0,
+            color_format: TextureFormat::Rgba8UnormSrgb,
+            depth_format: None,
         })
     }
     fn end_frame(

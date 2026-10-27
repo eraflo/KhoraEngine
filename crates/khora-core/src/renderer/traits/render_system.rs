@@ -18,7 +18,7 @@ use crate::math::Extent2D;
 use crate::platform::window::KhoraWindow;
 use crate::renderer::api::device::{GraphicsAdapterInfo, RenderSettings, RenderStats};
 use crate::renderer::api::gpu_scene::RenderObject;
-use crate::renderer::api::resource::{TextureViewId, ViewInfo};
+use crate::renderer::api::resource::{TextureFormat, TextureViewId, ViewInfo};
 use crate::renderer::error::RenderError;
 use crate::renderer::GraphicsDevice;
 use crate::telemetry::ResourceMonitor;
@@ -37,6 +37,10 @@ pub struct FrameTargets {
     /// Size of the colour attachment, in pixels. A camera's projection
     /// takes its aspect from it: the image a camera fills decides its shape.
     pub size: Extent2D,
+    /// The colour attachment's format: what a lane builds its pipelines for.
+    pub color_format: TextureFormat,
+    /// The depth attachment's format, when the frame has one.
+    pub depth_format: Option<TextureFormat>,
 }
 
 /// A high-level trait representing the entire rendering subsystem.

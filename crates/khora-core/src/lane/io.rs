@@ -33,6 +33,7 @@ use super::{LaneBus, LaneError, OutputDeck};
 use crate::agent::Contention;
 use crate::math::Extent2D;
 use crate::renderer::api::command::CommandBufferId;
+use crate::renderer::api::frame::FrameContext;
 use crate::renderer::api::resource::{TextureFormat, TextureViewId};
 use crate::renderer::traits::CommandEncoder;
 use crate::renderer::GraphicsDevice;
@@ -250,20 +251,30 @@ impl Declaration {
     }
 
     /// What the declaration contends for: `#[resource]` and `#[resident]`
-    /// reads, `#[locked]` locks, and the slots `#[deck]` and `#[pass]`
+    /// reads, `#[locked]` locks, the `FrameContext` a `#[frame]` target or
+    /// clear colour is lent from, and the slots `#[deck]` and `#[pass]`
     /// outputs write. A View, a deck read,
     /// the frame and the budget are nobody else's to write while the lane
     /// runs, so they contend for nothing.
     pub fn contention(&self) -> Contention {
         let mut contention = Contention::none();
+        let frame_context = TypeId::of::<Arc<FrameContext>>();
         for input in &self.inputs {
-            let into = match input.kind {
-                SourceKind::Resource | SourceKind::Resident => &mut contention.reads,
-                SourceKind::Locked => &mut contention.writes,
+            let (into, ty) = match input.kind {
+                SourceKind::Resource | SourceKind::Resident => (&mut contention.reads, input.ty),
+                SourceKind::Locked => (&mut contention.writes, input.ty),
+                // The agent lends the frame's target and clear colour from
+                // the `FrameContext`, so reading either reads it.
+                SourceKind::Frame
+                    if input.ty == TypeId::of::<Target>()
+                        || input.ty == TypeId::of::<ClearColor>() =>
+                {
+                    (&mut contention.reads, frame_context)
+                }
                 _ => continue,
             };
-            if !into.contains(&input.ty) {
-                into.push(input.ty);
+            if !into.contains(&ty) {
+                into.push(ty);
             }
         }
         for output in &self.outputs {

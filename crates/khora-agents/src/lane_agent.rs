@@ -24,6 +24,7 @@
 //! registration, and its lanes are released by [`shut_down_lanes`], two free
 //! functions of this module.
 
+use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -38,8 +39,10 @@ use khora_core::agent::{
 use khora_core::gpu::{DeviceCaps, GpuSetup};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::erased::{AnyLane, RunOutcome};
-use khora_core::lane::io::{Budget, FixedStep, OutputSink};
+use khora_core::lane::io::{Budget, FixedStep, OutputSink, Target};
+use khora_core::lane::ClearColor;
 use khora_core::lane::OutputDeck;
+use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
@@ -317,6 +320,14 @@ impl Agent for LaneAgent {
         };
         let device = context.resource::<Arc<dyn GraphicsDevice>>().cloned();
         let pipelines = context.resource::<Arc<dyn PipelineSystem>>().cloned();
+        // The frame's target and clear colour, for a lane that reads them:
+        // only its contention names the `FrameContext`.
+        let frame_context = TypeId::of::<Arc<FrameContext>>();
+        let frame = self
+            .row()
+            .and_then(|row| self.contentions.get(row.lane))
+            .filter(|contention| contention.reads.contains(&frame_context))
+            .and_then(|_| context.resource::<Arc<FrameContext>>().cloned());
         let mut gpu = match device.as_deref() {
             Some(device) => GpuSetup::new(device),
             None => GpuSetup::headless(),
@@ -335,6 +346,14 @@ impl Agent for LaneAgent {
             }
             if let Some(step) = self.fixed_step {
                 source = source.with_step(FixedStep(step));
+            }
+            if let Some(frame) = &frame {
+                if let Some(target) = frame.get::<Target>() {
+                    source = source.with_target(*target);
+                }
+                if let Some(clear) = frame.get::<ClearColor>() {
+                    source = source.with_clear_color(*clear);
+                }
             }
             let mut sink = OutputSink::new(&mut written).with_seed(context.deck);
             if let Some(device) = device.as_deref() {

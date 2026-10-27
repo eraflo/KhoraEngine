@@ -109,10 +109,28 @@ pub struct ScenePassSlot(pub Option<PassContribution>);
 pub struct UiPassSlot(pub Option<PassContribution>);
 
 /// Deck slot carrying the skybox / environment-background pass, written by
-/// `SkyboxAgent`. Folded in after the scene pass and before overlays, so the
+/// the skybox family. Folded in after the scene pass and before overlays, so the
 /// sky sits behind the geometry (depth-tested) and under the debug overlays.
 #[derive(Default)]
 pub struct SkyboxPassSlot(pub Option<PassContribution>);
+
+impl khora_core::lane::io::PassSlot for SkyboxPassSlot {
+    type Descriptor = PassDescriptor;
+
+    /// The sky paints the colour behind what the scene's depth holds.
+    fn descriptor() -> PassDescriptor {
+        PassDescriptor::new("SkyboxPass")
+            .writes(ResourceId::Color)
+            .reads(ResourceId::Depth)
+    }
+
+    fn close(descriptor: PassDescriptor, command_buffer: CommandBufferId) -> Self {
+        Self(Some(PassContribution {
+            descriptor,
+            command_buffer,
+        }))
+    }
+}
 
 /// Deck slot carrying the scene's **transparent** draws, written by
 /// `RenderAgent` alongside [`ScenePassSlot`].
@@ -535,6 +553,24 @@ mod tests {
             pass.descriptor.reads
         );
         assert_eq!(pass.command_buffer, buf(7));
+    }
+
+    /// **The skybox pass closes between the opaque and the blended draws.**
+    /// It paints the frame's colour where the opaque pass left the depth at
+    /// the far plane: it writes the colour, reads the depth, and holds the
+    /// buffer its encoder finished into.
+    #[test]
+    fn the_skybox_pass_closes_writing_the_colour_and_reading_the_depth() {
+        use khora_core::lane::io::PassSlot;
+
+        let closed = SkyboxPassSlot::close(SkyboxPassSlot::descriptor(), buf(9));
+        let Some(pass) = closed.0 else {
+            panic!("a closed skybox pass slot holds its pass");
+        };
+        assert_eq!(pass.descriptor.name, "SkyboxPass");
+        assert_eq!(pass.descriptor.writes, [ResourceId::Color]);
+        assert_eq!(pass.descriptor.reads, [ResourceId::Depth]);
+        assert_eq!(pass.command_buffer, buf(9));
     }
 
     #[test]

@@ -466,12 +466,6 @@ fn register_builtin_agents(dcc: &DccService) {
         1.0,
     );
     dcc.register_agent(
-        Arc::new(Mutex::new(
-            khora_agents::skybox_agent::SkyboxAgent::default(),
-        )),
-        1.0,
-    );
-    dcc.register_agent(
         Arc::new(Mutex::new(khora_agents::ui_agent::UiAgent::default())),
         1.0,
     );

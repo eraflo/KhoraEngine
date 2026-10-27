@@ -1229,7 +1229,13 @@ fn spot_light_fields(x: &khora_core::renderer::light::SpotLight) {
 }
 
 fn frame_targets_fields(x: &khora_core::renderer::traits::FrameTargets) {
-    let _ = (&x.color, &x.depth, &x.size);
+    let _ = (
+        &x.color,
+        &x.depth,
+        &x.size,
+        &x.color_format,
+        &x.depth_format,
+    );
 }
 
 // ---------------------------------------------------------------------------

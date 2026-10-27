@@ -12,19 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! SkyboxAgent — owns the environment-background render pass.
+//! The skybox family's agent: its registration, and nothing else.
 //!
-//! Runs in the OUTPUT phase after `RenderAgent`, like `OverlayAgent`, and
-//! contributes a single [`SkyboxPass`](khora_data::render::SkyboxPassSlot) to
-//! the FrameGraph (`writes(Color).reads(Depth)`). Its one lane
-//! ([`SkyboxLane`](khora_lanes::skybox_lane::SkyboxLane)) draws the IBL
-//! environment cube behind the scene geometry (depth-tested, no depth write),
-//! so the visible sky matches what surfaces reflect.
-//!
-//! It is **not** GORNA-negotiated (there is one fixed background pass), but it
-//! is `AgentImportance::Important` — the sky is not debug viz, so it is not
-//! dropped under budget pressure the way the optional overlays are.
+//! The engine boots one [`LaneAgent`](crate::lane_agent::LaneAgent) from it,
+//! after the renderer in the OUTPUT phase. Each frame the agent lends the
+//! [`SkyboxLane`](khora_lanes::skybox_lane::SkyboxLane) the frame's target,
+//! opens the skybox pass on the device and commits it into
+//! [`SkyboxPassSlot`](khora_data::render::SkyboxPassSlot)
+//! (`writes(Color).reads(Depth)`), which the FrameGraph folds between the
+//! scene's opaque and blended passes.
 
 mod agent;
-
-pub use agent::*;

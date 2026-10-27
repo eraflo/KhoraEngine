@@ -15,6 +15,7 @@
 //! `RenderSystem` for the wgpu backend: frames, resize, stats.
 
 use super::WgpuRenderSystem;
+use crate::graphics::wgpu::conversions::from_wgpu_texture_format;
 use crate::graphics::wgpu::profiler::WgpuTimestampProfiler;
 use khora_core::math::{Extent2D, LinearRgba};
 use khora_core::platform::window::KhoraWindow;
@@ -23,14 +24,18 @@ use khora_core::renderer::api::command::{
 };
 use khora_core::renderer::api::device::{GraphicsAdapterInfo, RenderSettings, RenderStats};
 use khora_core::renderer::api::gpu_scene::RenderObject;
-use khora_core::renderer::api::resource::IndexFormat;
 use khora_core::renderer::api::resource::ViewInfo;
+use khora_core::renderer::api::resource::{IndexFormat, TextureFormat};
 use khora_core::renderer::traits::{FrameTargets, RenderSystem};
 use khora_core::renderer::{GraphicsDevice, RenderError};
 use khora_core::telemetry::ResourceMonitor;
 use khora_core::Stopwatch;
 use std::sync::Arc;
 use winit::dpi::PhysicalSize;
+
+/// The editor viewport's colour format: always bindable in shaders, so the
+/// editor can show it in a panel.
+const VIEWPORT_COLOR_FORMAT: TextureFormat = TextureFormat::Rgba8UnormSrgb;
 
 impl RenderSystem for WgpuRenderSystem {
     fn init(
@@ -294,6 +299,19 @@ impl RenderSystem for WgpuRenderSystem {
         // --- Follow the window's size, once it has settled ---
         self.settle_swapchain_size(&gc);
 
+        // The surface's format, known before anything is acquired: a format
+        // the engine cannot name refuses the frame without holding a texture.
+        let surface_format = {
+            let format = gc
+                .lock()
+                .map_err(|_| RenderError::Internal("Context lock poisoned".into()))?
+                .surface_config
+                .format;
+            from_wgpu_texture_format(format).ok_or_else(|| {
+                RenderError::Internal(format!("surface format {format:?} has no engine format"))
+            })?
+        };
+
         // --- Acquire swapchain texture (resilient: see acquire_surface_texture) ---
         let output_surface_texture = match self.acquire_surface_texture(&gc)? {
             Some(texture) => texture,
@@ -324,11 +342,16 @@ impl RenderSystem for WgpuRenderSystem {
         self.settle_viewport_size();
 
         // Compute targets for the engine: choose between swapchain and viewport.
-        let (color, depth, (width, height)) = if self.render_to_viewport {
+        let (color, depth, (width, height), color_format) = if self.render_to_viewport {
             let c = self
                 .viewport_color_view_id
                 .ok_or_else(|| RenderError::Internal("viewport color view not created".into()))?;
-            (c, self.viewport_depth_view_id, self.viewport_size())
+            (
+                c,
+                self.viewport_depth_view_id,
+                self.viewport_size(),
+                VIEWPORT_COLOR_FORMAT,
+            )
         } else {
             // The configured surface, not the last resize request: while a
             // resize is debounced the swapchain still has its old size.
@@ -336,13 +359,21 @@ impl RenderSystem for WgpuRenderSystem {
                 .lock()
                 .map(|gc| (gc.surface_config.width, gc.surface_config.height))
                 .unwrap_or((self.current_width, self.current_height));
-            (target_view_id, self.depth_texture_view, surface)
+            (
+                target_view_id,
+                self.depth_texture_view,
+                surface,
+                surface_format,
+            )
         };
 
         Ok(FrameTargets {
             color,
             depth,
             size: Extent2D { width, height },
+            color_format,
+            // Both depth buffers, the window's and the viewport's.
+            depth_format: depth.map(|_| TextureFormat::Depth32Float),
         })
     }
 

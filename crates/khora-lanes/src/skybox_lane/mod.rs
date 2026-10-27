@@ -15,43 +15,52 @@
 //! Skybox lane — draws the IBL environment cube as the scene background.
 //!
 //! Renders `khora::pipelines::skybox` (a fullscreen triangle pinned to the far
-//! plane) into the main color target. It is depth-tested (`LessEqual`) against
-//! the scene's depth buffer with depth-write disabled, so it paints only the
-//! pixels **the opaque geometry left at the far plane**. The visible sky is
-//! therefore exactly the environment the lit surfaces reflect.
+//! plane) into the frame's colour target. It is depth-tested (`LessEqual`)
+//! against the scene's depth buffer with depth-write disabled, so it paints
+//! only the pixels **the opaque geometry left at the far plane**. The visible
+//! sky is therefore exactly the environment the lit surfaces reflect.
 //!
 //! # Where it sits, and why that word matters
 //!
 //! Between the scene's two passes: after the opaque draws that give it a depth
 //! buffer to test against, and **before** the blended ones.
 //!
-//! This doc used to say "after the scene pass" and "the meshes are untouched".
-//! Both held for opaque meshes and for no other kind: a blended surface must
-//! not write depth — two of them could not composite if it did — so it leaves
-//! the pixel at the far plane, and the sky then repainted it. A glass sphere
-//! against the sky vanished, while the half of it overlapping the floor
-//! survived. The scene is now two contributions
-//! ([`ScenePassSlot`](khora_data::render::ScenePassSlot) and
+//! A blended surface must not write depth — two of them could not composite
+//! if it did — so it leaves the pixel at the far plane, and a sky drawn after
+//! it would repaint it: a glass sphere against the sky would vanish while the
+//! half of it overlapping the floor survived. The scene is therefore two
+//! contributions ([`ScenePassSlot`](khora_data::render::ScenePassSlot) and
 //! [`TransparentPassSlot`](khora_data::render::TransparentPassSlot)) and this
 //! pass is folded between them.
 //!
-//! Registered under [`SkyboxAgent`](khora_agents::skybox_agent), which runs in
-//! the OUTPUT phase after `RenderAgent` and buffers this lane's pass into the
-//! FrameGraph (`writes(Color).reads(Depth)`), mirroring how `OverlayAgent`
-//! contributes the grid/gizmo overlays. `LoadOp::Load` preserves what the
-//! opaque pass drew.
-//!
-//! Per CLAD this struct holds only persistent state; init / render bodies are
-//! private free functions in this module.
+//! The family registers in the OUTPUT phase, after the renderer; its pass
+//! slot writes the colour and reads the depth, and `LoadOp::Load` preserves
+//! what the opaque pass drew. The pipeline is built for the target's formats,
+//! so the editor's viewport and the window each get the one they need.
 
-use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind};
+mod skybox_family;
+
+pub use skybox_family::*;
+
+use std::time::Duration;
+
+use khora_core::agent::gorna::StrategyId;
+use khora_core::gpu::GpuSetup;
+use khora_core::lane::contract::{Lane, LaneReport};
+use khora_core::lane::cost::{Cost, PerDevice};
+use khora_core::lane::io::{Target, TargetKey};
+use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::LaneError;
 use khora_core::renderer::api::command::{BindGroupId, BindGroupLayoutId};
 use khora_core::renderer::api::ibl::IblGpuBindings;
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::{BufferId, TextureViewId};
-use khora_core::renderer::traits::CommandEncoder;
+use khora_core::renderer::error::{RenderError, ResourceError};
+use khora_core::renderer::traits::{CommandEncoder, PipelineSystem};
+use khora_core::renderer::GraphicsDevice;
 use khora_data::render::RenderWorld;
-use std::sync::{Arc, Mutex, OnceLock};
+use khora_data::IblBaker;
+use khora_macros::LaneInputs;
 
 /// Stable cache label for the group-0 (inverse-VP + camera) layout.
 const SKY_UNIFORM_LAYOUT_LABEL: &str = "skybox_uniform_layout";
@@ -68,36 +77,193 @@ struct SkyUniforms {
     camera_pos: [f32; 4],
 }
 
-/// Environment-background lane.
-///
-/// Holds the pipeline, the two bespoke layouts, the per-frame uniform buffer +
-/// its bind group (group 0), and — created lazily once the IBL bake is ready —
-/// the env-cube bind group (group 1). It is cached with the env cube it binds
-/// and built again when a new bake publishes another cube.
+/// The lane's one level: the uniform block is the memory it holds.
+const LEVELS: [Level; 1] = [Level {
+    id: StrategyId::Balanced,
+    name: "skybox",
+    impact: Impact::None,
+    memory: PerDevice {
+        cpu: 0,
+        gpu: std::mem::size_of::<SkyUniforms>() as u64,
+        npu: 0,
+        other: 0,
+    },
+}];
+
+/// What recording the one triangle costs on the host, whatever the target.
+const RECORD_CPU: Duration = Duration::from_micros(20);
+/// What painting one pixel of sky costs on the device.
+const PIXEL_GPU_SECS: f64 = 5e-11;
+
+/// Environment-background lane. Holds what it built on the device; `None`
+/// before the first prepare and after shutdown.
 #[derive(Debug, Default)]
 pub struct SkyboxLane {
-    pipeline: OnceLock<RenderPipelineId>,
-    sky_layout: OnceLock<BindGroupLayoutId>,
-    env_layout: OnceLock<BindGroupLayoutId>,
-    sky_buffer: OnceLock<BufferId>,
-    sky_bind_group: OnceLock<BindGroupId>,
+    gpu: Option<SkyGpu>,
+}
+
+/// What the skybox builds on the device.
+#[derive(Debug)]
+struct SkyGpu {
+    /// The group-1 layout the env bind group is made with.
+    env_layout: BindGroupLayoutId,
+    /// The uniform block.
+    sky_buffer: BufferId,
+    /// The group-0 bind group over the uniform block.
+    sky_bind_group: BindGroupId,
+    /// The pipeline and the target it was built for; `None` for a target
+    /// without depth, which the sky cannot test against.
+    pipeline: Option<(TargetKey, RenderPipelineId)>,
     /// The env-cube bind group and the cube view it binds.
-    env_bind_group: Mutex<Option<(TextureViewId, BindGroupId)>>,
+    env_bind_group: Option<(TextureViewId, BindGroupId)>,
+}
+
+/// What the skybox lane reads each frame: the camera, the target it paints
+/// and the environment the IBL bake published.
+#[derive(LaneInputs)]
+pub struct SkyboxInputs<'f> {
+    /// The frame's views; the first is the camera the sky is seen from.
+    #[bus]
+    pub render_world: &'f RenderWorld,
+    /// The frame's colour and depth attachments.
+    #[frame]
+    pub target: Target,
+    /// The bake whose environment cube the sky samples.
+    #[resource]
+    pub ibl: &'f IblBaker,
+}
+
+impl Lane for SkyboxLane {
+    type Family = SkyboxFamily;
+    type Inputs<'f> = SkyboxInputs<'f>;
+
+    fn levels(&self) -> &[Level] {
+        &LEVELS
+    }
+
+    /// One triangle on the host; on the device, every pixel of the target is
+    /// tested and the sky's share painted.
+    fn cost(&self, _level: usize, inputs: &SkyboxInputs<'_>) -> Cost {
+        let size = inputs.target.size;
+        let pixels = f64::from(size.width) * f64::from(size.height);
+        Cost {
+            time: PerDevice {
+                cpu: RECORD_CPU,
+                gpu: Duration::from_secs_f64(pixels * PIXEL_GPU_SECS),
+                ..PerDevice::default()
+            },
+            memory: LEVELS[0].memory,
+            ..Cost::default()
+        }
+    }
+
+    /// Builds the uniform block once, and the pipeline for the target's
+    /// formats: a new target builds a new pipeline, a target without depth
+    /// none.
+    fn prepare(
+        &mut self,
+        _level: usize,
+        gpu: &mut GpuSetup<'_>,
+        key: Option<TargetKey>,
+    ) -> Result<(), LaneError> {
+        let device = gpu.device().ok_or(LaneError::missing("GraphicsDevice"))?;
+        let pipelines = gpu
+            .pipelines()
+            .ok_or(LaneError::missing("PipelineSystem"))?;
+        let sky = match &mut self.gpu {
+            Some(sky) => sky,
+            empty => empty.insert(
+                build_sky_gpu(device, pipelines)
+                    .map_err(|error| LaneError::InitializationFailed(Box::new(error)))?,
+            ),
+        };
+        let wanted = key.filter(|key| key.depth.is_some());
+        if sky.pipeline.map(|(built_for, _)| built_for) != wanted {
+            sky.pipeline = match wanted {
+                Some(key) => {
+                    let pipeline = pipelines
+                        .pipeline(device, &skybox_pipeline_spec(key))
+                        .map_err(|error| LaneError::InitializationFailed(Box::new(error)))?;
+                    Some((key, pipeline))
+                }
+                None => None,
+            };
+        }
+        Ok(())
+    }
+
+    /// Paints the sky when the bake has published its cube, the world has a
+    /// camera whose view-projection inverts, and the target has depth; any
+    /// of them missing leaves the pass empty.
+    fn record(
+        &mut self,
+        _level: usize,
+        inputs: &mut SkyboxInputs<'_>,
+        out: &mut SkyboxOutputs<'_>,
+    ) -> Result<LaneReport, LaneError> {
+        let sky = self.gpu.as_mut().ok_or(LaneError::NotInitialized)?;
+        let done = LaneReport {
+            done: 1.0,
+            stalled: false,
+        };
+        let Some(ibl) = inputs.ibl.bindings() else {
+            return Ok(done);
+        };
+        let Some(view) = inputs.render_world.views.first() else {
+            return Ok(done);
+        };
+        let (Some(depth), Some((_, pipeline))) = (inputs.target.depth, sky.pipeline) else {
+            return Ok(done);
+        };
+        // The fragment reconstructs its world ray from the inverse
+        // view-projection: a camera without one sees no sky.
+        let Some(inv_view_proj) = view.view_proj.inverse() else {
+            return Ok(done);
+        };
+
+        let device = out.pass.device();
+        let env_bind_group = env_bind_group(sky, device, &ibl)
+            .map_err(|error| LaneError::ExecutionFailed(Box::new(error)))?;
+        let uniforms = SkyUniforms {
+            inv_view_proj: inv_view_proj.to_cols_array_2d(),
+            camera_pos: [view.position.x, view.position.y, view.position.z, 1.0],
+        };
+        device
+            .write_buffer(sky.sky_buffer, 0, bytemuck::bytes_of(&uniforms))
+            .map_err(|error| LaneError::ExecutionFailed(Box::new(error)))?;
+        draw_sky(
+            out.pass.encoder(),
+            inputs.target.color,
+            depth,
+            pipeline,
+            sky.sky_bind_group,
+            env_bind_group,
+        );
+        Ok(done)
+    }
+
+    fn shutdown(&mut self, gpu: &mut GpuSetup<'_>) {
+        if let (Some(sky), Some(device)) = (self.gpu.take(), gpu.device()) {
+            destroy_sky_gpu(sky, device);
+        }
+    }
 }
 
 // ─── Free functions (CLAD: no inherent methods on the lane struct) ───
 
-fn init_gpu_resources(
-    lane: &SkyboxLane,
-    device: &dyn khora_core::renderer::GraphicsDevice,
-    pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
-) -> Result<(), khora_core::renderer::error::RenderError> {
+/// Builds the layouts, the uniform block and its bind group. A refused bind
+/// group gives the buffer back.
+fn build_sky_gpu(
+    device: &dyn GraphicsDevice,
+    pipeline_system: &dyn PipelineSystem,
+) -> Result<SkyGpu, RenderError> {
     use khora_core::renderer::api::command::{
         BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding,
     };
     use khora_core::renderer::api::resource::{BufferDescriptor, BufferUsage};
     use std::borrow::Cow;
 
+    // Layouts belong to the PipelineSystem, which caches them.
     let sky_layout = pipeline_system.inline_layout(
         device,
         SKY_UNIFORM_LAYOUT_LABEL,
@@ -113,32 +279,51 @@ fn init_gpu_resources(
             usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
             mapped_at_creation: false,
         })
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+        .map_err(RenderError::ResourceError)?;
+    let sky_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("skybox_uniform_bg"),
+        layout: sky_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: sky_buffer,
+                offset: 0,
+                size: None,
+            }),
+            _phantom: std::marker::PhantomData,
+        }],
+    });
+    match sky_bind_group {
+        Ok(sky_bind_group) => Ok(SkyGpu {
+            env_layout,
+            sky_buffer,
+            sky_bind_group,
+            pipeline: None,
+            env_bind_group: None,
+        }),
+        Err(error) => {
+            if let Err(e) = device.destroy_buffer(sky_buffer) {
+                log::warn!("SkyboxLane: could not destroy the uniform buffer: {e:?}");
+            }
+            Err(RenderError::ResourceError(error))
+        }
+    }
+}
 
-    let sky_bind_group = device
-        .create_bind_group(&BindGroupDescriptor {
-            label: Some("skybox_uniform_bg"),
-            layout: sky_layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: sky_buffer,
-                    offset: 0,
-                    size: None,
-                }),
-                _phantom: std::marker::PhantomData,
-            }],
-        })
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-    let pipeline_id = pipeline_system.pipeline(device, &skybox_pipeline_spec(device))?;
-
-    let _ = lane.sky_layout.set(sky_layout);
-    let _ = lane.env_layout.set(env_layout);
-    let _ = lane.sky_buffer.set(sky_buffer);
-    let _ = lane.sky_bind_group.set(sky_bind_group);
-    let _ = lane.pipeline.set(pipeline_id);
-    Ok(())
+/// Gives back what the lane built. The pipeline and the layouts are the
+/// `PipelineSystem`'s, so they stay.
+fn destroy_sky_gpu(sky: SkyGpu, device: &dyn GraphicsDevice) {
+    if let Some((_, group)) = sky.env_bind_group {
+        if let Err(e) = device.destroy_bind_group(group) {
+            log::warn!("SkyboxLane: could not destroy the environment bind group: {e:?}");
+        }
+    }
+    if let Err(e) = device.destroy_bind_group(sky.sky_bind_group) {
+        log::warn!("SkyboxLane: could not destroy the uniform bind group: {e:?}");
+    }
+    if let Err(e) = device.destroy_buffer(sky.sky_buffer) {
+        log::warn!("SkyboxLane: could not destroy the uniform buffer: {e:?}");
+    }
 }
 
 /// Group-0 layout: a single uniform buffer (fragment-only — the vertex shader
@@ -184,12 +369,10 @@ fn env_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayo
     ]
 }
 
-/// The declarative pipeline spec for the skybox — fullscreen triangle, no
-/// vertex buffer, depth-tested `LessEqual` with **no depth write** so it sits
-/// behind every mesh.
-fn skybox_pipeline_spec(
-    device: &dyn khora_core::renderer::GraphicsDevice,
-) -> khora_core::renderer::api::pipeline::PipelineSpec {
+/// The declarative pipeline spec for the skybox on a target of `key`'s
+/// formats — fullscreen triangle, no vertex buffer, depth-tested `LessEqual`
+/// with **no depth write** so it sits behind every mesh.
+fn skybox_pipeline_spec(key: TargetKey) -> khora_core::renderer::api::pipeline::PipelineSpec {
     use khora_core::renderer::api::pipeline::enums::{CompareFunction, PrimitiveTopology};
     use khora_core::renderer::api::pipeline::state::{
         ColorWrites, DepthBiasState, StencilFaceState,
@@ -198,7 +381,6 @@ fn skybox_pipeline_spec(
         ColorTargetStateDescriptor, DepthStencilStateDescriptor, LayoutSpec,
         MultisampleStateDescriptor, PipelineSpec, PrimitiveStateDescriptor,
     };
-    use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
     use khora_core::renderer::api::shader::ShaderVariantKey;
     use std::borrow::Cow;
 
@@ -226,8 +408,8 @@ fn skybox_pipeline_spec(
         // Depth-tested against the scene buffer (LessEqual); the sky is emitted
         // at the far plane (clip z = 1) and writes NO depth, so it fills only
         // the background pixels the geometry left untouched.
-        depth_stencil: Some(DepthStencilStateDescriptor {
-            format: TextureFormat::Depth32Float,
+        depth_stencil: key.depth.map(|format| DepthStencilStateDescriptor {
+            format,
             depth_write_enabled: false,
             depth_compare: CompareFunction::LessEqual,
             stencil_front: StencilFaceState::default(),
@@ -237,115 +419,90 @@ fn skybox_pipeline_spec(
             bias: DepthBiasState::default(),
         }),
         color_targets: vec![ColorTargetStateDescriptor {
-            format: device
-                .get_surface_format()
-                .unwrap_or(TextureFormat::Rgba8UnormSrgb),
+            format: key.color,
             blend: None,
             write_mask: ColorWrites::ALL,
         }],
         multisample: MultisampleStateDescriptor {
-            count: SampleCount::X1,
+            count: sample_count(key.samples),
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
     }
 }
 
-/// Returns the env-cube bind group for `ibl`'s env cube: the cached one while
-/// the cube is the same, else a new one (the previous is destroyed — its cube
-/// belongs to a bake that was replaced). `None` only if the bind group could
-/// not be created.
-fn env_bind_group(
-    lane: &SkyboxLane,
-    device: &dyn khora_core::renderer::GraphicsDevice,
-    ibl: &IblGpuBindings,
-) -> Option<BindGroupId> {
-    let mut cached = lane
-        .env_bind_group
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    if let Some((cube, bg)) = *cached {
-        if cube == ibl.env_cube {
-            return Some(bg);
-        }
+/// The sample count of a target with `samples` samples per pixel.
+fn sample_count(samples: u32) -> khora_core::renderer::api::resource::SampleCount {
+    use khora_core::renderer::api::resource::SampleCount;
+    match samples {
+        2 => SampleCount::X2,
+        4 => SampleCount::X4,
+        8 => SampleCount::X8,
+        16 => SampleCount::X16,
+        32 => SampleCount::X32,
+        64 => SampleCount::X64,
+        _ => SampleCount::X1,
     }
+}
+
+/// The env-cube bind group for `ibl`'s env cube: the cached one while the
+/// cube is the same, else a new one (the previous is destroyed — its cube
+/// belongs to a bake that was replaced).
+fn env_bind_group(
+    sky: &mut SkyGpu,
+    device: &dyn GraphicsDevice,
+    ibl: &IblGpuBindings,
+) -> Result<BindGroupId, ResourceError> {
     use khora_core::renderer::api::command::{
         BindGroupDescriptor, BindGroupEntry, BindingResource,
     };
-    let layout = lane.env_layout.get().copied()?;
-    let bg = device
-        .create_bind_group(&BindGroupDescriptor {
-            label: Some("skybox_env_bg"),
-            layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::TextureView(ibl.env_cube),
-                    _phantom: std::marker::PhantomData,
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: BindingResource::Sampler(ibl.sampler),
-                    _phantom: std::marker::PhantomData,
-                },
-            ],
-        })
-        .map_err(|e| log::error!("SkyboxLane: env bind group creation failed: {e:?}"))
-        .ok()?;
-    if let Some((_, stale)) = cached.replace((ibl.env_cube, bg)) {
+    if let Some((cube, group)) = sky.env_bind_group {
+        if cube == ibl.env_cube {
+            return Ok(group);
+        }
+    }
+    let group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("skybox_env_bg"),
+        layout: sky.env_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(ibl.env_cube),
+                _phantom: std::marker::PhantomData,
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Sampler(ibl.sampler),
+                _phantom: std::marker::PhantomData,
+            },
+        ],
+    })?;
+    if let Some((_, stale)) = sky.env_bind_group.replace((ibl.env_cube, group)) {
         if let Err(e) = device.destroy_bind_group(stale) {
             log::warn!("SkyboxLane: destroying the previous env bind group failed: {e:?}");
         }
     }
-    Some(bg)
+    Ok(group)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn render_skybox(
-    lane: &SkyboxLane,
-    device: &dyn khora_core::renderer::GraphicsDevice,
+/// The background pass — `LoadOp::Load` preserves the scene's colour and
+/// depth; the depth buffer is loaded (not cleared) so the `LessEqual` test
+/// rejects pixels the geometry already owns. Depth is not written.
+fn draw_sky(
     encoder: &mut dyn CommandEncoder,
-    color_target: TextureViewId,
-    depth_target: TextureViewId,
-    view: &khora_data::render::ExtractedView,
-    ibl: &IblGpuBindings,
+    color: TextureViewId,
+    depth: TextureViewId,
+    pipeline: RenderPipelineId,
+    sky_bind_group: BindGroupId,
+    env_bind_group: BindGroupId,
 ) {
     use khora_core::renderer::api::command::{
         LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
         RenderPassDescriptor, StoreOp,
     };
 
-    let (Some(pipeline), Some(sky_buffer), Some(sky_bg)) = (
-        lane.pipeline.get().copied(),
-        lane.sky_buffer.get().copied(),
-        lane.sky_bind_group.get().copied(),
-    ) else {
-        log::warn!("SkyboxLane: GPU resources not initialized, skipping");
-        return;
-    };
-    let Some(env_bg) = env_bind_group(lane, device, ibl) else {
-        return;
-    };
-
-    // The fragment reconstructs its world ray from the inverse view-projection;
-    // no inverse ⇒ a degenerate camera, skip this frame.
-    let Some(inv_view_proj) = view.view_proj.inverse() else {
-        return;
-    };
-    let uniforms = SkyUniforms {
-        inv_view_proj: inv_view_proj.to_cols_array_2d(),
-        camera_pos: [view.position.x, view.position.y, view.position.z, 1.0],
-    };
-    if let Err(e) = device.write_buffer(sky_buffer, 0, bytemuck::bytes_of(&uniforms)) {
-        log::error!("SkyboxLane: uniform buffer write failed: {:?}", e);
-        return;
-    }
-
-    // Background pass — `LoadOp::Load` preserves the scene's color + depth; the
-    // depth buffer is loaded (not cleared) so the LessEqual test rejects pixels
-    // the geometry already owns. Depth is not written.
     let color_attachment = RenderPassColorAttachment {
-        view: &color_target,
+        view: &color,
         resolve_target: None,
         ops: Operations {
             load: LoadOp::Load,
@@ -358,7 +515,7 @@ fn render_skybox(
         label: Some("Skybox Pass"),
         color_attachments: &[color_attachment],
         depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
-            view: &depth_target,
+            view: &depth,
             depth_ops: Some(Operations {
                 load: LoadOp::Load,
                 store: StoreOp::Store,
@@ -370,105 +527,11 @@ fn render_skybox(
 
     let mut pass = encoder.begin_render_pass(&pass_desc);
     pass.set_pipeline(&pipeline);
-    pass.set_bind_group(0, &sky_bg, &[]);
-    pass.set_bind_group(1, &env_bg, &[]);
+    pass.set_bind_group(0, &sky_bind_group, &[]);
+    pass.set_bind_group(1, &env_bind_group, &[]);
     // Fullscreen triangle — the vertex shader derives positions from
     // `vertex_index` (no vertex buffer bound).
     pass.draw(0..3, 0..1);
-}
-
-impl Lane for SkyboxLane {
-    fn strategy_name(&self) -> &'static str {
-        "Skybox"
-    }
-
-    fn lane_kind(&self) -> LaneKind {
-        LaneKind::Render
-    }
-
-    fn on_initialize(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
-        let device = ctx
-            .get::<Arc<dyn khora_core::renderer::GraphicsDevice>>()
-            .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
-            .clone();
-        let pipeline_system = ctx
-            .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
-            .ok_or(LaneError::missing("Arc<dyn PipelineSystem>"))?
-            .clone();
-        init_gpu_resources(self, device.as_ref(), pipeline_system.as_ref())
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))
-    }
-
-    fn execute(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
-        // The environment cube is published by the IBL bake once it has run.
-        // Absent ⇒ nothing to draw yet (the scene's clear color shows through).
-        let Some(ibl) = ctx.get::<IblGpuBindings>().copied() else {
-            return Ok(());
-        };
-
-        // Camera comes from the primary extracted view (the editor viewport
-        // override is folded into `RenderWorld.views` by `RenderFlow`).
-        let Some(render_world) = ctx.get_ref::<RenderWorld>() else {
-            return Ok(());
-        };
-        let Some(view) = render_world.views.first() else {
-            return Ok(());
-        };
-        let view = view.clone();
-
-        let device = ctx
-            .get::<Arc<dyn khora_core::renderer::GraphicsDevice>>()
-            .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
-            .clone();
-        let mut encoder_guard = ctx
-            .slot::<dyn CommandEncoder>()
-            .ok_or(LaneError::missing("&mut dyn CommandEncoder"))?;
-        let encoder = &mut *encoder_guard;
-        let color_target = ctx
-            .get::<khora_core::lane::ColorTarget>()
-            .ok_or(LaneError::missing("ColorTarget"))?
-            .0;
-        // The skybox depth-tests against the scene buffer — no depth target ⇒
-        // skip (it would otherwise overwrite the geometry).
-        let Some(depth_target) = ctx.get::<khora_core::lane::DepthTarget>().map(|d| d.0) else {
-            return Ok(());
-        };
-
-        render_skybox(
-            self,
-            device.as_ref(),
-            encoder,
-            color_target,
-            depth_target,
-            &view,
-            &ibl,
-        );
-        Ok(())
-    }
-
-    fn on_shutdown(&self, ctx: &mut LaneContext) {
-        let Some(device) = crate::render_lane::util::release::shutdown_device(ctx) else {
-            return;
-        };
-        let device = device.as_ref();
-        if let Some((_, group)) = self.env_bind_group.lock().ok().and_then(|mut g| g.take()) {
-            if let Err(e) = device.destroy_bind_group(group) {
-                log::warn!(
-                    "SkyboxLane shutdown: could not destroy the environment bind group: {e}"
-                );
-            }
-        }
-        crate::render_lane::util::release::release_bind_group(device, &self.sky_bind_group);
-        crate::render_lane::util::release::release_buffer(device, &self.sky_buffer);
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
 }
 
 #[cfg(test)]
@@ -476,262 +539,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn skybox_lane_strategy_name() {
-        let lane = SkyboxLane::default();
-        assert_eq!(lane.strategy_name(), "Skybox");
-        assert_eq!(lane.lane_kind(), LaneKind::Render);
-    }
-
-    #[test]
     fn sky_uniforms_are_std140_sized() {
         // mat4 (64) + vec4 (16) = 80 bytes, 16-aligned.
         assert_eq!(std::mem::size_of::<SkyUniforms>(), 80);
         assert_eq!(std::mem::align_of::<SkyUniforms>(), 16);
-    }
-
-    /// The IBL bindings of a bake whose environment cube is `env_cube`.
-    fn bake_with_env_cube(env_cube: usize) -> IblGpuBindings {
-        use khora_core::renderer::api::resource::{SamplerId, TextureViewId};
-        IblGpuBindings {
-            env_cube: TextureViewId(env_cube),
-            irradiance_cube: TextureViewId(env_cube + 1000),
-            prefiltered_cube: TextureViewId(env_cube + 2000),
-            brdf_lut: TextureViewId(env_cube + 3000),
-            sampler: SamplerId(env_cube + 4000),
-        }
-    }
-
-    #[test]
-    fn the_env_bind_group_is_rebuilt_when_the_env_cube_changes() {
-        let lane = SkyboxLane::default();
-        lane.env_layout
-            .set(BindGroupLayoutId(7))
-            .expect("the layout is set once");
-        let device = recording_device::RecordingDevice::default();
-
-        let first_bake = bake_with_env_cube(1);
-        let first = env_bind_group(&lane, &device, &first_bake).expect("a bind group");
-        let again = env_bind_group(&lane, &device, &first_bake).expect("a bind group");
-        assert_eq!(first, again, "the same env cube reuses its bind group");
-        assert_eq!(device.created().len(), 1, "one bind group for one env cube");
-        assert!(device.destroyed().is_empty());
-
-        let second_bake = bake_with_env_cube(2);
-        let second = env_bind_group(&lane, &device, &second_bake).expect("a bind group");
-        assert_ne!(first, second, "a re-baked env cube gets a new bind group");
-        assert_eq!(
-            device.created(),
-            vec![(first, first_bake.env_cube), (second, second_bake.env_cube)],
-            "the new bind group binds the new env cube"
-        );
-        assert_eq!(
-            device.destroyed(),
-            vec![first],
-            "the bind group of the previous env cube is destroyed"
-        );
-
-        let still = env_bind_group(&lane, &device, &second_bake).expect("a bind group");
-        assert_eq!(still, second, "the new env cube's bind group is kept");
-        assert_eq!(device.created().len(), 2);
-    }
-
-    /// A `GraphicsDevice` that only creates and destroys bind groups, and
-    /// records which env cube each one binds.
-    mod recording_device {
-        use khora_core::renderer::api::command::{
-            BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutId,
-            BindingResource, CommandBufferId,
-        };
-        use khora_core::renderer::api::device::GraphicsAdapterInfo;
-        use khora_core::renderer::api::pipeline::{
-            ComputePipelineDescriptor, ComputePipelineId, PipelineLayoutDescriptor,
-            PipelineLayoutId, RenderPipelineDescriptor, RenderPipelineId,
-        };
-        use khora_core::renderer::api::resource::{
-            BufferDescriptor, BufferId, SamplerDescriptor, SamplerId, TextureDescriptor,
-            TextureFormat, TextureId, TextureViewDescriptor, TextureViewId,
-        };
-        use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId};
-        use khora_core::renderer::error::ResourceError;
-        use khora_core::renderer::traits::{CommandEncoder, GraphicsDevice};
-        use std::sync::Mutex;
-
-        #[derive(Debug, Default)]
-        pub(super) struct RecordingDevice {
-            created: Mutex<Vec<(BindGroupId, TextureViewId)>>,
-            destroyed: Mutex<Vec<BindGroupId>>,
-        }
-
-        impl RecordingDevice {
-            /// Every bind group created, with the texture view bound at 0.
-            pub(super) fn created(&self) -> Vec<(BindGroupId, TextureViewId)> {
-                self.created.lock().expect("the created lock").clone()
-            }
-
-            /// Every bind group destroyed, in order.
-            pub(super) fn destroyed(&self) -> Vec<BindGroupId> {
-                self.destroyed.lock().expect("the destroyed lock").clone()
-            }
-        }
-
-        impl GraphicsDevice for RecordingDevice {
-            fn create_shader_module(
-                &self,
-                _d: &ShaderModuleDescriptor,
-            ) -> Result<ShaderModuleId, ResourceError> {
-                unreachable!("the env bind group builds no shader")
-            }
-            fn destroy_shader_module(&self, _id: ShaderModuleId) -> Result<(), ResourceError> {
-                unreachable!()
-            }
-            fn create_render_pipeline(
-                &self,
-                _d: &RenderPipelineDescriptor,
-            ) -> Result<RenderPipelineId, ResourceError> {
-                unreachable!()
-            }
-            fn create_pipeline_layout(
-                &self,
-                _d: &PipelineLayoutDescriptor,
-            ) -> Result<PipelineLayoutId, ResourceError> {
-                unreachable!()
-            }
-            fn destroy_render_pipeline(&self, _id: RenderPipelineId) -> Result<(), ResourceError> {
-                unreachable!()
-            }
-            fn create_compute_pipeline(
-                &self,
-                _d: &ComputePipelineDescriptor,
-            ) -> Result<ComputePipelineId, ResourceError> {
-                unreachable!()
-            }
-            fn destroy_compute_pipeline(
-                &self,
-                _id: ComputePipelineId,
-            ) -> Result<(), ResourceError> {
-                unreachable!()
-            }
-            fn create_bind_group_layout(
-                &self,
-                _d: &BindGroupLayoutDescriptor,
-            ) -> Result<BindGroupLayoutId, ResourceError> {
-                unreachable!("the lane's layout is already built")
-            }
-            fn create_bind_group(
-                &self,
-                d: &BindGroupDescriptor,
-            ) -> Result<BindGroupId, ResourceError> {
-                let view = d
-                    .entries
-                    .iter()
-                    .find(|entry| entry.binding == 0)
-                    .and_then(|entry| match entry.resource {
-                        BindingResource::TextureView(view) => Some(view),
-                        _ => None,
-                    })
-                    .expect("the env cube is bound at 0");
-                let mut created = self.created.lock().expect("the created lock");
-                let id = BindGroupId(100 + created.len());
-                created.push((id, view));
-                Ok(id)
-            }
-            fn destroy_bind_group_layout(
-                &self,
-                _id: BindGroupLayoutId,
-            ) -> Result<(), ResourceError> {
-                unreachable!("the lane's layout outlives the env cube")
-            }
-            fn destroy_bind_group(&self, id: BindGroupId) -> Result<(), ResourceError> {
-                self.destroyed.lock().expect("the destroyed lock").push(id);
-                Ok(())
-            }
-            fn create_buffer(&self, _d: &BufferDescriptor) -> Result<BufferId, ResourceError> {
-                unreachable!()
-            }
-            fn create_buffer_with_data(
-                &self,
-                _d: &BufferDescriptor,
-                _data: &[u8],
-            ) -> Result<BufferId, ResourceError> {
-                unreachable!()
-            }
-            fn destroy_buffer(&self, _id: BufferId) -> Result<(), ResourceError> {
-                unreachable!()
-            }
-            fn write_buffer(
-                &self,
-                _id: BufferId,
-                _offset: u64,
-                _data: &[u8],
-            ) -> Result<(), ResourceError> {
-                unreachable!()
-            }
-            fn write_buffer_async<'a>(
-                &'a self,
-                _id: BufferId,
-                _offset: u64,
-                _data: &'a [u8],
-            ) -> Box<dyn std::future::Future<Output = Result<(), ResourceError>> + Send + 'static>
-            {
-                unreachable!()
-            }
-            fn create_texture(&self, _d: &TextureDescriptor) -> Result<TextureId, ResourceError> {
-                unreachable!()
-            }
-            fn destroy_texture(&self, _id: TextureId) -> Result<(), ResourceError> {
-                unreachable!("the env cube belongs to the bake")
-            }
-            fn write_texture(
-                &self,
-                _id: TextureId,
-                _data: &[u8],
-                _bytes_per_row: Option<u32>,
-                _offset: khora_core::math::dimension::Origin3D,
-                _size: khora_core::math::dimension::Extent3D,
-            ) -> Result<(), ResourceError> {
-                unreachable!()
-            }
-            fn create_texture_view(
-                &self,
-                _id: TextureId,
-                _d: &TextureViewDescriptor,
-            ) -> Result<TextureViewId, ResourceError> {
-                unreachable!()
-            }
-            fn destroy_texture_view(&self, _id: TextureViewId) -> Result<(), ResourceError> {
-                unreachable!("the env cube belongs to the bake")
-            }
-            fn create_sampler(&self, _d: &SamplerDescriptor) -> Result<SamplerId, ResourceError> {
-                unreachable!()
-            }
-            fn destroy_sampler(&self, _id: SamplerId) -> Result<(), ResourceError> {
-                unreachable!("the sampler belongs to the bake")
-            }
-            fn create_command_encoder(&self, _label: Option<&str>) -> Box<dyn CommandEncoder> {
-                unreachable!()
-            }
-            fn submit_command_buffer(&self, _command_buffer: CommandBufferId) {
-                unreachable!()
-            }
-            fn get_surface_format(&self) -> Option<TextureFormat> {
-                unreachable!()
-            }
-            fn get_surface_size(&self) -> (u32, u32) {
-                unreachable!()
-            }
-            fn get_adapter_info(&self) -> GraphicsAdapterInfo {
-                unreachable!()
-            }
-            fn supports_feature(&self, _feature_name: &str) -> bool {
-                unreachable!()
-            }
-        }
-    }
-
-    /// The skybox lane owns its uniform buffer, sampler and bind groups; the
-    /// layouts and pipeline belong to the `PipelineSystem`.
-    #[test]
-    fn skybox_shutdown_destroys_every_buffer_it_created() {
-        crate::tests::assert_shutdown_destroys_what_it_created(&SkyboxLane::default());
     }
 }

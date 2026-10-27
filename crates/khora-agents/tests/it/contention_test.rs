@@ -20,10 +20,7 @@
 //! a wave that could have run concurrently. Only the real declarations can show
 //! that, so they are asserted here.
 
-use khora_agents::{
-    overlay_agent::OverlayAgent, render_agent::RenderAgent, skybox_agent::SkyboxAgent,
-    ui_agent::UiAgent,
-};
+use khora_agents::{overlay_agent::OverlayAgent, render_agent::RenderAgent, ui_agent::UiAgent};
 use khora_core::agent::{Agent, AgentAccess};
 use khora_data::ui::UiImageAtlas;
 use std::any::TypeId;
@@ -52,7 +49,7 @@ fn the_agents_sharing_read_only_handles_do_not_contend() {
     let all = [
         RenderAgent::default().contention(),
         crate::shadows_family::fixtures::shadow_agent().contention(),
-        SkyboxAgent::default().contention(),
+        crate::skybox_family::fixtures::skybox_agent().contention(),
         OverlayAgent::default().contention(),
         UiAgent::default().contention(),
     ];
@@ -75,7 +72,7 @@ fn each_render_agent_writes_a_slot_of_its_own() {
     let slots: Vec<_> = [
         RenderAgent::default().contention(),
         crate::shadows_family::fixtures::shadow_agent().contention(),
-        SkyboxAgent::default().contention(),
+        crate::skybox_family::fixtures::skybox_agent().contention(),
         OverlayAgent::default().contention(),
         UiAgent::default().contention(),
     ]
@@ -98,7 +95,7 @@ fn each_render_agent_writes_a_slot_of_its_own() {
 // slot by slot, against what each lane actually writes. A family on the typed
 // contract declares its slots through its outputs (audio: `audio_family.rs`,
 // physics: `physics_family/registration.rs`, shadows:
-// `shadows_family/registration.rs`).
+// `shadows_family/registration.rs`, skybox: `skybox_family/registration.rs`).
 
 /// The UI lane uploads glyphs and images into the shared atlas: that is a
 /// lock, and a lock declared as a read lets another agent read a half-written

@@ -177,8 +177,8 @@ fn the_registered_pass_order_runs_from_shadows_to_overlays() {
 }
 
 /// Records the six passes overlay first, each with the resources the shipped
-/// agent declares for it (`ShadowAgent`, `RenderAgent` with a shadow atlas,
-/// `SkyboxAgent`, `UiAgent`, `OverlayAgent`).
+/// agent declares for it (the shadows family, `RenderAgent` with a shadow
+/// atlas, the skybox family, `UiAgent`, `OverlayAgent`).
 struct EverySlotWithItsResources;
 
 impl Agent for EverySlotWithItsResources {

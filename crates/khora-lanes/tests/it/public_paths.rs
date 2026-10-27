@@ -330,7 +330,11 @@ fn module_skybox_lane_paths_still_resolve() {
     let _ = type_name::<khora_lanes::skybox_lane::SkyboxLane>();
     is_debug::<khora_lanes::skybox_lane::SkyboxLane>();
     is_default::<khora_lanes::skybox_lane::SkyboxLane>();
-    is_lane::<khora_lanes::skybox_lane::SkyboxLane>();
+    let _ = type_name::<khora_lanes::skybox_lane::SkyboxFamily>();
+    let _ = type_name::<khora_lanes::skybox_lane::SkyboxInputs<'static>>();
+    let _ = type_name::<khora_lanes::skybox_lane::SkyboxOutputs<'static>>();
+    is_typed_lane::<khora_lanes::skybox_lane::SkyboxLane>();
+    is_lane_family::<khora_lanes::skybox_lane::SkyboxFamily>();
 }
 
 #[test]

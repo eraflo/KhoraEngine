@@ -16,6 +16,7 @@
 //! scheduler, the render passes and presentation.
 
 use khora_control::substrate;
+use khora_core::lane::io::{Target, TargetKey};
 use khora_core::lane::{ClearColor, ColorTarget, ColorTargetSize, DepthTarget};
 use khora_core::renderer::traits::RenderSystem;
 use khora_core::renderer::GraphicsDevice;
@@ -185,11 +186,25 @@ impl<A: EngineApp> EngineCore<A> {
         match guard.begin_frame() {
             Ok(targets) => {
                 if let Some(fctx) = &fctx {
+                    // What a lane declaring `#[frame] target` draws into.
+                    fctx.insert(Target {
+                        color: targets.color,
+                        depth: targets.depth,
+                        size: targets.size,
+                        key: TargetKey {
+                            color: targets.color_format,
+                            depth: targets.depth_format,
+                            samples: 1,
+                        },
+                    });
                     fctx.insert(ColorTarget(targets.color));
                     // What every camera's projection takes its aspect from.
                     fctx.insert(ColorTargetSize(targets.size));
-                    if let Some(d) = targets.depth {
-                        fctx.insert(DepthTarget(d));
+                    match targets.depth {
+                        Some(d) => fctx.insert(DepthTarget(d)),
+                        None => {
+                            fctx.remove::<DepthTarget>();
+                        }
                     }
                     fctx.insert(ClearColor(khora_core::math::LinearRgba::new(
                         0.1, 0.1, 0.15, 1.0,
@@ -198,6 +213,11 @@ impl<A: EngineApp> EngineCore<A> {
                 true
             }
             Err(e) => {
+                // The context outlives the frame: what the last frame acquired
+                // was presented, so no lane may draw into it again.
+                if let Some(fctx) = &fctx {
+                    forget_frame_targets(fctx);
+                }
                 // Fatal device errors (lost / out-of-memory) are surfaced loudly
                 // so the host can decide to tear down; transient acquisition
                 // skips (minimized window, surface reconfigure, timeout) are
@@ -359,4 +379,13 @@ fn prepare_frame(
         Ok(mut render_system) => render_system.prepare_frame(view),
         Err(_) => log::error!("prepare_frame: RenderSystem mutex poisoned, frame not prepared"),
     }
+}
+
+/// Takes the frame's targets out of `fctx`, for a frame that acquired none.
+/// The size stays: it is what cameras take their aspect from, and the
+/// window's size has not changed.
+fn forget_frame_targets(fctx: &khora_core::renderer::api::frame::FrameContext) {
+    fctx.remove::<Target>();
+    fctx.remove::<ColorTarget>();
+    fctx.remove::<DepthTarget>();
 }
