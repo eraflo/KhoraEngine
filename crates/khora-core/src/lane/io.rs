@@ -22,7 +22,6 @@
 //! whole runtime — only the fields it named, fetched from an [`InputSource`].
 
 use std::any::{Any, TypeId};
-use std::marker::PhantomData;
 use std::sync::{Arc, Mutex, MutexGuard, TryLockError};
 use std::time::{Duration, Instant};
 
@@ -33,7 +32,10 @@ use super::guard::{
 use super::{LaneBus, LaneError, OutputDeck};
 use crate::agent::Contention;
 use crate::math::Extent2D;
+use crate::renderer::api::command::CommandBufferId;
 use crate::renderer::api::resource::{TextureFormat, TextureViewId};
+use crate::renderer::traits::CommandEncoder;
+use crate::renderer::GraphicsDevice;
 use crate::runtime::Runtime;
 
 /// How long a fetch waits for its locks when the lane was given no budget.
@@ -114,12 +116,69 @@ impl<T: ?Sized> std::ops::DerefMut for Locked<'_, T> {
 
 /// The encoder of pass slot `P`, opened for one record and closed on commit.
 ///
-/// No family records into a pass slot through the typed contract yet: opening
-/// one fails, naming the slot, until the first pass family brings the encoder
-/// it records into.
-pub struct Pass<'f, P> {
-    #[allow(dead_code)]
-    slot: PhantomData<fn(&'f mut ()) -> P>,
+/// Opened on the device the agent lends its sink, with the slot's
+/// descriptor; the lane records into [`encoder`](Self::encoder), may amend
+/// the descriptor, and the commit finishes the encoder into the slot. The
+/// engine submits the slot's command buffer in the registered pass order —
+/// a lane never submits.
+pub struct Pass<'f, P: PassSlot> {
+    encoder: Box<dyn CommandEncoder>,
+    device: &'f dyn GraphicsDevice,
+    descriptor: P::Descriptor,
+}
+
+/// A pass slot a `#[pass]` output closes into: what the frame graph orders
+/// the pass by, and how the slot holds the finished pass.
+///
+/// khora-core cannot name the frame graph's types; the slot, defined beside
+/// them, says what its descriptor is and how it is built.
+pub trait PassSlot: Default + Any + Send + Sync {
+    /// What the frame graph orders the pass by. The lane may amend it while
+    /// it records.
+    type Descriptor: Send;
+
+    /// The descriptor a pass of this slot opens with.
+    fn descriptor() -> Self::Descriptor;
+
+    /// The slot holding the closed pass: its descriptor and the command
+    /// buffer its encoder finished into.
+    fn close(descriptor: Self::Descriptor, command_buffer: CommandBufferId) -> Self;
+}
+
+impl<'f, P: PassSlot> Pass<'f, P> {
+    /// Opens a pass of slot `P` on `device`.
+    pub fn open(device: &'f dyn GraphicsDevice) -> Self {
+        Self {
+            encoder: device.create_command_encoder(Some(std::any::type_name::<P>())),
+            device,
+            descriptor: P::descriptor(),
+        }
+    }
+
+    /// The encoder the lane records the pass into.
+    pub fn encoder(&mut self) -> &mut dyn CommandEncoder {
+        self.encoder.as_mut()
+    }
+
+    /// The device the pass records for: what the lane uploads its per-pass
+    /// uniforms through.
+    pub fn device(&self) -> &'f dyn GraphicsDevice {
+        self.device
+    }
+
+    /// The descriptor the pass closes with.
+    pub fn descriptor_mut(&mut self) -> &mut P::Descriptor {
+        &mut self.descriptor
+    }
+
+    /// Finishes the encoder into the slot; `None` when the encoder gives no
+    /// command buffer.
+    pub fn close(self) -> Option<P> {
+        let descriptor = self.descriptor;
+        self.encoder
+            .finish()
+            .map(|command_buffer| P::close(descriptor, command_buffer))
+    }
 }
 
 /// One source or sink a lane named.
@@ -191,7 +250,8 @@ impl Declaration {
     }
 
     /// What the declaration contends for: `#[resource]` and `#[resident]`
-    /// reads, `#[locked]` locks and `#[deck]` outputs. A View, a deck read,
+    /// reads, `#[locked]` locks, and the slots `#[deck]` and `#[pass]`
+    /// outputs write. A View, a deck read,
     /// the frame and the budget are nobody else's to write while the lane
     /// runs, so they contend for nothing.
     pub fn contention(&self) -> Contention {
@@ -207,7 +267,7 @@ impl Declaration {
             }
         }
         for output in &self.outputs {
-            if output.kind == SinkKind::Deck && !contention.deck.contains(&output.ty) {
+            if !contention.deck.contains(&output.ty) {
                 contention.deck.push(output.ty);
             }
         }
@@ -454,6 +514,8 @@ pub struct OutputSink<'f> {
     written: Vec<TypeId>,
     /// What the slots hold this frame so far, outputs start from.
     seed: Option<&'f OutputDeck>,
+    /// The device `#[pass]` outputs open their encoder on.
+    device: Option<&'f dyn GraphicsDevice>,
 }
 
 impl<'f> OutputSink<'f> {
@@ -463,6 +525,7 @@ impl<'f> OutputSink<'f> {
             deck,
             written: Vec::new(),
             seed: None,
+            device: None,
         }
     }
 
@@ -472,6 +535,17 @@ impl<'f> OutputSink<'f> {
     pub fn with_seed(mut self, seed: &'f OutputDeck) -> Self {
         self.seed = Some(seed);
         self
+    }
+
+    /// The same sink, its `#[pass]` outputs opening an encoder on `device`.
+    pub fn with_device(mut self, device: &'f dyn GraphicsDevice) -> Self {
+        self.device = Some(device);
+        self
+    }
+
+    /// The device `#[pass]` outputs open on, when the agent lent one.
+    pub fn device(&self) -> Option<&'f dyn GraphicsDevice> {
+        self.device
     }
 
     /// What the slot `T` holds this frame so far, or its default.
@@ -490,11 +564,30 @@ impl<'f> OutputSink<'f> {
         field: &'static str,
         value: T,
     ) -> Result<(), OutputRefusal> {
+        self.write(field, SinkKind::Deck, value)
+    }
+
+    /// Writes a closed pass into its slot `P`, refused as
+    /// [`put`](Self::put) refuses a second write.
+    pub fn put_pass<P: PassSlot>(
+        &mut self,
+        field: &'static str,
+        pass: P,
+    ) -> Result<(), OutputRefusal> {
+        self.write(field, SinkKind::Pass, pass)
+    }
+
+    fn write<T: Default + Any + Send + Sync>(
+        &mut self,
+        field: &'static str,
+        sink: SinkKind,
+        value: T,
+    ) -> Result<(), OutputRefusal> {
         let slot = TypeId::of::<T>();
         if self.written.contains(&slot) {
             return Err(OutputRefusal {
                 field,
-                sink: SinkKind::Deck,
+                sink,
                 reason: Reason::WrittenTwice,
             });
         }

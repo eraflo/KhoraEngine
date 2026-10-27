@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Shadow rendering algorithm — free functions shared by every quality
-//! tier (`StandardShadowsLane`, `MediumShadowsLane`, `LowResShadowsLane`).
+//! Shadow rendering algorithm — the atlases, the depth passes, and the
+//! device resources a level of the shadows lane builds.
 //!
-//! Each function takes its dimensions as parameters; the lane that calls
-//! it provides its own (hardcoded-in-the-type) constants. No config
-//! struct is injected by the agent: the lane **is** its quality.
+//! Every function takes its dimensions from the level's [`Tier`]: the lane
+//! **is** its quality, no config struct is injected.
 
 pub mod atlas_2d;
 pub mod atlas_cube;
@@ -25,4 +24,4 @@ pub mod bindings;
 pub mod pass;
 pub mod state;
 
-pub use state::ShadowsLaneState;
+pub use state::{ShadowGpu, Tier};

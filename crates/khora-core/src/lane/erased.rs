@@ -85,9 +85,9 @@ pub trait AnyLane: Send {
 /// A typed lane, erased.
 pub struct Erased<L: Lane> {
     lane: L,
-    /// The target key the lane was last prepared for; `None` before the first
-    /// prepare.
-    prepared_for: Option<Option<TargetKey>>,
+    /// The level and target key the lane was last prepared for; `None`
+    /// before the first prepare.
+    prepared_for: Option<(usize, Option<TargetKey>)>,
 }
 
 impl<L: Lane> Erased<L> {
@@ -170,11 +170,11 @@ impl<L: Lane> Erased<L> {
             Err(refusal) => return (RunOutcome::Refused(refusal), Vec::new()),
         };
         let key = fetched.target_key();
-        if self.prepared_for != Some(key) {
-            if let Err(error) = self.lane.prepare(gpu, key) {
+        if self.prepared_for != Some((level, key)) {
+            if let Err(error) = self.lane.prepare(level, gpu, key) {
                 return (RunOutcome::Failed(error), Vec::new());
             }
-            self.prepared_for = Some(key);
+            self.prepared_for = Some((level, key));
         }
         let mut written =
             match <<L::Family as LaneFamily>::Outputs<'_> as LaneOutputs<'_>>::open(outputs) {

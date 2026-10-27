@@ -29,9 +29,10 @@ use std::sync::{Arc, Mutex};
 use super::context_keys::ClearColor;
 use super::contract::Lane;
 use super::family::LaneFamily;
-use super::guard::{InputRefusal, OutputRefusal, SinkKind, SourceKind};
+use super::guard::{InputRefusal, OutputRefusal, Reason, SinkKind, SourceKind};
 use super::io::{
-    Budget, Declaration, FixedStep, InputSource, Locked, OutputSink, Pass, Target, TargetKey,
+    Budget, Declaration, FixedStep, InputSource, Locked, OutputSink, Pass, PassSlot, Target,
+    TargetKey,
 };
 use super::LaneError;
 use crate::residency::{Residency, Resident};
@@ -243,18 +244,24 @@ pub trait PassField<'f>: Sized {
     /// Closes the pass into its slot.
     fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal>;
 }
-impl<'f, P: 'static> PassField<'f> for Pass<'f, P> {
+impl<'f, P: PassSlot> PassField<'f> for Pass<'f, P> {
     fn declare(d: &mut Declaration, field: &'static str) {
         d.write::<P>(field, SinkKind::Pass);
     }
-    fn open(_sink: &mut OutputSink<'f>, field: &'static str) -> Result<Self, LaneError> {
-        Err(LaneError::MissingResource {
+    fn open(sink: &mut OutputSink<'f>, field: &'static str) -> Result<Self, LaneError> {
+        let device = sink.device().ok_or_else(|| LaneError::MissingResource {
             kind: "pass encoder",
-            key: format!("`{field}` ({})", std::any::type_name::<P>()),
-        })
+            key: format!("`{field}` ({}): no device lent", std::any::type_name::<P>()),
+        })?;
+        Ok(Pass::open(device))
     }
-    fn commit(self, _sink: &mut OutputSink<'f>, _field: &'static str) -> Result<(), OutputRefusal> {
-        Ok(())
+    fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal> {
+        let closed = self.close().ok_or(OutputRefusal {
+            field,
+            sink: SinkKind::Pass,
+            reason: Reason::PassNotClosed,
+        })?;
+        sink.put_pass(field, closed)
     }
 }
 

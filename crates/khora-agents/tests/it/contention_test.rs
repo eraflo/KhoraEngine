@@ -21,11 +21,10 @@
 //! that, so they are asserted here.
 
 use khora_agents::{
-    overlay_agent::OverlayAgent, render_agent::RenderAgent, shadow_agent::ShadowAgent,
-    skybox_agent::SkyboxAgent, ui_agent::UiAgent,
+    overlay_agent::OverlayAgent, render_agent::RenderAgent, skybox_agent::SkyboxAgent,
+    ui_agent::UiAgent,
 };
 use khora_core::agent::{Agent, AgentAccess};
-use khora_core::renderer::api::shadow::ShadowFrame;
 use khora_data::ui::UiImageAtlas;
 use std::any::TypeId;
 use std::sync::Arc;
@@ -52,7 +51,7 @@ fn the_render_and_ui_agents_do_not_contend() {
 fn the_agents_sharing_read_only_handles_do_not_contend() {
     let all = [
         RenderAgent::default().contention(),
-        ShadowAgent::default().contention(),
+        crate::shadows_family::fixtures::shadow_agent().contention(),
         SkyboxAgent::default().contention(),
         OverlayAgent::default().contention(),
         UiAgent::default().contention(),
@@ -75,6 +74,7 @@ fn the_agents_sharing_read_only_handles_do_not_contend() {
 fn each_render_agent_writes_a_slot_of_its_own() {
     let slots: Vec<_> = [
         RenderAgent::default().contention(),
+        crate::shadows_family::fixtures::shadow_agent().contention(),
         SkyboxAgent::default().contention(),
         OverlayAgent::default().contention(),
         UiAgent::default().contention(),
@@ -97,36 +97,8 @@ fn each_render_agent_writes_a_slot_of_its_own() {
 // data at the merge of a concurrent wave — so the declaration is pinned here,
 // slot by slot, against what each lane actually writes. A family on the typed
 // contract declares its slots through its outputs (audio: `audio_family.rs`,
-// physics: `physics_family/registration.rs`).
-
-/// `ShadowLane` writes the frame's `ShadowFrame` (`shadow_lane/mod.rs`).
-#[test]
-fn shadow_agent_declares_its_deck_writes() {
-    let deck = ShadowAgent::default().contention().deck;
-
-    assert!(
-        deck.contains(&TypeId::of::<ShadowFrame>()),
-        "the shadow agent's lane writes ShadowFrame; its contention declares {deck:?}"
-    );
-}
-
-/// The shadow agent does not reach the `World`: it reads Views from the bus.
-/// An agent that declares more world access than it uses runs alone in its
-/// wave for nothing. The audio and physics families' agents are pinned in
-/// `audio_family.rs` and `physics_family/registration.rs`.
-#[test]
-fn world_free_agents_are_isolated() {
-    let agents: [(&str, AgentAccess); 1] = [("shadow", ShadowAgent::default().access())];
-
-    let not_isolated: Vec<_> = agents
-        .iter()
-        .filter(|(_, access)| *access != AgentAccess::Isolated)
-        .collect();
-    assert!(
-        not_isolated.is_empty(),
-        "world-free agents must declare AgentAccess::Isolated; these do not: {not_isolated:?}"
-    );
-}
+// physics: `physics_family/registration.rs`, shadows:
+// `shadows_family/registration.rs`).
 
 /// The UI lane uploads glyphs and images into the shared atlas: that is a
 /// lock, and a lock declared as a read lets another agent read a half-written

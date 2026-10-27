@@ -40,6 +40,7 @@ use khora_core::lane::cost::Cost;
 use khora_core::lane::erased::{AnyLane, RunOutcome};
 use khora_core::lane::io::{Budget, FixedStep, OutputSink};
 use khora_core::lane::OutputDeck;
+use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 
@@ -198,13 +199,17 @@ impl LaneAgent {
                 self.message = format!("`{}` was refused: {:?}", refusal.field, refusal.reason);
             }
             RunOutcome::Failed(error) => {
-                log::warn!(
-                    "{}: `{}` failed at row {:?}: {error}",
-                    self.registration.family_name,
-                    self.lane_name(row),
-                    row.id
-                );
-                self.message = error.to_string();
+                let message = error.to_string();
+                // A lane failing every frame for the same reason says so once.
+                if message != self.message {
+                    log::warn!(
+                        "{}: `{}` failed at row {:?}: {message}",
+                        self.registration.family_name,
+                        self.lane_name(row),
+                        row.id
+                    );
+                }
+                self.message = message;
                 self.current = self.cheaper_row(self.current);
             }
         }
@@ -311,10 +316,14 @@ impl Agent for LaneAgent {
             return;
         };
         let device = context.resource::<Arc<dyn GraphicsDevice>>().cloned();
+        let pipelines = context.resource::<Arc<dyn PipelineSystem>>().cloned();
         let mut gpu = match device.as_deref() {
             Some(device) => GpuSetup::new(device),
             None => GpuSetup::headless(),
         };
+        if let Some(pipelines) = pipelines.as_deref() {
+            gpu = gpu.with_pipelines(pipelines);
+        }
         let mut written = OutputDeck::new();
         let started = Instant::now();
         let run = {
@@ -328,6 +337,9 @@ impl Agent for LaneAgent {
                 source = source.with_step(FixedStep(step));
             }
             let mut sink = OutputSink::new(&mut written).with_seed(context.deck);
+            if let Some(device) = device.as_deref() {
+                sink = sink.with_device(device);
+            }
             let mut lane = self.lanes[row.lane]
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -373,14 +385,16 @@ impl Agent for LaneAgent {
         AgentAccess::Isolated
     }
 
-    /// The running lane's declaration, and the graphics device the agent
-    /// prepares and shuts its lanes down with.
+    /// The running lane's declaration, and the graphics device and pipeline
+    /// system the agent prepares and shuts its lanes down with.
     fn contention(&self) -> Contention {
         let mut contention = self
             .row()
             .and_then(|row| self.contentions.get(row.lane).cloned())
             .unwrap_or_else(Contention::none);
-        contention = contention.reading::<Arc<dyn GraphicsDevice>>();
+        contention = contention
+            .reading::<Arc<dyn GraphicsDevice>>()
+            .reading::<Arc<dyn PipelineSystem>>();
         contention
     }
 

@@ -50,7 +50,6 @@ mod every_pub_mod {
     use khora_agents::overlay_agent as _;
     use khora_agents::render_agent as _;
     use khora_agents::script_agent as _;
-    use khora_agents::shadow_agent as _;
     use khora_agents::skybox_agent as _;
     use khora_agents::ui_agent as _;
 }
@@ -67,14 +66,6 @@ fn rendering_strategy_variants(x: &khora_agents::render_agent::RenderingStrategy
         khora_agents::render_agent::RenderingStrategy::StandardPbr => {}
         khora_agents::render_agent::RenderingStrategy::ForwardPlus => {}
         khora_agents::render_agent::RenderingStrategy::Auto => {}
-    }
-}
-
-fn shadow_strategy_variants(x: &khora_agents::shadow_agent::ShadowStrategy) {
-    match x {
-        khora_agents::shadow_agent::ShadowStrategy::Standard => {}
-        khora_agents::shadow_agent::ShadowStrategy::Medium => {}
-        khora_agents::shadow_agent::ShadowStrategy::LowRes => {}
     }
 }
 
@@ -108,21 +99,6 @@ fn module_script_agent_paths_still_resolve() {
 }
 
 #[test]
-fn module_shadow_agent_paths_still_resolve() {
-    let _ = type_name::<khora_agents::shadow_agent::ShadowAgent>();
-    is_agent::<khora_agents::shadow_agent::ShadowAgent>();
-    is_default::<khora_agents::shadow_agent::ShadowAgent>();
-    let _ = type_name::<khora_agents::shadow_agent::ShadowStrategy>();
-    let _ = shadow_strategy_variants as fn(&khora_agents::shadow_agent::ShadowStrategy);
-    let _ = khora_agents::shadow_agent::ShadowStrategy::lane_name;
-    is_debug::<khora_agents::shadow_agent::ShadowStrategy>();
-    is_clone::<khora_agents::shadow_agent::ShadowStrategy>();
-    is_copy::<khora_agents::shadow_agent::ShadowStrategy>();
-    is_partial_eq::<khora_agents::shadow_agent::ShadowStrategy>();
-    is_eq::<khora_agents::shadow_agent::ShadowStrategy>();
-}
-
-#[test]
 fn module_skybox_agent_paths_still_resolve() {
     let _ = type_name::<khora_agents::skybox_agent::SkyboxAgent>();
     is_agent::<khora_agents::skybox_agent::SkyboxAgent>();
@@ -148,7 +124,6 @@ fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_agents::overlay_agent::OverlayAgent::default; // khora-sdk
     let _ = khora_agents::render_agent::RenderAgent::default; // khora-sdk
     let _ = khora_agents::script_agent::ScriptAgent::default; // khora-sdk
-    let _ = khora_agents::shadow_agent::ShadowAgent::default; // khora-sdk
     let _ = khora_agents::skybox_agent::SkyboxAgent::default; // khora-sdk
     let _ = khora_agents::ui_agent::UiAgent::default; // khora-sdk
 }

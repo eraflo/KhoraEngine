@@ -97,34 +97,26 @@ impl DynamicUniformRingBuffer {
                 _ => Cow::Owned(format!("{} [slot {}]", label, i)),
             };
 
-            let buffer = device.create_buffer(&BufferDescriptor {
-                label: Some(buffer_label),
-                size: initial_capacity as u64,
-                usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
-                mapped_at_creation: false,
-            })?;
-
-            let bind_group = device.create_bind_group(&BindGroupDescriptor {
-                label: Some(label),
+            let chunk = match make_chunk(
+                device,
                 layout,
-                entries: &[BindGroupEntry {
-                    binding,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer,
-                        offset: 0,
-                        size: std::num::NonZeroU64::new(element_size as u64),
-                    }),
-                    _phantom: std::marker::PhantomData,
-                }],
-            })?;
-
+                binding,
+                element_size,
+                initial_capacity,
+                buffer_label,
+                label,
+            ) {
+                Ok(chunk) => chunk,
+                Err(error) => {
+                    // The slots made before the refusal are given back.
+                    for slot in &slots {
+                        destroy_slot(device, slot, label);
+                    }
+                    return Err(error);
+                }
+            };
             slots.push(DynamicRingSlot {
-                chunks: vec![BufferChunk {
-                    buffer,
-                    bind_group,
-                    capacity: initial_capacity,
-                    current_offset: 0,
-                }],
+                chunks: vec![chunk],
                 active_chunk_index: 0,
             });
         }
@@ -179,33 +171,16 @@ impl DynamicUniformRingBuffer {
                     "{} [slot {} chunk {}]",
                     self.label, self.current_index, chunk_idx
                 ));
-                let buffer = device.create_buffer(&BufferDescriptor {
-                    label: Some(buffer_label),
-                    size: new_capacity as u64,
-                    usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
-                    mapped_at_creation: false,
-                })?;
-
-                let bind_group = device.create_bind_group(&BindGroupDescriptor {
-                    label: Some(self.label),
-                    layout: self.layout,
-                    entries: &[BindGroupEntry {
-                        binding: self.binding,
-                        resource: BindingResource::Buffer(BufferBinding {
-                            buffer,
-                            offset: 0,
-                            size: std::num::NonZeroU64::new(self.element_size as u64),
-                        }),
-                        _phantom: std::marker::PhantomData,
-                    }],
-                })?;
-
-                slot.chunks.push(BufferChunk {
-                    buffer,
-                    bind_group,
-                    capacity: new_capacity,
-                    current_offset: 0,
-                });
+                let chunk = make_chunk(
+                    device,
+                    self.layout,
+                    self.binding,
+                    self.element_size,
+                    new_capacity,
+                    buffer_label,
+                    self.label,
+                )?;
+                slot.chunks.push(chunk);
                 slot.active_chunk_index = chunk_idx;
             }
         }
@@ -233,22 +208,66 @@ impl DynamicUniformRingBuffer {
     /// Destroys the dynamic uniform ring buffer.
     pub fn destroy(&self, device: &dyn GraphicsDevice) {
         for slot in &self.slots {
-            for chunk in &slot.chunks {
-                if let Err(e) = device.destroy_bind_group(chunk.bind_group) {
-                    log::warn!(
-                        "DynamicUniformRingBuffer({}): Failed to destroy bind group: {:?}",
-                        self.label,
-                        e
-                    );
-                }
-                if let Err(e) = device.destroy_buffer(chunk.buffer) {
-                    log::warn!(
-                        "DynamicUniformRingBuffer({}): Failed to destroy buffer: {:?}",
-                        self.label,
-                        e
-                    );
-                }
+            destroy_slot(device, slot, self.label);
+        }
+    }
+}
+
+/// One chunk: a uniform buffer of `capacity` bytes and the bind group over
+/// it. A refused bind group gives the buffer back, so a refusal leaves
+/// nothing behind.
+fn make_chunk(
+    device: &dyn GraphicsDevice,
+    layout: BindGroupLayoutId,
+    binding: u32,
+    element_size: u32,
+    capacity: u32,
+    buffer_label: Cow<'static, str>,
+    label: &'static str,
+) -> Result<BufferChunk, ResourceError> {
+    let buffer = device.create_buffer(&BufferDescriptor {
+        label: Some(buffer_label),
+        size: capacity as u64,
+        usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
+        mapped_at_creation: false,
+    })?;
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some(label),
+        layout,
+        entries: &[BindGroupEntry {
+            binding,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer,
+                offset: 0,
+                size: std::num::NonZeroU64::new(element_size as u64),
+            }),
+            _phantom: std::marker::PhantomData,
+        }],
+    });
+    match bind_group {
+        Ok(bind_group) => Ok(BufferChunk {
+            buffer,
+            bind_group,
+            capacity,
+            current_offset: 0,
+        }),
+        Err(error) => {
+            if let Err(e) = device.destroy_buffer(buffer) {
+                log::warn!("DynamicUniformRingBuffer({label}): Failed to destroy buffer: {e:?}");
             }
+            Err(error)
+        }
+    }
+}
+
+/// Gives back every chunk of `slot`.
+fn destroy_slot(device: &dyn GraphicsDevice, slot: &DynamicRingSlot, label: &str) {
+    for chunk in &slot.chunks {
+        if let Err(e) = device.destroy_bind_group(chunk.bind_group) {
+            log::warn!("DynamicUniformRingBuffer({label}): Failed to destroy bind group: {e:?}");
+        }
+        if let Err(e) = device.destroy_buffer(chunk.buffer) {
+            log::warn!("DynamicUniformRingBuffer({label}): Failed to destroy buffer: {e:?}");
         }
     }
 }

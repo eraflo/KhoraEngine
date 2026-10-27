@@ -14,15 +14,11 @@
 
 //! 2D shadow atlas — directional and spot lights.
 //!
-//! Owns the `texture_depth_2d_array` atlas the lane samples for non-point
+//! The `texture_depth_2d_array` atlas the lit lanes sample for non-point
 //! shadow casters. One layer per shadow-casting directional / spot light.
-//!
-//! The dimensions are passed in by the lane — different quality tiers
-//! (`StandardShadowsLane`, `LowResShadowsLane`, …) use different
-//! resolutions but the algorithm is identical.
+//! The resolution is the lane level's.
 
 use std::borrow::Cow;
-use std::sync::RwLock;
 
 use crate::render_lane::util::DynamicUniformRingBuffer;
 use khora_core::math::{Extent3D, Mat4};
@@ -36,40 +32,26 @@ use khora_core::renderer::GraphicsDevice;
 
 use super::pass::{build_draw_cmds, AttachmentPass};
 
-/// 2D atlas resources — owned by whichever shadows lane created it.
+/// A 2D atlas on the device: its depth texture and the array view the lit
+/// lanes bind.
 pub struct Atlas2D {
-    /// Texture id (depth-only).
-    pub texture: RwLock<Option<TextureId>>,
-    /// `D2Array` view bound by the lit shader at
+    /// The depth texture.
+    pub texture: TextureId,
+    /// The `D2Array` view bound by the lit shader at
     /// [`khora_core::renderer::api::shadow::bindings::binding::ATLAS_2D`].
-    pub view: RwLock<Option<TextureViewId>>,
-}
-
-impl Default for Atlas2D {
-    fn default() -> Self {
-        Self {
-            texture: RwLock::new(None),
-            view: RwLock::new(None),
-        }
-    }
+    pub view: TextureViewId,
 }
 
 impl Atlas2D {
-    /// Creates the depth atlas + array view at the requested dimensions.
-    /// Idempotent — call once at `on_initialize`.
-    ///
-    /// `resolution` is the per-layer side length in texels;
-    /// `max_lights` is the number of array layers (== number of shadow
-    /// casters this lane will accept per frame).
+    /// Creates the depth atlas and its array view: `resolution` texels a
+    /// side, one layer per light up to `max_lights`. A view the device
+    /// refuses gives back the texture already made.
     pub fn create(
-        &self,
         device: &dyn GraphicsDevice,
         resolution: u32,
         max_lights: u32,
         label: &str,
-    ) -> Result<(), RenderError> {
-        use khora_core::lane::lock::write_lock_render;
-
+    ) -> Result<Self, RenderError> {
         let texture = device
             .create_texture(&TextureDescriptor {
                 label: Some(Cow::Owned(format!("{label} Texture"))),
@@ -87,43 +69,37 @@ impl Atlas2D {
             })
             .map_err(RenderError::ResourceError)?;
 
-        let view = device
-            .create_texture_view(
-                texture,
-                &TextureViewDescriptor {
-                    label: Some(Cow::Owned(format!("{label} View"))),
-                    format: Some(TextureFormat::Depth32Float),
-                    dimension: Some(TextureViewDimension::D2Array),
-                    aspect: ImageAspect::DepthOnly,
-                    base_mip_level: 0,
-                    mip_level_count: Some(1),
-                    base_array_layer: 0,
-                    array_layer_count: Some(max_lights),
-                },
-            )
-            .map_err(RenderError::ResourceError)?;
-
-        *write_lock_render(&self.texture, "Atlas2D.texture")? = Some(texture);
-        *write_lock_render(&self.view, "Atlas2D.view")? = Some(view);
-        Ok(())
-    }
-
-    /// Returns the current view id, if any.
-    pub fn view_id(&self) -> Option<TextureViewId> {
-        self.view.read().ok().and_then(|g| *g)
-    }
-
-    /// Destroys the atlas resources. No-op if already destroyed.
-    pub fn destroy(&self, device: &dyn GraphicsDevice) {
-        if let Some(view) = self.view.write().ok().and_then(|mut g| g.take()) {
-            if let Err(e) = device.destroy_texture_view(view) {
-                log::warn!("Atlas2D: failed to destroy view: {:?}", e);
+        let view = device.create_texture_view(
+            texture,
+            &TextureViewDescriptor {
+                label: Some(Cow::Owned(format!("{label} View"))),
+                format: Some(TextureFormat::Depth32Float),
+                dimension: Some(TextureViewDimension::D2Array),
+                aspect: ImageAspect::DepthOnly,
+                base_mip_level: 0,
+                mip_level_count: Some(1),
+                base_array_layer: 0,
+                array_layer_count: Some(max_lights),
+            },
+        );
+        match view {
+            Ok(view) => Ok(Self { texture, view }),
+            Err(error) => {
+                if let Err(e) = device.destroy_texture(texture) {
+                    log::warn!("Atlas2D: failed to destroy texture: {:?}", e);
+                }
+                Err(RenderError::ResourceError(error))
             }
         }
-        if let Some(texture) = self.texture.write().ok().and_then(|mut g| g.take()) {
-            if let Err(e) = device.destroy_texture(texture) {
-                log::warn!("Atlas2D: failed to destroy texture: {:?}", e);
-            }
+    }
+
+    /// Gives the atlas back to the device.
+    pub fn destroy(self, device: &dyn GraphicsDevice) {
+        if let Err(e) = device.destroy_texture_view(self.view) {
+            log::warn!("Atlas2D: failed to destroy view: {:?}", e);
+        }
+        if let Err(e) = device.destroy_texture(self.texture) {
+            log::warn!("Atlas2D: failed to destroy texture: {:?}", e);
         }
     }
 }

@@ -54,10 +54,16 @@ pub trait Lane: Send + 'static {
         true
     }
 
-    /// Builds what the lane needs on the device. Runs before the first record
-    /// and whenever the target's key changes.
-    fn prepare(&mut self, gpu: &mut GpuSetup<'_>, key: Option<TargetKey>) -> Result<(), LaneError> {
-        let _ = (gpu, key);
+    /// Builds what the lane needs on the device for `level`. Runs before the
+    /// first record, and again whenever the level or the target's key
+    /// changes: a level of another resolution rebuilds what it sizes.
+    fn prepare(
+        &mut self,
+        level: usize,
+        gpu: &mut GpuSetup<'_>,
+        key: Option<TargetKey>,
+    ) -> Result<(), LaneError> {
+        let _ = (level, gpu, key);
         Ok(())
     }
 

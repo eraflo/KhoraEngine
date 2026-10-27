@@ -93,6 +93,7 @@ impl Lane for DrawLane {
 
     fn prepare(
         &mut self,
+        _level: usize,
         _gpu: &mut GpuSetup<'_>,
         key: Option<TargetKey>,
     ) -> Result<(), LaneError> {

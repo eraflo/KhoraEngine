@@ -26,20 +26,15 @@ use khora_core::renderer::api::shadow::ShadowGpuBindings;
 use super::atlas_2d::Atlas2D;
 use super::atlas_cube::AtlasCube;
 
-/// Builds a [`ShadowGpuBindings`] from the lane's atlas resources, if
-/// every required handle is present.
-///
-/// Returns `None` only when the lane hasn't finished initialising yet
-/// (rare — only the very first frame between `on_initialize` and
-/// `execute`).
+/// Builds a [`ShadowGpuBindings`] from the lane's atlases and sampler.
 pub fn build_bindings(
     atlas_2d: &Atlas2D,
     atlas_cube: &AtlasCube,
     sampler: SamplerId,
-) -> Option<ShadowGpuBindings> {
-    Some(ShadowGpuBindings {
-        atlas_2d: atlas_2d.view_id()?,
-        atlas_cube: atlas_cube.view_id()?,
+) -> ShadowGpuBindings {
+    ShadowGpuBindings {
+        atlas_2d: atlas_2d.view,
+        atlas_cube: atlas_cube.view,
         sampler,
-    })
+    }
 }

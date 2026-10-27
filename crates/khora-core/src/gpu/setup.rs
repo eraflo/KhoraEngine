@@ -24,6 +24,7 @@ use crate::renderer::GraphicsDevice;
 /// [`GpuSetup::headless`].
 pub struct GpuSetup<'a> {
     device: Option<&'a dyn GraphicsDevice>,
+    pipelines: Option<&'a dyn crate::renderer::traits::PipelineSystem>,
     borrows: PhantomData<&'a mut ()>,
 }
 
@@ -32,6 +33,7 @@ impl<'a> GpuSetup<'a> {
     pub fn new(device: &'a dyn GraphicsDevice) -> Self {
         Self {
             device: Some(device),
+            pipelines: None,
             borrows: PhantomData,
         }
     }
@@ -40,6 +42,7 @@ impl<'a> GpuSetup<'a> {
     pub fn headless() -> Self {
         Self {
             device: None,
+            pipelines: None,
             borrows: PhantomData,
         }
     }
@@ -47,6 +50,21 @@ impl<'a> GpuSetup<'a> {
     /// The graphics device, when there is one.
     pub fn device(&self) -> Option<&'a dyn GraphicsDevice> {
         self.device
+    }
+
+    /// The same setup, building its pipelines and layouts through
+    /// `pipelines`.
+    pub fn with_pipelines(
+        mut self,
+        pipelines: &'a dyn crate::renderer::traits::PipelineSystem,
+    ) -> Self {
+        self.pipelines = Some(pipelines);
+        self
+    }
+
+    /// The pipeline system, when there is one.
+    pub fn pipelines(&self) -> Option<&'a dyn crate::renderer::traits::PipelineSystem> {
+        self.pipelines
     }
 }
 

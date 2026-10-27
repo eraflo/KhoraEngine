@@ -461,12 +461,6 @@ fn register_builtin_agents(dcc: &DccService) {
     );
     dcc.register_agent(
         Arc::new(Mutex::new(
-            khora_agents::shadow_agent::ShadowAgent::default(),
-        )),
-        1.0,
-    );
-    dcc.register_agent(
-        Arc::new(Mutex::new(
             khora_agents::overlay_agent::OverlayAgent::default(),
         )),
         1.0,

@@ -14,16 +14,11 @@
 
 //! Cube shadow atlas — point lights.
 //!
-//! Owns the `texture_depth_cube_array` atlas the lane samples for
-//! omnidirectional shadow casters. Six layers per shadow-casting point
-//! light (one per cube face).
-//!
-//! The dimensions are passed in by the lane — different quality tiers
-//! pick different `face_resolution` and `max_cubes`; the algorithm is
-//! identical.
+//! The `texture_depth_cube_array` atlas the lit lanes sample for
+//! omnidirectional shadow casters. Six layers per shadow-casting point light
+//! (one per cube face). The face resolution is the lane level's.
 
 use std::borrow::Cow;
-use std::sync::RwLock;
 
 use crate::render_lane::util::DynamicUniformRingBuffer;
 use khora_core::math::{Extent3D, Mat4};
@@ -32,49 +27,36 @@ use khora_core::renderer::api::resource::{
     TextureViewDescriptor, TextureViewDimension, TextureViewId,
 };
 use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
-use khora_core::renderer::error::RenderError;
+use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::GraphicsDevice;
 
 use super::pass::{build_draw_cmds, AttachmentPass};
 
-/// Cube atlas resources — owned by whichever shadows lane created it.
+/// A cube atlas on the device: its depth texture, the cube-array view the lit
+/// lanes bind, and one 2D view per face to render into.
 pub struct AtlasCube {
-    /// Underlying 2D-array texture id.
-    pub texture: RwLock<Option<TextureId>>,
-    /// `CubeArray` view bound by the lit shader at
+    /// The depth texture, six layers per cube.
+    pub texture: TextureId,
+    /// The `CubeArray` view bound by the lit shader at
     /// [`khora_core::renderer::api::shadow::bindings::binding::ATLAS_CUBE`].
-    pub view: RwLock<Option<TextureViewId>>,
-    /// Per-face 2D views used as depth render targets when rasterising
-    /// each cube face. Indexed `cube_layer * 6 + face_index` (with
-    /// `face_index` matching [`khora_core::math::CubeFace::index`]).
-    pub face_views: RwLock<Vec<TextureViewId>>,
-}
-
-impl Default for AtlasCube {
-    fn default() -> Self {
-        Self {
-            texture: RwLock::new(None),
-            view: RwLock::new(None),
-            face_views: RwLock::new(Vec::new()),
-        }
-    }
+    pub view: TextureViewId,
+    /// Per-face 2D views used as depth render targets. Indexed
+    /// `cube_layer * 6 + face_index` (with `face_index` matching
+    /// [`khora_core::math::CubeFace::index`]).
+    pub face_views: Vec<TextureViewId>,
 }
 
 impl AtlasCube {
-    /// Creates the cube depth atlas + cube-array view + per-face views at
-    /// the requested dimensions. Idempotent — call once at
-    /// `on_initialize`.
+    /// Creates the cube depth atlas, its cube-array view and its face views:
+    /// `face_resolution` texels a side, `max_cubes` cubes. Whatever was made
+    /// before a refusal is given back.
     pub fn create(
-        &self,
         device: &dyn GraphicsDevice,
         face_resolution: u32,
         max_cubes: u32,
         label: &str,
-    ) -> Result<(), RenderError> {
-        use khora_core::lane::lock::write_lock_render;
-
+    ) -> Result<Self, RenderError> {
         let cube_layers = max_cubes * 6;
-
         let texture = device
             .create_texture(&TextureDescriptor {
                 label: Some(Cow::Owned(format!("{label} Texture"))),
@@ -92,81 +74,82 @@ impl AtlasCube {
             })
             .map_err(RenderError::ResourceError)?;
 
-        let view = device
-            .create_texture_view(
+        let mut made = Vec::with_capacity(cube_layers as usize + 1);
+        let built = make_views(device, texture, cube_layers, label, &mut made);
+        match built {
+            Ok((view, face_views)) => Ok(Self {
                 texture,
-                &TextureViewDescriptor {
-                    label: Some(Cow::Owned(format!("{label} View"))),
-                    format: Some(TextureFormat::Depth32Float),
-                    dimension: Some(TextureViewDimension::CubeArray),
-                    aspect: ImageAspect::DepthOnly,
-                    base_mip_level: 0,
-                    mip_level_count: Some(1),
-                    base_array_layer: 0,
-                    array_layer_count: Some(cube_layers),
-                },
-            )
-            .map_err(RenderError::ResourceError)?;
-
-        let mut face_views = Vec::with_capacity(cube_layers as usize);
-        for layer in 0..cube_layers {
-            let face_view = device
-                .create_texture_view(
-                    texture,
-                    &TextureViewDescriptor {
-                        label: Some(Cow::Owned(format!("{label} Face View [{}]", layer))),
-                        format: Some(TextureFormat::Depth32Float),
-                        dimension: Some(TextureViewDimension::D2),
-                        aspect: ImageAspect::DepthOnly,
-                        base_mip_level: 0,
-                        mip_level_count: Some(1),
-                        base_array_layer: layer,
-                        array_layer_count: Some(1),
-                    },
-                )
-                .map_err(RenderError::ResourceError)?;
-            face_views.push(face_view);
-        }
-
-        *write_lock_render(&self.texture, "AtlasCube.texture")? = Some(texture);
-        *write_lock_render(&self.view, "AtlasCube.view")? = Some(view);
-        *write_lock_render(&self.face_views, "AtlasCube.face_views")? = face_views;
-        Ok(())
-    }
-
-    /// Returns the cube-array view id, if any.
-    pub fn view_id(&self) -> Option<TextureViewId> {
-        self.view.read().ok().and_then(|g| *g)
-    }
-
-    /// Returns a clone of the per-face view list (cheap — just `Vec<TextureViewId>`).
-    pub fn face_views_snapshot(&self) -> Vec<TextureViewId> {
-        self.face_views
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_default()
-    }
-
-    /// Destroys the atlas resources. No-op if already destroyed.
-    pub fn destroy(&self, device: &dyn GraphicsDevice) {
-        if let Ok(mut face_views) = self.face_views.write() {
-            for view in face_views.drain(..) {
-                if let Err(e) = device.destroy_texture_view(view) {
-                    log::warn!("AtlasCube: failed to destroy face view: {:?}", e);
+                view,
+                face_views,
+            }),
+            Err(error) => {
+                for view in made {
+                    if let Err(e) = device.destroy_texture_view(view) {
+                        log::warn!("AtlasCube: failed to destroy view: {:?}", e);
+                    }
                 }
-            }
-        }
-        if let Some(view) = self.view.write().ok().and_then(|mut g| g.take()) {
-            if let Err(e) = device.destroy_texture_view(view) {
-                log::warn!("AtlasCube: failed to destroy view: {:?}", e);
-            }
-        }
-        if let Some(texture) = self.texture.write().ok().and_then(|mut g| g.take()) {
-            if let Err(e) = device.destroy_texture(texture) {
-                log::warn!("AtlasCube: failed to destroy texture: {:?}", e);
+                if let Err(e) = device.destroy_texture(texture) {
+                    log::warn!("AtlasCube: failed to destroy texture: {:?}", e);
+                }
+                Err(RenderError::ResourceError(error))
             }
         }
     }
+
+    /// Gives the atlas back to the device.
+    pub fn destroy(self, device: &dyn GraphicsDevice) {
+        for view in self.face_views {
+            if let Err(e) = device.destroy_texture_view(view) {
+                log::warn!("AtlasCube: failed to destroy face view: {:?}", e);
+            }
+        }
+        if let Err(e) = device.destroy_texture_view(self.view) {
+            log::warn!("AtlasCube: failed to destroy view: {:?}", e);
+        }
+        if let Err(e) = device.destroy_texture(self.texture) {
+            log::warn!("AtlasCube: failed to destroy texture: {:?}", e);
+        }
+    }
+}
+
+/// The cube-array view and the face views of `texture`, each recorded in
+/// `made` as it is created, so a refusal can give back the ones before it.
+fn make_views(
+    device: &dyn GraphicsDevice,
+    texture: TextureId,
+    cube_layers: u32,
+    label: &str,
+    made: &mut Vec<TextureViewId>,
+) -> Result<(TextureViewId, Vec<TextureViewId>), ResourceError> {
+    let mut make = |descriptor: TextureViewDescriptor<'_>| -> Result<TextureViewId, ResourceError> {
+        let view = device.create_texture_view(texture, &descriptor)?;
+        made.push(view);
+        Ok(view)
+    };
+    let view = make(TextureViewDescriptor {
+        label: Some(Cow::Owned(format!("{label} View"))),
+        format: Some(TextureFormat::Depth32Float),
+        dimension: Some(TextureViewDimension::CubeArray),
+        aspect: ImageAspect::DepthOnly,
+        base_mip_level: 0,
+        mip_level_count: Some(1),
+        base_array_layer: 0,
+        array_layer_count: Some(cube_layers),
+    })?;
+    let mut face_views = Vec::with_capacity(cube_layers as usize);
+    for layer in 0..cube_layers {
+        face_views.push(make(TextureViewDescriptor {
+            label: Some(Cow::Owned(format!("{label} Face View [{layer}]"))),
+            format: Some(TextureFormat::Depth32Float),
+            dimension: Some(TextureViewDimension::D2),
+            aspect: ImageAspect::DepthOnly,
+            base_mip_level: 0,
+            mip_level_count: Some(1),
+            base_array_layer: layer,
+            array_layer_count: Some(1),
+        })?);
+    }
+    Ok((view, face_views))
 }
 
 /// Records six shadow passes for one point light (one per cube face).

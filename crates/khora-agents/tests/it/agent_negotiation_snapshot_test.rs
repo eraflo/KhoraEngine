@@ -27,7 +27,6 @@ use khora_agents::lane_agent::lane_agent;
 use khora_agents::overlay_agent::OverlayAgent;
 use khora_agents::render_agent::RenderAgent;
 use khora_agents::script_agent::ScriptAgent;
-use khora_agents::shadow_agent::ShadowAgent;
 use khora_agents::skybox_agent::SkyboxAgent;
 use khora_agents::ui_agent::UiAgent;
 use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
@@ -37,6 +36,7 @@ use std::time::Duration;
 
 use crate::audio_family::audio_registration;
 use crate::physics_family::fixtures::physics_agent;
+use crate::shadows_family::fixtures::{shadow_agent, LEVEL_MEMORY};
 
 const MIB: u64 = 1024 * 1024;
 
@@ -78,16 +78,19 @@ fn render_agent_offers_one_strategy_per_lane_in_registration_order() {
     );
 }
 
+/// The shadows family's agent, before any frame: one row per level of its
+/// one lane, cheapest first, each quoting the graphics memory of its atlases —
+/// 5.5, 22 and 88 MiB.
 #[test]
-fn shadow_agent_offers_three_tiers_from_standard_down() {
+fn shadow_agent_offers_three_tiers_from_low_power_up() {
     assert_eq!(
-        offer(ShadowAgent::default()),
+        offer(shadow_agent()),
         (
             AgentId::ShadowRenderer,
             vec![
-                (StrategyId::HighPerformance, (64 + 24) * MIB),
-                (StrategyId::Balanced, (16 + 6) * MIB),
-                (StrategyId::LowPower, 4 * MIB + 3 * 512 * 1024),
+                (StrategyId::LowPower, LEVEL_MEMORY[0]),
+                (StrategyId::Balanced, LEVEL_MEMORY[1]),
+                (StrategyId::HighPerformance, LEVEL_MEMORY[2]),
             ]
         )
     );

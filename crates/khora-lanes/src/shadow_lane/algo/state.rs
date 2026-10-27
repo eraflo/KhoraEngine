@@ -12,22 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Shared state container + algorithm for any shadows lane.
+//! What the shadows lane builds on the device for one level, and the frame's
+//! shadow rendering.
 //!
-//! Each concrete lane (`StandardShadowsLane`, `LowResShadowsLane`, …)
-//! owns one [`ShadowsLaneState`] and exposes its own (hardcoded)
-//! dimensions to its `Lane` trait methods. The state is identical in
-//! shape; only the GPU resource sizes differ.
-
-use std::collections::HashMap;
-use std::sync::RwLock;
+//! [`ShadowGpu`] is built whole by the lane's `prepare` — the depth pipeline,
+//! the two uniform rings, the two atlases at the level's resolution, the
+//! comparison sampler — and given back whole by its `shutdown`, or when a
+//! level of another resolution replaces it. The lane holds it by value and
+//! records through `&mut self`: no lock.
 
 use crate::render_lane::util::DynamicUniformRingBuffer;
-use khora_core::renderer::api::command::BindGroupLayoutId;
 use khora_core::renderer::api::gpu_scene::{GpuMesh, ModelUniforms};
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::{CameraUniformData, SamplerId};
-use khora_core::renderer::api::shadow::ShadowEntry;
+use khora_core::renderer::api::shadow::{ShadowEntries, ShadowEntry, ShadowGpuBindings};
+use khora_core::renderer::error::RenderError;
+use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::{traits::CommandEncoder, GraphicsDevice};
 use khora_data::assets::Assets;
 use khora_data::render::RenderWorld;
@@ -36,117 +36,79 @@ use super::atlas_2d::Atlas2D;
 use super::atlas_cube::AtlasCube;
 use super::pass;
 
-/// Shared state used by every shadows lane.
-///
-/// The state's shape is identical across quality tiers; the per-lane
-/// **constants** (atlas resolution, max lights) are passed in at
-/// `init_gpu` time and recorded inside the resources (textures are
-/// sized accordingly). The lane itself is the source of truth for its
-/// constants — there is no config struct injected by the agent.
-pub struct ShadowsLaneState {
-    /// Depth-only render pipeline shared by both atlas paths.
-    pub pipeline: RwLock<Option<RenderPipelineId>>,
-    /// Shadow camera (light view-projection) bind group layout.
-    pub camera_layout: RwLock<Option<BindGroupLayoutId>>,
-    /// Shadow model-uniform bind group layout.
-    pub model_layout: RwLock<Option<BindGroupLayoutId>>,
-
-    /// 2D atlas resources (directional / spot lights).
-    pub atlas_2d: Atlas2D,
-    /// Cube atlas resources (point lights).
-    pub atlas_cube: AtlasCube,
-
-    /// Comparison sampler shared by both atlases.
-    pub shadow_sampler: RwLock<Option<SamplerId>>,
-
-    /// Per-light shadow entries for the per-frame `OutputDeck`.
-    pub shadow_results: RwLock<HashMap<usize, ShadowEntry>>,
-
-    /// Dynamic ring buffer for camera (light view-proj) uniforms — one
-    /// slot per pass (1 per directional/spot light + 6 per point).
-    pub camera_ring: RwLock<Option<DynamicUniformRingBuffer>>,
-    /// Dynamic ring buffer for per-mesh model uniforms.
-    pub model_ring: RwLock<Option<DynamicUniformRingBuffer>>,
+/// The resolutions and capacities of one level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tier {
+    /// Side of each 2D atlas layer, in texels.
+    pub atlas_2d_resolution: u32,
+    /// Directional and spot casters a frame shadows.
+    pub atlas_2d_max_lights: u32,
+    /// Side of each cube face, in texels.
+    pub cube_face_resolution: u32,
+    /// Point casters a frame shadows.
+    pub cube_max_lights: u32,
 }
 
-impl Default for ShadowsLaneState {
-    fn default() -> Self {
-        Self {
-            pipeline: RwLock::new(None),
-            camera_layout: RwLock::new(None),
-            model_layout: RwLock::new(None),
-            atlas_2d: Atlas2D::default(),
-            atlas_cube: AtlasCube::default(),
-            shadow_sampler: RwLock::new(None),
-            shadow_results: RwLock::new(HashMap::new()),
-            camera_ring: RwLock::new(None),
-            model_ring: RwLock::new(None),
-        }
+impl Tier {
+    /// The graphics memory the level's atlases hold: four bytes a texel.
+    pub const fn atlas_bytes(&self) -> u64 {
+        let side_2d = self.atlas_2d_resolution as u64;
+        let side_cube = self.cube_face_resolution as u64;
+        side_2d * side_2d * self.atlas_2d_max_lights as u64 * 4
+            + side_cube * side_cube * self.cube_max_lights as u64 * 6 * 4
     }
 }
 
-impl ShadowsLaneState {
-    /// One-time GPU initialisation sized to the lane's own constants.
-    ///
-    /// Called by the lane's [`khora_core::lane::Lane::on_initialize`].
-    #[allow(clippy::too_many_arguments)]
-    pub fn init_gpu(
-        &self,
-        device: &dyn GraphicsDevice,
-        pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
-        atlas_2d_resolution: u32,
-        atlas_2d_max_lights: u32,
-        cube_face_resolution: u32,
-        cube_max_lights: u32,
-        label_prefix: &str,
-    ) -> Result<(), khora_core::renderer::error::RenderError> {
-        use khora_core::lane::lock::write_lock_render;
-        use khora_core::renderer::api::pipeline::enums::CompareFunction;
-        use khora_core::renderer::api::resource::{
-            AddressMode, FilterMode, MipmapFilterMode, SamplerDescriptor,
-        };
-        use std::borrow::Cow;
+/// Everything a level builds on the device.
+pub struct ShadowGpu {
+    /// The level it was built for.
+    pub tier: Tier,
+    pipeline: RenderPipelineId,
+    camera_ring: DynamicUniformRingBuffer,
+    model_ring: DynamicUniformRingBuffer,
+    atlas_2d: Atlas2D,
+    atlas_cube: AtlasCube,
+    sampler: SamplerId,
+}
 
-        // 1. Bind Group Layouts — bespoke per-draw dynamic-offset uniforms,
-        // resolved + cached by the PipelineSystem so the pipeline and the ring
-        // buffers share one layout id.
-        let camera_layout = pipeline_system.inline_layout(
+impl ShadowGpu {
+    /// Builds a level's resources. A refusal halfway gives back what was
+    /// made before it, so a retried prepare leaks nothing.
+    pub fn build(
+        device: &dyn GraphicsDevice,
+        pipelines: &dyn PipelineSystem,
+        tier: Tier,
+        label: &str,
+    ) -> Result<Self, RenderError> {
+        use crate::render_lane::util::dynamic_uniform_ring_buffer::{
+            DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
+        };
+
+        // Layouts and the depth-only pipeline belong to the PipelineSystem,
+        // which caches them: nothing to give back.
+        let camera_layout = pipelines.inline_layout(
             device,
             SHADOW_CAMERA_LAYOUT_LABEL,
             &shadow_camera_layout_entries(),
         )?;
-        let model_layout = pipeline_system.inline_layout(
+        let model_layout = pipelines.inline_layout(
             device,
             SHADOW_MODEL_LAYOUT_LABEL,
             &shadow_model_layout_entries(),
         )?;
+        let pipeline = pipelines.pipeline(device, &shadow_pipeline_spec())?;
 
-        // 2. Pipeline (depth-only) — compiled + cached by the backend from
-        // `khora::pipelines::shadow_pass`.
-        let pipeline = pipeline_system.pipeline(device, &shadow_pipeline_spec())?;
-
-        *write_lock_render(&self.pipeline, "ShadowsLaneState.pipeline")? = Some(pipeline);
-        *write_lock_render(&self.camera_layout, "ShadowsLaneState.camera_layout")? =
-            Some(camera_layout);
-        *write_lock_render(&self.model_layout, "ShadowsLaneState.model_layout")? =
-            Some(model_layout);
-
-        // 3. Ring buffers — sized for this lane's atlas capacities.
-        use crate::render_lane::util::dynamic_uniform_ring_buffer::{
-            DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
-        };
-        let camera_ring_capacity = atlas_2d_max_lights + cube_max_lights * 6;
         let camera_ring = DynamicUniformRingBuffer::new(
             device,
             camera_layout,
             0,
             std::mem::size_of::<CameraUniformData>() as u32,
-            camera_ring_capacity,
+            tier.atlas_2d_max_lights + tier.cube_max_lights * 6,
             MIN_UNIFORM_ALIGNMENT,
             "Shadow Camera Ring",
         )
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-        let model_ring = DynamicUniformRingBuffer::new(
+        .map_err(RenderError::ResourceError)?;
+        let model_ring = match DynamicUniformRingBuffer::new(
             device,
             model_layout,
             0,
@@ -154,251 +116,216 @@ impl ShadowsLaneState {
             DEFAULT_MAX_ELEMENTS,
             MIN_UNIFORM_ALIGNMENT,
             "Shadow Model Ring",
-        )
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-        *write_lock_render(&self.camera_ring, "ShadowsLaneState.camera_ring")? = Some(camera_ring);
-        *write_lock_render(&self.model_ring, "ShadowsLaneState.model_ring")? = Some(model_ring);
+        ) {
+            Ok(ring) => ring,
+            Err(error) => {
+                camera_ring.destroy(device);
+                return Err(RenderError::ResourceError(error));
+            }
+        };
+        let give_back_rings = |device: &dyn GraphicsDevice| {
+            camera_ring.destroy(device);
+            model_ring.destroy(device);
+        };
 
-        // 4. Atlases sized to the lane's constants.
-        let label_2d = format!("{label_prefix} Atlas 2D");
-        let label_cube = format!("{label_prefix} Atlas Cube");
-        self.atlas_2d
-            .create(device, atlas_2d_resolution, atlas_2d_max_lights, &label_2d)?;
-        self.atlas_cube
-            .create(device, cube_face_resolution, cube_max_lights, &label_cube)?;
-
-        // 5. Comparison sampler.
-        let sampler = device
-            .create_sampler(&SamplerDescriptor {
-                label: Some(Cow::Borrowed("Shadow Sampler")),
-                address_mode_u: AddressMode::ClampToEdge,
-                address_mode_v: AddressMode::ClampToEdge,
-                address_mode_w: AddressMode::ClampToEdge,
-                mag_filter: FilterMode::Linear,
-                min_filter: FilterMode::Linear,
-                mipmap_filter: MipmapFilterMode::Nearest,
-                lod_min_clamp: 0.0,
-                lod_max_clamp: 1.0,
-                compare: Some(CompareFunction::LessEqual),
-                anisotropy_clamp: 1,
-                border_color: None,
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-        *write_lock_render(&self.shadow_sampler, "ShadowsLaneState.shadow_sampler")? =
-            Some(sampler);
+        let atlas_2d = match Atlas2D::create(
+            device,
+            tier.atlas_2d_resolution,
+            tier.atlas_2d_max_lights,
+            &format!("{label} Atlas 2D"),
+        ) {
+            Ok(atlas) => atlas,
+            Err(error) => {
+                give_back_rings(device);
+                return Err(error);
+            }
+        };
+        let atlas_cube = match AtlasCube::create(
+            device,
+            tier.cube_face_resolution,
+            tier.cube_max_lights,
+            &format!("{label} Atlas Cube"),
+        ) {
+            Ok(atlas) => atlas,
+            Err(error) => {
+                atlas_2d.destroy(device);
+                give_back_rings(device);
+                return Err(error);
+            }
+        };
+        let sampler = match device.create_sampler(&shadow_sampler_descriptor()) {
+            Ok(sampler) => sampler,
+            Err(error) => {
+                atlas_cube.destroy(device);
+                atlas_2d.destroy(device);
+                give_back_rings(device);
+                return Err(RenderError::ResourceError(error));
+            }
+        };
 
         log::info!(
-            "{label_prefix}: atlases initialized — 2D({}×{}, {} layers), Cube({}×{}, {} cubes = {} face layers)",
-            atlas_2d_resolution,
-            atlas_2d_resolution,
-            atlas_2d_max_lights,
-            cube_face_resolution,
-            cube_face_resolution,
-            cube_max_lights,
-            cube_max_lights * 6,
+            "{label}: atlases built — 2D({side}×{side}, {} layers), Cube({face}×{face}, {} cubes)",
+            tier.atlas_2d_max_lights,
+            tier.cube_max_lights,
+            side = tier.atlas_2d_resolution,
+            face = tier.cube_face_resolution,
         );
-
-        Ok(())
+        Ok(Self {
+            tier,
+            pipeline,
+            camera_ring,
+            model_ring,
+            atlas_2d,
+            atlas_cube,
+            sampler,
+        })
     }
 
-    /// Renders one frame's shadows. The lane is responsible for
-    /// providing its own atlas capacities (used here only to **cap**
-    /// per-frame allocation; the texture is already sized correctly by
-    /// `init_gpu`).
+    /// The bindings the lit lanes sample the atlases through.
+    pub fn bindings(&self) -> ShadowGpuBindings {
+        super::bindings::build_bindings(&self.atlas_2d, &self.atlas_cube, self.sampler)
+    }
+
+    /// Renders one frame's shadows into `encoder` and fills `entries` with
+    /// each shadowed light's: the frame's 2D casters up to the level's
+    /// capacity, then its point casters up to its own.
     #[allow(clippy::too_many_arguments)] // one parameter per render input; a config struct would obscure the call sites
     pub fn render(
-        &self,
-        atlas_2d_max_lights: u32,
-        cube_max_lights: u32,
-        strategy_label: &str,
+        &mut self,
         render_world: &RenderWorld,
-        shadow_view: Option<&khora_data::flow::ShadowView>,
+        shadow_view: &khora_data::flow::ShadowView,
         device: &dyn GraphicsDevice,
         encoder: &mut dyn CommandEncoder,
-        gpu_meshes: &std::sync::RwLock<Assets<GpuMesh>>,
+        gpu_meshes: &Assets<GpuMesh>,
+        entries: &mut ShadowEntries,
+        label: &str,
     ) {
-        use super::atlas_2d as atlas_2d_mod;
-        use super::atlas_cube as atlas_cube_mod;
         use khora_core::math::Mat4;
         use khora_data::flow::ShadowMatrices;
 
-        let pipeline = if let Some(p) =
-            *crate::lock_or_log!(self.pipeline.read(), "ShadowsLaneState.pipeline")
-        {
-            p
-        } else {
-            return;
-        };
-
-        let atlas_2d_view = if let Some(v) = self.atlas_2d.view_id() {
-            v
-        } else {
-            return;
-        };
-        let cube_face_views = self.atlas_cube.face_views_snapshot();
-
-        let mut camera_lock =
-            crate::lock_or_log!(self.camera_ring.write(), "ShadowsLaneState.camera_ring");
-        let camera_ring = match camera_lock.as_mut() {
-            Some(r) => r,
-            None => {
-                log::warn!("{strategy_label}: camera_ring not initialized");
-                return;
-            }
-        };
-        camera_ring.advance();
-
-        let mut model_lock =
-            crate::lock_or_log!(self.model_ring.write(), "ShadowsLaneState.model_ring");
-        let model_ring = match model_lock.as_mut() {
-            Some(r) => r,
-            None => {
-                log::warn!("{strategy_label}: model_ring not initialized");
-                return;
-            }
-        };
-        model_ring.advance();
-
-        let gpu_meshes_guard =
-            crate::lock_or_log!(gpu_meshes.read(), "ShadowsLaneState.gpu_meshes");
-
-        let mut shadow_results = crate::lock_or_log!(
-            self.shadow_results.write(),
-            "ShadowsLaneState.shadow_results"
-        );
-        shadow_results.clear();
+        let tier = self.tier;
+        self.camera_ring.advance();
+        self.model_ring.advance();
+        entries.0.clear();
 
         let mut next_atlas_2d_index: u32 = 0;
         let mut next_cube_layer: u32 = 0;
         let mut passes: Vec<pass::AttachmentPass> = Vec::new();
 
         for (i, light) in render_world.lights.iter().enumerate() {
-            let Some(matrices) = shadow_view.and_then(|sv| sv.matrices.get(&i)) else {
+            let Some(matrices) = shadow_view.matrices.get(&i) else {
                 continue;
             };
-
             match matrices {
                 ShadowMatrices::Single(view_proj) => {
-                    if next_atlas_2d_index >= atlas_2d_max_lights {
+                    if next_atlas_2d_index >= tier.atlas_2d_max_lights {
                         log::warn!(
-                            "{strategy_label}: 2D atlas full ({} / {}), dropping shadow for light {}",
-                            next_atlas_2d_index,
-                            atlas_2d_max_lights,
-                            i
+                            "{label}: 2D atlas full ({next_atlas_2d_index} / {}), dropping shadow for light {i}",
+                            tier.atlas_2d_max_lights
                         );
                         continue;
                     }
                     let layer = next_atlas_2d_index;
                     next_atlas_2d_index += 1;
-
-                    shadow_results.insert(
+                    entries.insert(
                         i,
                         ShadowEntry::Atlas2D {
                             view_proj: *view_proj,
                             atlas_index: layer as i32,
                         },
                     );
-
-                    if let Some(p) = atlas_2d_mod::collect_pass(
-                        atlas_2d_view,
+                    if let Some(p) = super::atlas_2d::collect_pass(
+                        self.atlas_2d.view,
                         layer,
                         light.position,
                         *view_proj,
                         device,
                         render_world,
-                        &gpu_meshes_guard,
-                        camera_ring,
-                        model_ring,
+                        gpu_meshes,
+                        &mut self.camera_ring,
+                        &mut self.model_ring,
                     ) {
                         passes.push(p);
                     }
                 }
                 ShadowMatrices::Cube(face_view_projs) => {
-                    if next_cube_layer >= cube_max_lights {
+                    if next_cube_layer >= tier.cube_max_lights {
                         log::warn!(
-                            "{strategy_label}: cube atlas full ({} / {}), dropping shadow for point light {}",
-                            next_cube_layer,
-                            cube_max_lights,
-                            i
+                            "{label}: cube atlas full ({next_cube_layer} / {}), dropping shadow for point light {i}",
+                            tier.cube_max_lights
                         );
                         continue;
                     }
-                    let cube_layer = next_cube_layer;
-                    next_cube_layer += 1;
-
                     let far_plane = match &light.light_type {
                         khora_core::renderer::light::LightType::Point(p) => p.range,
                         _ => continue,
                     };
-
-                    let face_view_projs_arr: [Mat4; 6] = **face_view_projs;
-                    shadow_results.insert(
+                    let cube_layer = next_cube_layer;
+                    next_cube_layer += 1;
+                    let face_view_projs: [Mat4; 6] = **face_view_projs;
+                    entries.insert(
                         i,
                         ShadowEntry::Cube {
-                            face_view_projs: Box::new(face_view_projs_arr),
+                            face_view_projs: Box::new(face_view_projs),
                             cube_array_index: cube_layer as i32,
                             light_pos: light.position,
                             far_plane,
                         },
                     );
-
-                    let cube_passes = atlas_cube_mod::collect_passes(
-                        &cube_face_views,
+                    passes.extend(super::atlas_cube::collect_passes(
+                        &self.atlas_cube.face_views,
                         cube_layer,
                         light.position,
-                        &face_view_projs_arr,
+                        &face_view_projs,
                         device,
                         render_world,
-                        &gpu_meshes_guard,
-                        camera_ring,
-                        model_ring,
-                    );
-                    passes.extend(cube_passes);
+                        gpu_meshes,
+                        &mut self.camera_ring,
+                        &mut self.model_ring,
+                    ));
                 }
             }
         }
 
-        drop(model_lock);
-        drop(camera_lock);
-
-        for ap in &passes {
-            pass::record_depth_pass(encoder, &pipeline, ap);
+        for attachment in &passes {
+            pass::record_depth_pass(encoder, &self.pipeline, attachment);
         }
     }
 
-    /// Publishes the shadow bindings (per-frame snapshot of atlas
-    /// resource ids) into the lane context. Lit consumer lanes read
-    /// this opaquely via [`khora_core::renderer::api::shadow::ShadowGpuBindings`].
-    pub fn shadow_bindings(&self) -> Option<khora_core::renderer::api::shadow::ShadowGpuBindings> {
-        super::bindings::build_bindings(
-            &self.atlas_2d,
-            &self.atlas_cube,
-            self.shadow_sampler.read().ok().and_then(|g| *g)?,
-        )
-    }
-
-    /// Releases every GPU resource owned by this state. No-op if
-    /// already shut down.
-    pub fn shutdown(&self, device: &dyn GraphicsDevice) {
-        if let Some(ring) = self.camera_ring.write().ok().and_then(|mut g| g.take()) {
-            ring.destroy(device);
-        }
-        if let Some(ring) = self.model_ring.write().ok().and_then(|mut g| g.take()) {
-            ring.destroy(device);
-        }
-        // The depth-only pipeline and the camera/model bind-group layouts are
-        // owned + cached by the `PipelineSystem` backend, so they are not
-        // destroyed here; just clear the lane's cached handles.
-        let _ = self.pipeline.write().map(|mut g| g.take());
-        let _ = self.camera_layout.write().map(|mut g| g.take());
-        let _ = self.model_layout.write().map(|mut g| g.take());
+    /// Gives every resource back to the device. The pipeline and the
+    /// layouts are the `PipelineSystem`'s, so they stay.
+    pub fn destroy(self, device: &dyn GraphicsDevice) {
+        self.camera_ring.destroy(device);
+        self.model_ring.destroy(device);
         self.atlas_2d.destroy(device);
         self.atlas_cube.destroy(device);
-        if let Some(sampler) = self.shadow_sampler.write().ok().and_then(|mut g| g.take()) {
-            if let Err(e) = device.destroy_sampler(sampler) {
-                log::warn!("ShadowsLaneState: failed to destroy sampler: {:?}", e);
-            }
+        if let Err(e) = device.destroy_sampler(self.sampler) {
+            log::warn!("ShadowGpu: failed to destroy sampler: {:?}", e);
         }
+    }
+}
+
+/// The comparison sampler both atlases are sampled through.
+fn shadow_sampler_descriptor() -> khora_core::renderer::api::resource::SamplerDescriptor<'static> {
+    use khora_core::renderer::api::pipeline::enums::CompareFunction;
+    use khora_core::renderer::api::resource::{
+        AddressMode, FilterMode, MipmapFilterMode, SamplerDescriptor,
+    };
+    use std::borrow::Cow;
+
+    SamplerDescriptor {
+        label: Some(Cow::Borrowed("Shadow Sampler")),
+        address_mode_u: AddressMode::ClampToEdge,
+        address_mode_v: AddressMode::ClampToEdge,
+        address_mode_w: AddressMode::ClampToEdge,
+        mag_filter: FilterMode::Linear,
+        min_filter: FilterMode::Linear,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        lod_min_clamp: 0.0,
+        lod_max_clamp: 1.0,
+        compare: Some(CompareFunction::LessEqual),
+        anisotropy_clamp: 1,
+        border_color: None,
     }
 }
 

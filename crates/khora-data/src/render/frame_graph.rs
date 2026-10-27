@@ -149,6 +149,22 @@ pub struct OverlayPassSlot(pub Option<PassContribution>);
 #[derive(Default)]
 pub struct ShadowPassSlot(pub Option<PassContribution>);
 
+impl khora_core::lane::io::PassSlot for ShadowPassSlot {
+    type Descriptor = PassDescriptor;
+
+    /// The shadow pass writes the shadow atlas, which every lit pass reads.
+    fn descriptor() -> PassDescriptor {
+        PassDescriptor::new("ShadowPass").writes(ResourceId::ShadowAtlas)
+    }
+
+    fn close(descriptor: PassDescriptor, command_buffer: CommandBufferId) -> Self {
+        Self(Some(PassContribution {
+            descriptor,
+            command_buffer,
+        }))
+    }
+}
+
 /// One pass slot the engine submits each frame, and what it must follow.
 ///
 /// Submitted by `register_pass!(Slot)` or `register_pass!(Slot, after = [A, B])`
@@ -497,6 +513,28 @@ mod tests {
             "the sky must sit between the opaque draws that give it a depth \
              buffer and the blended draws that composite over it"
         );
+    }
+
+    /// **The shadow pass closes as the pass every lit pass waits for.** A
+    /// `#[pass]` output opens on the slot's descriptor and closes into the
+    /// slot: the shadow pass writes the shadow atlas, reads nothing, and holds
+    /// the buffer its encoder finished into.
+    #[test]
+    fn the_shadow_pass_closes_writing_the_shadow_atlas() {
+        use khora_core::lane::io::PassSlot;
+
+        let closed = ShadowPassSlot::close(ShadowPassSlot::descriptor(), buf(7));
+        let Some(pass) = closed.0 else {
+            panic!("a closed shadow pass slot holds its pass");
+        };
+        assert_eq!(pass.descriptor.name, "ShadowPass");
+        assert_eq!(pass.descriptor.writes, [ResourceId::ShadowAtlas]);
+        assert!(
+            pass.descriptor.reads.is_empty(),
+            "the shadow pass reads no frame resource: {:?}",
+            pass.descriptor.reads
+        );
+        assert_eq!(pass.command_buffer, buf(7));
     }
 
     #[test]

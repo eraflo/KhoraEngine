@@ -23,5 +23,7 @@ mod fixtures;
 mod guards;
 mod inputs;
 mod outputs;
+mod pass_device;
+mod passes;
 mod phases;
 mod run;

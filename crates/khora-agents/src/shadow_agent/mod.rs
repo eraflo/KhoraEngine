@@ -12,14 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! ShadowAgent — manages shadow map rendering lanes.
+//! The shadows family's agent: its registration, and nothing else.
 //!
-//! This agent is responsible for rendering shadow maps for all lights that
-//! cast shadows. It runs before the RenderAgent and inserts shadow data
-//! into the [`FrameContext`] for render lanes to consume.
+//! The engine boots one [`LaneAgent`](crate::lane_agent::LaneAgent) from it,
+//! offering the [`ShadowsLane`](khora_lanes::shadow_lane::ShadowsLane)'s three
+//! resolutions to GORNA. Each frame the agent hands the lane the bus's
+//! `RenderWorld` and `ShadowView`, opens the shadow pass on the device, and
+//! commits the closed pass and the frame's `ShadowFrame`.
 
 mod agent;
-mod strategy;
-
-pub use agent::*;
-pub use strategy::*;

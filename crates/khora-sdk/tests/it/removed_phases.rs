@@ -21,7 +21,7 @@ use khora_sdk::{
     Runtime, WindowConfig,
 };
 
-/// A game that removes the phase the shadow agent runs in.
+/// A game that removes the phase the shadows family runs in.
 struct NoObserve;
 
 impl AgentProvider for NoObserve {
@@ -43,11 +43,12 @@ impl EngineApp for NoObserve {
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
 }
 
-/// **An agent whose every phase was removed refuses the boot.** The shadow
-/// agent runs only in `OBSERVE`; a game removing `OBSERVE` would keep it
-/// registered and budgeted, yet it would never draw a shadow.
+/// **An agent whose every phase was removed refuses the boot.** The shadows
+/// family runs only in `OBSERVE`; a game removing `OBSERVE` would keep its
+/// agent registered and budgeted, yet it would never draw a shadow. The boot
+/// names the family.
 #[test]
-#[should_panic(expected = "ShadowRenderer")]
+#[should_panic(expected = "the family `shadows`")]
 fn removing_the_only_phase_of_an_agent_refuses_the_boot() {
     let mut engine = EngineCore::<NoObserve>::new();
     engine.bootstrap(NoObserve, Runtime::new());
