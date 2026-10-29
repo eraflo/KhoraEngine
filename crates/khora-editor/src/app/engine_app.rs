@@ -494,7 +494,7 @@ impl EngineApp for EditorApp {
         }
 
         // Collect the current selection gizmos and set them as the gizmo
-        // View. `OverlayAgent`'s `GizmoLane` renders them
+        // View. The gizmo family's `GizmoLane` renders them
         // during the scheduler's OUTPUT phase — the editor is a pure data
         // producer here, the engine owns the rendering mechanism. Gated
         // on `PlayMode::Editing`: gizmos must not bleed into Play / Paused.
@@ -526,7 +526,7 @@ impl EngineApp for EditorApp {
         };
 
         // Gizmo rendering now happens inside the scheduler via
-        // `OverlayAgent`'s `GizmoLane` (the lines are published into the
+        // the gizmo family's `GizmoLane` (the lines are published into the
         // shared `GizmoFrame` from `before_agents`). The editor no longer
         // drives a separate gizmo render pass here.
 

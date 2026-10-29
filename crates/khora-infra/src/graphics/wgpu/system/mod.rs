@@ -105,7 +105,7 @@ pub struct WgpuRenderSystem {
     /// and the engine skips its own present (caller manages the viewport).
     render_to_viewport: bool,
     // Grid + gizmo rendering moved to the engine-side `GridLane` /
-    // `GizmoLane` (under `OverlayAgent`) — the backend owns no
+    // `GizmoLane` (the grid and gizmo families) — the backend owns no
     // render-strategy pipelines.
 }
 

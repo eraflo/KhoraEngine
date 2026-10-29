@@ -20,11 +20,15 @@
 //! a wave that could have run concurrently. Only the real declarations can show
 //! that, so they are asserted here.
 
-use khora_agents::{overlay_agent::OverlayAgent, render_agent::RenderAgent, ui_agent::UiAgent};
+use khora_agents::{render_agent::RenderAgent, ui_agent::UiAgent};
 use khora_core::agent::{Agent, AgentAccess};
 use khora_data::ui::UiImageAtlas;
 use std::any::TypeId;
 use std::sync::Arc;
+
+use crate::overlay_families::fixtures::{
+    agent_of, gizmo_registration, grid_registration, wireframe_registration,
+};
 
 /// **The gain the contract was written for.** Both are `SharedWorld`, both sit
 /// in `OUTPUT`, and the old "at most one `SharedWorld` per wave" rule kept them
@@ -41,7 +45,7 @@ fn the_render_and_ui_agents_do_not_contend() {
     );
 }
 
-/// Reading is free. Five agents look at the same GPU device and the same
+/// Reading is free. Seven agents look at the same GPU device and the same
 /// per-agent status map every frame; if a shared *read* counted as contention,
 /// each of them would land in a wave of its own.
 #[test]
@@ -50,7 +54,9 @@ fn the_agents_sharing_read_only_handles_do_not_contend() {
         RenderAgent::default().contention(),
         crate::shadows_family::fixtures::shadow_agent().contention(),
         crate::skybox_family::fixtures::skybox_agent().contention(),
-        OverlayAgent::default().contention(),
+        agent_of(grid_registration()).contention(),
+        agent_of(wireframe_registration()).contention(),
+        agent_of(gizmo_registration()).contention(),
         UiAgent::default().contention(),
     ];
 
@@ -73,7 +79,9 @@ fn each_render_agent_writes_a_slot_of_its_own() {
         RenderAgent::default().contention(),
         crate::shadows_family::fixtures::shadow_agent().contention(),
         crate::skybox_family::fixtures::skybox_agent().contention(),
-        OverlayAgent::default().contention(),
+        agent_of(grid_registration()).contention(),
+        agent_of(wireframe_registration()).contention(),
+        agent_of(gizmo_registration()).contention(),
         UiAgent::default().contention(),
     ]
     .iter()

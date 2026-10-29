@@ -70,13 +70,6 @@ fn rendering_strategy_variants(x: &khora_agents::render_agent::RenderingStrategy
 }
 
 #[test]
-fn module_overlay_agent_paths_still_resolve() {
-    let _ = type_name::<khora_agents::overlay_agent::OverlayAgent>();
-    is_agent::<khora_agents::overlay_agent::OverlayAgent>();
-    is_default::<khora_agents::overlay_agent::OverlayAgent>();
-}
-
-#[test]
 fn module_render_agent_paths_still_resolve() {
     let _ = type_name::<khora_agents::render_agent::RenderAgent>();
     is_agent::<khora_agents::render_agent::RenderAgent>();
@@ -114,7 +107,6 @@ fn module_ui_agent_paths_still_resolve() {
 
 #[test]
 fn associated_items_used_by_other_crates_still_resolve() {
-    let _ = khora_agents::overlay_agent::OverlayAgent::default; // khora-sdk
     let _ = khora_agents::render_agent::RenderAgent::default; // khora-sdk
     let _ = khora_agents::script_agent::ScriptAgent::default; // khora-sdk
     let _ = khora_agents::ui_agent::UiAgent::default; // khora-sdk

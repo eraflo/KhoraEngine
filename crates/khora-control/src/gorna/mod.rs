@@ -495,8 +495,9 @@ impl GornaArbitrator {
             AgentId::Ui => 0.7,
             AgentId::Audio => 0.6,
             AgentId::Asset => 0.5,
-            AgentId::Overlay => 0.4,
-            AgentId::Skybox => 0.4,
+            // Presentation polish: what the user sees over and behind the
+            // scene, the first to give way.
+            AgentId::Skybox | AgentId::Grid | AgentId::Wireframe | AgentId::Gizmo => 0.4,
             // Above rendering polish and below simulation: gameplay decides
             // what the frame is about, but a frame that skipped a tick of it
             // is recoverable in a way a missed physics step is not.

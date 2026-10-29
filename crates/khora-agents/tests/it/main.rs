@@ -39,6 +39,7 @@ mod garbage_collector_test;
 mod imported_systems;
 mod input_from_script_test;
 mod lane_agent;
+mod overlay_families;
 mod physics_agent_tests;
 mod physics_family;
 mod physics_lane_contacts_test;

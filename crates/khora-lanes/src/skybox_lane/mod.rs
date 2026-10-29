@@ -424,24 +424,10 @@ fn skybox_pipeline_spec(key: TargetKey) -> khora_core::renderer::api::pipeline::
             write_mask: ColorWrites::ALL,
         }],
         multisample: MultisampleStateDescriptor {
-            count: sample_count(key.samples),
+            count: crate::render_lane::util::sample_count(key.samples),
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
-    }
-}
-
-/// The sample count of a target with `samples` samples per pixel.
-fn sample_count(samples: u32) -> khora_core::renderer::api::resource::SampleCount {
-    use khora_core::renderer::api::resource::SampleCount;
-    match samples {
-        2 => SampleCount::X2,
-        4 => SampleCount::X4,
-        8 => SampleCount::X8,
-        16 => SampleCount::X16,
-        32 => SampleCount::X32,
-        64 => SampleCount::X64,
-        _ => SampleCount::X1,
     }
 }
 

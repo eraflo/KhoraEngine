@@ -67,7 +67,7 @@ impl WgpuRenderSystem {
         let egui_id = self.create_viewport_target(800, 600, &mut overlay)?;
 
         // Grid + gizmo rendering are owned by the engine-side `GridLane`
-        // / `GizmoLane` (under `OverlayAgent`) — no render-strategy
+        // / `GizmoLane` (the grid and gizmo families) — no render-strategy
         // pipeline is created on the backend.
 
         let mut shell = crate::ui::egui::shell::EguiEditorShell::new(overlay.context(), theme);

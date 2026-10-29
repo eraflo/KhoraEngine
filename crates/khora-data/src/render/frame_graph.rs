@@ -89,8 +89,9 @@ struct RecordedPass {
 /// Instead of locking the shared [`SharedFrameGraph`] to `add_pass` directly,
 /// a recording agent writes its contribution into a per-layer slot on its
 /// [`OutputDeck`](khora_core::lane::OutputDeck) ([`ScenePassSlot`],
-/// [`UiPassSlot`], [`OverlayPassSlot`]). The engine folds those slots into the
-/// graph in a fixed layer order (scene → ui → overlay) after the agent wave —
+/// [`UiPassSlot`], [`GridPassSlot`], …). The engine folds those slots into the
+/// graph in their registered order (scene → ui → overlays) after the agent
+/// wave —
 /// preserving the previous insertion order while freeing the agents from the
 /// `Mutex<FrameGraph>`, so they can run concurrently.
 pub struct PassContribution {
@@ -157,9 +158,72 @@ impl khora_core::lane::io::PassSlot for SkyboxPassSlot {
 #[derive(Default)]
 pub struct TransparentPassSlot(pub Option<PassContribution>);
 
-/// Deck slot carrying the overlay / debug-viz pass, written by `OverlayAgent`.
+/// Deck slot carrying the editor ground grid's pass, written by the grid
+/// family. Submitted after the UI.
 #[derive(Default)]
-pub struct OverlayPassSlot(pub Option<PassContribution>);
+pub struct GridPassSlot(pub Option<PassContribution>);
+
+impl khora_core::lane::io::PassSlot for GridPassSlot {
+    type Descriptor = PassDescriptor;
+
+    /// The grid paints the colour, depth-tested against the scene.
+    fn descriptor() -> PassDescriptor {
+        PassDescriptor::new("GridPass")
+            .writes(ResourceId::Color)
+            .reads(ResourceId::Depth)
+    }
+
+    fn close(descriptor: PassDescriptor, command_buffer: CommandBufferId) -> Self {
+        Self(Some(PassContribution {
+            descriptor,
+            command_buffer,
+        }))
+    }
+}
+
+/// Deck slot carrying the wireframe overlay's pass, written by the wireframe
+/// family. Submitted after the grid.
+#[derive(Default)]
+pub struct WireframePassSlot(pub Option<PassContribution>);
+
+impl khora_core::lane::io::PassSlot for WireframePassSlot {
+    type Descriptor = PassDescriptor;
+
+    /// The wireframe paints the colour, depth-tested against the scene.
+    fn descriptor() -> PassDescriptor {
+        PassDescriptor::new("WireframePass")
+            .writes(ResourceId::Color)
+            .reads(ResourceId::Depth)
+    }
+
+    fn close(descriptor: PassDescriptor, command_buffer: CommandBufferId) -> Self {
+        Self(Some(PassContribution {
+            descriptor,
+            command_buffer,
+        }))
+    }
+}
+
+/// Deck slot carrying the line gizmos' pass, written by the gizmo family.
+/// Submitted after the wireframe, last of all.
+#[derive(Default)]
+pub struct GizmoPassSlot(pub Option<PassContribution>);
+
+impl khora_core::lane::io::PassSlot for GizmoPassSlot {
+    type Descriptor = PassDescriptor;
+
+    /// The gizmos paint the colour on top of everything: no depth.
+    fn descriptor() -> PassDescriptor {
+        PassDescriptor::new("GizmoPass").writes(ResourceId::Color)
+    }
+
+    fn close(descriptor: PassDescriptor, command_buffer: CommandBufferId) -> Self {
+        Self(Some(PassContribution {
+            descriptor,
+            command_buffer,
+        }))
+    }
+}
 
 /// Deck slot carrying the shadow-map pass, written by `ShadowAgent`.
 ///
@@ -339,7 +403,9 @@ register_pass!(ScenePassSlot, after = [ShadowPassSlot]);
 register_pass!(SkyboxPassSlot, after = [ScenePassSlot]);
 register_pass!(TransparentPassSlot, after = [SkyboxPassSlot]);
 register_pass!(UiPassSlot, after = [TransparentPassSlot]);
-register_pass!(OverlayPassSlot, after = [UiPassSlot]);
+register_pass!(GridPassSlot, after = [UiPassSlot]);
+register_pass!(WireframePassSlot, after = [GridPassSlot]);
+register_pass!(GizmoPassSlot, after = [WireframePassSlot]);
 
 /// Tag naming the encoder a lane records its transparent draws into.
 ///
@@ -571,6 +637,92 @@ mod tests {
         assert_eq!(pass.descriptor.writes, [ResourceId::Color]);
         assert_eq!(pass.descriptor.reads, [ResourceId::Depth]);
         assert_eq!(pass.command_buffer, buf(9));
+    }
+
+    /// **The grid pass closes writing the colour and reading the depth.** The
+    /// ground grid is depth-tested against the scene, so closer geometry
+    /// hides it: it reads the depth, paints the colour, and holds the buffer
+    /// its encoder finished into.
+    #[test]
+    fn the_grid_pass_closes_writing_the_colour_and_reading_the_depth() {
+        use khora_core::lane::io::PassSlot;
+
+        let closed = GridPassSlot::close(GridPassSlot::descriptor(), buf(11));
+        let Some(pass) = closed.0 else {
+            panic!("a closed grid pass slot holds its pass");
+        };
+        assert_eq!(pass.descriptor.name, "GridPass");
+        assert_eq!(pass.descriptor.writes, [ResourceId::Color]);
+        assert_eq!(pass.descriptor.reads, [ResourceId::Depth]);
+        assert_eq!(pass.command_buffer, buf(11));
+    }
+
+    /// **The wireframe pass closes writing the colour and reading the
+    /// depth.** Hidden edges are occluded by the scene, so it reads the depth
+    /// (and never writes it).
+    #[test]
+    fn the_wireframe_pass_closes_writing_the_colour_and_reading_the_depth() {
+        use khora_core::lane::io::PassSlot;
+
+        let closed = WireframePassSlot::close(WireframePassSlot::descriptor(), buf(12));
+        let Some(pass) = closed.0 else {
+            panic!("a closed wireframe pass slot holds its pass");
+        };
+        assert_eq!(pass.descriptor.name, "WireframePass");
+        assert_eq!(pass.descriptor.writes, [ResourceId::Color]);
+        assert_eq!(pass.descriptor.reads, [ResourceId::Depth]);
+        assert_eq!(pass.command_buffer, buf(12));
+    }
+
+    /// **The gizmo pass closes writing the colour and reading nothing.**
+    /// Gizmos are drawn on top of everything, with no depth test, so the pass
+    /// declares no read of the depth.
+    #[test]
+    fn the_gizmo_pass_closes_writing_the_colour_only() {
+        use khora_core::lane::io::PassSlot;
+
+        let closed = GizmoPassSlot::close(GizmoPassSlot::descriptor(), buf(13));
+        let Some(pass) = closed.0 else {
+            panic!("a closed gizmo pass slot holds its pass");
+        };
+        assert_eq!(pass.descriptor.name, "GizmoPass");
+        assert_eq!(pass.descriptor.writes, [ResourceId::Color]);
+        assert!(
+            pass.descriptor.reads.is_empty(),
+            "the gizmos test no depth: {:?}",
+            pass.descriptor.reads
+        );
+        assert_eq!(pass.command_buffer, buf(13));
+    }
+
+    /// **The overlays fold in their compositing order whatever they declare.**
+    /// Added after the UI in the order the engine folds the slots — grid,
+    /// wireframe, gizmos — with the descriptors their slots open with, the
+    /// frame graph keeps that order: the grid and the wireframe read only the
+    /// depth and the gizmos read nothing, so nothing but the insertion order
+    /// puts the gizmos last.
+    #[test]
+    fn the_overlay_passes_keep_their_folding_order() {
+        use khora_core::lane::io::PassSlot;
+
+        let mut g = FrameGraph::new();
+        g.add_pass(
+            PassDescriptor::new("ScenePass")
+                .writes(ResourceId::Color)
+                .writes(ResourceId::Depth),
+            buf(1),
+        );
+        g.add_pass(
+            PassDescriptor::new("UiPass")
+                .reads(ResourceId::Color)
+                .writes(ResourceId::Color),
+            buf(2),
+        );
+        g.add_pass(GridPassSlot::descriptor(), buf(3));
+        g.add_pass(WireframePassSlot::descriptor(), buf(4));
+        g.add_pass(GizmoPassSlot::descriptor(), buf(5));
+
+        assert_eq!(g.compile(), [buf(1), buf(2), buf(3), buf(4), buf(5)]);
     }
 
     #[test]

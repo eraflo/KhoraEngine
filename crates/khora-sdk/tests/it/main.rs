@@ -28,6 +28,7 @@ mod frame_target_reaches_lanes;
 mod game_saves;
 mod lane_agents_at_boot;
 mod mode_to_dcc;
+mod overlay_families;
 mod overlay_host_views;
 mod pass_order;
 mod physics_step_setting;

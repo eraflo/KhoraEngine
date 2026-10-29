@@ -200,6 +200,23 @@ impl DynamicUniformRingBuffer {
         &slot.chunks[slot.active_chunk_index].bind_group
     }
 
+    /// The bytes a ring built by [`new`](Self::new) with these arguments
+    /// holds: one chunk of `max_elements` aligned elements per frame in
+    /// flight.
+    pub const fn first_bytes(element_size: u32, max_elements: u32, alignment: u32) -> u64 {
+        let aligned = (element_size + alignment - 1) & !(alignment - 1);
+        aligned as u64 * max_elements as u64 * MAX_FRAMES_IN_FLIGHT as u64
+    }
+
+    /// The bytes every chunk of every slot holds.
+    pub fn bytes(&self) -> u64 {
+        self.slots
+            .iter()
+            .flat_map(|slot| &slot.chunks)
+            .map(|chunk| u64::from(chunk.capacity))
+            .sum()
+    }
+
     /// Returns the current slot index.
     pub fn current_slot_index(&self) -> usize {
         self.current_index
@@ -745,5 +762,40 @@ mod tests {
             .map(|id| id.0)
             .collect();
         assert_eq!(unbound, bound);
+    }
+
+    /// A new ring holds what `first_bytes` says, and its bytes follow every
+    /// chunk it grows.
+    #[test]
+    fn bytes_count_every_chunk_of_every_slot() {
+        let device = RecordingDevice::default();
+        let mut ring = ring(&device, 2);
+        let first = DynamicUniformRingBuffer::first_bytes(ELEMENT, 2, ALIGN);
+        assert_eq!(ring.bytes(), first);
+        let made: u64 = device
+            .buffers
+            .lock()
+            .expect("buffers lock")
+            .iter()
+            .map(|(_, size)| *size)
+            .sum();
+        assert_eq!(
+            ring.bytes(),
+            made,
+            "the bytes are the buffers the ring made"
+        );
+
+        for tag in 1..=3u8 {
+            ring.push(&device, &element(tag)).expect("push");
+        }
+        let grown: u64 = device
+            .buffers
+            .lock()
+            .expect("buffers lock")
+            .iter()
+            .map(|(_, size)| *size)
+            .sum();
+        assert!(grown > made, "the ring grew a chunk");
+        assert_eq!(ring.bytes(), grown);
     }
 }

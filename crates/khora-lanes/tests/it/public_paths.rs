@@ -205,15 +205,27 @@ fn module_overlay_lane_paths_still_resolve() {
     let _ = type_name::<khora_lanes::overlay_lane::GizmoLane>();
     is_debug::<khora_lanes::overlay_lane::GizmoLane>();
     is_default::<khora_lanes::overlay_lane::GizmoLane>();
-    is_lane::<khora_lanes::overlay_lane::GizmoLane>();
+    let _ = type_name::<khora_lanes::overlay_lane::GizmoFamily>();
+    let _ = type_name::<khora_lanes::overlay_lane::GizmoInputs<'static>>();
+    let _ = type_name::<khora_lanes::overlay_lane::GizmoOutputs<'static>>();
+    is_typed_lane::<khora_lanes::overlay_lane::GizmoLane>();
+    is_lane_family::<khora_lanes::overlay_lane::GizmoFamily>();
     let _ = type_name::<khora_lanes::overlay_lane::GridLane>();
     is_debug::<khora_lanes::overlay_lane::GridLane>();
     is_default::<khora_lanes::overlay_lane::GridLane>();
-    is_lane::<khora_lanes::overlay_lane::GridLane>();
+    let _ = type_name::<khora_lanes::overlay_lane::GridFamily>();
+    let _ = type_name::<khora_lanes::overlay_lane::GridInputs<'static>>();
+    let _ = type_name::<khora_lanes::overlay_lane::GridOutputs<'static>>();
+    is_typed_lane::<khora_lanes::overlay_lane::GridLane>();
+    is_lane_family::<khora_lanes::overlay_lane::GridFamily>();
     let _ = type_name::<khora_lanes::overlay_lane::WireframeLane>();
     is_debug::<khora_lanes::overlay_lane::WireframeLane>();
     is_default::<khora_lanes::overlay_lane::WireframeLane>();
-    is_lane::<khora_lanes::overlay_lane::WireframeLane>();
+    let _ = type_name::<khora_lanes::overlay_lane::WireframeFamily>();
+    let _ = type_name::<khora_lanes::overlay_lane::WireframeInputs<'static>>();
+    let _ = type_name::<khora_lanes::overlay_lane::WireframeOutputs<'static>>();
+    is_typed_lane::<khora_lanes::overlay_lane::WireframeLane>();
+    is_lane_family::<khora_lanes::overlay_lane::WireframeFamily>();
 }
 
 #[test]
@@ -497,8 +509,11 @@ fn exported_macros_still_expand() {
 #[allow(unused_imports)]
 mod paths_used_by_other_crates {
     use khora_lanes::audio_lane::SpatialMixingLane as _; // khora-agents
+    use khora_lanes::overlay_lane::GizmoFamily as _; // khora-agents
     use khora_lanes::overlay_lane::GizmoLane as _; // khora-agents
+    use khora_lanes::overlay_lane::GridFamily as _; // khora-agents
     use khora_lanes::overlay_lane::GridLane as _; // khora-agents
+    use khora_lanes::overlay_lane::WireframeFamily as _; // khora-agents
     use khora_lanes::overlay_lane::WireframeLane as _; // khora-agents
     use khora_lanes::physics_lane::StandardPhysicsLane as _; // khora-agents
     use khora_lanes::render_lane::ForwardPlusLane as _; // khora-agents

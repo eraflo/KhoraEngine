@@ -39,6 +39,7 @@ mod null_fields;
 mod null_into_declared_types;
 mod on_resume_failed;
 mod overdraft;
+mod overlays;
 mod public_paths;
 mod rate_limited_behaviors;
 mod resumable_after_edits;

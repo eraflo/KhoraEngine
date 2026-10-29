@@ -89,7 +89,7 @@ fn shared_world_joins_isolated_agents() {
 fn two_shared_world_agents_that_declare_nothing_share_a_wave() {
     let metas = vec![
         meta(AgentId::Renderer, AgentAccess::SharedWorld, &[]),
-        meta(AgentId::Overlay, AgentAccess::SharedWorld, &[]),
+        meta(AgentId::Grid, AgentAccess::SharedWorld, &[]),
     ];
     assert_eq!(partition_waves(&metas), vec![vec![0, 1]]);
 }
@@ -128,7 +128,7 @@ fn disjoint_deck_writes_pass_the_check() {
             &[std::any::TypeId::of::<u32>()],
         ),
         meta_writes(
-            AgentId::Overlay,
+            AgentId::Grid,
             AgentAccess::Isolated,
             &[std::any::TypeId::of::<u64>()],
         ),
@@ -243,7 +243,7 @@ fn colliding_deck_writes_are_detected() {
             &[std::any::TypeId::of::<u32>()],
         ),
         meta_writes(
-            AgentId::Overlay,
+            AgentId::Grid,
             AgentAccess::Isolated,
             &[std::any::TypeId::of::<u32>()],
         ),

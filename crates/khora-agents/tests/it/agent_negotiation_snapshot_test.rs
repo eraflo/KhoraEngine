@@ -24,7 +24,6 @@
 //! scene.
 
 use khora_agents::lane_agent::lane_agent;
-use khora_agents::overlay_agent::OverlayAgent;
 use khora_agents::render_agent::RenderAgent;
 use khora_agents::script_agent::ScriptAgent;
 use khora_agents::ui_agent::UiAgent;
@@ -34,6 +33,9 @@ use khora_core::gpu::DeviceCaps;
 use std::time::Duration;
 
 use crate::audio_family::audio_registration;
+use crate::overlay_families::fixtures::{
+    agent_of, gizmo_registration, grid_registration, wireframe_registration,
+};
 use crate::physics_family::fixtures::physics_agent;
 use crate::shadows_family::fixtures::{shadow_agent, LEVEL_MEMORY};
 use crate::skybox_family::fixtures::skybox_agent;
@@ -96,11 +98,28 @@ fn shadow_agent_offers_three_tiers_from_low_power_up() {
     );
 }
 
+/// The three overlay families' agents, before any frame: one `Balanced` row
+/// each, quoting the graphics memory of its one level — the grid's 80-byte
+/// camera block; the wireframe's camera and 32-byte style blocks plus its
+/// model ring's first chunk in each of the 2 frames in flight (1000 blocks of
+/// 256 bytes), since a level quotes its whole first build before it runs;
+/// the gizmos' camera block and the storage for 4096 lines of 48 bytes.
 #[test]
-fn overlay_agent_offers_one_flat_strategy() {
+fn overlay_agents_offer_one_flat_strategy_each() {
     assert_eq!(
-        offer(OverlayAgent::default()),
-        (AgentId::Overlay, vec![(StrategyId::Balanced, MIB)])
+        offer(agent_of(grid_registration())),
+        (AgentId::Grid, vec![(StrategyId::Balanced, 80)])
+    );
+    assert_eq!(
+        offer(agent_of(wireframe_registration())),
+        (
+            AgentId::Wireframe,
+            vec![(StrategyId::Balanced, 80 + 32 + 2 * 1000 * 256)]
+        )
+    );
+    assert_eq!(
+        offer(agent_of(gizmo_registration())),
+        (AgentId::Gizmo, vec![(StrategyId::Balanced, 80 + 4096 * 48)])
     );
 }
 

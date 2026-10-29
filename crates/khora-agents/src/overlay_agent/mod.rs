@@ -12,24 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! OverlayAgent — generic engine-side agent for overlay / debug
-//! rendering passes.
+//! The overlay families' agents: their registrations, and nothing else.
 //!
-//! Unlike `RenderAgent` (one strategy selected per frame via GORNA),
-//! lanes registered here run **in parallel** with the main render pass,
-//! after it, with depth-read-only / alpha-blend semantics. Domain
-//! examples:
-//!
-//! - `GizmoLane` — editor / debug line gizmos. Data published on the
-//!   `OutputDeck` by the host application (editor, game tooling).
-//! - `WireframeLane` — wireframe debug viz (opt-in via `WireframeConfig`).
-//!
-//! Domain-agnostic by design: the engine never assumes who pushes the
-//! data, only that the data slot type is well-known. This keeps the
-//! editor crate a pure consumer of engine mechanisms instead of an
-//! engine-internal `EditorAgent` (which would invert the engine /
-//! application dependency).
+//! The engine boots one [`LaneAgent`](crate::lane_agent::LaneAgent) for each
+//! of the grid, the wireframe and the gizmos, after the renderer in the
+//! OUTPUT phase. Each lends its lane the frame's target and the host's View,
+//! and commits its own pass slot; the FrameGraph composites them after the
+//! UI, grid first and gizmos last.
 
 mod agent;
-
-pub use agent::*;

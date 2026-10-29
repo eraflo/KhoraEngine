@@ -38,7 +38,7 @@ struct Watching {
 
 impl Agent for Watching {
     fn id(&self) -> AgentId {
-        AgentId::Overlay
+        AgentId::Grid
     }
     fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
         NegotiationResponse {
@@ -49,7 +49,7 @@ impl Agent for Watching {
     fn apply_budget(&mut self, _b: ResourceBudget) {}
     fn report_status(&self) -> AgentStatus {
         AgentStatus {
-            agent_id: AgentId::Overlay,
+            agent_id: AgentId::Grid,
             current_strategy: StrategyId::Balanced,
             health_score: 1.0,
             is_stalled: false,
@@ -94,7 +94,7 @@ fn a_view_the_host_set_reaches_the_agents_bus() {
     let mut scheduler = ExecutionScheduler::new(
         registry,
         Arc::new(RwLock::new(Context::default())),
-        &[AgentId::Overlay],
+        &[AgentId::Grid],
     );
 
     let host_views = Arc::new(HostViews::new());

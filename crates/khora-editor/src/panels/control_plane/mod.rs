@@ -103,8 +103,10 @@ fn crate_for_id(id: AgentId) -> &'static str {
     match id {
         AgentId::Renderer
         | AgentId::ShadowRenderer
-        | AgentId::Overlay
         | AgentId::Skybox
+        | AgentId::Grid
+        | AgentId::Wireframe
+        | AgentId::Gizmo
         | AgentId::Physics
         | AgentId::Ecs
         | AgentId::Ui
@@ -288,5 +290,20 @@ impl EditorPanel for ControlPlanePanel {
             agents.get(self.selected_idx),
             &theme,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **The three overlay agents are the engine's own**: the control plane
+    /// lists the grid's, the wireframe's and the gizmos' agents under
+    /// `khora-agents`, as it listed the one overlay agent they replace.
+    #[test]
+    fn the_overlay_agents_belong_to_khora_agents() {
+        for overlay in [AgentId::Grid, AgentId::Wireframe, AgentId::Gizmo] {
+            assert_eq!(crate_for_id(overlay), "khora-agents", "{overlay:?}");
+        }
     }
 }

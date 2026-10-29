@@ -775,6 +775,24 @@ fn test_agent_priorities() {
     assert!(arbitrator.get_agent_priority(AgentId::Audio) >= 0.5);
 }
 
+/// **The overlays weigh like the sky.** The grid, the wireframe and the
+/// gizmos were one overlay agent weighing 0.4; as three agents each keeps
+/// that weight, and none is critical: debug and editor viz is what budget
+/// pressure drops first.
+#[test]
+fn the_overlay_agents_weigh_like_the_sky_and_are_not_critical() {
+    let arbitrator = create_arbitrator();
+    for overlay in [AgentId::Grid, AgentId::Wireframe, AgentId::Gizmo] {
+        assert_eq!(
+            arbitrator.get_agent_priority(overlay),
+            arbitrator.get_agent_priority(AgentId::Skybox),
+            "{overlay:?}"
+        );
+        assert_eq!(arbitrator.get_agent_priority(overlay), 0.4, "{overlay:?}");
+        assert!(!arbitrator.is_critical_agent(overlay), "{overlay:?}");
+    }
+}
+
 #[test]
 fn test_critical_agents() {
     let arbitrator = create_arbitrator();

@@ -27,22 +27,25 @@ use khora_sdk::khora_core::renderer::api::command::CommandBufferId;
 use khora_sdk::khora_core::renderer::GraphicsDevice;
 use khora_sdk::khora_core::{EngineContext, Runtime};
 use khora_sdk::khora_data::render::{
-    registered_pass_order, OverlayPassSlot, PassContribution, PassDescriptor, ScenePassSlot,
-    ShadowPassSlot, SkyboxPassSlot, TransparentPassSlot, UiPassSlot,
+    registered_pass_order, GizmoPassSlot, GridPassSlot, PassContribution, PassDescriptor,
+    ScenePassSlot, ShadowPassSlot, SkyboxPassSlot, TransparentPassSlot, UiPassSlot,
+    WireframePassSlot,
 };
 use khora_sdk::{ExecutionPhase, ExecutionTiming};
 
 use super::render_doubles::{install_renderer, QueueLog, RecordingRenderer};
 
-/// The six slots, in the order the frame must submit them.
-fn declared_order() -> [TypeId; 6] {
+/// The eight slots, in the order the frame must submit them.
+fn declared_order() -> [TypeId; 8] {
     [
         TypeId::of::<ShadowPassSlot>(),
         TypeId::of::<ScenePassSlot>(),
         TypeId::of::<SkyboxPassSlot>(),
         TypeId::of::<TransparentPassSlot>(),
         TypeId::of::<UiPassSlot>(),
-        TypeId::of::<OverlayPassSlot>(),
+        TypeId::of::<GridPassSlot>(),
+        TypeId::of::<WireframePassSlot>(),
+        TypeId::of::<GizmoPassSlot>(),
     ]
 }
 
@@ -55,7 +58,7 @@ fn pass(name: &'static str, buffer: u64) -> Option<PassContribution> {
     })
 }
 
-/// Records one pass into each of the six slots, overlay first and shadows
+/// Records one pass into each of the eight slots, gizmos first and shadows
 /// last: the reverse of the order they must reach the device in.
 struct EverySlot;
 
@@ -86,7 +89,9 @@ impl Agent for EverySlot {
         Contention::none().writing_deck(declared_order())
     }
     fn execute(&mut self, ctx: &mut EngineContext<'_>) {
-        ctx.deck.slot::<OverlayPassSlot>().0 = pass("OverlayPass", 6);
+        ctx.deck.slot::<GizmoPassSlot>().0 = pass("GizmoPass", 8);
+        ctx.deck.slot::<WireframePassSlot>().0 = pass("WireframePass", 7);
+        ctx.deck.slot::<GridPassSlot>().0 = pass("GridPass", 6);
         ctx.deck.slot::<UiPassSlot>().0 = pass("UiPass", 5);
         ctx.deck.slot::<TransparentPassSlot>().0 = pass("TransparentPass", 4);
         ctx.deck.slot::<SkyboxPassSlot>().0 = pass("SkyboxPass", 3);
@@ -129,9 +134,9 @@ impl khora_sdk::EngineApp for Recorder {
 }
 
 /// **Passes reach the device in their declared order.** An agent records the
-/// six passes overlay first; the frame submits them shadows, scene, sky,
-/// transparent, UI, overlay — the shadow pass included, through the frame
-/// graph like the others.
+/// eight passes gizmos first; the frame submits them shadows, scene, sky,
+/// transparent, UI, grid, wireframe, gizmos — the shadow pass included,
+/// through the frame graph like the others.
 #[test]
 fn passes_submit_in_declared_order() {
     let device = Arc::new(QueueLog::default());
@@ -150,17 +155,17 @@ fn passes_submit_in_declared_order() {
     let recorded: Vec<CommandBufferId> = device
         .submitted()
         .into_iter()
-        .filter(|buffer| (1..=6).contains(&buffer.0))
+        .filter(|buffer| (1..=8).contains(&buffer.0))
         .collect();
     assert_eq!(
         recorded,
-        (1..=6).map(CommandBufferId).collect::<Vec<_>>(),
-        "the passes reach the device as shadow, scene, skybox, transparent, ui, overlay"
+        (1..=8).map(CommandBufferId).collect::<Vec<_>>(),
+        "the passes reach the device as shadow, scene, skybox, transparent, ui, grid, wireframe, gizmo"
     );
 }
 
 /// The registered `after` edges give exactly that order, and no other pass
-/// slot is registered beside the six.
+/// slot is registered beside the eight.
 #[test]
 fn the_registered_pass_order_runs_from_shadows_to_overlays() {
     let order = match registered_pass_order() {
@@ -172,13 +177,14 @@ fn the_registered_pass_order_runs_from_shadows_to_overlays() {
     assert_eq!(
         slots,
         declared_order(),
-        "shadow → scene → skybox → transparent → ui → overlay, got {names:?}"
+        "shadow → scene → skybox → transparent → ui → grid → wireframe → gizmo, got {names:?}"
     );
 }
 
-/// Records the six passes overlay first, each with the resources the shipped
+/// Records the eight passes gizmos first, each with the resources the shipped
 /// agent declares for it (the shadows family, `RenderAgent` with a shadow
-/// atlas, the skybox family, `UiAgent`, `OverlayAgent`).
+/// atlas, the skybox family, `UiAgent`, the grid, wireframe and gizmo
+/// families).
 struct EverySlotWithItsResources;
 
 impl Agent for EverySlotWithItsResources {
@@ -215,8 +221,18 @@ impl Agent for EverySlotWithItsResources {
                 command_buffer: CommandBufferId(buffer),
             })
         };
-        ctx.deck.slot::<OverlayPassSlot>().0 = contribution(
-            PassDescriptor::new("OverlayPass")
+        ctx.deck.slot::<GizmoPassSlot>().0 = contribution(
+            PassDescriptor::new("GizmoPass").writes(ResourceId::Color),
+            8,
+        );
+        ctx.deck.slot::<WireframePassSlot>().0 = contribution(
+            PassDescriptor::new("WireframePass")
+                .writes(ResourceId::Color)
+                .reads(ResourceId::Depth),
+            7,
+        );
+        ctx.deck.slot::<GridPassSlot>().0 = contribution(
+            PassDescriptor::new("GridPass")
                 .writes(ResourceId::Color)
                 .reads(ResourceId::Depth),
             6,
@@ -288,9 +304,10 @@ impl khora_sdk::EngineApp for ResourceRecorder {
 
 /// **The declared order survives the passes' own resources.** With the reads
 /// and writes the shipped agents declare, the frame graph's sort must still
-/// submit the UI before the overlays (`OverlayPassSlot` is registered after
-/// `UiPassSlot`): the overlay pass reads only the depth, so nothing but the
-/// registered order puts it after the UI.
+/// submit the UI before the overlays (`GridPassSlot` is registered after
+/// `UiPassSlot`, the wireframe and gizmo slots after it): the overlay passes
+/// read only the depth, or nothing, so nothing but the registered order puts
+/// them after the UI.
 #[test]
 fn passes_with_their_resources_submit_in_declared_order() {
     let device = Arc::new(QueueLog::default());
@@ -309,11 +326,11 @@ fn passes_with_their_resources_submit_in_declared_order() {
     let recorded: Vec<CommandBufferId> = device
         .submitted()
         .into_iter()
-        .filter(|buffer| (1..=6).contains(&buffer.0))
+        .filter(|buffer| (1..=8).contains(&buffer.0))
         .collect();
     assert_eq!(
         recorded,
-        (1..=6).map(CommandBufferId).collect::<Vec<_>>(),
-        "the passes reach the device as shadow, scene, skybox, transparent, ui, overlay"
+        (1..=8).map(CommandBufferId).collect::<Vec<_>>(),
+        "the passes reach the device as shadow, scene, skybox, transparent, ui, grid, wireframe, gizmo"
     );
 }

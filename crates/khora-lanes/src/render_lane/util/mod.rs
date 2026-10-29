@@ -23,6 +23,21 @@ pub use dynamic_uniform_ring_buffer::DynamicUniformRingBuffer;
 pub(crate) use uniform_layout::single_uniform_layout;
 pub use uniform_ring_buffer::UniformRingBuffer;
 
+/// The sample count of a target with `samples` samples per pixel; a count
+/// the device cannot name is one sample.
+pub fn sample_count(samples: u32) -> khora_core::renderer::api::resource::SampleCount {
+    use khora_core::renderer::api::resource::SampleCount;
+    match samples {
+        2 => SampleCount::X2,
+        4 => SampleCount::X4,
+        8 => SampleCount::X8,
+        16 => SampleCount::X16,
+        32 => SampleCount::X32,
+        64 => SampleCount::X64,
+        _ => SampleCount::X1,
+    }
+}
+
 /// Lock helper for callers that cannot propagate `Result<_, LaneError>`.
 ///
 /// Returns the guard on success; on poisoning logs an error and
@@ -54,4 +69,30 @@ macro_rules! lock_or_log {
             }
         }
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sample_count;
+    use khora_core::renderer::api::resource::SampleCount;
+
+    /// Each count the device names maps to its variant; any other count is
+    /// one sample.
+    #[test]
+    fn sample_count_names_the_device_counts() {
+        for (samples, count) in [
+            (1, SampleCount::X1),
+            (2, SampleCount::X2),
+            (4, SampleCount::X4),
+            (8, SampleCount::X8),
+            (16, SampleCount::X16),
+            (32, SampleCount::X32),
+            (64, SampleCount::X64),
+        ] {
+            assert_eq!(sample_count(samples), count, "{samples} samples");
+        }
+        for samples in [0, 3, 5, 128] {
+            assert_eq!(sample_count(samples), SampleCount::X1, "{samples} samples");
+        }
+    }
 }

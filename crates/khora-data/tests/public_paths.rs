@@ -617,7 +617,15 @@ fn collision_pairs_fields(x: &khora_data::physics::collision::CollisionPairs) {
     let _ = (&x.pairs,);
 }
 
-fn overlay_pass_slot_fields(x: &khora_data::render::OverlayPassSlot) {
+fn gizmo_pass_slot_fields(x: &khora_data::render::GizmoPassSlot) {
+    let _ = (&x.0,);
+}
+
+fn grid_pass_slot_fields(x: &khora_data::render::GridPassSlot) {
+    let _ = (&x.0,);
+}
+
+fn wireframe_pass_slot_fields(x: &khora_data::render::WireframePassSlot) {
     let _ = (&x.0,);
 }
 
@@ -1886,9 +1894,15 @@ fn module_render_paths_still_resolve() {
     let _ = khora_data::render::FrameGraph::clear;
     let _ = khora_data::render::FrameGraph::compile;
     is_default::<khora_data::render::FrameGraph>();
-    let _ = type_name::<khora_data::render::OverlayPassSlot>();
-    let _ = overlay_pass_slot_fields as fn(&khora_data::render::OverlayPassSlot);
-    is_default::<khora_data::render::OverlayPassSlot>();
+    let _ = type_name::<khora_data::render::GizmoPassSlot>();
+    let _ = gizmo_pass_slot_fields as fn(&khora_data::render::GizmoPassSlot);
+    is_default::<khora_data::render::GizmoPassSlot>();
+    let _ = type_name::<khora_data::render::GridPassSlot>();
+    let _ = grid_pass_slot_fields as fn(&khora_data::render::GridPassSlot);
+    is_default::<khora_data::render::GridPassSlot>();
+    let _ = type_name::<khora_data::render::WireframePassSlot>();
+    let _ = wireframe_pass_slot_fields as fn(&khora_data::render::WireframePassSlot);
+    is_default::<khora_data::render::WireframePassSlot>();
     let _ = type_name::<khora_data::render::PassContribution>();
     let _ = pass_contribution_fields as fn(&khora_data::render::PassContribution);
     let _ = type_name::<khora_data::render::PassDescriptor>();
@@ -2671,7 +2685,9 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ = khora_data::render::GizmoFrame::default; // khora-sdk
     let _ = type_name::<khora_data::render::GridConfig>(); // khora-lanes
     let _ = khora_data::render::GridConfig::default; // khora-sdk
-    let _ = type_name::<khora_data::render::OverlayPassSlot>(); // khora-agents, khora-sdk
+    let _ = type_name::<khora_data::render::GizmoPassSlot>(); // khora-lanes, khora-sdk
+    let _ = type_name::<khora_data::render::GridPassSlot>(); // khora-lanes, khora-sdk
+    let _ = type_name::<khora_data::render::WireframePassSlot>(); // khora-lanes, khora-sdk
     let _ = type_name::<khora_data::render::PassContribution>(); // khora-agents
     let _ = type_name::<khora_data::render::PassDescriptor>(); // khora-agents
     let _ = type_name::<khora_data::render::RenderWorld>(); // khora-agents, khora-lanes

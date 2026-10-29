@@ -14,99 +14,222 @@
 
 //! Grid overlay lane — the infinite editor ground grid.
 //!
-//! Renders `khora::pipelines::grid` (a fullscreen-triangle infinite
-//! grid) on top of the main render target, depth-tested against the
-//! scene so closer geometry occludes it. Registered under
-//! [`OverlayAgent`](khora_agents::overlay_agent), it runs in the OUTPUT
-//! phase **after** the scene pass — `LoadOp::Load` preserves what the
-//! scene drew.
+//! Renders `khora::pipelines::grid` (a fullscreen-triangle infinite grid) on
+//! top of the frame's target, depth-tested against the scene so closer
+//! geometry occludes it; it reads the depth and never writes it. The grid
+//! family runs in the OUTPUT phase after the renderer, and `LoadOp::Load`
+//! preserves what the scene drew.
 //!
-//! The grid is debug / editor viz: a host application opts in by
-//! enabling the shared [`GridConfig`](khora_data::render::GridConfig)
-//! runtime resource. The sandbox leaves it disabled — no grid.
-//!
-//! Per CLAD this struct holds only persistent state; init / render
-//! bodies are private free functions in this module.
+//! The grid is editor viz: a host application opts in by enabling the
+//! [`GridView`] it publishes. The sandbox leaves it disabled — no grid.
 
-use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind};
-use khora_core::renderer::api::command::{BindGroupId, BindGroupLayoutId};
-use khora_core::renderer::api::pipeline::RenderPipelineId;
-use khora_core::renderer::api::resource::BufferId;
+use std::time::Duration;
+
+use khora_core::agent::gorna::StrategyId;
+use khora_core::gpu::GpuSetup;
+use khora_core::lane::contract::{Lane, LaneReport};
+use khora_core::lane::cost::{Cost, PerDevice};
+use khora_core::lane::io::{Target, TargetKey};
+use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::LaneError;
+use khora_core::renderer::api::command::{
+    BindGroupLayoutEntry, LoadOp, Operations, RenderPassColorAttachment,
+    RenderPassDepthStencilAttachment, RenderPassDescriptor, StoreOp,
+};
+use khora_core::renderer::api::pipeline::{PipelineSpec, RenderPipelineId};
+use khora_core::renderer::api::resource::{CameraUniformData, TextureViewId};
 use khora_core::renderer::traits::CommandEncoder;
 use khora_data::render::{GridView, RenderWorld};
-use std::sync::{Arc, OnceLock};
+use khora_macros::LaneInputs;
 
-/// Infinite editor ground-grid overlay lane.
-#[derive(Debug, Default)]
-pub struct GridLane {
-    pipeline: OnceLock<RenderPipelineId>,
-    camera_layout: OnceLock<BindGroupLayoutId>,
-    camera_buffer: OnceLock<BufferId>,
-    camera_bind_group: OnceLock<BindGroupId>,
-}
-
-// ─── Free functions (CLAD: no inherent methods on the lane struct) ───
-
-fn init_gpu_resources(
-    lane: &GridLane,
-    device: &dyn khora_core::renderer::GraphicsDevice,
-    pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
-) -> Result<(), khora_core::renderer::error::RenderError> {
-    use khora_core::renderer::api::{
-        command::{BindGroupDescriptor, BindGroupEntry, BindingResource, BufferBinding},
-        resource::{BufferDescriptor, BufferUsage, CameraUniformData},
-    };
-    use std::borrow::Cow;
-
-    // Group 0 — camera UBO (mat4 view-proj + vec4 position = 80 B). Bespoke
-    // layout resolved + cached by the PipelineSystem so the pipeline and the
-    // lane's bind group share one layout id.
-    let camera_layout = pipeline_system.inline_layout(
-        device,
-        GRID_CAMERA_LAYOUT_LABEL,
-        &grid_camera_layout_entries(),
-    )?;
-
-    let camera_buffer = device
-        .create_buffer(&BufferDescriptor {
-            label: Some(Cow::Borrowed("grid_camera_ubo")),
-            size: std::mem::size_of::<CameraUniformData>() as u64,
-            usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
-            mapped_at_creation: false,
-        })
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-    let camera_bind_group = device
-        .create_bind_group(&BindGroupDescriptor {
-            label: Some("grid_camera_bg"),
-            layout: camera_layout,
-            entries: &[BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::Buffer(BufferBinding {
-                    buffer: camera_buffer,
-                    offset: 0,
-                    size: None,
-                }),
-                _phantom: std::marker::PhantomData,
-            }],
-        })
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-    // Pipeline — compiled + cached by the backend from `khora::pipelines::grid`.
-    let pipeline_id = pipeline_system.pipeline(device, &grid_pipeline_spec(device))?;
-
-    let _ = lane.camera_layout.set(camera_layout);
-    let _ = lane.camera_buffer.set(camera_buffer);
-    let _ = lane.camera_bind_group.set(camera_bind_group);
-    let _ = lane.pipeline.set(pipeline_id);
-    Ok(())
-}
+use super::block::Block;
+use super::GridOutputs;
 
 /// Stable cache label for the grid camera layout.
 const GRID_CAMERA_LAYOUT_LABEL: &str = "grid_camera_layout";
 
+/// What recording the grid's two triangles costs on the host.
+const RECORD_CPU: Duration = Duration::from_micros(15);
+/// What shading one pixel of the grid costs on the device.
+const PIXEL_GPU_SECS: f64 = 1e-10;
+
+/// The lane's one level: its camera block is the memory it holds.
+const LEVEL: Level = Level {
+    id: StrategyId::Balanced,
+    name: "grid",
+    impact: Impact::None,
+    memory: PerDevice {
+        cpu: 0,
+        gpu: std::mem::size_of::<CameraUniformData>() as u64,
+        npu: 0,
+        other: 0,
+    },
+};
+
+/// Infinite editor ground-grid overlay lane. Holds what it built on the
+/// device; `None` before the first prepare and after shutdown.
+#[derive(Debug)]
+pub struct GridLane {
+    levels: [Level; 1],
+    gpu: Option<GridGpu>,
+}
+
+impl Default for GridLane {
+    fn default() -> Self {
+        Self {
+            levels: [LEVEL],
+            gpu: None,
+        }
+    }
+}
+
+/// What the grid builds on the device.
+#[derive(Debug)]
+struct GridGpu {
+    camera: Block,
+    /// The pipeline and the target it was built for; `None` for a target
+    /// without depth, which the grid cannot test against.
+    pipeline: Option<(TargetKey, RenderPipelineId)>,
+}
+
+/// What the grid lane reads each frame: whether the host shows the grid, the
+/// camera it is seen from, and the target it is drawn into.
+#[derive(LaneInputs)]
+pub struct GridInputs<'f> {
+    /// The host's grid switch.
+    #[bus]
+    pub grid: &'f GridView,
+    /// The frame's views; the first is the camera the grid is seen from.
+    #[bus]
+    pub render_world: &'f RenderWorld,
+    /// The frame's colour and depth attachments.
+    #[frame]
+    pub target: Target,
+}
+
+impl Lane for GridLane {
+    type Family = super::GridFamily;
+    type Inputs<'f> = GridInputs<'f>;
+
+    fn levels(&self) -> &[Level] {
+        &self.levels
+    }
+
+    /// Two triangles on the host; on the device, every pixel of the target
+    /// is shaded. A grid that draws nothing — off, without a camera or
+    /// without depth — costs no time.
+    fn cost(&self, _level: usize, inputs: &GridInputs<'_>) -> Cost {
+        let draws = inputs.grid.0.enabled
+            && !inputs.render_world.views.is_empty()
+            && inputs.target.depth.is_some();
+        let size = inputs.target.size;
+        let pixels = f64::from(size.width) * f64::from(size.height);
+        let time = if draws {
+            PerDevice {
+                cpu: RECORD_CPU,
+                gpu: Duration::from_secs_f64(pixels * PIXEL_GPU_SECS),
+                ..PerDevice::default()
+            }
+        } else {
+            PerDevice::default()
+        };
+        Cost {
+            time,
+            memory: self.levels[0].memory,
+            ..Cost::default()
+        }
+    }
+
+    /// Builds the camera block once, and the pipeline for the target's
+    /// formats: a new target builds a new pipeline, a target without depth
+    /// none.
+    fn prepare(
+        &mut self,
+        _level: usize,
+        gpu: &mut GpuSetup<'_>,
+        key: Option<TargetKey>,
+    ) -> Result<(), LaneError> {
+        let device = gpu.device().ok_or(LaneError::missing("GraphicsDevice"))?;
+        let pipelines = gpu
+            .pipelines()
+            .ok_or(LaneError::missing("PipelineSystem"))?;
+        let built = match &mut self.gpu {
+            Some(built) => built,
+            empty => {
+                let layout = pipelines
+                    .inline_layout(device, GRID_CAMERA_LAYOUT_LABEL, &camera_layout_entries())
+                    .map_err(|error| LaneError::InitializationFailed(Box::new(error)))?;
+                let camera = Block::camera(device, layout, "grid_camera")
+                    .map_err(|error| LaneError::InitializationFailed(Box::new(error)))?;
+                empty.insert(GridGpu {
+                    camera,
+                    pipeline: None,
+                })
+            }
+        };
+        self.levels[0].memory.gpu = built.camera.size;
+        let wanted = key.filter(|key| key.depth.is_some());
+        if built.pipeline.map(|(built_for, _)| built_for) != wanted {
+            built.pipeline = match wanted {
+                Some(key) => Some((
+                    key,
+                    pipelines
+                        .pipeline(device, &grid_pipeline_spec(key))
+                        .map_err(|error| LaneError::InitializationFailed(Box::new(error)))?,
+                )),
+                None => None,
+            };
+        }
+        Ok(())
+    }
+
+    /// Draws the grid when the host enabled it, the world has a camera and
+    /// the target has depth; otherwise the pass stays empty.
+    fn record(
+        &mut self,
+        _level: usize,
+        inputs: &mut GridInputs<'_>,
+        out: &mut GridOutputs<'_>,
+    ) -> Result<LaneReport, LaneError> {
+        let built = self.gpu.as_ref().ok_or(LaneError::NotInitialized)?;
+        let done = LaneReport {
+            done: 1.0,
+            stalled: false,
+        };
+        if !inputs.grid.0.enabled {
+            return Ok(done);
+        }
+        let Some(view) = inputs.render_world.views.first() else {
+            return Ok(done);
+        };
+        let (Some(depth), Some((_, pipeline))) = (inputs.target.depth, built.pipeline) else {
+            return Ok(done);
+        };
+        built
+            .camera
+            .write_camera(out.pass.device(), view)
+            .map_err(|error| LaneError::ExecutionFailed(Box::new(error)))?;
+        draw_grid(
+            out.pass.encoder(),
+            inputs.target.color,
+            depth,
+            pipeline,
+            built,
+        );
+        Ok(done)
+    }
+
+    fn shutdown(&mut self, gpu: &mut GpuSetup<'_>) {
+        if let (Some(built), Some(device)) = (self.gpu.take(), gpu.device()) {
+            built.camera.destroy(device);
+        }
+    }
+}
+
+// ─── Free functions (CLAD: no inherent methods on the lane struct) ───
+
 /// Group-0 camera layout: a single uniform buffer (vertex + fragment).
-fn grid_camera_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
+fn camera_layout_entries() -> Vec<BindGroupLayoutEntry> {
     crate::render_lane::util::single_uniform_layout(
         khora_core::renderer::api::util::ShaderStageFlags::VERTEX
             | khora_core::renderer::api::util::ShaderStageFlags::FRAGMENT,
@@ -114,11 +237,10 @@ fn grid_camera_layout_entries() -> Vec<khora_core::renderer::api::command::BindG
     )
 }
 
-/// The declarative pipeline spec for the grid overlay — fullscreen triangle,
-/// alpha-blended, depth-tested (LessEqual) against the scene buffer.
-fn grid_pipeline_spec(
-    device: &dyn khora_core::renderer::GraphicsDevice,
-) -> khora_core::renderer::api::pipeline::PipelineSpec {
+/// The declarative pipeline spec for the grid on a target of `key`'s
+/// formats — fullscreen triangles, alpha-blended, depth-tested (LessEqual)
+/// against the scene buffer, which it never writes.
+fn grid_pipeline_spec(key: TargetKey) -> PipelineSpec {
     use khora_core::renderer::api::pipeline::enums::{
         BlendFactor, BlendOperation, CompareFunction, PrimitiveTopology,
     };
@@ -128,9 +250,8 @@ fn grid_pipeline_spec(
     };
     use khora_core::renderer::api::pipeline::{
         ColorTargetStateDescriptor, DepthStencilStateDescriptor, LayoutSpec,
-        MultisampleStateDescriptor, PipelineSpec, PrimitiveStateDescriptor,
+        MultisampleStateDescriptor, PrimitiveStateDescriptor,
     };
-    use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
     use khora_core::renderer::api::shader::ShaderVariantKey;
     use std::borrow::Cow;
 
@@ -154,7 +275,7 @@ fn grid_pipeline_spec(
         variant: ShaderVariantKey::empty(),
         bind_group_layouts: vec![LayoutSpec::Inline {
             label: GRID_CAMERA_LAYOUT_LABEL,
-            entries: Cow::Owned(grid_camera_layout_entries()),
+            entries: Cow::Owned(camera_layout_entries()),
         }],
         vertex_buffers: vec![],
         vs_entry: "vs_main",
@@ -163,12 +284,12 @@ fn grid_pipeline_spec(
             topology: PrimitiveTopology::TriangleList,
             ..Default::default()
         },
-        // The grid fragment shader writes `@builtin(frag_depth)`; depth
-        // testing against the scene buffer (LessEqual) lets closer geometry
-        // occlude the grid.
-        depth_stencil: Some(DepthStencilStateDescriptor {
-            format: TextureFormat::Depth32Float,
-            depth_write_enabled: true,
+        // The grid fragment shader writes `@builtin(frag_depth)` so the
+        // LessEqual test against the scene lets closer geometry occlude it;
+        // the pass only reads the depth, so the pipeline never writes it.
+        depth_stencil: key.depth.map(|format| DepthStencilStateDescriptor {
+            format,
+            depth_write_enabled: false,
             depth_compare: CompareFunction::LessEqual,
             stencil_front: StencilFaceState::default(),
             stencil_back: StencilFaceState::default(),
@@ -177,56 +298,28 @@ fn grid_pipeline_spec(
             bias: DepthBiasState::default(),
         }),
         color_targets: vec![ColorTargetStateDescriptor {
-            format: device
-                .get_surface_format()
-                .unwrap_or(TextureFormat::Rgba8UnormSrgb),
+            format: key.color,
             blend: Some(blend),
             write_mask: ColorWrites::ALL,
         }],
         multisample: MultisampleStateDescriptor {
-            count: SampleCount::X1,
+            count: crate::render_lane::util::sample_count(key.samples),
             mask: !0,
             alpha_to_coverage_enabled: false,
         },
     }
 }
 
-fn render_grid(
-    lane: &GridLane,
-    device: &dyn khora_core::renderer::GraphicsDevice,
+/// The grid pass — `LoadOp::Load` preserves the scene's colour and depth.
+fn draw_grid(
     encoder: &mut dyn CommandEncoder,
-    color_target: khora_core::renderer::api::resource::TextureViewId,
-    depth_target: khora_core::renderer::api::resource::TextureViewId,
-    view: &khora_data::render::ExtractedView,
+    color: TextureViewId,
+    depth: TextureViewId,
+    pipeline: RenderPipelineId,
+    built: &GridGpu,
 ) {
-    use khora_core::renderer::api::command::{
-        LoadOp, Operations, RenderPassColorAttachment, RenderPassDepthStencilAttachment,
-        RenderPassDescriptor, StoreOp,
-    };
-    use khora_core::renderer::api::resource::CameraUniformData;
-
-    let (Some(pipeline), Some(camera_buffer), Some(camera_bg)) = (
-        lane.pipeline.get().copied(),
-        lane.camera_buffer.get().copied(),
-        lane.camera_bind_group.get().copied(),
-    ) else {
-        log::warn!("GridLane: GPU resources not initialized, skipping");
-        return;
-    };
-
-    // Upload the camera uniforms (view-projection + position).
-    let camera_uniforms = CameraUniformData {
-        view_projection: view.view_proj.to_cols_array_2d(),
-        camera_position: [view.position.x, view.position.y, view.position.z, 1.0],
-    };
-    if let Err(e) = device.write_buffer(camera_buffer, 0, bytemuck::bytes_of(&camera_uniforms)) {
-        log::error!("GridLane: camera buffer write failed: {:?}", e);
-        return;
-    }
-
-    // Overlay pass — `LoadOp::Load` preserves the scene's color + depth.
     let color_attachment = RenderPassColorAttachment {
-        view: &color_target,
+        view: &color,
         resolve_target: None,
         ops: Operations {
             load: LoadOp::Load,
@@ -239,7 +332,7 @@ fn render_grid(
         label: Some("Grid Overlay Pass"),
         color_attachments: &[color_attachment],
         depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
-            view: &depth_target,
+            view: &depth,
             depth_ops: Some(Operations {
                 load: LoadOp::Load,
                 store: StoreOp::Store,
@@ -248,118 +341,10 @@ fn render_grid(
             base_array_layer: 0,
         }),
     };
-
     let mut pass = encoder.begin_render_pass(&pass_desc);
     pass.set_pipeline(&pipeline);
-    pass.set_bind_group(0, &camera_bg, &[]);
-    // Fullscreen triangle pair — the vertex shader derives positions
-    // from `vertex_index` (no vertex buffer bound).
+    pass.set_bind_group(0, &built.camera.bind_group, &[]);
+    // Fullscreen triangle pair — the vertex shader derives positions from
+    // `vertex_index` (no vertex buffer bound).
     pass.draw(0..6, 0..1);
-}
-
-impl Lane for GridLane {
-    fn strategy_name(&self) -> &'static str {
-        "Grid"
-    }
-
-    fn lane_kind(&self) -> LaneKind {
-        LaneKind::Render
-    }
-
-    fn on_initialize(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
-        let device = ctx
-            .get::<Arc<dyn khora_core::renderer::GraphicsDevice>>()
-            .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
-            .clone();
-        let pipeline_system = ctx
-            .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
-            .ok_or(LaneError::missing("Arc<dyn PipelineSystem>"))?
-            .clone();
-        init_gpu_resources(self, device.as_ref(), pipeline_system.as_ref())
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))
-    }
-
-    fn execute(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
-        // The grid is opt-in: a host application enables the grid View.
-        // Absent or disabled ⇒ nothing to draw.
-        let enabled = ctx.get_ref::<GridView>().is_some_and(|view| view.0.enabled);
-        if !enabled {
-            return Ok(());
-        }
-
-        // Camera comes from the primary extracted view (the editor
-        // viewport override is folded into `RenderWorld.views` by
-        // `RenderFlow`).
-        let Some(render_world) = ctx.get_ref::<RenderWorld>() else {
-            return Ok(());
-        };
-        let Some(view) = render_world.views.first() else {
-            return Ok(());
-        };
-        let view = view.clone();
-
-        let device = ctx
-            .get::<Arc<dyn khora_core::renderer::GraphicsDevice>>()
-            .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
-            .clone();
-        let mut encoder_guard = ctx
-            .slot::<dyn CommandEncoder>()
-            .ok_or(LaneError::missing("&mut dyn CommandEncoder"))?;
-        let encoder = &mut *encoder_guard;
-        let color_target = ctx
-            .get::<khora_core::lane::ColorTarget>()
-            .ok_or(LaneError::missing("ColorTarget"))?
-            .0;
-        // The grid depth-tests against the scene buffer — no depth
-        // target ⇒ skip (cannot run the depth-enabled pipeline).
-        let Some(depth_target) = ctx.get::<khora_core::lane::DepthTarget>().map(|d| d.0) else {
-            return Ok(());
-        };
-
-        render_grid(
-            self,
-            device.as_ref(),
-            encoder,
-            color_target,
-            depth_target,
-            &view,
-        );
-        Ok(())
-    }
-
-    fn on_shutdown(&self, ctx: &mut LaneContext) {
-        let Some(device) = crate::render_lane::util::release::shutdown_device(ctx) else {
-            return;
-        };
-        let device = device.as_ref();
-        crate::render_lane::util::release::release_bind_group(device, &self.camera_bind_group);
-        crate::render_lane::util::release::release_buffer(device, &self.camera_buffer);
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn grid_lane_strategy_name() {
-        let lane = GridLane::default();
-        assert_eq!(lane.strategy_name(), "Grid");
-        assert_eq!(lane.lane_kind(), LaneKind::Render);
-    }
-
-    /// The grid lane owns its uniform buffer and bind group; the layouts and
-    /// pipeline belong to the `PipelineSystem`.
-    #[test]
-    fn grid_shutdown_destroys_every_buffer_it_created() {
-        crate::tests::assert_shutdown_destroys_what_it_created(&GridLane::default());
-    }
 }

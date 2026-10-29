@@ -12,16 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Lanes of the `OverlayAgent`: the editor overlays drawn over the scene, in
-//! compositing order — the ground grid, the wireframe, then the gizmos.
+//! The overlay families: the editor overlays drawn over the scene, each its
+//! own family with its own pass, composited in order — the ground grid, the
+//! wireframe, then the gizmos.
 
+mod block;
 mod gizmo;
+mod gizmo_family;
 mod grid;
+mod grid_family;
 mod wireframe;
+mod wireframe_family;
 
-pub use gizmo::GizmoLane;
-pub use grid::GridLane;
-pub use wireframe::WireframeLane;
-
-#[cfg(test)]
-mod tests;
+pub use gizmo::{GizmoInputs, GizmoLane};
+pub use gizmo_family::*;
+pub use grid::{GridInputs, GridLane};
+pub use grid_family::*;
+pub use wireframe::{WireframeInputs, WireframeLane};
+pub use wireframe_family::*;

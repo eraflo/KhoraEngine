@@ -29,14 +29,16 @@ pub enum AgentId {
     Renderer,
     /// The shadow map rendering agent (runs in OBSERVE phase before Renderer).
     ShadowRenderer,
-    /// Overlay / debug-viz rendering (gizmos, wireframes, emissive). Runs
-    /// after `Renderer` in the OUTPUT phase. Lanes activate independently
-    /// based on context flags rather than a single budget-driven strategy.
-    Overlay,
     /// Skybox / environment background. Runs after `Renderer` in the OUTPUT
     /// phase and draws the environment cube behind the scene geometry
     /// (depth-tested), so the visible sky matches what surfaces reflect.
     Skybox,
+    /// The editor ground grid, drawn over the UI in the OUTPUT phase.
+    Grid,
+    /// The wireframe debug overlay, drawn over the grid.
+    Wireframe,
+    /// The editor and debug line gizmos, drawn over every other overlay.
+    Gizmo,
     /// The physics simulation agent.
     Physics,
     /// The ECS/Logic coordination agent.

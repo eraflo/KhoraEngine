@@ -333,8 +333,10 @@ fn agent_id_variants(x: &khora_core::agent::gorna::AgentId) {
     match x {
         khora_core::agent::gorna::AgentId::Renderer => {}
         khora_core::agent::gorna::AgentId::ShadowRenderer => {}
-        khora_core::agent::gorna::AgentId::Overlay => {}
         khora_core::agent::gorna::AgentId::Skybox => {}
+        khora_core::agent::gorna::AgentId::Grid => {}
+        khora_core::agent::gorna::AgentId::Wireframe => {}
+        khora_core::agent::gorna::AgentId::Gizmo => {}
         khora_core::agent::gorna::AgentId::Physics => {}
         khora_core::agent::gorna::AgentId::Ecs => {}
         khora_core::agent::gorna::AgentId::Ui => {}
@@ -3216,13 +3218,15 @@ mod paths_used_by_other_crates {
     use khora_core::agent::gorna::AgentHints as _; // khora-control, khora-sdk
     use khora_core::agent::gorna::AgentId as _; // khora-agents, khora-control, khora-sdk
     use khora_core::agent::gorna::AgentId::Audio as _; // khora-sdk
-    use khora_core::agent::gorna::AgentId::Overlay as _; // khora-sdk
+    use khora_core::agent::gorna::AgentId::Gizmo as _; // khora-editor, khora-lanes
+    use khora_core::agent::gorna::AgentId::Grid as _; // khora-editor, khora-lanes
     use khora_core::agent::gorna::AgentId::Physics as _; // khora-sdk
     use khora_core::agent::gorna::AgentId::Renderer as _; // khora-sdk
     use khora_core::agent::gorna::AgentId::Script as _; // khora-sdk
     use khora_core::agent::gorna::AgentId::ShadowRenderer as _; // khora-sdk
     use khora_core::agent::gorna::AgentId::Skybox as _; // khora-sdk
     use khora_core::agent::gorna::AgentId::Ui as _; // khora-sdk
+    use khora_core::agent::gorna::AgentId::Wireframe as _; // khora-editor, khora-lanes
     use khora_core::agent::gorna::AgentStatus as _; // khora-agents, khora-control, khora-sdk
     use khora_core::agent::gorna::DecisionTrace as _; // khora-control
     use khora_core::agent::gorna::EngineHint as _; // khora-control, khora-sdk

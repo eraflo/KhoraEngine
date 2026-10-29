@@ -157,7 +157,7 @@ macro_rules! family {
 
 family!(LightFamily, LaneKind::Physics, AgentId::Physics, LitOutputs);
 family!(EyeFamily, LaneKind::Render, AgentId::Skybox, SeenOutputs);
-family!(IdleFamily, LaneKind::Ui, AgentId::Overlay, IdleOutputs);
+family!(IdleFamily, LaneKind::Ui, AgentId::Grid, IdleOutputs);
 family!(StrayFamily, LaneKind::Audio, AgentId::Audio, StrayOutputs);
 
 const ONE_LEVEL: &[Level] = &[level(StrategyId::LowPower, "only")];

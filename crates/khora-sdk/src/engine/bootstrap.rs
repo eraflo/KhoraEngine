@@ -241,7 +241,7 @@ fn populate<A: EngineApp>(
 
     // ── Overlay channels (gizmo + grid) ──────────────────────────────────
     // Shared resources the host application (editor, debug tooling)
-    // writes into each frame; the `OverlayAgent` lanes read them in
+    // writes into each frame; the overlay families' lanes read them in
     // the OUTPUT phase. The engine only provides the slots — it never
     // produces the data itself, keeping the editor a pure consumer
     // of engine APIs (no engine-internal `EditorAgent`).
@@ -456,12 +456,6 @@ fn register_builtin_agents(dcc: &DccService) {
     dcc.register_agent(
         Arc::new(Mutex::new(
             khora_agents::render_agent::RenderAgent::default(),
-        )),
-        1.0,
-    );
-    dcc.register_agent(
-        Arc::new(Mutex::new(
-            khora_agents::overlay_agent::OverlayAgent::default(),
         )),
         1.0,
     );
