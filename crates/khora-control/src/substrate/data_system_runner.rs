@@ -17,7 +17,7 @@
 use khora_core::graph::topological_sort;
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
+use khora_data::ecs::{DataSystemRegistration, Observer, Tick, TickPhase, World};
 use std::collections::HashMap;
 
 /// Runs every [`DataSystemRegistration`] declared for the given phase, in a
@@ -50,9 +50,38 @@ pub fn run_data_systems(
 
     sort_systems(&mut systems);
 
+    // Each run writes at a tick of its own, which is what the system has
+    // seen once it returns; the clock then moves past it.
     for sys in systems {
+        let tick = world.begin_run();
         (sys.run)(world, runtime, deck);
+        world.note_observer_run(Observer::DataSystem(sys.name), tick);
+        world.end_run();
     }
+}
+
+/// The tick at which the observing `DataSystem` registered as `name` last
+/// ran on `world` — what it has seen of that world's changes. `Tick(0)` for a
+/// system that never ran on it: a new world (a new
+/// [`World::instance_id`]) restarts every observer.
+pub fn data_system_last_seen(name: &str, world: &World) -> Tick {
+    registered_name(
+        name,
+        inventory::iter::<DataSystemRegistration>
+            .into_iter()
+            .map(|s| s.name),
+    )
+    .map_or(Tick::default(), |name| {
+        world.observer_last_seen(Observer::DataSystem(name))
+    })
+}
+
+/// The registered `&'static` name equal to `name`, if one is registered.
+pub(crate) fn registered_name(
+    name: &str,
+    mut names: impl Iterator<Item = &'static str>,
+) -> Option<&'static str> {
+    names.find(|registered| *registered == name)
 }
 
 /// Stable in-place sort over a phase's systems.
@@ -130,6 +159,7 @@ mod tests {
             run: sys_b,
             order_hint: 10,
             runs_after: &[],
+            observes: &[],
         }
     }
     inventory::submit! {
@@ -139,6 +169,7 @@ mod tests {
             run: sys_a,
             order_hint: 0,
             runs_after: &[],
+            observes: &[],
         }
     }
     inventory::submit! {
@@ -148,6 +179,7 @@ mod tests {
             run: sys_c,
             order_hint: -5,
             runs_after: &["test_a"], // Forces c after a despite lower hint.
+            observes: &[],
         }
     }
 

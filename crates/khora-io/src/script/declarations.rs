@@ -588,5 +588,6 @@ inventory::submit! {
         run: script_components_system,
         order_hint: -9,
         runs_after: &["script_hot_reload"],
+        observes: &[],
     }
 }

@@ -51,5 +51,6 @@ inventory::submit! {
         run: audio_playback_writeback,
         order_hint: 10, // After physics_world_writeback (default 0).
         runs_after: &[],
+        observes: &[],
     }
 }

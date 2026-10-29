@@ -29,8 +29,11 @@
 
 pub mod flow_runner;
 
-pub use flow_runner::run_flows;
+pub use flow_runner::{flow_last_seen, run_flows};
 
 mod data_system_runner;
 
-pub use data_system_runner::run_data_systems;
+pub use data_system_runner::{data_system_last_seen, run_data_systems};
+
+#[cfg(test)]
+mod tests;

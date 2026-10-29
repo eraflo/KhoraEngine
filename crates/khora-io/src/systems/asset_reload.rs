@@ -357,6 +357,7 @@ inventory::submit! {
         // before the resolver compares the authored refs against them.
         order_hint: -6,
         runs_after: &[],
+        observes: &[],
     }
 }
 

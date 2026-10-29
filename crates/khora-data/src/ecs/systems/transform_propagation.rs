@@ -149,6 +149,7 @@ inventory::submit! {
         run: transform_propagation_entry,
         order_hint: 0,
         runs_after: &[],
+        observes: &[],
     }
 }
 

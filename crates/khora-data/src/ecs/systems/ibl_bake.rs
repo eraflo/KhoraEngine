@@ -133,6 +133,7 @@ inventory::submit! {
         run: ibl_bake_system,
         order_hint: -10,
         runs_after: &[],
+        observes: &[],
     }
 }
 

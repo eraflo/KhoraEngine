@@ -174,6 +174,7 @@ inventory::submit! {
         run: physics_release_entry,
         order_hint: 0,
         runs_after: &["transform_propagation"],
+        observes: &[],
     }
 }
 

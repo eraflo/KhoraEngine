@@ -17,7 +17,7 @@
 use khora_core::lane::LaneBus;
 use khora_core::Runtime;
 
-use crate::ecs::{SemanticDomain, World};
+use crate::ecs::{ComponentKey, SemanticDomain, World};
 
 /// Registration entry for a [`Flow`](super::Flow) — submitted by each
 /// concrete Flow implementation via [`inventory::submit!`].
@@ -34,6 +34,10 @@ pub struct FlowRegistration {
     pub domain: SemanticDomain,
     /// Trampoline that runs select + project and publishes the View.
     pub run: fn(&mut World, &mut LaneBus, &Runtime),
+    /// Components this Flow watches for change, by key. The `World` records
+    /// each as observed ([`World::observe`]); the runner keeps the Flow's
+    /// last-seen tick. Empty by default (`register_flow!(MyFlow)`).
+    pub observes: &'static [fn() -> ComponentKey],
 }
 
 inventory::collect!(FlowRegistration);
@@ -81,10 +85,15 @@ pub fn run_flow_cached<F: super::Flow>(
 /// impl khora_data::flow::Flow for MyFlow { /* ... */ }
 ///
 /// register_flow!(MyFlow);
+/// // A Flow watching components for change names their types:
+/// register_flow!(MyWatchingFlow, observes = [UiText]);
 /// ```
 #[macro_export]
 macro_rules! register_flow {
     ($flow_ty:ty) => {
+        $crate::register_flow!($flow_ty, observes = []);
+    };
+    ($flow_ty:ty, observes = [$($observed:ty),* $(,)?]) => {
         const _: () = {
             fn run_flow(
                 world: &mut $crate::ecs::World,
@@ -112,6 +121,7 @@ macro_rules! register_flow {
                     name: <$flow_ty as $crate::flow::Flow>::NAME,
                     domain: <$flow_ty as $crate::flow::Flow>::DOMAIN,
                     run: run_flow,
+                    observes: &[$($crate::ecs::ComponentKey::of::<$observed>),*],
                 }
             }
         };

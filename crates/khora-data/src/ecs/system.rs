@@ -40,6 +40,7 @@
 //!         run: my_system,
 //!         order_hint: 0,
 //!         runs_after: &[],
+//!         observes: &[],
 //!     }
 //! }
 //! ```
@@ -48,7 +49,7 @@
 //!
 //! See [`TickPhase`] for the available phases and their intended use.
 
-use crate::ecs::World;
+use crate::ecs::{ComponentKey, World};
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
 
@@ -106,6 +107,10 @@ pub struct DataSystemRegistration {
     /// Names of systems within the same phase that must run before this
     /// one. Used to topologically sort the phase. Empty by default.
     pub runs_after: &'static [&'static str],
+    /// Components this system watches for change, by key. The `World`
+    /// records each as observed ([`World::observe`]); the runner keeps the
+    /// system's last-seen tick. Empty by default.
+    pub observes: &'static [fn() -> ComponentKey],
 }
 
 inventory::collect!(DataSystemRegistration);

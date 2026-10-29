@@ -57,5 +57,6 @@ inventory::submit! {
         // first; either order is correct since the query skips orphan rows.
         order_hint: 1,
         runs_after: &["ecs_maintenance"],
+        observes: &[],
     }
 }

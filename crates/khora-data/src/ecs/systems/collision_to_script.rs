@@ -113,6 +113,7 @@ inventory::submit! {
         // is a frame of lag for no reason.
         order_hint: 20,
         runs_after: &[],
+        observes: &[],
     }
 }
 

@@ -67,6 +67,7 @@ inventory::submit! {
         order_hint: 30,
         run: behavior_writeback,
         runs_after: &[],
+        observes: &[],
     }
 }
 

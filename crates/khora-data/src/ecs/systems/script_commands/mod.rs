@@ -193,6 +193,7 @@ inventory::submit! {
         // simulation result the script was reacting to.
         order_hint: 20,
         runs_after: &[],
+        observes: &[],
     }
 }
 

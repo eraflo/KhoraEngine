@@ -127,6 +127,7 @@ inventory::submit! {
         // After the frame's script writes land: what it checks is the
         // frame's last word.
         runs_after: &["script_commands"],
+        observes: &[],
     }
 }
 

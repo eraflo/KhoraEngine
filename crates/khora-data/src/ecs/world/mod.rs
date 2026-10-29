@@ -29,7 +29,8 @@ use crate::ecs::page::PageIndex;
 use crate::ecs::planner::QueryPlanner;
 use crate::ecs::storage::StorageManager;
 use crate::ecs::{
-    ComponentBundle, ComponentKey, LayoutPolicy, MaterialRef, MeshRef, SemanticDomain,
+    ComponentBundle, ComponentKey, LayoutPolicy, MaterialRef, MeshRef, Observer, SemanticDomain,
+    Tick,
 };
 
 mod column_write;
@@ -90,6 +91,32 @@ pub struct World {
     /// a play-mode snapshot restore) can never alias a previous World's
     /// epoch values and serve a stale cached View.
     instance_id: u64,
+    /// The world's clock, the keys observers watch, and each observer's
+    /// last-seen tick.
+    clock: WorldClock,
+}
+
+/// What the world knows of time and of who watches it.
+#[derive(Debug)]
+struct WorldClock {
+    /// The tick of the run in progress, or of the last one.
+    tick: Tick,
+    /// The component keys some observer watches.
+    observed: std::collections::HashSet<ComponentKey>,
+    /// Each observer's last-seen tick on this world.
+    last_seen: std::collections::HashMap<Observer, Tick>,
+}
+
+impl Default for WorldClock {
+    fn default() -> Self {
+        Self {
+            // 0 is "never ran": a first run at tick 0 could not be told
+            // apart from an observer that never looked.
+            tick: Tick(1),
+            observed: std::collections::HashSet::new(),
+            last_seen: std::collections::HashMap::new(),
+        }
+    }
 }
 
 /// Source of process-unique [`World::instance_id`] values.
@@ -185,7 +212,19 @@ impl World {
             nowhere: None,
             reserver: std::sync::Arc::new(khora_core::ecs::EntityReserver::new()),
             instance_id: WORLD_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            clock: WorldClock::default(),
         };
+        // Every key a registration watches is observed from the first frame.
+        for reg in inventory::iter::<crate::ecs::DataSystemRegistration> {
+            for key in reg.observes {
+                world.observe(key());
+            }
+        }
+        for reg in inventory::iter::<crate::flow::FlowRegistration> {
+            for key in reg.observes {
+                world.observe(key());
+            }
+        }
         // Generic and hand-implemented components can't self-register via the
         // derive (generics have no single `TypeId`; `MaterialRef` holds a trait
         // object and has a manual `Component` impl), so they stay explicit.
@@ -266,6 +305,55 @@ impl World {
     /// that epochs from two different World instances never compare equal.
     pub fn instance_id(&self) -> u64 {
         self.instance_id
+    }
+
+    /// Starts a run on this world's clock and returns its tick: everything
+    /// the run writes carries it. The substrate starts one run per
+    /// `DataSystem`, per `Flow` and per scheduler wave.
+    pub fn begin_run(&mut self) -> Tick {
+        self.clock.tick
+    }
+
+    /// Ends the run in progress: the clock moves past its tick, so whatever
+    /// is written next — by the next run, or between runs (the app's update,
+    /// an editor edit) — carries a tick no observer has seen yet.
+    pub fn end_run(&mut self) {
+        self.clock.tick = Tick(self.clock.tick.0 + 1);
+    }
+
+    /// The tick a write made now carries. It is always strictly greater than
+    /// every observer's last-seen tick; a new world starts at `Tick(1)`, so
+    /// `Tick(0)` means "never ran".
+    pub fn current_tick(&self) -> Tick {
+        self.clock.tick
+    }
+
+    /// Records `key` as observed: some observer watches its changes. Called
+    /// for every key a registration `observes`, and at run time for a
+    /// declared (Ergon) component.
+    pub fn observe(&mut self, key: ComponentKey) {
+        self.clock.observed.insert(key);
+    }
+
+    /// Whether `key` is observed on this world.
+    pub fn is_observed(&self, key: ComponentKey) -> bool {
+        self.clock.observed.contains(&key)
+    }
+
+    /// The tick at which `observer` last ran on this world — what it has seen
+    /// of its changes; `Tick(0)` if it never ran here. The ledger lives in the
+    /// world, so a new world restarts every observer.
+    pub fn observer_last_seen(&self, observer: Observer) -> Tick {
+        self.clock
+            .last_seen
+            .get(&observer)
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// Records that `observer` ran on this world at `tick`.
+    pub fn note_observer_run(&mut self, observer: Observer, tick: Tick) {
+        self.clock.last_seen.insert(observer, tick);
     }
 
     /// (Internal) Marks `domain` as semantically changed. O(1).

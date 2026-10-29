@@ -174,5 +174,6 @@ inventory::submit! {
         run: physics_world_writeback,
         order_hint: 0,
         runs_after: &[],
+        observes: &[],
     }
 }

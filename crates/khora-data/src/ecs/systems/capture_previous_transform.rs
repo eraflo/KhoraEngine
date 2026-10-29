@@ -81,6 +81,7 @@ inventory::submit! {
         // GlobalTransform from the *previous* frame's propagation.
         order_hint: -10,
         runs_after: &[],
+        observes: &[],
     }
 }
 

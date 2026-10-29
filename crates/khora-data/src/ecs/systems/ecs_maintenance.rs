@@ -42,5 +42,6 @@ inventory::submit! {
         run: ecs_maintenance_system,
         order_hint: 0,
         runs_after: &[],
+        observes: &[],
     }
 }

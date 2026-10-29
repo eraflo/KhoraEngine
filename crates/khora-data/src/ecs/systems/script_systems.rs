@@ -104,5 +104,6 @@ inventory::submit! {
         order_hint: -8,
         run: script_systems,
         runs_after: &["script_components"],
+        observes: &[],
     }
 }

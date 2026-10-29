@@ -387,6 +387,7 @@ inventory::submit! {
         // A changed asset's copies are replaced before the authored refs are
         // compared against them.
         runs_after: &["asset_reload"],
+        observes: &[],
     }
 }
 

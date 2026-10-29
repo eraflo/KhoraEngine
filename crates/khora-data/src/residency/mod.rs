@@ -49,6 +49,7 @@ macro_rules! register_residency {
                 run: $run,
                 order_hint: 0,
                 runs_after: &["asset_reload", "asset_resolver" $(, $after)*],
+                observes: &[],
             }
         }
     };

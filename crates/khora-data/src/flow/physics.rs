@@ -136,6 +136,7 @@ inventory::submit! {
         run: physics_provider_sync,
         order_hint: 0,
         runs_after: &[],
+        observes: &[],
     }
 }
 

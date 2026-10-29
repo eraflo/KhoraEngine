@@ -82,6 +82,7 @@ inventory::submit! {
         // ended at, rather than the ones it started from.
         order_hint: 10,
         runs_after: &[],
+        observes: &[],
     }
 }
 

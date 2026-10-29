@@ -76,6 +76,7 @@ inventory::submit! {
         // held actions is a frame of lag nobody asked for.
         order_hint: -100,
         runs_after: &[],
+        observes: &[],
     }
 }
 
