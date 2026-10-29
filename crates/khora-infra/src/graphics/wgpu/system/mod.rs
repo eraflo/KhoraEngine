@@ -230,7 +230,20 @@ impl WgpuRenderSystem {
             self.current_height
         );
 
-        let graphics_device = WgpuDevice::new(context_arc.clone());
+        let graphics_device = match context_arc.lock() {
+            Ok(gc) => {
+                let device =
+                    WgpuDevice::new(gc.device.clone(), gc.queue.clone(), Arc::clone(&gc.health));
+                device.set_adapter_info(adapter_info_of(&gc));
+                describe_surface(&device, &gc);
+                device
+            }
+            Err(_) => {
+                return Err(RenderError::InitializationFailed(
+                    "the graphics context's mutex is poisoned".to_owned(),
+                ))
+            }
+        };
         let device_arc = Arc::new(graphics_device);
         self.wgpu_device = Some(device_arc.clone());
 
@@ -393,7 +406,12 @@ impl WgpuRenderSystem {
             return;
         };
         match gc.lock() {
-            Ok(mut gc) => gc.resize(width, height),
+            Ok(mut gc) => {
+                gc.resize(width, height);
+                if let Some(device) = &self.wgpu_device {
+                    describe_surface(device, &gc);
+                }
+            }
             Err(_) => return,
         }
         log::info!("Surface configured to {width}x{height}");
@@ -573,6 +591,9 @@ impl WgpuRenderSystem {
                         gc_guard.surface_config.height,
                     ) != (self.current_width, self.current_height);
                     gc_guard.resize(self.current_width, self.current_height);
+                    if let Some(device) = &self.wgpu_device {
+                        describe_surface(device, &gc_guard);
+                    }
                     drop(gc_guard);
                     // The depth attachment must match the surface it is drawn
                     // with — rebuilt only when the size moved, not on every
@@ -616,3 +637,38 @@ impl WgpuRenderSystem {
 unsafe impl Send for WgpuRenderSystem {}
 
 unsafe impl Sync for WgpuRenderSystem {}
+
+/// Tells `device` the surface `gc` is configured to: its format and size.
+fn describe_surface(device: &WgpuDevice, gc: &WgpuGraphicsContext) {
+    device.set_surface_format(
+        crate::graphics::wgpu::conversions::from_wgpu_texture_format(gc.surface_config.format),
+        (gc.surface_config.width, gc.surface_config.height),
+    );
+}
+
+/// The engine's description of the adapter `gc` runs on.
+fn adapter_info_of(
+    gc: &WgpuGraphicsContext,
+) -> khora_core::renderer::api::device::GraphicsAdapterInfo {
+    use khora_core::renderer::api::device::{
+        GraphicsAdapterInfo, GraphicsBackendType, RendererDeviceType,
+    };
+    GraphicsAdapterInfo {
+        name: gc.adapter_name.clone(),
+        backend_type: match gc.adapter_backend {
+            wgpu::Backend::Vulkan => GraphicsBackendType::Vulkan,
+            wgpu::Backend::Metal => GraphicsBackendType::Metal,
+            wgpu::Backend::Dx12 => GraphicsBackendType::Dx12,
+            wgpu::Backend::Gl => GraphicsBackendType::OpenGL,
+            wgpu::Backend::BrowserWebGpu => GraphicsBackendType::WebGpu,
+            wgpu::Backend::Noop => GraphicsBackendType::Unknown,
+        },
+        device_type: match gc.adapter_device_type {
+            wgpu::DeviceType::IntegratedGpu => RendererDeviceType::IntegratedGpu,
+            wgpu::DeviceType::DiscreteGpu => RendererDeviceType::DiscreteGpu,
+            wgpu::DeviceType::VirtualGpu => RendererDeviceType::VirtualGpu,
+            wgpu::DeviceType::Cpu => RendererDeviceType::Cpu,
+            _ => RendererDeviceType::Unknown,
+        },
+    }
+}

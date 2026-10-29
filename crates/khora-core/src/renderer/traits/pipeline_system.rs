@@ -40,6 +40,14 @@ use crate::renderer::traits::GraphicsDevice;
 
 /// Backend that compiles shaders and builds/caches bind-group layouts and
 /// render pipelines on demand. See the module docs.
+///
+/// # Called from many threads at once
+///
+/// Lanes build their pipelines in `prepare`, inside concurrent waves. An
+/// implementation may hold its own lock while it calls the
+/// [`GraphicsDevice`], whose locks are leaves below it; it must never be
+/// called back by the device, nor hold its lock while waiting on anything
+/// else.
 pub trait PipelineSystem: Send + Sync {
     /// Returns the canonical bind-group layout for `key` under `variant`,
     /// creating + caching it on first request. Both lit lanes (pipeline slot)

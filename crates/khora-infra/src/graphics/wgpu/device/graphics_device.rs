@@ -21,7 +21,7 @@ use khora_core::renderer::traits::CommandEncoder;
 use khora_core::renderer::{GraphicsDevice, PipelineError, ResourceError, ShaderError};
 
 use crate::graphics::wgpu::command::WgpuCommandEncoder;
-use crate::graphics::wgpu::conversions::{from_wgpu_texture_format, IntoWgpu};
+use crate::graphics::wgpu::conversions::IntoWgpu;
 
 use std::future::Future;
 use std::sync::atomic::Ordering;
@@ -77,15 +77,14 @@ impl GraphicsDevice for WgpuDevice {
 
         // Create a new shader module entry and insert it into the shader_modules map
         let id = self.generate_shader_id();
-        let mut modules_guard = self.internal.shader_modules.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {e}"))
+        self.with_registry(|r| {
+            r.shader_modules.insert(
+                id,
+                WgpuShaderModuleEntry {
+                    wgpu_module: wgpu_module_arc,
+                },
+            )
         })?;
-        modules_guard.insert(
-            id,
-            WgpuShaderModuleEntry {
-                wgpu_module: wgpu_module_arc,
-            },
-        );
 
         log::info!(
             "WgpuDevice: Successfully created shader module '{:?}' with ID: {:?}",
@@ -96,11 +95,10 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_shader_module(&self, id: ShaderModuleId) -> Result<(), ResourceError> {
-        let mut modules_guard = self.internal.shader_modules.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {e}"))
-        })?;
-
-        if modules_guard.remove(&id).is_some() {
+        if self
+            .with_registry(|r| r.shader_modules.remove(&id))?
+            .is_some()
+        {
             log::debug!("WgpuDevice: Destroyed shader module with ID: {id:?}");
             Ok(())
         } else {
@@ -119,32 +117,36 @@ impl GraphicsDevice for WgpuDevice {
             descriptor.label
         );
 
-        // 1. Get the shader modules from the context
-        let shader_modules_map = self.internal.shader_modules.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {e}"))
-        })?;
-
-        let vs_module_entry = shader_modules_map
-            .get(&descriptor.vertex_shader_module)
-            .ok_or_else(|| {
-                ResourceError::Pipeline(PipelineError::InvalidShaderModuleForPipeline {
-                    id: descriptor.vertex_shader_module,
-                    pipeline_label: descriptor.label.as_deref().map(String::from),
-                })
-            })?;
-        let vs_wgpu_module: &Arc<wgpu::ShaderModule> = &vs_module_entry.wgpu_module;
-
-        let fs_wgpu_module_opt = if let Some(fs_id) = descriptor.fragment_shader_module {
-            let fs_module_entry = shader_modules_map.get(&fs_id).ok_or_else(|| {
-                ResourceError::Pipeline(PipelineError::InvalidShaderModuleForPipeline {
-                    id: fs_id,
-                    pipeline_label: descriptor.label.as_deref().map(String::from),
-                })
-            })?;
-            Some(&fs_module_entry.wgpu_module)
-        } else {
-            None
+        // 1. The shader modules and the layout, cloned out of the registry.
+        let missing_module = |id| {
+            ResourceError::Pipeline(PipelineError::InvalidShaderModuleForPipeline {
+                id,
+                pipeline_label: descriptor.label.as_deref().map(String::from),
+            })
         };
+        let (vs_module, fs_module, layout_arc) = self.with_registry(|r| {
+            let module = |id| {
+                r.shader_modules
+                    .get(&id)
+                    .map(|e| Arc::clone(&e.wgpu_module))
+            };
+            (
+                module(descriptor.vertex_shader_module),
+                descriptor.fragment_shader_module.map(|id| (id, module(id))),
+                descriptor.layout.and_then(|id| {
+                    r.pipeline_layouts
+                        .get(&id)
+                        .map(|e| Arc::clone(&e.wgpu_layout))
+                }),
+            )
+        })?;
+        let vs_module = vs_module.ok_or_else(|| missing_module(descriptor.vertex_shader_module))?;
+        let vs_wgpu_module: &Arc<wgpu::ShaderModule> = &vs_module;
+        let fs_module = match fs_module {
+            Some((id, module)) => Some(module.ok_or_else(|| missing_module(id))?),
+            None => None,
+        };
+        let fs_wgpu_module_opt = fs_module.as_ref();
 
         // 2. Convert vertex buffers layout
         let wgpu_vertex_attributes_storage: Vec<Vec<wgpu::VertexAttribute>> = descriptor
@@ -261,19 +263,7 @@ impl GraphicsDevice for WgpuDevice {
 
         // 7. Create pipeline layout and render pipeline
         let (wgpu_render_pipeline_arc, id) = self.with_wgpu_device(|device| {
-            // Look up pipeline layout if provided
-            let layout_entry_opt = if let Some(layout_id) = descriptor.layout {
-                // Lock order is Context -> ShaderModules -> PipelineLayouts.
-                // create_render_pipeline locks shader_modules upstream, then
-                // we acquire pipeline_layouts here — the strict ordering
-                // prevents deadlock with other GPU paths.
-                let layouts = self.internal.pipeline_layouts.lock().map_err(|e| {
-                    ResourceError::BackendError(format!("Mutex poisoned (pipeline_layouts): {e}"))
-                })?;
-                layouts.get(&layout_id).map(|e| Arc::clone(&e.wgpu_layout))
-            } else {
-                None
-            };
+            let layout_entry_opt = layout_arc.clone();
 
             let wgpu_pipeline_descriptor = wgpu::RenderPipelineDescriptor {
                 label: descriptor.label.as_deref(),
@@ -326,16 +316,14 @@ impl GraphicsDevice for WgpuDevice {
             Ok((Arc::new(pipeline), new_id))
         })?;
 
-        let mut pipelines_guard =
-            self.internal.pipelines.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (pipelines): {e}"))
-            })?;
-        pipelines_guard.insert(
-            id,
-            WgpuRenderPipelineEntry {
-                wgpu_pipeline: wgpu_render_pipeline_arc,
-            },
-        );
+        self.with_registry(|r| {
+            r.pipelines.insert(
+                id,
+                WgpuRenderPipelineEntry {
+                    wgpu_pipeline: wgpu_render_pipeline_arc,
+                },
+            )
+        })?;
 
         log::info!(
             "WgpuDevice: Successfully created render pipeline '{:?}' with ID: {:?}",
@@ -353,22 +341,26 @@ impl GraphicsDevice for WgpuDevice {
         &self,
         descriptor: &PipelineLayoutDescriptor,
     ) -> Result<PipelineLayoutId, ResourceError> {
-        let bg_layouts_guard = self.internal.bind_group_layouts.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (bind_group_layouts): {e}"))
-        })?;
-
-        let mut wgpu_bind_group_layouts = Vec::with_capacity(descriptor.bind_group_layouts.len());
-        for id in descriptor.bind_group_layouts {
-            let entry = bg_layouts_guard.get(id).ok_or(ResourceError::NotFound)?;
-            wgpu_bind_group_layouts.push(&entry.wgpu_layout);
-        }
+        let wgpu_bind_group_layouts: Vec<Arc<wgpu::BindGroupLayout>> = self
+            .with_registry(|r| {
+                descriptor
+                    .bind_group_layouts
+                    .iter()
+                    .map(|id| {
+                        r.bind_group_layouts
+                            .get(id)
+                            .map(|e| Arc::clone(&e.wgpu_layout))
+                    })
+                    .collect::<Option<Vec<_>>>()
+            })?
+            .ok_or(ResourceError::NotFound)?;
 
         let wgpu_layout = self.with_wgpu_device(|device| {
             let wgpu_desc = wgpu::PipelineLayoutDescriptor {
                 label: descriptor.label.as_deref(),
                 bind_group_layouts: &wgpu_bind_group_layouts
                     .iter()
-                    .map(|l: &&Arc<wgpu::BindGroupLayout>| Some(l.as_ref()))
+                    .map(|l: &Arc<wgpu::BindGroupLayout>| Some(l.as_ref()))
                     .collect::<Vec<_>>(),
                 immediate_size: 0,
             };
@@ -381,13 +373,10 @@ impl GraphicsDevice for WgpuDevice {
                 .fetch_add(1, Ordering::Relaxed),
         );
 
-        self.internal
-            .pipeline_layouts
-            .lock()
-            .map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (pipeline_layouts): {e}"))
-            })?
-            .insert(id, WgpuPipelineLayoutEntry { wgpu_layout });
+        self.with_registry(|r| {
+            r.pipeline_layouts
+                .insert(id, WgpuPipelineLayoutEntry { wgpu_layout })
+        })?;
 
         log::debug!(
             "WgpuDevice: Created pipeline layout '{:?}' with ID: {:?}",
@@ -398,12 +387,7 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_render_pipeline(&self, id: RenderPipelineId) -> Result<(), ResourceError> {
-        let mut pipelines_guard =
-            self.internal.pipelines.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (pipelines): {e}"))
-            })?;
-
-        if pipelines_guard.remove(&id).is_some() {
+        if self.with_registry(|r| r.pipelines.remove(&id))?.is_some() {
             log::debug!("WgpuDevice: Destroyed render pipeline with ID: {id:?}");
             Ok(())
         } else {
@@ -415,71 +399,58 @@ impl GraphicsDevice for WgpuDevice {
         &self,
         descriptor: &khora_core::renderer::api::pipeline::ComputePipelineDescriptor,
     ) -> Result<ComputePipelineId, ResourceError> {
-        let context =
-            self.internal.context.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-            })?;
-        let device = &context.device;
-
-        // 1. Get shader module
-        let shader_modules_guard = self.internal.shader_modules.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (shader_modules): {e}"))
+        // 1. The shader module and the layout, cloned out of the registry.
+        let (shader_module, layout_entry_opt) = self.with_registry(|r| {
+            (
+                r.shader_modules
+                    .get(&descriptor.shader_module)
+                    .map(|e| Arc::clone(&e.wgpu_module)),
+                descriptor.layout.and_then(|id| {
+                    r.pipeline_layouts
+                        .get(&id)
+                        .map(|e| Arc::clone(&e.wgpu_layout))
+                }),
+            )
+        })?;
+        let shader_module = shader_module.ok_or(ShaderError::NotFound {
+            id: descriptor.shader_module,
         })?;
 
-        let shader_entry =
-            shader_modules_guard
-                .get(&descriptor.shader_module)
-                .ok_or(ShaderError::NotFound {
-                    id: descriptor.shader_module,
-                })?;
-
-        // 2. Look up pipeline layout if provided
-        let layout_entry_opt = if let Some(layout_id) = descriptor.layout {
-            let layouts = self.internal.pipeline_layouts.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (pipeline_layouts): {e}"))
-            })?;
-            layouts.get(&layout_id).map(|e| Arc::clone(&e.wgpu_layout))
-        } else {
-            None
-        };
-
-        // 3. Create compute pipeline
-        let wgpu_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: descriptor.label.as_deref(),
-            layout: layout_entry_opt.as_deref(),
-            module: &shader_entry.wgpu_module,
-            entry_point: Some(descriptor.entry_point.as_ref()),
-            compilation_options: Default::default(),
-            cache: None,
-        });
+        // 2. Create compute pipeline
+        let wgpu_pipeline =
+            self.wgpu_device()
+                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                    label: descriptor.label.as_deref(),
+                    layout: layout_entry_opt.as_deref(),
+                    module: &shader_module,
+                    entry_point: Some(descriptor.entry_point.as_ref()),
+                    compilation_options: Default::default(),
+                    cache: None,
+                });
 
         // 3. Store and return ID
-        let mut compute_pipelines_guard = self.internal.compute_pipelines.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (compute_pipelines): {e}"))
-        })?;
-
         let id = ComputePipelineId(
             self.internal
                 .next_compute_pipeline_id
                 .fetch_add(1, Ordering::Relaxed),
         );
-
-        compute_pipelines_guard.insert(
-            id,
-            WgpuComputePipelineEntry {
-                wgpu_pipeline: Arc::new(wgpu_pipeline),
-            },
-        );
+        self.with_registry(|r| {
+            r.compute_pipelines.insert(
+                id,
+                WgpuComputePipelineEntry {
+                    wgpu_pipeline: Arc::new(wgpu_pipeline),
+                },
+            )
+        })?;
 
         Ok(id)
     }
 
     fn destroy_compute_pipeline(&self, id: ComputePipelineId) -> Result<(), ResourceError> {
-        let mut compute_pipelines_guard = self.internal.compute_pipelines.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (compute_pipelines): {e}"))
-        })?;
-
-        if compute_pipelines_guard.remove(&id).is_some() {
+        if self
+            .with_registry(|r| r.compute_pipelines.remove(&id))?
+            .is_some()
+        {
             log::debug!("WgpuDevice: Destroyed compute pipeline with ID: {id:?}");
             Ok(())
         } else {
@@ -495,14 +466,8 @@ impl GraphicsDevice for WgpuDevice {
         &self,
         descriptor: &api_buf::BufferDescriptor,
     ) -> Result<api_buf::BufferId, ResourceError> {
-        let context =
-            self.internal.context.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-            })?;
-        let device = &context.device;
-
         let wgpu_buffer_descriptor = buffer_descriptor(descriptor);
-        let wgpu_buffer = device.create_buffer(&wgpu_buffer_descriptor);
+        let wgpu_buffer = self.wgpu_device().create_buffer(&wgpu_buffer_descriptor);
         let id = self.generate_buffer_id();
 
         // Track VRAM usage
@@ -515,17 +480,15 @@ impl GraphicsDevice for WgpuDevice {
             .fetch_max(current_vram, Ordering::Relaxed);
 
         // Insert the buffer into the map
-        self.internal
-            .buffers
-            .lock()
-            .map_err(|e| ResourceError::BackendError(format!("Mutex poisoned (buffers): {e}")))?
-            .insert(
+        self.with_registry(|r| {
+            r.buffers.insert(
                 id,
                 WgpuBufferEntry {
                     wgpu_buffer: Arc::new(wgpu_buffer),
                     size: descriptor.size,
                 },
-            );
+            )
+        })?;
 
         log::debug!(
             "WgpuDevice: Created buffer '{:?}' with ID: {:?}, size: {} bytes",
@@ -545,18 +508,13 @@ impl GraphicsDevice for WgpuDevice {
         descriptor: &api_buf::BufferDescriptor,
         data: &[u8],
     ) -> Result<api_buf::BufferId, ResourceError> {
-        let context =
-            self.internal.context.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-            })?;
-
-        let wgpu_buffer = context
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: descriptor.label.as_deref(),
-                contents: data,
-                usage: descriptor.usage.into_wgpu(),
-            });
+        let wgpu_buffer =
+            self.wgpu_device()
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: descriptor.label.as_deref(),
+                    contents: data,
+                    usage: descriptor.usage.into_wgpu(),
+                });
 
         // Use the existing ID generation and storage system.
         let id = self.generate_buffer_id();
@@ -572,17 +530,15 @@ impl GraphicsDevice for WgpuDevice {
             .fetch_max(current_vram, Ordering::Relaxed);
 
         // Store the buffer
-        self.internal
-            .buffers
-            .lock()
-            .map_err(|e| ResourceError::BackendError(format!("Mutex poisoned (buffers): {e}")))?
-            .insert(
+        self.with_registry(|r| {
+            r.buffers.insert(
                 id,
                 WgpuBufferEntry {
                     wgpu_buffer: Arc::new(wgpu_buffer),
                     size: buffer_size,
                 },
-            );
+            )
+        })?;
 
         log::debug!(
             "WgpuDevice: Created buffer '{:?}' with initial data. ID: {:?}, size: {} bytes",
@@ -594,13 +550,8 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_buffer(&self, id: api_buf::BufferId) -> Result<(), ResourceError> {
-        let mut buffers =
-            self.internal.buffers.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (buffers): {e}"))
-            })?;
-
         // Remove the buffer from the map and track VRAM usage
-        if let Some(entry) = buffers.remove(&id) {
+        if let Some(entry) = self.with_registry(|r| r.buffers.remove(&id))? {
             self.internal
                 .vram_allocated_bytes
                 .fetch_sub(entry.size as usize, Ordering::Relaxed);
@@ -617,26 +568,20 @@ impl GraphicsDevice for WgpuDevice {
         offset: u64,
         data: &[u8],
     ) -> Result<(), ResourceError> {
-        // 1. Get the resources
-        let buffers =
-            self.internal.buffers.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (buffers): {e}"))
-            })?;
-        let entry = buffers.get(&id).ok_or(ResourceError::NotFound)?;
-        let context =
-            self.internal.context.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-            })?;
+        // 1. The buffer, cloned out of the registry.
+        let wgpu_buffer = self
+            .with_registry(|r| r.buffers.get(&id).map(|e| Arc::clone(&e.wgpu_buffer)))?
+            .ok_or(ResourceError::NotFound)?;
 
         // 2. Check the bounds
-        let buffer_size = entry.wgpu_buffer.size();
+        let buffer_size = wgpu_buffer.size();
         let end_offset = offset + data.len() as u64;
         if end_offset > buffer_size {
             return Err(ResourceError::OutOfBounds);
         }
 
         // 3. Write directly. No padding, no allocation. It's simple and efficient.
-        context.queue.write_buffer(&entry.wgpu_buffer, offset, data);
+        self.wgpu_queue().write_buffer(&wgpu_buffer, offset, data);
 
         log::debug!(
             "WgpuDevice: Wrote {} bytes to buffer ID: {:?} at offset {}",
@@ -654,21 +599,12 @@ impl GraphicsDevice for WgpuDevice {
         offset: u64,
         data: &'a [u8],
     ) -> Box<dyn Future<Output = Result<(), ResourceError>> + Send + 'static> {
-        let buffers_guard = match self.internal.buffers.lock() {
-            Ok(g) => g,
-            Err(_) => {
-                return Box::new(async {
-                    Err(ResourceError::BackendError(
-                        "write_buffer_async: buffers mutex poisoned".to_owned(),
-                    ))
-                });
-            }
-        };
-        let entry_wgpu_buffer: Arc<wgpu::Buffer> = match buffers_guard.get(&id) {
-            Some(e) => Arc::clone(&e.wgpu_buffer),
-            None => return Box::new(async { Err(ResourceError::NotFound) }),
-        };
-        drop(buffers_guard); // Drop the lock to avoid deadlocks
+        let entry_wgpu_buffer: Arc<wgpu::Buffer> =
+            match self.with_registry(|r| r.buffers.get(&id).map(|e| Arc::clone(&e.wgpu_buffer))) {
+                Ok(Some(buffer)) => buffer,
+                Ok(None) => return Box::new(async { Err(ResourceError::NotFound) }),
+                Err(error) => return Box::new(async { Err(error) }),
+            };
 
         // Data needs to be owned by the future to be 'static.
         // This involves a copy, which is a common trade-off for true async operations.
@@ -755,12 +691,6 @@ impl GraphicsDevice for WgpuDevice {
         &self,
         descriptor: &api_tex::TextureDescriptor,
     ) -> Result<api_tex::TextureId, ResourceError> {
-        let context =
-            self.internal.context.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-            })?;
-        let device = &context.device;
-
         let wgpu_texture_descriptor = wgpu::TextureDescriptor {
             label: descriptor.label.as_deref(),
             size: descriptor.size.into_wgpu(),
@@ -777,7 +707,7 @@ impl GraphicsDevice for WgpuDevice {
         };
 
         // Create the texture using the wgpu device with the specified descriptor
-        let wgpu_texture = device.create_texture(&wgpu_texture_descriptor);
+        let wgpu_texture = self.wgpu_device().create_texture(&wgpu_texture_descriptor);
         let id = self.generate_texture_id();
         let size_in_bytes = Self::calculate_texture_size_in_bytes(descriptor);
 
@@ -791,17 +721,15 @@ impl GraphicsDevice for WgpuDevice {
             .fetch_max(current_vram, Ordering::Relaxed);
 
         // Insert the texture into the map
-        self.internal
-            .textures
-            .lock()
-            .map_err(|e| ResourceError::BackendError(format!("Mutex poisoned (textures): {e}")))?
-            .insert(
+        self.with_registry(|r| {
+            r.textures.insert(
                 id,
                 WgpuTextureEntry {
                     wgpu_texture: Arc::new(wgpu_texture),
                     size: size_in_bytes,
                 },
-            );
+            )
+        })?;
 
         log::debug!(
             "WgpuDevice: Created texture '{:?}' with ID: {:?}, size: {} bytes (VRAM)",
@@ -817,13 +745,8 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_texture(&self, id: api_tex::TextureId) -> Result<(), ResourceError> {
-        let mut textures =
-            self.internal.textures.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (textures): {e}"))
-            })?;
-
         // Remove the texture from the map and track VRAM usage
-        if let Some(entry) = textures.remove(&id) {
+        if let Some(entry) = self.with_registry(|r| r.textures.remove(&id))? {
             self.internal
                 .vram_allocated_bytes
                 .fetch_sub(entry.size as usize, Ordering::Relaxed);
@@ -842,19 +765,17 @@ impl GraphicsDevice for WgpuDevice {
         offset: dimension::Origin3D,
         size: dimension::Extent3D,
     ) -> Result<(), ResourceError> {
-        let textures =
-            self.internal.textures.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (textures): {e}"))
-            })?;
-        let entry = textures.get(&texture_id).ok_or(ResourceError::NotFound)?;
-        let context =
-            self.internal.context.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-            })?;
+        let wgpu_texture = self
+            .with_registry(|r| {
+                r.textures
+                    .get(&texture_id)
+                    .map(|e| Arc::clone(&e.wgpu_texture))
+            })?
+            .ok_or(ResourceError::NotFound)?;
 
-        context.queue.write_texture(
+        self.wgpu_queue().write_texture(
             wgpu::TexelCopyTextureInfo {
-                texture: &entry.wgpu_texture,
+                texture: &wgpu_texture,
                 mip_level: 0, // Assuming base mip for now
                 origin: offset.into_wgpu(),
                 aspect: wgpu::TextureAspect::All, // Assuming all aspects for now
@@ -881,11 +802,13 @@ impl GraphicsDevice for WgpuDevice {
         texture_id: api_tex::TextureId,
         descriptor: &api_tex::TextureViewDescriptor,
     ) -> Result<api_tex::TextureViewId, ResourceError> {
-        let textures =
-            self.internal.textures.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (textures): {e}"))
-            })?;
-        let texture_entry = textures.get(&texture_id).ok_or(ResourceError::NotFound)?;
+        let wgpu_texture = self
+            .with_registry(|r| {
+                r.textures
+                    .get(&texture_id)
+                    .map(|e| Arc::clone(&e.wgpu_texture))
+            })?
+            .ok_or(ResourceError::NotFound)?;
 
         let wgpu_view_descriptor = wgpu::TextureViewDescriptor {
             label: descriptor.label.as_deref(),
@@ -902,25 +825,17 @@ impl GraphicsDevice for WgpuDevice {
         };
 
         // Create the texture view using the wgpu texture
-        let wgpu_view = Arc::new(
-            texture_entry
-                .wgpu_texture
-                .create_view(&wgpu_view_descriptor),
-        );
+        let wgpu_view = Arc::new(wgpu_texture.create_view(&wgpu_view_descriptor));
         let id = self.generate_texture_view_id();
-        self.internal
-            .texture_views
-            .lock()
-            .map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (texture_views): {e}"))
-            })?
-            .insert(
+        self.with_registry(|r| {
+            r.texture_views.insert(
                 id,
                 WgpuTextureViewEntry {
                     wgpu_view,
                     source_texture_id: Some(texture_id),
                 },
-            );
+            )
+        })?;
         log::info!(
             "WgpuDevice: Created texture view '{:?}' for texture ID: {:?} with ID: {:?}",
             descriptor
@@ -935,12 +850,11 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_texture_view(&self, id: api_tex::TextureViewId) -> Result<(), ResourceError> {
-        let mut texture_views = self.internal.texture_views.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (texture_views): {e}"))
-        })?;
-
         // Remove the texture view from the map
-        if texture_views.remove(&id).is_some() {
+        if self
+            .with_registry(|r| r.texture_views.remove(&id))?
+            .is_some()
+        {
             log::debug!("WgpuDevice: Destroyed texture view with ID: {id:?}");
             Ok(())
         } else {
@@ -952,12 +866,6 @@ impl GraphicsDevice for WgpuDevice {
         &self,
         descriptor: &api_tex::SamplerDescriptor,
     ) -> Result<api_tex::SamplerId, ResourceError> {
-        let context =
-            self.internal.context.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (context): {e}"))
-            })?;
-        let device = &context.device;
-
         let wgpu_sampler_descriptor = wgpu::SamplerDescriptor {
             label: descriptor.label.as_deref(),
             address_mode_u: descriptor.address_mode_u.into_wgpu(),
@@ -976,13 +884,9 @@ impl GraphicsDevice for WgpuDevice {
         };
 
         // Create the sampler using the wgpu device
-        let wgpu_sampler = Arc::new(device.create_sampler(&wgpu_sampler_descriptor));
+        let wgpu_sampler = Arc::new(self.wgpu_device().create_sampler(&wgpu_sampler_descriptor));
         let id = self.generate_sampler_id();
-        self.internal
-            .samplers
-            .lock()
-            .map_err(|e| ResourceError::BackendError(format!("Mutex poisoned (samplers): {e}")))?
-            .insert(id, WgpuSamplerEntry { wgpu_sampler });
+        self.with_registry(|r| r.samplers.insert(id, WgpuSamplerEntry { wgpu_sampler }))?;
         log::debug!(
             "WgpuDevice: Created sampler '{:?}' with ID: {:?}",
             descriptor
@@ -996,13 +900,8 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_sampler(&self, id: api_tex::SamplerId) -> Result<(), ResourceError> {
-        let mut samplers =
-            self.internal.samplers.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (samplers): {e}"))
-            })?;
-
         // Remove the sampler from the map
-        if samplers.remove(&id).is_some() {
+        if self.with_registry(|r| r.samplers.remove(&id))?.is_some() {
             log::debug!("WgpuDevice: Destroyed sampler with ID: {id:?}");
             Ok(())
         } else {
@@ -1011,83 +910,32 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn get_surface_format(&self) -> Option<TextureFormat> {
-        let context = match self.internal.context.lock() {
-            Ok(g) => g,
-            Err(_) => {
-                log::error!("WgpuDevice::get_surface_format: context mutex poisoned");
-                return None;
-            }
-        };
-        from_wgpu_texture_format(context.surface_config.format)
+        self.surface().format
     }
 
     fn get_surface_size(&self) -> (u32, u32) {
-        match self.internal.context.lock() {
-            Ok(context) => (context.surface_config.width, context.surface_config.height),
-            Err(_) => {
-                log::error!("WgpuDevice::get_surface_size: context mutex poisoned");
-                (0, 0)
-            }
-        }
+        self.surface().size
     }
 
     fn get_adapter_info(&self) -> GraphicsAdapterInfo {
-        let context_guard = match self.internal.context.lock() {
-            Ok(g) => g,
-            Err(_) => {
-                log::error!(
-                    "WgpuDevice::get_adapter_info: context mutex poisoned, returning defaults"
-                );
-                return GraphicsAdapterInfo {
-                    name: "<poisoned context>".to_owned(),
-                    backend_type: GraphicsBackendType::Unknown,
-                    device_type: RendererDeviceType::Unknown,
-                };
-            }
-        };
-        GraphicsAdapterInfo {
-            name: context_guard.adapter_name.clone(),
-            backend_type: match context_guard.adapter_backend {
-                wgpu::Backend::Vulkan => GraphicsBackendType::Vulkan,
-                wgpu::Backend::Metal => GraphicsBackendType::Metal,
-                wgpu::Backend::Dx12 => GraphicsBackendType::Dx12,
-                wgpu::Backend::Gl => GraphicsBackendType::OpenGL,
-                wgpu::Backend::BrowserWebGpu => GraphicsBackendType::WebGpu,
-                wgpu::Backend::Noop => GraphicsBackendType::Unknown,
-            },
-            device_type: match context_guard.adapter_device_type {
-                wgpu::DeviceType::IntegratedGpu => RendererDeviceType::IntegratedGpu,
-                wgpu::DeviceType::DiscreteGpu => RendererDeviceType::DiscreteGpu,
-                wgpu::DeviceType::VirtualGpu => RendererDeviceType::VirtualGpu,
-                wgpu::DeviceType::Cpu => RendererDeviceType::Cpu,
-                _ => RendererDeviceType::Unknown,
-            },
-        }
+        self.internal
+            .adapter
+            .get()
+            .cloned()
+            .unwrap_or_else(|| GraphicsAdapterInfo {
+                name: "<undescribed adapter>".to_owned(),
+                backend_type: GraphicsBackendType::Unknown,
+                device_type: RendererDeviceType::Unknown,
+            })
     }
 
     fn supports_feature(&self, feature_name: &str) -> bool {
-        let context_guard = match self.internal.context.lock() {
-            Ok(g) => g,
-            Err(_) => {
-                log::error!(
-                    "WgpuDevice::supports_feature: context mutex poisoned, reporting unsupported"
-                );
-                return false;
-            }
-        };
+        let features = self.wgpu_device().features();
         match feature_name {
-            "gpu_timestamps" => context_guard
-                .active_device_features
-                .contains(wgpu::Features::TIMESTAMP_QUERY),
-            "texture_compression_bc" => context_guard
-                .active_device_features
-                .contains(wgpu::Features::TEXTURE_COMPRESSION_BC),
-            "polygon_mode_line" => context_guard
-                .active_device_features
-                .contains(wgpu::Features::POLYGON_MODE_LINE),
-            "polygon_mode_point" => context_guard
-                .active_device_features
-                .contains(wgpu::Features::POLYGON_MODE_POINT),
+            "gpu_timestamps" => features.contains(wgpu::Features::TIMESTAMP_QUERY),
+            "texture_compression_bc" => features.contains(wgpu::Features::TEXTURE_COMPRESSION_BC),
+            "polygon_mode_line" => features.contains(wgpu::Features::POLYGON_MODE_LINE),
+            "polygon_mode_point" => features.contains(wgpu::Features::POLYGON_MODE_POINT),
             _ => {
                 log::warn!(
                     "WgpuDevice: Unsupported feature_name query in supports_feature: {feature_name}"
@@ -1098,24 +946,8 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn create_command_encoder(&self, label: Option<&str>) -> Box<dyn CommandEncoder> {
-        let context_guard = match self.internal.context.lock() {
-            Ok(g) => g,
-            Err(_) => {
-                log::error!(
-                    "WgpuDevice::create_command_encoder: context mutex poisoned — \
-                     returning a dead encoder; subsequent `finish()` will return None"
-                );
-                // `WgpuCommandEncoder` already represents a dead state via
-                // `encoder: None` (its `finish()` fails fast with `None`),
-                // so the rest of the frame skips this submission cleanly.
-                return Box::new(WgpuCommandEncoder {
-                    encoder: None,
-                    device: self.clone(),
-                });
-            }
-        };
         let descriptor = wgpu::CommandEncoderDescriptor { label };
-        let encoder = context_guard.device.create_command_encoder(&descriptor);
+        let encoder = self.wgpu_device().create_command_encoder(&descriptor);
 
         Box::new(WgpuCommandEncoder {
             encoder: Some(encoder), // Wrap in Option to be `take`n in finish()
@@ -1124,45 +956,25 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn submit_command_buffer(&self, command_buffer_id: api_cmd::CommandBufferId) {
-        let mut guard = match self.internal.pending_command_buffers.lock() {
-            Ok(g) => g,
-            Err(_) => {
-                log::error!(
-                    "WgpuDevice::submit_command_buffer: pending_command_buffers mutex poisoned, \
-                     dropping {:?}",
-                    command_buffer_id
-                );
-                return;
-            }
-        };
-
-        // Remove the command buffer from the map. If it doesn't exist, it's a logic error.
-        if let Some(buffer) = guard.remove(&command_buffer_id) {
-            let context_guard = match self.internal.context.lock() {
-                Ok(g) => g,
-                Err(_) => {
+        let buffer =
+            match self.with_registry(|r| r.pending_command_buffers.remove(&command_buffer_id)) {
+                Ok(Some(buffer)) => buffer,
+                Ok(None) => {
                     log::error!(
-                        "WgpuDevice::submit_command_buffer: context mutex poisoned, \
-                         dropping {:?}",
+                        "Attempted to submit a CommandBufferId ({:?}) that does not exist.",
+                        command_buffer_id
+                    );
+                    return;
+                }
+                Err(e) => {
+                    log::error!(
+                        "WgpuDevice::submit_command_buffer: {e}, dropping {:?}",
                         command_buffer_id
                     );
                     return;
                 }
             };
-            let idx = context_guard.queue.submit(std::iter::once(buffer));
-            // Store the submission index so we can wait on it before the next acquire.
-            match self.internal.last_submission_index.lock() {
-                Ok(mut g) => *g = Some(idx),
-                Err(_) => log::error!(
-                    "WgpuDevice::submit_command_buffer: last_submission_index mutex poisoned"
-                ),
-            }
-        } else {
-            log::error!(
-                "Attempted to submit a CommandBufferId ({:?}) that does not exist.",
-                command_buffer_id
-            );
-        }
+        self.wgpu_queue().submit(std::iter::once(buffer));
     }
 
     // --- Bind Group Operations ---
@@ -1229,10 +1041,10 @@ impl GraphicsDevice for WgpuDevice {
         })?;
 
         let id = self.generate_bind_group_layout_id();
-        let mut layouts = self.internal.bind_group_layouts.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (bind_group_layouts): {e}"))
+        self.with_registry(|r| {
+            r.bind_group_layouts
+                .insert(id, WgpuBindGroupLayoutEntry { wgpu_layout })
         })?;
-        layouts.insert(id, WgpuBindGroupLayoutEntry { wgpu_layout });
 
         log::debug!(
             "WgpuDevice: Created bind group layout '{:?}' with ID: {:?}",
@@ -1248,16 +1060,6 @@ impl GraphicsDevice for WgpuDevice {
     ) -> Result<BindGroupId, ResourceError> {
         use api_cmd::BindingResource;
 
-        // Get the bind group layout
-        let layouts = self.internal.bind_group_layouts.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (bind_group_layouts): {e}"))
-        })?;
-        let layout_entry = layouts
-            .get(&descriptor.layout)
-            .ok_or(ResourceError::NotFound)?;
-        let wgpu_layout = Arc::clone(&layout_entry.wgpu_layout);
-        drop(layouts);
-
         // Resource storage to hold Arcs alive
         enum ResourceArc {
             Buffer(u32, Arc<wgpu::Buffer>, u64, Option<std::num::NonZeroU64>),
@@ -1265,53 +1067,43 @@ impl GraphicsDevice for WgpuDevice {
             Sampler(u32, Arc<wgpu::Sampler>),
         }
 
-        let mut resource_arcs = Vec::with_capacity(descriptor.entries.len());
-
-        {
-            let buffers_lock = self.internal.buffers.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (buffers): {e}"))
-            })?;
-            let texture_views_lock = self.internal.texture_views.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (texture_views): {e}"))
-            })?;
-            let samplers_lock = self.internal.samplers.lock().map_err(|e| {
-                ResourceError::BackendError(format!("Mutex poisoned (samplers): {e}"))
-            })?;
-
-            for entry in descriptor.entries {
-                match &entry.resource {
-                    BindingResource::Buffer(buffer_binding) => {
-                        let buffer_entry = buffers_lock
-                            .get(&buffer_binding.buffer)
-                            .ok_or(ResourceError::NotFound)?;
-                        resource_arcs.push(ResourceArc::Buffer(
-                            entry.binding,
-                            Arc::clone(&buffer_entry.wgpu_buffer),
-                            buffer_binding.offset,
-                            buffer_binding.size,
-                        ));
-                    }
-                    BindingResource::TextureView(view_id) => {
-                        let view_entry = texture_views_lock
-                            .get(view_id)
-                            .ok_or(ResourceError::NotFound)?;
-                        resource_arcs.push(ResourceArc::TextureView(
-                            entry.binding,
-                            Arc::clone(&view_entry.wgpu_view),
-                        ));
-                    }
-                    BindingResource::Sampler(sampler_id) => {
-                        let sampler_entry = samplers_lock
-                            .get(sampler_id)
-                            .ok_or(ResourceError::NotFound)?;
-                        resource_arcs.push(ResourceArc::Sampler(
-                            entry.binding,
-                            Arc::clone(&sampler_entry.wgpu_sampler),
-                        ));
-                    }
-                }
-            }
-        }
+        // The layout and every bound resource, cloned out of the registry in
+        // one pass.
+        let (wgpu_layout, resource_arcs) = self
+            .with_registry(|r| {
+                let layout = r
+                    .bind_group_layouts
+                    .get(&descriptor.layout)
+                    .map(|e| Arc::clone(&e.wgpu_layout))?;
+                let resources = descriptor
+                    .entries
+                    .iter()
+                    .map(|entry| match &entry.resource {
+                        BindingResource::Buffer(binding) => {
+                            r.buffers.get(&binding.buffer).map(|e| {
+                                ResourceArc::Buffer(
+                                    entry.binding,
+                                    Arc::clone(&e.wgpu_buffer),
+                                    binding.offset,
+                                    binding.size,
+                                )
+                            })
+                        }
+                        BindingResource::TextureView(view_id) => {
+                            r.texture_views.get(view_id).map(|e| {
+                                ResourceArc::TextureView(entry.binding, Arc::clone(&e.wgpu_view))
+                            })
+                        }
+                        BindingResource::Sampler(sampler_id) => {
+                            r.samplers.get(sampler_id).map(|e| {
+                                ResourceArc::Sampler(entry.binding, Arc::clone(&e.wgpu_sampler))
+                            })
+                        }
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                Some((layout, resources))
+            })?
+            .ok_or(ResourceError::NotFound)?;
 
         // Now create wgpu entries with references to the Arc'd resources
         let wgpu_entries: Vec<wgpu::BindGroupEntry> = resource_arcs
@@ -1346,10 +1138,10 @@ impl GraphicsDevice for WgpuDevice {
         })?;
 
         let id = self.generate_bind_group_id();
-        let mut bind_groups = self.internal.bind_groups.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (bind_groups): {e}"))
+        self.with_registry(|r| {
+            r.bind_groups
+                .insert(id, WgpuBindGroupEntry { wgpu_bind_group })
         })?;
-        bind_groups.insert(id, WgpuBindGroupEntry { wgpu_bind_group });
 
         log::debug!(
             "WgpuDevice: Created bind group '{:?}' with ID: {:?}",
@@ -1360,11 +1152,10 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_bind_group_layout(&self, id: BindGroupLayoutId) -> Result<(), ResourceError> {
-        let mut layouts = self.internal.bind_group_layouts.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (bind_group_layouts): {e}"))
-        })?;
-
-        if layouts.remove(&id).is_some() {
+        if self
+            .with_registry(|r| r.bind_group_layouts.remove(&id))?
+            .is_some()
+        {
             log::debug!("WgpuDevice: Destroyed bind group layout with ID: {id:?}");
             Ok(())
         } else {
@@ -1373,11 +1164,7 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     fn destroy_bind_group(&self, id: BindGroupId) -> Result<(), ResourceError> {
-        let mut bind_groups = self.internal.bind_groups.lock().map_err(|e| {
-            ResourceError::BackendError(format!("Mutex poisoned (bind_groups): {e}"))
-        })?;
-
-        if bind_groups.remove(&id).is_some() {
+        if self.with_registry(|r| r.bind_groups.remove(&id))?.is_some() {
             log::debug!("WgpuDevice: Destroyed bind group with ID: {id:?}");
             Ok(())
         } else {

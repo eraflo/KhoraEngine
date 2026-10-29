@@ -21,7 +21,7 @@ use khora_core::renderer::api::resource::texture::{self as api_tex};
 
 #[allow(dead_code)]
 #[derive(Debug)]
-pub(super) struct WgpuShaderModuleEntry {
+pub(crate) struct WgpuShaderModuleEntry {
     pub(super) wgpu_module: Arc<wgpu::ShaderModule>,
 }
 

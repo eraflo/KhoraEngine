@@ -40,6 +40,17 @@ use std::future::Future;
 ///
 /// It is the cornerstone of the `khora-infra` crate's responsibility, where a
 /// concrete type will implement this trait to provide actual rendering capabilities.
+///
+/// # Called from many threads at once
+///
+/// Lanes prepare and record in concurrent waves, so any method may run on
+/// several threads together — creating, writing and destroying at the same
+/// moment. An implementation must never wait while holding something another
+/// call could wait for: its locks are **leaves**, held only to look an entry
+/// up, insert or remove it, and never across a call to the graphics API or to
+/// anything else. Code above the device (a pipeline system, a text renderer)
+/// may hold its own lock while calling the device, because the device never
+/// calls back up.
 pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     // --- Shader Management ---
 
