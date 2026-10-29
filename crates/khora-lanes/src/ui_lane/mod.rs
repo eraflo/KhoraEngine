@@ -12,33 +12,76 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Implements a dedicated rendering lane for UI elements using taffy layout and instancing.
+//! The UI lane: every UI node as one instanced quad, then the frame's text,
+//! drawn over the frame's colour.
+//!
+//! The UI Flow lays the UI out and publishes it as a [`UiScene`]; the lane
+//! uploads one instance per node, draws them as a triangle strip of four
+//! vertices each, and hands the texts to the text renderer, which draws them
+//! into the same encoder after the quads. Image nodes sample the shared
+//! [`UiImageAtlas`], which the `image_on_gpu` residency fills before any
+//! agent runs — the lane only reads it.
 
-use std::any::Any;
 use std::borrow::Cow;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Arc;
+use std::time::Duration;
 
-use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind};
-use khora_core::math::{Extent2D, Mat4, Vec4};
+use khora_core::agent::gorna::StrategyId;
+use khora_core::gpu::GpuSetup;
+use khora_core::lane::contract::{Lane, LaneReport};
+use khora_core::lane::cost::{Cost, PerDevice};
+use khora_core::lane::io::{Target, TargetKey};
+use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::LaneError;
+use khora_core::math::{Extent2D, Extent3D, Mat4, Vec4};
 use khora_core::renderer::api::command::{
-    BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutEntry, BindGroupLayoutId,
-    BindingResource, BindingType, BufferBinding, BufferBindingType, LoadOp, Operations,
-    RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
+    BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutId, BindingResource, LoadOp,
+    Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
 };
-use khora_core::renderer::api::pipeline::{
-    BlendStateDescriptor, ColorTargetStateDescriptor, ColorWrites, MultisampleStateDescriptor,
-    PrimitiveStateDescriptor, PrimitiveTopology, RenderPipelineId,
-};
+use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::{
-    BufferDescriptor, BufferId, BufferUsage, TextureViewDimension, TextureViewId,
+    BufferUsage, ImageAspect, SamplerId, TextureDescriptor, TextureDimension, TextureFormat,
+    TextureId, TextureUsage, TextureViewDescriptor, TextureViewDimension, TextureViewId,
 };
-use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
 use khora_core::renderer::api::text::TextRenderer;
-use khora_core::renderer::api::util::ShaderStageFlags;
+use khora_core::renderer::error::{RenderError, ResourceError};
+use khora_core::renderer::traits::{CommandEncoder, PipelineSystem};
 use khora_core::renderer::GraphicsDevice;
-use khora_data::ui::UiScene;
+use khora_data::ui::{UiImageAtlas, UiScene};
+use khora_macros::LaneInputs;
 
-/// Data for a single UI instance sent to the GPU.
+use crate::render_lane::util::Block;
+
+mod pipeline;
+mod ui_family;
+
+use pipeline::{
+    ui_atlas_layout_entries, ui_global_layout_entries, ui_instance_layout_entries,
+    ui_pipeline_spec, ui_sampler_descriptor, UI_ATLAS_LAYOUT_LABEL, UI_GLOBAL_LAYOUT_LABEL,
+    UI_INSTANCE_LAYOUT_LABEL,
+};
+
+pub use ui_family::*;
+
+/// UI nodes the instance storage holds before it first grows.
+const UI_CAPACITY: usize = 1024;
+/// The projection block's size: one 4×4 matrix.
+const PROJECTION_BYTES: u64 = std::mem::size_of::<Mat4>() as u64;
+/// The bytes the first build holds: the projection and the first storage.
+const START_BYTES: u64 =
+    PROJECTION_BYTES + (UI_CAPACITY * std::mem::size_of::<UiInstanceData>()) as u64;
+
+/// What recording and uploading one node costs on the host.
+const NODE_CPU: Duration = Duration::from_nanos(200);
+/// What drawing one node's quad costs on the device.
+const NODE_GPU: Duration = Duration::from_nanos(100);
+/// What laying out and queueing one text costs on the host.
+const TEXT_CPU: Duration = Duration::from_micros(2);
+/// What drawing one text costs on the device.
+const TEXT_GPU: Duration = Duration::from_micros(1);
+
+/// Data for a single UI instance sent to the GPU — matches `UiInstance` in
+/// `ui.wgsl`.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct UiInstanceData {
@@ -50,417 +93,483 @@ struct UiInstanceData {
     uv_max: [f32; 2],
 }
 
-/// A lane designed for high-performance UI rendering using instancing.
-///
-/// All GPU handles are initialised exactly once in `init_gpu_resources`
-/// and only read on subsequent frames, so each is held in a [`OnceLock`]
-/// for lock-free hot-path reads (the underlying buffer/texture *contents*
-/// are mutated per-frame at the GPU level — only the abstract IDs are
-/// stored here).
-pub struct UiRenderLane {
-    /// The UI render pipeline.
-    pipeline: OnceLock<RenderPipelineId>,
-    /// Layout for the UI global uniform buffer (projection matrix).
-    global_layout: OnceLock<BindGroupLayoutId>,
-    /// Layout for the instance data storage buffer.
-    instance_layout: OnceLock<BindGroupLayoutId>,
-    /// The projection matrix buffer.
-    projection_buffer: OnceLock<BufferId>,
-    /// The instance data buffer.
-    instance_buffer: OnceLock<BufferId>,
-    /// The global bind group (set 0).
-    global_bind_group: OnceLock<BindGroupId>,
-    /// The instance bind group (set 1).
-    instance_bind_group: OnceLock<BindGroupId>,
-    /// Layout for the atlas texture and sampler (set 2).
-    atlas_layout: OnceLock<BindGroupLayoutId>,
-    /// Fixed sampler for UI textures.
-    sampler: OnceLock<khora_core::renderer::api::resource::SamplerId>,
-    /// Cached atlas bind group (set 2), keyed by the atlas texture view it
-    /// binds. Rebuilt only when the atlas view changes (the atlas texture was
-    /// reallocated); atlas *content* updates keep the same view, so the bind
-    /// group stays valid. Rebuilding destroys the previous one, so the device's
-    /// bind-group table never grows across frames. `None` until the first
-    /// atlas-bearing frame.
-    atlas_bind_group: Mutex<Option<(TextureViewId, BindGroupId)>>,
-    /// Maximum number of UI elements supported in a single batch.
-    max_instances: usize,
+/// The UI lane. Holds what it built on the device; `None` before the first
+/// prepare and after shutdown.
+#[derive(Debug)]
+pub struct UiLane {
+    levels: [Level; 1],
+    gpu: Option<UiGpu>,
 }
 
-impl Default for UiRenderLane {
+impl Default for UiLane {
     fn default() -> Self {
         Self {
-            pipeline: OnceLock::new(),
-            global_layout: OnceLock::new(),
-            instance_layout: OnceLock::new(),
-            projection_buffer: OnceLock::new(),
-            instance_buffer: OnceLock::new(),
-            global_bind_group: OnceLock::new(),
-            instance_bind_group: OnceLock::new(),
-            atlas_layout: OnceLock::new(),
-            sampler: OnceLock::new(),
-            atlas_bind_group: Mutex::new(None),
-            max_instances: 1024,
+            levels: [Level {
+                id: StrategyId::Balanced,
+                name: "ui",
+                impact: Impact::None,
+                memory: PerDevice {
+                    cpu: 0,
+                    gpu: START_BYTES,
+                    npu: 0,
+                    other: 0,
+                },
+            }],
+            gpu: None,
         }
     }
 }
 
-impl UiRenderLane {
-    /// Creates a new `UiRenderLane`.
-    pub fn new() -> Self {
-        Self::default()
+/// What the UI builds on the device.
+#[derive(Debug)]
+struct UiGpu {
+    /// The projection matrix and its set-0 bind group.
+    projection: Block,
+    /// The node instances and their set-1 bind group, grown when a frame
+    /// brings more nodes than they hold.
+    instances: Block,
+    instance_layout: BindGroupLayoutId,
+    atlas_layout: BindGroupLayoutId,
+    sampler: SamplerId,
+    /// The pipeline and the colour format and samples it was built for.
+    pipeline: Option<((TextureFormat, u32), RenderPipelineId)>,
+    /// The set-2 bind group and the atlas view it binds, rebuilt only when
+    /// the view changes.
+    atlas_bind_group: Option<(TextureViewId, BindGroupId)>,
+    /// A one-texel texture set 2 binds while the atlas has none: the layout
+    /// needs a texture even when no node samples one.
+    fallback: Option<(TextureId, TextureViewId)>,
+}
+
+impl UiGpu {
+    /// The bytes its buffers hold.
+    fn bytes(&self) -> u64 {
+        self.projection.size + self.instances.size
     }
 
-    fn init_gpu_resources(
-        &self,
-        device: &dyn GraphicsDevice,
-        pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
+    fn destroy(self, device: &dyn GraphicsDevice) {
+        if let Some((_, group)) = self.atlas_bind_group {
+            if let Err(e) = device.destroy_bind_group(group) {
+                log::warn!("UiLane: could not destroy the atlas bind group: {e:?}");
+            }
+        }
+        if let Some((texture, view)) = self.fallback {
+            destroy_texture(device, texture, view);
+        }
+        self.projection.destroy(device);
+        self.instances.destroy(device);
+        if let Err(e) = device.destroy_sampler(self.sampler) {
+            log::warn!("UiLane: could not destroy the sampler: {e:?}");
+        }
+    }
+}
+
+/// What the UI lane reads each frame.
+#[derive(LaneInputs)]
+pub struct UiInputs<'f> {
+    /// The frame's UI, laid out by the UI Flow.
+    #[bus]
+    pub scene: &'f UiScene,
+    /// The frame's colour attachment and its size.
+    #[frame]
+    pub target: Target,
+    /// The atlas image nodes sample, filled by the image residency.
+    #[resource]
+    pub atlas: &'f Arc<UiImageAtlas>,
+    /// The renderer that draws the frame's texts.
+    #[resource]
+    pub text: &'f Arc<dyn TextRenderer>,
+}
+
+impl Lane for UiLane {
+    type Family = UiFamily;
+    type Inputs<'f> = UiInputs<'f>;
+
+    fn levels(&self) -> &[Level] {
+        &self.levels
+    }
+
+    /// Every node is one quad and every text one run of glyphs: their time on
+    /// each device. An empty UI costs no time.
+    fn cost(&self, _level: usize, inputs: &UiInputs<'_>) -> Cost {
+        let nodes = inputs.scene.nodes.len() as u32;
+        let texts = inputs.scene.texts.len() as u32;
+        Cost {
+            time: PerDevice {
+                cpu: NODE_CPU * nodes + TEXT_CPU * texts,
+                gpu: NODE_GPU * nodes + TEXT_GPU * texts,
+                ..PerDevice::default()
+            },
+            memory: self.levels[0].memory,
+            ..Cost::default()
+        }
+    }
+
+    /// Builds the projection, the instance storage, their bind groups and
+    /// the sampler once, and the pipeline for the target's colour format and
+    /// samples: the UI tests no depth, so a depth change builds nothing.
+    fn prepare(
+        &mut self,
+        _level: usize,
+        gpu: &mut GpuSetup<'_>,
+        key: Option<TargetKey>,
     ) -> Result<(), LaneError> {
-        // 1. Bind Group Layouts — bespoke to the UI lane, resolved + cached by
-        // the PipelineSystem so the pipeline and the lane's bind groups share
-        // one layout id.
-        let global_layout = pipeline_system
-            .inline_layout(device, UI_GLOBAL_LAYOUT_LABEL, &ui_global_layout_entries())
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-        let instance_layout = pipeline_system
-            .inline_layout(
-                device,
-                UI_INSTANCE_LAYOUT_LABEL,
-                &ui_instance_layout_entries(),
-            )
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-        let atlas_layout = pipeline_system
-            .inline_layout(device, UI_ATLAS_LAYOUT_LABEL, &ui_atlas_layout_entries())
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-
-        // 2. Pipeline — compiled + cached by the backend from
-        // `khora::pipelines::ui`.
-        let pipeline_id = pipeline_system
-            .pipeline(device, &ui_pipeline_spec(device))
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-
-        // 3. Create Buffers
-        let projection_buffer = device
-            .create_buffer(&BufferDescriptor {
-                label: Some(Cow::Borrowed("UI Projection Buffer")),
-                size: 64, // 4x4 matrix
-                usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
-                mapped_at_creation: false,
-            })
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-
-        let instance_buffer = device
-            .create_buffer(&BufferDescriptor {
-                label: Some(Cow::Borrowed("UI Instance Buffer")),
-                size: (self.max_instances * std::mem::size_of::<UiInstanceData>()) as u64,
-                usage: BufferUsage::STORAGE | BufferUsage::COPY_DST,
-                mapped_at_creation: false,
-            })
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-
-        // 4. Create Bind Groups
-        let global_bind_group = device
-            .create_bind_group(&BindGroupDescriptor {
-                label: Some("ui_global_bind_group"),
-                layout: global_layout,
-                entries: &[BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: projection_buffer,
-                        offset: 0,
-                        size: None,
-                    }),
-                    _phantom: std::marker::PhantomData,
-                }],
-            })
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-
-        let instance_bind_group = device
-            .create_bind_group(&BindGroupDescriptor {
-                label: Some("ui_instance_bind_group"),
-                layout: instance_layout,
-                entries: &[BindGroupEntry {
-                    binding: 0,
-                    resource: BindingResource::Buffer(BufferBinding {
-                        buffer: instance_buffer,
-                        offset: 0,
-                        size: None,
-                    }),
-                    _phantom: std::marker::PhantomData,
-                }],
-            })
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-
-        // Store resources — init-once writes via OnceLock; second `set`
-        // would Err but `init_gpu_resources` is only called once.
-        let _ = self.pipeline.set(pipeline_id);
-        let _ = self.global_layout.set(global_layout);
-        let _ = self.instance_layout.set(instance_layout);
-        let _ = self.projection_buffer.set(projection_buffer);
-        let _ = self.instance_buffer.set(instance_buffer);
-        let _ = self.global_bind_group.set(global_bind_group);
-        let _ = self.instance_bind_group.set(instance_bind_group);
-        let _ = self.atlas_layout.set(atlas_layout);
-
-        let sampler = device
-            .create_sampler(&khora_core::renderer::api::resource::SamplerDescriptor {
-                label: Some(Cow::Borrowed("ui_sampler")),
-                address_mode_u: khora_core::renderer::api::resource::AddressMode::ClampToEdge,
-                address_mode_v: khora_core::renderer::api::resource::AddressMode::ClampToEdge,
-                address_mode_w: khora_core::renderer::api::resource::AddressMode::ClampToEdge,
-                mag_filter: khora_core::renderer::api::resource::FilterMode::Linear,
-                min_filter: khora_core::renderer::api::resource::FilterMode::Linear,
-                mipmap_filter: khora_core::renderer::api::resource::MipmapFilterMode::Linear,
-                lod_min_clamp: 0.0,
-                lod_max_clamp: 100.0,
-                compare: None,
-                anisotropy_clamp: 1,
-                border_color: None,
-            })
-            .map_err(|e| LaneError::InitializationFailed(Box::new(e)))?;
-        let _ = self.sampler.set(sampler);
-
+        let device = gpu.device().ok_or(LaneError::missing("GraphicsDevice"))?;
+        let pipelines = gpu
+            .pipelines()
+            .ok_or(LaneError::missing("PipelineSystem"))?;
+        let built = match &mut self.gpu {
+            Some(built) => built,
+            empty => empty.insert(
+                build_ui_gpu(device, pipelines)
+                    .map_err(|error| LaneError::InitializationFailed(Box::new(error)))?,
+            ),
+        };
+        self.levels[0].memory.gpu = built.bytes();
+        let wanted = key.map(|key| (key.color, key.samples));
+        if built.pipeline.map(|(built_for, _)| built_for) != wanted {
+            built.pipeline = match wanted {
+                Some(formats) => Some((
+                    formats,
+                    pipelines
+                        .pipeline(device, &ui_pipeline_spec(formats))
+                        .map_err(|error| LaneError::InitializationFailed(Box::new(error)))?,
+                )),
+                None => None,
+            };
+        }
         Ok(())
     }
-}
 
-impl Lane for UiRenderLane {
-    fn strategy_name(&self) -> &'static str {
-        "UiRender"
-    }
-
-    fn lane_kind(&self) -> LaneKind {
-        LaneKind::Render
-    }
-
-    fn estimate_cost(&self, _ctx: &LaneContext) -> f32 {
-        0.1
-    }
-
-    fn on_initialize(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
-        let device = ctx
-            .get::<Arc<dyn GraphicsDevice>>()
-            .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
-            .clone();
-        let pipeline_system = ctx
-            .get::<Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
-            .ok_or(LaneError::missing("Arc<dyn PipelineSystem>"))?
-            .clone();
-        self.init_gpu_resources(device.as_ref(), pipeline_system.as_ref())
-    }
-
-    fn execute(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
-        let device = ctx
-            .get::<Arc<dyn GraphicsDevice>>()
-            .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?;
-        let ui_scene = ctx
-            .get_ref::<UiScene>()
-            .ok_or(LaneError::missing("&UiScene"))?;
-        let atlas_map = ctx
-            .get_ref::<khora_data::ui::UiAtlasMap>()
-            .ok_or(LaneError::missing("&UiAtlasMap"))?;
-        let mut encoder_guard = ctx
-            .slot::<dyn khora_core::renderer::traits::CommandEncoder>()
-            .ok_or(LaneError::missing("&mut dyn CommandEncoder"))?;
-        let encoder = &mut *encoder_guard;
-        let color_target = ctx
-            .get::<khora_core::lane::ColorTarget>()
-            .ok_or(LaneError::missing("ColorTarget"))?
-            .0;
-        let target = ctx
-            .get::<khora_core::lane::ColorTargetSize>()
-            .ok_or(LaneError::missing("ColorTargetSize"))?
-            .0;
-
-        // 1. Update Projection Matrix — UI pixels are pixels of the image
-        // this frame draws into (the window, or the editor's viewport). A
-        // target without area (a minimised window) has nothing to draw on.
-        let Some(projection) = ui_projection(target) else {
-            return Ok(());
+    /// Draws every node as a quad, then flushes the frame's texts over them,
+    /// into the frame's colour. Everything the frame needs on the device is
+    /// built and uploaded before the first text is queued, so a frame that
+    /// fails leaves no text behind for the next one.
+    fn record(
+        &mut self,
+        _level: usize,
+        inputs: &mut UiInputs<'_>,
+        out: &mut UiOutputs<'_>,
+    ) -> Result<LaneReport, LaneError> {
+        let built = self.gpu.as_mut().ok_or(LaneError::NotInitialized)?;
+        let done = LaneReport {
+            done: 1.0,
+            stalled: false,
         };
+        let scene = inputs.scene;
+        if scene.nodes.is_empty() && scene.texts.is_empty() {
+            return Ok(done);
+        }
+        let size = inputs.target.size;
+        let Some(projection) = ui_projection(size) else {
+            return Ok(done);
+        };
+        let device = out.pass.device();
+        let failed = |error| LaneError::ExecutionFailed(Box::new(error));
 
-        if let Some(buffer_id) = self.projection_buffer.get().copied() {
+        let instances = instances_of(scene, inputs.atlas);
+        let needed = std::mem::size_of_val(instances.as_slice()) as u64;
+        if needed > built.instances.size {
+            let grown = grow_instances(built, device, needed);
+            self.levels[0].memory.gpu = built.bytes();
+            grown.map_err(failed)?;
+        }
+        let atlas_bind_group = if instances.is_empty() {
+            None
+        } else {
+            Some(atlas_bind_group(built, device, inputs.atlas).map_err(failed)?)
+        };
+        device
+            .write_buffer(built.projection.buffer, 0, bytemuck::bytes_of(&projection))
+            .map_err(failed)?;
+        if !instances.is_empty() {
             device
-                .write_buffer(buffer_id, 0, bytemuck::bytes_of(&projection))
-                .map_err(|e| LaneError::ExecutionFailed(Box::new(e)))?;
+                .write_buffer(built.instances.buffer, 0, bytemuck::cast_slice(&instances))
+                .map_err(failed)?;
         }
 
-        // 2. Process UI Nodes into Instance Data
-        let mut instances = Vec::with_capacity(ui_scene.nodes.len().min(self.max_instances));
+        let color = inputs.target.color;
+        if let (Some(atlas_bind_group), Some((_, pipeline))) = (atlas_bind_group, built.pipeline) {
+            draw_quads(
+                out.pass.encoder(),
+                color,
+                pipeline,
+                built,
+                atlas_bind_group,
+                instances.len() as u32,
+            );
+        }
 
-        for node in &ui_scene.nodes {
-            if instances.len() >= self.max_instances {
-                break;
-            }
+        for text in &scene.texts {
+            inputs
+                .text
+                .queue_text(text.layout.as_ref(), text.pos, text.color, text.z_index);
+        }
+        inputs
+            .text
+            .flush(device, out.pass.encoder(), &color, size)
+            .map_err(LaneError::ExecutionFailed)?;
+        Ok(done)
+    }
 
-            let color_vec = node.color.map(|c| c.0).unwrap_or(Vec4::ONE);
-            let border_radius = node.border.map(|b| b.radius).unwrap_or(0.0);
-            let border_width = node
-                .border
-                .map(|b| {
-                    if b.width.left > 0.0 {
-                        b.width.left
-                    } else {
-                        0.0
-                    }
-                })
-                .unwrap_or(0.0);
-            let has_texture = if node.image.is_some() { 1.0 } else { 0.0 };
+    fn shutdown(&mut self, gpu: &mut GpuSetup<'_>) {
+        if let (Some(built), Some(device)) = (self.gpu.take(), gpu.device()) {
+            built.destroy(device);
+        }
+        self.levels[0].memory.gpu = START_BYTES;
+    }
+}
 
+// ─── Free functions (CLAD: no inherent methods on the lane struct) ───
+
+/// One instance per node, in the scene's order: its rectangle, colour
+/// (white when it has none), corner radius, left border width, whether it
+/// samples an image, and the image's rect in the atlas (the whole atlas for
+/// an image not placed yet).
+fn instances_of(scene: &UiScene, atlas: &UiImageAtlas) -> Vec<UiInstanceData> {
+    scene
+        .nodes
+        .iter()
+        .map(|node| {
+            let color = node.color.map(|c| c.0).unwrap_or(Vec4::ONE);
+            let radius = node.border.map(|b| b.radius).unwrap_or(0.0);
+            let border = node.border.map(|b| b.width.left.max(0.0)).unwrap_or(0.0);
+            let has_image = if node.image.is_some() { 1.0 } else { 0.0 };
             let (uv_min, uv_max) = node
                 .image
-                .and_then(|img| atlas_map.get(&img.texture))
+                .and_then(|image| atlas.get_rect(&image.texture))
                 .map(|rect| (rect.min.into(), rect.max.into()))
                 .unwrap_or(([0.0, 0.0], [1.0, 1.0]));
-
-            instances.push(UiInstanceData {
+            UiInstanceData {
                 pos: node.pos.into(),
                 size: node.size.into(),
-                color: color_vec.into(),
-                params: [border_radius, border_width, has_texture, 0.0],
+                color: color.into(),
+                params: [radius, border, has_image, 0.0],
                 uv_min,
                 uv_max,
-            });
-        }
-
-        // A frame without quads skips the quad pass, never its text.
-        let draws_quads = !instances.is_empty();
-
-        // 3. Upload Instance Data
-        if let (true, Some(buffer_id)) = (draws_quads, self.instance_buffer.get().copied()) {
-            device
-                .write_buffer(buffer_id, 0, bytemuck::cast_slice(&instances))
-                .map_err(|e| LaneError::ExecutionFailed(Box::new(e)))?;
-        }
-
-        // 4. Atlas bind group (set 2), cached by the atlas texture view it binds.
-        //    It is rebuilt only when the view changes (the atlas texture was
-        //    reallocated) and the previous one is destroyed then — atlas *content*
-        //    updates keep the same view, so the bind group stays valid. This keeps
-        //    the device's bind-group table bounded instead of leaking one entry
-        //    per UI frame.
-        let mut atlas_bg = None;
-        if let Some(atlas) = ctx.slot::<khora_core::renderer::api::util::TextureAtlas>() {
-            if let (Some(layout), Some(sampler)) = (
-                self.atlas_layout.get().copied(),
-                self.sampler.get().copied(),
-            ) {
-                let view = atlas.view();
-                let mut cache = self
-                    .atlas_bind_group
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner());
-                let bg = match *cache {
-                    // Same atlas view → reuse the existing bind group.
-                    Some((cached_view, bg)) if cached_view == view => bg,
-                    // First atlas, or the atlas texture was reallocated: build a
-                    // fresh bind group and destroy the stale one (if any).
-                    _ => {
-                        let bg = device
-                            .create_bind_group(&BindGroupDescriptor {
-                                label: Some("ui_atlas_bind_group"),
-                                layout,
-                                entries: &[
-                                    BindGroupEntry {
-                                        binding: 0,
-                                        resource: BindingResource::TextureView(view),
-                                        _phantom: std::marker::PhantomData,
-                                    },
-                                    BindGroupEntry {
-                                        binding: 1,
-                                        resource: BindingResource::Sampler(sampler),
-                                        _phantom: std::marker::PhantomData,
-                                    },
-                                ],
-                            })
-                            .map_err(|e| LaneError::ExecutionFailed(Box::new(e)))?;
-                        if let Some((_, stale)) = cache.replace((view, bg)) {
-                            let _ = device.destroy_bind_group(stale);
-                        }
-                        bg
-                    }
-                };
-                atlas_bg = Some(bg);
             }
+        })
+        .collect()
+}
+
+/// The layouts, the projection and the first instance storage, and the
+/// sampler. A refusal halfway gives back what came before it.
+fn build_ui_gpu(
+    device: &dyn GraphicsDevice,
+    pipelines: &dyn PipelineSystem,
+) -> Result<UiGpu, RenderError> {
+    // Layouts belong to the PipelineSystem, which caches them.
+    let global_layout =
+        pipelines.inline_layout(device, UI_GLOBAL_LAYOUT_LABEL, &ui_global_layout_entries())?;
+    let instance_layout = pipelines.inline_layout(
+        device,
+        UI_INSTANCE_LAYOUT_LABEL,
+        &ui_instance_layout_entries(),
+    )?;
+    let atlas_layout =
+        pipelines.inline_layout(device, UI_ATLAS_LAYOUT_LABEL, &ui_atlas_layout_entries())?;
+
+    let projection = Block::new(
+        device,
+        global_layout,
+        PROJECTION_BYTES,
+        BufferUsage::UNIFORM,
+        "ui_projection",
+    )
+    .map_err(RenderError::ResourceError)?;
+    let instances = match instance_block(device, instance_layout, UI_CAPACITY) {
+        Ok(instances) => instances,
+        Err(error) => {
+            projection.destroy(device);
+            return Err(RenderError::ResourceError(error));
         }
+    };
+    let sampler = match device.create_sampler(&ui_sampler_descriptor()) {
+        Ok(sampler) => sampler,
+        Err(error) => {
+            instances.destroy(device);
+            projection.destroy(device);
+            return Err(RenderError::ResourceError(error));
+        }
+    };
+    Ok(UiGpu {
+        projection,
+        instances,
+        instance_layout,
+        atlas_layout,
+        sampler,
+        pipeline: None,
+        atlas_bind_group: None,
+        fallback: None,
+    })
+}
 
-        // 5. Render Pass — lock-free reads via OnceLock.
-        if let (true, Some(pipeline_id), Some(g_bg), Some(i_bg)) = (
-            draws_quads,
-            self.pipeline.get().copied(),
-            self.global_bind_group.get().copied(),
-            self.instance_bind_group.get().copied(),
-        ) {
-            let color_attachment = RenderPassColorAttachment {
-                view: &color_target,
-                resolve_target: None,
-                ops: Operations {
-                    load: LoadOp::Load,
-                    store: StoreOp::Store,
-                },
-                base_array_layer: 0,
-                base_mip_level: 0,
-            };
+/// An instance storage holding `nodes` instances.
+fn instance_block(
+    device: &dyn GraphicsDevice,
+    layout: BindGroupLayoutId,
+    nodes: usize,
+) -> Result<Block, ResourceError> {
+    Block::new(
+        device,
+        layout,
+        (nodes * std::mem::size_of::<UiInstanceData>()) as u64,
+        BufferUsage::STORAGE,
+        "ui_instances",
+    )
+}
 
-            let attachments = [color_attachment];
-            let render_pass_desc = RenderPassDescriptor {
-                label: Some("UI Render Pass"),
-                color_attachments: &attachments,
-                depth_stencil_attachment: None,
-            };
+/// Replaces the instance storage by one holding at least `needed` bytes,
+/// twice the nodes it held at least; the old one is given back once the new
+/// stands.
+fn grow_instances(
+    built: &mut UiGpu,
+    device: &dyn GraphicsDevice,
+    needed: u64,
+) -> Result<(), ResourceError> {
+    let instance = std::mem::size_of::<UiInstanceData>() as u64;
+    let held = built.instances.size / instance;
+    let nodes = needed.div_ceil(instance).max(held * 2) as usize;
+    let grown = instance_block(device, built.instance_layout, nodes)?;
+    std::mem::replace(&mut built.instances, grown).destroy(device);
+    Ok(())
+}
 
-            let mut render_pass = encoder.begin_render_pass(&render_pass_desc);
-            render_pass.set_pipeline(&pipeline_id);
-            render_pass.set_bind_group(0, &g_bg, &[]);
-            render_pass.set_bind_group(1, &i_bg, &[]);
-
-            if let Some(bg) = &atlas_bg {
-                render_pass.set_bind_group(2, bg, &[]);
+/// The set-2 bind group over the atlas's view, or over a one-texel fallback
+/// while the atlas has no texture. It is kept while the view it binds stays
+/// the same, and the one it replaces is given back.
+fn atlas_bind_group(
+    built: &mut UiGpu,
+    device: &dyn GraphicsDevice,
+    atlas: &UiImageAtlas,
+) -> Result<BindGroupId, ResourceError> {
+    let atlas_view = atlas
+        .lock_atlas()
+        .and_then(|guard| guard.as_ref().map(|atlas| atlas.view()));
+    let view = match atlas_view {
+        Some(view) => view,
+        None => match built.fallback {
+            Some((_, view)) => view,
+            None => {
+                let fallback = fallback_texture(device)?;
+                built.fallback = Some(fallback);
+                fallback.1
             }
-
-            // Draw 4 vertices per instance (quad)
-            render_pass.draw(0..4, 0..(instances.len() as u32));
+        },
+    };
+    if let Some((bound, group)) = built.atlas_bind_group {
+        if bound == view {
+            return Ok(group);
         }
-
-        // 5. Render Text
-        if let Some(tr) = ctx.get::<Arc<dyn TextRenderer>>() {
-            for text in &ui_scene.texts {
-                tr.queue_text(text.layout.as_ref(), text.pos, text.color, text.z_index);
-            }
-            tr.flush(device.as_ref(), encoder, &color_target, target)
-                .map_err(LaneError::ExecutionFailed)?;
-        }
-
-        Ok(())
     }
-
-    fn on_shutdown(&self, ctx: &mut LaneContext) {
-        let Some(device) = crate::render_lane::util::release::shutdown_device(ctx) else {
-            return;
-        };
-        let device = device.as_ref();
-        if let Some((_, group)) = self.atlas_bind_group.lock().ok().and_then(|mut g| g.take()) {
-            if let Err(e) = device.destroy_bind_group(group) {
-                log::warn!("UiRenderLane shutdown: could not destroy the atlas bind group: {e}");
-            }
+    let group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("ui_atlas_bind_group"),
+        layout: built.atlas_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: BindingResource::TextureView(view),
+                _phantom: std::marker::PhantomData,
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::Sampler(built.sampler),
+                _phantom: std::marker::PhantomData,
+            },
+        ],
+    })?;
+    if let Some((_, stale)) = built.atlas_bind_group.replace((view, group)) {
+        if let Err(e) = device.destroy_bind_group(stale) {
+            log::warn!("UiLane: could not destroy the previous atlas bind group: {e:?}");
         }
-        crate::render_lane::util::release::release_bind_group(device, &self.global_bind_group);
-        crate::render_lane::util::release::release_bind_group(device, &self.instance_bind_group);
-        crate::render_lane::util::release::release_buffer(device, &self.projection_buffer);
-        crate::render_lane::util::release::release_buffer(device, &self.instance_buffer);
-        crate::render_lane::util::release::release_sampler(device, &self.sampler);
     }
+    Ok(group)
+}
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+/// A one-texel texture and its view, for set 2 while the atlas has none.
+fn fallback_texture(
+    device: &dyn GraphicsDevice,
+) -> Result<(TextureId, TextureViewId), ResourceError> {
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some(Cow::Borrowed("ui_atlas_fallback")),
+        size: Extent3D {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: khora_core::renderer::api::resource::SampleCount::X1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8UnormSrgb,
+        usage: TextureUsage::TEXTURE_BINDING,
+        view_formats: Cow::Borrowed(&[]),
+    })?;
+    let view = device.create_texture_view(
+        texture,
+        &TextureViewDescriptor {
+            label: Some(Cow::Borrowed("ui_atlas_fallback_view")),
+            format: None,
+            dimension: Some(TextureViewDimension::D2),
+            aspect: ImageAspect::All,
+            base_mip_level: 0,
+            mip_level_count: Some(1),
+            base_array_layer: 0,
+            array_layer_count: Some(1),
+        },
+    );
+    match view {
+        Ok(view) => Ok((texture, view)),
+        Err(error) => {
+            if let Err(e) = device.destroy_texture(texture) {
+                log::warn!("UiLane: could not destroy the fallback texture: {e:?}");
+            }
+            Err(error)
+        }
     }
 }
 
-// ─── Free functions (CLAD: declarative spec + bespoke layouts) ───
+fn destroy_texture(device: &dyn GraphicsDevice, texture: TextureId, view: TextureViewId) {
+    if let Err(e) = device.destroy_texture_view(view) {
+        log::warn!("UiLane: could not destroy the fallback view: {e:?}");
+    }
+    if let Err(e) = device.destroy_texture(texture) {
+        log::warn!("UiLane: could not destroy the fallback texture: {e:?}");
+    }
+}
+
+/// The quad pass — `LoadOp::Load` preserves what the scene drew; no depth.
+fn draw_quads(
+    encoder: &mut dyn CommandEncoder,
+    color: TextureViewId,
+    pipeline: RenderPipelineId,
+    built: &UiGpu,
+    atlas_bind_group: BindGroupId,
+    nodes: u32,
+) {
+    let color_attachment = RenderPassColorAttachment {
+        view: &color,
+        resolve_target: None,
+        ops: Operations {
+            load: LoadOp::Load,
+            store: StoreOp::Store,
+        },
+        base_array_layer: 0,
+        base_mip_level: 0,
+    };
+    let attachments = [color_attachment];
+    let pass_desc = RenderPassDescriptor {
+        label: Some("UI Render Pass"),
+        color_attachments: &attachments,
+        depth_stencil_attachment: None,
+    };
+    let mut pass = encoder.begin_render_pass(&pass_desc);
+    pass.set_pipeline(&pipeline);
+    pass.set_bind_group(0, &built.projection.bind_group, &[]);
+    pass.set_bind_group(1, &built.instances.bind_group, &[]);
+    pass.set_bind_group(2, &atlas_bind_group, &[]);
+    // Four vertices per instance: a quad drawn as a triangle strip.
+    pass.draw(0..4, 0..nodes);
+}
 
 /// The orthographic projection that maps UI pixel coordinates of `target`
 /// (origin top-left, y down) to clip space; `None` when a side is zero.
@@ -478,113 +587,27 @@ pub(crate) fn ui_projection(target: Extent2D) -> Option<Mat4> {
     ))
 }
 
-/// Stable cache label for the UI global uniform layout (set 0).
-const UI_GLOBAL_LAYOUT_LABEL: &str = "ui_global_layout";
-/// Stable cache label for the UI instance storage layout (set 1).
-const UI_INSTANCE_LAYOUT_LABEL: &str = "ui_instance_layout";
-/// Stable cache label for the UI atlas texture + sampler layout (set 2).
-const UI_ATLAS_LAYOUT_LABEL: &str = "ui_atlas_layout";
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-/// Set-0 layout: the projection-matrix uniform buffer.
-fn ui_global_layout_entries() -> Vec<BindGroupLayoutEntry> {
-    vec![BindGroupLayoutEntry {
-        binding: 0,
-        visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
-        ty: BindingType::Buffer {
-            ty: BufferBindingType::Uniform,
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-    }]
-}
+    #[test]
+    fn ui_instances_are_sixty_four_bytes() {
+        // Sixteen floats, the stride of `UiInstance` in `ui.wgsl`.
+        assert_eq!(std::mem::size_of::<UiInstanceData>(), 64);
+    }
 
-/// Set-1 layout: the read-only instance storage buffer.
-fn ui_instance_layout_entries() -> Vec<BindGroupLayoutEntry> {
-    vec![BindGroupLayoutEntry {
-        binding: 0,
-        visibility: ShaderStageFlags::VERTEX | ShaderStageFlags::FRAGMENT,
-        ty: BindingType::Buffer {
-            ty: BufferBindingType::Storage { read_only: true },
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-    }]
-}
-
-/// Set-2 layout: the atlas texture + filtering sampler.
-fn ui_atlas_layout_entries() -> Vec<BindGroupLayoutEntry> {
-    vec![
-        BindGroupLayoutEntry {
-            binding: 0,
-            visibility: ShaderStageFlags::FRAGMENT,
-            ty: BindingType::Texture {
-                sample_type: khora_core::renderer::api::command::TextureSampleType::Float {
-                    filterable: true,
-                },
-                view_dimension: TextureViewDimension::D2,
-                multisampled: false,
-            },
-        },
-        BindGroupLayoutEntry {
-            binding: 1,
-            visibility: ShaderStageFlags::FRAGMENT,
-            ty: BindingType::Sampler(
-                khora_core::renderer::api::command::SamplerBindingType::Filtering,
-            ),
-        },
-    ]
-}
-
-/// The declarative pipeline spec for the UI lane — instanced, no vertex buffer,
-/// no depth, surface-format color target.
-fn ui_pipeline_spec(
-    device: &dyn GraphicsDevice,
-) -> khora_core::renderer::api::pipeline::PipelineSpec {
-    use khora_core::renderer::api::pipeline::{LayoutSpec, PipelineSpec};
-    use khora_core::renderer::api::shader::ShaderVariantKey;
-    PipelineSpec {
-        label: "UI Render Pipeline",
-        shader: "khora::pipelines::ui",
-        variant: ShaderVariantKey::empty(),
-        bind_group_layouts: vec![
-            LayoutSpec::Inline {
-                label: UI_GLOBAL_LAYOUT_LABEL,
-                entries: Cow::Owned(ui_global_layout_entries()),
-            },
-            LayoutSpec::Inline {
-                label: UI_INSTANCE_LAYOUT_LABEL,
-                entries: Cow::Owned(ui_instance_layout_entries()),
-            },
-            LayoutSpec::Inline {
-                label: UI_ATLAS_LAYOUT_LABEL,
-                entries: Cow::Owned(ui_atlas_layout_entries()),
-            },
-        ],
-        vertex_buffers: vec![],
-        vs_entry: "vs_main",
-        fs_entry: Some("fs_main"),
-        // Four corners per instance, drawn as a strip: two triangles per quad.
-        primitive: PrimitiveStateDescriptor {
-            topology: PrimitiveTopology::TriangleStrip,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        color_targets: vec![ColorTargetStateDescriptor {
-            format: device
-                .get_surface_format()
-                .unwrap_or(TextureFormat::Rgba8UnormSrgb),
-            // The shader returns straight (non-premultiplied) alpha for the
-            // rounded corners and borders.
-            blend: Some(BlendStateDescriptor::alpha_blending()),
-            write_mask: ColorWrites::ALL,
-        }],
-        multisample: MultisampleStateDescriptor {
-            count: SampleCount::X1,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
+    #[test]
+    fn a_target_without_area_has_no_projection() {
+        assert!(ui_projection(Extent2D {
+            width: 0,
+            height: 600
+        })
+        .is_none());
+        assert!(ui_projection(Extent2D {
+            width: 800,
+            height: 600
+        })
+        .is_some());
     }
 }
-
-#[cfg(test)]
-mod tests;

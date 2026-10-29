@@ -16,12 +16,9 @@
 //! and the persistent `AssetUUID → AtlasRect` cache used by the UI render
 //! pipeline.
 //!
-//! Previously these two pieces lived as fields on `UiAgent`, which made
-//! the agent own GPU state in violation of the "agents stay strategists,
-//! no buffered output" rule. They now live in
-//! [`khora_core::Resources`] so the agent can be recreated freely
-//! without losing the atlas, and the UiAgent code holds no GPU state at
-//! all.
+//! They live in [`khora_core::Resources`], not on an agent: agents stay
+//! strategists and hold no GPU state. The `image_on_gpu` residency fills
+//! the atlas before any agent runs; the UI lane only reads it.
 
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};
@@ -92,12 +89,12 @@ impl UiImageAtlas {
         }
     }
 
-    /// Locks the GPU atlas for the duration of a frame's upload + render.
+    /// Locks the GPU atlas, for the residency's upload or the UI lane's read
+    /// of its view.
     ///
     /// Returns the locked `MutexGuard<Option<TextureAtlas>>`; callers
     /// dereference twice (`guard.as_mut()`) to reach the optional
-    /// `&mut TextureAtlas`. The guard is held for the lifetime of the
-    /// caller's local — typically `UiAgent::execute` for one frame.
+    /// `&mut TextureAtlas`. Hold the guard no longer than the work needs.
     pub fn lock_atlas(&self) -> Option<MutexGuard<'_, Option<TextureAtlas>>> {
         match self.atlas.lock() {
             Ok(g) => Some(g),

@@ -49,3 +49,4 @@ mod scripts_outside_the_script_folder;
 mod scripts_unmounted_after_play;
 mod staged_bootstrap;
 mod system_components;
+mod ui_family;

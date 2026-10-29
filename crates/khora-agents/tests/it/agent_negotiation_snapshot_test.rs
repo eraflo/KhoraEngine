@@ -26,7 +26,6 @@
 use khora_agents::lane_agent::lane_agent;
 use khora_agents::render_agent::RenderAgent;
 use khora_agents::script_agent::ScriptAgent;
-use khora_agents::ui_agent::UiAgent;
 use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
 use khora_core::agent::{Agent, EngineMode, ExecutionTiming};
 use khora_core::gpu::DeviceCaps;
@@ -39,6 +38,7 @@ use crate::overlay_families::fixtures::{
 use crate::physics_family::fixtures::physics_agent;
 use crate::shadows_family::fixtures::{shadow_agent, LEVEL_MEMORY};
 use crate::skybox_family::fixtures::skybox_agent;
+use crate::ui_family::fixtures::ui_agent;
 
 const MIB: u64 = 1024 * 1024;
 
@@ -133,11 +133,14 @@ fn skybox_agent_offers_one_flat_strategy() {
     );
 }
 
+/// The UI family's agent, before any frame: one `Balanced` row, quoting the
+/// graphics memory of its one level — the 64-byte projection block and the
+/// storage for 1024 instances of 64 bytes.
 #[test]
 fn ui_agent_offers_one_flat_strategy() {
     assert_eq!(
-        offer(UiAgent::default()),
-        (AgentId::Ui, vec![(StrategyId::Balanced, MIB)])
+        offer(ui_agent()),
+        (AgentId::Ui, vec![(StrategyId::Balanced, 64 + 1024 * 64)])
     );
 }
 

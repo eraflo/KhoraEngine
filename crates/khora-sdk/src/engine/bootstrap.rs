@@ -271,6 +271,18 @@ fn populate<A: EngineApp>(
         runtime.resources.insert(mix_bus);
     }
 
+    // The UI family hands the frame's texts to the text renderer. An
+    // application that brings none gets the standard one.
+    if !runtime
+        .backends
+        .contains::<Arc<dyn khora_core::renderer::api::text::TextRenderer>>()
+    {
+        let text: Arc<dyn khora_core::renderer::api::text::TextRenderer> = Arc::new(
+            khora_infra::StandardTextRenderer::new(khora_infra::graphics::TEXT_WGSL.to_owned()),
+        );
+        runtime.backends.insert(text);
+    }
+
     // The physics family steps the provider every fixed sub-step, at the
     // game's `physics.step`. An application that brings neither gets the
     // engine's own: Rapier, at the default step.
@@ -394,7 +406,8 @@ fn populate<A: EngineApp>(
     runtime.resources.insert(transform_interpolation);
 
     // UiImageAtlas — `AssetUUID → AtlasRect` mapping for UI images; the GPU
-    // atlas itself is allocated lazily by `UiAgent::on_initialize`.
+    // atlas itself is allocated by the `image_on_gpu` residency, once an
+    // image is wanted.
     runtime
         .resources
         .insert(Arc::new(khora_data::ui::UiImageAtlas::new()));
@@ -457,10 +470,6 @@ fn register_builtin_agents(dcc: &DccService) {
         Arc::new(Mutex::new(
             khora_agents::render_agent::RenderAgent::default(),
         )),
-        1.0,
-    );
-    dcc.register_agent(
-        Arc::new(Mutex::new(khora_agents::ui_agent::UiAgent::default())),
         1.0,
     );
     // Gameplay. Registered like any other consumer, which is the point of

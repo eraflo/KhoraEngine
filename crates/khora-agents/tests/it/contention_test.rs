@@ -20,7 +20,7 @@
 //! a wave that could have run concurrently. Only the real declarations can show
 //! that, so they are asserted here.
 
-use khora_agents::{render_agent::RenderAgent, ui_agent::UiAgent};
+use khora_agents::render_agent::RenderAgent;
 use khora_core::agent::{Agent, AgentAccess};
 use khora_data::ui::UiImageAtlas;
 use std::any::TypeId;
@@ -29,6 +29,7 @@ use std::sync::Arc;
 use crate::overlay_families::fixtures::{
     agent_of, gizmo_registration, grid_registration, wireframe_registration,
 };
+use crate::ui_family::fixtures::ui_agent;
 
 /// **The gain the contract was written for.** Both are `SharedWorld`, both sit
 /// in `OUTPUT`, and the old "at most one `SharedWorld` per wave" rule kept them
@@ -37,7 +38,7 @@ use crate::overlay_families::fixtures::{
 #[test]
 fn the_render_and_ui_agents_do_not_contend() {
     let render = RenderAgent::default().contention();
-    let ui = UiAgent::default().contention();
+    let ui = ui_agent().contention();
 
     assert!(
         render.conflicts_with(&ui).is_empty(),
@@ -57,7 +58,7 @@ fn the_agents_sharing_read_only_handles_do_not_contend() {
         agent_of(grid_registration()).contention(),
         agent_of(wireframe_registration()).contention(),
         agent_of(gizmo_registration()).contention(),
-        UiAgent::default().contention(),
+        ui_agent().contention(),
     ];
 
     for (position, one) in all.iter().enumerate() {
@@ -82,7 +83,7 @@ fn each_render_agent_writes_a_slot_of_its_own() {
         agent_of(grid_registration()).contention(),
         agent_of(wireframe_registration()).contention(),
         agent_of(gizmo_registration()).contention(),
-        UiAgent::default().contention(),
+        ui_agent().contention(),
     ]
     .iter()
     .flat_map(|c| c.deck.clone())
@@ -103,23 +104,25 @@ fn each_render_agent_writes_a_slot_of_its_own() {
 // slot by slot, against what each lane actually writes. A family on the typed
 // contract declares its slots through its outputs (audio: `audio_family.rs`,
 // physics: `physics_family/registration.rs`, shadows:
-// `shadows_family/registration.rs`, skybox: `skybox_family/registration.rs`).
+// `shadows_family/registration.rs`, skybox: `skybox_family/registration.rs`,
+// ui: `ui_family/registration.rs`).
 
-/// The UI lane uploads glyphs and images into the shared atlas: that is a
-/// lock, and a lock declared as a read lets another agent read a half-written
-/// atlas in the same wave.
+/// The `image_on_gpu` DataSystem uploads every UI image into the shared atlas
+/// before any agent runs; the UI lane only reads the atlas's view and rects.
+/// So the UI agent declares the atlas as a read: a lock would keep every
+/// other reader of the atlas out of its wave for nothing.
 #[test]
-fn ui_agent_locks_the_atlas() {
-    let contention = UiAgent::default().contention();
+fn ui_agent_reads_the_atlas_without_locking_it() {
+    let contention = ui_agent().contention();
     let atlas = TypeId::of::<Arc<UiImageAtlas>>();
 
     assert!(
-        contention.writes.contains(&atlas),
-        "the UI agent mutates the atlas, so it must declare it under `writes`"
+        contention.reads.contains(&atlas),
+        "the UI agent reads the atlas, so it declares it under `reads`"
     );
     assert!(
-        !contention.reads.contains(&atlas),
-        "the atlas is locked, not merely read: it must not also sit under `reads`"
+        !contention.writes.contains(&atlas),
+        "the atlas is read, not locked: it must not sit under `writes`"
     );
 }
 

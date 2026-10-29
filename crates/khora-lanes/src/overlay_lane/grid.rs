@@ -42,8 +42,8 @@ use khora_core::renderer::traits::CommandEncoder;
 use khora_data::render::{GridView, RenderWorld};
 use khora_macros::LaneInputs;
 
-use super::block::Block;
 use super::GridOutputs;
+use crate::render_lane::util::Block;
 
 /// Stable cache label for the grid camera layout.
 const GRID_CAMERA_LAYOUT_LABEL: &str = "grid_camera_layout";

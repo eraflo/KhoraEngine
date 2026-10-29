@@ -105,9 +105,27 @@ pub struct PassContribution {
 #[derive(Default)]
 pub struct ScenePassSlot(pub Option<PassContribution>);
 
-/// Deck slot carrying the UI pass, written by `UiAgent`.
+/// Deck slot carrying the UI pass, written by the UI family.
 #[derive(Default)]
 pub struct UiPassSlot(pub Option<PassContribution>);
+
+impl khora_core::lane::io::PassSlot for UiPassSlot {
+    type Descriptor = PassDescriptor;
+
+    /// The UI blends over the colour the scene left.
+    fn descriptor() -> PassDescriptor {
+        PassDescriptor::new("UiPass")
+            .reads(ResourceId::Color)
+            .writes(ResourceId::Color)
+    }
+
+    fn close(descriptor: PassDescriptor, command_buffer: CommandBufferId) -> Self {
+        Self(Some(PassContribution {
+            descriptor,
+            command_buffer,
+        }))
+    }
+}
 
 /// Deck slot carrying the skybox / environment-background pass, written by
 /// the skybox family. Folded in after the scene pass and before overlays, so the

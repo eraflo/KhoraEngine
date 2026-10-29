@@ -91,7 +91,7 @@ pub(super) fn partition_waves(metas: &[WaveMeta]) -> Vec<Vec<usize>> {
                     // This once refused a second `SharedWorld` outright, because
                     // such an agent "may write shared resources" and nobody
                     // could say which. Now they say, so `RenderAgent` and
-                    // `UiAgent` may share a wave when their declarations are
+                    // the UI family's agent may share a wave when their declarations are
                     // disjoint — parallelism gained by removing a constraint.
                     && wave.iter().all(|&j| {
                         metas[j].contention.conflicts_with(&meta.contention).is_empty()

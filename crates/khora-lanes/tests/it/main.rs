@@ -57,6 +57,7 @@ mod spawn_scenarios;
 mod starved_turn;
 mod state_entry_across_edits;
 mod struct_fields;
+mod ui;
 mod watchdog;
 mod watchdog_across_saves;
 mod watchdog_debt;

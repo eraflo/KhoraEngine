@@ -136,7 +136,7 @@ fn disjoint_deck_writes_pass_the_check() {
     assert_eq!(check_wave_disjoint(&[0, 1], &metas), 0);
 }
 
-/// **The gain the whole contract exists for.** `RenderAgent` and `UiAgent`
+/// **The gain the whole contract exists for.** The renderer and the UI agent
 /// are both `SharedWorld` and both in `OUTPUT`, and a rule that refused a
 /// second `SharedWorld` outright kept them apart — not because they contend,
 /// but because nobody could say whether they did. Declared and disjoint,

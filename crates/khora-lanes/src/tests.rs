@@ -326,11 +326,6 @@ impl LedgerDevice {
     pub(crate) fn destroyed(&self) -> Vec<(GpuKind, usize)> {
         self.destroyed.lock().expect("ledger lock").clone()
     }
-
-    /// Every draw recorded through this device's encoders.
-    pub(crate) fn draws(&self) -> Vec<Draw> {
-        self.draws.lock().expect("ledger lock").clone()
-    }
 }
 
 /// An encoder that records the draws of its render passes into the device's ledger.

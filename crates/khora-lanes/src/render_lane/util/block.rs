@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What the overlay lanes build alike: a buffer bound alone in a bind group,
-//! and the camera block every overlay is seen through.
+//! What the render-side lanes build alike: a buffer bound alone in a bind
+//! group, and the camera block an overlay is seen through.
 
 use std::borrow::Cow;
 
@@ -30,7 +30,7 @@ use khora_data::render::ExtractedView;
 
 /// A buffer and the bind group that binds it whole at binding 0.
 #[derive(Debug, Clone, Copy)]
-pub(super) struct Block {
+pub(crate) struct Block {
     /// The buffer.
     pub buffer: BufferId,
     /// The bind group over it.
@@ -115,10 +115,10 @@ impl Block {
     /// Gives the bind group and the buffer back.
     pub fn destroy(self, device: &dyn GraphicsDevice) {
         if let Err(e) = device.destroy_bind_group(self.bind_group) {
-            log::warn!("overlay: could not destroy a bind group: {e:?}");
+            log::warn!("could not destroy a bind group: {e:?}");
         }
         if let Err(e) = device.destroy_buffer(self.buffer) {
-            log::warn!("overlay: could not destroy a buffer: {e:?}");
+            log::warn!("could not destroy a buffer: {e:?}");
         }
     }
 }

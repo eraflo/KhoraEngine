@@ -51,8 +51,8 @@ use khora_data::render::{RenderWorld, WireframeView};
 use khora_data::AssetStore;
 use khora_macros::LaneInputs;
 
-use super::block::Block;
 use super::WireframeOutputs;
+use crate::render_lane::util::Block;
 
 /// Wireframe material uniform — matches `WireframeMaterialUniforms` in
 /// `wireframe.wgsl` (line color + width, padded to 16 bytes).

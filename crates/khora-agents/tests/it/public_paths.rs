@@ -91,13 +91,6 @@ fn module_script_agent_paths_still_resolve() {
     is_agent::<khora_agents::script_agent::ScriptAgent>();
 }
 
-#[test]
-fn module_ui_agent_paths_still_resolve() {
-    let _ = type_name::<khora_agents::ui_agent::UiAgent>();
-    is_agent::<khora_agents::ui_agent::UiAgent>();
-    is_default::<khora_agents::ui_agent::UiAgent>();
-}
-
 // ---------------------------------------------------------------------------
 // Paths other crates of the workspace spell today (`crates/`, `examples/`,
 // `xtask/`; brace imports expanded). The trailing comment names
@@ -109,5 +102,4 @@ fn module_ui_agent_paths_still_resolve() {
 fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_agents::render_agent::RenderAgent::default; // khora-sdk
     let _ = khora_agents::script_agent::ScriptAgent::default; // khora-sdk
-    let _ = khora_agents::ui_agent::UiAgent::default; // khora-sdk
 }

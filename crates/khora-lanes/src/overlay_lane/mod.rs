@@ -16,7 +16,6 @@
 //! own family with its own pass, composited in order — the ground grid, the
 //! wireframe, then the gizmos.
 
-mod block;
 mod gizmo;
 mod gizmo_family;
 mod grid;

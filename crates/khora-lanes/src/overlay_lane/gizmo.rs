@@ -44,8 +44,8 @@ use khora_core::ui::editor::GizmoLineInstance;
 use khora_data::render::{GizmoView, RenderWorld};
 use khora_macros::LaneInputs;
 
-use super::block::Block;
 use super::GizmoOutputs;
+use crate::render_lane::util::Block;
 
 /// Line instances the storage buffer holds before it first grows.
 const GIZMO_CAPACITY: usize = 4096;

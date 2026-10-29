@@ -18,42 +18,13 @@
 //! groups, samplers. Layouts and pipelines come from the `PipelineSystem`,
 //! which owns and shares them across lanes, so a lane never destroys those.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use khora_core::lane::LaneContext;
-use khora_core::renderer::api::command::BindGroupId;
-use khora_core::renderer::api::resource::{BufferId, SamplerId};
 use khora_core::renderer::GraphicsDevice;
 
 /// The device a lane releases its resources on, when the shutdown context
 /// carries one.
 pub(crate) fn shutdown_device(ctx: &LaneContext) -> Option<Arc<dyn GraphicsDevice>> {
     ctx.get::<Arc<dyn GraphicsDevice>>().cloned()
-}
-
-/// Destroys the buffer held in `slot`, if initialisation created one.
-pub(crate) fn release_buffer(device: &dyn GraphicsDevice, slot: &OnceLock<BufferId>) {
-    if let Some(id) = slot.get() {
-        if let Err(e) = device.destroy_buffer(*id) {
-            log::warn!("lane shutdown: could not destroy buffer {id:?}: {e}");
-        }
-    }
-}
-
-/// Destroys the bind group held in `slot`, if initialisation created one.
-pub(crate) fn release_bind_group(device: &dyn GraphicsDevice, slot: &OnceLock<BindGroupId>) {
-    if let Some(id) = slot.get() {
-        if let Err(e) = device.destroy_bind_group(*id) {
-            log::warn!("lane shutdown: could not destroy bind group {id:?}: {e}");
-        }
-    }
-}
-
-/// Destroys the sampler held in `slot`, if initialisation created one.
-pub(crate) fn release_sampler(device: &dyn GraphicsDevice, slot: &OnceLock<SamplerId>) {
-    if let Some(id) = slot.get() {
-        if let Err(e) = device.destroy_sampler(*id) {
-            log::warn!("lane shutdown: could not destroy sampler {id:?}: {e}");
-        }
-    }
 }

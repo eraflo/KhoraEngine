@@ -71,4 +71,5 @@ mod system_singleton_encodings;
 mod system_singletons;
 mod system_sweeps_across_an_edit;
 mod systems_run;
+mod ui_family;
 mod watchdog_in_play;

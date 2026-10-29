@@ -12,20 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Defines the UiAgent — owns `LaneKind::Ui` lanes only.
+//! The UI family's agent: its registration, and nothing else.
 //!
-//! Per CLAD, an Agent owns exactly one `LaneKind` and stores **only** its
-//! own GORNA/strategy state.  All shared services (graphics device, render
-//! system, fonts, text renderer, texture assets, the per-frame `UiScene`,
-//! the UI image atlas) are looked up from the engine
-//! [`Runtime`](khora_core::Runtime) each frame.
-//!
-//! The persistent `AssetUUID → AtlasRect` cache and the GPU
-//! [`TextureAtlas`](khora_core::renderer::api::util::TextureAtlas) used
-//! to live on this agent as `image_cache` and `image_atlas` fields. They
-//! now both live in [`UiImageAtlas`](khora_data::ui::UiImageAtlas) (a
-//! `Resource`). The agent owns **no** GPU state and no buffered output.
+//! The engine boots one [`LaneAgent`](crate::lane_agent::LaneAgent) from it
+//! in the OUTPUT phase. Each frame the agent lends the
+//! [`UiLane`](khora_lanes::ui_lane::UiLane) the frame's target, the UI Flow's
+//! `UiScene`, the image atlas and the text renderer, and commits its pass
+//! into [`UiPassSlot`](khora_data::render::UiPassSlot).
 
 mod agent;
-
-pub use agent::*;

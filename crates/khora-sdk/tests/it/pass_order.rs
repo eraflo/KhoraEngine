@@ -183,7 +183,7 @@ fn the_registered_pass_order_runs_from_shadows_to_overlays() {
 
 /// Records the eight passes gizmos first, each with the resources the shipped
 /// agent declares for it (the shadows family, `RenderAgent` with a shadow
-/// atlas, the skybox family, `UiAgent`, the grid, wireframe and gizmo
+/// atlas, the skybox family, the UI family, the grid, wireframe and gizmo
 /// families).
 struct EverySlotWithItsResources;
 

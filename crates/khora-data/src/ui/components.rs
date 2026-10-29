@@ -73,7 +73,7 @@ impl From<UiNode> for khora_core::ui::types::UiNode {
 }
 
 /// The computed screen-space transform of a UI element.
-/// This is populated by the layout system (e.g. `UiAgent`) after evaluating the `taffy` tree.
+/// Authored today; a layout system that evaluates the `taffy` tree would fill it.
 #[derive(Debug, Clone, Copy, PartialEq, Component)]
 #[component(domain = Ui)]
 pub struct UiTransform {

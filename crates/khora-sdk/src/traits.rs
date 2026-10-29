@@ -73,7 +73,7 @@ pub trait WindowProvider: 'static {
 
 /// Allows the application to register custom agents with the DCC.
 ///
-/// This is where mode-specific agents (like the editor's UiAgent) are registered.
+/// This is where an application's own, mode-specific agents are registered.
 /// The engine calls this method once during initialization, after the DCC is created.
 pub trait AgentProvider {
     /// Register agents with the DCC service.
