@@ -21,7 +21,7 @@ use khora_core::ecs::entity::EntityId;
 use super::component_access::{AddComponentError, RemoveComponentError};
 use super::World;
 use crate::ecs::page::PageIndex;
-use crate::ecs::{AnyVec, ComponentKey};
+use crate::ecs::{AnyVec, ComponentKey, Tick};
 
 impl World {
     /// Adds component `key` to `entity`, `push` writing its value as the new
@@ -39,6 +39,19 @@ impl World {
         entity_id: EntityId,
         key: ComponentKey,
         push: impl FnOnce(&mut dyn AnyVec),
+    ) -> Result<Option<PageIndex>, AddComponentError> {
+        let now = self.clock.tick;
+        self.attach_at(entity_id, key, push, now)
+    }
+
+    /// [`attach`](Self::attach), the added component's row noted as written
+    /// at `added_at` — a component moved rather than added keeps its tick.
+    pub(crate) fn attach_at(
+        &mut self,
+        entity_id: EntityId,
+        key: ComponentKey,
+        push: impl FnOnce(&mut dyn AnyVec),
+        added_at: Tick,
     ) -> Result<Option<PageIndex>, AddComponentError> {
         // 1. Validate EntityId and get metadata — a copy, written back when
         // the move is done. The slot keeps its metadata meanwhile: an entity
@@ -89,8 +102,18 @@ impl World {
 
             dest_row_index = dest_page.entities.len() as u32;
 
+            // A kept component moves with the ticks it had: a migration is not
+            // a change. The added one is written now.
+            let mut carried: Vec<(ComponentKey, Tick)> = Vec::new();
             if let (Some(src_page), Some(loc)) = (src_page_opt, old_location_opt) {
                 for kept in &old_keys {
+                    carried.push((
+                        *kept,
+                        src_page
+                            .ticks
+                            .get(kept)
+                            .map_or(Tick::default(), |t| t.carried(loc.row_index as usize)),
+                    ));
                     let src_col = &src_page.columns[kept];
                     let dest_col = dest_page
                         .columns
@@ -113,7 +136,12 @@ impl World {
                     .as_mut(),
             );
 
-            dest_page.add_entity(entity_id);
+            dest_page.add_entity(entity_id, &self.clock.observed, |k| {
+                carried
+                    .iter()
+                    .find(|(kept, _)| *kept == k)
+                    .map_or(added_at, |(_, tick)| *tick)
+            });
         }
 
         // 5. Update metadata and put it back.
@@ -163,7 +191,7 @@ impl World {
         //    `None` case adds the entity to a domain for the first time, leaving
         //    no orphan behind.
         if let Some(old) = old_location_opt {
-            self.storage.dirty_pages.insert(old.page_id);
+            self.orphan_row(old.page_id);
         }
 
         // 7. Return the old location for cleanup, without performing swap_remove
@@ -221,7 +249,7 @@ impl World {
             self.bump_domain_epoch(domain);
             // The row is orphaned (metadata no longer references it) — schedule
             // its page for compaction.
-            self.storage.dirty_pages.insert(loc.page_id);
+            self.orphan_row(loc.page_id);
             return Ok(Some(loc));
         }
 
@@ -239,6 +267,18 @@ impl World {
             dest_row_index = dest_page.entities.len() as u32;
             let src_row = loc.row_index as usize;
 
+            let carried: Vec<(ComponentKey, Tick)> = new_keys
+                .iter()
+                .map(|kept| {
+                    (
+                        *kept,
+                        src_page
+                            .ticks
+                            .get(kept)
+                            .map_or(Tick::default(), |t| t.carried(src_row)),
+                    )
+                })
+                .collect();
             for kept in &new_keys {
                 let src_col = &src_page.columns[kept];
                 let dest_col = dest_page
@@ -250,7 +290,14 @@ impl World {
                     .copy_row(*kept, src_col.as_ref(), src_row, dest_col.as_mut());
             }
 
-            dest_page.add_entity(entity_id);
+            // Every survivor moves with the ticks it had: not a change.
+            let now = self.clock.tick;
+            dest_page.add_entity(entity_id, &self.clock.observed, |k| {
+                carried
+                    .iter()
+                    .find(|(kept, _)| *kept == k)
+                    .map_or(now, |(_, tick)| *tick)
+            });
         }
 
         // 7. Update entity metadata to point at the new (page, row). As in
@@ -276,7 +323,7 @@ impl World {
 
         // 8. Record the abandoned source page so maintenance compacts its
         //    now-orphaned row later.
-        self.storage.dirty_pages.insert(loc.page_id);
+        self.orphan_row(loc.page_id);
 
         // 9. Hand the old location off to the GC.
         Ok(Some(loc))

@@ -67,7 +67,7 @@ pub use query_plan::{QueryMode, QueryPlan};
 pub use script_role::ScriptRole;
 pub use soa::{FieldSoaColumn, SoaLayout};
 pub use system::{DataSystemRegistration, TickPhase};
-pub use tick::{Observer, Tick};
+pub use tick::{ColumnTicks, Observer, Tick};
 pub use world::*;
 pub use world_ext::{entities_with_all_tags, entities_with_any_tag, entities_with_tag};
 

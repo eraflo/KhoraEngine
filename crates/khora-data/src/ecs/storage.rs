@@ -84,10 +84,16 @@ impl StorageManager {
             keys: keys.clone(),
             columns,
             entities: Vec::new(),
+            ticks: Default::default(),
+            order: 0,
         };
 
         let page_id = if let Some(reused) = self.free_pages.pop() {
-            // Reinitialise the freed slot in place — no `page_id` shifts.
+            // Reinitialise the freed slot in place — no `page_id` shifts. The
+            // slot's order version carries on: (page id, ω) never names two
+            // states of the slot.
+            let mut page = page;
+            page.order = self.pages[reused as usize].order + 1;
             self.pages[reused as usize] = page;
             reused
         } else {

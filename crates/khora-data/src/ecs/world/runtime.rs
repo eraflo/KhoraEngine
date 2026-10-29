@@ -29,7 +29,7 @@ use crate::ecs::packed::{
 use crate::ecs::page::PageIndex;
 use crate::ecs::{
     AnyVec, Component, ComponentKey, ComponentProvenance, ComponentRegistry, ComponentVTable,
-    FieldWriteError, SemanticDomain,
+    FieldWriteError, SemanticDomain, Tick,
 };
 use crate::scene::component_registration::registration_for;
 
@@ -473,7 +473,8 @@ impl World {
         // its page and attached to the entity's page of the new domain, which
         // is the one move a page knows how to make.
         let names: Vec<String> = layout.fields().iter().map(|f| f.name.clone()).collect();
-        let held: Vec<(EntityId, ScriptValue)> = self
+        // Each row's tick too: a domain move is a move, not a change.
+        let held: Vec<(EntityId, ScriptValue, Tick)> = self
             .iter_entities()
             .collect::<Vec<_>>()
             .into_iter()
@@ -484,10 +485,11 @@ impl World {
                     .enumerate()
                     .filter_map(|(slot, name)| Some((name.clone(), row.field(slot)?)))
                     .collect();
-                Some((entity, ScriptValue::Struct(fields)))
+                let tick = self.carried_tick(entity, key);
+                Some((entity, ScriptValue::Struct(fields), tick))
             })
             .collect();
-        for (entity, _) in &held {
+        for (entity, _, _) in &held {
             let _ = self.detach(*entity, key);
         }
         self.storage.registry.set_domain(key, domain);
@@ -497,9 +499,10 @@ impl World {
             .write()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
-        for (entity, value) in &held {
-            // The values are the component's own, read from it above.
-            if let Err(error) = self.add_runtime_component(*entity, key, value) {
+        for (entity, value, tick) in &held {
+            // The values are the component's own, read from it above, and so
+            // is the tick the row lands with.
+            if let Err(error) = self.add_runtime_component_at(*entity, key, value, *tick) {
                 log::error!(
                     "moving a row of `{}` to {domain:?} lost it: {error:?}",
                     self.storage
@@ -522,6 +525,19 @@ impl World {
         entity: EntityId,
         key: ComponentKey,
         value: &ScriptValue,
+    ) -> Result<(), RowError> {
+        let now = self.clock.tick;
+        self.add_runtime_component_at(entity, key, value, now)
+    }
+
+    /// [`add_runtime_component`](Self::add_runtime_component), the row noted
+    /// as written at `written_at`.
+    pub(super) fn add_runtime_component_at(
+        &mut self,
+        entity: EntityId,
+        key: ComponentKey,
+        value: &ScriptValue,
+        written_at: Tick,
     ) -> Result<(), RowError> {
         if !self.contains(entity) {
             return Err(RowError::NoSuchEntity(entity));
@@ -559,18 +575,23 @@ impl World {
                 })
             }
         };
-        let attached = self.attach(entity, key, |column| {
-            let column = column
-                .as_any_mut()
-                .downcast_mut::<PackedColumn>()
-                .expect("a declared component's column is packed");
-            column.push_defaults();
-            let row = column.len() - 1;
-            for (slot, value) in patch {
-                // Checked of its kind above.
-                let _ = column.set(row, slot, value);
-            }
-        });
+        let attached = self.attach_at(
+            entity,
+            key,
+            |column| {
+                let column = column
+                    .as_any_mut()
+                    .downcast_mut::<PackedColumn>()
+                    .expect("a declared component's column is packed");
+                column.push_defaults();
+                let row = column.len() - 1;
+                for (slot, value) in patch {
+                    // Checked of its kind above.
+                    let _ = column.set(row, slot, value);
+                }
+            },
+            written_at,
+        );
         match attached {
             Ok(_) => Ok(()),
             Err(AddComponentError::ComponentAlreadyExists) => Err(RowError::AlreadyAttached),

@@ -182,7 +182,7 @@ impl World {
             self.bump_domain_epoch(domain);
             // The row is orphaned (metadata no longer references it) — schedule
             // its page for compaction.
-            self.storage.dirty_pages.insert(loc.page_id);
+            self.orphan_row(loc.page_id);
         }
 
         location
