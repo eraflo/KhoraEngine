@@ -50,6 +50,7 @@
 //! nothing — hot-reload is a development affordance, and its absence is the
 //! shipping path.
 
+use khora_data::ecs::SystemContext;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -369,7 +370,12 @@ fn modules_under(root: &Path) -> BTreeMap<String, Vec<String>> {
         .collect()
 }
 
-fn script_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn script_hot_reload_system(
+    _world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(watch) = runtime.resources.get::<Arc<AssetWatch>>() else {
         return; // No assets dir → no hot-reload, which is the shipping path.
     };

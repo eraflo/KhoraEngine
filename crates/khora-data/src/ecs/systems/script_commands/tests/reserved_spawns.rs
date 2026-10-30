@@ -35,13 +35,27 @@ use crate::ecs::{Name, Transform, World};
 fn frame(world: &mut World, commands: Vec<WorldCommand>) {
     let mut deck = OutputDeck::new();
     deck.slot::<CommandBuffer>().extend(commands);
-    apply_script_commands(world, &Runtime::default(), &mut deck);
+    apply_script_commands(
+        world,
+        &Runtime::default(),
+        &mut deck,
+        crate::ecs::SystemContext {
+            since: crate::ecs::Tick(0),
+        },
+    );
 }
 
 /// One frame of the `script_commands` system with no command buffer at all —
 /// a frame in which the script lane did not run.
 fn frame_without_scripts(world: &mut World) {
-    apply_script_commands(world, &Runtime::default(), &mut OutputDeck::new());
+    apply_script_commands(
+        world,
+        &Runtime::default(),
+        &mut OutputDeck::new(),
+        crate::ecs::SystemContext {
+            since: crate::ecs::Tick(0),
+        },
+    );
 }
 
 /// A spawn at `entity`, at `position`, of `components`.

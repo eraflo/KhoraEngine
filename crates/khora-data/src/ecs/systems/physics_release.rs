@@ -40,6 +40,7 @@
 //! the release is drawn from the simulated pose like the one before it, and the
 //! parent's world pose read here is this frame's.
 
+use crate::ecs::SystemContext;
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
 use khora_core::math::{AffineTransform, Mat4, Quaternion, Vec3, Vec4};
@@ -163,7 +164,12 @@ fn is_finite(v: Vec3) -> bool {
     v.x.is_finite() && v.y.is_finite() && v.z.is_finite()
 }
 
-fn physics_release_entry(world: &mut World, _runtime: &Runtime, _deck: &mut OutputDeck) {
+fn physics_release_entry(
+    world: &mut World,
+    _runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     physics_release_system(world);
 }
 

@@ -21,11 +21,13 @@ use crate::ecs::{
 };
 use std::any::TypeId;
 
+mod changed;
 mod columns;
 mod read;
 mod without;
 mod write;
 
+pub use changed::Changed;
 pub use columns::Soa;
 pub use read::Query;
 pub use without::Without;
@@ -122,22 +124,25 @@ pub(crate) struct NativeRowPlan {
 // ---- WorldQuery Part ---- //
 // ------------------------- //
 
-/// What a writable query item notes its write with: the tick the write
-/// carries — the world's [`current_tick`](World::current_tick) — and the
-/// keys of the query's writable terms that some observer watches, whose
-/// columns gain row ticks on their first write.
+/// What a query's items are fetched with: the tick a write through a
+/// writable item carries — the world's [`current_tick`](World::current_tick)
+/// —, the keys of the query's writable terms that some observer watches,
+/// whose columns gain row ticks on their first write, and the tick its
+/// [`Changed`] terms compare against.
 #[derive(Debug, Clone, Copy)]
-pub struct WriteStamp<'s> {
+pub struct FetchContext<'s> {
     pub(crate) tick: Tick,
     pub(crate) observed: &'s [ComponentKey],
+    pub(crate) since: Tick,
 }
 
-impl WriteStamp<'_> {
-    /// The stamp of a query that writes nothing.
-    pub(crate) fn read_only(tick: Tick) -> Self {
-        WriteStamp {
+impl FetchContext<'_> {
+    /// The context of a query that writes nothing.
+    pub(crate) fn read_only(tick: Tick, since: Tick) -> Self {
+        FetchContext {
             tick,
             observed: &[],
+            since,
         }
     }
 
@@ -190,6 +195,21 @@ pub trait WorldQuery {
         Vec::new()
     }
 
+    /// Whether the rows of `page` may pass this query's filters: `false`
+    /// skips the page whole. Asked of a Native iteration's driver pages only,
+    /// whose every column is the live row of the entities it holds live; a
+    /// term without a column on the page passes it.
+    fn page_passes(_page: &ComponentPage, _since: Tick) -> bool {
+        true
+    }
+
+    /// Whether row `row` of `page` passes this query's filters, judged from
+    /// the page alone — asked, as `page_passes` is, of a Native iteration's
+    /// live driver rows only. Elsewhere `fetch_from_world` judges.
+    fn row_passes(_page: &ComponentPage, _row: usize, _since: Tick) -> bool {
+        true
+    }
+
     /// Fetches the query's item from a specific row in a `ComponentPage`.
     ///
     /// # Safety
@@ -200,11 +220,11 @@ pub trait WorldQuery {
     /// 2. `row_index` is a valid index within the page's columns.
     /// 3. Aliasing rules are not violated (e.g., no two `&mut T` to the same data).
     ///
-    /// `stamp` is what a write through a writable item is noted with.
+    /// `ctx` is what the item is fetched with (see [`FetchContext`]).
     unsafe fn fetch<'a>(
         page_ptr: *const ComponentPage,
         row_index: usize,
-        stamp: WriteStamp<'_>,
+        ctx: FetchContext<'_>,
     ) -> Self::Item<'a>;
 
     /// Fetches the query's item directly from the world for a specific entity;
@@ -215,6 +235,7 @@ pub trait WorldQuery {
     unsafe fn fetch_from_world<'a>(
         world: *const World,
         entity_id: EntityId,
+        _ctx: FetchContext<'_>,
     ) -> Option<Self::Item<'a>>;
 }
 
@@ -234,7 +255,7 @@ impl<T: Component> WorldQuery for &T {
     unsafe fn fetch<'a>(
         page_ptr: *const ComponentPage,
         row_index: usize,
-        _stamp: WriteStamp<'_>,
+        _ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
         // 1. Get a reference to the `ComponentPage`.
         let page = &*page_ptr;
@@ -256,6 +277,7 @@ impl<T: Component> WorldQuery for &T {
     unsafe fn fetch_from_world<'a>(
         world: *const World,
         entity_id: EntityId,
+        _ctx: FetchContext<'_>,
     ) -> Option<Self::Item<'a>> {
         let world = &*world;
 
@@ -297,7 +319,7 @@ impl<T: Component> WorldQuery for &mut T {
     unsafe fn fetch<'a>(
         page_ptr: *const ComponentPage,
         row_index: usize,
-        stamp: WriteStamp<'_>,
+        ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
         // UNSAFE: We cast the const pointer to a mutable one.
         // This is safe ONLY if the query engine guarantees no other access.
@@ -311,23 +333,17 @@ impl<T: Component> WorldQuery for &mut T {
         // earlier call handed out from it.
         let value = vec.as_mut_ptr().add(row_index);
         let key = ComponentKey::of::<T>();
-        Mut::in_page(
-            value,
-            page_ptr,
-            key,
-            stamp.observes(key),
-            row_index,
-            stamp.tick,
-        )
+        Mut::in_page(value, page_ptr, key, ctx.observes(key), row_index, ctx.tick)
     }
 
     unsafe fn fetch_from_world<'a>(
         world: *const World,
         entity_id: EntityId,
+        ctx: FetchContext<'_>,
     ) -> Option<Self::Item<'a>> {
         let location = live_location::<T>(&*world, entity_id)?;
         let key = ComponentKey::of::<T>();
-        let (tick, observed) = ((*world).current_tick(), (*world).is_observed(key));
+        let (tick, observed) = (ctx.tick, ctx.observes(key));
         let page = page_of_world(world, location.page_id)?;
         let row = location.row_index as usize;
         let column = (*page).columns.get_mut(&ComponentKey::of::<T>())?;
@@ -353,7 +369,7 @@ impl<T: Component> WorldQuery for Option<&T> {
     unsafe fn fetch<'a>(
         page_ptr: *const ComponentPage,
         row_index: usize,
-        _stamp: WriteStamp<'_>,
+        _ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
         let page = &*page_ptr;
         let column = page.columns.get(&ComponentKey::of::<T>())?;
@@ -364,6 +380,7 @@ impl<T: Component> WorldQuery for Option<&T> {
     unsafe fn fetch_from_world<'a>(
         world: *const World,
         entity_id: EntityId,
+        _ctx: FetchContext<'_>,
     ) -> Option<Self::Item<'a>> {
         let world = &*world;
         // A dead entity fails the join; a live one lacking `T` — no row in
@@ -404,7 +421,7 @@ impl<T: Component> WorldQuery for Option<&mut T> {
     unsafe fn fetch<'a>(
         page_ptr: *const ComponentPage,
         row_index: usize,
-        stamp: WriteStamp<'_>,
+        ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
         let page_ptr = page_ptr as *mut ComponentPage;
         let page = &mut *page_ptr;
@@ -416,15 +433,16 @@ impl<T: Component> WorldQuery for Option<&mut T> {
             value,
             page_ptr,
             key,
-            stamp.observes(key),
+            ctx.observes(key),
             row_index,
-            stamp.tick,
+            ctx.tick,
         ))
     }
 
     unsafe fn fetch_from_world<'a>(
         world: *const World,
         entity_id: EntityId,
+        ctx: FetchContext<'_>,
     ) -> Option<Self::Item<'a>> {
         // Same contract as `Option<&T>`: a dead entity fails the join, a live
         // one lacking `T` yields `Some(None)`.
@@ -433,7 +451,7 @@ impl<T: Component> WorldQuery for Option<&mut T> {
             return Some(None);
         };
         let key = ComponentKey::of::<T>();
-        let (tick, observed) = ((*world).current_tick(), (*world).is_observed(key));
+        let (tick, observed) = (ctx.tick, ctx.observes(key));
         let Some(page) = page_of_world(world, location.page_id) else {
             return Some(None);
         };
@@ -526,19 +544,28 @@ macro_rules! impl_query_tuple {
                 ids
             }
 
+            fn page_passes(page: &ComponentPage, since: Tick) -> bool {
+                $($Q::page_passes(page, since))&&*
+            }
+
+            fn row_passes(page: &ComponentPage, row: usize, since: Tick) -> bool {
+                $($Q::row_passes(page, row, since))&&*
+            }
+
             unsafe fn fetch<'a>(
                 page_ptr: *const ComponentPage,
                 row_index: usize,
-                stamp: WriteStamp<'_>,
+                ctx: FetchContext<'_>,
             ) -> Self::Item<'a> {
-                ($($Q::fetch(page_ptr, row_index, stamp),)*)
+                ($($Q::fetch(page_ptr, row_index, ctx),)*)
             }
 
             unsafe fn fetch_from_world<'a>(
                 world: *const World,
                 entity_id: EntityId,
+        ctx: FetchContext<'_>,
             ) -> Option<Self::Item<'a>> {
-                Some(($($Q::fetch_from_world(world, entity_id)?,)*))
+                Some(($($Q::fetch_from_world(world, entity_id, ctx)?,)*))
             }
         }
     };
@@ -608,6 +635,8 @@ unsafe impl<T: Component> ReadOnlyWorldQuery for Option<&T> {}
 unsafe impl ReadOnlyWorldQuery for EntityId {}
 // SAFETY: a filter yields nothing and only tests the entity's metadata.
 unsafe impl<T: Component> ReadOnlyWorldQuery for without::Without<T> {}
+// SAFETY: a filter yields nothing and only reads the ticks of `T`'s column.
+unsafe impl<T: Component> ReadOnlyWorldQuery for changed::Changed<T> {}
 // SAFETY: a field-SoA read clones the component out of its columns.
 unsafe impl<T: crate::ecs::SoaLayout> ReadOnlyWorldQuery for columns::Soa<T> {}
 
@@ -647,7 +676,7 @@ impl WorldQuery for EntityId {
     unsafe fn fetch<'a>(
         page_ptr: *const ComponentPage,
         row_index: usize,
-        _stamp: WriteStamp<'_>,
+        _ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
         let page = &*page_ptr;
         // The entity ID is fetched from the page's own list of entities.
@@ -657,6 +686,7 @@ impl WorldQuery for EntityId {
     unsafe fn fetch_from_world<'a>(
         _world: *const World,
         entity_id: EntityId,
+        _ctx: FetchContext<'_>,
     ) -> Option<Self::Item<'a>> {
         // We already have the entity ID, just return it.
         Some(entity_id)

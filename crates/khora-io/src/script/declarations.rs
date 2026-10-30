@@ -35,6 +35,7 @@
 //! module's declaration kept: two modules that never import each other each
 //! compile alone, so this is the one place that sees both.
 
+use khora_data::ecs::SystemContext;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
@@ -577,7 +578,12 @@ pub fn register_pending(world: &mut World, runtime: &Runtime) -> DeclarationRepo
     report
 }
 
-fn script_components_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn script_components_system(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     register_pending(world, runtime);
 }
 

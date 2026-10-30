@@ -20,6 +20,7 @@
 //! declares it `observes`, and the declared ones a script asks to be watched
 //! while the engine runs.
 
+use crate::ecs::SystemContext;
 use khora_core::lane::OutputDeck;
 use khora_core::script::ScriptValue;
 use khora_core::Runtime;
@@ -46,7 +47,7 @@ impl Component for WatchedByFlow {}
 struct Unwatched(f32);
 impl Component for Unwatched {}
 
-fn watching_system(_: &mut World, _: &Runtime, _: &mut OutputDeck) {}
+fn watching_system(_: &mut World, _: &Runtime, _: &mut OutputDeck, _ctx: SystemContext) {}
 
 inventory::submit! {
     DataSystemRegistration {

@@ -51,6 +51,7 @@ mod tests;
 
 pub use apply::ApplyError;
 
+use crate::ecs::SystemContext;
 use khora_core::lane::OutputDeck;
 use khora_core::script::CommandBuffer;
 use khora_core::Runtime;
@@ -130,7 +131,12 @@ fn apply_each(
     report
 }
 
-fn apply_script_commands(world: &mut World, runtime: &Runtime, deck: &mut OutputDeck) {
+fn apply_script_commands(
+    world: &mut World,
+    runtime: &Runtime,
+    deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     // The ids scripts reserved this frame get their slots before anything
     // spawns at them; whatever no spawn used is taken back after — every
     // frame, scripts or not, so no reservation outlives the frame.

@@ -125,7 +125,14 @@ impl Pump {
         let mut sent = Sent::default();
         let deadline = Instant::now() + MAX_WAIT;
         while Instant::now() < deadline {
-            (system.run)(&mut world, &self.runtime, &mut OutputDeck::new());
+            (system.run)(
+                &mut world,
+                &self.runtime,
+                &mut OutputDeck::new(),
+                khora_data::ecs::SystemContext {
+                    since: khora_data::ecs::Tick(0),
+                },
+            );
             for reload in self
                 .runtime
                 .resources
@@ -468,7 +475,14 @@ fn deleting_a_script_another_mounted_root_also_provides_does_not_withdraw_it() {
     let mut heard = false;
     let deadline = Instant::now() + MAX_WAIT;
     while Instant::now() < deadline && !heard {
-        (system.run)(&mut World::new(), &runtime, &mut OutputDeck::new());
+        (system.run)(
+            &mut World::new(),
+            &runtime,
+            &mut OutputDeck::new(),
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
         for reload in runtime
             .resources
             .get::<PendingReloads>()

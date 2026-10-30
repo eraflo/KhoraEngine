@@ -502,6 +502,9 @@ fn the_play_snapshot_never_holds_observed_state() {
         world.inner_world_mut(),
         &khora_sdk::khora_core::Runtime::default(),
         &mut deck,
+        khora_sdk::khora_data::ecs::SystemContext {
+            since: khora_sdk::khora_data::ecs::Tick(0),
+        },
     );
     assert_eq!(
         declared_field(&world, guard, &format!("Guard{STATE_SUFFIX}"), "state"),

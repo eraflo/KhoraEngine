@@ -238,7 +238,7 @@ fn set(entity: EntityId, fields: &[(&str, ScriptValue)]) -> WorldCommand {
     }
 }
 
-fn system(name: &str) -> fn(&mut World, &Runtime, &mut OutputDeck) {
+fn system(name: &str) -> fn(&mut World, &Runtime, &mut OutputDeck, crate::ecs::SystemContext) {
     inventory::iter::<DataSystemRegistration>
         .into_iter()
         .find(|system| system.name == name)
@@ -259,8 +259,22 @@ fn boundary(
     deck.slot::<BehaviorWriteback>().extend(turns);
     record_warnings();
     let runtime = Runtime::default();
-    system("script_commands")(world, &runtime, &mut deck);
-    system("behavior_writeback")(world, &runtime, &mut deck);
+    system("script_commands")(
+        world,
+        &runtime,
+        &mut deck,
+        crate::ecs::SystemContext {
+            since: crate::ecs::Tick(0),
+        },
+    );
+    system("behavior_writeback")(
+        world,
+        &runtime,
+        &mut deck,
+        crate::ecs::SystemContext {
+            since: crate::ecs::Tick(0),
+        },
+    );
     lost_writes()
 }
 

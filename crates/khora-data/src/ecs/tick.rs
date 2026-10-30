@@ -86,6 +86,20 @@ impl ColumnTicks {
         self.summary = self.summary.max(tick);
     }
 
+    /// Whether `row` may have been written after `since`: never when the
+    /// column's summary is not past it; by its own tick when the column keeps
+    /// row ticks and `since` is at or above the floor; otherwise yes — the
+    /// row's history was dropped above `since`, so it is not known.
+    pub fn changed_since(&self, row: usize, since: Tick) -> bool {
+        if self.summary <= since {
+            return false;
+        }
+        match &self.rows {
+            Some(rows) if since >= self.floor => rows.get(row).is_none_or(|&own| own > since.0),
+            _ => true,
+        }
+    }
+
     /// Gives a column without row ticks one per row, each reading 0 — under
     /// the floor, which still covers them. A column that has them keeps them.
     pub(crate) fn materialize(&mut self, row_count: usize) {

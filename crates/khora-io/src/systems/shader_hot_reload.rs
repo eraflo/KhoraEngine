@@ -25,6 +25,7 @@
 //! With no assets directory present, no watcher is registered and the backend
 //! keeps serving its embedded `include_str!` sources — the production path.
 
+use khora_data::ecs::SystemContext;
 use std::sync::Arc;
 
 use khora_core::lane::OutputDeck;
@@ -61,7 +62,12 @@ pub fn logical_name_for_shader_path(rel_path: &str) -> Option<String> {
     Some(format!("{LOGICAL_ROOT}::{namespaced}"))
 }
 
-fn shader_hot_reload_system(_world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn shader_hot_reload_system(
+    _world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(watch) = runtime.resources.get::<Arc<AssetWatch>>() else {
         return; // No assets dir → embedded sources, nothing to pump.
     };

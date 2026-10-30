@@ -67,7 +67,14 @@ fn a_playback_update_lands_on_the_source_it_was_made_for() {
             entity: view.sources[0].entity,
             new_state: Some(PlaybackState { cursor: 777.0 }),
         });
-    (writeback().run)(&mut world, &Runtime::new(), &mut deck);
+    (writeback().run)(
+        &mut world,
+        &Runtime::new(),
+        &mut deck,
+        khora_data::ecs::SystemContext {
+            since: khora_data::ecs::Tick(0),
+        },
+    );
 
     let state_of = |entity| {
         world

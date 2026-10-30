@@ -37,6 +37,7 @@
 //! the bug the channel's per-reader cursors exist to prevent, and it would be a
 //! quiet one — input that works until the day two things want it.
 
+use crate::ecs::SystemContext;
 use std::sync::{Arc, Mutex};
 
 use khora_core::event::Channel;
@@ -46,7 +47,12 @@ use khora_core::Runtime;
 
 use crate::ecs::{DataSystemRegistration, TickPhase, World};
 
-fn input_map_update(_world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn input_map_update(
+    _world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(events) = runtime.resources.get::<Channel<InputEvent>>() else {
         // A headless host, or a test harness with no window. Nothing produces
         // input, so there is nothing to derive.
@@ -99,7 +105,14 @@ mod tests {
     }
 
     fn run(runtime: &Runtime) {
-        input_map_update(&mut World::new(), runtime, &mut OutputDeck::new());
+        input_map_update(
+            &mut World::new(),
+            runtime,
+            &mut OutputDeck::new(),
+            crate::ecs::SystemContext {
+                since: crate::ecs::Tick(0),
+            },
+        );
     }
 
     #[test]

@@ -17,7 +17,7 @@
 use khora_core::graph::topological_sort;
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, Observer, Tick, TickPhase, World};
+use khora_data::ecs::{DataSystemRegistration, Observer, SystemContext, Tick, TickPhase, World};
 use std::collections::HashMap;
 
 /// Runs every [`DataSystemRegistration`] declared for the given phase, in a
@@ -51,11 +51,17 @@ pub fn run_data_systems(
     sort_systems(&mut systems);
 
     // Each run writes at a tick of its own, which is what the system has
-    // seen once it returns; the clock then moves past it.
+    // seen once it returns; the clock then moves past it. It is handed the
+    // tick of its previous run on this world: what changed since is what it
+    // has not seen.
     for sys in systems {
+        let observer = Observer::DataSystem(sys.name);
+        let ctx = SystemContext {
+            since: world.observer_last_seen(observer),
+        };
         let tick = world.begin_run();
-        (sys.run)(world, runtime, deck);
-        world.note_observer_run(Observer::DataSystem(sys.name), tick);
+        (sys.run)(world, runtime, deck, ctx);
+        world.note_observer_run(observer, tick);
         world.end_run();
     }
 }
@@ -142,13 +148,13 @@ mod tests {
         ORDER_LOG.lock().unwrap().push(name);
     }
 
-    fn sys_a(_: &mut World, _: &Runtime, _: &mut OutputDeck) {
+    fn sys_a(_: &mut World, _: &Runtime, _: &mut OutputDeck, _: SystemContext) {
         record("a");
     }
-    fn sys_b(_: &mut World, _: &Runtime, _: &mut OutputDeck) {
+    fn sys_b(_: &mut World, _: &Runtime, _: &mut OutputDeck, _: SystemContext) {
         record("b");
     }
-    fn sys_c(_: &mut World, _: &Runtime, _: &mut OutputDeck) {
+    fn sys_c(_: &mut World, _: &Runtime, _: &mut OutputDeck, _: SystemContext) {
         record("c");
     }
 

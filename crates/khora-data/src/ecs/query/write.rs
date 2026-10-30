@@ -14,8 +14,8 @@
 
 //! `QueryMut`: iterating a query over an exclusive `&mut World`.
 
-use super::{has_foreign_excluded, is_live_row, NativeRowPlan, WorldQuery, WriteStamp};
-use crate::ecs::{ComponentKey, DomainBitset, QueryMode, QueryPlan, World};
+use super::{has_foreign_excluded, is_live_row, FetchContext, NativeRowPlan, WorldQuery};
+use crate::ecs::{ComponentKey, DomainBitset, QueryMode, QueryPlan, Tick, World};
 use std::marker::PhantomData;
 
 // ------------------------- //
@@ -37,7 +37,9 @@ pub struct QueryMut<'a, Q: WorldQuery> {
     /// The per-row work of a Native iteration beyond the driver row (see
     /// [`NativeRowPlan`]). Empty for most queries.
     row_plan: NativeRowPlan,
-    /// The writable terms' keys some observer watches (see [`WriteStamp`]).
+    /// The tick the query's `Changed` terms compare against (see `since`).
+    since: Tick,
+    /// The writable terms' keys some observer watches (see [`FetchContext`]).
     observed: Vec<ComponentKey>,
 }
 
@@ -66,8 +68,19 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             _phantom: PhantomData,
             combined_bitset,
             row_plan,
+            since: Tick::default(),
             observed,
         }
+    }
+}
+
+impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
+    /// Sets the tick the query's [`Changed`](super::Changed) terms compare
+    /// against: they keep the rows written after it. The default is
+    /// `Tick(0)`, under which every row counts as changed.
+    pub fn since(mut self, since: Tick) -> Self {
+        self.since = since;
+        self
     }
 }
 
@@ -97,6 +110,19 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             // before returning, so reborrows never overlap.
             let world = unsafe { &mut *self.world_ptr };
             let page_id = self.matching_page_indices[self.current_page_index] as usize;
+            // A page no row of which can pass the query's filters is skipped
+            // whole.
+            if self.current_row_index == 0
+                && !Q::page_passes(&world.storage.pages[page_id], self.since)
+            {
+                self.current_page_index += 1;
+                continue;
+            }
+            let ctx = FetchContext {
+                tick: world.current_tick(),
+                observed: &self.observed,
+                since: self.since,
+            };
 
             if self.current_row_index < world.storage.pages[page_id].row_count() {
                 let row = self.current_row_index;
@@ -105,6 +131,9 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                 // Skip stale orphan rows (see `is_live_row`) and rows failing a
                 // foreign-domain `Without` (see `has_foreign_excluded`), through
                 // shared borrows taken before any `&mut` access below.
+                if !Q::row_passes(&world.storage.pages[page_id], row, self.since) {
+                    continue;
+                }
                 let entity = world.storage.pages[page_id].entities[row];
                 if let Some(domain) = self.plan.driver_domain {
                     if !is_live_row(world, page_id as u32, row, entity, domain) {
@@ -123,7 +152,7 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                     // through; `world` is not used again. This is the entity's live
                     // driver row and each live entity has exactly one, so the
                     // `&mut` items this yields address disjoint rows.
-                    match unsafe { Q::fetch_from_world(self.world_ptr as *const _, entity) } {
+                    match unsafe { Q::fetch_from_world(self.world_ptr as *const _, entity, ctx) } {
                         Some(item) => return Some(item),
                         None => continue,
                     }
@@ -138,12 +167,8 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                 // matching `Q`, so the columns `Q::fetch` reads (and mutably
                 // aliases for `&mut` queries) are present, and `row` is in
                 // bounds.
-                let stamp = WriteStamp {
-                    tick: world.current_tick(),
-                    observed: &self.observed,
-                };
                 let page = unsafe { world.storage.pages.as_mut_ptr().add(page_id) };
-                let item = unsafe { Q::fetch(page as *const _, row, stamp) };
+                let item = unsafe { Q::fetch(page as *const _, row, ctx) };
                 return Some(item);
             } else {
                 self.current_page_index += 1;
@@ -156,6 +181,14 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
     /// entity once, joining every term through its live locations.
     fn next_entity_scan(&mut self) -> Option<Q::Item<'a>> {
         loop {
+            // SAFETY: as below — a shared reborrow of the exclusively borrowed
+            // world, ended before `fetch_from_world` takes its own access.
+            let tick = unsafe { (*self.world_ptr).current_tick() };
+            let ctx = FetchContext {
+                tick,
+                observed: &self.observed,
+                since: self.since,
+            };
             // SAFETY: same invariant as `next_native` — `world_ptr` came from the
             // `&'a mut World` given to `QueryMut::new` and that exclusive borrow is
             // held for `'a`. This shared reborrow ends before `fetch_from_world`
@@ -173,13 +206,19 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             // SAFETY: `world_ptr` is the exclusively-borrowed `World` (see above);
             // each live entity is visited once, so the `&mut` items this yields
             // address disjoint rows.
-            if let Some(item) = unsafe { Q::fetch_from_world(self.world_ptr as *const _, entity) } {
+            if let Some(item) =
+                unsafe { Q::fetch_from_world(self.world_ptr as *const _, entity, ctx) }
+            {
                 return Some(item);
             }
         }
     }
 
     fn next_transversal(&mut self) -> Option<Q::Item<'a>> {
+        // No page or row filter here: a term outside the driver domain may
+        // find a column of its own on the driver page — a mixed page left
+        // behind when its domain moved — which is not the entity's live row.
+        // `fetch_from_world` judges every term through the live locations.
         loop {
             if self.current_page_index >= self.matching_page_indices.len() {
                 return None;
@@ -192,6 +231,11 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             let world = unsafe { &mut *self.world_ptr };
             let page_id = self.matching_page_indices[self.current_page_index] as usize;
             let page = &world.storage.pages[page_id];
+            let ctx = FetchContext {
+                tick: world.current_tick(),
+                observed: &self.observed,
+                since: self.since,
+            };
 
             // Check if there are rows left in the current page.
             if self.current_row_index < page.row_count() {
@@ -221,7 +265,7 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                 // reborrow is not used again before the next `next` call, and the
                 // entity exists in the driver page.
                 if let Some(item) =
-                    unsafe { Q::fetch_from_world(self.world_ptr as *const _, entity_id) }
+                    unsafe { Q::fetch_from_world(self.world_ptr as *const _, entity_id, ctx) }
                 {
                     return Some(item);
                 }

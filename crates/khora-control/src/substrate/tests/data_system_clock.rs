@@ -22,7 +22,9 @@
 use crate::substrate::{data_system_last_seen, run_data_systems};
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
-use khora_data::ecs::{ComponentKey, DataSystemRegistration, Tick, TickPhase, World};
+use khora_data::ecs::{
+    ComponentKey, DataSystemRegistration, SystemContext, Tick, TickPhase, World,
+};
 use std::sync::Mutex;
 
 /// What the probe systems watch.
@@ -44,11 +46,11 @@ fn record(world: &World, name: &'static str) {
     ));
 }
 
-fn first(world: &mut World, _: &Runtime, _: &mut OutputDeck) {
+fn first(world: &mut World, _: &Runtime, _: &mut OutputDeck, _: SystemContext) {
     record(world, FIRST);
 }
 
-fn second(world: &mut World, _: &Runtime, _: &mut OutputDeck) {
+fn second(world: &mut World, _: &Runtime, _: &mut OutputDeck, _: SystemContext) {
     record(world, SECOND);
 }
 

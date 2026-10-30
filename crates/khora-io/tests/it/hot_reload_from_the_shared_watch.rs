@@ -64,7 +64,14 @@ fn run_until(name: &str, runtime: &Runtime, mut done: impl FnMut() -> bool) {
     let mut world = World::new();
     let deadline = Instant::now() + MAX_WAIT;
     while !done() && Instant::now() < deadline {
-        (system.run)(&mut world, runtime, &mut OutputDeck::new());
+        (system.run)(
+            &mut world,
+            runtime,
+            &mut OutputDeck::new(),
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
         std::thread::sleep(Duration::from_millis(50));
     }
 }

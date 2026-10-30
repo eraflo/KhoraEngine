@@ -16,7 +16,7 @@
 
 use khora_core::ecs::entity::EntityId;
 
-use super::{live_metadata, WorldQuery, WriteStamp};
+use super::{live_metadata, FetchContext, WorldQuery};
 use crate::ecs::{page::ComponentPage, Component, ComponentKey, World};
 use std::{any::TypeId, marker::PhantomData};
 
@@ -49,7 +49,7 @@ impl<T: Component> WorldQuery for Without<T> {
     unsafe fn fetch<'a>(
         _page_ptr: *const ComponentPage,
         _row_index: usize,
-        _stamp: WriteStamp<'_>,
+        _ctx: FetchContext<'_>,
     ) -> Self::Item<'a> {
         // This function will be called but its result is ignored.
     }
@@ -57,6 +57,7 @@ impl<T: Component> WorldQuery for Without<T> {
     unsafe fn fetch_from_world<'a>(
         world: *const World,
         entity_id: EntityId,
+        _ctx: FetchContext<'_>,
     ) -> Option<Self::Item<'a>> {
         // SAFETY: `fetch_from_world` is an `unsafe fn` whose contract requires
         // `world` to point to a `World` valid for `'a`; the `Query`/`QueryMut`

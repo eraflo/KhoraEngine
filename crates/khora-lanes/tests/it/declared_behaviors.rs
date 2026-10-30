@@ -185,5 +185,12 @@ pub(crate) fn write_back(world: &mut World, report: &ScriptRunReport) {
         .into_iter()
         .find(|system| system.name == "behavior_writeback")
         .expect("the engine registers the behaviors' writeback");
-    (system.run)(world, &Runtime::default(), &mut deck);
+    (system.run)(
+        world,
+        &Runtime::default(),
+        &mut deck,
+        khora_data::ecs::SystemContext {
+            since: khora_data::ecs::Tick(0),
+        },
+    );
 }

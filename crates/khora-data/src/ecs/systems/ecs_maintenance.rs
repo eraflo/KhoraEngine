@@ -19,6 +19,7 @@
 //! [`ServiceRegistry`] (inserted at engine init) so the system can fetch
 //! and tick it without any wiring.
 
+use crate::ecs::SystemContext;
 use std::sync::{Arc, Mutex};
 
 use khora_core::lane::OutputDeck;
@@ -26,7 +27,12 @@ use khora_core::Runtime;
 
 use crate::ecs::{DataSystemRegistration, EcsMaintenance, TickPhase, World};
 
-fn ecs_maintenance_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn ecs_maintenance_system(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(maintenance) = runtime.resources.get::<Arc<Mutex<EcsMaintenance>>>() else {
         return;
     };

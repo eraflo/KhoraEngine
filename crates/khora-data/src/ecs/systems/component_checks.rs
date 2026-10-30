@@ -28,6 +28,7 @@
 //! [`ProblemSource::Data`]: khora_core::problems::ProblemSource::Data
 //! [`TickPhase::Maintenance`]: crate::ecs::TickPhase::Maintenance
 
+use crate::ecs::SystemContext;
 use std::sync::Arc;
 
 use khora_core::lane::OutputDeck;
@@ -40,7 +41,12 @@ use crate::scene::ComponentRegistration;
 /// Runs every registered component check over `world` and reports what they
 /// find to the runtime's `Arc<Problems>` under `ProblemSource::Data`. A
 /// runtime without `Problems` has nowhere to report: the system returns.
-pub(crate) fn component_checks(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+pub(crate) fn component_checks(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(problems) = runtime.resources.get::<Arc<Problems>>() else {
         return;
     };
@@ -150,7 +156,14 @@ mod tests {
     }
 
     fn run(world: &mut World, runtime: &Runtime) {
-        component_checks(world, runtime, &mut OutputDeck::new());
+        component_checks(
+            world,
+            runtime,
+            &mut OutputDeck::new(),
+            crate::ecs::SystemContext {
+                since: crate::ecs::Tick(0),
+            },
+        );
     }
 
     /// The problems found in the scene's data: no module, a component.

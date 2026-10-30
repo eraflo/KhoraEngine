@@ -149,7 +149,7 @@ khora_script::inventory::submit! {
         phase: TickPhase::Maintenance,
         // After the writeback: what it reads is the frame's last word.
         order_hint: 40,
-        run: |_, runtime, _| report_running_problems(runtime),
+        run: |_, runtime, _, _| report_running_problems(runtime),
         runs_after: &["behavior_writeback"],
         observes: &[],
     }

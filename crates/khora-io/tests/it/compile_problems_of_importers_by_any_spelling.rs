@@ -97,7 +97,14 @@ fn load_then_fix_helper(import: &str) -> (Vec<String>, Vec<String>) {
     let mut sent = Vec::new();
     let deadline = Instant::now() + MAX_WAIT;
     while Instant::now() < deadline {
-        (system.run)(&mut world, &runtime, &mut OutputDeck::new());
+        (system.run)(
+            &mut world,
+            &runtime,
+            &mut OutputDeck::new(),
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
         sent.extend(pending.drain().into_iter().map(|reload| reload.module));
         if problems.all().is_empty() && sent.contains(&"main.erg".to_owned()) {
             break;

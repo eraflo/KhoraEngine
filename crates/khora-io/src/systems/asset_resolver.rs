@@ -64,6 +64,7 @@
 //! it calls the `khora-io`-owned `AssetService` while mutating the
 //! `khora-data` `World` + `AssetStore`.
 
+use khora_data::ecs::SystemContext;
 use std::sync::{Arc, Mutex};
 
 use khora_core::asset::{AssetHandle, AssetUUID, Material};
@@ -105,7 +106,12 @@ struct ResolvedMesh {
     had_stale_handle: bool,
 }
 
-fn asset_resolver_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn asset_resolver_system(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     resolve_materials(world, runtime);
     resolve_meshes(world, runtime);
     ui_asset_resolver::resolve_ui_fonts(world, runtime);
@@ -464,7 +470,14 @@ mod tests {
         let entity = world.spawn(MaterialRef::inline(Box::new(distinctive.clone())));
 
         let mut deck = OutputDeck::default();
-        asset_resolver_system(&mut world, &runtime, &mut deck);
+        asset_resolver_system(
+            &mut world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
 
         let resolved = world
             .get::<HandleComponent<Box<dyn Material>>>(entity)
@@ -494,14 +507,28 @@ mod tests {
         let entity = world.spawn(MaterialRef::inline(Box::new(StandardMaterial::default())));
 
         let mut deck = OutputDeck::default();
-        asset_resolver_system(&mut world, &runtime, &mut deck);
+        asset_resolver_system(
+            &mut world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
         let first = world
             .get::<HandleComponent<Box<dyn Material>>>(entity)
             .expect("first pass resolves")
             .uuid;
 
         // A second pass finds the handle already present and changes nothing.
-        asset_resolver_system(&mut world, &runtime, &mut deck);
+        asset_resolver_system(
+            &mut world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
         let second = world
             .get::<HandleComponent<Box<dyn Material>>>(entity)
             .expect("handle persists")
@@ -526,7 +553,14 @@ mod tests {
         let entity = world.spawn(MaterialRef::inline(Box::new(mat_a)));
 
         let mut deck = OutputDeck::default();
-        asset_resolver_system(&mut world, &runtime, &mut deck);
+        asset_resolver_system(
+            &mut world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
         let uuid_a = world
             .get::<HandleComponent<Box<dyn Material>>>(entity)
             .expect("material A resolves")
@@ -548,7 +582,14 @@ mod tests {
             "replacing the MaterialRef must succeed"
         );
 
-        asset_resolver_system(&mut world, &runtime, &mut deck);
+        asset_resolver_system(
+            &mut world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
 
         let uuid_b = world
             .get::<HandleComponent<Box<dyn Material>>>(entity)
@@ -576,7 +617,14 @@ mod tests {
         let entity = world.spawn(MaterialRef::inline(Box::new(StandardMaterial::default())));
 
         let mut deck = OutputDeck::default();
-        asset_resolver_system(&mut world, &runtime, &mut deck);
+        asset_resolver_system(
+            &mut world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
         let uuid = world
             .get::<HandleComponent<Box<dyn Material>>>(entity)
             .expect("resolves")
@@ -587,7 +635,14 @@ mod tests {
             .unwrap();
 
         // No ref change: the resolver must not touch either handle.
-        asset_resolver_system(&mut world, &runtime, &mut deck);
+        asset_resolver_system(
+            &mut world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
 
         let after = world
             .get::<HandleComponent<Box<dyn Material>>>(entity)
@@ -618,7 +673,14 @@ mod tests {
         ));
 
         let mut deck = OutputDeck::default();
-        asset_resolver_system(&mut world, &runtime, &mut deck);
+        asset_resolver_system(
+            &mut world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
         let uuid_a = world
             .get::<HandleComponent<Mesh>>(entity)
             .expect("mesh A resolves")
@@ -635,7 +697,14 @@ mod tests {
             "replacing the MeshRef must succeed"
         );
 
-        asset_resolver_system(&mut world, &runtime, &mut deck);
+        asset_resolver_system(
+            &mut world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
 
         let uuid_b = world
             .get::<HandleComponent<Mesh>>(entity)
@@ -709,7 +778,14 @@ mod tests {
         let entity = world.spawn(MaterialRef::Asset(uuid));
 
         let mut deck = OutputDeck::default();
-        asset_resolver_system(&mut world, &runtime, &mut deck);
+        asset_resolver_system(
+            &mut world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
 
         let resolved = world
             .get::<HandleComponent<Box<dyn Material>>>(entity)
@@ -750,7 +826,14 @@ mod tests {
         ));
 
         let mut deck = OutputDeck::default();
-        asset_resolver_system(&mut world, &runtime, &mut deck);
+        asset_resolver_system(
+            &mut world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
 
         let resolved = world
             .get::<HandleComponent<Mesh>>(entity)
@@ -784,7 +867,14 @@ mod tests {
         let b = world.spawn(make());
 
         let mut deck = OutputDeck::default();
-        asset_resolver_system(&mut world, &runtime, &mut deck);
+        asset_resolver_system(
+            &mut world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
 
         let ua = world.get::<HandleComponent<Mesh>>(a).unwrap().uuid;
         let ub = world.get::<HandleComponent<Mesh>>(b).unwrap().uuid;
@@ -838,7 +928,14 @@ mod tests {
         let entity = world.spawn(MeshRef::Asset(uuid));
 
         let mut deck = OutputDeck::default();
-        asset_resolver_system(&mut world, &runtime, &mut deck);
+        asset_resolver_system(
+            &mut world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
 
         let resolved = world
             .get::<HandleComponent<Mesh>>(entity)
@@ -913,8 +1010,22 @@ mod tests {
                     .into_iter()
                     .find(|system| system.name == "asset_reload")
                     .expect("`asset_reload` is registered");
-                (asset_reload.run)(world, &self.runtime, &mut deck);
-                asset_resolver_system(world, &self.runtime, &mut deck);
+                (asset_reload.run)(
+                    world,
+                    &self.runtime,
+                    &mut deck,
+                    khora_data::ecs::SystemContext {
+                        since: khora_data::ecs::Tick(0),
+                    },
+                );
+                asset_resolver_system(
+                    world,
+                    &self.runtime,
+                    &mut deck,
+                    khora_data::ecs::SystemContext {
+                        since: khora_data::ecs::Tick(0),
+                    },
+                );
             }
 
             fn texture(&self, uuid: &AssetUUID) -> Option<AssetHandle<CpuTexture>> {
@@ -1396,7 +1507,14 @@ mod tests {
 
             fn resolve(&self, world: &mut World) {
                 let mut deck = OutputDeck::default();
-                asset_resolver_system(world, &self.runtime, &mut deck);
+                asset_resolver_system(
+                    world,
+                    &self.runtime,
+                    &mut deck,
+                    khora_data::ecs::SystemContext {
+                        since: khora_data::ecs::Tick(0),
+                    },
+                );
             }
 
             fn font(&self, uuid: &AssetUUID) -> Option<AssetHandle<Font>> {

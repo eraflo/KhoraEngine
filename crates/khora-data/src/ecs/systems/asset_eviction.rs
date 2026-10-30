@@ -22,6 +22,7 @@
 //! [`AssetStore`] both live in the [`ServiceRegistry`], so the system fetches
 //! and ticks them without any manual wiring.
 
+use crate::ecs::SystemContext;
 use std::sync::{Arc, Mutex};
 
 use khora_core::lane::OutputDeck;
@@ -32,7 +33,12 @@ use crate::assets::AssetStore;
 use crate::ecs::{DataSystemRegistration, TickPhase, World};
 use crate::gpu::AssetEviction;
 
-fn asset_eviction_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn asset_eviction_system(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(eviction) = runtime.resources.get::<Arc<Mutex<AssetEviction>>>() else {
         return;
     };

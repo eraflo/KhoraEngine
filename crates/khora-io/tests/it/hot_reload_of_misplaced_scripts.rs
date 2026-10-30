@@ -82,7 +82,14 @@ impl Pump {
         let mut sent = BTreeSet::new();
         let deadline = Instant::now() + MAX_WAIT;
         while Instant::now() < deadline {
-            (system.run)(&mut world, &self.runtime, &mut OutputDeck::new());
+            (system.run)(
+                &mut world,
+                &self.runtime,
+                &mut OutputDeck::new(),
+                khora_data::ecs::SystemContext {
+                    since: khora_data::ecs::Tick(0),
+                },
+            );
             sent.extend(
                 self.runtime
                     .resources

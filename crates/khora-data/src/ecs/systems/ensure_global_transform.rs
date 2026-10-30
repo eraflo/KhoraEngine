@@ -39,13 +39,19 @@
 //! Regenerating derived state is what `Derived` *means*, and an invariant
 //! restored by a registered `DataSystem` is how `RULES.md` §3 says to do it.
 
+use crate::ecs::SystemContext;
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
 
 use crate::ecs::{DataSystemRegistration, GlobalTransform, TickPhase, Transform, World};
 
-fn ensure_global_transform(world: &mut World, _runtime: &Runtime, _deck: &mut OutputDeck) {
+fn ensure_global_transform(
+    world: &mut World,
+    _runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     // Collected before adding, because adding a component is a structural
     // change and the query borrows the world.
     let missing: Vec<(EntityId, Transform)> = world
@@ -84,7 +90,14 @@ mod tests {
     use khora_core::math::Vec3;
 
     fn run(world: &mut World) {
-        ensure_global_transform(world, &Runtime::default(), &mut OutputDeck::new());
+        ensure_global_transform(
+            world,
+            &Runtime::default(),
+            &mut OutputDeck::new(),
+            crate::ecs::SystemContext {
+                since: crate::ecs::Tick(0),
+            },
+        );
     }
 
     /// **What a scene load produces.** The Recipe carries `Transform` and skips

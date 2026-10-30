@@ -28,7 +28,14 @@ use crate::ecs::{MaterialRef, Transform, World};
 fn frame(world: &mut World, commands: Vec<WorldCommand>) {
     let mut deck = OutputDeck::new();
     deck.slot::<CommandBuffer>().extend(commands);
-    apply_script_commands(world, &Runtime::default(), &mut deck);
+    apply_script_commands(
+        world,
+        &Runtime::default(),
+        &mut deck,
+        crate::ecs::SystemContext {
+            since: crate::ecs::Tick(0),
+        },
+    );
 }
 
 /// The asset `entity`'s material references, if it references one.
@@ -173,7 +180,14 @@ fn setting_a_material_on_a_prefab_spawns_root_in_the_same_batch() {
             material: stone,
         },
     ]);
-    apply_script_commands(&mut world, &runtime, &mut deck);
+    apply_script_commands(
+        &mut world,
+        &runtime,
+        &mut deck,
+        crate::ecs::SystemContext {
+            since: crate::ecs::Tick(0),
+        },
+    );
 
     assert!(world.contains(root));
     assert_eq!(material_asset(&world, root), Some(stone));

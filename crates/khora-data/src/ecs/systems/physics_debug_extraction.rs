@@ -24,6 +24,7 @@
 //! Activation is per-entity via [`PhysicsDebugData::enabled`]: when no
 //! entity has the component, the system is a no-op.
 
+use crate::ecs::SystemContext;
 use std::sync::{Arc, Mutex};
 
 use khora_core::lane::OutputDeck;
@@ -32,7 +33,12 @@ use khora_core::Runtime;
 
 use crate::ecs::{DataSystemRegistration, PhysicsDebugData, TickPhase, World};
 
-fn physics_debug_extraction(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn physics_debug_extraction(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(provider_arc) = runtime
         .backends
         .get::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()

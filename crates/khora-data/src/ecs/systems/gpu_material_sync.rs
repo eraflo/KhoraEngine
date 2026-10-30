@@ -24,6 +24,7 @@
 //! performs no asset loading itself, keeping the data layer free of any
 //! `khora-io` dependency.
 
+use crate::ecs::SystemContext;
 use std::sync::Arc;
 
 use khora_core::lane::OutputDeck;
@@ -34,7 +35,12 @@ use khora_core::Runtime;
 use crate::ecs::World;
 use crate::ProjectionRegistry;
 
-fn gpu_material_sync_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn gpu_material_sync_system(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(proj) = runtime.resources.get::<ProjectionRegistry>() else {
         return;
     };

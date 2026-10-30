@@ -40,13 +40,19 @@
 //!
 //! [`script_commands`]: super::script_commands
 
+use crate::ecs::SystemContext;
 use khora_core::lane::OutputDeck;
 use khora_core::script::BehaviorWriteback;
 use khora_core::Runtime;
 
 use crate::ecs::{DataSystemRegistration, TickPhase, World};
 
-fn behavior_writeback(world: &mut World, _runtime: &Runtime, deck: &mut OutputDeck) {
+fn behavior_writeback(
+    world: &mut World,
+    _runtime: &Runtime,
+    deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     // What the frame's commands wrote, and where: a turn's field a command
     // written after it overwrote is that command's.
     let applied = deck.take::<super::script_commands::AppliedWrites>();

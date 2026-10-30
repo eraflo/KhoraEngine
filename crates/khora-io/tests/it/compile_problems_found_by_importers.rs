@@ -170,7 +170,14 @@ fn a_deleted_module_leaves_no_problem_under_its_name() {
     let mut world = World::new();
     let deadline = Instant::now() + MAX_WAIT;
     while Instant::now() < deadline {
-        (system.run)(&mut world, &runtime, &mut OutputDeck::new());
+        (system.run)(
+            &mut world,
+            &runtime,
+            &mut OutputDeck::new(),
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
         if problems.of_module("other.erg").0 > 0 {
             break;
         }

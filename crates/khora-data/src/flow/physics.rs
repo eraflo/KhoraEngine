@@ -33,6 +33,7 @@
 //! after the lane's `provider.step(dt)` and pulls the new transforms, kinematic
 //! results, and collision events from the provider back into the World.
 
+use crate::ecs::SystemContext;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -111,7 +112,12 @@ register_flow!(PhysicsFlow);
 /// [`PhysicsProvider`] backend before the physics lane steps it. This is the
 /// maintenance work that used to live in `PhysicsFlow::adapt`; moving it out
 /// keeps the Flow a read-only projector.
-fn physics_provider_sync(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn physics_provider_sync(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(provider_arc) = runtime
         .backends
         .get::<Arc<Mutex<Box<dyn PhysicsProvider>>>>()

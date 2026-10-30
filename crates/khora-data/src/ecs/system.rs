@@ -27,9 +27,9 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
+//! use khora_data::ecs::{DataSystemRegistration, SystemContext, TickPhase, World};
 //!
-//! pub fn my_system(world: &mut World) {
+//! pub fn my_system(world: &mut World, runtime: &Runtime, deck: &mut OutputDeck, ctx: SystemContext) {
 //!     // ...
 //! }
 //!
@@ -49,7 +49,7 @@
 //!
 //! See [`TickPhase`] for the available phases and their intended use.
 
-use crate::ecs::{ComponentKey, World};
+use crate::ecs::{ComponentKey, Tick, World};
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
 
@@ -79,6 +79,16 @@ pub enum TickPhase {
     Maintenance,
 }
 
+/// What the runner hands a [`DataSystem`] beside the world: what it has
+/// already seen of it.
+#[derive(Debug, Clone, Copy)]
+pub struct SystemContext {
+    /// The tick at which this system last ran on this world — `Tick(0)` the
+    /// first time. `world.query::<(…, Changed<T>)>().since(ctx.since)` reads
+    /// what changed since its last run.
+    pub since: Tick,
+}
+
 /// Registration entry for a [`DataSystem`].
 ///
 /// One entry per system, submitted via [`inventory::submit!`] at link time.
@@ -90,7 +100,8 @@ pub struct DataSystemRegistration {
     pub name: &'static str,
     /// Phase this system belongs to.
     pub phase: TickPhase,
-    /// The function to invoke on `(&mut World, &Runtime, &mut OutputDeck)`.
+    /// The function to invoke on
+    /// `(&mut World, &Runtime, &mut OutputDeck, SystemContext)`.
     ///
     /// - The `Runtime` bundle lets a system fetch typed services / backends /
     ///   resources it needs (`EcsMaintenance`, `GraphicsDevice`, …).
@@ -100,7 +111,9 @@ pub struct DataSystemRegistration {
     ///   apply them to ECS components. Pre-scheduler phases receive an
     ///   empty (transient) deck — systems that don't need it just ignore
     ///   the third arg.
-    pub run: fn(&mut World, &Runtime, &mut OutputDeck),
+    /// - The [`SystemContext`] carries what the system has already seen of
+    ///   this world (`since`).
+    pub run: fn(&mut World, &Runtime, &mut OutputDeck, SystemContext),
     /// Tie-breaker used to order systems within a phase when no explicit
     /// `runs_after` ordering applies. Lower runs first. Default `0`.
     pub order_hint: i32,

@@ -21,6 +21,7 @@
 //! `Maintenance` phase, after the scheduler has executed the physics
 //! agent and the lane has called `provider.step(dt)`.
 
+use crate::ecs::SystemContext;
 use std::sync::{Arc, Mutex};
 
 use khora_core::ecs::entity::EntityId;
@@ -34,7 +35,12 @@ use crate::ecs::{
 };
 use crate::flow::PhysicsStepResult;
 
-fn physics_world_writeback(world: &mut World, runtime: &Runtime, deck: &mut OutputDeck) {
+fn physics_world_writeback(
+    world: &mut World,
+    runtime: &Runtime,
+    deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     // Only writeback if the physics lane actually advanced the simulation
     // this frame (it publishes a `PhysicsStepResult` slot when it ran).
     // When the agent is paused, throttled, or the lane was skipped for

@@ -14,6 +14,7 @@
 
 mod asset_fields;
 mod behavior_components;
+mod changed;
 mod column_writes;
 mod component_keys;
 mod declared_names;
@@ -24,6 +25,7 @@ mod entity_reservations;
 mod hierarchy;
 mod hierarchy_writers;
 mod mut_guard;
+mod no_change_missed;
 mod observed_row_arrays;
 mod page_ticks;
 mod query_mut_aliasing;

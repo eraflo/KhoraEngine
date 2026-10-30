@@ -44,6 +44,9 @@ fn pump_until_recompiled(runtime: &khora_core::Runtime) {
             &mut world,
             runtime,
             &mut khora_core::lane::OutputDeck::new(),
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
         );
         std::thread::sleep(std::time::Duration::from_millis(50));
     };

@@ -42,6 +42,7 @@
 //! like any other: it lands on the deck, a data system moves it, and what reads
 //! it does so under a budget it negotiated.
 
+use crate::ecs::SystemContext;
 use khora_core::event::Channel;
 use khora_core::lane::OutputDeck;
 use khora_core::physics::{Collision, ContactBatch};
@@ -49,7 +50,12 @@ use khora_core::Runtime;
 
 use crate::ecs::{DataSystemRegistration, TickPhase, World};
 
-fn collision_dispatch(_world: &mut World, runtime: &Runtime, deck: &mut OutputDeck) {
+fn collision_dispatch(
+    _world: &mut World,
+    runtime: &Runtime,
+    deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     if !deck.contains::<ContactBatch>() {
         // The lane did not run this frame — paused, or no provider. Not the
         // same as "no contacts", and taking the slot would report an empty
@@ -115,7 +121,14 @@ mod tests {
     }
 
     fn run(runtime: &Runtime, deck: &mut OutputDeck) {
-        collision_dispatch(&mut World::new(), runtime, deck);
+        collision_dispatch(
+            &mut World::new(),
+            runtime,
+            deck,
+            crate::ecs::SystemContext {
+                since: crate::ecs::Tick(0),
+            },
+        );
     }
 
     #[test]

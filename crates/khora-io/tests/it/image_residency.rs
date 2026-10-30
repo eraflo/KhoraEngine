@@ -281,7 +281,14 @@ impl Project {
     fn frame(&self, world: &mut World) {
         let mut deck = OutputDeck::new();
         for name in ["asset_reload", "asset_resolver", "image_on_gpu"] {
-            (data_system(name).run)(world, &self.runtime, &mut deck);
+            (data_system(name).run)(
+                world,
+                &self.runtime,
+                &mut deck,
+                khora_data::ecs::SystemContext {
+                    since: khora_data::ecs::Tick(0),
+                },
+            );
         }
     }
 
@@ -400,7 +407,14 @@ fn a_refused_image_leaves_the_atlas_room_for_the_next() {
     let residency = data_system("image_on_gpu");
     let frame = |world: &mut World| {
         let mut deck = OutputDeck::new();
-        (residency.run)(world, &runtime, &mut deck);
+        (residency.run)(
+            world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
     };
     let transform = UiTransform {
         pos: Vec2::new(0.0, 0.0),
@@ -462,7 +476,14 @@ fn a_replaced_image_moves_to_its_new_rect() {
     let residency = data_system("image_on_gpu");
     let frame = |world: &mut World| {
         let mut deck = OutputDeck::new();
-        (residency.run)(world, &runtime, &mut deck);
+        (residency.run)(
+            world,
+            &runtime,
+            &mut deck,
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
+        );
     };
 
     let badge = AssetUUID::new_v5("ui/badge.png");

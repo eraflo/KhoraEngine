@@ -22,6 +22,7 @@
 //! retires the stale GPU projection so it is built again from the new value.
 //! Runs before the [`asset_resolver`](super::asset_resolver).
 
+use khora_data::ecs::SystemContext;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -72,7 +73,12 @@ struct Reload<'a> {
     retired: HashSet<AssetUUID>,
 }
 
-fn asset_reload_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn asset_reload_system(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(service) = runtime.services.get::<Arc<Mutex<AssetService>>>() else {
         return;
     };
@@ -435,8 +441,22 @@ mod tests {
         /// One engine tick of the asset systems: the reload, then the resolver.
         fn tick(&self, world: &mut World) {
             let mut deck = OutputDeck::default();
-            (data_system("asset_reload").run)(world, &self.runtime, &mut deck);
-            (data_system("asset_resolver").run)(world, &self.runtime, &mut deck);
+            (data_system("asset_reload").run)(
+                world,
+                &self.runtime,
+                &mut deck,
+                khora_data::ecs::SystemContext {
+                    since: khora_data::ecs::Tick(0),
+                },
+            );
+            (data_system("asset_resolver").run)(
+                world,
+                &self.runtime,
+                &mut deck,
+                khora_data::ecs::SystemContext {
+                    since: khora_data::ecs::Tick(0),
+                },
+            );
         }
 
         /// Rewrites the file at `rel` under the assets folder.

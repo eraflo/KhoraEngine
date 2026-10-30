@@ -80,7 +80,14 @@ fn saves_under_two_roots_read_in_one_frame_are_each_recompiled() {
         "the premise: both saves came back: {heard:?}"
     );
 
-    (data_system("script_hot_reload").run)(&mut World::new(), &runtime, &mut OutputDeck::new());
+    (data_system("script_hot_reload").run)(
+        &mut World::new(),
+        &runtime,
+        &mut OutputDeck::new(),
+        khora_data::ecs::SystemContext {
+            since: khora_data::ecs::Tick(0),
+        },
+    );
 
     let mut sent: Vec<String> = runtime
         .resources

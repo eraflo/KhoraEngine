@@ -23,6 +23,7 @@
 //! the procedural fallback. Otherwise a tick is one uuid and one pointer
 //! compare.
 
+use crate::ecs::SystemContext;
 use std::sync::Arc;
 
 use khora_core::lane::OutputDeck;
@@ -83,7 +84,12 @@ fn bake_decision(baker: &IblBaker, source: &IblSource) -> Decision {
     Decision::Bake
 }
 
-fn ibl_bake_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn ibl_bake_system(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(baker) = runtime.resources.get::<IblBaker>() else {
         return;
     };

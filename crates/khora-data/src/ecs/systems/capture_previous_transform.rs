@@ -30,6 +30,7 @@
 //! [`RigidBody`]) are snapshotted; everything else renders at its current
 //! transform.
 
+use crate::ecs::SystemContext;
 use std::collections::HashSet;
 
 use khora_core::ecs::entity::EntityId;
@@ -58,6 +59,7 @@ fn capture_previous_transform_entry(
     world: &mut World,
     runtime: &khora_core::Runtime,
     _deck: &mut khora_core::lane::OutputDeck,
+    _ctx: SystemContext,
 ) {
     let Some(shared) = runtime.resources.get::<SharedTransformInterpolation>() else {
         return;

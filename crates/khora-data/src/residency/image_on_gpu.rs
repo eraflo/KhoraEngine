@@ -22,6 +22,7 @@
 //!
 //! [`Resident`]: khora_core::residency::Resident
 
+use crate::ecs::SystemContext;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -81,7 +82,12 @@ impl Residency for ImageOnGpu {
     fn release(_resident: AtlasRect, _target: &mut AtlasTarget<'_>) {}
 }
 
-fn image_on_gpu_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn image_on_gpu_system(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(atlas) = runtime.resources.get::<Arc<UiImageAtlas>>() else {
         return;
     };

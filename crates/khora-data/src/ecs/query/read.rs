@@ -14,8 +14,8 @@
 
 //! `Query`: iterating a query over a shared `&World`.
 
-use super::{has_foreign_excluded, is_live_row, NativeRowPlan, WorldQuery, WriteStamp};
-use crate::ecs::{DomainBitset, QueryMode, QueryPlan, World};
+use super::{has_foreign_excluded, is_live_row, FetchContext, NativeRowPlan, WorldQuery};
+use crate::ecs::{DomainBitset, QueryMode, QueryPlan, Tick, World};
 use std::marker::PhantomData;
 
 // -------------------- //
@@ -55,6 +55,8 @@ pub struct Query<'a, Q: WorldQuery> {
     /// The per-row work of a Native iteration beyond the driver row (see
     /// [`NativeRowPlan`]). Empty for most queries.
     row_plan: NativeRowPlan,
+    /// The tick the query's `Changed` terms compare against (see `since`).
+    since: Tick,
 }
 
 impl<'a, Q: WorldQuery> Query<'a, Q> {
@@ -79,7 +81,19 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
             _phantom: PhantomData,
             combined_bitset,
             row_plan,
+            since: Tick::default(),
         }
+    }
+}
+
+impl<'a, Q: WorldQuery> Query<'a, Q> {
+    /// Sets the tick the query's [`Changed`](super::Changed) terms compare
+    /// against: they keep the rows written after it. The default is
+    /// `Tick(0)`, under which every row counts as changed — an observer that
+    /// has seen nothing sees everything.
+    pub fn since(mut self, since: Tick) -> Self {
+        self.since = since;
+        self
     }
 }
 
@@ -114,9 +128,15 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
             // reborrowing it as `&World` here is sound.
             let world = unsafe { &*self.world_ptr };
 
-            // 2. Get the current page.
+            // 2. Get the current page; one no row of which can pass the
+            // query's filters is skipped whole.
             let page_id = self.matching_page_indices[self.current_page_index];
             let page = &world.storage.pages[page_id as usize];
+            if self.current_row_index == 0 && !Q::page_passes(page, self.since) {
+                self.current_page_index += 1;
+                continue;
+            }
+            let ctx = FetchContext::read_only(world.current_tick(), self.since);
 
             // 3. Check if there are rows left in the current page.
             if self.current_row_index < page.row_count() {
@@ -132,6 +152,9 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                         continue;
                     }
                 }
+                if !Q::row_passes(page, row, self.since) {
+                    continue;
+                }
                 let entity = page.entities[row];
                 if !self.row_plan.foreign_without.is_empty()
                     && has_foreign_excluded(world, entity, &self.row_plan.foreign_without)
@@ -142,7 +165,7 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                     // SAFETY: `world` is a valid `&World` borrowed for `'a`; this is
                     // the entity's live driver row, so `fetch_from_world` joins its
                     // live rows only.
-                    match unsafe { Q::fetch_from_world(world as *const _, entity) } {
+                    match unsafe { Q::fetch_from_world(world as *const _, entity, ctx) } {
                         Some(item) => return Some(item),
                         None => continue,
                     }
@@ -152,8 +175,7 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                 // `matching_page_indices` only contains pages whose signature
                 // satisfies `Q`, so every column `Q::fetch` reads is present.
                 // `row < page.row_count()` keeps the row in bounds.
-                let stamp = WriteStamp::read_only(world.current_tick());
-                let item = unsafe { Q::fetch(page as *const _, row, stamp) };
+                let item = unsafe { Q::fetch(page as *const _, row, ctx) };
                 return Some(item);
             } else {
                 self.current_page_index += 1;
@@ -171,6 +193,7 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
         // `&'a World` given to `Query::new` and that shared borrow is kept
         // alive for `'a`, so no aliasing `&mut World` exists.
         let world = unsafe { &*self.world_ptr };
+        let ctx = FetchContext::read_only(world.current_tick(), self.since);
         while let Some((entity, metadata)) = world.entities.get(self.current_row_index) {
             self.current_row_index += 1;
             // A vacated slot is a dead entity; an occupied slot's id carries
@@ -180,7 +203,7 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
             }
             // SAFETY: `world` is a valid `&World` borrowed for `'a`;
             // `fetch_from_world` only reads the live rows of a live entity.
-            if let Some(item) = unsafe { Q::fetch_from_world(world as *const _, *entity) } {
+            if let Some(item) = unsafe { Q::fetch_from_world(world as *const _, *entity, ctx) } {
                 return Some(item);
             }
         }
@@ -190,6 +213,10 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
     /// (Internal) Performs a "Transversal" iteration, joining data across domains.
     /// This uses the driver domain to find entities and then pulls peer data from other domains.
     fn next_transversal(&mut self) -> Option<Q::Item<'a>> {
+        // No page or row filter here: a term outside the driver domain may
+        // find a column of its own on the driver page — a mixed page left
+        // behind when its domain moved — which is not the entity's live row.
+        // `fetch_from_world` judges every term through the live locations.
         loop {
             if self.current_page_index >= self.matching_page_indices.len() {
                 return None;
@@ -201,6 +228,7 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
             let world = unsafe { &*self.world_ptr };
             let page_id = self.matching_page_indices[self.current_page_index];
             let page = &world.storage.pages[page_id as usize];
+            let ctx = FetchContext::read_only(world.current_tick(), self.since);
 
             if self.current_row_index < page.row_count() {
                 // In transversal mode, we use the EntityId from the driver page to look up
@@ -229,7 +257,9 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                 // SAFETY: `world` is a valid `&World` borrowed for `'a` (see the
                 // deref above); `fetch_from_world` only reads peer columns through
                 // it for an entity that exists in the driver page.
-                if let Some(item) = unsafe { Q::fetch_from_world(world as *const _, entity_id) } {
+                if let Some(item) =
+                    unsafe { Q::fetch_from_world(world as *const _, entity_id, ctx) }
+                {
                     return Some(item);
                 }
                 // If the join failed for this entity, we continue to the next one.

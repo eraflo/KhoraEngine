@@ -95,6 +95,9 @@ impl Registration {
             &mut self.world,
             &self.runtime,
             &mut OutputDeck::new(),
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
         );
     }
 

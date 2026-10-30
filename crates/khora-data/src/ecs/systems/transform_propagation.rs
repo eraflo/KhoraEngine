@@ -16,6 +16,7 @@
 //! hierarchy. Runs in [`TickPhase::PostSimulation`], after `app.update` has
 //! mutated local `Transform`s and before extraction reads `GlobalTransform`.
 
+use crate::ecs::SystemContext;
 use std::collections::{HashMap, VecDeque};
 
 use khora_core::{
@@ -138,6 +139,7 @@ fn transform_propagation_entry(
     world: &mut World,
     _runtime: &khora_core::Runtime,
     _deck: &mut khora_core::lane::OutputDeck,
+    _ctx: SystemContext,
 ) {
     transform_propagation_system(world);
 }

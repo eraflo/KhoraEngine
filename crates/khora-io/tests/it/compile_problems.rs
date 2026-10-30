@@ -83,7 +83,14 @@ impl Pump {
         let mut world = World::new();
         let deadline = Instant::now() + MAX_WAIT;
         while Instant::now() < deadline {
-            (system.run)(&mut world, &self.runtime, &mut OutputDeck::new());
+            (system.run)(
+                &mut world,
+                &self.runtime,
+                &mut OutputDeck::new(),
+                khora_data::ecs::SystemContext {
+                    since: khora_data::ecs::Tick(0),
+                },
+            );
             if done(&self.problems) {
                 return;
             }

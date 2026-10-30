@@ -178,7 +178,14 @@ fn deck_with(updates: Vec<BehaviorUpdate>) -> OutputDeck {
 }
 
 fn run(world: &mut World, deck: &mut OutputDeck) {
-    behavior_writeback(world, &Runtime::default(), deck);
+    behavior_writeback(
+        world,
+        &Runtime::default(),
+        deck,
+        crate::ecs::SystemContext {
+            since: crate::ecs::Tick(0),
+        },
+    );
 }
 
 /// **What a save needs to be true.** A turn's changed field is on the

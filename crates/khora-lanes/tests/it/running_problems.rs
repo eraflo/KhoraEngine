@@ -108,6 +108,9 @@ impl Engine {
             &mut self.world,
             &self.runtime,
             &mut OutputDeck::new(),
+            khora_data::ecs::SystemContext {
+                since: khora_data::ecs::Tick(0),
+            },
         );
         std::mem::swap(
             &mut *self.shared.lock().expect("uncontended"),

@@ -42,6 +42,7 @@
 //! scripting: an event handled where it was raised opens a cascade with no
 //! bound, and a budget that cannot bound the work it pays for is not a budget.
 
+use crate::ecs::SystemContext;
 use khora_core::event::Channel;
 use khora_core::lane::OutputDeck;
 use khora_core::physics::{Collision, CollisionKind};
@@ -56,7 +57,12 @@ pub const TOUCHED: &str = khora_core::script::event::TOUCHED.name;
 /// And to hear that it stopped.
 pub const SEPARATED: &str = khora_core::script::event::SEPARATED.name;
 
-fn collision_to_script(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn collision_to_script(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(collisions) = runtime.resources.get::<Channel<Collision>>() else {
         return;
     };
@@ -147,7 +153,14 @@ mod tests {
     }
 
     fn run(world: &mut World, runtime: &Runtime) {
-        collision_to_script(world, runtime, &mut OutputDeck::new());
+        collision_to_script(
+            world,
+            runtime,
+            &mut OutputDeck::new(),
+            crate::ecs::SystemContext {
+                since: crate::ecs::Tick(0),
+            },
+        );
     }
 
     /// **The first producer this queue has ever had.** Before it, `on Touched`

@@ -96,7 +96,14 @@ fn with_bullet(prefab: AssetUUID) -> (Runtime, PersistentId) {
 fn frame(world: &mut World, runtime: &Runtime, commands: Vec<WorldCommand>) {
     let mut deck = OutputDeck::new();
     deck.slot::<CommandBuffer>().extend(commands);
-    apply_script_commands(world, runtime, &mut deck);
+    apply_script_commands(
+        world,
+        runtime,
+        &mut deck,
+        crate::ecs::SystemContext {
+            since: crate::ecs::Tick(0),
+        },
+    );
 }
 
 /// A prefab spawn of `prefab` at `entity` and `position`, writing

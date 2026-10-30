@@ -77,7 +77,14 @@ fn checked(world: &mut World) -> Vec<Problem> {
     let problems = Arc::new(Problems::default());
     let mut runtime = Runtime::default();
     runtime.resources.insert(Arc::clone(&problems));
-    (system.run)(world, &runtime, &mut OutputDeck::new());
+    (system.run)(
+        world,
+        &runtime,
+        &mut OutputDeck::new(),
+        khora_data::ecs::SystemContext {
+            since: khora_data::ecs::Tick(0),
+        },
+    );
     problems.all()
 }
 

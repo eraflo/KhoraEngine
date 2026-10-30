@@ -23,13 +23,19 @@
 //! `Maintenance`-phase `DataSystem`s; this system drains the slot and
 //! mutates the World. No subsystem-specific code lives in the engine.
 
+use crate::ecs::SystemContext;
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
 
 use crate::ecs::{AudioSource, DataSystemRegistration, TickPhase, World};
 use crate::flow::AudioPlaybackWriteback;
 
-fn audio_playback_writeback(world: &mut World, _runtime: &Runtime, deck: &mut OutputDeck) {
+fn audio_playback_writeback(
+    world: &mut World,
+    _runtime: &Runtime,
+    deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let drained = deck.take::<AudioPlaybackWriteback>();
     if drained.updates.is_empty() {
         return;

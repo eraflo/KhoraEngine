@@ -19,6 +19,7 @@
 //! asset reload and the resolver, so it lands before `RenderFlow` projects
 //! the world.
 
+use crate::ecs::SystemContext;
 use std::sync::Arc;
 
 use khora_core::lane::OutputDeck;
@@ -31,7 +32,12 @@ use crate::ecs::World;
 use crate::residency::MeshOnGpu;
 use crate::ProjectionRegistry;
 
-fn gpu_mesh_sync_system(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn gpu_mesh_sync_system(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let Some(proj) = runtime.resources.get::<ProjectionRegistry>() else {
         return;
     };

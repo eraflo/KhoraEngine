@@ -24,6 +24,7 @@
 //! runtime state, so no scene ever holds it; the editor's Stop, which puts
 //! back the world Play started from, takes it away.
 
+use crate::ecs::SystemContext;
 use khora_core::agent::SharedEngineMode;
 use khora_core::ecs::PersistentId;
 use khora_core::lane::OutputDeck;
@@ -37,7 +38,12 @@ pub fn singleton_id(system: &str) -> PersistentId {
     PersistentId::named(&format!("system:{system}"))
 }
 
-fn script_systems(world: &mut World, runtime: &Runtime, _deck: &mut OutputDeck) {
+fn script_systems(
+    world: &mut World,
+    runtime: &Runtime,
+    _deck: &mut OutputDeck,
+    _ctx: SystemContext,
+) {
     let playing = runtime
         .resources
         .get::<SharedEngineMode>()

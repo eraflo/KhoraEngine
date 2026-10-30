@@ -63,7 +63,14 @@ fn register(world: &mut World, runtime: &Runtime, batch: Vec<ScriptDeclarations>
     for declarations in batch {
         pending.send(declarations);
     }
-    (data_system("script_components").run)(world, runtime, &mut OutputDeck::new());
+    (data_system("script_components").run)(
+        world,
+        runtime,
+        &mut OutputDeck::new(),
+        khora_data::ecs::SystemContext {
+            since: khora_data::ecs::Tick(0),
+        },
+    );
 }
 
 fn runtime_with(problems: &Arc<Problems>) -> Runtime {
