@@ -30,7 +30,8 @@ use khora_core::ui::text::{ShapeRequest, TextShaper};
 use khora_core::Runtime;
 
 use crate::ecs::{
-    Changed, ComponentKey, DataSystemRegistration, HandleComponent, SystemContext, TickPhase, World,
+    Changed, ComponentKey, DataSystemRegistration, HandleComponent, SystemContext, Tick, TickPhase,
+    World,
 };
 use crate::ui::{UiText, UiTextLayout};
 
@@ -46,55 +47,24 @@ pub(crate) fn ui_text_layout(
         return;
     };
 
-    // 1. The fonts whose handle changed — loaded, or replaced by a hot
-    //    reload — registered once each, their file copied once, whatever
-    //    number of texts use them. The first handle in page order speaks
-    //    for its font.
-    let changed_handles: Vec<(EntityId, AssetUUID, AssetHandle<Font>)> = world
-        .query::<(
-            EntityId,
-            &HandleComponent<Font>,
-            Changed<HandleComponent<Font>>,
-        )>()
+    // 1. The fonts whose file is new — loaded, or replaced by a hot reload —
+    //    registered once each, their file copied once, whatever number of
+    //    texts use them.
+    let changed_handles: Vec<EntityId> = world
+        .query::<(EntityId, Changed<HandleComponent<Font>>)>()
         .since(ctx.since)
-        .map(|(entity, handle, _)| (entity, handle.uuid, handle.handle.clone()))
+        .map(|(entity, _)| entity)
         .collect();
-    // A font's file is new to the shaper only when no handle left unchanged
-    // this run holds that very file: a text spawned in a font shares the
-    // handle the others hold (the same `Arc`), a reload replaces it on every
-    // entity with a new one. The built-in font is the engine's, never a
-    // handle's to replace.
-    let held_before: Vec<(AssetUUID, AssetHandle<Font>)> = if changed_handles.is_empty() {
-        Vec::new()
-    } else {
-        let changed: HashSet<EntityId> =
-            changed_handles.iter().map(|(entity, ..)| *entity).collect();
-        world
-            .query::<(EntityId, &HandleComponent<Font>)>()
-            .filter(|(entity, _)| !changed.contains(entity))
-            .map(|(_, handle)| (handle.uuid, handle.handle.clone()))
-            .collect()
-    };
-    let is_new = |font: &AssetUUID, handle: &AssetHandle<Font>| {
-        *font != Font::BUILT_IN
-            && !held_before
-                .iter()
-                .any(|(held, data)| held == font && data == handle)
-    };
     let mut readable: HashMap<AssetUUID, bool> = HashMap::new();
-    for (_, font, handle) in changed_handles
-        .iter()
-        .filter(|(_, font, handle)| is_new(font, handle))
-    {
-        readable.entry(*font).or_insert_with(|| {
-            match shaper.register_font(*font, Arc::from(&handle.data[..])) {
-                Ok(_) => true,
-                Err(error) => {
-                    log::warn!("ui_text_layout: font {font} cannot be read: {error}");
-                    false
-                }
+    for (font, handle) in new_fonts(world, ctx.since) {
+        let registered = match shaper.register_font(font, Arc::from(&handle.data[..])) {
+            Ok(_) => true,
+            Err(error) => {
+                log::warn!("ui_text_layout: font {font} cannot be read: {error}");
+                false
             }
-        });
+        };
+        readable.insert(font, registered);
     }
 
     // 2. The texts to shape: their text changed, their font handle did, or
@@ -105,7 +75,7 @@ pub(crate) fn ui_text_layout(
         .since(ctx.since)
         .map(|(entity, _)| entity)
         .collect();
-    dirty.extend(changed_handles.iter().map(|(entity, ..)| *entity));
+    dirty.extend(changed_handles.iter().copied());
     if !readable.is_empty() {
         dirty.extend(
             world
@@ -201,6 +171,49 @@ fn font_of(world: &World, entity: EntityId) -> Option<AssetUUID> {
     }
     let handle = world.get::<HandleComponent<Font>>(entity)?;
     (handle.uuid == text.font).then_some(text.font)
+}
+
+/// The fonts whose file is new since `since`: each font a changed
+/// `HandleComponent<Font>` holds a file of that no handle left unchanged
+/// since then holds. A text spawned in a font shares the handle the others
+/// hold (the same `Arc`), so it brings no new file; a reload replaces the
+/// handle on every entity with a new one. `Font::BUILT_IN` is never new — it
+/// is the engine's, never a handle's to replace.
+///
+/// Each font once, with the first changed handle in page order speaking for
+/// it. The rule both text systems register fonts by: the shaper's
+/// (`ui_text_layout`) and the rasteriser's (`glyphs_on_gpu`).
+pub(crate) fn new_fonts(world: &World, since: Tick) -> Vec<(AssetUUID, AssetHandle<Font>)> {
+    let changed: Vec<(EntityId, AssetUUID, AssetHandle<Font>)> = world
+        .query::<(
+            EntityId,
+            &HandleComponent<Font>,
+            Changed<HandleComponent<Font>>,
+        )>()
+        .since(since)
+        .map(|(entity, handle, _)| (entity, handle.uuid, handle.handle.clone()))
+        .collect();
+    if changed.is_empty() {
+        return Vec::new();
+    }
+    let changed_entities: HashSet<EntityId> = changed.iter().map(|(entity, ..)| *entity).collect();
+    let held_before: Vec<(AssetUUID, AssetHandle<Font>)> = world
+        .query::<(EntityId, &HandleComponent<Font>)>()
+        .filter(|(entity, _)| !changed_entities.contains(entity))
+        .map(|(_, handle)| (handle.uuid, handle.handle.clone()))
+        .collect();
+    let mut seen: HashSet<AssetUUID> = HashSet::new();
+    changed
+        .into_iter()
+        .filter(|(_, font, handle)| {
+            *font != Font::BUILT_IN
+                && !held_before
+                    .iter()
+                    .any(|(held, data)| held == font && data == handle)
+        })
+        .filter(|(_, font, _)| seen.insert(*font))
+        .map(|(_, font, handle)| (font, handle))
+        .collect()
 }
 
 inventory::submit! {

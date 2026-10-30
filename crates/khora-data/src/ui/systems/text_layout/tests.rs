@@ -918,3 +918,116 @@ fn a_handle_named_after_the_built_in_font_does_not_replace_it() {
         "the built-in text keeps its layout"
     );
 }
+
+// --- the fonts new this run: the rule both text systems register by ---
+
+/// The fonts `new_fonts` names for what changed since the last call, as
+/// `(font, file)`, sorted; one call stands for one run of a system.
+fn fonts_new_this_run(scene: &mut Scene) -> Vec<(AssetUUID, Vec<u8>)> {
+    let tick = scene.world.begin_run();
+    let fonts = super::new_fonts(&scene.world, scene.last_seen);
+    scene.world.end_run();
+    scene.last_seen = tick;
+    let mut fonts: Vec<(AssetUUID, Vec<u8>)> = fonts
+        .into_iter()
+        .map(|(font, handle)| (font, handle.data.clone()))
+        .collect();
+    fonts.sort();
+    fonts
+}
+
+/// **A font loaded is new once**, whatever the number of texts holding it,
+/// and not on a run where nothing changed.
+#[test]
+fn a_font_loaded_is_new_once_whatever_the_number_of_its_texts() {
+    let mut scene = Scene::new();
+    scene.text_with_handle("First", BODY, 16.0, b"body v1");
+    scene.text_with_handle("Second", BODY, 16.0, b"body v1");
+
+    assert_eq!(
+        fonts_new_this_run(&mut scene),
+        vec![(BODY, b"body v1".to_vec())]
+    );
+    assert_eq!(fonts_new_this_run(&mut scene), vec![], "nothing changed");
+}
+
+/// **Two fonts loaded in one run are both new**, each once.
+#[test]
+fn two_fonts_loaded_in_one_run_are_both_new() {
+    let mut scene = Scene::new();
+    scene.text_with_handle("Body", BODY, 16.0, b"body v1");
+    scene.text_with_handle("Title", TITLE, 16.0, b"title v1");
+
+    let mut expected = vec![(BODY, b"body v1".to_vec()), (TITLE, b"title v1".to_vec())];
+    expected.sort();
+    assert_eq!(fonts_new_this_run(&mut scene), expected);
+}
+
+/// **A text spawned sharing a held file brings no new font**: the resolver
+/// hands it the handle the other texts hold.
+#[test]
+fn a_text_spawned_sharing_a_held_file_brings_no_new_font() {
+    let mut scene = Scene::new();
+    let shared = font_handle(BODY, b"body v1");
+    scene.world.spawn((
+        UiTransform::default(),
+        text("First", BODY, 16.0),
+        shared.clone(),
+    ));
+    fonts_new_this_run(&mut scene);
+
+    scene.world.spawn((
+        UiTransform::default(),
+        text("Second", BODY, 16.0),
+        shared.clone(),
+    ));
+
+    assert_eq!(fonts_new_this_run(&mut scene), vec![]);
+}
+
+/// **A replaced handle brings its font once**, though every text in the font
+/// had its handle replaced.
+#[test]
+fn a_replaced_handle_brings_its_font_once_whatever_the_number_of_its_texts() {
+    let mut scene = Scene::new();
+    let first = scene.text_with_handle("First", BODY, 16.0, b"body v1");
+    let second = scene.text_with_handle("Second", BODY, 16.0, b"body v1");
+    fonts_new_this_run(&mut scene);
+
+    for entity in [first, second] {
+        assert!(scene
+            .world
+            .set_component(entity, font_handle(BODY, b"body v2")));
+    }
+
+    assert_eq!(
+        fonts_new_this_run(&mut scene),
+        vec![(BODY, b"body v2".to_vec())]
+    );
+}
+
+/// **A text spawned with a new file of a held font brings that file**: the
+/// resolver loaded the font again for it, the older texts keep the file they
+/// had.
+#[test]
+fn a_text_spawned_with_a_new_file_of_a_held_font_brings_it() {
+    let mut scene = Scene::new();
+    scene.text_with_handle("First", BODY, 16.0, b"body v1");
+    fonts_new_this_run(&mut scene);
+
+    scene.text_with_handle("Second", BODY, 16.0, b"body v2");
+
+    assert_eq!(
+        fonts_new_this_run(&mut scene),
+        vec![(BODY, b"body v2".to_vec())]
+    );
+}
+
+/// **The built-in font is never new**, whatever handle carries its id.
+#[test]
+fn the_built_in_font_is_never_new() {
+    let mut scene = Scene::new();
+    scene.world.spawn(font_handle(Font::BUILT_IN, UNREADABLE));
+
+    assert_eq!(fonts_new_this_run(&mut scene), vec![]);
+}

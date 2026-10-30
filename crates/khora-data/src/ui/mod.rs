@@ -17,6 +17,7 @@
 //! Provides UI components and layout management for the Khora Engine.
 
 pub mod components;
+pub mod glyph_atlas;
 pub mod image_atlas;
 pub mod layout_view;
 mod scene;
@@ -24,6 +25,7 @@ pub mod systems;
 pub mod text_layout;
 
 pub use components::*;
+pub use glyph_atlas::{GlyphAtlas, GlyphSlot};
 pub use image_atlas::UiImageAtlas;
 pub use scene::{ExtractedUiNode, ExtractedUiText, UiAtlasMap, UiScene};
 pub use text_layout::UiTextLayout;

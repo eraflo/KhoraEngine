@@ -15,4 +15,5 @@
 //! The UI's invariant systems, each a [`crate::ecs::DataSystemRegistration`]
 //! the engine dispatches in its declared phase.
 
+pub(crate) mod glyphs_on_gpu;
 pub(crate) mod text_layout;

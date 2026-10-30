@@ -25,5 +25,6 @@
 
 pub mod fixtures;
 mod frames;
+mod glyphs_on_gpu;
 mod registration;
 mod text_layout;

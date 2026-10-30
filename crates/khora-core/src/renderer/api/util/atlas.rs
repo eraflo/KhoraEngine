@@ -159,6 +159,12 @@ impl TextureAtlas {
         })
     }
 
+    /// Whether an image `width` × `height` fits this atlas once empty: a
+    /// `false` means no rebuild will ever make room for it.
+    pub fn could_hold(&self, width: u32, height: u32) -> bool {
+        fits_when_empty(self.size, self.padding, width, height)
+    }
+
     /// Returns the texture handle that stores the atlas pixels.
     pub fn texture(&self) -> TextureId {
         self.texture
@@ -172,5 +178,31 @@ impl TextureAtlas {
     /// Returns the atlas side length in pixels.
     pub fn size(&self) -> u32 {
         self.size
+    }
+}
+
+/// Whether an image fits an empty atlas of side `size` whose images keep
+/// `padding` pixels from each other and from the edges.
+fn fits_when_empty(size: u32, padding: u32, width: u32, height: u32) -> bool {
+    let margins = padding.saturating_mul(2);
+    width.saturating_add(margins) <= size && height.saturating_add(margins) <= size
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fits_when_empty;
+
+    /// An image fits an empty atlas when it leaves the padding on both sides,
+    /// along each axis.
+    #[test]
+    fn an_image_fits_an_empty_atlas_within_its_padding() {
+        assert!(fits_when_empty(32, 2, 28, 28));
+        assert!(!fits_when_empty(32, 2, 29, 28));
+        assert!(!fits_when_empty(32, 2, 28, 29));
+        assert!(fits_when_empty(32, 2, 0, 0));
+        assert!(
+            !fits_when_empty(3, 2, 0, 0),
+            "an atlas narrower than its padding holds nothing"
+        );
     }
 }
