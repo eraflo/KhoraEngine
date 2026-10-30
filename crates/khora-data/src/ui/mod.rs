@@ -20,7 +20,10 @@ pub mod components;
 pub mod image_atlas;
 pub mod layout_view;
 mod scene;
+pub mod systems;
+pub mod text_layout;
 
 pub use components::*;
 pub use image_atlas::UiImageAtlas;
 pub use scene::{ExtractedUiNode, ExtractedUiText, UiAtlasMap, UiScene};
+pub use text_layout::UiTextLayout;

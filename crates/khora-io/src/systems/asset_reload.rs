@@ -26,6 +26,7 @@ use khora_data::ecs::SystemContext;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
+use khora_core::asset::font::Font;
 use khora_core::asset::{Asset, AssetHandle, AssetUUID, Material};
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
@@ -106,15 +107,18 @@ fn asset_reload_system(
     let refreshed = reload.textures(&changed);
     let held_materials = reload.materials(world, &changed, &refreshed);
     let held_meshes = reload.meshes(world, &changed);
+    let held_fonts = reload.fonts(world, &changed);
 
     // A changed asset no entity holds keeps no copy: the resolver decodes it
     // afresh when a reference names it again.
     for uuid in &changed {
-        if held_materials.contains(uuid) || held_meshes.contains(uuid) {
+        if held_materials.contains(uuid) || held_meshes.contains(uuid) || held_fonts.contains(uuid)
+        {
             continue;
         }
         reload.forget::<Box<dyn Material>>(uuid);
         reload.forget::<Mesh>(uuid);
+        reload.forget::<Font>(uuid);
         reload.retire(uuid);
     }
 }
@@ -289,6 +293,40 @@ impl Reload<'_> {
                     self.retire(&uuid);
                     drop_component::<HandleComponent<Mesh>>(world, entity);
                     drop_component::<HandleComponent<GpuMesh>>(world, entity);
+                }
+                Reloaded::Kept => {}
+            }
+        }
+        held
+    }
+
+    /// Replaces every entity's resolved font that changed, under its uuid:
+    /// the handle written again is what tells the text systems to register
+    /// the new file and lay their texts out with it. Returns the changed fonts
+    /// some entity holds.
+    fn fonts(&mut self, world: &mut World, changed: &HashSet<AssetUUID>) -> HashSet<AssetUUID> {
+        let affected: Vec<(EntityId, AssetUUID, AssetHandle<Font>)> = world
+            .query::<(EntityId, &HandleComponent<Font>)>()
+            .filter(|(_, resolved)| changed.contains(&resolved.uuid))
+            .map(|(entity, resolved)| (entity, resolved.uuid, resolved.handle.clone()))
+            .collect();
+
+        let mut held = HashSet::new();
+        let mut reloaded: HashMap<AssetUUID, Reloaded<Font>> = HashMap::new();
+        for (entity, uuid, current) in affected {
+            held.insert(uuid);
+            let outcome = reloaded
+                .entry(uuid)
+                .or_insert_with(|| self.reload::<Font>(&uuid, &current))
+                .clone();
+            match outcome {
+                Reloaded::Fresh(font) => {
+                    self.publish(uuid, &font);
+                    world.set_component(entity, HandleComponent { handle: font, uuid });
+                }
+                Reloaded::Gone => {
+                    self.forget::<Font>(&uuid);
+                    drop_component::<HandleComponent<Font>>(world, entity);
                 }
                 Reloaded::Kept => {}
             }

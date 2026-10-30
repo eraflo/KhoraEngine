@@ -119,7 +119,9 @@ pub struct ShapedText {
 pub trait TextShaper: Send + Sync {
     /// Registers the font file `data` under `id` and returns the family the
     /// file declares. Registering an `id` again replaces its font (a hot
-    /// reload): later shaping under `id` uses the new data.
+    /// reload): later shaping under `id` uses the new data. A refused
+    /// registration leaves `id` with no font — never the file it held before,
+    /// which is no longer the one its owner holds.
     fn register_font(&self, id: AssetUUID, data: Arc<[u8]>) -> Result<FontFamily, FontError>;
 
     /// Shapes `request.text` with the font registered under `request.font`.
@@ -213,7 +215,8 @@ impl GlyphKey {
 /// many threads at once without deadlocking.
 pub trait GlyphRasterizer: Send + Sync {
     /// Registers the font file `data` under `id`. Registering an `id` again
-    /// replaces its font (a hot reload).
+    /// replaces its font (a hot reload); a refused registration leaves `id`
+    /// with no font.
     fn register_font(&self, id: AssetUUID, data: Arc<[u8]>) -> Result<(), FontError>;
 
     /// Rasterises the glyph `key` names, offset right by its subpixel bin.

@@ -97,6 +97,30 @@ impl Default for SwashRasterizer {
 
 impl GlyphRasterizer for SwashRasterizer {
     fn register_font(&self, id: AssetUUID, data: Arc<[u8]>) -> Result<(), FontError> {
+        let registered = self.read_font(data);
+        let mut state = self.state();
+        match registered {
+            // Refused: the id holds no font, not the file it held before.
+            Err(error) => {
+                state.fonts.remove(&id);
+                Err(error)
+            }
+            Ok(registered) => {
+                state.fonts.insert(id, registered);
+                Ok(())
+            }
+        }
+    }
+
+    fn rasterize(&self, key: &GlyphKey) -> Option<GlyphImage> {
+        self.draw(key)
+    }
+}
+
+impl SwashRasterizer {
+    /// Reads a font file by the rule the shaper reads it by; its first face
+    /// is the one drawn. Outside any lock.
+    fn read_font(&self, data: Arc<[u8]>) -> Result<Registered, FontError> {
         // Read outside the lock: only the insertion is under it. The file is
         // a font by the rule the shaper reads it by, and its first face is
         // the one drawn.
@@ -110,17 +134,16 @@ impl GlyphRasterizer for SwashRasterizer {
         if glyph_count == 0 {
             return Err(FontError::Unreadable);
         }
-        let registered = Registered {
+        Ok(Registered {
             data: Arc::clone(&data),
             offset,
             key,
             glyph_count,
-        };
-        self.state().fonts.insert(id, registered);
-        Ok(())
+        })
     }
 
-    fn rasterize(&self, key: &GlyphKey) -> Option<GlyphImage> {
+    /// Rasterises `key` (see [`GlyphRasterizer::rasterize`]).
+    fn draw(&self, key: &GlyphKey) -> Option<GlyphImage> {
         let mut state = self.state();
         let State { fonts, scale } = &mut *state;
         let registered = fonts.get(&key.font)?;

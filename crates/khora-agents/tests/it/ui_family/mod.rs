@@ -26,3 +26,4 @@
 pub mod fixtures;
 mod frames;
 mod registration;
+mod text_layout;

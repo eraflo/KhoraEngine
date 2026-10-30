@@ -81,7 +81,14 @@ impl TextShaper for ParleyShaper {
     fn register_font(&self, id: AssetUUID, data: Arc<[u8]>) -> Result<FontFamily, FontError> {
         // Parsed outside the lock: only the insertion is under it.
         let mut context = FontContext::new();
-        let family = super::register_first_face(&mut context.collection, data)?;
+        let family = match super::register_first_face(&mut context.collection, data) {
+            Ok(family) => family,
+            Err(error) => {
+                // Refused: the id holds no font, not the file it held before.
+                self.state().fonts.remove(&id);
+                return Err(error);
+            }
+        };
         self.state().fonts.insert(
             id,
             Registered {
