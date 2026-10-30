@@ -23,12 +23,15 @@ use std::any::TypeId;
 
 mod changed;
 mod columns;
+mod fetch_context;
 mod read;
 mod without;
 mod write;
 
 pub use changed::Changed;
 pub use columns::Soa;
+pub use fetch_context::FetchContext;
+pub(crate) use fetch_context::Writable;
 pub use read::Query;
 pub use without::Without;
 pub use write::QueryMut;
@@ -123,33 +126,6 @@ pub(crate) struct NativeRowPlan {
 // ------------------------- //
 // ---- WorldQuery Part ---- //
 // ------------------------- //
-
-/// What a query's items are fetched with: the tick a write through a
-/// writable item carries — the world's [`current_tick`](World::current_tick)
-/// —, the keys of the query's writable terms that some observer watches,
-/// whose columns gain row ticks on their first write, and the tick its
-/// [`Changed`] terms compare against.
-#[derive(Debug, Clone, Copy)]
-pub struct FetchContext<'s> {
-    pub(crate) tick: Tick,
-    pub(crate) observed: &'s [ComponentKey],
-    pub(crate) since: Tick,
-}
-
-impl FetchContext<'_> {
-    /// The context of a query that writes nothing.
-    pub(crate) fn read_only(tick: Tick, since: Tick) -> Self {
-        FetchContext {
-            tick,
-            observed: &[],
-            since,
-        }
-    }
-
-    fn observes(&self, key: ComponentKey) -> bool {
-        self.observed.contains(&key)
-    }
-}
 
 /// A trait implemented by types that can be used to query data from the `World`.
 ///
@@ -333,7 +309,10 @@ impl<T: Component> WorldQuery for &mut T {
         // earlier call handed out from it.
         let value = vec.as_mut_ptr().add(row_index);
         let key = ComponentKey::of::<T>();
-        Mut::in_page(value, page_ptr, key, ctx.observes(key), row_index, ctx.tick)
+        {
+            let (observed, epoch) = ctx.writable(key);
+            Mut::in_page(value, page_ptr, key, observed, epoch, row_index, ctx.tick)
+        }
     }
 
     unsafe fn fetch_from_world<'a>(
@@ -343,13 +322,13 @@ impl<T: Component> WorldQuery for &mut T {
     ) -> Option<Self::Item<'a>> {
         let location = live_location::<T>(&*world, entity_id)?;
         let key = ComponentKey::of::<T>();
-        let (tick, observed) = (ctx.tick, ctx.observes(key));
+        let (tick, (observed, epoch)) = (ctx.tick, ctx.writable(key));
         let page = page_of_world(world, location.page_id)?;
         let row = location.row_index as usize;
         let column = (*page).columns.get_mut(&ComponentKey::of::<T>())?;
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
         let value = column_item(vec, row)?;
-        Some(Mut::in_page(value, page, key, observed, row, tick))
+        Some(Mut::in_page(value, page, key, observed, epoch, row, tick))
     }
 }
 
@@ -429,13 +408,9 @@ impl<T: Component> WorldQuery for Option<&mut T> {
         let column = page.columns.get_mut(&key)?;
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
         let value = column_item(vec, row_index)?;
+        let (observed, epoch) = ctx.writable(key);
         Some(Mut::in_page(
-            value,
-            page_ptr,
-            key,
-            ctx.observes(key),
-            row_index,
-            ctx.tick,
+            value, page_ptr, key, observed, epoch, row_index, ctx.tick,
         ))
     }
 
@@ -451,7 +426,7 @@ impl<T: Component> WorldQuery for Option<&mut T> {
             return Some(None);
         };
         let key = ComponentKey::of::<T>();
-        let (tick, observed) = (ctx.tick, ctx.observes(key));
+        let (tick, (observed, epoch)) = (ctx.tick, ctx.writable(key));
         let Some(page) = page_of_world(world, location.page_id) else {
             return Some(None);
         };
@@ -462,7 +437,7 @@ impl<T: Component> WorldQuery for Option<&mut T> {
                 .get_mut(&ComponentKey::of::<T>())
                 .and_then(|column| column.as_any_mut().downcast_mut::<Vec<T>>())
                 .and_then(|vec| column_item(vec, row))
-                .map(|value| Mut::in_page(value, page, key, observed, row, tick)),
+                .map(|value| Mut::in_page(value, page, key, observed, epoch, row, tick)),
         )
     }
 }

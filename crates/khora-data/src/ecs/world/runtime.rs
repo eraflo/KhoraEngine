@@ -279,7 +279,6 @@ impl World {
                 report.dropped
             );
         }
-        let domain = vtable.domain;
         let mut layout = layout;
         layout.kept_for(vtable.provenance);
         let layout = Arc::new(layout);
@@ -302,7 +301,6 @@ impl World {
         self.storage
             .registry
             .set_columns(key, Arc::new(PackedColumns::new(layout)));
-        self.bump_domain_epoch(domain);
         Ok(report)
     }
 

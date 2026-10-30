@@ -41,7 +41,7 @@ impl World {
     /// A row of an entity that is gone, or holds no such component, is
     /// skipped; a row a field refuses is skipped whole; the others apply. Of
     /// two rows of one entity, the later is the one left written. The
-    /// component's domain epoch is bumped once, when anything was written.
+    /// component's domain epoch rises with the first row written.
     pub fn write_column<'v>(
         &mut self,
         key: ComponentKey,
@@ -113,9 +113,6 @@ impl World {
                 self.stamp_row(page, key, row);
             }
             start = end;
-        }
-        if report.written > 0 {
-            self.bump_domain_epoch(domain);
         }
         report
     }

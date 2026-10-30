@@ -161,3 +161,55 @@ impl Flow for AudioFlow {
 }
 
 register_flow!(AudioFlow);
+
+#[cfg(test)]
+mod tests {
+    use khora_core::ecs::entity::EntityId;
+    use khora_core::renderer::light::{DirectionalLight, LightType};
+    use khora_core::Runtime;
+
+    use super::AudioFlow;
+    use crate::ecs::{AudioSource, Camera, GlobalTransform, Light, World};
+    use crate::flow::{Flow, Selection};
+
+    /// The sources of a fresh projection, in the view's order.
+    fn sources(world: &World) -> Vec<EntityId> {
+        AudioFlow
+            .project(world, &Selection::new(), &Runtime::new())
+            .sources
+            .iter()
+            .map(|source| source.entity)
+            .collect()
+    }
+
+    /// **An unchanged key means an unchanged view.** A source whose row is
+    /// shared with a Render component (one mixed bundle) moves page when a
+    /// Render component is added to it; its sources come out in another order,
+    /// so the cached view, in the old one, must not be served.
+    #[test]
+    fn a_source_moved_by_a_render_migration_invalidates_the_audio_cache() {
+        let mut world = World::new();
+        let runtime = Runtime::new();
+        let light = || Light::new(LightType::Directional(DirectionalLight::default()));
+        let moved = world.spawn((GlobalTransform::identity(), AudioSource::default(), light()));
+        world.spawn((GlobalTransform::identity(), AudioSource::default()));
+        world.begin_run();
+        world.end_run();
+        let (key, before) = (AudioFlow.cache_key(&world, &runtime), sources(&world));
+
+        world
+            .add_component(
+                moved,
+                Camera::new_perspective(std::f32::consts::FRAC_PI_3, 0.1, 100.0),
+            )
+            .expect("add");
+
+        let after = sources(&world);
+        assert_ne!(after, before, "the sources changed order");
+        assert_ne!(
+            AudioFlow.cache_key(&world, &runtime),
+            key,
+            "the projection changed ({before:?} -> {after:?}), the cached view must not be served"
+        );
+    }
+}

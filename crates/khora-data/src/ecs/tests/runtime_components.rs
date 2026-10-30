@@ -647,13 +647,16 @@ fn a_runtime_field_refuses_the_wrong_kind() {
 }
 
 #[test]
-fn setting_a_runtime_field_bumps_its_domain_epoch() {
+fn setting_a_runtime_field_moves_its_domain_epoch() {
     let mut world = World::new();
     let stats = declare(&mut world, "Stats", SemanticDomain::Physics, stats_fields());
     let entity = world.spawn(());
     world
         .add_runtime_component(entity, stats, &ScriptValue::Unit)
         .expect("Stats attach");
+    // The clock moves past the setup, so the write below carries a later
+    // tick than the rows it finds.
+    world.end_run();
     let before = world.domain_epoch(SemanticDomain::Physics);
 
     write(&mut world, entity, stats, "speed", ScriptValue::Float(3.0)).expect("a float fits");
@@ -702,6 +705,9 @@ fn removing_a_runtime_component_detaches_it() {
     };
     let entity = spawn(&mut world, 1.0);
     let other = spawn(&mut world, 2.0);
+    // The clock moves past the setup, so the change below carries a later
+    // tick than the rows it finds.
+    world.end_run();
     let spatial_epoch = world.domain_epoch(SemanticDomain::Spatial);
 
     assert!(world.remove_component_by_key(entity, marker));

@@ -53,6 +53,8 @@ enum Ticks {
         page: *mut ComponentPage,
         key: ComponentKey,
         observed: bool,
+        /// The change epoch of the column's domain, raised with the write.
+        epoch: *mut u64,
     },
 }
 
@@ -77,20 +79,22 @@ impl<'w, T> Mut<'w, T> {
 
     /// A guard over `value`, row `row` of column `key` in `page`, stamping
     /// `tick` on its first write — giving the column row ticks first when it
-    /// is `observed` and keeps none. Guards made this way over one column may
+    /// is `observed` and keeps none — and raising `epoch`, its domain's
+    /// change epoch, to that tick. Guards made this way over one column may
     /// live together.
     ///
     /// # Safety
     ///
-    /// `value` and `page` are valid for `'w`; no other reference to `*value`
-    /// is live while the guard is; no reference to `page`'s ticks or entity
-    /// list is live when the guard is written through; `row` is `value`'s row
-    /// in column `key` of `page`.
+    /// `value`, `page` and `epoch` are valid for `'w`; no other reference to
+    /// `*value` is live while the guard is; no reference to `page`'s ticks or
+    /// entity list, nor to `epoch`, is live when the guard is written through;
+    /// `row` is `value`'s row in column `key` of `page`.
     pub(crate) unsafe fn in_page(
         value: *mut T,
         page: *mut ComponentPage,
         key: ComponentKey,
         observed: bool,
+        epoch: *mut u64,
         row: usize,
         tick: Tick,
     ) -> Self {
@@ -100,6 +104,7 @@ impl<'w, T> Mut<'w, T> {
                 page,
                 key,
                 observed,
+                epoch,
             },
             row,
             tick,
@@ -165,6 +170,7 @@ impl<'w, T> Mut<'w, T> {
                     page,
                     key,
                     observed,
+                    epoch,
                 } => {
                     let rows = (*page).entities.len();
                     if let Some(ticks) = (*page).ticks.get_mut(&key) {
@@ -173,6 +179,7 @@ impl<'w, T> Mut<'w, T> {
                         }
                         ticks.stamp(self.row, self.tick);
                     }
+                    *epoch = (*epoch).max(self.tick.0);
                 }
             }
         }

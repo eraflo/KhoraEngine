@@ -156,15 +156,6 @@ impl World {
             .registry
             .record_access(&plan_key(&type_ids), rows_scanned);
 
-        // The caller may write through every `&mut` term of the query:
-        // mark those domains changed ONCE here, at construction — never
-        // per row, which would put the bump on the iteration hot path.
-        for type_id in Q::mutable_type_ids() {
-            if let Some(domain) = self.storage.registry.get_domain(type_id) {
-                self.bump_domain_epoch(domain);
-            }
-        }
-
         // 3. Construct the iterator
         QueryMut::new(self, plan, matching_page_indices, row_plan)
     }

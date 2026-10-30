@@ -210,6 +210,9 @@ fn a_moved_component_is_read_and_written_in_its_new_domain() {
     world
         .move_component_domain(wake, SemanticDomain::Physics)
         .expect("Wake moves");
+    // The clock moves past the setup, so the write below carries a later
+    // tick than the rows it finds.
+    world.end_run();
 
     let physics = world.domain_epoch(SemanticDomain::Physics);
     let slot = super::runtime_components::slot(&world, wake, "strength").expect("a slot");
@@ -232,8 +235,11 @@ fn a_moved_component_is_read_and_written_in_its_new_domain() {
 
 /// A move changes where data lives for both domains: each one's epoch says so.
 #[test]
-fn a_domain_move_bumps_both_domains() {
+fn a_domain_move_moves_both_domain_epochs() {
     let (mut world, wake, _, _) = wakes();
+    // The clock moves past the setup, so the change below carries a later
+    // tick than the rows it finds.
+    world.end_run();
     let script = world.domain_epoch(SemanticDomain::Script);
     let physics = world.domain_epoch(SemanticDomain::Physics);
 

@@ -96,6 +96,49 @@ impl World {
             page.order += 1;
         }
         self.storage.dirty_pages.insert(page_id);
+        self.note_page_changed(page_id);
+    }
+
+    /// Raises, to now, the change epoch of every domain page `page_id` holds
+    /// columns of: one of its rows was pushed, moved or left behind, so the
+    /// rows of each of those domains — a mixed page holds several — are no
+    /// longer where they were. Called wherever a page's order ω moves or a
+    /// row is pushed onto it.
+    pub(crate) fn note_page_changed(&mut self, page_id: u32) {
+        let Some(page) = self.storage.pages.get(page_id as usize) else {
+            return;
+        };
+        let now = self.clock.tick.0;
+        for key in &page.keys {
+            if let Some(domain) = self.storage.registry.domain_of(*key) {
+                let epoch = &mut self.domain_epochs[domain.index()];
+                *epoch = (*epoch).max(now);
+            }
+        }
+    }
+
+    /// A pointer to `domain`'s change epoch in `world`, for a writable guard
+    /// to raise when it is written through.
+    ///
+    /// # Safety
+    ///
+    /// `world` is valid and keeps write permission over the world for as
+    /// long as the pointer is used; no reference to the epochs is live when
+    /// it is written through.
+    pub(crate) unsafe fn domain_epoch_slot(
+        world: *mut World,
+        domain: crate::ecs::SemanticDomain,
+    ) -> *mut u64 {
+        // A place projection: no reference to the world or its epochs is made.
+        unsafe { std::ptr::addr_of_mut!((*world).domain_epochs[domain.index()]) }
+    }
+
+    /// Raises the change epoch of `key`'s domain to now: a value of it was
+    /// written.
+    fn note_written(&mut self, key: ComponentKey) {
+        if let Some(domain) = self.storage.registry.domain_of(key) {
+            self.bump_domain_epoch(domain);
+        }
     }
 
     /// Notes a write of row `row` of `key` in page `page_id`, now. An observed
@@ -112,6 +155,7 @@ impl World {
                 ticks.stamp(row, tick);
             }
         }
+        self.note_written(key);
     }
 
     /// Notes a write of every row of `key` in page `page_id`, now.
@@ -126,6 +170,7 @@ impl World {
                 ticks.stamp_all(tick);
             }
         }
+        self.note_written(key);
     }
 
     /// Drops the row ticks of every page column that has been silent at least

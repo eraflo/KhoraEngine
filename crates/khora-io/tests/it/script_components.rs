@@ -163,7 +163,7 @@ fn epochs(world: &World) -> Vec<u64> {
 
 /// **`[Domain(Physics)]` places the data**: the component is registered under
 /// its name's key, in the Physics domain, authored (a scene keeps it); a row
-/// of it is a Physics row — a write bumps Physics, not Script.
+/// of it is a Physics row — a write moves Physics, not Script.
 #[test]
 fn a_script_component_lives_in_its_declared_domain() {
     let (mut world, _, report) = registered(&[declarations("game/health.erg", HEALTH)]);
@@ -178,6 +178,9 @@ fn a_script_component_lives_in_its_declared_domain() {
 
     let entity = world.spawn(Transform::identity());
     attach(&mut world, entity, "Health", ScriptValue::Unit);
+    // The clock moves past the setup, so the write below carries a later
+    // tick than the rows it finds.
+    world.end_run();
     let (physics, script) = (
         world.domain_epoch(SemanticDomain::Physics),
         world.domain_epoch(SemanticDomain::Script),
@@ -726,9 +729,9 @@ fn a_component_moving_between_modules_in_one_batch_stays_declared() {
 }
 
 /// **The same declaration again changes nothing** — no relayout, no move, no
-/// epoch bumped, so nothing projected from it is invalidated.
+/// domain epoch moved, so nothing projected from it is invalidated.
 #[test]
-fn an_unchanged_declaration_bumps_no_epoch() {
+fn an_unchanged_declaration_moves_no_domain_epoch() {
     let (mut world, mut state, written, _) = reloading(HEALTH);
     let before = epochs(&world);
 

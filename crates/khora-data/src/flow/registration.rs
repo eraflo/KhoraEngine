@@ -144,8 +144,9 @@ mod tests {
         projections: usize,
     }
 
-    /// Cached test flow keyed on the Audio + Spatial epochs, mirroring the
-    /// real `AudioFlow` key; counts how many times `project` actually runs.
+    /// Cached test flow keyed on the Audio + Spatial domain epochs,
+    /// mirroring the real `AudioFlow` key; counts how many times `project`
+    /// actually runs.
     #[derive(Default)]
     struct CountedFlow {
         projections: AtomicUsize,
@@ -246,6 +247,49 @@ mod tests {
         assert_eq!(
             bus.get::<CountedView>(),
             Some(&CountedView { projections: 2 })
+        );
+    }
+
+    /// Handing out `&mut` access is not a write: a cached flow keyed on the
+    /// domain epochs keeps its view while its components are only read
+    /// through `get_mut` and `query_mut`, and re-projects once one is written.
+    #[test]
+    fn cached_flow_keeps_its_view_when_access_is_handed_out_but_nothing_is_written() {
+        let mut world = World::new();
+        let runtime = Runtime::new();
+        let mut flow = CountedFlow::default();
+        let mut cache = None;
+        let listener = world.spawn(AudioListener);
+        world.spawn(AudioSource::default());
+
+        let mut bus = LaneBus::new();
+        super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
+        assert_eq!(flow.projections.load(Ordering::Relaxed), 1);
+        // The clock moves past the setup, as it does between runs.
+        world.end_run();
+
+        assert!(world.get_mut::<AudioListener>(listener).is_some());
+        let sources = world.query_mut::<&mut AudioSource>().count();
+        assert_eq!(sources, 1);
+
+        let mut bus = LaneBus::new();
+        super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
+        assert_eq!(
+            flow.projections.load(Ordering::Relaxed),
+            1,
+            "access handed out with no write must not invalidate the cached view"
+        );
+
+        *world
+            .get_mut::<AudioListener>(listener)
+            .expect("the listener is there") = AudioListener;
+
+        let mut bus = LaneBus::new();
+        super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
+        assert_eq!(
+            flow.projections.load(Ordering::Relaxed),
+            2,
+            "a write of the flow's domain must invalidate the cached view"
         );
     }
 

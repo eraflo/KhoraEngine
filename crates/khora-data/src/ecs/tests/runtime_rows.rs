@@ -253,8 +253,11 @@ fn relayout_drops_and_retypes_value_fields_down_to_none_and_back() {
 }
 
 #[test]
-fn relayout_bumps_its_domain_epoch() {
+fn relayout_moves_its_domain_epoch() {
     let (mut world, badge, _, _) = crowd();
+    // The clock moves past the setup, so the write below carries a later
+    // tick than the rows it finds.
+    world.end_run();
     let before = world.domain_epoch(SemanticDomain::Spatial);
     world
         .relayout(
@@ -319,6 +322,9 @@ fn filters_and_options_see_rows_beside_runtime_components() {
         2
     );
 
+    // The clock moves past the setup, so the write below carries a later
+    // tick than the rows it finds.
+    world.end_run();
     let before = world.domain_epoch(SemanticDomain::Physics);
     for mut v in world.query_mut::<&mut Velocity>() {
         v.0 += 1;

@@ -14,7 +14,7 @@
 
 //! `QueryMut`: iterating a query over an exclusive `&mut World`.
 
-use super::{has_foreign_excluded, is_live_row, FetchContext, NativeRowPlan, WorldQuery};
+use super::{has_foreign_excluded, is_live_row, FetchContext, NativeRowPlan, WorldQuery, Writable};
 use crate::ecs::{ComponentKey, DomainBitset, QueryMode, QueryPlan, Tick, World};
 use std::marker::PhantomData;
 
@@ -39,8 +39,8 @@ pub struct QueryMut<'a, Q: WorldQuery> {
     row_plan: NativeRowPlan,
     /// The tick the query's `Changed` terms compare against (see `since`).
     since: Tick,
-    /// The writable terms' keys some observer watches (see [`FetchContext`]).
-    observed: Vec<ComponentKey>,
+    /// The writable terms (see [`FetchContext`]).
+    writable: Vec<Writable>,
 }
 
 impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
@@ -54,13 +54,27 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
         row_plan: NativeRowPlan,
     ) -> Self {
         let combined_bitset = world.compute_query_bitset(&plan);
-        let observed = Q::mutable_type_ids()
-            .into_iter()
-            .map(ComponentKey::Rust)
-            .filter(|key| world.is_observed(*key))
-            .collect();
+        let world_ptr: *mut World = world;
+        // SAFETY: `world_ptr` is the exclusively borrowed world, held for
+        // `'a`; the epoch slots are place projections into it, written only
+        // by the guards this query hands out, never while a reference to the
+        // epochs is live.
+        let writable = unsafe {
+            Q::mutable_type_ids()
+                .into_iter()
+                .filter_map(|type_id| {
+                    let domain = (*world_ptr).storage.registry.get_domain(type_id)?;
+                    let key = ComponentKey::Rust(type_id);
+                    Some(Writable {
+                        key,
+                        observed: (*world_ptr).is_observed(key),
+                        epoch: World::domain_epoch_slot(world_ptr, domain),
+                    })
+                })
+                .collect()
+        };
         Self {
-            world_ptr: world as *mut _,
+            world_ptr,
             matching_page_indices,
             plan,
             current_page_index: 0,
@@ -69,7 +83,7 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             combined_bitset,
             row_plan,
             since: Tick::default(),
-            observed,
+            writable,
         }
     }
 }
@@ -120,7 +134,7 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             }
             let ctx = FetchContext {
                 tick: world.current_tick(),
-                observed: &self.observed,
+                writable: &self.writable,
                 since: self.since,
             };
 
@@ -186,7 +200,7 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             let tick = unsafe { (*self.world_ptr).current_tick() };
             let ctx = FetchContext {
                 tick,
-                observed: &self.observed,
+                writable: &self.writable,
                 since: self.since,
             };
             // SAFETY: same invariant as `next_native` — `world_ptr` came from the
@@ -233,7 +247,7 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             let page = &world.storage.pages[page_id];
             let ctx = FetchContext {
                 tick: world.current_tick(),
-                observed: &self.observed,
+                writable: &self.writable,
                 since: self.since,
             };
 

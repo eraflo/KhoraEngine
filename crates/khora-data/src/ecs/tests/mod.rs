@@ -18,6 +18,7 @@ mod changed;
 mod column_writes;
 mod component_keys;
 mod declared_names;
+mod domain_epochs;
 mod domain_moves;
 mod entity_count;
 mod entity_count_unwind;
@@ -1086,7 +1087,7 @@ fn world_instances_have_unique_ids() {
 }
 
 #[test]
-fn spawn_bumps_only_the_spawned_domains() {
+fn spawn_moves_only_the_spawned_domains() {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);
 
@@ -1097,20 +1098,23 @@ fn spawn_bumps_only_the_spawned_domains() {
 
     assert!(
         world.domain_epoch(SemanticDomain::Spatial) > spatial,
-        "spawn must bump the spawned component's domain"
+        "spawn must move the spawned component's domain"
     );
     assert_eq!(
         world.domain_epoch(SemanticDomain::Render),
         render,
-        "spawn must not bump unrelated domains"
+        "spawn must not move unrelated domains"
     );
 }
 
 #[test]
-fn despawn_bumps_the_entity_domains() {
+fn despawn_moves_the_entity_domains() {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);
     let entity = world.spawn(Position(1));
+    // The clock moves past the setup, so the change below carries a later
+    // tick than the rows it finds.
+    world.end_run();
 
     let spatial = world.domain_epoch(SemanticDomain::Spatial);
     assert!(world.despawn(entity));
@@ -1118,7 +1122,7 @@ fn despawn_bumps_the_entity_domains() {
 }
 
 #[test]
-fn add_and_remove_component_bump_that_component_domain() {
+fn add_and_remove_component_move_that_component_domain() {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<RenderTag>(SemanticDomain::Render);
@@ -1129,51 +1133,73 @@ fn add_and_remove_component_bump_that_component_domain() {
         .add_component(entity, RenderTag)
         .expect("add_component");
     let after_add = world.domain_epoch(SemanticDomain::Render);
-    assert!(after_add > render, "add_component must bump");
+    assert!(after_add > render, "add_component must move the epoch");
+    // The clock moves past the setup, so the change below carries a later
+    // tick than the rows it finds.
+    world.end_run();
 
     world
         .remove_component::<RenderTag>(entity)
         .expect("remove_component");
     assert!(
         world.domain_epoch(SemanticDomain::Render) > after_add,
-        "remove_component must bump"
+        "remove_component must move the epoch"
     );
 }
 
+/// Handing out `&mut` is not a write: neither `get` nor a `get_mut` whose
+/// guard is only read moves the domain epoch; a write through it does.
 #[test]
-fn get_mut_bumps_but_get_does_not() {
+fn get_mut_without_a_write_leaves_the_domain_epoch() {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);
     let entity = world.spawn(Position(1));
+    // The clock moves past the setup, so a write from here on carries a
+    // later tick than the rows it finds.
+    world.end_run();
 
     let baseline = world.domain_epoch(SemanticDomain::Spatial);
     assert!(world.get::<Position>(entity).is_some());
     assert_eq!(
         world.domain_epoch(SemanticDomain::Spatial),
         baseline,
-        "shared access must not bump"
+        "shared access must not move the epoch"
     );
 
     assert!(world.get_mut::<Position>(entity).is_some());
+    assert_eq!(
+        world.domain_epoch(SemanticDomain::Spatial),
+        baseline,
+        "mutable access that writes nothing must not move the epoch"
+    );
+
+    if let Some(mut position) = world.get_mut::<Position>(entity) {
+        position.0 = 2;
+    }
     assert!(
         world.domain_epoch(SemanticDomain::Spatial) > baseline,
-        "mutable access must bump"
+        "a write through the guard must move the epoch"
     );
 }
 
 #[test]
-fn set_component_bumps_the_domain() {
+fn set_component_moves_the_domain() {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);
     let entity = world.spawn(Position(1));
+    // The clock moves past the setup, so a write from here on carries a
+    // later tick than the rows it finds.
+    world.end_run();
 
     let baseline = world.domain_epoch(SemanticDomain::Spatial);
     assert!(world.set_component(entity, Position(2)));
     assert!(world.domain_epoch(SemanticDomain::Spatial) > baseline);
 }
 
+/// A mutable query moves the epoch of the domains it wrote, never of a
+/// domain it only handed out `&mut` access to, nor of a read-only term's.
 #[test]
-fn mutable_query_bumps_only_mutably_accessed_domains() {
+fn mutable_query_moves_only_the_domains_it_wrote() {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<RenderTag>(SemanticDomain::Render);
@@ -1181,29 +1207,50 @@ fn mutable_query_bumps_only_mutably_accessed_domains() {
     world
         .add_component(entity, RenderTag)
         .expect("add_component");
+    // The clock moves past the setup, so a write from here on carries a
+    // later tick than the rows it finds.
+    world.end_run();
 
     let spatial = world.domain_epoch(SemanticDomain::Spatial);
     let render = world.domain_epoch(SemanticDomain::Render);
 
-    // `&Position` is a read-only term; only `&mut RenderTag` may write.
+    // `&Position` is a read-only term; only `&mut RenderTag` may write, and
+    // a query that is only counted writes nothing.
     let _ = world.query_mut::<(&Position, &mut RenderTag)>().count();
 
     assert_eq!(
         world.domain_epoch(SemanticDomain::Spatial),
         spatial,
-        "read-only query terms must not bump their domain"
+        "read-only query terms must not move their domain"
+    );
+    assert_eq!(
+        world.domain_epoch(SemanticDomain::Render),
+        render,
+        "`&mut` query terms that write nothing must not move their domain"
+    );
+
+    for (_, mut tag) in world.query_mut::<(&Position, &mut RenderTag)>() {
+        *tag = RenderTag;
+    }
+    assert_eq!(
+        world.domain_epoch(SemanticDomain::Spatial),
+        spatial,
+        "read-only query terms must not move their domain"
     );
     assert!(
         world.domain_epoch(SemanticDomain::Render) > render,
-        "`&mut` query terms must bump their domain"
+        "a write through a `&mut` query term must move its domain"
     );
 }
 
 #[test]
-fn read_only_query_does_not_bump() {
+fn read_only_query_does_not_move_the_domain_epoch() {
     let mut world = World::new();
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.spawn(Position(1));
+    // The clock moves past the setup, so a write from here on carries a
+    // later tick than the rows it finds.
+    world.end_run();
 
     let baseline = world.domain_epoch(SemanticDomain::Spatial);
     let _ = world.query::<&Position>().count();
@@ -1357,12 +1404,15 @@ fn respawn_after_despawn_reuses_slot_without_corrupting_survivor() {
 }
 
 #[test]
-fn despawn_multi_domain_bumps_every_domain_epoch() {
+fn despawn_multi_domain_moves_every_domain_epoch() {
     let mut world = multi_domain_world();
 
     let a = world.spawn((Position(1), RenderId(10)));
     let _b = world.spawn((Position(2), RenderId(20)));
 
+    // The clock moves past the setup, so the change below carries a later
+    // tick than the rows it finds.
+    world.end_run();
     let spatial = world.domain_epoch(SemanticDomain::Spatial);
     let render = world.domain_epoch(SemanticDomain::Render);
 
@@ -1370,11 +1420,11 @@ fn despawn_multi_domain_bumps_every_domain_epoch() {
 
     assert!(
         world.domain_epoch(SemanticDomain::Spatial) > spatial,
-        "despawn must bump the Spatial epoch"
+        "despawn must move the Spatial epoch"
     );
     assert!(
         world.domain_epoch(SemanticDomain::Render) > render,
-        "despawn must bump the Render epoch"
+        "despawn must move the Render epoch"
     );
 }
 
@@ -1518,10 +1568,13 @@ fn migrating_a_multi_domain_entity_keeps_it_co_located_without_dead_columns() {
 }
 
 #[test]
-fn compaction_bumps_page_domains_only_when_a_row_is_removed() {
+fn compaction_moves_page_domains_only_when_a_row_is_removed() {
     let mut world = compaction_world();
     let e = world.spawn(RenderId(10));
     world.add_component(e, RenderTag).expect("add_component"); // dirties the Render page
+                                                               // The clock moves past the setup, so the change below carries a later
+                                                               // tick than the rows it finds.
+    world.end_run();
 
     let render_before = world.domain_epoch(SemanticDomain::Render);
     let spatial_before = world.domain_epoch(SemanticDomain::Spatial);
@@ -1530,15 +1583,15 @@ fn compaction_bumps_page_domains_only_when_a_row_is_removed() {
 
     assert!(
         world.domain_epoch(SemanticDomain::Render) > render_before,
-        "removing a Render-page row must bump the Render epoch"
+        "removing a Render-page row must move the Render epoch"
     );
     assert_eq!(
         world.domain_epoch(SemanticDomain::Spatial),
         spatial_before,
-        "a Render-only page must not bump the Spatial epoch"
+        "a Render-only page must not move the Spatial epoch"
     );
 
-    // A second pass has no dirty pages — a no-op that bumps nothing.
+    // A second pass has no dirty pages — a no-op that moves nothing.
     let render_after = world.domain_epoch(SemanticDomain::Render);
     assert_eq!(world.run_compaction(16), 0);
     assert_eq!(world.domain_epoch(SemanticDomain::Render), render_after);
@@ -2686,6 +2739,9 @@ fn native_query_mut_mixed_terms_across_layouts_write_each_entity_once() {
     world.add_component(e, Velocity(0)).expect("add");
     world.add_component(e, RenderId(90)).expect("add");
     world.add_component(e, RenderTag).expect("add");
+    // The clock moves past the setup, so a write from here on carries a
+    // later tick than the rows it finds.
+    world.end_run();
 
     let render_before = world.domain_epoch(SemanticDomain::Render);
     let mut seen: Vec<EntityId> = Vec::new();

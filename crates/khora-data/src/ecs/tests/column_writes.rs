@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! `World::write_column`: many rows of one component, by key and slot, in
-//! one pass — what it reports, the epoch it bumps, and the Rust rows it
+//! one pass — what it reports, the domain epoch it moves, and the Rust rows it
 //! writes in place.
 
 use std::cell::Cell;
@@ -117,12 +117,15 @@ fn a_column_write_reports_what_it_wrote_and_skipped() {
     assert_eq!(world.get::<Gauge>(entities[2]).map(|g| g.level), Some(12));
 }
 
-/// **One bump per batch.** A batch that wrote something marks the
-/// component's domain changed once — not once per row — and no other domain.
+/// **Its domain, and no other.** A batch that wrote something moves the
+/// epoch of the component's domain, and of no other domain.
 #[test]
-fn a_column_write_bumps_the_domain_epoch_once() {
+fn a_column_write_moves_its_domain_epoch_only() {
     let (mut world, key, entities) = gauges(100);
     let level = slot(&world, key, "level");
+    // The clock moves past the setup, so the write below carries a later
+    // tick than the rows it finds.
+    world.end_run();
     let physics = world.domain_epoch(SemanticDomain::Physics);
     let spatial = world.domain_epoch(SemanticDomain::Spatial);
 
@@ -133,18 +136,20 @@ fn a_column_write_bumps_the_domain_epoch_once() {
     let report = world.write_column(key, &[level], borrowed(&rows));
 
     assert_eq!(report.written, 100);
+    assert!(world.domain_epoch(SemanticDomain::Physics) > physics);
     assert_eq!(
         world.domain_epoch(SemanticDomain::Physics),
-        physics.wrapping_add(1)
+        world.current_tick().0,
+        "the epoch is the tick the write carried"
     );
     assert_eq!(world.domain_epoch(SemanticDomain::Spatial), spatial);
 }
 
 /// **Nothing written, nothing changed.** A batch whose every row was
-/// skipped — missing or refused — or that held no row leaves the epoch as
-/// it was, so no cached view is thrown away for it.
+/// skipped — missing or refused — or that held no row leaves the domain
+/// epoch as it was, so no cached view is thrown away for it.
 #[test]
-fn a_column_write_that_wrote_nothing_leaves_the_epoch_alone() {
+fn a_column_write_that_wrote_nothing_leaves_the_domain_epoch_alone() {
     let (mut world, key, entities) = gauges(3);
     let level = slot(&world, key, "level");
     world.despawn(entities[2]);
@@ -394,9 +399,9 @@ fn a_row_of_another_width_than_the_slots_is_refused() {
 }
 
 /// **No field, no write.** A batch of no field changes no row, reports no
-/// row and leaves the epoch as it was.
+/// row and leaves the domain epoch as it was.
 #[test]
-fn a_column_write_of_no_field_writes_reports_and_bumps_nothing() {
+fn a_column_write_of_no_field_writes_reports_and_moves_nothing() {
     let (mut world, key, entities) = gauges(3);
     let epoch = world.domain_epoch(SemanticDomain::Physics);
 

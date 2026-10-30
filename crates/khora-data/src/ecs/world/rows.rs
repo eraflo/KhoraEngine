@@ -61,6 +61,8 @@ pub struct RowMut<'w> {
     observed: bool,
     /// The page's row count, which those row ticks number.
     rows: usize,
+    /// The change epoch of the component's domain, raised with the write.
+    epoch: &'w mut u64,
 }
 
 impl<'w> RowMut<'w> {
@@ -110,6 +112,7 @@ impl<'w> RowMut<'w> {
             self.ticks.materialize(self.rows);
         }
         self.ticks.stamp(self.row, self.tick);
+        *self.epoch = (*self.epoch).max(self.tick.0);
     }
 
     /// [`set_field`](Self::set_field), the row left unstamped.
@@ -159,8 +162,9 @@ impl World {
         })
     }
 
-    /// `entity`'s row of component `key`, writable. Marks the component's
-    /// domain changed, as handing out any writable access does.
+    /// `entity`'s row of component `key`, writable. A write accepted through it
+    /// stamps the row and raises the domain's change epoch; taking it changes
+    /// nothing.
     pub fn row_mut(&mut self, entity: EntityId, key: ComponentKey) -> Option<RowMut<'_>> {
         let (vtable, location) = self.row_location(entity, key)?;
         let domain = vtable.domain;
@@ -170,9 +174,9 @@ impl World {
         {
             return None;
         }
-        self.bump_domain_epoch(domain);
         let observed = self.clock.observed.contains(&key);
         let tick = self.clock.tick;
+        let epoch = &mut self.domain_epochs[domain.index()];
         let storage = &mut self.storage;
         let vtable = storage.registry.vtable(key)?;
         let page = &mut storage.pages[location.page_id as usize];
@@ -186,6 +190,7 @@ impl World {
             tick,
             observed,
             rows,
+            epoch,
         })
     }
 

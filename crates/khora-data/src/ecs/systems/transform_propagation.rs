@@ -62,10 +62,12 @@ pub fn transform_propagation_system(world: &mut World) {
         world.query_mut::<(EntityId, &Transform, &mut GlobalTransform, Without<Parent>)>()
     {
         let placed: AffineTransform = transform.to_mat4().into();
-        global_transform.0 = match simulated.get(&id) {
+        // Written only when it differs: an unmoved scene writes nothing, and
+        // the views projected from it stay valid.
+        global_transform.set_if_neq(GlobalTransform(match simulated.get(&id) {
             Some(pose) => with_scale_of(pose, &placed),
             None => placed,
-        };
+        }));
         queue.push_back(id);
     }
 
@@ -108,7 +110,7 @@ pub fn transform_propagation_system(world: &mut World) {
             // wrote — that's the invariant the next iteration of this loop
             // relies on. Transform-only children stay out of the queue.
             if let Some(mut global_transform) = world.get_mut::<GlobalTransform>(child_id) {
-                global_transform.0 = child_matrix;
+                global_transform.set_if_neq(GlobalTransform(child_matrix));
                 queue.push_back(child_id);
             }
         }
@@ -407,5 +409,222 @@ mod tests {
                 * Mat4::from_quat(rotation)
                 * Mat4::from_scale(Vec3::new(-2.0, 2.0, 2.0)),
         );
+    }
+
+    /// The flows keyed on the Spatial domain, run over a static scene.
+    mod render_cache {
+        use khora_core::asset::{AssetHandle, AssetUUID};
+        use khora_core::ecs::entity::EntityId;
+        use khora_core::lane::OutputDeck;
+        use khora_core::math::Vec3;
+        use khora_core::renderer::api::gpu_scene::GpuMesh;
+        use khora_core::renderer::api::pipeline::PrimitiveTopology;
+        use khora_core::renderer::api::resource::{BufferId, IndexFormat};
+        use khora_core::renderer::light::{DirectionalLight, LightType};
+        use khora_core::Runtime;
+
+        use super::super::transform_propagation_entry;
+        use crate::ecs::{
+            AudioListener, AudioSource, Camera, GlobalTransform, HandleComponent, Light, Observer,
+            Parent, SystemContext, Transform, World,
+        };
+        use crate::flow::{AudioFlow, Flow, RenderFlow, Selection, ShadowFlow};
+
+        /// The cache keys of `RenderFlow`, `ShadowFlow` and `AudioFlow`, in
+        /// that order.
+        type Keys = [Option<u64>; 3];
+
+        /// A scene nothing moves in: a camera, a shadow-casting light, a mesh
+        /// with a child mesh, a sound and a listener, each placed by a
+        /// `Transform` away from the origin. Returns the world and the root
+        /// mesh.
+        fn static_scene() -> (World, EntityId) {
+            let mut world = World::new();
+            let at = |x: f32, y: f32, z: f32| {
+                (
+                    Transform::from_translation(Vec3::new(x, y, z)),
+                    GlobalTransform::identity(),
+                )
+            };
+            let mesh = || HandleComponent {
+                handle: AssetHandle::new(GpuMesh {
+                    vertex_buffer: BufferId(0),
+                    index_buffer: BufferId(0),
+                    index_count: 0,
+                    index_format: IndexFormat::Uint32,
+                    primitive_topology: PrimitiveTopology::TriangleList,
+                }),
+                uuid: AssetUUID::new(),
+            };
+
+            let (transform, global) = at(0.0, 2.0, 10.0);
+            world.spawn((
+                transform,
+                global,
+                Camera::new_perspective(std::f32::consts::FRAC_PI_3, 0.1, 100.0),
+            ));
+            let (transform, global) = at(0.0, 10.0, 0.0);
+            world.spawn((
+                transform,
+                global,
+                Light::new(LightType::Directional(DirectionalLight {
+                    direction: Vec3::new(0.3, -1.0, 0.2).normalize(),
+                    shadow_enabled: true,
+                    ..DirectionalLight::default()
+                })),
+            ));
+            let (transform, global) = at(3.0, 0.0, -2.0);
+            let root = world.spawn((transform, global, mesh()));
+            let (transform, global) = at(0.0, 1.0, 0.0);
+            world.spawn((transform, global, mesh(), Parent(root)));
+            let (transform, global) = at(-4.0, 0.0, 1.0);
+            world.spawn((transform, global, AudioSource::default()));
+            let (transform, global) = at(0.0, 1.5, 6.0);
+            world.spawn((transform, global, AudioListener));
+            (world, root)
+        }
+
+        /// One frame as the substrate runs it: `transform_propagation` as a
+        /// DataSystem, then the three flows, each a run of its own. Returns
+        /// the cache keys the flows were asked for.
+        fn frame(world: &mut World, runtime: &Runtime) -> Keys {
+            let system = Observer::DataSystem("transform_propagation");
+            let ctx = SystemContext {
+                since: world.observer_last_seen(system),
+            };
+            let tick = world.begin_run();
+            let mut deck = OutputDeck::new();
+            transform_propagation_entry(world, runtime, &mut deck, ctx);
+            world.note_observer_run(system, tick);
+            world.end_run();
+
+            let selection = Selection::new();
+            let mut keys = [None; 3];
+
+            let tick = world.begin_run();
+            keys[0] = RenderFlow.cache_key(world, runtime);
+            let _ = RenderFlow.project(world, &selection, runtime);
+            world.note_observer_run(Observer::Flow(RenderFlow::NAME), tick);
+            world.end_run();
+
+            let tick = world.begin_run();
+            keys[1] = ShadowFlow.cache_key(world, runtime);
+            let _ = ShadowFlow.project(world, &selection, runtime);
+            world.note_observer_run(Observer::Flow(ShadowFlow::NAME), tick);
+            world.end_run();
+
+            let tick = world.begin_run();
+            keys[2] = AudioFlow.cache_key(world, runtime);
+            let _ = AudioFlow.project(world, &selection, runtime);
+            world.note_observer_run(Observer::Flow(AudioFlow::NAME), tick);
+            world.end_run();
+
+            keys
+        }
+
+        /// **A propagation that changes nothing writes nothing.** Once the
+        /// first frame has placed every `GlobalTransform`, a frame in which
+        /// no `Transform` moved leaves the Spatial domain as it was, so the
+        /// cached views of `RenderFlow`, `ShadowFlow` and `AudioFlow` stay
+        /// valid; moving one `Transform` invalidates all three.
+        #[test]
+        fn transform_propagation_writing_nothing_leaves_the_render_cache_valid() {
+            let (mut world, root) = static_scene();
+            let runtime = Runtime::default();
+
+            let _settling = frame(&mut world, &runtime);
+            let second = frame(&mut world, &runtime);
+            let third = frame(&mut world, &runtime);
+
+            for (flow, key) in ["RenderFlow", "ShadowFlow", "AudioFlow"].iter().zip(second) {
+                assert!(key.is_some(), "{flow} caches its view");
+            }
+            assert_eq!(
+                third, second,
+                "a frame in which nothing moved must leave every cache key as it was"
+            );
+
+            world
+                .get_mut::<Transform>(root)
+                .expect("the root mesh has a Transform")
+                .translation = Vec3::new(3.0, 0.5, -2.0);
+            let moved = frame(&mut world, &runtime);
+
+            assert_eq!(
+                world
+                    .get::<GlobalTransform>(root)
+                    .map(|g| g.0.translation()),
+                Some(Vec3::new(3.0, 0.5, -2.0)),
+                "the move was propagated"
+            );
+            for ((flow, before), after) in ["RenderFlow", "ShadowFlow", "AudioFlow"]
+                .iter()
+                .zip(third)
+                .zip(moved)
+            {
+                assert_ne!(after, before, "moving a Transform must change {flow}'s key");
+            }
+        }
+
+        /// **Each real change invalidates the caches that read it, and only
+        /// those.** Over the static scene: a light switched off (Render), a
+        /// mesh handle swapped by value (Render), a sound's volume (Audio),
+        /// and a mesh despawned (Render and Spatial).
+        #[test]
+        fn each_real_change_invalidates_the_caches_that_read_it() {
+            let (mut world, root) = static_scene();
+            let runtime = Runtime::default();
+            let _settling = frame(&mut world, &runtime);
+            let mut last = frame(&mut world, &runtime);
+            let mut step = |world: &mut World, what: &str, changed: [bool; 3]| {
+                let keys = frame(world, &runtime);
+                for (((flow, before), after), changed) in ["RenderFlow", "ShadowFlow", "AudioFlow"]
+                    .iter()
+                    .zip(last)
+                    .zip(keys)
+                    .zip(changed)
+                {
+                    assert_eq!(
+                        after != before,
+                        changed,
+                        "{what}: {flow}'s key {}",
+                        if changed { "must change" } else { "must stay" }
+                    );
+                }
+                last = keys;
+            };
+
+            let light = world
+                .query::<(EntityId, &Light)>()
+                .map(|(entity, _)| entity)
+                .next()
+                .expect("a light");
+            world.get_mut::<Light>(light).expect("the light").enabled = false;
+            step(&mut world, "a light switched off", [true, true, false]);
+
+            let mut mesh = world
+                .get::<HandleComponent<GpuMesh>>(root)
+                .expect("a mesh")
+                .clone();
+            mesh.uuid = AssetUUID::new();
+            assert!(world.set_component(root, mesh));
+            step(&mut world, "a mesh handle swapped", [true, true, false]);
+
+            let source = world
+                .query::<(EntityId, &AudioSource)>()
+                .map(|(entity, _)| entity)
+                .next()
+                .expect("a source");
+            world
+                .get_mut::<AudioSource>(source)
+                .expect("the source")
+                .volume = 0.25;
+            step(&mut world, "a sound's volume", [false, false, true]);
+
+            step(&mut world, "nothing", [false, false, false]);
+
+            assert!(world.despawn(root));
+            step(&mut world, "a mesh despawned", [true, true, true]);
+        }
     }
 }

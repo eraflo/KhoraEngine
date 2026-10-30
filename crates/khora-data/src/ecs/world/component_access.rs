@@ -210,10 +210,6 @@ impl World {
         let domain = self.storage.registry.get_domain(TypeId::of::<T>())?;
         let location = *metadata.locations.get(&domain)?;
 
-        // Handing out writable access means T may change — invalidate cached
-        // Views.
-        self.bump_domain_epoch(domain);
-
         // 3. Get the component data from the page, through the page buffer's
         // pointer, which the guard notes its write through.
         let key = ComponentKey::of::<T>();
@@ -223,6 +219,9 @@ impl World {
         if page_id >= self.storage.pages.len() {
             return None;
         }
+        // SAFETY: `self` is exclusively borrowed for the guard's life; the
+        // slot is a place projection into it.
+        let epoch = unsafe { World::domain_epoch_slot(self, domain) };
         let row = location.row_index as usize;
         // SAFETY: `page_id` indexes the page buffer of the exclusively
         // borrowed world; the `&mut` to the page's columns ends before the
@@ -240,7 +239,7 @@ impl World {
                 return None;
             }
             let value = vec.as_mut_ptr().add(row);
-            Some(Mut::in_page(value, page, key, observed, row, tick))
+            Some(Mut::in_page(value, page, key, observed, epoch, row, tick))
         }
     }
 
@@ -266,10 +265,6 @@ impl World {
             Some(d) => d,
             None => return results,
         };
-
-        // Handing out `&mut T` references means T may change — invalidate
-        // cached Views (conservative: bumped even if no entity resolves).
-        self.bump_domain_epoch(domain);
 
         // 1. Collect locations and check for duplicates
         let mut locations = [(0u32, 0u32); N];
@@ -303,6 +298,9 @@ impl World {
         let key = ComponentKey::Rust(type_id);
         let observed = self.clock.observed.contains(&key);
         let tick = self.clock.tick;
+        // SAFETY: as `get_mut`'s; the guards share the slot and write it one
+        // at a time.
+        let epoch = unsafe { World::domain_epoch_slot(self, domain) };
 
         // 3. Retrieve the guards through raw pointers to bypass split_at_mut
         // complexity: the pages through the page buffer's pointer, never a
@@ -332,8 +330,9 @@ impl World {
                             let row = row_index as usize;
                             if row < vec.len() {
                                 let value = vec.as_mut_ptr().add(row);
-                                results[i] =
-                                    Some(Mut::in_page(value, page, key, observed, row, tick));
+                                results[i] = Some(Mut::in_page(
+                                    value, page, key, observed, epoch, row, tick,
+                                ));
                             }
                         }
                     }
@@ -432,8 +431,6 @@ impl World {
             ComponentKey::of::<T>(),
             location.row_index as usize,
         );
-        // The component's value changed — invalidate cached Views.
-        self.bump_domain_epoch(domain);
         true
     }
 
@@ -449,11 +446,6 @@ impl World {
         mut f: impl FnMut(&mut crate::ecs::FieldSoaColumn<T>),
     ) {
         let type_id = TypeId::of::<T>();
-        // Bulk mutable access to T's lanes — invalidate cached Views once,
-        // up front (never inside the per-page/per-element loop).
-        if let Some(domain) = self.storage.registry.get_domain(type_id) {
-            self.bump_domain_epoch(domain);
-        }
         let key = ComponentKey::Rust(type_id);
         for page_id in 0..self.storage.pages.len() {
             let page = &mut self.storage.pages[page_id];

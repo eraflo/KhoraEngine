@@ -143,6 +143,8 @@ impl World {
                     .map_or(added_at, |(_, tick)| *tick)
             });
         }
+        // The whole row moved: every domain of the destination page sees it.
+        self.note_page_changed(dest_page_id);
 
         // 5. Update metadata and put it back.
         //
@@ -299,6 +301,8 @@ impl World {
                     .map_or(now, |(_, tick)| *tick)
             });
         }
+        // The whole row moved: every domain of the destination page sees it.
+        self.note_page_changed(dest_page_id);
 
         // 7. Update entity metadata to point at the new (page, row). As in
         //    `attach`, the whole archetype row migrated, so repoint every

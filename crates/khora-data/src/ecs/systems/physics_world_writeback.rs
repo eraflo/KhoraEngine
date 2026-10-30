@@ -102,7 +102,10 @@ fn sync_from_provider(world: &mut World, provider: &dyn PhysicsProvider) {
         // condition. Anything asking a body what it is doing used to be told
         // what its designer typed.
         match world.get_mut::<BodyMotion>(entity) {
-            Some(mut existing) => *existing = motion,
+            // Written only when it differs: a body at rest writes nothing.
+            Some(mut existing) => {
+                existing.set_if_neq(motion);
+            }
             None => {
                 let _ = world.add_component(entity, motion);
             }
@@ -113,7 +116,10 @@ fn sync_from_provider(world: &mut World, provider: &dyn PhysicsProvider) {
 /// Writes an entity's simulated pose, giving it one if this is its first frame.
 fn set_simulated(world: &mut World, entity: EntityId, pose: SimulatedTransform) {
     match world.get_mut::<SimulatedTransform>(entity) {
-        Some(mut existing) => *existing = pose,
+        // Written only when it differs: a body at rest writes nothing.
+        Some(mut existing) => {
+            existing.set_if_neq(pose);
+        }
         None => {
             let _ = world.add_component(entity, pose);
         }

@@ -72,13 +72,15 @@ pub struct World {
     pub(crate) storage: StorageManager,
     /// Manages query planning and caching.
     pub(crate) planner: QueryPlanner,
-    /// Monotonic per-domain change counters ("epochs"), indexed by
-    /// [`SemanticDomain::index`]. Every entry point that can change a
-    /// domain's *semantic* content (spawn/despawn, component add/remove,
-    /// mutable access) bumps the matching epoch in O(1). Flows compare
-    /// epochs across frames to decide whether a cached View is still
-    /// valid, so over-bumping is harmless while a missed bump would mean
-    /// stale Views. Representation-only changes (AGDF layout) do NOT bump.
+    /// Per-domain change epochs, indexed by [`SemanticDomain::index`]: the
+    /// latest tick at which a value of the domain was written or a row of
+    /// one of its pages changed place. Raised wherever a column summary σ
+    /// rises (a stamped write, a pushed row) or a page's order ω moves
+    /// (despawn, migration, compaction), never by handing out writable
+    /// access alone. Flows compare epochs across frames to decide whether a
+    /// cached View is still valid; raising too much is harmless, missing a
+    /// raise would mean stale Views. Representation-only changes (AGDF
+    /// layout) raise nothing.
     domain_epochs: [u64; SemanticDomain::COUNT],
     /// The persistent identity of each live entity that has been given one.
     identity: identity::IdentityCell,
@@ -144,6 +146,7 @@ impl World {
         let old_last_row = (page.entities.len() - 1) as u32;
         let moved_entity = page.entities[old_last_row as usize];
         page.swap_remove_row(location.row_index);
+        self.note_page_changed(location.page_id);
 
         // Removing the last row moves nothing.
         if location.row_index == old_last_row {
@@ -269,12 +272,14 @@ impl World {
             .collect()
     }
 
-    /// Current change epoch of `domain` — a monotonic counter bumped by
-    /// every mutation entry point that can affect the domain's semantic
-    /// content. Equal epochs across two reads guarantee the domain's data
-    /// (and its query iteration order) is unchanged; a different value
-    /// only means "possibly changed" (bumps are conservative). Flows use
-    /// this to validate cached Views.
+    /// Current change epoch of `domain`: the latest tick at which one of its
+    /// values was written or a row of one of its pages changed place —
+    /// monotone, read in O(1). Equal epochs across two reads guarantee the
+    /// domain's data (and its query iteration order) is unchanged: every
+    /// reader runs at a tick of its own, and whatever changes after it
+    /// carries a later one. A different value only means "possibly changed".
+    /// Handing out writable access moves nothing until something is written.
+    /// Flows use this to validate cached Views.
     pub fn domain_epoch(&self, domain: SemanticDomain) -> u64 {
         self.domain_epochs[domain.index()]
     }
@@ -286,9 +291,11 @@ impl World {
         self.instance_id
     }
 
-    /// (Internal) Marks `domain` as semantically changed. O(1).
+    /// (Internal) Notes that `domain` changed now: its epoch rises to the
+    /// clock's tick. O(1).
     pub(crate) fn bump_domain_epoch(&mut self, domain: SemanticDomain) {
-        self.domain_epochs[domain.index()] = self.domain_epochs[domain.index()].wrapping_add(1);
+        let epoch = &mut self.domain_epochs[domain.index()];
+        *epoch = (*epoch).max(self.clock.tick.0);
     }
 
     /// Spawns a new entity with the given bundle of components.
@@ -365,6 +372,7 @@ impl World {
             let now = self.clock.tick;
             page.add_entity(entity_id, &self.clock.observed, |_| now);
         }
+        self.note_page_changed(page_id);
 
         // --- Step 4: Update the entity's metadata. ---
         let location = PageIndex { page_id, row_index };
@@ -389,7 +397,8 @@ impl World {
             // Views. Inline field access: `metadata` still borrows
             // `self.entities`, so `bump_domain_epoch(&mut self)` can't be
             // called here.
-            self.domain_epochs[domain.index()] = self.domain_epochs[domain.index()].wrapping_add(1);
+            let epoch = &mut self.domain_epochs[domain.index()];
+            *epoch = (*epoch).max(self.clock.tick.0);
         }
     }
 
@@ -455,6 +464,7 @@ impl World {
             page.add_entity(entity, &self.clock.observed, |_| now);
             row_index
         };
+        self.note_page_changed(page_id);
 
         let location = PageIndex { page_id, row_index };
         if let Some(metadata) = self.entities.get_metadata_mut(entity) {
