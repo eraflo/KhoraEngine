@@ -360,6 +360,7 @@ impl TileLists {
 
 /// Runs `light_culling.wgsl` over `lights` for `frame`; `None` without a GPU.
 fn cull(frame: &Frame, lights: &[GpuLight]) -> Option<TileLists> {
+    let _turn = crate::gpu_test::exclusive_gpu();
     let culler = culler()?;
     let device = &culler.device;
     let (tiles_x, tiles_y) = tile_counts(frame.tile_size);

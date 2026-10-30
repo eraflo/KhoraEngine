@@ -22,6 +22,7 @@ mod bounded_drag_value;
 mod cover_panel;
 mod covered_hover;
 mod dnd_hover_payload;
+mod gpu_test;
 mod gradient_fill;
 mod light_culling_edge_cases;
 mod light_culling_gpu;

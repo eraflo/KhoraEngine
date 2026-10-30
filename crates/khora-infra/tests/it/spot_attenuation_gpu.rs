@@ -397,6 +397,7 @@ fn create_probe() -> Option<Probe> {
 /// `None` without an adapter.
 fn falloffs(samples: &[SpotSample]) -> Option<Vec<f32>> {
     assert!(!samples.is_empty(), "a probe dispatch needs samples");
+    let _turn = crate::gpu_test::exclusive_gpu();
     let probe = probe()?;
     let device = &probe.device;
 

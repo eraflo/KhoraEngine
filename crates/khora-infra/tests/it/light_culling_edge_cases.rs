@@ -373,6 +373,7 @@ impl Culled {
 /// Runs the shader on `lights` with `num_lights` announced (usually
 /// `lights.len()`), over output buffers filled with [`UNWRITTEN`].
 fn dispatch(view: &View, tile_size: u32, lights: &[GpuLight], num_lights: u32) -> Option<Culled> {
+    let _turn = crate::gpu_test::exclusive_gpu();
     let culler = culler()?;
     let device = &culler.device;
     let (tiles_x, tiles_y) = view.tiles(tile_size);

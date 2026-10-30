@@ -88,11 +88,14 @@ const TEXTURE_SIDE: u32 = 16;
 
 // ─── A real device, or none ─────────────────────────────────────────────────
 
-/// A wgpu device and queue, plus every error wgpu reported on them.
+/// A wgpu device and queue, plus every error wgpu reported on them, and the
+/// test's turn on the GPU — declared last, so it is given back after the
+/// device is dropped.
 struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
     errors: Arc<Mutex<Vec<String>>>,
+    _turn: std::sync::MutexGuard<'static, ()>,
 }
 
 impl Gpu {
@@ -107,6 +110,7 @@ impl Gpu {
 
 /// A device of its own for `test`, or `None` (logged) without any adapter.
 fn gpu(test: &str) -> Option<Gpu> {
+    let turn = crate::graphics::wgpu::tests::gpu::exclusive_gpu();
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = [false, true]
         .into_iter()
@@ -152,6 +156,7 @@ fn gpu(test: &str) -> Option<Gpu> {
         device,
         queue,
         errors,
+        _turn: turn,
     })
 }
 

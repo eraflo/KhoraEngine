@@ -291,6 +291,7 @@ mod tests {
 
     #[test]
     fn gpu_timestamp_profiler_initializes_correctly_or_skips() {
+        let _turn = crate::graphics::wgpu::tests::gpu::exclusive_gpu();
         // This test requires a physical device, so it might be skipped on CI without one.
         let (device, queue, features) = match create_test_device() {
             Some(v) => v,

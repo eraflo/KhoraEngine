@@ -27,3 +27,6 @@ mod system;
 
 pub use self::pipeline_system::WgpuPipelineSystem;
 pub use self::system::WgpuRenderSystem;
+
+#[cfg(test)]
+mod tests;
