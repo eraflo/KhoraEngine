@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! Components declared while the engine runs: registering them, changing
-//! their fields, and reading and writing their rows by key.
+//! their fields, attaching and removing them by key.
 
 use std::any::TypeId;
 use std::sync::Arc;
@@ -23,13 +23,9 @@ use khora_core::script::ScriptValue;
 
 use super::component_access::AddComponentError;
 use super::World;
-use crate::ecs::packed::{
-    retyped, FieldError, FieldKind, PackedColumn, PackedColumns, PackedLayout,
-};
-use crate::ecs::page::PageIndex;
+use crate::ecs::packed::{retyped, FieldError, PackedColumn, PackedColumns, PackedLayout};
 use crate::ecs::{
-    AnyVec, Component, ComponentKey, ComponentProvenance, ComponentRegistry, ComponentVTable,
-    FieldWriteError, SemanticDomain, Tick,
+    AnyVec, Component, ComponentKey, ComponentProvenance, ComponentRegistry, SemanticDomain, Tick,
 };
 use crate::scene::component_registration::registration_for;
 
@@ -177,103 +173,6 @@ pub enum RowError {
     },
 }
 
-/// One entity's row of one component, read by id.
-pub struct RowRef<'w> {
-    vtable: &'w ComponentVTable,
-    column: &'w dyn AnyVec,
-    row: usize,
-}
-
-impl<'w> RowRef<'w> {
-    /// The component.
-    pub fn key(&self) -> ComponentKey {
-        self.vtable.key
-    }
-
-    /// The component's vtable.
-    pub fn vtable(&self) -> &'w ComponentVTable {
-        self.vtable
-    }
-
-    /// The value of the field at `slot`, `None` for one a script cannot
-    /// reach.
-    pub fn field(&self, slot: usize) -> Option<ScriptValue> {
-        self.vtable.columns.read_field(self.column, self.row, slot)
-    }
-}
-
-/// One entity's row of one component, written by id.
-pub struct RowMut<'w> {
-    vtable: &'w ComponentVTable,
-    column: &'w mut dyn AnyVec,
-    row: usize,
-}
-
-impl<'w> RowMut<'w> {
-    /// The component.
-    pub fn key(&self) -> ComponentKey {
-        self.vtable.key
-    }
-
-    /// The component's vtable.
-    pub fn vtable(&self) -> &ComponentVTable {
-        self.vtable
-    }
-
-    /// The value of the field at `slot`, `None` for one a script cannot
-    /// reach.
-    pub fn field(&self, slot: usize) -> Option<ScriptValue> {
-        self.vtable
-            .columns
-            .read_field(&*self.column, self.row, slot)
-    }
-
-    /// Writes the fields the patch names, by slot — all or nothing: every
-    /// value is checked before any is written.
-    pub fn write_fields(&mut self, patch: &[(usize, &ScriptValue)]) -> Result<(), FieldWriteError> {
-        self.vtable
-            .columns
-            .write_fields(self.column, self.row, patch)
-    }
-
-    /// Writes the field at `slot`, refusing a value it cannot hold.
-    ///
-    /// # Panics
-    ///
-    /// When `slot` is not a field of the component: a slot comes from the
-    /// component the row is read with.
-    pub fn set_field(&mut self, slot: usize, value: &ScriptValue) -> Result<(), FieldError> {
-        let row = self.row;
-        if let Some(column) = self.column.as_any_mut().downcast_mut::<PackedColumn>() {
-            assert!(
-                column.has(row, slot),
-                "slot {slot} is not a field of this row"
-            );
-            return column.set(row, slot, value);
-        }
-        let columns = &self.vtable.columns;
-        let kind = columns
-            .field_type(slot)
-            .map_or(FieldKind::Value, |ty| FieldKind::of(&ty));
-        match columns.write_fields(self.column, row, &[(slot, value)]) {
-            Ok(()) => Ok(()),
-            Err(FieldWriteError::NoSuchField(field)) => {
-                panic!("slot {field} is not a field of this row")
-            }
-            Err(FieldWriteError::NotAccessible(field)) => Err(FieldError {
-                field,
-                expected: kind,
-                found: value.type_name().to_owned(),
-            }),
-            Err(FieldWriteError::Refused { field, .. }) => Err(FieldError {
-                field,
-                expected: kind,
-                found: value.type_name().to_owned(),
-            }),
-        }
-    }
-}
-
 /// `column` as a run-time component's.
 fn packed(column: &dyn AnyVec) -> Option<&PackedColumn> {
     column.as_any().downcast_ref::<PackedColumn>()
@@ -384,13 +283,21 @@ impl World {
         let mut layout = layout;
         layout.kept_for(vtable.provenance);
         let layout = Arc::new(layout);
-        for page in &mut self.storage.pages {
+        let mut relaid = Vec::new();
+        for (page_id, page) in self.storage.pages.iter_mut().enumerate() {
             let Some(column) = page.columns.get_mut(&key) else {
                 continue;
             };
             if let Some(packed) = packed(column.as_ref()) {
                 *column = Box::new(packed.relaid(&layout));
+                if page.row_count() > 0 {
+                    relaid.push(page_id as u32);
+                }
             }
+        }
+        // Every row was rebuilt: every row is written.
+        for page_id in relaid {
+            self.stamp_column(page_id, key);
         }
         self.storage
             .registry
@@ -628,57 +535,5 @@ impl World {
             }
         }
         removed
-    }
-
-    /// `entity`'s row of component `key`.
-    pub fn row(&self, entity: EntityId, key: ComponentKey) -> Option<RowRef<'_>> {
-        let (vtable, location) = self.row_location(entity, key)?;
-        let column = self.storage.pages[location.page_id as usize]
-            .columns
-            .get(&key)?;
-        Some(RowRef {
-            vtable,
-            column: column.as_ref(),
-            row: location.row_index as usize,
-        })
-    }
-
-    /// `entity`'s row of component `key`, writable. Marks the component's
-    /// domain changed, as handing out any writable access does.
-    pub fn row_mut(&mut self, entity: EntityId, key: ComponentKey) -> Option<RowMut<'_>> {
-        let (vtable, location) = self.row_location(entity, key)?;
-        let domain = vtable.domain;
-        if !self.storage.pages[location.page_id as usize]
-            .columns
-            .contains_key(&key)
-        {
-            return None;
-        }
-        self.bump_domain_epoch(domain);
-        let storage = &mut self.storage;
-        let vtable = storage.registry.vtable(key)?;
-        let column = storage.pages[location.page_id as usize]
-            .columns
-            .get_mut(&key)?;
-        Some(RowMut {
-            vtable,
-            column: column.as_mut(),
-            row: location.row_index as usize,
-        })
-    }
-
-    /// The vtable of `key` and `entity`'s live row in its domain.
-    fn row_location(
-        &self,
-        entity: EntityId,
-        key: ComponentKey,
-    ) -> Option<(&ComponentVTable, PageIndex)> {
-        let vtable = self.storage.registry.vtable(key)?;
-        let (slot, metadata) = self.entities.get(entity.index as usize)?;
-        if *slot != entity {
-            return None;
-        }
-        let location = *metadata.as_ref()?.locations.get(&vtable.domain)?;
-        Some((vtable, location))
     }
 }

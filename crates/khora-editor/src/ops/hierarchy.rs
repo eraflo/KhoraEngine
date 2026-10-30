@@ -81,7 +81,7 @@ pub fn duplicate_entity(
         }
     };
 
-    if let Some(name) = world.get_component_mut::<Name>(new_entity) {
+    if let Some(mut name) = world.get_component_mut::<Name>(new_entity) {
         *name = Name::new(copy_name);
     } else {
         world.add_component(new_entity, Name::new(copy_name));

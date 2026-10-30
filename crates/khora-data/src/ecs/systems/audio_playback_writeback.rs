@@ -38,7 +38,7 @@ fn audio_playback_writeback(world: &mut World, _runtime: &Runtime, deck: &mut Ou
     // Each update names its source: a source the View left out (one with no
     // transform) or one despawned since is simply not updated.
     for update in drained.updates {
-        if let Some(source) = world.get_mut::<AudioSource>(update.entity) {
+        if let Some(mut source) = world.get_mut::<AudioSource>(update.entity) {
             source.state = update.new_state;
         }
     }

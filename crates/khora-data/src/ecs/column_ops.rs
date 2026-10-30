@@ -75,23 +75,22 @@ pub trait ColumnOps: Send + Sync {
     /// Writes many rows of `column`: for each `(row, values)`, `values[i]`
     /// into the field at `slots[i]`. Each row is all or nothing, as
     /// [`Self::write_fields`] is; a refused row is skipped and the others are
-    /// written. Returns how many rows were written.
+    /// written. Pushes each row written onto `written`, in order.
     fn write_rows(
         &self,
         column: &mut dyn AnyVec,
         slots: &[usize],
         rows: &[(usize, &[ScriptValue])],
-    ) -> usize {
+        written: &mut Vec<usize>,
+    ) {
         let mut patch = Vec::with_capacity(slots.len());
-        let mut written = 0;
         for &(row, values) in rows {
             patch.clear();
             patch.extend(slots.iter().copied().zip(values.iter()));
             if self.write_fields(column, row, &patch).is_ok() {
-                written += 1;
+                written.push(row);
             }
         }
-        written
     }
 }
 
@@ -193,24 +192,23 @@ impl<T: Component> ColumnOps for RustColumns<T> {
         column: &mut dyn AnyVec,
         slots: &[usize],
         rows: &[(usize, &[ScriptValue])],
-    ) -> usize {
+        written: &mut Vec<usize>,
+    ) {
         // The slots are the batch's, checked once rather than once a row.
         if slots.iter().any(|&slot| T::script_type(slot).is_none()) {
-            return 0;
+            return;
         }
         let Some(values) = column.as_any_mut().downcast_mut::<Vec<T>>() else {
             let mut patch = Vec::with_capacity(slots.len());
-            let mut written = 0;
             for &(row, row_values) in rows {
                 patch.clear();
                 patch.extend(slots.iter().copied().zip(row_values.iter()));
                 if self.write_fields(column, row, &patch).is_ok() {
-                    written += 1;
+                    written.push(row);
                 }
             }
-            return written;
+            return;
         };
-        let mut written = 0;
         for &(row, row_values) in rows {
             let Some(target) = values.get_mut(row) else {
                 continue;
@@ -226,9 +224,8 @@ impl<T: Component> ColumnOps for RustColumns<T> {
                 // Checked above: the value is one the field takes.
                 let _ = target.write_field(slot, value);
             }
-            written += 1;
+            written.push(row);
         }
-        written
     }
 
     fn snapshot(&self, column: &dyn AnyVec) -> Box<dyn ColumnSnapshot> {

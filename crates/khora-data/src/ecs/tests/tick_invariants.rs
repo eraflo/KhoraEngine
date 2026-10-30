@@ -36,10 +36,10 @@ use super::{Position, RenderId, RenderTag, Velocity};
 use crate::ecs::{ComponentKey, SemanticDomain, World};
 
 /// A seeded xorshift: the same seed, the same sequence, every run.
-struct Rng(u64);
+pub(super) struct Rng(u64);
 
 impl Rng {
-    fn new(seed: u64) -> Self {
+    pub(super) fn new(seed: u64) -> Self {
         // Never zero: xorshift stays at zero forever.
         Self(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
     }
@@ -54,7 +54,7 @@ impl Rng {
     }
 
     /// A number in `0..n`.
-    fn below(&mut self, n: usize) -> usize {
+    pub(super) fn below(&mut self, n: usize) -> usize {
         (self.next() % n as u64) as usize
     }
 }

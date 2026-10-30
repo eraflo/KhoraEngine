@@ -150,7 +150,7 @@ fn three_save_generations_against_one_base_load_the_last_world() {
             .unwrap_or_else(|e| panic!("run {run}: {e}"));
         let living: Vec<_> = playing.iter_entities().collect();
         if let Some(first) = living.first() {
-            if let Some(transform) = playing.get_mut::<Transform>(*first) {
+            if let Some(mut transform) = playing.get_mut::<Transform>(*first) {
                 transform.translation.y += 1.0;
             }
         }

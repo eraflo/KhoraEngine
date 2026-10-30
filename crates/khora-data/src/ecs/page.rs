@@ -168,6 +168,15 @@ impl ComponentPage {
         self.entities.len()
     }
 
+    /// Gives the column `key` one tick per row, if it keeps none yet (see
+    /// [`ColumnTicks::materialize`]).
+    pub(crate) fn materialize_row_ticks(&mut self, key: ComponentKey) {
+        let row_count = self.entities.len();
+        if let Some(ticks) = self.ticks.get_mut(&key) {
+            ticks.materialize(row_count);
+        }
+    }
+
     /// The ticks of the column `key`, read with nothing but the page and the
     /// key; `None` when the page holds no such column.
     pub fn column_ticks(&self, key: ComponentKey) -> Option<&ColumnTicks> {

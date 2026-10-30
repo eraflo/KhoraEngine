@@ -320,7 +320,7 @@ fn filters_and_options_see_rows_beside_runtime_components() {
     );
 
     let before = world.domain_epoch(SemanticDomain::Physics);
-    for v in world.query_mut::<&mut Velocity>() {
+    for mut v in world.query_mut::<&mut Velocity>() {
         v.0 += 1;
     }
     assert!(world.domain_epoch(SemanticDomain::Physics) > before);
@@ -375,7 +375,7 @@ fn a_transversal_join_reaches_rows_beside_runtime_components() {
         .collect();
     got.sort();
     assert_eq!(got, vec![(0, 0), (2, 20), (3, 30), (4, 40)]);
-    for (position, velocity) in world.query_mut::<(&mut Position, &Velocity)>() {
+    for (mut position, velocity) in world.query_mut::<(&mut Position, &Velocity)>() {
         position.0 += velocity.0;
     }
     let mut got: Vec<i32> = world.query::<&Position>().map(|p| p.0).collect();

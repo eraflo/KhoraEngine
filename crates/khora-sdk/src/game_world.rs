@@ -25,7 +25,7 @@ use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::scene::{SceneFile, SerializationGoal};
 use khora_core::script::ScriptValue;
 use khora_data::ecs::{
-    Camera, Component, ComponentBundle, ComponentKey, GlobalTransform, HandleComponent, Query,
+    Camera, Component, ComponentBundle, ComponentKey, GlobalTransform, HandleComponent, Mut, Query,
     QueryMut, ReadOnlyWorldQuery, RowError, ScriptRole, Transform, World, WorldQuery,
 };
 use khora_data::scene::record::LoadReport;
@@ -311,7 +311,7 @@ impl GameWorld {
     /// world.spawn((Transform::identity(), GlobalTransform::default()));
     ///
     /// // Nudge every transform up by one unit.
-    /// for (transform,) in world.query_mut::<(&mut Transform,)>() {
+    /// for (mut transform,) in world.query_mut::<(&mut Transform,)>() {
     ///     transform.translation = transform.translation + Vec3::Y;
     /// }
     /// ```
@@ -336,10 +336,11 @@ impl GameWorld {
         self.world.iter_entities()
     }
 
-    /// Gets a mutable reference to a transform component.
+    /// Gets writable access to a transform component: a [`Mut`] guard, which
+    /// notes the write the first time it is written through.
     ///
     /// Returns `None` if the entity doesn't exist or has no transform.
-    pub fn get_transform_mut(&mut self, entity: EntityId) -> Option<&mut Transform> {
+    pub fn get_transform_mut(&mut self, entity: EntityId) -> Option<Mut<'_, Transform>> {
         self.world.get_mut::<Transform>(entity)
     }
 
@@ -350,10 +351,11 @@ impl GameWorld {
         self.world.get::<Transform>(entity)
     }
 
-    /// Gets a mutable reference to any component.
+    /// Gets writable access to any component: a [`Mut`] guard, which notes
+    /// the write the first time it is written through.
     ///
     /// Returns `None` if the entity doesn't exist or has no such component.
-    pub fn get_component_mut<C: Component>(&mut self, entity: EntityId) -> Option<&mut C> {
+    pub fn get_component_mut<C: Component>(&mut self, entity: EntityId) -> Option<Mut<'_, C>> {
         self.world.get_mut::<C>(entity)
     }
 
@@ -384,7 +386,7 @@ impl GameWorld {
     /// let entity = world.spawn((Transform::identity(), GlobalTransform::default()));
     ///
     /// // Move the entity, then sync so the renderer sees the new pose.
-    /// if let Some(transform) = world.get_transform_mut(entity) {
+    /// if let Some(mut transform) = world.get_transform_mut(entity) {
     ///     transform.translation = transform.translation + Vec3::Y;
     /// }
     /// world.sync_global_transform(entity);
@@ -392,7 +394,7 @@ impl GameWorld {
     pub fn sync_global_transform(&mut self, entity: EntityId) {
         if let Some(transform) = self.world.get::<Transform>(entity) {
             let matrix = transform.to_mat4();
-            if let Some(global) = self.world.get_mut::<GlobalTransform>(entity) {
+            if let Some(mut global) = self.world.get_mut::<GlobalTransform>(entity) {
                 *global = GlobalTransform::new(matrix);
             }
         }
@@ -420,8 +422,8 @@ impl GameWorld {
     where
         F: FnOnce(&mut Transform),
     {
-        if let Some(transform) = self.world.get_mut::<Transform>(entity) {
-            f(transform);
+        if let Some(mut transform) = self.world.get_mut::<Transform>(entity) {
+            f(&mut transform);
         }
         self.sync_global_transform(entity);
     }

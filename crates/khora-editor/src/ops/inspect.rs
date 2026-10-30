@@ -80,7 +80,7 @@ pub fn apply_edits(world: &mut GameWorld, state: &mut EditorState) {
     for edit in edits {
         match edit {
             PropertyEdit::SetName(entity, new_name) => {
-                if let Some(name) = world.get_component_mut::<Name>(entity) {
+                if let Some(mut name) = world.get_component_mut::<Name>(entity) {
                     *name = Name::new(new_name);
                 }
             }

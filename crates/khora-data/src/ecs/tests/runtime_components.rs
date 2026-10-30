@@ -912,7 +912,7 @@ fn queries_still_find_rust_components_next_to_runtime_ones() {
         .collect();
     assert_eq!(joined, vec![(3.0, 4.0)]);
 
-    for transform in world.query_mut::<&mut Transform>() {
+    for mut transform in world.query_mut::<&mut Transform>() {
         transform.translation.y = 7.0;
     }
     assert_eq!(

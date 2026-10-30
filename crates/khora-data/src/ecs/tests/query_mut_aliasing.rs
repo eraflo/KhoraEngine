@@ -29,7 +29,7 @@ use khora_core::ecs::entity::EntityId;
 use super::{Position, RenderId, Velocity};
 use crate::ecs::query::Without;
 use crate::ecs::query::WorldQuery;
-use crate::ecs::{QueryMode, SemanticDomain, World};
+use crate::ecs::{Mut, QueryMode, SemanticDomain, World};
 
 fn native_world() -> World {
     let mut world = World::new();
@@ -45,7 +45,7 @@ fn native_query_mut_items_held_together_stay_writable() {
     let mut world = native_world();
 
     // Every item of one column, alive at once.
-    let mut items: Vec<&mut Position> = world.query_mut::<&mut Position>().collect();
+    let mut items: Vec<Mut<'_, Position>> = world.query_mut::<&mut Position>().collect();
     assert_eq!(items.len(), 3);
     for item in items.iter_mut() {
         item.0 += 100;
@@ -75,7 +75,7 @@ fn transversal_query_mut_items_held_together_stay_writable() {
         "the test needs the transversal plan"
     );
 
-    let mut items: Vec<(&mut Position, &mut RenderId)> = world
+    let mut items: Vec<(Mut<'_, Position>, Mut<'_, RenderId>)> = world
         .query_mut::<(&mut Position, &mut RenderId)>()
         .collect();
     assert_eq!(items.len(), 3);
@@ -169,7 +169,7 @@ fn positions_and_velocities(world: &World) -> Vec<(i32, Option<i32>)> {
 fn native_optional_query_mut_items_held_together_stay_writable() {
     let mut world = two_term_world(SemanticDomain::Spatial);
 
-    let mut items: Vec<(&mut Position, Option<&mut Velocity>)> = world
+    let mut items: Vec<(Mut<'_, Position>, Option<Mut<'_, Velocity>>)> = world
         .query_mut::<(&mut Position, Option<&mut Velocity>)>()
         .collect();
     assert_eq!(items.len(), 3);
@@ -200,7 +200,7 @@ fn joined_native_query_mut_items_held_together_stay_writable() {
             .expect("add");
     }
 
-    let mut items: Vec<(&mut Position, Option<&mut Velocity>)> = world
+    let mut items: Vec<(Mut<'_, Position>, Option<Mut<'_, Velocity>>)> = world
         .query_mut::<(&mut Position, Option<&mut Velocity>)>()
         .collect();
     assert_eq!(items.len(), 3);
@@ -227,7 +227,7 @@ fn entity_scan_query_mut_items_held_together_stay_writable() {
         QueryMode::EntityScan
     );
 
-    let mut items: Vec<(EntityId, Option<&mut Position>)> = world
+    let mut items: Vec<(EntityId, Option<Mut<'_, Position>>)> = world
         .query_mut::<(EntityId, Option<&mut Position>)>()
         .collect();
     assert_eq!(items.len(), 3);
@@ -247,10 +247,10 @@ fn entity_scan_query_mut_items_held_together_stay_writable() {
 fn query_mut_read_and_write_items_held_together_stay_usable() {
     let mut world = two_term_world(SemanticDomain::Spatial);
 
-    let items: Vec<(&mut Position, &Velocity)> =
+    let items: Vec<(Mut<'_, Position>, &Velocity)> =
         world.query_mut::<(&mut Position, &Velocity)>().collect();
     let mut sum = 0;
-    for (position, velocity) in items {
+    for (mut position, velocity) in items {
         position.0 += velocity.0;
         sum += velocity.0;
     }

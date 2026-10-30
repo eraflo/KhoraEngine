@@ -188,6 +188,7 @@ fn transform_mut(world: &mut GameWorld, entity: EntityId) -> &mut Transform {
     world
         .get_component_mut::<Transform>(entity)
         .expect("placed")
+        .into_inner()
 }
 
 fn translation(world: &World, id: PersistentId) -> Vec3 {

@@ -44,7 +44,7 @@ impl UiLayoutView for World {
     }
 
     fn set_transform(&mut self, entity: EntityId, transform: CoreUiTransform) {
-        if let Some(existing) = self.get_mut::<UiTransform>(entity) {
+        if let Some(mut existing) = self.get_mut::<UiTransform>(entity) {
             *existing = UiTransform::from(transform);
         } else {
             let _ = self.add_component(entity, UiTransform::from(transform));

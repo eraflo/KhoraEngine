@@ -214,6 +214,7 @@ impl Placed {
             .world
             .get_component_mut::<Transform>(entity)
             .expect("placed")
+            .into_inner()
             .translation
     }
 }

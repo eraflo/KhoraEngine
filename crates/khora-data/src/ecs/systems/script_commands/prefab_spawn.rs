@@ -51,7 +51,7 @@ pub(super) fn spawn_prefab(
 
     let (position, rotation) = placed;
     match world.get_mut::<Transform>(entity) {
-        Some(transform) => {
+        Some(mut transform) => {
             transform.translation = position;
             if let Some(rotation) = rotation {
                 transform.rotation = rotation;
@@ -99,7 +99,7 @@ pub(super) fn set_material(
     if !world.contains(entity) {
         return Err(ApplyError::NoSuchEntity(entity));
     }
-    if let Some(current) = world.get_mut::<MaterialRef>(entity) {
+    if let Some(mut current) = world.get_mut::<MaterialRef>(entity) {
         *current = MaterialRef::Asset(material);
         return Ok(());
     }

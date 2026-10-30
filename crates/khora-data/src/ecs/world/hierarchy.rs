@@ -138,7 +138,7 @@ impl World {
         // Detach first, whatever comes next. Skipping this on a re-parent is
         // what leaves a child listed under both its old and its new parent.
         if let Some(former) = self.get::<Parent>(child).map(|p| p.0) {
-            if let Some(children) = self.get_mut::<Children>(former) {
+            if let Some(mut children) = self.get_mut::<Children>(former) {
                 children.0.retain(|listed| *listed != child);
             }
         }
@@ -150,13 +150,13 @@ impl World {
             return true;
         };
 
-        if let Some(existing) = self.get_mut::<Parent>(child) {
+        if let Some(mut existing) = self.get_mut::<Parent>(child) {
             existing.0 = parent;
         } else {
             self.add_component(child, Parent(parent)).ok();
         }
 
-        if let Some(children) = self.get_mut::<Children>(parent) {
+        if let Some(mut children) = self.get_mut::<Children>(parent) {
             if !children.0.contains(&child) {
                 children.0.push(child);
             }

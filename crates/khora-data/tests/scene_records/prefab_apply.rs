@@ -76,7 +76,10 @@ pub(super) fn placed() -> Placed {
 }
 
 fn transform_mut(world: &mut World, entity: EntityId) -> &mut Transform {
-    world.get_mut::<Transform>(entity).expect("placed")
+    world
+        .get_mut::<Transform>(entity)
+        .expect("placed")
+        .into_inner()
 }
 
 fn field(entity: EntityId, component: &str, path: &[&str]) -> PrefabApply {
@@ -495,7 +498,12 @@ fn point_light_mut(
     world: &mut World,
     entity: EntityId,
 ) -> &mut khora_core::renderer::light::PointLight {
-    match &mut world.get_mut::<Light>(entity).expect("lit").light_type {
+    match &mut world
+        .get_mut::<Light>(entity)
+        .expect("lit")
+        .into_inner()
+        .light_type
+    {
         khora_core::renderer::light::LightType::Point(point) => point,
         other => panic!("not a point light: {other:?}"),
     }

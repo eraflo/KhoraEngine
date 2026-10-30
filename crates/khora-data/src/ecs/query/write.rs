@@ -14,8 +14,8 @@
 
 //! `QueryMut`: iterating a query over an exclusive `&mut World`.
 
-use super::{has_foreign_excluded, is_live_row, NativeRowPlan, WorldQuery};
-use crate::ecs::{DomainBitset, QueryMode, QueryPlan, World};
+use super::{has_foreign_excluded, is_live_row, NativeRowPlan, WorldQuery, WriteStamp};
+use crate::ecs::{ComponentKey, DomainBitset, QueryMode, QueryPlan, World};
 use std::marker::PhantomData;
 
 // ------------------------- //
@@ -37,6 +37,8 @@ pub struct QueryMut<'a, Q: WorldQuery> {
     /// The per-row work of a Native iteration beyond the driver row (see
     /// [`NativeRowPlan`]). Empty for most queries.
     row_plan: NativeRowPlan,
+    /// The writable terms' keys some observer watches (see [`WriteStamp`]).
+    observed: Vec<ComponentKey>,
 }
 
 impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
@@ -50,6 +52,11 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
         row_plan: NativeRowPlan,
     ) -> Self {
         let combined_bitset = world.compute_query_bitset(&plan);
+        let observed = Q::mutable_type_ids()
+            .into_iter()
+            .map(ComponentKey::Rust)
+            .filter(|key| world.is_observed(*key))
+            .collect();
         Self {
             world_ptr: world as *mut _,
             matching_page_indices,
@@ -59,6 +66,7 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
             _phantom: PhantomData,
             combined_bitset,
             row_plan,
+            observed,
         }
     }
 }
@@ -121,14 +129,21 @@ impl<'a, Q: WorldQuery> QueryMut<'a, Q> {
                     }
                 }
 
-                // We get a mutable reference to the page, which is a safe operation
-                // because `world` is a mutable reference.
-                // SAFETY: `page` is borrowed from the exclusively-held `world`;
-                // `matching_page_indices` only lists pages matching `Q`, so the
-                // columns `Q::fetch` reads (and mutably aliases for `&mut`
-                // queries) are present, and `row` is in bounds.
-                let page = &mut world.storage.pages[page_id];
-                let item = unsafe { Q::fetch(page as *mut _ as *const _, row) };
+                // The page through the page buffer's pointer, never a reference
+                // to it: the guards handed out earlier note their writes
+                // through theirs, which a new reference would invalidate.
+                // SAFETY: the buffer belongs to the exclusively-held `world`
+                // and `page_id` indexes it (it was checked against
+                // `row_count` above); `matching_page_indices` only lists pages
+                // matching `Q`, so the columns `Q::fetch` reads (and mutably
+                // aliases for `&mut` queries) are present, and `row` is in
+                // bounds.
+                let stamp = WriteStamp {
+                    tick: world.current_tick(),
+                    observed: &self.observed,
+                };
+                let page = unsafe { world.storage.pages.as_mut_ptr().add(page_id) };
+                let item = unsafe { Q::fetch(page as *const _, row, stamp) };
                 return Some(item);
             } else {
                 self.current_page_index += 1;

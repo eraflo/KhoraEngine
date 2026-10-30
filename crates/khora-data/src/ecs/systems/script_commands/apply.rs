@@ -25,7 +25,8 @@ use khora_core::math::{Quaternion, Vec3};
 use khora_core::script::{ColumnBatch, ComponentName, ScriptValue, WorldCommand};
 
 use crate::ecs::{
-    ColumnWriteReport, ComponentKey, FieldWriteError, HierarchyWrite, RowError, Transform, World,
+    ColumnWriteReport, ComponentKey, FieldWriteError, HierarchyWrite, Mut, RowError, Transform,
+    World,
 };
 use crate::scene::component_registration::registration_of;
 use crate::scene::PrefabSource;
@@ -211,16 +212,16 @@ fn apply_one(
 ) -> Result<(), ApplyError> {
     match command {
         WorldCommand::SetTranslation { entity, value } => {
-            transform_mut(world, *entity).map(|t| t.translation = *value)
+            transform_mut(world, *entity).map(|mut t| t.translation = *value)
         }
         WorldCommand::Translate { entity, delta } => {
-            transform_mut(world, *entity).map(|t| t.translation = t.translation + *delta)
+            transform_mut(world, *entity).map(|mut t| t.translation = t.translation + *delta)
         }
         WorldCommand::SetRotation { entity, value } => {
-            transform_mut(world, *entity).map(|t| t.rotation = *value)
+            transform_mut(world, *entity).map(|mut t| t.rotation = *value)
         }
         WorldCommand::SetScale { entity, value } => {
-            transform_mut(world, *entity).map(|t| t.scale = *value)
+            transform_mut(world, *entity).map(|mut t| t.scale = *value)
         }
         WorldCommand::SetParent { entity, parent } => set_parent(world, *entity, *parent),
         WorldCommand::Spawn {
@@ -276,7 +277,7 @@ fn apply_one(
 /// `transform_propagation` recomputes the global from this, one phase per frame,
 /// which is the same latency a physics writeback already has. Writing the global
 /// directly would be overwritten on the next propagation anyway.
-fn transform_mut(world: &mut World, entity: EntityId) -> Result<&mut Transform, ApplyError> {
+fn transform_mut(world: &mut World, entity: EntityId) -> Result<Mut<'_, Transform>, ApplyError> {
     if !world.contains(entity) {
         return Err(ApplyError::NoSuchEntity(entity));
     }

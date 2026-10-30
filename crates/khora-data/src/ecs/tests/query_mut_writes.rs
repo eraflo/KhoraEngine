@@ -46,10 +46,10 @@ type Held = (Option<i32>, Option<i32>, Option<i32>);
 /// and returns the entities it yielded in order of index.
 fn write_all(world: &mut World) -> Vec<EntityId> {
     let mut seen = Vec::new();
-    for (id, position, render, velocity) in world.query_mut::<Writes>() {
+    for (id, mut position, mut render, velocity) in world.query_mut::<Writes>() {
         position.0 += 1000;
         render.0 += 1000;
-        if let Some(velocity) = velocity {
+        if let Some(mut velocity) = velocity {
             velocity.0 += 1000;
         }
         seen.push(id);

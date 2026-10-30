@@ -57,7 +57,7 @@ pub mod ecs {
     pub use khora_core::renderer::light::{DirectionalLight, LightType, PointLight, SpotLight};
     pub use khora_data::ecs::{
         AudioSource, Camera, CameraProblem, Children, Collider, Component, ComponentBundle,
-        GlobalTransform, Light, MaterialRef, MeshRef, Name, Parent, ProceduralMeshKind,
+        GlobalTransform, Light, MaterialRef, MeshRef, Mut, Name, Parent, ProceduralMeshKind,
         ProjectionType, RigidBody, Tag, Transform, Without,
     };
     // A behavior is attached by its component, by name —

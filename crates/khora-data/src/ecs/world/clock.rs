@@ -98,6 +98,36 @@ impl World {
         self.storage.dirty_pages.insert(page_id);
     }
 
+    /// Notes a write of row `row` of `key` in page `page_id`, now. An observed
+    /// column without row ticks gains them first, so that the write is known
+    /// for that row alone.
+    pub(crate) fn stamp_row(&mut self, page_id: u32, key: ComponentKey, row: usize) {
+        let observed = self.clock.observed.contains(&key);
+        let tick = self.clock.tick;
+        if let Some(page) = self.storage.pages.get_mut(page_id as usize) {
+            if observed {
+                page.materialize_row_ticks(key);
+            }
+            if let Some(ticks) = page.ticks.get_mut(&key) {
+                ticks.stamp(row, tick);
+            }
+        }
+    }
+
+    /// Notes a write of every row of `key` in page `page_id`, now.
+    pub(crate) fn stamp_column(&mut self, page_id: u32, key: ComponentKey) {
+        let observed = self.clock.observed.contains(&key);
+        let tick = self.clock.tick;
+        if let Some(page) = self.storage.pages.get_mut(page_id as usize) {
+            if observed {
+                page.materialize_row_ticks(key);
+            }
+            if let Some(ticks) = page.ticks.get_mut(&key) {
+                ticks.stamp_all(tick);
+            }
+        }
+    }
+
     /// Records that `observer` ran on this world at `tick`.
     pub fn note_observer_run(&mut self, observer: Observer, tick: Tick) {
         self.clock.last_seen.insert(observer, tick);

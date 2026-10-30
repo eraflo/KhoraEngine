@@ -179,7 +179,7 @@ fn a_key_removed_from_a_nested_map_stays_removed_in_every_encoding() {
     let base = capture_world(&world).expect("captures");
 
     {
-        let glossary = world.get_mut::<Glossary>(entity).expect("there");
+        let mut glossary = world.get_mut::<Glossary>(entity).expect("there");
         glossary.entries.words.remove("two");
         glossary.entries.count = 1;
     }

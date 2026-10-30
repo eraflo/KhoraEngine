@@ -16,7 +16,7 @@
 
 use khora_core::ecs::entity::EntityId;
 
-use super::{live_metadata, WorldQuery};
+use super::{live_metadata, WorldQuery, WriteStamp};
 use crate::ecs::{page::ComponentPage, Component, ComponentKey, World};
 use std::{any::TypeId, marker::PhantomData};
 
@@ -46,7 +46,11 @@ impl<T: Component> WorldQuery for Without<T> {
     }
 
     /// Fetches nothing. Returns a unit type `()`.
-    unsafe fn fetch<'a>(_page_ptr: *const ComponentPage, _row_index: usize) -> Self::Item<'a> {
+    unsafe fn fetch<'a>(
+        _page_ptr: *const ComponentPage,
+        _row_index: usize,
+        _stamp: WriteStamp<'_>,
+    ) -> Self::Item<'a> {
         // This function will be called but its result is ignored.
     }
 

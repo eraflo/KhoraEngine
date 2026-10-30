@@ -57,7 +57,7 @@ pub fn transform_propagation_system(world: &mut World) {
     // Stage 1: initialize the work queue with all root entities.
     // A root has `Transform` and `GlobalTransform` but no `Parent`.
     let mut queue: VecDeque<EntityId> = VecDeque::new();
-    for (id, transform, global_transform, _) in
+    for (id, transform, mut global_transform, _) in
         world.query_mut::<(EntityId, &Transform, &mut GlobalTransform, Without<Parent>)>()
     {
         let placed: AffineTransform = transform.to_mat4().into();
@@ -106,7 +106,7 @@ pub fn transform_propagation_system(world: &mut World) {
             // Only enqueue children whose `GlobalTransform` we successfully
             // wrote — that's the invariant the next iteration of this loop
             // relies on. Transform-only children stay out of the queue.
-            if let Some(global_transform) = world.get_mut::<GlobalTransform>(child_id) {
+            if let Some(mut global_transform) = world.get_mut::<GlobalTransform>(child_id) {
                 global_transform.0 = child_matrix;
                 queue.push_back(child_id);
             }

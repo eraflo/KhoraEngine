@@ -154,13 +154,15 @@ impl<'a> Vessel<'a> {
     /// This finalizes the Vessel creation and returns the entity ID.
     pub fn build(self) -> EntityId {
         // Update transform (entity was spawned with one, so we need to update it)
-        if let Some(existing_transform) = self.world.get_component_mut::<Transform>(self.entity) {
+        if let Some(mut existing_transform) = self.world.get_component_mut::<Transform>(self.entity)
+        {
             *existing_transform = self.transform;
         }
 
         // Sync GlobalTransform
         let global = GlobalTransform::new(self.transform.to_mat4());
-        if let Some(existing_global) = self.world.get_component_mut::<GlobalTransform>(self.entity)
+        if let Some(mut existing_global) =
+            self.world.get_component_mut::<GlobalTransform>(self.entity)
         {
             *existing_global = global;
         }

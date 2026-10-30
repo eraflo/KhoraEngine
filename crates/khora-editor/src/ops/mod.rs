@@ -55,7 +55,7 @@ pub fn sync_scene_cameras_for_mode(world: &mut GameWorld, mode: PlayMode) {
         // Editing mode always uses the dedicated editor camera.
         PlayMode::Editing => {
             for (entity, _) in camera_states {
-                if let Some(cam) = world.get_component_mut::<Camera>(entity) {
+                if let Some(mut cam) = world.get_component_mut::<Camera>(entity) {
                     cam.is_active = false;
                 }
             }
@@ -66,7 +66,7 @@ pub fn sync_scene_cameras_for_mode(world: &mut GameWorld, mode: PlayMode) {
                 return;
             }
             if let Some((entity, _)) = camera_states.first().copied() {
-                if let Some(cam) = world.get_component_mut::<Camera>(entity) {
+                if let Some(mut cam) = world.get_component_mut::<Camera>(entity) {
                     cam.is_active = true;
                 }
             }

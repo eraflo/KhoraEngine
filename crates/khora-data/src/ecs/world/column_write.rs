@@ -85,6 +85,7 @@ impl World {
 
         let mut start = 0;
         let mut run: Vec<(usize, &[ScriptValue])> = Vec::new();
+        let mut written: Vec<usize> = Vec::new();
         while start < placed.len() {
             let page = placed[start].0;
             let end = start
@@ -104,9 +105,13 @@ impl World {
                     .iter()
                     .map(|(_, row, values)| (*row as usize, *values)),
             );
-            let written = ops.write_rows(column.as_mut(), slots, &run);
-            report.written += written;
-            report.refused += run.len() - written;
+            written.clear();
+            ops.write_rows(column.as_mut(), slots, &run, &mut written);
+            report.written += written.len();
+            report.refused += run.len() - written.len();
+            for &row in &written {
+                self.stamp_row(page, key, row);
+            }
             start = end;
         }
         if report.written > 0 {

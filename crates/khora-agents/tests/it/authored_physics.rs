@@ -255,6 +255,7 @@ impl Rig {
         self.world
             .get_mut::<Collider>(entity)
             .expect("the entity has a collider")
+            .into_inner()
     }
 
     /// The kinds of every contact reported between `a` and `b`, in order.
@@ -1157,7 +1158,7 @@ fn a_released_child_is_handed_back_in_its_parents_frame_and_follows_its_parent()
     );
 
     let before = rig.drawn_at(child);
-    let parent_now = rig
+    let mut parent_now = rig
         .world
         .get_mut::<Transform>(parent)
         .expect("the parent has a Transform");

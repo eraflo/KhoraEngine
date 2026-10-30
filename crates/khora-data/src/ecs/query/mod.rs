@@ -17,7 +17,7 @@ use khora_core::ecs::entity::EntityId;
 use crate::ecs::{
     entity::EntityMetadata,
     page::{AnyVec, ComponentPage, PageIndex},
-    Component, ComponentKey, SemanticDomain, World,
+    Component, ComponentKey, Mut, SemanticDomain, Tick, World,
 };
 use std::any::TypeId;
 
@@ -122,6 +122,30 @@ pub(crate) struct NativeRowPlan {
 // ---- WorldQuery Part ---- //
 // ------------------------- //
 
+/// What a writable query item notes its write with: the tick the write
+/// carries — the world's [`current_tick`](World::current_tick) — and the
+/// keys of the query's writable terms that some observer watches, whose
+/// columns gain row ticks on their first write.
+#[derive(Debug, Clone, Copy)]
+pub struct WriteStamp<'s> {
+    pub(crate) tick: Tick,
+    pub(crate) observed: &'s [ComponentKey],
+}
+
+impl WriteStamp<'_> {
+    /// The stamp of a query that writes nothing.
+    pub(crate) fn read_only(tick: Tick) -> Self {
+        WriteStamp {
+            tick,
+            observed: &[],
+        }
+    }
+
+    fn observes(&self, key: ComponentKey) -> bool {
+        self.observed.contains(&key)
+    }
+}
+
 /// A trait implemented by types that can be used to query data from the `World`.
 ///
 /// This "sealed" trait provides the necessary information for the query engine to
@@ -175,9 +199,16 @@ pub trait WorldQuery {
     /// 1. The page pointed to by `page_ptr` is valid and matches the query's signature.
     /// 2. `row_index` is a valid index within the page's columns.
     /// 3. Aliasing rules are not violated (e.g., no two `&mut T` to the same data).
-    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a>;
+    ///
+    /// `stamp` is what a write through a writable item is noted with.
+    unsafe fn fetch<'a>(
+        page_ptr: *const ComponentPage,
+        row_index: usize,
+        stamp: WriteStamp<'_>,
+    ) -> Self::Item<'a>;
 
-    /// Fetches the query's item directly from the world for a specific entity.
+    /// Fetches the query's item directly from the world for a specific entity;
+    /// a write through a writable item carries the world's current tick.
     ///
     /// # Safety
     /// Caller must ensure `world` is valid and no aliasing rules are violated.
@@ -200,7 +231,11 @@ impl<T: Component> WorldQuery for &T {
     /// # Safety
     /// The caller MUST guarantee that the page contains a column for component `T`
     /// and that `row_index` is in bounds.
-    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
+    unsafe fn fetch<'a>(
+        page_ptr: *const ComponentPage,
+        row_index: usize,
+        _stamp: WriteStamp<'_>,
+    ) -> Self::Item<'a> {
         // 1. Get a reference to the `ComponentPage`.
         let page = &*page_ptr;
 
@@ -237,7 +272,7 @@ impl<T: Component> WorldQuery for &T {
 
 // Implementation for a query of a single, mutable component reference.
 impl<T: Component> WorldQuery for &mut T {
-    type Item<'a> = &'a mut T;
+    type Item<'a> = Mut<'a, T>;
 
     fn type_ids() -> Vec<TypeId> {
         vec![TypeId::of::<T>()]
@@ -247,7 +282,8 @@ impl<T: Component> WorldQuery for &mut T {
         vec![TypeId::of::<T>()]
     }
 
-    /// Fetches a mutable reference to the component `T` from the specified row.
+    /// Fetches writable access to the component `T` at the specified row: a
+    /// guard that stamps the row on its first write.
     ///
     /// # Safety
     /// The caller MUST guarantee that:
@@ -255,17 +291,34 @@ impl<T: Component> WorldQuery for &mut T {
     /// 2. `row_index` is in bounds.
     /// 3. No other mutable reference to this specific component exists at the same time.
     ///    The query engine must enforce this.
-    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
+    /// 4. `page_ptr` keeps write permission over the page for `'a` — it is
+    ///    taken from the page buffer, not cast from a reference to one page —
+    ///    and no reference to the page's ticks is live while an item is.
+    unsafe fn fetch<'a>(
+        page_ptr: *const ComponentPage,
+        row_index: usize,
+        stamp: WriteStamp<'_>,
+    ) -> Self::Item<'a> {
         // UNSAFE: We cast the const pointer to a mutable one.
         // This is safe ONLY if the query engine guarantees no other access.
-        let page = &mut *(page_ptr as *mut ComponentPage);
+        let page_ptr = page_ptr as *mut ComponentPage;
+        let page = &mut *page_ptr;
         let column = page.columns.get_mut(&ComponentKey::of::<T>()).unwrap();
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>().unwrap();
         debug_assert!(row_index < vec.len());
         // Through the buffer's pointer, never a slice: `get_unchecked_mut`
         // reborrows the whole column `&mut`, which invalidates every item an
         // earlier call handed out from it.
-        &mut *vec.as_mut_ptr().add(row_index)
+        let value = vec.as_mut_ptr().add(row_index);
+        let key = ComponentKey::of::<T>();
+        Mut::in_page(
+            value,
+            page_ptr,
+            key,
+            stamp.observes(key),
+            row_index,
+            stamp.tick,
+        )
     }
 
     unsafe fn fetch_from_world<'a>(
@@ -273,12 +326,14 @@ impl<T: Component> WorldQuery for &mut T {
         entity_id: EntityId,
     ) -> Option<Self::Item<'a>> {
         let location = live_location::<T>(&*world, entity_id)?;
-        let world_mut = &mut *(world as *mut World);
-
-        let page = &mut world_mut.storage.pages[location.page_id as usize];
-        let column = page.columns.get_mut(&ComponentKey::of::<T>())?;
+        let key = ComponentKey::of::<T>();
+        let (tick, observed) = ((*world).current_tick(), (*world).is_observed(key));
+        let page = page_of_world(world, location.page_id)?;
+        let row = location.row_index as usize;
+        let column = (*page).columns.get_mut(&ComponentKey::of::<T>())?;
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
-        column_item(vec, location.row_index as usize)
+        let value = column_item(vec, row)?;
+        Some(Mut::in_page(value, page, key, observed, row, tick))
     }
 }
 
@@ -295,7 +350,11 @@ impl<T: Component> WorldQuery for Option<&T> {
         vec![TypeId::of::<T>()]
     }
 
-    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
+    unsafe fn fetch<'a>(
+        page_ptr: *const ComponentPage,
+        row_index: usize,
+        _stamp: WriteStamp<'_>,
+    ) -> Self::Item<'a> {
         let page = &*page_ptr;
         let column = page.columns.get(&ComponentKey::of::<T>())?;
         let vec = column.as_any().downcast_ref::<Vec<T>>()?;
@@ -326,7 +385,7 @@ impl<T: Component> WorldQuery for Option<&T> {
 
 // Implementation for an optional mutable component reference.
 impl<T: Component> WorldQuery for Option<&mut T> {
-    type Item<'a> = Option<&'a mut T>;
+    type Item<'a> = Option<Mut<'a, T>>;
 
     fn type_ids() -> Vec<TypeId> {
         Vec::new()
@@ -340,11 +399,27 @@ impl<T: Component> WorldQuery for Option<&mut T> {
         vec![TypeId::of::<T>()]
     }
 
-    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
-        let page = &mut *(page_ptr as *mut ComponentPage);
-        let column = page.columns.get_mut(&ComponentKey::of::<T>())?;
+    /// # Safety
+    /// As `&mut T`'s, the column aside: the page may lack it.
+    unsafe fn fetch<'a>(
+        page_ptr: *const ComponentPage,
+        row_index: usize,
+        stamp: WriteStamp<'_>,
+    ) -> Self::Item<'a> {
+        let page_ptr = page_ptr as *mut ComponentPage;
+        let page = &mut *page_ptr;
+        let key = ComponentKey::of::<T>();
+        let column = page.columns.get_mut(&key)?;
         let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
-        column_item(vec, row_index)
+        let value = column_item(vec, row_index)?;
+        Some(Mut::in_page(
+            value,
+            page_ptr,
+            key,
+            stamp.observes(key),
+            row_index,
+            stamp.tick,
+        ))
     }
 
     unsafe fn fetch_from_world<'a>(
@@ -357,19 +432,40 @@ impl<T: Component> WorldQuery for Option<&mut T> {
         let Some(location) = live_location::<T>(&*world, entity_id) else {
             return Some(None);
         };
-        let world_mut = &mut *(world as *mut World);
-
-        let page = &mut world_mut.storage.pages[location.page_id as usize];
+        let key = ComponentKey::of::<T>();
+        let (tick, observed) = ((*world).current_tick(), (*world).is_observed(key));
+        let Some(page) = page_of_world(world, location.page_id) else {
+            return Some(None);
+        };
+        let row = location.row_index as usize;
         Some(
-            page.columns
+            (*page)
+                .columns
                 .get_mut(&ComponentKey::of::<T>())
                 .and_then(|column| column.as_any_mut().downcast_mut::<Vec<T>>())
-                .and_then(|vec| column_item(vec, location.row_index as usize)),
+                .and_then(|vec| column_item(vec, row))
+                .map(|value| Mut::in_page(value, page, key, observed, row, tick)),
         )
     }
 }
 
-/// The `&mut` to item `row` of `vec`, through the buffer's pointer.
+/// The page `page_id` of `world`, through the page buffer's pointer.
+///
+/// Never `&mut world.storage.pages[page_id]`: a pointer cast from a reference
+/// to one page is invalidated by the next reference made to it, and the
+/// guards an earlier fetch handed out note their writes through theirs.
+///
+/// # Safety
+///
+/// `world` keeps write permission over the world, and no reference to the
+/// page is live.
+unsafe fn page_of_world(world: *const World, page_id: u32) -> Option<*mut ComponentPage> {
+    let world = &mut *(world as *mut World);
+    let pages = &mut world.storage.pages;
+    ((page_id as usize) < pages.len()).then(|| pages.as_mut_ptr().add(page_id as usize))
+}
+
+/// The pointer to item `row` of `vec`, through the buffer's pointer.
 ///
 /// Never `vec.get_mut(row)`: that reborrows the whole column as `&mut [T]`,
 /// which invalidates every item an earlier fetch handed out from the same
@@ -378,10 +474,10 @@ impl<T: Component> WorldQuery for Option<&mut T> {
 /// # Safety
 ///
 /// No other reference to item `row` may be live.
-unsafe fn column_item<'a, T>(vec: &mut Vec<T>, row: usize) -> Option<&'a mut T> {
+unsafe fn column_item<T>(vec: &mut Vec<T>, row: usize) -> Option<*mut T> {
     // `row` is in bounds, checked here, and the caller guarantees no other
     // reference to that item is live; the pointer reaches that item alone.
-    (row < vec.len()).then(|| &mut *vec.as_mut_ptr().add(row))
+    (row < vec.len()).then(|| vec.as_mut_ptr().add(row))
 }
 
 // Implementation for tuples of WorldQuery types.
@@ -430,8 +526,12 @@ macro_rules! impl_query_tuple {
                 ids
             }
 
-            unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
-                ($($Q::fetch(page_ptr, row_index),)*)
+            unsafe fn fetch<'a>(
+                page_ptr: *const ComponentPage,
+                row_index: usize,
+                stamp: WriteStamp<'_>,
+            ) -> Self::Item<'a> {
+                ($($Q::fetch(page_ptr, row_index, stamp),)*)
             }
 
             unsafe fn fetch_from_world<'a>(
@@ -485,7 +585,7 @@ impl_query_tuple!(Q1, Q2, Q3, Q4, Q5, Q6, Q7, Q8, Q9, Q10, Q11, Q12);
 /// let mut world = World::new();
 /// // Reading through a shared borrow, writing through an exclusive one.
 /// for _transform in world.query::<&Transform>() {}
-/// for transform in world.query_mut::<&mut Transform>() {
+/// for mut transform in world.query_mut::<&mut Transform>() {
 ///     *transform = Transform::default();
 /// }
 /// ```
@@ -544,7 +644,11 @@ impl WorldQuery for EntityId {
     // It doesn't have a `without` filter either.
     // The default implementation is sufficient.
 
-    unsafe fn fetch<'a>(page_ptr: *const ComponentPage, row_index: usize) -> Self::Item<'a> {
+    unsafe fn fetch<'a>(
+        page_ptr: *const ComponentPage,
+        row_index: usize,
+        _stamp: WriteStamp<'_>,
+    ) -> Self::Item<'a> {
         let page = &*page_ptr;
         // The entity ID is fetched from the page's own list of entities.
         *page.entities.get_unchecked(row_index)

@@ -191,7 +191,7 @@ mod tests {
     fn picking_follows_the_transform() {
         let mut world = GameWorld::new();
         let entity = spawn_at(&mut world, Vec3::new(3.0, 0.0, 0.0), "moved");
-        if let Some(g) = world.get_component_mut::<GlobalTransform>(entity) {
+        if let Some(mut g) = world.get_component_mut::<GlobalTransform>(entity) {
             *g = GlobalTransform::new(Mat4::from_translation(Vec3::new(3.0, 0.0, 0.0)));
         }
 

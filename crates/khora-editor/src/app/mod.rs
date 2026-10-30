@@ -194,7 +194,7 @@ impl EditorApp {
         ops::process_reparents(world, &mut state);
 
         if let Some((entity, new_name)) = state.pending_rename.take() {
-            if let Some(name) = world.get_component_mut::<Name>(entity) {
+            if let Some(mut name) = world.get_component_mut::<Name>(entity) {
                 *name = Name::new(&new_name);
                 log::info!("Renamed entity {:?} to '{}'", entity, new_name);
             }

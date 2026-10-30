@@ -257,10 +257,10 @@ impl EngineApp for SandboxGame {
             .unwrap_or(1.0 / 60.0);
 
         if let Some(player) = self.player {
-            if let Some(transform) = world.get_transform_mut(player) {
+            if let Some(mut transform) = world.get_transform_mut(player) {
                 if let Some(map_arc) = &self.input_map {
                     if let Ok(map) = map_arc.lock() {
-                        self.controller.update(transform, dt, &map);
+                        self.controller.update(&mut transform, dt, &map);
                     }
                 }
             }

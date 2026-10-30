@@ -66,6 +66,34 @@ impl ColumnTicks {
         self.summary = self.summary.max(tick);
     }
 
+    /// Notes a write of `row` at `tick`: the row's own tick when the column
+    /// keeps them, the floor otherwise, so that the row stays covered; the
+    /// summary in both cases.
+    pub(crate) fn stamp(&mut self, row: usize, tick: Tick) {
+        match self.rows.as_mut().and_then(|rows| rows.get_mut(row)) {
+            Some(own) => *own = (*own).max(tick.0),
+            None => self.floor = self.floor.max(tick),
+        }
+        self.summary = self.summary.max(tick);
+    }
+
+    /// Notes a write of every row at `tick`.
+    pub(crate) fn stamp_all(&mut self, tick: Tick) {
+        match &mut self.rows {
+            Some(rows) => rows.iter_mut().for_each(|own| *own = (*own).max(tick.0)),
+            None => self.floor = self.floor.max(tick),
+        }
+        self.summary = self.summary.max(tick);
+    }
+
+    /// Gives a column without row ticks one per row, each reading 0 — under
+    /// the floor, which still covers them. A column that has them keeps them.
+    pub(crate) fn materialize(&mut self, row_count: usize) {
+        if self.rows.is_none() {
+            self.rows = Some(vec![0; row_count]);
+        }
+    }
+
     /// Removes `row` by moving the last row into its place, as the column
     /// does.
     pub(crate) fn swap_remove(&mut self, row: usize) {

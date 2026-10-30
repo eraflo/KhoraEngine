@@ -132,7 +132,7 @@ mod tests {
 
         // Move the body, then capture again: the snapshot mirrors the (now
         // current) GlobalTransform that propagation will overwrite next.
-        if let Some(gt) = world.get_mut::<GlobalTransform>(body) {
+        if let Some(mut gt) = world.get_mut::<GlobalTransform>(body) {
             *gt = GlobalTransform::at_position(Vec3::new(5.0, 0.0, 0.0));
         }
         capture_previous_transform(&world, &mut store);

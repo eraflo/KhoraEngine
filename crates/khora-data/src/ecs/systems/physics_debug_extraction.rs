@@ -55,7 +55,7 @@ fn physics_debug_extraction(world: &mut World, runtime: &Runtime, _deck: &mut Ou
         }
     };
 
-    for debug_data in world.query_mut::<&mut PhysicsDebugData>() {
+    for mut debug_data in world.query_mut::<&mut PhysicsDebugData>() {
         if debug_data.enabled {
             let (vertices, indices) = guard.get_debug_render_data();
             debug_data.vertices = vertices;

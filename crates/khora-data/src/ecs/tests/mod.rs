@@ -23,6 +23,8 @@ mod entity_count_unwind;
 mod entity_reservations;
 mod hierarchy;
 mod hierarchy_writers;
+mod mut_guard;
+mod observed_row_arrays;
 mod page_ticks;
 mod query_mut_aliasing;
 mod query_mut_writes;
@@ -37,6 +39,8 @@ mod ticks_unsaved;
 mod typed_fields;
 mod unit_fields;
 mod world_clock;
+mod write_invariants;
+mod write_stamps;
 
 use crate::ecs::query::Without;
 use crate::ecs::SemanticDomain;
@@ -456,7 +460,7 @@ fn test_mutable_query_modifies_components() {
 
     // --- 2. ACT ---
     // Run a mutable query and modify the `Position` components.
-    for position_ref in world.query_mut::<&mut Position>() {
+    for mut position_ref in world.query_mut::<&mut Position>() {
         // Multiply the position's value by 2.
         position_ref.0 *= 2;
     }
@@ -753,7 +757,7 @@ fn test_simple_mutable_query_modifies_components() {
 
     // --- 2. ACT ---
     // Run a mutable query to modify the `Position` components.
-    for position_mut in world.query_mut::<&mut Position>() {
+    for mut position_mut in world.query_mut::<&mut Position>() {
         position_mut.0 *= 2;
     }
 
@@ -791,7 +795,7 @@ fn test_complex_mutable_query_with_filter() {
     // Query for entities with a mutable Position and an immutable Velocity,
     // but only if they do NOT have a RenderTag.
     // The physics system is a classic example of this pattern.
-    for (pos_mut, vel_ref, ()) in
+    for (mut pos_mut, vel_ref, ()) in
         world.query_mut::<(&mut Position, &Velocity, Without<RenderTag>)>()
     {
         pos_mut.0 += vel_ref.0;
@@ -911,7 +915,7 @@ fn test_transversal_join() {
     assert_eq!(join_results, vec![1, 3]);
 
     // Verify it works with QueryMut too
-    for (p, _) in world.query_mut::<(&mut Position, &RenderTag)>() {
+    for (mut p, _) in world.query_mut::<(&mut Position, &RenderTag)>() {
         p.0 += 10;
     }
 
@@ -2083,7 +2087,7 @@ fn transversal_query_mut_skips_migration_orphan() {
     let e = world.spawn((Position(1), RenderId(10)));
     world.add_component(e, RenderTag).expect("add_component");
     let mut seen = Vec::new();
-    for (id, p, r) in world.query_mut::<(EntityId, &mut Position, &mut RenderId)>() {
+    for (id, mut p, mut r) in world.query_mut::<(EntityId, &mut Position, &mut RenderId)>() {
         p.0 += 1;
         r.0 += 1;
         seen.push(id);
@@ -2105,7 +2109,7 @@ fn transversal_query_mut_skips_dead_orphan_with_recycled_index() {
     let c = world.spawn((Position(3), RenderId(30)));
     assert_eq!(c.index, a.index);
     let mut seen = Vec::new();
-    for (id, p, r) in world.query_mut::<(EntityId, &mut Position, &mut RenderId)>() {
+    for (id, mut p, mut r) in world.query_mut::<(EntityId, &mut Position, &mut RenderId)>() {
         p.0 += 1;
         r.0 += 1;
         seen.push(id);
@@ -2221,7 +2225,7 @@ fn transversal_query_mut_after_repeated_migrations_yields_once() {
     world.remove_component::<RenderTag>(e).expect("remove");
     world.add_component(e, RenderTag).expect("add 2");
     let mut seen = Vec::new();
-    for (id, p, r) in world.query_mut::<(EntityId, &mut Position, &mut RenderId)>() {
+    for (id, mut p, mut r) in world.query_mut::<(EntityId, &mut Position, &mut RenderId)>() {
         p.0 += 1;
         r.0 += 1;
         seen.push(id);
@@ -2367,7 +2371,7 @@ fn component_less_query_mut_writes_through_option_term() {
     let (mut world, co, split) = two_layout_world();
     for (_, pos) in world.query_mut::<(khora_core::ecs::entity::EntityId, Option<&mut Position>)>()
     {
-        if let Some(pos) = pos {
+        if let Some(mut pos) = pos {
             pos.0 += 100;
         }
     }
@@ -2561,7 +2565,7 @@ fn native_query_mut_option_term_writes_foreign_domain_row() {
     let e = world.spawn(Position(1));
     world.add_component(e, RenderId(10)).expect("add");
     for (_, r) in world.query_mut::<(&mut Position, Option<&mut RenderId>)>() {
-        if let Some(r) = r {
+        if let Some(mut r) = r {
             r.0 += 1;
         }
     }
@@ -2650,9 +2654,9 @@ fn native_unregistered_driver_with_registered_option_yields_nothing() {
 fn native_query_mut_colocated_mut_and_foreign_option_mut_both_write() {
     let mut world = compaction_world();
     let co = world.spawn((Position(1), RenderId(10)));
-    for (p, r) in world.query_mut::<(&mut Position, Option<&mut RenderId>)>() {
+    for (mut p, r) in world.query_mut::<(&mut Position, Option<&mut RenderId>)>() {
         p.0 += 1;
-        if let Some(r) = r {
+        if let Some(mut r) = r {
             r.0 += 1;
         }
     }
@@ -2682,7 +2686,7 @@ fn native_query_mut_mixed_terms_across_layouts_write_each_entity_once() {
 
     let render_before = world.domain_epoch(SemanticDomain::Render);
     let mut seen: Vec<EntityId> = Vec::new();
-    for (id, p, v, r, _) in world.query_mut::<(
+    for (id, p, mut v, r, _) in world.query_mut::<(
         EntityId,
         &Position,
         &mut Velocity,
@@ -2691,7 +2695,7 @@ fn native_query_mut_mixed_terms_across_layouts_write_each_entity_once() {
     )>() {
         seen.push(id);
         v.0 += p.0;
-        if let Some(r) = r {
+        if let Some(mut r) = r {
             r.0 += 1;
         }
     }
@@ -2720,7 +2724,7 @@ fn native_query_mut_foreign_option_skips_orphans_after_repeated_migrations() {
     let mut hits = 0;
     for (_, r) in world.query_mut::<(&Position, Option<&mut RenderId>)>() {
         hits += 1;
-        if let Some(r) = r {
+        if let Some(mut r) = r {
             r.0 += 1;
         }
     }

@@ -14,7 +14,7 @@
 
 //! `Query`: iterating a query over a shared `&World`.
 
-use super::{has_foreign_excluded, is_live_row, NativeRowPlan, WorldQuery};
+use super::{has_foreign_excluded, is_live_row, NativeRowPlan, WorldQuery, WriteStamp};
 use crate::ecs::{DomainBitset, QueryMode, QueryPlan, World};
 use std::marker::PhantomData;
 
@@ -152,7 +152,8 @@ impl<'a, Q: WorldQuery> Query<'a, Q> {
                 // `matching_page_indices` only contains pages whose signature
                 // satisfies `Q`, so every column `Q::fetch` reads is present.
                 // `row < page.row_count()` keeps the row in bounds.
-                let item = unsafe { Q::fetch(page as *const _, row) };
+                let stamp = WriteStamp::read_only(world.current_tick());
+                let item = unsafe { Q::fetch(page as *const _, row, stamp) };
                 return Some(item);
             } else {
                 self.current_page_index += 1;

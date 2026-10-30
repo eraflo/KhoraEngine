@@ -96,7 +96,7 @@ fn sync_from_provider(world: &mut World, provider: &dyn PhysicsProvider) {
         // condition. Anything asking a body what it is doing used to be told
         // what its designer typed.
         match world.get_mut::<BodyMotion>(entity) {
-            Some(existing) => *existing = motion,
+            Some(mut existing) => *existing = motion,
             None => {
                 let _ = world.add_component(entity, motion);
             }
@@ -107,7 +107,7 @@ fn sync_from_provider(world: &mut World, provider: &dyn PhysicsProvider) {
 /// Writes an entity's simulated pose, giving it one if this is its first frame.
 fn set_simulated(world: &mut World, entity: EntityId, pose: SimulatedTransform) {
     match world.get_mut::<SimulatedTransform>(entity) {
-        Some(existing) => *existing = pose,
+        Some(mut existing) => *existing = pose,
         None => {
             let _ = world.add_component(entity, pose);
         }
@@ -160,7 +160,7 @@ fn resolve_characters(world: &mut World, provider: &dyn PhysicsProvider) {
             );
         }
 
-        if let Some(kcc) = world.get_mut::<KinematicCharacterController>(id) {
+        if let Some(mut kcc) = world.get_mut::<KinematicCharacterController>(id) {
             kcc.is_grounded = g;
             kcc.desired_translation = khora_core::math::Vec3::ZERO;
         }

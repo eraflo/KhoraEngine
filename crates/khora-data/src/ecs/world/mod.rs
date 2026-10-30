@@ -42,6 +42,7 @@ mod migration;
 mod projection;
 mod queries;
 mod reservations;
+mod rows;
 mod runtime;
 
 pub use column_write::ColumnWriteReport;
@@ -51,7 +52,8 @@ pub use component_access::SpawnError;
 pub use hierarchy::HierarchyWrite;
 pub(crate) use hierarchy::LoadedHierarchy;
 pub use projection::BehaviorComponent;
-pub use runtime::{RegisterError, RelayoutReport, RowError, RowMut, RowRef, RuntimeComponentDecl};
+pub use rows::{RowMut, RowRef};
+pub use runtime::{RegisterError, RelayoutReport, RowError, RuntimeComponentDecl};
 
 /// Simple statistics for a semantic domain.
 #[derive(Debug, Default, Clone, Copy)]

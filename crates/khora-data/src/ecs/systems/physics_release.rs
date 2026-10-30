@@ -64,7 +64,7 @@ pub fn physics_release_system(world: &mut World) {
         // authored pose, and the author's `Transform` is the one to keep.
         if world.get::<Teleported>(entity).is_none() {
             if let Some(placed) = handed_back(world, entity) {
-                if let Some(transform) = world.get_mut::<Transform>(entity) {
+                if let Some(mut transform) = world.get_mut::<Transform>(entity) {
                     *transform = placed;
                 }
             }

@@ -19,7 +19,7 @@ use std::any::TypeId;
 use khora_core::ecs::entity::EntityId;
 
 use super::World;
-use crate::ecs::{page::PageIndex, Component, ComponentKey, SemanticDomain};
+use crate::ecs::{page::PageIndex, Component, ComponentKey, Mut, SemanticDomain};
 
 /// Errors that can occur when adding a component to an entity.
 #[derive(Debug, PartialEq, Eq)]
@@ -188,7 +188,8 @@ impl World {
         location
     }
 
-    /// Gets a mutable reference to a single component `T` for a given entity.
+    /// Gets writable access to a single component `T` for a given entity: a
+    /// [`Mut`] guard, which stamps the row on its first write.
     ///
     /// This provides direct, "random" access to a component, which can be less
     /// performant than querying but is useful for targeted modifications.
@@ -196,7 +197,7 @@ impl World {
     /// # Returns
     ///
     /// `None` if the entity is not alive or does not have the requested component.
-    pub fn get_mut<T: Component>(&mut self, entity_id: EntityId) -> Option<&mut T> {
+    pub fn get_mut<T: Component>(&mut self, entity_id: EntityId) -> Option<Mut<'_, T>> {
         // 1. Validate the entity ID. An out-of-range index means "not alive"
         // (e.g. a stale or malformed EntityId), so return None rather than panic.
         let (id_in_world, metadata_opt) = self.entities.get(entity_id.index as usize)?;
@@ -207,37 +208,58 @@ impl World {
 
         // 2. Use the registry to find the component's domain and its location.
         let domain = self.storage.registry.get_domain(TypeId::of::<T>())?;
-        let location = metadata.locations.get(&domain)?;
+        let location = *metadata.locations.get(&domain)?;
 
-        // Handing out `&mut T` means T may change — invalidate cached
-        // Views. Inline field access: `metadata` still borrows
-        // `self.entities`, so `bump_domain_epoch(&mut self)` can't be
-        // called here.
-        self.domain_epochs[domain.index()] = self.domain_epochs[domain.index()].wrapping_add(1);
+        // Handing out writable access means T may change — invalidate cached
+        // Views.
+        self.bump_domain_epoch(domain);
 
-        // 3. Get the component data from the page.
-        let type_id = TypeId::of::<T>();
-        let page = self.storage.pages.get_mut(location.page_id as usize)?;
-        let column = page.columns.get_mut(&ComponentKey::Rust(type_id))?;
-        let vec = column.as_any_mut().downcast_mut::<Vec<T>>()?;
-
-        vec.get_mut(location.row_index as usize)
+        // 3. Get the component data from the page, through the page buffer's
+        // pointer, which the guard notes its write through.
+        let key = ComponentKey::of::<T>();
+        let observed = self.clock.observed.contains(&key);
+        let tick = self.clock.tick;
+        let page_id = location.page_id as usize;
+        if page_id >= self.storage.pages.len() {
+            return None;
+        }
+        let row = location.row_index as usize;
+        // SAFETY: `page_id` indexes the page buffer of the exclusively
+        // borrowed world; the `&mut` to the page's columns ends before the
+        // guard is made. `value` is row `row` of `T`'s column, in bounds; the
+        // guard holds the world's borrow, so nothing else reaches the value
+        // or the page's ticks while it lives.
+        unsafe {
+            let page = self.storage.pages.as_mut_ptr().add(page_id);
+            let vec = (*page)
+                .columns
+                .get_mut(&key)?
+                .as_any_mut()
+                .downcast_mut::<Vec<T>>()?;
+            if row >= vec.len() {
+                return None;
+            }
+            let value = vec.as_mut_ptr().add(row);
+            Some(Mut::in_page(value, page, key, observed, row, tick))
+        }
     }
 
-    /// Gets mutable references to components of type `T` for multiple entities simultaneously.
+    /// Gets writable access to components of type `T` for multiple entities
+    /// simultaneously: one [`Mut`] guard each, which stamps its row on its
+    /// first write.
     ///
     /// This is safer than `get_mut` in a loop because it allows retrieving multiple
     /// disjoint mutable references to components of the same type.
     ///
     /// # Returns
     ///
-    /// An array of `Option<&mut T>`. If any entity is not found, does not have the component,
+    /// An array of `Option<Mut<T>>`. If any entity is not found, does not have the component,
     /// or if there are duplicate requests for the same component instance, that entry will be `None`.
     pub fn get_many_mut<T: Component, const N: usize>(
         &mut self,
         ids: [EntityId; N],
-    ) -> [Option<&mut T>; N] {
-        let mut results: [Option<&mut T>; N] = std::array::from_fn(|_| None);
+    ) -> [Option<Mut<'_, T>>; N] {
+        let mut results: [Option<Mut<'_, T>>; N] = std::array::from_fn(|_| None);
 
         let type_id = TypeId::of::<T>();
         let domain = match self.storage.registry.get_domain(type_id) {
@@ -278,26 +300,40 @@ impl World {
             }
         }
 
-        // 3. Retrieve references using unsafe to bypass split_at_mut complexity.
-        // SAFETY: We have verified that all (page, row) pairs are unique,
-        // so we are not creating multiple mutable references to the same data.
+        let key = ComponentKey::Rust(type_id);
+        let observed = self.clock.observed.contains(&key);
+        let tick = self.clock.tick;
+
+        // 3. Retrieve the guards through raw pointers to bypass split_at_mut
+        // complexity: the pages through the page buffer's pointer, never a
+        // reference to one, which the next would invalidate — the guards note
+        // their writes through theirs.
+        let page_count = self.storage.pages.len();
+        let pages = self.storage.pages.as_mut_ptr();
         for i in 0..N {
             if found_mask[i] {
                 let (page_id, row_index) = locations[i];
+                if page_id as usize >= page_count {
+                    continue;
+                }
+                // SAFETY: `page_id` indexes the page buffer of the exclusively
+                // borrowed world, and all (page, row) pairs are unique (checked
+                // above), so no two guards reach one value. The `&mut` to the
+                // page's columns ends before the next page is reached, and no
+                // reference to a page's ticks is made while the guards live
+                // except by a guard noting its write.
                 unsafe {
-                    // We can't borrow self.pages multiple times mutably in the loop,
-                    // but we know the indices are disjoint or the data is disjoint.
-                    let world_ptr = self as *mut Self;
-                    if let Some(page) = (&mut *world_ptr).storage.pages.get_mut(page_id as usize) {
-                        if let Some(column) = page.columns.get_mut(&ComponentKey::Rust(type_id)) {
-                            if let Some(vec) = column.as_any_mut().downcast_mut::<Vec<T>>() {
-                                // Through the buffer's pointer: a slice over
-                                // the column would invalidate the items taken
-                                // from it before this one.
-                                let row = row_index as usize;
-                                if row < vec.len() {
-                                    results[i] = Some(&mut *vec.as_mut_ptr().add(row));
-                                }
+                    let page = pages.add(page_id as usize);
+                    if let Some(column) = (*page).columns.get_mut(&key) {
+                        if let Some(vec) = column.as_any_mut().downcast_mut::<Vec<T>>() {
+                            // Through the buffer's pointer: a slice over
+                            // the column would invalidate the items taken
+                            // from it before this one.
+                            let row = row_index as usize;
+                            if row < vec.len() {
+                                let value = vec.as_mut_ptr().add(row);
+                                results[i] =
+                                    Some(Mut::in_page(value, page, key, observed, row, tick));
                             }
                         }
                     }
@@ -391,6 +427,11 @@ impl World {
             return false;
         };
         value.set_in_column(column.as_mut(), location.row_index as usize);
+        self.stamp_row(
+            location.page_id,
+            ComponentKey::of::<T>(),
+            location.row_index as usize,
+        );
         // The component's value changed — invalidate cached Views.
         self.bump_domain_epoch(domain);
         true
@@ -413,14 +454,24 @@ impl World {
         if let Some(domain) = self.storage.registry.get_domain(type_id) {
             self.bump_domain_epoch(domain);
         }
-        for page in self.storage.pages.iter_mut() {
-            if let Some(column) = page.columns.get_mut(&ComponentKey::Rust(type_id)) {
-                if let Some(soa) = column
+        let key = ComponentKey::Rust(type_id);
+        for page_id in 0..self.storage.pages.len() {
+            let page = &mut self.storage.pages[page_id];
+            let rows = page.row_count();
+            let handed = match page.columns.get_mut(&key).and_then(|column| {
+                column
                     .as_any_mut()
                     .downcast_mut::<crate::ecs::FieldSoaColumn<T>>()
-                {
+            }) {
+                Some(soa) => {
                     f(soa);
+                    true
                 }
+                None => false,
+            };
+            // Every row handed out may have been written.
+            if handed && rows > 0 {
+                self.stamp_column(page_id as u32, key);
             }
         }
     }

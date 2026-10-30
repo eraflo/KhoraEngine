@@ -182,7 +182,7 @@ fn sync_rigid_bodies(
 
     let query = world.query_mut::<(EntityId, &GlobalTransform, &mut RigidBody)>();
 
-    for (entity_id, transform, rb) in query {
+    for (entity_id, transform, mut rb) in query {
         let current_pos = transform.0.translation();
         let current_rot = transform.0.rotation();
 
@@ -252,13 +252,13 @@ fn sync_colliders(
     }
 
     let query = world.query_mut::<(EntityId, &mut Collider, &GlobalTransform)>();
-    for (entity_id, collider, transform) in query {
+    for (entity_id, mut collider, transform) in query {
         let is_active = active_events.contains(&entity_id);
 
         let mut desc = build_collider_desc(
             entity_id,
             transform,
-            collider,
+            &collider,
             &parent_map,
             &parent_transforms,
             is_active,

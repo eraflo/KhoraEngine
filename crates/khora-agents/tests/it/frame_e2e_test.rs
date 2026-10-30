@@ -232,7 +232,7 @@ fn mutation_across_frames_reprojects_not_stale() {
     // Mutate: move one mesh (Spatial epoch bump) and add a light (Render epoch
     // bump). Both bumps must invalidate the frame-1 cached view.
     {
-        let gt = world
+        let mut gt = world
             .get_mut::<GlobalTransform>(mover)
             .expect("mover has a GlobalTransform");
         *gt = GlobalTransform::at_position(Vec3::new(0.0, 7.0, 0.0));

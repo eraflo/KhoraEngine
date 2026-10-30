@@ -201,7 +201,7 @@ pub fn apply_delta(
 ) {
     for &(entity, start) in starts {
         let result = delta.apply(start);
-        let Some(transform) = world.get_component_mut::<Transform>(entity) else {
+        let Some(mut transform) = world.get_component_mut::<Transform>(entity) else {
             continue;
         };
         transform.translation = result.translation;

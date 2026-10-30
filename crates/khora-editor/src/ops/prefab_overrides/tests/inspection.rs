@@ -143,7 +143,7 @@ fn an_untouched_member_overrides_nothing() {
 fn the_override_count_sums_fields_and_added_and_removed_components() {
     let mut placed = placed();
     let inner = placed.world.inner_world_mut();
-    let transform = inner.get_mut::<Transform>(placed.root).expect("placed");
+    let mut transform = inner.get_mut::<Transform>(placed.root).expect("placed");
     transform.scale.x = 2.0;
     transform.scale.z = 3.0;
     inner
@@ -182,7 +182,7 @@ fn the_roots_placement_is_no_override() {
         .expect("authored");
     placed.world.set_parent(placed.root, Some(base));
     {
-        let transform = placed
+        let mut transform = placed
             .world
             .get_component_mut::<Transform>(placed.root)
             .expect("placed");
