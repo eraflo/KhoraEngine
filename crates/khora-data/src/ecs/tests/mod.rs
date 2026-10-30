@@ -31,6 +31,7 @@ mod page_ticks;
 mod query_mut_aliasing;
 mod query_mut_writes;
 mod query_plan_after_registration;
+mod quiet_columns;
 mod relayout;
 mod runtime_components;
 mod runtime_rows;

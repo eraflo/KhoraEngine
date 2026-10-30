@@ -128,6 +128,32 @@ impl World {
         }
     }
 
+    /// Drops the row ticks of every page column that has been silent at least
+    /// `quiet` ticks (`current_tick − σ ≥ quiet`) and that every observer
+    /// which ran on this world has seen (`last_seen ≥ σ`): the column keeps
+    /// its summary σ, its floor rises to σ, its rows read 0 under it. The
+    /// next write of an observed key gives it row ticks again, zeroed. A
+    /// page's order version never moves. Returns how many columns it freed.
+    pub fn free_quiet_row_ticks(&mut self, quiet: u64) -> usize {
+        let now = self.clock.tick;
+        // What every observer has seen: the least last-seen tick of the
+        // ledger. An observer that never ran here holds nothing back — it
+        // reads every row on its first run anyway.
+        let seen = self.clock.last_seen.values().copied().min();
+        let mut freed = 0;
+        for page in &mut self.storage.pages {
+            for ticks in page.ticks.values_mut() {
+                let quiet_enough = now.0.saturating_sub(ticks.summary.0) >= quiet;
+                let seen_by_all = seen.is_none_or(|seen| seen >= ticks.summary);
+                if ticks.rows.is_some() && quiet_enough && seen_by_all {
+                    ticks.free_rows();
+                    freed += 1;
+                }
+            }
+        }
+        freed
+    }
+
     /// Records that `observer` ran on this world at `tick`.
     pub fn note_observer_run(&mut self, observer: Observer, tick: Tick) {
         self.clock.last_seen.insert(observer, tick);

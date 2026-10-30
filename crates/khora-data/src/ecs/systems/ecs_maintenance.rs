@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! ECS maintenance — drains the queued cleanup / vacuum work each frame.
+//! ECS maintenance — drains the queued cleanup / vacuum work each frame, and
+//! frees the row ticks of columns that stayed quiet.
 //!
 //! Replaces the previous hardcoded `gw.tick_maintenance()` call in the
 //! engine tick. The [`EcsMaintenance`] state lives in the
@@ -25,7 +26,7 @@ use std::sync::{Arc, Mutex};
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
 
-use crate::ecs::{DataSystemRegistration, EcsMaintenance, TickPhase, World};
+use crate::ecs::{DataSystemRegistration, EcsMaintenance, TickPhase, World, QUIET_ROW_TICKS};
 
 fn ecs_maintenance_system(
     world: &mut World,
@@ -33,6 +34,7 @@ fn ecs_maintenance_system(
     _deck: &mut OutputDeck,
     _ctx: SystemContext,
 ) {
+    world.free_quiet_row_ticks(QUIET_ROW_TICKS);
     let Some(maintenance) = runtime.resources.get::<Arc<Mutex<EcsMaintenance>>>() else {
         return;
     };

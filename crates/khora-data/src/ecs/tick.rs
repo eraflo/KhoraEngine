@@ -19,6 +19,14 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Tick(pub u64);
 
+/// The silence, in ticks, after which `ecs_maintenance` frees a column's row
+/// ticks ([`World::free_quiet_row_ticks`](crate::ecs::World::free_quiet_row_ticks)):
+/// about five seconds of frames at 60 frames a second — a frame of the
+/// sandbox scene runs about 41 ticks (one per `DataSystem`, `Flow` and
+/// scheduler wave). A count of ticks, not of seconds: a column is freed once
+/// that much of the world's work went by without writing it.
+pub const QUIET_ROW_TICKS: u64 = 12_300;
+
 /// The ticks a page keeps beside one of its columns, under the column's own
 /// [`ComponentKey`](crate::ecs::ComponentKey): what was written to it, and
 /// when.
@@ -106,6 +114,13 @@ impl ColumnTicks {
         if self.rows.is_none() {
             self.rows = Some(vec![0; row_count]);
         }
+    }
+
+    /// Drops the column's row ticks: its rows read 0 under a floor raised to
+    /// the summary, which still covers every one of them (I2).
+    pub(crate) fn free_rows(&mut self) {
+        self.rows = None;
+        self.floor = self.floor.max(self.summary);
     }
 
     /// Removes `row` by moving the last row into its place, as the column

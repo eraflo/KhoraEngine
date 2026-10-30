@@ -35,6 +35,11 @@
 //!
 //! Observers read as the runners make them: `since` is the tick of their
 //! previous read, each read is a run of its own.
+//!
+//! The freeing sequences (`run_freeing_sequence`, tested in `quiet_columns`)
+//! also note each observer's reads in the world's ledger and free quiet
+//! columns (`free_quiet_row_ticks`, a small random `quiet`) among the other
+//! operations; each free is checked against its rule, column by column.
 
 use std::collections::HashMap;
 
@@ -43,7 +48,9 @@ use khora_core::ecs::entity::EntityId;
 use super::page_ticks::{page_of, row_tick, ticks};
 use super::tick_invariants::Rng;
 use super::{Position, RenderId, RenderTag, Velocity};
-use crate::ecs::{Changed, Component, ComponentKey, SemanticDomain, Tick, World};
+use crate::ecs::{
+    Changed, ColumnTicks, Component, ComponentKey, Observer, SemanticDomain, Tick, World,
+};
 
 /// The components the sequences use: two Spatial, two Render. `RenderTag`
 /// is only ever moved, never read.
@@ -83,6 +90,16 @@ impl Part {
     }
 
     /// A read part of the other domain, for Transversal and joined reads.
+    /// The observer reading this part, in a freeing sequence.
+    fn observer(self) -> Observer {
+        Observer::Flow(match self {
+            Part::Position => "Position reader",
+            Part::Velocity => "Velocity reader",
+            Part::RenderId => "RenderId reader",
+            Part::RenderTag => "RenderTag reader",
+        })
+    }
+
     fn foreign(self) -> Part {
         match self.domain() {
             SemanticDomain::Spatial => Part::RenderId,
@@ -207,6 +224,11 @@ struct Sequence {
     exact: usize,
     /// Rows the theorem was checked for: written after `since`, and found.
     caught: usize,
+    /// Whether the observers' reads enter the world's ledger and quiet
+    /// columns are freed among the other operations.
+    frees: bool,
+    /// Columns freed so far.
+    freed: usize,
 }
 
 impl Sequence {
@@ -226,6 +248,16 @@ impl Sequence {
             seen: READ.iter().map(|&part| (part, 0)).collect(),
             exact: 0,
             caught: 0,
+            frees: false,
+            freed: 0,
+        }
+    }
+
+    /// A sequence that also frees quiet columns.
+    fn freeing(seed: u64) -> Self {
+        Self {
+            frees: true,
+            ..Self::new(seed)
         }
     }
 
@@ -485,9 +517,75 @@ impl Sequence {
         let since = self.seen[&part];
         let tick = self.world.begin_run();
         let got = read(&mut self.world, part, reader, since);
+        if self.frees {
+            self.world.note_observer_run(part.observer(), tick);
+        }
         self.world.end_run();
         self.check(part, reader, since, &got, at);
         self.seen.insert(part, tick.0);
+    }
+
+    /// Frees the quiet columns, `quiet` drawn small, and checks each column
+    /// against the rule: a column keeping row ticks, silent at least `quiet`
+    /// ticks and seen by every observer that ran, keeps its summary, its
+    /// floor rises to it and its row ticks go; every other column is left as
+    /// it was; no page's order version moves; the count returned is the
+    /// number freed.
+    fn free(&mut self, at: &str) {
+        let quiet = self.rng.below(4) as u64;
+        let now = self.now();
+        let ran: Vec<u64> = self.seen.values().copied().filter(|&s| s > 0).collect();
+        let before: Vec<(u64, Vec<(ComponentKey, ColumnTicks)>)> = self
+            .world
+            .storage
+            .pages
+            .iter()
+            .map(|page| {
+                (
+                    page.order(),
+                    page.ticks
+                        .iter()
+                        .map(|(key, column)| (*key, column.clone()))
+                        .collect(),
+                )
+            })
+            .collect();
+
+        let freed = self.world.free_quiet_row_ticks(quiet);
+
+        let ctx = format!("seed {} {at}: free, quiet {quiet}, now {now}", self.seed);
+        let pages = &self.world.storage.pages;
+        assert_eq!(pages.len(), before.len(), "{ctx}: a free adds no page");
+        let mut expected = 0;
+        for (index, (order, columns)) in before.iter().enumerate() {
+            let page = &pages[index];
+            assert_eq!(page.order(), *order, "{ctx}: page {index}'s ω moved");
+            for (key, was) in columns {
+                let column = page
+                    .column_ticks(*key)
+                    .unwrap_or_else(|| panic!("{ctx}: page {index} lost its {key:?} ticks"));
+                let sigma = was.summary.0;
+                let frees = was.rows.is_some()
+                    && now.saturating_sub(sigma) >= quiet
+                    && ran.iter().all(|&seen| seen >= sigma);
+                if frees {
+                    expected += 1;
+                    assert_eq!(
+                        column,
+                        &ColumnTicks {
+                            summary: was.summary,
+                            floor: was.summary,
+                            rows: None,
+                        },
+                        "{ctx}: page {index} {key:?} is freed (was {was:?})"
+                    );
+                } else {
+                    assert_eq!(column, was, "{ctx}: page {index} {key:?} is kept");
+                }
+            }
+        }
+        assert_eq!(freed, expected, "{ctx}: the count of columns freed");
+        self.freed += freed;
     }
 
     fn step(&mut self, step: usize) {
@@ -554,6 +652,9 @@ impl Sequence {
             14..=15 => self.observer_read(&at("observer")),
             _ => {}
         }
+        if self.frees && self.rng.below(4) == 0 {
+            self.free(&at("free"));
+        }
         if self.rng.below(3) == 0 {
             self.probe(&at("probe"));
         }
@@ -566,6 +667,16 @@ fn run_sequence(seed: u64, steps: usize) -> (usize, usize) {
         sequence.step(step);
     }
     (sequence.exact, sequence.caught)
+}
+
+/// A freeing sequence of `steps` steps from `seed`: the exact reads, the
+/// rows the theorem was checked for, and the columns freed.
+pub(super) fn run_freeing_sequence(seed: u64, steps: usize) -> (usize, usize, usize) {
+    let mut sequence = Sequence::freeing(seed);
+    for step in 0..steps {
+        sequence.step(step);
+    }
+    (sequence.exact, sequence.caught, sequence.freed)
 }
 
 /// **No change is ever missed**, over many random sequences of moves, runs,
