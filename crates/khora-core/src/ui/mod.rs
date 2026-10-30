@@ -30,6 +30,7 @@ pub mod editor;
 pub mod fonts;
 pub mod geometry;
 pub mod layout;
+pub mod text;
 pub mod theme;
 pub mod types;
 
@@ -40,4 +41,8 @@ pub use editor::{EditorPanel, EditorShell, PanelLocation, UiBuilder, ViewportTex
 pub use fonts::{FontHandle, FontPack, NamedFont};
 pub use geometry::{Align, Align2, CornerRadius, Margin, Stroke};
 pub use layout::{LayoutSystem, UiLayoutView};
+pub use text::{
+    FontError, FontFamily, GlyphImage, GlyphKey, GlyphKind, GlyphRasterizer, ShapeError,
+    ShapeRequest, ShapedGlyph, ShapedText, TextShaper,
+};
 pub use theme::UiTheme;

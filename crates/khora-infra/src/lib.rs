@@ -36,3 +36,4 @@ pub use telemetry::{
 };
 pub use ui::egui::{EguiEditorShell, EguiFrameRenderState, EguiOverlay, EguiUiBuilder};
 pub use ui::taffy::TaffyLayoutSystem;
+pub use ui::text::{ParleyShaper, SwashRasterizer};

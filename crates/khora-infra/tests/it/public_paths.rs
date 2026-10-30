@@ -52,6 +52,7 @@ fn is_default<T: Default>() {}
 fn is_editor_overlay<T: khora_core::ui::EditorOverlay>() {}
 fn is_editor_shell<T: khora_core::ui::EditorShell>() {}
 fn is_global_alloc<T: std::alloc::GlobalAlloc>() {}
+fn is_glyph_rasterizer<T: khora_core::ui::text::GlyphRasterizer>() {}
 fn is_hardware_monitor<T: khora_core::platform::HardwareMonitor>() {}
 fn is_has_display_handle<T: raw_window_handle::HasDisplayHandle>() {}
 fn is_has_window_handle<T: raw_window_handle::HasWindowHandle>() {}
@@ -67,6 +68,7 @@ fn is_send<T: Send>() {}
 fn is_sync<T: Sync>() {}
 fn is_text_layout<T: khora_core::renderer::api::text::TextLayout>() {}
 fn is_text_renderer<T: khora_core::renderer::api::text::TextRenderer>() {}
+fn is_text_shaper<T: khora_core::ui::text::TextShaper>() {}
 fn is_ui_builder<T: khora_core::ui::UiBuilder>() {}
 fn is_zeroable<T: bytemuck::Zeroable>() {}
 
@@ -111,6 +113,9 @@ mod every_pub_mod {
     use khora_infra::ui::egui::ui_builder as _;
     use khora_infra::ui::taffy as _;
     use khora_infra::ui::taffy::layout_system as _;
+    use khora_infra::ui::text as _;
+    use khora_infra::ui::text::parley_shaper as _;
+    use khora_infra::ui::text::swash_rasterizer as _;
 }
 
 // ---------------------------------------------------------------------------
@@ -582,6 +587,53 @@ fn module_ui_paths_still_resolve() {
     is_layout_system::<khora_infra::ui::taffy::layout_system::TaffyLayoutSystem>();
     is_send::<khora_infra::ui::taffy::layout_system::TaffyLayoutSystem>();
     is_sync::<khora_infra::ui::taffy::layout_system::TaffyLayoutSystem>();
+}
+
+#[test]
+fn module_ui_text_paths_still_resolve() {
+    let _: &'static [u8] = khora_infra::ui::text::DEFAULT_FONT;
+    let _ = type_name::<khora_infra::ui::text::parley_shaper::ParleyShaper>();
+    let _ = type_name::<khora_infra::ui::text::ParleyShaper>();
+    same_type(
+        PhantomData::<khora_infra::ui::text::ParleyShaper>,
+        PhantomData::<khora_infra::ui::text::parley_shaper::ParleyShaper>,
+    );
+    let _ = type_name::<khora_infra::ui::ParleyShaper>();
+    same_type(
+        PhantomData::<khora_infra::ui::ParleyShaper>,
+        PhantomData::<khora_infra::ui::text::parley_shaper::ParleyShaper>,
+    );
+    let _ = type_name::<khora_infra::ParleyShaper>();
+    same_type(
+        PhantomData::<khora_infra::ParleyShaper>,
+        PhantomData::<khora_infra::ui::text::parley_shaper::ParleyShaper>,
+    );
+    let _ = khora_infra::ui::text::parley_shaper::ParleyShaper::new;
+    is_default::<khora_infra::ui::text::parley_shaper::ParleyShaper>();
+    is_text_shaper::<khora_infra::ui::text::parley_shaper::ParleyShaper>();
+    is_send::<khora_infra::ui::text::parley_shaper::ParleyShaper>();
+    is_sync::<khora_infra::ui::text::parley_shaper::ParleyShaper>();
+    let _ = type_name::<khora_infra::ui::text::swash_rasterizer::SwashRasterizer>();
+    let _ = type_name::<khora_infra::ui::text::SwashRasterizer>();
+    same_type(
+        PhantomData::<khora_infra::ui::text::SwashRasterizer>,
+        PhantomData::<khora_infra::ui::text::swash_rasterizer::SwashRasterizer>,
+    );
+    let _ = type_name::<khora_infra::ui::SwashRasterizer>();
+    same_type(
+        PhantomData::<khora_infra::ui::SwashRasterizer>,
+        PhantomData::<khora_infra::ui::text::swash_rasterizer::SwashRasterizer>,
+    );
+    let _ = type_name::<khora_infra::SwashRasterizer>();
+    same_type(
+        PhantomData::<khora_infra::SwashRasterizer>,
+        PhantomData::<khora_infra::ui::text::swash_rasterizer::SwashRasterizer>,
+    );
+    let _ = khora_infra::ui::text::swash_rasterizer::SwashRasterizer::new;
+    is_default::<khora_infra::ui::text::swash_rasterizer::SwashRasterizer>();
+    is_glyph_rasterizer::<khora_infra::ui::text::swash_rasterizer::SwashRasterizer>();
+    is_send::<khora_infra::ui::text::swash_rasterizer::SwashRasterizer>();
+    is_sync::<khora_infra::ui::text::swash_rasterizer::SwashRasterizer>();
 }
 
 // ---------------------------------------------------------------------------

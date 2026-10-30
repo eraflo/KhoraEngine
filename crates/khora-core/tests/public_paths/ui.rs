@@ -74,6 +74,7 @@ mod every_pub_mod {
     use khora_core::ui::fonts as _;
     use khora_core::ui::geometry as _;
     use khora_core::ui::layout as _;
+    use khora_core::ui::text as _;
     use khora_core::ui::theme as _;
     use khora_core::ui::types as _;
 }
@@ -555,6 +556,49 @@ fn ui_val_variants(x: &khora_core::ui::types::UiVal) {
     }
 }
 
+fn font_family_fields(x: &khora_core::ui::text::FontFamily) {
+    let _ = (&x.name,);
+}
+
+fn font_error_variants(x: &khora_core::ui::text::FontError) {
+    match x {
+        khora_core::ui::text::FontError::Unreadable => {}
+    }
+}
+
+fn shape_error_variants(x: &khora_core::ui::text::ShapeError) {
+    match x {
+        khora_core::ui::text::ShapeError::UnknownFont(..) => {}
+    }
+}
+
+fn shape_request_fields(x: &khora_core::ui::text::ShapeRequest<'static>) {
+    let _ = (&x.text, &x.font, &x.size_px, &x.max_width);
+}
+
+fn shaped_glyph_fields(x: &khora_core::ui::text::ShapedGlyph) {
+    let _ = (&x.id, &x.x, &x.y);
+}
+
+fn shaped_text_fields(x: &khora_core::ui::text::ShapedText) {
+    let _ = (&x.glyphs, &x.size, &x.lines);
+}
+
+fn glyph_kind_variants(x: &khora_core::ui::text::GlyphKind) {
+    match x {
+        khora_core::ui::text::GlyphKind::Mask => {}
+        khora_core::ui::text::GlyphKind::Color => {}
+    }
+}
+
+fn glyph_image_fields(x: &khora_core::ui::text::GlyphImage) {
+    let _ = (&x.width, &x.height, &x.left, &x.top, &x.kind, &x.pixels);
+}
+
+fn glyph_key_fields(x: &khora_core::ui::text::GlyphKey) {
+    let _ = (&x.font, &x.glyph, &x.size_q, &x.subpixel_x);
+}
+
 // ---------------------------------------------------------------------------
 // Trait items, named through a generic parameter. A generic body is
 // type-checked where it is written, so these need no implementor and are
@@ -836,6 +880,32 @@ mod trait_items {
 
     fn ui_layout_view_trait_identity_rev<T: khora_core::ui::layout::UiLayoutView>() {
         ui_layout_view_trait_identity::<T>();
+    }
+
+    fn text_shaper_trait_items<T: khora_core::ui::text::TextShaper>() {
+        let _ = <T as khora_core::ui::text::TextShaper>::register_font;
+        let _ = <T as khora_core::ui::text::TextShaper>::shape;
+    }
+
+    fn text_shaper_trait_identity<T: khora_core::ui::TextShaper>() {
+        text_shaper_trait_items::<T>();
+    }
+
+    fn text_shaper_trait_identity_rev<T: khora_core::ui::text::TextShaper>() {
+        text_shaper_trait_identity::<T>();
+    }
+
+    fn glyph_rasterizer_trait_items<T: khora_core::ui::text::GlyphRasterizer>() {
+        let _ = <T as khora_core::ui::text::GlyphRasterizer>::register_font;
+        let _ = <T as khora_core::ui::text::GlyphRasterizer>::rasterize;
+    }
+
+    fn glyph_rasterizer_trait_identity<T: khora_core::ui::GlyphRasterizer>() {
+        glyph_rasterizer_trait_items::<T>();
+    }
+
+    fn glyph_rasterizer_trait_identity_rev<T: khora_core::ui::text::GlyphRasterizer>() {
+        glyph_rasterizer_trait_identity::<T>();
     }
 }
 
@@ -1382,4 +1452,120 @@ fn module_ui_paths_still_resolve() {
     is_serialize::<khora_core::ui::types::UiVal>();
     is_deserialize_owned::<khora_core::ui::types::UiVal>();
     is_default::<khora_core::ui::types::UiVal>();
+}
+
+#[test]
+fn module_ui_text_paths_still_resolve() {
+    // trait `khora_core::ui::text::TextShaper`: see `text_shaper_trait_items`
+    // trait `khora_core::ui::TextShaper`: see `text_shaper_trait_items`
+    // trait `khora_core::ui::text::GlyphRasterizer`: see `glyph_rasterizer_trait_items`
+    // trait `khora_core::ui::GlyphRasterizer`: see `glyph_rasterizer_trait_items`
+    let _ = type_name::<khora_core::ui::text::FontFamily>();
+    let _ = type_name::<khora_core::ui::FontFamily>();
+    same_type(
+        PhantomData::<khora_core::ui::FontFamily>,
+        PhantomData::<khora_core::ui::text::FontFamily>,
+    );
+    let _ = font_family_fields as fn(&khora_core::ui::text::FontFamily);
+    is_debug::<khora_core::ui::text::FontFamily>();
+    is_clone::<khora_core::ui::text::FontFamily>();
+    is_partial_eq::<khora_core::ui::text::FontFamily>();
+    is_eq::<khora_core::ui::text::FontFamily>();
+    is_hash::<khora_core::ui::text::FontFamily>();
+    let _ = type_name::<khora_core::ui::text::FontError>();
+    let _ = type_name::<khora_core::ui::FontError>();
+    same_type(
+        PhantomData::<khora_core::ui::FontError>,
+        PhantomData::<khora_core::ui::text::FontError>,
+    );
+    let _ = font_error_variants as fn(&khora_core::ui::text::FontError);
+    is_debug::<khora_core::ui::text::FontError>();
+    is_clone::<khora_core::ui::text::FontError>();
+    is_partial_eq::<khora_core::ui::text::FontError>();
+    is_eq::<khora_core::ui::text::FontError>();
+    is_display::<khora_core::ui::text::FontError>();
+    is_error::<khora_core::ui::text::FontError>();
+    let _ = type_name::<khora_core::ui::text::ShapeError>();
+    let _ = type_name::<khora_core::ui::ShapeError>();
+    same_type(
+        PhantomData::<khora_core::ui::ShapeError>,
+        PhantomData::<khora_core::ui::text::ShapeError>,
+    );
+    let _ = shape_error_variants as fn(&khora_core::ui::text::ShapeError);
+    is_debug::<khora_core::ui::text::ShapeError>();
+    is_clone::<khora_core::ui::text::ShapeError>();
+    is_partial_eq::<khora_core::ui::text::ShapeError>();
+    is_eq::<khora_core::ui::text::ShapeError>();
+    is_display::<khora_core::ui::text::ShapeError>();
+    is_error::<khora_core::ui::text::ShapeError>();
+    let _ = type_name::<khora_core::ui::text::ShapeRequest<'static>>();
+    let _ = type_name::<khora_core::ui::ShapeRequest<'static>>();
+    same_type(
+        PhantomData::<khora_core::ui::ShapeRequest<'static>>,
+        PhantomData::<khora_core::ui::text::ShapeRequest<'static>>,
+    );
+    let _ = shape_request_fields as fn(&khora_core::ui::text::ShapeRequest<'static>);
+    is_debug::<khora_core::ui::text::ShapeRequest<'static>>();
+    is_clone::<khora_core::ui::text::ShapeRequest<'static>>();
+    is_copy::<khora_core::ui::text::ShapeRequest<'static>>();
+    let _ = type_name::<khora_core::ui::text::ShapedGlyph>();
+    let _ = type_name::<khora_core::ui::ShapedGlyph>();
+    same_type(
+        PhantomData::<khora_core::ui::ShapedGlyph>,
+        PhantomData::<khora_core::ui::text::ShapedGlyph>,
+    );
+    let _ = shaped_glyph_fields as fn(&khora_core::ui::text::ShapedGlyph);
+    is_debug::<khora_core::ui::text::ShapedGlyph>();
+    is_clone::<khora_core::ui::text::ShapedGlyph>();
+    is_copy::<khora_core::ui::text::ShapedGlyph>();
+    is_partial_eq::<khora_core::ui::text::ShapedGlyph>();
+    let _ = type_name::<khora_core::ui::text::ShapedText>();
+    let _ = type_name::<khora_core::ui::ShapedText>();
+    same_type(
+        PhantomData::<khora_core::ui::ShapedText>,
+        PhantomData::<khora_core::ui::text::ShapedText>,
+    );
+    let _ = shaped_text_fields as fn(&khora_core::ui::text::ShapedText);
+    is_debug::<khora_core::ui::text::ShapedText>();
+    is_clone::<khora_core::ui::text::ShapedText>();
+    is_partial_eq::<khora_core::ui::text::ShapedText>();
+    let _ = type_name::<khora_core::ui::text::GlyphKind>();
+    let _ = type_name::<khora_core::ui::GlyphKind>();
+    same_type(
+        PhantomData::<khora_core::ui::GlyphKind>,
+        PhantomData::<khora_core::ui::text::GlyphKind>,
+    );
+    let _ = glyph_kind_variants as fn(&khora_core::ui::text::GlyphKind);
+    is_debug::<khora_core::ui::text::GlyphKind>();
+    is_clone::<khora_core::ui::text::GlyphKind>();
+    is_copy::<khora_core::ui::text::GlyphKind>();
+    is_partial_eq::<khora_core::ui::text::GlyphKind>();
+    is_eq::<khora_core::ui::text::GlyphKind>();
+    is_hash::<khora_core::ui::text::GlyphKind>();
+    let _ = type_name::<khora_core::ui::text::GlyphImage>();
+    let _ = type_name::<khora_core::ui::GlyphImage>();
+    same_type(
+        PhantomData::<khora_core::ui::GlyphImage>,
+        PhantomData::<khora_core::ui::text::GlyphImage>,
+    );
+    let _ = glyph_image_fields as fn(&khora_core::ui::text::GlyphImage);
+    is_debug::<khora_core::ui::text::GlyphImage>();
+    is_clone::<khora_core::ui::text::GlyphImage>();
+    is_partial_eq::<khora_core::ui::text::GlyphImage>();
+    is_eq::<khora_core::ui::text::GlyphImage>();
+    let _ = type_name::<khora_core::ui::text::GlyphKey>();
+    let _ = type_name::<khora_core::ui::GlyphKey>();
+    same_type(
+        PhantomData::<khora_core::ui::GlyphKey>,
+        PhantomData::<khora_core::ui::text::GlyphKey>,
+    );
+    let _ = glyph_key_fields as fn(&khora_core::ui::text::GlyphKey);
+    let _ = khora_core::ui::text::GlyphKey::new;
+    let _ = khora_core::ui::text::GlyphKey::size_px;
+    is_debug::<khora_core::ui::text::GlyphKey>();
+    is_clone::<khora_core::ui::text::GlyphKey>();
+    is_copy::<khora_core::ui::text::GlyphKey>();
+    is_partial_eq::<khora_core::ui::text::GlyphKey>();
+    is_eq::<khora_core::ui::text::GlyphKey>();
+    is_hash::<khora_core::ui::text::GlyphKey>();
 }

@@ -58,6 +58,10 @@ egui-winit = "0.34"
 #     backend selected — boot panics on Windows with
 #     "No wgpu backend feature that is implemented for the target
 #      platform was enabled".
+# UI text: Parley shapes (no system font enumeration — the engine registers
+# its own fonts), swash rasterises glyphs into the atlas.
+parley = { version = "0.12", default-features = false, features = ["std"] }
+swash = "0.2.10"
 eframe = { version = "0.34", default-features = false, features = [
     "default_fonts",
     "glow",

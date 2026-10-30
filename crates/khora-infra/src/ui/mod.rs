@@ -16,6 +16,8 @@
 
 pub mod egui;
 pub mod taffy;
+pub mod text;
 
 pub use self::egui::{EguiEditorShell, EguiFrameRenderState, EguiOverlay, EguiUiBuilder};
 pub use taffy::TaffyLayoutSystem;
+pub use text::{ParleyShaper, SwashRasterizer};
