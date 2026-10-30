@@ -81,7 +81,7 @@ To touch many entities at once, query mutably:
 ```rust
 use khora_sdk::prelude::ecs::Transform;
 
-for (t,) in world.query_mut::<(&mut Transform,)>() {
+for (mut t,) in world.query_mut::<(&mut Transform,)>() {
     t.translation = t.translation + Vec3::Y * 0.01;
 }
 ```

@@ -143,21 +143,25 @@ query can pre-filter pages by *meaning*: a render-extraction query hinted with t
 `Render` domain never touches UI pages. As the entity count grows, this is part of
 what keeps per-frame extraction from scaling with the whole world.
 
-Domains are also the unit of *change tracking*, and this is where the ECS connects
-to the adaptive layer. The `World` keeps a monotonic counter — a **change epoch** —
-per domain, bumped in O(1) by every mutation entry point that can affect that
-domain's *semantic* content: spawn/despawn, component insert/remove, `get_mut`,
-mutable query construction, deserialization, and compaction that reorders rows.
+Domains are also the coarsest unit of *change tracking*, and this is where the ECS
+connects to the adaptive layer. The `World` keeps a **change epoch** per domain: the
+tick of the latest write to one of its values, or of the latest move of a row of one
+of its pages — a spawn, a despawn, a component added or removed, a compaction that
+reorders rows. Handing out writable access (`get_mut`, a mutable query) moves
+nothing: only a write does. The epoch is read in O(1).
 
 The contract is deliberately one-sided. Equal epochs across two reads *guarantee*
 the domain's data — and its iteration order — is unchanged; a different value means
-only "possibly changed". The bumps are conservative, so over-bumping is harmless
-while a *missed* bump would mean a stale consumer, which is the failure mode the
-design refuses to risk. Crucially, a representation-only change — an AGDF layout
-choice that rewrites how a column is stored — does **not** bump the epoch, because
-it changes the HOW, not the WHAT. Epochs are read via `World::domain_epoch(domain)`
-and paired with `World::instance_id()` so counters from two different `World`
-instances can never accidentally compare equal.
+only "possibly changed". A raise too many is harmless, while a *missed* one would
+mean a stale consumer, which is the failure mode the design refuses to risk. A
+representation-only change — an AGDF layout choice that rewrites how a column is
+stored — raises nothing, because it changes the HOW, not the WHAT. Epochs are read
+via `World::domain_epoch(domain)` and paired with `World::instance_id()` so epochs
+from two different `World` instances can never accidentally compare equal.
+
+Finer answers — *which* rows of a component changed since a given moment — come
+from the ticks every page keeps beside its columns, and the `Changed<T>` query
+filter: see [Knowing what changed](./change-detection.md).
 
 The first consumer of these epochs is **Flow** view caching: a Flow that can name
 all of its inputs folds the relevant domain epochs into a cache key, and on an
@@ -178,9 +182,11 @@ for (transform, mut global) in world.query_mut::<(&Transform, &mut GlobalTransfo
 ```
 
 Reading and writing are two doors. `world.query` takes `&World` and accepts only
-read-only terms (`&T`, `Option<&T>`, `EntityId`, `Without<T>`) — asking it for a
-`&mut T` is a compile error, because a shared borrow cannot hand out exclusive
-access. `world.query_mut` takes `&mut World` and is where writing happens; it
+read-only terms (`&T`, `Option<&T>`, `EntityId`, `Without<T>`, `Changed<T>`) —
+asking it for a `&mut T` is a compile error, because a shared borrow cannot hand out
+exclusive access. `world.query_mut` takes `&mut World` and is where writing happens:
+a `&mut T` term yields a `Mut<T>` guard, which reads like a `&mut T` and notes the
+row as changed on its first write (see [Knowing what changed](./change-detection.md)); it
 refuses, by panicking, a query that names one component twice, which would hand
 out two references to one value. A `&mut Component` in one query closes the door,
 at compile time, on any other query touching that component for the borrow's

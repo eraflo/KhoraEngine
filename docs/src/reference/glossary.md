@@ -48,6 +48,23 @@ asset slot. A script compares it, passes it, and hands it to what uses its kind:
 `Spawn(bullet, at: p)`, `e.SetMaterial(m)`. See
 [Ergon — values and types](./ergon.md#values-and-types).
 
+### Change detection — ticks, `Mut<T>`, `Changed<T>`
+
+How the data layer knows what changed. The `World` counts **ticks**, one per run of
+a DataSystem, a Flow or a scheduler wave; every write carries its run's tick. Each
+page keeps, beside each column, a summary (its latest write), a floor, and — for a
+component an **observer** watches — one tick per row. Writes go through the
+`Mut<T>` guard, which stamps its row on its first write; readers ask for
+`Changed<T>` rows `since` the tick of their last run. No change is ever missed. See
+[Knowing what changed](../concepts/change-detection.md).
+
+### Change epoch
+
+One tick per `SemanticDomain`: when one of its values was last written or one of
+its rows last moved, read in O(1). Equal epochs guarantee the domain is unchanged;
+Flows fold them into their view-cache keys. See
+[Knowing what changed](../concepts/change-detection.md#a-whole-domain-at-once).
+
 ### Channel&lt;T&gt;
 
 The engine's one reusable one-way queue, in `khora-core::event`. Two axes and
@@ -108,7 +125,9 @@ A registered, fixed (non-negotiating) unit of Data-layer work the engine runs in
 an ordered slot each tick — invariants like transform propagation and GPU mesh
 sync, plus maintenance write-backs. New invariants are added data-driven, by
 submitting a `DataSystemRegistration` rather than wiring a system manually. A
-DataSystem is *not* an agent: it has no strategies to negotiate. See
+Each run is handed a `SystemContext`, whose `since` is the tick of the system's
+previous run, so it can read only what changed since (`Changed<T>`). DataSystem is
+*not* an agent: it has no strategies to negotiate. See
 [The frame](../concepts/the-frame.md) and [TickPhase](#executionphase--tickphase).
 
 ### DCC — Dynamic Context Core
@@ -307,6 +326,13 @@ the world as it was. See [Serialization](../concepts/serialization.md).
 positional ones, in any order; a parameter left out takes its constant default.
 Arguments run in the order written. See the
 [Ergon reference](./ergon.md#calls).
+
+### Observer
+
+A DataSystem or a Flow that watches components for change, declared by the
+`observes` list of its registration. The `World` keeps per-row ticks for the
+components observers watch and remembers each observer's last-seen tick. See
+[Knowing what changed](../concepts/change-detection.md).
 
 ### OnLoad / OnResumeFailed
 

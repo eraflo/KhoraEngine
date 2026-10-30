@@ -1,0 +1,147 @@
+<svg id="fig-ecs-change-floor" class="kp-figure" viewBox="0 0 760 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-change-floor-title kp-change-floor-desc">
+  <title id="kp-change-floor-title">Each row of a page wears a sticker with the tick it was last written at, until the column falls quiet and a floor replaces the stickers</title>
+  <desc id="kp-change-floor-desc">One page holds five entities' Health. Each row has a sticker with the tick of its last write, and the column keeps a summary, the latest of them. A write at tick 9 changes the third row. A reader that last looked at tick 7 asks what changed: the summary is past 7, so it reads the stickers and finds the third row alone. Later the column is quiet and every reader has seen tick 9: the stickers are dropped and a floor at 9 says every row was written at 9 or before. A late reader that last looked at tick 4, under the floor, is handed every row, to be safe. A write at tick 30 to the first row brings the stickers back, the others at 0 under the floor, and a reader since 9 finds the first row alone.</desc>
+  <style>
+    #fig-ecs-change-floor { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
+    #fig-ecs-change-floor .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-ecs-change-floor .kp-row { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-ecs-change-floor .kp-sticker { fill: var(--k-bg-2, #181e2b); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-ecs-change-floor .kp-sticker-gone { fill: none; stroke: var(--k-line, #383d48); stroke-width: 1; stroke-dasharray: 3 4; }
+    #fig-ecs-change-floor .kp-summary { fill: var(--k-bg-2, #181e2b); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.25; }
+    #fig-ecs-change-floor .kp-card { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-ecs-change-floor .kp-floor { stroke: var(--k-silver, #b4cfe2); stroke-width: 2; stroke-dasharray: 8 5; }
+    #fig-ecs-change-floor .kp-hit { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 2; }
+    #fig-ecs-change-floor .kp-all { fill: none; stroke: var(--k-silver, #b4cfe2); stroke-width: 1.5; }
+    #fig-ecs-change-floor .kp-station { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-display, 'Archivo', Georgia, serif); font-style: italic; font-size: 17px; }
+    #fig-ecs-change-floor .kp-label { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; }
+    #fig-ecs-change-floor .kp-strong { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-ecs-change-floor .kp-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12.5px; }
+    #fig-ecs-change-floor .kp-tick { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 13px; text-anchor: middle; }
+    #fig-ecs-change-floor .kp-tick-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 13px; text-anchor: middle; }
+    #fig-ecs-change-floor .kp-tick-dim { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 13px; text-anchor: middle; }
+    #fig-ecs-change-floor .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="350" rx="8"/>
+  <!-- The page: one column, five rows -->
+  <text class="kp-note" x="40" y="30">one page · its Health column</text>
+  <text class="kp-note" x="290" y="30" text-anchor="middle">sticker</text>
+  <rect class="kp-summary" x="40" y="42" width="290" height="30" rx="6"/>
+  <text class="kp-label" x="54" y="62">summary σ — the latest sticker</text>
+  <text class="kp-tick" x="300" y="62" data-on="1">7</text>
+  <text class="kp-tick" x="300" y="62" data-on="2 3 4 5">9</text>
+  <text class="kp-tick-gold" x="300" y="62" data-on="6">30</text>
+  <!-- Rows -->
+  <rect class="kp-row" x="40" y="86" width="200" height="32" rx="5"/>
+  <rect class="kp-row" x="40" y="126" width="200" height="32" rx="5"/>
+  <rect class="kp-row" x="40" y="166" width="200" height="32" rx="5"/>
+  <rect class="kp-row" x="40" y="206" width="200" height="32" rx="5"/>
+  <rect class="kp-row" x="40" y="246" width="200" height="32" rx="5"/>
+  <text class="kp-strong" x="54" y="107">e1</text>
+  <text class="kp-strong" x="54" y="147">e2</text>
+  <text class="kp-strong" x="54" y="187">e3</text>
+  <text class="kp-strong" x="54" y="227">e4</text>
+  <text class="kp-strong" x="54" y="267">e5</text>
+  <text class="kp-label" x="150" y="107" data-on="1 2 3 4 5">health 100</text>
+  <text class="kp-gold" x="150" y="107" data-on="6">health 90</text>
+  <text class="kp-label" x="150" y="147">health 80</text>
+  <text class="kp-label" x="150" y="187" data-on="1">health 100</text>
+  <text class="kp-gold" x="150" y="187" data-on="2 3">health 45</text>
+  <text class="kp-label" x="150" y="187" data-on="4 5 6">health 45</text>
+  <text class="kp-label" x="150" y="227">health 60</text>
+  <text class="kp-label" x="150" y="267">health 100</text>
+  <!-- Stickers, while the column keeps them -->
+  <g data-on="1 2 3 6">
+    <rect class="kp-sticker" x="250" y="86" width="80" height="32" rx="5"/>
+    <rect class="kp-sticker" x="250" y="126" width="80" height="32" rx="5"/>
+    <rect class="kp-sticker" x="250" y="166" width="80" height="32" rx="5"/>
+    <rect class="kp-sticker" x="250" y="206" width="80" height="32" rx="5"/>
+    <rect class="kp-sticker" x="250" y="246" width="80" height="32" rx="5"/>
+  </g>
+  <g data-on="1 2 3">
+    <text class="kp-tick" x="290" y="107">3</text>
+    <text class="kp-tick" x="290" y="147">3</text>
+    <text class="kp-tick" x="290" y="227">3</text>
+    <text class="kp-tick" x="290" y="267">7</text>
+  </g>
+  <text class="kp-tick" x="290" y="187" data-on="1">5</text>
+  <text class="kp-tick-gold" x="290" y="187" data-on="2 3">9</text>
+  <g data-on="6">
+    <text class="kp-tick-gold" x="290" y="107">30</text>
+    <text class="kp-tick-dim" x="290" y="147">0</text>
+    <text class="kp-tick-dim" x="290" y="187">0</text>
+    <text class="kp-tick-dim" x="290" y="227">0</text>
+    <text class="kp-tick-dim" x="290" y="267">0</text>
+  </g>
+  <!-- Dropped stickers -->
+  <g data-on="4 5">
+    <rect class="kp-sticker-gone" x="250" y="86" width="80" height="32" rx="5"/>
+    <rect class="kp-sticker-gone" x="250" y="126" width="80" height="32" rx="5"/>
+    <rect class="kp-sticker-gone" x="250" y="166" width="80" height="32" rx="5"/>
+    <rect class="kp-sticker-gone" x="250" y="206" width="80" height="32" rx="5"/>
+    <rect class="kp-sticker-gone" x="250" y="246" width="80" height="32" rx="5"/>
+  </g>
+  <!-- The floor -->
+  <g data-on="4 5 6">
+    <line class="kp-floor" x1="40" y1="296" x2="330" y2="296"/>
+    <text class="kp-label" x="40" y="318">floor φ = 9 — every row was written at 9 or before</text>
+  </g>
+  <!-- What a reader is handed -->
+  <rect class="kp-hit" x="36" y="162" width="298" height="40" rx="7" data-on="3"/>
+  <rect class="kp-hit" x="36" y="82" width="298" height="40" rx="7" data-on="6"/>
+  <g data-on="5">
+    <rect class="kp-all" x="36" y="82" width="298" height="40" rx="7"/>
+    <rect class="kp-all" x="36" y="122" width="298" height="40" rx="7"/>
+    <rect class="kp-all" x="36" y="162" width="298" height="40" rx="7"/>
+    <rect class="kp-all" x="36" y="202" width="298" height="40" rx="7"/>
+    <rect class="kp-all" x="36" y="242" width="298" height="40" rx="7"/>
+  </g>
+  <!-- The reader's card -->
+  <rect class="kp-card" x="390" y="42" width="340" height="236" rx="8"/>
+  <g data-on="1">
+    <text class="kp-station" x="410" y="76">The renderer</text>
+    <text class="kp-label" x="410" y="100">last looked at tick 7</text>
+    <text class="kp-label" x="410" y="140">Every write carries the clock's tick.</text>
+    <text class="kp-label" x="410" y="160">Each row keeps the tick of its last write;</text>
+    <text class="kp-label" x="410" y="180">the summary keeps the latest of them.</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-station" x="410" y="76">A write, at tick 9</text>
+    <text class="kp-gold" x="410" y="100">e3 takes damage: health 100 → 45</text>
+    <text class="kp-label" x="410" y="140">Its sticker becomes 9,</text>
+    <text class="kp-label" x="410" y="160">and the summary rises to 9.</text>
+    <text class="kp-label" x="410" y="180">No other row is touched.</text>
+  </g>
+  <g data-on="3">
+    <text class="kp-station" x="410" y="76">The renderer asks</text>
+    <text class="kp-strong" x="410" y="100">what changed since tick 7?</text>
+    <text class="kp-label" x="410" y="140">The summary, 9, is past 7: something did.</text>
+    <text class="kp-label" x="410" y="160">The stickers past 7 say which —</text>
+    <text class="kp-gold" x="410" y="186">e3, and nothing else</text>
+  </g>
+  <g data-on="4">
+    <text class="kp-station" x="410" y="76">The column falls quiet</text>
+    <text class="kp-label" x="410" y="100">nothing written for a long while,</text>
+    <text class="kp-label" x="410" y="118">and every reader has seen tick 9</text>
+    <text class="kp-label" x="410" y="158">The stickers are dropped. A floor at 9</text>
+    <text class="kp-label" x="410" y="178">stands for all of them: no row was</text>
+    <text class="kp-label" x="410" y="198">written later than 9.</text>
+  </g>
+  <g data-on="5">
+    <text class="kp-station" x="410" y="76">A late reader asks</text>
+    <text class="kp-strong" x="410" y="100">what changed since tick 4?</text>
+    <text class="kp-label" x="410" y="140">4 is under the floor: a row may have</text>
+    <text class="kp-label" x="410" y="160">changed after 4, and the stickers that</text>
+    <text class="kp-label" x="410" y="180">would say which are gone.</text>
+    <text class="kp-strong" x="410" y="206">Every row, to be safe — never one too few.</text>
+  </g>
+  <g data-on="6">
+    <text class="kp-station" x="410" y="76">A write, at tick 30</text>
+    <text class="kp-gold" x="410" y="100">e1 heals: health 100 → 90</text>
+    <text class="kp-label" x="410" y="140">The stickers come back: e1 at 30, the</text>
+    <text class="kp-label" x="410" y="160">others at 0, under the floor that covers them.</text>
+    <text class="kp-strong" x="410" y="186">since tick 9? —</text>
+    <text class="kp-gold" x="510" y="186">e1, and nothing else</text>
+  </g>
+  <text class="kp-note" x="390" y="306">a tick: one run of a system, a flow or a wave</text>
+  <text class="kp-note" x="390" y="322">about 41 a frame</text>
+</svg>

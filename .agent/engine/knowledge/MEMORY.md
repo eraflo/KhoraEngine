@@ -8,7 +8,20 @@ Deep history lives in git and `docs/plans/`.
 - **Build**: clean (all crates compile, 0 errors); clippy 0 errors.
 - **Tests**: ~2520 workspace tests, 0 failures. Treat the live `cargo test --workspace` count as truth.
 
-## Latest work (2026-10-25) — Unusable component values: kept, shown, never a panic (uncommitted on `dev`)
+## Latest work (2026-10-30) — CRPECS change detection (phases 1–7 on `dev`)
+- World clock (`Tick`, one per DataSystem run / Flow run / wave), per page column `ColumnTicks { σ, φ, τ }`
+  (row ticks only for keys an observer `observes`, freed when quiet: `QUIET_ROW_TICKS = 12_300`), page order
+  version ω. Writes go through the `Mut<T>` guard or by-value stamps; `Changed<T>` + `Query::since`; DataSystems
+  take a 4th argument `SystemContext { since }`. `domain_epoch` kept (owner's choice) but exact: the tick of
+  the domain's last write or row move, never raised by handing out access; `transform_propagation` and the
+  physics writeback use `set_if_neq`, so a still scene keeps the flow caches.
+- Invariants I0–I2 + theorem (no missed change) pinned by property tests; Miri clean on the query suites.
+- Docs: `docs/src/concepts/change-detection.md` (+ step-through `images/ecs/change-floor.svg`) and
+  `change-detection-formal.md` (advanced). Plan: `docs/plans/crpecs-change-detection.md`.
+- Open: the `khora-infra` lib test process sometimes crashes at exit after all tests pass (GPU teardown?);
+  3i-b (Parley text) resumes on this.
+
+## Earlier work (2026-10-25) — Unusable component values: kept, shown, never a panic
 - A camera with `z_near <= 0` (or NaN, inf far, fov 0…) used to panic every frame through
   `Mat4::perspective_rh_zo`'s assert. Now: `Mat4::try_perspective_rh_zo` / `try_orthographic_rh_zo` /
   `try_cube_face_view_projs` (`khora-core/src/math/matrix/{mat4,cube}.rs`); `Camera::{problems, check}`,

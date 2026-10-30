@@ -74,8 +74,11 @@ not cached.
 
 A key **must fold in every input the projection reads**, or it serves stale views. Use
 `combine_cache_key` over `World::instance_id`, the relevant `World::domain_epoch`s, and
-a bit-level hash of any runtime state consulted. An over-broad key only re-projects
-more often (safe); a key that misses an input is a bug.
+a bit-level hash of any runtime state consulted. A domain's epoch moves when one of
+its values is written or one of its rows moves — not when writable access is merely
+handed out (see [Knowing what changed](../concepts/change-detection.md#a-whole-domain-at-once)).
+An over-broad key only re-projects more often (safe); a key that misses an input is a
+bug.
 
 ```rust
 fn cache_key(&self, world: &World, _runtime: &Runtime) -> Option<u64> {

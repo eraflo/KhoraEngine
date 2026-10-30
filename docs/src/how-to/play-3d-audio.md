@@ -65,7 +65,7 @@ music.autoplay = true;  // begin on first encounter
 To change a live source, query it mutably in `update`:
 
 ```rust
-for (source,) in world.query_mut::<(&mut AudioSource,)>() {
+for (mut source,) in world.query_mut::<(&mut AudioSource,)>() {
     source.volume = 0.2;
 }
 ```

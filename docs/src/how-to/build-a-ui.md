@@ -110,7 +110,7 @@ layout re-runs when components change:
 ```rust
 use khora_sdk::khora_data::ui::UiText;
 
-for (text,) in world.query_mut::<(&mut UiText,)>() {
+for (mut text,) in world.query_mut::<(&mut UiText,)>() {
     text.content = format!("Score: {score}");
 }
 ```

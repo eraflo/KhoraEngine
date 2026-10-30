@@ -39,7 +39,7 @@ Code style and project conventions. Pairs with [`RULES.md`](./RULES.md).
 - Integration tests in `crates/{name}/tests/`; benchmarks in `crates/{name}/benches/`.
 - Backend implementations grouped per backend folder under `khora-infra/src/`: `graphics/wgpu/`, `physics/rapier/`, `audio/cpal/`, `ui/taffy/`.
 - Shaders under `crates/khora-infra/src/graphics/shader/shaders/` — `pipelines/` (entry points) and `lib/` (reusable modules). One pass per pipeline file; no `.wgsl` at the shaders root.
-- **Invariant `DataSystem`s**: one file per system in `crates/khora-data/src/ecs/systems/`. Discovered via `inventory::submit!{ DataSystemRegistration { … } }`. Zero wiring elsewhere.
+- **Invariant `DataSystem`s**: one file per system in `crates/khora-data/src/ecs/systems/`. Discovered via `inventory::submit!{ DataSystemRegistration { … } }`. Zero wiring elsewhere. The function is `fn(&mut World, &Runtime, &mut OutputDeck, SystemContext)`; `ctx.since` is the tick of its previous run, read with `Changed<T>`, and the components it watches go in `observes`.
 - **Domain `Flow`s**: one file per flow in `crates/khora-data/src/flow/`. Register with `register_flow!(MyFlow)`. The Scheduler's Substrate Pass runs them automatically.
 - **Asset decoders**: one file per decoder in `crates/khora-io/src/asset/decoders/`. Registered with the `AssetService`; the `…Lane` legacy suffix is dropped.
 

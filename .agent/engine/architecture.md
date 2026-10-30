@@ -65,7 +65,9 @@ is additive and inert until a column is profiled as worth re-tiling (e.g. SoA �
 are **read-only projectors** (`select → project`); they never mutate the World. A Flow may opt into
 **view caching** via `Flow::cache_key`: the `register_flow!` trampoline republishes the previous View
 (cheap clone) when the key — `World::instance_id` + per-domain change epochs (`World::domain_epoch`,
-bumped O(1) at every semantic mutation) + any runtime-state fingerprint — is unchanged. Cached today:
+the tick of the domain's last write or row move, O(1); handing out access raises nothing) + any
+runtime-state fingerprint — is unchanged. Finer change detection (row ticks, `Changed<T>`, `Mut<T>`):
+`docs/src/concepts/change-detection.md`. Cached today:
 Audio/Render/Shadow flows; Ui/Physics stay uncached (no change signal / mutates every frame).
 Representation-only: a cached View is bit-identical to a re-projected one. Gameplay-relevance
 gating (e.g. detach `RigidBody` by distance) is **not** AGDF — it changes the simulation, so it is an

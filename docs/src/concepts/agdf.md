@@ -112,13 +112,14 @@ nothing the projection reads has changed, so re-running it is pure waste — and
 cached View is bit-identical to a freshly projected one, so skipping the work changes
 only the HOW, never the WHAT.
 
-Two pieces close the gap. The `World` keeps a [per-domain change epoch](./ecs.md), a
-monotonic counter bumped O(1) at every mutation that can affect a domain's *semantic*
-content; equal epochs guarantee "unchanged", a bump means only "possibly changed"
-(conservative by design), and a representation-only AGDF layout change does **not**
-bump it. A flow that can name all of its inputs returns a `cache_key` combining the
+Two pieces close the gap. The `World` keeps a [per-domain change epoch](./change-detection.md#a-whole-domain-at-once):
+the tick of the latest write to one of the domain's values or move of one of its
+rows, read in O(1). Equal epochs guarantee "unchanged", a raise means only "possibly
+changed" (conservative by design); handing out writable access does not raise it,
+and neither does a representation-only AGDF layout change. Systems that recompute a
+value every frame write it with `set_if_neq`, so a still scene raises nothing. A flow that can name all of its inputs returns a `cache_key` combining the
 World's instance id and the relevant domain epochs (plus any runtime fingerprint,
-like the editor viewport override, that has no ECS epoch); on a key match the runner
+like the editor viewport override, that has no domain epoch); on a key match the runner
 republishes the previous View as a cheap clone instead of re-projecting. Which flows
 opt in is an honest audit of their inputs — `AudioFlow`, `RenderFlow`, and
 `ShadowFlow` cache; `UiFlow` and `PhysicsFlow` do not, because their inputs (surface

@@ -36,6 +36,8 @@
 - [Architecture (CLAD)](./concepts/clad.md)
 - [The frame](./concepts/the-frame.md)
 - [Data and the ECS (CRPECS)](./concepts/ecs.md)
+  - [Knowing what changed](./concepts/change-detection.md)
+  - [Under the hood: change detection](./concepts/change-detection-formal.md)
 - [Agents and Lanes](./concepts/agents-and-lanes.md)
 - [GORNA](./concepts/gorna.md)
 - [AGDF](./concepts/agdf.md)

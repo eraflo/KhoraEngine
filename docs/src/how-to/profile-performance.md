@@ -178,10 +178,11 @@ changed, so the projection is pure waste — and a cached View is *bit-identical
 so skipping the work changes only the HOW. See [AGDF — Flow view caching](../concepts/agdf.md) and
 [ECS — Semantic domains](../concepts/ecs.md).
 
-**What makes a Flow cache-hit vs re-project.** The `World` keeps a monotonic **change epoch** per
-`SemanticDomain`, bumped at every mutation that can affect that domain's semantic content
-(spawn/despawn, component insert/remove, `get_mut`, mutable query construction, deserialization,
-compaction). A flow that can name *all* of its inputs returns a `Flow::cache_key` combining the world
+**What makes a Flow cache-hit vs re-project.** The `World` keeps a **change epoch** per
+`SemanticDomain`: the tick of the latest write to one of its values or move of one of its rows
+(spawn/despawn, component insert/remove, compaction). Handing out writable access moves nothing
+until something is written, and `transform_propagation` and the physics writeback write only values
+that differ, so a still scene keeps every cache. A flow that can name *all* of its inputs returns a `Flow::cache_key` combining the world
 instance id, the relevant domain epochs, and any runtime fingerprints. The `register_flow!`
 trampoline compares the key against the previous View and, on a match, republishes it (a cheap clone)
 without re-running `select`/`project`. A `None` key disables (and clears) the cache.

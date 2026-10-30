@@ -39,7 +39,9 @@ snapshot, atomic loads, game saves and prefab links.
   only reads must implement it, one that writes must not). Writing goes through `query_mut`, which panics on a
   query naming one component twice (`WorldQuery::accessed_type_ids`, undeduplicated). A `&mut T` item is reached
   through `vec.as_mut_ptr().add(row)` (`query/mod.rs::column_item`), never `get_mut`/`get_unchecked_mut` on the
-  column — a slice reborrow invalidates items already handed out (Miri, Stacked Borrows).
+  column — a slice reborrow invalidates items already handed out (Miri, Stacked Borrows). Pages are reached
+  through the page buffer's pointer (`pages.as_mut_ptr().add(id)`, `query/mod.rs::page_of_world`), never a pointer
+  cast from a `&mut ComponentPage`: guards note their writes through it after later fetches reborrow the page.
 - **Spawning:** `spawn` panics on an unregistered component type or a bundle naming one twice; `try_spawn`
   returns `SpawnError`. Registering a component clears the query-plan cache.
 - **Keys, not World-local ids.** Page columns are keyed by `ComponentKey` (`Rust(TypeId)` | `Declared(u128)`,
@@ -66,6 +68,25 @@ snapshot, atomic loads, game saves and prefab links.
   compact v3 (v2 when none), snapshot v2 (fields by name, mapped onto the live declaration on restore). Cells are
   **self-typed** (each field a serde-tagged `ScriptValue`), so the table only registers a missing component; a
   cell is mapped by name and by value. Saves are compared under one declaration (`save::as_read(.., under)`).
+- **Change detection** (`ecs/tick.rs`, `world/clock.rs`, `mut_guard.rs`, `query/changed.rs`; docs
+  `docs/src/concepts/change-detection{,-formal}.md`). The world clock `t` (one tick per DataSystem run, Flow run
+  and scheduler wave; `begin_run`/`end_run`), each page column's `ColumnTicks { summary σ, floor φ, rows τ }`
+  (row ticks only for **observed** keys, only while they move), the page order version ω. Invariants: **I0**
+  `s_o < t`, **I1** `last ≤ σ`, **I2** `last ≤ max(τ, φ)`, `φ ≤ σ` — every write path and every move must
+  keep them (property tests `no_change_missed.rs`, `write_invariants.rs`).
+  - Every write stamps: through `Mut<T>` (what `query_mut` / `get_mut` / `get_many_mut` hand out; first
+    `DerefMut` stamps; `set_if_neq`, `bypass_change_detection`, `into_inner`), or by value (`set_component`,
+    `write_column`, `RowMut`, `relayout`, `for_each_soa_column_mut` → `World::stamp_row` / `stamp_column`). A
+    new write route that skips the stamp is a missed change. A system recomputing a value every frame writes
+    it with `set_if_neq`.
+  - A move is not a change: migrations, swap-removes and compaction carry `max(τ, φ)` and move ω.
+  - Readers: `Changed<T>` (`.since(tick)`, default 0 = everything), a DataSystem's `SystemContext { since }`.
+    Page/row filters (`WorldQuery::page_passes` / `row_passes`) are asked of Native iterations only; Transversal
+    judges through live locations.
+  - `ecs_maintenance` frees quiet row arrays (`free_quiet_row_ticks(QUIET_ROW_TICKS)`): `φ := σ`.
+  - `domain_epoch(d)`: the tick of the domain's last write or row move, raised by the stamps, the guards, and
+    `note_page_changed` (every domain of a page, wherever a row is pushed or ω moves) — never by handing out
+    access. Ticks are never saved.
 - Verify `unsafe` query/storage changes under Miri: `cargo +nightly miri test -p khora-data --lib -- <filter>`.
 
 ## Persistence
