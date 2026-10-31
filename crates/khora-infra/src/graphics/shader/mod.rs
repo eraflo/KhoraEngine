@@ -17,16 +17,11 @@
 //! ([`WgpuPipelineSystem`](crate::graphics::wgpu::WgpuPipelineSystem)) and
 //! looked up by name.
 //!
-//! Two shaders are handed over as raw strings instead, because their
-//! consumers take WGSL source rather than a pipeline handle: the text renderer
-//! and the egui editor overlay. They are whole shaders, not composed, so they
-//! sit in `standalone/` rather than `pipelines/`. They are the only `_WGSL` constants; a new
-//! pipeline goes through the backend's table.
-
-/// Shader for text rendering. Consumed by
-/// [`StandardTextRenderer::new`](crate::graphics::text::StandardTextRenderer::new)
-/// as a raw `String`.
-pub const TEXT_WGSL: &str = include_str!("shaders/standalone/text.wgsl");
+//! One shader is handed over as a raw string instead, because its consumer,
+//! the egui editor overlay, takes WGSL source rather than a pipeline handle.
+//! It is a whole shader, not composed, so it sits in `standalone/` rather
+//! than `pipelines/`. It is the only `_WGSL` constant; a new pipeline goes
+//! through the backend's table.
 
 /// Shader for the egui editor overlay. Consumed by
 /// `WgpuRenderSystem::create_editor_overlay_and_shell` as a raw `&str`.
@@ -35,12 +30,6 @@ pub const EGUI_WGSL: &str = include_str!("shaders/standalone/egui.wgsl");
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn text_shader_valid() {
-        assert!(TEXT_WGSL.contains("@vertex"));
-        assert!(TEXT_WGSL.contains("@fragment"));
-    }
 
     #[test]
     fn egui_shader_valid() {

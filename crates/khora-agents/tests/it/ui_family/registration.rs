@@ -32,15 +32,14 @@ use khora_core::lane::guard::{SinkKind, SourceKind};
 use khora_core::lane::io::Target;
 use khora_core::lane::LaneKind;
 use khora_core::renderer::api::frame::FrameContext;
-use khora_core::renderer::api::text::TextRenderer;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 use khora_data::render::UiPassSlot;
-use khora_data::ui::{UiImageAtlas, UiScene};
+use khora_data::ui::{GlyphAtlas, UiImageAtlas, UiScene};
 use khora_data::AssetStore;
 
-use super::fixtures::{ui_agent, ui_registration, NoText};
+use super::fixtures::{ui_agent, ui_registration};
 use crate::overlay_families::fixtures::{agent_of, overlay_registrations};
 
 // ─── The registration ───────────────────────────────────────────────────────
@@ -98,8 +97,8 @@ fn the_ui_registration_runs_in_output() {
 
 /// **The UI lane declares what it reads and writes**: the `UiScene` from the
 /// bus, the frame's `Target`, and from the runtime the image atlas and the
-/// text renderer — nothing else, nothing locked; its family writes the UI
-/// pass slot and nothing else.
+/// glyph atlas — no text renderer, nothing else, nothing locked; its family
+/// writes the UI pass slot and nothing else.
 #[test]
 fn the_ui_lane_declares_what_it_reads_and_writes() {
     let declaration = (ui_registration().lanes[0])().declaration();
@@ -123,8 +122,8 @@ fn the_ui_lane_declares_what_it_reads_and_writes() {
         ),
         (
             SourceKind::Resource,
-            TypeId::of::<Arc<dyn TextRenderer>>(),
-            "the text renderer",
+            TypeId::of::<Arc<GlyphAtlas>>(),
+            "the glyph atlas",
         ),
     ] {
         assert!(
@@ -137,6 +136,14 @@ fn the_ui_lane_declares_what_it_reads_and_writes() {
         declared.len(),
         4,
         "nothing else: {:?}",
+        declaration.inputs()
+    );
+    assert!(
+        declaration
+            .inputs()
+            .iter()
+            .all(|input| !input.type_name.contains("TextRenderer")),
+        "no text renderer: {:?}",
         declaration.inputs()
     );
     assert!(
@@ -160,23 +167,21 @@ fn the_ui_lane_declares_what_it_reads_and_writes() {
 
 // ─── Boot ───────────────────────────────────────────────────────────────────
 
-/// A runtime holding what the UI reads at boot: the image atlas and a text
-/// renderer.
+/// A runtime holding what the UI reads at boot: the image atlas and the
+/// glyph atlas — and no text renderer.
 fn ui_boot_runtime() -> Runtime {
     let mut runtime = Runtime::new();
     runtime.resources.insert(Arc::new(UiImageAtlas::new()));
-    runtime
-        .backends
-        .insert(Arc::new(NoText) as Arc<dyn TextRenderer>);
+    runtime.resources.insert(Arc::new(GlyphAtlas::default()));
     runtime
 }
 
-/// **The UI family boots** on a runtime holding the image atlas and a text
-/// renderer: the check accepts it, and one `Ui` agent is built from it. The
-/// `FrameContext` it reads its target from is not there at boot, and boot
-/// does not ask for it.
+/// **The UI family boots without any text renderer**, on a runtime holding
+/// the image atlas and the glyph atlas: the check accepts it, and one `Ui`
+/// agent is built from it. The `FrameContext` it reads its target from is
+/// not there at boot, and boot does not ask for it.
 #[test]
-fn the_ui_family_boots_with_the_atlas_and_a_text_renderer() {
+fn the_ui_family_boots_with_the_two_atlases_and_no_text_renderer() {
     let runtime = ui_boot_runtime();
     let registration = ui_registration();
 
@@ -213,21 +218,19 @@ fn assert_boot_refused_for_want_of(runtime: &Runtime, missing: &str) {
 #[test]
 fn boot_refuses_the_ui_family_without_the_image_atlas() {
     let mut runtime = Runtime::new();
-    runtime
-        .backends
-        .insert(Arc::new(NoText) as Arc<dyn TextRenderer>);
+    runtime.resources.insert(Arc::new(GlyphAtlas::default()));
 
     assert_boot_refused_for_want_of(&runtime, "UiImageAtlas");
 }
 
-/// Boot refuses the UI family on a runtime without a text renderer: the lane
+/// Boot refuses the UI family on a runtime without the glyph atlas: the lane
 /// could never draw a text.
 #[test]
-fn boot_refuses_the_ui_family_without_a_text_renderer() {
+fn boot_refuses_the_ui_family_without_the_glyph_atlas() {
     let mut runtime = Runtime::new();
     runtime.resources.insert(Arc::new(UiImageAtlas::new()));
 
-    assert_boot_refused_for_want_of(&runtime, "TextRenderer");
+    assert_boot_refused_for_want_of(&runtime, "GlyphAtlas");
 }
 
 // ─── The agent ──────────────────────────────────────────────────────────────
@@ -253,18 +256,19 @@ fn the_ui_reads_the_image_atlas_without_locking_it() {
     );
 }
 
-/// **The UI agent reads the frame context, the atlas, the text renderer, the
-/// device and the pipeline system**, locks nothing, and writes its pass slot
-/// and nothing else. An undeclared read would be refused by
-/// `EngineContext::resource`.
+/// **The UI agent reads the frame context, the two atlases, the device and
+/// the pipeline system**, locks nothing, and writes its pass slot and nothing
+/// else. An undeclared read would be refused by `EngineContext::resource`.
+/// The glyph atlas is read, not locked: `glyphs_on_gpu` fills it before any
+/// agent runs.
 #[test]
-fn the_ui_agent_reads_the_frame_context_the_atlas_the_text_renderer_the_device_and_the_pipelines() {
+fn the_ui_agent_reads_the_frame_context_the_two_atlases_the_device_and_the_pipelines() {
     let contention = ui_agent().contention();
 
     for (name, ty) in [
         ("the frame context", TypeId::of::<Arc<FrameContext>>()),
         ("the image atlas", TypeId::of::<Arc<UiImageAtlas>>()),
-        ("the text renderer", TypeId::of::<Arc<dyn TextRenderer>>()),
+        ("the glyph atlas", TypeId::of::<Arc<GlyphAtlas>>()),
         ("the device", TypeId::of::<Arc<dyn GraphicsDevice>>()),
         (
             "the pipeline system",

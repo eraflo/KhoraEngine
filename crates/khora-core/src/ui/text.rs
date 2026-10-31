@@ -183,13 +183,22 @@ impl GlyphKey {
     /// to a full pixel wraps to bin 0. Two pen positions a whole number of
     /// pixels apart, left of the origin included, share a bin.
     pub fn new(font: AssetUUID, glyph: u16, size_px: f32, x: f32) -> Self {
-        let fraction = x - x.floor();
         Self {
             font,
             glyph,
             size_q: (size_px.max(0.0) * 4.0).round() as u32,
-            subpixel_x: ((fraction * 4.0).round() as u8) % 4,
+            subpixel_x: (quarters(x) % 4) as u8,
         }
+    }
+
+    /// The whole pixel a glyph whose pen is at `x` is drawn from: the image
+    /// its key names already holds the bin's fraction, so it is placed at
+    /// `whole_pixel(x)`, and `whole_pixel(x) + subpixel_offset()` is within
+    /// an eighth of a pixel of `x`. It follows the bin's rounding exactly — a
+    /// fraction that wraps to bin 0 moves the pen to the next pixel — on
+    /// either side of the origin.
+    pub fn whole_pixel(x: f32) -> f32 {
+        x.floor() + if quarters(x) == 4 { 1.0 } else { 0.0 }
     }
 
     /// The size this key stands for, in pixels: `size_q / 4`.
@@ -202,6 +211,12 @@ impl GlyphKey {
     pub fn subpixel_offset(&self) -> f32 {
         f32::from(self.subpixel_x) / 4.0
     }
+}
+
+/// The fractional part of `x`, always in `[0, 1)`, in quarter pixels rounded
+/// to the nearest: `0..=4`, `4` a fraction that rounds to a full pixel.
+fn quarters(x: f32) -> u32 {
+    ((x - x.floor()) * 4.0).round() as u32
 }
 
 /// Rasterises glyphs of registered fonts.
@@ -350,6 +365,33 @@ mod tests {
                 offset,
                 "x = {x}"
             );
+        }
+    }
+
+    #[test]
+    fn a_pen_is_drawn_from_the_whole_pixel_below_it_or_the_next_when_its_bin_wraps() {
+        assert_eq!(GlyphKey::whole_pixel(3.0), 3.0);
+        assert_eq!(GlyphKey::whole_pixel(3.6), 3.0);
+        assert_eq!(GlyphKey::whole_pixel(3.9), 4.0, "bin 0 of the next pixel");
+        assert_eq!(GlyphKey::whole_pixel(-0.25), -1.0);
+        assert_eq!(GlyphKey::whole_pixel(-0.1), 0.0, "bin 0 of the origin");
+        assert_eq!(
+            GlyphKey::whole_pixel(-0.125),
+            0.0,
+            "0.875 past -1 rounds to a full pixel, as its bin does"
+        );
+    }
+
+    /// Wherever the pen, left of the origin or right of it, its whole pixel
+    /// plus its key's offset is the pen to an eighth of a pixel: the image
+    /// lands where it was shaped.
+    #[test]
+    fn a_whole_pixel_and_its_keys_offset_are_the_pen_to_an_eighth_of_a_pixel() {
+        for step in -800..800 {
+            let x = step as f32 / 64.0;
+            let drawn =
+                GlyphKey::whole_pixel(x) + GlyphKey::new(font(), 7, 16.0, x).subpixel_offset();
+            assert!((drawn - x).abs() <= 0.125, "x = {x}: drawn at {drawn}");
         }
     }
 }

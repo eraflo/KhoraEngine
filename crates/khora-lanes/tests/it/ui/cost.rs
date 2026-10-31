@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What the UI lane quotes: a time per node and a time per text, nothing
+//! What the UI lane quotes: a time per node and a time per glyph, nothing
 //! for a frame with neither, and the memory its level holds.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use khora_core::lane::cost::Cost;
+use khora_core::math::{Vec2, Vec4};
 
-use super::fixtures::{Scene, Ui};
+use super::fixtures::{glyph_text, Glyphs, Scene, Ui};
 
 /// The cost the run quoted for the one level.
 fn quoted(ui: &mut Ui, scene: &Scene) -> Cost {
@@ -66,22 +68,46 @@ fn the_ui_costs_a_time_per_node() {
     assert_equal_steps("nodes", &costs);
 }
 
-/// **The UI costs a time per text.** One, two and three hundred texts, no
-/// node, cost more each time, by the same step.
+/// A scene of no node and `texts` texts, of `glyphs` resident glyphs each.
+fn texts_of(texts: usize, glyphs: usize) -> Scene {
+    let mut atlas = Glyphs::new();
+    // Whole-pixel pens: every glyph is the one resident key.
+    let line: Vec<(u16, f32, f32)> = (0..glyphs).map(|i| (65, i as f32, 12.0)).collect();
+    let shaped = atlas.resident(&line);
+    Scene::new()
+        .with_node_count(0)
+        .with_glyphs(Arc::clone(&atlas.atlas))
+        .with_texts(
+            (0..texts)
+                .map(|k| glyph_text(Vec2::new(0.0, 20.0 * k as f32), Vec4::ONE, 0, &shaped))
+                .collect(),
+        )
+}
+
+/// **The UI costs a time per glyph.** One text of one, two and three hundred
+/// glyphs, no node, costs more each time, by the same step.
 #[test]
-fn the_ui_costs_a_time_per_text() {
+fn the_ui_costs_a_time_per_glyph() {
     let mut ui = Ui::new();
     let costs: Vec<Duration> = [100, 200, 300]
         .into_iter()
-        .map(|count| {
-            time(&quoted(
-                &mut ui,
-                &Scene::new().with_node_count(0).with_text_count(count),
-            ))
-        })
+        .map(|glyphs| time(&quoted(&mut ui, &texts_of(1, glyphs))))
         .collect();
 
-    assert_equal_steps("texts", &costs);
+    assert_equal_steps("glyphs", &costs);
+}
+
+/// **The cost is per glyph, not per text**: three hundred glyphs cost the
+/// same as one text or as three texts of a hundred.
+#[test]
+fn the_ui_cost_is_per_glyph_not_per_text() {
+    let mut ui = Ui::new();
+
+    let one_text = time(&quoted(&mut ui, &texts_of(1, 300)));
+    let three_texts = time(&quoted(&mut ui, &texts_of(3, 100)));
+
+    assert!(one_text > Duration::ZERO, "glyphs cost time");
+    assert_eq!(one_text, three_texts, "the same glyphs, the same time");
 }
 
 /// **An empty UI costs no time**, and its cost still quotes the memory its

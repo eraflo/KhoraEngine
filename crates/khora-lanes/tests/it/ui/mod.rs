@@ -14,10 +14,10 @@
 
 //! `UiLane`, the UI family's lane, runs on the typed contract: fetched from
 //! an `InputSource` holding the `UiScene` and the frame's target, the image
-//! atlas and the text renderer, its pass committed through an `OutputSink`,
+//! atlas and the glyph atlas, its pass committed through an `OutputSink`,
 //! on a ledger device: the projection for the target's size, the quads as
-//! instanced strips, the text flushed into the pass, the atlas bind group,
-//! the pipeline per target, the cost, and what the lane builds and gives
+//! instanced strips, the glyphs drawn after them, the atlas bind groups,
+//! the pipelines per target, the cost, and what the lane builds and gives
 //! back.
 
 mod atlas;

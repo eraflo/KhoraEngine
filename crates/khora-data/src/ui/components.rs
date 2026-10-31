@@ -244,8 +244,8 @@ pub struct UiInteraction {
 pub struct UiText {
     /// The string to display.
     pub content: String,
-    /// The font: [`Font::BUILT_IN`] (the default) for the text renderer's
-    /// built-in face, or the id of a font asset.
+    /// The font: [`Font::BUILT_IN`] (the default) for the engine's built-in
+    /// face, or the id of a font asset.
     pub font: AssetUUID,
     /// Font size in pixels.
     pub size: f32,

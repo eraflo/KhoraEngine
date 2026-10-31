@@ -126,7 +126,6 @@ mod every_pub_mod {
     use khora_core::renderer::api::shadow as _;
     use khora_core::renderer::api::shadow::bindings as _;
     use khora_core::renderer::api::shadow::bindings::binding as _;
-    use khora_core::renderer::api::text as _;
     use khora_core::renderer::api::util as _;
     use khora_core::renderer::api::util::flags as _;
     use khora_core::renderer::api::util::half_float as _;
@@ -1314,17 +1313,6 @@ mod trait_items {
 
     fn render_system_trait_identity_rev<T: khora_core::renderer::RenderSystem>() {
         render_system_trait_identity::<T>();
-    }
-
-    fn text_layout_trait_items<T: khora_core::renderer::api::text::TextLayout>() {
-        let _ = <T as khora_core::renderer::api::text::TextLayout>::size;
-        let _ = <T as khora_core::renderer::api::text::TextLayout>::as_any;
-    }
-
-    fn text_renderer_trait_items<T: khora_core::renderer::api::text::TextRenderer>() {
-        let _ = <T as khora_core::renderer::api::text::TextRenderer>::layout_text;
-        let _ = <T as khora_core::renderer::api::text::TextRenderer>::queue_text;
-        let _ = <T as khora_core::renderer::api::text::TextRenderer>::flush;
     }
 
     fn command_encoder_trait_items<T: khora_core::renderer::traits::CommandEncoder>() {
@@ -2924,8 +2912,6 @@ fn module_renderer_paths_still_resolve() {
         &khora_core::renderer::api::shadow::shadow_bind_group_layout_entries,
         &khora_core::renderer::api::shadow::bindings::shadow_bind_group_layout_entries,
     );
-    // trait `khora_core::renderer::api::text::TextLayout`: see `text_layout_trait_items`
-    // trait `khora_core::renderer::api::text::TextRenderer`: see `text_renderer_trait_items`
     let _ = type_name::<khora_core::renderer::api::util::AtlasRect>();
     let _ = atlas_rect_fields as fn(&khora_core::renderer::api::util::AtlasRect);
     is_debug::<khora_core::renderer::api::util::AtlasRect>();

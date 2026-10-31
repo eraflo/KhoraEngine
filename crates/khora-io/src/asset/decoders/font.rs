@@ -23,8 +23,8 @@ use crate::asset::{AssetDecoder, DecoderRegistration};
 
 /// Decodes TTF/OTF font files into a `Font` asset.
 ///
-/// For now, the decoder simply wraps the raw bytes; actual parsing happens
-/// in the text renderer downstream.
+/// The decoder wraps the raw bytes; the text shaper and the glyph rasteriser
+/// read the file when `ui_text_layout` and `glyphs_on_gpu` register it.
 #[derive(Clone, Default)]
 pub struct FontDecoder;
 

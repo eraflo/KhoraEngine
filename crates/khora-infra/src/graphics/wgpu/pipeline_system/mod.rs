@@ -136,6 +136,10 @@ const PIPELINE_MODULES: &[(&str, &str)] = &[
         include_str!("../../shader/shaders/pipelines/ui.wgsl"),
     ),
     (
+        "khora::pipelines::ui_text",
+        include_str!("../../shader/shaders/pipelines/ui_text.wgsl"),
+    ),
+    (
         "khora::pipelines::grid",
         include_str!("../../shader/shaders/pipelines/grid.wgsl"),
     ),

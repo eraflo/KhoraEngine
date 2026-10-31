@@ -179,16 +179,14 @@ pub use khora_infra::WgpuRenderSystem;
 // audio backends.
 pub use khora_core::audio::{AudioDevice, AudioMixBus, AudioStream, StreamInfo};
 pub use khora_core::physics::PhysicsProvider;
-pub use khora_core::renderer::api::text::TextRenderer;
 pub use khora_core::renderer::traits::PipelineSystem;
 pub use khora_core::ui::LayoutSystem;
 pub use khora_infra::audio::cpal::CpalAudioDevice;
 pub use khora_infra::graphics::WgpuPipelineSystem;
-pub use khora_infra::graphics::{EGUI_WGSL, TEXT_WGSL};
+pub use khora_infra::graphics::EGUI_WGSL;
 pub use khora_infra::physics::rapier::RapierPhysicsWorld;
 pub use khora_infra::ui::TaffyLayoutSystem;
 pub use khora_infra::DefaultMixBus;
-pub use khora_infra::StandardTextRenderer;
 
 // Data / ECS (needed for world restore)
 pub use khora_data;

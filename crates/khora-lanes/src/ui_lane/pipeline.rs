@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What the UI lane asks the device and the pipeline system for: its three
-//! bind-group layouts, its pipeline for a target's formats, and its sampler.
+//! What the UI lane asks the device and the pipeline system for: its
+//! bind-group layouts, its two pipelines for a target's formats — the quads'
+//! and the glyphs' — and its sampler.
 
 use std::borrow::Cow;
 
@@ -31,6 +32,9 @@ pub(super) const UI_GLOBAL_LAYOUT_LABEL: &str = "ui_global_layout";
 pub(super) const UI_INSTANCE_LAYOUT_LABEL: &str = "ui_instance_layout";
 /// Stable cache label for the UI atlas texture + sampler layout (set 2).
 pub(super) const UI_ATLAS_LAYOUT_LABEL: &str = "ui_atlas_layout";
+/// Stable cache label for the glyph atlases + sampler layout (set 2 of the
+/// glyph pipeline).
+pub(super) const UI_GLYPH_ATLAS_LAYOUT_LABEL: &str = "ui_glyph_atlas_layout";
 
 /// The UI's filtering sampler, clamped at the atlas's edges.
 pub(super) fn ui_sampler_descriptor(
@@ -104,14 +108,72 @@ pub(super) fn ui_atlas_layout_entries() -> Vec<BindGroupLayoutEntry> {
     ]
 }
 
-/// The declarative pipeline spec for the UI on a target of `color` with
-/// `samples` — instanced, no vertex buffer, no depth.
-pub(super) fn ui_pipeline_spec((color, samples): (TextureFormat, u32)) -> PipelineSpec {
+/// Set-2 layout of the glyph pipeline: the mask atlas, the colour atlas,
+/// and the filtering sampler both are read through.
+pub(super) fn ui_glyph_atlas_layout_entries() -> Vec<BindGroupLayoutEntry> {
+    let texture = |binding| BindGroupLayoutEntry {
+        binding,
+        visibility: ShaderStageFlags::FRAGMENT,
+        ty: BindingType::Texture {
+            sample_type: khora_core::renderer::api::command::TextureSampleType::Float {
+                filterable: true,
+            },
+            view_dimension: TextureViewDimension::D2,
+            multisampled: false,
+        },
+    };
+    vec![
+        texture(0),
+        texture(1),
+        BindGroupLayoutEntry {
+            binding: 2,
+            visibility: ShaderStageFlags::FRAGMENT,
+            ty: BindingType::Sampler(
+                khora_core::renderer::api::command::SamplerBindingType::Filtering,
+            ),
+        },
+    ]
+}
+
+/// The declarative pipeline spec for the UI's quads on a target of `color`
+/// with `samples` — instanced, no vertex buffer, no depth.
+pub(super) fn ui_pipeline_spec(formats: (TextureFormat, u32)) -> PipelineSpec {
+    instanced_spec(
+        "UI Render Pipeline",
+        "khora::pipelines::ui",
+        UI_ATLAS_LAYOUT_LABEL,
+        ui_atlas_layout_entries(),
+        formats,
+    )
+}
+
+/// The declarative pipeline spec for the UI's glyphs on a target of `color`
+/// with `samples` — the quads' shape, over the glyph atlases.
+pub(super) fn ui_text_pipeline_spec(formats: (TextureFormat, u32)) -> PipelineSpec {
+    instanced_spec(
+        "UI Text Pipeline",
+        "khora::pipelines::ui_text",
+        UI_GLYPH_ATLAS_LAYOUT_LABEL,
+        ui_glyph_atlas_layout_entries(),
+        formats,
+    )
+}
+
+/// An instanced pipeline of `shader` over the projection (set 0), an
+/// instance storage (set 1) and the textures `textures` lays out (set 2):
+/// four vertices a quad from no vertex buffer, no depth, alpha-blended.
+fn instanced_spec(
+    label: &'static str,
+    shader: &'static str,
+    textures_label: &'static str,
+    textures: Vec<BindGroupLayoutEntry>,
+    (color, samples): (TextureFormat, u32),
+) -> PipelineSpec {
     use khora_core::renderer::api::pipeline::LayoutSpec;
     use khora_core::renderer::api::shader::ShaderVariantKey;
     PipelineSpec {
-        label: "UI Render Pipeline",
-        shader: "khora::pipelines::ui",
+        label,
+        shader,
         variant: ShaderVariantKey::empty(),
         bind_group_layouts: vec![
             LayoutSpec::Inline {
@@ -123,8 +185,8 @@ pub(super) fn ui_pipeline_spec((color, samples): (TextureFormat, u32)) -> Pipeli
                 entries: Cow::Owned(ui_instance_layout_entries()),
             },
             LayoutSpec::Inline {
-                label: UI_ATLAS_LAYOUT_LABEL,
-                entries: Cow::Owned(ui_atlas_layout_entries()),
+                label: textures_label,
+                entries: Cow::Owned(textures),
             },
         ],
         vertex_buffers: vec![],
@@ -138,8 +200,9 @@ pub(super) fn ui_pipeline_spec((color, samples): (TextureFormat, u32)) -> Pipeli
         depth_stencil: None,
         color_targets: vec![ColorTargetStateDescriptor {
             format: color,
-            // The shader returns straight (non-premultiplied) alpha for the
-            // rounded corners and borders.
+            // Both shaders return straight (non-premultiplied) alpha: the
+            // quads for their rounded corners and borders, the glyphs for
+            // their coverage.
             blend: Some(BlendStateDescriptor::alpha_blending()),
             write_mask: ColorWrites::ALL,
         }],

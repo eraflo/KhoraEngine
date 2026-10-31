@@ -17,7 +17,7 @@
 //! The engine boots one [`LaneAgent`](crate::lane_agent::LaneAgent) from it
 //! in the OUTPUT phase. Each frame the agent lends the
 //! [`UiLane`](khora_lanes::ui_lane::UiLane) the frame's target, the UI Flow's
-//! `UiScene`, the image atlas and the text renderer, and commits its pass
+//! `UiScene`, the image atlas and the glyph atlas, and commits its pass
 //! into [`UiPassSlot`](khora_data::render::UiPassSlot).
 
 mod agent;

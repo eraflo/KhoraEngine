@@ -15,7 +15,8 @@
 //! The atlas bind group while the image atlas has no texture yet: set 2
 //! binds a one-texel texture the lane made, once, until the atlas has one;
 //! the lane gives it back at shutdown; and a frame that fails on the way —
-//! whether building it or growing the storage — leaves no text queued.
+//! whether building it or growing the storage — leaves the next frame
+//! drawing its own glyphs.
 
 use std::sync::Arc;
 
@@ -23,8 +24,8 @@ use khora_core::renderer::api::resource::TextureViewId;
 use khora_data::ui::UiImageAtlas;
 
 use super::fixtures::{
-    assert_everything_released, atlas_view, nth_text, queued, Bound, GpuKind, Ledger, Scene, Ui,
-    OLD_CAPACITY,
+    assert_everything_released, atlas_view, Bound, GpuKind, Ledger, Scene, Ui, OLD_CAPACITY,
+    RESIDENT_GLYPHS,
 };
 
 /// An image atlas whose GPU texture does not exist yet, as the engine
@@ -42,14 +43,14 @@ fn bound_view(ui: &Ui, n: usize) -> TextureViewId {
     }
 }
 
-/// Asserts the last flush holds the scene's own text, `nth_text(0)`, alone:
-/// no text a failed frame queued was left for it.
-fn assert_last_flush_holds_its_own_text_only(ui: &Ui) {
-    let flushes = ui.text.flushes();
+/// Asserts the last frame drew the resident text's own glyphs, each once:
+/// nothing a failed frame computed was left for it.
+fn assert_last_frame_draws_its_own_glyphs(ui: &Ui) {
+    let drawn = ui.last_glyphs();
     assert_eq!(
-        flushes.last().map(|flush| flush.texts.clone()),
-        Some(vec![queued(&nth_text(0))]),
-        "the frame flushes its own text only: {flushes:?}"
+        drawn.len(),
+        RESIDENT_GLYPHS,
+        "the frame draws its own glyphs: {drawn:?}"
     );
 }
 
@@ -142,56 +143,64 @@ fn the_atlas_texture_once_made_replaces_the_fallback_binding() {
 /// **A refusal while building over an empty atlas leaks nothing**: for every
 /// object a first frame over an atlas without a texture asks for — the
 /// fallback texture and its view among them — a device refusing it fails the
-/// frame; the next frame draws and flushes its own text only; and the
-/// shutdown gives back everything the lane made, once.
+/// frame; the next frame draws its own glyphs; and the shutdown gives back
+/// everything the lane made, once.
 #[test]
 fn a_refusal_while_building_over_an_empty_atlas_leaks_nothing() {
     let steps = {
         let mut ui = Ui::new();
-        ui.record(&Scene::new().with_atlas(empty_atlas()))
+        ui.record(&Scene::new().with_resident_text().with_atlas(empty_atlas()))
             .recorded();
         ui.device.asked()
     };
 
     for refused in 1..=steps {
         let mut ui = Ui::on(Ledger::refusing_the(refused));
-        let scene = Scene::new().with_atlas(empty_atlas());
+        let scene = Scene::new().with_resident_text().with_atlas(empty_atlas());
 
         ui.record(&scene).failed();
         ui.device.stop_refusing();
         ui.record(&scene).recorded();
 
-        assert_last_flush_holds_its_own_text_only(&ui);
+        assert_last_frame_draws_its_own_glyphs(&ui);
         ui.shut_down();
         assert_everything_released(&ui.device);
     }
 }
 
-/// **A frame failing before its flush queues no text.** A refused storage
-/// growth, and a refused bind group over a new atlas view, fail their frame
-/// after its instances were computed: no text of theirs reaches the next
-/// frame's flush.
+/// **A failed frame leaves the next frame its own glyphs.** A refused
+/// storage growth, and a refused bind group over a new atlas view, fail
+/// their frame after its instances were computed: the next frame draws its
+/// own text's glyphs, each once.
 #[test]
-fn a_frame_failing_before_its_flush_queues_no_text() {
+fn a_failed_frame_leaves_the_next_frame_its_own_glyphs() {
+    let resident = Scene::new().with_resident_text();
+    let glyphs = Arc::clone(&resident.glyphs);
+    let texts = resident.ui.texts.clone();
+    let scene = || {
+        Scene::new()
+            .with_glyphs(Arc::clone(&glyphs))
+            .with_texts(texts.clone())
+    };
     let build = {
         let mut ui = Ui::new();
-        ui.record(&Scene::new()).recorded();
+        ui.record(&scene()).recorded();
         ui.device.asked()
     };
 
     // The growth: the first object the second frame asks for.
     let mut ui = Ui::on(Ledger::refusing_the(build + 1));
-    ui.record(&Scene::new()).recorded();
-    ui.record(&Scene::new().with_node_count(4 * OLD_CAPACITY))
+    ui.record(&scene()).recorded();
+    ui.record(&scene().with_node_count(4 * OLD_CAPACITY))
         .failed();
-    ui.record(&Scene::new()).recorded();
-    assert_last_flush_holds_its_own_text_only(&ui);
+    ui.record(&scene()).recorded();
+    assert_last_frame_draws_its_own_glyphs(&ui);
 
     // The bind group over a new atlas view: likewise.
     let mut ui = Ui::on(Ledger::refusing_the(build + 1));
-    ui.record(&Scene::new()).recorded();
-    let moved = Scene::new().with_atlas(super::fixtures::gpu_atlas());
+    ui.record(&scene()).recorded();
+    let moved = scene().with_atlas(super::fixtures::gpu_atlas());
     ui.record(&moved).failed();
     ui.record(&moved).recorded();
-    assert_last_flush_holds_its_own_text_only(&ui);
+    assert_last_frame_draws_its_own_glyphs(&ui);
 }

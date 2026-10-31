@@ -21,9 +21,8 @@ use khora_sdk::winit_adapters::run_winit_staged;
 use khora_sdk::winit_adapters::WinitWindowProvider;
 use khora_sdk::{
     AudioDevice, AudioMixBus, AudioStream, CpalAudioDevice, DefaultMixBus, EditorShell,
-    LayoutSystem, PhysicsProvider, PipelineSystem, RapierPhysicsWorld, RenderSystem,
-    StandardTextRenderer, StreamInfo, TaffyLayoutSystem, TextRenderer, WgpuPipelineSystem,
-    WgpuRenderSystem, TEXT_WGSL,
+    LayoutSystem, PhysicsProvider, PipelineSystem, RapierPhysicsWorld, RenderSystem, StreamInfo,
+    TaffyLayoutSystem, WgpuPipelineSystem, WgpuRenderSystem,
 };
 use khora_sdk::{BootStep, Runtime, StagedBoot};
 
@@ -133,13 +132,11 @@ pub fn run() -> anyhow::Result<()> {
                 let physics: Box<dyn PhysicsProvider> = Box::new(RapierPhysicsWorld::default());
                 runtime.backends.insert(Arc::new(Mutex::new(physics)));
             })),
-            // UI layout — Taffy; text renderer — StandardTextRenderer
+            // UI layout — Taffy. Text is shaped and rasterised by the
+            // engine's own backends, which the boot installs.
             BootStep::Main(Box::new(|runtime| {
                 let layout: Box<dyn LayoutSystem> = Box::new(TaffyLayoutSystem::new());
                 runtime.backends.insert(Arc::new(Mutex::new(layout)));
-                let text: Arc<dyn TextRenderer> =
-                    Arc::new(StandardTextRenderer::new(TEXT_WGSL.to_owned()));
-                runtime.backends.insert(text);
             })),
             // Audio — shared mix bus + CPAL device. The bus is the sole
             // synchronisation boundary between audio lanes (main thread) and

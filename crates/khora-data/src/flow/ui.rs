@@ -12,35 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! `UiFlow` — projects UI ECS data + text layout into a per-frame
+//! `UiFlow` — projects UI ECS data into a per-frame
 //! [`UiScene`](crate::ui::UiScene) published into the
 //! [`LaneBus`](khora_core::lane::LaneBus).
 //!
-//! `Flow::project` drives both stages — node extraction from the ECS and
-//! text layout via the `TextRenderer` service — because both are pure
-//! per-frame derivations of the world. Atlas allocation is **not** here:
-//! it requires GPU device access (lane territory) and produces structural
-//! GPU side effects, so the UI agent owns it and exposes the resulting
-//! `UiAtlasMap` to its lane through `LaneContext`.
+//! The flow shapes nothing: each text's glyphs are copied from its
+//! [`UiTextLayout`](crate::ui::UiTextLayout), which the `ui_text_layout`
+//! DataSystem writes when the text changes. Atlas allocation is **not** here
+//! either: it requires GPU device access and produces GPU side effects, so
+//! the image atlas is filled by the UI agent and the glyph atlas by the
+//! `glyphs_on_gpu` DataSystem.
 
 use std::sync::Arc;
 
-use khora_core::asset::font::Font;
-use khora_core::renderer::api::text::{FontFace, TextRenderer};
 use khora_core::Runtime;
 
-use crate::ecs::{HandleComponent, SemanticDomain, World};
+use crate::ecs::{SemanticDomain, World};
 use crate::flow::{Flow, Selection};
 use crate::register_flow;
 use crate::ui::components::{UiBorder, UiColor, UiImage, UiText, UiTransform};
-use crate::ui::{ExtractedUiNode, ExtractedUiText, UiScene};
+use crate::ui::{ExtractedUiNode, ExtractedUiText, UiScene, UiTextLayout};
 
 /// UI presentation Flow.
 ///
-/// Deliberately **uncached** (no `cache_key` override): the projection
-/// depends on font assets that can hot-reload without any change signal the
-/// key could fold in, so a cached `UiScene` could go stale. It re-projects
-/// every tick.
+/// **Uncached** (no `cache_key` override): it re-projects every tick, a copy
+/// of every node and every laid-out text.
 ///
 /// The size of the image the UI is drawn into is not part of the view: the
 /// UI lane takes it from the frame's `ColorTargetSize`, alongside the target
@@ -54,14 +50,11 @@ impl Flow for UiFlow {
     const DOMAIN: SemanticDomain = SemanticDomain::Ui;
     const NAME: &'static str = "ui";
 
-    fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
+    fn project(&self, world: &World, _sel: &Selection, _runtime: &Runtime) -> Self::View {
         let mut scene = UiScene::default();
 
         extract_nodes(world, &mut scene);
-
-        if let Some(text_renderer) = runtime.backends.get::<Arc<dyn TextRenderer>>() {
-            layout_texts(world, text_renderer.as_ref(), &mut scene);
-        }
+        project_texts(world, &mut scene);
 
         scene.nodes.sort_by_key(|n| n.z_index);
         scene.texts.sort_by_key(|t| t.z_index);
@@ -90,31 +83,18 @@ fn extract_nodes(world: &World, scene: &mut UiScene) {
     }
 }
 
-/// Lays out every text whose face is ready: the built-in face always is; a
-/// font asset is once the entity's `HandleComponent<Font>` names it (the
-/// asset resolver loads it). A text whose font is not resolved yet is not
-/// drawn — never substituted by another face.
-fn layout_texts(world: &World, text_renderer: &dyn TextRenderer, scene: &mut UiScene) {
-    for (transform, text, resolved) in
-        world.query::<(&UiTransform, &UiText, Option<&HandleComponent<Font>>)>()
-    {
-        let face = if text.font == Font::BUILT_IN {
-            FontFace::BuiltIn
-        } else {
-            match resolved {
-                Some(handle) if handle.uuid == text.font => FontFace::Asset {
-                    uuid: text.font,
-                    font: &handle.handle,
-                },
-                _ => continue,
-            }
-        };
-        let layout = text_renderer.layout_text(&text.content, face, text.size, None);
+/// Copies every text's `UiTextLayout` into the scene, with its position,
+/// colour and layer. A text without a layout is not projected.
+fn project_texts(world: &World, scene: &mut UiScene) {
+    let query = world.query::<(&UiTransform, &UiText, &UiTextLayout)>();
+    for (transform, text, layout) in query {
         scene.texts.push(ExtractedUiText {
             pos: transform.pos,
-            layout: Arc::from(layout),
             color: text.color,
             z_index: transform.z_index,
+            font: layout.font,
+            size_px: layout.size_px,
+            glyphs: Arc::from(layout.glyphs.as_slice()),
         });
     }
 }
@@ -122,132 +102,55 @@ fn layout_texts(world: &World, text_renderer: &dyn TextRenderer, scene: &mut UiS
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assets::Assets;
     use crate::ecs::{HandleComponent, SemanticDomain, World};
     use crate::flow::{Flow, Selection};
     use crate::ui::components::{UiText, UiTransform};
-    use crate::ui::UiScene;
+    use crate::ui::{ExtractedUiText, UiScene, UiTextLayout};
     use khora_core::asset::font::Font;
-    use khora_core::asset::{AssetHandle, AssetUUID};
-    use khora_core::math::{Extent2D, Vec2, Vec4};
-    use khora_core::renderer::api::resource::TextureViewId;
-    use khora_core::renderer::api::text::TextRenderer;
-    use khora_core::renderer::api::text::{FontFace, TextLayout};
-    use khora_core::renderer::traits::CommandEncoder;
-    use khora_core::renderer::GraphicsDevice;
+    use khora_core::asset::AssetUUID;
+    use khora_core::math::{Vec2, Vec4};
+    use khora_core::ui::text::ShapedGlyph;
     use khora_core::Runtime;
-    use std::any::{Any, TypeId};
-    use std::sync::{Arc, RwLock};
+    use std::any::TypeId;
+    use std::sync::Arc;
 
-    /// The face a text was laid out with, as the test reads it back.
-    #[derive(Debug, Clone, Copy, PartialEq)]
-    enum Face {
-        BuiltIn,
-        Asset(AssetUUID),
-    }
+    /// The font the tests' layouts name.
+    const BODY: AssetUUID = AssetUUID::from_bytes(*b"khora:test:flow!");
 
-    /// A layout that remembers the text and the face it was laid out with.
-    struct RecordedLayout {
-        content: String,
-        face: Face,
-    }
-
-    impl TextLayout for RecordedLayout {
-        fn size(&self) -> Vec2 {
-            Vec2::new(10.0, 10.0)
-        }
-
-        fn as_any(&self) -> &dyn Any {
-            self
-        }
-    }
-
-    /// A text renderer that lays out into [`RecordedLayout`]s; the flow
-    /// never draws.
-    struct LayoutRecorder;
-
-    impl TextRenderer for LayoutRecorder {
-        fn layout_text(
-            &self,
-            text: &str,
-            face: FontFace<'_>,
-            _font_size: f32,
-            _max_width: Option<f32>,
-        ) -> Box<dyn TextLayout> {
-            let face = match face {
-                FontFace::BuiltIn => Face::BuiltIn,
-                FontFace::Asset { uuid, .. } => Face::Asset(uuid),
-            };
-            Box::new(RecordedLayout {
-                content: text.to_owned(),
-                face,
-            })
-        }
-
-        fn queue_text(&self, _layout: &dyn TextLayout, _pos: Vec2, _color: Vec4, _z: i32) {
-            unreachable!("the UI flow lays text out, it never queues it")
-        }
-
-        fn flush(
-            &self,
-            _device: &dyn GraphicsDevice,
-            _encoder: &mut dyn CommandEncoder,
-            _color_target: &TextureViewId,
-            _target: Extent2D,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            unreachable!("the UI flow lays text out, it never flushes")
-        }
-    }
-
-    /// A runtime whose text renderer is a [`LayoutRecorder`].
-    fn runtime() -> Runtime {
-        let mut runtime = Runtime::default();
-        runtime
-            .backends
-            .insert(Arc::new(LayoutRecorder) as Arc<dyn TextRenderer>);
-        runtime
-    }
-
-    fn transform() -> UiTransform {
+    fn transform(pos: Vec2, z_index: i32) -> UiTransform {
         UiTransform {
-            pos: Vec2::new(5.0, 6.0),
+            pos,
             size: Vec2::new(100.0, 20.0),
-            z_index: 0,
+            z_index,
         }
     }
 
-    fn text(content: &str, font: AssetUUID) -> UiText {
+    fn text(content: &str, color: Vec4) -> UiText {
         UiText {
             content: content.to_owned(),
-            font,
-            ..Default::default()
+            font: BODY,
+            size: 18.0,
+            color,
         }
     }
 
-    fn font_handle(uuid: AssetUUID) -> HandleComponent<Font> {
-        HandleComponent {
-            handle: AssetHandle::new(Font {
-                name: "Body".to_owned(),
-                data: vec![0, 1, 2],
-            }),
-            uuid,
+    /// A layout of `glyphs`, `(id, x, y)` each, in `BODY` at 18 px.
+    fn layout(glyphs: &[(u16, f32, f32)]) -> UiTextLayout {
+        UiTextLayout {
+            font: BODY,
+            size_px: 18.0,
+            size: Vec2::new(40.0, 18.0),
+            lines: 1,
+            glyphs: glyphs
+                .iter()
+                .map(|&(id, x, y)| ShapedGlyph { id, x, y })
+                .collect(),
         }
     }
 
-    /// The `(content, face)` of every text the flow laid out.
-    fn laid_out(scene: &UiScene) -> Vec<(String, Face)> {
-        scene
-            .texts
-            .iter()
-            .map(|text| {
-                let layout = text
-                    .layout
-                    .as_any()
-                    .downcast_ref::<RecordedLayout>()
-                    .expect("laid out by the recorder");
-                (layout.content.clone(), layout.face)
-            })
-            .collect()
+    /// The flow over `world`, with a runtime holding nothing at all.
+    fn project(world: &World) -> UiScene {
+        UiFlow.project(world, &Selection::new(), &Runtime::default())
     }
 
     #[test]
@@ -258,54 +161,96 @@ mod tests {
         );
     }
 
+    /// **A text with a layout projects its glyphs, font, size, colour, layer
+    /// and position**: the flow copies the entity's `UiTextLayout` — its
+    /// glyphs as shaped, the font and the size they were shaped at — with the
+    /// `UiTransform`'s position and layer and the `UiText`'s colour.
     #[test]
-    fn a_text_in_the_built_in_font_is_laid_out_without_any_font_asset() {
+    fn a_text_with_a_layout_projects_its_glyphs_font_size_colour_layer_and_position() {
         let mut world = World::new();
-        world.spawn((transform(), text("Hello", Font::BUILT_IN)));
-
-        let scene = UiFlow.project(&world, &Selection::new(), &runtime());
-
-        assert_eq!(laid_out(&scene), [("Hello".to_owned(), Face::BuiltIn)]);
-    }
-
-    #[test]
-    fn a_text_whose_font_handle_names_its_font_is_laid_out_with_that_asset() {
-        let font = AssetUUID::new();
-        let mut world = World::new();
-        world.spawn((transform(), text("Score", font), font_handle(font)));
-
-        let scene = UiFlow.project(&world, &Selection::new(), &runtime());
-
-        assert_eq!(laid_out(&scene), [("Score".to_owned(), Face::Asset(font))]);
-    }
-
-    #[test]
-    fn a_text_whose_font_is_not_resolved_on_the_entity_is_not_laid_out() {
-        let unloaded = AssetUUID::new();
-        let renamed = AssetUUID::new();
-        let mut world = World::new();
-        // No handle at all.
-        world.spawn((transform(), text("Waiting", unloaded)));
-        // A handle left over from another font.
+        let red = Vec4::new(1.0, 0.0, 0.0, 0.5);
+        let shaped = layout(&[(43, 0.0, 14.0), (72, 9.25, 14.0), (72, 18.5, 14.0)]);
         world.spawn((
-            transform(),
-            text("Stale", renamed),
-            font_handle(AssetUUID::new()),
+            transform(Vec2::new(12.5, 30.0), 3),
+            text("Hii", red),
+            shaped.clone(),
         ));
 
-        // Both fonts sit in a shared `Assets<Font>` resource: an entity's
-        // own handle is the only source of its font, so they stay unused.
-        let mut runtime = runtime();
-        let mut fonts = Assets::<Font>::new();
-        fonts.insert(unloaded, font_handle(unloaded).handle);
-        fonts.insert(renamed, font_handle(renamed).handle);
-        runtime.resources.insert(Arc::new(RwLock::new(fonts)));
+        let scene = project(&world);
 
-        let scene = UiFlow.project(&world, &Selection::new(), &runtime);
-
-        assert!(
-            laid_out(&scene).is_empty(),
-            "no text is laid out before its entity holds its font"
+        assert_eq!(
+            scene.texts,
+            [ExtractedUiText {
+                pos: Vec2::new(12.5, 30.0),
+                color: red,
+                z_index: 3,
+                font: BODY,
+                size_px: 18.0,
+                glyphs: Arc::from(shaped.glyphs.as_slice()),
+            }]
         );
+    }
+
+    /// **A text without a layout is not projected** — its font is not
+    /// resolved yet, or `ui_text_layout` has not run on it: beside a text that
+    /// has one, which is, it is not in the scene.
+    #[test]
+    fn a_text_without_a_layout_is_not_projected() {
+        let mut world = World::new();
+        world.spawn((
+            transform(Vec2::new(1.0, 2.0), 0),
+            text("Waiting", Vec4::ONE),
+        ));
+        world.spawn((
+            transform(Vec2::new(3.0, 4.0), 0),
+            text("Ready", Vec4::ONE),
+            layout(&[(7, 0.0, 14.0)]),
+        ));
+
+        let scene = project(&world);
+
+        let positions: Vec<Vec2> = scene.texts.iter().map(|text| text.pos).collect();
+        assert_eq!(
+            positions,
+            [Vec2::new(3.0, 4.0)],
+            "the text with a layout alone is projected"
+        );
+    }
+
+    /// **The flow reaches no text backend**: on a runtime holding nothing at
+    /// all — no shaper, no rasteriser, no renderer — a laid-out text is
+    /// projected with every one of its glyphs.
+    #[test]
+    fn the_flow_projects_texts_on_a_runtime_holding_no_text_backend() {
+        let mut world = World::new();
+        world.spawn((
+            transform(Vec2::ZERO, 0),
+            text("ab", Vec4::ONE),
+            layout(&[(1, 0.0, 14.0), (2, 8.0, 14.0)]),
+        ));
+
+        let scene = UiFlow.project(&world, &Selection::new(), &Runtime::new());
+
+        assert_eq!(scene.texts.len(), 1, "the text is projected");
+        assert_eq!(scene.texts[0].glyphs.len(), 2, "with its two glyphs");
+    }
+
+    /// **The texts are projected in layer order**, lowest `z_index` first, so
+    /// the lane draws a higher layer over a lower one.
+    #[test]
+    fn the_texts_are_projected_in_layer_order() {
+        let mut world = World::new();
+        for z_index in [7, -3, 0] {
+            world.spawn((
+                transform(Vec2::new(z_index as f32, 0.0), z_index),
+                text("x", Vec4::ONE),
+                layout(&[(1, 0.0, 14.0)]),
+            ));
+        }
+
+        let scene = project(&world);
+
+        let layers: Vec<i32> = scene.texts.iter().map(|text| text.z_index).collect();
+        assert_eq!(layers, [-3, 0, 7]);
     }
 }

@@ -134,13 +134,17 @@ fn skybox_agent_offers_one_flat_strategy() {
 }
 
 /// The UI family's agent, before any frame: one `Balanced` row, quoting the
-/// graphics memory of its one level — the 64-byte projection block and the
-/// storage for 1024 instances of 64 bytes.
+/// graphics memory of its one level — the 64-byte projection block, the
+/// storage for 1024 node instances and the storage for 1024 glyph instances,
+/// 64 bytes each.
 #[test]
 fn ui_agent_offers_one_flat_strategy() {
     assert_eq!(
         offer(ui_agent()),
-        (AgentId::Ui, vec![(StrategyId::Balanced, 64 + 1024 * 64)])
+        (
+            AgentId::Ui,
+            vec![(StrategyId::Balanced, 64 + 1024 * 64 + 1024 * 64)]
+        )
     );
 }
 

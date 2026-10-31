@@ -36,7 +36,6 @@ pub mod pipeline;
 pub mod resource;
 pub mod shader;
 pub mod shadow;
-pub mod text;
 pub mod util;
 
 pub use shader::ShaderDefs;

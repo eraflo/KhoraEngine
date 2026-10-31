@@ -12,17 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The UI lane: every UI node as one instanced quad, then the frame's text,
-//! drawn over the frame's colour.
+//! The UI lane: every UI node as one instanced quad, then every glyph of the
+//! frame's texts as one, drawn over the frame's colour.
 //!
-//! The UI Flow lays the UI out and publishes it as a [`UiScene`]; the lane
-//! uploads one instance per node, draws them as a triangle strip of four
-//! vertices each, and hands the texts to the text renderer, which draws them
-//! into the same encoder after the quads. Image nodes sample the shared
-//! [`UiImageAtlas`], which the `image_on_gpu` residency fills before any
-//! agent runs — the lane only reads it.
+//! The UI Flow publishes the UI as a [`UiScene`]; the lane uploads one
+//! instance per node and one per glyph, and draws them in one pass as
+//! triangle strips of four vertices each — the quads first, the glyphs over
+//! them with a pipeline of their own. Image nodes sample the shared
+//! [`UiImageAtlas`], which the `image_on_gpu` residency fills, and glyphs
+//! the [`GlyphAtlas`], which `glyphs_on_gpu` fills, both before any agent
+//! runs — the lane only reads them.
 
-use std::borrow::Cow;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -33,31 +33,34 @@ use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::io::{Target, TargetKey};
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::LaneError;
-use khora_core::math::{Extent2D, Extent3D, Mat4, Vec4};
+use khora_core::math::{Extent2D, Mat4, Vec4};
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, BindGroupId, BindGroupLayoutId, BindingResource, LoadOp,
     Operations, RenderPassColorAttachment, RenderPassDescriptor, StoreOp,
 };
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::{
-    BufferUsage, ImageAspect, SamplerId, TextureDescriptor, TextureDimension, TextureFormat,
-    TextureId, TextureUsage, TextureViewDescriptor, TextureViewDimension, TextureViewId,
+    BufferUsage, SamplerId, TextureFormat, TextureId, TextureViewId,
 };
-use khora_core::renderer::api::text::TextRenderer;
 use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::traits::{CommandEncoder, PipelineSystem};
 use khora_core::renderer::GraphicsDevice;
-use khora_data::ui::{UiImageAtlas, UiScene};
+use khora_data::ui::{GlyphAtlas, UiImageAtlas, UiScene};
 use khora_macros::LaneInputs;
 
 use crate::render_lane::util::Block;
 
+mod fallback;
+mod glyphs;
 mod pipeline;
 mod ui_family;
 
+use fallback::{destroy_texture, fallback_view};
+use glyphs::{glyph_bind_group, glyph_instances_of, GLYPH_CAPACITY};
 use pipeline::{
-    ui_atlas_layout_entries, ui_global_layout_entries, ui_instance_layout_entries,
-    ui_pipeline_spec, ui_sampler_descriptor, UI_ATLAS_LAYOUT_LABEL, UI_GLOBAL_LAYOUT_LABEL,
+    ui_atlas_layout_entries, ui_global_layout_entries, ui_glyph_atlas_layout_entries,
+    ui_instance_layout_entries, ui_pipeline_spec, ui_sampler_descriptor, ui_text_pipeline_spec,
+    UI_ATLAS_LAYOUT_LABEL, UI_GLOBAL_LAYOUT_LABEL, UI_GLYPH_ATLAS_LAYOUT_LABEL,
     UI_INSTANCE_LAYOUT_LABEL,
 };
 
@@ -67,21 +70,22 @@ pub use ui_family::*;
 const UI_CAPACITY: usize = 1024;
 /// The projection block's size: one 4×4 matrix.
 const PROJECTION_BYTES: u64 = std::mem::size_of::<Mat4>() as u64;
-/// The bytes the first build holds: the projection and the first storage.
-const START_BYTES: u64 =
-    PROJECTION_BYTES + (UI_CAPACITY * std::mem::size_of::<UiInstanceData>()) as u64;
+/// The bytes the first build holds: the projection and the first node and
+/// glyph storages.
+const START_BYTES: u64 = PROJECTION_BYTES
+    + ((UI_CAPACITY + GLYPH_CAPACITY) * std::mem::size_of::<UiInstanceData>()) as u64;
 
 /// What recording and uploading one node costs on the host.
 const NODE_CPU: Duration = Duration::from_nanos(200);
 /// What drawing one node's quad costs on the device.
 const NODE_GPU: Duration = Duration::from_nanos(100);
-/// What laying out and queueing one text costs on the host.
-const TEXT_CPU: Duration = Duration::from_micros(2);
-/// What drawing one text costs on the device.
-const TEXT_GPU: Duration = Duration::from_micros(1);
+/// What looking up and uploading one glyph costs on the host.
+const GLYPH_CPU: Duration = Duration::from_nanos(60);
+/// What drawing one glyph's quad costs on the device.
+const GLYPH_GPU: Duration = Duration::from_nanos(30);
 
 /// Data for a single UI instance sent to the GPU — matches `UiInstance` in
-/// `ui.wgsl`.
+/// `ui.wgsl` and `GlyphInstance` in `ui_text.wgsl`.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct UiInstanceData {
@@ -128,29 +132,47 @@ struct UiGpu {
     /// The node instances and their set-1 bind group, grown when a frame
     /// brings more nodes than they hold.
     instances: Block,
+    /// The glyph instances and their set-1 bind group, grown likewise.
+    glyphs: Block,
     instance_layout: BindGroupLayoutId,
     atlas_layout: BindGroupLayoutId,
+    glyph_atlas_layout: BindGroupLayoutId,
     sampler: SamplerId,
-    /// The pipeline and the colour format and samples it was built for.
-    pipeline: Option<((TextureFormat, u32), RenderPipelineId)>,
-    /// The set-2 bind group and the atlas view it binds, rebuilt only when
-    /// the view changes.
+    /// The two pipelines and the colour format and samples they were built
+    /// for.
+    pipelines: Option<((TextureFormat, u32), UiPipelines)>,
+    /// The quads' set-2 bind group and the atlas view it binds, rebuilt only
+    /// when the view changes.
     atlas_bind_group: Option<(TextureViewId, BindGroupId)>,
-    /// A one-texel texture set 2 binds while the atlas has none: the layout
-    /// needs a texture even when no node samples one.
+    /// The glyphs' set-2 bind group and the `(mask, colour)` views it binds,
+    /// rebuilt only when one of them changes.
+    glyph_bind_group: Option<((TextureViewId, TextureViewId), BindGroupId)>,
+    /// A one-texel texture set 2 binds in place of an atlas not made yet: the
+    /// layouts need a texture even when nothing samples one.
     fallback: Option<(TextureId, TextureViewId)>,
+}
+
+/// The UI's two pipelines, built for one colour format and sample count.
+#[derive(Debug, Clone, Copy)]
+struct UiPipelines {
+    quads: RenderPipelineId,
+    glyphs: RenderPipelineId,
 }
 
 impl UiGpu {
     /// The bytes its buffers hold.
     fn bytes(&self) -> u64 {
-        self.projection.size + self.instances.size
+        self.projection.size + self.instances.size + self.glyphs.size
     }
 
     fn destroy(self, device: &dyn GraphicsDevice) {
-        if let Some((_, group)) = self.atlas_bind_group {
+        let groups = [
+            self.atlas_bind_group.map(|(_, group)| group),
+            self.glyph_bind_group.map(|(_, group)| group),
+        ];
+        for group in groups.into_iter().flatten() {
             if let Err(e) = device.destroy_bind_group(group) {
-                log::warn!("UiLane: could not destroy the atlas bind group: {e:?}");
+                log::warn!("UiLane: could not destroy a texture bind group: {e:?}");
             }
         }
         if let Some((texture, view)) = self.fallback {
@@ -158,6 +180,7 @@ impl UiGpu {
         }
         self.projection.destroy(device);
         self.instances.destroy(device);
+        self.glyphs.destroy(device);
         if let Err(e) = device.destroy_sampler(self.sampler) {
             log::warn!("UiLane: could not destroy the sampler: {e:?}");
         }
@@ -176,9 +199,9 @@ pub struct UiInputs<'f> {
     /// The atlas image nodes sample, filled by the image residency.
     #[resource]
     pub atlas: &'f Arc<UiImageAtlas>,
-    /// The renderer that draws the frame's texts.
+    /// The glyphs of the frame's texts, made resident by `glyphs_on_gpu`.
     #[resource]
-    pub text: &'f Arc<dyn TextRenderer>,
+    pub glyphs: &'f Arc<GlyphAtlas>,
 }
 
 impl Lane for UiLane {
@@ -189,15 +212,21 @@ impl Lane for UiLane {
         &self.levels
     }
 
-    /// Every node is one quad and every text one run of glyphs: their time on
-    /// each device. An empty UI costs no time.
+    /// Every node is one quad and every glyph one: their time on each
+    /// device, whatever number of texts the glyphs are in. An empty UI costs
+    /// no time.
     fn cost(&self, _level: usize, inputs: &UiInputs<'_>) -> Cost {
         let nodes = inputs.scene.nodes.len() as u32;
-        let texts = inputs.scene.texts.len() as u32;
+        let glyphs: u32 = inputs
+            .scene
+            .texts
+            .iter()
+            .map(|text| text.glyphs.len() as u32)
+            .sum();
         Cost {
             time: PerDevice {
-                cpu: NODE_CPU * nodes + TEXT_CPU * texts,
-                gpu: NODE_GPU * nodes + TEXT_GPU * texts,
+                cpu: NODE_CPU * nodes + GLYPH_CPU * glyphs,
+                gpu: NODE_GPU * nodes + GLYPH_GPU * glyphs,
                 ..PerDevice::default()
             },
             memory: self.levels[0].memory,
@@ -205,9 +234,10 @@ impl Lane for UiLane {
         }
     }
 
-    /// Builds the projection, the instance storage, their bind groups and
-    /// the sampler once, and the pipeline for the target's colour format and
-    /// samples: the UI tests no depth, so a depth change builds nothing.
+    /// Builds the projection, the node and glyph storages, their bind groups
+    /// and the sampler once, and the two pipelines for the target's colour
+    /// format and samples: the UI tests no depth, so a depth change builds
+    /// nothing.
     fn prepare(
         &mut self,
         _level: usize,
@@ -227,13 +257,19 @@ impl Lane for UiLane {
         };
         self.levels[0].memory.gpu = built.bytes();
         let wanted = key.map(|key| (key.color, key.samples));
-        if built.pipeline.map(|(built_for, _)| built_for) != wanted {
-            built.pipeline = match wanted {
+        if built.pipelines.map(|(built_for, _)| built_for) != wanted {
+            let refused = |error| LaneError::InitializationFailed(Box::new(error));
+            built.pipelines = match wanted {
                 Some(formats) => Some((
                     formats,
-                    pipelines
-                        .pipeline(device, &ui_pipeline_spec(formats))
-                        .map_err(|error| LaneError::InitializationFailed(Box::new(error)))?,
+                    UiPipelines {
+                        quads: pipelines
+                            .pipeline(device, &ui_pipeline_spec(formats))
+                            .map_err(refused)?,
+                        glyphs: pipelines
+                            .pipeline(device, &ui_text_pipeline_spec(formats))
+                            .map_err(refused)?,
+                    },
                 )),
                 None => None,
             };
@@ -241,10 +277,10 @@ impl Lane for UiLane {
         Ok(())
     }
 
-    /// Draws every node as a quad, then flushes the frame's texts over them,
-    /// into the frame's colour. Everything the frame needs on the device is
-    /// built and uploaded before the first text is queued, so a frame that
-    /// fails leaves no text behind for the next one.
+    /// Draws every node as a quad, then every glyph over them, into the
+    /// frame's colour. Everything the frame needs on the device is built and
+    /// uploaded before the pass is recorded, so a frame that fails records
+    /// nothing.
     fn record(
         &mut self,
         _level: usize,
@@ -268,9 +304,17 @@ impl Lane for UiLane {
         let failed = |error| LaneError::ExecutionFailed(Box::new(error));
 
         let instances = instances_of(scene, inputs.atlas);
+        let glyphs = glyph_instances_of(scene, inputs.glyphs);
+        let layout = built.instance_layout;
         let needed = std::mem::size_of_val(instances.as_slice()) as u64;
         if needed > built.instances.size {
-            let grown = grow_instances(built, device, needed);
+            let grown = grow(&mut built.instances, device, layout, needed, "ui_instances");
+            self.levels[0].memory.gpu = built.bytes();
+            grown.map_err(failed)?;
+        }
+        let needed = std::mem::size_of_val(glyphs.as_slice()) as u64;
+        if needed > built.glyphs.size {
+            let grown = grow(&mut built.glyphs, device, layout, needed, "ui_glyphs");
             self.levels[0].memory.gpu = built.bytes();
             grown.map_err(failed)?;
         }
@@ -279,36 +323,43 @@ impl Lane for UiLane {
         } else {
             Some(atlas_bind_group(built, device, inputs.atlas).map_err(failed)?)
         };
+        let glyph_bind_group = if glyphs.is_empty() {
+            None
+        } else {
+            Some(glyph_bind_group(built, device, inputs.glyphs).map_err(failed)?)
+        };
         device
             .write_buffer(built.projection.buffer, 0, bytemuck::bytes_of(&projection))
             .map_err(failed)?;
-        if !instances.is_empty() {
-            device
-                .write_buffer(built.instances.buffer, 0, bytemuck::cast_slice(&instances))
-                .map_err(failed)?;
+        for (block, held) in [(&built.instances, &instances), (&built.glyphs, &glyphs)] {
+            if !held.is_empty() {
+                device
+                    .write_buffer(block.buffer, 0, bytemuck::cast_slice(held))
+                    .map_err(failed)?;
+            }
         }
 
-        let color = inputs.target.color;
-        if let (Some(atlas_bind_group), Some((_, pipeline))) = (atlas_bind_group, built.pipeline) {
-            draw_quads(
-                out.pass.encoder(),
-                color,
-                pipeline,
-                built,
-                atlas_bind_group,
-                instances.len() as u32,
-            );
-        }
-
-        for text in &scene.texts {
-            inputs
-                .text
-                .queue_text(text.layout.as_ref(), text.pos, text.color, text.z_index);
-        }
-        inputs
-            .text
-            .flush(device, out.pass.encoder(), &color, size)
-            .map_err(LaneError::ExecutionFailed)?;
+        let Some((_, pipelines)) = built.pipelines else {
+            return Ok(done);
+        };
+        let quads = atlas_bind_group.map(|group| Draw {
+            pipeline: pipelines.quads,
+            instances: &built.instances,
+            textures: group,
+            count: instances.len() as u32,
+        });
+        let glyphs = glyph_bind_group.map(|group| Draw {
+            pipeline: pipelines.glyphs,
+            instances: &built.glyphs,
+            textures: group,
+            count: glyphs.len() as u32,
+        });
+        draw_ui(
+            out.pass.encoder(),
+            inputs.target.color,
+            &built.projection,
+            [quads, glyphs],
+        );
         Ok(done)
     }
 
@@ -368,6 +419,11 @@ fn build_ui_gpu(
     )?;
     let atlas_layout =
         pipelines.inline_layout(device, UI_ATLAS_LAYOUT_LABEL, &ui_atlas_layout_entries())?;
+    let glyph_atlas_layout = pipelines.inline_layout(
+        device,
+        UI_GLYPH_ATLAS_LAYOUT_LABEL,
+        &ui_glyph_atlas_layout_entries(),
+    )?;
 
     let projection = Block::new(
         device,
@@ -377,9 +433,17 @@ fn build_ui_gpu(
         "ui_projection",
     )
     .map_err(RenderError::ResourceError)?;
-    let instances = match instance_block(device, instance_layout, UI_CAPACITY) {
+    let instances = match instance_block(device, instance_layout, UI_CAPACITY, "ui_instances") {
         Ok(instances) => instances,
         Err(error) => {
+            projection.destroy(device);
+            return Err(RenderError::ResourceError(error));
+        }
+    };
+    let glyphs = match instance_block(device, instance_layout, GLYPH_CAPACITY, "ui_glyphs") {
+        Ok(glyphs) => glyphs,
+        Err(error) => {
+            instances.destroy(device);
             projection.destroy(device);
             return Err(RenderError::ResourceError(error));
         }
@@ -387,6 +451,7 @@ fn build_ui_gpu(
     let sampler = match device.create_sampler(&ui_sampler_descriptor()) {
         Ok(sampler) => sampler,
         Err(error) => {
+            glyphs.destroy(device);
             instances.destroy(device);
             projection.destroy(device);
             return Err(RenderError::ResourceError(error));
@@ -395,43 +460,49 @@ fn build_ui_gpu(
     Ok(UiGpu {
         projection,
         instances,
+        glyphs,
         instance_layout,
         atlas_layout,
+        glyph_atlas_layout,
         sampler,
-        pipeline: None,
+        pipelines: None,
         atlas_bind_group: None,
+        glyph_bind_group: None,
         fallback: None,
     })
 }
 
-/// An instance storage holding `nodes` instances.
+/// An instance storage holding `count` instances.
 fn instance_block(
     device: &dyn GraphicsDevice,
     layout: BindGroupLayoutId,
-    nodes: usize,
+    count: usize,
+    label: &'static str,
 ) -> Result<Block, ResourceError> {
     Block::new(
         device,
         layout,
-        (nodes * std::mem::size_of::<UiInstanceData>()) as u64,
+        (count * std::mem::size_of::<UiInstanceData>()) as u64,
         BufferUsage::STORAGE,
-        "ui_instances",
+        label,
     )
 }
 
-/// Replaces the instance storage by one holding at least `needed` bytes,
-/// twice the nodes it held at least; the old one is given back once the new
-/// stands.
-fn grow_instances(
-    built: &mut UiGpu,
+/// Replaces the instance storage `block` by one holding at least `needed`
+/// bytes, twice the instances it held at least; the old one is given back
+/// once the new stands.
+fn grow(
+    block: &mut Block,
     device: &dyn GraphicsDevice,
+    layout: BindGroupLayoutId,
     needed: u64,
+    label: &'static str,
 ) -> Result<(), ResourceError> {
     let instance = std::mem::size_of::<UiInstanceData>() as u64;
-    let held = built.instances.size / instance;
-    let nodes = needed.div_ceil(instance).max(held * 2) as usize;
-    let grown = instance_block(device, built.instance_layout, nodes)?;
-    std::mem::replace(&mut built.instances, grown).destroy(device);
+    let held = block.size / instance;
+    let count = needed.div_ceil(instance).max(held * 2) as usize;
+    let grown = instance_block(device, layout, count, label)?;
+    std::mem::replace(block, grown).destroy(device);
     Ok(())
 }
 
@@ -448,14 +519,7 @@ fn atlas_bind_group(
         .and_then(|guard| guard.as_ref().map(|atlas| atlas.view()));
     let view = match atlas_view {
         Some(view) => view,
-        None => match built.fallback {
-            Some((_, view)) => view,
-            None => {
-                let fallback = fallback_texture(device)?;
-                built.fallback = Some(fallback);
-                fallback.1
-            }
-        },
+        None => fallback_view(built, device)?,
     };
     if let Some((bound, group)) = built.atlas_bind_group {
         if bound == view {
@@ -486,66 +550,27 @@ fn atlas_bind_group(
     Ok(group)
 }
 
-/// A one-texel texture and its view, for set 2 while the atlas has none.
-fn fallback_texture(
-    device: &dyn GraphicsDevice,
-) -> Result<(TextureId, TextureViewId), ResourceError> {
-    let texture = device.create_texture(&TextureDescriptor {
-        label: Some(Cow::Borrowed("ui_atlas_fallback")),
-        size: Extent3D {
-            width: 1,
-            height: 1,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: khora_core::renderer::api::resource::SampleCount::X1,
-        dimension: TextureDimension::D2,
-        format: TextureFormat::Rgba8UnormSrgb,
-        usage: TextureUsage::TEXTURE_BINDING,
-        view_formats: Cow::Borrowed(&[]),
-    })?;
-    let view = device.create_texture_view(
-        texture,
-        &TextureViewDescriptor {
-            label: Some(Cow::Borrowed("ui_atlas_fallback_view")),
-            format: None,
-            dimension: Some(TextureViewDimension::D2),
-            aspect: ImageAspect::All,
-            base_mip_level: 0,
-            mip_level_count: Some(1),
-            base_array_layer: 0,
-            array_layer_count: Some(1),
-        },
-    );
-    match view {
-        Ok(view) => Ok((texture, view)),
-        Err(error) => {
-            if let Err(e) = device.destroy_texture(texture) {
-                log::warn!("UiLane: could not destroy the fallback texture: {e:?}");
-            }
-            Err(error)
-        }
-    }
+/// One instanced draw of the UI pass: its pipeline, the storage of its
+/// instances, its set-2 bind group, and how many instances it draws.
+struct Draw<'b> {
+    pipeline: RenderPipelineId,
+    instances: &'b Block,
+    textures: BindGroupId,
+    count: u32,
 }
 
-fn destroy_texture(device: &dyn GraphicsDevice, texture: TextureId, view: TextureViewId) {
-    if let Err(e) = device.destroy_texture_view(view) {
-        log::warn!("UiLane: could not destroy the fallback view: {e:?}");
-    }
-    if let Err(e) = device.destroy_texture(texture) {
-        log::warn!("UiLane: could not destroy the fallback texture: {e:?}");
-    }
-}
-
-/// The quad pass — `LoadOp::Load` preserves what the scene drew; no depth.
-fn draw_quads(
+/// The UI pass — `LoadOp::Load` preserves what the scene drew; no depth.
+/// Each draw, in order, over the one projection; none at all records no
+/// pass.
+fn draw_ui(
     encoder: &mut dyn CommandEncoder,
     color: TextureViewId,
-    pipeline: RenderPipelineId,
-    built: &UiGpu,
-    atlas_bind_group: BindGroupId,
-    nodes: u32,
+    projection: &Block,
+    draws: [Option<Draw<'_>>; 2],
 ) {
+    if draws.iter().all(Option::is_none) {
+        return;
+    }
     let color_attachment = RenderPassColorAttachment {
         view: &color,
         resolve_target: None,
@@ -563,12 +588,14 @@ fn draw_quads(
         depth_stencil_attachment: None,
     };
     let mut pass = encoder.begin_render_pass(&pass_desc);
-    pass.set_pipeline(&pipeline);
-    pass.set_bind_group(0, &built.projection.bind_group, &[]);
-    pass.set_bind_group(1, &built.instances.bind_group, &[]);
-    pass.set_bind_group(2, &atlas_bind_group, &[]);
-    // Four vertices per instance: a quad drawn as a triangle strip.
-    pass.draw(0..4, 0..nodes);
+    for draw in draws.iter().flatten() {
+        pass.set_pipeline(&draw.pipeline);
+        pass.set_bind_group(0, &projection.bind_group, &[]);
+        pass.set_bind_group(1, &draw.instances.bind_group, &[]);
+        pass.set_bind_group(2, &draw.textures, &[]);
+        // Four vertices per instance: a quad drawn as a triangle strip.
+        pass.draw(0..4, 0..draw.count);
+    }
 }
 
 /// The orthographic projection that maps UI pixel coordinates of `target`

@@ -25,8 +25,9 @@ pub struct Font {
 }
 
 impl Font {
-    /// The fixed, well-known id of the text renderer's built-in face. A text
-    /// naming it needs no font asset.
+    /// The fixed, well-known id of the engine's built-in face, which the
+    /// text backends hold from the start. A text naming it needs no font
+    /// asset.
     pub const BUILT_IN: AssetUUID = AssetUUID::from_bytes(*b"khora:font:built");
 }
 

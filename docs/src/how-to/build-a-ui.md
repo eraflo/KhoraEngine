@@ -59,12 +59,12 @@ let panel = world.spawn((
 ## Add text
 
 `UiText` holds the string, a font, a pixel size, and an RGBA color. The default font,
-`Font::BUILT_IN`, is the text renderer's built-in face and needs no asset. Any other
-font is a font asset named by its UUID: it is loaded when the text first appears, and the
-text is drawn once it has loaded. A font that fails to load is reported in the log, and
-the text is not drawn in another face. (The standard text renderer does not rasterise font
-files yet: it draws every font with its built-in glyphs.) Spawn the text as a child node
-and parent it under the panel:
+`Font::BUILT_IN`, is the engine's built-in face (Inter) and needs no asset. Any other
+font is a font asset (a `.ttf` or `.otf` file) named by its UUID: it is loaded when the
+text first appears, and the text is drawn once it has loaded. A font that fails to load
+is reported in the log, and the text is not drawn in another face. The text is shaped
+again only when it changes, and each of its glyphs is rasterised once, then drawn from
+the glyph atlas. Spawn the text as a child node and parent it under the panel:
 
 ```rust
 use khora_sdk::khora_data::ui::{UiNode, UiText};

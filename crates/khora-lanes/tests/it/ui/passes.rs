@@ -19,6 +19,7 @@
 //! it, and the storage grows to hold every node.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use khora_core::asset::AssetUUID;
 use khora_core::lane::guard::{InputRefusal, Reason, SourceKind};
@@ -92,7 +93,8 @@ fn an_empty_ui_records_an_empty_pass() {
     assert_empty_pass(&ui.device, &recorded);
 }
 
-/// **A frame of text and no node draws no quad**, and still records.
+/// **A frame of text and no node draws no quad**, and still records; its
+/// text, no glyph of which is in the glyph atlas, draws nothing either.
 #[test]
 fn a_frame_of_text_alone_draws_no_quad() {
     let mut ui = Ui::new();
@@ -105,20 +107,23 @@ fn a_frame_of_text_alone_draws_no_quad() {
 /// **A zero-area target refuses the UI.** The old lane recorded nothing and
 /// called it a success; the typed lane's `target` input is refused as
 /// `BadTarget` — a minimised window, a collapsed viewport — whichever side is
-/// zero. After a frame that drew, those frames open no encoder, upload
-/// nothing, and hand the text renderer nothing, so no text is left queued
-/// for the next frame.
+/// zero. After a frame that drew, those frames open no encoder and upload
+/// nothing — no quad, no glyph.
 #[test]
 fn a_zero_area_target_refuses_the_ui() {
     let mut ui = Ui::new();
-    ui.record(&Scene::new()).recorded();
+    let scene = Scene::new().with_resident_text();
+    ui.record(&scene).recorded();
     let opened = ui.device.opened().len();
     let writes = ui.device.writes().len();
-    let queued = ui.text.queued().len();
-    let flushes = ui.text.flushes().len();
 
     for target in [sized(0, 600), sized(800, 0), sized(0, 0)] {
-        let recorded = ui.record(&Scene::new().into_target(target));
+        let recorded = ui.record(
+            &Scene::new()
+                .with_glyphs(Arc::clone(&scene.glyphs))
+                .with_texts(scene.ui.texts.clone())
+                .into_target(target),
+        );
         assert_eq!(
             recorded.refused(),
             InputRefusal {
@@ -134,18 +139,16 @@ fn a_zero_area_target_refuses_the_ui() {
 
     assert_eq!(ui.device.opened().len(), opened, "no encoder opened");
     assert_eq!(ui.device.writes().len(), writes, "nothing uploaded");
-    assert_eq!(ui.text.queued().len(), queued, "no text queued");
-    assert_eq!(ui.text.flushes().len(), flushes, "no text flushed");
 }
 
 /// **A frame handed no target refuses the UI's `target` input**: after a
-/// frame that drew, it opens no encoder and hands the text renderer nothing.
+/// frame that drew, it opens no encoder and uploads nothing.
 #[test]
 fn a_frame_without_a_target_refuses_the_ui() {
     let mut ui = Ui::new();
     ui.record(&Scene::new()).recorded();
     let opened = ui.device.opened().len();
-    let flushes = ui.text.flushes().len();
+    let writes = ui.device.writes().len();
 
     let recorded = ui.record(&Scene::new().without_a_target());
 
@@ -158,7 +161,7 @@ fn a_frame_without_a_target_refuses_the_ui() {
         }
     );
     assert_eq!(ui.device.opened().len(), opened, "no encoder opened");
-    assert_eq!(ui.text.flushes().len(), flushes, "no text flushed");
+    assert_eq!(ui.device.writes().len(), writes, "nothing uploaded");
 }
 
 /// The instances the `n`-th quad pass drew from, as sixteen floats each.

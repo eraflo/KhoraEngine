@@ -97,7 +97,8 @@ runtime.backends.insert(Arc::new(Mutex::new(Box::new(rs) as Box<dyn RenderSystem
 
 runtime.backends.insert(Arc::new(Mutex::new(Box::new(RapierPhysicsWorld::default()) as Box<dyn PhysicsProvider>)));
 runtime.backends.insert(Arc::new(Mutex::new(Box::new(TaffyLayoutSystem::new()) as Box<dyn LayoutSystem>)));
-runtime.backends.insert(Arc::new(StandardTextRenderer::new(TEXT_WGSL.to_owned())) as Arc<dyn TextRenderer>);
+// Text: nothing to register — the boot installs ParleyShaper and SwashRasterizer
+// unless an `Arc<dyn TextShaper>` / `Arc<dyn GlyphRasterizer>` is already here.
 
 let mix_bus: Arc<dyn AudioMixBus> = Arc::new(DefaultMixBus::new(StreamInfo { channels: 2, sample_rate: 48_000 }, 8192));
 runtime.resources.insert(Arc::clone(&mix_bus));

@@ -263,31 +263,6 @@ fn every_watched_pipeline_file_is_a_registered_pipeline() {
     );
 }
 
-/// What `recompose_dirty` does, device-free, when the sandbox's watcher sees
-/// an edit to `pipelines/text.wgsl`: the overlay is set under
-/// `khora::pipelines::text`, which is not in the pipeline table, so it is
-/// re-added to the composer as a lib module. That must not fail — an edit to
-/// a file in the watched tree must not log a recompose error.
-#[test]
-fn hot_reload_of_text_wgsl_is_not_a_failed_lib_recompose() {
-    let sys = WgpuPipelineSystem::new().expect("system init");
-    let edited = format!(
-        "{}\n// hot-reload overlay marker\n",
-        crate::graphics::shader::TEXT_WGSL
-    );
-    sys.set_overlay_source("khora::pipelines::text", edited);
-
-    let mut inner = sys.inner.lock().unwrap();
-    let dirty: Vec<String> = inner.dirty.iter().cloned().collect();
-    for path in &dirty {
-        if !inner.pipelines.contains_key(path.as_str()) {
-            readd_lib_module(&mut inner, path).unwrap_or_else(|e| {
-                panic!("recompose_dirty would log `failed to recompose lib `{path}``: {e}")
-            });
-        }
-    }
-}
-
 /// Number of components a mesh vertex format feeds to the shader.
 fn vertex_format_components(format: khora_core::renderer::api::pipeline::VertexFormat) -> u32 {
     use khora_core::renderer::api::pipeline::VertexFormat as F;
@@ -1695,5 +1670,129 @@ fn ui_shader_corners_follow_strip_order() {
         corners,
         [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)],
         "the UI quad's vertices 0..3 must follow triangle-strip order"
+    );
+}
+
+/// **`khora::pipelines::ui_text` composes and validates.** The UI lane draws
+/// its glyphs with it: it is registered, composes at the empty variant,
+/// validates, and has the vertex and fragment entry points the quad pipeline
+/// has, `vs_main` and `fs_main`.
+#[test]
+fn the_ui_text_pipeline_composes_and_validates() {
+    let module = compose_pipeline("khora::pipelines::ui_text");
+
+    Validator::new(ValidationFlags::all(), Capabilities::all())
+        .validate(&module)
+        .unwrap_or_else(|e| panic!("validate khora::pipelines::ui_text: {e:?}"));
+    let entries: Vec<(naga::ShaderStage, &str)> = module
+        .entry_points
+        .iter()
+        .map(|entry| (entry.stage, entry.name.as_str()))
+        .collect();
+    assert!(
+        entries.contains(&(naga::ShaderStage::Vertex, "vs_main")),
+        "a vertex entry point vs_main: {entries:?}"
+    );
+    assert!(
+        entries.contains(&(naga::ShaderStage::Fragment, "fs_main")),
+        "a fragment entry point fs_main: {entries:?}"
+    );
+}
+
+/// **The `ui_text` shader binds exactly what the UI lane's layout declares**:
+/// the projection uniform at 0.0, the glyph instance storage at 1.0, the mask
+/// atlas at 2.0, the colour atlas at 2.1 and their sampler at 2.2 — and
+/// nothing else. The lane's own test (`khora-lanes` `ui::text`) pins its
+/// pipeline layout to the same set.
+#[test]
+fn the_ui_text_shader_binds_exactly_what_the_ui_lane_layout_declares() {
+    let module = compose_pipeline("khora::pipelines::ui_text");
+
+    let bound: std::collections::BTreeSet<(u32, u32, &str)> = module
+        .global_variables
+        .iter()
+        .filter_map(|(_, var)| {
+            let binding = var.binding.as_ref()?;
+            let slot = match module.types[var.ty].inner {
+                naga::TypeInner::Image { .. } => "texture",
+                naga::TypeInner::Sampler { .. } => "sampler",
+                _ => match var.space {
+                    naga::AddressSpace::Uniform => "uniform",
+                    naga::AddressSpace::Storage { .. } => "storage",
+                    _ => "other",
+                },
+            };
+            Some((binding.group, binding.binding, slot))
+        })
+        .collect();
+
+    let expected: std::collections::BTreeSet<(u32, u32, &str)> = [
+        (0, 0, "uniform"),
+        (1, 0, "storage"),
+        (2, 0, "texture"),
+        (2, 1, "texture"),
+        (2, 2, "sampler"),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(bound, expected);
+}
+
+/// The UI lane draws each glyph as a four-vertex triangle strip, as it does
+/// a quad: vertex 0..3 of `ui_text`'s `vs_main` must be (0,0), (1,0), (0,1),
+/// (1,1), each sampling the corner of the glyph's rect it is drawn at.
+#[test]
+fn ui_text_shader_corners_follow_strip_order() {
+    let module = compose_pipeline("khora::pipelines::ui_text");
+
+    let corners: Vec<(f32, f32)> = (0..4).map(|v| ui_corner(&module, v)).collect();
+
+    assert_eq!(
+        corners,
+        [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)],
+        "the glyph quad's vertices 0..3 must follow triangle-strip order"
+    );
+}
+
+/// **`ui_text`'s `GlyphInstance` is the UI lane's 64-byte instance**: the
+/// lane uploads sixteen floats a glyph — `pos` at 0, `size` at 8, `color` at
+/// 16, `params` at 32, `uv_min` at 48, `uv_max` at 56 — so the storage array
+/// the shader reads at 1.0 strides 64 bytes and lays its members there.
+#[test]
+fn the_ui_text_glyph_instance_mirrors_the_ui_lane_instance_layout() {
+    let module = compose_pipeline("khora::pipelines::ui_text");
+
+    let storage = module
+        .global_variables
+        .iter()
+        .find(|(_, var)| {
+            var.binding
+                .as_ref()
+                .is_some_and(|b| b.group == 1 && b.binding == 0)
+        })
+        .map(|(_, var)| var.ty)
+        .expect("a storage array at 1.0");
+    let naga::TypeInner::Array { base, stride, .. } = module.types[storage].inner else {
+        panic!("1.0 is an array of glyph instances");
+    };
+    assert_eq!(stride, 64, "a glyph instance is sixty-four bytes");
+    let naga::TypeInner::Struct { ref members, span } = module.types[base].inner else {
+        panic!("a glyph instance is a struct");
+    };
+    assert_eq!(span, 64);
+    let offsets: Vec<(&str, u32)> = members
+        .iter()
+        .map(|m| (m.name.as_deref().unwrap_or("?"), m.offset))
+        .collect();
+    assert_eq!(
+        offsets,
+        [
+            ("pos", 0),
+            ("size", 8),
+            ("color", 16),
+            ("params", 32),
+            ("uv_min", 48),
+            ("uv_max", 56),
+        ]
     );
 }

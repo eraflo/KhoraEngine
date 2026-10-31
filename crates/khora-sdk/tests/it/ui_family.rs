@@ -13,20 +13,29 @@
 // limitations under the License.
 
 //! The UI as the engine runs it: one agent, built from the UI family's
-//! registration, in every mode; and its pass, composited where it always
-//! was — after the transparent pass, before the grid.
+//! registration, in every mode; its pass, composited where it always was —
+//! after the transparent pass, before the grid; and the text backends it
+//! draws through, installed by default and kept when the application brings
+//! its own.
 
 use std::any::TypeId;
+use std::sync::Arc;
 
 use khora_agents::lane_agent::LaneAgent;
 use khora_sdk::khora_core::agent::gorna::AgentId;
 use khora_sdk::khora_core::agent::EngineMode;
+use khora_sdk::khora_core::asset::AssetUUID;
 use khora_sdk::khora_core::lane::io::PassSlot;
+use khora_sdk::khora_core::ui::text::{
+    FontError, FontFamily, GlyphImage, GlyphKey, GlyphRasterizer, ShapeError, ShapeRequest,
+    ShapedText, TextShaper,
+};
 use khora_sdk::khora_core::Runtime;
 use khora_sdk::khora_data::render::{
     registered_pass_order, GridPassSlot, PassDescriptor, ResourceId, TransparentPassSlot,
     UiPassSlot,
 };
+use khora_sdk::khora_data::ui::GlyphAtlas;
 use khora_sdk::ExecutionPhase;
 
 /// A game registering no agent of its own.
@@ -108,75 +117,119 @@ fn the_ui_pass_composites_after_the_transparent_pass_and_before_the_grid() {
     assert_eq!(writes, [ResourceId::Color]);
 }
 
-/// A text renderer of the application's own, drawing nothing.
-struct AppText;
+/// A shaper of the application's own, which knows no font.
+struct AppShaper;
 
-/// A layout of no size, from [`AppText`].
-struct AppLayout;
-
-impl khora_sdk::khora_core::renderer::api::text::TextLayout for AppLayout {
-    fn size(&self) -> khora_sdk::khora_core::math::Vec2 {
-        khora_sdk::khora_core::math::Vec2::ZERO
+impl TextShaper for AppShaper {
+    fn register_font(&self, _id: AssetUUID, _data: Arc<[u8]>) -> Result<FontFamily, FontError> {
+        Err(FontError::Unreadable)
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    fn shape(&self, request: &ShapeRequest<'_>) -> Result<ShapedText, ShapeError> {
+        Err(ShapeError::UnknownFont(request.font))
     }
 }
 
-impl khora_sdk::TextRenderer for AppText {
-    fn layout_text(
-        &self,
-        _text: &str,
-        _face: khora_sdk::khora_core::renderer::api::text::FontFace<'_>,
-        _font_size: f32,
-        _max_width: Option<f32>,
-    ) -> Box<dyn khora_sdk::khora_core::renderer::api::text::TextLayout> {
-        Box::new(AppLayout)
+/// A rasteriser of the application's own, which draws nothing.
+struct AppRasterizer;
+
+impl GlyphRasterizer for AppRasterizer {
+    fn register_font(&self, _id: AssetUUID, _data: Arc<[u8]>) -> Result<(), FontError> {
+        Err(FontError::Unreadable)
     }
 
-    fn queue_text(
-        &self,
-        _layout: &dyn khora_sdk::khora_core::renderer::api::text::TextLayout,
-        _pos: khora_sdk::khora_core::math::Vec2,
-        _color: khora_sdk::khora_core::math::Vec4,
-        _z_index: i32,
-    ) {
-    }
-
-    fn flush(
-        &self,
-        _device: &dyn khora_sdk::khora_core::renderer::GraphicsDevice,
-        _encoder: &mut dyn khora_sdk::khora_core::renderer::traits::CommandEncoder,
-        _color_target: &khora_sdk::khora_core::renderer::api::resource::TextureViewId,
-        _target: khora_sdk::khora_core::math::Extent2D,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        Ok(())
+    fn rasterize(&self, _key: &GlyphKey) -> Option<GlyphImage> {
+        None
     }
 }
 
-/// **An application's own text renderer is kept.** The engine installs the
-/// standard one only when the application brings none: booted over a
-/// runtime holding the application's renderer, the engine's runtime holds
-/// that very renderer, which the UI family's lane then queues its texts to.
+/// The engine booted over `runtime`, as an application hands it over.
+fn booted(runtime: Runtime) -> khora_sdk::EngineCore<Game> {
+    let mut engine = khora_sdk::EngineCore::<Game>::new();
+    engine.bootstrap(Game, runtime);
+    engine
+}
+
+/// **The default install provides the shaper, the rasteriser and the glyph
+/// atlas.** Booted over an application's empty runtime, the engine's runtime
+/// holds a `TextShaper` and a `GlyphRasterizer` among its backends — what
+/// `ui_text_layout` and `glyphs_on_gpu` need — and the `GlyphAtlas` the UI
+/// lane draws from among its resources.
 #[test]
-fn an_applications_own_text_renderer_is_kept() {
-    use std::sync::Arc;
+fn the_default_install_provides_the_shaper_the_rasteriser_and_the_glyph_atlas() {
+    let engine = booted(Runtime::new());
+    let runtime = engine.runtime();
 
-    let own: Arc<dyn khora_sdk::TextRenderer> = Arc::new(AppText);
+    assert!(
+        runtime.backends.get::<Arc<dyn TextShaper>>().is_some(),
+        "a text shaper is installed"
+    );
+    assert!(
+        runtime.backends.get::<Arc<dyn GlyphRasterizer>>().is_some(),
+        "a glyph rasteriser is installed"
+    );
+    assert!(
+        runtime.resources.get::<Arc<GlyphAtlas>>().is_some(),
+        "a glyph atlas is installed"
+    );
+}
+
+/// **An application's own shaper is kept**, and the engine's rasteriser is
+/// installed beside it: booted over a runtime holding the application's
+/// shaper alone, the engine's runtime holds that very shaper, and a
+/// rasteriser.
+#[test]
+fn an_applications_own_shaper_is_kept_and_the_rasteriser_installed_beside_it() {
+    let own: Arc<dyn TextShaper> = Arc::new(AppShaper);
     let mut runtime = Runtime::new();
     runtime.backends.insert(Arc::clone(&own));
 
-    let mut engine = khora_sdk::EngineCore::<Game>::new();
-    engine.bootstrap(Game, runtime);
+    let engine = booted(runtime);
 
     let installed = engine
         .runtime()
         .backends
-        .get::<Arc<dyn khora_sdk::TextRenderer>>()
-        .expect("a text renderer is installed");
+        .get::<Arc<dyn TextShaper>>()
+        .expect("a text shaper is installed");
     assert!(
         Arc::ptr_eq(installed, &own),
-        "the application's own text renderer, not the engine's standard one"
+        "the application's own shaper, not the engine's"
+    );
+    assert!(
+        engine
+            .runtime()
+            .backends
+            .get::<Arc<dyn GlyphRasterizer>>()
+            .is_some(),
+        "and the engine's rasteriser beside it"
+    );
+}
+
+/// **An application's own rasteriser is kept**, and the engine's shaper is
+/// installed beside it.
+#[test]
+fn an_applications_own_rasteriser_is_kept_and_the_shaper_installed_beside_it() {
+    let own: Arc<dyn GlyphRasterizer> = Arc::new(AppRasterizer);
+    let mut runtime = Runtime::new();
+    runtime.backends.insert(Arc::clone(&own));
+
+    let engine = booted(runtime);
+
+    let installed = engine
+        .runtime()
+        .backends
+        .get::<Arc<dyn GlyphRasterizer>>()
+        .expect("a glyph rasteriser is installed");
+    assert!(
+        Arc::ptr_eq(installed, &own),
+        "the application's own rasteriser, not the engine's"
+    );
+    assert!(
+        engine
+            .runtime()
+            .backends
+            .get::<Arc<dyn TextShaper>>()
+            .is_some(),
+        "and the engine's shaper beside it"
     );
 }

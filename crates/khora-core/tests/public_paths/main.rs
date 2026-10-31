@@ -1751,9 +1751,6 @@ fn module_asset_paths_still_resolve() {
     is_deserialize_owned::<khora_core::asset::font::Font>();
     is_asset::<khora_core::asset::font::Font>();
     let _: khora_core::asset::AssetUUID = khora_core::asset::font::Font::BUILT_IN;
-    let _ = type_name::<khora_core::renderer::api::text::FontFace<'static>>();
-    is_copy::<khora_core::renderer::api::text::FontFace<'static>>();
-    let _ = khora_core::renderer::api::text::FontFace::uuid;
     let _ = type_name::<khora_core::asset::script::ScriptModule>();
     let _ = type_name::<khora_core::asset::ScriptModule>();
     same_type(
@@ -3531,8 +3528,6 @@ mod paths_used_by_other_crates {
     use khora_core::renderer::api::shadow::ShadowEntry::Cube as _; // khora-lanes
     use khora_core::renderer::api::shadow::ShadowFrame as _; // khora-data, khora-lanes
     use khora_core::renderer::api::shadow::ShadowGpuBindings as _; // khora-lanes
-    use khora_core::renderer::api::text::TextLayout as _; // khora-data, khora-infra
-    use khora_core::renderer::api::text::TextRenderer as _; // khora-agents, khora-data, khora-infra, khora-lanes, khora-sdk
     use khora_core::renderer::api::util::f32_to_f16_bits as _; // khora-io
     use khora_core::renderer::api::util::flags::ShaderStageFlags as _; // khora-infra
     use khora_core::renderer::api::util::AtlasRect as _; // khora-data

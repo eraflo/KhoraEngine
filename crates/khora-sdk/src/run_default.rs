@@ -41,8 +41,8 @@ use crate::{
     run_winit, AgentProvider, AssetService, AudioDevice, AudioMixBus, AudioStream, CpalAudioDevice,
     DccService, DefaultMixBus, EngineApp, GameWorld, InputEvent, LayoutSystem, MetricsRegistry,
     PackLoader, PhaseProvider, PhysicsProvider, PipelineSystem, RapierPhysicsWorld, RenderSystem,
-    Runtime, SceneFile, SerializationService, StandardTextRenderer, StreamInfo, TaffyLayoutSystem,
-    TextRenderer, WgpuPipelineSystem, WgpuRenderSystem, WindowConfig, TEXT_WGSL,
+    Runtime, SceneFile, SerializationService, StreamInfo, TaffyLayoutSystem, WgpuPipelineSystem,
+    WgpuRenderSystem, WindowConfig,
 };
 use khora_io::asset::{AssetIdRegistry, PackManifest};
 
@@ -297,13 +297,10 @@ pub fn run_default() -> Result<()> {
         runtime.backends.insert(Arc::new(Mutex::new(physics)));
         runtime.resources.insert(physics_settings);
 
-        // UI layout — Taffy
+        // UI layout — Taffy. Text is shaped and rasterised by the engine's
+        // own backends, which the boot installs.
         let layout: Box<dyn LayoutSystem> = Box::new(TaffyLayoutSystem::new());
         runtime.backends.insert(Arc::new(Mutex::new(layout)));
-
-        // Text renderer — StandardTextRenderer
-        let text: Arc<dyn TextRenderer> = Arc::new(StandardTextRenderer::new(TEXT_WGSL.to_owned()));
-        runtime.backends.insert(text);
 
         // Audio — shared mix bus + CPAL device. The opened AudioStream
         // is stored as a backend handle; dropping it stops the stream.

@@ -227,16 +227,6 @@ mod trait_items {
         khora_sdk_render_system_same::<T>();
     }
 
-    fn khora_sdk_text_renderer_same<T: ?Sized + khora_sdk::TextRenderer>() {
-        khora_sdk_text_renderer_same_rev::<T>();
-    }
-
-    fn khora_sdk_text_renderer_same_rev<
-        T: ?Sized + khora_core::renderer::api::text::TextRenderer,
-    >() {
-        khora_sdk_text_renderer_same::<T>();
-    }
-
     fn khora_sdk_tool_ui_ui_builder_same<T: ?Sized + khora_sdk::tool_ui::UiBuilder>() {
         khora_sdk_tool_ui_ui_builder_same_rev::<T>();
     }
@@ -837,11 +827,6 @@ fn module_crate_root_paths_still_resolve() {
         PhantomData::<khora_sdk::SoundData>,
         PhantomData::<khora_data::assets::SoundData>,
     );
-    let _ = type_name::<khora_sdk::StandardTextRenderer>();
-    same_type(
-        PhantomData::<khora_sdk::StandardTextRenderer>,
-        PhantomData::<khora_infra::StandardTextRenderer>,
-    );
     let _ = type_name::<khora_sdk::StatusBarData>();
     same_type(
         PhantomData::<khora_sdk::StatusBarData>,
@@ -864,8 +849,6 @@ fn module_crate_root_paths_still_resolve() {
     );
     let _ = khora_sdk::EGUI_WGSL;
     assert_eq!(khora_sdk::EGUI_WGSL, khora_infra::graphics::EGUI_WGSL);
-    let _ = khora_sdk::TEXT_WGSL;
-    assert_eq!(khora_sdk::TEXT_WGSL, khora_infra::graphics::TEXT_WGSL);
     let _ = type_name::<khora_sdk::TaffyLayoutSystem>();
     same_type(
         PhantomData::<khora_sdk::TaffyLayoutSystem>,
@@ -891,7 +874,6 @@ fn module_crate_root_paths_still_resolve() {
         PhantomData::<khora_sdk::TextAlign>,
         PhantomData::<khora_core::ui::editor::TextAlign>,
     );
-    // trait `khora_sdk::TextRenderer` is `khora_core::renderer::api::text::TextRenderer`: see `trait_items::khora_sdk_text_renderer_same`
     // trait `khora_sdk::tool_ui::UiBuilder` is `khora_core::ui::UiBuilder`: see `trait_items::khora_sdk_tool_ui_ui_builder_same`
     // trait `khora_sdk::UiBuilder` is `khora_core::ui::UiBuilder`: see `trait_items::khora_sdk_ui_builder_same`
     let _ = type_name::<khora_sdk::editor_ui::UiTheme>();
@@ -2052,12 +2034,10 @@ mod paths_used_by_other_crates {
     use khora_sdk::SerializationGoal as _; // khora-editor
     use khora_sdk::SerializationService as _; // khora-editor
     use khora_sdk::SoundData as _; // khora-editor
-    use khora_sdk::StandardTextRenderer as _; // khora-editor, sandbox
     use khora_sdk::StrategyId as _; // khora-editor
     use khora_sdk::StreamInfo as _; // khora-editor, sandbox
     use khora_sdk::SymphoniaDecoder as _; // khora-editor
     use khora_sdk::TaffyLayoutSystem as _; // khora-editor, sandbox
-    use khora_sdk::TextRenderer as _; // khora-editor, sandbox
     use khora_sdk::WgpuPipelineSystem as _; // khora-editor, sandbox
     use khora_sdk::WgpuRenderSystem as _; // khora-editor, sandbox
     use khora_sdk::WindowConfig as _; // sandbox
@@ -2065,7 +2045,6 @@ mod paths_used_by_other_crates {
     use khora_sdk::EGUI_WGSL as _; // khora-editor
     use khora_sdk::PRIMARY_VIEWPORT as _; // khora-editor
     use khora_sdk::RUNTIME_CONFIG_FILE as _; // khora-editor
-    use khora_sdk::TEXT_WGSL as _; // khora-editor, sandbox
 }
 
 #[test]

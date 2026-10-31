@@ -48,7 +48,7 @@ use std::future::Future;
 /// moment. An implementation must never wait while holding something another
 /// call could wait for: its locks are **leaves**, held only to look an entry
 /// up, insert or remove it, and never across a call to the graphics API or to
-/// anything else. Code above the device (a pipeline system, a text renderer)
+/// anything else. Code above the device (a pipeline system, a glyph atlas)
 /// may hold its own lock while calling the device, because the device never
 /// calls back up.
 pub trait GraphicsDevice: Send + Sync + Debug + 'static {

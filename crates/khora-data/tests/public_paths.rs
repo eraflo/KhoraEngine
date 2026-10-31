@@ -800,7 +800,7 @@ fn extracted_ui_node_fields(x: &khora_data::ui::ExtractedUiNode) {
 }
 
 fn extracted_ui_text_fields(x: &khora_data::ui::ExtractedUiText) {
-    let _ = (&x.pos, &x.layout, &x.color, &x.z_index);
+    let _ = (&x.pos, &x.color, &x.z_index, &x.font, &x.size_px, &x.glyphs);
 }
 
 fn ui_atlas_map_fields(x: &khora_data::ui::UiAtlasMap) {
@@ -2550,6 +2550,8 @@ fn module_ui_paths_still_resolve() {
     let _ = type_name::<khora_data::ui::ExtractedUiText>();
     let _ = extracted_ui_text_fields as fn(&khora_data::ui::ExtractedUiText);
     is_clone::<khora_data::ui::ExtractedUiText>();
+    is_debug::<khora_data::ui::ExtractedUiText>();
+    is_partial_eq::<khora_data::ui::ExtractedUiText>();
     let _ = type_name::<khora_data::ui::UiAtlasMap>();
     let _ = ui_atlas_map_fields as fn(&khora_data::ui::UiAtlasMap);
     let _ = khora_data::ui::UiAtlasMap::new;

@@ -53,7 +53,7 @@ What the SDK gives you:
 | **Math** | `prelude::math::*` — `Vec3`, `Quaternion`, `Mat4`, `LinearRgba`. |
 | **Input** | `InputEvent`, `KeyCode`, `MouseButton`, `InputMap` (action bindings), `InputBinding`. |
 | **Assets** | `AssetHandle<T>`, `AssetService`, pack tooling (`PackBuilder`); `run_default` for packed runtimes. |
-| **Backends** | Registered once in the `run_winit` bootstrap closure: `WgpuRenderSystem`, `RapierPhysicsWorld`, `TaffyLayoutSystem`, `StandardTextRenderer`, `CpalAudioDevice` + `DefaultMixBus`. |
+| **Backends** | Registered once in the `run_winit` bootstrap closure: `WgpuRenderSystem`, `RapierPhysicsWorld`, `TaffyLayoutSystem`, `CpalAudioDevice` + `DefaultMixBus` (text backends are installed by default). |
 
 That is all you keep resident. For anything deeper, route.
 

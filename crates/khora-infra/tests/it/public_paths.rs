@@ -61,16 +61,12 @@ fn is_khora_window<T: khora_core::platform::KhoraWindow>() {}
 fn is_layout_system<T: khora_core::ui::LayoutSystem>() {}
 fn is_physics_provider<T: khora_core::physics::PhysicsProvider>() {}
 fn is_pipeline_system<T: khora_core::renderer::traits::PipelineSystem>() {}
-fn is_pod<T: bytemuck::Pod>() {}
 fn is_render_system<T: khora_core::renderer::RenderSystem>() {}
 fn is_resource_monitor<T: khora_core::telemetry::ResourceMonitor>() {}
 fn is_send<T: Send>() {}
 fn is_sync<T: Sync>() {}
-fn is_text_layout<T: khora_core::renderer::api::text::TextLayout>() {}
-fn is_text_renderer<T: khora_core::renderer::api::text::TextRenderer>() {}
 fn is_text_shaper<T: khora_core::ui::text::TextShaper>() {}
 fn is_ui_builder<T: khora_core::ui::UiBuilder>() {}
-fn is_zeroable<T: bytemuck::Zeroable>() {}
 
 // ---------------------------------------------------------------------------
 // Every `pub mod`, down to the leaves.
@@ -82,10 +78,6 @@ mod every_pub_mod {
     use khora_infra::audio::cpal as _;
     use khora_infra::graphics as _;
     use khora_infra::graphics::shader as _;
-    use khora_infra::graphics::text as _;
-    use khora_infra::graphics::text::custom as _;
-    use khora_infra::graphics::text::custom::pixel_font as _;
-    use khora_infra::graphics::text::standard as _;
     use khora_infra::graphics::wgpu as _;
     use khora_infra::memory as _;
     use khora_infra::physics as _;
@@ -142,20 +134,6 @@ fn velocity_state_fields(x: &khora_infra::physics::khora::solver::VelocityState)
         &x.mass,
         &x.body_type,
     );
-}
-
-fn standard_text_layout_fields(x: &khora_infra::graphics::text::standard::StandardTextLayout) {
-    let _ = (
-        &x.size,
-        &x.glyph_positions,
-        &x.font_handle,
-        &x.font_uuid,
-        &x.font_size,
-    );
-}
-
-fn text_vertex_fields(x: &khora_infra::graphics::text::standard::TextVertex) {
-    let _ = (&x.pos, &x.uv, &x.color);
 }
 
 fn window_config_input_fields(x: &khora_infra::ui::egui::app::WindowConfigInput) {
@@ -264,14 +242,9 @@ fn module_graphics_paths_still_resolve() {
     let _ = khora_infra::graphics::WgpuPipelineSystem::new;
     is_pipeline_system::<khora_infra::graphics::WgpuPipelineSystem>();
     let _: &str = khora_infra::graphics::shader::EGUI_WGSL;
-    let _: &str = khora_infra::graphics::shader::TEXT_WGSL;
     assert_eq!(
         khora_infra::graphics::EGUI_WGSL,
         khora_infra::graphics::shader::EGUI_WGSL
-    );
-    assert_eq!(
-        khora_infra::graphics::TEXT_WGSL,
-        khora_infra::graphics::shader::TEXT_WGSL
     );
 }
 
@@ -372,42 +345,6 @@ fn module_platform_paths_still_resolve() {
     let _ = khora_infra::platform::winit::window::WinitWindowBuilder::with_icon_rgba;
     let _ = khora_infra::platform::winit::window::WinitWindowBuilder::build;
     is_default::<khora_infra::platform::winit::window::WinitWindowBuilder>();
-}
-
-#[test]
-fn module_graphics_text_paths_still_resolve() {
-    let _ = khora_infra::graphics::text::custom::pixel_font::get_font_bits;
-    let _ = khora_infra::graphics::text::custom::pixel_font::rasterize_glyph;
-    let _ = type_name::<khora_infra::graphics::text::standard::StandardTextLayout>();
-    let _ = standard_text_layout_fields
-        as fn(&khora_infra::graphics::text::standard::StandardTextLayout);
-    is_text_layout::<khora_infra::graphics::text::standard::StandardTextLayout>();
-    let _ = type_name::<khora_infra::graphics::text::standard::StandardTextRenderer>();
-    let _ = khora_infra::graphics::text::standard::text_projection;
-    let _ = type_name::<khora_infra::graphics::text::StandardTextRenderer>();
-    let _ = type_name::<khora_infra::graphics::StandardTextRenderer>();
-    let _ = type_name::<khora_infra::StandardTextRenderer>();
-    same_type(
-        PhantomData::<khora_infra::graphics::StandardTextRenderer>,
-        PhantomData::<khora_infra::graphics::text::standard::StandardTextRenderer>,
-    );
-    same_type(
-        PhantomData::<khora_infra::graphics::text::StandardTextRenderer>,
-        PhantomData::<khora_infra::graphics::text::standard::StandardTextRenderer>,
-    );
-    same_type(
-        PhantomData::<khora_infra::StandardTextRenderer>,
-        PhantomData::<khora_infra::graphics::text::standard::StandardTextRenderer>,
-    );
-    let _ = khora_infra::graphics::text::standard::StandardTextRenderer::new;
-    is_text_renderer::<khora_infra::graphics::text::standard::StandardTextRenderer>();
-    let _ = type_name::<khora_infra::graphics::text::standard::TextVertex>();
-    let _ = text_vertex_fields as fn(&khora_infra::graphics::text::standard::TextVertex);
-    is_copy::<khora_infra::graphics::text::standard::TextVertex>();
-    is_clone::<khora_infra::graphics::text::standard::TextVertex>();
-    is_debug::<khora_infra::graphics::text::standard::TextVertex>();
-    is_pod::<khora_infra::graphics::text::standard::TextVertex>();
-    is_zeroable::<khora_infra::graphics::text::standard::TextVertex>();
 }
 
 #[test]
@@ -649,7 +586,6 @@ mod paths_used_by_other_crates {
     use khora_infra::audio::cpal::CpalAudioDevice as _; // khora-sdk
     use khora_infra::graphics::WgpuPipelineSystem as _; // khora-sdk
     use khora_infra::graphics::EGUI_WGSL as _; // khora-sdk
-    use khora_infra::graphics::TEXT_WGSL as _; // khora-sdk
     use khora_infra::physics::rapier::RapierPhysicsWorld as _; // khora-agents, khora-sdk
     use khora_infra::platform::winit::input::translate_winit_input as _; // khora-sdk
     use khora_infra::platform::winit::WinitWindow as _; // khora-sdk
@@ -661,7 +597,6 @@ mod paths_used_by_other_crates {
     use khora_infra::DefaultMixBus as _; // khora-sdk
     use khora_infra::GpuMonitor as _; // khora-sdk
     use khora_infra::SaaTrackingAllocator as _; // khora-sdk
-    use khora_infra::StandardTextRenderer as _; // khora-sdk
     use khora_infra::WgpuRenderSystem as _; // khora-sdk
 }
 

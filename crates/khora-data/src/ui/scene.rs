@@ -22,8 +22,8 @@
 
 use khora_core::asset::AssetUUID;
 use khora_core::math::{Vec2, Vec4};
-use khora_core::renderer::api::text::TextLayout;
 use khora_core::renderer::api::util::AtlasRect;
+use khora_core::ui::text::ShapedGlyph;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -46,18 +46,22 @@ pub struct ExtractedUiNode {
     pub z_index: i32,
 }
 
-/// Extracted text data for rendering.
-#[derive(Clone)]
+/// One text of the frame, as its `UiTextLayout` shaped it.
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExtractedUiText {
-    /// Screen-space position.
+    /// Screen-space position of the text's top-left corner.
     pub pos: Vec2,
-    /// Pre-computed text layout. `Arc` (immutable, shared) rather than
-    /// `Box` so the containing `UiScene` view is cheaply clonable.
-    pub layout: Arc<dyn TextLayout>,
     /// Text color RGBA.
     pub color: Vec4,
     /// Z-index for sorting.
     pub z_index: i32,
+    /// The font the glyphs were shaped with.
+    pub font: AssetUUID,
+    /// The size they were shaped at, in pixels per em.
+    pub size_px: f32,
+    /// The shaped glyphs, their pens relative to `pos`. `Arc` (immutable,
+    /// shared) so the containing `UiScene` view is cheaply clonable.
+    pub glyphs: Arc<[ShapedGlyph]>,
 }
 
 /// All UI data extracted from the main `World` for a single frame.

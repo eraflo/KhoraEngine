@@ -30,8 +30,8 @@ use khora_sdk::run_winit;
 use khora_sdk::winit_adapters::WinitWindowProvider;
 use khora_sdk::{
     AudioDevice, AudioMixBus, CpalAudioDevice, DefaultMixBus, LayoutSystem, PhysicsProvider,
-    PipelineSystem, RapierPhysicsWorld, RenderSystem, StandardTextRenderer, StreamInfo,
-    TaffyLayoutSystem, TextRenderer, WgpuPipelineSystem, WgpuRenderSystem, TEXT_WGSL,
+    PipelineSystem, RapierPhysicsWorld, RenderSystem, StreamInfo, TaffyLayoutSystem,
+    WgpuPipelineSystem, WgpuRenderSystem,
 };
 use std::sync::{Arc, Mutex};
 
@@ -73,13 +73,10 @@ fn main() -> Result<()> {
         let physics: Box<dyn PhysicsProvider> = Box::new(RapierPhysicsWorld::default());
         runtime.backends.insert(Arc::new(Mutex::new(physics)));
 
-        // UI layout — Taffy
+        // UI layout — Taffy. Text is shaped and rasterised by the engine's
+        // own backends, which the boot installs.
         let layout: Box<dyn LayoutSystem> = Box::new(TaffyLayoutSystem::new());
         runtime.backends.insert(Arc::new(Mutex::new(layout)));
-
-        // Text renderer — StandardTextRenderer
-        let text: Arc<dyn TextRenderer> = Arc::new(StandardTextRenderer::new(TEXT_WGSL.to_owned()));
-        runtime.backends.insert(text);
 
         // Audio — shared mix bus + CPAL device. The bus is the sole
         // synchronisation boundary between audio lanes (main thread) and

@@ -18,9 +18,9 @@ All under `crates/khora-infra/src/graphics/shader/shaders/`:
 - Reusable modules: `lib/` (`std/`, `lighting/`, `shadow/`), each declaring a `#define_import_path`
   (e.g. `khora::shadow::sample_2d`).
 
-Two pipelines — `text.wgsl` and `egui.wgsl` — are also exposed as raw strings, `TEXT_WGSL` /
-`EGUI_WGSL` in `crates/khora-infra/src/graphics/shader/mod.rs`, because their consumers take a raw string rather than a pipeline
-handle. **No new `_WGSL` constant should appear.**
+One shader — `standalone/egui.wgsl` — is also exposed as a raw string, `EGUI_WGSL` in
+`crates/khora-infra/src/graphics/shader/mod.rs`, because its consumer (the egui overlay) takes a raw
+string rather than a pipeline handle. **No new `_WGSL` constant should appear.**
 
 ## Steps
 1. Write the entry-point `.wgsl` under `shaders/pipelines/`; `#import` lib modules by their path

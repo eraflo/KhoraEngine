@@ -28,23 +28,24 @@
 //! [`ATLAS_IDS`], so the lane's ledger holds the lane's objects alone and two
 //! atlases never share a view.
 //!
-//! The text renderer is a recorder: it keeps every text queued, and every
-//! flush — the encoder it was handed (by the command buffer that encoder
-//! finishes into), the colour target and its size, the texts queued since
-//! the flush before, and how many render passes the lane's ledger had
-//! recorded by then. It can be told to fail its flushes.
+//! The glyph atlas is filled as the engine fills it: by the engine's own
+//! `glyphs_on_gpu` DataSystem, over a world of laid-out texts, rasterising
+//! through a fake rasteriser whose images have known sizes and offsets, on a
+//! ledger of its own counting from [`GLYPH_IDS`]. Every draw the lane records
+//! is kept with the pipeline and the bind groups bound when it was made, so a
+//! test tells the quads' draws from the glyphs' by the shader of their
+//! pipeline, wherever the lane records them.
 //!
 //! A frame is what the engine hands the UI lane: the `UiScene` on the bus,
 //! stamped for the frame, the frame's `Target`, a runtime holding the image
-//! atlas among its resources and the text renderer among its backends (where
-//! the engine installs it), and an `OutputSink` whose pass opens on the
-//! ledger.
+//! atlas and the glyph atlas among its resources, and an `OutputSink` whose
+//! pass opens on the ledger.
 
 use std::any::Any;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::future::Future;
 use std::ops::Range;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use khora_core::asset::AssetUUID;
@@ -57,14 +58,14 @@ use khora_core::math::dimension::{Extent3D, Origin3D};
 use khora_core::math::{Extent2D, Vec2, Vec4};
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
-    BindGroupLayoutId, BindingResource, CommandBufferId, ComputePassDescriptor, LoadOp,
-    RenderPassDescriptor,
+    BindGroupLayoutId, BindingResource, BindingType, BufferBindingType, CommandBufferId,
+    ComputePassDescriptor, LoadOp, RenderPassDescriptor,
 };
 use khora_core::renderer::api::device::GraphicsAdapterInfo;
 use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
 use khora_core::renderer::api::pipeline::state::BlendStateDescriptor;
 use khora_core::renderer::api::pipeline::{
-    ComputePipelineDescriptor, ComputePipelineId, ComputePipelineSpec, LayoutKey,
+    ComputePipelineDescriptor, ComputePipelineId, ComputePipelineSpec, LayoutKey, LayoutSpec,
     PipelineLayoutDescriptor, PipelineLayoutId, PipelineSpec, RenderPipelineDescriptor,
     RenderPipelineId,
 };
@@ -73,18 +74,22 @@ use khora_core::renderer::api::resource::{
     TextureDescriptor, TextureFormat, TextureId, TextureViewDescriptor, TextureViewId,
 };
 use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId, ShaderVariantKey};
-use khora_core::renderer::api::text::{FontFace, TextLayout, TextRenderer};
 use khora_core::renderer::api::util::AtlasRect;
 use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::traits::{
     CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass,
 };
 use khora_core::renderer::GraphicsDevice;
+use khora_core::ui::text::{
+    FontError, GlyphImage, GlyphKey, GlyphKind, GlyphRasterizer, ShapedGlyph,
+};
 use khora_core::ui::types::UiRect;
 use khora_core::Runtime;
+use khora_data::ecs::{DataSystemRegistration, SystemContext, Tick, World};
 use khora_data::render::{PassDescriptor, ResourceId, UiPassSlot};
 use khora_data::ui::{
-    ExtractedUiNode, ExtractedUiText, UiBorder, UiColor, UiImage, UiImageAtlas, UiScene,
+    ExtractedUiNode, ExtractedUiText, GlyphAtlas, GlyphSlot, UiBorder, UiColor, UiImage,
+    UiImageAtlas, UiScene, UiTextLayout, UiTransform,
 };
 use khora_lanes::ui_lane::UiLane;
 
@@ -93,6 +98,9 @@ pub const LEVEL: usize = 0;
 
 /// The shader the UI pipeline is composed from.
 pub const UI_SHADER: &str = "khora::pipelines::ui";
+
+/// The shader the UI's glyph pipeline is composed from.
+pub const UI_TEXT_SHADER: &str = "khora::pipelines::ui_text";
 
 /// The format the ledger says its surface has: never the format of a test's
 /// target, so a lane building for the surface instead of the target shows.
@@ -111,14 +119,35 @@ pub const PIPELINE_SYSTEM_IDS: usize = 1_000_000;
 /// ledger or the `PipelineSystem` hands out.
 pub const ATLAS_IDS: usize = 7_000_000;
 
+/// First id of the glyph atlases' own ledgers, above the image atlases'.
+pub const GLYPH_IDS: usize = 8_000_000;
+
 /// The bytes one UI node takes in the instance storage: the shader's
 /// `UiInstance` — position, size, colour, params, uv min, uv max — sixteen
 /// floats.
 pub const INSTANCE_BYTES: u64 = 64;
 
-/// The nodes the instance storage held before 3i-a, when it stopped
-/// silently past them.
+/// The nodes the instance storage held when it stopped silently past them.
 pub const OLD_CAPACITY: usize = 1024;
+
+/// The floats one glyph takes in the glyph instance storage, as
+/// `ui_text.wgsl` reads it — in the order of the quads' `UiInstance`:
+/// position (2), size (2), colour (4), params (4: `1.0` when it samples the
+/// colour atlas, `0.0` the mask atlas, then three unused), uv min (2), uv max
+/// (2).
+pub const GLYPH_FLOATS: usize = 16;
+
+/// What `ui_text.wgsl` binds, `(group, binding, slot)`: the projection at
+/// 0.0; the glyph instances at 1.0; the mask atlas at 2.0, the colour atlas
+/// at 2.1 and their sampler at 2.2. The shader's own test in khora-infra
+/// pins the same set.
+pub const UI_TEXT_BINDINGS: [(u32, u32, Slot); 5] = [
+    (0, 0, Slot::Uniform),
+    (1, 0, Slot::Storage),
+    (2, 0, Slot::Texture),
+    (2, 1, Slot::Texture),
+    (2, 2, Slot::Sampler),
+];
 
 // ─── The ledger ─────────────────────────────────────────────────────────────
 
@@ -184,6 +213,34 @@ pub struct RecordedPass {
     pub draws: Vec<(Range<u32>, Range<u32>)>,
     /// The indexed draws, as `(indices, instances)`.
     pub indexed_draws: Vec<(Range<u32>, Range<u32>)>,
+    /// Every non-indexed draw, with what was bound when it was made.
+    pub drawn: Vec<Drawn>,
+}
+
+/// One non-indexed draw, with the pipeline and the bind groups bound when it
+/// was made.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Drawn {
+    /// Its place among every draw the ledger recorded, from 0.
+    pub seq: usize,
+    /// The buffer of the encoder it was recorded through.
+    pub buffer: CommandBufferId,
+    /// The pipeline set last before it.
+    pub pipeline: Option<RenderPipelineId>,
+    /// The bind group set last at each group before it.
+    pub groups: BTreeMap<u32, BindGroupId>,
+    pub vertices: Range<u32>,
+    pub instances: Range<u32>,
+}
+
+impl Drawn {
+    /// The bind group bound at `group`; panics when none was.
+    pub fn group(&self, group: u32) -> BindGroupId {
+        *self
+            .groups
+            .get(&group)
+            .unwrap_or_else(|| panic!("draw #{} binds no group {group}: {self:?}", self.seq))
+    }
 }
 
 impl RecordedPass {
@@ -215,6 +272,8 @@ struct Log {
     finished: Vec<CommandBufferId>,
     passes: Vec<RecordedPass>,
     submitted: Vec<CommandBufferId>,
+    /// How many draws were recorded, through every pass.
+    draws: usize,
 }
 
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -399,6 +458,37 @@ impl Ledger {
     pub fn submitted(&self) -> Vec<CommandBufferId> {
         locked(&self.log).submitted.clone()
     }
+
+    /// Every non-indexed draw recorded, in the order it was made.
+    pub fn drawn(&self) -> Vec<Drawn> {
+        let mut drawn: Vec<Drawn> = self
+            .passes()
+            .into_iter()
+            .flat_map(|pass| pass.drawn)
+            .collect();
+        drawn.sort_by_key(|draw| draw.seq);
+        drawn
+    }
+
+    /// The bytes `buffer` holds now: every write to it, in order, over a
+    /// buffer of its size.
+    pub fn contents(&self, buffer: BufferId) -> Vec<u8> {
+        let size = self
+            .find(GpuKind::Buffer, buffer.0)
+            .and_then(|made| made.size)
+            .unwrap_or_else(|| panic!("{buffer:?} is not a buffer the lane made"));
+        let mut bytes = vec![0; size as usize];
+        for write in self.writes_to(buffer) {
+            let start = write.offset as usize;
+            let end = start + write.data.len();
+            assert!(
+                end <= bytes.len(),
+                "a write past the end of {buffer:?}: {start}..{end} of {size}"
+            );
+            bytes[start..end].copy_from_slice(&write.data);
+        }
+        bytes
+    }
 }
 
 /// An encoder of the ledger. The command buffer it finishes into is known
@@ -411,6 +501,10 @@ pub struct LedgerEncoder {
 struct LedgerRenderPass {
     pass: RecordedPass,
     log: Arc<Mutex<Log>>,
+    /// The pipeline set last.
+    pipeline: Option<RenderPipelineId>,
+    /// The bind group set last at each group.
+    groups: BTreeMap<u32, BindGroupId>,
 }
 
 impl Drop for LedgerRenderPass {
@@ -422,8 +516,10 @@ impl Drop for LedgerRenderPass {
 impl RenderPass<'_> for LedgerRenderPass {
     fn set_pipeline(&mut self, pipeline: &RenderPipelineId) {
         self.pass.pipelines.push(*pipeline);
+        self.pipeline = Some(*pipeline);
     }
     fn set_bind_group(&mut self, index: u32, bind_group: &BindGroupId, offsets: &[u32]) {
+        self.groups.insert(index, *bind_group);
         self.pass.bind_groups.push(SetBindGroup {
             group: index,
             bind_group: *bind_group,
@@ -435,6 +531,19 @@ impl RenderPass<'_> for LedgerRenderPass {
     }
     fn set_index_buffer(&mut self, _buffer: &BufferId, _offset: u64, _format: IndexFormat) {}
     fn draw(&mut self, vertices: Range<u32>, instances: Range<u32>) {
+        let seq = {
+            let mut log = locked(&self.log);
+            log.draws += 1;
+            log.draws - 1
+        };
+        self.pass.drawn.push(Drawn {
+            seq,
+            buffer: self.pass.buffer,
+            pipeline: self.pipeline,
+            groups: self.groups.clone(),
+            vertices: vertices.clone(),
+            instances: instances.clone(),
+        });
         self.pass.draws.push((vertices, instances));
     }
     fn draw_indexed(&mut self, indices: Range<u32>, _base_vertex: i32, instances: Range<u32>) {
@@ -481,8 +590,11 @@ impl CommandEncoder for LedgerEncoder {
                 vertex_buffers: Vec::new(),
                 draws: Vec::new(),
                 indexed_draws: Vec::new(),
+                drawn: Vec::new(),
             },
             log: Arc::clone(&self.log),
+            pipeline: None,
+            groups: BTreeMap::new(),
         })
     }
     fn begin_compute_pass<'enc>(
@@ -743,6 +855,43 @@ pub struct Requested {
     pub layouts: usize,
     /// How many vertex buffers the spec reads.
     pub vertex_buffers: usize,
+    /// What its inline layouts bind, `(group, binding, slot)`.
+    pub bindings: BTreeSet<(u32, u32, Slot)>,
+}
+
+/// What one binding of a layout holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Slot {
+    Uniform,
+    Storage,
+    Texture,
+    Sampler,
+}
+
+/// What `spec`'s inline layouts bind, `(group, binding, slot)`.
+fn bindings_of(spec: &PipelineSpec) -> BTreeSet<(u32, u32, Slot)> {
+    spec.bind_group_layouts
+        .iter()
+        .enumerate()
+        .flat_map(|(group, layout)| match layout {
+            LayoutSpec::Inline { entries, .. } => entries
+                .iter()
+                .map(|entry| {
+                    let slot = match entry.ty {
+                        BindingType::Buffer {
+                            ty: BufferBindingType::Uniform,
+                            ..
+                        } => Slot::Uniform,
+                        BindingType::Buffer { .. } => Slot::Storage,
+                        BindingType::Texture { .. } => Slot::Texture,
+                        BindingType::Sampler(_) => Slot::Sampler,
+                    };
+                    (group as u32, entry.binding, slot)
+                })
+                .collect::<Vec<_>>(),
+            LayoutSpec::Named(_) => Vec::new(),
+        })
+        .collect()
 }
 
 /// A `PipelineSystem` answering every request with a fresh id at or above
@@ -834,6 +983,7 @@ impl PipelineSystem for LedgerPipelines {
             topology: spec.primitive.topology,
             layouts: spec.bind_group_layouts.len(),
             vertex_buffers: spec.vertex_buffers.len(),
+            bindings: bindings_of(spec),
         });
         Ok(id)
     }
@@ -846,135 +996,194 @@ impl PipelineSystem for LedgerPipelines {
     }
 }
 
-// ─── The text renderer ──────────────────────────────────────────────────────
+// ─── The glyphs ─────────────────────────────────────────────────────────────
 
-/// A laid-out text of a fixed size: the size names which text it is.
-pub struct FixedLayout(pub Vec2);
+/// The font every text of the tests is laid out in.
+pub const BODY: AssetUUID = AssetUUID::from_bytes(*b"khora:test:lane!");
 
-impl TextLayout for FixedLayout {
-    fn size(&self) -> Vec2 {
-        self.0
-    }
+/// The size every text of the tests is laid out at, in pixels per em.
+pub const SIZE_PX: f32 = 16.0;
 
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
+/// The glyph the fake rasteriser draws nothing for: a space.
+pub const SPACE: u16 = b' ' as u16;
 
-/// One text queued, as the text renderer was handed it.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Queued {
-    /// The size of its layout.
-    pub layout: Vec2,
-    pub pos: Vec2,
-    pub color: Vec4,
-    pub z_index: i32,
-}
+/// Glyph ids from this one up are colour glyphs to the fake rasteriser;
+/// every other glyph but [`SPACE`] is a mask.
+pub const COLOR_GLYPHS: u16 = 1000;
 
-/// One flush of the text renderer.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Flush {
-    /// The command buffer the encoder it was handed finishes into; `None`
-    /// when that encoder was not one of the ledger's.
-    pub encoder: Option<CommandBufferId>,
-    /// The colour target it was handed.
-    pub color: TextureViewId,
-    /// The size it was handed.
-    pub size: Extent2D,
-    /// The texts queued since the flush before.
-    pub texts: Vec<Queued>,
-    /// How many render passes the lane's ledger had recorded by then.
-    pub passes_before: usize,
-}
+/// What the fake rasteriser makes of a mask glyph: a 5 × 8 coverage mask,
+/// one pixel right of its pen, its top 7 pixels above the baseline.
+pub const MASK_WIDTH: u32 = 5;
+pub const MASK_HEIGHT: u32 = 8;
+pub const MASK_LEFT: i32 = 1;
+pub const MASK_TOP: i32 = 7;
 
-/// A text renderer recording what it was queued and flushed.
-pub struct RecordingText {
-    /// The lane's ledger, to tell which passes came before a flush.
-    device: Arc<Ledger>,
-    pending: Mutex<Vec<Queued>>,
-    queued: Mutex<Vec<Queued>>,
-    flushes: Mutex<Vec<Flush>>,
-    failing: AtomicBool,
-}
+/// What it makes of a colour glyph: a 6 × 6 RGBA image, one pixel left of
+/// its pen, its top 9 pixels above the baseline.
+pub const COLOR_WIDTH: u32 = 6;
+pub const COLOR_HEIGHT: u32 = 6;
+pub const COLOR_LEFT: i32 = -1;
+pub const COLOR_TOP: i32 = 9;
 
-impl RecordingText {
-    /// A text renderer beside the lane's `device`.
-    pub fn beside(device: &Arc<Ledger>) -> Self {
-        Self {
-            device: Arc::clone(device),
-            pending: Mutex::new(Vec::new()),
-            queued: Mutex::new(Vec::new()),
-            flushes: Mutex::new(Vec::new()),
-            failing: AtomicBool::new(false),
-        }
-    }
+/// A rasteriser of fixed images: a [`SPACE`] draws nothing, a glyph from
+/// [`COLOR_GLYPHS`] up is a colour image, any other a mask.
+struct FakeRasterizer;
 
-    /// Every text queued so far, in order.
-    pub fn queued(&self) -> Vec<Queued> {
-        locked(&self.queued).clone()
-    }
-
-    /// Every flush so far, in order.
-    pub fn flushes(&self) -> Vec<Flush> {
-        locked(&self.flushes).clone()
-    }
-
-    /// Fails every flush from now on.
-    pub fn fail_flushes(&self) {
-        self.failing.store(true, Ordering::SeqCst);
-    }
-
-    /// Succeeds every flush from now on.
-    pub fn stop_failing(&self) {
-        self.failing.store(false, Ordering::SeqCst);
-    }
-}
-
-impl TextRenderer for RecordingText {
-    fn layout_text(
-        &self,
-        _text: &str,
-        _face: FontFace<'_>,
-        _font_size: f32,
-        _max_width: Option<f32>,
-    ) -> Box<dyn TextLayout> {
-        Box::new(FixedLayout(Vec2::new(40.0, 16.0)))
-    }
-
-    fn queue_text(&self, layout: &dyn TextLayout, pos: Vec2, color: Vec4, z_index: i32) {
-        let queued = Queued {
-            layout: layout.size(),
-            pos,
-            color,
-            z_index,
-        };
-        locked(&self.pending).push(queued);
-        locked(&self.queued).push(queued);
-    }
-
-    fn flush(
-        &self,
-        _device: &dyn GraphicsDevice,
-        encoder: &mut dyn CommandEncoder,
-        color_target: &TextureViewId,
-        target: Extent2D,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let encoder = encoder
-            .as_any_mut()
-            .downcast_mut::<LedgerEncoder>()
-            .map(|encoder| encoder.buffer);
-        let texts = std::mem::take(&mut *locked(&self.pending));
-        locked(&self.flushes).push(Flush {
-            encoder,
-            color: *color_target,
-            size: target,
-            texts,
-            passes_before: self.device.passes().len(),
-        });
-        if self.failing.load(Ordering::SeqCst) {
-            return Err("the text renderer refused the flush".into());
-        }
+impl GlyphRasterizer for FakeRasterizer {
+    fn register_font(&self, _id: AssetUUID, _data: Arc<[u8]>) -> Result<(), FontError> {
         Ok(())
+    }
+
+    fn rasterize(&self, key: &GlyphKey) -> Option<GlyphImage> {
+        if key.glyph == SPACE {
+            None
+        } else if key.glyph >= COLOR_GLYPHS {
+            Some(GlyphImage {
+                width: COLOR_WIDTH,
+                height: COLOR_HEIGHT,
+                left: COLOR_LEFT,
+                top: COLOR_TOP,
+                kind: GlyphKind::Color,
+                pixels: vec![200; (COLOR_WIDTH * COLOR_HEIGHT * 4) as usize],
+            })
+        } else {
+            Some(GlyphImage {
+                width: MASK_WIDTH,
+                height: MASK_HEIGHT,
+                left: MASK_LEFT,
+                top: MASK_TOP,
+                kind: GlyphKind::Mask,
+                pixels: vec![255; (MASK_WIDTH * MASK_HEIGHT) as usize],
+            })
+        }
+    }
+}
+
+/// The key the glyph atlas holds `glyph` of a [`BODY`] text at [`SIZE_PX`]
+/// under: the key `glyphs_on_gpu` makes it resident under.
+pub fn key(glyph: &ShapedGlyph) -> GlyphKey {
+    GlyphKey::new(BODY, glyph.id, SIZE_PX, glyph.x)
+}
+
+/// A glyph atlas, filled as the engine fills it: `glyphs_on_gpu` run over a
+/// world of laid-out texts, with the fake rasteriser, on a ledger of its own.
+pub struct Glyphs {
+    world: World,
+    runtime: Runtime,
+    /// The atlas, as the engine's `GlyphAtlas` resource.
+    pub atlas: Arc<GlyphAtlas>,
+    last_seen: Tick,
+}
+
+impl Glyphs {
+    /// An empty atlas, its textures not made yet.
+    pub fn new() -> Self {
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+        let first = GLYPH_IDS + 100 * NEXT.fetch_add(1, Ordering::Relaxed);
+        let atlas = Arc::new(GlyphAtlas::default());
+        let mut runtime = Runtime::new();
+        runtime
+            .backends
+            .insert(Arc::new(Ledger::counting_from(first)) as Arc<dyn GraphicsDevice>);
+        runtime
+            .backends
+            .insert(Arc::new(FakeRasterizer) as Arc<dyn GlyphRasterizer>);
+        runtime.resources.insert(Arc::clone(&atlas));
+        Self {
+            world: World::new(),
+            runtime,
+            atlas,
+            last_seen: Tick(0),
+        }
+    }
+
+    /// Lays `glyphs` — `(id, x, y)` each — out as one [`BODY`] text at
+    /// [`SIZE_PX`], and makes them resident as the engine does, through one
+    /// run of `glyphs_on_gpu`. Returns the glyphs, as a `UiTextLayout` holds
+    /// them.
+    pub fn resident(&mut self, glyphs: &[(u16, f32, f32)]) -> Vec<ShapedGlyph> {
+        let shaped: Vec<ShapedGlyph> = glyphs
+            .iter()
+            .map(|&(id, x, y)| ShapedGlyph { id, x, y })
+            .collect();
+        self.world.spawn((
+            UiTransform::default(),
+            UiTextLayout {
+                font: BODY,
+                size_px: SIZE_PX,
+                size: Vec2::new(64.0, SIZE_PX),
+                lines: 1,
+                glyphs: shaped.clone(),
+            },
+        ));
+        let system = khora_script::inventory::iter::<DataSystemRegistration>
+            .into_iter()
+            .find(|system| system.name == "glyphs_on_gpu")
+            .expect("the engine registers `glyphs_on_gpu`");
+        let tick = self.world.begin_run();
+        (system.run)(
+            &mut self.world,
+            &self.runtime,
+            &mut OutputDeck::new(),
+            SystemContext {
+                since: self.last_seen,
+            },
+        );
+        self.world.end_run();
+        self.last_seen = tick;
+        shaped
+    }
+
+    /// The slot `glyph` has in the atlas; panics when it has none.
+    pub fn slot(&self, glyph: &ShapedGlyph) -> GlyphSlot {
+        self.atlas
+            .slot(&key(glyph))
+            .unwrap_or_else(|| panic!("{glyph:?} is resident"))
+    }
+
+    /// The views of the two atlases, `(mask, colour)`.
+    pub fn views(&self) -> (Option<TextureViewId>, Option<TextureViewId>) {
+        self.atlas.views()
+    }
+}
+
+/// One glyph instance, as the lane uploaded it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GlyphQuad {
+    /// Its top-left corner, in UI pixels.
+    pub pos: Vec2,
+    /// Its size, in pixels.
+    pub size: Vec2,
+    pub color: Vec4,
+    /// Whether it samples the colour atlas rather than the mask atlas.
+    pub color_glyph: bool,
+    /// Its rect in its atlas, in UV.
+    pub uv_min: Vec2,
+    pub uv_max: Vec2,
+}
+
+impl GlyphQuad {
+    /// The instance `floats` — [`GLYPH_FLOATS`] of them — hold.
+    pub fn read(floats: &[f32]) -> Self {
+        assert_eq!(floats.len(), GLYPH_FLOATS, "{floats:?}");
+        let color_glyph = if floats[8] == 0.0 {
+            false
+        } else if floats[8] == 1.0 {
+            true
+        } else {
+            panic!(
+                "a glyph samples the mask (0) or the colour (1) atlas, not {}",
+                floats[8]
+            )
+        };
+        Self {
+            pos: Vec2::new(floats[0], floats[1]),
+            size: Vec2::new(floats[2], floats[3]),
+            color: Vec4::new(floats[4], floats[5], floats[6], floats[7]),
+            color_glyph,
+            uv_min: Vec2::new(floats[12], floats[13]),
+            uv_max: Vec2::new(floats[14], floats[15]),
+        }
     }
 }
 
@@ -1074,35 +1283,37 @@ pub fn image_node(pos: Vec2, size: Vec2, texture: AssetUUID) -> ExtractedUiNode 
     }
 }
 
-/// A text at `pos` on layer `z_index`, its layout `layout` big, in `color`.
-pub fn text(pos: Vec2, layout: Vec2, color: Vec4, z_index: i32) -> ExtractedUiText {
+/// A [`BODY`] text at [`SIZE_PX`] at `pos` on layer `z_index`, in `color`,
+/// of `glyphs`.
+pub fn glyph_text(pos: Vec2, color: Vec4, z_index: i32, glyphs: &[ShapedGlyph]) -> ExtractedUiText {
     ExtractedUiText {
         pos,
-        layout: Arc::new(FixedLayout(layout)),
         color,
         z_index,
+        font: BODY,
+        size_px: SIZE_PX,
+        glyphs: Arc::from(glyphs),
     }
 }
 
-/// The `k`-th text of a column: at `(4, 30k + 2)`, its layout 40×(k+1).
+/// The `k`-th text of a column: at `(4, 30k + 2)`, white, of one glyph no
+/// atlas holds.
 pub fn nth_text(k: usize) -> ExtractedUiText {
-    text(
+    glyph_text(
         Vec2::new(4.0, 30.0 * k as f32 + 2.0),
-        Vec2::new(40.0, k as f32 + 1.0),
         Vec4::ONE,
         0,
+        &[ShapedGlyph {
+            id: 65 + k as u16,
+            x: 0.0,
+            y: 12.0,
+        }],
     )
 }
 
-/// What `text` looks like once queued.
-pub fn queued(text: &ExtractedUiText) -> Queued {
-    Queued {
-        layout: text.layout.size(),
-        pos: text.pos,
-        color: text.color,
-        z_index: text.z_index,
-    }
-}
+/// The glyphs the text of [`Scene::with_resident_text`] holds: "Hi", two
+/// masks.
+pub const RESIDENT_GLYPHS: usize = 2;
 
 /// A UI image atlas whose GPU texture exists, as the `image_on_gpu`
 /// residency leaves it once a UI image is wanted. Its texture and view come
@@ -1134,23 +1345,28 @@ pub fn rect(u0: f32, v0: f32, u1: f32, v1: f32) -> AtlasRect {
     }
 }
 
-/// What a frame hands the UI lane: the scene on the bus, the target, and the
-/// image atlas.
+/// What a frame hands the UI lane: the scene on the bus, the target, the
+/// image atlas and the glyph atlas.
 pub struct Scene {
     pub ui: UiScene,
     pub target: Option<Target>,
     pub atlas: Arc<UiImageAtlas>,
+    pub glyphs: Arc<GlyphAtlas>,
 }
 
 thread_local! {
     /// The atlas every scene of one test shares, as the engine's one
     /// `UiImageAtlas` resource is shared by every frame.
     static THE_ATLAS: Arc<UiImageAtlas> = gpu_atlas();
+    /// The glyph atlas every scene of one test shares unless it says
+    /// otherwise: empty, so no glyph of [`nth_text`] has a slot.
+    static THE_GLYPHS: Arc<GlyphAtlas> = Arc::new(GlyphAtlas::default());
 }
 
 impl Scene {
     /// A scene of one node and one text, drawn into [`default_target`], with
-    /// the test's one atlas, holding its GPU texture.
+    /// the test's one atlas, holding its GPU texture, and the test's empty
+    /// glyph atlas: the text has no glyph to draw.
     pub fn new() -> Self {
         Self {
             ui: UiScene {
@@ -1159,6 +1375,7 @@ impl Scene {
             },
             target: Some(default_target()),
             atlas: THE_ATLAS.with(Arc::clone),
+            glyphs: THE_GLYPHS.with(Arc::clone),
         }
     }
 
@@ -1206,6 +1423,22 @@ impl Scene {
     pub fn with_atlas(mut self, atlas: Arc<UiImageAtlas>) -> Self {
         self.atlas = atlas;
         self
+    }
+
+    /// The same scene with `glyphs` as the glyph atlas.
+    pub fn with_glyphs(mut self, glyphs: Arc<GlyphAtlas>) -> Self {
+        self.glyphs = glyphs;
+        self
+    }
+
+    /// The same scene whose one text, "Hi" at `(4, 2)` in white, has its
+    /// [`RESIDENT_GLYPHS`] mask glyphs resident in a glyph atlas of its own,
+    /// which has no colour atlas.
+    pub fn with_resident_text(self) -> Self {
+        let mut glyphs = Glyphs::new();
+        let shaped = glyphs.resident(&[(u16::from(b'H'), 0.0, 12.0), (u16::from(b'i'), 9.0, 12.0)]);
+        self.with_glyphs(Arc::clone(&glyphs.atlas))
+            .with_texts(vec![glyph_text(Vec2::new(4.0, 2.0), Vec4::ONE, 0, &shaped)])
     }
 }
 
@@ -1259,13 +1492,11 @@ impl Recorded {
     }
 }
 
-/// The UI lane, kept across frames, on a ledger device, with a recording
-/// text renderer.
+/// The UI lane, kept across frames, on a ledger device.
 pub struct Ui {
     lane: Erased<UiLane>,
     pub device: Arc<Ledger>,
     pub pipelines: Arc<LedgerPipelines>,
-    pub text: Arc<RecordingText>,
     frame: u64,
 }
 
@@ -1280,7 +1511,6 @@ impl Ui {
         let device = Arc::new(device);
         Self {
             lane: Erased::new(UiLane::default()),
-            text: Arc::new(RecordingText::beside(&device)),
             device,
             pipelines: Arc::new(LedgerPipelines::default()),
             frame: 0,
@@ -1301,9 +1531,7 @@ impl Ui {
         bus.publish(scene.ui.clone());
         let mut runtime = Runtime::new();
         runtime.resources.insert(Arc::clone(&scene.atlas));
-        runtime
-            .backends
-            .insert(Arc::clone(&self.text) as Arc<dyn TextRenderer>);
+        runtime.resources.insert(Arc::clone(&scene.glyphs));
         let mut deck = OutputDeck::new();
         let run = {
             let mut inputs = InputSource::new(frame, &bus, &runtime);
@@ -1360,6 +1588,98 @@ impl Ui {
             .get(n)
             .cloned()
             .unwrap_or_else(|| panic!("no quad pass #{n}: {drawn:?}"))
+    }
+
+    /// Every draw made with a pipeline of `shader`, in the order made.
+    pub fn draws_with(&self, shader: &str) -> Vec<Drawn> {
+        let pipelines: Vec<RenderPipelineId> = self
+            .pipelines
+            .of(shader)
+            .into_iter()
+            .map(|requested| requested.id)
+            .collect();
+        self.device
+            .drawn()
+            .into_iter()
+            .filter(|draw| draw.pipeline.is_some_and(|id| pipelines.contains(&id)))
+            .collect()
+    }
+
+    /// Every draw of the UI's quads, in the order made.
+    pub fn quad_draws(&self) -> Vec<Drawn> {
+        self.draws_with(UI_SHADER)
+    }
+
+    /// Every draw of glyphs, in the order made.
+    pub fn glyph_draws(&self) -> Vec<Drawn> {
+        self.draws_with(UI_TEXT_SHADER)
+    }
+
+    /// The glyph draws recorded through the encoder of `buffer`, in order.
+    pub fn glyph_draws_in(&self, buffer: CommandBufferId) -> Vec<Drawn> {
+        self.glyph_draws()
+            .into_iter()
+            .filter(|draw| draw.buffer == buffer)
+            .collect()
+    }
+
+    /// The glyph instances drawn through the encoder of `buffer`, in draw
+    /// order, as the storage bound at group 1 holds them now — read right
+    /// after the frame.
+    pub fn glyphs_drawn_in(&self, buffer: CommandBufferId) -> Vec<GlyphQuad> {
+        self.glyph_draws_in(buffer)
+            .iter()
+            .flat_map(|draw| {
+                let storage = self.device.buffer_of(draw.group(1));
+                let all = floats(&self.device.contents(storage));
+                let instances: Vec<GlyphQuad> = all
+                    .chunks_exact(GLYPH_FLOATS)
+                    .skip(draw.instances.start as usize)
+                    .take(draw.instances.len())
+                    .map(GlyphQuad::read)
+                    .collect();
+                assert_eq!(
+                    instances.len(),
+                    draw.instances.len(),
+                    "draw #{} reads past its storage",
+                    draw.seq
+                );
+                instances
+            })
+            .collect()
+    }
+
+    /// The glyph instances the last frame drew.
+    pub fn last_glyphs(&self) -> Vec<GlyphQuad> {
+        let last = *self
+            .device
+            .opened()
+            .last()
+            .expect("the lane recorded a frame");
+        self.glyphs_drawn_in(last)
+    }
+
+    /// The bind group every glyph draw of the `n`-th frame binds at `group`;
+    /// panics unless the frame drew glyphs, all through that one group.
+    pub fn glyph_group(&self, n: usize, group: u32) -> BindGroupId {
+        let buffer = self.device.opened()[n];
+        let draws = self.glyph_draws_in(buffer);
+        assert!(!draws.is_empty(), "frame #{n} draws glyphs");
+        let bound: BTreeSet<usize> = draws.iter().map(|draw| draw.group(group).0).collect();
+        assert_eq!(
+            bound.len(),
+            1,
+            "frame #{n} binds one group {group}: {draws:?}"
+        );
+        draws[0].group(group)
+    }
+
+    /// The view `bind_group` binds at `binding`; panics when it binds none.
+    pub fn view_at(&self, bind_group: BindGroupId, binding: u32) -> TextureViewId {
+        match self.device.bound_at(bind_group, binding) {
+            Some(Bound::View(view)) => view,
+            other => panic!("{bind_group:?} binds a view at {binding}, not {other:?}"),
+        }
     }
 
     /// The buffer the `n`-th quad pass binds whole at `group`.

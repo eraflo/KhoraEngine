@@ -271,16 +271,25 @@ fn populate<A: EngineApp>(
         runtime.resources.insert(mix_bus);
     }
 
-    // The UI family hands the frame's texts to the text renderer. An
-    // application that brings none gets the standard one.
+    // Texts are shaped by `ui_text_layout` through the shaper, and their
+    // glyphs rasterised by `glyphs_on_gpu` through the rasteriser. An
+    // application that brings either keeps its own; the engine's are Parley
+    // and swash, which share the built-in font.
     if !runtime
         .backends
-        .contains::<Arc<dyn khora_core::renderer::api::text::TextRenderer>>()
+        .contains::<Arc<dyn khora_core::ui::text::TextShaper>>()
     {
-        let text: Arc<dyn khora_core::renderer::api::text::TextRenderer> = Arc::new(
-            khora_infra::StandardTextRenderer::new(khora_infra::graphics::TEXT_WGSL.to_owned()),
-        );
-        runtime.backends.insert(text);
+        let shaper: Arc<dyn khora_core::ui::text::TextShaper> =
+            Arc::new(khora_infra::ParleyShaper::new());
+        runtime.backends.insert(shaper);
+    }
+    if !runtime
+        .backends
+        .contains::<Arc<dyn khora_core::ui::text::GlyphRasterizer>>()
+    {
+        let rasterizer: Arc<dyn khora_core::ui::text::GlyphRasterizer> =
+            Arc::new(khora_infra::SwashRasterizer::new());
+        runtime.backends.insert(rasterizer);
     }
 
     // The physics family steps the provider every fixed sub-step, at the
@@ -411,6 +420,11 @@ fn populate<A: EngineApp>(
     runtime
         .resources
         .insert(Arc::new(khora_data::ui::UiImageAtlas::new()));
+    // GlyphAtlas — the glyphs of the UI's texts, placed by `glyphs_on_gpu`
+    // and drawn by the UI lane; its two textures are made on first need.
+    runtime
+        .resources
+        .insert(Arc::new(khora_data::ui::GlyphAtlas::default()));
 
     // AgentFrameStatus map — per-agent execution metrics measured and
     // written by the scheduler each frame; agents read their own slot in

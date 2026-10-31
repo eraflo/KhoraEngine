@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The two shaders handed over as raw WGSL strings — text and the egui
-//! overlay — reach their consumers through the SDK, and each is the shader its
-//! consumer expects: it parses, validates, exposes `vs_main` / `fs_main`, and
-//! declares the bindings that consumer's pipeline layout binds.
+//! The one shader handed over as a raw WGSL string — the egui overlay —
+//! reaches its consumer through the SDK, and is the shader its consumer
+//! expects: it parses, validates, exposes `vs_main` / `fs_main`, and declares
+//! the bindings that consumer's pipeline layout binds.
 //!
 //! Read through the paths the editor and the sandbox use, so moving the
 //! `.wgsl` files or the constants shows up here rather than at editor boot.
 
 use khora_sdk::EGUI_WGSL;
-use khora_sdk::TEXT_WGSL;
 
 /// An entry point as `(name, stage)`.
 type EntryPoint = (String, naga::ShaderStage);
@@ -77,17 +76,6 @@ fn vs_fs() -> Vec<EntryPoint> {
         ("fs_main".to_owned(), naga::ShaderStage::Fragment),
         ("vs_main".to_owned(), naga::ShaderStage::Vertex),
     ]
-}
-
-#[test]
-fn text_wgsl_is_the_text_shader_and_validates() {
-    assert!(!TEXT_WGSL.trim().is_empty(), "TEXT_WGSL is empty");
-    let (entry_points, bindings) = shape("TEXT_WGSL", TEXT_WGSL);
-    assert_eq!(entry_points, vs_fs());
-    assert_eq!(
-        bindings,
-        owned(&[("globals", 0, 0), ("t_diffuse", 0, 1), ("s_diffuse", 0, 2)])
-    );
 }
 
 #[test]

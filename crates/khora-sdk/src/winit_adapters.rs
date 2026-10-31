@@ -643,7 +643,7 @@ pub fn run_winit_staged<W: WindowProvider, A: EngineApp>(boot: StagedBoot) -> Re
 /// * `bootstrap` — A closure called once during initialization. Receives:
 ///   - `&dyn KhoraWindow` — the created window for renderer initialization
 ///   - `&mut ServiceRegistry` — the service registry to populate with
-///     renderer, text renderer, layout system, monitors, etc.
+///     renderer, layout system, monitors, etc.
 ///   - `&dyn Any` — the active winit event loop, opaque so the SDK does not
 ///     leak the winit type. Apps that need it (e.g., egui) downcast to
 ///     `&winit::event_loop::ActiveEventLoop`.

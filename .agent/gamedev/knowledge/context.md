@@ -12,7 +12,8 @@
 - `GameWorld`, `Vessel`, `spawn_cube_at`, `spawn_sphere`, `spawn_plane`.
 - `prelude` modules: `ecs`, `materials`, `math`; plus `InputEvent`/`KeyCode`/`MouseButton`/`InputMap`.
 - Backends to register: `WgpuRenderSystem`, `RapierPhysicsWorld`, `TaffyLayoutSystem`,
-  `StandardTextRenderer`, `CpalAudioDevice` + `DefaultMixBus`.
+  `CpalAudioDevice` + `DefaultMixBus`. Text needs nothing: the boot installs `ParleyShaper` and
+  `SwashRasterizer` unless the game brings its own `TextShaper` / `GlyphRasterizer`.
 
 ## Commands
 - `cargo build` — build your game.
