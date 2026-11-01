@@ -12,50 +12,39 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! GORNA Arbitrator implementation.
+//! GORNA, the DCC's side of the protocol.
 //!
-//! This module contains the **Goal-Oriented Resource Negotiation & Allocation**
-//! logic. The arbitrator is responsible for:
-//!
-//! 1. Polling agent health via `report_status()`.
-//! 2. Sending `NegotiationRequest` to each agent and collecting strategy options.
-//! 3. Running a global budget-fitting solver that respects total frame time.
-//! 4. Applying thermal/battery multipliers from the `AnalysisReport`.
-//! 5. Detecting and handling "death spiral" conditions.
-//! 6. Issuing `ResourceBudget` to each agent.
+//! One round per epoch: the arbitrator asks every agent for an
+//! [`Offer`] (one `OfferRequest` each, with a deadline), calibrates the quoted
+//! costs by what the DCC measured, [`decide`]s an envelope for each agent, and
+//! lends it through [`Agent::apply`]. The DCC decides *how much*; each agent
+//! chooses *how*, within its envelope. A death spiral, too many stalled
+//! agents, or floors that do not fit make the round `Trigger::Safety`: every
+//! agent is lent its floor.
 
 use crate::analysis::AnalysisReport;
 use crate::dcc_context::Context;
-use khora_core::agent::gorna::{
-    AdaptationMode, AgentHints, AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints,
-    StrategyId, StrategyOption, TickDecisions,
+use khora_core::agent::gorna::protocol::{
+    Allocation, Envelope, Epoch, Offer, OfferRequest, Trigger,
 };
+use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, StrategyId};
 use khora_core::agent::{Agent, AgentImportance};
+use khora_core::lane::cost::{PerDevice, PerLink};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-mod fitting;
+mod decide;
+
+pub use decide::{decide, Bid, Round};
 
 const MAX_STALLED_AGENTS: usize = 2;
 
 /// Clamp range for the empirical calibration factor applied to agent-quoted
-/// strategy costs. Bounds the correction so one pathological measurement
-/// (a hitch, a cold cache) can't swing the whole fit by orders of magnitude.
+/// costs. Bounds the correction so one pathological measurement (a hitch, a
+/// cold cache) can't swing a whole round by orders of magnitude.
 const CALIBRATION_FACTOR_MIN: f64 = 0.25;
 const CALIBRATION_FACTOR_MAX: f64 = 4.0;
-
-/// Ordinal rank of a strategy for clamping (`Bounded` mode):
-/// `LowPower < Balanced < HighPerformance`, with `Custom` ranked above the
-/// standard tiers.
-fn strategy_rank(id: StrategyId) -> u8 {
-    match id {
-        StrategyId::LowPower => 0,
-        StrategyId::Balanced => 1,
-        StrategyId::HighPerformance => 2,
-        StrategyId::Custom(_) => 3,
-    }
-}
 
 fn try_lock_agent_with_timeout<T: ?Sized>(
     mutex: &Mutex<T>,
@@ -79,62 +68,48 @@ fn try_lock_agent_with_timeout<T: ?Sized>(
     }
 }
 
-/// Arbitrates resource allocation between multiple ISAs.
-///
-/// The arbitrator implements a two-pass approach:
-/// - **Pass 1 (Negotiation)**: Collects strategy options from all agents.
-/// - **Pass 2 (Fitting)**: Selects the optimal strategy combination that fits
-///   within the global frame budget, respecting priorities and VRAM constraints.
+/// The DCC's side of GORNA: the rounds, the epochs, and the allocation in
+/// force.
 pub struct GornaArbitrator {
+    /// How long a round waits for an agent's lock, and for its offer.
     lock_timeout: Duration,
-    /// Per-agent developer-control mode (default `Learning`). Configured by the
-    /// host; consulted at issuance so a `Manual` agent is never overridden.
+    /// Per-agent developer-control mode (default `Learning`).
     modes: HashMap<AgentId, AdaptationMode>,
     /// The scheduler's latest wave grouping (agents that run concurrently),
     /// refreshed by the DCC each tick via [`set_wave_plan`](Self::set_wave_plan).
-    /// Empty means serial execution: budget fitting then sums per-agent costs.
+    /// Empty means serial execution.
     wave_plan: Vec<Vec<AgentId>>,
-}
-
-/// A collected negotiation from a single agent, used during the fitting pass.
-struct AgentNegotiation {
-    agent_index: usize,
-    agent_id: AgentId,
-    priority: f32,
-    strategies: Vec<StrategyOption>,
-}
-
-/// A resolved allocation for a single agent.
-struct AgentAllocation {
-    agent_index: usize,
-    strategy: StrategyOption,
+    /// The last epoch opened.
+    epoch: Epoch,
+    /// The allocation in force, until the next round.
+    in_force: Option<Allocation>,
+    /// Each agent seen, by a weak reference to its lock: the name of one busy
+    /// through a round is known without locking it (the weak reference also
+    /// keeps a removed agent's lock address from being reused while held).
+    known: Vec<(Weak<Mutex<dyn Agent>>, AgentId)>,
 }
 
 impl GornaArbitrator {
-    /// Creates a new arbitrator with the specified lock timeout.
-    ///
-    /// The lock timeout determines how long to wait when acquiring locks on agents
-    /// during negotiation and budget issuance. Agents that cannot be locked within
-    /// this timeout are skipped.
+    /// Creates an arbitrator that waits at most `lock_timeout` for an agent's
+    /// lock and for its offer.
     pub fn new(lock_timeout: Duration) -> Self {
         Self {
             lock_timeout,
             modes: HashMap::new(),
             wave_plan: Vec::new(),
+            epoch: Epoch::default(),
+            in_force: None,
+            known: Vec::new(),
         }
     }
 
-    /// Sets the scheduler's latest wave plan (how agents are grouped for
-    /// concurrent execution). Budget fitting costs each wave by its critical
-    /// path (`max` of its members); an empty plan means serial execution, so
-    /// fitting falls back to summing per-agent costs — bit-identical to the
-    /// pre-parallel behaviour.
+    /// Sets the scheduler's latest wave plan: the agents of one wave run side
+    /// by side, so a wave costs its slowest member on the critical path.
     pub fn set_wave_plan(&mut self, waves: &[Vec<AgentId>]) {
         self.wave_plan = waves.to_vec();
     }
 
     /// Sets the [`AdaptationMode`] for an agent — the developer-control surface.
-    /// `Manual(strategy)` pins the agent; `Learning` (default) lets GORNA negotiate.
     pub fn set_adaptation_mode(&mut self, agent_id: AgentId, mode: AdaptationMode) {
         self.modes.insert(agent_id, mode);
     }
@@ -143,355 +118,223 @@ impl GornaArbitrator {
     pub fn adaptation_mode(&self, agent_id: AgentId) -> AdaptationMode {
         self.modes.get(&agent_id).copied().unwrap_or_default()
     }
-    /// Performs a full GORNA arbitration round.
+
+    /// The allocation in force, if a round ran.
+    pub fn in_force(&self) -> Option<&Allocation> {
+        self.in_force.as_ref()
+    }
+
+    /// One round of the protocol: asks every agent in `agents` for an offer
+    /// (one `OfferRequest` for the round's epoch, the frame's target and the
+    /// context's mode), calibrates the quoted rows by `measured_costs`,
+    /// [`decide`]s, and lends each agent its envelope, pin and allowed rows
+    /// through [`Agent::apply`]. Returns the allocation, which stays in force
+    /// until the next round.
     ///
-    /// # Arguments
-    /// - `context`: The current DCC situational model (phase, hardware, multiplier).
-    /// - `report`: The analysis report from the `HeuristicEngine`.
-    /// - `agents`: The registered ISA agents.
-    /// - `measured_costs`: Per-agent measured execution cost in milliseconds
-    ///   (from the DCC's empirical cost models). Used to calibrate the agents'
-    ///   self-quoted strategy estimates against reality; agents without a
-    ///   measurement keep their quotes as-is (cold start).
-    /// - `replay`: When `Some`, issue the recorded strategy per agent instead of
-    ///   the negotiated fit (deterministic replay — bypasses budget fitting and
-    ///   the per-agent `AdaptationMode`). `None` for normal live arbitration.
-    /// - `hints`: Per-agent developer [`AgentHints`] accumulated by the DCC.
-    ///   `Prioritize` biases the negotiation priority (which agents the fit
-    ///   upgrades first); `Cap` clamps the issued strategy to a time ceiling.
-    ///   Advisory only — `replay` and a `Manual` pin both override a hint.
-    ///
-    /// Returns the [`TickDecisions`] actually issued this tick (agent → strategy),
-    /// so the DCC can record them for later replay.
-    pub fn arbitrate(
-        &self,
+    /// `trigger` says why the round opens. The round is `Trigger::Safety`
+    /// instead when `report` detects a death spiral, when too many agents are
+    /// stalled, or when the floors do not fit.
+    pub fn allocate(
+        &mut self,
         context: &Context,
         report: &AnalysisReport,
-        agents: &mut [Arc<Mutex<dyn Agent>>],
+        trigger: Trigger,
+        agents: &[Arc<Mutex<dyn Agent>>],
         measured_costs: &HashMap<AgentId, f64>,
-        replay: Option<&TickDecisions>,
         hints: &HashMap<AgentId, AgentHints>,
-    ) -> TickDecisions {
-        if agents.is_empty() {
-            return TickDecisions::new();
-        }
-
-        log::debug!(
-            "GORNA: Starting arbitration for {} agents. Phase={:?}, Multiplier={:.2}",
-            agents.len(),
-            context.mode,
-            context.global_budget_multiplier
-        );
-
-        // ── 0. Health Check ──────────────────────────────────────────────
-        let stalled_count = self.check_agent_health(agents);
-        if stalled_count >= MAX_STALLED_AGENTS || report.death_spiral_detected {
+    ) -> Allocation {
+        self.epoch = Epoch(self.epoch.0 + 1);
+        let epoch = self.epoch;
+        let target_ms = f64::from(report.suggested_latency_ms * context.global_budget_multiplier);
+        let target = Duration::from_secs_f64(target_ms.max(0.0) / 1_000.0);
+        let stalled = self.stalled(agents);
+        let trigger = if report.death_spiral_detected || stalled >= MAX_STALLED_AGENTS {
             log::error!(
-                "GORNA: Death spiral detected ({} stalled agents). \
-                Forcing emergency LowPower on all agents.",
-                stalled_count
+                "GORNA: death spiral ({stalled} stalled agents): every agent is lent its floor"
             );
-            return self.emergency_stop(agents);
-        }
+            Trigger::Safety
+        } else {
+            trigger
+        };
 
-        // ── 1. Compute effective frame budget ────────────────────────────
-        // Start from the analysis-suggested latency (accounts for phase, thermal, battery).
-        let base_latency_ms = report.suggested_latency_ms;
-        // Apply the global budget multiplier from the context.
-        let effective_budget_ms = base_latency_ms * context.global_budget_multiplier;
-
-        log::debug!(
-            "GORNA: Effective frame budget: {:.2}ms (base={:.2}ms × multiplier={:.2})",
-            effective_budget_ms,
-            base_latency_ms,
-            context.global_budget_multiplier
-        );
-
-        // ── 2. Negotiation Pass ──────────────────────────────────────────
-        let mut negotiations: Vec<AgentNegotiation> = Vec::with_capacity(agents.len());
-
-        for (i, agent_mutex) in agents.iter().enumerate() {
+        // Agents removed since the last round are forgotten.
+        self.known.retain(|(weak, _)| weak.strong_count() > 0);
+        let mut bids = Vec::with_capacity(agents.len());
+        for agent_mutex in agents {
+            let weak = Arc::downgrade(agent_mutex);
             let Some(mut agent) = try_lock_agent_with_timeout(agent_mutex, self.lock_timeout)
             else {
-                log::warn!(
-                    "GORNA: Failed to lock agent {} for negotiation (timeout). Skipping.",
-                    i
-                );
-                continue;
-            };
-            let agent_id = agent.id();
-            let timing = agent.execution_timing();
-            // How much an agent weighs, and whether it must run, come from
-            // the importance it declares — never from its name. A `Prioritize`
-            // hint overrides the weight.
-            let priority = hints
-                .get(&agent_id)
-                .and_then(|h| h.priority)
-                .unwrap_or_else(|| importance_weight(timing.importance));
-            let must_run = timing.importance == AgentImportance::Critical;
-            let current_strategy = agent.report_status().current_strategy;
-
-            let request = NegotiationRequest {
-                target_latency: Duration::from_secs_f64(effective_budget_ms as f64 / 1000.0),
-                priority_weight: priority,
-                constraints: ResourceConstraints {
-                    must_run,
-                    ..Default::default()
-                },
-                current_mode: context.mode.clone(),
-                agent_timing: timing,
-            };
-
-            let response = agent.negotiate(request);
-
-            if response.strategies.is_empty() {
-                log::warn!(
-                    "GORNA: Agent {:?} returned no strategies. Skipping.",
-                    agent_id
-                );
-                continue;
-            }
-
-            // Sort strategies by estimated time (ascending = cheapest first).
-            let mut strategies = response.strategies;
-            strategies.sort_by_key(|s| s.estimated_time);
-
-            // ── 2b. Empirical calibration ────────────────────────────────
-            // Anchor the agent's self-quoted estimates in measured reality:
-            // when the DCC has an observed cost for this agent, rescale every
-            // quoted option so the one matching the agent's *current* strategy
-            // equals the measurement. Relative ordering between options is
-            // preserved — only the absolute scale moves, so the fit reasons
-            // about real milliseconds instead of static worst-case quotes.
-            if let Some(&measured_ms) = measured_costs.get(&agent_id) {
-                let quoted_ms = strategies
-                    .iter()
-                    .find(|s| s.id == current_strategy)
-                    .map(|s| s.estimated_time.as_secs_f64() * 1000.0)
-                    .filter(|ms| *ms > f64::EPSILON);
-                if let Some(quoted_ms) = quoted_ms {
-                    let factor = (measured_ms / quoted_ms)
-                        .clamp(CALIBRATION_FACTOR_MIN, CALIBRATION_FACTOR_MAX);
-                    for s in &mut strategies {
-                        s.estimated_time =
-                            Duration::from_secs_f64(s.estimated_time.as_secs_f64() * factor);
-                    }
-                    log::debug!(
-                        "GORNA: Calibrated {:?} estimates ×{:.2} \
-                         (measured {:.2}ms vs quoted {:.2}ms at {:?})",
-                        agent_id,
-                        factor,
-                        measured_ms,
-                        quoted_ms,
-                        current_strategy
+                // Busy through the whole deadline: like a late offer, the
+                // agent keeps the envelope it holds (it runs on it still).
+                let known = self.known.iter().find(|(seen, _)| seen.ptr_eq(&weak));
+                if let Some(id) = known.map(|(_, id)| *id) {
+                    log::warn!(
+                        "GORNA: agent {id} was busy through the round; it keeps its envelope"
                     );
+                    if let Some(kept) = self.kept(id) {
+                        bids.push(Bid {
+                            offer: Offer {
+                                agent: id,
+                                epoch,
+                                rows: Vec::new(),
+                                floor: StrategyId::LowPower,
+                                current: StrategyId::LowPower,
+                                health: 1.0,
+                            },
+                            importance: AgentImportance::Optional,
+                            mode: self.adaptation_mode(id),
+                            hints: hints.get(&id).copied().unwrap_or_default(),
+                            kept: Some(kept),
+                            late: true,
+                        });
+                    }
                 }
+                continue;
+            };
+            match self.known.iter_mut().find(|(seen, _)| seen.ptr_eq(&weak)) {
+                Some((_, id)) => *id = agent.id(),
+                None => self.known.push((weak, agent.id())),
             }
-
-            negotiations.push(AgentNegotiation {
-                agent_index: i,
-                agent_id,
-                priority,
-                strategies,
+            let request = OfferRequest {
+                epoch,
+                target,
+                pressure: 0.0,
+                mode: context.mode.clone(),
+                reply_by: Instant::now() + self.lock_timeout,
+            };
+            let mut offer = agent.offer(&request);
+            let late = Instant::now() > request.reply_by;
+            let importance = agent.execution_timing().importance;
+            let id = agent.id();
+            drop(agent);
+            calibrate(&mut offer, measured_costs.get(&id).copied());
+            bids.push(Bid {
+                kept: self.kept(id),
+                late,
+                importance,
+                mode: self.adaptation_mode(id),
+                hints: hints.get(&id).copied().unwrap_or_default(),
+                offer,
             });
         }
 
-        // ── 3. Global Budget Fitting ─────────────────────────────────────
-        let max_vram = context
-            .hardware
-            .available_vram
-            .or(context.hardware.total_vram);
-        let allocations = self.fit_budgets(&negotiations, effective_budget_ms, max_vram);
-
-        // ── 4. Issuance Pass ─────────────────────────────────────────────
-        let mut issued: TickDecisions = Vec::with_capacity(allocations.len());
-        for alloc in &allocations {
-            let Some(mut agent) =
-                try_lock_agent_with_timeout(&agents[alloc.agent_index], self.lock_timeout)
-            else {
-                log::warn!(
-                    "GORNA: Failed to lock agent for budget issuance (index {}). Skipping.",
-                    alloc.agent_index
-                );
-                continue;
-            };
-
-            let agent_id = agent.id();
-
-            let strategy = if let Some(recorded) = replay {
-                // Replay: issue the recorded strategy for this agent, bypassing
-                // the fit and the AdaptationMode (deterministic reproduction).
-                // Fall back to the fit if the recorded strategy isn't offered.
-                recorded
-                    .iter()
-                    .find(|(id, _)| *id == agent_id)
-                    .and_then(|(_, sid)| self.strategy_for(&negotiations, alloc.agent_index, *sid))
-                    .unwrap_or_else(|| alloc.strategy.clone())
-            } else {
-                // Developer control: a `Manual` agent is pinned to its chosen
-                // strategy — GORNA reports but never overrides it. `Learning`
-                // (default) issues the negotiated fit.
-                match self.adaptation_mode(agent_id) {
-                    AdaptationMode::Manual(pinned) => self
-                        .strategy_for(&negotiations, alloc.agent_index, pinned)
-                        .unwrap_or_else(|| alloc.strategy.clone()),
-                    AdaptationMode::Stable => {
-                        // No opportunistic upgrade: keep the current strategy unless
-                        // the fit is a downgrade (or the current one isn't offered).
-                        let current = agent.report_status().current_strategy;
-                        match self.strategy_for(&negotiations, alloc.agent_index, current) {
-                            Some(cur) if alloc.strategy.estimated_time > cur.estimated_time => cur,
-                            _ => alloc.strategy.clone(),
-                        }
-                    }
-                    AdaptationMode::Bounded { min, max } => self.clamp_strategy(
-                        &negotiations,
-                        alloc.agent_index,
-                        &alloc.strategy,
-                        min,
-                        max,
-                    ),
-                    AdaptationMode::Learning => alloc.strategy.clone(),
-                }
-            };
-
-            // Developer `Cap` hint: clamp the issued strategy down to the time
-            // ceiling. Skipped under replay (deterministic) and for a `Manual`
-            // pin (an explicit strategy choice outranks a budget hint).
-            let strategy = if replay.is_none()
-                && !matches!(self.adaptation_mode(agent_id), AdaptationMode::Manual(_))
-            {
-                self.apply_cap(
-                    &negotiations,
-                    alloc.agent_index,
-                    strategy,
-                    hints.get(&agent_id),
-                )
-            } else {
-                strategy
-            };
-
-            let budget = ResourceBudget {
-                strategy_id: strategy.id,
-                time_limit: strategy.estimated_time,
-                memory_limit: Some(strategy.estimated_vram),
-                extra_params: std::collections::HashMap::new(),
-            };
-
-            log::info!(
-                "GORNA: Issuing budget to {:?} — strategy={:?}, time={:.2}ms, vram={}KB",
-                agent_id,
-                budget.strategy_id,
-                budget.time_limit.as_secs_f64() * 1000.0,
-                strategy.estimated_vram / 1024
-            );
-
-            agent.apply_budget(budget);
-            issued.push((agent_id, strategy.id));
-        }
-
-        log::debug!(
-            "GORNA: Arbitration complete. {} budgets issued.",
-            issued.len()
-        );
-        issued
+        let memory = PerDevice {
+            gpu: context
+                .hardware
+                .available_vram
+                .or(context.hardware.total_vram),
+            ..PerDevice::default()
+        };
+        let allocation = decide(&Round {
+            epoch,
+            trigger,
+            target,
+            memory,
+            link_rate: PerLink::default(),
+            waves: &self.wave_plan,
+            bids: &bids,
+        });
+        self.lend(&allocation, agents);
+        allocation
     }
 
-    /// Polls all agents for health status and returns the count of stalled agents.
-    fn check_agent_health(&self, agents: &[Arc<Mutex<dyn Agent>>]) -> usize {
-        let mut stalled = 0;
-        for (i, agent_mutex) in agents.iter().enumerate() {
-            let Some(agent) = try_lock_agent_with_timeout(agent_mutex, self.lock_timeout) else {
-                log::warn!(
-                    "GORNA: Failed to lock agent {} for health check (timeout).",
-                    i
-                );
-                continue;
-            };
-            let status = agent.report_status();
-            if status.is_stalled {
-                log::warn!(
-                    "GORNA: Agent {:?} is STALLED. Health={:.2}, Message: {}",
-                    status.agent_id,
-                    status.health_score,
-                    status.message
-                );
-                stalled += 1;
-            } else if status.health_score < 0.5 {
-                log::warn!(
-                    "GORNA: Agent {:?} health degraded ({:.2}). Message: {}",
-                    status.agent_id,
-                    status.health_score,
-                    status.message
-                );
-            }
-        }
-        stalled
+    /// Lends every agent in `agents` its envelope, pin and allowed rows from a
+    /// recorded `allocation`, without asking for offers or deciding: a replay.
+    /// The allocation is then the one in force.
+    pub fn reissue(&mut self, allocation: &Allocation, agents: &[Arc<Mutex<dyn Agent>>]) {
+        self.epoch = self.epoch.max(allocation.epoch);
+        self.lend(allocation, agents);
     }
 
-    /// Forces all agents to their lowest-cost strategy as an emergency measure.
-    /// Returns the issued decisions (all `LowPower`) for recording.
-    fn emergency_stop(&self, agents: &mut [Arc<Mutex<dyn Agent>>]) -> TickDecisions {
-        let mut issued = TickDecisions::with_capacity(agents.len());
-        for (i, agent_mutex) in agents.iter_mut().enumerate() {
+    /// Lends each agent of `agents` what `allocation` names for it, and keeps
+    /// the allocation as the one in force.
+    fn lend(&mut self, allocation: &Allocation, agents: &[Arc<Mutex<dyn Agent>>]) {
+        for agent_mutex in agents {
             let Some(mut agent) = try_lock_agent_with_timeout(agent_mutex, self.lock_timeout)
             else {
-                log::warn!(
-                    "GORNA: Failed to lock agent {} for emergency stop (timeout).",
-                    i
-                );
+                log::warn!("GORNA: an agent could not be locked for its envelope; skipped");
                 continue;
             };
-
-            let budget = ResourceBudget {
-                strategy_id: StrategyId::LowPower,
-                time_limit: Duration::from_millis(2),
-                memory_limit: None,
-                extra_params: std::collections::HashMap::new(),
+            let id = agent.id();
+            let Some((_, envelope)) = allocation.envelopes.iter().find(|(agent, _)| *agent == id)
+            else {
+                continue;
             };
-
-            log::warn!("GORNA: Emergency LowPower issued to {:?}.", agent.id());
-            agent.apply_budget(budget);
-            issued.push((agent.id(), StrategyId::LowPower));
+            let pin = allocation
+                .pins
+                .iter()
+                .find(|(agent, _)| *agent == id)
+                .map(|(_, row)| *row);
+            let allowed = allocation
+                .allowed
+                .iter()
+                .find(|(agent, _)| *agent == id)
+                .map(|(_, rows)| rows.as_slice());
+            agent.apply(allocation.epoch, envelope, pin, allowed);
         }
-        issued
+        self.in_force = Some(allocation.clone());
     }
 
-    /// Maps each negotiation to a wave id from `self.wave_plan`.
-    ///
-    /// Agents named together in a plan wave share its id (they run concurrently);
-    /// any agent the plan does not mention — and every agent when the plan is
-    /// empty — gets a fresh singleton id, so its cost is summed rather than
-    /// folded into a wave `max`.
-    fn assign_waves(&self, negotiations: &[AgentNegotiation]) -> Vec<usize> {
-        let mut wave_of_id: HashMap<AgentId, usize> = HashMap::new();
-        for (w, wave) in self.wave_plan.iter().enumerate() {
-            for id in wave {
-                wave_of_id.entry(*id).or_insert(w);
-            }
-        }
-        let mut next_singleton = self.wave_plan.len();
-        negotiations
+    /// The envelope `agent` holds from the allocation in force.
+    fn kept(&self, agent: AgentId) -> Option<Envelope> {
+        self.in_force.as_ref().and_then(|allocation| {
+            allocation
+                .envelopes
+                .iter()
+                .find(|(id, _)| *id == agent)
+                .map(|(_, envelope)| *envelope)
+        })
+    }
+
+    /// How many of `agents` report they are stalled.
+    fn stalled(&self, agents: &[Arc<Mutex<dyn Agent>>]) -> usize {
+        agents
             .iter()
-            .map(|n| match wave_of_id.get(&n.agent_id) {
-                Some(&w) => w,
-                None => {
-                    let w = next_singleton;
-                    next_singleton += 1;
-                    w
+            .filter_map(|agent| try_lock_agent_with_timeout(agent, self.lock_timeout))
+            .filter(|agent| {
+                let status = agent.report_status();
+                if status.is_stalled {
+                    log::warn!(
+                        "GORNA: agent {} is stalled. Health={:.2}: {}",
+                        status.agent_id,
+                        status.health_score,
+                        status.message
+                    );
                 }
+                status.is_stalled
             })
-            .collect()
+            .count()
     }
 }
 
-/// The weight an agent of `importance` gets in the budget fit: the agents a
-/// frame cannot do without first, the ones it can lose last.
-fn importance_weight(importance: AgentImportance) -> f32 {
-    match importance {
-        AgentImportance::Critical => 1.0,
-        AgentImportance::Important => 0.75,
-        AgentImportance::Optional => 0.5,
+/// Anchors `offer`'s quoted costs in what the DCC measured: every priced
+/// row's time is scaled so the row running now costs `measured_ms`. Relative
+/// order between rows is kept; the factor is clamped.
+fn calibrate(offer: &mut Offer, measured_ms: Option<f64>) {
+    let Some(measured_ms) = measured_ms else {
+        return;
+    };
+    let busiest = |row: &khora_core::agent::gorna::protocol::OfferRow| {
+        let time = &row.cost.time;
+        time.cpu.max(time.gpu).max(time.npu).max(time.other)
+    };
+    let Some(quoted_ms) = offer
+        .rows
+        .iter()
+        .find(|row| row.id == offer.current)
+        .map(|row| busiest(row).as_secs_f64() * 1_000.0)
+        .filter(|ms| *ms > f64::EPSILON)
+    else {
+        return;
+    };
+    let factor = (measured_ms / quoted_ms).clamp(CALIBRATION_FACTOR_MIN, CALIBRATION_FACTOR_MAX);
+    let scale = |time: Duration| Duration::from_secs_f64(time.as_secs_f64() * factor);
+    for row in &mut offer.rows {
+        let time = &mut row.cost.time;
+        time.cpu = scale(time.cpu);
+        time.gpu = scale(time.gpu);
+        time.npu = scale(time.npu);
+        time.other = scale(time.other);
     }
 }
 

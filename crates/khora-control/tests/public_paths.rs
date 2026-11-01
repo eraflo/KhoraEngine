@@ -109,7 +109,25 @@ fn dcc_config_fields(c: &khora_control::dcc_service::DccConfig) {
         &c.agent_lock_timeout_ms,
         &c.memory_budget_bytes,
         &c.frame_pid,
+        &c.min_epoch_ticks,
+        &c.overruns_in_a_row,
     );
+}
+
+fn round_fields(r: &khora_control::gorna::Round<'_>) {
+    let _ = (
+        &r.epoch,
+        &r.trigger,
+        &r.target,
+        &r.memory,
+        &r.link_rate,
+        &r.waves,
+        &r.bids,
+    );
+}
+
+fn bid_fields(b: &khora_control::gorna::Bid) {
+    let _ = (&b.offer, &b.importance, &b.mode, &b.hints, &b.kept, &b.late);
 }
 
 fn pid_config_fields(x: &khora_control::pid::PidConfig) {
@@ -296,7 +314,17 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::gorna::GornaArbitrator::set_wave_plan;
     let _ = khora_control::gorna::GornaArbitrator::set_adaptation_mode;
     let _ = khora_control::gorna::GornaArbitrator::adaptation_mode;
-    let _ = khora_control::gorna::GornaArbitrator::arbitrate;
+    let _ = khora_control::gorna::GornaArbitrator::allocate;
+    let _ = khora_control::gorna::GornaArbitrator::reissue;
+    let _ = khora_control::gorna::decide;
+    let _ = type_name::<khora_control::gorna::Round<'static>>();
+    let _ = type_name::<khora_control::gorna::Bid>();
+    let _ = round_fields as fn(&khora_control::gorna::Round<'_>);
+    let _ = bid_fields as fn(&khora_control::gorna::Bid);
+    is_clone::<khora_control::gorna::Round<'static>>();
+    is_debug::<khora_control::gorna::Round<'static>>();
+    is_clone::<khora_control::gorna::Bid>();
+    is_debug::<khora_control::gorna::Bid>();
 
     // --- module `metrics`
     let _ = type_name::<khora_control::metrics::RingBuffer<f32, 4>>();

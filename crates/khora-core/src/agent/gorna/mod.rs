@@ -170,21 +170,17 @@ impl AgentHints {
     }
 }
 
-/// One arbitration tick's outcome: the strategy issued to each agent, in
-/// issuance order.
-pub type TickDecisions = Vec<(AgentId, StrategyId)>;
-
-/// An ordered, replayable recording of GORNA's per-tick decisions.
+/// An ordered, replayable recording of GORNA's decisions: each epoch's
+/// allocation.
 ///
-/// Arbitration is deterministic (no RNG), so recording the issued strategy per
-/// agent per tick and replaying it reproduces a session's adaptation
-/// **bit-for-bit** — for QA, network lockstep, and bug reproduction. Recorded by
-/// the DCC while recording is enabled; fed back to drive issuance from the trace
-/// instead of from live negotiation (the `Replay` capability).
+/// A round is a pure function of its inputs (no RNG), so lending the recorded
+/// allocations again reproduces a session's adaptation — for QA, network
+/// lockstep and bug reproduction. Recorded by the DCC while recording is
+/// enabled; replayed one allocation a tick, asking agents for no offer.
 #[derive(Debug, Clone, Default)]
 pub struct DecisionTrace {
-    /// Per-tick issued decisions, in arbitration order.
-    pub ticks: Vec<TickDecisions>,
+    /// Each epoch's allocation, in the order the DCC issued them.
+    pub epochs: Vec<protocol::Allocation>,
 }
 
 /// Hard resource constraints the DCC imposes on an Agent during negotiation.

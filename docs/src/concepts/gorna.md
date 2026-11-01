@@ -48,14 +48,17 @@ flowchart LR
 - **Awareness** gathers telemetry from agents and hardware monitors.
 - **Analysis** runs the heuristic engine over that telemetry, shaping a single
   frame-time target.
-- **Negotiation** asks each agent for its strategy options and their estimated
-  costs.
-- **Arbitration** selects an optimal strategy per agent that fits the global frame
-  budget, respecting priorities and constraints.
-- **Application** calls `apply_budget` on each agent and pushes the result through
-  the `BudgetChannel` (one channel per agent, last-wins).
+- **Offers**: when an epoch opens, the DCC asks each agent active in the mode for
+  an offer: every row it can run, with its cost per device, its quality and its
+  floor.
+- **Share**: the DCC admits every floor on the critical path, then gives the
+  remaining time to the upgrades that gain the most quality per microsecond, and
+  gives 80 % of what is left back as slack. Each agent receives an **envelope** —
+  how much time and memory it may use — never a row.
+- **Choice**: each agent picks, every frame, the best row whose quote fits its
+  envelope; nothing fits, it runs its floor and says so in its report.
 
-Agents declare what they offer as `StrategyOption`s and receive a `ResourceBudget`.
+The DCC decides *how much*; the agent decides *how*.
 The request and budget shapes are intentionally narrow — time, memory, VRAM, and a
 small extras map — so that adding a resource dimension is a considered change, not a
 free-form bag each subsystem invents its own dialect for. The exhaustive field lists
@@ -94,12 +97,12 @@ the setpoint the multiplier climbs, budgets are re-issued, and agents upgrade
 again — instead of staying pinned at a degraded strategy forever.
 
 **Empirical cost calibration** closes the other gap. Agents quote *static* estimates
-in `negotiate()`, but reality drifts from the quote per machine and per scene. The
+in their offers, but reality drifts from the quote per machine and per scene. The
 DCC fits each agent's measured `(n, time)` samples to an empirical cost model (a
 constant factor times a complexity class `f(n)`, the same shape a query optimiser
-uses), and `GornaArbitrator::arbitrate` feeds those measured costs back into the
-negotiation: every strategy option is rescaled so the one matching the agent's
-*current* strategy equals the measurement. The rescale factor is clamped (to
+uses), and `GornaArbitrator::allocate` feeds those measured costs back into the
+offers: every offered row is rescaled so the row the agent runs now
+costs what was measured. The rescale factor is clamped (to
 `[0.25, 4.0]`) so a single hitch or cold cache cannot swing the fit by orders of
 magnitude, and the relative ordering of options is preserved — only the absolute
 scale moves. The budget fitting therefore reasons about *measured milliseconds*, not

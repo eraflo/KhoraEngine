@@ -1,0 +1,437 @@
+// Copyright 2025 eraflo
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! GORNA as a protocol: [`decide`](super::decide) shares the frame into
+//! envelopes (`decide.rs`), and the arbitrator asks for offers, decides and
+//! lends each agent its envelope (`allocate.rs`, `importance.rs`).
+//!
+//! Two kinds of fake agent: [`Bidder`] speaks the protocol (`offer`, `apply`,
+//! `report`); [`Legacy`] only negotiates, and answers through the trait's
+//! bridge.
+
+mod allocate;
+mod decide;
+mod importance;
+
+use super::*;
+use crate::analysis::AnalysisReport;
+use crate::dcc_context::Context;
+use crate::EngineMode;
+use khora_core::agent::gorna::protocol::{
+    Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
+};
+use khora_core::agent::gorna::{
+    AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
+    StrategyOption,
+};
+use khora_core::agent::{Agent, AgentImportance, ExecutionTiming};
+use khora_core::lane::cost::{Cost, PerDevice};
+use khora_core::EngineContext;
+use std::time::Instant;
+
+/// A mebibyte.
+const MIB: u64 = 1024 * 1024;
+
+fn ms(n: u64) -> Duration {
+    Duration::from_millis(n)
+}
+
+fn us(n: u64) -> Duration {
+    Duration::from_micros(n)
+}
+
+/// A cost of `cpu_us` on the host and nothing else.
+fn cpu_cost(cpu_us: u64) -> Cost {
+    Cost {
+        time: PerDevice {
+            cpu: us(cpu_us),
+            ..PerDevice::default()
+        },
+        ..Cost::default()
+    }
+}
+
+/// A quoted row costing `cpu_us` on the host, of `quality`.
+fn row(id: StrategyId, cpu_us: u64, quality: f32) -> OfferRow {
+    OfferRow {
+        id,
+        cost: cpu_cost(cpu_us),
+        quality,
+        confidence: Confidence::Quoted,
+    }
+}
+
+/// `row`, also holding `gpu_bytes` on the graphics processor.
+fn row_holding(id: StrategyId, cpu_us: u64, gpu_bytes: u64, quality: f32) -> OfferRow {
+    let mut row = row(id, cpu_us, quality);
+    row.cost.memory.gpu = gpu_bytes;
+    row
+}
+
+/// The offer of `name`, its rows and its floor, running its floor.
+fn offer(name: &'static str, rows: Vec<OfferRow>, floor: StrategyId) -> Offer {
+    Offer {
+        agent: AgentId::new(name),
+        epoch: Epoch(1),
+        rows,
+        floor,
+        current: floor,
+        health: 1.0,
+    }
+}
+
+/// The envelope a row's cost asks for: its time and its memory.
+fn envelope_of(cost: &Cost) -> Envelope {
+    Envelope {
+        time: cost.time,
+        memory: cost.memory,
+    }
+}
+
+/// An envelope of `cpu_us` on the host, nothing elsewhere.
+fn cpu_envelope(cpu_us: u64) -> Envelope {
+    Envelope {
+        time: PerDevice {
+            cpu: us(cpu_us),
+            ..PerDevice::default()
+        },
+        ..Envelope::default()
+    }
+}
+
+/// The envelope `allocation` lends `name`; panics when it lends none.
+fn lent_to(allocation: &Allocation, name: &'static str) -> Envelope {
+    allocation
+        .envelopes
+        .iter()
+        .find(|(agent, _)| *agent == AgentId::new(name))
+        .map(|(_, envelope)| *envelope)
+        .unwrap_or_else(|| panic!("no envelope for `{name}` in {allocation:?}"))
+}
+
+/// The time an envelope gives on its busiest device.
+fn busiest(envelope: &Envelope) -> Duration {
+    let time = &envelope.time;
+    time.cpu.max(time.gpu).max(time.npu).max(time.other)
+}
+
+/// Whether `cost` fits `envelope` on every device, time and memory.
+fn fits(cost: &Cost, envelope: &Envelope) -> bool {
+    let (t, e) = (&cost.time, &envelope.time);
+    let (m, n) = (&cost.memory, &envelope.memory);
+    t.cpu <= e.cpu
+        && t.gpu <= e.gpu
+        && t.npu <= e.npu
+        && t.other <= e.other
+        && m.cpu <= n.cpu
+        && m.gpu <= n.gpu
+        && m.npu <= n.npu
+        && m.other <= n.other
+}
+
+/// Shares one agent between the test, which reads it, and the arbitrator.
+fn shared<A: Agent + 'static>(agent: A) -> (Arc<Mutex<A>>, Arc<Mutex<dyn Agent>>) {
+    let typed = Arc::new(Mutex::new(agent));
+    let erased: Arc<Mutex<dyn Agent>> = typed.clone();
+    (typed, erased)
+}
+
+/// A frame of `latency_ms` and nothing to report.
+fn frame_of(latency_ms: f32) -> AnalysisReport {
+    AnalysisReport {
+        needs_negotiation: true,
+        suggested_latency_ms: latency_ms,
+        death_spiral_detected: false,
+        alerts: Vec::new(),
+    }
+}
+
+/// Playing, at the full budget, on a machine that says nothing of its memory.
+fn playing() -> Context {
+    Context {
+        mode: EngineMode::Playing,
+        global_budget_multiplier: 1.0,
+        ..Default::default()
+    }
+}
+
+fn arbitrator() -> GornaArbitrator {
+    GornaArbitrator::new(Duration::from_millis(100))
+}
+
+/// No measurement and no hint.
+fn nothing<T>() -> HashMap<AgentId, T> {
+    HashMap::new()
+}
+
+// ── A fake that speaks the protocol ───────────────────────────────
+
+/// What an agent was lent by one `apply`.
+#[derive(Debug, Clone, PartialEq)]
+struct Lent {
+    epoch: Epoch,
+    envelope: Envelope,
+    pin: Option<StrategyId>,
+    allowed: Option<Vec<StrategyId>>,
+}
+
+/// An agent that answers `offer`, `apply` and `report` itself, and records
+/// what the DCC asked and lent it. It never expects `negotiate` nor
+/// `apply_budget`: it counts them.
+struct Bidder {
+    id: AgentId,
+    importance: AgentImportance,
+    rows: Vec<OfferRow>,
+    floor: StrategyId,
+    health: f32,
+    stalled: bool,
+    /// Whether it answers after the request's `reply_by`.
+    late: bool,
+    asked: Vec<OfferRequest>,
+    lent: Vec<Lent>,
+    old_calls: usize,
+}
+
+impl Bidder {
+    /// `name`, offering `rows` with `floor` as its floor.
+    fn new(name: &'static str, rows: Vec<OfferRow>, floor: StrategyId) -> Self {
+        Self {
+            id: AgentId::new(name),
+            importance: AgentImportance::Important,
+            rows,
+            floor,
+            health: 1.0,
+            stalled: false,
+            late: false,
+            asked: Vec::new(),
+            lent: Vec::new(),
+            old_calls: 0,
+        }
+    }
+
+    /// `name`, offering one `LowPower` row of `cpu_us`.
+    fn single(name: &'static str, cpu_us: u64) -> Self {
+        Self::new(
+            name,
+            vec![row(StrategyId::LowPower, cpu_us, 0.4)],
+            StrategyId::LowPower,
+        )
+    }
+
+    fn weighing(mut self, importance: AgentImportance) -> Self {
+        self.importance = importance;
+        self
+    }
+
+    fn last_lent(&self) -> &Lent {
+        self.lent.last().expect("the agent was lent an envelope")
+    }
+
+    fn floor_cost(&self) -> Cost {
+        self.rows
+            .iter()
+            .find(|row| row.id == self.floor)
+            .map(|row| row.cost)
+            .expect("the floor is one of the rows")
+    }
+}
+
+impl Agent for Bidder {
+    fn id(&self) -> AgentId {
+        self.id
+    }
+
+    fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
+        self.old_calls += 1;
+        NegotiationResponse {
+            strategies: Vec::new(),
+            timing_adjustment: None,
+        }
+    }
+
+    fn apply_budget(&mut self, _budget: ResourceBudget) {
+        self.old_calls += 1;
+    }
+
+    fn report_status(&self) -> AgentStatus {
+        AgentStatus {
+            agent_id: self.id,
+            current_strategy: self.floor,
+            health_score: self.health,
+            is_stalled: self.stalled,
+            message: String::new(),
+        }
+    }
+
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        self.asked.push(request.clone());
+        if self.late {
+            let after = request.reply_by + Duration::from_millis(20);
+            let now = Instant::now();
+            if after > now {
+                std::thread::sleep(after - now);
+            }
+        }
+        Offer {
+            agent: self.id,
+            epoch: request.epoch,
+            rows: self.rows.clone(),
+            floor: self.floor,
+            current: self.floor,
+            health: self.health,
+        }
+    }
+
+    fn apply(
+        &mut self,
+        epoch: Epoch,
+        envelope: &Envelope,
+        pin: Option<StrategyId>,
+        allowed: Option<&[StrategyId]>,
+    ) {
+        self.lent.push(Lent {
+            epoch,
+            envelope: *envelope,
+            pin,
+            allowed: allowed.map(<[StrategyId]>::to_vec),
+        });
+    }
+
+    fn report(&self) -> Report {
+        Report {
+            agent: self.id,
+            epoch: self.lent.last().map_or(Epoch::default(), |lent| lent.epoch),
+            row: self.floor,
+            measured: PerDevice::default(),
+            done: 1.0,
+            health: self.health,
+            over_budget: false,
+        }
+    }
+
+    fn execution_timing(&self) -> ExecutionTiming {
+        ExecutionTiming {
+            importance: self.importance,
+            ..Default::default()
+        }
+    }
+
+    fn execute(&mut self, _context: &mut EngineContext<'_>) {}
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+// ── A fake that only negotiates ───────────────────────────────────
+
+fn option(id: StrategyId, time: Duration, vram: u64) -> StrategyOption {
+    StrategyOption {
+        id,
+        estimated_time: time,
+        estimated_vram: vram,
+    }
+}
+
+/// An agent written before the protocol: it negotiates options and applies
+/// budgets, and answers `offer` / `apply` / `report` through the bridge.
+struct Legacy {
+    id: AgentId,
+    options: Vec<StrategyOption>,
+    applied: Option<ResourceBudget>,
+    stalled: bool,
+    health: f32,
+}
+
+impl Legacy {
+    /// `name` with three options: `LowPower` 2 ms / 1 KiB, `Balanced`
+    /// 8 ms / 10 MiB, `HighPerformance` 14 ms / 20 MiB; it reports
+    /// `Balanced` until a budget is applied.
+    fn new(name: &'static str) -> Self {
+        Self::with_options(
+            name,
+            vec![
+                option(StrategyId::LowPower, ms(2), 1024),
+                option(StrategyId::Balanced, ms(8), 10 * MIB),
+                option(StrategyId::HighPerformance, ms(14), 20 * MIB),
+            ],
+        )
+    }
+
+    fn with_options(name: &'static str, options: Vec<StrategyOption>) -> Self {
+        Self {
+            id: AgentId::new(name),
+            options,
+            applied: None,
+            stalled: false,
+            health: 1.0,
+        }
+    }
+
+    fn stalled(name: &'static str) -> Self {
+        Self {
+            stalled: true,
+            health: 0.0,
+            ..Self::new(name)
+        }
+    }
+
+    fn applied(&self) -> &ResourceBudget {
+        self.applied.as_ref().expect("a budget was applied")
+    }
+}
+
+impl Agent for Legacy {
+    fn id(&self) -> AgentId {
+        self.id
+    }
+
+    fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
+        NegotiationResponse {
+            strategies: self.options.clone(),
+            timing_adjustment: None,
+        }
+    }
+
+    fn apply_budget(&mut self, budget: ResourceBudget) {
+        self.applied = Some(budget);
+    }
+
+    fn report_status(&self) -> AgentStatus {
+        AgentStatus {
+            agent_id: self.id,
+            current_strategy: self
+                .applied
+                .as_ref()
+                .map_or(StrategyId::Balanced, |budget| budget.strategy_id),
+            health_score: self.health,
+            is_stalled: self.stalled,
+            message: String::new(),
+        }
+    }
+
+    fn execute(&mut self, _context: &mut EngineContext<'_>) {}
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}

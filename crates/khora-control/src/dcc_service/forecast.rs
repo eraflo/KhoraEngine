@@ -19,52 +19,50 @@ use crate::cost_model::CostModel;
 use khora_core::agent::gorna::AgentId;
 use std::collections::HashMap;
 
-/// Forecasts the frame's empirical cost (`c·f(n)`) at workload `n`, grouping
-/// agents into concurrent waves: a wave costs its **critical path** (the `max`
-/// of its members), and the frame is the sum over waves.
+/// Forecasts the frame's empirical cost (`c·f(n)`), each agent's model read at
+/// **its own** workload: `workloads` holds the latest `n` each agent reported,
+/// and a model whose agent reported none is not counted. Agents are grouped
+/// into concurrent waves: a wave costs its **critical path** (the `max` of its
+/// members), and the frame is the sum over waves.
 ///
 /// With an empty `wave_plan` — serial execution, or before the hot path has
-/// published one — every agent is its own singleton wave, so this reduces
-/// exactly to the plain per-agent sum. A model for an agent absent from the
-/// plan is likewise summed as its own singleton (conservative).
+/// published one — every agent is its own singleton wave, so this reduces to
+/// the plain per-agent sum. A model for an agent absent from the plan is
+/// likewise summed as its own singleton (conservative).
 ///
 /// Returns `None` until at least one agent has enough distinct-`n` samples to
 /// fit a model — before that the DCC has nothing to anticipate with.
-pub(super) fn forecast_total_ms(
+pub(super) fn forecast_frame_ms(
     models: &HashMap<AgentId, CostModel>,
-    n: f64,
+    workloads: &HashMap<AgentId, f64>,
     wave_plan: &[Vec<AgentId>],
 ) -> Option<f64> {
-    let mut planned: std::collections::HashSet<AgentId> = std::collections::HashSet::new();
+    let predict = |id: &AgentId| {
+        let n = *workloads.get(id)?;
+        models.get(id)?.predict_ms(n).map(|ms| ms.max(0.0))
+    };
+    let mut planned = std::collections::HashSet::new();
     let mut total = 0.0;
     let mut any = false;
-
     for wave in wave_plan {
-        let mut wave_max = 0.0_f64;
-        let mut wave_has = false;
+        let mut slowest: Option<f64> = None;
         for id in wave {
             planned.insert(*id);
-            if let Some(p) = models.get(id).and_then(|m| m.predict_ms(n)) {
-                wave_max = wave_max.max(p.max(0.0));
-                wave_has = true;
+            if let Some(ms) = predict(id) {
+                slowest = Some(slowest.map_or(ms, |s: f64| s.max(ms)));
             }
         }
-        if wave_has {
-            total += wave_max;
+        if let Some(ms) = slowest {
+            total += ms;
             any = true;
         }
     }
-
     // Any model not covered by the plan is its own singleton wave.
-    for (id, m) in models {
-        if planned.contains(id) {
-            continue;
-        }
-        if let Some(p) = m.predict_ms(n) {
-            total += p.max(0.0);
+    for id in models.keys().filter(|id| !planned.contains(*id)) {
+        if let Some(ms) = predict(id) {
+            total += ms;
             any = true;
         }
     }
-
     any.then_some(total)
 }

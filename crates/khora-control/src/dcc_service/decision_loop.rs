@@ -15,7 +15,8 @@
 //! Starting and stopping the DCC's decision thread — the cold-path loop that
 //! ingests telemetry, runs the heuristics and re-arbitrates budgets.
 
-use super::forecast::forecast_total_ms;
+use super::epochs::Epochs;
+use super::forecast::forecast_frame_ms;
 use super::{DccService, COST_MODEL_CAPACITY, FRAME_TIME_MIN_SAMPLES, PID_RENEGOTIATE_DELTA};
 use crate::cost_model::CostModel;
 use crate::dcc_context::safety_ceiling;
@@ -33,7 +34,8 @@ use std::time::{Duration, Instant};
 
 use crate::analysis::HeuristicEngine;
 use crate::gorna::GornaArbitrator;
-use khora_core::agent::gorna::{AgentHints, AgentId, TickDecisions};
+use khora_core::agent::gorna::protocol::Trigger;
+use khora_core::agent::gorna::{AgentHints, AgentId};
 use std::collections::HashMap;
 
 impl DccService {
@@ -59,15 +61,19 @@ impl DccService {
         let memory_budget_bytes = self.config.memory_budget_bytes;
         let frame_pid_cfg = self.config.frame_pid;
 
+        let min_epoch_ticks = self.config.min_epoch_ticks;
+        let overruns_in_a_row = self.config.overruns_in_a_row;
         let handle = thread::spawn(move || {
             let mut store = MetricStore::new();
             let heuristic_engine = HeuristicEngine;
             let mut arbitrator = GornaArbitrator::new(agent_lock_timeout);
-            let mut initial_negotiation_done = false;
+            // When the next epoch opens, and what waits to open it.
+            let mut epochs = Epochs::default();
             // Per-agent empirical cost models (`c·f(n)`), fed from `AgentCost`
-            // samples and used to forecast budget breaches before they happen.
+            // samples and used to forecast budget breaches before they happen,
+            // each read at the workload its own agent last reported.
             let mut cost_models: HashMap<AgentId, CostModel> = HashMap::new();
-            let mut last_workload_n: f64 = 0.0;
+            let mut workloads: HashMap<AgentId, f64> = HashMap::new();
             // Latest wave plan from the hot path: how agents are grouped for
             // concurrent execution. Empty until the scheduler publishes one (and
             // stays empty under serial execution), in which case cost fitting
@@ -105,7 +111,8 @@ impl DccService {
                             ctx.hardware.battery = report.battery;
                             ctx.hardware.cpu_load = report.cpu_load;
                             ctx.hardware.gpu_load = report.gpu_load.unwrap_or(0.0);
-                            ctx.hardware.available_vram = report.gpu_timings.as_ref().map(|_| 0);
+                            // A hardware report carries no VRAM figure: the
+                            // one the DCC knows stays.
 
                             if let Some(gpu_timings) = report.gpu_timings {
                                 if let Some(frame_time_us) = gpu_timings.frame_total_duration_us() {
@@ -129,6 +136,9 @@ impl DccService {
                         TelemetryEvent::ModeChange(new_mode) => {
                             let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
                             log::debug!("DCC Mode: {:?} → {:?}", ctx.mode, new_mode);
+                            if ctx.mode != new_mode {
+                                epochs.raise(Trigger::ModeChanged);
+                            }
                             ctx.mode = new_mode;
                         }
                         TelemetryEvent::GpuReport(report) => {
@@ -156,7 +166,7 @@ impl DccService {
                         TelemetryEvent::AgentCost { id, n, time_ms } => {
                             // Feed the per-agent empirical cost model and surface
                             // the latest time as a glass-box metric.
-                            last_workload_n = n;
+                            workloads.insert(id, n);
                             cost_models
                                 .entry(id)
                                 .or_insert_with(|| CostModel::new(COST_MODEL_CAPACITY))
@@ -218,21 +228,25 @@ impl DccService {
                 //     turning the reactive loop predictive (model proposes,
                 //     measurement disposes).
                 if let Some(predicted_ms) =
-                    forecast_total_ms(&cost_models, last_workload_n, &latest_wave_plan)
+                    forecast_frame_ms(&cost_models, &workloads, &latest_wave_plan)
                 {
                     if predicted_ms > report.suggested_latency_ms as f64 {
                         let ratio = (report.suggested_latency_ms as f64 / predicted_ms)
                             .clamp(0.5, 1.0) as f32;
                         report.alerts.push(format!(
-                            "Cost-model forecast {:.1}ms > budget {:.1}ms at n={:.0} — tightening to {:.1}ms",
+                            "Cost-model forecast {:.1}ms > budget {:.1}ms — tightening to {:.1}ms",
                             predicted_ms,
                             report.suggested_latency_ms,
-                            last_workload_n,
                             report.suggested_latency_ms * ratio
                         ));
                         report.suggested_latency_ms *= ratio;
-                        report.needs_negotiation = true;
+                        epochs.raise(Trigger::ForecastBreach);
                     }
+                }
+                if report.death_spiral_detected {
+                    epochs.raise(Trigger::Safety);
+                } else if report.needs_negotiation {
+                    epochs.raise(Trigger::Pressure);
                 }
 
                 // 2b-bis. Frame-time PID: regulate the global budget multiplier so
@@ -278,9 +292,9 @@ impl DccService {
                 //     can upgrade instead of staying degraded forever.
                 if let Some(last) = last_issued_multiplier {
                     if (multiplier - last).abs() > PID_RENEGOTIATE_DELTA {
-                        report.needs_negotiation = true;
+                        epochs.raise(Trigger::PidDrift);
                         report.alerts.push(format!(
-                            "PID: budget multiplier {last:.2} → {multiplier:.2} since last issuance — re-arbitrating",
+                            "PID: budget multiplier {last:.2} → {multiplier:.2} since the last epoch — re-allocating",
                         ));
                     }
                 }
@@ -289,93 +303,103 @@ impl DccService {
                     log::info!("DCC Analysis: {}", alert);
                 }
 
-                // 2c. Replay: while a trace is loaded, drive arbitration every
-                //     tick from the recorded decisions (in order) until it is
-                //     exhausted, then fall back to live negotiation.
-                let replay_tick: Option<TickDecisions> = replay
+                // 3. GORNA. Only the agents active in the engine's mode take
+                //    part; their reports may raise a trigger, and a due trigger
+                //    opens an epoch.
+                let agents: Vec<Arc<std::sync::Mutex<dyn Agent>>> = {
+                    let registry = registry.lock().unwrap_or_else(|e| e.into_inner());
+                    registry.iter_for_mode(&ctx_copy.mode).cloned().collect()
+                };
+                epochs.observe(&agents, overruns_in_a_row);
+
+                // A replay lends the recorded allocations, one a tick, in
+                // order, until the trace is exhausted.
+                let replayed = replay
                     .read()
                     .ok()
-                    .and_then(|r| r.as_ref().and_then(|(t, c)| t.ticks.get(*c).cloned()));
-                let replaying = replay_tick.is_some();
-
-                // 3. GORNA Negotiation
-                if report.needs_negotiation || !initial_negotiation_done || replaying {
-                    let registry_lock = registry.lock().unwrap_or_else(|e| e.into_inner());
-                    if !registry_lock.is_empty() {
-                        let agents: Vec<_> = registry_lock.iter().cloned().collect();
-                        drop(registry_lock);
-
-                        let mut agents_slice: Vec<Arc<std::sync::Mutex<dyn Agent>>> = agents;
-                        // Sync developer-control modes into the arbitrator before
-                        // it issues budgets (host may have changed them).
-                        if let Ok(modes) = adaptation_modes.read() {
-                            for (id, mode) in modes.iter() {
-                                arbitrator.set_adaptation_mode(*id, *mode);
-                            }
+                    .and_then(|r| r.as_ref().and_then(|(t, c)| t.epochs.get(*c).cloned()));
+                if let Some(allocation) = replayed {
+                    arbitrator.reissue(&allocation, &agents);
+                    let exhausted = replay.write().ok().is_some_and(|mut r| match r.as_mut() {
+                        Some((trace, cursor)) => {
+                            *cursor += 1;
+                            *cursor >= trace.epochs.len()
                         }
-                        // Snapshot the developer hints for this tick (Cap /
-                        // Prioritize biases). Empty map = no hints = default
-                        // behaviour, so this is bit-identical when unused.
-                        let tick_hints: HashMap<AgentId, AgentHints> =
-                            hints.read().map(|h| h.clone()).unwrap_or_default();
-                        // Per-agent measured costs anchor the agents' self-quoted
-                        // estimates in reality during fitting: prefer the model's
-                        // forecast at the current workload, fall back to the
-                        // latest raw observation when no fit is available yet.
-                        let measured_costs: HashMap<AgentId, f64> = cost_models
-                            .iter()
-                            .filter_map(|(id, m)| {
-                                m.predict_ms(last_workload_n)
-                                    .or_else(|| m.latest_ms())
-                                    .map(|ms| (*id, ms))
-                            })
-                            .collect();
-
-                        // Give the arbitrator the current wave grouping so its
-                        // budget fit costs concurrent waves by their critical
-                        // path (empty plan = serial = sum-of-costs).
-                        arbitrator.set_wave_plan(&latest_wave_plan);
-                        let issued = arbitrator.arbitrate(
-                            &ctx_copy,
-                            &report,
-                            &mut agents_slice,
-                            &measured_costs,
-                            replay_tick.as_ref(),
-                            &tick_hints,
-                        );
-                        initial_negotiation_done = true;
-                        last_issued_multiplier = Some(multiplier);
-
-                        // Advance the replay cursor, or record this tick's decisions.
-                        if replaying {
-                            if let Ok(mut r) = replay.write() {
-                                if let Some((_, cursor)) = r.as_mut() {
-                                    *cursor += 1;
-                                }
-                            }
-                        } else if decision_recording.read().map(|b| *b).unwrap_or(false) {
-                            if let Ok(mut trace) = recorded_trace.write() {
-                                trace.ticks.push(issued);
-                            }
+                        None => false,
+                    });
+                    epochs.replayed(&agents);
+                    // Once the trace runs out, a live epoch opens for the
+                    // engine as it is now, whatever the trace lent last.
+                    if exhausted {
+                        epochs.raise(Trigger::Refresh);
+                    }
+                    last_issued_multiplier = Some(multiplier);
+                } else if let Some(trigger) =
+                    epochs.due(min_epoch_ticks).filter(|_| !agents.is_empty())
+                {
+                    // Sync developer-control modes into the arbitrator (the
+                    // host may have changed them) and snapshot the hints.
+                    if let Ok(modes) = adaptation_modes.read() {
+                        for (id, mode) in modes.iter() {
+                            arbitrator.set_adaptation_mode(*id, *mode);
                         }
+                    }
+                    let tick_hints: HashMap<AgentId, AgentHints> =
+                        hints.read().map(|h| h.clone()).unwrap_or_default();
+                    // Per-agent measured costs anchor the agents' quotes in
+                    // reality: each model read at its own agent's workload,
+                    // else its latest observation.
+                    let measured_costs: HashMap<AgentId, f64> = cost_models
+                        .iter()
+                        .filter_map(|(id, model)| {
+                            workloads
+                                .get(id)
+                                .and_then(|n| model.predict_ms(*n))
+                                .or_else(|| model.latest_ms())
+                                .map(|ms| (*id, ms))
+                        })
+                        .collect();
+                    arbitrator.set_wave_plan(&latest_wave_plan);
+                    let allocation = arbitrator.allocate(
+                        &ctx_copy,
+                        &report,
+                        trigger,
+                        &agents,
+                        &measured_costs,
+                        &tick_hints,
+                    );
+                    epochs.opened(&agents);
+                    last_issued_multiplier = Some(multiplier);
+                    if decision_recording.read().map(|b| *b).unwrap_or(false) {
+                        if let Ok(mut trace) = recorded_trace.write() {
+                            trace.epochs.push(allocation.clone());
+                        }
+                    }
 
-                        // Send budgets through the budget channel to the Scheduler.
-                        if let Some(ref budget_channel) = budget_channel {
-                            for agent_arc in &agents_slice {
-                                if let Ok(agent) = agent_arc.lock() {
-                                    // The agent's current budget was set by apply_budget() during arbitration.
-                                    // We need to reconstruct the budget from the agent's status.
-                                    let status = agent.report_status();
-                                    let budget = ResourceBudget {
-                                        strategy_id: status.current_strategy,
-                                        time_limit: Duration::from_secs_f32(
-                                            report.suggested_latency_ms / 1000.0,
-                                        ),
-                                        memory_limit: None,
+                    // The scheduler's budget channel still carries a budget
+                    // per agent: its row and its envelope's busiest time.
+                    if let Some(ref budget_channel) = budget_channel {
+                        for (id, envelope) in &allocation.envelopes {
+                            let time = &envelope.time;
+                            let row = agents
+                                .iter()
+                                .filter_map(|agent| agent.try_lock().ok())
+                                .find(|agent| agent.id() == *id)
+                                .map(|agent| agent.report().row);
+                            if let Some(strategy_id) = row {
+                                budget_channel.send(
+                                    *id,
+                                    ResourceBudget {
+                                        strategy_id,
+                                        time_limit: time
+                                            .cpu
+                                            .max(time.gpu)
+                                            .max(time.npu)
+                                            .max(time.other),
+                                        memory_limit: Some(envelope.memory.gpu),
                                         extra_params: std::collections::HashMap::new(),
-                                    };
-                                    budget_channel.send(agent.id(), budget);
-                                }
+                                    },
+                                );
                             }
                         }
                     }

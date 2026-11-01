@@ -9,24 +9,26 @@ modes, and tick ordering (Substrate Pass + agent descent).
 
 ## Key files
 - DCC: `crates/khora-control/src/dcc_service/` (decision thread in `decision_loop.rs`); situational `Context` `crates/khora-control/src/dcc_context.rs`.
-- GORNA: `crates/khora-control/src/gorna/` — `mod.rs` (arbitration + replay via `Option<&TickDecisions>`), `fitting.rs` (budget fit, clamps).
+- GORNA: `crates/khora-control/src/gorna/` — `mod.rs` (`GornaArbitrator::allocate`: offers, calibration, lending; `reissue` for replay), `decide.rs` (the pure share: admission, Q-RAM upgrades, 80/20 slack, policies as envelope shapes). Epochs and triggers: `dcc_service/epochs.rs`. Protocol types: `crates/khora-core/src/agent/gorna/protocol.rs`.
 - Cost model: `crates/khora-control/src/cost_model.rs` (learned linear `predict_ms`).
 - PID: `crates/khora-control/src/pid.rs` (anti-windup, ~20 Hz cold path, output `[0.3, 1.0]`).
 - Substrate dispatcher: `crates/khora-control/src/substrate/`.
 
 ## Concepts
-- **Two-pass GORNA**: agents return `NegotiationResponse` options (time, VRAM); the arbitrator fits the best
-  combination within the global frame budget. Replay overrides the fit with recorded decisions.
-- **Adaptation modes**: `Learning` (free), `Manual(strategy)` (pinned), `Stable` (no upgrades),
-  `Bounded(min, max)` (clamped).
+- **GORNA is a protocol** (`OfferRequest` → `Offer` → `Allocation` → `Report`): per epoch, agents offer
+  their rows (cost per device, quality from `Impact`, confidence, floor); the DCC admits the floors on the
+  critical path, upgrades by weighed quality per µs, and lends each agent an **envelope** (time + memory);
+  the agent chooses its row within it every frame. Replay lends recorded allocations.
+- **Adaptation modes** are envelope shapes: `Learning` (free), `Manual(row)` (a pin), `Stable` (keeps its
+  envelope while it fits), `Bounded(min, max)` (allowed rows); a `Cap` hint is a ceiling.
 - **Only agents bid** for the budget; the Data layer (AGDF) self-optimizes and is only observed via telemetry.
 - Memory-pressure / thermal / battery heuristics bias `AnalysisReport` toward efficient strategies.
 
 ## Hard rules
-- The DCC sets budgets and observes; it never commands a concrete agent strategy or data layout.
+- The DCC lends envelopes and observes; it never chooses an agent's row (a developer pin aside) nor a data layout.
 - No `std::thread::spawn` — concurrency flows through the DCC.
 
-Use codegraph to trace `negotiate → arbitrate → apply_budget → execute`.
+Use codegraph to trace `offer → allocate → decide → apply → execute`.
 
 ## Skills
 - [`add-an-agent`](../skills/add-an-agent/SKILL.md) — add a budget-negotiating agent.

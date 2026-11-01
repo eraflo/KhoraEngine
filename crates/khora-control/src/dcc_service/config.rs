@@ -38,6 +38,12 @@ pub struct DccConfig {
     /// The defaults are conservative gains for the ~20 Hz cold path; expose this
     /// to retune per target without touching the loop.
     pub frame_pid: PidConfig,
+    /// The fewest ticks an epoch lasts before another trigger opens the next
+    /// one; a trigger raised sooner waits for it. `Safety` never waits.
+    pub min_epoch_ticks: u32,
+    /// How many over-budget reports in a row from one agent raise
+    /// `Trigger::Overruns`.
+    pub overruns_in_a_row: u32,
 }
 
 impl Default for DccConfig {
@@ -48,6 +54,8 @@ impl Default for DccConfig {
             agent_lock_timeout_ms: 100,
             memory_budget_bytes: None,
             frame_pid: PidConfig::default(),
+            min_epoch_ticks: 3,
+            overruns_in_a_row: 3,
         }
     }
 }

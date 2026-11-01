@@ -12,18 +12,236 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::forecast::forecast_total_ms;
+//! The DCC service: its thread, what it ingests, its forecast, its PID, and
+//! the order it initializes agents in. The protocol it speaks to the agents
+//! is in `protocol.rs`; when it opens an epoch, in `epochs.rs`.
+
+mod epochs;
+mod protocol;
+
+use super::forecast::forecast_frame_ms;
 use super::*;
 use crate::cost_model::CostModel;
 use crate::EngineMode;
-use khora_core::agent::gorna::{
-    AdaptationMode, AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget,
-    StrategyId, StrategyOption,
+use khora_core::agent::gorna::protocol::{
+    Allocation, Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report, Trigger,
 };
+use khora_core::agent::gorna::{
+    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
+    StrategyOption,
+};
+use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::telemetry::{MetricId, MetricValue};
 use std::sync::atomic::Ordering;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+// ── Fakes and waiting ─────────────────────────────────────────────
+
+/// Waits up to `secs` seconds for `done`, polling every 5 ms.
+fn wait_for(secs: u64, mut done: impl FnMut() -> bool) -> bool {
+    let deadline = std::time::Instant::now() + Duration::from_secs(secs);
+    while std::time::Instant::now() < deadline {
+        if done() {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    done()
+}
+
+/// A DCC ticking at 100 Hz, recording its epochs, with `config` otherwise.
+fn recording(config: DccConfig) -> (DccService, Receiver<TelemetryEvent>) {
+    let (dcc, rx) = DccService::new(DccConfig {
+        tick_rate: 100,
+        ..config
+    });
+    dcc.start_decision_recording();
+    (dcc, rx)
+}
+
+/// The allocations the DCC has issued so far.
+fn epochs(dcc: &DccService) -> Vec<Allocation> {
+    dcc.recorded_decisions().epochs
+}
+
+/// Whether some issued allocation was opened by `trigger`.
+fn opened_by(dcc: &DccService, trigger: Trigger) -> bool {
+    epochs(dcc).iter().any(|epoch| epoch.trigger == trigger)
+}
+
+/// What a [`Speaker`] heard from the DCC.
+#[derive(Debug, Default)]
+struct Heard {
+    asked: Vec<OfferRequest>,
+    lent: Vec<(Epoch, Envelope, Option<StrategyId>)>,
+    /// Calls to `negotiate` or `apply_budget`, which a protocol agent never
+    /// expects.
+    old_calls: usize,
+}
+
+/// How a [`Speaker`] is doing; the test changes it while the DCC runs.
+#[derive(Debug)]
+struct Health {
+    health: f32,
+    stalled: bool,
+    /// How many of its next reports say over budget (`u32::MAX`: all).
+    over_budget_reports: u32,
+}
+
+impl Default for Health {
+    fn default() -> Self {
+        Self {
+            health: 1.0,
+            stalled: false,
+            over_budget_reports: 0,
+        }
+    }
+}
+
+/// An agent that speaks the protocol: it offers one `LowPower` row of
+/// `floor`, and shares what it heard and how it is doing with the test.
+struct Speaker {
+    id: AgentId,
+    floor: Duration,
+    heard: Arc<Mutex<Heard>>,
+    health: Arc<Mutex<Health>>,
+}
+
+/// The test's side of a [`Speaker`].
+struct Ear {
+    heard: Arc<Mutex<Heard>>,
+    health: Arc<Mutex<Health>>,
+}
+
+impl Ear {
+    fn heard(&self) -> std::sync::MutexGuard<'_, Heard> {
+        self.heard.lock().expect("the heard lock")
+    }
+
+    fn health(&self) -> std::sync::MutexGuard<'_, Health> {
+        self.health.lock().expect("the health lock")
+    }
+}
+
+impl Speaker {
+    /// `name`, offering one row of `floor` on the host.
+    fn with_ear(name: &'static str, floor: Duration) -> (Arc<Mutex<dyn Agent>>, Ear) {
+        let heard = Arc::new(Mutex::new(Heard::default()));
+        let health = Arc::new(Mutex::new(Health::default()));
+        let agent: Arc<Mutex<dyn Agent>> = Arc::new(Mutex::new(Speaker {
+            id: AgentId::new(name),
+            floor,
+            heard: Arc::clone(&heard),
+            health: Arc::clone(&health),
+        }));
+        (agent, Ear { heard, health })
+    }
+
+    fn floor_row(&self) -> OfferRow {
+        OfferRow {
+            id: StrategyId::LowPower,
+            cost: Cost {
+                time: PerDevice {
+                    cpu: self.floor,
+                    ..PerDevice::default()
+                },
+                ..Cost::default()
+            },
+            quality: 0.4,
+            confidence: Confidence::Quoted,
+        }
+    }
+}
+
+impl Agent for Speaker {
+    fn id(&self) -> AgentId {
+        self.id
+    }
+    fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
+        self.heard.lock().expect("the heard lock").old_calls += 1;
+        NegotiationResponse {
+            strategies: Vec::new(),
+            timing_adjustment: None,
+        }
+    }
+    fn apply_budget(&mut self, _: ResourceBudget) {
+        self.heard.lock().expect("the heard lock").old_calls += 1;
+    }
+    fn report_status(&self) -> AgentStatus {
+        let health = self.health.lock().expect("the health lock");
+        AgentStatus {
+            agent_id: self.id,
+            current_strategy: StrategyId::LowPower,
+            health_score: health.health,
+            is_stalled: health.stalled,
+            message: String::new(),
+        }
+    }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        self.heard
+            .lock()
+            .expect("the heard lock")
+            .asked
+            .push(request.clone());
+        Offer {
+            agent: self.id,
+            epoch: request.epoch,
+            rows: vec![self.floor_row()],
+            floor: StrategyId::LowPower,
+            current: StrategyId::LowPower,
+            health: self.health.lock().expect("the health lock").health,
+        }
+    }
+    fn apply(
+        &mut self,
+        epoch: Epoch,
+        envelope: &Envelope,
+        pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+        self.heard
+            .lock()
+            .expect("the heard lock")
+            .lent
+            .push((epoch, *envelope, pin));
+    }
+    fn report(&self) -> Report {
+        let mut health = self.health.lock().expect("the health lock");
+        let over_budget = health.over_budget_reports > 0;
+        if health.over_budget_reports != u32::MAX {
+            health.over_budget_reports = health.over_budget_reports.saturating_sub(1);
+        }
+        let epoch = self
+            .heard
+            .lock()
+            .expect("the heard lock")
+            .lent
+            .last()
+            .map_or(Epoch::default(), |(epoch, _, _)| *epoch);
+        Report {
+            agent: self.id,
+            epoch,
+            row: StrategyId::LowPower,
+            measured: PerDevice {
+                cpu: self.floor,
+                ..PerDevice::default()
+            },
+            done: 1.0,
+            health: health.health,
+            over_budget,
+        }
+    }
+    fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+/// An agent written before the protocol, answering through the bridge: two
+/// options, `LowPower` 2 ms and `Balanced` 8 ms.
 struct StubAgent {
     applied: Option<StrategyId>,
 }
@@ -115,13 +333,16 @@ fn test_dcc_metric_ingestion_smoke() {
     dcc.stop();
 }
 
+/// **The forecast sums the agents' models on the critical path**: serial, a
+/// frame costs every model at its workload; in one wave, the slowest.
 #[test]
-fn test_forecast_total_ms_sums_agent_models() {
+fn the_forecast_sums_agent_models_on_the_critical_path() {
     // No models yet → nothing to anticipate.
     let mut models: HashMap<AgentId, CostModel> = HashMap::new();
-    assert!(forecast_total_ms(&models, 100.0, &[]).is_none());
+    let mut workloads: HashMap<AgentId, f64> = HashMap::new();
+    assert!(forecast_frame_ms(&models, &workloads, &[]).is_none());
 
-    // Renderer: linear 3·n; Physics: linear 2·n.
+    // Renderer: linear 3·n; Physics: linear 2·n; both at n = 100.
     let mut renderer = CostModel::new(16);
     let mut physics = CostModel::new(16);
     for n in [10.0, 20.0, 40.0] {
@@ -130,18 +351,47 @@ fn test_forecast_total_ms_sums_agent_models() {
     }
     models.insert(AgentId::new("renderer"), renderer);
     models.insert(AgentId::new("physics"), physics);
+    workloads.insert(AgentId::new("renderer"), 100.0);
+    workloads.insert(AgentId::new("physics"), 100.0);
 
     // Serial (empty plan): 300 + 200 = 500ms (within fit tolerance).
-    let total = forecast_total_ms(&models, 100.0, &[]).expect("a fit is available");
+    let total = forecast_frame_ms(&models, &workloads, &[]).expect("a fit is available");
     assert!((total - 500.0).abs() < 1.0, "serial forecast = {total}");
 
     // Concurrent wave [Renderer, Physics]: critical path = max(300, 200).
     let plan = vec![vec![AgentId::new("renderer"), AgentId::new("physics")]];
-    let concurrent = forecast_total_ms(&models, 100.0, &plan).expect("a fit is available");
+    let concurrent = forecast_frame_ms(&models, &workloads, &plan).expect("a fit is available");
     assert!(
         (concurrent - 300.0).abs() < 1.0,
         "concurrent forecast = {concurrent}"
     );
+}
+
+/// **Each agent is forecast at its own workload.** The renderer last drew
+/// 100 items (3·n = 300 ms), physics last stepped 10 bodies (2·n = 20 ms):
+/// 320 ms. One workload shared by every agent would forecast both at
+/// whichever agent reported last — 500 ms or 50 ms.
+#[test]
+fn each_agent_is_forecast_at_its_own_workload() {
+    let mut renderer = CostModel::new(16);
+    let mut physics = CostModel::new(16);
+    for n in [10.0, 20.0, 40.0] {
+        renderer.record(n, 3.0 * n);
+        physics.record(n, 2.0 * n);
+    }
+    let models: HashMap<AgentId, CostModel> = [
+        (AgentId::new("renderer"), renderer),
+        (AgentId::new("physics"), physics),
+    ]
+    .into();
+    let workloads: HashMap<AgentId, f64> = [
+        (AgentId::new("renderer"), 100.0),
+        (AgentId::new("physics"), 10.0),
+    ]
+    .into();
+
+    let total = forecast_frame_ms(&models, &workloads, &[]).expect("a fit is available");
+    assert!((total - 320.0).abs() < 1.0, "forecast = {total}");
 }
 
 #[test]
@@ -199,98 +449,6 @@ fn test_dcc_layout_advisor_produces_recommendation() {
 }
 
 #[test]
-fn test_dcc_records_decisions() {
-    let (mut dcc, rx) = DccService::new(DccConfig {
-        tick_rate: 100,
-        ..Default::default()
-    });
-    let agent = Arc::new(std::sync::Mutex::new(StubAgent { applied: None }));
-    dcc.register_agent(agent, 1.0);
-    dcc.start_decision_recording();
-    dcc.start(rx);
-
-    thread::sleep(Duration::from_millis(150));
-    let trace = dcc.stop_decision_recording();
-    dcc.stop();
-
-    assert!(
-        !trace.ticks.is_empty(),
-        "recording should capture at least one arbitration tick"
-    );
-    assert!(
-        trace
-            .ticks
-            .iter()
-            .all(|tick| tick.iter().any(|(id, _)| *id == AgentId::new("renderer"))),
-        "every recorded tick should include the registered agent"
-    );
-}
-
-#[test]
-fn test_dcc_replay_flag_control() {
-    let (dcc, _rx) = DccService::new(DccConfig::default());
-    assert!(!dcc.is_replaying());
-
-    let trace = DecisionTrace {
-        ticks: vec![vec![(AgentId::new("renderer"), StrategyId::LowPower)]],
-    };
-    dcc.replay_decisions(trace);
-    assert!(dcc.is_replaying());
-
-    dcc.stop_replay();
-    assert!(!dcc.is_replaying());
-}
-
-#[test]
-fn test_dcc_initial_negotiation_fires_with_agent() {
-    let (mut dcc, rx) = DccService::new(DccConfig {
-        tick_rate: 100,
-        ..Default::default()
-    });
-    let agent = Arc::new(std::sync::Mutex::new(StubAgent { applied: None }));
-    dcc.register_agent(agent.clone(), 1.0);
-    dcc.start(rx);
-
-    thread::sleep(Duration::from_millis(200));
-
-    let applied = agent.lock().unwrap().applied.is_some();
-    dcc.stop();
-
-    assert!(
-        applied,
-        "Initial GORNA negotiation should have called apply_budget"
-    );
-}
-
-#[test]
-fn test_dcc_manual_mode_pins_strategy() {
-    let (mut dcc, rx) = DccService::new(DccConfig {
-        tick_rate: 100,
-        ..Default::default()
-    });
-    let agent = Arc::new(std::sync::Mutex::new(StubAgent { applied: None }));
-    dcc.register_agent(agent.clone(), 1.0);
-    // Developer pins the agent to LowPower. With ample budget, `Learning`
-    // would otherwise pick Balanced (the most expensive offered strategy).
-    dcc.set_adaptation_mode(
-        AgentId::new("renderer"),
-        AdaptationMode::Manual(StrategyId::LowPower),
-    );
-    dcc.start(rx);
-
-    thread::sleep(Duration::from_millis(200));
-
-    let applied = agent.lock().unwrap().applied;
-    dcc.stop();
-
-    assert_eq!(
-        applied,
-        Some(StrategyId::LowPower),
-        "Manual mode set via DccService should pin the agent's strategy"
-    );
-}
-
-#[test]
 fn test_pid_drives_multiplier_down_under_overrun() {
     // A sustained frame time well above the 16.66ms target must make the PID
     // loop pull the global budget multiplier below 1.0 over several ticks.
@@ -323,121 +481,6 @@ fn test_pid_drives_multiplier_down_under_overrun() {
     assert!(
         multiplier >= 0.3,
         "multiplier must respect the output floor, got {multiplier}"
-    );
-}
-
-/// Stub whose two strategies straddle the frame budget: Balanced (14ms)
-/// fits the 16.66ms target only when the budget multiplier is near 1.0,
-/// so a degraded multiplier forces LowPower and a recovered one allows
-/// the upgrade back — making the recovery path observable.
-struct RecoveryStubAgent {
-    applied: Option<StrategyId>,
-}
-
-impl Agent for RecoveryStubAgent {
-    fn id(&self) -> AgentId {
-        AgentId::new("renderer")
-    }
-    fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![
-                StrategyOption {
-                    id: StrategyId::LowPower,
-                    estimated_time: Duration::from_millis(2),
-                    estimated_vram: 0,
-                },
-                StrategyOption {
-                    id: StrategyId::Balanced,
-                    estimated_time: Duration::from_millis(14),
-                    estimated_vram: 0,
-                },
-            ],
-            timing_adjustment: None,
-        }
-    }
-    fn apply_budget(&mut self, budget: ResourceBudget) {
-        self.applied = Some(budget.strategy_id);
-    }
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: AgentId::new("renderer"),
-            current_strategy: self.applied.unwrap_or(StrategyId::LowPower),
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
-    }
-    fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-#[test]
-fn test_pid_recovery_reissues_budgets_and_upgrades() {
-    // Once measured frame time settles back under the setpoint, the PID
-    // multiplier climbs and its drift past PID_RENEGOTIATE_DELTA must
-    // re-arbitrate so the agent is upgraded — without this trigger the
-    // agent would stay pinned at the degraded strategy forever (no
-    // pressure heuristic fires when everything is healthy).
-    let (mut dcc, rx) = DccService::new(DccConfig {
-        tick_rate: 100,
-        ..Default::default()
-    });
-    let agent = Arc::new(std::sync::Mutex::new(RecoveryStubAgent { applied: None }));
-    dcc.register_agent(agent.clone(), 1.0);
-    let tx = dcc.event_sender();
-    dcc.start(rx);
-
-    let frame_time_id = MetricId::new("renderer", "frame_time");
-
-    // Phase 1 — sustained overrun (40ms ≫ 16.66ms): the PID pulls the
-    // multiplier down until Balanced (14ms) no longer fits and the agent
-    // is downgraded to LowPower. Poll instead of a fixed sleep.
-    let mut degraded = false;
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < deadline {
-        tx.send(TelemetryEvent::MetricUpdate {
-            id: frame_time_id.clone(),
-            value: khora_core::telemetry::MetricValue::Gauge(40.0),
-        })
-        .unwrap();
-        thread::sleep(Duration::from_millis(5));
-        if agent.lock().unwrap().applied == Some(StrategyId::LowPower) {
-            degraded = true;
-            break;
-        }
-    }
-    assert!(
-        degraded,
-        "sustained overrun should downgrade the agent to LowPower"
-    );
-
-    // Phase 2 — recovery (5ms ≪ 16.66ms): the averages drop below every
-    // pressure threshold, so only the PID-drift trigger can re-issue
-    // budgets. The multiplier climbs back and the agent must be upgraded.
-    let mut recovered = false;
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < deadline {
-        tx.send(TelemetryEvent::MetricUpdate {
-            id: frame_time_id.clone(),
-            value: khora_core::telemetry::MetricValue::Gauge(5.0),
-        })
-        .unwrap();
-        thread::sleep(Duration::from_millis(5));
-        if agent.lock().unwrap().applied == Some(StrategyId::Balanced) {
-            recovered = true;
-            break;
-        }
-    }
-    dcc.stop();
-
-    assert!(
-        recovered,
-        "once frame time settles, the PID drift must re-arbitrate and upgrade the agent"
     );
 }
 

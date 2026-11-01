@@ -136,6 +136,9 @@ pub struct Allocation {
     pub allowed: Vec<(AgentId, Vec<StrategyId>)>,
     /// The cutoff of the upgrade pass, for information only.
     pub price: Option<f32>,
+    /// The agents whose offer came after the request's `reply_by`: each keeps
+    /// the envelope it had.
+    pub late: Vec<AgentId>,
 }
 
 /// What an agent ran on its last frame.

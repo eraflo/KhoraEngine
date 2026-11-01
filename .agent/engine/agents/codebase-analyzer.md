@@ -13,7 +13,7 @@ return a precise, condensed walkthrough — the parent agent reads your summary 
 
 ## Method
 1. **codegraph first** — `codegraph_trace`/`codegraph_explore` to follow the call path, including
-   dynamic dispatch (agent `execute` → lane, `negotiate → arbitrate → apply_budget`, Flow → View → bus).
+   dynamic dispatch (agent `execute` → lane, `offer → allocate → decide → apply`, Flow → View → bus).
 2. Read only the spans the trace points to; do not read whole crates.
 3. Anchor to CLAD: name the layer each step touches (`Control → Agent → Lane → Data`) and whether it
    is Pass A (DataSystems/Flows publish Views) or Pass B (agent → lane).

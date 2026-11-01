@@ -32,6 +32,7 @@ use std::sync::Mutex;
 
 mod config;
 mod decision_loop;
+mod epochs;
 mod forecast;
 
 pub use config::DccConfig;
@@ -75,10 +76,10 @@ pub struct DccService {
     layout_recommendations: Arc<std::sync::RwLock<HashMap<String, LayoutRecommendation>>>,
     /// Whether the DCC is recording GORNA decisions for deterministic replay.
     decision_recording: Arc<std::sync::RwLock<bool>>,
-    /// The accumulating recorded decision trace (one entry per arbitration tick).
+    /// The accumulating recorded decision trace (one allocation per epoch).
     recorded_trace: Arc<std::sync::RwLock<DecisionTrace>>,
-    /// When `Some((trace, cursor))`, arbitration replays the trace tick by tick
-    /// instead of negotiating live.
+    /// When `Some((trace, cursor))`, the DCC lends the trace's allocations,
+    /// one a tick, instead of asking for offers.
     replay: Arc<std::sync::RwLock<Option<(DecisionTrace, usize)>>>,
 }
 
@@ -161,7 +162,7 @@ impl DccService {
             .unwrap_or_default()
     }
 
-    /// Starts recording GORNA's per-tick decisions into a fresh trace. The
+    /// Starts recording each epoch's allocation into a fresh trace. The
     /// recording can be replayed later for bit-for-bit reproduction (QA,
     /// network lockstep, bug repro). Thread-safe; takes effect next tick.
     pub fn start_decision_recording(&self) {
@@ -189,9 +190,9 @@ impl DccService {
             .unwrap_or_default()
     }
 
-    /// Begins replaying `trace`: each subsequent arbitration tick issues the
-    /// recorded strategies in order (bypassing live fit + `AdaptationMode`)
-    /// until the trace is exhausted, then normal arbitration resumes.
+    /// Begins replaying `trace`: each subsequent tick lends the next recorded
+    /// allocation, asking for no offer,
+    /// until the trace is exhausted; then live rounds resume.
     pub fn replay_decisions(&self, trace: DecisionTrace) {
         if let Ok(mut replay) = self.replay.write() {
             *replay = Some((trace, 0));
@@ -210,7 +211,7 @@ impl DccService {
         self.replay
             .read()
             .ok()
-            .and_then(|r| r.as_ref().map(|(t, c)| *c < t.ticks.len()))
+            .and_then(|r| r.as_ref().map(|(t, c)| *c < t.epochs.len()))
             .unwrap_or(false)
     }
 

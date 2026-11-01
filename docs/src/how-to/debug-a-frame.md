@@ -119,17 +119,17 @@ recipe and the trade-offs of each mode, see
 ## 4 — Record and replay a GORNA decision
 
 When a bug only reproduces under a *specific* adaptation sequence, capture that sequence and replay it
-bit-for-bit. The DCC records its per-tick decisions into a `DecisionTrace` (a `Vec<TickDecisions>` in
-arbitration order, `crates/khora-core/src/agent/gorna/mod.rs`) and can drive arbitration from a trace:
+bit-for-bit. The DCC records each epoch's allocation (the envelopes it lent) into a `DecisionTrace` (its
+`epochs`, in order, `crates/khora-core/src/agent/gorna/mod.rs`) and can lend them again from a trace:
 
 ```rust
 dcc.start_decision_recording();      // begins a fresh trace; takes effect next tick
 // … reproduce the scenario …
 let trace = dcc.stop_decision_recording();   // returns the captured DecisionTrace
 
-dcc.replay_decisions(trace);         // each subsequent tick issues the recorded
-                                     // strategies in order, bypassing live fit +
-                                     // AdaptationMode, until the trace is exhausted
+dcc.replay_decisions(trace);         // each subsequent tick lends the recorded
+                                     // allocations in order, asking for no offer,
+                                     // until the trace is exhausted
 assert!(dcc.is_replaying());         // true until the trace runs out
 dcc.stop_replay();                   // return to live arbitration at any time
 ```

@@ -346,7 +346,7 @@ fn agent_status_fields(x: &khora_core::agent::gorna::AgentStatus) {
 }
 
 fn decision_trace_fields(x: &khora_core::agent::gorna::DecisionTrace) {
-    let _ = (&x.ticks,);
+    let _ = (&x.epochs,);
 }
 
 fn engine_hint_variants(x: &khora_core::agent::gorna::EngineHint) {
@@ -1890,7 +1890,6 @@ fn module_agent_gorna_paths_still_resolve() {
     let _ = strategy_option_fields as fn(&khora_core::agent::gorna::StrategyOption);
     is_debug::<khora_core::agent::gorna::StrategyOption>();
     is_clone::<khora_core::agent::gorna::StrategyOption>();
-    let _ = type_name::<khora_core::agent::gorna::TickDecisions>();
     let _ = type_name::<khora_core::agent::gorna::TimingAdjustment>();
     let _ = timing_adjustment_fields as fn(&khora_core::agent::gorna::TimingAdjustment);
     is_debug::<khora_core::agent::gorna::TimingAdjustment>();
@@ -3216,7 +3215,6 @@ mod paths_used_by_other_crates {
     use khora_core::agent::gorna::StrategyId as _; // khora-agents, khora-control, khora-sdk
     use khora_core::agent::gorna::StrategyId::Balanced as _; // khora-agents
     use khora_core::agent::gorna::StrategyOption as _; // khora-agents, khora-control
-    use khora_core::agent::gorna::TickDecisions as _; // khora-control
     use khora_core::agent::mode::EngineMode::Playing as _; // khora-agents
     use khora_core::agent::timing::AgentImportance as _; // khora-control
     use khora_core::agent::Agent as _; // khora-agents, khora-control

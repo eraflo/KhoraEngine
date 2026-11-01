@@ -294,7 +294,7 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la cl�
   `global_budget_multiplier` at last budget issuance and re-arbitrates when the frame-time PID drifts
   it by more than `PID_RENEGOTIATE_DELTA` (0.05) — pressure heuristics drive downgrades, this drift
   trigger drives *recovery* (agents upgrade again once measured frame time settles under the setpoint).
-- **Empirical cost calibration** (`khora-control/src/gorna/mod.rs`): `GornaArbitrator::arbitrate` takes
+- **Empirical cost calibration** (`khora-control/src/gorna/mod.rs`): `GornaArbitrator::allocate` takes
   per-agent measured costs (CostModel forecast at current workload, fallback `latest_ms`); during
   negotiation each agent's quoted estimates are rescaled so the current-strategy option equals the
   measurement (factor clamped `[0.25, 4.0]`) — the fit reasons in measured ms, not static quotes.
