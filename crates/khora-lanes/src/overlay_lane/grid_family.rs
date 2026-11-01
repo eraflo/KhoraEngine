@@ -28,7 +28,7 @@ pub struct GridFamily;
 impl LaneFamily for GridFamily {
     const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "grid";
-    const AGENT: AgentId = AgentId::Grid;
+    const AGENT: AgentId = AgentId::new("grid");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = GridOutputs<'f>;
 }

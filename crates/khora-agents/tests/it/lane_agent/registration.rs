@@ -37,7 +37,7 @@ pub struct CollectedFamily;
 impl LaneFamily for CollectedFamily {
     const KIND: LaneKind = LaneKind::Script;
     const NAME: &'static str = "collected";
-    const AGENT: AgentId = AgentId::Script;
+    const AGENT: AgentId = AgentId::new("script");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = ProbeOutputs;
 }

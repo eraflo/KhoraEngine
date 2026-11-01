@@ -28,7 +28,7 @@ pub struct AudioFamily;
 impl LaneFamily for AudioFamily {
     const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "audio";
-    const AGENT: AgentId = AgentId::Audio;
+    const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = AudioOutputs;
 }

@@ -29,8 +29,8 @@ fn meta(id: AgentId, access: AgentAccess, deps: &[AgentId]) -> WaveMeta {
 #[test]
 fn all_exclusive_are_singletons() {
     let metas = vec![
-        meta(AgentId::Physics, AgentAccess::Exclusive, &[]),
-        meta(AgentId::Renderer, AgentAccess::Exclusive, &[]),
+        meta(AgentId::new("physics"), AgentAccess::Exclusive, &[]),
+        meta(AgentId::new("renderer"), AgentAccess::Exclusive, &[]),
     ];
     assert_eq!(partition_waves(&metas), vec![vec![0], vec![1]]);
 }
@@ -38,8 +38,8 @@ fn all_exclusive_are_singletons() {
 #[test]
 fn consecutive_isolated_form_one_wave() {
     let metas = vec![
-        meta(AgentId::Audio, AgentAccess::Isolated, &[]),
-        meta(AgentId::ShadowRenderer, AgentAccess::Isolated, &[]),
+        meta(AgentId::new("audio"), AgentAccess::Isolated, &[]),
+        meta(AgentId::new("shadows"), AgentAccess::Isolated, &[]),
     ];
     assert_eq!(partition_waves(&metas), vec![vec![0, 1]]);
 }
@@ -47,9 +47,9 @@ fn consecutive_isolated_form_one_wave() {
 #[test]
 fn exclusive_breaks_the_wave() {
     let metas = vec![
-        meta(AgentId::Audio, AgentAccess::Isolated, &[]),
-        meta(AgentId::Physics, AgentAccess::Exclusive, &[]),
-        meta(AgentId::ShadowRenderer, AgentAccess::Isolated, &[]),
+        meta(AgentId::new("audio"), AgentAccess::Isolated, &[]),
+        meta(AgentId::new("physics"), AgentAccess::Exclusive, &[]),
+        meta(AgentId::new("shadows"), AgentAccess::Isolated, &[]),
     ];
     assert_eq!(partition_waves(&metas), vec![vec![0], vec![1], vec![2]]);
 }
@@ -59,11 +59,11 @@ fn hard_dep_on_wave_member_splits_it() {
     // The second Isolated agent hard-depends on the first, so it must run in
     // a later wave — preserving the dependency ordering.
     let metas = vec![
-        meta(AgentId::Audio, AgentAccess::Isolated, &[]),
+        meta(AgentId::new("audio"), AgentAccess::Isolated, &[]),
         meta(
-            AgentId::ShadowRenderer,
+            AgentId::new("shadows"),
             AgentAccess::Isolated,
-            &[AgentId::Audio],
+            &[AgentId::new("audio")],
         ),
     ];
     assert_eq!(partition_waves(&metas), vec![vec![0], vec![1]]);
@@ -73,9 +73,9 @@ fn hard_dep_on_wave_member_splits_it() {
 fn shared_world_joins_isolated_agents() {
     // One SharedWorld reader runs alongside any number of Isolated agents.
     let metas = vec![
-        meta(AgentId::Renderer, AgentAccess::SharedWorld, &[]),
-        meta(AgentId::Audio, AgentAccess::Isolated, &[]),
-        meta(AgentId::ShadowRenderer, AgentAccess::Isolated, &[]),
+        meta(AgentId::new("renderer"), AgentAccess::SharedWorld, &[]),
+        meta(AgentId::new("audio"), AgentAccess::Isolated, &[]),
+        meta(AgentId::new("shadows"), AgentAccess::Isolated, &[]),
     ];
     assert_eq!(partition_waves(&metas), vec![vec![0, 1, 2]]);
 }
@@ -88,8 +88,8 @@ fn shared_world_joins_isolated_agents() {
 #[test]
 fn two_shared_world_agents_that_declare_nothing_share_a_wave() {
     let metas = vec![
-        meta(AgentId::Renderer, AgentAccess::SharedWorld, &[]),
-        meta(AgentId::Grid, AgentAccess::SharedWorld, &[]),
+        meta(AgentId::new("renderer"), AgentAccess::SharedWorld, &[]),
+        meta(AgentId::new("grid"), AgentAccess::SharedWorld, &[]),
     ];
     assert_eq!(partition_waves(&metas), vec![vec![0, 1]]);
 }
@@ -97,10 +97,10 @@ fn two_shared_world_agents_that_declare_nothing_share_a_wave() {
 #[test]
 fn exclusive_still_breaks_a_mixed_wave() {
     let metas = vec![
-        meta(AgentId::Audio, AgentAccess::Isolated, &[]),
-        meta(AgentId::Renderer, AgentAccess::SharedWorld, &[]),
-        meta(AgentId::Physics, AgentAccess::Exclusive, &[]),
-        meta(AgentId::ShadowRenderer, AgentAccess::Isolated, &[]),
+        meta(AgentId::new("audio"), AgentAccess::Isolated, &[]),
+        meta(AgentId::new("renderer"), AgentAccess::SharedWorld, &[]),
+        meta(AgentId::new("physics"), AgentAccess::Exclusive, &[]),
+        meta(AgentId::new("shadows"), AgentAccess::Isolated, &[]),
     ];
     assert_eq!(partition_waves(&metas), vec![vec![0, 1], vec![2], vec![3]]);
 }
@@ -123,12 +123,12 @@ fn disjoint_deck_writes_pass_the_check() {
     // Two agents writing distinct slot types share a wave cleanly.
     let metas = vec![
         meta_writes(
-            AgentId::Ui,
+            AgentId::new("ui"),
             AgentAccess::SharedWorld,
             &[std::any::TypeId::of::<u32>()],
         ),
         meta_writes(
-            AgentId::Grid,
+            AgentId::new("grid"),
             AgentAccess::Isolated,
             &[std::any::TypeId::of::<u64>()],
         ),
@@ -154,12 +154,12 @@ fn two_shared_world_agents_share_a_wave_when_disjoint() {
 
     let metas = vec![
         meta_declaring(
-            AgentId::Renderer,
+            AgentId::new("renderer"),
             AgentAccess::SharedWorld,
             Contention::none().writing_deck([std::any::TypeId::of::<Draws>()]),
         ),
         meta_declaring(
-            AgentId::Ui,
+            AgentId::new("ui"),
             AgentAccess::SharedWorld,
             Contention::none().writing_deck([std::any::TypeId::of::<Overlays>()]),
         ),
@@ -176,12 +176,12 @@ fn agents_that_contend_are_split_into_separate_waves() {
 
     let metas = vec![
         meta_declaring(
-            AgentId::Renderer,
+            AgentId::new("renderer"),
             AgentAccess::SharedWorld,
             Contention::none().locking::<Atlas>(),
         ),
         meta_declaring(
-            AgentId::Ui,
+            AgentId::new("ui"),
             AgentAccess::Isolated,
             Contention::none().reading::<Atlas>(),
         ),
@@ -198,12 +198,12 @@ fn two_readers_of_one_resource_share_a_wave() {
 
     let metas = vec![
         meta_declaring(
-            AgentId::Ui,
+            AgentId::new("ui"),
             AgentAccess::Isolated,
             Contention::none().reading::<Input>(),
         ),
         meta_declaring(
-            AgentId::Script,
+            AgentId::new("script"),
             AgentAccess::Isolated,
             Contention::none().reading::<Input>(),
         ),
@@ -219,12 +219,12 @@ fn a_contended_resource_is_detected() {
 
     let metas = vec![
         meta_declaring(
-            AgentId::Ui,
+            AgentId::new("ui"),
             AgentAccess::Isolated,
             Contention::none().locking::<Queue>(),
         ),
         meta_declaring(
-            AgentId::Script,
+            AgentId::new("script"),
             AgentAccess::Isolated,
             Contention::none().locking::<Queue>(),
         ),
@@ -238,12 +238,12 @@ fn colliding_deck_writes_are_detected() {
     // Two agents in one wave both declaring the same slot type collide.
     let metas = vec![
         meta_writes(
-            AgentId::Ui,
+            AgentId::new("ui"),
             AgentAccess::SharedWorld,
             &[std::any::TypeId::of::<u32>()],
         ),
         meta_writes(
-            AgentId::Grid,
+            AgentId::new("grid"),
             AgentAccess::Isolated,
             &[std::any::TypeId::of::<u32>()],
         ),

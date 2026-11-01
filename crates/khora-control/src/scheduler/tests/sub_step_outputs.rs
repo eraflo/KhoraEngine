@@ -123,7 +123,7 @@ fn gathered_after_one_frame(access: AgentAccess, parallel: bool) -> Option<Gathe
         let mut registry = registry.lock().expect("the registry lock");
         registry.register(
             Arc::new(Mutex::new(SubStepper {
-                id: AgentId::Physics,
+                id: AgentId::new("physics"),
                 access,
                 gathers: true,
                 runs: 0,
@@ -132,7 +132,7 @@ fn gathered_after_one_frame(access: AgentAccess, parallel: bool) -> Option<Gathe
         );
         registry.register(
             Arc::new(Mutex::new(SubStepper {
-                id: AgentId::Script,
+                id: AgentId::new("script"),
                 access,
                 gathers: false,
                 runs: 0,

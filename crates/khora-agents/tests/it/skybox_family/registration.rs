@@ -51,7 +51,7 @@ fn the_skybox_family_is_registered_once() {
     let registration = skybox_registration();
 
     assert_eq!(registration.family_name, "skybox");
-    assert_eq!(registration.agent, AgentId::Skybox);
+    assert_eq!(registration.agent, AgentId::new("skybox"));
     assert_eq!(registration.kind, LaneKind::Render);
     assert_eq!(registration.semantics, Semantics::Presentation);
     assert_eq!(registration.importance, AgentImportance::Important);
@@ -77,14 +77,14 @@ fn the_skybox_family_is_registered_once() {
 fn the_skybox_registration_runs_after_the_renderer() {
     let registration = skybox_registration();
     assert_eq!(registration.phase, ExecutionPhase::OUTPUT);
-    assert_eq!(registration.after, [AgentId::Renderer]);
+    assert_eq!(registration.after, [AgentId::new("renderer")]);
 
     let timing = skybox_agent().execution_timing();
     assert_eq!(timing.default_phase, ExecutionPhase::OUTPUT);
     assert_eq!(timing.allowed_phases, [ExecutionPhase::OUTPUT]);
     assert_eq!(timing.importance, AgentImportance::Important);
     assert_eq!(timing.dependencies.len(), 1, "{:?}", timing.dependencies);
-    assert_eq!(timing.dependencies[0].target, AgentId::Renderer);
+    assert_eq!(timing.dependencies[0].target, AgentId::new("renderer"));
     assert!(
         matches!(timing.dependencies[0].kind, DependencyKind::Hard),
         "a hard dependency: {:?}",
@@ -160,7 +160,7 @@ fn the_skybox_family_boots_with_the_ibl_baker_and_no_frame_context() {
         Err(refusal) => panic!("the skybox family boots: {refusal}"),
     };
     let ids: Vec<AgentId> = agents.iter().map(|agent| agent.id()).collect();
-    assert_eq!(ids, vec![AgentId::Skybox]);
+    assert_eq!(ids, vec![AgentId::new("skybox")]);
 }
 
 /// Boot refuses the skybox family on a runtime without the IBL bake, naming
@@ -253,6 +253,6 @@ fn the_skybox_agent_offers_one_balanced_strategy() {
 
     assert_eq!(offered, [StrategyId::Balanced]);
     let status = agent.report_status();
-    assert_eq!(status.agent_id, AgentId::Skybox);
+    assert_eq!(status.agent_id, AgentId::new("skybox"));
     assert_eq!(status.current_strategy, StrategyId::Balanced);
 }

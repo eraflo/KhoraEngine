@@ -182,7 +182,7 @@ fn test_report_status_initial_state() {
     let agent = RenderAgent::default();
     let status = agent.report_status();
 
-    assert_eq!(status.agent_id, AgentId::Renderer);
+    assert_eq!(status.agent_id, AgentId::new("renderer"));
     assert_eq!(status.health_score, 1.0);
     assert!(!status.is_stalled);
     assert_eq!(status.current_strategy, StrategyId::Balanced);

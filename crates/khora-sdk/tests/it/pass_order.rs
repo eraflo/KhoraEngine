@@ -64,7 +64,7 @@ struct EverySlot;
 
 impl Agent for EverySlot {
     fn id(&self) -> AgentId {
-        AgentId::Asset
+        AgentId::new("asset")
     }
     fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
         NegotiationResponse {
@@ -75,7 +75,7 @@ impl Agent for EverySlot {
     fn apply_budget(&mut self, _b: ResourceBudget) {}
     fn report_status(&self) -> AgentStatus {
         AgentStatus {
-            agent_id: AgentId::Asset,
+            agent_id: AgentId::new("asset"),
             current_strategy: StrategyId::Balanced,
             health_score: 1.0,
             is_stalled: false,
@@ -189,7 +189,7 @@ struct EverySlotWithItsResources;
 
 impl Agent for EverySlotWithItsResources {
     fn id(&self) -> AgentId {
-        AgentId::Asset
+        AgentId::new("asset")
     }
     fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
         NegotiationResponse {
@@ -200,7 +200,7 @@ impl Agent for EverySlotWithItsResources {
     fn apply_budget(&mut self, _b: ResourceBudget) {}
     fn report_status(&self) -> AgentStatus {
         AgentStatus {
-            agent_id: AgentId::Asset,
+            agent_id: AgentId::new("asset"),
             current_strategy: StrategyId::Balanced,
             health_score: 1.0,
             is_stalled: false,

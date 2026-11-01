@@ -35,7 +35,7 @@ pub struct AudioFamily;
 impl LaneFamily for AudioFamily {
     const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "audio";
-    const AGENT: AgentId = AgentId::Audio;
+    const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = NoOutputs;
 }
@@ -45,7 +45,7 @@ pub struct UiFamily;
 impl LaneFamily for UiFamily {
     const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "ui";
-    const AGENT: AgentId = AgentId::Ui;
+    const AGENT: AgentId = AgentId::new("ui");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = NoOutputs;
 }

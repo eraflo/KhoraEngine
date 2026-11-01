@@ -103,13 +103,13 @@ fn concurrent_wave_runs_shared_reader_and_isolated_writer() {
     let scheduler = ExecutionScheduler::new(
         Arc::new(Mutex::new(AgentRegistry::new())),
         Arc::new(RwLock::new(Context::default())),
-        &[AgentId::Renderer, AgentId::Audio],
+        &[AgentId::new("renderer"), AgentId::new("audio")],
     );
     let mut world = World::new();
     let runtime = Arc::new(Runtime::new());
     let completion = Arc::new(AgentCompletionMap::new(&[
-        AgentId::Renderer,
-        AgentId::Audio,
+        AgentId::new("renderer"),
+        AgentId::new("audio"),
     ]));
     let bus = Arc::new(LaneBus::new());
     let mut deck = OutputDeck::new();
@@ -117,7 +117,7 @@ fn concurrent_wave_runs_shared_reader_and_isolated_writer() {
     let agents: Vec<AgentSlot> = vec![
         (
             Arc::new(Mutex::new(MockAgent {
-                id: AgentId::Renderer,
+                id: AgentId::new("renderer"),
                 access: AgentAccess::SharedWorld,
                 role: Role::SharedWorldReader,
             })),
@@ -127,7 +127,7 @@ fn concurrent_wave_runs_shared_reader_and_isolated_writer() {
         ),
         (
             Arc::new(Mutex::new(MockAgent {
-                id: AgentId::Audio,
+                id: AgentId::new("audio"),
                 access: AgentAccess::Isolated,
                 role: Role::IsolatedWriter,
             })),
@@ -150,11 +150,11 @@ fn concurrent_wave_runs_shared_reader_and_isolated_writer() {
         "Isolated agent must be granted no world access"
     );
     assert_eq!(
-        completion.outcome(AgentId::Renderer),
+        completion.outcome(AgentId::new("renderer")),
         Some(CompletionOutcome::Completed)
     );
     assert_eq!(
-        completion.outcome(AgentId::Audio),
+        completion.outcome(AgentId::new("audio")),
         Some(CompletionOutcome::Completed)
     );
 }
@@ -209,18 +209,21 @@ fn a_panicking_agent_is_reported_as_a_failed_completion() {
     let scheduler = ExecutionScheduler::new(
         Arc::new(Mutex::new(AgentRegistry::new())),
         Arc::new(RwLock::new(Context::default())),
-        &[AgentId::Audio, AgentId::Physics],
+        &[AgentId::new("audio"), AgentId::new("physics")],
     );
     let mut world = World::new();
     let runtime = Arc::new(Runtime::new());
-    let completion = Arc::new(AgentCompletionMap::new(&[AgentId::Audio, AgentId::Physics]));
+    let completion = Arc::new(AgentCompletionMap::new(&[
+        AgentId::new("audio"),
+        AgentId::new("physics"),
+    ]));
     let bus = Arc::new(LaneBus::new());
     let mut deck = OutputDeck::new();
 
     let agents: Vec<AgentSlot> = vec![
         (
             Arc::new(Mutex::new(MockAgent {
-                id: AgentId::Audio,
+                id: AgentId::new("audio"),
                 access: AgentAccess::Isolated,
                 role: Role::IsolatedWriter,
             })),
@@ -230,7 +233,7 @@ fn a_panicking_agent_is_reported_as_a_failed_completion() {
         ),
         (
             Arc::new(Mutex::new(Panicking {
-                id: AgentId::Physics,
+                id: AgentId::new("physics"),
             })),
             AgentImportance::Critical,
             0.5,
@@ -241,16 +244,16 @@ fn a_panicking_agent_is_reported_as_a_failed_completion() {
     scheduler.execute_agents_parallel(agents, &mut world, &runtime, &completion, &bus, &mut deck);
 
     assert!(
-        completion.is_done(AgentId::Physics),
+        completion.is_done(AgentId::new("physics")),
         "the panicking agent's completion is marked, so nothing waits on it forever"
     );
     assert_ne!(
-        completion.outcome(AgentId::Physics),
+        completion.outcome(AgentId::new("physics")),
         Some(CompletionOutcome::Completed),
         "a panic is a failed completion, never a completed one"
     );
     assert_eq!(
-        completion.outcome(AgentId::Audio),
+        completion.outcome(AgentId::new("audio")),
         Some(CompletionOutcome::Completed),
         "the panicking agent's wave-mate completes"
     );

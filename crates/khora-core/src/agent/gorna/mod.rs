@@ -24,46 +24,47 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
-/// Unique identifier for engine agents with implicit priority ordering.
+/// An agent's identity: its name, which its family declares
+/// ([`LaneFamily::AGENT`](crate::lane::family::LaneFamily::AGENT)).
 ///
-/// The order of variants defines the default execution priority (first = highest).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
-pub enum AgentId {
-    /// The primary rendering agent (highest priority in Simulation).
-    Renderer,
-    /// The shadow map rendering agent (runs in OBSERVE phase before Renderer).
-    ShadowRenderer,
-    /// Skybox / environment background. Runs after `Renderer` in the OUTPUT
-    /// phase and draws the environment cube behind the scene geometry
-    /// (depth-tested), so the visible sky matches what surfaces reflect.
-    Skybox,
-    /// The editor ground grid, drawn over the UI in the OUTPUT phase.
-    Grid,
-    /// The wireframe debug overlay, drawn over the grid.
-    Wireframe,
-    /// The editor and debug line gizmos, drawn over every other overlay.
-    Gizmo,
-    /// The physics simulation agent.
-    Physics,
-    /// The ECS/Logic coordination agent.
-    Ecs,
-    /// The UI layout and interaction agent.
-    Ui,
-    /// The audio processing agent.
-    Audio,
-    /// The asset management agent (highest priority in Boot).
-    Asset,
-    /// The gameplay scripting agent.
-    ///
-    /// Negotiates like any other consumer, which is the reason scripting has an
-    /// agent at all: a language that could not be told "you have 0.4ms, hand
-    /// back control" would make the frame budget a suggestion.
-    Script,
+/// The core knows no agent: a family names itself where it lives, and boot
+/// refuses two families with one name. Agents compare, hash and order by
+/// their name, so a decision journal reads the same from one build to the
+/// next.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct AgentId(&'static str);
+
+impl AgentId {
+    /// The agent named `name`.
+    pub const fn new(name: &'static str) -> Self {
+        Self(name)
+    }
+
+    /// The agent's name.
+    pub fn name(&self) -> &'static str {
+        self.0
+    }
 }
 
 impl std::fmt::Display for AgentId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        f.write_str(self.0)
+    }
+}
+
+impl Serialize for AgentId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentId {
+    /// An agent read back, as a journal records it. The name outlives the
+    /// read, so it is kept for the program's life: a reader should read each
+    /// agent's name once (a journal's table of names), not once per entry.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        Ok(Self(Box::leak(name.into_boxed_str())))
     }
 }
 

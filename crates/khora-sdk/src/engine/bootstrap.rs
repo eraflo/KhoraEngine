@@ -479,6 +479,25 @@ fn populate<A: EngineApp>(
 /// The engine's built-in agents, always present. Agents implement only the
 /// `Agent` trait + `Default`, so construction goes through `Default::default()`.
 fn register_builtin_agents(dcc: &DccService) {
+    // An agent's name is free text: a game agent registered first under one
+    // of these names would leave the engine's own out, and no frame could
+    // recover it. Boot refuses that, as it refuses a family whose name is
+    // taken.
+    let taken = dcc
+        .agent_registry()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .all_ids();
+    for builtin in [
+        khora_agents::render_agent::RENDERER,
+        khora_agents::script_agent::SCRIPT,
+    ] {
+        if taken.contains(&builtin) {
+            panic!(
+                "the engine cannot boot: an agent already negotiates as `{builtin}`, the name of the engine's own"
+            );
+        }
+    }
     dcc.register_agent(
         Arc::new(Mutex::new(
             khora_agents::render_agent::RenderAgent::default(),
@@ -496,6 +515,19 @@ fn register_builtin_agents(dcc: &DccService) {
         )),
         1.0,
         vec![EngineMode::Playing],
+    );
+    // Where they come from, for tools: their types' paths.
+    let mut registry = dcc
+        .agent_registry()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    registry.set_origin(
+        khora_agents::render_agent::RENDERER,
+        std::any::type_name::<khora_agents::render_agent::RenderAgent>(),
+    );
+    registry.set_origin(
+        khora_agents::script_agent::SCRIPT,
+        std::any::type_name::<khora_agents::script_agent::ScriptAgent>(),
     );
 }
 
@@ -569,7 +601,7 @@ fn register_lane_agents(
         .copied()
         .unwrap_or_default();
     for (registration, agent) in registrations.iter().zip(agents.iter_mut()) {
-        if registration.agent == khora_core::agent::gorna::AgentId::Physics {
+        if registration.agent == <khora_lanes::physics_lane::PhysicsFamily as khora_core::lane::family::LaneFamily>::AGENT {
             set_fixed_step(agent, physics.step);
         }
     }
@@ -597,6 +629,10 @@ fn register_lane_agents(
                 1.0,
                 registration.modes.to_vec(),
             );
+            dcc.agent_registry()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .set_origin(registration.agent, registration.module);
             agent
         })
         .collect()

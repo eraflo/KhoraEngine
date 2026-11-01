@@ -179,7 +179,7 @@ pub struct ProbeFamily;
 impl LaneFamily for ProbeFamily {
     const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "probe";
-    const AGENT: AgentId = AgentId::Audio;
+    const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = ProbeOutputs;
 }
@@ -190,7 +190,7 @@ pub struct OtherFamily;
 impl LaneFamily for OtherFamily {
     const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "other";
-    const AGENT: AgentId = AgentId::Ui;
+    const AGENT: AgentId = AgentId::new("ui");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = ProbeOutputs;
 }
@@ -201,7 +201,7 @@ pub struct ReleasingFamily;
 impl LaneFamily for ReleasingFamily {
     const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "releasing";
-    const AGENT: AgentId = AgentId::Renderer;
+    const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = ProbeOutputs;
 }
@@ -494,7 +494,7 @@ pub static FIXED_LADDER: AgentRegistration = khora_core::register_agent! {
     family: ProbeFamily,
     phase: ExecutionPhase::TRANSFORM,
     importance: AgentImportance::Critical,
-    after: [AgentId::Physics],
+    after: [AgentId::new("physics")],
     modes: [EngineMode::Playing],
     fixed_step: Some(FIXED_STEP),
     lanes: [LadderLane],

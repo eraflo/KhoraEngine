@@ -93,9 +93,12 @@ fn peek<T>(
         .unwrap_or(fallback)
 }
 
+/// The script runner's name.
+pub const SCRIPT: AgentId = AgentId::new("script");
+
 impl Agent for ScriptAgent {
     fn id(&self) -> AgentId {
-        AgentId::Script
+        SCRIPT
     }
 
     fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {

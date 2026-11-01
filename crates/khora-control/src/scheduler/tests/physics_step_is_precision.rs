@@ -85,7 +85,7 @@ impl Falling {
 
 impl Agent for Falling {
     fn id(&self) -> AgentId {
-        AgentId::Physics
+        AgentId::new("physics")
     }
     fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
         NegotiationResponse {
@@ -96,7 +96,7 @@ impl Agent for Falling {
     fn apply_budget(&mut self, _b: ResourceBudget) {}
     fn report_status(&self) -> AgentStatus {
         AgentStatus {
-            agent_id: AgentId::Physics,
+            agent_id: AgentId::new("physics"),
             current_strategy: StrategyId::Balanced,
             health_score: 1.0,
             is_stalled: false,
@@ -153,7 +153,7 @@ impl Rig {
         let scheduler = ExecutionScheduler::new(
             registry,
             Arc::new(RwLock::new(Context::default())),
-            &[AgentId::Physics],
+            &[AgentId::new("physics")],
         );
         let mut clock = Time::default();
         clock.set_scale(scale);

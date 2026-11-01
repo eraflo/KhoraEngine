@@ -60,7 +60,7 @@ pub struct DrawFamily;
 impl LaneFamily for DrawFamily {
     const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "draw";
-    const AGENT: AgentId = AgentId::Renderer;
+    const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = DrawOutputs;
 }

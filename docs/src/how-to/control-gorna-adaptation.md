@@ -30,11 +30,11 @@ It is thread-safe and takes effect on the next arbitration tick.
 use khora_core::agent::gorna::{AdaptationMode, AgentId, StrategyId};
 
 // Pin the renderer to LowPower (e.g. on battery): GORNA will not upgrade it.
-dcc.set_adaptation_mode(AgentId::Renderer, AdaptationMode::Manual(StrategyId::LowPower));
+dcc.set_adaptation_mode(AgentId::new("renderer"), AdaptationMode::Manual(StrategyId::LowPower));
 
 // Or let physics learn, but never below Balanced and never above HighPerformance:
 dcc.set_adaptation_mode(
-    AgentId::Physics,
+    AgentId::new("physics"),
     AdaptationMode::Bounded {
         min: StrategyId::Balanced,
         max: StrategyId::HighPerformance,
@@ -42,7 +42,7 @@ dcc.set_adaptation_mode(
 );
 
 // Or stop quality from flapping for the UI agent:
-dcc.set_adaptation_mode(AgentId::Ui, AdaptationMode::Stable);
+dcc.set_adaptation_mode(AgentId::new("ui"), AdaptationMode::Stable);
 ```
 
 To return an agent to full autonomy, set it back to `AdaptationMode::Learning`.

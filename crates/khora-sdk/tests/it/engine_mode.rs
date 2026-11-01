@@ -178,15 +178,19 @@ fn the_script_agent_runs_only_while_playing() {
     let engine = tool_engine(None);
 
     let playing = agents_in(&engine, ExecutionPhase::TRANSFORM, &EngineMode::Playing);
-    assert!(playing.contains(&AgentId::Script), "playing: {playing:?}");
+    assert!(
+        playing.contains(&AgentId::new("script")),
+        "playing: {playing:?}"
+    );
 
     let tooling = agents_in(&engine, ExecutionPhase::TRANSFORM, &tool_mode());
     assert!(
-        !tooling.contains(&AgentId::Script),
+        !tooling.contains(&AgentId::new("script")),
         "a tool's mode: {tooling:?}"
     );
     assert!(
-        agents_in(&engine, ExecutionPhase::OUTPUT, &tool_mode()).contains(&AgentId::Renderer),
+        agents_in(&engine, ExecutionPhase::OUTPUT, &tool_mode())
+            .contains(&AgentId::new("renderer")),
         "the renderer runs in any mode"
     );
 }

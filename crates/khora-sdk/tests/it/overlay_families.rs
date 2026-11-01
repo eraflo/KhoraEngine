@@ -77,7 +77,7 @@ struct EveryPassReversed;
 
 impl Agent for EveryPassReversed {
     fn id(&self) -> AgentId {
-        AgentId::Asset
+        AgentId::new("asset")
     }
     fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
         NegotiationResponse {
@@ -88,7 +88,7 @@ impl Agent for EveryPassReversed {
     fn apply_budget(&mut self, _b: ResourceBudget) {}
     fn report_status(&self) -> AgentStatus {
         AgentStatus {
-            agent_id: AgentId::Asset,
+            agent_id: AgentId::new("asset"),
             current_strategy: StrategyId::Balanced,
             health_score: 1.0,
             is_stalled: false,
@@ -232,7 +232,11 @@ fn the_engine_boots_one_agent_per_overlay() {
         .into_iter()
         .filter_map(|(agent, ..)| agent.lock().ok().map(|agent| agent.id()))
         .collect();
-    for overlay in [AgentId::Grid, AgentId::Wireframe, AgentId::Gizmo] {
+    for overlay in [
+        AgentId::new("grid"),
+        AgentId::new("wireframe"),
+        AgentId::new("gizmo"),
+    ] {
         assert_eq!(
             output.iter().filter(|id| **id == overlay).count(),
             1,

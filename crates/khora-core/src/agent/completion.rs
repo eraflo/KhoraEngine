@@ -142,10 +142,10 @@ mod tests {
 
     #[test]
     fn wait_returns_immediately_after_mark() {
-        let map = AgentCompletionMap::new(&[AgentId::Renderer]);
-        map.mark(AgentId::Renderer, CompletionOutcome::Completed);
+        let map = AgentCompletionMap::new(&[AgentId::new("renderer")]);
+        map.mark(AgentId::new("renderer"), CompletionOutcome::Completed);
 
-        let result = rt().block_on(async { map.wait(AgentId::Renderer).await });
+        let result = rt().block_on(async { map.wait(AgentId::new("renderer")).await });
         assert_eq!(result, Some(CompletionOutcome::Completed));
     }
 
@@ -153,14 +153,14 @@ mod tests {
     fn wait_unblocks_when_mark_arrives_later() {
         use std::sync::Arc;
 
-        let map = Arc::new(AgentCompletionMap::new(&[AgentId::ShadowRenderer]));
+        let map = Arc::new(AgentCompletionMap::new(&[AgentId::new("shadows")]));
         let map_clone = Arc::clone(&map);
 
         let result = rt().block_on(async move {
-            let waiter = tokio::spawn(async move { map_clone.wait(AgentId::ShadowRenderer).await });
+            let waiter = tokio::spawn(async move { map_clone.wait(AgentId::new("shadows")).await });
             // Yield so the waiter has a chance to register.
             tokio::task::yield_now().await;
-            map.mark(AgentId::ShadowRenderer, CompletionOutcome::Skipped);
+            map.mark(AgentId::new("shadows"), CompletionOutcome::Skipped);
             waiter.await.unwrap()
         });
         assert_eq!(result, Some(CompletionOutcome::Skipped));
@@ -168,44 +168,44 @@ mod tests {
 
     #[test]
     fn wait_on_unknown_agent_returns_none() {
-        let map = AgentCompletionMap::new(&[AgentId::Renderer]);
-        let result = rt().block_on(async { map.wait(AgentId::Audio).await });
+        let map = AgentCompletionMap::new(&[AgentId::new("renderer")]);
+        let result = rt().block_on(async { map.wait(AgentId::new("audio")).await });
         assert_eq!(result, None);
     }
 
     #[test]
     fn outcome_distinguishes_completed_from_skipped() {
-        let map = AgentCompletionMap::new(&[AgentId::Renderer, AgentId::ShadowRenderer]);
-        map.mark(AgentId::Renderer, CompletionOutcome::Completed);
-        map.mark(AgentId::ShadowRenderer, CompletionOutcome::Skipped);
+        let map = AgentCompletionMap::new(&[AgentId::new("renderer"), AgentId::new("shadows")]);
+        map.mark(AgentId::new("renderer"), CompletionOutcome::Completed);
+        map.mark(AgentId::new("shadows"), CompletionOutcome::Skipped);
 
         assert_eq!(
-            map.outcome(AgentId::Renderer),
+            map.outcome(AgentId::new("renderer")),
             Some(CompletionOutcome::Completed)
         );
         assert_eq!(
-            map.outcome(AgentId::ShadowRenderer),
+            map.outcome(AgentId::new("shadows")),
             Some(CompletionOutcome::Skipped)
         );
-        assert_eq!(map.outcome(AgentId::Physics), None);
+        assert_eq!(map.outcome(AgentId::new("physics")), None);
     }
 
     #[test]
     fn mark_is_idempotent() {
-        let map = AgentCompletionMap::new(&[AgentId::Renderer]);
-        assert!(map.mark(AgentId::Renderer, CompletionOutcome::Completed));
+        let map = AgentCompletionMap::new(&[AgentId::new("renderer")]);
+        assert!(map.mark(AgentId::new("renderer"), CompletionOutcome::Completed));
         // Second mark is accepted (returns true: agent is known) but the
         // outcome stays at the first value.
-        assert!(map.mark(AgentId::Renderer, CompletionOutcome::Skipped));
+        assert!(map.mark(AgentId::new("renderer"), CompletionOutcome::Skipped));
         assert_eq!(
-            map.outcome(AgentId::Renderer),
+            map.outcome(AgentId::new("renderer")),
             Some(CompletionOutcome::Completed)
         );
     }
 
     #[test]
     fn mark_unknown_agent_returns_false() {
-        let map = AgentCompletionMap::new(&[AgentId::Renderer]);
-        assert!(!map.mark(AgentId::Audio, CompletionOutcome::Completed));
+        let map = AgentCompletionMap::new(&[AgentId::new("renderer")]);
+        assert!(!map.mark(AgentId::new("audio"), CompletionOutcome::Completed));
     }
 }

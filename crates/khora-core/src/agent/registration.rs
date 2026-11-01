@@ -63,6 +63,9 @@ pub struct AgentRegistration {
     /// The level the agent starts on, by strategy id: the first row of its
     /// menu with that id. `None` starts on the menu's first row.
     pub default_level: Option<StrategyId>,
+    /// The module the registration is written in (`module_path!()`): where
+    /// the family comes from, for tools to group agents by crate.
+    pub module: &'static str,
     /// One constructor per lane of the family, each wrapping its lane in
     /// [`Erased`](crate::lane::erased::Erased).
     pub lanes: &'static [fn() -> Box<dyn AnyLane>],
@@ -523,6 +526,7 @@ macro_rules! register_agent {
             modes: &[$($mode),*],
             fixed_step: $fixed_step,
             default_level: $crate::register_agent!(@default_level $($default_level)?),
+            module: ::core::module_path!(),
             lanes: &[$(
                 || -> ::std::boxed::Box<dyn $crate::lane::erased::AnyLane> {
                     ::std::boxed::Box::new($crate::lane::erased::Erased::new(

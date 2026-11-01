@@ -330,21 +330,9 @@ fn agent_hints_fields(x: &khora_core::agent::gorna::AgentHints) {
     let _ = (&x.cap_ms, &x.priority);
 }
 
-fn agent_id_variants(x: &khora_core::agent::gorna::AgentId) {
-    match x {
-        khora_core::agent::gorna::AgentId::Renderer => {}
-        khora_core::agent::gorna::AgentId::ShadowRenderer => {}
-        khora_core::agent::gorna::AgentId::Skybox => {}
-        khora_core::agent::gorna::AgentId::Grid => {}
-        khora_core::agent::gorna::AgentId::Wireframe => {}
-        khora_core::agent::gorna::AgentId::Gizmo => {}
-        khora_core::agent::gorna::AgentId::Physics => {}
-        khora_core::agent::gorna::AgentId::Ecs => {}
-        khora_core::agent::gorna::AgentId::Ui => {}
-        khora_core::agent::gorna::AgentId::Audio => {}
-        khora_core::agent::gorna::AgentId::Asset => {}
-        khora_core::agent::gorna::AgentId::Script => {}
-    }
+fn agent_id_api(x: &khora_core::agent::gorna::AgentId) {
+    const _: khora_core::agent::gorna::AgentId = khora_core::agent::gorna::AgentId::new("an agent");
+    let _: &'static str = x.name();
 }
 
 fn agent_status_fields(x: &khora_core::agent::gorna::AgentStatus) {
@@ -1843,7 +1831,7 @@ fn module_agent_gorna_paths_still_resolve() {
     is_default::<khora_core::agent::gorna::AgentHints>();
     is_partial_eq::<khora_core::agent::gorna::AgentHints>();
     let _ = type_name::<khora_core::agent::gorna::AgentId>();
-    let _ = agent_id_variants as fn(&khora_core::agent::gorna::AgentId);
+    let _ = agent_id_api as fn(&khora_core::agent::gorna::AgentId);
     is_debug::<khora_core::agent::gorna::AgentId>();
     is_clone::<khora_core::agent::gorna::AgentId>();
     is_copy::<khora_core::agent::gorna::AgentId>();
@@ -3218,16 +3206,6 @@ mod paths_used_by_other_crates {
     use khora_core::agent::gorna::AgentFrameStatusMap as _; // khora-agents, khora-control, khora-sdk
     use khora_core::agent::gorna::AgentHints as _; // khora-control, khora-sdk
     use khora_core::agent::gorna::AgentId as _; // khora-agents, khora-control, khora-sdk
-    use khora_core::agent::gorna::AgentId::Audio as _; // khora-sdk
-    use khora_core::agent::gorna::AgentId::Gizmo as _; // khora-editor, khora-lanes
-    use khora_core::agent::gorna::AgentId::Grid as _; // khora-editor, khora-lanes
-    use khora_core::agent::gorna::AgentId::Physics as _; // khora-sdk
-    use khora_core::agent::gorna::AgentId::Renderer as _; // khora-sdk
-    use khora_core::agent::gorna::AgentId::Script as _; // khora-sdk
-    use khora_core::agent::gorna::AgentId::ShadowRenderer as _; // khora-sdk
-    use khora_core::agent::gorna::AgentId::Skybox as _; // khora-sdk
-    use khora_core::agent::gorna::AgentId::Ui as _; // khora-sdk
-    use khora_core::agent::gorna::AgentId::Wireframe as _; // khora-editor, khora-lanes
     use khora_core::agent::gorna::AgentStatus as _; // khora-agents, khora-control, khora-sdk
     use khora_core::agent::gorna::DecisionTrace as _; // khora-control
     use khora_core::agent::gorna::EngineHint as _; // khora-control, khora-sdk

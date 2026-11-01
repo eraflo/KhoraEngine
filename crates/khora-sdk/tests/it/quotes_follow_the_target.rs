@@ -80,7 +80,7 @@ pub struct TargetFamily;
 impl LaneFamily for TargetFamily {
     const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "target quotes";
-    const AGENT: AgentId = AgentId::Renderer;
+    const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = DrawnOutputs;
 }

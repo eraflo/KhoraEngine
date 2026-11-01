@@ -123,7 +123,7 @@ fn the_audio_family_is_registered_once() {
     let registration = audio_registration();
 
     assert_eq!(registration.family_name, "audio");
-    assert_eq!(registration.agent, AgentId::Audio);
+    assert_eq!(registration.agent, AgentId::new("audio"));
     assert_eq!(registration.kind, LaneKind::Audio);
     assert_eq!(registration.semantics, Semantics::Presentation);
     assert_eq!(registration.phase, ExecutionPhase::TRANSFORM);
@@ -202,7 +202,7 @@ fn the_audio_family_boots_with_a_mix_bus() {
         Err(refusal) => panic!("the audio family boots: {refusal}"),
     };
     let ids: Vec<AgentId> = agents.iter().map(|agent| agent.id()).collect();
-    assert_eq!(ids, vec![AgentId::Audio]);
+    assert_eq!(ids, vec![AgentId::new("audio")]);
 }
 
 /// Boot refuses the audio family on a runtime without the mix bus, naming the

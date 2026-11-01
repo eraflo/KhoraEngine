@@ -144,7 +144,7 @@ fn runs(counter: &Arc<AtomicUsize>) -> usize {
 /// that step — and the agents still run once that frame, as before.
 #[test]
 fn with_no_fixed_agent_a_thirtieth_of_a_second_is_two_published_steps() {
-    let (mut scheduler, counters) = scheduler_of(&[(AgentId::Script, None)]);
+    let (mut scheduler, counters) = scheduler_of(&[(AgentId::new("script"), None)]);
     let (runtime, time) = clocked(1.0);
     let mut world = World::new();
 
@@ -168,7 +168,7 @@ fn with_no_fixed_agent_a_thirtieth_of_a_second_is_two_published_steps() {
 /// and the agents run once every frame.
 #[test]
 fn with_no_fixed_agent_short_frames_alternate_between_no_step_and_one() {
-    let (mut scheduler, counters) = scheduler_of(&[(AgentId::Script, None)]);
+    let (mut scheduler, counters) = scheduler_of(&[(AgentId::new("script"), None)]);
     let (runtime, time) = clocked(1.0);
     let mut world = World::new();
 
@@ -193,7 +193,7 @@ fn with_no_fixed_agent_short_frames_alternate_between_no_step_and_one() {
 /// and nothing else — at half scale it is one, at full scale two.
 #[test]
 fn with_no_fixed_agent_the_time_scale_scales_the_published_steps() {
-    let (mut scheduler, counters) = scheduler_of(&[(AgentId::Script, None)]);
+    let (mut scheduler, counters) = scheduler_of(&[(AgentId::new("script"), None)]);
     let (runtime, time) = clocked(0.0);
     let mut world = World::new();
 
@@ -222,7 +222,7 @@ fn with_no_fixed_agent_the_time_scale_scales_the_published_steps() {
 /// 1/60 s would be fifteen steps; [`MAX_SIM_STEPS`] are published.
 #[test]
 fn with_no_fixed_agent_a_long_frame_publishes_at_most_the_step_cap() {
-    let (mut scheduler, _counters) = scheduler_of(&[(AgentId::Script, None)]);
+    let (mut scheduler, _counters) = scheduler_of(&[(AgentId::new("script"), None)]);
     let (runtime, time) = clocked(1.0);
     let mut world = World::new();
 
@@ -240,8 +240,11 @@ fn with_no_fixed_agent_a_long_frame_publishes_at_most_the_step_cap() {
 #[test]
 fn with_a_fixed_agent_at_the_tick_the_published_steps_are_the_sub_steps_it_ran() {
     let (mut scheduler, counters) = scheduler_of(&[
-        (AgentId::Physics, Some(Duration::from_secs_f64(1.0 / 60.0))),
-        (AgentId::Script, None),
+        (
+            AgentId::new("physics"),
+            Some(Duration::from_secs_f64(1.0 / 60.0)),
+        ),
+        (AgentId::new("script"), None),
     ]);
     let (runtime, time) = clocked(1.0);
     let mut world = World::new();

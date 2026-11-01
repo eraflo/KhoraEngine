@@ -218,7 +218,7 @@ fn an_offer_names_the_floor_and_each_rows_confidence() {
 
     let offer = agent.offer(&offer_request(2));
 
-    assert_eq!(offer.agent, AgentId::Audio);
+    assert_eq!(offer.agent, AgentId::new("audio"));
     assert_eq!(
         offer.epoch,
         Epoch(2),
@@ -311,7 +311,7 @@ fn a_report_names_the_row_that_ran_and_its_epoch() {
 
     let report = agent.report();
 
-    assert_eq!(report.agent, AgentId::Audio);
+    assert_eq!(report.agent, AgentId::new("audio"));
     assert_eq!(report.epoch, Epoch(4));
     assert_eq!(report.row, StrategyId::HighPerformance);
     assert_eq!(report.done, 1.0);

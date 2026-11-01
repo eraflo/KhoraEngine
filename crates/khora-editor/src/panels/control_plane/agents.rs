@@ -72,7 +72,7 @@ impl ControlPlanePanel {
         let view = [x, rows_top, w, (y + h - rows_top).max(0.0)];
         let sections = agents
             .iter()
-            .map(|a| a.crate_name)
+            .map(|a| a.crate_name.as_str())
             .collect::<std::collections::BTreeSet<_>>()
             .len() as f32;
         let content_h = agents.len() as f32 * (AGENT_ROW_HEIGHT + 2.0) + sections * 14.0;
@@ -82,17 +82,17 @@ impl ControlPlanePanel {
         let mut row_y = rows_top - self.agents_scroll.offset();
         let mut current_section: Option<&str> = None;
         for (i, agent) in agents.iter().enumerate() {
-            if Some(agent.crate_name) != current_section {
+            if Some(agent.crate_name.as_str()) != current_section {
                 ui.paint_text_styled(
                     [x + 12.0, row_y],
-                    agent.crate_name,
+                    &agent.crate_name,
                     10.0,
                     theme.text_muted,
                     FontFamilyHint::Monospace,
                     TextAlign::Left,
                 );
                 row_y += 14.0;
-                current_section = Some(agent.crate_name);
+                current_section = Some(agent.crate_name.as_str());
             }
             if row_y + AGENT_ROW_HEIGHT >= view[1] && row_y <= view[1] + view[3] {
                 self.paint_agent_row(ui, x + 6.0, row_y, w - 12.0, agent, i, theme);

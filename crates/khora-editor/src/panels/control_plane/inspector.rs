@@ -76,7 +76,7 @@ impl ControlPlanePanel {
         let name = agent.name();
         paint::text(ui, [x + 58.0, y + 46.0], &name, 14.5, theme.text);
 
-        let tag = agent.crate_name;
+        let tag = agent.crate_name.as_str();
         let tag_w = ui.measure_text(tag, 10.0, FontFamilyHint::Monospace)[0] + 14.0;
         ui.paint_rect_filled(
             [x + 58.0, y + 68.0],

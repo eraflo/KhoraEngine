@@ -29,7 +29,7 @@ pub struct PhysicsFamily;
 impl LaneFamily for PhysicsFamily {
     const KIND: LaneKind = LaneKind::Physics;
     const NAME: &'static str = "physics";
-    const AGENT: AgentId = AgentId::Physics;
+    const AGENT: AgentId = AgentId::new("physics");
     const SEMANTICS: Semantics = Semantics::Exact;
     type Outputs<'f> = PhysicsOutputs;
 }

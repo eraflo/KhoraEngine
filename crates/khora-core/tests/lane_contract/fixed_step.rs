@@ -59,7 +59,7 @@ pub struct TickFamily;
 impl LaneFamily for TickFamily {
     const KIND: LaneKind = LaneKind::Physics;
     const NAME: &'static str = "tick";
-    const AGENT: AgentId = AgentId::Physics;
+    const AGENT: AgentId = AgentId::new("physics");
     const SEMANTICS: Semantics = Semantics::Exact;
     type Outputs<'f> = TickOutputs;
 }
@@ -111,6 +111,7 @@ fn tick_registration(fixed_step: Option<Duration>) -> AgentRegistration {
         modes: &[],
         fixed_step,
         default_level: None,
+        module: module_path!(),
         lanes: &[tick_lane],
     }
 }

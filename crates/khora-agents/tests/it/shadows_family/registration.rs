@@ -39,7 +39,7 @@ use super::fixtures::{shadow_agent, shadows_registration, shadows_runtime, Submi
 // ─── The registration ───────────────────────────────────────────────────────
 
 /// **The shadows family registers by submitting**, once, as the agent it
-/// replaces ran: a `ShadowRenderer` agent in `OBSERVE` — before the lit lanes
+/// replaces ran: an agent named `shadows` in `OBSERVE` — before the lit lanes
 /// of `OUTPUT` read its frame — important, in every mode, every frame, with
 /// one lane.
 #[test]
@@ -47,7 +47,7 @@ fn the_shadows_family_is_registered_once() {
     let registration = shadows_registration();
 
     assert_eq!(registration.family_name, "shadows");
-    assert_eq!(registration.agent, AgentId::ShadowRenderer);
+    assert_eq!(registration.agent, AgentId::new("shadows"));
     assert_eq!(registration.kind, LaneKind::Shadow);
     assert_eq!(registration.semantics, Semantics::Presentation);
     assert_eq!(registration.phase, ExecutionPhase::OBSERVE);
@@ -124,7 +124,7 @@ fn the_shadows_lane_declares_what_it_reads_and_writes() {
 // ─── Boot ───────────────────────────────────────────────────────────────────
 
 /// **The shadows family boots** on a runtime holding the asset store: the
-/// check accepts it, and one `ShadowRenderer` agent is built from it.
+/// check accepts it, and one agent named `shadows` is built from it.
 #[test]
 fn the_shadows_family_boots_with_the_asset_store() {
     let runtime = shadows_runtime(&Arc::new(SubmitLog::new()));
@@ -138,7 +138,26 @@ fn the_shadows_family_boots_with_the_asset_store() {
         Err(refusal) => panic!("the shadows family boots: {refusal}"),
     };
     let ids: Vec<AgentId> = agents.iter().map(|agent| agent.id()).collect();
-    assert_eq!(ids, vec![AgentId::ShadowRenderer]);
+    assert_eq!(ids, vec![AgentId::new("shadows")]);
+}
+
+/// **The renderer waits on the shadows agent, by its name.** The lit lanes
+/// read the shadow frame, so the scene renderer declares a hard dependency on
+/// the agent that draws it: the target is the very name the shadows family
+/// registers, or the scheduler would wait on an agent that never runs.
+#[test]
+fn the_renderer_waits_on_the_shadows_agent() {
+    let shadows = shadows_registration().agent;
+    let timing = khora_agents::render_agent::RenderAgent::default().execution_timing();
+
+    assert!(
+        timing.dependencies.iter().any(|dependency| {
+            dependency.target == shadows
+                && matches!(dependency.kind, khora_core::agent::DependencyKind::Hard)
+        }),
+        "the renderer depends hard on `{shadows}`: {:?}",
+        timing.dependencies
+    );
 }
 
 /// Boot refuses the shadows family on a runtime without the asset store,

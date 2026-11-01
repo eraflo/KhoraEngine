@@ -18,8 +18,8 @@
 //!
 //! The probe family below is submitted to the collection of this whole test
 //! binary, so every engine booted here carries it. It reads nothing and
-//! writes one slot of its own, and its agent id (`Ecs`) is one no built-in
-//! agent takes. Its third lane runs only on a device with storage buffers, so
+//! writes one slot of its own, and its agent is named `ecs`, a name no
+//! built-in agent takes. Its third lane runs only on a device with storage buffers, so
 //! it is on the menu only when the engine boots over such a device.
 
 use std::sync::{Arc, Mutex};
@@ -87,7 +87,7 @@ pub struct ProbeFamily;
 impl LaneFamily for ProbeFamily {
     const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "shutdown probe";
-    const AGENT: AgentId = AgentId::Ecs;
+    const AGENT: AgentId = AgentId::new("ecs");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = ProbeOutputs;
 }
@@ -276,11 +276,11 @@ fn bootstrap_registers_one_lane_agent_per_collected_registration() {
 
     let output = agents_in(&engine, ExecutionPhase::OUTPUT, &EngineMode::Playing);
     assert!(
-        output.contains(&AgentId::Ecs),
+        output.contains(&AgentId::new("ecs")),
         "the probe family's agent runs in OUTPUT: {output:?}"
     );
     assert!(
-        output.contains(&AgentId::Renderer),
+        output.contains(&AgentId::new("renderer")),
         "beside the agents not migrated yet: {output:?}"
     );
 }
@@ -294,10 +294,11 @@ fn a_lane_agent_runs_only_in_its_registrations_modes() {
 
     let tool = EngineMode::Custom("tool".to_owned());
     assert!(
-        agents_in(&engine, ExecutionPhase::OUTPUT, &EngineMode::Playing).contains(&AgentId::Ecs)
+        agents_in(&engine, ExecutionPhase::OUTPUT, &EngineMode::Playing)
+            .contains(&AgentId::new("ecs"))
     );
     assert!(
-        !agents_in(&engine, ExecutionPhase::OUTPUT, &tool).contains(&AgentId::Ecs),
+        !agents_in(&engine, ExecutionPhase::OUTPUT, &tool).contains(&AgentId::new("ecs")),
         "registered for Playing only"
     );
 }
@@ -349,7 +350,11 @@ fn probe_menu(engine: &EngineCore<Game>) -> Vec<StrategyId> {
         .collect_for_phase(ExecutionPhase::OUTPUT, &EngineMode::Playing)
         .into_iter()
         .map(|(agent, ..)| agent)
-        .find(|agent| agent.lock().is_ok_and(|agent| agent.id() == AgentId::Ecs))
+        .find(|agent| {
+            agent
+                .lock()
+                .is_ok_and(|agent| agent.id() == AgentId::new("ecs"))
+        })
         .expect("the probe family's agent is registered");
     let mut probe = probe.lock().expect("the probe agent's lock");
     probe
@@ -419,7 +424,7 @@ struct Squatter;
 
 impl khora_sdk::khora_core::agent::Agent for Squatter {
     fn id(&self) -> AgentId {
-        AgentId::Ecs
+        AgentId::new("ecs")
     }
     fn negotiate(
         &mut self,
@@ -433,7 +438,7 @@ impl khora_sdk::khora_core::agent::Agent for Squatter {
     fn apply_budget(&mut self, _budget: khora_sdk::khora_core::agent::gorna::ResourceBudget) {}
     fn report_status(&self) -> khora_sdk::AgentStatus {
         khora_sdk::AgentStatus {
-            agent_id: AgentId::Ecs,
+            agent_id: AgentId::new("ecs"),
             current_strategy: StrategyId::Balanced,
             health_score: 1.0,
             is_stalled: false,
@@ -483,5 +488,121 @@ fn a_family_whose_agent_id_is_taken_refuses_to_boot() {
     assert!(
         booted.is_err(),
         "the engine booted with the probe family's agent refused by the registry"
+    );
+}
+
+// ─── Where each agent comes from ────────────────────────────────────────────
+
+/// **Boot records where each agent comes from.** A family's agent comes from
+/// the module its registration was written in — the probe's, this file — and
+/// the engine's own agents from `khora-agents`, so a tool can list each under
+/// its crate.
+#[test]
+fn boot_records_each_agents_origin() {
+    let mut engine = EngineCore::<Game>::new();
+    engine.bootstrap(Game, Runtime::new());
+
+    let dcc = engine.dcc().expect("bootstrapped");
+    let registry = dcc.agent_registry().lock().expect("the registry lock");
+    assert_eq!(
+        registry.origin(AgentId::new("ecs")),
+        Some(module_path!()),
+        "the probe family was registered in this module"
+    );
+    for engine_agent in ["renderer", "script", "audio", "physics", "ui"] {
+        let origin = registry.origin(AgentId::new(engine_agent));
+        assert!(
+            origin.is_some_and(|module| module.starts_with("khora_agents::")),
+            "`{engine_agent}` comes from khora-agents: {origin:?}"
+        );
+    }
+}
+
+// ─── A game agent under an engine agent's name ──────────────────────────────
+
+/// A game agent that names itself `script`, the name of the engine's own
+/// script runner.
+struct GameScript;
+
+impl khora_sdk::khora_core::agent::Agent for GameScript {
+    fn id(&self) -> AgentId {
+        AgentId::new("script")
+    }
+    fn negotiate(
+        &mut self,
+        _request: khora_sdk::khora_core::agent::gorna::NegotiationRequest,
+    ) -> khora_sdk::khora_core::agent::gorna::NegotiationResponse {
+        khora_sdk::khora_core::agent::gorna::NegotiationResponse {
+            strategies: Vec::new(),
+            timing_adjustment: None,
+        }
+    }
+    fn apply_budget(&mut self, _budget: khora_sdk::khora_core::agent::gorna::ResourceBudget) {}
+    fn report_status(&self) -> khora_sdk::AgentStatus {
+        khora_sdk::AgentStatus {
+            agent_id: AgentId::new("script"),
+            current_strategy: StrategyId::Balanced,
+            health_score: 1.0,
+            is_stalled: false,
+            message: String::new(),
+        }
+    }
+    fn execute(&mut self, _context: &mut khora_sdk::khora_core::EngineContext<'_>) {}
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+/// A game registering its own agent under the name `script`.
+struct GameNamingItsAgentScript;
+
+impl AgentProvider for GameNamingItsAgentScript {
+    fn register_agents(&self, dcc: &DccService, _runtime: &mut Runtime) {
+        dcc.register_agent(Arc::new(Mutex::new(GameScript)), 1.0);
+    }
+}
+impl PhaseProvider for GameNamingItsAgentScript {}
+impl EngineApp for GameNamingItsAgentScript {
+    fn window_config() -> WindowConfig {
+        WindowConfig::default()
+    }
+    fn new() -> Self {
+        GameNamingItsAgentScript
+    }
+    fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {}
+    fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
+}
+
+/// **The engine's own agents never boot without themselves.** A name is now
+/// free text, so a game naming its agent `script` (or `renderer`) takes the
+/// name before the engine registers its own: the registry keeps the first,
+/// and the engine's script runner would be silently left out — no script
+/// would ever run. Boot refuses that, as it refuses a family whose name is
+/// taken.
+#[test]
+fn a_game_agent_under_an_engine_agents_name_refuses_to_boot() {
+    let booted = std::panic::catch_unwind(|| {
+        let mut engine = EngineCore::<GameNamingItsAgentScript>::new();
+        engine.bootstrap(GameNamingItsAgentScript, Runtime::new());
+        let dcc = engine.dcc().expect("bootstrapped");
+        let registry = dcc.agent_registry().lock().expect("the registry lock");
+        let holder = registry
+            .get_by_id(AgentId::new("script"))
+            .expect("an agent named `script` is registered");
+        let is_the_games = holder
+            .lock()
+            .is_ok_and(|agent| agent.as_any().is::<GameScript>());
+        (is_the_games, registry.origin(AgentId::new("script")))
+    });
+
+    assert!(
+        booted.is_err(),
+        "the engine booted with its script runner refused by the registry; \
+         `script` is the game's agent ({:?}) yet its origin reads {:?}",
+        booted.as_ref().map(|(is_the_games, _)| *is_the_games),
+        booted.as_ref().map(|(_, origin)| *origin),
     );
 }

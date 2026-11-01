@@ -28,7 +28,7 @@ pub struct WireframeFamily;
 impl LaneFamily for WireframeFamily {
     const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "wireframe";
-    const AGENT: AgentId = AgentId::Wireframe;
+    const AGENT: AgentId = AgentId::new("wireframe");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = WireframeOutputs<'f>;
 }

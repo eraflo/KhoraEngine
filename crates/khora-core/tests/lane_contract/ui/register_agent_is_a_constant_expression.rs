@@ -20,7 +20,7 @@ pub struct AudioFamily;
 impl LaneFamily for AudioFamily {
     const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "audio";
-    const AGENT: AgentId = AgentId::Audio;
+    const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = NoOutputs;
 }
@@ -53,7 +53,7 @@ static AUDIO: AgentRegistration = khora_core::register_agent! {
     family: AudioFamily,
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
-    after: [AgentId::Physics],
+    after: [AgentId::new("physics")],
     modes: [EngineMode::Playing],
     fixed_step: None,
     lanes: [MixLane],

@@ -110,9 +110,8 @@ impl Default for HeartbeatAgent {
 
 impl Agent for HeartbeatAgent {
     fn id(&self) -> AgentId {
-        // Reuse an existing slot — `AgentId` is a fixed enum, so a custom
-        // subsystem borrows the kind closest to its work.
-        AgentId::Ecs
+        // The agent names itself; boot refuses a name another agent holds.
+        AgentId::new("heartbeat")
     }
 
     fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {

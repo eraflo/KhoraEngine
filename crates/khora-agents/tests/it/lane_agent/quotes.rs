@@ -145,7 +145,7 @@ pub struct QuotedFamily;
 impl LaneFamily for QuotedFamily {
     const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "quoted";
-    const AGENT: AgentId = AgentId::Renderer;
+    const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = ProbeOutputs;
 }

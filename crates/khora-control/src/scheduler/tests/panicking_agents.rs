@@ -176,7 +176,7 @@ fn playing() -> Arc<Runtime> {
 
 fn flaky(access: AgentAccess, panics_on: Vec<usize>, runs: &Arc<AtomicUsize>) -> Flaky {
     Flaky {
-        id: AgentId::Physics,
+        id: AgentId::new("physics"),
         access,
         panics_on,
         step: None,
@@ -234,7 +234,7 @@ fn a_pooled_agent_that_panicked_runs_again_on_the_next_frame() {
     let mut scheduler = scheduler_over(
         vec![
             Arc::new(Mutex::new(Steady {
-                id: AgentId::Audio,
+                id: AgentId::new("audio"),
                 access: AgentAccess::Isolated,
                 depends_on: None,
                 runs: Arc::clone(&mate_runs),
@@ -293,7 +293,7 @@ fn a_panicking_inline_agent_leaves_nothing_in_the_deck() {
     let mut scheduler = scheduler_over(
         vec![
             Arc::new(Mutex::new(Steady {
-                id: AgentId::Audio,
+                id: AgentId::new("audio"),
                 access: AgentAccess::Isolated,
                 depends_on: None,
                 runs: Arc::clone(&mate_runs),
@@ -326,9 +326,9 @@ fn a_hard_dependent_of_a_panicked_agent_is_skipped() {
         vec![
             Arc::new(Mutex::new(flaky(AgentAccess::Exclusive, vec![1], &runs))),
             Arc::new(Mutex::new(Steady {
-                id: AgentId::Audio,
+                id: AgentId::new("audio"),
                 access: AgentAccess::Exclusive,
-                depends_on: Some(AgentId::Physics),
+                depends_on: Some(AgentId::new("physics")),
                 runs: Arc::clone(&dependent_runs),
             })),
         ],
@@ -366,9 +366,9 @@ fn a_fixed_agent_failing_a_later_sub_step_has_failed_the_frame() {
                 ..flaky(AgentAccess::Exclusive, vec![2], &runs)
             })),
             Arc::new(Mutex::new(Steady {
-                id: AgentId::Audio,
+                id: AgentId::new("audio"),
                 access: AgentAccess::Exclusive,
-                depends_on: Some(AgentId::Physics),
+                depends_on: Some(AgentId::new("physics")),
                 runs: Arc::clone(&dependent_runs),
             })),
         ],

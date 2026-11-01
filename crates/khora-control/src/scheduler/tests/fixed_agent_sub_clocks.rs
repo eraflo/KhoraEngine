@@ -248,10 +248,10 @@ impl Rig {
 #[test]
 fn a_fixed_agent_hard_depending_on_a_coarser_fixed_agent_integrates_gameplay_time() {
     let mut rig = Rig::new(vec![
-        Spec::fixed(AgentId::Physics, 30.0),
+        Spec::fixed(AgentId::new("physics"), 30.0),
         Spec {
-            depends_on: Some(AgentId::Physics),
-            ..Spec::fixed(AgentId::Audio, 60.0)
+            depends_on: Some(AgentId::new("physics")),
+            ..Spec::fixed(AgentId::new("audio"), 60.0)
         },
     ]);
     for _ in 0..60 {
@@ -271,8 +271,8 @@ fn a_fixed_agent_hard_depending_on_a_coarser_fixed_agent_integrates_gameplay_tim
 #[test]
 fn a_second_agent_under_a_taken_id_is_refused_and_the_first_keeps_the_games_time() {
     let mut rig = Rig::new(vec![
-        Spec::fixed(AgentId::Physics, 30.0),
-        Spec::fixed(AgentId::Physics, 30.0),
+        Spec::fixed(AgentId::new("physics"), 30.0),
+        Spec::fixed(AgentId::new("physics"), 30.0),
     ]);
     for _ in 0..60 {
         rig.frame_of(1.0 / 60.0);
@@ -299,11 +299,11 @@ fn the_parallel_executor_sub_steps_two_fixed_agents_as_the_sequential_one_does()
         vec![
             Spec {
                 access: AgentAccess::Isolated,
-                ..Spec::fixed(AgentId::Physics, 120.0)
+                ..Spec::fixed(AgentId::new("physics"), 120.0)
             },
             Spec {
                 access: AgentAccess::Isolated,
-                ..Spec::fixed(AgentId::Audio, 30.0)
+                ..Spec::fixed(AgentId::new("audio"), 30.0)
             },
         ]
     };
@@ -327,7 +327,7 @@ fn the_parallel_executor_sub_steps_two_fixed_agents_as_the_sequential_one_does()
 /// twice (sub-stepped and once-per-frame) nor zero times in a switching frame.
 #[test]
 fn an_agent_switching_between_fixed_and_unfixed_runs_once_a_frame() {
-    let mut rig = Rig::new(vec![Spec::fixed(AgentId::Physics, 60.0)]);
+    let mut rig = Rig::new(vec![Spec::fixed(AgentId::new("physics"), 60.0)]);
     let agent = &rig.agents[0];
     let (step, seen) = (Arc::clone(&agent.step), Arc::clone(&agent.seen));
     let handle = Handle { step, seen };

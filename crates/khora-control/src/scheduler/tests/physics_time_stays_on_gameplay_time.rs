@@ -202,7 +202,7 @@ impl Rig {
 fn a_step_a_hair_over_the_tick_does_not_run_physics_ahead_of_gameplay() {
     for step in [Duration::from_micros(16_667), Duration::from_micros(8_334)] {
         let p = step.as_secs_f64();
-        let mut rig = Rig::new(&[(AgentId::Physics, Some(step))], 1.0);
+        let mut rig = Rig::new(&[(AgentId::new("physics"), Some(step))], 1.0);
         for frame in 0..18_000 {
             rig.frame_of(0.05);
             let physics = rig.agents[0].seen().simulated;
@@ -279,7 +279,7 @@ fn slow_motion_and_fast_forward_keep_physics_on_gameplay_time_under_every_step()
     for hz in GORNA_RATES {
         let step = gorna_step(hz);
         let p = step.as_secs_f64();
-        let mut rig = Rig::new(&[(AgentId::Physics, Some(step))], 1.0);
+        let mut rig = Rig::new(&[(AgentId::new("physics"), Some(step))], 1.0);
         for (i, &scale) in scales.iter().cycle().take(400).enumerate() {
             rig.set_scale(scale);
             let time = rig.frame_of(1.0 / 30.0);
@@ -305,7 +305,7 @@ fn slow_motion_and_fast_forward_keep_physics_on_gameplay_time_under_every_step()
 /// overflow arithmetic is the one the single clock had.
 #[test]
 fn an_infinite_time_scale_does_not_stop_the_games_clock() {
-    let mut rig = Rig::new(&[(AgentId::Physics, Some(gorna_step(60.0)))], 1.0);
+    let mut rig = Rig::new(&[(AgentId::new("physics"), Some(gorna_step(60.0)))], 1.0);
     rig.frame_of(0.05);
 
     rig.set_scale(f32::INFINITY);
@@ -335,7 +335,7 @@ fn an_infinite_time_scale_does_not_stop_the_games_clock() {
 /// Coverage: holds today.
 #[test]
 fn paused_a_step_change_runs_nothing_and_resumed_the_carry_is_paid_at_the_new_step() {
-    let mut rig = Rig::new(&[(AgentId::Physics, Some(gorna_step(30.0)))], 1.0);
+    let mut rig = Rig::new(&[(AgentId::new("physics"), Some(gorna_step(30.0)))], 1.0);
     let first = rig.frame_of(TICK);
     assert_eq!(first.fixed_steps, 1, "set-up: one tick");
     assert_eq!(rig.agents[0].seen().runs, 0, "set-up: the tick carried");
@@ -375,7 +375,7 @@ fn a_step_longer_than_the_catch_up_cap_keeps_physics_within_a_step() {
     let frames = [0.25, 1.0, 3.0, 15.0, 2.5, 18.0, 0.5, 6.0, 1.5, 4.0];
     for step in [Duration::from_millis(100), Duration::from_millis(500)] {
         let p = step.as_secs_f64();
-        let mut rig = Rig::new(&[(AgentId::Physics, Some(step))], 1.0);
+        let mut rig = Rig::new(&[(AgentId::new("physics"), Some(step))], 1.0);
         for (i, &ticks) in frames.iter().cycle().take(300).enumerate() {
             rig.frame_of(ticks * TICK);
             let physics = rig.agents[0].seen().simulated;
@@ -397,7 +397,7 @@ fn a_step_longer_than_the_catch_up_cap_keeps_physics_within_a_step() {
 /// holds today.
 #[test]
 fn a_zero_fixed_step_is_no_fixed_step() {
-    let mut alone = Rig::new(&[(AgentId::Script, Some(Duration::ZERO))], 1.0);
+    let mut alone = Rig::new(&[(AgentId::new("script"), Some(Duration::ZERO))], 1.0);
     for frame in 1..=4 {
         let time = alone.frame_of(0.05);
         assert_eq!(time.fixed_steps, 3, "frame {frame}: three ticks");
@@ -406,8 +406,8 @@ fn a_zero_fixed_step_is_no_fixed_step() {
 
     let mut beside = Rig::new(
         &[
-            (AgentId::Script, Some(Duration::ZERO)),
-            (AgentId::Physics, Some(gorna_step(120.0))),
+            (AgentId::new("script"), Some(Duration::ZERO)),
+            (AgentId::new("physics"), Some(gorna_step(120.0))),
         ],
         1.0,
     );
@@ -434,7 +434,7 @@ fn a_zero_fixed_step_is_no_fixed_step() {
 /// Coverage: pins the new behaviour.
 #[test]
 fn with_no_fixed_agent_the_interpolation_factor_is_the_gameplay_remainder() {
-    let mut rig = Rig::new(&[(AgentId::Script, None)], 1.0);
+    let mut rig = Rig::new(&[(AgentId::new("script"), None)], 1.0);
     rig.frame_of(TICK); // the first frame measured from here on
     let half = rig.frame_of(0.5 * TICK);
     assert!(
@@ -463,8 +463,8 @@ fn with_no_fixed_agent_the_interpolation_factor_is_the_gameplay_remainder() {
 fn two_fixed_agents_with_different_steps_each_integrate_gameplay_time() {
     let mut rig = Rig::new(
         &[
-            (AgentId::Physics, Some(gorna_step(120.0))),
-            (AgentId::Audio, Some(gorna_step(30.0))),
+            (AgentId::new("physics"), Some(gorna_step(120.0))),
+            (AgentId::new("audio"), Some(gorna_step(30.0))),
         ],
         1.0,
     );

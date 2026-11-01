@@ -28,7 +28,7 @@ pub struct UiFamily;
 impl LaneFamily for UiFamily {
     const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "ui";
-    const AGENT: AgentId = AgentId::Ui;
+    const AGENT: AgentId = AgentId::new("ui");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = UiOutputs<'f>;
 }

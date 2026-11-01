@@ -109,12 +109,12 @@ fn two_waves(parallel: bool) -> (ExecutionScheduler, Seen) {
     {
         let mut registry = registry.lock().expect("the registry lock");
         for (id, access, after) in [
-            (AgentId::Renderer, AgentAccess::SharedWorld, vec![]),
-            (AgentId::Grid, AgentAccess::SharedWorld, vec![]),
+            (AgentId::new("renderer"), AgentAccess::SharedWorld, vec![]),
+            (AgentId::new("grid"), AgentAccess::SharedWorld, vec![]),
             (
-                AgentId::Physics,
+                AgentId::new("physics"),
                 AgentAccess::Exclusive,
-                vec![AgentId::Renderer, AgentId::Grid],
+                vec![AgentId::new("renderer"), AgentId::new("grid")],
             ),
         ] {
             registry.register(
@@ -131,7 +131,11 @@ fn two_waves(parallel: bool) -> (ExecutionScheduler, Seen) {
     let mut scheduler = ExecutionScheduler::new(
         registry,
         Arc::new(RwLock::new(Context::default())),
-        &[AgentId::Renderer, AgentId::Grid, AgentId::Physics],
+        &[
+            AgentId::new("renderer"),
+            AgentId::new("grid"),
+            AgentId::new("physics"),
+        ],
     );
     scheduler.set_parallel_execution(parallel);
     (scheduler, seen)
@@ -159,9 +163,9 @@ fn writes_in_one_wave_share_its_tick() {
 
     let seen = seen.lock().expect("the seen lock").clone();
     assert_eq!(seen.len(), 3, "every agent ran once: {seen:?}");
-    let renderer = tick_of(&seen, AgentId::Renderer);
-    let grid = tick_of(&seen, AgentId::Grid);
-    let physics = tick_of(&seen, AgentId::Physics);
+    let renderer = tick_of(&seen, AgentId::new("renderer"));
+    let grid = tick_of(&seen, AgentId::new("grid"));
+    let physics = tick_of(&seen, AgentId::new("physics"));
 
     assert_eq!(renderer, grid, "one concurrent wave, one tick: {seen:?}");
     assert!(
@@ -185,8 +189,8 @@ fn a_wave_of_two_agents_advances_the_clock_once() {
     scheduler.run_frame(&mut world, Arc::new(Runtime::new()));
 
     let seen = seen.lock().expect("the seen lock").clone();
-    let shared = tick_of(&seen, AgentId::Renderer);
-    let exclusive = tick_of(&seen, AgentId::Physics);
+    let shared = tick_of(&seen, AgentId::new("renderer"));
+    let exclusive = tick_of(&seen, AgentId::new("physics"));
     assert_eq!(
         exclusive,
         Tick(shared.0 + 1),
@@ -238,7 +242,7 @@ struct FixedTickReader {
 
 impl Agent for FixedTickReader {
     fn id(&self) -> AgentId {
-        AgentId::Physics
+        AgentId::new("physics")
     }
     fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
         NegotiationResponse {
@@ -249,7 +253,7 @@ impl Agent for FixedTickReader {
     fn apply_budget(&mut self, _b: ResourceBudget) {}
     fn report_status(&self) -> AgentStatus {
         AgentStatus {
-            agent_id: AgentId::Physics,
+            agent_id: AgentId::new("physics"),
             current_strategy: StrategyId::Balanced,
             health_score: 1.0,
             is_stalled: false,

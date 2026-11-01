@@ -71,7 +71,7 @@ impl Old {
 
 impl Agent for Old {
     fn id(&self) -> AgentId {
-        AgentId::Script
+        AgentId::new("script")
     }
 
     fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
@@ -89,7 +89,7 @@ impl Agent for Old {
 
     fn report_status(&self) -> AgentStatus {
         AgentStatus {
-            agent_id: AgentId::Script,
+            agent_id: AgentId::new("script"),
             current_strategy: self.current,
             health_score: 0.75,
             is_stalled: false,
@@ -155,7 +155,7 @@ fn old_agents_answer_through_the_bridge() {
 
     let offer = agent.offer(&request());
 
-    assert_eq!(offer.agent, AgentId::Script);
+    assert_eq!(offer.agent, AgentId::new("script"));
     assert_eq!(
         offer.epoch,
         Epoch(3),
@@ -287,7 +287,7 @@ fn the_bridge_report_reads_report_status() {
 
     let report = agent.report();
 
-    assert_eq!(report.agent, AgentId::Script);
+    assert_eq!(report.agent, AgentId::new("script"));
     assert_eq!(report.row, StrategyId::HighPerformance);
     assert_eq!(report.health, 0.75);
 }
@@ -320,5 +320,54 @@ fn the_bridge_apply_fits_each_option_on_the_host_it_was_offered_on() {
         agent.last_applied(),
         Some(StrategyId::LowPower),
         "the only option within the host's 3 ms"
+    );
+}
+
+// ─── An agent id is its name ────────────────────────────────────────────────
+
+/// **An agent id is its name.** `AgentId::new("ui")` equals itself and no
+/// other name, displays and serialises as `ui`, and reads back from that.
+#[test]
+fn an_agent_id_is_its_name() {
+    let ui = AgentId::new("ui");
+
+    assert_eq!(ui, AgentId::new("ui"), "one name, one agent");
+    assert_ne!(ui, AgentId::new("audio"), "two names, two agents");
+    assert_eq!(ui.name(), "ui");
+    assert_eq!(ui.to_string(), "ui", "Display prints the name");
+
+    let written = serde_json::to_string(&ui).expect("an agent id serialises");
+    assert_eq!(written, "\"ui\"", "an agent id is written as its name");
+    let read: AgentId = serde_json::from_str(&written).expect("an agent id reads back");
+    assert_eq!(read, ui, "an agent id round-trips");
+    assert_eq!(read.name(), "ui");
+}
+
+/// **Agent ids order by name**, not by a declaration order: a journal keyed
+/// by agent lists them the same way on every run. `physics` comes before
+/// `renderer`, which the old variant order put first.
+#[test]
+fn agent_ids_order_by_name() {
+    let mut ids = [
+        AgentId::new("ui"),
+        AgentId::new("renderer"),
+        AgentId::new("audio"),
+        AgentId::new("physics"),
+    ];
+
+    ids.sort();
+
+    assert!(AgentId::new("physics") < AgentId::new("renderer"));
+    assert!(AgentId::new("audio") < AgentId::new("ui"));
+    let names: Vec<&str> = ids.iter().map(|id| id.name()).collect();
+    assert_eq!(names, ["audio", "physics", "renderer", "ui"]);
+
+    let journal: std::collections::BTreeMap<AgentId, u32> =
+        [(AgentId::new("ui"), 1), (AgentId::new("audio"), 2)].into();
+    let keys: Vec<&str> = journal.keys().map(|id| id.name()).collect();
+    assert_eq!(
+        keys,
+        ["audio", "ui"],
+        "a journal keyed by agent lists names in order"
     );
 }

@@ -155,10 +155,25 @@ macro_rules! family {
     };
 }
 
-family!(LightFamily, LaneKind::Physics, AgentId::Physics, LitOutputs);
-family!(EyeFamily, LaneKind::Render, AgentId::Skybox, SeenOutputs);
-family!(IdleFamily, LaneKind::Ui, AgentId::Grid, IdleOutputs);
-family!(StrayFamily, LaneKind::Audio, AgentId::Audio, StrayOutputs);
+family!(
+    LightFamily,
+    LaneKind::Physics,
+    AgentId::new("physics"),
+    LitOutputs
+);
+family!(
+    EyeFamily,
+    LaneKind::Render,
+    AgentId::new("skybox"),
+    SeenOutputs
+);
+family!(IdleFamily, LaneKind::Ui, AgentId::new("grid"), IdleOutputs);
+family!(
+    StrayFamily,
+    LaneKind::Audio,
+    AgentId::new("audio"),
+    StrayOutputs
+);
 
 const ONE_LEVEL: &[Level] = &[level(StrategyId::LowPower, "only")];
 
@@ -420,7 +435,7 @@ fn an_undeclared_slot_a_lane_agent_commits_is_reported() {
         assert!(
             scheduler
                 .undeclared_deck_writes()
-                .contains(&(AgentId::Audio, stray)),
+                .contains(&(AgentId::new("audio"), stray)),
             "parallel = {parallel}: {:?}",
             scheduler.undeclared_deck_writes()
         );
@@ -474,13 +489,13 @@ impl<'f> LaneOutputs<'f> for PartnerOutputs {
 family!(
     TickFamily,
     LaneKind::Physics,
-    AgentId::Physics,
+    AgentId::new("physics"),
     TicksOutputs
 );
 family!(
     PartnerFamily,
     LaneKind::Script,
-    AgentId::Script,
+    AgentId::new("script"),
     PartnerOutputs
 );
 

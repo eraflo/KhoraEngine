@@ -86,7 +86,7 @@ pub struct SeenFamily;
 impl LaneFamily for SeenFamily {
     const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "frame probe";
-    const AGENT: AgentId = AgentId::Asset;
+    const AGENT: AgentId = AgentId::new("asset");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = SeenOutputs;
 }

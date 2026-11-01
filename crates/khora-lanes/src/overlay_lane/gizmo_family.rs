@@ -28,7 +28,7 @@ pub struct GizmoFamily;
 impl LaneFamily for GizmoFamily {
     const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "gizmo";
-    const AGENT: AgentId = AgentId::Gizmo;
+    const AGENT: AgentId = AgentId::new("gizmo");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = GizmoOutputs<'f>;
 }

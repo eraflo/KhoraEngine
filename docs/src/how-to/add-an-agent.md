@@ -39,17 +39,20 @@ pub struct FoliageAgent {
 }
 ```
 
-## Step 2 — Pick an `AgentId`
+## Step 2 — Name the agent
 
-`AgentId` is a **fixed enum** — there is no `Custom` variant. A new subsystem reuses
-the slot closest to its work. Foliage rendering, for example, reuses
-`AgentId::Renderer`. The variants are: `Renderer`, `ShadowRenderer`, `Overlay`,
-`Skybox`, `Physics`, `Ecs`, `Ui`, `Audio`, `Script`, `Asset`.
+An `AgentId` is a name the agent gives itself: `AgentId::new("foliage")`, kept in a
+constant next to the agent. The engine knows no list of agents. Each name must be
+unique: boot refuses two agents under one name, and a name the engine's own agents
+use (`renderer`, `script`, or a family's such as `ui`, `audio`, `shadows`) is taken.
 
 ```rust
+/// The foliage renderer's name.
+pub const FOLIAGE: AgentId = AgentId::new("foliage");
+
 impl Agent for FoliageAgent {
     fn id(&self) -> AgentId {
-        AgentId::Renderer
+        FOLIAGE
     }
 ```
 

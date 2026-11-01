@@ -45,6 +45,9 @@ struct AgentEntry {
 /// iterated in execution order.
 pub struct AgentRegistry {
     entries: Vec<AgentEntry>,
+    /// Where each agent comes from (a module path, `crate::module`), for
+    /// tools; an agent registered without one has none.
+    origins: Vec<(AgentId, &'static str)>,
 }
 
 impl AgentRegistry {
@@ -52,7 +55,25 @@ impl AgentRegistry {
     pub fn new() -> Self {
         Self {
             entries: Vec::new(),
+            origins: Vec::new(),
         }
+    }
+
+    /// Records that the agent `id` comes from the module `module`
+    /// (`module_path!()` where its family was registered).
+    pub fn set_origin(&mut self, id: AgentId, module: &'static str) {
+        match self.origins.iter_mut().find(|(known, _)| *known == id) {
+            Some((_, origin)) => *origin = module,
+            None => self.origins.push((id, module)),
+        }
+    }
+
+    /// The module the agent `id` comes from, if one was recorded.
+    pub fn origin(&self, id: AgentId) -> Option<&'static str> {
+        self.origins
+            .iter()
+            .find(|(known, _)| *known == id)
+            .map(|(_, module)| *module)
     }
 
     /// Registers an agent with the given priority.
@@ -73,11 +94,23 @@ impl AgentRegistry {
         priority: f32,
         modes: Vec<EngineMode>,
     ) {
-        let id = agent.lock().map(|a| a.id()).unwrap_or(AgentId::Asset);
+        let id = agent
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .id();
         // One agent per id: the frame's completion map, the phase ordering,
         // GORNA's budgets and the fixed agents' clocks are all keyed by it, so
         // a second agent under a taken id could never be scheduled as itself.
-        if self.all_ids().contains(&id) {
+        // A poisoned agent (one that panicked) still holds its name.
+        let taken = self.entries.iter().any(|entry| {
+            entry
+                .agent
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .id()
+                == id
+        });
+        if taken {
             log::error!(
                 "AgentRegistry: refused a second agent registered as {:?}; the first stays",
                 id
@@ -310,7 +343,11 @@ mod tests {
     fn registry_of(agents: &[(&'static str, f32)]) -> (AgentRegistry, Log) {
         let log: Log = Arc::new(Mutex::new(Vec::new()));
         let mut registry = AgentRegistry::new();
-        let ids = [AgentId::Script, AgentId::Audio, AgentId::Ui];
+        let ids = [
+            AgentId::new("script"),
+            AgentId::new("audio"),
+            AgentId::new("ui"),
+        ];
         for (&(name, priority), &id) in agents.iter().zip(ids.iter()) {
             registry.register(
                 Arc::new(Mutex::new(Recording {
@@ -416,5 +453,127 @@ mod tests {
 
         assert!(registry.initialize_one(2, &mut ctx));
         assert_eq!(logged(&log), vec!["low"], "index 2 is the lowest priority");
+    }
+    /// **The registry refuses a second agent under a name it holds.** The
+    /// frame's completion map, the phase order and the budgets are keyed by
+    /// the name, so a second `narrator` could never be scheduled as itself:
+    /// the first stays, the second is not registered, and an agent with
+    /// another name still is.
+    #[test]
+    fn the_registry_refuses_a_duplicate_name() {
+        let log: Log = Arc::new(Mutex::new(Vec::new()));
+        let mut registry = AgentRegistry::new();
+        for (name, id) in [
+            ("first narrator", AgentId::new("narrator")),
+            ("second narrator", AgentId::new("narrator")),
+            ("chorus", AgentId::new("chorus")),
+        ] {
+            registry.register(
+                Arc::new(Mutex::new(Recording {
+                    name,
+                    id,
+                    log: Arc::clone(&log),
+                })),
+                1.0,
+            );
+        }
+
+        assert_eq!(
+            registry.len(),
+            2,
+            "`narrator` once and `chorus` once: the second `narrator` is refused"
+        );
+        let names: Vec<&str> = registry.all_ids().iter().map(|id| id.name()).collect();
+        assert!(
+            names.contains(&"narrator") && names.contains(&"chorus"),
+            "{names:?}"
+        );
+
+        let bus = LaneBus::new();
+        let mut deck = OutputDeck::new();
+        registry.initialize_all(&mut EngineContext::for_initialisation(
+            Arc::new(Runtime::new()),
+            &bus,
+            &mut deck,
+        ));
+        let mut initialized = logged(&log);
+        initialized.sort_unstable();
+        assert_eq!(
+            initialized,
+            vec!["chorus", "first narrator"],
+            "the first `narrator` stays; the second never runs"
+        );
+    }
+    /// **The registry remembers where each agent comes from.** An origin is
+    /// kept per name, a second `set_origin` for one name replaces the first,
+    /// and a name never given one has none.
+    #[test]
+    fn the_registry_keeps_one_origin_per_agent() {
+        let mut registry = AgentRegistry::new();
+        let narrator = AgentId::new("narrator");
+        let chorus = AgentId::new("chorus");
+
+        registry.set_origin(narrator, "khora_agents::narrator_agent::agent");
+        registry.set_origin(chorus, "my_game::chorus");
+
+        assert_eq!(
+            registry.origin(narrator),
+            Some("khora_agents::narrator_agent::agent")
+        );
+        assert_eq!(registry.origin(chorus), Some("my_game::chorus"));
+        assert_eq!(
+            registry.origin(AgentId::new("bard")),
+            None,
+            "never recorded"
+        );
+
+        registry.set_origin(narrator, "my_game::narrator");
+        assert_eq!(
+            registry.origin(narrator),
+            Some("my_game::narrator"),
+            "the latest origin wins"
+        );
+        assert_eq!(
+            registry.origin(chorus),
+            Some("my_game::chorus"),
+            "another agent's origin is untouched"
+        );
+    }
+    /// **A poisoned agent still holds its name.** An agent whose lock a panic
+    /// poisoned (one that panicked while running, say) is still registered,
+    /// and still answers to its name: a second agent under that name is
+    /// refused like any other duplicate — the registry reads names through
+    /// the poison, the agents' already registered as much as the newcomer's.
+    #[test]
+    fn a_poisoned_agent_still_holds_its_name() {
+        let log: Log = Arc::new(Mutex::new(Vec::new()));
+        let mut registry = AgentRegistry::new();
+        let first = Arc::new(Mutex::new(Recording {
+            name: "first narrator",
+            id: AgentId::new("narrator"),
+            log: Arc::clone(&log),
+        }));
+        registry.register(first.clone(), 1.0);
+        let poisoner = Arc::clone(&first);
+        let poisoned = std::panic::catch_unwind(move || {
+            let _held = poisoner.lock();
+            panic!("a panic while the agent's lock is held poisons it");
+        });
+        assert!(poisoned.is_err() && first.is_poisoned());
+
+        registry.register(
+            Arc::new(Mutex::new(Recording {
+                name: "second narrator",
+                id: AgentId::new("narrator"),
+                log: Arc::clone(&log),
+            })),
+            1.0,
+        );
+
+        assert_eq!(
+            registry.len(),
+            1,
+            "the poisoned `narrator` keeps its name: the second `narrator` is refused"
+        );
     }
 }

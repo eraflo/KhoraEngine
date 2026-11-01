@@ -69,7 +69,7 @@ fn render_agent_offers_one_strategy_per_lane_in_registration_order() {
     assert_eq!(
         offer(RenderAgent::default()),
         (
-            AgentId::Renderer,
+            AgentId::new("renderer"),
             vec![
                 (StrategyId::LowPower, 0),
                 (StrategyId::Balanced, 4096),
@@ -88,7 +88,7 @@ fn shadow_agent_offers_three_tiers_from_low_power_up() {
     assert_eq!(
         offer(shadow_agent()),
         (
-            AgentId::ShadowRenderer,
+            AgentId::new("shadows"),
             vec![
                 (StrategyId::LowPower, LEVEL_MEMORY[0]),
                 (StrategyId::Balanced, LEVEL_MEMORY[1]),
@@ -108,18 +108,21 @@ fn shadow_agent_offers_three_tiers_from_low_power_up() {
 fn overlay_agents_offer_one_flat_strategy_each() {
     assert_eq!(
         offer(agent_of(grid_registration())),
-        (AgentId::Grid, vec![(StrategyId::Balanced, 80)])
+        (AgentId::new("grid"), vec![(StrategyId::Balanced, 80)])
     );
     assert_eq!(
         offer(agent_of(wireframe_registration())),
         (
-            AgentId::Wireframe,
+            AgentId::new("wireframe"),
             vec![(StrategyId::Balanced, 80 + 32 + 2 * 1000 * 256)]
         )
     );
     assert_eq!(
         offer(agent_of(gizmo_registration())),
-        (AgentId::Gizmo, vec![(StrategyId::Balanced, 80 + 4096 * 48)])
+        (
+            AgentId::new("gizmo"),
+            vec![(StrategyId::Balanced, 80 + 4096 * 48)]
+        )
     );
 }
 
@@ -129,7 +132,7 @@ fn overlay_agents_offer_one_flat_strategy_each() {
 fn skybox_agent_offers_one_flat_strategy() {
     assert_eq!(
         offer(skybox_agent()),
-        (AgentId::Skybox, vec![(StrategyId::Balanced, 80)])
+        (AgentId::new("skybox"), vec![(StrategyId::Balanced, 80)])
     );
 }
 
@@ -142,7 +145,7 @@ fn ui_agent_offers_one_flat_strategy() {
     assert_eq!(
         offer(ui_agent()),
         (
-            AgentId::Ui,
+            AgentId::new("ui"),
             vec![(StrategyId::Balanced, 64 + 1024 * 64 + 1024 * 64)]
         )
     );
@@ -154,7 +157,7 @@ fn ui_agent_offers_one_flat_strategy() {
 fn physics_agent_offers_one_flat_strategy() {
     assert_eq!(
         offer(physics_agent()),
-        (AgentId::Physics, vec![(StrategyId::Balanced, 0)])
+        (AgentId::new("physics"), vec![(StrategyId::Balanced, 0)])
     );
 }
 
@@ -165,7 +168,7 @@ fn audio_agent_offers_three_tiers_from_low_power_up() {
     assert_eq!(
         offer(lane_agent(audio_registration(), &DeviceCaps::default())),
         (
-            AgentId::Audio,
+            AgentId::new("audio"),
             vec![
                 (StrategyId::LowPower, 0),
                 (StrategyId::Balanced, 0),
@@ -180,7 +183,7 @@ fn script_agent_offers_three_tiers_from_low_power_up() {
     assert_eq!(
         offer(ScriptAgent::default()),
         (
-            AgentId::Script,
+            AgentId::new("script"),
             vec![
                 (StrategyId::LowPower, 0),
                 (StrategyId::Balanced, 0),

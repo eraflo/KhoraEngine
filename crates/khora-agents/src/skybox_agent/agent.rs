@@ -15,7 +15,6 @@
 //! The skybox family's registration: the one `LaneAgent` the engine boots
 //! for it, its phase and its lane.
 
-use khora_core::agent::gorna::AgentId;
 use khora_core::agent::{AgentImportance, ExecutionPhase};
 use khora_lanes::skybox_lane::{SkyboxFamily, SkyboxLane};
 
@@ -28,7 +27,7 @@ khora_script::inventory::submit! {
         phase: ExecutionPhase::OUTPUT,
         // Not debug viz: the background survives budget pressure.
         importance: AgentImportance::Important,
-        after: [AgentId::Renderer],
+        after: [crate::render_agent::RENDERER],
         modes: [],
         fixed_step: None,
         lanes: [SkyboxLane],

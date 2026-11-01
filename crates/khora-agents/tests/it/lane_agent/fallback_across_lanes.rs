@@ -39,7 +39,7 @@ pub struct DearFirstFamily;
 impl LaneFamily for DearFirstFamily {
     const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "dear first";
-    const AGENT: AgentId = AgentId::Renderer;
+    const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = ProbeOutputs;
 }

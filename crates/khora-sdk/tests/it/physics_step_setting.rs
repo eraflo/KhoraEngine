@@ -164,7 +164,7 @@ fn physics_agent_of(engine: &EngineCore<Game>) -> Arc<Mutex<dyn Agent>> {
         .find(|agent| {
             agent
                 .lock()
-                .map(|agent| agent.id() == AgentId::Physics)
+                .map(|agent| agent.id() == AgentId::new("physics"))
                 .unwrap_or(false)
         })
         .cloned();

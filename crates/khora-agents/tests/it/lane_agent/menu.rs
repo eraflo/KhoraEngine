@@ -225,7 +225,7 @@ fn timing_comes_from_the_registration() {
     assert_eq!(timing.importance, AgentImportance::Critical);
     assert_eq!(timing.fixed_timestep, Some(FIXED_STEP));
     let after: Vec<AgentId> = timing.dependencies.iter().map(|d| d.target).collect();
-    assert_eq!(after, vec![AgentId::Physics]);
+    assert_eq!(after, vec![AgentId::new("physics")]);
     assert!(
         timing
             .dependencies

@@ -170,7 +170,7 @@ pub struct SpeedFamily;
 impl LaneFamily for SpeedFamily {
     const KIND: LaneKind = LaneKind::Physics;
     const NAME: &'static str = "speed";
-    const AGENT: AgentId = AgentId::Physics;
+    const AGENT: AgentId = AgentId::new("physics");
     const SEMANTICS: Semantics = Semantics::Exact;
     type Outputs<'f> = SpeedOutputs;
 }
@@ -181,7 +181,7 @@ pub struct MixFamily;
 impl LaneFamily for MixFamily {
     const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "mix";
-    const AGENT: AgentId = AgentId::Audio;
+    const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = MixOutputs;
 }
@@ -192,7 +192,7 @@ pub struct EchoFamily;
 impl LaneFamily for EchoFamily {
     const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "echo";
-    const AGENT: AgentId = AgentId::Ui;
+    const AGENT: AgentId = AgentId::new("ui");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = EchoOutputs;
 }

@@ -56,9 +56,9 @@ use super::fixtures::{
 fn each_overlay_is_its_own_family() {
     let registrations = overlay_registrations();
     let expected = [
-        ("grid", AgentId::Grid, "GridLane"),
-        ("wireframe", AgentId::Wireframe, "WireframeLane"),
-        ("gizmo", AgentId::Gizmo, "GizmoLane"),
+        ("grid", AgentId::new("grid"), "GridLane"),
+        ("wireframe", AgentId::new("wireframe"), "WireframeLane"),
+        ("gizmo", AgentId::new("gizmo"), "GizmoLane"),
     ];
 
     for (registration, (name, agent, lane)) in registrations.iter().zip(expected) {
@@ -89,7 +89,14 @@ fn each_overlay_is_its_own_family() {
         Err(refusal) => panic!("the overlay families boot: {refusal}"),
     };
     let ids: Vec<AgentId> = agents.iter().map(|agent| agent.id()).collect();
-    assert_eq!(ids, [AgentId::Grid, AgentId::Wireframe, AgentId::Gizmo]);
+    assert_eq!(
+        ids,
+        [
+            AgentId::new("grid"),
+            AgentId::new("wireframe"),
+            AgentId::new("gizmo")
+        ]
+    );
 }
 
 /// **The overlay agents are optional and run after the renderer.** Each
@@ -101,7 +108,7 @@ fn the_overlay_agents_are_optional_and_run_after_the_renderer() {
     for registration in overlay_registrations() {
         let name = registration.family_name;
         assert_eq!(registration.phase, ExecutionPhase::OUTPUT, "{name}");
-        assert_eq!(registration.after, [AgentId::Renderer], "{name}");
+        assert_eq!(registration.after, [AgentId::new("renderer")], "{name}");
         assert_eq!(registration.importance, AgentImportance::Optional, "{name}");
         assert!(registration.modes.is_empty(), "{name}: in every mode");
         assert_eq!(registration.fixed_step, None, "{name}: every frame");
@@ -116,7 +123,11 @@ fn the_overlay_agents_are_optional_and_run_after_the_renderer() {
             "{name}: {:?}",
             timing.dependencies
         );
-        assert_eq!(timing.dependencies[0].target, AgentId::Renderer, "{name}");
+        assert_eq!(
+            timing.dependencies[0].target,
+            AgentId::new("renderer"),
+            "{name}"
+        );
         assert!(
             matches!(timing.dependencies[0].kind, DependencyKind::Hard),
             "{name}: a hard dependency: {:?}",
@@ -378,11 +389,11 @@ fn the_overlay_agents_are_world_free() {
 /// its own agent.
 #[test]
 fn each_overlay_agent_offers_one_balanced_strategy() {
-    for (registration, id) in
-        overlay_registrations()
-            .into_iter()
-            .zip([AgentId::Grid, AgentId::Wireframe, AgentId::Gizmo])
-    {
+    for (registration, id) in overlay_registrations().into_iter().zip([
+        AgentId::new("grid"),
+        AgentId::new("wireframe"),
+        AgentId::new("gizmo"),
+    ]) {
         let mut agent = agent_of(registration);
         let offered: Vec<StrategyId> = agent
             .negotiate(NegotiationRequest {

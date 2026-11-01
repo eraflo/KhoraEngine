@@ -63,6 +63,7 @@ fn registration<F: LaneFamily>(
         modes: &[],
         fixed_step: None,
         default_level: None,
+        module: module_path!(),
         lanes,
     }
 }
@@ -206,7 +207,7 @@ pub struct AlsoAudioFamily;
 impl LaneFamily for AlsoAudioFamily {
     const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "also audio";
-    const AGENT: AgentId = AgentId::Audio;
+    const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = EchoOutputs;
 }
@@ -259,7 +260,7 @@ fn boot_refuses_two_families_negotiating_as_one_agent() {
     assert!(
         checked.is_err(),
         "`mix` and `also audio` both negotiate as {:?}, and boot accepted them",
-        AgentId::Audio
+        AgentId::new("audio")
     );
 }
 
@@ -387,7 +388,7 @@ pub struct DriftingSpeedFamily;
 impl LaneFamily for DriftingSpeedFamily {
     const KIND: LaneKind = LaneKind::Physics;
     const NAME: &'static str = "drifting speed";
-    const AGENT: AgentId = AgentId::Physics;
+    const AGENT: AgentId = AgentId::new("physics");
     const SEMANTICS: Semantics = Semantics::Exact;
     type Outputs<'f> = MixOutputs;
 }
@@ -586,7 +587,7 @@ fn boot_refusals_name_the_family_level_and_agent() {
     assert_eq!(
         check_registrations(&[&mix, &also], &runtime, &caps),
         Err(BootError::TwoFamiliesForOneAgent {
-            agent: AgentId::Audio,
+            agent: AgentId::new("audio"),
             first: "mix",
             second: AlsoAudioFamily::NAME,
         })
@@ -603,7 +604,7 @@ pub struct TwiceEchoFamily;
 impl LaneFamily for TwiceEchoFamily {
     const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "twice echo";
-    const AGENT: AgentId = AgentId::Ui;
+    const AGENT: AgentId = AgentId::new("ui");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = TwiceEchoes;
 }
@@ -655,5 +656,137 @@ fn boot_refuses_a_family_writing_one_slot_twice() {
     assert!(
         checked.is_err(),
         "`twice echo` declares `Echoes` as two deck outputs, and boot accepted it"
+    );
+}
+
+// ─── An agent is named by its family ────────────────────────────────────────
+
+const NAMED_LEVELS: &[Level] = &[level(StrategyId::Balanced, "named")];
+
+/// A family named `$family_name` whose agent is `AgentId::new($agent)`, with
+/// one lane `$lane` built by `$make`. The family and agent names differ, so a
+/// message naming the agent cannot be passing on the family's name.
+macro_rules! named_family {
+    ($family:ident, $lane:ident, $make:ident, $family_name:literal, $agent:literal) => {
+        pub struct $family;
+
+        impl LaneFamily for $family {
+            const KIND: LaneKind = LaneKind::Audio;
+            const NAME: &'static str = $family_name;
+            const AGENT: AgentId = AgentId::new($agent);
+            const SEMANTICS: Semantics = Semantics::Presentation;
+            type Outputs<'f> = EchoOutputs;
+        }
+
+        #[derive(Default)]
+        pub struct $lane;
+
+        impl Lane for $lane {
+            type Family = $family;
+            type Inputs<'f> = MixInputs<'f>;
+
+            fn levels(&self) -> &[Level] {
+                NAMED_LEVELS
+            }
+            fn cost(&self, _level: usize, _inputs: &MixInputs<'_>) -> Cost {
+                Cost::default()
+            }
+            fn record(
+                &mut self,
+                _level: usize,
+                _inputs: &mut MixInputs<'_>,
+                out: &mut EchoOutputs,
+            ) -> Result<LaneReport, LaneError> {
+                out.echoes = Echoes(0);
+                Ok(LaneReport::default())
+            }
+        }
+
+        fn $make() -> Box<dyn AnyLane> {
+            Box::new(Erased::new($lane))
+        }
+    };
+}
+
+named_family!(
+    StorytellerFamily,
+    StorytellerLane,
+    storyteller_lane,
+    "storyteller",
+    "narrator"
+);
+named_family!(BardFamily, BardLane, bard_lane, "bard", "narrator");
+named_family!(ChoirFamily, ChoirLane, choir_lane, "choir", "chorus");
+
+/// **Two families with one agent name do not boot.** An agent is its name:
+/// two families declaring `narrator` would share one budget, one cost model
+/// and one row of every decision. Two different names boot side by side;
+/// a second `narrator` is refused, the error naming the agent.
+#[test]
+fn boot_refuses_two_families_with_one_name() {
+    let runtime = runtime_with_mix_settings();
+    let caps = DeviceCaps::default();
+    let storyteller =
+        registration::<StorytellerFamily>(ExecutionPhase::OUTPUT, &[storyteller_lane]);
+    let choir = registration::<ChoirFamily>(ExecutionPhase::OUTPUT, &[choir_lane]);
+    let bard = registration::<BardFamily>(ExecutionPhase::OUTPUT, &[bard_lane]);
+
+    assert_eq!(
+        check_registrations(&[&storyteller, &choir], &runtime, &caps),
+        Ok(()),
+        "`narrator` and `chorus` are two names, so two agents"
+    );
+
+    let Err(error) = check_registrations(&[&storyteller, &choir, &bard], &runtime, &caps) else {
+        panic!("`storyteller` and `bard` both name `narrator`, and boot accepted them");
+    };
+    let BootError::TwoFamiliesForOneAgent {
+        agent,
+        first,
+        second,
+    } = error.clone()
+    else {
+        panic!("expected TwoFamiliesForOneAgent, got {error:?}");
+    };
+    assert_eq!(agent.name(), "narrator", "the error names the agent");
+    assert_eq!(agent, AgentId::new("narrator"));
+    assert_eq!((first, second), ("storyteller", "bard"));
+    assert!(
+        error.to_string().contains("narrator"),
+        "the message names the agent: {error}"
+    );
+}
+
+/// **A family declares its agent.** `register_agent!` reads the agent from
+/// the family's `AGENT`, so a registration negotiates under the name its
+/// family gave, and two families with two names register two agents.
+#[test]
+fn a_family_declares_its_agent() {
+    static STORYTELLER: AgentRegistration = khora_core::register_agent! {
+        family: StorytellerFamily,
+        phase: ExecutionPhase::OUTPUT,
+        importance: AgentImportance::Important,
+        after: [],
+        modes: [],
+        fixed_step: None,
+        lanes: [StorytellerLane],
+    };
+    static CHOIR: AgentRegistration = khora_core::register_agent! {
+        family: ChoirFamily,
+        phase: ExecutionPhase::OUTPUT,
+        importance: AgentImportance::Important,
+        after: [],
+        modes: [],
+        fixed_step: None,
+        lanes: [ChoirLane],
+    };
+
+    assert_eq!(STORYTELLER.agent, StorytellerFamily::AGENT);
+    assert_eq!(STORYTELLER.agent.name(), "narrator");
+    assert_eq!(CHOIR.agent, ChoirFamily::AGENT);
+    assert_eq!(CHOIR.agent.name(), "chorus");
+    assert_ne!(
+        STORYTELLER.agent, CHOIR.agent,
+        "two families naming two agents register two agents"
     );
 }

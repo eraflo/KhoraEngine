@@ -74,9 +74,12 @@ pub struct RenderAgent {
     frame_status: Option<AgentFrameStatusMap>,
 }
 
+/// The scene renderer's name.
+pub const RENDERER: AgentId = AgentId::new("renderer");
+
 impl Agent for RenderAgent {
     fn id(&self) -> AgentId {
-        AgentId::Renderer
+        RENDERER
     }
 
     /// World-free: the scene comes from the bus's `RenderWorld`, and the
@@ -405,7 +408,7 @@ impl Agent for RenderAgent {
             // FrameContext that this agent reads. The scheduler uses this
             // declaration to enforce ordering via the AgentCompletionMap.
             dependencies: vec![AgentDependency {
-                target: AgentId::ShadowRenderer,
+                target: <khora_lanes::shadow_lane::ShadowsFamily as khora_core::lane::family::LaneFamily>::AGENT,
                 kind: DependencyKind::Hard,
                 condition: None,
             }],
@@ -572,7 +575,7 @@ mod tests {
     fn test_report_status_initial_state() {
         let agent = RenderAgent::default();
         let status = agent.report_status();
-        assert_eq!(status.agent_id, AgentId::Renderer);
+        assert_eq!(status.agent_id, AgentId::new("renderer"));
         assert_eq!(status.health_score, 1.0);
         assert!(!status.is_stalled);
     }

@@ -30,7 +30,7 @@ pub struct ShadowsFamily;
 impl LaneFamily for ShadowsFamily {
     const KIND: LaneKind = LaneKind::Shadow;
     const NAME: &'static str = "shadows";
-    const AGENT: AgentId = AgentId::ShadowRenderer;
+    const AGENT: AgentId = AgentId::new("shadows");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = ShadowsOutputs<'f>;
 }

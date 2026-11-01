@@ -29,7 +29,7 @@ pub struct SkyboxFamily;
 impl LaneFamily for SkyboxFamily {
     const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "skybox";
-    const AGENT: AgentId = AgentId::Skybox;
+    const AGENT: AgentId = AgentId::new("skybox");
     const SEMANTICS: Semantics = Semantics::Presentation;
     type Outputs<'f> = SkyboxOutputs<'f>;
 }

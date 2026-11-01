@@ -30,7 +30,7 @@ struct StubAgent {
 
 impl Agent for StubAgent {
     fn id(&self) -> AgentId {
-        AgentId::Renderer
+        AgentId::new("renderer")
     }
     fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
         NegotiationResponse {
@@ -54,7 +54,7 @@ impl Agent for StubAgent {
     }
     fn report_status(&self) -> AgentStatus {
         AgentStatus {
-            agent_id: AgentId::Renderer,
+            agent_id: AgentId::new("renderer"),
             current_strategy: self.applied.unwrap_or(StrategyId::Balanced),
             health_score: 1.0,
             is_stalled: false,
@@ -128,15 +128,15 @@ fn test_forecast_total_ms_sums_agent_models() {
         renderer.record(n, 3.0 * n);
         physics.record(n, 2.0 * n);
     }
-    models.insert(AgentId::Renderer, renderer);
-    models.insert(AgentId::Physics, physics);
+    models.insert(AgentId::new("renderer"), renderer);
+    models.insert(AgentId::new("physics"), physics);
 
     // Serial (empty plan): 300 + 200 = 500ms (within fit tolerance).
     let total = forecast_total_ms(&models, 100.0, &[]).expect("a fit is available");
     assert!((total - 500.0).abs() < 1.0, "serial forecast = {total}");
 
     // Concurrent wave [Renderer, Physics]: critical path = max(300, 200).
-    let plan = vec![vec![AgentId::Renderer, AgentId::Physics]];
+    let plan = vec![vec![AgentId::new("renderer"), AgentId::new("physics")]];
     let concurrent = forecast_total_ms(&models, 100.0, &plan).expect("a fit is available");
     assert!(
         (concurrent - 300.0).abs() < 1.0,
@@ -153,7 +153,7 @@ fn test_dcc_ingests_agent_cost_and_component_access() {
     dcc.start(rx);
 
     tx.send(TelemetryEvent::AgentCost {
-        id: AgentId::Renderer,
+        id: AgentId::new("renderer"),
         n: 1000.0,
         time_ms: 4.2,
     })
@@ -221,7 +221,7 @@ fn test_dcc_records_decisions() {
         trace
             .ticks
             .iter()
-            .all(|tick| tick.iter().any(|(id, _)| *id == AgentId::Renderer)),
+            .all(|tick| tick.iter().any(|(id, _)| *id == AgentId::new("renderer"))),
         "every recorded tick should include the registered agent"
     );
 }
@@ -232,7 +232,7 @@ fn test_dcc_replay_flag_control() {
     assert!(!dcc.is_replaying());
 
     let trace = DecisionTrace {
-        ticks: vec![vec![(AgentId::Renderer, StrategyId::LowPower)]],
+        ticks: vec![vec![(AgentId::new("renderer"), StrategyId::LowPower)]],
     };
     dcc.replay_decisions(trace);
     assert!(dcc.is_replaying());
@@ -273,7 +273,7 @@ fn test_dcc_manual_mode_pins_strategy() {
     // Developer pins the agent to LowPower. With ample budget, `Learning`
     // would otherwise pick Balanced (the most expensive offered strategy).
     dcc.set_adaptation_mode(
-        AgentId::Renderer,
+        AgentId::new("renderer"),
         AdaptationMode::Manual(StrategyId::LowPower),
     );
     dcc.start(rx);
@@ -336,7 +336,7 @@ struct RecoveryStubAgent {
 
 impl Agent for RecoveryStubAgent {
     fn id(&self) -> AgentId {
-        AgentId::Renderer
+        AgentId::new("renderer")
     }
     fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
         NegotiationResponse {
@@ -360,7 +360,7 @@ impl Agent for RecoveryStubAgent {
     }
     fn report_status(&self) -> AgentStatus {
         AgentStatus {
-            agent_id: AgentId::Renderer,
+            agent_id: AgentId::new("renderer"),
             current_strategy: self.applied.unwrap_or(StrategyId::LowPower),
             health_score: 1.0,
             is_stalled: false,
@@ -522,9 +522,9 @@ fn dcc_with_three_recording_agents() -> (
     let (dcc, _rx) = DccService::new(DccConfig::default());
     let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     for (name, priority, id) in [
-        ("low", 1.0, AgentId::Script),
-        ("high", 3.0, AgentId::Audio),
-        ("middle", 2.0, AgentId::Ui),
+        ("low", 1.0, AgentId::new("script")),
+        ("high", 3.0, AgentId::new("audio")),
+        ("middle", 2.0, AgentId::new("ui")),
     ] {
         dcc.register_agent(
             std::sync::Arc::new(std::sync::Mutex::new(InitRecording {

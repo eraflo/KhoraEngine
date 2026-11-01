@@ -44,6 +44,7 @@ fn mix_in(phase: ExecutionPhase) -> AgentRegistration {
         modes: &[],
         fixed_step: None,
         default_level: None,
+        module: module_path!(),
         lanes: &[mix_lane],
     }
 }

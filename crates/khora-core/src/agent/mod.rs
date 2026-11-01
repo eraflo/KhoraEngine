@@ -77,7 +77,7 @@ pub use timing::{AgentImportance, ExecutionTiming};
 /// struct MyAgent;
 ///
 /// impl Agent for MyAgent {
-///     fn id(&self) -> AgentId { AgentId::Renderer }
+///     fn id(&self) -> AgentId { AgentId::new("renderer") }
 ///
 ///     fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
 ///         // Propose a strategy that fits `request`'s constraints.

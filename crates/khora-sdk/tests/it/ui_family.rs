@@ -75,7 +75,7 @@ fn the_engine_boots_the_ui_family_as_one_lane_agent() {
                 agent
                     .lock()
                     .ok()
-                    .filter(|agent| agent.id() == AgentId::Ui)
+                    .filter(|agent| agent.id() == AgentId::new("ui"))
                     .map(|agent| agent.as_any().is::<LaneAgent>())
             })
             .collect();

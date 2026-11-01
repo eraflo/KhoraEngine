@@ -153,13 +153,17 @@ fn after_one_frame(writers: Vec<Writer>, parallel: bool) -> ExecutionScheduler {
 #[test]
 fn an_undeclared_deck_write_is_reported_in_debug() {
     let scheduler = after_one_frame(
-        vec![Writer::new(AgentId::Script, AgentAccess::Exclusive, true)],
+        vec![Writer::new(
+            AgentId::new("script"),
+            AgentAccess::Exclusive,
+            true,
+        )],
         false,
     );
 
     assert_eq!(
         scheduler.undeclared_deck_writes(),
-        [(AgentId::Script, TypeId::of::<Undeclared>())],
+        [(AgentId::new("script"), TypeId::of::<Undeclared>())],
         "the slot written outside the declaration is reported, with its writer"
     );
 }
@@ -169,7 +173,11 @@ fn an_undeclared_deck_write_is_reported_in_debug() {
 #[test]
 fn a_declared_deck_write_is_not_reported() {
     let scheduler = after_one_frame(
-        vec![Writer::new(AgentId::Script, AgentAccess::Exclusive, false)],
+        vec![Writer::new(
+            AgentId::new("script"),
+            AgentAccess::Exclusive,
+            false,
+        )],
         false,
     );
 
@@ -188,15 +196,15 @@ fn a_declared_deck_write_is_not_reported() {
 fn an_undeclared_deck_write_in_a_concurrent_wave_is_reported_in_debug() {
     let scheduler = after_one_frame(
         vec![
-            Writer::new(AgentId::Audio, AgentAccess::Isolated, false),
-            Writer::new(AgentId::ShadowRenderer, AgentAccess::Isolated, true).elsewhere(),
+            Writer::new(AgentId::new("audio"), AgentAccess::Isolated, false),
+            Writer::new(AgentId::new("shadows"), AgentAccess::Isolated, true).elsewhere(),
         ],
         true,
     );
 
     assert_eq!(
         scheduler.undeclared_deck_writes(),
-        [(AgentId::ShadowRenderer, TypeId::of::<Undeclared>())],
+        [(AgentId::new("shadows"), TypeId::of::<Undeclared>())],
         "only the agent that wrote outside its declaration is reported"
     );
 }

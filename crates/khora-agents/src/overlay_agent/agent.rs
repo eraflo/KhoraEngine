@@ -15,7 +15,6 @@
 //! The overlay families' registrations: one `LaneAgent` each for the grid,
 //! the wireframe and the gizmos, their phase and their lane.
 
-use khora_core::agent::gorna::AgentId;
 use khora_core::agent::{AgentImportance, ExecutionPhase};
 use khora_lanes::overlay_lane::{
     GizmoFamily, GizmoLane, GridFamily, GridLane, WireframeFamily, WireframeLane,
@@ -32,7 +31,7 @@ khora_script::inventory::submit! {
         family: GridFamily,
         phase: ExecutionPhase::OUTPUT,
         importance: AgentImportance::Optional,
-        after: [AgentId::Renderer],
+        after: [crate::render_agent::RENDERER],
         modes: [],
         fixed_step: None,
         lanes: [GridLane],
@@ -44,7 +43,7 @@ khora_script::inventory::submit! {
         family: WireframeFamily,
         phase: ExecutionPhase::OUTPUT,
         importance: AgentImportance::Optional,
-        after: [AgentId::Renderer],
+        after: [crate::render_agent::RENDERER],
         modes: [],
         fixed_step: None,
         lanes: [WireframeLane],
@@ -56,7 +55,7 @@ khora_script::inventory::submit! {
         family: GizmoFamily,
         phase: ExecutionPhase::OUTPUT,
         importance: AgentImportance::Optional,
-        after: [AgentId::Renderer],
+        after: [crate::render_agent::RENDERER],
         modes: [],
         fixed_step: None,
         lanes: [GizmoLane],

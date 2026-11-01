@@ -52,7 +52,7 @@ fn the_ui_family_is_registered_once() {
     let registration = ui_registration();
 
     assert_eq!(registration.family_name, "ui");
-    assert_eq!(registration.agent, AgentId::Ui);
+    assert_eq!(registration.agent, AgentId::new("ui"));
     assert_eq!(registration.kind, LaneKind::Ui);
     assert_eq!(registration.semantics, Semantics::Presentation);
     assert!(registration.modes.is_empty(), "the UI draws in every mode");
@@ -193,7 +193,7 @@ fn the_ui_family_boots_with_the_two_atlases_and_no_text_renderer() {
         Err(refusal) => panic!("the UI family boots: {refusal}"),
     };
     let ids: Vec<AgentId> = agents.iter().map(|agent| agent.id()).collect();
-    assert_eq!(ids, vec![AgentId::Ui]);
+    assert_eq!(ids, vec![AgentId::new("ui")]);
 }
 
 /// Asserts the check refuses the UI family on `runtime`, naming the family
@@ -368,6 +368,6 @@ fn the_ui_agent_offers_one_balanced_strategy() {
 
     assert_eq!(offered, [StrategyId::Balanced]);
     let status = agent.report_status();
-    assert_eq!(status.agent_id, AgentId::Ui);
+    assert_eq!(status.agent_id, AgentId::new("ui"));
     assert_eq!(status.current_strategy, StrategyId::Balanced);
 }

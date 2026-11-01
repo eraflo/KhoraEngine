@@ -68,7 +68,7 @@ fn the_physics_family_is_registered_once() {
     let registration = physics_registration();
 
     assert_eq!(registration.family_name, "physics");
-    assert_eq!(registration.agent, AgentId::Physics);
+    assert_eq!(registration.agent, AgentId::new("physics"));
     assert_eq!(registration.kind, LaneKind::Physics);
     assert_eq!(registration.semantics, Semantics::Exact);
     assert_eq!(registration.phase, ExecutionPhase::TRANSFORM);
@@ -165,7 +165,7 @@ fn the_physics_family_boots_with_a_provider() {
         Err(refusal) => panic!("the physics family boots: {refusal}"),
     };
     let ids: Vec<AgentId> = agents.iter().map(|agent| agent.id()).collect();
-    assert_eq!(ids, vec![AgentId::Physics]);
+    assert_eq!(ids, vec![AgentId::new("physics")]);
 }
 
 /// Boot refuses the physics family on a runtime without a provider, naming

@@ -76,10 +76,15 @@ fn scheduler_takes_agent_ids_from_the_registry() {
     let registry = Arc::new(Mutex::new(AgentRegistry::new()));
     {
         let mut agents = registry.lock().expect("the registry lock");
-        agents.register(Arc::new(Mutex::new(Idle { id: AgentId::Audio })), 1.0);
+        agents.register(
+            Arc::new(Mutex::new(Idle {
+                id: AgentId::new("audio"),
+            })),
+            1.0,
+        );
         agents.register_for_mode(
             Arc::new(Mutex::new(Idle {
-                id: AgentId::Script,
+                id: AgentId::new("script"),
             })),
             0.5,
             vec![EngineMode::Playing],
@@ -90,23 +95,23 @@ fn scheduler_takes_agent_ids_from_the_registry() {
         ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
 
     let channel = scheduler.budget_channel();
-    channel.send(AgentId::Audio, budget(StrategyId::LowPower));
-    channel.send(AgentId::Script, budget(StrategyId::HighPerformance));
-    channel.send(AgentId::Physics, budget(StrategyId::Balanced));
+    channel.send(AgentId::new("audio"), budget(StrategyId::LowPower));
+    channel.send(AgentId::new("script"), budget(StrategyId::HighPerformance));
+    channel.send(AgentId::new("physics"), budget(StrategyId::Balanced));
     channel.sync();
 
     assert_eq!(
-        channel.get(AgentId::Audio).map(|b| b.strategy_id),
+        channel.get(AgentId::new("audio")).map(|b| b.strategy_id),
         Some(StrategyId::LowPower),
         "a registered agent is budgeted"
     );
     assert_eq!(
-        channel.get(AgentId::Script).map(|b| b.strategy_id),
+        channel.get(AgentId::new("script")).map(|b| b.strategy_id),
         Some(StrategyId::HighPerformance),
         "an agent registered for some modes only is budgeted too"
     );
     assert_eq!(
-        channel.get(AgentId::Physics).map(|b| b.strategy_id),
+        channel.get(AgentId::new("physics")).map(|b| b.strategy_id),
         None,
         "an agent the registry does not hold has no channel entry"
     );

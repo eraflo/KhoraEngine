@@ -36,7 +36,7 @@ struct Counting {
 
 impl Agent for Counting {
     fn id(&self) -> AgentId {
-        AgentId::Script
+        AgentId::new("script")
     }
     fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
         NegotiationResponse {
@@ -47,7 +47,7 @@ impl Agent for Counting {
     fn apply_budget(&mut self, _b: ResourceBudget) {}
     fn report_status(&self) -> AgentStatus {
         AgentStatus {
-            agent_id: AgentId::Script,
+            agent_id: AgentId::new("script"),
             current_strategy: StrategyId::Balanced,
             health_score: 1.0,
             is_stalled: false,
@@ -91,8 +91,11 @@ fn playing_only(context_mode: EngineMode) -> (ExecutionScheduler, Arc<AtomicUsiz
         mode: context_mode,
         ..Context::default()
     };
-    let scheduler =
-        ExecutionScheduler::new(registry, Arc::new(RwLock::new(context)), &[AgentId::Script]);
+    let scheduler = ExecutionScheduler::new(
+        registry,
+        Arc::new(RwLock::new(context)),
+        &[AgentId::new("script")],
+    );
     (scheduler, runs)
 }
 

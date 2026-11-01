@@ -56,7 +56,7 @@ const FRAME_TARGET_MS: f32 = 16.67;
 #[derive(Debug, Clone)]
 struct AgentSnapshot {
     id: AgentId,
-    crate_name: &'static str,
+    crate_name: String,
     importance: AgentImportance,
     default_phase: ExecutionPhase,
     priority: f32,
@@ -95,25 +95,14 @@ impl AgentSnapshot {
     }
 }
 
-/// Crate-of-origin convention: built-in `khora-agents` agents have known
-/// `AgentId` values; everything else is conventionally classified as
-/// `user-plugin` (extension). This mapping is data-only — it doesn't try to
-/// inspect Cargo metadata at runtime.
-fn crate_for_id(id: AgentId) -> &'static str {
-    match id {
-        AgentId::Renderer
-        | AgentId::ShadowRenderer
-        | AgentId::Skybox
-        | AgentId::Grid
-        | AgentId::Wireframe
-        | AgentId::Gizmo
-        | AgentId::Physics
-        | AgentId::Ecs
-        | AgentId::Ui
-        | AgentId::Audio
-        | AgentId::Script
-        | AgentId::Asset => "khora-agents",
-    }
+/// The crate an agent comes from, as tools show it: the first segment of the
+/// module its family was registered in (`khora_agents::ui_agent` →
+/// `khora-agents`), or `other` for an agent registered without one.
+fn crate_label(origin: Option<&str>) -> String {
+    origin
+        .and_then(|module| module.split("::").next())
+        .filter(|name| !name.is_empty())
+        .map_or_else(|| "other".to_owned(), |name| name.replace('_', "-"))
 }
 
 /// How many recent frame-time samples the summary sparkline keeps.
@@ -179,7 +168,7 @@ impl ControlPlanePanel {
             let id = agent.id();
             out.push(AgentSnapshot {
                 id,
-                crate_name: crate_for_id(id),
+                crate_name: crate_label(reg.origin(id)),
                 importance: timing.importance,
                 default_phase: timing.default_phase,
                 priority: timing.priority,
@@ -297,13 +286,23 @@ impl EditorPanel for ControlPlanePanel {
 mod tests {
     use super::*;
 
-    /// **The three overlay agents are the engine's own**: the control plane
-    /// lists the grid's, the wireframe's and the gizmos' agents under
-    /// `khora-agents`, as it listed the one overlay agent they replace.
+    /// **An agent is listed under the crate it was registered in.** The
+    /// overlay agents, registered in `khora-agents`, are listed under
+    /// `khora-agents`; a game's agent under its own crate; an agent whose
+    /// origin was never recorded under `other`.
     #[test]
-    fn the_overlay_agents_belong_to_khora_agents() {
-        for overlay in [AgentId::Grid, AgentId::Wireframe, AgentId::Gizmo] {
-            assert_eq!(crate_for_id(overlay), "khora-agents", "{overlay:?}");
-        }
+    fn an_agent_is_listed_under_the_crate_it_was_registered_in() {
+        assert_eq!(
+            crate_label(Some("khora_agents::overlay_agent::agent")),
+            "khora-agents"
+        );
+        assert_eq!(
+            crate_label(Some("my_game::agents::weather")),
+            "my-game",
+            "a game's agent is listed under the game's crate"
+        );
+        assert_eq!(crate_label(Some("sandbox")), "sandbox", "a crate root");
+        assert_eq!(crate_label(None), "other", "no recorded origin");
+        assert_eq!(crate_label(Some("")), "other", "an empty origin");
     }
 }

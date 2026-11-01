@@ -30,7 +30,7 @@ use khora_core::agent::gorna::{
     AdaptationMode, AgentHints, AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints,
     StrategyId, StrategyOption, TickDecisions,
 };
-use khora_core::agent::Agent;
+use khora_core::agent::{Agent, AgentImportance};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -220,20 +220,22 @@ impl GornaArbitrator {
                 continue;
             };
             let agent_id = agent.id();
-            // A `Prioritize` hint overrides the default per-agent priority,
-            // steering which agents the budget fit upgrades first.
+            let timing = agent.execution_timing();
+            // How much an agent weighs, and whether it must run, come from
+            // the importance it declares — never from its name. A `Prioritize`
+            // hint overrides the weight.
             let priority = hints
                 .get(&agent_id)
                 .and_then(|h| h.priority)
-                .unwrap_or_else(|| self.get_agent_priority(agent_id));
-            let timing = agent.execution_timing();
+                .unwrap_or_else(|| importance_weight(timing.importance));
+            let must_run = timing.importance == AgentImportance::Critical;
             let current_strategy = agent.report_status().current_strategy;
 
             let request = NegotiationRequest {
                 target_latency: Duration::from_secs_f64(effective_budget_ms as f64 / 1000.0),
                 priority_weight: priority,
                 constraints: ResourceConstraints {
-                    must_run: self.is_critical_agent(agent_id),
+                    must_run,
                     ..Default::default()
                 },
                 current_mode: context.mode.clone(),
@@ -481,37 +483,15 @@ impl GornaArbitrator {
             })
             .collect()
     }
+}
 
-    /// Returns the priority weight for an agent.
-    ///
-    /// Higher values indicate greater importance. The DCC uses these weights to
-    /// decide which agents get upgraded first when budget is available.
-    fn get_agent_priority(&self, id: AgentId) -> f32 {
-        match id {
-            AgentId::Renderer => 1.0,
-            AgentId::ShadowRenderer => 1.0,
-            AgentId::Physics => 1.0,
-            AgentId::Ecs => 0.8,
-            AgentId::Ui => 0.7,
-            AgentId::Audio => 0.6,
-            AgentId::Asset => 0.5,
-            // Presentation polish: what the user sees over and behind the
-            // scene, the first to give way.
-            AgentId::Skybox | AgentId::Grid | AgentId::Wireframe | AgentId::Gizmo => 0.4,
-            // Above rendering polish and below simulation: gameplay decides
-            // what the frame is about, but a frame that skipped a tick of it
-            // is recoverable in a way a missed physics step is not.
-            AgentId::Script => 0.9,
-        }
-    }
-
-    /// Returns `true` if the agent is considered critical
-    /// and must always receive at least its minimum strategy.
-    fn is_critical_agent(&self, id: AgentId) -> bool {
-        matches!(
-            id,
-            AgentId::Renderer | AgentId::Physics | AgentId::Ecs | AgentId::Ui
-        )
+/// The weight an agent of `importance` gets in the budget fit: the agents a
+/// frame cannot do without first, the ones it can lose last.
+fn importance_weight(importance: AgentImportance) -> f32 {
+    match importance {
+        AgentImportance::Critical => 1.0,
+        AgentImportance::Important => 0.75,
+        AgentImportance::Optional => 0.5,
     }
 }
 

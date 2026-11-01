@@ -98,7 +98,7 @@ To remove adaptation as a variable, set the agent's **`AdaptationMode`** through
 There are exactly four modes (`crates/khora-core/src/agent/gorna/mod.rs`):
 
 ```rust
-dcc.set_adaptation_mode(AgentId::Renderer, AdaptationMode::Manual(StrategyId::LowPower));
+dcc.set_adaptation_mode(AgentId::new("renderer"), AdaptationMode::Manual(StrategyId::LowPower));
 ```
 
 | Mode | Effect |
