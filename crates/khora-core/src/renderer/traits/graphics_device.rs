@@ -243,4 +243,11 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
 
     /// Checks if a specific, optional rendering feature is supported by the backend.
     fn supports_feature(&self, feature_name: &str) -> bool;
+
+    /// What the device can do that a lane may need, read once at boot to
+    /// decide which lanes stay on their families' menus. A device that does
+    /// not say reports none of it.
+    fn caps(&self) -> crate::gpu::DeviceCaps {
+        crate::gpu::DeviceCaps::default()
+    }
 }

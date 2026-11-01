@@ -20,7 +20,7 @@ use std::any::TypeId;
 use super::contract::{Lane, LaneReport};
 use super::cost::Cost;
 use super::family::LaneFamily;
-use super::guard::{InputRefusal, InputWarning, OutputRefusal};
+use super::guard::{InputRefusal, InputWarning, OutputRefusal, SourceKind};
 use super::io::{Declaration, InputSource, LaneInputs, LaneOutputs, OutputSink, TargetKey};
 use super::level::Level;
 use super::LaneError;
@@ -77,6 +77,14 @@ pub trait AnyLane: Send {
         outputs: &mut OutputSink<'_>,
         gpu: &mut GpuSetup<'_>,
     ) -> Run;
+
+    /// The cost of every level on this frame's inputs, in level order,
+    /// without running the lane: the inputs are fetched and each level is
+    /// costed, but nothing is prepared, recorded or written.
+    ///
+    /// `None` when an input is refused, and for a lane that declares a
+    /// `#[locked]` input: quoting never takes a lock.
+    fn quote(&self, inputs: &mut InputSource<'_>) -> Option<Vec<Cost>>;
 
     /// Releases what the lane built on the device.
     fn shutdown(&mut self, gpu: &mut GpuSetup<'_>);
@@ -139,6 +147,23 @@ impl<L: Lane> AnyLane for Erased<L> {
             costs,
             warnings: inputs.warnings().to_vec(),
         }
+    }
+
+    fn quote(&self, inputs: &mut InputSource<'_>) -> Option<Vec<Cost>> {
+        let locks = self
+            .declaration()
+            .inputs()
+            .iter()
+            .any(|input| input.kind == SourceKind::Locked);
+        if locks {
+            return None;
+        }
+        let fetched = <L::Inputs<'_> as LaneInputs<'_>>::fetch(inputs).ok()?;
+        Some(
+            (0..self.lane.levels().len())
+                .map(|level| self.lane.cost(level, &fetched))
+                .collect(),
+        )
     }
 
     fn shutdown(&mut self, gpu: &mut GpuSetup<'_>) {

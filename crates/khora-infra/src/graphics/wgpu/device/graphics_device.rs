@@ -15,6 +15,7 @@
 //! `GraphicsDevice` for the wgpu device: resource creation, writes,
 //! command submission.
 
+use khora_core::gpu::DeviceCaps;
 use khora_core::renderer::api::device::{GraphicsBackendType, RendererDeviceType};
 use khora_core::renderer::api::resource::{IndexFormat, TextureFormat};
 use khora_core::renderer::traits::CommandEncoder;
@@ -927,6 +928,19 @@ impl GraphicsDevice for WgpuDevice {
                 backend_type: GraphicsBackendType::Unknown,
                 device_type: RendererDeviceType::Unknown,
             })
+    }
+
+    /// Read from the device's limits: storage buffers are there when a
+    /// shader stage may bind at least one (a downlevel device, such as WebGL2,
+    /// allows none).
+    fn caps(&self) -> DeviceCaps {
+        DeviceCaps {
+            storage_buffers: self
+                .wgpu_device()
+                .limits()
+                .max_storage_buffers_per_shader_stage
+                > 0,
+        }
     }
 
     fn supports_feature(&self, feature_name: &str) -> bool {

@@ -20,6 +20,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use khora_sdk::khora_core::gpu::DeviceCaps;
 use khora_sdk::khora_core::math::dimension::{Extent3D, Origin3D};
 use khora_sdk::khora_core::math::Extent2D;
 use khora_sdk::khora_core::platform::window::KhoraWindow;
@@ -157,14 +158,24 @@ pub fn install_renderer(runtime: &mut Runtime, renderer: RecordingRenderer) {
 }
 
 /// A device that creates whatever it is asked to and records every command
-/// buffer submitted to it, in order.
+/// buffer submitted to it, in order. It reports the capabilities it was made
+/// with: none by default.
 #[derive(Debug, Default)]
 pub struct QueueLog {
     next_id: AtomicUsize,
     submitted: Mutex<Vec<CommandBufferId>>,
+    caps: DeviceCaps,
 }
 
 impl QueueLog {
+    /// A device reporting `caps`.
+    pub fn with_caps(caps: DeviceCaps) -> Self {
+        Self {
+            caps,
+            ..Self::default()
+        }
+    }
+
     /// The command buffers submitted so far, in submission order.
     pub fn submitted(&self) -> Vec<CommandBufferId> {
         self.submitted.lock().expect("the queue log").clone()
@@ -357,6 +368,9 @@ impl GraphicsDevice for QueueLog {
     }
     fn supports_feature(&self, _feature_name: &str) -> bool {
         false
+    }
+    fn caps(&self) -> DeviceCaps {
+        self.caps
     }
 }
 

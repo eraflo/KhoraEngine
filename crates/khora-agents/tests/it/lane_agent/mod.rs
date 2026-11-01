@@ -15,9 +15,12 @@
 //! `LaneAgent`, the one agent behaviour, and the registrations it is built
 //! from.
 
+mod default_level;
 mod execution;
 mod fallback_across_lanes;
 mod fixtures;
+mod health;
 mod menu;
+mod quotes;
 mod registration;
 mod scheduled;

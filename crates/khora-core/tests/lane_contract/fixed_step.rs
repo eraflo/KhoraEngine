@@ -110,6 +110,7 @@ fn tick_registration(fixed_step: Option<Duration>) -> AgentRegistration {
         after: &[],
         modes: &[],
         fixed_step,
+        default_level: None,
         lanes: &[tick_lane],
     }
 }

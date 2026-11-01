@@ -19,7 +19,6 @@ use khora_agents::lane_agent::{set_fixed_step, LaneAgent};
 use khora_agents::registered_agent::{lane_agents_in, registered_agents};
 use khora_control::{DccConfig, DccService, EngineMode};
 use khora_core::agent::{Agent, ExecutionPhase};
-use khora_core::gpu::DeviceCaps;
 use khora_core::Runtime;
 use khora_data::render::{FrameGraph, SharedFrameGraph};
 use khora_telemetry::TelemetryService;
@@ -552,9 +551,12 @@ fn register_lane_agents(
     phase_order: &[ExecutionPhase],
 ) -> Vec<Arc<Mutex<LaneAgent>>> {
     let registrations = registered_agents();
-    // No family offers a storage-buffer lane yet: the caps are read from the
-    // device once one does.
-    let caps = DeviceCaps::default();
+    // What the installed graphics device can do decides which lanes stay on
+    // their family's menu; without a device, nothing optional is assumed.
+    let caps = runtime
+        .look_up::<Arc<dyn khora_core::renderer::GraphicsDevice>>()
+        .map(|device| device.caps())
+        .unwrap_or_default();
     let mut agents = match lane_agents_in(&registrations, runtime, &caps, phase_order) {
         Ok(agents) => agents,
         Err(refusal) => panic!("the engine cannot boot its lane agents: {refusal}"),

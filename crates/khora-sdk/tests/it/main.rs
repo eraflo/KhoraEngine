@@ -35,6 +35,7 @@ mod physics_step_setting;
 mod prefab_library;
 mod problems_without_scripts;
 mod public_paths;
+mod quotes_follow_the_target;
 mod reload_after_an_emptied_module;
 mod removed_phases;
 mod render_doubles;

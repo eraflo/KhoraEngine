@@ -162,11 +162,14 @@ fn a_strategy_off_the_menu_keeps_the_current_row() {
     assert_eq!(agent.report_status().current_strategy, StrategyId::Balanced);
 }
 
-/// **Contention follows the current lane.** Each lane's declaration is what
-/// the agent contends for while that lane is the one running: switching rows
-/// takes the first lane's read away and brings the second lane's lock in.
+/// **Locks follow the current lane; reads cover every lane the agent quotes.**
+/// The locks and deck slots the agent contends for are the running lane's: the
+/// second lane's lock is absent while the first lane runs, and present once the
+/// second runs. A full quote fetches the inputs of the lanes that do not run,
+/// so their reads stay declared whichever lane runs: the first lane's `Load` is
+/// still read while the second lane runs.
 #[test]
-fn contention_follows_the_current_lane() {
+fn locks_follow_the_current_lane_and_reads_cover_every_quoted_lane() {
     let first = Erased::new(FirstLane).declaration().contention();
     let second = Erased::new(SecondLane).declaration().contention();
     let load = TypeId::of::<Load>();
@@ -193,8 +196,8 @@ fn contention_follows_the_current_lane() {
     }
     assert!(on_second.writes.contains(&tally_lock));
     assert!(
-        !on_second.reads.contains(&load),
-        "the first lane's read went with it"
+        on_second.reads.contains(&load),
+        "the first lane is quoted while the second runs, so its read stays declared"
     );
     assert!(on_second.deck.contains(&recorded), "the family's slot");
 }

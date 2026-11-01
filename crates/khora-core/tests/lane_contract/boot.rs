@@ -62,6 +62,7 @@ fn registration<F: LaneFamily>(
         after: &[],
         modes: &[],
         fixed_step: None,
+        default_level: None,
         lanes,
     }
 }

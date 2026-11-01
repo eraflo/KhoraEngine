@@ -16,6 +16,7 @@
 //! holds up when many threads call it at once.
 
 mod buffer_descriptor;
+mod caps;
 mod concurrency;
 
 use crate::telemetry::gpu_monitor::GpuMonitor;

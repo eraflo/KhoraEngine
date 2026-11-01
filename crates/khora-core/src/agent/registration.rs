@@ -60,6 +60,9 @@ pub struct AgentRegistration {
     pub modes: &'static [EngineMode],
     /// The fixed step it runs at, if it does not run every frame.
     pub fixed_step: Option<Duration>,
+    /// The level the agent starts on, by strategy id: the first row of its
+    /// menu with that id. `None` starts on the menu's first row.
+    pub default_level: Option<StrategyId>,
     /// One constructor per lane of the family, each wrapping its lane in
     /// [`Erased`](crate::lane::erased::Erased).
     pub lanes: &'static [fn() -> Box<dyn AnyLane>],
@@ -168,6 +171,14 @@ pub enum BootError {
         /// The slot's type name.
         slot: &'static str,
     },
+    /// The registration names a default level no supported lane of the
+    /// family offers.
+    UnknownDefaultLevel {
+        /// The family.
+        family: &'static str,
+        /// The level it names.
+        level: StrategyId,
+    },
 }
 
 impl std::fmt::Display for BootError {
@@ -240,6 +251,10 @@ impl std::fmt::Display for BootError {
             } => write!(
                 f,
                 "`{lane}` of `{family}` reads the slot `{slot}` in `{field}`, which no earlier phase writes"
+            ),
+            Self::UnknownDefaultLevel { family, level } => write!(
+                f,
+                "the family `{family}` starts on {level:?}, which none of its lanes offers"
             ),
         }
     }
@@ -338,6 +353,11 @@ pub fn check_registrations_in(
         }
         if ids.is_empty() {
             return Err(BootError::NoLevel { family });
+        }
+        if let Some(level) = registration.default_level {
+            if !ids.contains(&level) {
+                return Err(BootError::UnknownDefaultLevel { family, level });
+            }
         }
         for lane in lanes {
             let declaration = lane.declaration();
@@ -467,8 +487,17 @@ fn written_earlier(
 ///     lanes: [SpatialMixingLane],
 /// };
 /// ```
+///
+/// A family that starts on a named level, rather than on its menu's first
+/// row, says so after `fixed_step`: `default_level: StrategyId::Balanced,`.
 #[macro_export]
 macro_rules! register_agent {
+    (@default_level) => {
+        ::core::option::Option::None
+    };
+    (@default_level $default_level:expr) => {
+        ::core::option::Option::Some($default_level)
+    };
     (
         family: $family:ty,
         phase: $phase:expr,
@@ -476,6 +505,7 @@ macro_rules! register_agent {
         after: [$($after:expr),* $(,)?],
         modes: [$($mode:expr),* $(,)?],
         fixed_step: $fixed_step:expr,
+        $(default_level: $default_level:expr,)?
         lanes: [$($lane:ty),+ $(,)?] $(,)?
     ) => {{
         $(
@@ -492,6 +522,7 @@ macro_rules! register_agent {
             after: &[$($after),*],
             modes: &[$($mode),*],
             fixed_step: $fixed_step,
+            default_level: $crate::register_agent!(@default_level $($default_level)?),
             lanes: &[$(
                 || -> ::std::boxed::Box<dyn $crate::lane::erased::AnyLane> {
                     ::std::boxed::Box::new($crate::lane::erased::Erased::new(

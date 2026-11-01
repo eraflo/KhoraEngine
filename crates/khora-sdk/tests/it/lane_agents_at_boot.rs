@@ -19,14 +19,15 @@
 //! The probe family below is submitted to the collection of this whole test
 //! binary, so every engine booted here carries it. It reads nothing and
 //! writes one slot of its own, and its agent id (`Ecs`) is one no built-in
-//! agent takes.
+//! agent takes. Its third lane runs only on a device with storage buffers, so
+//! it is on the menu only when the engine boots over such a device.
 
 use std::sync::{Arc, Mutex};
 
 use khora_agents::registered_agent::RegisteredAgent;
 use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_sdk::khora_core::agent::{AgentImportance, EngineMode, ExecutionPhase};
-use khora_sdk::khora_core::gpu::GpuSetup;
+use khora_sdk::khora_core::gpu::{DeviceCaps, GpuSetup};
 use khora_sdk::khora_core::lane::contract::{Lane, LaneReport};
 use khora_sdk::khora_core::lane::cost::{Cost, PerDevice};
 use khora_sdk::khora_core::lane::family::{LaneFamily, Semantics};
@@ -107,6 +108,7 @@ const fn level(id: StrategyId, name: &'static str) -> Level {
 
 const FIRST_LEVELS: &[Level] = &[level(StrategyId::LowPower, "first")];
 const SECOND_LEVELS: &[Level] = &[level(StrategyId::Balanced, "second")];
+const STORAGE_LEVELS: &[Level] = &[level(StrategyId::HighPerformance, "storage")];
 
 /// Every probe lane shutdown so far, in every engine of this binary: the
 /// lane, and the address of the device it was handed (`None` when headless).
@@ -186,6 +188,41 @@ impl Lane for SecondProbeLane {
     }
 }
 
+/// The probe's behaviour for a device with storage buffers.
+#[derive(Default)]
+pub struct StorageProbeLane;
+
+impl Lane for StorageProbeLane {
+    type Family = ProbeFamily;
+    type Inputs<'f> = NoInputs;
+
+    fn levels(&self) -> &[Level] {
+        STORAGE_LEVELS
+    }
+
+    fn supports(&self, caps: &DeviceCaps) -> bool {
+        caps.storage_buffers
+    }
+
+    fn cost(&self, _level: usize, _inputs: &NoInputs) -> Cost {
+        Cost::default()
+    }
+
+    fn record(
+        &mut self,
+        _level: usize,
+        _inputs: &mut NoInputs,
+        out: &mut ProbeOutputs,
+    ) -> Result<LaneReport, LaneError> {
+        out.slot = ProbeSlot;
+        Ok(LaneReport::default())
+    }
+
+    fn shutdown(&mut self, gpu: &mut GpuSetup<'_>) {
+        note_shutdown("storage", gpu);
+    }
+}
+
 khora_sdk::inventory::submit! {
     RegisteredAgent(khora_sdk::khora_core::register_agent! {
         family: ProbeFamily,
@@ -194,7 +231,7 @@ khora_sdk::inventory::submit! {
         after: [],
         modes: [EngineMode::Playing],
         fixed_step: None,
-        lanes: [FirstProbeLane, SecondProbeLane],
+        lanes: [FirstProbeLane, SecondProbeLane, StorageProbeLane],
     })
 }
 
@@ -296,6 +333,82 @@ fn engine_shutdown_releases_every_lane() {
         sorted,
         vec!["first", "second"],
         "each lane once, with this engine's device: {shutdowns:?}"
+    );
+}
+
+// ─── The device's capabilities ──────────────────────────────────────────────
+
+/// The strategies the probe family's agent offers in `engine`.
+fn probe_menu(engine: &EngineCore<Game>) -> Vec<StrategyId> {
+    use khora_sdk::khora_core::agent::gorna::{NegotiationRequest, ResourceConstraints};
+    use khora_sdk::khora_core::agent::ExecutionTiming;
+
+    let dcc = engine.dcc().expect("bootstrapped");
+    let registry = dcc.agent_registry().lock().expect("the registry lock");
+    let probe = registry
+        .collect_for_phase(ExecutionPhase::OUTPUT, &EngineMode::Playing)
+        .into_iter()
+        .map(|(agent, ..)| agent)
+        .find(|agent| agent.lock().is_ok_and(|agent| agent.id() == AgentId::Ecs))
+        .expect("the probe family's agent is registered");
+    let mut probe = probe.lock().expect("the probe agent's lock");
+    probe
+        .negotiate(NegotiationRequest {
+            target_latency: std::time::Duration::from_micros(16_667),
+            priority_weight: 1.0,
+            constraints: ResourceConstraints::default(),
+            current_mode: EngineMode::Playing,
+            agent_timing: ExecutionTiming::default(),
+        })
+        .strategies
+        .iter()
+        .map(|option| option.id)
+        .collect()
+}
+
+/// **Boot reads the capabilities from the installed device.** Over a device
+/// that has storage buffers, the probe's storage lane stays on its family's
+/// menu; over a device that has none, or with no device at all, it leaves it.
+#[test]
+fn boot_reads_the_device_caps_from_the_installed_device() {
+    let with_storage = Arc::new(QueueLog::with_caps(DeviceCaps {
+        storage_buffers: true,
+    }));
+    let mut runtime = Runtime::new();
+    runtime
+        .backends
+        .insert(with_storage as Arc<dyn GraphicsDevice>);
+    let mut engine = EngineCore::<Game>::new();
+    engine.bootstrap(Game, runtime);
+    let menu = probe_menu(&engine);
+    assert!(
+        menu.contains(&StrategyId::HighPerformance),
+        "a device with storage buffers keeps the storage lane: {menu:?}"
+    );
+
+    let without_storage = Arc::new(QueueLog::default());
+    let mut runtime = Runtime::new();
+    runtime
+        .backends
+        .insert(without_storage as Arc<dyn GraphicsDevice>);
+    let mut engine = EngineCore::<Game>::new();
+    engine.bootstrap(Game, runtime);
+    let menu = probe_menu(&engine);
+    assert!(
+        !menu.contains(&StrategyId::HighPerformance),
+        "a device without storage buffers drops the storage lane: {menu:?}"
+    );
+
+    let mut engine = EngineCore::<Game>::new();
+    engine.bootstrap(Game, Runtime::new());
+    let menu = probe_menu(&engine);
+    assert!(
+        !menu.contains(&StrategyId::HighPerformance),
+        "without a device the default caps stand: {menu:?}"
+    );
+    assert!(
+        menu.contains(&StrategyId::LowPower) && menu.contains(&StrategyId::Balanced),
+        "the lanes that run anywhere stay: {menu:?}"
     );
 }
 
