@@ -14,6 +14,10 @@
 
 //! Types and traits for the Goal-Oriented Resource Negotiation & Allocation (GORNA) protocol.
 
+pub mod protocol;
+#[cfg(test)]
+mod tests;
+
 use crate::agent::mode::EngineMode;
 use crate::agent::timing::{AgentImportance, ExecutionTiming};
 use serde::{Deserialize, Serialize};

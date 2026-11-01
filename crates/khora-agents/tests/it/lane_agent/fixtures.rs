@@ -21,9 +21,10 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use khora_agents::lane_agent::LaneAgent;
+use khora_agents::agent::LaneAgent;
+use khora_core::agent::gorna::protocol::{Envelope, Epoch, OfferRequest};
 use khora_core::agent::gorna::{
     AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId,
 };
@@ -625,4 +626,47 @@ pub fn offered(agent: &mut LaneAgent) -> Vec<StrategyId> {
         .iter()
         .map(|option| option.id)
         .collect()
+}
+
+// ─── Driving an agent through the protocol ──────────────────────────────────
+
+/// Room for anything on every device's memory.
+pub const ANY_MEMORY: PerDevice<u64> = PerDevice {
+    cpu: u64::MAX,
+    gpu: u64::MAX,
+    npu: u64::MAX,
+    other: u64::MAX,
+};
+
+/// An envelope of `micros` on the host, nothing on the other devices, and
+/// room for anything on every device's memory.
+pub fn host_envelope(micros: u64) -> Envelope {
+    Envelope {
+        time: PerDevice {
+            cpu: Duration::from_micros(micros),
+            ..PerDevice::default()
+        },
+        memory: ANY_MEMORY,
+    }
+}
+
+/// Lends `agent` `envelope` for epoch 1, with no pin and every row allowed.
+pub fn lend(agent: &mut LaneAgent, envelope: Envelope) {
+    agent.apply(Epoch(1), &envelope, None, None);
+}
+
+/// A request for an offer for `epoch`, at a 60 Hz target, while playing.
+pub fn offer_request(epoch: u64) -> OfferRequest {
+    OfferRequest {
+        epoch: Epoch(epoch),
+        target: Duration::from_micros(16_667),
+        pressure: 0.0,
+        mode: EngineMode::Playing,
+        reply_by: Instant::now() + Duration::from_secs(1),
+    }
+}
+
+/// The level `deck`'s last record ran at.
+pub fn recorded_level(deck: &OutputDeck) -> Option<usize> {
+    deck.get::<Recorded>().map(|recorded| recorded.level)
 }

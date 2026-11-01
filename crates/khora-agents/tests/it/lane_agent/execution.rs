@@ -19,7 +19,7 @@
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use khora_agents::lane_agent::{lane_agent, shut_down_lanes};
+use khora_agents::agent::{lane_agent, shut_down_lanes};
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Agent;
 use khora_core::gpu::{DeviceCaps, GpuSetup};

@@ -16,7 +16,7 @@
 //! tick on a real Rapier provider: releases under scaled parents, mirrored
 //! bodies, and a character that loses its collider.
 
-use khora_agents::lane_agent::LaneAgent;
+use khora_agents::agent::LaneAgent;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::engine_context::EngineContext;

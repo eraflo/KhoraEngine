@@ -14,7 +14,7 @@
 
 //! The audio family's agent: its registration, and nothing else.
 //!
-//! The engine boots one [`LaneAgent`](crate::lane_agent::LaneAgent) from it.
+//! The engine boots one [`LaneAgent`](crate::agent::LaneAgent) from it.
 //! The agent offers the [`SpatialMixingLane`]'s three voice levels to GORNA,
 //! fetches the frame's `AudioView` and the shared mix bus, and commits the
 //! playback updates. The audio device is opened by the application during

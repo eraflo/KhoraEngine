@@ -22,7 +22,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use khora_agents::lane_agent::{lane_agent, LaneAgent};
+use khora_agents::agent::{lane_agent, LaneAgent};
 use khora_agents::registered_agent::registered_agents;
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::Agent;

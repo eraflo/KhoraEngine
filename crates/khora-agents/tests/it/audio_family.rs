@@ -23,7 +23,7 @@ use std::any::TypeId;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use khora_agents::lane_agent::lane_agent;
+use khora_agents::agent::lane_agent;
 use khora_agents::registered_agent::{lane_agents, registered_agents};
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::registration::{check_registrations, AgentRegistration, BootError};

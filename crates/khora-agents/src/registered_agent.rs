@@ -25,7 +25,7 @@ use khora_core::agent::ExecutionPhase;
 use khora_core::gpu::DeviceCaps;
 use khora_core::Runtime;
 
-use crate::lane_agent::{lane_agent, LaneAgent};
+use crate::agent::{lane_agent, LaneAgent};
 
 /// One family's registration, as submitted to the collection.
 pub struct RegisteredAgent(pub AgentRegistration);

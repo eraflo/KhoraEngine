@@ -14,7 +14,7 @@
 
 //! The physics family's agent: its registration, and nothing else.
 //!
-//! The engine boots one [`LaneAgent`](crate::lane_agent::LaneAgent) from it, at
+//! The engine boots one [`LaneAgent`](crate::agent::LaneAgent) from it, at
 //! the game's `physics.step` ([`PhysicsSettings`](khora_core::physics::PhysicsSettings)).
 //! The family is exact: its one level keeps the simulation's result, and no
 //! GORNA decision changes the step — a step is a game setting, never a budget

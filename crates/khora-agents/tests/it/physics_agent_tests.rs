@@ -21,7 +21,7 @@
 //!   - Raycast queries call `PhysicsProvider::cast_ray` directly on the
 //!     locked backend.
 
-use khora_agents::lane_agent::LaneAgent;
+use khora_agents::agent::LaneAgent;
 use khora_core::agent::Agent;
 use khora_core::engine_context::EngineContext;
 use khora_core::math::Vec3;

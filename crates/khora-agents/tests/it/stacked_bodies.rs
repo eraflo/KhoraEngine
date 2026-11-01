@@ -23,7 +23,7 @@
 //! tests pin what a resting stack, a resting box, and a scaled body look like
 //! from the ECS side.
 
-use khora_agents::lane_agent::LaneAgent;
+use khora_agents::agent::LaneAgent;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::engine_context::EngineContext;

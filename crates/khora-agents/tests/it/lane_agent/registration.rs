@@ -135,7 +135,7 @@ fn a_refused_registration_set_builds_no_lane_agent() {
 /// frame is left running every frame.
 #[test]
 fn a_games_step_changes_only_a_fixed_step_agent() {
-    use khora_agents::lane_agent::{lane_agent, set_fixed_step};
+    use khora_agents::agent::{lane_agent, set_fixed_step};
     use std::time::Duration;
 
     use super::fixtures::{FIXED_LADDER, FIXED_STEP};

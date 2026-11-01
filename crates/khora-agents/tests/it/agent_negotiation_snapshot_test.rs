@@ -23,7 +23,7 @@
 //! Nothing here needs a GPU: `negotiate` runs on the DCC thread against a stub
 //! scene.
 
-use khora_agents::lane_agent::lane_agent;
+use khora_agents::agent::lane_agent;
 use khora_agents::render_agent::RenderAgent;
 use khora_agents::script_agent::ScriptAgent;
 use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};

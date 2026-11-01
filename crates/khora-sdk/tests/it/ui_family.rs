@@ -21,7 +21,7 @@
 use std::any::TypeId;
 use std::sync::Arc;
 
-use khora_agents::lane_agent::LaneAgent;
+use khora_agents::agent::LaneAgent;
 use khora_sdk::khora_core::agent::gorna::AgentId;
 use khora_sdk::khora_core::agent::EngineMode;
 use khora_sdk::khora_core::asset::AssetUUID;

@@ -28,7 +28,7 @@
 //! - **Character teleport.** A character moved by its `Transform` stays where
 //!   it was put.
 
-use khora_agents::lane_agent::LaneAgent;
+use khora_agents::agent::LaneAgent;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::engine_context::EngineContext;

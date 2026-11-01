@@ -88,6 +88,7 @@ mod every_pub_mod {
     use khora_core::agent::dependency as _;
     use khora_core::agent::execution_phase as _;
     use khora_core::agent::gorna as _;
+    use khora_core::agent::gorna::protocol as _;
     use khora_core::agent::mode as _;
     use khora_core::agent::timing as _;
     use khora_core::asset as _;
@@ -1243,6 +1244,9 @@ mod trait_items {
         let _ = <T as khora_core::agent::Agent>::negotiate;
         let _ = <T as khora_core::agent::Agent>::apply_budget;
         let _ = <T as khora_core::agent::Agent>::report_status;
+        let _ = <T as khora_core::agent::Agent>::offer;
+        let _ = <T as khora_core::agent::Agent>::apply;
+        let _ = <T as khora_core::agent::Agent>::report;
         let _ = <T as khora_core::agent::Agent>::on_initialize;
         let _ = <T as khora_core::agent::Agent>::execute;
         let _ = <T as khora_core::agent::Agent>::execution_timing;

@@ -14,7 +14,7 @@
 
 //! The skybox family's agent: its registration, and nothing else.
 //!
-//! The engine boots one [`LaneAgent`](crate::lane_agent::LaneAgent) from it,
+//! The engine boots one [`LaneAgent`](crate::agent::LaneAgent) from it,
 //! after the renderer in the OUTPUT phase. Each frame the agent lends the
 //! [`SkyboxLane`](khora_lanes::skybox_lane::SkyboxLane) the frame's target,
 //! opens the skybox pass on the device and commits it into

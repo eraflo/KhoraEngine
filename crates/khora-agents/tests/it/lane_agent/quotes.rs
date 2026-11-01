@@ -26,7 +26,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_agents::lane_agent::{lane_agent, LaneAgent, QUOTE_MAX_AGE};
+use khora_agents::agent::{lane_agent, LaneAgent, QUOTE_MAX_AGE};
+use khora_core::agent::gorna::protocol::Envelope;
 use khora_core::agent::gorna::{AgentId, ResourceBudget, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
@@ -41,8 +42,8 @@ use khora_core::lane::{LaneError, LaneKind, OutputDeck};
 use khora_core::Runtime;
 
 use super::fixtures::{
-    budget, level, request, run, Load, LoadAndPlan, Plan, ProbeOutputs, Recorded, Tally, TallyLock,
-    LADDER,
+    budget, level, offer_request, request, run, Load, LoadAndPlan, Plan, ProbeOutputs, Recorded,
+    Tally, TallyLock, ANY_MEMORY, LADDER,
 };
 
 // ─── Runtime entries ────────────────────────────────────────────────────────
@@ -797,12 +798,13 @@ fn a_refusal_for_want_of_a_budget_keeps_the_price() {
     );
 }
 
-/// **A lane that needs a budget gets to run.** GORNA grants an agent the time
-/// of the option it picked (`time_limit = estimated_time`). Before any run no
-/// row is priced, so every row is offered at zero time: GORNA grants zero, the
-/// lane is refused for want of a budget, prices nothing, and is offered at
-/// zero again. Driven as GORNA drives it for a few rounds, the lane must
-/// record at least once.
+/// **A lane that needs a budget gets to run.** Before any run no row is
+/// priced, so the family offers its row `Assumed`, at no time: an envelope of
+/// only the offered cost would be zero, the lane refused for want of a
+/// budget, priced nothing, and offered at zero again. GORNA lends an
+/// envelope, not the price of a row: for a lone agent, its floor's cost plus
+/// 80 % of the slack the frame's target leaves. Driven so for a few rounds,
+/// the lane must record at least once.
 #[test]
 fn a_lane_that_needs_a_budget_runs_when_driven_as_gorna_drives_it() {
     let counts = Counts::default();
@@ -810,12 +812,22 @@ fn a_lane_that_needs_a_budget_runs_when_driven_as_gorna_drives_it() {
     let mut deck = OutputDeck::new();
 
     for frame in 1..=5 {
-        let response = agent.negotiate(request());
-        let option = response
-            .strategies
-            .first()
-            .expect("the family offers a row");
-        agent.apply_budget(granting(option.id, option.estimated_time));
+        let request = offer_request(frame);
+        let offer = agent.offer(&request);
+        let floor = offer
+            .rows
+            .iter()
+            .find(|row| row.id == offer.floor)
+            .expect("the floor is one of the offered rows");
+        let slack = request.target.saturating_sub(floor.cost.time.cpu);
+        let envelope = Envelope {
+            time: PerDevice {
+                cpu: floor.cost.time.cpu + slack.mul_f32(0.8),
+                ..floor.cost.time
+            },
+            memory: ANY_MEMORY,
+        };
+        agent.apply(request.epoch, &envelope, None, None);
         run(&mut agent, frame, &plain(100, &counts), &mut deck);
     }
 

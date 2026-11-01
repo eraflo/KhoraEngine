@@ -28,6 +28,9 @@ use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use khora_core::agent::gorna::protocol::{
+    Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
+};
 use khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
@@ -37,10 +40,11 @@ use khora_core::agent::{
     Agent, AgentAccess, AgentDependency, Contention, DependencyKind, ExecutionTiming,
 };
 use khora_core::gpu::{DeviceCaps, GpuSetup};
-use khora_core::lane::cost::Cost;
+use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::erased::{AnyLane, RunOutcome};
 use khora_core::lane::guard::Reason;
-use khora_core::lane::io::{Budget, FixedStep, InputSource, OutputSink, Target, TargetKey};
+use khora_core::lane::io::{Budget, FixedStep, InputSource, OutputSink, Target};
+use khora_core::lane::level::Level;
 use khora_core::lane::ClearColor;
 use khora_core::lane::OutputDeck;
 use khora_core::renderer::api::frame::FrameContext;
@@ -48,13 +52,13 @@ use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::EngineContext;
 
-/// How far the running row's quote may move from its value at the last full
-/// quote, as a fraction of that value, before every row is quoted again.
-pub const QUOTE_DRIFT: f32 = 0.10;
+mod choice;
+mod quotes;
 
-/// How long a full quote stands before every row is quoted again, even when
-/// nothing drifted.
-pub const QUOTE_MAX_AGE: Duration = Duration::from_secs(1);
+use choice::time_of;
+pub use choice::{choose, Choice};
+use quotes::FullQuote;
+pub use quotes::{QUOTE_DRIFT, QUOTE_MAX_AGE};
 
 /// One row of the menu: a level of a lane.
 #[derive(Debug, Clone, Copy)]
@@ -96,11 +100,24 @@ pub struct LaneAgent {
     stalled: bool,
     /// The share of its work the last recorded run did, `1.0` before any.
     done: f32,
-    /// The frame's target time, from the last negotiation: the budget a
-    /// quote is made with. A quote asks what a lane would cost, not whether
-    /// it fits the time GORNA granted, so a lane never granted any can still
-    /// be priced.
-    frame_time: Option<Duration>,
+    /// Every row's level, by row: what [`choose`] reads the impact from.
+    levels: Vec<Level>,
+    /// The row the family starts on, and runs while nothing is priced.
+    default_row: usize,
+    /// The envelope the DCC lent, with its epoch, the row a policy pins and
+    /// the rows a policy allows; `None` while the agent is driven by budgets
+    /// naming its row.
+    lent: Option<Lent>,
+    /// Whether the last choice found no row fitting the envelope.
+    over_budget: bool,
+    /// The rows that failed since the envelope was lent, by row: the choice
+    /// passes them by until the next allocation.
+    failed: Vec<bool>,
+    /// The row that ran last, which a report and an offer speak of: after a
+    /// failure, `current` already names the row to fall back to.
+    ran: Option<usize>,
+    /// Whether the row that ran was the floor run because nothing fitted.
+    ran_over_budget: bool,
     /// When every row was last quoted, and on what; `None` before the first
     /// full quote.
     full_quote: Option<FullQuote>,
@@ -108,26 +125,13 @@ pub struct LaneAgent {
     message: String,
 }
 
-/// The last time every row of the menu was quoted.
+/// What the DCC lent an agent for an epoch.
 #[derive(Debug, Clone)]
-struct FullQuote {
-    /// When.
-    at: Instant,
-    /// The frame's target key then; `None` when no lane reads the frame.
-    key: Option<TargetKey>,
-    /// Every row's quote then, by row: the base each row's drift is measured
-    /// from when it is the one running. `None` for a row left unquoted.
-    bases: Vec<Option<Duration>>,
-}
-
-/// The time a cost takes: the busiest device's, the devices running side by
-/// side.
-fn time_of(cost: &Cost) -> Duration {
-    cost.time
-        .cpu
-        .max(cost.time.gpu)
-        .max(cost.time.npu)
-        .max(cost.time.other)
+struct Lent {
+    epoch: Epoch,
+    envelope: Envelope,
+    pin: Option<StrategyId>,
+    allowed: Option<Vec<StrategyId>>,
 }
 
 /// The agent of `registration`'s family, its menu holding every level of
@@ -165,6 +169,11 @@ pub fn lane_agent(registration: &'static AgentRegistration, caps: &DeviceCaps) -
         .default_level
         .and_then(|level| menu.iter().position(|row| row.id == level))
         .unwrap_or(0);
+    let levels: Vec<Level> = lanes
+        .iter()
+        .flat_map(|erased| erased.levels().iter().copied())
+        .collect();
+    let rows = menu.len();
     LaneAgent {
         registration,
         lanes: lanes.into_iter().map(Mutex::new).collect(),
@@ -177,19 +186,16 @@ pub fn lane_agent(registration: &'static AgentRegistration, caps: &DeviceCaps) -
         measured: None,
         stalled: false,
         done: 1.0,
-        frame_time: None,
+        levels,
+        default_row: current,
+        lent: None,
+        over_budget: false,
+        failed: vec![false; rows],
+        ran: None,
+        ran_over_budget: false,
         full_quote: None,
         message: String::new(),
     }
-}
-
-/// Whether `now` moved from `base` by more than [`QUOTE_DRIFT`] of it.
-fn drifted(base: Duration, now: Duration) -> bool {
-    if base.is_zero() {
-        return !now.is_zero();
-    }
-    let change = (now.as_secs_f64() - base.as_secs_f64()).abs();
-    change > base.as_secs_f64() * f64::from(QUOTE_DRIFT)
 }
 
 /// The inputs of one run as the agent lends them: the bus, the earlier
@@ -242,87 +248,6 @@ impl LaneAgent {
     /// The row that runs, if the menu has any.
     fn row(&self) -> Option<Row> {
         self.menu.get(self.current).copied()
-    }
-
-    /// Quotes every lane but the one that just ran (its run quoted it) when
-    /// the quotes may no longer hold: the first time, when the frame's target
-    /// changed, when the running row's quote drifted past [`QUOTE_DRIFT`]
-    /// from its value at the last full quote, or when that quote is older
-    /// than [`QUOTE_MAX_AGE`]. Otherwise the other lanes keep their quotes.
-    ///
-    /// The agent reads no world state to decide: a change in the world
-    /// reaches it only through the Views its lanes read, as a drift of the
-    /// running row's quote.
-    fn requote(&mut self, ran: usize, context: &EngineContext<'_>, frame: Option<&FrameContext>) {
-        let ran_lane = self.menu[ran].lane;
-        // A run that priced nothing (refused for want of a budget it was never
-        // granted) is quoted on its inputs, so GORNA has a price to grant.
-        if self.quotes.get(ran).copied().flatten().is_none() {
-            self.quote_lane(ran_lane, context, frame);
-        }
-        let Some(running) = self.quotes.get(ran).copied().flatten().map(|c| time_of(&c)) else {
-            return;
-        };
-        let key = frame
-            .and_then(|frame| frame.get::<Target>())
-            .map(|target| target.key);
-        let due = match &self.full_quote {
-            None => true,
-            Some(last) => {
-                last.key != key
-                    || last.at.elapsed() > QUOTE_MAX_AGE
-                    // The row that ran, against its own quote at the last full
-                    // quote: a row GORNA moved to since is measured from its
-                    // price then, and one unquoted then counts as moved.
-                    || last
-                        .bases
-                        .get(ran)
-                        .copied()
-                        .flatten()
-                        .is_none_or(|base| drifted(base, running))
-            }
-        };
-        if !due {
-            return;
-        }
-        for lane in (0..self.lanes.len()).filter(|&lane| lane != ran_lane) {
-            self.quote_lane(lane, context, frame);
-        }
-        self.full_quote = Some(FullQuote {
-            at: Instant::now(),
-            key,
-            bases: self
-                .quotes
-                .iter()
-                .map(|quote| quote.as_ref().map(time_of))
-                .collect(),
-        });
-    }
-
-    /// Quotes every level of `lane` on this frame's inputs, as if it had the
-    /// frame's time: a quote asks what the lane would cost, not whether it
-    /// fits what GORNA granted. Its rows are left unquoted when it cannot be.
-    fn quote_lane(
-        &mut self,
-        lane: usize,
-        context: &EngineContext<'_>,
-        frame: Option<&FrameContext>,
-    ) {
-        let budget = self.frame_time.unwrap_or(self.time_limit);
-        let quoted = {
-            let mut source = lend(context, budget, self.fixed_step, frame);
-            self.lanes[lane]
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .quote(&mut source)
-        };
-        for (row, offered) in self.menu.iter().zip(self.quotes.iter_mut()) {
-            if row.lane == lane {
-                *offered = quoted
-                    .as_ref()
-                    .and_then(|costs| costs.get(row.level).copied());
-            }
-        }
     }
 
     /// Takes in what one run of the current row gave back.
@@ -397,6 +322,17 @@ impl LaneAgent {
                 }
                 self.message = message;
                 self.current = self.cheaper_row(self.current);
+                // Under an envelope the choice passes the failed row by until
+                // the next allocation: its own lane's runs would price it
+                // again, and it would fail again.
+                if self.lent.is_some() {
+                    let failed = self.menu.iter().position(|candidate| {
+                        candidate.lane == row.lane && candidate.level == row.level
+                    });
+                    if let Some(failed) = failed.and_then(|failed| self.failed.get_mut(failed)) {
+                        *failed = true;
+                    }
+                }
             }
         }
     }
@@ -435,10 +371,7 @@ impl Agent for LaneAgent {
         self.registration.agent
     }
 
-    fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
-        if !request.target_latency.is_zero() {
-            self.frame_time = Some(request.target_latency);
-        }
+    fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
         // While no row has a price (before any run, or every lane refused an
         // input), every row is offered at its memory alone, so the family is
         // always scheduled again. Once some rows are priced, a row without a
@@ -476,6 +409,10 @@ impl Agent for LaneAgent {
             .position(|row| row.id == budget.strategy_id)
         {
             Some(row) => {
+                // A budget naming the row overrides any envelope: the agent
+                // runs what it is told until it is lent an envelope again.
+                self.lent = None;
+                self.over_budget = false;
                 self.current = row;
                 self.time_limit = budget.time_limit;
             }
@@ -507,6 +444,108 @@ impl Agent for LaneAgent {
         }
     }
 
+    /// Every row at its quote: `Measured` for the row that ran it, `Quoted`
+    /// for the others, `Assumed` at its level's memory for a row not priced.
+    /// The floor is the cheapest priced row, the default level while none is.
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        let rows = self
+            .menu
+            .iter()
+            .zip(&self.quotes)
+            .zip(&self.levels)
+            .enumerate()
+            .map(|(index, ((row, quote), level))| {
+                let (cost, confidence) = match quote {
+                    Some(cost) if Some(index) == self.ran => (*cost, Confidence::Measured),
+                    Some(cost) => (*cost, Confidence::Quoted),
+                    None => (
+                        Cost {
+                            memory: PerDevice {
+                                gpu: row.gpu_memory,
+                                ..PerDevice::default()
+                            },
+                            ..Cost::default()
+                        },
+                        Confidence::Assumed,
+                    ),
+                };
+                OfferRow {
+                    id: row.id,
+                    cost,
+                    quality: level.impact.quality(),
+                    confidence,
+                }
+            })
+            .collect();
+        let floor = self
+            .menu
+            .iter()
+            .zip(&self.quotes)
+            .enumerate()
+            .filter_map(|(index, (row, quote))| quote.map(|cost| (index, row.id, time_of(&cost))))
+            .min_by(|a, b| a.2.cmp(&b.2).then(a.0.cmp(&b.0)))
+            .map(|(_, id, _)| id)
+            .or_else(|| self.menu.get(self.default_row).map(|row| row.id))
+            .unwrap_or(StrategyId::Balanced);
+        Offer {
+            agent: self.registration.agent,
+            epoch: request.epoch,
+            rows,
+            floor,
+            current: self.row().map_or(StrategyId::Balanced, |row| row.id),
+            health: self.report_status().health_score,
+        }
+    }
+
+    /// Keeps the envelope, the pin and the allowed rows, lends a `#[budget]`
+    /// lane the envelope's time on its busiest device, and chooses the row
+    /// that runs.
+    fn apply(
+        &mut self,
+        epoch: Epoch,
+        envelope: &Envelope,
+        pin: Option<StrategyId>,
+        allowed: Option<&[StrategyId]>,
+    ) {
+        let time = &envelope.time;
+        self.time_limit = time.cpu.max(time.gpu).max(time.npu).max(time.other);
+        // A new allocation gives every row its chance again.
+        self.failed.iter_mut().for_each(|failed| *failed = false);
+        self.lent = Some(Lent {
+            epoch,
+            envelope: *envelope,
+            pin,
+            allowed: allowed.map(<[StrategyId]>::to_vec),
+        });
+        self.choose_row();
+    }
+
+    fn report(&self) -> Report {
+        Report {
+            agent: self.registration.agent,
+            epoch: self
+                .lent
+                .as_ref()
+                .map_or(Epoch::default(), |lent| lent.epoch),
+            row: self
+                .ran
+                .or(Some(self.current))
+                .and_then(|row| self.menu.get(row))
+                .map_or(StrategyId::Balanced, |row| row.id),
+            measured: PerDevice {
+                cpu: self.measured.unwrap_or_default(),
+                ..PerDevice::default()
+            },
+            done: self.done,
+            health: self.report_status().health_score,
+            over_budget: if self.ran.is_some() {
+                self.ran_over_budget
+            } else {
+                self.over_budget
+            },
+        }
+    }
+
     /// Fetch, prepare if the target changed, record, cost every level, and
     /// commit what the lane wrote. Each run commits through a deck of its own,
     /// so the sub-steps of a fixed-step frame each commit theirs.
@@ -515,6 +554,9 @@ impl Agent for LaneAgent {
             return;
         };
         let ran = self.current;
+        // Whether this run is the floor because nothing fitted: what its
+        // report says, whatever the next choice finds.
+        let ran_over_budget = self.over_budget;
         let device = context.resource::<Arc<dyn GraphicsDevice>>().cloned();
         let pipelines = context.resource::<Arc<dyn PipelineSystem>>().cloned();
         // The frame's target and clear colour, for a family one of whose
@@ -565,7 +607,13 @@ impl Agent for LaneAgent {
             );
         }
         self.absorb(row, run.outcome, run.costs);
+        self.ran = Some(ran);
+        self.ran_over_budget = ran_over_budget;
         self.requote(ran, context, frame.as_deref());
+        // The next frame's row is chosen now, within the envelope and on the
+        // quotes as they stand, so the contention the scheduler reads before
+        // that frame is the contention of the lane it runs.
+        self.choose_row();
     }
 
     fn execution_timing(&self) -> ExecutionTiming {

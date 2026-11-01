@@ -14,7 +14,7 @@
 
 //! The UI family's agent: its registration, and nothing else.
 //!
-//! The engine boots one [`LaneAgent`](crate::lane_agent::LaneAgent) from it
+//! The engine boots one [`LaneAgent`](crate::agent::LaneAgent) from it
 //! in the OUTPUT phase. Each frame the agent lends the
 //! [`UiLane`](khora_lanes::ui_lane::UiLane) the frame's target, the UI Flow's
 //! `UiScene`, the image atlas and the glyph atlas, and commits its pass

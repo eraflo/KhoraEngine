@@ -15,7 +15,7 @@
 //! Assembling the engine: services, agents, lanes and the scheduler, once,
 //! before the first frame.
 
-use khora_agents::lane_agent::{set_fixed_step, LaneAgent};
+use khora_agents::agent::{set_fixed_step, LaneAgent};
 use khora_agents::registered_agent::{lane_agents_in, registered_agents};
 use khora_control::{DccConfig, DccService, EngineMode};
 use khora_core::agent::{Agent, ExecutionPhase};

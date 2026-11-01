@@ -14,6 +14,7 @@
 
 //! Traits for autonomous engine subsystems (Agents).
 
+mod bridge;
 pub mod completion;
 pub mod contention;
 pub mod dependency;
@@ -23,8 +24,11 @@ pub mod mode;
 pub mod registration;
 pub mod timing;
 
+use crate::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use crate::agent::gorna::AgentId;
-use crate::agent::gorna::{AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget};
+use crate::agent::gorna::{
+    AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
+};
 use crate::EngineContext;
 use std::any::Any;
 
@@ -109,6 +113,39 @@ pub trait Agent: Send + Sync {
 
     /// Reports the current status and health of the agent.
     fn report_status(&self) -> AgentStatus;
+
+    /// Offers every row the agent can run, each with its cost, quality and
+    /// confidence, and names the floor it falls back to.
+    ///
+    /// The default bridges an agent that only [`negotiate`](Self::negotiate)s.
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        bridge::offer(self, request)
+    }
+
+    /// Takes the envelope the DCC lent for `epoch`, the row a policy pins, and
+    /// the rows a policy allows.
+    ///
+    /// The default bridges an agent that only applies budgets: it picks the
+    /// dearest option that fits the envelope and hands it to
+    /// [`apply_budget`](Self::apply_budget).
+    fn apply(
+        &mut self,
+        epoch: Epoch,
+        envelope: &Envelope,
+        pin: Option<StrategyId>,
+        allowed: Option<&[StrategyId]>,
+    ) {
+        // A bridged agent keeps no epoch: its report carries none.
+        let _ = epoch;
+        bridge::apply(self, envelope, pin, allowed);
+    }
+
+    /// Reports what the agent ran on its last frame.
+    ///
+    /// The default bridges an agent that only reports its status.
+    fn report(&self) -> Report {
+        bridge::report(self)
+    }
 
     /// Called **once** after the agent is registered with the DCC.
     ///

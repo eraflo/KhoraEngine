@@ -140,7 +140,7 @@ Rust component: its script declares `Guard` (authored) and its state companion `
 | Area | Path |
 |---|---|
 | Lane trait / bus / deck | `crates/khora-core/src/lane/` (`mod.rs`, `bus.rs`, `deck.rs`) |
-| Agent trait / `AgentId` | `crates/khora-core/src/agent/`, GORNA types `crates/khora-core/src/agent/gorna.rs` |
+| Agent trait / `AgentId` | `crates/khora-core/src/agent/`, GORNA types `crates/khora-core/src/agent/gorna/mod.rs` |
 | Math / SIMD | `crates/khora-core/src/math/` (`simd.rs`) |
 | ECS (CRPECS) / layout learner | `crates/khora-data/src/ecs/` (`world/`, `storage.rs`, `soa.rs`, `layout/`) |
 | Components / registrations | `crates/khora-data/src/ecs/components/` |

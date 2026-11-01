@@ -14,7 +14,7 @@
 
 //! The overlay families' agents: their registrations, and nothing else.
 //!
-//! The engine boots one [`LaneAgent`](crate::lane_agent::LaneAgent) for each
+//! The engine boots one [`LaneAgent`](crate::agent::LaneAgent) for each
 //! of the grid, the wireframe and the gizmos, after the renderer in the
 //! OUTPUT phase. Each lends its lane the frame's target and the host's View,
 //! and commits its own pass slot; the FrameGraph composites them after the
