@@ -27,8 +27,8 @@ use khora_core::agent::gorna::protocol::{
     Allocation, Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report, Trigger,
 };
 use khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-    StrategyOption,
+    AgentId, AgentStatus, EpochRecord, NegotiationRequest, NegotiationResponse, ResourceBudget,
+    StrategyId, StrategyOption,
 };
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::telemetry::{MetricId, MetricValue};
@@ -61,7 +61,113 @@ fn recording(config: DccConfig) -> (DccService, Receiver<TelemetryEvent>) {
 
 /// The allocations the DCC has issued so far.
 fn epochs(dcc: &DccService) -> Vec<Allocation> {
+    records(dcc)
+        .into_iter()
+        .map(|record| record.allocation)
+        .collect()
+}
+
+/// The epochs the DCC has journaled so far, inputs and all.
+fn records(dcc: &DccService) -> Vec<EpochRecord> {
     dcc.recorded_decisions().epochs
+}
+
+/// A journal entry holding `allocation` and nothing of its inputs, as a test
+/// writes a trace to replay.
+fn record(allocation: Allocation) -> EpochRecord {
+    EpochRecord {
+        allocation,
+        target: Duration::from_micros(16_667),
+        offers: Vec::new(),
+        reports: Vec::new(),
+        waves: Vec::new(),
+        policies: Vec::new(),
+        hints: Vec::new(),
+        reasons: Vec::new(),
+    }
+}
+
+/// An allocation for `epoch`, opened by `trigger`, lending each named agent
+/// its envelope.
+fn allocation(epoch: u64, trigger: Trigger, envelopes: Vec<(AgentId, Envelope)>) -> Allocation {
+    Allocation {
+        epoch: Epoch(epoch),
+        trigger,
+        envelopes,
+        pins: Vec::new(),
+        allowed: Vec::new(),
+        price: None,
+        late: Vec::new(),
+    }
+}
+
+/// An envelope of `micros` on the host.
+fn cpu_envelope(micros: u64) -> Envelope {
+    Envelope {
+        time: PerDevice {
+            cpu: Duration::from_micros(micros),
+            ..PerDevice::default()
+        },
+        ..Envelope::default()
+    }
+}
+
+/// A DCC and a scheduler over the same agents, as the engine runs them: the
+/// DCC publishes its allocations on the scheduler's channel, and the
+/// scheduler, run by the test on its own thread, lends them at its frame
+/// starts and publishes each agent's report to the DCC.
+struct Host {
+    dcc: DccService,
+    rx: Option<Receiver<TelemetryEvent>>,
+    scheduler: Option<crate::scheduler::ExecutionScheduler>,
+    world: khora_data::ecs::World,
+    runtime: Arc<khora_core::Runtime>,
+}
+
+impl Host {
+    /// A DCC of `config`, recording its epochs; no scheduler yet.
+    fn new(config: DccConfig) -> Self {
+        let (dcc, rx) = DccService::new(config);
+        dcc.start_decision_recording();
+        Self {
+            dcc,
+            rx: Some(rx),
+            scheduler: None,
+            world: khora_data::ecs::World::new(),
+            runtime: Arc::new(khora_core::Runtime::new()),
+        }
+    }
+
+    /// Builds the scheduler over the DCC's agents, connects the two, and
+    /// starts the DCC's thread.
+    fn start(&mut self) {
+        let mut scheduler = crate::scheduler::ExecutionScheduler::from_registry(
+            Arc::clone(self.dcc.agent_registry()),
+            self.dcc.context_handle(),
+        );
+        scheduler.set_telemetry_sender(self.dcc.event_sender());
+        self.dcc
+            .connect_budget_channel(scheduler.budget_channel().clone());
+        self.scheduler = Some(scheduler);
+        let rx = self.rx.take().expect("the host starts once");
+        self.dcc.start(rx);
+    }
+
+    /// Runs frames on this thread, one every 2 ms, until `done` says so of
+    /// the DCC or `secs` seconds have passed; whether `done` came.
+    fn frames_until(&mut self, secs: u64, mut done: impl FnMut(&DccService) -> bool) -> bool {
+        let deadline = std::time::Instant::now() + Duration::from_secs(secs);
+        while std::time::Instant::now() < deadline {
+            if let Some(scheduler) = self.scheduler.as_mut() {
+                scheduler.run_frame(&mut self.world, Arc::clone(&self.runtime));
+            }
+            if done(&self.dcc) {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+        done(&self.dcc)
+    }
 }
 
 /// Whether some issued allocation was opened by `trigger`.
@@ -74,6 +180,8 @@ fn opened_by(dcc: &DccService, trigger: Trigger) -> bool {
 struct Heard {
     asked: Vec<OfferRequest>,
     lent: Vec<(Epoch, Envelope, Option<StrategyId>)>,
+    /// The thread each `apply` came on, in order.
+    lent_on: Vec<thread::ThreadId>,
     /// Calls to `negotiate` or `apply_budget`, which a protocol agent never
     /// expects.
     old_calls: usize,
@@ -199,11 +307,9 @@ impl Agent for Speaker {
         pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
-        self.heard
-            .lock()
-            .expect("the heard lock")
-            .lent
-            .push((epoch, *envelope, pin));
+        let mut heard = self.heard.lock().expect("the heard lock");
+        heard.lent.push((epoch, *envelope, pin));
+        heard.lent_on.push(thread::current().id());
     }
     fn report(&self) -> Report {
         let mut health = self.health.lock().expect("the health lock");
@@ -229,6 +335,8 @@ impl Agent for Speaker {
             done: 1.0,
             health: health.health,
             over_budget,
+            stalled: health.stalled,
+            workload: None,
         }
     }
     fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
@@ -394,19 +502,83 @@ fn each_agent_is_forecast_at_its_own_workload() {
     assert!((total - 320.0).abs() < 1.0, "forecast = {total}");
 }
 
+/// A report of `name`'s run on `epoch`: `cpu_us` on the host at `workload`,
+/// on its `LowPower` row, healthy, within budget.
+fn run_report(name: &'static str, epoch: Epoch, cpu_us: u64, workload: f64) -> Report {
+    Report {
+        agent: AgentId::new(name),
+        epoch,
+        row: StrategyId::LowPower,
+        measured: PerDevice {
+            cpu: Duration::from_micros(cpu_us),
+            ..PerDevice::default()
+        },
+        done: 1.0,
+        health: 1.0,
+        over_budget: false,
+        stalled: false,
+        workload: Some(workload),
+    }
+}
+
+/// **Reports feed the cost models at their workload.** The renderer's runs
+/// cost 0.3 ms per unit of work; its last run did 80 units. Its model
+/// forecasts 24 ms at that workload, over the 16.66 ms frame: an epoch opens
+/// for the forecast breach, and says why.
 #[test]
-fn test_dcc_ingests_agent_cost_and_component_access() {
+fn reports_feed_the_cost_models_at_their_workload() {
+    let (mut dcc, rx) = recording(DccConfig {
+        min_epoch_ticks: 1,
+        ..Default::default()
+    });
+    let (agent, _ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    dcc.register_agent(agent, 1.0);
+    let tx = dcc.event_sender();
+    for n in [10.0, 20.0, 40.0, 80.0] {
+        tx.send(TelemetryEvent::AgentReport(run_report(
+            "renderer",
+            Epoch(0),
+            (300.0 * n) as u64,
+            n,
+        )))
+        .expect("the DCC listens");
+    }
+    dcc.start(rx);
+
+    let breached = wait_for(3, || opened_by(&dcc, Trigger::ForecastBreach));
+    let journaled = records(&dcc);
+    dcc.stop();
+
+    assert!(breached, "{:?}", epochs_of(&journaled));
+    let breach = journaled
+        .iter()
+        .find(|record| record.allocation.trigger == Trigger::ForecastBreach)
+        .expect("the breach epoch");
+    assert!(
+        !breach.reasons.is_empty(),
+        "a breach epoch says why it opened"
+    );
+}
+
+/// The allocations of `records`, for a failure message.
+fn epochs_of(records: &[EpochRecord]) -> Vec<&Allocation> {
+    records.iter().map(|record| &record.allocation).collect()
+}
+
+#[test]
+fn test_dcc_ingests_agent_reports_and_component_access() {
     // Smoke test for the observation-tunnel variants: the DCC must ingest
-    // AgentCost + ComponentAccess without panicking and keep running.
+    // AgentReport + ComponentAccess without panicking and keep running.
     let (mut dcc, rx) = DccService::new(DccConfig::default());
     let tx = dcc.event_sender();
     dcc.start(rx);
 
-    tx.send(TelemetryEvent::AgentCost {
-        id: AgentId::new("renderer"),
-        n: 1000.0,
-        time_ms: 4.2,
-    })
+    tx.send(TelemetryEvent::AgentReport(run_report(
+        "renderer",
+        Epoch(0),
+        4_200,
+        1000.0,
+    )))
     .unwrap();
     tx.send(TelemetryEvent::ComponentAccess {
         type_name: "Transform".to_string(),
@@ -638,4 +810,35 @@ fn initialize_agent_leaves_the_later_agents_uninitialized() {
 
     assert!(dcc.initialize_agent(0, &mut ctx));
     assert_eq!(*log.lock().expect("the log lock"), vec!["high"]);
+}
+
+/// **A hint that is not a usable number is refused**: a weight or a cap that
+/// is not a number, or an infinite weight, is not folded into the agent's
+/// hints, and the hints already set stay.
+#[test]
+fn a_hint_that_is_not_a_number_is_refused() {
+    use khora_core::agent::gorna::EngineHint;
+    let (dcc, _rx) = DccService::new(DccConfig::default());
+    let renderer = AgentId::new("renderer");
+    dcc.set_hint(EngineHint::Cap {
+        agent: renderer,
+        max_ms: 12.0,
+    });
+
+    dcc.set_hint(EngineHint::Prioritize {
+        agent: renderer,
+        weight: f32::NAN,
+    });
+    dcc.set_hint(EngineHint::Prioritize {
+        agent: renderer,
+        weight: f32::INFINITY,
+    });
+    dcc.set_hint(EngineHint::Cap {
+        agent: renderer,
+        max_ms: f32::NAN,
+    });
+
+    let hints = dcc.hints().get(&renderer).copied().unwrap_or_default();
+    assert_eq!(hints.priority, None);
+    assert_eq!(hints.cap_ms, Some(12.0));
 }

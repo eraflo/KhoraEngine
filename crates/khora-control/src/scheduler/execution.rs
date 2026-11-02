@@ -21,6 +21,7 @@ use super::{
     AgentSlot, ExecutionScheduler,
 };
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
+use khora_core::agent::gorna::protocol::Report;
 use khora_core::agent::gorna::{AgentFrameStatus, AgentFrameStatusMap, AgentId};
 use khora_core::agent::timing::AgentImportance;
 use khora_core::agent::{AgentAccess, AgentDependency, EngineMode, ExecutionPhase};
@@ -29,7 +30,7 @@ use khora_core::telemetry::TelemetryEvent;
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::World;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 impl ExecutionScheduler {
     #[allow(clippy::too_many_arguments)]
@@ -148,6 +149,7 @@ impl ExecutionScheduler {
             world.begin_run();
             deck.drain_written();
             let started = Instant::now();
+            let mut report = None;
             let ran = {
                 let mut engine_ctx = EngineContext::for_agent(
                     WorldAccess::Exclusive(world as &mut dyn std::any::Any),
@@ -160,6 +162,7 @@ impl ExecutionScheduler {
                 run_guarded(agent_id, || {
                     if let Ok(mut a) = agent.lock() {
                         a.execute(&mut engine_ctx);
+                        report = Some(a.report());
                     }
                 })
             };
@@ -169,15 +172,7 @@ impl ExecutionScheduler {
                 agent.clear_poison();
             }
             record_frame_time(agent_id, elapsed_ms as f32);
-            // Observation tunnel: report (n, time) so the DCC can fit this
-            // agent's cost model and forecast budget breaches. Best-effort.
-            if let Some(tx) = &self.telemetry {
-                let _ = tx.try_send(TelemetryEvent::AgentCost {
-                    id: agent_id,
-                    n: workload_n,
-                    time_ms: elapsed_ms,
-                });
-            }
+            self.publish_report(report, elapsed_ms, workload_n);
             completion_map.mark(agent_id, outcome_of(ran));
             world.end_run();
         }
@@ -228,16 +223,6 @@ impl ExecutionScheduler {
                     .insert(id, AgentFrameStatus { measured_time_ms });
             }
         };
-        let report_cost = |id: AgentId, time_ms: f64| {
-            if let Some(tx) = &self.telemetry {
-                let _ = tx.try_send(TelemetryEvent::AgentCost {
-                    id,
-                    n: workload_n,
-                    time_ms,
-                });
-            }
-        };
-
         // Read each agent's id + access footprint once (a failed lock yields no
         // id → an always-singleton, always-skipped slot, matching sequential).
         let metas = build_wave_metas(&agents);
@@ -276,6 +261,7 @@ impl ExecutionScheduler {
                     let permit = metas[idx].contention.clone();
                     deck.drain_written();
                     let started = Instant::now();
+                    let mut report = None;
                     let ran = {
                         let mut engine_ctx = EngineContext::for_agent(
                             WorldAccess::Exclusive(world as &mut dyn std::any::Any),
@@ -288,6 +274,7 @@ impl ExecutionScheduler {
                         run_guarded(id, || {
                             if let Ok(mut a) = agent.lock() {
                                 a.execute(&mut engine_ctx);
+                                report = Some(a.report());
                             }
                         })
                     };
@@ -297,7 +284,7 @@ impl ExecutionScheduler {
                         agent.clear_poison();
                     }
                     record_frame_time(id, elapsed_ms as f32);
-                    report_cost(id, elapsed_ms);
+                    self.publish_report(report, elapsed_ms, workload_n);
                     completion_map.mark(id, outcome_of(ran));
                     break 'wave;
                 }
@@ -375,6 +362,7 @@ impl ExecutionScheduler {
                     self.pool.submit(move || {
                         let bus_ref: &LaneBus = &bus;
                         let started = Instant::now();
+                        let mut report = None;
                         let ran = {
                             let mut ctx = EngineContext::for_agent(
                                 WorldAccess::None,
@@ -388,6 +376,7 @@ impl ExecutionScheduler {
                             run_guarded(id, || {
                                 if let Ok(mut a) = agent.lock() {
                                     a.execute(&mut ctx);
+                                    report = Some(a.report());
                                 }
                             })
                         };
@@ -404,6 +393,7 @@ impl ExecutionScheduler {
                             permit,
                             ms,
                             ran,
+                            report,
                             earlier,
                         });
                     });
@@ -427,6 +417,7 @@ impl ExecutionScheduler {
                     let permit = metas[idx].contention.clone();
                     inline_deck.drain_written();
                     let started = Instant::now();
+                    let mut report = None;
                     let ran = {
                         let mut ctx = EngineContext::for_agent(
                             WorldAccess::Shared(&*world as &dyn std::any::Any),
@@ -440,6 +431,7 @@ impl ExecutionScheduler {
                         run_guarded(id, || {
                             if let Ok(mut a) = agents[idx].0.lock() {
                                 a.execute(&mut ctx);
+                                report = Some(a.report());
                             }
                         })
                     };
@@ -449,7 +441,7 @@ impl ExecutionScheduler {
                         agents[idx].0.clear_poison();
                     }
                     record_frame_time(id, ms as f32);
-                    report_cost(id, ms);
+                    self.publish_report(report, ms, workload_n);
                     completion_map.mark(id, outcome_of(ran));
                 }
 
@@ -469,7 +461,7 @@ impl ExecutionScheduler {
                     self.audit_deck_writes(run.id, &run.permit, run.written);
                     written.merge_from(run.shard);
                     record_frame_time(run.id, run.ms as f32);
-                    report_cost(run.id, run.ms);
+                    self.publish_report(run.report.take(), run.ms, workload_n);
                     completion_map.mark(run.id, outcome_of(run.ran));
                     drop(run.earlier);
                 }
@@ -486,6 +478,20 @@ impl ExecutionScheduler {
             }
             world.end_run();
         }
+    }
+
+    /// Publishes to the DCC an agent's `report` of the run that just took
+    /// `ms` on the host: the host time at least what the scheduler measured,
+    /// and the world's entity count `workload_n` where the agent counted no
+    /// workload of its own. Best-effort, like all telemetry.
+    fn publish_report(&self, report: Option<Report>, ms: f64, workload_n: f64) {
+        let (Some(tx), Some(mut report)) = (&self.telemetry, report) else {
+            return;
+        };
+        let host = Duration::from_secs_f64(ms.max(0.0) / 1_000.0);
+        report.measured.cpu = report.measured.cpu.max(host);
+        report.workload.get_or_insert(workload_n);
+        let _ = tx.try_send(TelemetryEvent::AgentReport(report));
     }
 
     fn is_under_budget_pressure(&self) -> bool {
@@ -505,6 +511,8 @@ struct PooledRun {
     ms: f64,
     /// False when `execute` panicked.
     ran: bool,
+    /// The agent's report of the run, if it ran.
+    report: Option<Report>,
     /// The job's view of the deck the wave reads, handed back so the wave can
     /// take the deck back once every job is done.
     earlier: Arc<OutputDeck>,

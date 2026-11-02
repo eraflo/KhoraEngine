@@ -56,36 +56,84 @@ fn a_mode_change_opens_an_epoch() {
     assert!(opened, "{recorded:?}");
 }
 
-/// **Registering an agent opens an epoch**, `AgentsChanged`, which lends
-/// the newcomer an envelope.
+/// **Registering an agent opens an epoch**, `AgentsChanged`, which names the
+/// newcomer.
 #[test]
 fn registering_an_agent_opens_an_epoch() {
     let (mut dcc, rx, _ear) = one_speaker(quick());
     dcc.start(rx);
     assert!(wait_for(3, || opened_by(&dcc, Trigger::Initial)));
 
-    let (late_comer, ear) = Speaker::with_ear("audio", Duration::from_millis(1));
+    let (late_comer, _late_ear) = Speaker::with_ear("audio", Duration::from_millis(1));
     dcc.register_agent(late_comer, 0.5);
     let opened = wait_for(3, || opened_by(&dcc, Trigger::AgentsChanged));
-    let lent = wait_for(1, || !ear.heard().lent.is_empty());
     let recorded = epochs(&dcc);
     dcc.stop();
 
     assert!(opened, "{recorded:?}");
-    assert!(lent, "the newcomer is lent an envelope");
+    assert!(
+        recorded
+            .iter()
+            .filter(|epoch| epoch.trigger == Trigger::AgentsChanged)
+            .all(|epoch| epoch
+                .envelopes
+                .iter()
+                .any(|(id, _)| *id == AgentId::new("audio"))),
+        "the newcomer is named: {recorded:?}"
+    );
 }
 
-/// **Over-budget reports in a row open an epoch**, `Overruns`, once there
-/// are as many as the configuration says.
+/// `report` on `epoch`, over budget or not.
+fn over(report: Report, epoch: Epoch, over_budget: bool) -> TelemetryEvent {
+    TelemetryEvent::AgentReport(Report {
+        epoch,
+        over_budget,
+        ..report
+    })
+}
+
+/// The renderer's report of a 2 ms run on its floor, healthy, within budget.
+fn renderer_report() -> Report {
+    Report {
+        agent: AgentId::new("renderer"),
+        epoch: Epoch(0),
+        row: StrategyId::LowPower,
+        measured: PerDevice {
+            cpu: Duration::from_millis(2),
+            ..PerDevice::default()
+        },
+        done: 1.0,
+        health: 1.0,
+        over_budget: false,
+        stalled: false,
+        workload: None,
+    }
+}
+
+/// The epoch the first allocation opened, once it has.
+fn first_epoch(dcc: &DccService) -> Epoch {
+    assert!(wait_for(3, || opened_by(dcc, Trigger::Initial)));
+    epochs(dcc)[0].epoch
+}
+
+/// **Over-budget reports in a row open an epoch**, `Overruns`, once as many
+/// as the configuration says are published — the reports the scheduler
+/// publishes, not ones the DCC asks the agent for (asked, this agent says it
+/// is within budget).
 #[test]
 fn over_budget_reports_in_a_row_open_an_epoch() {
-    let (mut dcc, rx, ear) = one_speaker(DccConfig {
+    let (mut dcc, rx, _ear) = one_speaker(DccConfig {
         overruns_in_a_row: 3,
         ..quick()
     });
-    ear.health().over_budget_reports = u32::MAX;
+    let tx = dcc.event_sender();
     dcc.start(rx);
+    let epoch = first_epoch(&dcc);
 
+    for _ in 0..3 {
+        tx.send(over(renderer_report(), epoch, true))
+            .expect("the DCC listens");
+    }
     let opened = wait_for(3, || opened_by(&dcc, Trigger::Overruns));
     let recorded = epochs(&dcc);
     dcc.stop();
@@ -93,29 +141,130 @@ fn over_budget_reports_in_a_row_open_an_epoch() {
     assert!(opened, "{recorded:?}");
 }
 
-/// **Fewer over-budget reports than the limit open no epoch.** Four reports
-/// over budget, then none, against a limit of five.
+/// **Fewer over-budget reports in a row than the limit open no epoch.**
+/// Against a limit of five: four reports over budget, one within, four over
+/// — eight over, never five in a row.
 #[test]
 fn fewer_over_budget_reports_than_the_limit_open_no_epoch() {
-    let (mut dcc, rx, ear) = one_speaker(DccConfig {
+    let (mut dcc, rx, _ear) = one_speaker(DccConfig {
         overruns_in_a_row: 5,
         ..quick()
     });
-    ear.health().over_budget_reports = 4;
+    let tx = dcc.event_sender();
     dcc.start(rx);
+    let epoch = first_epoch(&dcc);
 
-    let first = wait_for(3, || opened_by(&dcc, Trigger::Initial));
+    for over_budget in [true, true, true, true, false, true, true, true, true] {
+        tx.send(over(renderer_report(), epoch, over_budget))
+            .expect("the DCC listens");
+    }
     thread::sleep(Duration::from_millis(300));
     let recorded = epochs(&dcc);
     dcc.stop();
 
-    assert!(first, "the first epoch was recorded");
     assert!(
         recorded
             .iter()
             .all(|epoch| epoch.trigger != Trigger::Overruns),
         "{recorded:?}"
     );
+}
+
+/// **The DCC counts overruns from published reports, not by asking agents.**
+/// Asked, this agent would say it is over budget every time; no report is
+/// published, so no `Overruns` epoch opens.
+#[test]
+fn an_agent_over_budget_only_when_asked_opens_no_epoch() {
+    let (mut dcc, rx, ear) = one_speaker(DccConfig {
+        overruns_in_a_row: 3,
+        ..quick()
+    });
+    ear.health().over_budget_reports = u32::MAX;
+    dcc.start(rx);
+    first_epoch(&dcc);
+
+    thread::sleep(Duration::from_millis(300));
+    let recorded = epochs(&dcc);
+    dcc.stop();
+
+    assert!(
+        recorded
+            .iter()
+            .all(|epoch| epoch.trigger != Trigger::Overruns),
+        "{recorded:?}"
+    );
+}
+
+/// **A bridged agent's reports count toward overruns.** An agent bridged from
+/// the old protocol reports `Epoch(0)` whatever epoch is in force; its
+/// over-budget reports in a row are not dropped as stale, and open an
+/// `Overruns` epoch like any other agent's.
+#[test]
+fn reports_of_epoch_zero_count_toward_overruns() {
+    let (mut dcc, rx, _ear) = one_speaker(DccConfig {
+        overruns_in_a_row: 3,
+        ..quick()
+    });
+    let tx = dcc.event_sender();
+    dcc.start(rx);
+    assert!(first_epoch(&dcc) > Epoch(0), "an epoch is in force");
+
+    for _ in 0..3 {
+        tx.send(over(renderer_report(), Epoch(0), true))
+            .expect("the DCC listens");
+    }
+    let opened = wait_for(3, || opened_by(&dcc, Trigger::Overruns));
+    let recorded = epochs(&dcc);
+    dcc.stop();
+
+    assert!(opened, "{recorded:?}");
+}
+
+/// **The overruns an epoch answered open no other.** Three over-budget
+/// reports on the first epoch open an `Overruns` epoch. The scheduler lends
+/// it only at its next frame start, so the runs of the frames still going
+/// while the round decided — over budget, on the first epoch — reach the DCC
+/// after the epoch opened (a physics agent sub-stepping three times a frame
+/// sends three in one frame). Then the agent, lent the new epoch, runs within
+/// it. The overruns were already answered: no second `Overruns` epoch opens.
+#[test]
+fn the_overruns_an_epoch_answered_open_no_other() {
+    let (mut dcc, rx, _ear) = one_speaker(DccConfig {
+        overruns_in_a_row: 3,
+        ..quick()
+    });
+    let tx = dcc.event_sender();
+    dcc.start(rx);
+    let first = first_epoch(&dcc);
+
+    for _ in 0..3 {
+        tx.send(over(renderer_report(), first, true))
+            .expect("the DCC listens");
+    }
+    assert!(wait_for(3, || opened_by(&dcc, Trigger::Overruns)));
+    let answered = (epochs(&dcc).iter())
+        .find(|epoch| epoch.trigger == Trigger::Overruns)
+        .map(|epoch| epoch.epoch)
+        .expect("the Overruns epoch");
+
+    // The frames that ran on the first epoch while the round decided.
+    for _ in 0..3 {
+        tx.send(over(renderer_report(), first, true))
+            .expect("the DCC listens");
+    }
+    // Lent the new epoch, the agent runs within it.
+    for _ in 0..3 {
+        tx.send(over(renderer_report(), answered, false))
+            .expect("the DCC listens");
+    }
+    thread::sleep(Duration::from_millis(300));
+    let recorded = epochs(&dcc);
+    dcc.stop();
+
+    let overruns = (recorded.iter())
+        .filter(|epoch| epoch.trigger == Trigger::Overruns)
+        .count();
+    assert_eq!(overruns, 1, "{recorded:?}");
 }
 
 /// **An epoch lasts at least its minimum.** With a minimum of 30 ticks
@@ -195,23 +344,55 @@ fn safety_does_not_wait_for_the_epoch_to_end() {
 }
 
 /// **A stalled, unhealthy agent opens an epoch**, `AgentStalled`, where a
-/// health below 0.5 was once only logged.
+/// health below 0.5 was once only logged — learnt from its published report
+/// (asked, this agent says it is well).
 #[test]
 fn a_stalled_unhealthy_agent_opens_an_epoch() {
-    let (mut dcc, rx, ear) = one_speaker(quick());
+    let (mut dcc, rx, _ear) = one_speaker(quick());
+    let tx = dcc.event_sender();
     dcc.start(rx);
-    assert!(wait_for(3, || opened_by(&dcc, Trigger::Initial)));
+    let epoch = first_epoch(&dcc);
 
-    {
-        let mut health = ear.health();
-        health.stalled = true;
-        health.health = 0.2;
-    }
+    tx.send(TelemetryEvent::AgentReport(Report {
+        epoch,
+        health: 0.2,
+        stalled: true,
+        ..renderer_report()
+    }))
+    .expect("the DCC listens");
     let opened = wait_for(3, || opened_by(&dcc, Trigger::AgentStalled));
     let recorded = epochs(&dcc);
     dcc.stop();
 
     assert!(opened, "{recorded:?}");
+}
+
+/// **A stalled agent in good health opens no epoch**: a stall alone, at a
+/// health of 0.9, is not a reason to share the frame again.
+#[test]
+fn a_stalled_agent_in_good_health_opens_no_epoch() {
+    let (mut dcc, rx, _ear) = one_speaker(quick());
+    let tx = dcc.event_sender();
+    dcc.start(rx);
+    let epoch = first_epoch(&dcc);
+
+    tx.send(TelemetryEvent::AgentReport(Report {
+        epoch,
+        health: 0.9,
+        stalled: true,
+        ..renderer_report()
+    }))
+    .expect("the DCC listens");
+    thread::sleep(Duration::from_millis(300));
+    let recorded = epochs(&dcc);
+    dcc.stop();
+
+    assert!(
+        recorded
+            .iter()
+            .all(|epoch| epoch.trigger != Trigger::AgentStalled),
+        "{recorded:?}"
+    );
 }
 
 /// An agent written before the protocol whose health the test sets: it
@@ -255,29 +436,33 @@ impl Agent for Fading {
 }
 
 /// **A bridged agent's report is not stale.** Its reports say `Epoch(0)`
-/// whatever epoch is in force; the DCC still reads them, so when it stalls
-/// and falls below 0.5 it opens an `AgentStalled` epoch like any other.
+/// whatever epoch is in force; the scheduler publishes them after each run
+/// and the DCC reads them, so when it stalls and falls below 0.5 it opens an
+/// `AgentStalled` epoch like any other.
 #[test]
 fn a_bridged_agents_report_is_not_stale() {
-    let (mut dcc, rx) = recording(quick());
+    let mut host = Host::new(DccConfig {
+        tick_rate: 100,
+        ..quick()
+    });
     let health = Arc::new(Mutex::new(Health::default()));
-    dcc.register_agent(
+    host.dcc.register_agent(
         Arc::new(Mutex::new(Fading {
             health: Arc::clone(&health),
         })),
         1.0,
     );
-    dcc.start(rx);
-    assert!(wait_for(3, || opened_by(&dcc, Trigger::Initial)));
+    host.start();
+    assert!(host.frames_until(3, |dcc| opened_by(dcc, Trigger::Initial)));
 
     {
         let mut health = health.lock().expect("the health lock");
         health.stalled = true;
         health.health = 0.2;
     }
-    let opened = wait_for(3, || opened_by(&dcc, Trigger::AgentStalled));
-    let recorded = epochs(&dcc);
-    dcc.stop();
+    let opened = host.frames_until(3, |dcc| opened_by(dcc, Trigger::AgentStalled));
+    let recorded = epochs(&host.dcc);
+    host.dcc.stop();
 
     assert!(opened, "{recorded:?}");
 }
@@ -295,12 +480,12 @@ fn an_agent_busy_when_an_epoch_opens_does_not_reopen_it() {
     let agents = vec![renderer, Arc::clone(&audio)];
     let mut tracker = Epochs::default();
 
-    tracker.observe(&agents, 3);
+    tracker.observe(&agents);
     {
         let _running = audio.lock().expect("the agent lock");
         tracker.opened(&agents);
     }
-    tracker.observe(&agents, 3);
+    tracker.observe(&agents);
 
     assert_eq!(tracker.due(0), None, "the same agents, no new epoch");
 }
@@ -312,17 +497,10 @@ fn an_agent_busy_when_an_epoch_opens_does_not_reopen_it() {
 #[test]
 fn a_mode_change_during_a_replay_opens_an_epoch_after_it() {
     let (mut dcc, rx, _ear) = one_speaker(quick());
-    let recorded = |epoch| Allocation {
-        epoch: Epoch(epoch),
-        trigger: Trigger::Refresh,
-        envelopes: Vec::new(),
-        pins: Vec::new(),
-        allowed: Vec::new(),
-        price: None,
-        late: Vec::new(),
-    };
     dcc.replay_decisions(DecisionTrace {
-        epochs: (1..=20).map(recorded).collect(),
+        epochs: (1..=20)
+            .map(|epoch| record(allocation(epoch, Trigger::Refresh, Vec::new())))
+            .collect(),
     });
     let tx = dcc.event_sender();
     dcc.start(rx);
@@ -350,7 +528,7 @@ fn an_agent_replaced_by_another_opens_an_epoch() {
     let mut tracker = Epochs::default();
     let (renderer, renderer_ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
     let freed = address(&renderer);
-    tracker.observe(std::slice::from_ref(&renderer), 3);
+    tracker.observe(std::slice::from_ref(&renderer));
     tracker.opened(std::slice::from_ref(&renderer));
     drop(renderer);
     drop(renderer_ear);
@@ -365,7 +543,7 @@ fn an_agent_replaced_by_another_opens_an_epoch() {
         elsewhere.push((audio, ear));
     };
     let reused = address(&audio) == freed;
-    tracker.observe(std::slice::from_ref(&audio), 3);
+    tracker.observe(std::slice::from_ref(&audio));
 
     assert_eq!(
         tracker.due(0),
@@ -376,29 +554,65 @@ fn an_agent_replaced_by_another_opens_an_epoch() {
 
 /// **An agent a replay did not name is lent an envelope after it.** The
 /// recorded allocations name no agent; once the replay is over, live
-/// arbitration lends the registered agent an envelope.
+/// arbitration names the registered agent, and the scheduler lends it.
 #[test]
 fn an_agent_the_replay_did_not_name_is_lent_an_envelope_after_it() {
-    let (mut dcc, rx, ear) = one_speaker(quick());
-    let recorded = |epoch| Allocation {
-        epoch: Epoch(epoch),
-        trigger: Trigger::Refresh,
-        envelopes: Vec::new(),
-        pins: Vec::new(),
-        allowed: Vec::new(),
-        price: None,
-        late: Vec::new(),
-    };
-    dcc.replay_decisions(DecisionTrace {
-        epochs: (1..=5).map(recorded).collect(),
+    let mut host = Host::new(DccConfig {
+        tick_rate: 100,
+        ..quick()
     });
-    dcc.start(rx);
+    let (agent, ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    host.dcc.register_agent(agent, 1.0);
+    host.dcc.replay_decisions(DecisionTrace {
+        epochs: (1..=5)
+            .map(|epoch| record(allocation(epoch, Trigger::Refresh, Vec::new())))
+            .collect(),
+    });
+    host.start();
 
-    let replayed = wait_for(3, || !dcc.is_replaying());
-    let lent = wait_for(2, || !ear.heard().lent.is_empty());
-    let live = epochs(&dcc);
-    dcc.stop();
+    let replayed = host.frames_until(3, |dcc| !dcc.is_replaying());
+    let lent = host.frames_until(2, |_| !ear.heard().lent.is_empty());
+    let live = epochs(&host.dcc);
+    host.dcc.stop();
 
     assert!(replayed, "the replay ran out");
     assert!(lent, "the agent is lent an envelope: {live:?}");
+}
+
+/// **A stall on a replayed epoch still being lent is not dropped.** A replay
+/// publishes its epochs in turn and the scheduler takes one per frame start,
+/// so while the DCC has already put epoch 43 in force, a long frame's
+/// successors still run on 41. Those runs are not of an epoch the DCC
+/// answered — 41 was never followed by anything the agent ran on — and a
+/// stall the renderer reports on 41 raises `AgentStalled`, as it would on
+/// the epoch the DCC holds in force. (The calls are the DCC loop's, in its
+/// order: a live epoch, then three replayed ones.)
+#[test]
+fn a_stall_on_a_replayed_epoch_still_being_lent_is_not_dropped() {
+    use super::super::epochs::Epochs;
+
+    let (renderer, _ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    let agents = [renderer];
+    let mut tracker = Epochs::default();
+    tracker.observe(&agents);
+    tracker.opened(&agents);
+    tracker.set_in_force(Epoch(1));
+    for replayed in 41..=43 {
+        tracker.observe(&agents);
+        tracker.replayed(&agents);
+        tracker.set_in_force(Epoch(replayed));
+    }
+
+    // The frames have taken 41 only.
+    tracker.report(
+        &Report {
+            epoch: Epoch(41),
+            stalled: true,
+            health: 0.2,
+            ..renderer_report()
+        },
+        3,
+    );
+
+    assert_eq!(tracker.due(0), Some(Trigger::AgentStalled));
 }

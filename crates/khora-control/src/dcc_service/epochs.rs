@@ -21,7 +21,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 
-use khora_core::agent::gorna::protocol::Trigger;
+use khora_core::agent::gorna::protocol::{Epoch, Report, Trigger};
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Agent;
 
@@ -40,6 +40,11 @@ pub(super) struct Epochs {
     agents: Vec<Weak<Mutex<dyn Agent>>>,
     /// Each agent's over-budget reports in a row.
     overruns: HashMap<AgentId, u32>,
+    /// The epochs put in force since the last epoch opened: the one it opened
+    /// and those replayed after it.
+    unanswered: Vec<Epoch>,
+    /// The epochs the last opened epoch answered: the ones in force before it.
+    answered: Vec<Epoch>,
 }
 
 impl Epochs {
@@ -53,29 +58,42 @@ impl Epochs {
         };
     }
 
-    /// One tick passes: notices agents that came or went (`AgentsChanged`),
-    /// and reads every agent's report — an agent over budget
-    /// `overruns_in_a_row` reports in a row raises `Overruns`, a stalled agent
-    /// whose health fell below 0.5 raises `AgentStalled`. An agent busy
-    /// running is read the next tick.
-    pub(super) fn observe(&mut self, agents: &[Arc<Mutex<dyn Agent>>], overruns_in_a_row: u32) {
+    /// One tick passes: notices agents that came or went (`AgentsChanged`).
+    pub(super) fn observe(&mut self, agents: &[Arc<Mutex<dyn Agent>>]) {
         self.ticks_since = self.ticks_since.saturating_add(1);
         if self.opened_any && !same_agents(agents, &self.agents) {
             self.raise(Trigger::AgentsChanged);
         }
-        for agent in agents {
-            let Ok(agent) = agent.try_lock() else {
-                continue;
-            };
-            let report = agent.report();
-            let in_a_row = self.overruns.entry(agent.id()).or_default();
-            *in_a_row = if report.over_budget { *in_a_row + 1 } else { 0 };
-            if overruns_in_a_row > 0 && *in_a_row >= overruns_in_a_row {
-                self.raise(Trigger::Overruns);
-            }
-            if report.health < 0.5 && agent.report_status().is_stalled {
-                self.raise(Trigger::AgentStalled);
-            }
+    }
+
+    /// An epoch the DCC put in force, opened or replayed: it is not answered
+    /// until the next epoch opens.
+    pub(super) fn set_in_force(&mut self, epoch: Epoch) {
+        self.unanswered.push(epoch);
+    }
+
+    /// A run's report, as the scheduler published it: an agent over budget
+    /// `overruns_in_a_row` reports in a row raises `Overruns`, a stalled agent
+    /// whose health fell below 0.5 raises `AgentStalled`.
+    ///
+    /// The reports of an epoch an opened epoch answered do not count: the
+    /// runs of the frames still going on it — until the scheduler lends the
+    /// new one at its next frame start — were answered by the epoch they
+    /// opened. A replay answers nothing: the replayed epochs the frames are
+    /// still lending, and the live one an agent the trace does not name runs
+    /// on, all count. A report naming no epoch (an agent bridged from the old
+    /// protocol, an agent not lent yet) always counts.
+    pub(super) fn report(&mut self, report: &Report, overruns_in_a_row: u32) {
+        if report.epoch != Epoch::default() && self.answered.contains(&report.epoch) {
+            return;
+        }
+        let in_a_row = self.overruns.entry(report.agent).or_default();
+        *in_a_row = if report.over_budget { *in_a_row + 1 } else { 0 };
+        if overruns_in_a_row > 0 && *in_a_row >= overruns_in_a_row {
+            self.raise(Trigger::Overruns);
+        }
+        if report.stalled && report.health < 0.5 {
+            self.raise(Trigger::AgentStalled);
         }
     }
 
@@ -99,6 +117,7 @@ impl Epochs {
         self.replayed(agents);
         self.pending = None;
         self.overruns.clear();
+        self.answered = std::mem::take(&mut self.unanswered);
     }
 
     /// A recorded allocation was lent to `agents`: an epoch passed, but what

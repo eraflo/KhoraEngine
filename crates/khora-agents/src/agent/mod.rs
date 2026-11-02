@@ -543,6 +543,8 @@ impl Agent for LaneAgent {
             } else {
                 self.over_budget
             },
+            stalled: self.stalled,
+            workload: None,
         }
     }
 

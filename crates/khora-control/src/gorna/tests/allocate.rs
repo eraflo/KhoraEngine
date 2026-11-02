@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A round of the arbitrator: one offer request per agent, calibration, the
-//! decision, and one `apply` per agent — to agents that speak the protocol
-//! and to agents that only negotiate, through the bridge.
+//! A round of the arbitrator: one offer request per agent, calibration and
+//! the decision — for agents that speak the protocol and agents that only
+//! negotiate, through the bridge. A round lends nothing itself: the scheduler
+//! lends the allocation at its next frame start. What an agent makes of its
+//! envelope is checked here by lending it as the scheduler would ([`lend`]).
 
 use super::*;
 use khora_core::agent::gorna::protocol::Trigger;
@@ -45,14 +47,14 @@ fn lock<A>(agent: &Arc<Mutex<A>>) -> std::sync::MutexGuard<'_, A> {
 
 // ── The round ─────────────────────────────────────────────────────
 
-/// **A round asks each agent once, for its epoch, and lends what it
-/// decided.** The request carries the round's epoch, the frame's target (the
-/// analysis' latency under the budget multiplier) and the context's mode;
-/// the agent is lent its envelope for that same epoch, through `apply` —
-/// never through `negotiate` or `apply_budget`. Each round opens a later
-/// epoch.
+/// **A round asks each agent once, for its epoch, and lends nothing
+/// itself.** The request carries the round's epoch, the frame's target (the
+/// analysis' latency under the budget multiplier) and the context's mode. The
+/// round decides the agent's envelope but never calls its `apply` — the
+/// scheduler lends it at its next frame start — nor its `negotiate` or
+/// `apply_budget`. Each round opens a later epoch.
 #[test]
-fn a_round_asks_each_agent_once_and_lends_it_its_envelope() {
+fn a_round_asks_each_agent_once_and_lends_nothing_itself() {
     let (bidder, agent) = shared(Bidder::single("ash", 2_000));
     let mut arbitrator = arbitrator();
     let context = Context {
@@ -79,11 +81,17 @@ fn a_round_asks_each_agent_once_and_lends_it_its_envelope() {
             request.target
         );
         assert_eq!(request.mode, EngineMode::Custom("editor".to_owned()));
-        assert_eq!(bidder.lent.len(), 1, "one apply per round");
-        assert_eq!(bidder.last_lent().epoch, first.epoch);
-        assert_eq!(bidder.last_lent().envelope, lent_to(&first, "ash"));
+        assert!(
+            bidder.lent.is_empty(),
+            "the round applied nothing: {:?}",
+            bidder.lent
+        );
         assert_eq!(bidder.old_calls, 0, "spoken to through the protocol only");
     }
+    assert!(first
+        .envelopes
+        .iter()
+        .any(|(id, _)| *id == AgentId::new("ash")));
     assert_eq!(first.trigger, Trigger::Initial);
 
     let second = allocate(&mut arbitrator, &context, 20.0, Trigger::Refresh, &[agent]);
@@ -94,7 +102,10 @@ fn a_round_asks_each_agent_once_and_lends_it_its_envelope() {
         second.epoch
     );
     assert_eq!(second.trigger, Trigger::Refresh);
-    assert_eq!(lock(&bidder).last_lent().epoch, second.epoch);
+    let bidder = lock(&bidder);
+    assert_eq!(bidder.asked.len(), 2);
+    assert_eq!(bidder.asked[1].epoch, second.epoch);
+    assert!(bidder.lent.is_empty(), "still nothing applied");
 }
 
 /// **An agent that only negotiates is lent its envelope through the
@@ -104,13 +115,15 @@ fn a_round_asks_each_agent_once_and_lends_it_its_envelope() {
 #[test]
 fn an_agent_that_only_negotiates_is_lent_an_envelope_through_the_bridge() {
     let (legacy, agent) = shared(Legacy::new("renderer"));
+    let agents = [agent];
     let allocation = allocate(
         &mut arbitrator(),
         &playing(),
         20.0,
         Trigger::Initial,
-        &[agent],
+        &agents,
     );
+    lend(&allocation, &agents);
     let lent = lent_to(&allocation, "renderer");
     let legacy = lock(&legacy);
     assert_eq!(legacy.applied().time_limit, lent.time.cpu);
@@ -129,13 +142,15 @@ fn a_round_without_agents_lends_nothing() {
 fn envelopes_never_exceed_the_frame() {
     let (renderer, first) = shared(Legacy::new("renderer"));
     let (physics, second) = shared(Legacy::new("physics"));
+    let agents = [first, second];
     let allocation = allocate(
         &mut arbitrator(),
         &playing(),
         16.66,
         Trigger::Initial,
-        &[first, second],
+        &agents,
     );
+    lend(&allocation, &agents);
     let lent: Duration = allocation.envelopes.iter().map(|(_, e)| busiest(e)).sum();
     assert!(lent <= Duration::from_micros(16_660), "{allocation:?}");
     assert!(lock(&renderer).applied.is_some());
@@ -245,6 +260,41 @@ fn the_calibration_factor_is_clamped() {
     assert!(lent_to(&allocation, "renderer").time.cpu >= ms(8));
 }
 
+/// **A round keeps the offers as the agents answered them, for its epoch
+/// only.** `renderer` quotes `LowPower` at 2 ms and was measured at 24 ms
+/// against its 8 ms `Balanced`: the round decides on rows scaled ×3, but the
+/// offer it keeps for the journal holds the 2 ms quoted, for the round's
+/// epoch. The next round, with no agent, keeps no offer of the last one.
+#[test]
+fn a_round_keeps_the_offers_as_answered_for_its_epoch() {
+    let mut arbitrator = arbitrator();
+    let agents = [shared(Legacy::new("renderer")).1];
+    let allocation = arbitrator.allocate(
+        &playing(),
+        &frame_of(40.0),
+        Trigger::Refresh,
+        &agents,
+        &[(AgentId::new("renderer"), 24.0)].into(),
+        &nothing(),
+    );
+
+    let offers = arbitrator.offers();
+    assert_eq!(offers.len(), 1, "{offers:?}");
+    assert_eq!(offers[0].agent, AgentId::new("renderer"));
+    assert_eq!(offers[0].epoch, allocation.epoch, "the round's epoch");
+    let floor = (offers[0].rows.iter())
+        .find(|row| row.id == LowPower)
+        .expect("the floor is offered");
+    assert_eq!(floor.cost.time.cpu, ms(2), "as quoted, not calibrated");
+
+    allocate(&mut arbitrator, &playing(), 40.0, Trigger::Refresh, &[]);
+    assert!(
+        arbitrator.offers().is_empty(),
+        "a round keeps only its own offers: {:?}",
+        arbitrator.offers()
+    );
+}
+
 // ── Policies ──────────────────────────────────────────────────────
 
 /// **A `Manual` agent is pinned against the budget.** The bridge applies the
@@ -255,13 +305,9 @@ fn a_manual_mode_pins_the_row_against_the_budget() {
     let (legacy, agent) = shared(Legacy::new("renderer"));
     let mut arbitrator = arbitrator();
     arbitrator.set_adaptation_mode(AgentId::new("renderer"), AdaptationMode::Manual(LowPower));
-    let allocation = allocate(
-        &mut arbitrator,
-        &playing(),
-        20.0,
-        Trigger::Initial,
-        &[agent],
-    );
+    let agents = [agent];
+    let allocation = allocate(&mut arbitrator, &playing(), 20.0, Trigger::Initial, &agents);
+    lend(&allocation, &agents);
     assert_eq!(allocation.pins, vec![(AgentId::new("renderer"), LowPower)]);
     assert_eq!(lock(&legacy).applied().strategy_id, LowPower);
 }
@@ -280,13 +326,9 @@ fn a_bounded_agent_runs_within_its_range() {
             max: Balanced,
         },
     );
-    let allocation = allocate(
-        &mut arbitrator,
-        &playing(),
-        20.0,
-        Trigger::Initial,
-        &[agent],
-    );
+    let agents = [agent];
+    let allocation = allocate(&mut arbitrator, &playing(), 20.0, Trigger::Initial, &agents);
+    lend(&allocation, &agents);
     let allowed = allocation
         .allowed
         .iter()
@@ -303,7 +345,7 @@ fn a_bounded_agent_runs_within_its_range() {
 /// the frame falls to 6 ms.
 #[test]
 fn a_stable_agent_is_not_upgraded_on_recovery() {
-    let (bidder, agent) = shared(Bidder::single("renderer", 2_000));
+    let (_bidder, agent) = shared(Bidder::single("renderer", 2_000));
     let mut arbitrator = arbitrator();
     arbitrator.set_adaptation_mode(AgentId::new("renderer"), AdaptationMode::Stable);
     let agents = [agent];
@@ -329,7 +371,6 @@ fn a_stable_agent_is_not_upgraded_on_recovery() {
     );
     assert!(pressed.time.cpu < held.time.cpu, "{pressed:?} vs {held:?}");
     assert!(pressed.time.cpu <= ms(6));
-    assert_eq!(lock(&bidder).last_lent().envelope, pressed);
 }
 
 /// **A `Cap` hint is a ceiling on the envelope.** At 20 ms the bridge would
@@ -347,14 +388,16 @@ fn a_cap_hint_bounds_the_envelope() {
             },
         )]
         .into();
+        let agents = [agent];
         let allocation = arbitrator().allocate(
             &playing(),
             &frame_of(20.0),
             Trigger::Refresh,
-            &[agent],
+            &agents,
             &nothing(),
             &hints,
         );
+        lend(&allocation, &agents);
         let lent = lent_to(&allocation, "renderer");
         assert!(
             busiest(&lent) <= Duration::from_secs_f32(cap_ms / 1000.0) + us(1),
@@ -403,13 +446,9 @@ fn vram_known_to_the_context_bounds_the_envelopes() {
         let (legacy, agent) = shared(Legacy::new("renderer"));
         let mut context = playing();
         context.hardware.available_vram = vram;
-        let allocation = allocate(
-            &mut arbitrator(),
-            &context,
-            20.0,
-            Trigger::Refresh,
-            &[agent],
-        );
+        let agents = [agent];
+        let allocation = allocate(&mut arbitrator(), &context, 20.0, Trigger::Refresh, &agents);
+        lend(&allocation, &agents);
         if let Some(vram) = vram {
             assert!(lent_to(&allocation, "renderer").memory.gpu <= vram);
         }
@@ -459,7 +498,11 @@ fn a_late_offer_keeps_the_envelope() {
         lent_to(&after, "ash").time.cpu > lent_to(&on_time, "ash").time.cpu,
         "the agent on time is lent the larger frame"
     );
-    assert_eq!(lock(&ash).last_lent().epoch, after.epoch);
+    assert_eq!(
+        lock(&ash).asked.last().map(|request| request.epoch),
+        Some(after.epoch),
+        "the agent on time was asked for the new epoch"
+    );
 }
 
 // ── The emergency ─────────────────────────────────────────────────
@@ -486,14 +529,16 @@ fn the_emergency_gives_every_agent_its_floor() {
     let mut spiral = frame_of(16.66);
     spiral.death_spiral_detected = true;
 
+    let agents = [first, second];
     let allocation = arbitrator().allocate(
         &playing(),
         &spiral,
         Trigger::Pressure,
-        &[first, second],
+        &agents,
         &nothing(),
         &nothing(),
     );
+    lend(&allocation, &agents);
 
     assert_eq!(allocation.trigger, Trigger::Safety);
     assert!(allocation.pins.is_empty() && allocation.allowed.is_empty());
@@ -515,58 +560,18 @@ fn the_emergency_gives_every_agent_its_floor() {
 fn two_stalled_agents_make_the_round_safety() {
     let (renderer, first) = shared(Legacy::stalled("renderer"));
     let (physics, second) = shared(Legacy::stalled("physics"));
+    let agents = [first, second];
     let allocation = allocate(
         &mut arbitrator(),
         &playing(),
         16.66,
         Trigger::Refresh,
-        &[first, second],
+        &agents,
     );
+    lend(&allocation, &agents);
     assert_eq!(allocation.trigger, Trigger::Safety);
     assert_eq!(lock(&renderer).applied().strategy_id, LowPower);
     assert_eq!(lock(&physics).applied().strategy_id, LowPower);
-}
-
-// ── Replay ────────────────────────────────────────────────────────
-
-/// **A replayed allocation is lent as recorded**, whatever the agents would
-/// offer now: the protocol agent gets the recorded envelope and pin, the
-/// bridged one the recorded time as its limit.
-#[test]
-fn a_replayed_allocation_is_lent_as_recorded() {
-    let (bidder, first) = shared(Bidder::single("ash", 2_000));
-    let (legacy, second) = shared(Legacy::new("renderer"));
-    let recorded = Allocation {
-        epoch: Epoch(41),
-        trigger: Trigger::Refresh,
-        envelopes: vec![
-            (AgentId::new("ash"), cpu_envelope(3_333)),
-            (
-                AgentId::new("renderer"),
-                Envelope {
-                    memory: PerDevice {
-                        gpu: 32 * MIB,
-                        ..PerDevice::default()
-                    },
-                    ..cpu_envelope(9_000)
-                },
-            ),
-        ],
-        pins: vec![(AgentId::new("ash"), LowPower)],
-        allowed: Vec::new(),
-        price: None,
-        late: Vec::new(),
-    };
-
-    arbitrator().reissue(&recorded, &[first, second]);
-
-    let lent = lock(&bidder).last_lent().clone();
-    assert_eq!(lent.envelope, cpu_envelope(3_333));
-    assert_eq!(lent.pin, Some(LowPower));
-    assert_eq!(lock(&bidder).asked.len(), 0, "a replay asks for no offer");
-    let legacy = lock(&legacy);
-    assert_eq!(legacy.applied().time_limit, us(9_000));
-    assert_eq!(legacy.applied().strategy_id, Balanced, "8 ms fit 9 ms");
 }
 
 // ── Kept envelopes across live rounds ─────────────────────────────

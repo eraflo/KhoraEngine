@@ -25,11 +25,13 @@ frame:
 
 The Lane Timeline shows execution *windows* per subsystem, not a per-render-stage GPU breakdown — that
 finer slice does not exist yet (see [Profile performance — gaps](./profile-performance.md#what-is-not-yet-measurable)).
-For the CPU side, the scheduler publishes a `TelemetryEvent::AgentCost { id, n, time_ms }` per agent
-per frame, surfaced as the `agent.<Id>_time_ms` metric — that is your per-agent cost.
+For the CPU side, the scheduler publishes each agent's report after every run
+(`TelemetryEvent::AgentReport`: the row that ran, the time on each device — the host's at least what
+the scheduler measured — and the run's workload), surfaced as the `agent.<name>_time_ms` metric — that
+is your per-agent cost.
 
 If you are reading metrics from your own code rather than the editor, the well-known names live in
-`crates/khora-telemetry/src/lib.rs` under the metric names the DCC emits (built inline, e.g. `agent.<Id>_time_ms` in `DccService`); the DCC also ingests
+`crates/khora-telemetry/src/lib.rs` under the metric names the DCC emits (built inline, e.g. `agent.<name>_time_ms` in `DccService`); the DCC also ingests
 `renderer.frame_time` (ms), `renderer.draw_calls`, and `renderer.triangles_rendered` from the GPU
 report.
 
@@ -119,15 +121,18 @@ recipe and the trade-offs of each mode, see
 ## 4 — Record and replay a GORNA decision
 
 When a bug only reproduces under a *specific* adaptation sequence, capture that sequence and replay it
-bit-for-bit. The DCC records each epoch's allocation (the envelopes it lent) into a `DecisionTrace` (its
-`epochs`, in order, `crates/khora-core/src/agent/gorna/mod.rs`) and can lend them again from a trace:
+bit-for-bit. The DCC journals each epoch into a `DecisionTrace`: its allocation and what the round was
+given — the target, the offers, the agents' latest reports, the waves, the policies, the hints and the
+reasons (`EpochRecord`, `crates/khora-core/src/agent/gorna/decision_trace.rs`). A trace serialises with
+each agent's name written once. Replay publishes the recorded allocations again; the scheduler lends
+each at its next frame start:
 
 ```rust
 dcc.start_decision_recording();      // begins a fresh trace; takes effect next tick
 // … reproduce the scenario …
 let trace = dcc.stop_decision_recording();   // returns the captured DecisionTrace
 
-dcc.replay_decisions(trace);         // each subsequent tick lends the recorded
+dcc.replay_decisions(trace);         // each subsequent tick publishes the recorded
                                      // allocations in order, asking for no offer,
                                      // until the trace is exhausted
 assert!(dcc.is_replaying());         // true until the trace runs out

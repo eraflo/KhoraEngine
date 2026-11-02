@@ -12,107 +12,56 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The scheduler budgets every agent the registry holds — with no list kept
-//! by hand beside it, which can forget one.
+//! The scheduler lends an allocation to every agent the registry holds —
+//! with no list kept by hand beside it, which can forget one.
 
-use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
-use crate::scheduler::*;
-use khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
+use super::allocations::{
+    allocation, envelope, lent_to, runtime_in, scheduler_over, Hand, SharedLog,
 };
-use khora_core::agent::{Agent, EngineMode};
-use khora_core::EngineContext;
-use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
-
-struct Idle {
-    id: AgentId,
-}
-
-impl Agent for Idle {
-    fn id(&self) -> AgentId {
-        self.id
-    }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
-    }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id,
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
-    }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {}
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-fn budget(strategy_id: StrategyId) -> ResourceBudget {
-    ResourceBudget {
-        strategy_id,
-        time_limit: Duration::from_millis(4),
-        memory_limit: None,
-        extra_params: std::collections::HashMap::new(),
-    }
-}
+use crate::agent_registry::AgentRegistry;
+use khora_core::agent::gorna::protocol::Epoch;
+use khora_core::agent::EngineMode;
+use khora_data::ecs::World;
+use std::sync::{Arc, Mutex};
 
 /// An agent registered for every mode and one registered for `Playing` only
-/// both get a budget channel entry: a budget sent to either reaches the hot
-/// thread. An agent the registry does not hold gets none.
+/// are both lent what the allocation names for them, while the game plays.
+/// An agent the registry does not hold is named in vain: nothing is lent to
+/// it, and nothing fails.
 #[test]
-fn scheduler_takes_agent_ids_from_the_registry() {
+fn the_scheduler_lends_every_agent_the_registry_holds() {
+    let log = SharedLog::default();
     let registry = Arc::new(Mutex::new(AgentRegistry::new()));
     {
         let mut agents = registry.lock().expect("the registry lock");
-        agents.register(
-            Arc::new(Mutex::new(Idle {
-                id: AgentId::new("audio"),
-            })),
-            1.0,
-        );
+        agents.register(Arc::new(Mutex::new(Hand::new("audio", &log))), 1.0);
         agents.register_for_mode(
-            Arc::new(Mutex::new(Idle {
-                id: AgentId::new("script"),
-            })),
+            Arc::new(Mutex::new(Hand::new("script", &log))),
             0.5,
             vec![EngineMode::Playing],
         );
     }
+    let mut scheduler = scheduler_over(&registry);
+    let (runtime, _mode) = runtime_in(EngineMode::Playing);
 
-    let scheduler =
-        ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
-
-    let channel = scheduler.budget_channel();
-    channel.send(AgentId::new("audio"), budget(StrategyId::LowPower));
-    channel.send(AgentId::new("script"), budget(StrategyId::HighPerformance));
-    channel.send(AgentId::new("physics"), budget(StrategyId::Balanced));
-    channel.sync();
+    scheduler.budget_channel().publish(allocation(
+        1,
+        &[("audio", 1_000), ("script", 2_000), ("physics", 3_000)],
+    ));
+    scheduler.run_frame(&mut World::new(), runtime);
 
     assert_eq!(
-        channel.get(AgentId::new("audio")).map(|b| b.strategy_id),
-        Some(StrategyId::LowPower),
-        "a registered agent is budgeted"
+        lent_to(&log, "audio"),
+        vec![(Epoch(1), envelope(1_000))],
+        "a registered agent is lent its envelope"
     );
     assert_eq!(
-        channel.get(AgentId::new("script")).map(|b| b.strategy_id),
-        Some(StrategyId::HighPerformance),
-        "an agent registered for some modes only is budgeted too"
+        lent_to(&log, "script"),
+        vec![(Epoch(1), envelope(2_000))],
+        "an agent registered for some modes only is lent too"
     );
-    assert_eq!(
-        channel.get(AgentId::new("physics")).map(|b| b.strategy_id),
-        None,
-        "an agent the registry does not hold has no channel entry"
+    assert!(
+        lent_to(&log, "physics").is_empty(),
+        "an agent the registry does not hold is lent nothing"
     );
 }

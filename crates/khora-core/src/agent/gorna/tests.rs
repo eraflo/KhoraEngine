@@ -19,10 +19,12 @@
 
 use std::time::{Duration, Instant};
 
-use super::protocol::{Envelope, Epoch, OfferRequest};
+use super::protocol::{
+    Allocation, Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report, Trigger,
+};
 use super::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-    StrategyOption,
+    AdaptationMode, AgentHints, AgentId, AgentStatus, DecisionTrace, EpochRecord,
+    NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
 use crate::agent::{Agent, EngineMode};
 use crate::lane::cost::{Cost, PerDevice};
@@ -35,6 +37,8 @@ struct Old {
     applied: Vec<ResourceBudget>,
     asked: Vec<NegotiationRequest>,
     current: StrategyId,
+    /// Whether its status says it is stalled.
+    stalled: bool,
 }
 
 /// `millis` of time and `vram` bytes.
@@ -60,6 +64,7 @@ impl Old {
             applied: Vec::new(),
             asked: Vec::new(),
             current: StrategyId::Balanced,
+            stalled: false,
         }
     }
 
@@ -92,7 +97,7 @@ impl Agent for Old {
             agent_id: AgentId::new("script"),
             current_strategy: self.current,
             health_score: 0.75,
-            is_stalled: false,
+            is_stalled: self.stalled,
             message: String::new(),
         }
     }
@@ -369,5 +374,256 @@ fn agent_ids_order_by_name() {
         keys,
         ["audio", "ui"],
         "a journal keyed by agent lists names in order"
+    );
+}
+
+/// **The bridge report says when the agent is stalled**: an old agent whose
+/// status says it is stalled reports it, so the DCC learns of the stall from
+/// the report alone, without asking the agent.
+#[test]
+fn the_bridge_report_says_when_the_agent_is_stalled() {
+    let mut agent = Old::new();
+    assert!(!agent.report().stalled, "a running agent is not stalled");
+
+    agent.stalled = true;
+
+    assert!(agent.report().stalled, "its status says it is stalled");
+}
+
+// ─── The journal ────────────────────────────────────────────────────────────
+
+/// Two agents whose names appear nowhere else in a journal.
+const ALPHA: AgentId = AgentId::new("journal-alpha");
+const BETA: AgentId = AgentId::new("journal-beta");
+
+/// `micros` on the host, nothing elsewhere.
+fn host_time(micros: u64) -> PerDevice<Duration> {
+    PerDevice {
+        cpu: Duration::from_micros(micros),
+        ..PerDevice::default()
+    }
+}
+
+/// Epoch `epoch`, naming both agents in every place a record names an agent.
+fn epoch_record(epoch: u64) -> EpochRecord {
+    let envelope = |micros| Envelope {
+        time: host_time(micros),
+        memory: PerDevice {
+            gpu: 1024,
+            ..PerDevice::default()
+        },
+    };
+    let offer = |agent, confidence| Offer {
+        agent,
+        epoch: Epoch(epoch),
+        rows: vec![
+            OfferRow {
+                id: StrategyId::Balanced,
+                cost: Cost {
+                    time: host_time(2_000),
+                    ..Cost::default()
+                },
+                quality: 0.7,
+                confidence,
+            },
+            OfferRow {
+                id: StrategyId::Custom(3),
+                cost: Cost {
+                    time: host_time(500),
+                    ..Cost::default()
+                },
+                quality: 0.4,
+                confidence: Confidence::Assumed,
+            },
+        ],
+        floor: StrategyId::Custom(3),
+        current: StrategyId::Balanced,
+        health: 0.9,
+    };
+    let report = |agent| Report {
+        agent,
+        epoch: Epoch(epoch - 1),
+        row: StrategyId::Balanced,
+        measured: host_time(1_500),
+        done: 1.0,
+        health: 0.9,
+        over_budget: epoch.is_multiple_of(2),
+        stalled: false,
+        workload: Some(120.0),
+    };
+    EpochRecord {
+        allocation: Allocation {
+            epoch: Epoch(epoch),
+            trigger: if epoch == 1 {
+                Trigger::Initial
+            } else {
+                Trigger::Overruns
+            },
+            envelopes: vec![(ALPHA, envelope(4_000)), (BETA, envelope(3_000))],
+            pins: vec![(ALPHA, StrategyId::LowPower)],
+            allowed: vec![(BETA, vec![StrategyId::LowPower, StrategyId::Balanced])],
+            price: Some(0.25),
+            late: vec![BETA],
+        },
+        target: Duration::from_micros(16_667),
+        offers: vec![
+            offer(ALPHA, Confidence::Measured),
+            offer(BETA, Confidence::Quoted),
+        ],
+        reports: vec![report(ALPHA), report(BETA)],
+        waves: vec![vec![ALPHA, BETA]],
+        policies: vec![
+            (ALPHA, AdaptationMode::Manual(StrategyId::LowPower)),
+            (
+                BETA,
+                AdaptationMode::Bounded {
+                    min: StrategyId::LowPower,
+                    max: StrategyId::Balanced,
+                },
+            ),
+        ],
+        hints: vec![(
+            BETA,
+            AgentHints {
+                cap_ms: Some(8.0),
+                priority: Some(0.5),
+            },
+        )],
+        reasons: vec!["the frame ran over its target".to_owned()],
+    }
+}
+
+/// A journal of `epochs` epochs, each naming both agents.
+fn journal(epochs: u64) -> DecisionTrace {
+    DecisionTrace {
+        epochs: (1..=epochs).map(epoch_record).collect(),
+    }
+}
+
+/// Every agent `trace` names, wherever it names one.
+fn every_agent_named(trace: &DecisionTrace) -> Vec<AgentId> {
+    let mut named = Vec::new();
+    for record in &trace.epochs {
+        let allocation = &record.allocation;
+        named.extend(allocation.envelopes.iter().map(|(agent, _)| *agent));
+        named.extend(allocation.pins.iter().map(|(agent, _)| *agent));
+        named.extend(allocation.allowed.iter().map(|(agent, _)| *agent));
+        named.extend(allocation.late.iter().copied());
+        named.extend(record.offers.iter().map(|offer| offer.agent));
+        named.extend(record.reports.iter().map(|report| report.agent));
+        named.extend(record.waves.iter().flatten().copied());
+        named.extend(record.policies.iter().map(|(agent, _)| *agent));
+        named.extend(record.hints.iter().map(|(agent, _)| *agent));
+    }
+    named
+}
+
+/// **A journal round-trips through serde**: every epoch's allocation, target,
+/// offers, reports, waves, policies, hints and reasons read back as written.
+#[test]
+fn a_journal_round_trips_through_serde() {
+    let trace = journal(3);
+
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let read: DecisionTrace = serde_json::from_str(&written).expect("a journal reads back");
+
+    assert_eq!(read, trace);
+}
+
+/// **A journal writes each agent's name once**, in a table its entries refer
+/// to: two hundred epochs, each naming the two agents fourteen times between
+/// them, still hold each name a single time.
+#[test]
+fn a_journal_writes_each_agent_name_once() {
+    let written = serde_json::to_string(&journal(200)).expect("a journal serialises");
+
+    assert_eq!(written.matches(ALPHA.name()).count(), 1, "{ALPHA} once");
+    assert_eq!(written.matches(BETA.name()).count(), 1, "{BETA} once");
+}
+
+/// **Reading a journal keeps one name per agent.** An agent id read back keeps
+/// its name for the program's life; a journal of two hundred epochs naming two
+/// agents reads back with every mention of an agent sharing that agent's one
+/// name — two names kept, not one per mention.
+#[test]
+fn reading_a_journal_keeps_one_name_per_agent() {
+    let written = serde_json::to_string(&journal(200)).expect("a journal serialises");
+    let read: DecisionTrace = serde_json::from_str(&written).expect("a journal reads back");
+
+    let named = every_agent_named(&read);
+    assert_eq!(named.len(), 200 * 14, "every mention read back");
+    let kept: std::collections::HashSet<usize> = named
+        .iter()
+        .map(|agent| agent.name().as_ptr() as usize)
+        .collect();
+    assert_eq!(
+        kept.len(),
+        2,
+        "one name kept per agent, whatever the number of mentions"
+    );
+    let names: std::collections::BTreeSet<&str> = named.iter().map(|agent| agent.name()).collect();
+    assert_eq!(names, [ALPHA.name(), BETA.name()].into());
+}
+
+/// **A journal keeps a free upgrade's price.** An upgrade that costs no more
+/// time than the row below it — two rows quoting the same time, as every row
+/// of an idle family quotes zero — gains an infinite weighed quality per
+/// microsecond, and `decide` records that as the round's price. Written and
+/// read back, the epoch still says the price was infinite, not that the round
+/// took no upgrade.
+#[test]
+fn a_journal_keeps_a_free_upgrades_price() {
+    let mut trace = journal(1);
+    trace.epochs[0].allocation.price = Some(f32::INFINITY);
+
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let read: DecisionTrace = serde_json::from_str(&written).expect("a journal reads back");
+
+    assert_eq!(
+        read.epochs[0].allocation.price,
+        Some(f32::INFINITY),
+        "written as {written}"
+    );
+}
+
+/// **A journal naming an agent its table does not hold is refused**, with the
+/// index and the table's size: an entry is never read back as some other
+/// agent, nor dropped.
+#[test]
+fn a_journal_naming_an_agent_outside_its_table_is_refused() {
+    let written = serde_json::to_string(&journal(1)).expect("a journal serialises");
+    let mut value: serde_json::Value = serde_json::from_str(&written).expect("a journal is JSON");
+    value["epochs"][0]["allocation"]["late"] = serde_json::json!([7]);
+
+    let read = serde_json::from_value::<DecisionTrace>(value);
+
+    let error = read
+        .expect_err("agent #7 is not in a table of two")
+        .to_string();
+    assert!(
+        error.contains("#7") && error.contains('2'),
+        "the index and the table's size: {error}"
+    );
+}
+
+/// **A journal whose price is not a number still reads back.** A priority
+/// hint of NaN (`EngineHint::Prioritize`, which nothing checks) weighs every
+/// gain NaN; `total_cmp` orders a NaN slope above all others, so the round
+/// takes that upgrade and records a NaN price. The journal written then reads
+/// back, its price still not a number — one bad hint does not make a whole
+/// session's journal unreadable.
+#[test]
+fn a_journal_whose_price_is_not_a_number_still_reads_back() {
+    let mut trace = journal(2);
+    trace.epochs[1].allocation.price = Some(f32::NAN);
+
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let read = serde_json::from_str::<DecisionTrace>(&written);
+
+    let read = read.unwrap_or_else(|error| panic!("{error}: written as {written}"));
+    assert!(
+        read.epochs[1].allocation.price.is_some_and(f32::is_nan),
+        "{:?}",
+        read.epochs[1].allocation.price
     );
 }

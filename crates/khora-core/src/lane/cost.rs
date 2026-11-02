@@ -14,10 +14,11 @@
 
 //! What a level costs one frame, per device and per link.
 
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 /// One value per kind of device.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PerDevice<T> {
     /// The host processor.
     pub cpu: T,
@@ -30,7 +31,7 @@ pub struct PerDevice<T> {
 }
 
 /// One value per link between devices.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PerLink<T> {
     /// Host to graphics processor.
     pub cpu_to_gpu: T,
@@ -39,11 +40,11 @@ pub struct PerLink<T> {
 }
 
 /// How far a cost can be trusted, from `0.0` (a guess) to `1.0` (measured).
-#[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Confidence(pub f32);
 
 /// What running one level costs this frame.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct Cost {
     /// The time spent on each device.
     pub time: PerDevice<Duration>,

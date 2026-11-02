@@ -24,12 +24,12 @@ use crate::substrate;
 use khora_core::agent::completion::AgentCompletionMap;
 use khora_core::agent::completion::CompletionOutcome;
 use khora_core::agent::gorna::AgentId;
-use khora_core::agent::{EngineMode, ExecutionPhase};
+use khora_core::agent::{Agent, EngineMode, ExecutionPhase};
 use khora_core::lane::{HostViews, LaneBus, OutputDeck};
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::Runtime;
 use khora_data::ecs::World;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, TryLockError};
 use std::time::Instant;
 
 impl ExecutionScheduler {
@@ -89,7 +89,9 @@ impl ExecutionScheduler {
         before_agents: impl FnOnce(&LaneBus),
     ) {
         // 1. Sync budgets from cold thread
-        self.budget_channel.sync();
+        if let Some(next) = self.budget_channel.take() {
+            self.taken.push(next);
+        }
         self.frame_start = Instant::now();
         if let Ok(mut found) = self.undeclared_deck_writes.lock() {
             found.clear();
@@ -107,6 +109,10 @@ impl ExecutionScheduler {
                 let ctx = self.context.read().unwrap_or_else(|e| e.into_inner());
                 ctx.mode.clone()
             });
+
+        // 1a-bis. Lend the allocation in force, before anything locks an
+        //     agent: the whole frame runs on one epoch.
+        self.lend_allocation(&mode);
 
         // 1b. Real frame delta + fixed-timestep accumulator bookkeeping.
         let now = self.frame_start;
@@ -287,6 +293,64 @@ impl ExecutionScheduler {
                     });
                 }
             }
+        }
+    }
+
+    /// Lends every agent `mode` runs what it is owed, under its lock, at the
+    /// frame start: each replayed allocation taken since it was last handed
+    /// one, in order, then the one in force — which the whole frame runs on.
+    /// The DCC never lends. An agent busy now (asked for an offer) is not
+    /// waited for: it runs this frame on what it holds, and is handed what it
+    /// missed at the next frame start. An agent the mode does not run is lent
+    /// once it runs. An allocation that does not name an agent leaves it with
+    /// what it holds.
+    fn lend_allocation(&mut self, mode: &EngineMode) {
+        let Some(current) = self.taken.last().map(|((place, _), _)| *place) else {
+            return;
+        };
+        let agents: Vec<Arc<Mutex<dyn Agent>>> = {
+            let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+            registry.iter_for_mode(mode).cloned().collect()
+        };
+        // Agents removed since are forgotten.
+        self.lent.retain(|(agent, _)| agent.strong_count() > 0);
+        // The oldest place an agent active in the mode was handed: what was
+        // taken before it is owed to none of them any more.
+        let mut oldest_handed = Some(current);
+        for agent_mutex in &agents {
+            let weak = Arc::downgrade(agent_mutex);
+            let entry = self.lent.iter().position(|(seen, _)| seen.ptr_eq(&weak));
+            let handed = entry.map(|at| self.lent[at].1);
+            if handed == Some(current) {
+                continue;
+            }
+            let mut agent = match agent_mutex.try_lock() {
+                Ok(agent) => agent,
+                Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+                Err(TryLockError::WouldBlock) => {
+                    oldest_handed = oldest_handed.min(handed);
+                    continue;
+                }
+            };
+            let owed = self
+                .taken
+                .iter()
+                .filter(|((place, _), _)| handed.is_none_or(|handed| *place > handed));
+            for ((place, allocation), in_turn) in owed {
+                if *in_turn || *place == current {
+                    allocation.lend_to(&mut *agent);
+                }
+            }
+            match entry {
+                Some(at) => self.lent[at].1 = current,
+                None => self.lent.push((weak, current)),
+            }
+        }
+        // `None` is an agent never handed anything: it is owed all that is
+        // kept.
+        if let Some(oldest) = oldest_handed {
+            self.taken
+                .retain(|((place, _), _)| *place > oldest || *place == current);
         }
     }
 

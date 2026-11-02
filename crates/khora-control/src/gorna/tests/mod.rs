@@ -175,6 +175,32 @@ fn nothing<T>() -> HashMap<AgentId, T> {
     HashMap::new()
 }
 
+/// Lends each of `agents` what `allocation` names for it — its envelope, pin
+/// and allowed rows — as the scheduler does at a frame start. A round decides
+/// and lends nothing itself; the tests of what an agent makes of its envelope
+/// lend it here.
+fn lend(allocation: &Allocation, agents: &[Arc<Mutex<dyn Agent>>]) {
+    for agent in agents {
+        let mut agent = agent.lock().expect("the agent lock");
+        let id = agent.id();
+        let Some((_, envelope)) = allocation.envelopes.iter().find(|(named, _)| *named == id)
+        else {
+            continue;
+        };
+        let pin = allocation
+            .pins
+            .iter()
+            .find(|(named, _)| *named == id)
+            .map(|(_, row)| *row);
+        let allowed = allocation
+            .allowed
+            .iter()
+            .find(|(named, _)| *named == id)
+            .map(|(_, rows)| rows.as_slice());
+        agent.apply(allocation.epoch, envelope, pin, allowed);
+    }
+}
+
 // ── A fake that speaks the protocol ───────────────────────────────
 
 /// What an agent was lent by one `apply`.
@@ -317,6 +343,8 @@ impl Agent for Bidder {
             done: 1.0,
             health: self.health,
             over_budget: false,
+            stalled: self.stalled,
+            workload: None,
         }
     }
 

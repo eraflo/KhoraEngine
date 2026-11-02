@@ -59,7 +59,7 @@ accept/reject — e.g. "RenderAgent: LitForward → Forward+, reason: GPU pressu
 The underlying signals come from the `TelemetryService`. See
 [GORNA](./concepts/gorna.md), [Telemetry](./concepts/telemetry.md), and [Editor](./reference/editor.md).
 Recording and replay ship: `DccService::start_decision_recording` captures
-GORNA's per-tick decisions into a `DecisionTrace`, and `replay_decisions` issues
+each GORNA epoch — its allocation and its inputs — into a `DecisionTrace`, and `replay_decisions` issues
 them back in order — bypassing live fit and the adaptation mode — for
 bit-for-bit reproduction in QA or a bug repro. What is *not* shipped is a
 `Replay` variant of `AdaptationMode` (the enum has only `Learning`, `Manual`,

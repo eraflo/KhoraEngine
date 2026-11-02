@@ -16,11 +16,12 @@
 //!
 //! One round per epoch: the arbitrator asks every agent for an
 //! [`Offer`] (one `OfferRequest` each, with a deadline), calibrates the quoted
-//! costs by what the DCC measured, [`decide`]s an envelope for each agent, and
-//! lends it through [`Agent::apply`]. The DCC decides *how much*; each agent
-//! chooses *how*, within its envelope. A death spiral, too many stalled
-//! agents, or floors that do not fit make the round `Trigger::Safety`: every
-//! agent is lent its floor.
+//! costs by what the DCC measured, and [`decide`]s an envelope for each agent.
+//! The DCC publishes the allocation; the scheduler lends it at its next frame
+//! start, through [`Agent::apply`] — the DCC's thread never does. The DCC
+//! decides *how much*; each agent chooses *how*, within its envelope. A death
+//! spiral, too many stalled agents, or floors that do not fit make the round
+//! `Trigger::Safety`: every agent is lent its floor.
 
 use crate::analysis::AnalysisReport;
 use crate::dcc_context::Context;
@@ -83,6 +84,10 @@ pub struct GornaArbitrator {
     epoch: Epoch,
     /// The allocation in force, until the next round.
     in_force: Option<Allocation>,
+    /// The last round's offers, as the agents answered them.
+    offers: Vec<Offer>,
+    /// The last round's target time for the frame.
+    target: Duration,
     /// Each agent seen, by a weak reference to its lock: the name of one busy
     /// through a round is known without locking it (the weak reference also
     /// keeps a removed agent's lock address from being reused while held).
@@ -99,6 +104,8 @@ impl GornaArbitrator {
             wave_plan: Vec::new(),
             epoch: Epoch::default(),
             in_force: None,
+            offers: Vec::new(),
+            target: Duration::ZERO,
             known: Vec::new(),
         }
     }
@@ -124,12 +131,24 @@ impl GornaArbitrator {
         self.in_force.as_ref()
     }
 
+    /// The last round's offers, as the agents answered them — before the
+    /// DCC calibrated them by what it measured.
+    pub fn offers(&self) -> &[Offer] {
+        &self.offers
+    }
+
+    /// The target time for the frame the last round shared.
+    pub fn target(&self) -> Duration {
+        self.target
+    }
+
     /// One round of the protocol: asks every agent in `agents` for an offer
     /// (one `OfferRequest` for the round's epoch, the frame's target and the
-    /// context's mode), calibrates the quoted rows by `measured_costs`,
-    /// [`decide`]s, and lends each agent its envelope, pin and allowed rows
-    /// through [`Agent::apply`]. Returns the allocation, which stays in force
-    /// until the next round.
+    /// context's mode), calibrates the quoted rows by `measured_costs`, and
+    /// [`decide`]s each agent's envelope, pin and allowed rows. Returns the
+    /// allocation, which stays in force until the next round; the round
+    /// lends nothing itself — the scheduler lends the allocation at its next
+    /// frame start.
     ///
     /// `trigger` says why the round opens. The round is `Trigger::Safety`
     /// instead when `report` detects a death spiral, when too many agents are
@@ -147,6 +166,8 @@ impl GornaArbitrator {
         let epoch = self.epoch;
         let target_ms = f64::from(report.suggested_latency_ms * context.global_budget_multiplier);
         let target = Duration::from_secs_f64(target_ms.max(0.0) / 1_000.0);
+        self.target = target;
+        self.offers.clear();
         let stalled = self.stalled(agents);
         let trigger = if report.death_spiral_detected || stalled >= MAX_STALLED_AGENTS {
             log::error!(
@@ -207,6 +228,7 @@ impl GornaArbitrator {
             let importance = agent.execution_timing().importance;
             let id = agent.id();
             drop(agent);
+            self.offers.push(offer.clone());
             calibrate(&mut offer, measured_costs.get(&id).copied());
             bids.push(Bid {
                 kept: self.kept(id),
@@ -234,44 +256,16 @@ impl GornaArbitrator {
             waves: &self.wave_plan,
             bids: &bids,
         });
-        self.lend(&allocation, agents);
+        self.in_force = Some(allocation.clone());
         allocation
     }
 
-    /// Lends every agent in `agents` its envelope, pin and allowed rows from a
-    /// recorded `allocation`, without asking for offers or deciding: a replay.
-    /// The allocation is then the one in force.
-    pub fn reissue(&mut self, allocation: &Allocation, agents: &[Arc<Mutex<dyn Agent>>]) {
+    /// Puts a recorded `allocation` in force without asking for offers or
+    /// deciding: a replay. The DCC publishes it for the scheduler to lend,
+    /// and the next live round keeps from it the envelopes of the agents
+    /// that answer late.
+    pub fn reissue(&mut self, allocation: &Allocation) {
         self.epoch = self.epoch.max(allocation.epoch);
-        self.lend(allocation, agents);
-    }
-
-    /// Lends each agent of `agents` what `allocation` names for it, and keeps
-    /// the allocation as the one in force.
-    fn lend(&mut self, allocation: &Allocation, agents: &[Arc<Mutex<dyn Agent>>]) {
-        for agent_mutex in agents {
-            let Some(mut agent) = try_lock_agent_with_timeout(agent_mutex, self.lock_timeout)
-            else {
-                log::warn!("GORNA: an agent could not be locked for its envelope; skipped");
-                continue;
-            };
-            let id = agent.id();
-            let Some((_, envelope)) = allocation.envelopes.iter().find(|(agent, _)| *agent == id)
-            else {
-                continue;
-            };
-            let pin = allocation
-                .pins
-                .iter()
-                .find(|(agent, _)| *agent == id)
-                .map(|(_, row)| *row);
-            let allowed = allocation
-                .allowed
-                .iter()
-                .find(|(agent, _)| *agent == id)
-                .map(|(_, rows)| rows.as_slice());
-            agent.apply(allocation.epoch, envelope, pin, allowed);
-        }
         self.in_force = Some(allocation.clone());
     }
 

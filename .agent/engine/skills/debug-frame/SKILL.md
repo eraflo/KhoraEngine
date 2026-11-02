@@ -15,7 +15,7 @@ description: Investigates a per-frame problem or a GORNA budget decision — wro
    PID output in `crates/khora-control/src/pid.rs`.
 4. **Substrate vs descent**: confirm whether the issue is in Pass A (DataSystems/Flows publishing Views) or
    Pass B (agent → lane). A missing/stale `View` in the `LaneBus` is a common cause of "nothing renders".
-5. **Replay**: GORNA replays recorded allocations (`DecisionTrace.epochs`) — use a recorded epoch to
+5. **Replay**: GORNA replays recorded allocations (`DecisionTrace.epochs`, each an `EpochRecord` with its inputs) — use a recorded epoch to
    isolate negotiation from rendering.
 
 ## Known-issue checklist

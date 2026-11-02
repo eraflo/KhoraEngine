@@ -9,7 +9,7 @@ modes, and tick ordering (Substrate Pass + agent descent).
 
 ## Key files
 - DCC: `crates/khora-control/src/dcc_service/` (decision thread in `decision_loop.rs`); situational `Context` `crates/khora-control/src/dcc_context.rs`.
-- GORNA: `crates/khora-control/src/gorna/` — `mod.rs` (`GornaArbitrator::allocate`: offers, calibration, lending; `reissue` for replay), `decide.rs` (the pure share: admission, Q-RAM upgrades, 80/20 slack, policies as envelope shapes). Epochs and triggers: `dcc_service/epochs.rs`. Protocol types: `crates/khora-core/src/agent/gorna/protocol.rs`.
+- GORNA: `crates/khora-control/src/gorna/` — `mod.rs` (`GornaArbitrator::allocate`: offers, calibration, the round; `reissue` for replay; it lends nothing — the scheduler lends the published allocation at its frame start, `scheduler/frame.rs` `lend_allocation`), channel `budget_channel.rs`, journal `khora-core/src/agent/gorna/decision_trace.rs`, `decide.rs` (the pure share: admission, Q-RAM upgrades, 80/20 slack, policies as envelope shapes). Epochs and triggers: `dcc_service/epochs.rs`. Protocol types: `crates/khora-core/src/agent/gorna/protocol.rs`.
 - Cost model: `crates/khora-control/src/cost_model.rs` (learned linear `predict_ms`).
 - PID: `crates/khora-control/src/pid.rs` (anti-windup, ~20 Hz cold path, output `[0.3, 1.0]`).
 - Substrate dispatcher: `crates/khora-control/src/substrate/`.
@@ -28,7 +28,7 @@ modes, and tick ordering (Substrate Pass + agent descent).
 - The DCC lends envelopes and observes; it never chooses an agent's row (a developer pin aside) nor a data layout.
 - No `std::thread::spawn` — concurrency flows through the DCC.
 
-Use codegraph to trace `offer → allocate → decide → apply → execute`.
+Use codegraph to trace `offer → allocate → decide → publish → lend_allocation → apply → execute → AgentReport`.
 
 ## Skills
 - [`add-an-agent`](../skills/add-an-agent/SKILL.md) — add a budget-negotiating agent.

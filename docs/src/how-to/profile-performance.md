@@ -25,8 +25,8 @@ the input to every adaptive decision. See [Telemetry](../concepts/telemetry.md).
   (`crates/khora-infra/src/graphics/wgpu/profiler.rs`) that measures the **main pass** and the
   **frame total** on the GPU, smoothed with an EMA. It uses a two-pass timestamp scheme with a
   frame-lag read model (timestamps written in frame N are read at frame N+2).
-- **Per-agent cost.** The scheduler times every `agent.execute()` and publishes a
-  `TelemetryEvent::AgentCost { id, n, time_ms }` each frame, where `n` is the workload size. This is
+- **Per-agent cost.** The scheduler times every `agent.execute()` and publishes the agent's report,
+  `TelemetryEvent::AgentReport` after each run: the row, the time per device and the workload `n`. This is
   what feeds the cost model ([§2](#understand-gornas-decisions)–[§3](#the-fixed-timestep-cost-model)).
 - **Draw calls / triangles / render stats.** Agents and lanes push named counters and gauges through
   the `MetricsRegistry` (e.g. `render.draw_calls`, `physics.bodies_active`). Names are dot-separated;
@@ -51,7 +51,7 @@ path).
 
 **Honest gap.** The GPU profiler measures *main pass* and *frame total*; there is **no fine-grained
 per-stage GPU breakdown** (per-pass, per-material) and **no CPU tracing spans** (Tracy-style) wired up
-yet. Per-agent CPU cost is available (from `AgentCost`), but it is not yet sliced per render stage.
+yet. Per-agent CPU cost is available (from `AgentReport`), but it is not yet sliced per render stage.
 See [What is not yet measurable](#what-is-not-yet-measurable).
 
 ---

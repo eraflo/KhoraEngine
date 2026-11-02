@@ -58,7 +58,10 @@ pub struct DccService {
     config: DccConfig,
     context: Arc<std::sync::RwLock<Context>>,
     registry: Arc<std::sync::Mutex<AgentRegistry>>,
-    budget_channel: Option<BudgetChannel>,
+    /// The scheduler's channel, shared with the decision thread: connected
+    /// before or after the thread starts, it is the one the next allocation is
+    /// published on.
+    budget_channel: Arc<std::sync::RwLock<Option<BudgetChannel>>>,
     running: Arc<AtomicBool>,
     handle: Option<thread::JoinHandle<()>>,
     event_tx: Sender<TelemetryEvent>,
@@ -91,7 +94,7 @@ impl DccService {
             config,
             context: Arc::new(std::sync::RwLock::new(Context::default())),
             registry: Arc::new(std::sync::Mutex::new(AgentRegistry::new())),
-            budget_channel: None,
+            budget_channel: Arc::new(std::sync::RwLock::new(None)),
             running: Arc::new(AtomicBool::new(false)),
             handle: None,
             event_tx: tx,
@@ -131,7 +134,18 @@ impl DccService {
     /// tick. Hints persist and accumulate per agent (latest value wins per
     /// kind) until cleared with [`clear_agent_hints`](Self::clear_agent_hints).
     /// Advisory only: a `Manual` pin and the death-spiral safety stop still win.
+    ///
+    /// A hint whose value is not a number, or a weight that is not finite, is
+    /// refused and logged: it would make every round's shares meaningless.
     pub fn set_hint(&self, hint: EngineHint) {
+        let usable = match hint {
+            EngineHint::Cap { max_ms, .. } => !max_ms.is_nan(),
+            EngineHint::Prioritize { weight, .. } => weight.is_finite(),
+        };
+        if !usable {
+            log::warn!("DCC: hint {hint:?} refused: its value is not a usable number");
+            return;
+        }
         if let Ok(mut hints) = self.hints.write() {
             hints.entry(hint.agent()).or_default().apply(hint);
         }
@@ -199,10 +213,14 @@ impl DccService {
         }
     }
 
-    /// Stops any in-progress replay, returning to live arbitration.
+    /// Stops any in-progress replay, returning to live arbitration. The
+    /// replayed epochs the scheduler has not taken yet are withdrawn.
     pub fn stop_replay(&self) {
         if let Ok(mut replay) = self.replay.write() {
             *replay = None;
+        }
+        if let Some(channel) = self.connected_channel() {
+            channel.withdraw_in_turn();
         }
     }
 
@@ -215,10 +233,20 @@ impl DccService {
             .unwrap_or(false)
     }
 
-    /// Connects the DCC to the Scheduler's budget channel.
-    /// After GORNA arbitration, budgets are sent through this channel.
+    /// Connects the DCC to the scheduler's channel: each allocation the DCC
+    /// decides or replays is published on it, for the scheduler to lend at
+    /// its frame start. Connected before or after [`start`](Self::start), it
+    /// carries the next allocation.
     pub fn connect_budget_channel(&mut self, channel: BudgetChannel) {
-        self.budget_channel = Some(channel);
+        *self
+            .budget_channel
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = Some(channel);
+    }
+
+    /// The scheduler's channel, if one is connected.
+    fn connected_channel(&self) -> Option<BudgetChannel> {
+        connected(&self.budget_channel)
     }
 
     /// Registers an agent with a priority value.
@@ -324,6 +352,11 @@ impl Drop for DccService {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+/// The channel in `slot`, if one is connected.
+fn connected(slot: &std::sync::RwLock<Option<BudgetChannel>>) -> Option<BudgetChannel> {
+    slot.read().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 #[cfg(test)]

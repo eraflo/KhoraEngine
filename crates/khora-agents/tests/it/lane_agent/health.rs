@@ -46,6 +46,8 @@ pub struct Effort {
     pub takes: Duration,
     /// Whether the record fails.
     pub fails: bool,
+    /// Whether the lane reports it could not progress.
+    pub stalls: bool,
 }
 
 impl Effort {
@@ -55,6 +57,7 @@ impl Effort {
             done,
             takes: Duration::ZERO,
             fails: false,
+            stalls: false,
         }
     }
 
@@ -134,7 +137,7 @@ impl Lane for EffortLane {
         };
         Ok(LaneReport {
             done: effort.done,
-            stalled: false,
+            stalled: effort.stalls,
         })
     }
 }
@@ -287,4 +290,25 @@ fn a_nan_done_counts_as_nothing_done() {
     run(&mut agent, 1, &with(Effort::done(f32::NAN)), &mut deck);
 
     assert_eq!(health(&agent), 0.0, "NaN done is nothing done");
+}
+
+/// **A report says when the lane stalled**, so the DCC learns of a stall from
+/// the report the scheduler publishes, without asking the agent: a run whose
+/// lane could not progress reports `stalled`, and the next run that does
+/// progress no longer does.
+#[test]
+fn a_report_says_when_the_lane_stalled() {
+    let mut agent = effort_agent(Duration::from_secs(1));
+    let mut deck = OutputDeck::new();
+    let stalling = Effort {
+        stalls: true,
+        ..Effort::done(0.0)
+    };
+
+    run(&mut agent, 1, &with(stalling), &mut deck);
+    assert!(agent.report_status().is_stalled, "the status says so");
+    assert!(agent.report().stalled, "and so does the report");
+
+    run(&mut agent, 2, &with(Effort::done(1.0)), &mut deck);
+    assert!(!agent.report().stalled, "the lane progresses again");
 }

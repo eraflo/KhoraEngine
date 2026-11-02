@@ -41,7 +41,7 @@ flowchart LR
     A[Awareness] -->|collect metrics| B[Analysis]
     B -->|run heuristics| C[Negotiation]
     C -->|collect strategies| D[Arbitration]
-    D -->|apply budgets| E[Application]
+    D -->|publish the allocation| E[Lending at frame start]
     E -->|next tick| A
 ```
 
@@ -55,8 +55,15 @@ flowchart LR
   remaining time to the upgrades that gain the most quality per microsecond, and
   gives 80 % of what is left back as slack. Each agent receives an **envelope** —
   how much time and memory it may use — never a row.
+- **Lending**: the DCC publishes the allocation; the scheduler lends it at its
+  next frame start, to every agent at once, so no frame mixes two epochs. An
+  agent busy at that moment keeps its envelope and is lent at the next frame
+  start. The DCC's thread never touches an agent's envelope.
 - **Choice**: each agent picks, every frame, the best row whose quote fits its
   envelope; nothing fits, it runs its floor and says so in its report.
+- **Reports**: after each run the scheduler publishes the agent's report — the
+  row, the time per device, the workload — which feeds the cost models and may
+  open the next epoch (overruns in a row, a stalled agent).
 
 The DCC decides *how much*; the agent decides *how*.
 The request and budget shapes are intentionally narrow — time, memory, VRAM, and a

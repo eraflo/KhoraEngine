@@ -349,6 +349,19 @@ fn decision_trace_fields(x: &khora_core::agent::gorna::DecisionTrace) {
     let _ = (&x.epochs,);
 }
 
+fn epoch_record_fields(x: &khora_core::agent::gorna::EpochRecord) {
+    let _ = (
+        &x.allocation,
+        &x.target,
+        &x.offers,
+        &x.reports,
+        &x.waves,
+        &x.policies,
+        &x.hints,
+        &x.reasons,
+    );
+}
+
 fn engine_hint_variants(x: &khora_core::agent::gorna::EngineHint) {
     match x {
         khora_core::agent::gorna::EngineHint::Cap { .. } => {}
@@ -1096,7 +1109,7 @@ fn telemetry_event_variants(x: &khora_core::telemetry::event::TelemetryEvent) {
         khora_core::telemetry::event::TelemetryEvent::HardwareReport(..) => {}
         khora_core::telemetry::event::TelemetryEvent::GpuReport(..) => {}
         khora_core::telemetry::event::TelemetryEvent::ModeChange(..) => {}
-        khora_core::telemetry::event::TelemetryEvent::AgentCost { .. } => {}
+        khora_core::telemetry::event::TelemetryEvent::AgentReport(..) => {}
         khora_core::telemetry::event::TelemetryEvent::WavePlan { .. } => {}
         khora_core::telemetry::event::TelemetryEvent::ComponentAccess { .. } => {}
     }
@@ -1852,6 +1865,12 @@ fn module_agent_gorna_paths_still_resolve() {
     is_debug::<khora_core::agent::gorna::DecisionTrace>();
     is_clone::<khora_core::agent::gorna::DecisionTrace>();
     is_default::<khora_core::agent::gorna::DecisionTrace>();
+    is_serialize::<khora_core::agent::gorna::DecisionTrace>();
+    is_deserialize_owned::<khora_core::agent::gorna::DecisionTrace>();
+    let _ = type_name::<khora_core::agent::gorna::EpochRecord>();
+    let _ = epoch_record_fields as fn(&khora_core::agent::gorna::EpochRecord);
+    is_debug::<khora_core::agent::gorna::EpochRecord>();
+    is_clone::<khora_core::agent::gorna::EpochRecord>();
     let _ = type_name::<khora_core::agent::gorna::EngineHint>();
     let _ = engine_hint_variants as fn(&khora_core::agent::gorna::EngineHint);
     let _ = khora_core::agent::gorna::EngineHint::agent;

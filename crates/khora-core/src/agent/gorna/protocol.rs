@@ -19,18 +19,22 @@
 //! The DCC decides *how much* (an envelope per agent per epoch); the agent
 //! decides *how* (its row within the envelope).
 
+use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
 use super::{AgentId, StrategyId};
 use crate::agent::mode::EngineMode;
+use crate::agent::Agent;
 use crate::lane::cost::{Cost, PerDevice};
 
 /// One round of negotiation: an allocation holds from its epoch until the next.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 pub struct Epoch(pub u64);
 
 /// Why the DCC opened an epoch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Trigger {
     /// The first round.
     Initial,
@@ -72,7 +76,7 @@ pub struct OfferRequest {
 }
 
 /// How far an offered cost can be trusted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Confidence {
     /// Measured on a run of the row.
     Measured,
@@ -83,7 +87,7 @@ pub enum Confidence {
 }
 
 /// One row an agent offers.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct OfferRow {
     /// The row's id, unique within the agent.
     pub id: StrategyId,
@@ -113,7 +117,7 @@ pub struct Offer {
 }
 
 /// What the DCC lends one agent for an epoch.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Envelope {
     /// The time on each device.
     pub time: PerDevice<Duration>,
@@ -141,6 +145,26 @@ pub struct Allocation {
     pub late: Vec<AgentId>,
 }
 
+impl Allocation {
+    /// Lends `agent` what the allocation names for it — its envelope, its pin
+    /// and its allowed rows — through [`Agent::apply`]; whether it named the
+    /// agent. An agent it does not name is left with what it holds.
+    pub fn lend_to(&self, agent: &mut dyn Agent) -> bool {
+        let id = agent.id();
+        let Some((_, envelope)) = self.envelopes.iter().find(|(named, _)| *named == id) else {
+            return false;
+        };
+        let pin = (self.pins.iter())
+            .find(|(named, _)| *named == id)
+            .map(|(_, row)| *row);
+        let allowed = (self.allowed.iter())
+            .find(|(named, _)| *named == id)
+            .map(|(_, rows)| rows.as_slice());
+        agent.apply(self.epoch, envelope, pin, allowed);
+        true
+    }
+}
+
 /// What an agent ran on its last frame.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Report {
@@ -158,4 +182,12 @@ pub struct Report {
     pub health: f32,
     /// Whether no row fitted the envelope, so the floor ran.
     pub over_budget: bool,
+    /// Whether the agent could not progress: a lane that stalled, a script
+    /// that faulted.
+    pub stalled: bool,
+    /// How much work the run did, in the agent's own unit (draws, bodies,
+    /// instructions): the `n` its cost model is read at. `None` when the agent
+    /// does not count it; the scheduler then fills in the world's entity
+    /// count before publishing the report.
+    pub workload: Option<f64>,
 }

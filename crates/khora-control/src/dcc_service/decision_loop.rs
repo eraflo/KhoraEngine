@@ -17,13 +17,14 @@
 
 use super::epochs::Epochs;
 use super::forecast::forecast_frame_ms;
-use super::{DccService, COST_MODEL_CAPACITY, FRAME_TIME_MIN_SAMPLES, PID_RENEGOTIATE_DELTA};
+use super::{
+    connected, DccService, COST_MODEL_CAPACITY, FRAME_TIME_MIN_SAMPLES, PID_RENEGOTIATE_DELTA,
+};
 use crate::cost_model::CostModel;
 use crate::dcc_context::safety_ceiling;
 use crate::metrics::MetricStore;
 use crate::pid::PidController;
 use crossbeam_channel::Receiver;
-use khora_core::agent::gorna::ResourceBudget;
 use khora_core::agent::Agent;
 use khora_core::telemetry::{MetricId, TelemetryEvent};
 use khora_data::ecs::layout::LayoutAdvisor;
@@ -34,8 +35,8 @@ use std::time::{Duration, Instant};
 
 use crate::analysis::HeuristicEngine;
 use crate::gorna::GornaArbitrator;
-use khora_core::agent::gorna::protocol::Trigger;
-use khora_core::agent::gorna::{AgentHints, AgentId};
+use khora_core::agent::gorna::protocol::{Report, Trigger};
+use khora_core::agent::gorna::{AgentHints, AgentId, EpochRecord};
 use std::collections::HashMap;
 
 impl DccService {
@@ -49,7 +50,7 @@ impl DccService {
         let running = Arc::clone(&self.running);
         let context = Arc::clone(&self.context);
         let registry = Arc::clone(&self.registry);
-        let budget_channel = self.budget_channel.clone();
+        let budget_channel = Arc::clone(&self.budget_channel);
         let adaptation_modes = Arc::clone(&self.adaptation_modes);
         let hints = Arc::clone(&self.hints);
         let layout_recommendations = Arc::clone(&self.layout_recommendations);
@@ -69,11 +70,14 @@ impl DccService {
             let mut arbitrator = GornaArbitrator::new(agent_lock_timeout);
             // When the next epoch opens, and what waits to open it.
             let mut epochs = Epochs::default();
-            // Per-agent empirical cost models (`c·f(n)`), fed from `AgentCost`
-            // samples and used to forecast budget breaches before they happen,
-            // each read at the workload its own agent last reported.
+            // Per-agent empirical cost models (`c·f(n)`), fed from the reports
+            // the scheduler publishes and used to forecast budget breaches
+            // before they happen, each read at the workload its own agent last
+            // reported.
             let mut cost_models: HashMap<AgentId, CostModel> = HashMap::new();
             let mut workloads: HashMap<AgentId, f64> = HashMap::new();
+            // Each agent's latest report, for the journal.
+            let mut reports: HashMap<AgentId, Report> = HashMap::new();
             // Latest wave plan from the hot path: how agents are grouped for
             // concurrent execution. Empty until the scheduler publishes one (and
             // stays empty under serial execution), in which case cost fitting
@@ -90,6 +94,10 @@ impl DccService {
             // Multiplier in effect when budgets were last issued — drift beyond
             // PID_RENEGOTIATE_DELTA re-arbitrates (closes the recovery path).
             let mut last_issued_multiplier: Option<f32> = None;
+            // The channel the allocation in force was last published on: one
+            // connected since is handed it, so an allocation decided before
+            // the scheduler connected is not lost.
+            let mut published_on: Option<crate::budget_channel::BudgetChannel> = None;
 
             log::info!("DCC Service thread started.");
 
@@ -138,6 +146,8 @@ impl DccService {
                             log::debug!("DCC Mode: {:?} → {:?}", ctx.mode, new_mode);
                             if ctx.mode != new_mode {
                                 epochs.raise(Trigger::ModeChanged);
+                                // Runs of another mode say nothing of this one.
+                                reports.clear();
                             }
                             ctx.mode = new_mode;
                         }
@@ -163,21 +173,36 @@ impl DccService {
                                 report.triangles_rendered as f32,
                             );
                         }
-                        TelemetryEvent::AgentCost { id, n, time_ms } => {
-                            // Feed the per-agent empirical cost model and surface
-                            // the latest time as a glass-box metric.
-                            workloads.insert(id, n);
-                            cost_models
-                                .entry(id)
-                                .or_insert_with(|| CostModel::new(COST_MODEL_CAPACITY))
-                                .record(n, time_ms);
+                        TelemetryEvent::AgentReport(run) => {
+                            // A run's report feeds the agent's empirical cost
+                            // model at the run's workload, surfaces the run's
+                            // time as a glass-box metric, may raise a trigger,
+                            // and is kept for the journal.
+                            let id = run.agent;
+                            let time = &run.measured;
+                            let time_ms = time
+                                .cpu
+                                .max(time.gpu)
+                                .max(time.npu)
+                                .max(time.other)
+                                .as_secs_f64()
+                                * 1_000.0;
+                            if let Some(n) = run.workload {
+                                workloads.insert(id, n);
+                                cost_models
+                                    .entry(id)
+                                    .or_insert_with(|| CostModel::new(COST_MODEL_CAPACITY))
+                                    .record(n, time_ms);
+                            }
                             store.push(
                                 khora_core::telemetry::MetricId::new(
                                     "agent",
-                                    format!("{id:?}_time_ms"),
+                                    format!("{id}_time_ms"),
                                 ),
                                 time_ms as f32,
                             );
+                            epochs.report(&run, overruns_in_a_row);
+                            reports.insert(id, run);
                         }
                         TelemetryEvent::WavePlan { waves } => {
                             // The hot path republishes this each frame; keep the
@@ -303,23 +328,38 @@ impl DccService {
                     log::info!("DCC Analysis: {}", alert);
                 }
 
+                // A channel connected since the last tick is handed the
+                // allocation in force.
+                if let Some(channel) = connected(&budget_channel) {
+                    if !published_on.as_ref().is_some_and(|on| on.is(&channel)) {
+                        if let Some(allocation) = arbitrator.in_force() {
+                            channel.publish(allocation.clone());
+                        }
+                        published_on = Some(channel);
+                    }
+                }
+
                 // 3. GORNA. Only the agents active in the engine's mode take
-                //    part; their reports may raise a trigger, and a due trigger
-                //    opens an epoch.
+                //    part; a due trigger opens an epoch. The allocation is
+                //    published for the scheduler, which lends it at its next
+                //    frame start: this thread never lends.
                 let agents: Vec<Arc<std::sync::Mutex<dyn Agent>>> = {
                     let registry = registry.lock().unwrap_or_else(|e| e.into_inner());
                     registry.iter_for_mode(&ctx_copy.mode).cloned().collect()
                 };
-                epochs.observe(&agents, overruns_in_a_row);
+                epochs.observe(&agents);
 
-                // A replay lends the recorded allocations, one a tick, in
+                // A replay publishes the recorded allocations, one a tick, in
                 // order, until the trace is exhausted.
-                let replayed = replay
-                    .read()
-                    .ok()
-                    .and_then(|r| r.as_ref().and_then(|(t, c)| t.epochs.get(*c).cloned()));
+                let replayed = replay.read().ok().and_then(|r| {
+                    r.as_ref()
+                        .and_then(|(t, c)| t.epochs.get(*c).map(|e| e.allocation.clone()))
+                });
                 if let Some(allocation) = replayed {
-                    arbitrator.reissue(&allocation, &agents);
+                    arbitrator.reissue(&allocation);
+                    if let Some(channel) = connected(&budget_channel) {
+                        channel.publish_in_turn(allocation.clone());
+                    }
                     let exhausted = replay.write().ok().is_some_and(|mut r| match r.as_mut() {
                         Some((trace, cursor)) => {
                             *cursor += 1;
@@ -328,6 +368,7 @@ impl DccService {
                         None => false,
                     });
                     epochs.replayed(&agents);
+                    epochs.set_in_force(allocation.epoch);
                     // Once the trace runs out, a live epoch opens for the
                     // engine as it is now, whatever the trace lent last.
                     if exhausted {
@@ -339,10 +380,12 @@ impl DccService {
                 {
                     // Sync developer-control modes into the arbitrator (the
                     // host may have changed them) and snapshot the hints.
-                    if let Ok(modes) = adaptation_modes.read() {
-                        for (id, mode) in modes.iter() {
-                            arbitrator.set_adaptation_mode(*id, *mode);
-                        }
+                    let policies = adaptation_modes
+                        .read()
+                        .map(|m| m.clone())
+                        .unwrap_or_default();
+                    for (id, mode) in &policies {
+                        arbitrator.set_adaptation_mode(*id, *mode);
                     }
                     let tick_hints: HashMap<AgentId, AgentHints> =
                         hints.read().map(|h| h.clone()).unwrap_or_default();
@@ -369,39 +412,27 @@ impl DccService {
                         &tick_hints,
                     );
                     epochs.opened(&agents);
+                    epochs.set_in_force(allocation.epoch);
                     last_issued_multiplier = Some(multiplier);
                     if decision_recording.read().map(|b| *b).unwrap_or(false) {
                         if let Ok(mut trace) = recorded_trace.write() {
-                            trace.epochs.push(allocation.clone());
+                            trace.epochs.push(EpochRecord {
+                                allocation: allocation.clone(),
+                                target: arbitrator.target(),
+                                offers: arbitrator.offers().to_vec(),
+                                reports: by_agent(&reports)
+                                    .into_iter()
+                                    .map(|(_, run)| run)
+                                    .collect(),
+                                waves: latest_wave_plan.clone(),
+                                policies: by_agent(&policies),
+                                hints: by_agent(&tick_hints),
+                                reasons: report.alerts.clone(),
+                            });
                         }
                     }
-
-                    // The scheduler's budget channel still carries a budget
-                    // per agent: its row and its envelope's busiest time.
-                    if let Some(ref budget_channel) = budget_channel {
-                        for (id, envelope) in &allocation.envelopes {
-                            let time = &envelope.time;
-                            let row = agents
-                                .iter()
-                                .filter_map(|agent| agent.try_lock().ok())
-                                .find(|agent| agent.id() == *id)
-                                .map(|agent| agent.report().row);
-                            if let Some(strategy_id) = row {
-                                budget_channel.send(
-                                    *id,
-                                    ResourceBudget {
-                                        strategy_id,
-                                        time_limit: time
-                                            .cpu
-                                            .max(time.gpu)
-                                            .max(time.npu)
-                                            .max(time.other),
-                                        memory_limit: Some(envelope.memory.gpu),
-                                        extra_params: std::collections::HashMap::new(),
-                                    },
-                                );
-                            }
-                        }
+                    if let Some(channel) = connected(&budget_channel) {
+                        channel.publish(allocation);
                     }
                 }
 
@@ -424,4 +455,13 @@ impl DccService {
             let _ = handle.join();
         }
     }
+}
+
+/// `map`'s entries in the agents' order, so a journal reads the same from one
+/// run to the next.
+fn by_agent<T: Clone>(map: &HashMap<AgentId, T>) -> Vec<(AgentId, T)> {
+    let mut entries: Vec<(AgentId, T)> =
+        map.iter().map(|(id, value)| (*id, value.clone())).collect();
+    entries.sort_by_key(|(id, _)| *id);
+    entries
 }

@@ -15,7 +15,7 @@
 //! The ExecutionScheduler — hot-path orchestrator for the SAA frame loop.
 
 use crate::agent_registry::AgentRegistry;
-use crate::budget_channel::BudgetChannel;
+use crate::budget_channel::{BudgetChannel, Publication};
 use crate::dcc_context::Context;
 use crate::plugin::EnginePlugin;
 use crate::worker_pool::WorkerPool;
@@ -30,7 +30,7 @@ use khora_core::lane::OutputDeck;
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::Runtime;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 use waves::{build_wave_metas, partition_waves};
 
@@ -95,6 +95,14 @@ fn fixed_slot_id(slot: &AgentSlot) -> Option<AgentId> {
 pub struct ExecutionScheduler {
     registry: Arc<Mutex<AgentRegistry>>,
     budget_channel: BudgetChannel,
+    /// What the frame starts took from the channel, oldest first, each with
+    /// whether it was published in turn: the one in force last, and before it
+    /// the replayed ones an agent active in the mode has not been lent yet.
+    taken: Vec<(Publication, bool)>,
+    /// Each agent seen at a frame start, by a weak reference to its lock,
+    /// with the place of the last publication it was handed: what it is owed
+    /// is what was taken after it.
+    lent: Vec<(Weak<Mutex<dyn khora_core::agent::Agent>>, u64)>,
     plugins: Vec<EnginePlugin>,
     phase_order: Vec<ExecutionPhase>,
     context: Arc<std::sync::RwLock<Context>>,
@@ -144,15 +152,18 @@ pub struct ExecutionScheduler {
 }
 
 impl ExecutionScheduler {
-    /// Creates a new scheduler.
+    /// Creates a new scheduler. The ids are no longer read: every agent of
+    /// `registry` is lent the allocations the DCC publishes.
     pub fn new(
         registry: Arc<Mutex<AgentRegistry>>,
         context: Arc<std::sync::RwLock<Context>>,
-        agent_ids: &[AgentId],
+        _agent_ids: &[AgentId],
     ) -> Self {
         Self {
             registry,
-            budget_channel: BudgetChannel::new(agent_ids),
+            budget_channel: BudgetChannel::new(),
+            taken: Vec::new(),
+            lent: Vec::new(),
             plugins: Vec::new(),
             phase_order: ExecutionPhase::DEFAULT_ORDER.to_vec(),
             context,
@@ -173,23 +184,14 @@ impl ExecutionScheduler {
 
     /// Creates a scheduler over the agents of `registry`.
     ///
-    /// The budget channel gets one entry per agent the registry holds, so an
-    /// agent is budgeted because it is registered — no hand-kept id list can
-    /// forget it.
+    /// Every agent the registry holds, now or later, is lent the allocations
+    /// the DCC publishes: an agent is budgeted because it is registered — no
+    /// hand-kept id list can forget it.
     pub fn from_registry(
         registry: Arc<Mutex<AgentRegistry>>,
         context: Arc<std::sync::RwLock<Context>>,
     ) -> Self {
-        let ids: Vec<AgentId> = registry
-            .lock()
-            .map(|registry| {
-                registry
-                    .iter()
-                    .filter_map(|agent| agent.lock().ok().map(|agent| agent.id()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        Self::new(registry, context, &ids)
+        Self::new(registry, context, &[])
     }
 
     /// The deck slots agents wrote during the last frame without declaring
@@ -351,7 +353,11 @@ fn sort_agents(mut agents: Vec<AgentSlot>) -> Vec<AgentSlot> {
         .filter_map(|(idx, slot)| slot.0.lock().ok().map(|a| (a.id(), idx)))
         .collect();
 
-    let nodes: Vec<AgentId> = id_to_index.keys().copied().collect();
+    // In the importance + priority order: the topological sort keeps its
+    // input order among agents no dependency orders.
+    let mut nodes: Vec<(usize, AgentId)> = id_to_index.iter().map(|(id, i)| (*i, *id)).collect();
+    nodes.sort_unstable_by_key(|(index, _)| *index);
+    let nodes: Vec<AgentId> = nodes.into_iter().map(|(_, id)| id).collect();
 
     // Build hard-dep edges (parent = dep target, child = dependent agent)
     // — the dep target must run first.

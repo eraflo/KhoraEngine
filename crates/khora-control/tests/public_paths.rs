@@ -245,10 +245,11 @@ fn every_public_path_of_khora_control_still_resolves() {
     // --- module `budget_channel`
     let _ = type_name::<khora_control::budget_channel::BudgetChannel>();
     is_clone::<khora_control::budget_channel::BudgetChannel>();
+    is_default::<khora_control::budget_channel::BudgetChannel>();
     let _ = khora_control::budget_channel::BudgetChannel::new;
-    let _ = khora_control::budget_channel::BudgetChannel::send;
+    let _ = khora_control::budget_channel::BudgetChannel::publish;
     let _ = khora_control::budget_channel::BudgetChannel::sync;
-    let _ = khora_control::budget_channel::BudgetChannel::get;
+    let _ = khora_control::budget_channel::BudgetChannel::latest;
 
     // --- module `dcc_context` (re-exports of `khora_core` enums + own items)
     let _ = type_name::<khora_control::dcc_context::EngineMode>();

@@ -14,9 +14,12 @@
 
 //! Types and traits for the Goal-Oriented Resource Negotiation & Allocation (GORNA) protocol.
 
+mod decision_trace;
 pub mod protocol;
 #[cfg(test)]
 mod tests;
+
+pub use decision_trace::{DecisionTrace, EpochRecord};
 
 use crate::agent::mode::EngineMode;
 use crate::agent::timing::{AgentImportance, ExecutionTiming};
@@ -89,7 +92,7 @@ pub enum StrategyId {
 /// DCC observes and proposes, but the developer decides how much it may act. Set
 /// per agent; `Learning` is the default. (A death-spiral safety stop can still
 /// force `LowPower` in any mode — safety overrides developer control.)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AdaptationMode {
     /// Full GORNA negotiation — the DCC freely picks the best-fitting strategy
     /// each tick. The engine's default.
@@ -152,7 +155,7 @@ impl EngineHint {
 /// The accumulated hint state for one agent, folded from the [`EngineHint`]s
 /// the DCC has received. A `None` field means "no developer hint — use the
 /// engine default". Persists across ticks until overwritten by a newer hint.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct AgentHints {
     /// Per-frame time-budget ceiling in milliseconds, if capped.
     pub cap_ms: Option<f32>,
@@ -168,19 +171,6 @@ impl AgentHints {
             EngineHint::Prioritize { weight, .. } => self.priority = Some(weight),
         }
     }
-}
-
-/// An ordered, replayable recording of GORNA's decisions: each epoch's
-/// allocation.
-///
-/// A round is a pure function of its inputs (no RNG), so lending the recorded
-/// allocations again reproduces a session's adaptation — for QA, network
-/// lockstep and bug reproduction. Recorded by the DCC while recording is
-/// enabled; replayed one allocation a tick, asking agents for no offer.
-#[derive(Debug, Clone, Default)]
-pub struct DecisionTrace {
-    /// Each epoch's allocation, in the order the DCC issued them.
-    pub epochs: Vec<protocol::Allocation>,
 }
 
 /// Hard resource constraints the DCC imposes on an Agent during negotiation.

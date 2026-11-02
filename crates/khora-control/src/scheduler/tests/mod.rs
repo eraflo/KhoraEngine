@@ -15,6 +15,7 @@
 //! Tests of the execution scheduler, one file per concern.
 
 mod agent_ids;
+mod allocations;
 mod concurrent_exec;
 mod deck_writes;
 mod engine_mode;
@@ -24,6 +25,8 @@ mod panicking_agents;
 mod physics_step_is_precision;
 mod physics_time_stays_on_gameplay_time;
 mod published_fixed_steps;
+mod reports;
+mod run_order;
 mod sim_steps;
 mod sub_step_outputs;
 mod wave_ticks;
