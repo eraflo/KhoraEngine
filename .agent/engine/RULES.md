@@ -49,7 +49,8 @@ and [`security-privacy.md`](./security-privacy.md).
 - **Lanes MUST consume Views from the `LaneBus`** (`khora-core/src/lane/bus.rs`), not query the World directly. The domain `Flow` (`khora-data/src/flow/`) is the only legitimate producer of those Views.
 - **Adapt the HOW, never the WHAT.** Automatic adaptation (DCC / GORNA / `Flow` / AGDF) changes only *representation* — strategy, quality, memory layout. It MUST NEVER change *game semantics* (which components an entity has, simulation-observable behavior).
 - **Structural mutations are forbidden inside Lanes.** Representation-only layout changes (AGDF, e.g. SoA↔AoSoA) belong to the data layer's self-maintenance; Flows are **read-only projectors**. Semantic structural change (attach/detach gameplay components) is developer-authored — opt-in policy, `DataSystem` invariants, or explicit editor/script actions.
-- **Agents stay strategists** — choose a Lane given a budget, report status. No per-frame state, no owning a Flow, no buffering outputs. The descent is `Control → Agent → Lane → Data`; the agent invokes its own lane.
+- **The DCC decides how much; the agent decides how.** Per epoch the DCC lends each agent an **envelope** (time per device, memory) — never a row, a developer's pin aside; the agent chooses the row whose price fits, and reports after every run. The DCC's thread never touches an agent: allocations are lent at a frame start by the scheduler.
+- **Agents stay strategists.** A family's lane runs as a **layer** installed at the family's **place** (its phase and pass); the scheduler applies it every frame without the agent, and wakes the agent only for an event (`Wake`). The agent then prepares a new layer beside the installed one, swapped in at a frame start at the same place, or reinstates one kept. No per-frame state, no owning a Flow, no buffering outputs. The descent is `Control → Agent → Lane → Data`.
 - **Engine-tick wiring is data-driven** — to add an invariant register a `DataSystemRegistration`; to add a Flow use `register_flow!`; to add an asset decoder register an `AssetDecoderRegistration`. Never wire a system manually in engine code.
 
 ## 4 — Code quality
@@ -103,8 +104,9 @@ and [`security-privacy.md`](./security-privacy.md).
 
 ## 8 — Must never
 
-- Add a method outside the `Agent` trait to an agent struct. Agents implement **only** `Agent` and `Default` — no `start/stop`, builders, or accessors. Construction via `Default::default()`. Private free functions in the module file are fine.
-- Give an agent more than one `LaneKind`, or any job other than lane selection, GORNA budget negotiation, and `Lane::execute()` dispatch.
+- Write a new agent type. A new subsystem is a **family**: its lanes and one `register_agent!` registration (phase, importance, lanes, default level); its agent is the one `LaneAgent`, built by `lane_agent`. An agent implements **only** `Agent` — no `start/stop`, builders, or accessors; private free functions in the module file are fine. (`RenderAgent` and `ScriptAgent` are the last hand-written agents, until they become families.)
+- Give an agent more than one family, or any job other than choosing its row, answering GORNA, and installing its layers. Never run a lane from an agent's `execute` in the frame loop: the scheduler runs the place.
+- Offer one `StrategyId` twice in a family — boot refuses it, and a family's rows, pins and layers are named by it.
 - Use an `Agent` for a subsystem that doesn't need GORNA negotiation — use a direct service (`AssetService`, `SerializationService`, `EcsMaintenance`).
 - Bypass the `Lane` abstraction for hot-path work.
 - Add concrete backend logic to `khora-core`.
@@ -128,7 +130,8 @@ and [`security-privacy.md`](./security-privacy.md).
 
 ## Decisions (rationale)
 
-- **One agent per `LaneKind`** — keeps each agent focused on one negotiation surface.
+- **One agent per family** — keeps each agent focused on one negotiation surface.
+- **Lanes are layers** — an agent off the hot path costs nothing on a quiet frame, a swap is prepared beside and lands at a frame start (no first-frame hitch), and its measured prepare time is what a switch of row costs.
 - **GPU IDs over raw handles** — decouples public APIs from wgpu version drift.
 - **Shaders as files, never strings** — editable, reviewable, hot-reloadable.
 - **Backend code in `khora-infra` only** — `khora-core` stays portable and trait-only.

@@ -13,12 +13,13 @@ first mention.
 
 ### AdaptationMode
 
-The per-agent dial that bounds how freely GORNA may change an agent's strategy.
-Four variants are enforced today — `Learning` (default, negotiates freely),
-`Manual(strategy)` (pins one strategy), `Stable` (blocks opportunistic
-up-switches), and `Bounded { min, max }` (clamps the strategy range) — set via
-`DccService::set_adaptation_mode`. A death-spiral safety stop can still force the
-cheapest strategy regardless. See [GORNA](../concepts/gorna.md).
+The per-agent dial that bounds how freely GORNA may shape an agent's envelope.
+Every mode is an envelope shape — `Learning` (default, negotiates freely),
+`Manual(row)` (a pinned row the agent is told to run), `Stable` (keeps its envelope
+while its row still fits, takes no upgrade), and `Bounded { min, max }` (limits the
+rows planned and chosen) — set via `DccService::set_adaptation_mode`. The `Safety`
+allocation can still give every agent its floor regardless. See
+[GORNA](../concepts/gorna.md).
 
 ### AGDF — Adaptive Game Data Flows
 
@@ -30,14 +31,15 @@ data. AGDF is self-optimized inside `khora-data`; the DCC only observes it. See
 
 ### Agent
 
-A tactical manager that owns exactly one `LaneKind`, exposes that kind's lane
-strategies to GORNA, applies the budget GORNA returns, and dispatches the chosen
-lane each frame. An agent implements only the `Agent` and `Default` traits — no
-extra methods. It is *not* a controller (the DCC decides global priorities) and
-*not* a worker (lanes do the work). Eight ship today: Render, Shadow, Skybox,
-Overlay, Physics, UI, Audio, and Script (the last registered for
-`EngineMode::Playing` only). See [Agents and Lanes](../concepts/agents-and-lanes.md). Also
-called an **ISA** (Intelligent Subsystem Agent).
+A family's strategist: it offers the family's rows (every level of every lane the
+device supports) to GORNA, receives an [envelope](#envelope), chooses the row that
+fits, and installs it as a [layer](#layer-and-place); it is woken only by events.
+Every family's agent is the same `LaneAgent`, built from the family's registration;
+an agent implements only the `Agent` trait. It is *not* a controller (the DCC
+decides how much) and *not* a worker (lanes do the work). Rendering and scripting
+still have hand-written agents (`RenderAgent`, `ScriptAgent`, the latter for
+`EngineMode::Playing` only). See [Agents and Lanes](../concepts/agents-and-lanes.md).
+Also called an **ISA** (Intelligent Subsystem Agent).
 
 ### Asset reference (Ergon)
 
@@ -172,6 +174,21 @@ transport state; the editor turns it into an engine mode every frame —
 time scale. See [The frame](../concepts/the-frame.md#the-simulation-clock) and
 [SDK surface](./sdk.md#engine-modes).
 
+### Envelope
+
+What GORNA lends an agent for an [epoch](#epoch-gorna): how much time on each device
+and how much memory it may use — never which row to run. It is the row the DCC
+planned for the agent plus its part of the slack; the agent chooses within it. See
+[GORNA](../concepts/gorna.md).
+
+### Epoch (GORNA)
+
+One numbered round of the GORNA dialogue: `OfferRequest`, `Offer`, `Allocation`,
+then a `Report` after every run until the next one. An epoch opens on a trigger
+(pressure, drift, a mode or agent change, overruns, a refresh, an emergency) and is
+lent to every agent at the same frame start. Not to be confused with a
+[change epoch](#change-epoch). See [GORNA](../concepts/gorna.md).
+
 ### Ergon
 
 Khora's own gameplay language, in `khora-script`. It exists because a budget
@@ -261,12 +278,12 @@ since reaches every field the game left alone. Written by
 
 ### GORNA — Goal-Oriented Resource Negotiation and Allocation
 
-The per-tick protocol by which the DCC and the agents trade frame budgets,
-replacing static compile-time allocations. Each tick the DCC runs five phases —
-Awareness, Analysis, Negotiation, Arbitration, Application — collecting each
-agent's strategy options and costs, then handing back a `ResourceBudget` per
-agent that reflects *this* hardware, *this* scene, *this* frame. Only agents
-negotiate; the Data layer does not. See [GORNA](../concepts/gorna.md).
+The protocol by which the DCC and the agents share each frame's time, replacing
+static compile-time allocations: per [epoch](#epoch-gorna), each agent offers its
+priced rows, the DCC lends each one an [envelope](#envelope), and the agent chooses
+its row within it and reports after every run. The DCC decides how much; the agent
+decides how. Only agents negotiate; the Data layer does not. See
+[GORNA](../concepts/gorna.md).
 
 ### Headroom
 
@@ -293,12 +310,12 @@ used in the architecture and roadmap. See [SAA](../concepts/saa.md) and
 
 ### Lane
 
-A hot-path execution unit: one deterministic strategy an agent can choose from
-(render a forward pass, simulate one physics step, mix one audio frame). Lanes do
-not decide *whether* to run and do not negotiate — they run when an agent
-dispatches them. Lanes consume the typed Views the Flows publish into the
-`LaneBus` and never query the World directly. The `Lane` trait has a
-prepare/execute/cleanup triple. See [Agents and Lanes](../concepts/agents-and-lanes.md).
+A hot-path execution unit: one deterministic way of doing a family's work (draw the
+shadow maps, step physics once, mix one audio frame), offered at one or more levels.
+Lanes do not decide *whether* to run and do not negotiate. They consume the typed
+Views the Flows publish into the `LaneBus` and never query the World directly. The
+`Lane` trait has `prepare`, `cost`, `record` and `shutdown`. See
+[Agents and Lanes](../concepts/agents-and-lanes.md).
 
 ### LaneBus / OutputDeck
 
@@ -309,6 +326,15 @@ The **`OutputDeck`** is the typed sink lanes write cross-domain results into
 frame. GPU render passes use a separate sink, the `FrameGraph`. Both live in
 `khora-core/src/lane/`. See [The frame](../concepts/the-frame.md) and
 [Agents and Lanes](../concepts/agents-and-lanes.md).
+
+### Layer and place
+
+A family's **place** is its fixed spot in the frame — its phase and, for what draws,
+its pass. A **layer** is one of its lanes, prepared at one level, installed at that
+place: the scheduler applies it every frame without the agent. A new layer is
+prepared beside the installed one and swapped in at a frame start; the old one is
+kept ready three epochs, then released. See
+[Agents and Lanes](../concepts/agents-and-lanes.md#lanes-are-layers).
 
 ### LoadReport
 
@@ -404,9 +430,9 @@ generation. See [Scripting](../concepts/scripting/writing.md#an-entity-named-bef
 
 ### ResourceBudget
 
-The result GORNA hands each agent: the chosen `StrategyId`, a time limit, optional
-memory and VRAM limits, and an extra-params map. Narrow by design — adding a
-resource dimension is a deliberate change, not a free-form bag. See
+The budget of the protocol before envelopes: a chosen `StrategyId` and a time
+limit, applied through `Agent::apply_budget`. It is kept for callers that name a row
+directly; GORNA itself lends [envelopes](#envelope). See
 [GORNA](../concepts/gorna.md).
 
 ### Resume tier

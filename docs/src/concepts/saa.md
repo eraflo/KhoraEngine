@@ -77,13 +77,14 @@ independent of the frame loop.
 
 Every major subsystem is an [**agent**](../reference/glossary.md): not a passive
 library but a semi-autonomous component with deep understanding of its own
-domain. An agent measures its own cost, holds multiple strategies with different
-performance characteristics, and can estimate the resource cost of each. Eight
-agents exist today: Render, Shadow, Overlay, Skybox, Physics, Ui, Audio and
-Script. It is **not** one per [**`LaneKind`**](../reference/glossary.md) — four of
-them dispatch render lanes, and the `Asset`, `Scene` and `Ecs` kinds have no agent
-at all, because a decoder and a compaction pass have no competing strategies to
-negotiate. The architecture is open; you can add your own.
+domain. An agent measures its own cost, holds several ways of doing its work at
+different costs and qualities — its **rows** — and prices each of them. Each
+**family** of lanes (shadows, physics, audio, the interface, the sky, the grid, the
+wireframe, the gizmos) has one, the same `LaneAgent` built from the family's
+registration; rendering and scripting still have hand-written agents of their own.
+The `Asset`, `Scene` and `Ecs` work has no agent at all, because a decoder and a
+compaction pass have no competing strategies to negotiate. The architecture is
+open: a game adds a family, and its agent comes with it.
 
 ### 3. GORNA — Goal-Oriented Resource Negotiation and Allocation
 
@@ -92,18 +93,18 @@ agents use to allocate resources, replacing static budgets:
 
 ```mermaid
 flowchart LR
-    A[Agent requests] -->|needs + costs| B[DCC analysis]
-    B -->|heuristics| C[Arbitration]
-    C -->|budgets| D[Agent adaptation]
-    D -->|telemetry| A
+    A[Offer: every row, priced] --> B[DCC: share the frame]
+    B -->|Allocation: one envelope each| C[Agent: choose a row]
+    C -->|Report, every run| B
 ```
 
-Agents submit desired needs with strategy costs; the DCC arbitrates against the
-global model and its goals; it grants each agent a budget (possibly less than
-requested); the agent then selects a strategy that fits. The DCC shapes a single
-frame-time target from a battery of heuristics each tick, and a closed-loop
-**PID controller** regulates the global budget so the *measured* frame time
-tracks that target.
+Per epoch, each agent offers its whole menu, priced; the DCC shares the frame's
+time out on its critical path and lends each agent an **envelope** — how much time
+and memory it may use, never which row to run; the agent chooses the best row that
+fits, and reports after every run. **The DCC decides how much; the agent decides
+how.** The DCC shapes a single frame-time target from a battery of heuristics, and
+a closed-loop **PID controller** scales it so the *measured* frame time tracks that
+target.
 
 ### 4. Adaptive Game Data Flows — the living representation
 
@@ -177,27 +178,29 @@ graph TD
     end
     subgraph Hot["Hot path — main thread, 60+ Hz"]
         Scheduler[ExecutionScheduler]
-        Agents[Agents: Render, Shadow, Overlay, Skybox, Physics, Ui, Audio, Script]
-        Lanes[Lanes: pipelines]
+        Layers[Layers: the lanes installed at each family's place]
+        Agents[Agents, woken by events]
     end
     Telemetry --> DCC
     DCC --> Heuristics
     Heuristics --> GORNA
-    GORNA -->|BudgetChannel| Scheduler
-    Scheduler --> Agents
-    Agents --> Lanes
-    Lanes -->|telemetry| Telemetry
+    GORNA -->|Allocation| Scheduler
+    Scheduler --> Layers
+    Scheduler -->|wakes| Agents
+    Agents -->|a new layer| Layers
+    Layers -->|Report| Telemetry
 ```
 
 | Aspect | Cold path (DCC) | Hot path (Scheduler + agents) |
 |---|---|---|
 | Thread | Background | Main |
 | Frequency | ~20 Hz | 60+ Hz (every frame) |
-| Responsibility | Observe, analyze, negotiate | Execute agents, dispatch lanes, produce output |
-| Communication | Unidirectional budget channel | Agents read budgets at frame start |
+| Responsibility | Observe, analyze, share out envelopes | Apply the layers, wake the agents, produce output |
+| Communication | Allocations published on one channel | Allocations lent at a frame start; reports sent after every run |
 
 **The key insight:** agents are not controllers, they are *adapters*. They
-receive budgets from GORNA and select the appropriate lane strategy. The DCC
+receive envelopes from GORNA and choose the row that fits; between two choices they
+are not called at all — the scheduler applies the layer they installed. The DCC
 decides *what* resources are available; agents decide *how* to use them. The
 data layer plays by the same spirit on its own — it self-optimizes its memory
 layout internally, and the DCC only *observes* the result through a read-only
@@ -206,7 +209,8 @@ never bids for frame time.
 
 This cold/hot split is non-negotiable. The frame loop must never be blocked by
 analysis, and an agent must never wait synchronously on the DCC — the
-relationship is fire-and-forget through a channel, with last-wins semantics.
+relationship is fire-and-forget through a channel: a live allocation replaces one
+still waiting, and a frame start lends whatever is newest.
 
 ## SAA is the *why*; CLAD is the *how*
 

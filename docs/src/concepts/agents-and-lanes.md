@@ -14,38 +14,45 @@ the rustdoc on `khora_core::agent` and `khora_core::lane`.
 ## Two roles, one descent
 
 The CLAD descent of a frame is `Control → Agent → Lane → Data`. The Control layer
-(the DCC, via [GORNA](./gorna.md)) hands each agent a budget; the agent picks a
-strategy and dispatches it; the strategy — a lane — does the work against data the
-Data layer has projected. The two middle roles are not interchangeable:
+(the DCC, via [GORNA](./gorna.md)) lends each agent an **envelope** — how much time
+and memory it may use; the agent chooses how to do its work within it; the way it
+chose — a lane at one level — does the work against data the Data layer has
+projected. The two middle roles are not interchangeable:
 
-- An **Agent** is a *tactical manager*. It owns exactly one **LaneKind**, knows the
-  lanes (strategies) available for that kind, exposes those strategies to GORNA,
-  applies the budget GORNA returns, and dispatches the chosen lane each frame. It
-  decides *which* lane runs.
-- A **Lane** is a *hot-path worker*. It does one thing — render a forward pass,
-  step physics once, mix one audio frame, decode one glTF — deterministically, and
-  it does it when an agent dispatches it. It decides *nothing*; it just executes.
+- A **Lane** is a *hot-path worker*. It does one thing — draw the shadow maps,
+  step physics once, mix one audio frame, lay out the interface — deterministically.
+  It offers **levels** (the same work at several costs and qualities), prices each
+  of them on the frame's inputs, and records at the one it is given. It decides
+  *nothing*.
+- A **family** groups the lanes that do the same job: they have the same outputs and
+  run at the same place in the frame, so any of them can stand in for another. Each
+  family is registered once (`register_agent!`), with its phase, its importance, its
+  lanes and its default level.
+- An **Agent** is the family's *strategist*. Every family gets the same one,
+  `LaneAgent`, built from its registration: its **menu** is every level of every lane
+  the device supports, each a **row**. It offers the menu to GORNA, receives its
+  envelope, and chooses the row that fits. It decides *which* row runs, never how
+  much time there is.
 
-The naming is symmetric on purpose. `RenderAgent` chooses between
-`SimpleUnlitLane`, `LitForwardLane`, and `ForwardPlusLane`; `PhysicsAgent` runs the
-standard physics lane; `AudioAgent` runs the spatial-mixing lane. **The agent owns
-selection. The lane owns execution.** Each lane *is* a strategy the owning agent
-can offer to GORNA.
+**The agent owns the choice. The lane owns the work.** A new subsystem is a new
+family — lanes and a registration — never a new agent type. (`RenderAgent` and
+`ScriptAgent` are the last two hand-written agents; they become families as well.)
 
 ## Why agents are kept so thin
 
-An agent implements **only** the `Agent` trait plus `Default` — no other methods.
-No `start`/`stop`, no builders, no accessors; construction goes through
-`Default::default()`. This is a hard rule, and it is worth understanding the
-reasoning rather than treating it as arbitrary:
+An agent implements **only** the `Agent` trait — no other methods, no
+`start`/`stop`, no builders, no accessors. `LaneAgent` is built from a family's
+registration by one free function, and its lanes are released by another. This is a
+hard rule, and it is worth understanding the reasoning rather than treating it as
+arbitrary:
 
-- **One LaneKind per agent.** An agent has exactly one negotiation surface. The
-  canonical example is the split between `RenderAgent` and `ShadowAgent`: shadows
-  and the main pass have different costs, different dependencies, and different
-  per-frame roles, so they are two agents, not one agent with two jobs.
+- **One family per agent.** An agent has exactly one negotiation surface. The
+  canonical example is shadows: the shadow maps and the main pass have different
+  costs, different dependencies, and a different place in the frame, so shadows are
+  a family of their own, not a second job of the renderer.
 - **No per-frame state.** An agent does not buffer outputs, own a Flow, or
   accumulate work between frames. What it may hold is its strategy state — its
-  lanes, the one it picked, its budget — and *shared handles* it reads through.
+  lanes, the row it chose, its envelope — and *shared handles* it reads through.
   Anything that is a subsystem's own state belongs in `Runtime::services` or
   `Runtime::backends`, where the physics provider and the scripting runtime both
   live; anything measured per frame belongs in a shared slot the way
@@ -100,6 +107,63 @@ Now they say, so two of them may share a wave when their declarations do not
 overlap. The parallelism was gained by removing a constraint, not by adding a
 mechanism.
 
+## Lanes are layers
+
+<p class="kp-lede">Picture the frame as a sheet of paper with transparent sheets laid on it, each at its own height. An agent chooses a sheet — a lane — and lays it at its family's height. To change, it swaps the old sheet for the new one, at the same height. The frame itself just applies the sheets that lie there, frame after frame.</p>
+
+<figure class="kp-steps">
+<div class="kp-figure-frame">
+
+{{#include ../images/agents/layers.svg}}
+
+</div>
+<ol class="kp-steps-text">
+<li><strong>A place for each family.</strong> Its <em>place</em> is fixed: its phase in the frame and, for what draws, its pass. On it lies one <em>layer</em>: one of its lanes, prepared at one level.</li>
+<li><strong>The scheduler applies the layers.</strong> Every frame it runs each installed layer at its place, without calling or locking any agent. On a quiet frame an agent costs nothing.</li>
+<li><strong>The layer wakes its agent.</strong> Each run prices itself. When the price no longer fits the envelope — or an allocation arrives, the lane fails, an input is refused — the layer leaves a <em>wake</em> for its agent.</li>
+<li><strong>A new layer, prepared beside.</strong> Woken between the frame start and the frame's work, the agent chooses the row that fits and prepares a fresh layer of it — its pipelines, its buffers — while the old layer keeps running.</li>
+<li><strong>The swap, at a frame start.</strong> At the next frame start the new layer takes the old one's place: the same place, the same outputs. No frame is ever left without a layer.</li>
+<li><strong>Put aside, then released.</strong> The old layer is kept ready for three epochs, so going back to it prepares nothing; then it is released — at once if the envelope's memory cannot hold both.</li>
+</ol>
+</figure>
+
+Concretely, the family's `Place` is shared between its agent and the scheduler. It
+holds the layer installed, the one staged for the next frame start, the ones put
+aside with the epochs they have left, the wakes gathered for the agent, and the
+**terms** of the run — the epoch, the envelope, the time lent to a lane that takes a
+budget, the fixed step. Its frame logic is written once, in `khora-core`, and the
+scheduler and the tests run the same code.
+
+A frame goes like this:
+
+1. **Lending.** At the frame start, the allocation in force is lent to the agents
+   that do not hold it yet; each one keeps it and leaves itself a wake.
+2. **Swap.** Every place swaps its staged layer in.
+3. **Event pass.** Once the frame's inputs are on the bus, every agent whose place
+   holds a wake is woken: it takes in what its layer's last run found, prices its
+   rows again when the prices may no longer hold, chooses, and stages a new layer —
+   or reinstates one put aside — for the next frame start.
+4. **Waves.** The layers run, grouped into waves by what the *installed* layers
+   declare; each run reports.
+
+The agent is woken for:
+
+| Wake | What happened |
+|---|---|
+| `FirstFrame` | nothing is installed yet |
+| `Allocated` | a new envelope, pin or allowed set was lent |
+| `QuoteUnfit` | the running row's price stopped fitting the envelope |
+| `QuoteDrift` | the running row's price moved more than 10 % from the last full quote |
+| `QuoteAge` | the last full quote is older than a second |
+| `TargetChanged` | the frame draws into another target |
+| `LaneFailed` | the lane returned an error |
+| `InputRefused(reason)` | an input was refused, and why |
+
+The first report after a swap says how long the new layer took to prepare
+(`Report.switch`): what a change of row costs, measured. A panic in a layer's run,
+in a wake or at a frame start fails that family alone, for that frame; the wakes it
+was handed are given back, so the next frame wakes the agent again.
+
 ## How a lane gets its data: the bus and the deck
 
 A lane never reaches into the ECS `World` directly. This is the other half of the
@@ -124,15 +188,15 @@ reached via the `LaneContext` the agent hands them:
 flowchart LR
     World[(World — CRPECS)] -->|Substrate Pass| Flow[Flows]
     Flow -->|publish Views| Bus[LaneBus]
-    DCC[DCC / GORNA] -->|budget| Agent
-    Agent -->|dispatch chosen lane| Lane
+    DCC[DCC / GORNA] -->|envelope| Agent
+    Agent -->|installs a layer| Lane
     Bus -->|get View| Lane
     Lane -->|write output| Deck[OutputDeck]
     Deck -->|engine takes| IO[I/O boundary: submit / present]
 ```
 
 So the full data flow is: **World → Flow → LaneBus → Lane → OutputDeck → engine
-I/O**, with the agent sitting above the lane choosing *which* lane runs and the DCC
+I/O**, with the agent sitting above the lane choosing *which* row runs and the DCC
 above the agent setting *how much* it may spend. Read-only Views in, typed outputs
 out, nothing shared by long-lived reference. A lane can be removed, replaced, or
 swapped for another strategy without disturbing any other lane, because everything
@@ -144,27 +208,34 @@ not depend on a `ShadowPassLane` *instance* — it depends on the shadow View be
 present in the bus. The shadow lane can be rewritten, and as long as it still
 publishes the same View type, the forward lane never notices.
 
-## The three phases of a lane
+## The life of a lane
 
-A lane has three moments: `on_initialize` once at boot (it builds what lives
-across frames, such as GPU resources), `execute` every frame (the work itself), and
-`on_shutdown` when the engine stops (it releases what `on_initialize` built). There
-is no per-frame `prepare` or `cleanup` hook: everything a lane reads arrives in the
-`LaneContext` its agent filled for that frame, and nothing per-frame survives the
-call. Errors surface as a `LaneError` returned to the agent, which logs it; a lane
-error never crashes the frame.
+A lane answers four questions, and the agent and its layer ask them:
+
+- **`prepare`** — build what a level needs on the device (pipelines, buffers) for the
+  frame's target. The agent calls it for a new layer, beside the installed one; a run
+  prepares again only when the target changes.
+- **`cost`** — the price of a level on this frame's inputs, per device. Every run
+  prices every level of its lane, and quoting prices a lane without running it.
+- **`record`** — do the work at one level and write the family's outputs.
+- **`shutdown`** — release what `prepare` built, when a layer is released or the
+  engine stops.
+
+Everything a lane reads arrives through its typed inputs for that frame, and nothing
+per-frame survives the call. Errors surface as a `LaneError` that wakes the agent,
+which falls back to a cheaper row; a lane error never crashes the frame.
 
 ## Why this separation exists
 
 Pulling the two roles apart buys three things the engine depends on:
 
-1. **GORNA has something to negotiate.** Because lanes *are* strategies and agents
-   expose them, the cost estimates flow up to the DCC and budgets flow back down —
+1. **GORNA has something to negotiate.** Because a family's levels are its rows and
+   its agent offers them, prices flow up to the DCC and envelopes flow back down —
    adaptation has a surface to act on. A monolithic "render system" would have
    nothing to choose between.
-2. **The hot path stays decoupled from the cold path.** Agents apply budgets that
-   the DCC computed off-thread; lanes execute against Views the Flow layer already
-   projected. Neither blocks on the other.
+2. **The hot path stays decoupled from the cold path.** Envelopes are computed
+   off-thread and lent at a frame start; layers run against Views the Flow layer
+   already projected; agents are woken only by events. Nothing blocks on anything.
 3. **Subsystems stay swappable.** Lanes communicate only through the bus and the
    deck, so a strategy can be added, removed, or replaced in isolation — which is
    exactly what an *adaptive* engine needs when it switches `LitForward` to
@@ -173,9 +244,8 @@ Pulling the two roles apart buys three things the engine depends on:
 ## Next steps
 
 - [How-to: add a lane](../how-to/add-a-lane.md) — write a hot-path strategy.
-- [How-to: add an agent](../how-to/add-an-agent.md) — add a strategist over a new
-  LaneKind.
-- [GORNA](./gorna.md) — how budgets reach agents and strategies are chosen.
+- [How-to: add an agent](../how-to/add-an-agent.md) — register a new family.
+- [GORNA](./gorna.md) — how envelopes reach agents and rows are chosen.
 - [Data and the ECS](./ecs.md) — the World the Flow layer projects Views from.
 - [Glossary](../reference/glossary.md) — Agent, Lane, LaneKind, LaneBus,
   OutputDeck, Flow, View.

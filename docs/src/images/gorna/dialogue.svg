@@ -1,0 +1,107 @@
+<svg id="fig-gorna-dialogue" class="kp-figure" viewBox="0 0 760 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-gorna-dialogue-title kp-gorna-dialogue-desc">
+  <title id="kp-gorna-dialogue-title">GORNA, one epoch of the dialogue</title>
+  <desc id="kp-gorna-dialogue-desc">Four agents report what they ran each frame. A report that drifted opens a new epoch. The DCC asks every agent for an offer; each answers with every way it can do its work, priced. The DCC shares the frame's time out as one envelope per agent, published for the next frame start. Each agent then chooses, within its envelope, the way it does its work.</desc>
+  <style>
+    #fig-gorna-dialogue { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-gorna-dialogue .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-gorna-dialogue .kp-chief { fill: var(--k-bg-1, #101622); stroke: var(--k-silver, #b4cfe2); stroke-width: 1.2; }
+    #fig-gorna-dialogue .kp-agent { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-gorna-dialogue .kp-wire { stroke: var(--k-silver-dim, #809db2); stroke-width: 1.2; fill: none; }
+    #fig-gorna-dialogue .kp-wire-down { stroke: var(--k-silver, #b4cfe2); stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+    #fig-gorna-dialogue .kp-envelope { fill: var(--k-gold, #e4b65c); }
+    #fig-gorna-dialogue .kp-envelope-text { fill: var(--k-bg-0, #090d17); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; font-weight: 600; }
+    #fig-gorna-dialogue .kp-share-floor { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-gorna-dialogue .kp-share-up { fill: oklch(0.32 0.04 245); stroke: var(--k-silver, #b4cfe2); stroke-width: 1; }
+    #fig-gorna-dialogue .kp-share-slack { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 1; stroke-dasharray: 3 3; }
+    #fig-gorna-dialogue .kp-alert { fill: var(--k-amber, #e8a33d); }
+    #fig-gorna-dialogue .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 13px; font-weight: 500; }
+    #fig-gorna-dialogue .kp-how { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11px; }
+    #fig-gorna-dialogue .kp-msg { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-gorna-dialogue .kp-msg-gold { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-gorna-dialogue .kp-warn { fill: var(--k-amber, #e8a33d); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-gorna-dialogue .kp-choice { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11px; }
+    #fig-gorna-dialogue .kp-station { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-style: italic; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="360" rx="10"/>
+  <!-- the DCC -->
+  <rect class="kp-chief" x="270" y="24" width="220" height="76" rx="10"/>
+  <text class="kp-name" x="288" y="50">DCC</text>
+  <text class="kp-how" x="288" y="70">decides how much</text>
+  <text class="kp-how" x="288" y="88">target 16.7 ms a frame</text>
+  <!-- the agents -->
+  <rect class="kp-agent" x="40" y="252" width="150" height="62" rx="8"/>
+  <text class="kp-name" x="54" y="276">Shadows</text>
+  <rect class="kp-agent" x="218" y="252" width="150" height="62" rx="8"/>
+  <text class="kp-name" x="232" y="276">Physics</text>
+  <rect class="kp-agent" x="396" y="252" width="150" height="62" rx="8"/>
+  <text class="kp-name" x="410" y="276">Audio</text>
+  <rect class="kp-agent" x="574" y="252" width="150" height="62" rx="8"/>
+  <text class="kp-name" x="588" y="276">UI</text>
+  <text class="kp-station" x="40" y="340">the agents decide how</text>
+  <!-- 1. reports -->
+  <g data-on="1 2">
+    <path class="kp-wire" d="M115 252 L330 100 M293 252 L360 100 M471 252 L400 100 M649 252 L430 100"/>
+    <text class="kp-msg" x="560" y="128">Report, every run</text>
+    <text class="kp-how" x="560" y="146">the row that ran,</text>
+    <text class="kp-how" x="560" y="162">its time per device,</text>
+    <text class="kp-how" x="560" y="178">the share done</text>
+    <text class="kp-how" x="54" y="298">1.4 ms · all done</text>
+    <text class="kp-how" x="232" y="298">2.0 ms · all done</text>
+    <text class="kp-how" x="410" y="298">0.3 ms · all done</text>
+    <text class="kp-how" x="588" y="298">0.6 ms · all done</text>
+  </g>
+  <!-- 2. a trigger opens an epoch -->
+  <g data-on="2">
+    <circle class="kp-alert" cx="504" cy="38" r="6"/>
+    <text class="kp-warn" x="516" y="42">shadows drifted</text>
+    <text class="kp-warn" x="516" y="60">epoch 41 → 42</text>
+  </g>
+  <!-- 3. the call for offers -->
+  <g data-on="3">
+    <path class="kp-wire-down" d="M330 100 L115 252 M360 100 L293 252 M400 100 L471 252 M430 100 L649 252"/>
+    <text class="kp-msg" x="40" y="140">OfferRequest</text>
+    <text class="kp-how" x="40" y="158">epoch 42 · target 16.7 ms</text>
+  </g>
+  <!-- 4. the offers -->
+  <g data-on="4">
+    <path class="kp-wire" d="M115 252 L330 100 M293 252 L360 100 M471 252 L400 100 M649 252 L430 100"/>
+    <text class="kp-msg" x="560" y="120">Offer</text>
+    <text class="kp-how" x="560" y="138">each row: its cost,</text>
+    <text class="kp-how" x="560" y="154">quality, how sure;</text>
+    <text class="kp-how" x="560" y="170">and its floor</text>
+    <text class="kp-how" x="54" y="298">3 rows</text>
+    <text class="kp-how" x="232" y="298">1 row</text>
+    <text class="kp-how" x="410" y="298">3 rows</text>
+    <text class="kp-how" x="588" y="298">2 rows</text>
+  </g>
+  <!-- 5. the share, published as envelopes -->
+  <g data-on="5 6">
+    <rect class="kp-share-floor" x="288" y="112" width="70" height="16" rx="3"/>
+    <rect class="kp-share-up" x="358" y="112" width="70" height="16"/>
+    <rect class="kp-share-slack" x="428" y="112" width="44" height="16"/>
+    <text class="kp-how" x="288" y="146">floors · upgrades · slack</text>
+    <rect class="kp-envelope" x="84" y="214" width="62" height="26" rx="4"/>
+    <text class="kp-envelope-text" x="92" y="232">2.6 ms</text>
+    <rect class="kp-envelope" x="262" y="214" width="62" height="26" rx="4"/>
+    <text class="kp-envelope-text" x="270" y="232">2.4 ms</text>
+    <rect class="kp-envelope" x="440" y="214" width="62" height="26" rx="4"/>
+    <text class="kp-envelope-text" x="448" y="232">0.9 ms</text>
+    <rect class="kp-envelope" x="618" y="214" width="62" height="26" rx="4"/>
+    <text class="kp-envelope-text" x="626" y="232">0.8 ms</text>
+  </g>
+  <g data-on="5">
+    <text class="kp-msg-gold" x="40" y="160">Allocation · epoch 42</text>
+    <text class="kp-how" x="40" y="178">one envelope each, never a row</text>
+    <text class="kp-how" x="40" y="194">lent at the next frame start</text>
+  </g>
+  <!-- 6. each agent chooses -->
+  <g data-on="6">
+    <text class="kp-choice" x="54" y="298">→ medium shadows</text>
+    <text class="kp-choice" x="232" y="298">→ its one step</text>
+    <text class="kp-choice" x="410" y="298">→ 32 voices</text>
+    <text class="kp-choice" x="588" y="298">→ full text</text>
+    <text class="kp-msg" x="40" y="160">each chooses its row</text>
+    <text class="kp-how" x="40" y="178">the best whose price fits its envelope;</text>
+    <text class="kp-how" x="40" y="194">none fits: its floor, and it says so</text>
+  </g>
+</svg>
