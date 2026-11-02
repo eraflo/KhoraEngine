@@ -33,6 +33,8 @@ pub type PhaseAgentEntry = (
 /// Entry in the agent registry containing the agent and its priority.
 struct AgentEntry {
     agent: Arc<Mutex<dyn Agent>>,
+    /// The agent's name, read once: it never changes.
+    id: AgentId,
     priority: f32,
     /// Modes in which this agent is active.
     /// Empty = active in all modes.
@@ -102,14 +104,7 @@ impl AgentRegistry {
         // GORNA's budgets and the fixed agents' clocks are all keyed by it, so
         // a second agent under a taken id could never be scheduled as itself.
         // A poisoned agent (one that panicked) still holds its name.
-        let taken = self.entries.iter().any(|entry| {
-            entry
-                .agent
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .id()
-                == id
-        });
+        let taken = self.entries.iter().any(|entry| entry.id == id);
         if taken {
             log::error!(
                 "AgentRegistry: refused a second agent registered as {:?}; the first stays",
@@ -126,6 +121,7 @@ impl AgentRegistry {
 
         self.entries.push(AgentEntry {
             agent,
+            id,
             priority,
             active_modes: modes,
         });
@@ -168,10 +164,7 @@ impl AgentRegistry {
     ///
     /// Used by the scheduler to seed a fresh `AgentCompletionMap` per frame.
     pub fn all_ids(&self) -> Vec<AgentId> {
-        self.entries
-            .iter()
-            .filter_map(|entry| entry.agent.lock().ok().map(|a| a.id()))
-            .collect()
+        self.entries.iter().map(|entry| entry.id).collect()
     }
 
     /// Initializes all agents once after registration.
@@ -225,14 +218,10 @@ impl AgentRegistry {
 
     /// Returns the agent with the given ID, if registered.
     pub fn get_by_id(&self, id: AgentId) -> Option<Arc<Mutex<dyn Agent>>> {
-        for entry in &self.entries {
-            if let Ok(agent) = entry.agent.lock() {
-                if agent.id() == id {
-                    return Some(entry.agent.clone());
-                }
-            }
-        }
-        None
+        self.entries
+            .iter()
+            .find(|entry| entry.id == id)
+            .map(|entry| entry.agent.clone())
     }
 
     /// Collects agents that are allowed to run in the given phase and mode.

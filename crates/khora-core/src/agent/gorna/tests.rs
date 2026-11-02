@@ -450,6 +450,7 @@ fn epoch_record(epoch: u64) -> EpochRecord {
         over_budget: epoch.is_multiple_of(2),
         stalled: false,
         workload: Some(120.0),
+        switch: None,
     };
     EpochRecord {
         allocation: Allocation {

@@ -29,6 +29,7 @@ use khora_core::graph::topological_sort;
 use khora_core::lane::OutputDeck;
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::Runtime;
+use known::KnownAgents;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
@@ -36,6 +37,7 @@ use waves::{build_wave_metas, partition_waves};
 
 mod execution;
 mod frame;
+mod known;
 mod sim_steps;
 mod waves;
 
@@ -73,22 +75,6 @@ enum AgentSelection {
     FixedRound(u32),
     /// Every agent except the fixed-timestep ones (they were sub-stepped).
     ExcludeFixed,
-}
-
-/// Whether the agent in `slot` declares a positive `fixed_timestep`.
-fn slot_is_fixed(slot: &AgentSlot) -> bool {
-    fixed_slot_id(slot).is_some()
-}
-
-/// The id of the agent in `slot` when it declares a positive
-/// `fixed_timestep`, `None` otherwise.
-fn fixed_slot_id(slot: &AgentSlot) -> Option<AgentId> {
-    let agent = slot.0.lock().ok()?;
-    agent
-        .execution_timing()
-        .fixed_timestep
-        .filter(|d| *d > Duration::ZERO)
-        .map(|_| agent.id())
 }
 
 /// The hot-path execution scheduler.
@@ -149,6 +135,9 @@ pub struct ExecutionScheduler {
     /// What agents wrote into the deck without declaring it, last frame
     /// (debug builds only; see [`undeclared_deck_writes`](Self::undeclared_deck_writes)).
     undeclared_deck_writes: Mutex<Vec<(AgentId, std::any::TypeId)>>,
+    /// Every agent met, with its name and, for one running as layers, its
+    /// place and declarations: a quiet frame locks no such agent.
+    known: KnownAgents,
 }
 
 impl ExecutionScheduler {
@@ -179,6 +168,7 @@ impl ExecutionScheduler {
             parallel_execution: false,
             pool: WorkerPool::new(default_pool_size()),
             undeclared_deck_writes: Mutex::new(Vec::new()),
+            known: KnownAgents::default(),
         }
     }
 
@@ -261,14 +251,11 @@ impl ExecutionScheduler {
         // share a wave.
         let mut waves: Vec<Vec<AgentId>> = Vec::new();
         for &phase in &self.phase_order {
-            let agents = {
-                let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-                registry.collect_for_phase(phase, mode)
-            };
+            let agents = self.phase_slots(phase, mode);
             if agents.is_empty() {
                 continue;
             }
-            let metas = build_wave_metas(&sort_agents(agents));
+            let metas = build_wave_metas(&sort_agents(agents, &self.known), &self.known);
             for wave in partition_waves(&metas) {
                 let ids: Vec<AgentId> = wave.iter().filter_map(|&i| metas[i].id).collect();
                 if !ids.is_empty() {
@@ -327,6 +314,39 @@ impl ExecutionScheduler {
     pub fn remove_phase(&mut self, phase: ExecutionPhase) {
         self.phase_order.retain(|p| *p != phase);
     }
+
+    /// The agents `mode` runs in `phase`, each with its importance, priority
+    /// and dependencies. An agent running as layers is not locked: its
+    /// timing is the one it declared when the scheduler met it.
+    fn phase_slots(&self, phase: ExecutionPhase, mode: &EngineMode) -> Vec<AgentSlot> {
+        let agents: Vec<Arc<Mutex<dyn khora_core::agent::Agent>>> = {
+            let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+            registry.iter_for_mode(mode).cloned().collect()
+        };
+        agents
+            .into_iter()
+            .filter_map(|agent| {
+                let timing = self.known.of(&agent)?.timing(&agent)?;
+                timing.allowed_phases.contains(&phase).then_some((
+                    agent,
+                    timing.importance,
+                    timing.priority,
+                    timing.dependencies,
+                ))
+            })
+            .collect()
+    }
+
+    /// The id of the agent in `slot` when it declares a positive
+    /// `fixed_timestep`, `None` otherwise.
+    fn fixed_slot_id(&self, slot: &AgentSlot) -> Option<AgentId> {
+        let known = self.known.of(&slot.0)?;
+        known
+            .timing(&slot.0)?
+            .fixed_timestep
+            .filter(|d| *d > Duration::ZERO)
+            .map(|_| known.id)
+    }
 }
 
 /// Orders the agents within a phase: Hard-dependency edges first (topological),
@@ -335,7 +355,7 @@ impl ExecutionScheduler {
 /// On a cycle the topo sort fails; we log and fall back to the
 /// importance/priority ordering — execution still happens, just not in DAG
 /// order. Validating cycles at registration time is a future improvement.
-fn sort_agents(mut agents: Vec<AgentSlot>) -> Vec<AgentSlot> {
+fn sort_agents(mut agents: Vec<AgentSlot>, known: &KnownAgents) -> Vec<AgentSlot> {
     // Importance + priority tiebreaker.
     agents.sort_by(|a, b| {
         let imp_ord = a.1.cmp(&b.1);
@@ -350,7 +370,7 @@ fn sort_agents(mut agents: Vec<AgentSlot>) -> Vec<AgentSlot> {
     let id_to_index: std::collections::HashMap<AgentId, usize> = agents
         .iter()
         .enumerate()
-        .filter_map(|(idx, slot)| slot.0.lock().ok().map(|a| (a.id(), idx)))
+        .filter_map(|(idx, slot)| known.of(&slot.0).map(|known| (known.id, idx)))
         .collect();
 
     // In the importance + priority order: the topological sort keeps its
@@ -363,9 +383,8 @@ fn sort_agents(mut agents: Vec<AgentSlot>) -> Vec<AgentSlot> {
     // — the dep target must run first.
     let mut edges: Vec<(AgentId, AgentId)> = Vec::new();
     for slot in &agents {
-        let agent_id = match slot.0.lock().ok().map(|a| a.id()) {
-            Some(id) => id,
-            None => continue,
+        let Some(agent_id) = known.of(&slot.0).map(|known| known.id) else {
+            continue;
         };
         for dep in &slot.3 {
             if matches!(dep.kind, DependencyKind::Hard) && id_to_index.contains_key(&dep.target) {

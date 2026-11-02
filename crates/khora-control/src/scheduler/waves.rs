@@ -15,6 +15,7 @@
 //! Grouping a phase's agents into concurrent waves, and checking that the
 //! agents sharing a wave do not contend.
 
+use super::known::KnownAgents;
 use super::AgentSlot;
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::gorna::AgentId;
@@ -38,18 +39,22 @@ pub(super) struct WaveMeta {
 /// Reads each agent's id, access footprint, and declared contention once,
 /// building the [`WaveMeta`] the wave partitioner + disjointness check need. A
 /// failed lock yields `id: None` → an always-singleton, always-skipped slot.
+/// An agent running as layers is not locked: it contends as the layer
+/// installed at its place.
 ///
 /// Once, and reused: the context is stamped with the same `Contention` the wave
 /// was built from, so what the scheduler checked and what the agent is held to
 /// cannot be two different answers.
-pub(super) fn build_wave_metas(agents: &[AgentSlot]) -> Vec<WaveMeta> {
+pub(super) fn build_wave_metas(agents: &[AgentSlot], known: &KnownAgents) -> Vec<WaveMeta> {
     agents
         .iter()
         .map(|(agent, _, _, deps)| {
-            let (id, access, contention) = agent
-                .lock()
-                .ok()
-                .map(|a| (Some(a.id()), a.access(), a.contention()))
+            let (id, access, contention) = known
+                .of(agent)
+                .and_then(|known| {
+                    let (access, contention) = known.footprint(agent)?;
+                    Some((Some(known.id), access, contention))
+                })
                 .unwrap_or((None, AgentAccess::Exclusive, Contention::none()));
             WaveMeta {
                 id,

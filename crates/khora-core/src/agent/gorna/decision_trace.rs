@@ -321,6 +321,7 @@ fn read_epoch<E>(
                     over_budget: report.over_budget,
                     stalled: report.stalled,
                     workload: report.workload,
+                    switch: None,
                 })
             })
             .collect::<Result<_, E>>()?,

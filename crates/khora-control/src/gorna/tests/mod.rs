@@ -345,6 +345,7 @@ impl Agent for Bidder {
             over_budget: false,
             stalled: self.stalled,
             workload: None,
+            switch: None,
         }
     }
 

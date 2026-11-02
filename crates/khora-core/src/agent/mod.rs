@@ -20,6 +20,7 @@ pub mod contention;
 pub mod dependency;
 pub mod execution_phase;
 pub mod gorna;
+pub mod layer;
 pub mod mode;
 pub mod registration;
 pub mod timing;
@@ -31,11 +32,13 @@ use crate::agent::gorna::{
 };
 use crate::EngineContext;
 use std::any::Any;
+use std::sync::{Arc, Mutex};
 
 pub use completion::{AgentCompletionMap, AgentDone, CompletionOutcome};
 pub use contention::Contention;
 pub use dependency::{AgentDependency, DependencyCondition, DependencyKind};
 pub use execution_phase::ExecutionPhase;
+pub use layer::{LastRun, Layer, LayerRun, Place, Terms, Wake, KEEP_EPOCHS};
 pub use mode::{EngineMode, SharedEngineMode};
 pub use registration::{check_registrations, AgentRegistration, BootError};
 pub use timing::{AgentImportance, ExecutionTiming};
@@ -145,6 +148,37 @@ pub trait Agent: Send + Sync {
     /// The default bridges an agent that only reports its status.
     fn report(&self) -> Report {
         bridge::report(self)
+    }
+
+    /// The family's place, when the agent runs as **layers**: the scheduler
+    /// then runs the place's installed [`Layer`] every frame instead of
+    /// [`execute`](Self::execute), and wakes the agent through
+    /// [`wake`](Self::wake) only when the place holds a [`Wake`].
+    ///
+    /// The scheduler asks once, when it first meets the agent, and keeps the
+    /// place: on a quiet frame it neither calls nor locks the agent.
+    ///
+    /// Defaults to `None`: the agent runs through `execute` every frame.
+    fn place(&self) -> Option<Arc<Mutex<Place>>> {
+        None
+    }
+
+    /// Wakes a layered agent for the events its place gathered, `why`, in
+    /// the scheduler's event pass: after the frame start, once the bus is
+    /// built, before the waves. `place` is the agent's own place, already
+    /// locked — the agent must not lock it again.
+    ///
+    /// The agent quotes and chooses its row. When the row changes it either
+    /// prepares a new layer beside the installed one and
+    /// [`stage`](Place::stage)s it with the time the preparation took, or
+    /// [`reinstate`](Place::reinstate)s a kept layer of that row, preparing
+    /// nothing. When only its envelope changed it updates the place's
+    /// [`Terms`]. A staged layer is swapped in at the next frame start.
+    ///
+    /// Defaults to doing nothing, which is right for an agent without a
+    /// place.
+    fn wake(&mut self, why: &[Wake], place: &mut Place, context: &mut EngineContext<'_>) {
+        let _ = (why, place, context);
     }
 
     /// Called **once** after the agent is registered with the DCC.

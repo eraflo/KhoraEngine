@@ -17,19 +17,31 @@
 //!
 //! khora-agents does not depend on khora-macros, so the lane inputs and
 //! outputs implement their traits by hand, as the derives would.
+//!
+//! **A frame is the scheduler's.** A `LaneAgent` runs as layers: [`run`]
+//! goes through the core `Place` frame logic exactly as the scheduler does —
+//! the frame start swaps a staged layer in; the event pass wakes the agent,
+//! only if its place holds a wake; then the installed layer runs, on its own
+//! contention. So a wake a run raises is answered in the next frame's event
+//! pass, and a layer the agent stages there runs from the frame after; a
+//! layer staged into an empty place (the first frame) runs at once. An
+//! allocation lent between two frames ([`lend`], `apply`, `apply_budget`) is
+//! answered in the next frame's event pass.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use khora_agents::agent::LaneAgent;
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, OfferRequest};
+use khora_core::agent::gorna::protocol::{Envelope, Epoch, OfferRequest, Report};
 use khora_core::agent::gorna::{
     AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId,
 };
 use khora_core::agent::registration::AgentRegistration;
-use khora_core::agent::{Agent, AgentImportance, EngineMode, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{
+    Agent, AgentImportance, EngineMode, ExecutionPhase, ExecutionTiming, Place, Wake,
+};
 use khora_core::gpu::{DeviceCaps, GpuSetup};
 use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
@@ -397,15 +409,40 @@ impl Lane for StorageLane {
     }
 }
 
-/// How many times each releasing lane was shut down. Only the shutdown test
-/// builds these lanes, so nothing else moves the counts.
-pub static RELEASED_A: AtomicUsize = AtomicUsize::new(0);
-/// See [`RELEASED_A`].
-pub static RELEASED_B: AtomicUsize = AtomicUsize::new(0);
+/// Numbers the releasing lanes' instances, from 1.
+static INSTANCES: AtomicU32 = AtomicU32::new(1);
 
-/// Counts its shutdowns in [`RELEASED_A`].
-#[derive(Default)]
-pub struct ReleasingLaneA;
+/// Every releasing lane instance shut down so far: its lane, and its number.
+/// Only the shutdown test builds these lanes, so nothing else adds to it.
+static RELEASED: Mutex<Vec<(&'static str, u32)>> = Mutex::new(Vec::new());
+
+/// Every releasing lane instance shut down so far, in order.
+pub fn released() -> Vec<(&'static str, u32)> {
+    RELEASED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
+
+fn release(lane: &'static str, instance: u32) {
+    RELEASED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .push((lane, instance));
+}
+
+/// Records its instance's number; logs its shutdown in [`released`].
+pub struct ReleasingLaneA {
+    instance: u32,
+}
+
+impl Default for ReleasingLaneA {
+    fn default() -> Self {
+        Self {
+            instance: INSTANCES.fetch_add(1, Ordering::SeqCst),
+        }
+    }
+}
 
 impl Lane for ReleasingLaneA {
     type Family = ReleasingFamily;
@@ -428,19 +465,28 @@ impl Lane for ReleasingLaneA {
         out.recorded = Recorded {
             lane: "a",
             level,
-            record: 1,
+            record: self.instance,
         };
         Ok(LaneReport::default())
     }
 
     fn shutdown(&mut self, _gpu: &mut GpuSetup<'_>) {
-        RELEASED_A.fetch_add(1, Ordering::SeqCst);
+        release("a", self.instance);
     }
 }
 
-/// Counts its shutdowns in [`RELEASED_B`].
-#[derive(Default)]
-pub struct ReleasingLaneB;
+/// Records its instance's number; logs its shutdown in [`released`].
+pub struct ReleasingLaneB {
+    instance: u32,
+}
+
+impl Default for ReleasingLaneB {
+    fn default() -> Self {
+        Self {
+            instance: INSTANCES.fetch_add(1, Ordering::SeqCst),
+        }
+    }
+}
 
 impl Lane for ReleasingLaneB {
     type Family = ReleasingFamily;
@@ -463,13 +509,13 @@ impl Lane for ReleasingLaneB {
         out.recorded = Recorded {
             lane: "b",
             level,
-            record: 1,
+            record: self.instance,
         };
         Ok(LaneReport::default())
     }
 
     fn shutdown(&mut self, _gpu: &mut GpuSetup<'_>) {
-        RELEASED_B.fetch_add(1, Ordering::SeqCst);
+        release("b", self.instance);
     }
 }
 
@@ -600,22 +646,96 @@ pub fn request() -> NegotiationRequest {
     }
 }
 
-/// Runs `agent` once for `frame` as the scheduler would: world-free, with the
-/// permit its contention declares, committing into `deck`.
-pub fn run(agent: &mut LaneAgent, frame: u64, runtime: &Arc<Runtime>, deck: &mut OutputDeck) {
+/// Runs one frame of `agent` as the scheduler does, world-free, committing
+/// into `deck`; the report of its run, `None` when nothing ran.
+pub fn run(
+    agent: &mut LaneAgent,
+    frame: u64,
+    runtime: &Arc<Runtime>,
+    deck: &mut OutputDeck,
+) -> Option<Report> {
+    run_sub_steps(agent, frame, runtime, deck, 1)
+        .pop()
+        .flatten()
+}
+
+/// Runs one frame of `agent` as the scheduler does, its installed layer run
+/// `steps` times as a fixed-step family's sub-steps are: the frame start and
+/// the event pass happen once, before the first. The report of each run.
+///
+/// 1. **Frame start**: the place swaps its staged layer in.
+/// 2. **Event pass**: if the place holds wakes, the agent is woken for them,
+///    with the permit of its own contention (what it quotes and prepares
+///    with) and its place locked.
+/// 3. **Waves**: the installed layer runs on the permit of its contention.
+pub fn run_sub_steps(
+    agent: &mut LaneAgent,
+    frame: u64,
+    runtime: &Arc<Runtime>,
+    deck: &mut OutputDeck,
+    steps: usize,
+) -> Vec<Option<Report>> {
+    let place = place_of(agent);
     let mut bus = LaneBus::new();
     bus.set_frame(FrameId(frame));
-    let permit = agent.contention();
     let id = agent.id();
-    let mut context = EngineContext::for_agent(
-        WorldAccess::None,
-        Arc::clone(runtime),
-        &bus,
-        deck,
-        &permit,
-        Some(id),
-    );
-    agent.execute(&mut context);
+
+    locked(&place).start_frame(&mut GpuSetup::headless());
+
+    let why = locked(&place).take_wakes();
+    if !why.is_empty() {
+        let permit = agent.contention();
+        let mut context = EngineContext::for_agent(
+            WorldAccess::None,
+            Arc::clone(runtime),
+            &bus,
+            deck,
+            &permit,
+            Some(id),
+        );
+        let mut held = locked(&place);
+        agent.wake(&why, &mut held, &mut context);
+    }
+
+    (0..steps)
+        .map(|_| {
+            let mut held = locked(&place);
+            let permit = held.contention();
+            let mut context = EngineContext::for_agent(
+                WorldAccess::None,
+                Arc::clone(runtime),
+                &bus,
+                deck,
+                &permit,
+                Some(id),
+            );
+            held.run(&mut context)
+        })
+        .collect()
+}
+
+/// `agent`'s place: a `LaneAgent` runs as layers.
+pub fn place_of(agent: &LaneAgent) -> Arc<Mutex<Place>> {
+    agent
+        .place()
+        .expect("a LaneAgent runs as layers: it has a place")
+}
+
+/// `place`, locked.
+pub fn locked(place: &Mutex<Place>) -> MutexGuard<'_, Place> {
+    place
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// The wakes `agent`'s place holds for the next event pass.
+pub fn wakes_of(agent: &LaneAgent) -> Vec<Wake> {
+    locked(&place_of(agent)).wakes().to_vec()
+}
+
+/// The row of the layer installed at `agent`'s place.
+pub fn installed_row(agent: &LaneAgent) -> Option<StrategyId> {
+    locked(&place_of(agent)).installed_row()
 }
 
 /// The strategy ids `agent` offers, in the order it offers them.

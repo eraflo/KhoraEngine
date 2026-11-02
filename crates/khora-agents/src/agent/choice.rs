@@ -53,7 +53,7 @@ fn within<T: PartialOrd + Copy>(value: &PerDevice<T>, limit: &PerDevice<T>) -> b
 }
 
 /// Whether `cost` fits `envelope`: its time and its memory, on every device.
-fn fits(cost: &Cost, envelope: &Envelope) -> bool {
+pub(super) fn fits(cost: &Cost, envelope: &Envelope) -> bool {
     within(&cost.time, &envelope.time) && within(&cost.memory, &envelope.memory)
 }
 

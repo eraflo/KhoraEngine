@@ -337,6 +337,7 @@ impl Agent for Speaker {
             over_budget,
             stalled: health.stalled,
             workload: None,
+            switch: None,
         }
     }
     fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
@@ -518,6 +519,7 @@ fn run_report(name: &'static str, epoch: Epoch, cpu_us: u64, workload: f64) -> R
         over_budget: false,
         stalled: false,
         workload: Some(workload),
+        switch: None,
     }
 }
 

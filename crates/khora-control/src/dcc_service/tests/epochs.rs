@@ -107,6 +107,7 @@ fn renderer_report() -> Report {
         over_budget: false,
         stalled: false,
         workload: None,
+        switch: None,
     }
 }
 

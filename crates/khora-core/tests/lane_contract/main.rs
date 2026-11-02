@@ -27,6 +27,7 @@ mod outputs;
 mod pass_device;
 mod passes;
 mod phases;
+mod prepare_ahead;
 mod quote;
 mod run;
 mod target_key_pipelines;

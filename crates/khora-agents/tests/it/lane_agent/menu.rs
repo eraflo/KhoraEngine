@@ -29,8 +29,9 @@ use khora_core::lane::family::LaneFamily;
 use khora_core::lane::OutputDeck;
 
 use super::fixtures::{
-    budget, ladder_cost, offered, request, run, runtime, FirstLane, Load, Plan, ProbeFamily,
-    Recorded, SecondLane, Tally, FIXED_LADDER, FIXED_STEP, LADDER, STORAGE_OR_PLAIN, TWO_LANES,
+    budget, ladder_cost, locked, offered, place_of, request, run, runtime, FirstLane, Load, Plan,
+    ProbeFamily, Recorded, SecondLane, Tally, FIXED_LADDER, FIXED_STEP, LADDER, STORAGE_OR_PLAIN,
+    TWO_LANES,
 };
 
 /// **GORNA prices every row from the frame that just ran.** One option per
@@ -128,8 +129,9 @@ fn an_unsupported_behaviour_leaves_the_agent_menu() {
     );
 }
 
-/// `apply_budget` picks the row its strategy names: the next frame records at
-/// that level, and the status reports it.
+/// `apply_budget` picks the row its strategy names: before the first frame,
+/// that frame records at that level; later, the next frame's event pass
+/// stages it and the frame after records there. The status reports it.
 #[test]
 fn apply_budget_picks_the_row_its_strategy_names() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
@@ -143,6 +145,7 @@ fn apply_budget_picks_the_row_its_strategy_names() {
 
     agent.apply_budget(budget(StrategyId::LowPower));
     run(&mut agent, 2, &runtime, &mut deck);
+    run(&mut agent, 3, &runtime, &mut deck);
     assert_eq!(deck.get::<Recorded>().map(|r| r.level), Some(0));
     assert_eq!(agent.report_status().current_strategy, StrategyId::LowPower);
 }
@@ -162,27 +165,30 @@ fn a_strategy_off_the_menu_keeps_the_current_row() {
     assert_eq!(agent.report_status().current_strategy, StrategyId::Balanced);
 }
 
-/// **Locks follow the current lane; reads cover every lane the agent quotes.**
-/// The locks and deck slots the agent contends for are the running lane's: the
-/// second lane's lock is absent while the first lane runs, and present once the
-/// second runs. A full quote fetches the inputs of the lanes that do not run,
-/// so their reads stay declared whichever lane runs: the first lane's `Load` is
-/// still read while the second lane runs.
+/// **Locks follow the installed layer; the agent's reads cover every lane it
+/// quotes.** The waves contend for the installed layer's declaration: the
+/// second lane's lock is absent while the first lane runs, and present once
+/// the second runs, and the family's slot is declared either way. A wake's
+/// full quote fetches the inputs of every lane, so the agent's own
+/// contention — the event pass's permit — reads them whichever lane runs:
+/// the first lane's `Load` is still read while the second lane runs.
 #[test]
-fn locks_follow_the_current_lane_and_reads_cover_every_quoted_lane() {
+fn locks_follow_the_installed_layer_and_reads_cover_every_quoted_lane() {
     let first = Erased::new(FirstLane).declaration().contention();
     let second = Erased::new(SecondLane).declaration().contention();
     let load = TypeId::of::<Load>();
     let tally_lock = TypeId::of::<Arc<Mutex<Tally>>>();
     let recorded = TypeId::of::<Recorded>();
+    let runtime = runtime(1, Plan::default());
+    let mut deck = OutputDeck::new();
     let mut agent = lane_agent(&TWO_LANES, &DeviceCaps::default());
 
     agent.apply_budget(budget(StrategyId::LowPower));
-    let on_first = agent.contention();
+    run(&mut agent, 1, &runtime, &mut deck);
+    let on_first = locked(&place_of(&agent)).contention();
     for read in &first.reads {
         assert!(on_first.reads.contains(read), "the first lane's reads");
     }
-    assert!(on_first.reads.contains(&load));
     assert!(
         !on_first.writes.contains(&tally_lock),
         "the second lane's lock is not taken while the first runs"
@@ -190,16 +196,18 @@ fn locks_follow_the_current_lane_and_reads_cover_every_quoted_lane() {
     assert!(on_first.deck.contains(&recorded), "the family's slot");
 
     agent.apply_budget(budget(StrategyId::Balanced));
-    let on_second = agent.contention();
+    run(&mut agent, 2, &runtime, &mut deck);
+    run(&mut agent, 3, &runtime, &mut deck);
+    let on_second = locked(&place_of(&agent)).contention();
     for lock in &second.writes {
         assert!(on_second.writes.contains(lock), "the second lane's locks");
     }
     assert!(on_second.writes.contains(&tally_lock));
-    assert!(
-        on_second.reads.contains(&load),
-        "the first lane is quoted while the second runs, so its read stays declared"
-    );
     assert!(on_second.deck.contains(&recorded), "the family's slot");
+    assert!(
+        agent.contention().reads.contains(&load),
+        "the first lane is quoted while the second runs, so the agent reads it"
+    );
 }
 
 /// A lane agent never touches the world: it reads through its lane's inputs

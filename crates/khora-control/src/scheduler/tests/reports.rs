@@ -61,6 +61,7 @@ impl Teller {
                 over_budget: true,
                 stalled: false,
                 workload: Some(42.0),
+                switch: None,
             },
             takes: Duration::ZERO,
             access: AgentAccess::Exclusive,

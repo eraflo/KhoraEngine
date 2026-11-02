@@ -12,9 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! When a family's rows are priced: the running row by its own run, the
-//! other lanes by quoting them on their inputs when the quotes may no longer
-//! hold.
+//! When a family's rows are priced: the row that ran by its own run, every
+//! lane by quoting it on its inputs when the quotes may no longer hold.
 
 use std::time::{Duration, Instant};
 
@@ -36,16 +35,16 @@ pub const QUOTE_MAX_AGE: Duration = Duration::from_secs(1);
 #[derive(Debug, Clone)]
 pub(super) struct FullQuote {
     /// When.
-    at: Instant,
+    pub(super) at: Instant,
     /// The frame's target key then; `None` when no lane reads the frame.
-    key: Option<TargetKey>,
+    pub(super) key: Option<TargetKey>,
     /// Every row's quote then, by row: the base each row's drift is measured
     /// from when it is the one running. `None` for a row left unquoted.
-    bases: Vec<Option<Duration>>,
+    pub(super) bases: Vec<Option<Duration>>,
 }
 
 /// Whether `now` moved from `base` by more than [`QUOTE_DRIFT`] of it.
-fn drifted(base: Duration, now: Duration) -> bool {
+pub(super) fn drifted(base: Duration, now: Duration) -> bool {
     if base.is_zero() {
         return !now.is_zero();
     }
@@ -54,58 +53,27 @@ fn drifted(base: Duration, now: Duration) -> bool {
 }
 
 impl LaneAgent {
-    /// Quotes every lane but the one that just ran (its run quoted it) when
-    /// the quotes may no longer hold: the first time, when the frame's target
-    /// changed, when the running row's quote drifted past [`QUOTE_DRIFT`]
-    /// from its value at the last full quote, or when that quote is older
-    /// than [`QUOTE_MAX_AGE`]. Otherwise the other lanes keep their quotes.
+    /// Quotes every lane but `ran`, the lane of the row that just ran — its
+    /// run priced it — on this frame's inputs, and records the full quote:
+    /// when, on which target, and each row's price then.
     ///
-    /// The agent reads no world state to decide: a change in the world
+    /// The agent reads no world state to decide when: a change in the world
     /// reaches it only through the Views its lanes read, as a drift of the
-    /// running row's quote.
-    pub(super) fn requote(
+    /// running row's quote its layer reports.
+    pub(super) fn quote_every_lane(
         &mut self,
-        ran: usize,
         context: &EngineContext<'_>,
         frame: Option<&FrameContext>,
+        ran: Option<usize>,
     ) {
-        let ran_lane = self.menu[ran].lane;
-        // A run that priced nothing (refused for want of a budget it was never
-        // granted) is quoted on its inputs, so GORNA has a price to grant.
-        if self.quotes.get(ran).copied().flatten().is_none() {
-            self.quote_lane(ran_lane, context, frame);
-        }
-        let Some(running) = self.quotes.get(ran).copied().flatten().map(|c| time_of(&c)) else {
-            return;
-        };
-        let key = frame
-            .and_then(|frame| frame.get::<Target>())
-            .map(|target| target.key);
-        let due = match &self.full_quote {
-            None => true,
-            Some(last) => {
-                last.key != key
-                    || last.at.elapsed() > QUOTE_MAX_AGE
-                    // The row that ran, against its own quote at the last full
-                    // quote: a row GORNA moved to since is measured from its
-                    // price then, and one unquoted then counts as moved.
-                    || last
-                        .bases
-                        .get(ran)
-                        .copied()
-                        .flatten()
-                        .is_none_or(|base| drifted(base, running))
-            }
-        };
-        if !due {
-            return;
-        }
-        for lane in (0..self.lanes.len()).filter(|&lane| lane != ran_lane) {
+        for lane in (0..self.lanes.len()).filter(|lane| Some(*lane) != ran) {
             self.quote_lane(lane, context, frame);
         }
         self.full_quote = Some(FullQuote {
             at: Instant::now(),
-            key,
+            key: frame
+                .and_then(|frame| frame.get::<Target>())
+                .map(|target| target.key),
             bases: self
                 .quotes
                 .iter()
@@ -117,7 +85,7 @@ impl LaneAgent {
     /// Quotes every level of `lane` on this frame's inputs, lent the time the
     /// agent was granted: a budgeted lane prices its own budget. Its rows are
     /// left unquoted when it cannot be.
-    fn quote_lane(
+    pub(super) fn quote_lane(
         &mut self,
         lane: usize,
         context: &EngineContext<'_>,

@@ -15,6 +15,8 @@
 //! The per-frame entry point: fixed-timestep accounting, the phase loop,
 //! and publishing the frame's `Time`.
 
+use super::execution::run_guarded;
+use super::known::{locked, LayeredAgent};
 use super::sim_steps::{compute_sim_steps, compute_sub_steps, MAX_SIM_STEPS};
 use super::{
     simulation_scale, AgentSelection, ExecutionScheduler, COMPONENT_ACCESS_SAMPLE_PERIOD,
@@ -25,9 +27,12 @@ use khora_core::agent::completion::AgentCompletionMap;
 use khora_core::agent::completion::CompletionOutcome;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::{Agent, EngineMode, ExecutionPhase};
+use khora_core::gpu::GpuSetup;
 use khora_core::lane::{HostViews, LaneBus, OutputDeck};
+use khora_core::renderer::traits::PipelineSystem;
+use khora_core::renderer::GraphicsDevice;
 use khora_core::telemetry::TelemetryEvent;
-use khora_core::Runtime;
+use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::World;
 use std::sync::{Arc, Mutex, TryLockError};
 use std::time::Instant;
@@ -113,6 +118,11 @@ impl ExecutionScheduler {
         // 1a-bis. Lend the allocation in force, before anything locks an
         //     agent: the whole frame runs on one epoch.
         self.lend_allocation(&mode);
+
+        // 1a-ter. The frame start of every family running as layers: the
+        //     layer staged at its place is swapped in, at the same place.
+        let layered = self.layered_agents(&mode);
+        swap_layers(&layered, &runtime);
 
         // 1b. Real frame delta + fixed-timestep accumulator bookkeeping.
         let now = self.frame_start;
@@ -206,6 +216,11 @@ impl ExecutionScheduler {
             host_views.publish_into(&mut bus);
         }
         before_agents(&bus);
+
+        // 5b. The event pass: every agent whose place gathered a wake is woken
+        //     for it, once the bus is built and before any layer runs. A quiet
+        //     agent is neither called nor locked.
+        wake_layered(&layered, &runtime, &bus);
 
         // Freeze the bus behind an `Arc` for the rest of the frame. It is
         // strictly read-only from here on (the CLAD descent only reads Views),
@@ -359,15 +374,33 @@ impl ExecutionScheduler {
     /// `apply_budget` takes effect on the next frame. An agent the mode does
     /// not run keeps no clock: it owes nothing for the time it sat out.
     fn declared_fixed_steps(&self, mode: &EngineMode) -> Vec<(AgentId, f32)> {
-        let Ok(registry) = self.registry.lock() else {
-            return Vec::new();
+        let agents: Vec<Arc<Mutex<dyn Agent>>> = {
+            let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+            registry.iter_for_mode(mode).cloned().collect()
         };
-        registry
-            .iter_for_mode(mode)
+        agents
+            .iter()
             .filter_map(|agent| {
-                let agent = agent.lock().ok()?;
-                let step = agent.execution_timing().fixed_timestep?.as_secs_f32();
-                (step > 0.0).then(|| (agent.id(), step))
+                let known = self.known.of(agent)?;
+                let step = known.timing(agent)?.fixed_timestep?.as_secs_f32();
+                (step > 0.0).then_some((known.id, step))
+            })
+            .collect()
+    }
+
+    /// Every agent `mode` runs as layers, with its lock and what the
+    /// scheduler knows of it.
+    fn layered_agents(&self, mode: &EngineMode) -> Vec<LayeredAgent> {
+        let agents: Vec<Arc<Mutex<dyn Agent>>> = {
+            let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
+            registry.iter_for_mode(mode).cloned().collect()
+        };
+        agents
+            .into_iter()
+            .filter_map(|agent| {
+                let known = self.known.of(&agent)?;
+                let layered = known.layered?;
+                Some((agent, known.id, layered))
             })
             .collect()
     }
@@ -391,6 +424,74 @@ impl ExecutionScheduler {
             time.fixed_steps = fixed_steps;
             time.interpolation_alpha = alpha;
             time.frame = time.frame.wrapping_add(1);
+        }
+    }
+}
+
+/// The device and pipeline system a layer is released with, as the runtime
+/// holds them; headless without a device.
+fn gpu_of(runtime: &Runtime) -> GpuSetup<'_> {
+    let mut gpu = match runtime.look_up::<Arc<dyn GraphicsDevice>>() {
+        Some(device) => GpuSetup::new(device.as_ref()),
+        None => GpuSetup::headless(),
+    };
+    if let Some(pipelines) = runtime.look_up::<Arc<dyn PipelineSystem>>() {
+        gpu = gpu.with_pipelines(pipelines.as_ref());
+    }
+    gpu
+}
+
+/// The frame start of each family's place: its staged layer is swapped in,
+/// and the kept layers it can no longer keep are released. A layer that
+/// panics while released fails its own family's frame start, not the frame.
+fn swap_layers(layered: &[LayeredAgent], runtime: &Runtime) {
+    let mut gpu = gpu_of(runtime);
+    for (_, id, layered) in layered {
+        let swapped = run_guarded(*id, || locked(&layered.place).start_frame(&mut gpu));
+        if !swapped {
+            layered.place.clear_poison();
+        }
+    }
+}
+
+/// Wakes every agent whose place gathered a wake, under its lock and then
+/// its place's — the one order both are ever taken in — with the permit of
+/// its own contention: what it quotes and prepares with. It touches no
+/// world, and writes nothing a later agent reads.
+fn wake_layered(layered: &[LayeredAgent], runtime: &Arc<Runtime>, bus: &LaneBus) {
+    for (agent, id, layered) in layered {
+        let why = locked(&layered.place).take_wakes();
+        if why.is_empty() {
+            continue;
+        }
+        // Waking runs lane code — quotes, the preparation of a new layer —
+        // so a panic there fails this family's wake, not the frame: its
+        // installed layer runs on it as on any frame.
+        let woken = run_guarded(*id, || {
+            let mut agent = agent.lock().unwrap_or_else(|e| e.into_inner());
+            let permit = agent.contention();
+            let mut scratch = OutputDeck::new();
+            let mut context = EngineContext::for_agent(
+                WorldAccess::None,
+                Arc::clone(runtime),
+                bus,
+                &mut scratch,
+                &permit,
+                Some(*id),
+            );
+            let mut place = locked(&layered.place);
+            agent.wake(&why, &mut place, &mut context);
+        });
+        if !woken {
+            agent.clear_poison();
+            layered.place.clear_poison();
+            // Handed back, so the next event pass wakes the agent for them
+            // again: a panic once is not a silent death, nor a lost
+            // allocation.
+            let mut place = locked(&layered.place);
+            for wake in why {
+                place.raise(wake);
+            }
         }
     }
 }

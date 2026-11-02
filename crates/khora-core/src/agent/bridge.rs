@@ -136,5 +136,6 @@ pub(crate) fn report<A: Agent + ?Sized>(agent: &A) -> Report {
         over_budget: false,
         stalled: status.is_stalled,
         workload: None,
+        switch: None,
     }
 }

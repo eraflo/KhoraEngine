@@ -14,10 +14,12 @@
 
 //! Every row of a multi-lane family carries a real quote. The running lane
 //! quotes its levels on every run; the lanes that do not run are quoted
-//! together with it — a *full quote* — on the first run, when the running
-//! row's own quote drifts beyond `QUOTE_DRIFT` (10 %) from its value at the last
-//! full quote, and when the last full quote is older than [`QUOTE_MAX_AGE`].
-//! Otherwise their quotes stand. A lane that locks is never quoted.
+//! together with it — a *full quote* — when the agent is woken for its first
+//! frame, for the running row's own quote drifting beyond `QUOTE_DRIFT`
+//! (10 %) from its value at the last full quote, or for the last full quote
+//! growing older than [`QUOTE_MAX_AGE`]. The run that finds the drift or the
+//! age raises the wake; the next frame's event pass answers it. Otherwise
+//! the other lanes' quotes stand. A lane that locks is never quoted.
 //!
 //! The lanes that do not run count their quotes: their `cost` is called only
 //! by a quote, once per level, and each has one level.
@@ -42,8 +44,8 @@ use khora_core::lane::{LaneError, LaneKind, OutputDeck};
 use khora_core::Runtime;
 
 use super::fixtures::{
-    budget, level, offer_request, request, run, Load, LoadAndPlan, Plan, ProbeOutputs, Recorded,
-    Tally, TallyLock, ANY_MEMORY, LADDER,
+    budget, level, locked, offer_request, place_of, request, run, Load, LoadAndPlan, Plan,
+    ProbeOutputs, Recorded, Tally, TallyLock, ANY_MEMORY, LADDER,
 };
 
 // ─── Runtime entries ────────────────────────────────────────────────────────
@@ -389,9 +391,10 @@ fn a_running_quote_within_the_drift_does_not_requote_the_other_lanes() {
 
 /// **A drift beyond 10 % quotes every row again**, measured from the running
 /// quote at the last full quote — not from the frame before. The load creeps
-/// from 100 to 109 (within), then to 111: beyond the drift of 100, so the
-/// other lane is quoted again, on 111. The next full quote is measured from
-/// 111: 115 is within it. Down works the same: 111 to 99 is beyond.
+/// from 100 to 109 (within), then to 111: beyond the drift of 100, so the run
+/// on 111 wakes the agent, which quotes the other lane again at the next
+/// frame, on 111. The next full quote is measured from 111: 115 is within it.
+/// Down works the same: 111 to 99 is beyond.
 #[test]
 fn a_running_quote_beyond_the_drift_requotes_the_other_lanes() {
     let counts = Counts::default();
@@ -403,21 +406,29 @@ fn a_running_quote_beyond_the_drift_requotes_the_other_lanes() {
     assert_eq!(counts.quoted(), 1, "109 is within the drift of 100");
 
     run(&mut agent, 3, &plain(111, &counts), &mut deck);
+    assert_eq!(
+        counts.quoted(),
+        1,
+        "the run on 111 finds the drift; the agent is not woken mid-frame"
+    );
+    run(&mut agent, 4, &plain(111, &counts), &mut deck);
     assert_eq!(counts.quoted(), 2, "111 is beyond the drift of 100");
     assert_eq!(
         offered_time(&mut agent, StrategyId::LowPower),
         Some(quoted_cost(111).time.cpu),
-        "the other lane is quoted on the frame that drifted"
+        "the other lane is quoted on the frame after the drift"
     );
 
-    run(&mut agent, 4, &plain(115, &counts), &mut deck);
+    run(&mut agent, 5, &plain(115, &counts), &mut deck);
+    run(&mut agent, 6, &plain(115, &counts), &mut deck);
     assert_eq!(
         counts.quoted(),
         2,
         "the drift is measured from the last full quote, 111"
     );
 
-    run(&mut agent, 5, &plain(99, &counts), &mut deck);
+    run(&mut agent, 7, &plain(99, &counts), &mut deck);
+    run(&mut agent, 8, &plain(99, &counts), &mut deck);
     assert_eq!(
         counts.quoted(),
         3,
@@ -427,7 +438,8 @@ fn a_running_quote_beyond_the_drift_requotes_the_other_lanes() {
 
 /// **A full quote older than [`QUOTE_MAX_AGE`] is made again**, even when
 /// nothing drifted: the other lane's inputs may have changed in ways the
-/// running lane does not see.
+/// running lane does not see. The run that finds it old wakes the agent; the
+/// next frame quotes again.
 #[test]
 fn a_full_quote_older_than_the_max_age_requotes_the_other_lanes() {
     let counts = Counts::default();
@@ -440,6 +452,7 @@ fn a_full_quote_older_than_the_max_age_requotes_the_other_lanes() {
 
     std::thread::sleep(QUOTE_MAX_AGE + Duration::from_millis(100));
     run(&mut agent, 3, &plain(100, &counts), &mut deck);
+    run(&mut agent, 4, &plain(100, &counts), &mut deck);
 
     assert_eq!(counts.quoted(), 2, "an old quote is made again");
 }
@@ -447,8 +460,9 @@ fn a_full_quote_older_than_the_max_age_requotes_the_other_lanes() {
 /// **A lane that locks stays unquoted, and is never the cheaper row.** The
 /// locking lane would quote between the running lane and the quoted one, so,
 /// quoted, it would be the row a failure falls back to. It is never quoted
-/// (its `cost` is never called), and when the running lane fails the agent
-/// falls back across lanes to the quoted one, which then records.
+/// (its `cost` is never called), and when the running lane fails the agent,
+/// woken by the failure, falls back across lanes to the quoted one, which
+/// records from the frame after.
 #[test]
 fn a_locking_lane_stays_unquoted_and_is_not_picked_as_cheaper() {
     let counts = Counts::default();
@@ -460,19 +474,30 @@ fn a_locking_lane_stays_unquoted_and_is_not_picked_as_cheaper() {
     };
 
     run(&mut agent, 1, &plain(100, &counts), &mut deck);
-    run(&mut agent, 2, &frame(100, failing, &counts), &mut deck);
+    run(
+        &mut agent,
+        2,
+        &frame(100, failing.clone(), &counts),
+        &mut deck,
+    );
+    run(&mut agent, 3, &frame(100, failing, &counts), &mut deck);
 
     assert_eq!(counts.locked(), 0, "the locking lane was never quoted");
     assert_eq!(
-        agent.report_status().current_strategy,
-        StrategyId::LowPower,
+        locked(&place_of(&agent)).staged_row(),
+        Some(StrategyId::LowPower),
         "the failure falls back to the quoted lane, not the unquoted one"
     );
-    run(&mut agent, 3, &plain(100, &counts), &mut deck);
+    run(&mut agent, 4, &plain(100, &counts), &mut deck);
     assert_eq!(
         deck.get::<Recorded>().map(|recorded| recorded.lane),
         Some("quoted"),
-        "the quoted lane runs the next frame"
+        "the quoted lane runs from the frame start after the wake"
+    );
+    assert_eq!(
+        agent.report_status().current_strategy,
+        StrategyId::LowPower,
+        "once installed, the quoted lane is the row the agent runs"
     );
     assert_eq!(counts.locked(), 0, "still never quoted");
 }
@@ -480,9 +505,11 @@ fn a_locking_lane_stays_unquoted_and_is_not_picked_as_cheaper() {
 /// **The drift is measured from the running row's own quote at the last full
 /// quote**, not from the row that ran then. On a load of 100 the running lane
 /// quotes 100 µs and the quoted lane 50 µs; GORNA then moves to the quoted
-/// lane. The load doubles: the quoted lane, now running, quotes 100 µs — twice
-/// its 50 µs, far beyond the drift — so the lane it left is quoted again, on
-/// the load of 200, rather than kept at its 100 µs of the first frame.
+/// lane, which runs from the frame after. The load doubles: the quoted lane
+/// quotes 100 µs — twice its own 50 µs, far beyond the drift, though equal
+/// to the 100 µs the running lane quoted then — so the lane it left is
+/// quoted again on the frame after, on the load of 200, rather than kept at
+/// its 100 µs of the first frame.
 #[test]
 fn a_row_gorna_moved_to_drifts_from_its_own_quote_at_the_last_full_quote() {
     let counts = Counts::default();
@@ -491,13 +518,20 @@ fn a_row_gorna_moved_to_drifts_from_its_own_quote_at_the_last_full_quote() {
 
     run(&mut agent, 1, &plain(100, &counts), &mut deck);
     agent.apply_budget(budget(StrategyId::LowPower));
-    run(&mut agent, 2, &plain(200, &counts), &mut deck);
-
+    run(&mut agent, 2, &plain(100, &counts), &mut deck);
+    run(&mut agent, 3, &plain(200, &counts), &mut deck);
     assert_eq!(
         deck.get::<Recorded>().map(|recorded| recorded.lane),
         Some("quoted"),
-        "the quoted lane ran the second frame"
+        "the quoted lane ran the third frame"
     );
+    assert_eq!(
+        offered_time(&mut agent, StrategyId::HighPerformance),
+        Some(running_cost(100).time.cpu),
+        "the drift is found by the run; the agent is woken at the next frame"
+    );
+
+    run(&mut agent, 4, &plain(200, &counts), &mut deck);
     assert_eq!(
         offered_time(&mut agent, StrategyId::HighPerformance),
         Some(running_cost(200).time.cpu),
@@ -521,10 +555,10 @@ fn without_a_plan(load: u32, counts: &Counts) -> Arc<Runtime> {
 
 /// **A running lane whose input went missing is not offered at its old
 /// quote.** The running lane ran on a load of 100 and quoted 100 µs. On the
-/// next frame its plan is missing: the run is refused and quotes nothing. A
-/// missing input gives no quote, so its row has no price on this frame's
-/// inputs and is no longer offered, while the quoted lane, whose inputs are
-/// there, still is.
+/// next two frames its plan is missing: the runs are refused and quote
+/// nothing, and the agent is woken by the refusal. A missing input gives no
+/// quote, so its row has no price on these inputs and is no longer offered,
+/// while the quoted lane, whose inputs are there, still is.
 #[test]
 fn a_running_lane_refused_its_input_is_not_offered_at_its_old_quote() {
     let counts = Counts::default();
@@ -533,6 +567,7 @@ fn a_running_lane_refused_its_input_is_not_offered_at_its_old_quote() {
 
     run(&mut agent, 1, &plain(100, &counts), &mut deck);
     run(&mut agent, 2, &without_a_plan(100, &counts), &mut deck);
+    run(&mut agent, 3, &without_a_plan(100, &counts), &mut deck);
 
     assert!(
         !agent.report_status().message.is_empty(),
@@ -581,10 +616,11 @@ fn after_a_full_quote_a_row_without_a_quote_is_not_offered() {
 
 /// **A row GORNA moves to that was unquoted at the last full quote is quoted
 /// with every other row on its first run, and measured from that run after.**
-/// The locking lane is never quoted, so the first run's full quote leaves it
-/// without a base. GORNA moves to it: its first run quotes the quoted lane
-/// again. Its next run, on the same load, is measured from its own first
-/// quote and quotes nothing more.
+/// The locking lane is never quoted, so the first frame's full quote leaves
+/// it without a base. GORNA moves to it, and it runs from the frame after:
+/// that first run counts as drifted and wakes the agent, which quotes the
+/// quoted lane again on the next frame. Its next run, on the same load, is
+/// measured from its own price and quotes nothing more.
 #[test]
 fn a_row_unquoted_at_the_full_quote_requotes_on_its_first_run_only() {
     let counts = Counts::default();
@@ -592,22 +628,25 @@ fn a_row_unquoted_at_the_full_quote_requotes_on_its_first_run_only() {
     let mut deck = OutputDeck::new();
 
     run(&mut agent, 1, &plain(100, &counts), &mut deck);
-    assert_eq!(counts.quoted(), 1, "the first run's full quote");
+    assert_eq!(counts.quoted(), 1, "the first frame's full quote");
 
     agent.apply_budget(budget(StrategyId::Balanced));
     run(&mut agent, 2, &plain(100, &counts), &mut deck);
+    run(&mut agent, 3, &plain(100, &counts), &mut deck);
     assert_eq!(
         deck.get::<Recorded>().map(|recorded| recorded.lane),
         Some("locking"),
         "the locking lane ran"
     );
+    run(&mut agent, 4, &plain(100, &counts), &mut deck);
     assert_eq!(
         counts.quoted(),
         2,
         "a row without a base counts as drifted: every row is quoted again"
     );
 
-    run(&mut agent, 3, &plain(100, &counts), &mut deck);
+    run(&mut agent, 5, &plain(100, &counts), &mut deck);
+    run(&mut agent, 6, &plain(100, &counts), &mut deck);
     assert_eq!(
         counts.quoted(),
         2,
@@ -618,6 +657,7 @@ fn a_row_unquoted_at_the_full_quote_requotes_on_its_first_run_only() {
 /// **A family whose one lane is refused after it was priced is still
 /// offered**, every row at zero time, as before its first run: with no row
 /// priced, omitting the unpriced ones would leave GORNA nothing to grant.
+/// Two refused frames: the agent is woken by the first refusal.
 #[test]
 fn a_one_lane_family_refused_after_it_was_priced_is_still_offered() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
@@ -630,7 +670,9 @@ fn a_one_lane_family_refused_after_it_was_priced_is_still_offered() {
     let mut without_a_plan = Runtime::new();
     without_a_plan.resources.insert(Load(10));
 
-    run(&mut agent, 2, &Arc::new(without_a_plan), &mut deck);
+    let without_a_plan = Arc::new(without_a_plan);
+    run(&mut agent, 2, &without_a_plan, &mut deck);
+    run(&mut agent, 3, &without_a_plan, &mut deck);
 
     assert!(
         !agent.report_status().message.is_empty(),
@@ -654,10 +696,11 @@ fn a_one_lane_family_refused_after_it_was_priced_is_still_offered() {
 }
 
 /// **A lane whose lock was not obtained in time keeps its price.** The locking
-/// lane runs and is priced by its run; on the next frame another holder keeps
-/// the tally, and the lock times out. Nothing it needs is missing — the lock
-/// was busy — and a lane that locks is never quoted, only priced by its own
-/// runs: dropped from the menu now, it could never be offered again.
+/// lane runs and is priced by its run; on the next two frames another holder
+/// keeps the tally, and the lock times out — the agent is woken by the first.
+/// Nothing it needs is missing — the lock was busy — and a lane that locks is
+/// never quoted, only priced by its own runs: dropped from the menu now, it
+/// could never be offered again.
 #[test]
 fn a_lock_not_obtained_in_time_keeps_the_running_lanes_price() {
     let counts = Counts::default();
@@ -680,6 +723,7 @@ fn a_lock_not_obtained_in_time_keeps_the_running_lanes_price() {
     {
         let _held_elsewhere = tally.lock().expect("the tally is free");
         run(&mut agent, 2, &busy, &mut deck);
+        run(&mut agent, 3, &busy, &mut deck);
     }
 
     assert!(

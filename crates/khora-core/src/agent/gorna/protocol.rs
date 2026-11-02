@@ -190,4 +190,8 @@ pub struct Report {
     /// does not count it; the scheduler then fills in the world's entity
     /// count before publishing the report.
     pub workload: Option<f64>,
+    /// How long preparing the layer that ran took, on the first run after it
+    /// was swapped in at its family's place; `None` on every other run. What
+    /// a switch of row costs.
+    pub switch: Option<Duration>,
 }

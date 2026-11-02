@@ -51,6 +51,16 @@ pub struct Run {
     pub warnings: Vec<InputWarning>,
 }
 
+/// Why a lane could not be prepared ahead of its first run.
+#[derive(Debug)]
+pub enum NotPrepared {
+    /// An input was refused, so the target the lane draws into is not known:
+    /// its first run prepares it.
+    Refused(InputRefusal),
+    /// The lane's `prepare` failed, or it does not offer the level.
+    Failed(LaneError),
+}
+
 /// A lane with its types erased.
 pub trait AnyLane: Send {
     /// The lane's type name, for messages.
@@ -85,6 +95,17 @@ pub trait AnyLane: Send {
     /// `None` when an input is refused, and for a lane that declares a
     /// `#[locked]` input: quoting never takes a lock.
     fn quote(&self, inputs: &mut InputSource<'_>) -> Option<Vec<Cost>>;
+
+    /// Prepares the lane at `level` for this frame's inputs — the target it
+    /// draws into — ahead of its first run, so that run prepares nothing
+    /// while the target keeps its key. What the agent does for a new layer,
+    /// beside the installed one.
+    fn prepare(
+        &mut self,
+        level: usize,
+        inputs: &mut InputSource<'_>,
+        gpu: &mut GpuSetup<'_>,
+    ) -> Result<(), NotPrepared>;
 
     /// Releases what the lane built on the device.
     fn shutdown(&mut self, gpu: &mut GpuSetup<'_>);
@@ -164,6 +185,29 @@ impl<L: Lane> AnyLane for Erased<L> {
                 .map(|level| self.lane.cost(level, &fetched))
                 .collect(),
         )
+    }
+
+    fn prepare(
+        &mut self,
+        level: usize,
+        inputs: &mut InputSource<'_>,
+        gpu: &mut GpuSetup<'_>,
+    ) -> Result<(), NotPrepared> {
+        let levels = self.lane.levels().len();
+        if level >= levels {
+            return Err(NotPrepared::Failed(LaneError::InvalidContext {
+                expected: "a level the lane offers",
+                received: format!("level {level} of {levels}"),
+            }));
+        }
+        let fetched =
+            <L::Inputs<'_> as LaneInputs<'_>>::fetch(inputs).map_err(NotPrepared::Refused)?;
+        let key = fetched.target_key();
+        self.lane
+            .prepare(level, gpu, key)
+            .map_err(NotPrepared::Failed)?;
+        self.prepared_for = Some((level, key));
+        Ok(())
     }
 
     fn shutdown(&mut self, gpu: &mut GpuSetup<'_>) {

@@ -15,21 +15,21 @@
 //! Running one phase's agents — sequentially, or in concurrent waves on the
 //! worker pool.
 
+use super::known::locked;
 use super::waves::{build_wave_metas, check_wave_disjoint, partition_waves};
 use super::{
-    are_hard_dependencies_completed, fixed_slot_id, slot_is_fixed, sort_agents, AgentSelection,
-    AgentSlot, ExecutionScheduler,
+    are_hard_dependencies_completed, sort_agents, AgentSelection, AgentSlot, ExecutionScheduler,
 };
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::gorna::protocol::Report;
 use khora_core::agent::gorna::{AgentFrameStatus, AgentFrameStatusMap, AgentId};
 use khora_core::agent::timing::AgentImportance;
-use khora_core::agent::{AgentAccess, AgentDependency, EngineMode, ExecutionPhase};
+use khora_core::agent::{Agent, AgentAccess, AgentDependency, EngineMode, ExecutionPhase, Place};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::World;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 impl ExecutionScheduler {
@@ -46,10 +46,7 @@ impl ExecutionScheduler {
         selection: AgentSelection,
     ) {
         // Collect agents for this phase and mode
-        let agents = {
-            let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-            registry.collect_for_phase(phase, mode)
-        };
+        let agents = self.phase_slots(phase, mode);
 
         // Partition by whether the agent declares a fixed timestep, so the
         // fixed-update sub-loop and the once-per-frame loop never double-run
@@ -59,14 +56,14 @@ impl ExecutionScheduler {
             AgentSelection::FixedRound(round) => agents
                 .into_iter()
                 .filter(|slot| {
-                    fixed_slot_id(slot)
+                    self.fixed_slot_id(slot)
                         .and_then(|id| self.fixed_due.get(&id))
                         .is_some_and(|&due| due > round)
                 })
                 .collect(),
             AgentSelection::ExcludeFixed => agents
                 .into_iter()
-                .filter(|slot| !slot_is_fixed(slot))
+                .filter(|slot| self.fixed_slot_id(slot).is_none())
                 .collect(),
         };
 
@@ -74,7 +71,7 @@ impl ExecutionScheduler {
             return;
         }
 
-        let sorted = sort_agents(agents);
+        let sorted = sort_agents(agents, &self.known);
         if self.parallel_execution {
             self.execute_agents_parallel(sorted, world, runtime, completion_map, bus, deck);
         } else {
@@ -119,10 +116,11 @@ impl ExecutionScheduler {
         };
 
         for (agent, importance, _priority, dependencies) in agents {
-            let agent_id = match agent.lock().ok().map(|a| a.id()) {
-                Some(id) => id,
-                None => continue,
+            let Some(known) = self.known.of(&agent) else {
+                continue;
             };
+            let agent_id = known.id;
+            let place = known.layered.as_ref().map(|layered| &layered.place);
 
             // Budget escape valve: only *negotiable* (Optional) work is skipped
             // under pressure. Critical/Important agents are non-negotiable.
@@ -144,7 +142,10 @@ impl ExecutionScheduler {
             // The same declaration the agent will be held to when it reaches a
             // resource — read here rather than assumed empty, so the serial path
             // enforces exactly what the concurrent one does.
-            let permit = agent.lock().map(|a| a.contention()).unwrap_or_default();
+            let permit = known
+                .footprint(&agent)
+                .map(|(_, contention)| contention)
+                .unwrap_or_default();
             // Serially, each agent is a wave of its own: a run of its own.
             world.begin_run();
             deck.drain_written();
@@ -160,16 +161,13 @@ impl ExecutionScheduler {
                     Some(agent_id),
                 );
                 run_guarded(agent_id, || {
-                    if let Ok(mut a) = agent.lock() {
-                        a.execute(&mut engine_ctx);
-                        report = Some(a.report());
-                    }
+                    report = run_once(&agent, place, &mut engine_ctx);
                 })
             };
             let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
             settle_deck(self, agent_id, &permit, deck, ran);
             if !ran {
-                agent.clear_poison();
+                clear_poison(&agent, place);
             }
             record_frame_time(agent_id, elapsed_ms as f32);
             self.publish_report(report, elapsed_ms, workload_n);
@@ -225,7 +223,16 @@ impl ExecutionScheduler {
         };
         // Read each agent's id + access footprint once (a failed lock yields no
         // id → an always-singleton, always-skipped slot, matching sequential).
-        let metas = build_wave_metas(&agents);
+        let metas = build_wave_metas(&agents, &self.known);
+        // Each agent's place, when it runs as layers: what runs is the layer
+        // installed there, not the agent.
+        let places: Vec<Option<Arc<Mutex<Place>>>> = agents
+            .iter()
+            .map(|(agent, ..)| {
+                let layered = self.known.of(agent)?.layered?;
+                Some(layered.place)
+            })
+            .collect();
 
         // Returns true if the agent should run (not budget-skipped, hard deps
         // satisfied); marks + records the skip otherwise.
@@ -272,16 +279,13 @@ impl ExecutionScheduler {
                             Some(id),
                         );
                         run_guarded(id, || {
-                            if let Ok(mut a) = agent.lock() {
-                                a.execute(&mut engine_ctx);
-                                report = Some(a.report());
-                            }
+                            report = run_once(agent, places[idx].as_ref(), &mut engine_ctx);
                         })
                     };
                     let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
                     settle_deck(self, id, &permit, deck, ran);
                     if !ran {
-                        agent.clear_poison();
+                        clear_poison(agent, places[idx].as_ref());
                     }
                     record_frame_time(id, elapsed_ms as f32);
                     self.publish_report(report, elapsed_ms, workload_n);
@@ -349,6 +353,7 @@ impl ExecutionScheduler {
                     .filter(|&&idx| metas[idx].access != AgentAccess::SharedWorld)
                 {
                     let agent = Arc::clone(&agents[idx].0);
+                    let place = places[idx].clone();
                     let id = metas[idx].id.expect("gated runnable has an id");
                     let runtime = Arc::clone(runtime);
                     let bus = Arc::clone(bus);
@@ -374,14 +379,11 @@ impl ExecutionScheduler {
                             )
                             .with_earlier_deck(&earlier);
                             run_guarded(id, || {
-                                if let Ok(mut a) = agent.lock() {
-                                    a.execute(&mut ctx);
-                                    report = Some(a.report());
-                                }
+                                report = run_once(&agent, place.as_ref(), &mut ctx);
                             })
                         };
                         if !ran {
-                            agent.clear_poison();
+                            clear_poison(&agent, place.as_ref());
                         }
                         let ms = started.elapsed().as_secs_f64() * 1000.0;
                         let written = shard.drain_written();
@@ -429,16 +431,13 @@ impl ExecutionScheduler {
                         )
                         .with_earlier_deck(&earlier);
                         run_guarded(id, || {
-                            if let Ok(mut a) = agents[idx].0.lock() {
-                                a.execute(&mut ctx);
-                                report = Some(a.report());
-                            }
+                            report = run_once(&agents[idx].0, places[idx].as_ref(), &mut ctx);
                         })
                     };
                     let ms = started.elapsed().as_secs_f64() * 1000.0;
                     settle_deck(self, id, &permit, &mut inline_deck, ran);
                     if !ran {
-                        agents[idx].0.clear_poison();
+                        clear_poison(&agents[idx].0, places[idx].as_ref());
                     }
                     record_frame_time(id, ms as f32);
                     self.publish_report(report, ms, workload_n);
@@ -518,12 +517,41 @@ struct PooledRun {
     earlier: Arc<OutputDeck>,
 }
 
-/// Runs an agent's `execute`, turning a panic into `false` so the frame goes
-/// on and the agent is reported as failed instead of taking the thread down.
-fn run_guarded(id: AgentId, execute: impl FnOnce()) -> bool {
+/// One run of `agent`: the layer installed at its `place` when it runs as
+/// layers — the agent is neither called nor locked — or its `execute`. The
+/// run's report; `None` when nothing is installed, or the agent's lock is
+/// poisoned.
+fn run_once(
+    agent: &Arc<Mutex<dyn Agent>>,
+    place: Option<&Arc<Mutex<Place>>>,
+    context: &mut EngineContext<'_>,
+) -> Option<Report> {
+    match place {
+        Some(place) => locked(place).run(context),
+        None => {
+            let mut agent = agent.lock().ok()?;
+            agent.execute(context);
+            Some(agent.report())
+        }
+    }
+}
+
+/// After a run panicked: the lock it poisoned — the place's when the agent
+/// runs as layers, else the agent's — is usable again.
+fn clear_poison(agent: &Arc<Mutex<dyn Agent>>, place: Option<&Arc<Mutex<Place>>>) {
+    match place {
+        Some(place) => place.clear_poison(),
+        None => agent.clear_poison(),
+    }
+}
+
+/// Runs an agent's work — its `execute`, its layer's run, its wake, its
+/// place's frame start — turning a panic into `false` so the frame goes on
+/// and the agent is reported as failed instead of taking the thread down.
+pub(super) fn run_guarded(id: AgentId, execute: impl FnOnce()) -> bool {
     let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(execute)).is_ok();
     if !ran {
-        log::error!("agent {id:?} panicked during execute; its outputs for this frame are dropped");
+        log::error!("agent {id:?} panicked; its work for this frame is dropped");
     }
     ran
 }

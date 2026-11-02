@@ -31,7 +31,7 @@ use khora_core::lane::level::Level;
 use khora_core::lane::{LaneError, LaneKind, OutputDeck};
 use khora_core::Runtime;
 
-use super::fixtures::{budget, level, run, NoInputs, ProbeOutputs, Recorded};
+use super::fixtures::{budget, installed_row, level, run, NoInputs, ProbeOutputs, Recorded};
 
 /// A family whose dearer lane is listed first.
 pub struct DearFirstFamily;
@@ -112,16 +112,29 @@ static DEAR_FIRST: AgentRegistration = khora_core::register_agent! {
 };
 
 /// **A lane error never moves the agent to a dearer row.** The cheapest row
-/// fails; there is nothing cheaper below it, so the agent keeps it — it does
-/// not climb to the `HighPerformance` lane listed before it.
+/// fails, frame after frame, and each failure wakes the agent; there is
+/// nothing cheaper below it, so the agent keeps it — it never climbs to the
+/// `HighPerformance` lane listed before it.
 #[test]
 fn a_lane_error_never_falls_back_to_a_dearer_lane() {
     let mut agent = lane_agent(&DEAR_FIRST, &DeviceCaps::default());
     agent.apply_budget(budget(StrategyId::LowPower));
-    let mut deck = OutputDeck::new();
+    let runtime = Arc::new(Runtime::new());
 
-    run(&mut agent, 1, &Arc::new(Runtime::new()), &mut deck);
-
+    for frame in 1..=4 {
+        let mut deck = OutputDeck::new();
+        run(&mut agent, frame, &runtime, &mut deck);
+        assert_ne!(
+            deck.get::<Recorded>().map(|recorded| recorded.lane),
+            Some("dear"),
+            "frame {frame}: a failure on the LowPower row moved the agent up"
+        );
+        assert_eq!(
+            installed_row(&agent),
+            Some(StrategyId::LowPower),
+            "frame {frame}"
+        );
+    }
     assert_ne!(
         agent.report_status().current_strategy,
         StrategyId::HighPerformance,

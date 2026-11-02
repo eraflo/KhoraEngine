@@ -554,6 +554,7 @@ fn the_journal_records_each_epochs_inputs() {
         over_budget: false,
         stalled: false,
         workload: Some(10.0),
+        switch: None,
     };
     tx.send(TelemetryEvent::AgentReport(report.clone()))
         .expect("the DCC listens");
