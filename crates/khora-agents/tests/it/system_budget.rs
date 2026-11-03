@@ -13,9 +13,10 @@
 // limitations under the License.
 
 //! **GORNA prices the rows a system sweeps** (Ergon spec 10): one system is
-//! one instance whatever its queries match, so the script agent's estimate
-//! counts the rows the systems' queries took last frame — ten thousand rows
-//! are not the cost of one behavior.
+//! one instance whatever its queries match, so the script agent's full row
+//! counts the rows the systems' queries took last frame on top of the lane's
+//! overhead and the measured demand — ten thousand rows are not the cost of
+//! one behavior.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -47,9 +48,11 @@ const CENSUS: Project = &[
     ),
 ];
 
-/// The Balanced estimate the script agent offers once a session over
-/// `rows` entities holding `Health` has played two frames.
-fn balanced_estimate(rows: i64) -> Duration {
+/// What the Balanced estimate the script agent offers, once a session over
+/// `rows` entities holding `Health` has played two frames, prices on top of
+/// the lane's measured overhead and the measured demand at the measured rate:
+/// the rows the system swept.
+fn rows_priced(rows: i64) -> Duration {
     let mut session = SystemSession::new(World::new(), CENSUS);
     for current in 0..rows {
         let entity = session.world.spawn(Transform::identity());
@@ -86,28 +89,33 @@ fn balanced_estimate(rows: i64) -> Duration {
         );
         agent.on_initialize(&mut ctx);
     }
+    let target = Duration::from_millis(16);
     let response = agent.negotiate(NegotiationRequest {
-        target_latency: Duration::from_millis(16),
+        target_latency: target,
         priority_weight: 1.0,
         constraints: ResourceConstraints::default(),
         current_mode: EngineMode::Playing,
         agent_timing: ExecutionTiming::default(),
     });
-    response
+    let balanced = response
         .strategies
         .iter()
         .find(|option| option.id == StrategyId::Balanced)
         .map(|option| option.estimated_time)
-        .expect("a Balanced offer")
+        .expect("a Balanced offer");
+    let scripts = shared.lock().expect("the scripting world's lock is free");
+    let demand = scripts.demand(target.as_secs_f32()).all;
+    let work = Duration::from_secs_f64(demand as f64 / scripts.rate() / 1_000.0);
+    balanced.saturating_sub(scripts.overhead() + work)
 }
 
 /// **The estimate grows with the rows swept**: the same one system over a
-/// hundred times the rows is priced higher — and it ran as one instance in
-/// both.
+/// hundred times the rows is priced higher past its overhead and its
+/// measured turn — and it ran as one instance in both.
 #[test]
 fn the_script_agents_estimate_grows_with_the_rows_its_systems_swept() {
-    let few = balanced_estimate(4);
-    let many = balanced_estimate(400);
+    let few = rows_priced(4);
+    let many = rows_priced(400);
 
     assert!(
         many > few,

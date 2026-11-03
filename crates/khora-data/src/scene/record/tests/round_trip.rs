@@ -167,6 +167,7 @@ fn busy_snapshot(target: EntityId) -> ScriptSnapshot {
         }),
         lifecycle: khora_core::script::InstanceLifecycle {
             owed: 0.0,
+            update_owed: 0.0,
             fixed_owed: Vec::new(),
             resume_failed: Vec::new(),
             spawned: true,

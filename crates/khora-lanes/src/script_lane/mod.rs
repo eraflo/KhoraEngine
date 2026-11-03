@@ -45,6 +45,7 @@ mod carry;
 mod departure;
 mod fixed_step;
 mod frame;
+mod fuel;
 mod hooks;
 mod mail;
 pub mod persistence;
@@ -64,7 +65,7 @@ mod tests;
 
 pub use frame::run_behaviors;
 pub use report::{Resumed, ScriptRunReport, Slow};
-pub use runtime::{Body, Instance, Pending, ReloadReport, ScriptRuntime};
+pub use runtime::{Body, Demand, Instance, Pending, ReloadReport, ScriptRuntime};
 pub use watchdog::{WATCHDOG_FAULT, WATCHDOG_WARN};
 
 use std::any::Any;
@@ -228,7 +229,7 @@ impl Lane for BudgetedScriptLane {
             .extend(report.state.iter().cloned());
 
         if let Some(elapsed) = clock.elapsed() {
-            runtime.observe_rate(report.spent, elapsed);
+            runtime.observe(report.spent, report.turns_time, elapsed);
         }
 
         // Said once per transition, not once per frame: an entity naming an

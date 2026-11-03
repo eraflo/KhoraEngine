@@ -13,12 +13,12 @@
 // limitations under the License.
 
 //! **GORNA hears the scheduling attributes** through the script agent: its
-//! estimate weighs a rate-limited instance by the share of frames it runs
-//! (`min(1, rate × frame delta)` of an instance); its cheapest strategy is
-//! never priced below what the critical behaviors spent last frame; its
-//! status names the critical instances a frame deferred; and a frame a
-//! rate-limited instance skips is not a deferral, so it does not lower the
-//! agent's health.
+//! full row weighs a rate-limited instance by the share of frames it runs
+//! (`min(1, rate × frame delta)` of an instance); its floor is priced at
+//! the lane's overhead and what the critical behaviors need, and nothing
+//! more when none is critical; its status names the critical instances a
+//! frame deferred; and a frame a rate-limited instance skips is not a
+//! deferral, so it does not lower the agent's health.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -117,32 +117,39 @@ fn status(session: &mut Session) -> AgentStatus {
     with_agent(session, |agent| agent.report_status())
 }
 
-/// The Balanced estimate for sixty `Tick`s of `project` after three frames.
-fn balanced_for_sixty(project: Project) -> Duration {
+/// The work the Balanced row prices for sixty `Tick`s of `project` after
+/// three frames: its time past the lane's measured overhead, in the fuel
+/// that time buys at the measured rate — what the sessions' own timings
+/// cannot tell apart.
+fn balanced_work_for_sixty(project: Project) -> f64 {
     let mut session = session_of(project, "Tick", 60);
     for _ in 0..3 {
         session.frame(FRAME);
     }
-    estimate(&mut session, StrategyId::Balanced)
+    let balanced = estimate(&mut session, StrategyId::Balanced);
+    let past = balanced.saturating_sub(session.scripts.overhead());
+    past.as_secs_f64() * 1_000.0 * session.scripts.rate()
 }
 
 /// **A rate-limited instance is priced as the share of frames it runs.**
 /// Sixty `Tick`s at 10 Hz in 1/60-s frames run a sixth of the frames each:
-/// priced at most a third of sixty unrated ones. At 120 Hz — more than once
-/// a frame — an instance counts as one, and the price is the unrated one.
+/// the work the full row prices is at most a third of sixty unrated ones'.
+/// At 120 Hz — more than once a frame — an instance counts as one, and the
+/// work is the unrated one.
 #[test]
 fn a_rate_limited_instance_is_priced_as_the_share_of_frames_it_runs() {
-    let unrated = balanced_for_sixty(UNRATED);
-    let ten_hertz = balanced_for_sixty(TEN_HERTZ);
-    let fast = balanced_for_sixty(HUNDRED_TWENTY_HERTZ);
+    let unrated = balanced_work_for_sixty(UNRATED);
+    let ten_hertz = balanced_work_for_sixty(TEN_HERTZ);
+    let fast = balanced_work_for_sixty(HUNDRED_TWENTY_HERTZ);
+    assert!(unrated > 0.0, "set-up: sixty turns are priced at some work");
 
     assert!(
-        ten_hertz * 3 <= unrated,
-        "sixty at 10 Hz in 1/60-s frames are about ten instances' work: {ten_hertz:?} vs {unrated:?} unrated"
+        ten_hertz * 3.0 <= unrated,
+        "sixty at 10 Hz in 1/60-s frames are about ten instances' work: {ten_hertz} vs {unrated} unrated"
     );
-    assert_eq!(
-        fast, unrated,
-        "a rate above the frame rate counts each instance once"
+    assert!(
+        (fast - unrated).abs() <= unrated * 0.01 + 1.0,
+        "a rate above the frame rate counts each instance once: {fast} vs {unrated}"
     );
 }
 
@@ -161,10 +168,10 @@ const PLAIN_HEAVY: Project = &[(
      void Update(float dt) { int n = 0; while (n < 300) { n += 1; } ticks += 1; } }",
 )];
 
-/// Four `Heavy`s of `project` after three frames with plenty of fuel, the
-/// LowPower estimate, and what the frame's spending costs at the measured
-/// rate.
-fn low_power_and_last_cost(project: Project) -> (Duration, Duration) {
+/// Four `Heavy`s of `project` after three frames with plenty of fuel: the
+/// LowPower estimate, the lane's measured overhead, and what the frame's
+/// spending costs at the measured rate.
+fn low_power_and_last_cost(project: Project) -> (Duration, Duration, Duration) {
     let mut session = session_of(project, "Heavy", 4);
     for _ in 0..3 {
         session.frame(FRAME);
@@ -172,26 +179,32 @@ fn low_power_and_last_cost(project: Project) -> (Duration, Duration) {
     let spent = session.scripts.last_report().spent;
     let rate = session.scripts.rate();
     let cost = Duration::from_secs_f64(spent as f64 / rate / 1_000.0);
-    (estimate(&mut session, StrategyId::LowPower), cost)
+    let overhead = session.scripts.overhead();
+    (estimate(&mut session, StrategyId::LowPower), overhead, cost)
 }
 
-/// **The cheapest strategy covers what the critical behaviors spent.** Four
-/// `[Critical]` `Heavy`s spend a few thousand instructions a frame; LowPower,
-/// a quarter of an estimate that prices each instance at two microseconds, is
-/// floored at that spending, converted at the measured rate. The same four
-/// without `[Critical]` are not floored.
+/// **The cheapest strategy covers what the critical behaviors need.** Four
+/// `[Critical]` `Heavy`s spend a few thousand instructions a frame; LowPower
+/// is the lane's overhead and that demand, converted at the measured rate.
+/// The same four without `[Critical]` are not floored at their spending:
+/// their LowPower is the overhead alone.
 #[test]
 fn low_power_is_floored_at_what_the_critical_behaviors_spent() {
-    let (critical_low, critical_cost) = low_power_and_last_cost(CRITICAL_HEAVY);
-    let (plain_low, plain_cost) = low_power_and_last_cost(PLAIN_HEAVY);
+    let (critical_low, critical_overhead, critical_cost) = low_power_and_last_cost(CRITICAL_HEAVY);
+    let (plain_low, plain_overhead, plain_cost) = low_power_and_last_cost(PLAIN_HEAVY);
 
     assert!(
-        critical_low.as_secs_f64() >= critical_cost.as_secs_f64() * 0.99,
-        "LowPower {critical_low:?} covers the critical behaviors' {critical_cost:?}"
+        critical_low.as_secs_f64()
+            >= critical_overhead.as_secs_f64() + critical_cost.as_secs_f64() * 0.99,
+        "LowPower {critical_low:?} covers the overhead {critical_overhead:?} and the critical behaviors' {critical_cost:?}"
     );
     assert!(
-        plain_low < plain_cost,
-        "set-up: unfloored, LowPower {plain_low:?} is below what the frame spent ({plain_cost:?})"
+        plain_low < plain_overhead + plain_cost,
+        "unfloored, LowPower {plain_low:?} is below the overhead {plain_overhead:?} and what the frame spent ({plain_cost:?})"
+    );
+    assert!(
+        plain_low.abs_diff(plain_overhead) <= Duration::from_micros(1),
+        "with nothing critical, LowPower {plain_low:?} is the overhead {plain_overhead:?}"
     );
 }
 

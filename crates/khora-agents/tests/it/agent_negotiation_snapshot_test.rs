@@ -178,17 +178,16 @@ fn audio_agent_offers_three_tiers_from_low_power_up() {
     );
 }
 
+/// The script agent, before any frame: two rows, cheapest first — the floor
+/// its critical behaviors need, `LowPower`, and its full demand, `Balanced`
+/// — and no VRAM.
 #[test]
 fn script_agent_offers_three_tiers_from_low_power_up() {
     assert_eq!(
         offer(ScriptAgent::default()),
         (
             AgentId::new("script"),
-            vec![
-                (StrategyId::LowPower, 0),
-                (StrategyId::Balanced, 0),
-                (StrategyId::HighPerformance, 0),
-            ]
+            vec![(StrategyId::LowPower, 0), (StrategyId::Balanced, 0)]
         )
     );
 }

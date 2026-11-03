@@ -123,6 +123,12 @@ pub struct Instance {
     /// reach, is not lost time.
     pub owed: f32,
 
+    /// Game seconds its `Update` is owed past `owed`: time an earlier turn
+    /// counted down its countdowns with but stopped — cut by the fuel, busy
+    /// waiting, or its events deferred — before its `Update` ran. Its next
+    /// `Update` is handed them.
+    pub update_owed: f32,
+
     /// The fixed steps its `FixedUpdate` has not been called for yet, each
     /// the step it was taken at, oldest first, at most the engine's step cap:
     /// they run first, on its next turn.
@@ -132,6 +138,15 @@ pub struct Instance {
     /// started, the first time it is seen, at a phase its entity decides, so
     /// that its instances spread over the period.
     pub until: Option<f32>,
+
+    /// The fuel its last whole turn took, from the turn's start to where it
+    /// finished — the pieces of a turn cut across frames summed: what its
+    /// next turn is priced at. `None` before its first whole turn.
+    pub full_turn: Option<u64>,
+
+    /// The fuel the turn part-way through has spent so far, across the
+    /// frames it was cut over.
+    pub piece_spent: u64,
 
     /// The events it was sent with a payload its handler could not take —
     /// dropped, not run — by event, the last such delivery's reason: what a
@@ -184,6 +199,15 @@ pub enum Body {
         /// The timer slot's value once the body finishes.
         rearm: Value,
     },
+}
+
+/// The fuel a frame's due instances need.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Demand {
+    /// Every due instance's.
+    pub all: u64,
+    /// The `[Critical]` behaviors' instances' alone.
+    pub critical: u64,
 }
 
 /// What a reload did to one behavior's instances.
@@ -260,7 +284,10 @@ pub struct ScriptRuntime {
     /// it to turn a time budget into fuel. It lives here because only the lane
     /// knows how many instructions were spent, and an agent that measured its
     /// own execution would be doing the lane's job.
-    rate: f64,
+    pub(super) rate: f64,
+    /// Measured time a lane run costs besides its turns — the frame's
+    /// bookkeeping, which no fuel buys. `None` before the first run.
+    pub(super) overhead: Option<std::time::Duration>,
     /// The frame memory, lent to each frame's host and given back after.
     ///
     /// One for the scripting world's whole life, so its generation only ever
@@ -283,12 +310,16 @@ pub struct ScriptRuntime {
 /// slow machine is exactly where the budget needed to hold.
 pub const INITIAL_RATE: f64 = 50_000.0;
 
+/// What a turn is priced at before one has run whole: a guess, corrected by
+/// the first turn that completes.
+pub const UNKNOWN_TURN: std::time::Duration = std::time::Duration::from_micros(2);
+
 /// How much of the measured rate one frame's observation may move it.
 ///
 /// Smoothed rather than replaced, because one frame is a noisy sample: a
 /// scheduler hiccup would otherwise halve the budget for the frame after it,
 /// producing a stutter out of a measurement artefact.
-const RATE_BLEND: f64 = 0.1;
+pub(super) const RATE_BLEND: f64 = 0.1;
 
 impl Default for ScriptRuntime {
     fn default() -> Self {
@@ -300,6 +331,7 @@ impl Default for ScriptRuntime {
             last_report: ScriptRunReport::default(),
             last_unloaded: 0,
             rate: INITIAL_RATE,
+            overhead: None,
             arena: Arena::new(),
             deferred: Vec::new(),
             attached: Default::default(),
@@ -390,20 +422,6 @@ impl ScriptRuntime {
     /// Measured instructions per millisecond, for turning a budget into fuel.
     pub fn rate(&self) -> f64 {
         self.rate
-    }
-
-    /// Corrects the measured rate from what a run actually cost.
-    pub fn observe_rate(&mut self, spent: u64, elapsed: std::time::Duration) {
-        let millis = elapsed.as_secs_f64() * 1_000.0;
-        // A run too short to time says nothing: the clock's own resolution
-        // would dominate, and a rate read from noise is worse than the last one
-        // that was measured properly.
-        if spent == 0 || millis <= f64::EPSILON {
-            return;
-        }
-
-        let observed = spent as f64 / millis;
-        self.rate = self.rate * (1.0 - RATE_BLEND) + observed * RATE_BLEND;
     }
 
     /// Registers a compiled module under the path it came from.

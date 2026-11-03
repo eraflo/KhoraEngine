@@ -372,6 +372,7 @@ fn a_save_taken_while_on_resume_failed_waits_answers_each_member_once() {
             fault: None,
             resume_failed: vec!["Wander".to_owned(), "Spotted".to_owned()],
             owed: 0.0,
+            update_owed: 0.0,
             fixed_owed: Vec::new(),
         },
         ..ScriptSnapshot::default()

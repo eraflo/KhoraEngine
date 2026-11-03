@@ -27,7 +27,9 @@
 //! picks the body up before anything new starts.
 
 use khora_core::script::EventQueue;
-use khora_script::dispatch::{deliver, finish_timer, tick_timers, NotDelivered};
+use khora_script::dispatch::{
+    count_down, count_rearm, deliver, finish_timer, rearm_after_fault, tick_timers, NotDelivered,
+};
 use khora_script::lifecycle;
 use khora_script::native::Host;
 use khora_script::vm::{Machine, Program, Run, StrRef, Suspension, Value};
@@ -104,9 +106,12 @@ pub(super) struct Invocation<'a> {
     pub(super) events: &'a EventQueue,
     pub(super) fuel: u64,
     /// The seconds since the instance's last turn — the frame's, or more
-    /// when a rate or the fuel kept it out of some: what its countdowns,
-    /// waits and `Update` are given.
+    /// when a rate or the fuel kept it out of some: what its countdowns and
+    /// waits count down, before anything runs.
     pub(super) delta: f32,
+    /// What its `Update` is given: `delta`, and whatever earlier turns that
+    /// stopped before their `Update` left owed to it.
+    pub(super) update_delta: f32,
     /// The seconds since the previous frame: what the watchdog counts a body
     /// as running, whatever it was owed.
     pub(super) frame_delta: f32,
@@ -138,6 +143,10 @@ pub(super) struct Progress {
     /// each the step it was taken at: what it hands back, owed to the next
     /// turn.
     pub(super) fixed_left: Vec<f32>,
+    /// The time its `Update` is owed and has not been handed this turn —
+    /// `Invocation::update_delta` until `Update` is called: what it keeps,
+    /// owed to the next turn, when the turn stops before it.
+    pub(super) update_left: f32,
 }
 
 /// `OnLoad` has finished: the body the load restored is the one owed next.
@@ -174,11 +183,10 @@ fn advance(
         program,
         behavior,
         fuel,
-        delta,
         frame_delta,
         ..
     } = *call;
-    pending.remaining -= delta;
+    // Counted down at the start of the turn, with every countdown.
     if pending.remaining > 0.0 {
         // Still waiting. Nothing else runs either: the behavior is busy — so
         // nothing addressed to it this frame was delivered, and the frame
@@ -282,7 +290,10 @@ fn release(
     host: &mut Host,
 ) {
     match pending.body {
-        Body::Timer { index, rearm } => finish_timer(program, behavior, host, index, rearm),
+        Body::Timer { index, rearm } => {
+            let rearm = rearm_after_fault(program, behavior, index, rearm);
+            finish_timer(program, behavior, host, index, rearm);
+        }
         body => finish_hook(progress, &body),
     }
 }
@@ -295,10 +306,36 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
         events,
         fuel,
         delta,
+        update_delta,
         frame_delta,
     } = call;
     let call = &call;
     let mut spent = 0;
+
+    // The time first, before any code: every countdown — the waits of the
+    // bodies part-way, the timers — counts the turn's seconds here, where no
+    // fuel cut can come before it. What runs after only fires what is due.
+    if delta > 0.0 {
+        let mut held = Vec::new();
+        for waiting in [progress.pending.as_mut(), progress.after_load.as_mut()]
+            .into_iter()
+            .flatten()
+        {
+            // A timer whose body is part-way counts on the body's rearm —
+            // unless the body is still waiting on its `await` after this
+            // turn: an `every`'s interval runs from the end of its body, and
+            // the body's own wait is not a cut.
+            let awaiting = waiting.remaining > delta;
+            if let Body::Timer { index, rearm } = &mut waiting.body {
+                held.push(*index);
+                if !awaiting {
+                    count_rearm(rearm, delta);
+                }
+            }
+            waiting.remaining -= delta;
+        }
+        count_down(program, behavior, host, delta, &held);
+    }
 
     // A load announces itself first: `OnLoad` runs once the restored state is
     // in place, before anything else — `OnSpawn`, the body the save restored,
@@ -454,9 +491,10 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
     // Before the events, so a `become` a timer performs decides which state
     // hears what arrives this frame — the schedule is what the behavior does on
     // its own, and an event is what happens to it.
-    if delta > 0.0 {
+    {
         let left = fuel.saturating_sub(spent);
-        let ticked = tick_timers(program, behavior, host, delta, left);
+        // Counted down already: only what is due runs.
+        let ticked = tick_timers(program, behavior, host, 0.0, left);
         spent += ticked.spent;
         if let Some(fault) = ticked.fault {
             return Outcome::faulted(spent, fault);
@@ -560,11 +598,14 @@ pub(super) fn run_one(call: Invocation<'_>, progress: &mut Progress, host: &mut 
         // costs the frame nothing to put back.
         return Outcome::Deferred { spent, delivered };
     }
+    // Handed its time whatever the call does: a suspended `Update` keeps the
+    // `dt` it was called with.
+    progress.update_left = 0.0;
     match call_hook(
         program,
         behavior,
         &lifecycle::UPDATE,
-        &[Value::Float(delta)],
+        &[Value::Float(update_delta)],
         host,
         left,
     ) {

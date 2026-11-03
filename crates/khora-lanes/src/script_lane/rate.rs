@@ -109,10 +109,11 @@ pub(super) fn due(
     }
 }
 
-/// A turn is about to run: it is handed what the instance is owed — its time
-/// and its fixed steps — which is then nothing; a rate-limited instance's
-/// next turn is due a period on.
-pub(super) fn take_turn(held: &mut Instance, schedule: Schedule) -> (f32, Vec<f32>) {
+/// A turn is about to run: it is handed what the instance is owed — its time,
+/// its `Update`'s time (the same, and what earlier turns that stopped before
+/// their `Update` left it) and its fixed steps — which is then nothing; a
+/// rate-limited instance's next turn is due a period on.
+pub(super) fn take_turn(held: &mut Instance, schedule: Schedule) -> (f32, f32, Vec<f32>) {
     if let (Some(period), Some(until)) = (period(schedule), held.until.as_mut()) {
         if *until <= DUE_SLACK {
             // The whole periods it is behind, at once: a rate far above the
@@ -126,10 +127,9 @@ pub(super) fn take_turn(held: &mut Instance, schedule: Schedule) -> (f32, Vec<f3
             };
         }
     }
-    (
-        std::mem::take(&mut held.owed),
-        std::mem::take(&mut held.fixed_owed),
-    )
+    let delta = std::mem::take(&mut held.owed);
+    let update = delta + std::mem::take(&mut held.update_owed);
+    (delta, update, std::mem::take(&mut held.fixed_owed))
 }
 
 /// Whether a frame that did not run `instance` changed what it is owed in a
@@ -141,10 +141,13 @@ pub(super) fn note_sat_out(
     program: &ScriptProgram,
     steps: u32,
 ) {
-    if steps > 0 && declares_fixed_update(runtime, program) {
-        runtime
-            .instance(instance.entity, &program.behavior)
-            .rewritten = true;
+    let owes_steps = steps > 0 && declares_fixed_update(runtime, program);
+    let held = runtime.instance(instance.entity, &program.behavior);
+    // The time it sat out is owed to its next turn: its record says so, as a
+    // frame its rate skips does, or a save taken now would hand the load none
+    // of it.
+    if owes_steps || (!held.disabled && held.owed > 0.0) {
+        held.rewritten = true;
     }
 }
 

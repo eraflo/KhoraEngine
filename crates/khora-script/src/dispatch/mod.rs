@@ -229,6 +229,39 @@ pub fn resolve_member(
     program.index_of(&plain).is_some().then_some(plain)
 }
 
+/// Counts the behavior's live countdowns down by `delta`, running nothing.
+///
+/// Apart from [`tick_timers`] so that a turn can count its time before it
+/// runs any code: counting costs no fuel, so no cut can come before it, and
+/// a turn the fuel stops early has still given its countdowns every second.
+/// [`tick_timers`] then runs, with no time of its own, whichever came due.
+///
+/// `held` names the timers whose body is part-way: their slot is rewritten
+/// when the body finishes, so their time is counted on the body's rearm
+/// instead (see [`count_rearm`]).
+pub fn count_down(program: &Program, behavior: &str, host: &mut Host, delta: f32, held: &[usize]) {
+    let Some(layout) = program.layout(behavior) else {
+        return;
+    };
+    let live_state = match host.fields.get(layout.state_slot()) {
+        Some(Persisted::Scalar(Value::Int(index))) => usize::try_from(*index).ok(),
+        _ => None,
+    };
+    for (index, timer) in layout.timers.iter().enumerate() {
+        // A state's schedule counts only while the behavior is in it, as in
+        // `tick_timers`.
+        if (timer.state.is_some() && timer.state != live_state) || held.contains(&index) {
+            continue;
+        }
+        let slot = layout.timer_slot(index);
+        if let Some(Persisted::Scalar(Value::Float(remaining))) = host.fields.get(slot) {
+            let remaining = *remaining - delta;
+            host.fields
+                .set(slot, Persisted::Scalar(Value::Float(remaining)));
+        }
+    }
+}
+
 /// Advances the behavior's countdowns and runs whichever came due.
 ///
 /// Called once per frame with the time that passed. A countdown rather than a
@@ -372,7 +405,9 @@ pub struct SuspendedTimer {
 
 /// Rearms timer `index` of `behavior` once its body, resumed after a cut, has
 /// finished — what [`tick_timers`] does at once for a body that finishes in
-/// one go.
+/// one go. `rearm` has gone on counting while the body was cut
+/// ([`count_rearm`]), so an `every` fires next where it would have had the
+/// body never been cut.
 pub fn finish_timer(
     program: &Program,
     behavior: &str,
@@ -383,6 +418,28 @@ pub fn finish_timer(
     if let Some(layout) = program.layout(behavior) {
         host.fields
             .set(layout.timer_slot(index), Persisted::Scalar(rearm));
+    }
+}
+
+/// Counts `delta` on the rearm of a timer whose body is part-way: a fuel cut
+/// changes when the body runs, never the schedule it keeps. An `after`
+/// rearms to `Null` and counts nothing.
+pub fn count_rearm(rearm: &mut Value, delta: f32) {
+    if let Value::Float(seconds) = rearm {
+        *seconds -= delta;
+    }
+}
+
+/// What timer `index` of `behavior` waits once a body part-way through is
+/// stopped by a fault: its whole interval again for an `every`, whatever the
+/// cut had counted; `rearm` for an `after`.
+pub fn rearm_after_fault(program: &Program, behavior: &str, index: usize, rearm: Value) -> Value {
+    match program
+        .layout(behavior)
+        .and_then(|layout| layout.timers.get(index))
+    {
+        Some(timer) if matches!(timer.kind, TimerKind::Every) => Value::Float(timer.seconds),
+        _ => rearm,
     }
 }
 

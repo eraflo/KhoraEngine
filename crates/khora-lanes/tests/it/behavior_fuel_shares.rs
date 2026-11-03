@@ -99,7 +99,9 @@ fn ran(report: &ScriptRunReport, behavior: &str) -> Vec<u32> {
     report
         .state
         .iter()
-        .filter(|update| update.behavior == behavior)
+        // Work changes a field; a frame it sat out still writes its record,
+        // owing the time it waited, but changes none.
+        .filter(|update| update.behavior == behavior && !update.changed.is_empty())
         .map(|update| update.entity.index)
         .collect()
 }
@@ -507,7 +509,8 @@ fn a_rotation_whose_cursor_was_recycled_starts_at_the_newer_generation() {
     let mut ran: Vec<_> = report
         .state
         .iter()
-        .filter(|update| update.behavior == "Tick")
+        // Work changes a field; a frame sat out writes its record unchanged.
+        .filter(|update| update.behavior == "Tick" && !update.changed.is_empty())
         .map(|update| (update.entity.index, update.entity.generation))
         .collect();
     ran.sort_unstable();

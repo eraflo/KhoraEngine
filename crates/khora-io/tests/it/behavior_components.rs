@@ -35,7 +35,7 @@ const GUARD: &str = "behavior Guard {
 }";
 
 /// The state companion's fields, in order — the same for every behavior.
-const COMPANION_FIELDS: [&str; 9] = [
+const COMPANION_FIELDS: [&str; 10] = [
     "state",
     "state_fields",
     "timers",
@@ -44,6 +44,7 @@ const COMPANION_FIELDS: [&str; 9] = [
     "fault",
     "resume_failed",
     "owed",
+    "update_owed",
     "fixed_owed",
 ];
 

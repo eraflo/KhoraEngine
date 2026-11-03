@@ -72,6 +72,7 @@ pub(super) fn arrive(
     }
     // What it was owed when the save was taken.
     state.owed += arriving.lifecycle.owed;
+    state.update_owed += arriving.lifecycle.update_owed;
     // The steps the save owed first, then the ones taken since.
     let mut owed = arriving.lifecycle.fixed_owed.clone();
     owed.append(&mut state.fixed_owed);

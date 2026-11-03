@@ -19,7 +19,10 @@
 
 use khora_core::ecs::entity::EntityId;
 
-use super::watchdog_stage::{entity, Stage, SLICE};
+use khora_script::arena::Persisted;
+use khora_script::vm::Value;
+
+use super::watchdog_stage::{build, entity, Stage, MODULE, SLICE};
 
 /// An `Update` that never finishes, each turn overdrawing its slice: a call
 /// of `WatchdogWall` costs more than [`SLICE`].
@@ -82,4 +85,61 @@ fn frames_with_no_fuel_during_a_debt_do_not_count() {
         stage.instance(subject, "Wall").fault
     );
     assert_eq!(stage.warnings(subject, "Wall"), 0, "{:?}", stage.slow);
+}
+
+/// An `Update` that sums the `dt` it is handed, then never finishes, each
+/// turn overdrawing its slice.
+const LIVING_WALL: &str = "behavior Wall {
+                        float lived = 0.0;
+                        int n = 0;
+                        void Update(float dt) { lived += dt; while (true) { WatchdogWall(); n += 1; } }
+                    }";
+
+/// The same, its loop fixed: an edit answering the fault.
+const LIVING_WALL_FIXED: &str = "behavior Wall {
+                        float lived = 0.0;
+                        int n = 0;
+                        void Update(float dt) { lived += dt; }
+                    }";
+
+/// `Wall`'s `lived` on `subject`.
+fn lived(stage: &Stage, subject: EntityId) -> f32 {
+    let slot = stage
+        .runtime
+        .program(MODULE)
+        .and_then(|program| program.layout("Wall")?.slot_of("lived"))
+        .expect("`Wall` has a field `lived`");
+    match stage.instance(subject, "Wall").fields.get(slot) {
+        Some(Persisted::Scalar(Value::Float(lived))) => *lived,
+        other => panic!("`lived` is a float: {other:?}"),
+    }
+}
+
+/// **A body the watchdog stops while its behavior sits out a debt leaves its
+/// `Update` owed nothing.** A spinner overdraws its slice in half-second
+/// frames until the watchdog faults it — on a frame it sits out repaying,
+/// not on one of its turns. The edit that fixes it runs its `Update` again,
+/// handed at most the frame it runs in — never the minute its stuck body
+/// held `Update` off, as a fault on one of its turns already guarantees.
+#[test]
+fn a_fault_during_a_debt_leaves_the_update_owed_nothing() {
+    let subject = entity(0);
+    let mut stage = Stage::new(LIVING_WALL, &[(subject, "Wall")]);
+    stage
+        .frames_until_disabled(subject, "Wall", 0.5, SLICE, 400)
+        .expect("the spinner faults in time");
+    let before = lived(&stage, subject);
+    assert_eq!(
+        before, 0.5,
+        "set-up: the one `Update` called was handed its frame"
+    );
+
+    stage.runtime.reload(MODULE, build(LIVING_WALL_FIXED));
+    stage.frame(0.5, 1_000_000);
+    let after = lived(&stage, subject);
+    assert!(
+        after - before <= 0.5,
+        "the edit's `Update` was handed {} s: what its faulted body held off came back",
+        after - before
+    );
 }

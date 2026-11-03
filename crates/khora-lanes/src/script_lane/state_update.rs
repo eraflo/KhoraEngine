@@ -61,6 +61,7 @@ pub(super) fn update_of(
         spawned: held.spawned && !spawning_in_front,
         fault: held.fault.clone(),
         owed: held.owed,
+        update_owed: held.update_owed,
         fixed_owed: held.fixed_owed.clone(),
     };
     let changed = snapshot

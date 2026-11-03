@@ -164,6 +164,7 @@ fn declare_guard(world: &mut World) -> (ComponentKey, ComponentKey) {
                 ScriptValue::Array(Vec::new()),
             ),
             field("owed", FieldKind::Float, ScriptValue::Float(0.0)),
+            field("update_owed", FieldKind::Float, ScriptValue::Float(0.0)),
             field(
                 "fixed_owed",
                 FieldKind::Value,

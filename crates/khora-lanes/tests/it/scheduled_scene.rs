@@ -118,7 +118,9 @@ pub fn ran(report: &ScriptRunReport, behavior: &str) -> Vec<u32> {
     let mut ran: Vec<u32> = report
         .state
         .iter()
-        .filter(|update| update.behavior == behavior)
+        // Work changes a field; a frame it sat out still writes its record,
+        // owing the time it waited, but changes none.
+        .filter(|update| update.behavior == behavior && !update.changed.is_empty())
         .map(|update| update.entity.index)
         .collect();
     ran.sort_unstable();

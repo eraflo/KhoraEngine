@@ -377,7 +377,7 @@ pub fn run_behaviors(
                 .layout(&program.behavior)
                 .map(|layout| layout.schedule)
                 .unwrap_or_default();
-            let (delta, fixed_steps) = super::rate::take_turn(state, schedule);
+            let (delta, update_delta, fixed_steps) = super::rate::take_turn(state, schedule);
             let mut progress = Progress {
                 spawned: state.spawned,
                 pending: state.pending.take(),
@@ -387,6 +387,7 @@ pub fn run_behaviors(
                 slow: None,
                 dropped: Vec::new(),
                 fixed_left: fixed_steps,
+                update_left: update_delta,
             };
 
             // Brought back by a load as the save had it, it owes nothing: what
@@ -403,6 +404,9 @@ pub fn run_behaviors(
             let turn = TurnStart::mark(host);
 
             let slice = remaining.min(FUEL_PER_BEHAVIOR);
+            // Timed apart from the frame's bookkeeping: the rate the budget
+            // is converted at is the VM's, not the lane's.
+            let ran = std::time::Instant::now();
             let outcome = run_one(
                 Invocation {
                     program: &compiled,
@@ -411,6 +415,7 @@ pub fn run_behaviors(
                     events,
                     fuel: slice,
                     delta,
+                    update_delta,
                     frame_delta: view.delta_seconds,
                 },
                 &mut progress,
@@ -430,6 +435,7 @@ pub fn run_behaviors(
                 let left = slice.saturating_sub(outcome.spent());
                 say_goodbye(&compiled, &program.behavior, host, left)
             });
+            report.turns_time += ran.elapsed();
 
             // The fields go back whatever happened, so a fault does not lose the
             // state the behavior had before it.
@@ -459,11 +465,12 @@ pub fn run_behaviors(
             state.resume_failed = progress.resume_failed;
             // The steps it did not run are owed — unless it faulted: an edit
             // that runs it again owes it none from before.
-            state.fixed_owed = if matches!(outcome, Outcome::Faulted { .. }) {
-                Vec::new()
-            } else {
-                progress.fixed_left
+            // And so is the time its `Update` was not handed.
+            let (steps, time) = match outcome {
+                Outcome::Faulted { .. } => (Vec::new(), 0.0),
+                _ => (progress.fixed_left, progress.update_left),
             };
+            (state.fixed_owed, state.update_owed) = (steps, time);
             state.farewelled |= leaving;
             for (event, why) in progress.dropped {
                 log::warn!(
@@ -477,6 +484,7 @@ pub fn run_behaviors(
             let farewell_cost = farewell.unwrap_or(0);
             report.spent += farewell_cost;
             let outcome_cost = outcome.spent();
+            let end = super::fuel::TurnEnd::of(&outcome);
 
             match outcome {
                 Outcome::Completed { spent } => {
@@ -543,6 +551,12 @@ pub fn run_behaviors(
                 }
             }
 
+            super::fuel::price_turn(
+                runtime.instance(instance.entity, &program.behavior),
+                end,
+                outcome_cost,
+            );
+
             // Last, because a suspended machine is only known after the match — and
             // a save taken this frame has to record the guard mid-attack, not the
             // guard about to start one.
@@ -558,7 +572,11 @@ pub fn run_behaviors(
             // whenever it was last hurt. The same for an `await` still waiting: its
             // countdown moves for free too, and a save taken part-way through the
             // wait has to record what is left of it, not the wait as it began.
-            let ticked = delta_moved_a_countdown(&compiled, &program.behavior, view.delta_seconds);
+            let ticked = super::fuel::delta_moved_a_countdown(
+                &compiled,
+                &program.behavior,
+                view.delta_seconds,
+            );
             let waited = view.delta_seconds > 0.0
                 && runtime
                     .peek(instance.entity, &program.behavior)
@@ -637,23 +655,6 @@ pub fn run_behaviors(
     report
 }
 
-/// Whether this frame advanced any of the behavior's countdowns.
-///
-/// Its own question because a countdown is the one part of an instance that
-/// changes without the behavior running: `tick_timers` decrements what is armed
-/// whether or not anything comes due, so fuel spent is not the whole test of
-/// "did this instance change".
-pub(super) fn delta_moved_a_countdown(
-    program: &khora_script::vm::Program,
-    behavior: &str,
-    delta: f32,
-) -> bool {
-    delta > 0.0
-        && program
-            .layout(behavior)
-            .is_some_and(|layout| !layout.timers.is_empty())
-}
-
 /// Runs `OnDespawn` for every instance whose entity has left the view.
 ///
 /// The other half of the farewell: a script that despawns itself is told at the
@@ -689,7 +690,9 @@ pub(super) fn farewell_departed(
         // where it is.
         host.position = positions.get(&entity).copied();
         host.fields = std::mem::take(&mut runtime.instance(entity, &behavior).fields);
+        let ran = std::time::Instant::now();
         report.spent += say_goodbye(&program, &behavior, host, left.min(FUEL_PER_BEHAVIOR));
+        report.turns_time += ran.elapsed();
         host.fields = khora_script::arena::PersistentStore::new();
     }
 }

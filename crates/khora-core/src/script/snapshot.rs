@@ -116,6 +116,10 @@ pub struct InstanceLifecycle {
     /// or the fuel could not reach: its next turn is handed them.
     #[serde(default)]
     pub owed: f32,
+    /// Game seconds its `Update` is owed past `owed`: time a turn counted its
+    /// countdowns with but stopped before its `Update` ran.
+    #[serde(default)]
+    pub update_owed: f32,
     /// The fixed steps its `FixedUpdate` has not been called for yet, each
     /// the step it was taken at, oldest first, at most the engine's step
     /// cap: they run first, on its next turn.

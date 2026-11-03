@@ -26,7 +26,7 @@ use crate::ecs::{
 };
 
 /// The companion's fields, in order — the same for every behavior.
-const COMPANION: [&str; 9] = [
+const COMPANION: [&str; 10] = [
     "state",
     "state_fields",
     "timers",
@@ -35,6 +35,7 @@ const COMPANION: [&str; 9] = [
     "fault",
     "resume_failed",
     "owed",
+    "update_owed",
     "fixed_owed",
 ];
 
@@ -101,6 +102,7 @@ fn busy() -> ScriptSnapshot {
         }),
         lifecycle: InstanceLifecycle {
             owed: 0.0,
+            update_owed: 0.0,
             fixed_owed: Vec::new(),
             spawned: true,
             fault: Some(RecordedFault {
@@ -261,6 +263,7 @@ fn a_companion_row_is_stored_and_read_back_by_the_world() {
                     ScriptValue::Array(Vec::new()),
                 ),
                 field("owed", FieldKind::Float, ScriptValue::Float(0.0)),
+                field("update_owed", FieldKind::Float, ScriptValue::Float(0.0)),
                 field(
                     "fixed_owed",
                     FieldKind::Value,
@@ -387,5 +390,34 @@ fn a_companion_row_round_trips_the_fixed_steps_owed() {
     assert!(
         back.lifecycle.fixed_owed.is_empty(),
         "a count from an older row owes nothing"
+    );
+}
+
+/// **The time an instance's `Update` is still owed round trips through its
+/// companion**, as a `float`: a game saved while a turn had counted its
+/// countdowns but stopped before its `Update` loads owing that `Update` the
+/// same seconds. A row from before the field existed owes it nothing.
+#[test]
+fn a_companion_row_round_trips_the_time_update_is_owed() {
+    let mut snapshot = busy();
+    snapshot.lifecycle.update_owed = 0.375;
+
+    let row = companion_row(&snapshot).expect("a row");
+    assert_eq!(value_of(&row, "update_owed"), &ScriptValue::Float(0.375));
+    let back = companion_snapshot(&row).expect("reads back");
+    assert_eq!(
+        back.lifecycle.update_owed, 0.375,
+        "the seconds `Update` is owed"
+    );
+
+    let older: Vec<(String, ScriptValue)> = row
+        .iter()
+        .filter(|(name, _)| name != "update_owed")
+        .cloned()
+        .collect();
+    let back = companion_snapshot(&older).expect("an older row reads back");
+    assert_eq!(
+        back.lifecycle.update_owed, 0.0,
+        "a row without the field owes `Update` nothing"
     );
 }

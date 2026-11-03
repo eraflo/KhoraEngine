@@ -73,6 +73,9 @@ pub struct ScriptRunReport {
     pub unloaded: usize,
     /// Fuel actually spent.
     pub spent: u64,
+    /// The time the frame's turns ran: the sum of its `run_one` calls — the
+    /// VM's share of the run, the lane's own bookkeeping excluded.
+    pub turns_time: std::time::Duration,
     /// What this frame's scripts raised, for the next frame to deliver.
     ///
     /// Carried out rather than written to the deck: an event between two

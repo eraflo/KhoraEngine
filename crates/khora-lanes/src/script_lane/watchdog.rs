@@ -75,6 +75,9 @@ pub(super) fn sit_out(
             match pending.body {
                 super::runtime::Body::Timer { index, rearm } => {
                     if let Some(layout) = program.layout(behavior) {
+                        let rearm = khora_script::dispatch::rearm_after_fault(
+                            program, behavior, index, rearm,
+                        );
                         held.fields.set(
                             layout.timer_slot(index),
                             khora_script::arena::Persisted::Scalar(rearm),
@@ -173,6 +176,11 @@ pub(super) fn sat_out(
                 fingerprint: compiled.fingerprint(),
                 reason,
             });
+            // What it was owed is not the edit's to replay, as for a turn that
+            // faults.
+            held.owed = 0.0;
+            held.update_owed = 0.0;
+            held.fixed_owed.clear();
             report.faulted += 1;
         }
     }

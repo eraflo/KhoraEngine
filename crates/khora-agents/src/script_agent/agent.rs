@@ -16,6 +16,7 @@ use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use khora_core::agent::gorna::protocol::{Confidence, Offer, OfferRequest, OfferRow};
 use khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
@@ -24,11 +25,12 @@ use khora_core::agent::{
     Agent, AgentAccess, AgentImportance, Contention, ExecutionPhase, ExecutionTiming,
 };
 use khora_core::event::Channel;
+use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::{LaneContext, LaneRegistry};
 use khora_core::script::{BehaviorWriteback, CommandBuffer, ScriptEvent};
 use khora_core::EngineContext;
 use khora_data::flow::ScriptView;
-use khora_lanes::script_lane::runtime::INITIAL_RATE;
+use khora_lanes::script_lane::runtime::UNKNOWN_TURN;
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
 use khora_script::reload::ScriptReload;
 
@@ -46,8 +48,9 @@ pub struct ScriptAgent {
     current_lane: &'static str,
     /// Current GORNA strategy ID.
     current_strategy: StrategyId,
-    /// This frame's fuel, converted from the budget at the measured rate.
-    fuel: u64,
+    /// The time the budget lent: turned into fuel every frame, at the rate
+    /// and past the overhead the lane measured last.
+    lent: Duration,
     /// Shared handle to the scripting world.
     ///
     /// A handle, not the thing. [`negotiate`](Agent::negotiate),
@@ -66,7 +69,7 @@ impl Default for ScriptAgent {
             lanes,
             current_lane: "Budgeted",
             current_strategy: StrategyId::Balanced,
-            fuel: 0,
+            lent: Duration::ZERO,
             runtime: None,
         }
     }
@@ -75,6 +78,50 @@ impl Default for ScriptAgent {
 /// What one row a query takes costs, about: its check, its copies and a
 /// body of a few statements.
 const PER_ROW: Duration = Duration::from_nanos(200);
+
+/// What the script's two rows cost one frame, and what the floor is worth.
+struct Pricing {
+    /// The `[Critical]` behaviors' turns, and the run's overhead.
+    floor: Duration,
+    /// Every due turn, and the run's overhead.
+    full: Duration,
+    /// The share of the due turns the floor serves on time.
+    floor_quality: f32,
+    /// Whether every price comes from a whole turn that ran.
+    measured: bool,
+}
+
+impl Pricing {
+    /// The price with no scripting world to read: one turn, guessed.
+    fn unmeasured() -> Self {
+        Self {
+            floor: Duration::ZERO,
+            full: UNKNOWN_TURN,
+            floor_quality: 0.0,
+            measured: false,
+        }
+    }
+}
+
+/// Prices the rows from what the runs measured, for a `frame` this long: the
+/// fuel the due turns need at the measured rate, past the overhead every run
+/// pays, plus the rows the systems' queries took last frame — a system is
+/// one instance however many rows it sweeps.
+fn pricing(runtime: &ScriptRuntime, frame: Duration) -> Pricing {
+    let frame = frame.as_secs_f32();
+    let demand = runtime.demand(frame);
+    let rate = runtime.rate().max(1.0);
+    let time = |fuel: u64| Duration::from_secs_f64(fuel as f64 / rate / 1_000.0);
+    let swept = runtime.last_report().swept_rows;
+    let rows = PER_ROW * u32::try_from(swept).unwrap_or(u32::MAX);
+    let overhead = runtime.overhead();
+    Pricing {
+        floor: overhead + time(demand.critical) + rows,
+        full: overhead + time(demand.all) + rows,
+        floor_quality: runtime.critical_share(frame),
+        measured: runtime.demand_is_measured(),
+    }
+}
 
 /// Reads something off the scripting world without blocking.
 ///
@@ -102,55 +149,21 @@ impl Agent for ScriptAgent {
     }
 
     fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
-        // Priced from what the scene actually holds, not from a table: the same
-        // three strategies cost very differently with ten behaviors and with a
-        // thousand, and offering a fixed estimate would have the DCC allocate
-        // against a number that was never true.
-        let per_behavior = Duration::from_nanos(2_000);
-        // A rate-limited instance takes a turn in only some frames: priced as
-        // that share of the frame negotiated for.
-        let frame = request.target_latency.as_secs_f32();
-        let live = peek(
+        let price = peek(
             &self.runtime,
-            |runtime| runtime.weighted_instances(frame),
-            0.0,
-        )
-        .max(1.0);
-        // A system is one instance however many rows it sweeps: the rows the
-        // last frame's queries took are priced on top.
-        let swept = peek(&self.runtime, |runtime| runtime.last_report().swept_rows, 0);
-        let rows = PER_ROW * u32::try_from(swept).unwrap_or(u32::MAX);
-        let work = per_behavior.mul_f32(live) + rows;
-        // The cheapest strategy still covers what the critical behaviors
-        // spent last frame: they are served first.
-        let critical = peek(
-            &self.runtime,
-            |runtime| {
-                let spent = runtime.last_report().critical_spent as f64;
-                Duration::from_secs_f64(spent / runtime.rate().max(1.0) / 1_000.0)
-            },
-            Duration::ZERO,
+            |runtime| pricing(runtime, request.target_latency),
+            Pricing::unmeasured(),
         );
-
         NegotiationResponse {
             strategies: vec![
-                // Only what the scene cannot do without: enough for the
-                // behaviors that were reached, and the rest wait a frame.
                 StrategyOption {
                     id: StrategyId::LowPower,
-                    estimated_time: (work / 4).max(critical),
+                    estimated_time: price.floor,
                     estimated_vram: 0,
                 },
                 StrategyOption {
                     id: StrategyId::Balanced,
-                    estimated_time: work,
-                    estimated_vram: 0,
-                },
-                // Room for every behavior plus the events they raise for each
-                // other, which is where a frame's script work actually peaks.
-                StrategyOption {
-                    id: StrategyId::HighPerformance,
-                    estimated_time: work * 2,
+                    estimated_time: price.full,
                     estimated_vram: 0,
                 },
             ],
@@ -158,22 +171,57 @@ impl Agent for ScriptAgent {
         }
     }
 
+    /// Two rows, both priced on what the runs measured: the floor serves the
+    /// `[Critical]` behaviors, the full row every due one. Their qualities say
+    /// how many turns each serves on time — never what a turn computes, which
+    /// a cut never changes — so GORNA lends the full row whenever it fits.
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        let price = peek(
+            &self.runtime,
+            |runtime| pricing(runtime, request.target),
+            Pricing::unmeasured(),
+        );
+        let confidence = if price.measured {
+            Confidence::Measured
+        } else {
+            Confidence::Quoted
+        };
+        let row = |id, time, quality| OfferRow {
+            id,
+            cost: Cost {
+                time: PerDevice {
+                    cpu: time,
+                    ..PerDevice::default()
+                },
+                ..Cost::default()
+            },
+            quality,
+            confidence,
+        };
+        let status = self.report_status();
+        Offer {
+            agent: self.id(),
+            epoch: request.epoch,
+            rows: vec![
+                row(StrategyId::LowPower, price.floor, price.floor_quality),
+                row(StrategyId::Balanced, price.full, 1.0),
+            ],
+            floor: StrategyId::LowPower,
+            current: status.current_strategy,
+            health: status.health_score,
+        }
+    }
+
     fn apply_budget(&mut self, budget: ResourceBudget) {
         self.current_strategy = budget.strategy_id;
-
-        // Converted at a rate the **lane** measured rather than one assumed
-        // here. A fixed instructions-per-millisecond constant would be wrong on
-        // the first machine that was not the one it was written on.
-        let rate = peek(&self.runtime, ScriptRuntime::rate, INITIAL_RATE);
-        let millis = budget.time_limit.as_secs_f64() * 1_000.0;
-        self.fuel = (millis * rate) as u64;
-
+        // Kept as time: the fuel it buys is worked out each frame, at the
+        // rate the **lane** measured last, so a rate corrected between two
+        // allocations is used at once.
+        self.lent = budget.time_limit;
         log::debug!(
-            "ScriptAgent: {:?} — {:.3}ms at {:.0} instr/ms = {} fuel",
+            "ScriptAgent: {:?} — {:.3}ms lent",
             budget.strategy_id,
-            millis,
-            rate,
-            self.fuel
+            self.lent.as_secs_f64() * 1_000.0
         );
     }
 
@@ -233,7 +281,7 @@ impl Agent for ScriptAgent {
         if let Some(prefabs) = context.bus.get::<khora_data::flow::PrefabCatalogView>() {
             ctx.insert_ref(prefabs);
         }
-        ctx.insert(Fuel(self.fuel));
+        ctx.insert(Fuel(runtime.fuel_for(self.lent)));
         // The guard is held for the whole of this call, outliving `ctx`, and
         // the contention declaration is what keeps a concurrent agent out of it.
         ctx.insert_slot(&mut *runtime);
@@ -513,9 +561,10 @@ mod tests {
         let agent = ScriptAgent::default();
 
         // Everything it knows before a frame runs: its lanes, which one it
-        // picked, its strategy, its fuel, and a handle it has not been given.
+        // picked, its strategy, the time it was lent, and a handle it has not
+        // been given.
         assert_eq!(agent.current_lane, "Budgeted");
-        assert_eq!(agent.fuel, 0);
+        assert_eq!(agent.lent, Duration::ZERO);
         assert!(
             agent.runtime.is_none(),
             "the scripting world is the engine's, handed over at initialisation"
@@ -537,7 +586,8 @@ mod tests {
 
         let response = agent.negotiate(request);
 
-        assert_eq!(response.strategies.len(), 3);
+        let ids: Vec<StrategyId> = response.strategies.iter().map(|option| option.id).collect();
+        assert_eq!(ids, [StrategyId::LowPower, StrategyId::Balanced]);
     }
 }
 

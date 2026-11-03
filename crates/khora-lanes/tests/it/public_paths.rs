@@ -452,7 +452,9 @@ fn module_script_lane_paths_still_resolve() {
     let _ = khora_lanes::script_lane::runtime::ScriptRuntime::last_report;
     let _ = khora_lanes::script_lane::runtime::ScriptRuntime::report_unloaded;
     let _ = khora_lanes::script_lane::runtime::ScriptRuntime::rate;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::observe_rate;
+    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::observe;
+    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::overhead;
+    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::fuel_for;
     let _: fn(
         &mut khora_lanes::script_lane::runtime::ScriptRuntime,
         String,
