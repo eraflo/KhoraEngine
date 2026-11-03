@@ -1105,7 +1105,12 @@ fn behavior_update_fields(x: &khora_core::script::writeback::BehaviorUpdate) {
 fn telemetry_event_variants(x: &khora_core::telemetry::event::TelemetryEvent) {
     match x {
         khora_core::telemetry::event::TelemetryEvent::MetricUpdate { .. } => {}
-        khora_core::telemetry::event::TelemetryEvent::ResourceReport(..) => {}
+        khora_core::telemetry::event::TelemetryEvent::ResourceReport { resource, usage } => {
+            let _: (
+                &khora_core::telemetry::monitoring::MonitoredResourceType,
+                &khora_core::telemetry::monitoring::ResourceUsageReport,
+            ) = (resource, usage);
+        }
         khora_core::telemetry::event::TelemetryEvent::HardwareReport(..) => {}
         khora_core::telemetry::event::TelemetryEvent::ModeChange(..) => {}
         khora_core::telemetry::event::TelemetryEvent::AgentReport(..) => {}
@@ -1161,6 +1166,10 @@ fn metrics_error_variants(x: &khora_core::telemetry::metrics::MetricsError) {
 
 fn hardware_report_fields(x: &khora_core::telemetry::monitoring::HardwareReport) {
     let _ = (&x.thermal, &x.battery, &x.cpu_load, &x.gpu_load);
+}
+
+fn host_monitors_fields(x: &khora_core::telemetry::monitoring::HostMonitors) {
+    let _: &Vec<std::sync::Arc<dyn khora_core::telemetry::monitoring::ResourceMonitor>> = &x.0;
 }
 
 fn memory_report_fields(x: &khora_core::telemetry::monitoring::MemoryReport) {
@@ -3021,6 +3030,7 @@ fn module_telemetry_paths_still_resolve() {
         PhantomData::<khora_core::telemetry::MemoryReport>,
         PhantomData::<khora_core::telemetry::monitoring::MemoryReport>,
     );
+    let _ = host_monitors_fields as fn(&khora_core::telemetry::monitoring::HostMonitors);
     let _ = memory_report_fields as fn(&khora_core::telemetry::monitoring::MemoryReport);
     let _ = khora_core::telemetry::monitoring::MemoryReport::current_usage_mb;
     let _ = khora_core::telemetry::monitoring::MemoryReport::peak_usage_mb;

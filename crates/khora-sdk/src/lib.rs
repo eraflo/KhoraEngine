@@ -121,6 +121,7 @@ pub use khora_control::Context as DccContext;
 // Core types
 pub use khora_core::agent::gorna::{AgentHints, AgentId, AgentStatus, EngineHint, StrategyId};
 pub use khora_core::agent::{AgentImportance, ExecutionPhase, ExecutionTiming};
+pub use khora_core::telemetry::monitoring::HostMonitors;
 pub use khora_core::telemetry::{MonitoredResourceType, TelemetryEvent};
 pub use khora_core::ui::editor::gizmo::GizmoLineInstance;
 pub use khora_core::ui::editor::viewport_texture::ViewportTextureHandle;

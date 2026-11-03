@@ -26,6 +26,7 @@ use crate::governor::FrameGovernor;
 use crate::metrics::MetricStore;
 use crossbeam_channel::Receiver;
 use khora_core::agent::Agent;
+use khora_core::telemetry::monitoring::MonitoredResourceType;
 use khora_core::telemetry::{MetricId, TelemetryEvent};
 use khora_data::ecs::layout::LayoutAdvisor;
 use std::sync::atomic::Ordering;
@@ -60,6 +61,7 @@ impl DccService {
         let tick_duration = Duration::from_secs_f32(1.0 / self.config.tick_rate as f32);
         let agent_lock_timeout = Duration::from_millis(self.config.agent_lock_timeout_ms);
         let memory_budget_bytes = self.config.memory_budget_bytes;
+        let vram_budget_bytes = self.config.vram_budget_bytes;
         let governor_cfg = self.config.frame_governor;
 
         let min_epoch_ticks = self.config.min_epoch_ticks;
@@ -117,7 +119,26 @@ impl DccService {
                                 store.push(id, v as f32);
                             }
                         }
-                        TelemetryEvent::ResourceReport(_) => {}
+                        TelemetryEvent::ResourceReport { resource, usage } => {
+                            // The video memory left is what GORNA caps the
+                            // upgrades that add VRAM on: the developer's
+                            // budget, else the device's capacity, less what
+                            // is used. A report with neither says nothing of
+                            // what is left: the figure the DCC knew stays.
+                            if resource == MonitoredResourceType::Vram {
+                                store.push(
+                                    MetricId::new("vram", "current_bytes"),
+                                    usage.current_bytes as f32,
+                                );
+                                let ceiling = vram_budget_bytes.or(usage.total_capacity_bytes);
+                                if let Some(ceiling) = ceiling {
+                                    let mut ctx =
+                                        context.write().unwrap_or_else(|e| e.into_inner());
+                                    ctx.hardware.available_vram =
+                                        Some(ceiling.saturating_sub(usage.current_bytes));
+                                }
+                            }
+                        }
                         TelemetryEvent::HardwareReport(report) => {
                             let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
                             ctx.hardware.thermal = report.thermal;

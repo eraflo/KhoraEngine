@@ -33,6 +33,12 @@ pub struct DccConfig {
     /// the ceiling approaches. `None` disables the signal — chiefly useful on
     /// memory-constrained targets.
     pub memory_budget_bytes: Option<u64>,
+    /// Optional VRAM budget in bytes, as
+    /// [`memory_budget_bytes`](Self::memory_budget_bytes) for system RAM.
+    /// When set, a VRAM report makes the available VRAM `budget − current`;
+    /// otherwise the device's capacity, if the report carries one, stands in
+    /// for the budget.
+    pub vram_budget_bytes: Option<u64>,
     /// Tuning for the frame governor that drives
     /// [`Context::global_budget_multiplier`](crate::dcc_context::Context::global_budget_multiplier).
     pub frame_governor: GovernorConfig,
@@ -51,6 +57,7 @@ impl Default for DccConfig {
             telemetry_buffer_size: 1000,
             agent_lock_timeout_ms: 100,
             memory_budget_bytes: None,
+            vram_budget_bytes: None,
             frame_governor: GovernorConfig::default(),
             min_epoch_ticks: 3,
             overruns_in_a_row: 3,

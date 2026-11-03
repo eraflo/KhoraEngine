@@ -66,8 +66,11 @@ impl TelemetryService {
                 // 1. Forward monitor reports.
                 for monitor in self.monitors.get_all_monitors() {
                     // Standard ResourceUsageReport (bytes)
-                    let report = monitor.get_usage_report();
-                    let _ = sender.send(TelemetryEvent::ResourceReport(report));
+                    let usage = monitor.get_usage_report();
+                    let _ = sender.send(TelemetryEvent::ResourceReport {
+                        resource: monitor.resource_type(),
+                        usage,
+                    });
 
                     // Hardware Health Report (thermal, load)
                     if let Some(hw_report) = monitor.get_hardware_report() {

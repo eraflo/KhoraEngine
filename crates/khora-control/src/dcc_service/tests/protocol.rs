@@ -485,6 +485,191 @@ fn a_hardware_report_keeps_the_known_vram() {
     );
 }
 
+const MIB: u64 = 1024 * 1024;
+
+/// A report that `current` bytes of `resource` are in use, out of `capacity`
+/// if the report knows it.
+fn usage_of(
+    resource: khora_core::telemetry::MonitoredResourceType,
+    current: u64,
+    capacity: Option<u64>,
+) -> TelemetryEvent {
+    TelemetryEvent::ResourceReport {
+        resource,
+        usage: khora_core::telemetry::ResourceUsageReport {
+            current_bytes: current,
+            peak_bytes: None,
+            total_capacity_bytes: capacity,
+        },
+    }
+}
+
+/// A VRAM report of `current` bytes in use, out of `capacity` if known.
+fn vram_used(current: u64, capacity: Option<u64>) -> TelemetryEvent {
+    usage_of(
+        khora_core::telemetry::MonitoredResourceType::Vram,
+        current,
+        capacity,
+    )
+}
+
+/// A hardware report that marks how far the DCC has read its inbox: once
+/// the context is `Warm`, every event sent before it was ingested.
+fn marker() -> TelemetryEvent {
+    TelemetryEvent::HardwareReport(khora_core::telemetry::monitoring::HardwareReport {
+        thermal: khora_core::platform::ThermalStatus::Warm,
+        ..Default::default()
+    })
+}
+
+/// The available VRAM the DCC's context holds.
+fn available_vram(dcc: &DccService) -> Option<u64> {
+    dcc.get_context().hardware.available_vram
+}
+
+/// A DCC ticking at 100 Hz with `vram_budget_bytes`, started, and the sender
+/// of its inbox.
+fn vram_dcc(
+    vram_budget_bytes: Option<u64>,
+) -> (DccService, crossbeam_channel::Sender<TelemetryEvent>) {
+    let (mut dcc, rx) = DccService::new(DccConfig {
+        tick_rate: 100,
+        vram_budget_bytes,
+        ..Default::default()
+    });
+    let tx = dcc.event_sender();
+    dcc.start(rx);
+    (dcc, tx)
+}
+
+/// **A VRAM budget is not set unless asked for.** The default configuration
+/// leaves the VRAM unbudgeted, as it leaves the system RAM.
+#[test]
+fn no_vram_budget_by_default() {
+    assert_eq!(DccConfig::default().vram_budget_bytes, None);
+}
+
+/// **A VRAM report under a budget leaves the budget's remainder.** With a
+/// 1 GiB budget, 300 MiB in use leaves 724 MiB available.
+#[test]
+fn a_vram_report_under_a_budget_leaves_the_remainder() {
+    let (mut dcc, tx) = vram_dcc(Some(1024 * MIB));
+    tx.send(vram_used(300 * MIB, None))
+        .expect("the DCC listens");
+    let set = wait_for(3, || available_vram(&dcc) == Some(724 * MIB));
+    let vram = available_vram(&dcc);
+    dcc.stop();
+
+    assert!(
+        set,
+        "the available VRAM is the budget less the use: {vram:?}"
+    );
+}
+
+/// **A VRAM budget wins over the device's capacity.** A report that carries
+/// a 2 GiB capacity, under a 1 GiB budget, still leaves the budget's
+/// remainder: the budget is the ceiling the engine was given.
+#[test]
+fn a_vram_budget_wins_over_the_capacity() {
+    let (mut dcc, tx) = vram_dcc(Some(1024 * MIB));
+    tx.send(vram_used(300 * MIB, Some(2048 * MIB)))
+        .expect("the DCC listens");
+    let set = wait_for(3, || available_vram(&dcc) == Some(724 * MIB));
+    let vram = available_vram(&dcc);
+    dcc.stop();
+
+    assert!(
+        set,
+        "the budget, not the capacity, bounds the VRAM: {vram:?}"
+    );
+}
+
+/// **VRAM used past its budget leaves none.** 1.5 GiB in use under a 1 GiB
+/// budget leaves 0 available — never an underflow.
+#[test]
+fn vram_used_past_its_budget_leaves_none() {
+    let (mut dcc, tx) = vram_dcc(Some(1024 * MIB));
+    tx.send(vram_used(1536 * MIB, None))
+        .expect("the DCC listens");
+    let set = wait_for(3, || available_vram(&dcc) == Some(0));
+    let vram = available_vram(&dcc);
+    dcc.stop();
+
+    assert!(set, "an exceeded budget leaves no VRAM: {vram:?}");
+}
+
+/// **Without a budget, the device's capacity bounds the VRAM.** No budget
+/// set and a 2 GiB capacity in the report: 300 MiB in use leaves 1748 MiB.
+#[test]
+fn without_a_budget_the_capacity_bounds_the_vram() {
+    let (mut dcc, tx) = vram_dcc(None);
+    tx.send(vram_used(300 * MIB, Some(2048 * MIB)))
+        .expect("the DCC listens");
+    let set = wait_for(3, || available_vram(&dcc) == Some(1748 * MIB));
+    let vram = available_vram(&dcc);
+    dcc.stop();
+
+    assert!(
+        set,
+        "the available VRAM is the capacity less the use: {vram:?}"
+    );
+}
+
+/// **A VRAM report with neither budget nor capacity keeps the known VRAM.**
+/// Once a report with a capacity has set the available VRAM, one without a
+/// capacity, and no budget to stand in, says nothing of what is left: the
+/// known figure stays.
+#[test]
+fn a_vram_report_without_a_ceiling_keeps_the_known_vram() {
+    let (mut dcc, tx) = vram_dcc(None);
+    tx.send(vram_used(300 * MIB, Some(2048 * MIB)))
+        .expect("the DCC listens");
+    let known = wait_for(3, || available_vram(&dcc) == Some(1748 * MIB));
+    tx.send(vram_used(900 * MIB, None))
+        .expect("the DCC listens");
+    tx.send(marker()).expect("the DCC listens");
+    let ingested = wait_for(3, || {
+        dcc.get_context().hardware.thermal == khora_core::platform::ThermalStatus::Warm
+    });
+    let vram = available_vram(&dcc);
+    dcc.stop();
+
+    assert!(known, "the first report set the available VRAM: {vram:?}");
+    assert!(ingested, "the second report was ingested");
+    assert_eq!(
+        vram,
+        Some(1748 * MIB),
+        "a report without a ceiling keeps the known figure"
+    );
+}
+
+/// **A system-RAM report leaves the VRAM alone.** Only a VRAM report moves
+/// the available VRAM: a RAM report, capacity and all, under a VRAM budget,
+/// changes nothing of it.
+#[test]
+fn a_system_ram_report_leaves_the_vram_alone() {
+    let (mut dcc, tx) = vram_dcc(Some(1024 * MIB));
+    tx.send(vram_used(300 * MIB, None))
+        .expect("the DCC listens");
+    let known = wait_for(3, || available_vram(&dcc) == Some(724 * MIB));
+    tx.send(usage_of(
+        khora_core::telemetry::MonitoredResourceType::SystemRam,
+        4096 * MIB,
+        Some(16 * 1024 * MIB),
+    ))
+    .expect("the DCC listens");
+    tx.send(marker()).expect("the DCC listens");
+    let ingested = wait_for(3, || {
+        dcc.get_context().hardware.thermal == khora_core::platform::ThermalStatus::Warm
+    });
+    let vram = available_vram(&dcc);
+    dcc.stop();
+
+    assert!(known, "the VRAM report set the available VRAM: {vram:?}");
+    assert!(ingested, "the RAM report was ingested");
+    assert_eq!(vram, Some(724 * MIB), "a RAM report keeps the VRAM figure");
+}
+
 /// **Only the agents active in the mode are asked.** A script registered for
 /// `Playing` alone is neither asked for an offer nor named by an epoch while
 /// the editor edits; once the game plays, it is.

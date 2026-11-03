@@ -29,9 +29,9 @@ use khora_sdk::prelude::*;
 use khora_sdk::run_winit;
 use khora_sdk::winit_adapters::WinitWindowProvider;
 use khora_sdk::{
-    AudioDevice, AudioMixBus, CpalAudioDevice, DefaultMixBus, LayoutSystem, PhysicsProvider,
-    PipelineSystem, RapierPhysicsWorld, RenderSystem, StreamInfo, TaffyLayoutSystem,
-    WgpuPipelineSystem, WgpuRenderSystem,
+    AudioDevice, AudioMixBus, CpalAudioDevice, DefaultMixBus, HostMonitors, LayoutSystem,
+    PhysicsProvider, PipelineSystem, RapierPhysicsWorld, RenderSystem, StreamInfo,
+    TaffyLayoutSystem, WgpuPipelineSystem, WgpuRenderSystem,
 };
 use std::sync::{Arc, Mutex};
 
@@ -53,7 +53,8 @@ fn main() -> Result<()> {
 
     run_winit::<WinitWindowProvider, SandboxGame>(|window, runtime, _event_loop| {
         let mut rs = WgpuRenderSystem::new();
-        rs.init(window).expect("renderer init failed");
+        let monitors = rs.init(window).expect("renderer init failed");
+        runtime.resources.insert(HostMonitors(monitors));
         // Register the graphics device before boxing — required by RenderAgent.
         runtime.backends.insert(rs.graphics_device());
         let rs: Box<dyn RenderSystem> = Box::new(rs);

@@ -108,6 +108,7 @@ fn dcc_config_fields(c: &khora_control::dcc_service::DccConfig) {
         &c.telemetry_buffer_size,
         &c.agent_lock_timeout_ms,
         &c.memory_budget_bytes,
+        &c.vram_budget_bytes,
         &c.frame_governor,
         &c.min_epoch_ticks,
         &c.overruns_in_a_row,

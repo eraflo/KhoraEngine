@@ -56,9 +56,12 @@ pub fn run() -> anyhow::Result<()> {
         // loading screen is painted with.
         first: Box::new(|window, runtime, event_loop_any| {
             let mut rs = WgpuRenderSystem::new();
-            if let Err(e) = rs.init(window) {
-                log::error!("editor: renderer init failed: {e:?}");
-                return;
+            match rs.init(window) {
+                Ok(monitors) => runtime.resources.insert(khora_sdk::HostMonitors(monitors)),
+                Err(e) => {
+                    log::error!("editor: renderer init failed: {e:?}");
+                    return;
+                }
             }
             runtime.backends.insert(rs.graphics_device());
 

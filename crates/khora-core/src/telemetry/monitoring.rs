@@ -20,6 +20,7 @@
 
 use std::borrow::Cow;
 use std::fmt::Debug;
+use std::sync::Arc;
 
 use crate::platform::{BatteryLevel, ThermalStatus};
 
@@ -63,6 +64,13 @@ pub trait ResourceMonitor: Send + Sync + Debug + 'static {
         // Default: no-op
     }
 }
+
+/// The monitors a host built for the telemetry service — the renderer's,
+/// say, from `RenderSystem::init`. A host puts them in `runtime.resources`;
+/// the SDK's bootstrap registers each in the `MonitorRegistry` and removes
+/// the resource.
+#[derive(Debug, Default)]
+pub struct HostMonitors(pub Vec<Arc<dyn ResourceMonitor>>);
 
 /// An enumeration of the types of resources that can be monitored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

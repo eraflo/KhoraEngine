@@ -17,7 +17,7 @@
 use crate::agent::gorna::protocol::{FrameReport, Report};
 use crate::agent::gorna::AgentId;
 use crate::telemetry::metrics::{MetricId, MetricValue};
-use crate::telemetry::monitoring::{HardwareReport, ResourceUsageReport};
+use crate::telemetry::monitoring::{HardwareReport, MonitoredResourceType, ResourceUsageReport};
 
 /// What reaches the DCC on its inbox. Two families share it:
 ///
@@ -37,8 +37,15 @@ pub enum TelemetryEvent {
         /// The new value.
         value: MetricValue,
     },
-    /// A hardware resource usage report (typically bytes/memory).
-    ResourceReport(ResourceUsageReport),
+    /// A hardware resource usage report (typically bytes/memory), tagged
+    /// with the resource it measures.
+    ResourceReport {
+        /// The resource the report measures (the monitor's
+        /// [`resource_type`](crate::telemetry::monitoring::ResourceMonitor::resource_type)).
+        resource: MonitoredResourceType,
+        /// The usage the monitor reported.
+        usage: ResourceUsageReport,
+    },
     /// A physical hardware health report (thermal, CPU load).
     HardwareReport(HardwareReport),
     /// The engine's mode changed — which agents run.

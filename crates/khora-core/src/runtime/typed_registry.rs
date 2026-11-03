@@ -97,6 +97,15 @@ impl<K: RegistryKind> TypedRegistry<K> {
         self.inner.insert(TypeId::of::<T>(), Box::new(entry));
     }
 
+    /// Takes the entry keyed by `T` out of this registry (not its parent's),
+    /// if there is one.
+    pub fn remove<T: Send + Sync + 'static>(&mut self) -> Option<T> {
+        self.inner
+            .remove(&TypeId::of::<T>())
+            .and_then(|entry| entry.downcast::<T>().ok())
+            .map(|entry| *entry)
+    }
+
     /// Returns a borrow of the registered entry, walking the parent chain.
     #[must_use]
     pub fn get<T: Send + Sync + 'static>(&self) -> Option<&T> {

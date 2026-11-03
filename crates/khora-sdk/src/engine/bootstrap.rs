@@ -224,6 +224,17 @@ fn populate<A: EngineApp>(
     telemetry.monitor_registry().register(std::sync::Arc::new(
         khora_infra::telemetry::memory_monitor::MemoryMonitor::new("System_RAM".to_string()),
     ));
+    // The monitors the host built — the renderer's video memory — handed
+    // over in the runtime, since the telemetry service did not exist yet.
+    if let Some(khora_core::telemetry::monitoring::HostMonitors(monitors)) =
+        runtime
+            .resources
+            .remove::<khora_core::telemetry::monitoring::HostMonitors>()
+    {
+        for monitor in monitors {
+            telemetry.monitor_registry().register(monitor);
+        }
+    }
 
     // ── Expose observable handles via Resources ─────────────────────
     // Apps (e.g. the editor) read live engine state (monitors, agent

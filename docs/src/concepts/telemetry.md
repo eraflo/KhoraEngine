@@ -77,6 +77,17 @@ gate reads memory pressure so it declines a repack — which transiently doubles
 column — under tight memory. Allocation tracking feeding adaptation directly is the
 difference between a readout and a nervous system.
 
+## Video memory
+
+The renderer's device is its own video-memory monitor: it counts the bytes it
+allocates. A host hands the monitors its renderer builds to the engine
+(`HostMonitors`, put in the runtime before the boot), and the telemetry service
+reports each with its kind. From the VRAM report the DCC works out what is left —
+the developer's budget (`DccConfig::vram_budget_bytes`), else the device's capacity,
+less what is used — and GORNA caps the upgrades that add video memory on it. wgpu
+does not give a device's capacity, so without a budget nothing is capped yet; asking
+the platform for it is the next step.
+
 ## The DCC closes the loop
 
 The DCC's cold-path loop runs at a low frequency relative to the frame and does the

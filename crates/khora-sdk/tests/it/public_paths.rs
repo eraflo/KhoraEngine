@@ -654,6 +654,11 @@ fn module_crate_root_paths_still_resolve() {
         PhantomData::<khora_sdk::LogLevel>,
         PhantomData::<khora_core::ui::editor::LogLevel>,
     );
+    let _ = type_name::<khora_sdk::HostMonitors>();
+    same_type(
+        PhantomData::<khora_sdk::HostMonitors>,
+        PhantomData::<khora_core::telemetry::monitoring::HostMonitors>,
+    );
     let _ = type_name::<khora_sdk::Mat4>();
     same_type(
         PhantomData::<khora_sdk::Mat4>,

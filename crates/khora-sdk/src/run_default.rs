@@ -277,7 +277,12 @@ pub fn run_default() -> Result<()> {
     let physics_settings = cfg.physics;
     run_winit::<WinitWindowProvider, DefaultRuntimeApp>(move |window, runtime, _event_loop| {
         let mut rs = WgpuRenderSystem::new();
-        rs.init(window).expect("renderer init failed");
+        let monitors = rs.init(window).expect("renderer init failed");
+        runtime
+            .resources
+            .insert(crate::khora_core::telemetry::monitoring::HostMonitors(
+                monitors,
+            ));
         runtime.backends.insert(rs.graphics_device());
         let rs_dyn: Box<dyn RenderSystem> = Box::new(rs);
         runtime.backends.insert(Arc::new(Mutex::new(rs_dyn)));
