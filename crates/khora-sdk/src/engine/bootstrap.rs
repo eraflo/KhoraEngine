@@ -224,6 +224,12 @@ fn populate<A: EngineApp>(
     telemetry.monitor_registry().register(std::sync::Arc::new(
         khora_infra::telemetry::memory_monitor::MemoryMonitor::new("System_RAM".to_string()),
     ));
+    // The hardware's health (heat, battery, CPU load), read by the DCC's own
+    // thread: the sensors are slow to read, and the telemetry service runs in
+    // the frame.
+    dcc.set_hardware_monitor(std::sync::Arc::new(
+        khora_infra::platform::sysinfo_impl::SysinfoMonitor::new(),
+    ));
     // The monitors the host built — the renderer's video memory — handed
     // over in the runtime, since the telemetry service did not exist yet.
     if let Some(khora_core::telemetry::monitoring::HostMonitors(monitors)) =

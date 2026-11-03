@@ -15,12 +15,14 @@
 //! The DCC service: its thread, what it ingests, its forecast, its frame
 //! governor, and the order it initializes agents in. The protocol it speaks
 //! to the agents is in `protocol.rs`; when it opens an epoch, in `epochs.rs`;
-//! how the governor drives the multiplier in `frame_governor.rs`, and the
-//! loop it closes through GORNA, simulated, in `closed_loop.rs`.
+//! how the governor drives the multiplier in `frame_governor.rs`, the
+//! loop it closes through GORNA, simulated, in `closed_loop.rs`, and the
+//! hardware monitor its thread reads in `hardware_monitor.rs`.
 
 mod closed_loop;
 mod epochs;
 mod frame_governor;
+mod hardware_monitor;
 mod protocol;
 
 use super::forecast::forecast_frame_ms;

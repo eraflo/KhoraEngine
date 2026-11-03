@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The monitors the bootstrap hands the telemetry service: those a host
-//! built and put in the runtime, and the engine's own.
+//! The monitors the bootstrap hands out: to the telemetry service, those a
+//! host built and put in the runtime, and the engine's own; to the DCC, the
+//! hardware monitor its thread reads.
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -112,5 +113,35 @@ fn the_host_monitors_resource_is_gone_after_the_bootstrap() {
     assert!(
         !engine.runtime().resources.contains::<HostMonitors>(),
         "the hand-over resource was removed"
+    );
+}
+
+/// **The DCC reads the hardware, not the telemetry.** Reading the sensors
+/// costs milliseconds, and the telemetry service runs inside the frame: after
+/// the bootstrap the DCC holds a hardware monitor, and the telemetry service
+/// holds no `Hardware` monitor (the system-RAM one is still there).
+#[test]
+fn the_bootstrap_gives_the_dcc_a_hardware_monitor_and_the_telemetry_none() {
+    let mut engine = EngineCore::<Idle>::new();
+    engine.bootstrap(Idle, Runtime::new());
+
+    let dcc = engine.dcc().expect("the bootstrap starts the DCC");
+    assert!(
+        dcc.hardware_monitor().is_some(),
+        "the DCC was given a hardware monitor"
+    );
+
+    let monitors = registered(&engine);
+    assert!(
+        !monitors
+            .iter()
+            .any(|monitor| monitor.resource_type() == MonitoredResourceType::Hardware),
+        "no hardware monitor is registered in the telemetry: {monitors:?}"
+    );
+    assert!(
+        monitors
+            .iter()
+            .any(|monitor| monitor.resource_type() == MonitoredResourceType::SystemRam),
+        "the system-RAM monitor is: {monitors:?}"
     );
 }

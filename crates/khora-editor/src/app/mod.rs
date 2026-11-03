@@ -297,6 +297,13 @@ impl EditorApp {
                 }
             }
         }
+        // The machine's loads, as the DCC read them on its own thread.
+        if let Some(context) = &self.dcc_context {
+            if let Ok(context) = context.read() {
+                state.status.cpu_load = context.hardware.cpu_load;
+                state.status.gpu_load = context.hardware.gpu_load;
+            }
+        }
 
         let status_copy = state.status.clone();
         drop(state);

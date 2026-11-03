@@ -1360,6 +1360,7 @@ mod trait_items {
         let _ = <T as khora_core::platform::HardwareMonitor>::thermal_status;
         let _ = <T as khora_core::platform::HardwareMonitor>::battery_level;
         let _ = <T as khora_core::platform::HardwareMonitor>::cpu_load;
+        let _ = <T as khora_core::platform::HardwareMonitor>::refresh;
     }
 
     fn khora_window_trait_items<T: khora_core::platform::window::KhoraWindow>() {

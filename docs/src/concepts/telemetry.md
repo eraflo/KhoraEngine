@@ -48,7 +48,7 @@ a report sees the work.
 The pipeline has two complementary halves, reflecting two kinds of data:
 
 - **Poll-based monitors.** Hardware-facing readings — heap and virtual memory,
-  video memory, heat and load — are *pulled*: the telemetry service asks
+  video memory — are *pulled*: the telemetry service asks
   each registered monitor for its current value. A monitor is a trait; the concrete
   implementations live in the backend crate because they call platform APIs, while
   the trait surface stays portable.
@@ -76,6 +76,15 @@ likely per-frame allocation hotspot; and the deferred layout-repack cost/benefit
 gate reads memory pressure so it declines a repack — which transiently doubles a
 column — under tight memory. Allocation tracking feeding adaptation directly is the
 difference between a readout and a nervous system.
+
+## The hardware
+
+Heat, battery and the CPU's load come from a hardware monitor (`SysinfoMonitor`,
+the battery read through `starship-battery`) that the DCC reads on its own thread,
+about once a second. It is not one of the telemetry service's monitors on purpose:
+reading the sensors takes milliseconds — far more the first time — and the
+telemetry service runs inside the frame, where those milliseconds would show as a
+hitch every second. The editor reads the loads from the DCC's context.
 
 ## Video memory
 

@@ -40,6 +40,9 @@ use khora_core::agent::gorna::protocol::{Report, Trigger};
 use khora_core::agent::gorna::{AgentHints, AgentId, EpochRecord};
 use std::collections::HashMap;
 
+/// How often the DCC's thread reads its hardware monitor.
+const HARDWARE_READ_PERIOD: Duration = Duration::from_secs(1);
+
 impl DccService {
     /// Starts the DCC background thread.
     pub fn start(&mut self, event_rx: Receiver<TelemetryEvent>) {
@@ -58,6 +61,7 @@ impl DccService {
         let decision_recording = Arc::clone(&self.decision_recording);
         let recorded_trace = Arc::clone(&self.recorded_trace);
         let replay = Arc::clone(&self.replay);
+        let hardware_monitor = Arc::clone(&self.hardware_monitor);
         let tick_duration = Duration::from_secs_f32(1.0 / self.config.tick_rate as f32);
         let agent_lock_timeout = Duration::from_millis(self.config.agent_lock_timeout_ms);
         let memory_budget_bytes = self.config.memory_budget_bytes;
@@ -102,11 +106,40 @@ impl DccService {
             // connected since is handed it, so an allocation decided before
             // the scheduler connected is not lost.
             let mut published_on: Option<crate::budget_channel::BudgetChannel> = None;
+            // When the hardware monitor was last read: its sensors are slow to
+            // read, and heat and charge move slowly.
+            let mut hardware_read: Option<Instant> = None;
 
             log::info!("DCC Service thread started.");
 
             while running.load(Ordering::Relaxed) {
                 let start_time = Instant::now();
+
+                // 0. Read the hardware — heat, battery, the CPU's load — on this
+                //    thread, at most once a second: a sensor read can take
+                //    milliseconds, and none of it may land in a frame.
+                if hardware_read.is_none_or(|at| at.elapsed() >= HARDWARE_READ_PERIOD) {
+                    let monitor = hardware_monitor
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .clone();
+                    if let Some(monitor) = monitor {
+                        // Read before the context is locked: the frame's
+                        // thread reads it every frame, and must never wait
+                        // on a sensor.
+                        monitor.refresh();
+                        let (thermal, battery, cpu_load) = (
+                            monitor.thermal_status(),
+                            monitor.battery_level(),
+                            monitor.cpu_load(),
+                        );
+                        let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
+                        ctx.hardware.thermal = thermal;
+                        ctx.hardware.battery = battery;
+                        ctx.hardware.cpu_load = cpu_load;
+                        hardware_read = Some(Instant::now());
+                    }
+                }
 
                 // 1. Ingest all pending events. The frames reported during
                 //    this tick, in order, are what the governor observes once

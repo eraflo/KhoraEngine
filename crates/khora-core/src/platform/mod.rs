@@ -62,4 +62,11 @@ pub trait HardwareMonitor: Send + Sync {
     fn battery_level(&self) -> BatteryLevel;
     /// Returns the current overall CPU load (0.0 to 1.0).
     fn cpu_load(&self) -> f32;
+    /// Reads the hardware again, so the readings that follow are fresh.
+    ///
+    /// Reading the sensors can be slow (milliseconds on some platforms), so
+    /// the DCC calls this on its own thread, at most about once a second,
+    /// before it reads the monitor. A monitor whose readings are always
+    /// current keeps the default, which does nothing.
+    fn refresh(&self) {}
 }

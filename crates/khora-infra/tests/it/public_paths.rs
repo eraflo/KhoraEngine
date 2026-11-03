@@ -302,8 +302,10 @@ fn module_platform_paths_still_resolve() {
     let _ = khora_infra::platform::winit::input::translate_winit_input;
     let _ = type_name::<khora_infra::platform::sysinfo_impl::SysinfoMonitor>();
     let _ = khora_infra::platform::sysinfo_impl::SysinfoMonitor::new;
-    let _ = khora_infra::platform::sysinfo_impl::SysinfoMonitor::refresh;
+    let _ = <khora_infra::platform::sysinfo_impl::SysinfoMonitor as khora_core::platform::HardwareMonitor>::refresh;
     is_hardware_monitor::<khora_infra::platform::sysinfo_impl::SysinfoMonitor>();
+    let _: fn(starship_battery::State, f32) -> khora_core::platform::BatteryLevel =
+        khora_infra::platform::sysinfo_impl::battery_level_of;
     is_default::<khora_infra::platform::sysinfo_impl::SysinfoMonitor>();
     let _ = type_name::<khora_infra::platform::winit::window::WinitWindow>();
     let _ = type_name::<khora_infra::platform::winit::WinitWindow>();

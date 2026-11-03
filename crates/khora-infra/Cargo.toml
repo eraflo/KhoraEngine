@@ -31,6 +31,8 @@ winit = { version = "0.30", features = ["x11", "wayland", "wayland-dlopen", "way
 # Audio
 cpal = "0.17.0"
 sysinfo = "0.39.1"
+# Battery level for the hardware report (sysinfo has none).
+starship-battery = "0.12"
 
 # Logging
 log = "0.4"

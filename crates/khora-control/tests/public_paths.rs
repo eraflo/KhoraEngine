@@ -436,6 +436,8 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::dcc_service::DccService::stop_replay;
     let _ = khora_control::dcc_service::DccService::is_replaying;
     let _ = khora_control::dcc_service::DccService::connect_budget_channel;
+    let _ = khora_control::dcc_service::DccService::set_hardware_monitor;
+    let _ = khora_control::dcc_service::DccService::hardware_monitor;
     let _ = khora_control::dcc_service::DccService::register_agent;
     let _ = khora_control::dcc_service::DccService::register_agent_for_mode;
     let _ = khora_control::dcc_service::DccService::start;

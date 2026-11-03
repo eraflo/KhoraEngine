@@ -19,6 +19,7 @@ use crate::dcc_context::Context;
 use crate::EngineMode;
 use crossbeam_channel::{Receiver, Sender};
 use khora_core::agent::Agent;
+use khora_core::platform::HardwareMonitor;
 use khora_core::telemetry::TelemetryEvent;
 use khora_data::ecs::layout::LayoutRecommendation;
 use std::sync::atomic::AtomicBool;
@@ -82,6 +83,8 @@ pub struct DccService {
     /// When `Some((trace, cursor))`, the DCC lends the trace's allocations,
     /// one a tick, instead of asking for offers.
     replay: Arc<std::sync::RwLock<Option<(DecisionTrace, usize)>>>,
+    /// The monitor the DCC's thread reads the hardware from.
+    hardware_monitor: Arc<std::sync::RwLock<Option<Arc<dyn HardwareMonitor>>>>,
 }
 
 impl DccService {
@@ -102,6 +105,7 @@ impl DccService {
             decision_recording: Arc::new(std::sync::RwLock::new(false)),
             recorded_trace: Arc::new(std::sync::RwLock::new(DecisionTrace::default())),
             replay: Arc::new(std::sync::RwLock::new(None)),
+            hardware_monitor: Arc::new(std::sync::RwLock::new(None)),
         };
         (service, rx)
     }
@@ -240,6 +244,25 @@ impl DccService {
             .budget_channel
             .write()
             .unwrap_or_else(|e| e.into_inner()) = Some(channel);
+    }
+
+    /// Gives the DCC the monitor it reads the hardware from — heat, battery,
+    /// the CPU's load. The DCC's thread refreshes and reads it, at most about
+    /// once a second and on its first tick, so a slow sensor read never lands
+    /// in a frame.
+    pub fn set_hardware_monitor(&self, monitor: Arc<dyn HardwareMonitor>) {
+        *self
+            .hardware_monitor
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = Some(monitor);
+    }
+
+    /// The monitor the DCC reads the hardware from, if it was given one.
+    pub fn hardware_monitor(&self) -> Option<Arc<dyn HardwareMonitor>> {
+        self.hardware_monitor
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// The scheduler's channel, if one is connected.
