@@ -28,7 +28,6 @@ use super::resilience::GpuHealth;
 #[derive(Debug)]
 pub struct WgpuGraphicsContext {
     pub surface: wgpu::Surface<'static>,
-    #[allow(dead_code)]
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,

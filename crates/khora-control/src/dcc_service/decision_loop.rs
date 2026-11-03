@@ -40,6 +40,11 @@ use khora_core::agent::gorna::protocol::{Report, Trigger};
 use khora_core::agent::gorna::{AgentHints, AgentId, EpochRecord};
 use std::collections::HashMap;
 
+/// The share of the platform's video-memory budget kept in reserve, as
+/// engines that size their pools from it do: the budget moves with the
+/// other programs on the GPU, and running at its edge invites eviction.
+const VRAM_HEADROOM: f64 = 0.1;
+
 /// How often the DCC's thread reads its hardware monitor.
 const HARDWARE_READ_PERIOD: Duration = Duration::from_secs(1);
 
@@ -163,7 +168,11 @@ impl DccService {
                                     MetricId::new("vram", "current_bytes"),
                                     usage.current_bytes as f32,
                                 );
-                                let ceiling = vram_budget_bytes.or(usage.total_capacity_bytes);
+                                // A developer's budget is taken whole; the
+                                // platform's keeps a tenth in reserve.
+                                let ceiling = vram_budget_bytes.or(usage.total_capacity_bytes.map(
+                                    |capacity| (capacity as f64 * (1.0 - VRAM_HEADROOM)) as u64,
+                                ));
                                 if let Some(ceiling) = ceiling {
                                     let mut ctx =
                                         context.write().unwrap_or_else(|e| e.into_inner());

@@ -38,6 +38,7 @@ use khora_core::renderer::api::shader::ShaderModuleId;
 mod entries;
 mod graphics_device;
 mod map_async;
+pub mod vram_probe;
 
 #[cfg(test)]
 mod tests;
@@ -116,6 +117,9 @@ pub struct WgpuDeviceInternal {
     surface: Mutex<SurfaceInfo>,
     /// The adapter the device runs on, described once by the render system.
     adapter: OnceLock<GraphicsAdapterInfo>,
+    /// The wgpu adapter itself, which the VRAM report asks the platform's
+    /// budget through; given once by the render system.
+    adapter_handle: OnceLock<wgpu::Adapter>,
 
     next_shader_id: AtomicUsize,
     next_pipeline_id: AtomicUsize,
@@ -131,6 +135,9 @@ pub struct WgpuDeviceInternal {
     // VRAM Tracking
     vram_allocated_bytes: AtomicUsize,
     vram_peak_bytes: AtomicU64,
+    /// The most video memory a report has said in use: the platform's count
+    /// included, which sees more than Khora allocates.
+    reported_peak_bytes: AtomicU64,
 
     /// A thread-safe counter to generate unique command buffer IDs.
     command_buffer_id_counter: AtomicU64,
@@ -162,6 +169,7 @@ impl WgpuDevice {
                 registry: Mutex::new(Registry::default()),
                 surface: Mutex::new(SurfaceInfo::default()),
                 adapter: OnceLock::new(),
+                adapter_handle: OnceLock::new(),
                 health,
                 next_shader_id: AtomicUsize::new(0),
                 next_pipeline_id: AtomicUsize::new(0),
@@ -175,6 +183,7 @@ impl WgpuDevice {
                 next_bind_group_id: AtomicUsize::new(0),
                 vram_allocated_bytes: AtomicUsize::new(0),
                 vram_peak_bytes: AtomicU64::new(0),
+                reported_peak_bytes: AtomicU64::new(0),
                 command_buffer_id_counter: AtomicU64::new(0),
             }),
         }
@@ -195,6 +204,12 @@ impl WgpuDevice {
     /// Describes the adapter the device runs on; the first description stays.
     pub fn set_adapter_info(&self, info: GraphicsAdapterInfo) {
         let _ = self.internal.adapter.set(info);
+    }
+
+    /// Gives the device the wgpu adapter it runs on, which its VRAM report
+    /// reads the platform's budget through; the first adapter stays.
+    pub fn set_adapter_handle(&self, adapter: wgpu::Adapter) {
+        let _ = self.internal.adapter_handle.set(adapter);
     }
 
     /// The surface the render system last configured.
@@ -492,11 +507,30 @@ impl ResourceMonitor for WgpuDevice {
         MonitoredResourceType::Vram
     }
 
+    /// What the device holds, and — once it knows its adapter — what the
+    /// platform lets it hold: the budget as the capacity, and the platform's
+    /// count of what is used, which sees what Khora does not allocate itself
+    /// (the swapchain, the driver).
     fn get_usage_report(&self) -> ResourceUsageReport {
+        let own = self.internal.vram_allocated_bytes.load(Ordering::Relaxed) as u64;
+        let reading = self
+            .internal
+            .adapter_handle
+            .get()
+            .and_then(|adapter| vram_probe::probe(Some(adapter), &self.internal.device));
+        let current = reading.and_then(|reading| reading.usage).unwrap_or(own);
+        // The peak of what was reported, never below what is reported now:
+        // the platform's count runs above Khora's own peak.
+        let reported = self
+            .internal
+            .reported_peak_bytes
+            .fetch_max(current, Ordering::Relaxed)
+            .max(current);
+        let peak = reported.max(self.internal.vram_peak_bytes.load(Ordering::Relaxed));
         ResourceUsageReport {
-            current_bytes: self.internal.vram_allocated_bytes.load(Ordering::Relaxed) as u64,
-            peak_bytes: Some(self.internal.vram_peak_bytes.load(Ordering::Relaxed)),
-            total_capacity_bytes: None, //  Difficult to determine in WGPU
+            current_bytes: current,
+            peak_bytes: Some(peak),
+            total_capacity_bytes: reading.map(|reading| reading.budget),
         }
     }
 

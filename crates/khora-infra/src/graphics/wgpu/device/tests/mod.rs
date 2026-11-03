@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The device's tests: its buffer descriptors, its capabilities, and how it
-//! holds up when many threads call it at once.
+//! The device's tests: its buffer descriptors, its capabilities, how it
+//! holds up when many threads call it at once, and the video memory the
+//! platform gives it.
 
 mod buffer_descriptor;
 mod caps;
 mod concurrency;
+mod vram;

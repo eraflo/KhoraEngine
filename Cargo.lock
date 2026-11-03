@@ -2800,6 +2800,7 @@ name = "khora-infra"
 version = "0.2.2"
 dependencies = [
  "anyhow",
+ "ash",
  "async-trait",
  "bytemuck",
  "cpal",
@@ -2807,10 +2808,12 @@ dependencies = [
  "egui",
  "egui-winit",
  "env_logger",
+ "glow",
  "khora-core",
  "log",
  "naga",
  "naga_oil",
+ "objc2-metal 0.3.2",
  "parley",
  "pollster 1.0.1",
  "rapier3d",
@@ -2821,6 +2824,7 @@ dependencies = [
  "taffy",
  "thiserror 2.0.18",
  "wgpu",
+ "windows 0.62.2",
  "winit",
 ]
 

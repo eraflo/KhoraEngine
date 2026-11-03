@@ -230,6 +230,8 @@ impl WgpuRenderSystem {
                 let device =
                     WgpuDevice::new(gc.device.clone(), gc.queue.clone(), Arc::clone(&gc.health));
                 device.set_adapter_info(adapter_info_of(&gc));
+                // What its VRAM report asks the platform's budget through.
+                device.set_adapter_handle(gc.adapter.clone());
                 describe_surface(&device, &gc);
                 device
             }

@@ -88,14 +88,20 @@ hitch every second. The editor reads the loads from the DCC's context.
 
 ## Video memory
 
-The renderer's device is its own video-memory monitor: it counts the bytes it
-allocates. A host hands the monitors its renderer builds to the engine
-(`HostMonitors`, put in the runtime before the boot), and the telemetry service
-reports each with its kind. From the VRAM report the DCC works out what is left —
-the developer's budget (`DccConfig::vram_budget_bytes`), else the device's capacity,
-less what is used — and GORNA caps the upgrades that add video memory on it. wgpu
-does not give a device's capacity, so without a budget nothing is capped yet; asking
-the platform for it is the next step.
+The renderer's device is its own video-memory monitor. wgpu says nothing of a
+GPU's memory, so the device asks the platform through its backend: DXGI's budget on
+DX12, `VK_EXT_memory_budget` on Vulkan (the local heaps' sizes without it), the
+working set Metal recommends, and `GL_NVX_gpu_memory_info` on NVIDIA's OpenGL. The
+answer is the budget the system gives the process, which moves with the other
+programs on the GPU, and what is used — the swapchain and the driver included, not
+only what Khora allocates. It costs a few microseconds. Without an answer (WebGPU,
+OpenGL elsewhere), the device reports its own count and no capacity.
+
+A host hands the monitors its renderer builds to the engine (`HostMonitors`, put in
+the runtime before the boot), and the telemetry service reports each with its kind.
+From the VRAM report the DCC works out what is left — the developer's budget
+(`DccConfig::vram_budget_bytes`) taken whole, else 90 % of the platform's budget —
+less what is used, and GORNA caps the upgrades that add video memory on it.
 
 ## The DCC closes the loop
 

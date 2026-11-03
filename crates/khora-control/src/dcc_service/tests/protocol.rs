@@ -598,21 +598,64 @@ fn vram_used_past_its_budget_leaves_none() {
     assert!(set, "an exceeded budget leaves no VRAM: {vram:?}");
 }
 
-/// **Without a budget, the device's capacity bounds the VRAM.** No budget
-/// set and a 2 GiB capacity in the report: 300 MiB in use leaves 1748 MiB.
+/// Whether `vram` is `exact` bytes, to the byte the rounding of a tenth may
+/// cost.
+fn within_a_byte(vram: Option<u64>, exact: f64) -> bool {
+    vram.is_some_and(|v| (v as f64 - exact).abs() < 1.0)
+}
+
+/// **Without a budget, nine tenths of the device's capacity bound the
+/// VRAM.** No budget set and a 2 GiB capacity in the report: the platform's
+/// figure keeps a tenth in reserve, so 300 MiB in use leaves 0.9 × 2 GiB −
+/// 300 MiB.
 #[test]
 fn without_a_budget_the_capacity_bounds_the_vram() {
+    let exact = 0.9 * (2048 * MIB) as f64 - (300 * MIB) as f64;
     let (mut dcc, tx) = vram_dcc(None);
     tx.send(vram_used(300 * MIB, Some(2048 * MIB)))
         .expect("the DCC listens");
-    let set = wait_for(3, || available_vram(&dcc) == Some(1748 * MIB));
+    let set = wait_for(3, || within_a_byte(available_vram(&dcc), exact));
     let vram = available_vram(&dcc);
     dcc.stop();
 
     assert!(
         set,
-        "the available VRAM is the capacity less the use: {vram:?}"
+        "the available VRAM is nine tenths of the capacity less the use, \
+         {exact} bytes: {vram:?}"
     );
+}
+
+/// **A platform's VRAM capacity keeps a tenth in reserve.** A 1000 MiB
+/// capacity with 100 MiB in use leaves 800 MiB: the 100 MiB above nine
+/// tenths are never offered to an upgrade.
+#[test]
+fn a_platform_vram_capacity_keeps_a_tenth_in_reserve() {
+    let (mut dcc, tx) = vram_dcc(None);
+    tx.send(vram_used(100 * MIB, Some(1000 * MIB)))
+        .expect("the DCC listens");
+    let set = wait_for(3, || available_vram(&dcc) == Some(800 * MIB));
+    let vram = available_vram(&dcc);
+    dcc.stop();
+
+    assert!(
+        set,
+        "nine tenths of 1000 MiB less 100 MiB is 800 MiB: {vram:?}"
+    );
+}
+
+/// **VRAM used into the reserved tenth leaves none.** 950 MiB in use out of
+/// a 1000 MiB capacity is past its nine tenths: nothing is left — never an
+/// underflow, never the 50 MiB of the reserve.
+#[test]
+fn vram_used_into_the_reserved_tenth_leaves_none() {
+    let (mut dcc, tx) = vram_dcc(None);
+    tx.send(vram_used(950 * MIB, Some(1000 * MIB)))
+        .expect("the DCC listens");
+    let set = wait_for(3, || available_vram(&dcc) == Some(0));
+    let vram = available_vram(&dcc);
+    dcc.stop();
+
+    assert!(set, "VRAM used past nine tenths leaves none: {vram:?}");
 }
 
 /// **A VRAM report with neither budget nor capacity keeps the known VRAM.**
@@ -624,7 +667,8 @@ fn a_vram_report_without_a_ceiling_keeps_the_known_vram() {
     let (mut dcc, tx) = vram_dcc(None);
     tx.send(vram_used(300 * MIB, Some(2048 * MIB)))
         .expect("the DCC listens");
-    let known = wait_for(3, || available_vram(&dcc) == Some(1748 * MIB));
+    let set = wait_for(3, || available_vram(&dcc).is_some());
+    let known = available_vram(&dcc);
     tx.send(vram_used(900 * MIB, None))
         .expect("the DCC listens");
     tx.send(marker()).expect("the DCC listens");
@@ -634,11 +678,10 @@ fn a_vram_report_without_a_ceiling_keeps_the_known_vram() {
     let vram = available_vram(&dcc);
     dcc.stop();
 
-    assert!(known, "the first report set the available VRAM: {vram:?}");
+    assert!(set, "the first report set the available VRAM: {vram:?}");
     assert!(ingested, "the second report was ingested");
     assert_eq!(
-        vram,
-        Some(1748 * MIB),
+        vram, known,
         "a report without a ceiling keeps the known figure"
     );
 }

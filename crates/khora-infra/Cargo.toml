@@ -70,3 +70,15 @@ eframe = { version = "0.34", default-features = false, features = [
     "wayland",
     "x11",
 ] }
+
+# The platform's VRAM budget, read through each wgpu backend's hal. The
+# versions are the ones wgpu-hal 29 already builds, so none is duplicated.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = ["Win32_Graphics_Dxgi"] }
+
+[target.'cfg(any(windows, target_os = "linux", target_os = "android", target_os = "freebsd"))'.dependencies]
+ash = "0.38"
+glow = "0.17"
+
+[target.'cfg(target_vendor = "apple")'.dependencies]
+objc2-metal = { version = "0.3.2", default-features = false, features = ["std", "MTLDevice"] }
