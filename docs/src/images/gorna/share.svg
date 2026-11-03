@@ -1,0 +1,74 @@
+<svg id="fig-gorna-share" class="kp-figure" viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-gorna-share-title kp-gorna-share-desc">
+  <title id="kp-gorna-share-title">How the DCC shares a frame's time</title>
+  <desc id="kp-gorna-share-desc">The frame has a target time. First every agent's floor, its cheapest row that is still right, is admitted. Then the time left goes to the upgrades that gain the most quality for each microsecond, one at a time; an upgrade that no longer fits is passed over. What is left at the end is the slack: four fifths of it are shared out to the envelopes, one fifth is kept back for spikes. An agent's envelope is the row the DCC planned for it plus its part of the slack.</desc>
+  <style>
+    #fig-gorna-share { width: 100%; height: auto; display: block; margin: 0; }
+    #fig-gorna-share .kp-bg { fill: var(--k-bg-0, #090d17); }
+    #fig-gorna-share .kp-track { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-gorna-share .kp-floor { fill: var(--k-bg-3, #1f2636); stroke: var(--k-silver-dim, #809db2); stroke-width: 1; }
+    #fig-gorna-share .kp-up { fill: oklch(0.32 0.04 245); stroke: var(--k-silver, #b4cfe2); stroke-width: 1; }
+    #fig-gorna-share .kp-over { fill: oklch(0.78 0.14 70 / 0.16); stroke: var(--k-amber, #e8a33d); stroke-width: 1; stroke-dasharray: 3 3; }
+    #fig-gorna-share .kp-slack { fill: none; stroke: var(--k-silver-dim, #809db2); stroke-width: 1; stroke-dasharray: 3 3; }
+    #fig-gorna-share .kp-reserve { fill: var(--k-bg-1, #101622); stroke: var(--k-line, #383d48); stroke-width: 1; }
+    #fig-gorna-share .kp-limit { stroke: var(--k-fg-0, #eff2f5); stroke-width: 2; }
+    #fig-gorna-share .kp-envelope { fill: none; stroke: var(--k-gold, #e4b65c); stroke-width: 2.5; }
+    #fig-gorna-share .kp-envelope-text { fill: var(--k-gold, #e4b65c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 11.5px; }
+    #fig-gorna-share .kp-name { fill: var(--k-fg-0, #eff2f5); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    #fig-gorna-share .kp-head { fill: var(--k-silver, #b4cfe2); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 12px; font-weight: 500; }
+    #fig-gorna-share .kp-how { fill: var(--k-fg-2, #8a9096); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-gorna-share .kp-warn { fill: var(--k-amber, #e8a33d); font-family: var(--k-font-sans, 'Archivo', system-ui, sans-serif); font-size: 11.5px; }
+    #fig-gorna-share .kp-note { fill: var(--k-fg-3, #5d646c); font-family: var(--k-font-mono, 'IBM Plex Mono', ui-monospace, monospace); font-size: 10.5px; }
+  </style>
+  <rect class="kp-bg" x="0" y="0" width="760" height="300" rx="10"/>
+  <text class="kp-head" x="40" y="40">one frame, on its critical path</text>
+  <text class="kp-note" x="40" y="58">waves running side by side count for their slowest member</text>
+  <rect class="kp-track" x="40" y="80" width="660" height="56" rx="6"/>
+  <line class="kp-limit" x1="700" y1="70" x2="700" y2="146"/>
+  <text class="kp-note" x="660" y="64">16.7 ms</text>
+  <!-- 1. the floors -->
+  <g data-on="1 2 3 4">
+    <rect class="kp-floor" x="44" y="84" width="70" height="48" rx="4"/>
+    <text class="kp-name" x="52" y="112">shadows</text>
+    <rect class="kp-floor" x="116" y="84" width="96" height="48" rx="4"/>
+    <text class="kp-name" x="124" y="112">physics</text>
+    <rect class="kp-floor" x="214" y="84" width="30" height="48" rx="4"/>
+    <rect class="kp-floor" x="246" y="84" width="40" height="48" rx="4"/>
+    <text class="kp-name" x="250" y="112">UI</text>
+  </g>
+  <g data-on="1">
+    <text class="kp-how" x="40" y="176">Every agent's floor first: the cheapest row that keeps the game right.</text>
+    <text class="kp-how" x="40" y="196">They all fit, so the epoch is not an emergency.</text>
+  </g>
+  <!-- 2. the upgrades -->
+  <g data-on="2 3 4">
+    <rect class="kp-up" x="288" y="84" width="150" height="48" rx="4"/>
+    <text class="kp-name" x="296" y="104">shadows → high</text>
+    <text class="kp-note" x="296" y="122">most quality per µs</text>
+  </g>
+  <g data-on="2">
+    <text class="kp-how" x="40" y="176">Then the time left goes, one step at a time, to the upgrade that gains</text>
+    <text class="kp-how" x="40" y="196">the most quality for each microsecond, weighed by the agent's importance.</text>
+  </g>
+  <!-- 3. an upgrade that does not fit -->
+  <g data-on="3 4">
+    <rect class="kp-up" x="440" y="84" width="60" height="48" rx="4"/>
+    <text class="kp-name" x="446" y="112">UI ↑</text>
+  </g>
+  <g data-on="3">
+    <rect class="kp-over" x="502" y="80" width="250" height="56"/>
+    <text class="kp-warn" x="512" y="160">audio → 128 voices: does not fit</text>
+    <text class="kp-how" x="40" y="196">An upgrade that no longer fits is passed over; a smaller one may still.</text>
+  </g>
+  <!-- 4. the slack -->
+  <g data-on="4">
+    <rect class="kp-slack" x="502" y="84" width="158" height="48" rx="4"/>
+    <text class="kp-how" x="510" y="104">80 % shared out</text>
+    <rect class="kp-reserve" x="662" y="84" width="36" height="48" rx="4"/>
+    <text class="kp-note" x="560" y="156">20 % kept for spikes</text>
+    <rect class="kp-envelope" x="44" y="226" width="186" height="34" rx="4"/>
+    <text class="kp-envelope-text" x="54" y="248">shadows' envelope</text>
+    <text class="kp-how" x="244" y="242">= its planned row (high) + its part of the 80 %,</text>
+    <text class="kp-how" x="244" y="260">in proportion to what it was planned</text>
+    <text class="kp-how" x="40" y="196">What is left is slack, given, not thrown away: room to absorb a small rise.</text>
+  </g>
+</svg>

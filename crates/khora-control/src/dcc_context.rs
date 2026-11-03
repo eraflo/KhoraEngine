@@ -82,7 +82,7 @@ impl Default for Context {
 }
 
 /// Memory pressure at or above which the DCC clamps the budget multiplier to a
-/// hard safety ceiling, regardless of where the PID loop currently sits.
+/// hard safety ceiling, regardless of where the frame governor currently sits.
 pub const MEMORY_PRESSURE_CRITICAL: f32 = 0.95;
 
 impl Context {
@@ -92,7 +92,7 @@ impl Context {
     /// Pressure is `current_ram_bytes / memory_budget_bytes`, clamped to `[0, 1]`.
     /// An unset budget yields `0.0` (the signal is inert). This is a first-class
     /// resource signal consumed by the heuristic engine and the AGDF repack gate;
-    /// it no longer feeds the budget multiplier directly — that is the PID loop's
+    /// it no longer feeds the budget multiplier directly — that is the frame governor's
     /// job — but it does drive the DCC's hard safety clamp (see [`safety_ceiling`]).
     pub fn refresh_memory_pressure(&mut self) {
         self.memory_pressure = match (
@@ -109,7 +109,7 @@ impl Context {
 
 /// The hard ceiling on the budget multiplier for the current context.
 ///
-/// The PID loop regulates the multiplier smoothly toward the frame-time target,
+/// The frame governor regulates the multiplier smoothly toward the frame-time target,
 /// but emergencies (`Critical` thermal/battery, near-budget memory pressure)
 /// demand an immediate cap that does not wait for the loop to converge. This is
 /// the feedforward / safety half of the controller: it can only ever *lower* the

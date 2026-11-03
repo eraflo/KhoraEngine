@@ -1,12 +1,35 @@
 # GORNA: resource negotiation
 
+<p class="kp-lede">A building site has one day of work to share out. The foreman asks every craftsman for a quote, hands each one an envelope of money, and each craftsman decides how to do the job with what is in it. In the evening, everyone says what they did and what it cost. GORNA is that dialogue, played between the parts of the engine for every frame's time.</p>
+
 **GORNA** — *Goal-Oriented Resource Negotiation and Allocation* — is the protocol
-that lets the engine's agents and its central controller trade frame budgets in
-real time. This page explains *why* the engine negotiates budgets at all, the shape
-of the negotiation, and how the control loop closes. It is an explanation, not an
-operator's manual — for pinning or bounding an agent in practice, see
-[How-to: control GORNA adaptation](../how-to/control-gorna-adaptation.md), and for
+between the engine's **agents** (the parts that do the work: shadows, physics,
+audio, the interface, …) and the **DCC**, the Dynamic Context Core that watches the
+running game. The rule that shapes it fits in one line: **the DCC decides how much;
+the agent decides how.**
+
+This page explains why the engine negotiates at all, the dialogue message by
+message, how the time is shared, how an agent chooses, and what happens when things
+go wrong; the [formalisation](#formalisation) at the end states what it guarantees.
+For pinning or bounding an agent in practice, see
+[How-to: control GORNA adaptation](../how-to/control-gorna-adaptation.md); for
 watching a live decision, [How-to: debug a frame](../how-to/debug-a-frame.md).
+
+<figure class="kp-steps">
+<div class="kp-figure-frame">
+
+{{#include ../images/gorna/dialogue.svg}}
+
+</div>
+<ol class="kp-steps-text">
+<li><strong>Every run, a report.</strong> Each agent says which way of working it ran, how long it took on each device, and how much of its work it got done.</li>
+<li><strong>Something changed.</strong> The shadows took longer than their quote said. The DCC opens a new <em>epoch</em>, a numbered round of the dialogue.</li>
+<li><strong>A call for offers.</strong> The DCC asks every agent the current mode runs for an offer, and tells them the frame's target time.</li>
+<li><strong>The offers.</strong> Each agent answers with its menu: every way it can do its work (a <em>row</em>), with its cost on each device, its quality, how sure the price is, and its floor — the cheapest row that keeps the game right.</li>
+<li><strong>The envelopes.</strong> The DCC shares the frame's time out and publishes one <em>envelope</em> per agent: how much time and memory it may use. Never a row. Every agent receives it at the same next frame start.</li>
+<li><strong>Each chooses.</strong> Every agent picks the best row whose price fits in its envelope. If nothing fits, it runs its floor and says so in its report.</li>
+</ol>
+</figure>
 
 ---
 
@@ -18,63 +41,130 @@ the developer's — and wrong everywhere else. A laptop on battery, a workstatio
 a Steam Deck do not share a frame budget, and the same machine does not share one
 between a quiet menu and a crowded firefight.
 
-GORNA replaces the fixed split with a per-tick negotiation. Agents declare what they
-*can* do at several cost points; the **DCC** (the Dynamic Context Core) observes the
-running system, applies a set of heuristics, and hands back a budget that reflects
-*this* hardware, *this* scene, *this* frame. The result is one binary that adapts
-its strategy each tick to hold the frame rate, instead of a binary tuned for one
-target.
+GORNA replaces the fixed split with a negotiation that follows the game. Agents say
+what they *can* do at several cost points; the DCC observes the running system,
+applies a set of heuristics, and shares out a budget that reflects *this* hardware,
+*this* scene, *this* moment. The result is one binary that adapts each frame to hold
+the frame rate, instead of a binary tuned for one target.
 
-A boundary worth stating up front: **only agents negotiate in GORNA.** There is one
-negotiation surface per LaneKind, and that is it. The Data layer does *not* compete
-here — it self-optimises its own memory layout ([AGDF](./agdf.md)), observed by the
-DCC but never driven by it, and never bids for the frame budget. GORNA arbitrates
-strategy; AGDF arbitrates layout; they are siblings, not the same auction.
+A boundary worth stating up front: **only agents negotiate in GORNA.** The Data
+layer does *not* compete here — it self-optimises its own memory layout
+([AGDF](./agdf.md)), observed by the DCC but never driven by it, and never bids for
+the frame budget. GORNA arbitrates strategy; AGDF arbitrates layout; they are
+siblings, not the same auction.
 
-## The negotiation, phase by phase
+## The four messages
 
-The loop runs on the cold path at roughly 20 Hz. The hot path never waits for it —
-if a budget is late, the previous one simply stays in effect.
+One round of the dialogue is an **epoch**. Each epoch is one round trip: agents that
+cooperate can say everything at once — their whole menu — so nothing needs to be
+bid again.
 
-```mermaid
-flowchart LR
-    A[Awareness] -->|collect metrics| B[Analysis]
-    B -->|run heuristics| C[Negotiation]
-    C -->|collect strategies| D[Arbitration]
-    D -->|publish the allocation| E[Lending at frame start]
-    E -->|next tick| A
-```
+| Message | From → to | Carries | When |
+|---|---|---|---|
+| `OfferRequest` | DCC → agent | the epoch, the frame's target time, the pressure, the mode, a deadline | when an epoch opens |
+| `Offer` | agent → DCC | every row: its cost per device, its quality, its confidence (`Measured`, `Quoted`, `Assumed`); the floor; the row running; its health | in reply, from prices the agent already holds — no lane runs on the DCC's thread |
+| `Allocation` | DCC → every agent | the epoch, why it opened, one **envelope** per agent (time per device, memory), a developer's pinned or allowed rows | published at once, lent at the next frame start |
+| `Report` | agent → DCC | the row that ran, its time on each device, the share of its work done, its health, whether it was over budget or stalled, what a switch of row cost | after every run |
 
-- **Awareness** gathers telemetry from agents and hardware monitors.
-- **Analysis** runs the heuristic engine over that telemetry, shaping a single
-  frame-time target.
-- **Offers**: when an epoch opens, the DCC asks each agent active in the mode for
-  an offer: every row it can run, with its cost per device, its quality and its
-  floor.
-- **Share**: the DCC admits every floor on the critical path, then gives the
-  remaining time to the upgrades that gain the most quality per microsecond, and
-  gives 80 % of what is left back as slack. Each agent receives an **envelope** —
-  how much time and memory it may use — never a row.
-- **Lending**: the DCC publishes the allocation; the scheduler lends it at its
-  next frame start, to every agent at once, so no frame mixes two epochs. An
-  agent busy at that moment keeps its envelope and is lent at the next frame
-  start. The DCC's thread never touches an agent's envelope.
-- **Choice**: each agent picks, every frame, the best row whose quote fits its
-  envelope; nothing fits, it runs its floor and says so in its report.
-- **Reports**: after each run the scheduler publishes the agent's report — the
-  row, the time per device, the workload — which feeds the cost models and may
-  open the next epoch (overruns in a row, a stalled agent).
+An epoch opens on a trigger: the first round, pressure from a heuristic (heat,
+battery, memory), the cost model forecasting a breach, the frame-time controller
+drifting, a mode change, an agent arriving or leaving, a developer policy changing,
+an agent stalled and unhealthy, overruns several frames in a row, a periodic
+refresh — or an emergency (`Safety`). An epoch lasts at least a few ticks, except
+for an emergency. The exhaustive field lists live in the rustdoc on
+`khora_core::agent::gorna::protocol`.
 
-The DCC decides *how much*; the agent decides *how*.
-The request and budget shapes are intentionally narrow — time, memory, VRAM, and a
-small extras map — so that adding a resource dimension is a considered change, not a
-free-form bag each subsystem invents its own dialect for. The exhaustive field lists
-live in the rustdoc on `khora_core::agent::gorna`.
+## Who decides what
+
+| Question | Who | How |
+|---|---|---|
+| How much time and memory? | DCC | one envelope per agent per epoch |
+| When to renegotiate? | DCC | the triggers above, and the shortest length of an epoch |
+| An emergency? | DCC | a `Safety` allocation: every envelope is its agent's floor, from the next frame start |
+| Which way of working? | agent | the best row whose fresh price fits its envelope |
+| What does it cost? | the agent's lanes | prices worked out on the frame's inputs, priced again when they change |
+| What did I do? | agent | a report after every run |
+| The developer's rules | DCC → agent | a cap is a ceiling on the envelope; `Manual` is a pinned row the agent is told; `Bounded` is a set of allowed rows |
+
+## How the DCC shares the time
+
+<figure class="kp-steps">
+<div class="kp-figure-frame">
+
+{{#include ../images/gorna/share.svg}}
+
+</div>
+<ol class="kp-steps-text">
+<li><strong>The floors first.</strong> The DCC adds up every agent's floor on the frame's <em>critical path</em>: agents that run side by side, in one wave, count for the slowest of them; transfers between the processor and the graphics card count too. If the floors do not fit, it is an emergency.</li>
+<li><strong>Then the upgrades.</strong> Of every possible step up — one agent moving to its next row — the DCC takes the one that gains the most quality for each microsecond, weighed by how important the agent is, and starts again.</li>
+<li><strong>Passed over.</strong> An upgrade that no longer fits is skipped; a smaller one, for another agent, may still fit.</li>
+<li><strong>The slack.</strong> What is left is not thrown away: 80 % of it is shared out to the envelopes, in proportion to what each was planned; 20 % stays back for spikes. An envelope is at least the price of the row the DCC planned for that agent, and has room to absorb a small rise.</li>
+</ol>
+</figure>
+
+The DCC does plan one row per agent to size the envelopes, but it sends only the
+envelope; the plan goes to the journal. Quality comes from each level's `Impact`
+(none, minor, major → 1.0, 0.7, 0.4), so a family never has to invent a number.
+The developer's rules are envelope shapes, applied to the plan: a pinned row is
+planned as is, an allowed set limits the rows planned, a cap lowers the envelope.
+
+## How an agent chooses
+
+An agent holds, for every row of its menu, the last price it knows: its own run's
+for the row running, a *quote* for the others (the lane prices itself on the frame's
+inputs without running). With its envelope it picks:
+
+1. among the rows whose price fits the envelope on every device, the one of least
+   impact — the most faithful — and, between equals, the dearest: more work done,
+   more voices, more lights;
+2. if none fits, its **floor**, and its report says it ran over budget — it never
+   overruns in silence;
+3. before anything is priced, the default level its registration names.
+
+A developer's pin overrides the choice; an allowed set filters it. A row that failed
+under the current envelope is passed by until the next allocation, and an agent
+whose lane fails falls back to a cheaper row by itself.
+
+## Lanes are layers
+
+The agent chooses; it does not run its lane frame after frame. Each family has a
+fixed **place** in the frame, and on it lies one **layer** — one of its lanes,
+prepared at one level. The scheduler applies the installed layers every frame
+without calling the agents, and an agent is woken only when its layer or an
+allocation says it must choose again; a new layer is prepared beside the old one and
+swapped in at a frame start, at the same place. [Agents and Lanes](./agents-and-lanes.md#lanes-are-layers)
+tells that part of the story.
+
+## When things go wrong
+
+- **An agent busy at a frame start** (the DCC is reading its offer) is not waited
+  for: it runs that frame on what it holds, and is handed what it missed at the next
+  frame start.
+- **An agent that arrives or leaves** — scripts run only while the game is playing —
+  opens an epoch (`AgentsChanged`, `ModeChanged`). Only the agents active in the mode
+  are asked for offers and given envelopes.
+- **An emergency** (heat, memory and overruns together: the *death spiral*) is an
+  allocation like the others, marked `Safety`: each envelope is its agent's floor.
+  It overrides developer control — safety wins — and it does not assume a row is
+  called `LowPower`: every family has a floor.
+- **Overruns several frames in a row**: the agent's layer wakes it at once, and it
+  steps down by itself within its envelope; if the overruns go on, the DCC opens an
+  epoch (`Overruns`). A stalled, unhealthy agent opens one too (`AgentStalled`).
+- **A lane that fails or panics** fails its own family's run, never the frame: the
+  agent falls back to a cheaper row, and a panic is caught, logged, and the agent
+  is woken again on the next frame.
+- **Stale reports** — a report made under an epoch that a later one already
+  answered — are dropped, so an old overrun cannot reopen an epoch.
+- **Replay**: arbitration is deterministic (no randomness, integer microseconds,
+  ties broken by a total order), so the DCC can record its **decision journal** —
+  each epoch's inputs, its allocation and its reasons — and replay it, one recorded
+  allocation per frame start, asking no agent for an offer. A session's adaptation
+  comes back exactly, for QA, lockstep and bug reproduction.
 
 ## The cost model and the frame governor
 
-Two pieces turn measurements into a budget, and the division of labour between them
-is the heart of the current design.
+Two pieces turn measurements into the frame's target, and the division of labour
+between them is the heart of the control loop.
 
 The **heuristics** shape a single *frame-time target* rather than scaling the budget
 directly. Thermal, battery, and engine-phase heuristics *relax* the target (a hot
@@ -112,28 +202,21 @@ this is what drives *recovery*: once frames have room, the multiplier climbs, th
 budgets are re-issued, and agents upgrade again instead of staying pinned at a degraded
 strategy.
 
-**Empirical cost calibration** closes the other gap. Agents quote *static* estimates
-in their offers, but reality drifts from the quote per machine and per scene. The
-DCC fits each agent's measured `(n, time)` samples to an empirical cost model (a
-constant factor times a complexity class `f(n)`, the same shape a query optimiser
-uses), and `GornaArbitrator::allocate` feeds those measured costs back into the
-offers: every offered row is rescaled so the row the agent runs now
-costs what was measured. The rescale factor is clamped (to
-`[0.25, 4.0]`) so a single hitch or cold cache cannot swing the fit by orders of
-magnitude, and the relative ordering of options is preserved — only the absolute
-scale moves. The budget fitting therefore reasons about *measured milliseconds*, not
-static worst-case quotes. An agent with no measurement yet (cold start) keeps its
-quotes as-is. Together with the cost model's forecast — which can tighten the target
-*before* a frame overruns — this is the "model proposes, measurement disposes" loop:
-the controller acts ahead of a breach, and the measurements keep its arithmetic
-honest.
+**Empirical cost calibration** closes the other gap. Quotes drift from reality per
+machine and per scene. The DCC fits each agent's reports — `(workload, time)` — to an
+empirical cost model (a constant factor times a complexity class `f(n)`, the shape a
+query optimiser uses), and the round rescales every row of an offer so that the row
+the agent runs costs what was measured. The rescale is clamped (to `[0.25, 4.0]`) so
+one hitch cannot swing it by orders of magnitude, and the ordering of a menu is kept:
+only its scale moves. An agent with no measurement yet keeps its quotes. This is the
+"model proposes, measurement disposes" loop.
 
 ## The heuristics
 
 The heuristic engine runs a battery of independent heuristics each tick, each one a
-near-pure function of telemetry that emits a target adjustment or a recommendation;
-the arbitrator combines them. Because they are independent, new heuristics grow the
-engine's adaptive intelligence by accretion, without touching the existing ones.
+near-pure function of telemetry that emits a target adjustment or a recommendation.
+Because they are independent, new heuristics grow the engine's adaptive intelligence
+by accretion, without touching the existing ones.
 
 | Heuristic | Reads | Effect |
 |---|---|---|
@@ -141,46 +224,33 @@ engine's adaptive intelligence by accretion, without touching the existing ones.
 | **Thermal** | GPU/CPU temperature | relaxes the target when hot; hard safety cap on critical |
 | **Battery** | battery level + AC state | relaxes the target on low battery; hard cap on critical |
 | **Frame time** | recent frame durations | tightens when frames run over target |
-| **Stutter** | frame-time variance | penalises strategies with inconsistent timing |
+| **Stutter** | frame-time variance | flags inconsistent timing |
 | **Trend** | frame-time slope | anticipates degradation before it becomes a stutter |
-| **CPU pressure** | CPU utilisation | rebalances toward CPU-light strategies |
-| **GPU pressure** | GPU utilisation | rebalances toward GPU-light strategies |
-| **Death spiral** | consecutive over-budget frames | forces the cheapest strategy until recovery |
+| **CPU pressure** | CPU utilisation | rebalances toward CPU-light rows |
+| **GPU pressure** | GPU utilisation | rebalances toward GPU-light rows |
+| **Death spiral** | consecutive over-budget frames | the `Safety` allocation until recovery |
 
-The death spiral is a first-class concept: when the engine cannot hold its frame
-budget for several frames running, GORNA forces the cheapest strategy and monitors
-for recovery, returning agents to negotiated strategies once the spiral breaks. It
-overrides developer control — safety wins.
-
-One firm constraint runs through all of this: **GORNA can never force a phase.** It
-can suggest an *importance* change, but agents always control which phases they run
-in. Adaptation changes the HOW, never the WHAT.
+One firm constraint runs through all of this: **GORNA can never force a phase.**
+Adaptation changes the HOW, never the WHAT.
 
 ## AdaptationMode — the developer-control surface
 
 GORNA is a partnership, not an autocracy. How much latitude it has over a given
-agent is set per agent through **AdaptationMode** (via `DccService::set_adaptation_mode`,
-the DCC being a registered service). There are four modes:
+agent is set per agent through **AdaptationMode** (via
+`DccService::set_adaptation_mode`), and every mode is an envelope shape:
 
-- **Learning** *(default)* — full negotiation; the DCC freely picks the best-fitting
-  strategy each tick.
-- **Manual(strategy)** — the agent is pinned; GORNA observes and reports but never
-  switches it.
-- **Stable** — GORNA may *downgrade* under pressure but never makes an opportunistic
-  *upgrade*, so the strategy does not flap frame to frame.
-- **Bounded { min, max }** — the chosen strategy is clamped to a range.
+- **Learning** *(default)* — full negotiation.
+- **Manual(row)** — the row is pinned: the DCC plans it, and the agent is told to
+  run it whatever its envelope.
+- **Stable** — the agent keeps its envelope while its row still fits it, so it does
+  not flap from epoch to epoch; it still steps down under pressure.
+- **Bounded { min, max }** — the rows planned and chosen are limited to a range.
 
-All four are enforced today. A death-spiral safety stop can still force the cheapest
-strategy in any mode — safety overrides developer control. (A few finer modes —
-calibration, spatial priority volumes, a spatial `PriorityVolume` constraint API —
-remain on the roadmap; they are not part of `AdaptationMode`.)
-
-Separately, the DCC can **record and replay** its decision trace. Arbitration is
-deterministic (no RNG), so recording the strategy issued to each agent each tick and
-replaying it reproduces a session's adaptation bit-for-bit — for QA, lockstep, and
-bug reproduction. This is a *capability of the DCC service* (start/stop recording,
-load a trace to replay), not an `AdaptationMode` variant, and it is implemented
-today rather than planned.
+A developer **hint** adds a weight (an agent made more or less important) or a cap (a
+ceiling on its envelope). The `Safety` allocation can still give every agent its
+floor in any mode — safety overrides developer control. The DCC can also **record
+and replay** its decision journal (start/stop recording, load a journal to replay);
+that is a capability of the DCC service, not an `AdaptationMode` variant.
 
 ## Cold path and hot path
 
@@ -193,35 +263,111 @@ graph TD
     end
     subgraph Hot["Hot path — 60+ Hz"]
         Sch[Scheduler]
-        Agents[Agents]
-        Lanes[Lanes]
+        Places[Places: installed layers]
+        Agents[Agents, when woken]
     end
     DCC --> Heur --> Arb
-    Arb -->|BudgetChannel last-wins| Sch
-    Sch --> Agents --> Lanes
-    Lanes -->|telemetry| DCC
+    Arb -->|Allocation, lent at frame start| Sch
+    Sch --> Places
+    Sch -->|wakes| Agents
+    Agents -->|stage a new layer| Places
+    Places -->|Report| DCC
 ```
 
-The two paths touch only through the `BudgetChannel`, and the hot path never blocks
-on the cold path.
+The two paths touch only through the allocation channel and the reports, and the hot
+path never blocks on the cold path: a live allocation published before a frame start
+replaces any live one still waiting, and the frame lends whatever is newest; the
+DCC's thread never touches an agent's envelope. Offers are read from prices the
+agents already hold — no lane runs on the cold thread.
 
-Within a phase the scheduler groups agents into **waves** and runs each wave
-concurrently — enabled by default (`set_parallel_execution(true)`). Two agents
-share a wave only when their declared [contentions](./agents-and-lanes.md) are
-disjoint; an `Exclusive` agent is a wave of its own.
+Within a phase the scheduler groups the work into **waves** and runs each wave
+concurrently. Two layers share a wave only when their declared
+[contentions](./agents-and-lanes.md) are disjoint. Because a wave is concurrent, its
+cost is its **critical path** — the slowest member — not the sum of its members: the
+scheduler publishes the wave plan and GORNA shares against `max` within a wave and
+`sum` across waves. Over-declaring a contention is therefore not free: it serialises
+a wave that could have run concurrently, and nothing reddens.
 
-Because a wave is concurrent, its cost is the **critical path** — the slowest
-member — not the sum of its members. The budget fitting reflects that: the
-scheduler publishes the wave plan and GORNA fits against `max` within a wave and
-`sum` across waves. Over-declaring a contention is therefore not free: it
-serialises a wave that could have run concurrently, and nothing reddens.
+## Formalisation
+
+*This part is for readers who want the guarantees stated precisely.*
+
+**Notation.** *A*<sub>m</sub> is the set of agents active in the mode *m*. The menu
+of an agent *a* is a set of rows *r*, each with a cost *c*<sub>a,r</sub> ∈ ℕ<sup>D</sup>
+— integer microseconds on each device *d* — a memory *μ*<sub>a,r</sub>, and a quality
+*q*<sub>a,r</sub> ∈ [0, 1] from its `Impact`. The floor of *a* is *f*<sub>a</sub>, its
+importance *w*<sub>a</sub>. The scheduler's waves *W*<sub>1</sub> … *W*<sub>k</sub> are
+fixed for the epoch; the target is *T*, the memory available *M*.
+
+**The cost of a frame** on a plan *x* (one row per agent) is its critical path:
+
+> *C*(*x*) = Σ<sub>j = 1…k</sub> max<sub>a ∈ W<sub>j</sub></sub> max<sub>d</sub> *c*<sub>a, x(a), d</sub> + transfers(*x*)
+
+**The DCC's problem** is to maximise Σ<sub>a</sub> *w*<sub>a</sub> *q*<sub>a, x(a)</sub>
+subject to *C*(*x*) ≤ *T* and Σ<sub>a</sub> *μ*<sub>a, x(a)</sub> ≤ *M*, with every
+*x*(*a*) at least as good as *f*<sub>a</sub>. It is a multiple-choice knapsack on the
+critical path, NP-hard in general. The Q-RAM greedy — floors first, then upgrades in
+decreasing Δ(*w q*) / Δ*c* over each menu's convex hull — solves it near-optimally;
+an exact solver stays the fallback for small menus. The envelope sent is
+*b*<sub>a</sub> = *c*<sub>a, x∗(a)</sub> + *σ*<sub>a</sub>, where *σ*<sub>a</sub> is
+*a*'s part of 80 % of the slack *T* − *C*(*x*<sup>∗</sup>), in proportion to
+*c*<sub>a, x∗(a)</sub>, device by device.
+
+**The agent's choice** at frame *t*, from its fresh prices *ĉ*<sup>t</sup>:
+
+> *r*<sub>t</sub> = the row of least impact, then dearest, among those with
+> *ĉ*<sup>t</sup><sub>a,r</sub> ≤ *b*<sub>a</sub>; *r*<sub>t</sub> = *f*<sub>a</sub>,
+> flagged over budget, when there is none.
+
+**Propositions.**
+
+- **(P-a) A frame fits when the prices are right.** If every *ĉ*<sup>t</sup> = *c*,
+  then *C*(*r*<sub>t</sub>) ≤ *T*. *Proof.* Each agent runs a row costing at most
+  *b*<sub>a</sub>. The share scales every planned time by one factor per device, so
+  a wave's slowest member stays its slowest and the critical path grows by at most
+  80 % of the slack: *C*(*r*<sub>t</sub>) ≤ *C*(*x*<sup>∗</sup>) + 0.8 (*T* − *C*(*x*<sup>∗</sup>)) ≤ *T*. ∎
+- **(P-b) Every active agent can run.** Its floor is admitted, or the epoch is an
+  emergency in which its envelope *is* its floor. *Proof.* The share admits every
+  floor before any upgrade; when the floors do not fit, the allocation is `Safety`. ∎
+- **(P-c) The choice can be replayed.** *r*<sub>t</sub> is a pure function of
+  *b*<sub>a</sub>, the prices and the developer's rules: the same frame with the same
+  prices chooses the same row. With integer costs and a total order on ties, the
+  share is a pure function of its inputs too, which is what makes the journal
+  replayable. ∎
+
+When the prices are wrong — an agent under-quoted — P-a no longer holds for that
+frame; the layer sees its own price leave the envelope on the run that overran, its
+agent steps down from the next frame start, and the reserve (the 20 % kept back)
+absorbs what is between.
+
+**Layers.** *L*<sub>t</sub>(*a*) is the layer installed at *a*'s place during frame
+*t*.
+
+- *No frame without a layer:* a layer staged into an empty place is installed at
+  once; afterwards *L*<sub>t</sub>(*a*) changes only at a frame start, from
+  *L*<sub>t−1</sub>(*a*) to the staged layer.
+- *The place is fixed:* every lane of a family has the family's outputs and phase, so
+  a swap changes how the family works, never what it produces or when.
+- *Bounded memory:* a layer put aside is released once *K* = 3 allocations have been
+  lent, or as soon as the installed layer and the kept ones exceed the envelope's
+  memory on a device — at every frame start, a place holds no kept layer the envelope
+  cannot hold.
+- *A quiet frame costs the agent nothing:* it is called only for a wake — its first
+  frame, an allocation, a price that stops fitting or drifts by more than 10 %, a
+  full quote older than one second, a new target, a lane error, a refused input.
+
+**The cost of the protocol.** One round trip per epoch. The share costs
+O(*L* log *L*), *L* being the number of rows of every menu together — a few dozen.
+The choice costs O(|menu|) per agent, and only when the agent is woken: a quiet frame
+adds no agent call.
 
 ## Next steps
 
 - [How-to: control GORNA adaptation](../how-to/control-gorna-adaptation.md) — pin,
   bound, or free an agent.
 - [How-to: debug a frame](../how-to/debug-a-frame.md) — watch a live GORNA decision.
-- [Agents and Lanes](./agents-and-lanes.md) — what GORNA negotiates over.
+- [Agents and Lanes](./agents-and-lanes.md) — what GORNA negotiates over, and lanes
+  as layers.
 - [AGDF](./agdf.md) — the layout adaptation the DCC observes but does not auction.
-- [Glossary](../reference/glossary.md) — GORNA, DCC, AdaptationMode, cost model, frame governor
-  budget multiplier, death spiral.
+- [Glossary](../reference/glossary.md) — GORNA, DCC, epoch, envelope, AdaptationMode,
+  cost model, frame governor, budget multiplier, death spiral.

@@ -11,6 +11,12 @@ a budget through GORNA, selects one lane, and dispatches it every frame.
 > runs deterministically each tick belongs in a direct service (`AssetService`,
 > `EcsMaintenance`, a `DataSystem`), not an agent.
 
+> **A new subsystem is usually a family, not an agent.** A family is its lanes and one
+> `register_agent!` registration; its agent is the engine's `LaneAgent`, which offers
+> the family's rows to GORNA, chooses within its envelope and runs the lanes as
+> [layers](../concepts/agents-and-lanes.md#lanes-are-layers). The steps below write an
+> agent by hand, the older way that rendering and scripting still use.
+
 ## Step 1 — Implement `Agent` and `Default` — and nothing else
 
 An agent struct implements **exactly two traits**: [`Agent`](../concepts/agents-and-lanes.md) and

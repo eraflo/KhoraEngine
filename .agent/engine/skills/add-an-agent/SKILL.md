@@ -9,6 +9,11 @@ An `Agent` is a strategist: given a budget, it selects a `Lane` and reports stat
 `crates/khora-core/src/agent/mod.rs`. **Most subsystems should NOT be agents** — only those that negotiate
 a GORNA budget. Non-negotiating work uses a service (`AssetService`, `EcsMaintenance`, …).
 
+> **A new subsystem is a family, not an agent** (RULES §8): its lanes and one `register_agent!`
+> registration (phase, importance, lanes, default level); its agent is the one `LaneAgent`, which runs the
+> lanes as layers. The steps below write a hand-written agent — what only `RenderAgent` and `ScriptAgent`
+> still are.
+
 ## Steps
 1. Name the agent: `AgentId::new("<name>")` — for a lane family, its `LaneFamily::AGENT` constant. The core
    lists no agent (`AgentId` is a name, `crates/khora-core/src/agent/gorna/mod.rs`); boot refuses a duplicate

@@ -19,6 +19,7 @@ modes, and tick ordering (Substrate Pass + agent descent).
   their rows (cost per device, quality from `Impact`, confidence, floor); the DCC admits the floors on the
   critical path, upgrades by weighed quality per µs, and lends each agent an **envelope** (time + memory);
   the agent chooses its row within it every frame. Replay lends recorded allocations.
+- **Lanes are layers** (`khora-core/src/agent/layer/`): a family's `Place` holds the installed `Layer`, the staged one, the ones kept (`KEEP_EPOCHS` = 3) and the `Wake`s. Frame order (`scheduler/frame.rs`): lend → `swap_layers` (each place's `start_frame`) → after the bus, `wake_layered` (agent lock, then place lock) → waves run `place.run` (`execution.rs` `run_once`), contending as the installed layer. The scheduler caches each layered agent (`scheduler/known.rs`): a quiet frame locks none. `LaneAgent`'s side: `khora-agents/src/agent/{layer,wake}.rs`.
 - **Adaptation modes** are envelope shapes: `Learning` (free), `Manual(row)` (a pin), `Stable` (keeps its
   envelope while it fits), `Bounded(min, max)` (allowed rows); a `Cap` hint is a ceiling.
 - **Only agents bid** for the budget; the Data layer (AGDF) self-optimizes and is only observed via telemetry.
@@ -26,9 +27,11 @@ modes, and tick ordering (Substrate Pass + agent descent).
 
 ## Hard rules
 - The DCC lends envelopes and observes; it never chooses an agent's row (a developer pin aside) nor a data layout.
+- A swap happens only at a frame start, at the family's place; no frame runs without a layer. Lock order: an agent's lock, then its place's — never the reverse.
+- A panic in a run, a wake or a frame start fails that family alone; its wakes are handed back.
 - No `std::thread::spawn` — concurrency flows through the DCC.
 
-Use codegraph to trace `offer → allocate → decide → publish → lend_allocation → apply → execute → AgentReport`.
+Use codegraph to trace `offer → allocate → decide → publish → lend_allocation → apply → wake_layered → LaneAgent::answer → Place::run → AgentReport`.
 
 ## Skills
 - [`add-an-agent`](../skills/add-an-agent/SKILL.md) — add a budget-negotiating agent.
