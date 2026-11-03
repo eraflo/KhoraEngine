@@ -282,15 +282,6 @@ impl EditorApp {
                         let r = monitor.get_usage_report();
                         state.status.vram_mb = r.current_bytes as f32 / (1024.0 * 1024.0);
                     }
-                    MonitoredResourceType::Gpu => {
-                        if let Some(g) = monitor.get_gpu_report() {
-                            state.status.draw_calls = g.draw_calls;
-                            state.status.triangles = g.triangles_rendered as u64;
-                        }
-                        if let Some(hw) = monitor.get_hardware_report() {
-                            state.status.gpu_load = hw.gpu_load.unwrap_or(0.0);
-                        }
-                    }
                     MonitoredResourceType::Hardware => {
                         if let Some(hw) = monitor.get_hardware_report() {
                             state.status.cpu_load = hw.cpu_load;

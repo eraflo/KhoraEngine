@@ -34,8 +34,8 @@ the input to every adaptive decision. See [Telemetry](../concepts/telemetry.md).
 - **Memory.** `SaaTrackingAllocator` (installed as the global allocator in every binary) tracks every
   heap allocation into atomic counters; the `MemoryMonitor` surfaces them as `memory.current_bytes`,
   `memory.bytes_allocated_lifetime`, `memory.net_allocations`.
-- **Hardware monitors.** `GpuMonitor`, `MemoryMonitor`, `VramMonitor` poll GPU utilization, heap, and
-  VRAM.
+- **Hardware monitors.** `MemoryMonitor` and `VramMonitor` poll the heap and the VRAM. Time is not a
+  monitor's: it comes from the agents' reports and the frame report.
 
 **Where it surfaces.** The editor's **Control Plane** (the sixth Spine mode) is the primary surface —
 see [Editor — The Control Plane](../reference/editor.md):

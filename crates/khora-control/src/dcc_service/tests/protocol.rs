@@ -444,11 +444,11 @@ fn the_governors_recovery_widens_the_envelope_again() {
     assert!(widened, "the recovery widens it again: {after:?}");
 }
 
-/// **The VRAM figure survives GPU timings.** A hardware report carrying GPU
-/// timings says nothing of the VRAM: the figure the DCC knew stays, instead
-/// of becoming `Some(0)` — which refused every upgrade that adds VRAM.
+/// **A hardware report keeps the known VRAM.** A hardware report says
+/// nothing of the VRAM: the figure the DCC knew stays, instead of becoming
+/// `Some(0)` — which refused every upgrade that adds VRAM.
 #[test]
-fn vram_cap_is_not_zero_once_gpu_timings_arrive() {
+fn a_hardware_report_keeps_the_known_vram() {
     let (mut dcc, rx) = DccService::new(DccConfig {
         tick_rate: 100,
         ..Default::default()
@@ -468,7 +468,6 @@ fn vram_cap_is_not_zero_once_gpu_timings_arrive() {
             battery: khora_core::platform::BatteryLevel::Mains,
             cpu_load: 0.1,
             gpu_load: Some(0.1),
-            gpu_timings: Some(khora_core::telemetry::monitoring::GpuReport::default()),
         },
     ))
     .expect("the DCC listens");

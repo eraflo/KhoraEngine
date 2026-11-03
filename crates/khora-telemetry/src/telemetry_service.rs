@@ -69,11 +69,6 @@ impl TelemetryService {
                     let report = monitor.get_usage_report();
                     let _ = sender.send(TelemetryEvent::ResourceReport(report));
 
-                    // GPU Performance Report (timings)
-                    if let Some(gpu_report) = monitor.get_gpu_report() {
-                        let _ = sender.send(TelemetryEvent::GpuReport(gpu_report));
-                    }
-
                     // Hardware Health Report (thermal, load)
                     if let Some(hw_report) = monitor.get_hardware_report() {
                         let _ = sender.send(TelemetryEvent::HardwareReport(hw_report));

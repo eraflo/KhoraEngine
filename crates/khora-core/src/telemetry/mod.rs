@@ -29,6 +29,6 @@ pub mod monitoring;
 pub use self::event::TelemetryEvent;
 pub use self::metrics::{Metric, MetricId, MetricValue, MetricsError, MetricsResult};
 pub use self::monitoring::{
-    GpuReport, MemoryReport, MonitoredResourceType, ResourceMonitor, ResourceUsageReport,
-    VramProvider, VramReport,
+    MemoryReport, MonitoredResourceType, ResourceMonitor, ResourceUsageReport, VramProvider,
+    VramReport,
 };

@@ -22,7 +22,6 @@ use std::borrow::Cow;
 use std::fmt::Debug;
 
 use crate::platform::{BatteryLevel, ThermalStatus};
-use crate::renderer::api::device::gpu_hook::GpuHook;
 
 /// The core trait for a resource monitor.
 ///
@@ -39,11 +38,6 @@ pub trait ResourceMonitor: Send + Sync + Debug + 'static {
 
     /// Returns a snapshot of the current usage data for the monitored resource.
     fn get_usage_report(&self) -> ResourceUsageReport;
-
-    /// Returns a GPU performance report, if this monitor supports it.
-    fn get_gpu_report(&self) -> Option<GpuReport> {
-        None
-    }
 
     /// Returns a hardware health report, if this monitor supports it.
     fn get_hardware_report(&self) -> Option<HardwareReport> {
@@ -77,8 +71,6 @@ pub enum MonitoredResourceType {
     Vram,
     /// Main system RAM.
     SystemRam,
-    /// General GPU performance (e.g., execution timing).
-    Gpu,
     /// General platform hardware status (thermal, CPU load).
     Hardware,
 }
@@ -105,26 +97,6 @@ pub struct HardwareReport {
     pub cpu_load: f32,
     /// Overall GPU load (0.0 to 1.0), if reported by the hardware monitor.
     pub gpu_load: Option<f32>,
-    /// Detailed GPU timing report for the current frame.
-    pub gpu_timings: Option<GpuReport>,
-}
-
-/// A report of GPU performance timings for a single frame.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct GpuReport {
-    /// The frame number this report corresponds to.
-    pub frame_number: u64,
-    /// Raw timestamp query results for each GPU hook, in microseconds.
-    /// The order corresponds to the `GpuHook` enum definition.
-    pub hook_timings_us: [Option<u32>; 4],
-    /// The CPU time spent preparing the frame, in microseconds.
-    pub cpu_preparation_time_us: Option<u32>,
-    /// The CPU time spent submitting commands for the frame, in microseconds.
-    pub cpu_submission_time_us: Option<u32>,
-    /// The number of draw calls in this frame.
-    pub draw_calls: u32,
-    /// The number of triangles rendered in this frame.
-    pub triangles_rendered: u32,
 }
 
 /// A detailed report of system memory (RAM) usage and allocation patterns.
@@ -240,39 +212,5 @@ impl MemoryReport {
             r if r < 0.6 => "High",
             _ => "Critical",
         }
-    }
-}
-
-impl GpuReport {
-    /// Gets the timing for a specific GPU performance hook, in microseconds.
-    pub fn get_hook_timing_us(&self, hook: GpuHook) -> Option<u32> {
-        self.hook_timings_us[hook as usize]
-    }
-
-    /// Calculates the duration of the main render pass, in microseconds.
-    pub fn main_pass_duration_us(&self) -> Option<u32> {
-        match (
-            self.get_hook_timing_us(GpuHook::MainPassBegin),
-            self.get_hook_timing_us(GpuHook::MainPassEnd),
-        ) {
-            (Some(begin), Some(end)) if end >= begin => Some(end - begin),
-            _ => None,
-        }
-    }
-
-    /// Calculates the total GPU duration for the frame, in microseconds.
-    pub fn frame_total_duration_us(&self) -> Option<u32> {
-        match (
-            self.get_hook_timing_us(GpuHook::FrameStart),
-            self.get_hook_timing_us(GpuHook::FrameEnd),
-        ) {
-            (Some(start), Some(end)) if end >= start => Some(end - start),
-            _ => None,
-        }
-    }
-
-    /// Sets the timing for a specific hook, in microseconds.
-    pub fn set_hook_timing_us(&mut self, hook: GpuHook, timing_us: Option<u32>) {
-        self.hook_timings_us[hook as usize] = timing_us;
     }
 }

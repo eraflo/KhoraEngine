@@ -588,11 +588,6 @@ fn module_crate_root_paths_still_resolve() {
         PhantomData::<khora_sdk::GizmoMode>,
         PhantomData::<khora_core::ui::editor::GizmoMode>,
     );
-    let _ = type_name::<khora_sdk::GpuMonitor>();
-    same_type(
-        PhantomData::<khora_sdk::GpuMonitor>,
-        PhantomData::<khora_infra::GpuMonitor>,
-    );
     let _ = type_name::<khora_sdk::HandleComponent<khora_sdk::SoundData>>();
     same_type(
         PhantomData::<khora_sdk::HandleComponent<khora_sdk::SoundData>>,

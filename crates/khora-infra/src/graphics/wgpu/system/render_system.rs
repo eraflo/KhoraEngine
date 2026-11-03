@@ -264,10 +264,6 @@ impl RenderSystem for WgpuRenderSystem {
             (full_frame_ms - command_recording_timer.elapsed_ms().unwrap_or(0)) as f32;
         self.last_frame_stats.cpu_render_submission_time_ms = submission_ms as f32;
 
-        if let Some(monitor) = &self.gpu_monitor {
-            monitor.update_from_frame_stats(&self.last_frame_stats);
-        }
-
         Ok(self.last_frame_stats.clone())
     }
 
@@ -393,10 +389,6 @@ impl RenderSystem for WgpuRenderSystem {
         self.frame_count += 1;
         self.last_frame_stats.frame_number = self.frame_count;
 
-        if let Some(monitor) = &self.gpu_monitor {
-            monitor.update_from_frame_stats(&self.last_frame_stats);
-        }
-
         Ok(self.last_frame_stats.clone())
     }
 
@@ -501,7 +493,6 @@ impl RenderSystem for WgpuRenderSystem {
         }
         self.wgpu_device = None;
         self.graphics_context_shared = None;
-        self.gpu_monitor = None;
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

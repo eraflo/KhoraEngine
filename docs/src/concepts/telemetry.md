@@ -12,9 +12,9 @@ see [How-to: profile performance](../how-to/profile-performance.md).
 
 A self-optimizing engine is only as smart as its inputs. The DCC negotiates frame
 budgets through **GORNA**, but it can only make better decisions than a static
-configuration *if it can see* frame time, GPU utilization, VRAM headroom, and heap
-pressure. Take those readings away and the whole adaptive premise collapses to a
-fixed config.
+configuration *if it can see* how long the work takes and what the machine has
+left: VRAM headroom, heap pressure, heat, battery. Take those readings away and the
+whole adaptive premise collapses to a fixed config.
 
 So telemetry is not bolted on — it is the **nervous system** of the
 [SAA](./saa.md). Monitors run alongside the workload, a registry collects the
@@ -22,12 +22,33 @@ readings, and the DCC consumes them on its cold-path tick and turns them into bu
 decisions. The same readings power the editor's control surface, where the engine's
 decision-making becomes visible.
 
+## Reports and context
+
+Two kinds of reading reach the DCC, on the same inbox, and they answer different
+questions:
+
+- **What the work costs** comes from the **reports** of the GORNA protocol, never
+  from a monitor. Each agent reports every run — the row it ran, the time it took
+  on each device, the work it did — and the host reports every frame: the
+  `FrameReport`, how long the frame kept each device busy, the waits for the
+  display left out. The DCC fits its cost models on the agents' reports and
+  regulates the frame on the frame's (see [GORNA](./gorna.md)). A device a report
+  did not measure is *unmeasured*, never zero: the GPU stays unmeasured until the
+  frame graph is timed.
+- **The situation the work runs in** comes from **telemetry**: memory, video memory,
+  heat, battery, the CPU's load, the data layer's access patterns. No agent reports
+  these — they are facts about the machine and the data, not costs of work — and
+  the heuristics read them to shape the target the budget is shared against.
+
+Time, in particular, never travels through a monitor: a monitor sees the machine,
+a report sees the work.
+
 ## Two collection styles
 
 The pipeline has two complementary halves, reflecting two kinds of data:
 
-- **Poll-based monitors.** Hardware-facing readings — GPU utilization and timings,
-  heap and virtual memory, video memory — are *pulled*: the telemetry service asks
+- **Poll-based monitors.** Hardware-facing readings — heap and virtual memory,
+  video memory, heat and load — are *pulled*: the telemetry service asks
   each registered monitor for its current value. A monitor is a trait; the concrete
   implementations live in the backend crate because they call platform APIs, while
   the trait surface stays portable.
@@ -67,9 +88,10 @@ pay the string-keyed lookup, which they can afford.
 
 ```
 hardware monitors  ┐
-                   ├─→ telemetry service ─→ DCC (cold path)
-pushed metrics     ┘        ↑                  │ heuristics → GORNA → budgets
-                            │                  ↓
+                   ├─→ telemetry service ─┐
+pushed metrics     ┘        ↑             ├─→ DCC (cold path)
+                            │             │     │ heuristics → GORNA → budgets
+agents' and frame reports ──┼─────────────┘     ↓
                     editor reads out      budget channel → agents
 ```
 
@@ -81,8 +103,9 @@ side-channel.
 
 The pipeline is real but not complete, and it is worth naming the edges:
 
-- **No per-stage GPU breakdown.** GPU timings are coarse; the renderer does not yet
-  attribute cost to individual passes.
+- **No GPU time yet.** The frame graph is not timed on the GPU, so the reports
+  carry the host's time only and a GPU-bound frame hides in the wait for the
+  swapchain image (issue #292).
 - **No per-frame trace records.** Integration with an external tracing tool is
   compatible with the pipeline but not wired up.
 - **Histogram export and retention are unsettled.** Histograms collect, but an

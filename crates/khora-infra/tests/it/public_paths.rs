@@ -92,7 +92,6 @@ mod every_pub_mod {
     use khora_infra::platform::winit::input as _;
     use khora_infra::platform::winit::window as _;
     use khora_infra::telemetry as _;
-    use khora_infra::telemetry::gpu_monitor as _;
     use khora_infra::telemetry::memory_monitor as _;
     use khora_infra::telemetry::vram_monitor as _;
     use khora_infra::ui as _;
@@ -349,17 +348,6 @@ fn module_platform_paths_still_resolve() {
 
 #[test]
 fn module_telemetry_paths_still_resolve() {
-    let _ = type_name::<khora_infra::telemetry::gpu_monitor::GpuMonitor>();
-    let _ = type_name::<khora_infra::GpuMonitor>();
-    same_type(
-        PhantomData::<khora_infra::GpuMonitor>,
-        PhantomData::<khora_infra::telemetry::gpu_monitor::GpuMonitor>,
-    );
-    let _ = khora_infra::telemetry::gpu_monitor::GpuMonitor::new;
-    let _ = khora_infra::telemetry::gpu_monitor::GpuMonitor::get_gpu_report;
-    let _ = khora_infra::telemetry::gpu_monitor::GpuMonitor::update_from_frame_stats;
-    is_debug::<khora_infra::telemetry::gpu_monitor::GpuMonitor>();
-    is_resource_monitor::<khora_infra::telemetry::gpu_monitor::GpuMonitor>();
     let _ = type_name::<khora_infra::telemetry::memory_monitor::MemoryMonitor>();
     let _ = type_name::<khora_infra::MemoryMonitor>();
     same_type(
@@ -595,7 +583,6 @@ mod paths_used_by_other_crates {
     use khora_infra::ui::egui::app::WindowIconInput as _; // khora-sdk
     use khora_infra::ui::TaffyLayoutSystem as _; // khora-sdk
     use khora_infra::DefaultMixBus as _; // khora-sdk
-    use khora_infra::GpuMonitor as _; // khora-sdk
     use khora_infra::SaaTrackingAllocator as _; // khora-sdk
     use khora_infra::WgpuRenderSystem as _; // khora-sdk
 }

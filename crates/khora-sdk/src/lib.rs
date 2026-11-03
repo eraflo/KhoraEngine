@@ -141,7 +141,6 @@ pub use khora_telemetry::TelemetryService;
 
 // Infra / monitors
 pub use khora_infra::telemetry::memory_monitor::MemoryMonitor;
-pub use khora_infra::GpuMonitor;
 
 // I/O
 pub use khora_core::asset::AssetSource;

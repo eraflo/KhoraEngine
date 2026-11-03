@@ -319,7 +319,6 @@ fn safety_does_not_wait_for_the_epoch_to_end() {
             battery: khora_core::platform::BatteryLevel::Critical,
             cpu_load: 0.99,
             gpu_load: Some(0.2),
-            gpu_timings: None,
         },
     ))
     .expect("the DCC listens");

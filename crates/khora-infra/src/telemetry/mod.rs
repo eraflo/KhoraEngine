@@ -14,6 +14,5 @@
 
 //! Telemetry monitoring for system resources.
 
-pub mod gpu_monitor;
 pub mod memory_monitor;
 pub mod vram_monitor;

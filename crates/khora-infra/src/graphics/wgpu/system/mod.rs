@@ -14,8 +14,6 @@
 
 //! The concrete, WGPU-based implementation of the `RenderSystem` trait.
 
-use crate::telemetry::gpu_monitor::GpuMonitor;
-
 use crate::graphics::wgpu::backend::WgpuBackendSelector;
 use crate::graphics::wgpu::device::WgpuDevice;
 use crate::graphics::wgpu::graphics_context::WgpuGraphicsContext;
@@ -58,7 +56,6 @@ mod resize_debounce;
 pub struct WgpuRenderSystem {
     graphics_context_shared: Option<Arc<Mutex<WgpuGraphicsContext>>>,
     wgpu_device: Option<Arc<WgpuDevice>>,
-    gpu_monitor: Option<Arc<GpuMonitor>>,
     current_width: u32,
     current_height: u32,
     frame_count: u64,
@@ -114,7 +111,6 @@ impl fmt::Debug for WgpuRenderSystem {
         f.debug_struct("WgpuRenderSystem")
             .field("graphics_context_shared", &self.graphics_context_shared)
             .field("wgpu_device", &self.wgpu_device)
-            .field("gpu_monitor", &self.gpu_monitor)
             .field("current_width", &self.current_width)
             .field("current_height", &self.current_height)
             .field("frame_count", &self.frame_count)
@@ -158,7 +154,6 @@ impl WgpuRenderSystem {
         Self {
             graphics_context_shared: None,
             wgpu_device: None,
-            gpu_monitor: None,
             current_width: 0,
             current_height: 0,
             frame_count: 0,
@@ -259,13 +254,8 @@ impl WgpuRenderSystem {
             }
         }
 
-        let mut created_monitors: Vec<Arc<dyn ResourceMonitor>> = Vec::new();
-        let gpu_monitor = Arc::new(GpuMonitor::new("WGPU".to_string()));
-        created_monitors.push(gpu_monitor.clone());
-        self.gpu_monitor = Some(gpu_monitor);
-
         let vram_monitor = device_arc as Arc<dyn ResourceMonitor>;
-        created_monitors.push(vram_monitor);
+        let created_monitors: Vec<Arc<dyn ResourceMonitor>> = vec![vram_monitor];
 
         // Initialize camera uniform resources
         self.initialize_camera_uniforms()?;

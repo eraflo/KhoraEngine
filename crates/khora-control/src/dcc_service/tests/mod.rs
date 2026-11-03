@@ -1043,7 +1043,6 @@ fn thermal_report(thermal: khora_core::platform::ThermalStatus) -> TelemetryEven
         battery: khora_core::platform::BatteryLevel::Mains,
         cpu_load: 0.2,
         gpu_load: Some(0.2),
-        gpu_timings: None,
     })
 }
 
@@ -1240,7 +1239,6 @@ fn test_critical_thermal_clamps_multiplier() {
             battery: khora_core::platform::BatteryLevel::Mains,
             cpu_load: 0.2,
             gpu_load: Some(0.2),
-            gpu_timings: None,
         },
     ))
     .unwrap();

@@ -639,8 +639,8 @@ pub struct StatusBarData {
     pub frame_time_ms: f32,
     pub entity_count: usize,
     pub memory_used_mb: f32,
-    /// GPU draw calls last frame (from `GpuReport`). 0 when telemetry has no
-    /// reading yet.
+    /// GPU draw calls last frame. 0 until the render family reports them
+    /// (the frame graph is not timed yet: issue #292).
     pub draw_calls: u32,
     /// GPU triangles rendered last frame.
     pub triangles: u64,

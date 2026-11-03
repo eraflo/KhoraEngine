@@ -49,6 +49,17 @@ const RETIRED: &[&str] = &[
     "khora-core/src/ui/editor/gizmo_interact",
     "khora-core/src/ui/editor/log_capture",
     "mod_gizmo",
+    // Time left telemetry: the frame report and the agents' reports carry it.
+    "khora_infra::telemetry::gpu_monitor",
+    "khora-infra/src/telemetry/gpu_monitor",
+    "khora_infra::GpuMonitor",
+    "khora_sdk::GpuMonitor",
+    "TelemetryEvent::GpuReport",
+    "monitoring::GpuReport",
+    "get_gpu_report",
+    // The frame governor replaced the PID.
+    "khora_control::pid",
+    "khora-control/src/pid.rs",
     // The hub directory.
     "`hub/",
     "(hub/",

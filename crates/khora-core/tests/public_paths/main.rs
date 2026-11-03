@@ -1107,7 +1107,6 @@ fn telemetry_event_variants(x: &khora_core::telemetry::event::TelemetryEvent) {
         khora_core::telemetry::event::TelemetryEvent::MetricUpdate { .. } => {}
         khora_core::telemetry::event::TelemetryEvent::ResourceReport(..) => {}
         khora_core::telemetry::event::TelemetryEvent::HardwareReport(..) => {}
-        khora_core::telemetry::event::TelemetryEvent::GpuReport(..) => {}
         khora_core::telemetry::event::TelemetryEvent::ModeChange(..) => {}
         khora_core::telemetry::event::TelemetryEvent::AgentReport(..) => {}
         khora_core::telemetry::event::TelemetryEvent::FrameReport(..) => {}
@@ -1160,25 +1159,8 @@ fn metrics_error_variants(x: &khora_core::telemetry::metrics::MetricsError) {
     }
 }
 
-fn gpu_report_fields(x: &khora_core::telemetry::monitoring::GpuReport) {
-    let _ = (
-        &x.frame_number,
-        &x.hook_timings_us,
-        &x.cpu_preparation_time_us,
-        &x.cpu_submission_time_us,
-        &x.draw_calls,
-        &x.triangles_rendered,
-    );
-}
-
 fn hardware_report_fields(x: &khora_core::telemetry::monitoring::HardwareReport) {
-    let _ = (
-        &x.thermal,
-        &x.battery,
-        &x.cpu_load,
-        &x.gpu_load,
-        &x.gpu_timings,
-    );
+    let _ = (&x.thermal, &x.battery, &x.cpu_load, &x.gpu_load);
 }
 
 fn memory_report_fields(x: &khora_core::telemetry::monitoring::MemoryReport) {
@@ -1206,7 +1188,6 @@ fn monitored_resource_type_variants(x: &khora_core::telemetry::monitoring::Monit
     match x {
         khora_core::telemetry::monitoring::MonitoredResourceType::Vram => {}
         khora_core::telemetry::monitoring::MonitoredResourceType::SystemRam => {}
-        khora_core::telemetry::monitoring::MonitoredResourceType::Gpu => {}
         khora_core::telemetry::monitoring::MonitoredResourceType::Hardware => {}
     }
 }
@@ -1415,7 +1396,6 @@ mod trait_items {
         let _ = <T as khora_core::telemetry::monitoring::ResourceMonitor>::monitor_id;
         let _ = <T as khora_core::telemetry::monitoring::ResourceMonitor>::resource_type;
         let _ = <T as khora_core::telemetry::monitoring::ResourceMonitor>::get_usage_report;
-        let _ = <T as khora_core::telemetry::monitoring::ResourceMonitor>::get_gpu_report;
         let _ = <T as khora_core::telemetry::monitoring::ResourceMonitor>::get_hardware_report;
         let _ = <T as khora_core::telemetry::monitoring::ResourceMonitor>::get_metrics;
         let _ = <T as khora_core::telemetry::monitoring::ResourceMonitor>::as_any;
@@ -3029,21 +3009,6 @@ fn module_telemetry_paths_still_resolve() {
         PhantomData::<khora_core::telemetry::MetricsResult<u32>>,
         PhantomData::<khora_core::telemetry::metrics::MetricsResult<u32>>,
     );
-    let _ = type_name::<khora_core::telemetry::monitoring::GpuReport>();
-    let _ = type_name::<khora_core::telemetry::GpuReport>();
-    same_type(
-        PhantomData::<khora_core::telemetry::GpuReport>,
-        PhantomData::<khora_core::telemetry::monitoring::GpuReport>,
-    );
-    let _ = gpu_report_fields as fn(&khora_core::telemetry::monitoring::GpuReport);
-    let _ = khora_core::telemetry::monitoring::GpuReport::get_hook_timing_us;
-    let _ = khora_core::telemetry::monitoring::GpuReport::main_pass_duration_us;
-    let _ = khora_core::telemetry::monitoring::GpuReport::frame_total_duration_us;
-    let _ = khora_core::telemetry::monitoring::GpuReport::set_hook_timing_us;
-    is_debug::<khora_core::telemetry::monitoring::GpuReport>();
-    is_clone::<khora_core::telemetry::monitoring::GpuReport>();
-    is_copy::<khora_core::telemetry::monitoring::GpuReport>();
-    is_default::<khora_core::telemetry::monitoring::GpuReport>();
     let _ = type_name::<khora_core::telemetry::monitoring::HardwareReport>();
     let _ = hardware_report_fields as fn(&khora_core::telemetry::monitoring::HardwareReport);
     is_debug::<khora_core::telemetry::monitoring::HardwareReport>();
@@ -3597,7 +3562,6 @@ mod paths_used_by_other_crates {
     use khora_core::telemetry::metrics::MetricValue::Histogram as _; // khora-telemetry
     use khora_core::telemetry::metrics::MetricsError as _; // khora-telemetry
     use khora_core::telemetry::metrics::MetricsResult as _; // khora-telemetry
-    use khora_core::telemetry::monitoring::GpuReport as _; // khora-infra
     use khora_core::telemetry::monitoring::HardwareReport as _; // khora-control
     use khora_core::telemetry::monitoring::MemoryReport as _; // khora-infra
     use khora_core::telemetry::monitoring::MonitoredResourceType as _; // khora-infra

@@ -30,9 +30,7 @@ pub use audio::DefaultMixBus;
 pub use graphics::wgpu::WgpuRenderSystem;
 pub use memory::SaaTrackingAllocator;
 pub use platform::winit::{WinitWindow, WinitWindowBuilder};
-pub use telemetry::{
-    gpu_monitor::GpuMonitor, memory_monitor::MemoryMonitor, vram_monitor::VramMonitor,
-};
+pub use telemetry::{memory_monitor::MemoryMonitor, vram_monitor::VramMonitor};
 pub use ui::egui::{EguiEditorShell, EguiFrameRenderState, EguiOverlay, EguiUiBuilder};
 pub use ui::taffy::TaffyLayoutSystem;
 pub use ui::text::{ParleyShaper, SwashRasterizer};

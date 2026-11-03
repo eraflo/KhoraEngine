@@ -144,28 +144,6 @@ impl DccService {
                             }
                             ctx.mode = new_mode;
                         }
-                        TelemetryEvent::GpuReport(report) => {
-                            if let Some(frame_time_us) = report.frame_total_duration_us() {
-                                store.push(
-                                    khora_core::telemetry::MetricId::new(
-                                        "renderer",
-                                        "gpu_frame_time",
-                                    ),
-                                    frame_time_us as f32 / 1000.0,
-                                );
-                            }
-                            store.push(
-                                khora_core::telemetry::MetricId::new("renderer", "draw_calls"),
-                                report.draw_calls as f32,
-                            );
-                            store.push(
-                                khora_core::telemetry::MetricId::new(
-                                    "renderer",
-                                    "triangles_rendered",
-                                ),
-                                report.triangles_rendered as f32,
-                            );
-                        }
                         TelemetryEvent::AgentReport(run) => {
                             // A run's report feeds the agent's empirical cost
                             // model at the run's workload, surfaces the run's

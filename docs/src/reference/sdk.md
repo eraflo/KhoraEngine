@@ -257,7 +257,7 @@ alone. The major groups:
 | Runtime / control | `Runtime`, `Services`, `Backends`, `Resources`, `DccService`, `DccConfig`, `EngineMode`, `SharedEngineMode`, `EngineContext`, `AgentRegistry` |
 | Core types | `ExecutionPhase`, `ExecutionTiming`, `AgentId`, `AgentStatus`, `StrategyId`, `AgentImportance` |
 | Telemetry | `TelemetryService`, `TelemetryEvent`, `MonitoredResourceType`, `MetricsRegistry`, `MonitorRegistry` |
-| Monitors | `GpuMonitor`, `MemoryMonitor` |
+| Monitors | `MemoryMonitor` |
 | Backends + traits | `WgpuRenderSystem`, `RenderSystem`, `PipelineSystem`, `RapierPhysicsWorld`, `PhysicsProvider`, `CpalAudioDevice`, `AudioDevice`, `TaffyLayoutSystem`, `LayoutSystem` |
 | Scene I/O | `SerializationService`, `SerializationServiceError`, `SceneFile`, `SerializationGoal`, `LoadReport`, `ComponentRegistration`, `serialize_subtree`, `instantiate_subtree` |
 | Assets | `AssetService`, `AssetIo`, `FileLoader`, `PackLoader`, `PackBuilder`, `IndexBuilder`, `AssetWatcher`, `AssetSource` |
