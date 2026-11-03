@@ -304,8 +304,8 @@ When quality changes unexpectedly, GORNA is usually responding to a real signal.
 
 ### "Why did quality suddenly drop?" (a strategy downgraded on its own)
 
-**Cause.** The DCC's heuristics shape a single frame-time **target**, and a **PID controller** drives
-the `global_budget_multiplier` that scales every agent's budget. Any of these will lower the
+**Cause.** The DCC's heuristics shape a single frame-time **target**, and the **frame governor**
+drives the `global_budget_multiplier` that scales every agent's budget. Any of these will lower the
 multiplier and push agents to cheaper strategies:
 
 - **Thermal** — a throttling GPU/CPU relaxes the target to 30 FPS; `Critical` triggers a hard ~20 FPS
@@ -323,9 +323,10 @@ pressure"). See [Pin a strategy](#pin-a-strategy-so-adaptation-stops-surprising-
 ### Quality keeps oscillating, or upgrades right after a downgrade
 
 **Cause.** The loop is closed in both directions: once measured frame time settles under the
-setpoint, the PID multiplier climbs back toward 1.0 and budgets are re-issued so agents upgrade
-again. Re-arbitration fires when the multiplier moves by more than `PID_RENEGOTIATE_DELTA` (0.05).
-Near a threshold this can cycle.
+setpoint, the governor's multiplier climbs back toward 1.0 and budgets are re-issued so agents
+upgrade again. The governor holds inside a band and remembers, for five seconds, the multiplier that
+ran over, so it does not cycle between two neighbouring rows on its own; an oscillation that remains
+comes from the load itself changing.
 
 **Fix.** Pin or clamp the agent (below) to stop the oscillation while you investigate.
 

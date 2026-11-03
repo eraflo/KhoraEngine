@@ -57,7 +57,7 @@ during Research and Implement. Replaces the former per-domain "expert" agents.
 | [`math`](./reference/math.md) | `khora_core::math`, explicit SIMD, numerical correctness. |
 | [`ecs-data`](./reference/ecs-data.md) | CRPECS, storage, queries, SoA/AGDF layout, component registration — and **persistence**: scene records, `PersistentId`, encodings/snapshot, atomic load + `LoadReport`, game saves, prefab links. |
 | [`scripting`](./reference/scripting.md) | Ergon — the language, VM, fuel/safepoints, resume tiers, hot-reload, script lane + agent, script state in saves. |
-| [`control-gorna`](./reference/control-gorna.md) | DCC, GORNA negotiation/replay, cost model, PID budget, adaptation modes. |
+| [`control-gorna`](./reference/control-gorna.md) | DCC, GORNA negotiation/replay, cost model, frame governor, adaptation modes. |
 | [`editor-ui-ux`](./reference/editor-ui-ux.md) | khora-editor panels, inspector (prefab overrides), gizmos, dock, scene I/O — design via `/impeccable`. |
 | [`api-ux`](./reference/api-ux.md) | khora-sdk public ergonomics, builder/type-state, game save/load surface. |
 | [`documentation`](./reference/documentation.md) | mdBook, rustdoc, diagrams. |

@@ -18,12 +18,12 @@
 use super::epochs::Epochs;
 use super::forecast::forecast_frame_ms;
 use super::{
-    connected, DccService, COST_MODEL_CAPACITY, FRAME_TIME_MIN_SAMPLES, PID_RENEGOTIATE_DELTA,
+    connected, DccService, COST_MODEL_CAPACITY, FRAME_TIME_MIN_SAMPLES, MULTIPLIER_EPSILON,
 };
 use crate::cost_model::CostModel;
 use crate::dcc_context::safety_ceiling;
+use crate::governor::FrameGovernor;
 use crate::metrics::MetricStore;
-use crate::pid::PidController;
 use crossbeam_channel::Receiver;
 use khora_core::agent::Agent;
 use khora_core::telemetry::{MetricId, TelemetryEvent};
@@ -60,7 +60,7 @@ impl DccService {
         let tick_duration = Duration::from_secs_f32(1.0 / self.config.tick_rate as f32);
         let agent_lock_timeout = Duration::from_millis(self.config.agent_lock_timeout_ms);
         let memory_budget_bytes = self.config.memory_budget_bytes;
-        let frame_pid_cfg = self.config.frame_pid;
+        let governor_cfg = self.config.frame_governor;
 
         let min_epoch_ticks = self.config.min_epoch_ticks;
         let overruns_in_a_row = self.config.overruns_in_a_row;
@@ -86,13 +86,15 @@ impl DccService {
             // Read-only layout advisor: turns per-component access telemetry into
             // a recommendation for the glass-box. Stateless (a tuned heuristic).
             let layout_advisor = LayoutAdvisor::default();
-            // Frame-time PID: regulates the global budget multiplier so measured
-            // frame time tracks the heuristic-suggested latency. Persists across
-            // ticks; `last_tick` gives the real `dt` between updates.
-            let mut frame_pid = PidController::new(frame_pid_cfg);
-            let mut last_tick: Option<Instant> = None;
-            // Multiplier in effect when budgets were last issued — drift beyond
-            // PID_RENEGOTIATE_DELTA re-arbitrates (closes the recovery path).
+            // The frame governor: drives the global budget multiplier from the
+            // frames' critical paths, so the frame settles under its setpoint.
+            let mut governor = FrameGovernor::new(governor_cfg);
+            // Whether the governor's last change still waits for an epoch to
+            // lend it: it does not decide again on frames that never saw it.
+            let mut change_unlent = false;
+            // Multiplier in effect when budgets were last issued: one that has
+            // moved since — a governor decision, the safety ceiling — opens an
+            // epoch.
             let mut last_issued_multiplier: Option<f32> = None;
             // The channel the allocation in force was last published on: one
             // connected since is handed it, so an allocation decided before
@@ -104,7 +106,10 @@ impl DccService {
             while running.load(Ordering::Relaxed) {
                 let start_time = Instant::now();
 
-                // 1. Ingest all pending events
+                // 1. Ingest all pending events. The frames reported during
+                //    this tick, in order, are what the governor observes once
+                //    the tick's setpoint is known.
+                let mut frames: Vec<Duration> = Vec::new();
                 while let Ok(event) = event_rx.try_recv() {
                     match event {
                         TelemetryEvent::MetricUpdate { id, value } => {
@@ -121,18 +126,6 @@ impl DccService {
                             ctx.hardware.gpu_load = report.gpu_load.unwrap_or(0.0);
                             // A hardware report carries no VRAM figure: the
                             // one the DCC knows stays.
-
-                            if let Some(gpu_timings) = report.gpu_timings {
-                                if let Some(frame_time_us) = gpu_timings.frame_total_duration_us() {
-                                    store.push(
-                                        khora_core::telemetry::MetricId::new(
-                                            "renderer",
-                                            "frame_time",
-                                        ),
-                                        frame_time_us as f32 / 1000.0,
-                                    );
-                                }
-                            }
 
                             log::debug!(
                                 "DCC Hardware: Thermal={:?}, CPU={:.2}, GPU={:?}",
@@ -204,6 +197,30 @@ impl DccService {
                             epochs.report(&run, overruns_in_a_row);
                             reports.insert(id, run);
                         }
+                        TelemetryEvent::FrameReport(frame) => {
+                            // The frame's busy time on each device it
+                            // measured, and its critical path, which the
+                            // governor and the heuristics regulate on.
+                            let busy = &frame.busy;
+                            for (device, time) in [
+                                ("cpu_ms", busy.cpu),
+                                ("gpu_ms", busy.gpu),
+                                ("npu_ms", busy.npu),
+                                ("other_ms", busy.other),
+                            ] {
+                                if let Some(time) = time {
+                                    store.push(
+                                        MetricId::new("frame", device),
+                                        time.as_secs_f32() * 1_000.0,
+                                    );
+                                }
+                            }
+                            if let Some(critical) = frame.critical() {
+                                let ms = critical.as_secs_f32() * 1_000.0;
+                                store.push(MetricId::new("frame", "critical_ms"), ms);
+                                frames.push(critical);
+                            }
+                        }
                         TelemetryEvent::WavePlan { waves } => {
                             // The hot path republishes this each frame; keep the
                             // latest so arbitration costs concurrent waves by
@@ -246,6 +263,12 @@ impl DccService {
                     (report, ctx.clone())
                 };
 
+                // The governor's setpoint is the heuristics' target, before the
+                // forecast below tightens it: the forecast acts on what GORNA
+                // shares, and counting it in the governor's target as well
+                // would cut the same overrun twice.
+                let setpoint_ms = report.suggested_latency_ms;
+
                 // 2b. Anticipatory budgeting: the empirical per-agent cost models
                 //     forecast the combined frame cost at the current workload. If
                 //     that exceeds the budget, negotiate now and tighten the target
@@ -274,53 +297,54 @@ impl DccService {
                     epochs.raise(Trigger::Pressure);
                 }
 
-                // 2b-bis. Frame-time PID: regulate the global budget multiplier so
-                //     the measured frame time tracks the (now-finalized) setpoint
-                //     `report.suggested_latency_ms`. The setpoint already carries
-                //     the thermal/battery/phase modulation; the loop converges the
-                //     multiplier smoothly instead of stepping it. A hard safety
-                //     ceiling (Critical thermal/battery, near-budget memory) caps
-                //     it immediately, independent of loop convergence.
-                let dt = last_tick
-                    .map(|t| start_time.duration_since(t).as_secs_f32())
-                    .unwrap_or_else(|| tick_duration.as_secs_f32());
-                last_tick = Some(start_time);
-
-                let frame_time_id = MetricId::new("renderer", "frame_time");
-                let measured = store.get_average(&frame_time_id);
-                let mut multiplier = if store.get_sample_count(&frame_time_id)
-                    >= FRAME_TIME_MIN_SAMPLES
-                    && measured > 0.0
+                // 2b-bis. The frame governor: it observes the tick's frames and
+                //     decides, once the last change has reached them, whether
+                //     the multiplier moves. It never lowers it when every agent
+                //     already runs its floor — no row is left to give. A hard
+                //     safety ceiling (Critical thermal/battery, near-budget
+                //     memory) caps what is published, whatever it decided.
+                let setpoint = Duration::from_secs_f64(f64::from(setpoint_ms.max(0.0)) / 1_000.0);
+                for frame in &frames {
+                    governor.observe(*frame, setpoint);
+                }
+                let frame_time_id = MetricId::new("frame", "critical_ms");
+                // A replay lends what was recorded, whatever the multiplier:
+                // the governor decides nothing on frames run under it.
+                let replaying = replay.read().ok().is_some_and(|r| r.is_some());
+                if !change_unlent
+                    && !replaying
+                    && store.get_sample_count(&frame_time_id) >= FRAME_TIME_MIN_SAMPLES
                 {
-                    frame_pid.update(report.suggested_latency_ms, measured, dt)
-                } else {
-                    frame_pid.output()
-                };
-                multiplier = multiplier.min(safety_ceiling(&ctx_copy));
+                    let no_lever = arbitrator
+                        .in_force()
+                        .is_some_and(|allocation| !allocation.lever);
+                    if let Some(next) = governor.decide(setpoint, no_lever) {
+                        change_unlent = true;
+                        report.alerts.push(format!(
+                            "Governor: budget multiplier → {next:.2} ({} frames this tick)",
+                            frames.len()
+                        ));
+                    }
+                }
+                let multiplier = governor.multiplier().min(safety_ceiling(&ctx_copy));
                 ctx_copy.global_budget_multiplier = multiplier;
                 if let Ok(mut ctx) = context.write() {
                     ctx.global_budget_multiplier = multiplier;
                 }
                 log::debug!(
-                    "DCC PID: multiplier={:.3} (setpoint={:.2}ms, measured={:.2}ms, dt={:.3}s)",
+                    "DCC governor: multiplier={:.3} (setpoint={:.2}ms, {} frames this tick)",
                     multiplier,
-                    report.suggested_latency_ms,
-                    measured,
-                    dt
+                    setpoint_ms,
+                    frames.len()
                 );
 
-                // 2b-ter. Re-arbitrate when the PID has moved the effective budget
-                //     significantly since the last issuance — in both directions.
-                //     Pressure heuristics drive downgrades; this drives recovery:
-                //     once measured frame time settles under the setpoint, the
-                //     multiplier climbs back and budgets are re-issued so agents
-                //     can upgrade instead of staying degraded forever.
+                // 2b-ter. A multiplier that moved since the last issuance — in
+                //     either direction — re-arbitrates: pressure drives
+                //     downgrades, and this drives recovery, so agents upgrade
+                //     again once the frames have room.
                 if let Some(last) = last_issued_multiplier {
-                    if (multiplier - last).abs() > PID_RENEGOTIATE_DELTA {
-                        epochs.raise(Trigger::PidDrift);
-                        report.alerts.push(format!(
-                            "PID: budget multiplier {last:.2} → {multiplier:.2} since the last epoch — re-allocating",
-                        ));
+                    if (multiplier - last).abs() > MULTIPLIER_EPSILON {
+                        epochs.raise(Trigger::FrameGovernor);
                     }
                 }
 
@@ -348,6 +372,12 @@ impl DccService {
                     registry.iter_for_mode(&ctx_copy.mode).cloned().collect()
                 };
                 epochs.observe(&agents);
+                // With no agent to lend it to, a change has nothing to wait
+                // for.
+                if agents.is_empty() && change_unlent {
+                    change_unlent = false;
+                    governor.lent();
+                }
 
                 // A replay publishes the recorded allocations, one a tick, in
                 // order, until the trace is exhausted.
@@ -374,6 +404,8 @@ impl DccService {
                     if exhausted {
                         epochs.raise(Trigger::Refresh);
                     }
+                    // A replayed allocation was decided before the
+                    // governor's change: it does not lend it.
                     last_issued_multiplier = Some(multiplier);
                 } else if let Some(trigger) =
                     epochs.due(min_epoch_ticks).filter(|_| !agents.is_empty())
@@ -414,6 +446,10 @@ impl DccService {
                     epochs.opened(&agents);
                     epochs.set_in_force(allocation.epoch);
                     last_issued_multiplier = Some(multiplier);
+                    if change_unlent {
+                        change_unlent = false;
+                        governor.lent();
+                    }
                     if decision_recording.read().map(|b| *b).unwrap_or(false) {
                         if let Ok(mut trace) = recorded_trace.write() {
                             trace.epochs.push(EpochRecord {

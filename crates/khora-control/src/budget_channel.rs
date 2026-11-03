@@ -149,6 +149,7 @@ mod tests {
             pins: Vec::new(),
             allowed: Vec::new(),
             price: None,
+            lever: false,
             late: Vec::new(),
         }
     }

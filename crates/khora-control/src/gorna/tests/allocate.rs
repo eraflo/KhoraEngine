@@ -359,7 +359,7 @@ fn a_stable_agent_is_not_upgraded_on_recovery() {
             &mut arbitrator,
             &playing(),
             20.0,
-            Trigger::PidDrift,
+            Trigger::FrameGovernor,
             &agents,
         ),
         "renderer",
@@ -489,7 +489,7 @@ fn a_late_offer_keeps_the_envelope() {
         &mut arbitrator,
         &playing(),
         20.0,
-        Trigger::PidDrift,
+        Trigger::FrameGovernor,
         &agents,
     );
     assert_eq!(after.late, vec![AgentId::new("zinc")]);
@@ -594,7 +594,7 @@ fn stable_agents_keep_their_envelopes_when_the_memory_is_unknown() {
         &mut arbitrator,
         &playing(),
         20.0,
-        Trigger::PidDrift,
+        Trigger::FrameGovernor,
         &agents,
     );
     assert_eq!(lent_to(&kept, "ash"), lent_to(&held, "ash"));
@@ -617,8 +617,14 @@ fn a_late_agent_does_not_make_the_round_safety_once_vram_is_known() {
     lock(&zinc).late = true;
     let mut known = playing();
     known.hardware.available_vram = Some(512 * MIB);
-    let after = allocate(&mut arbitrator, &known, 10.0, Trigger::PidDrift, &agents);
-    assert_eq!(after.trigger, Trigger::PidDrift, "{after:?}");
+    let after = allocate(
+        &mut arbitrator,
+        &known,
+        10.0,
+        Trigger::FrameGovernor,
+        &agents,
+    );
+    assert_eq!(after.trigger, Trigger::FrameGovernor, "{after:?}");
     assert_eq!(after.late, vec![AgentId::new("zinc")]);
 }
 
@@ -652,7 +658,7 @@ fn an_agent_busy_through_a_round_keeps_its_envelope() {
         &mut arbitrator,
         &playing(),
         20.0,
-        Trigger::PidDrift,
+        Trigger::FrameGovernor,
         &agents,
     );
     drop(release);
@@ -713,7 +719,13 @@ fn an_agent_busy_through_a_round_keeps_its_memory() {
     let before = allocate(&mut arbitrator, &known, 10.0, Trigger::Initial, &agents);
     let held = lent_to(&before, "ash");
     let during = while_busy(&ash, || {
-        allocate(&mut arbitrator, &known, 10.0, Trigger::PidDrift, &agents)
+        allocate(
+            &mut arbitrator,
+            &known,
+            10.0,
+            Trigger::FrameGovernor,
+            &agents,
+        )
     });
 
     assert_eq!(lent_to(&during, "ash"), held, "{during:?}");
@@ -748,7 +760,13 @@ fn a_late_agent_keeps_its_memory_while_it_fits() {
     let held = lent_to(&before, "zinc");
     lock(&ash).rows = vec![row_holding(LowPower, 2_000, 30 * MIB, 0.4)];
     lock(&zinc).late = true;
-    let after = allocate(&mut arbitrator, &known, 10.0, Trigger::PidDrift, &agents);
+    let after = allocate(
+        &mut arbitrator,
+        &known,
+        10.0,
+        Trigger::FrameGovernor,
+        &agents,
+    );
 
     assert_eq!(after.late, vec![AgentId::new("zinc")]);
     assert_eq!(

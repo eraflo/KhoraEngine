@@ -4,14 +4,14 @@ Domain knowledge for Khora's control plane. Consulted during Research (dispatch 
 subagents to apply it to concrete files). Follow [`../RULES.md`](../RULES.md) §3 and §5.
 
 ## Scope
-Per-frame budget negotiation and arbitration, learned cost prediction, PID budget regulation, adaptation
+Per-frame budget negotiation and arbitration, learned cost prediction, frame-governor budget regulation, adaptation
 modes, and tick ordering (Substrate Pass + agent descent).
 
 ## Key files
 - DCC: `crates/khora-control/src/dcc_service/` (decision thread in `decision_loop.rs`); situational `Context` `crates/khora-control/src/dcc_context.rs`.
 - GORNA: `crates/khora-control/src/gorna/` — `mod.rs` (`GornaArbitrator::allocate`: offers, calibration, the round; `reissue` for replay; it lends nothing — the scheduler lends the published allocation at its frame start, `scheduler/frame.rs` `lend_allocation`), channel `budget_channel.rs`, journal `khora-core/src/agent/gorna/decision_trace.rs`, `decide.rs` (the pure share: admission, Q-RAM upgrades, 80/20 slack, policies as envelope shapes). Epochs and triggers: `dcc_service/epochs.rs`. Protocol types: `crates/khora-core/src/agent/gorna/protocol.rs`.
 - Cost model: `crates/khora-control/src/cost_model.rs` (learned linear `predict_ms`).
-- PID: `crates/khora-control/src/pid.rs` (anti-windup, ~20 Hz cold path, output `[0.3, 1.0]`).
+- Frame governor: `crates/khora-control/src/governor/mod.rs` (ratio law on the frame reports' critical path, 10 % headroom, band + overshoot memory, hitch rejection, no lowering when every agent is on its floor; output `[0.3, 1.0]`). The frame time comes from `FrameReport`, the host's report (`khora-core/src/agent/gorna/protocol.rs`), measured by `khora-sdk`'s frame clock.
 - Substrate dispatcher: `crates/khora-control/src/substrate/`.
 
 ## Concepts

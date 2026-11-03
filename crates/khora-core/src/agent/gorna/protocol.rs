@@ -42,8 +42,8 @@ pub enum Trigger {
     Pressure,
     /// The cost model forecast the frame over its target.
     ForecastBreach,
-    /// The frame-time controller drifted.
-    PidDrift,
+    /// The frame governor changed the budget multiplier.
+    FrameGovernor,
     /// The engine mode changed.
     ModeChanged,
     /// An agent was registered or unregistered.
@@ -140,6 +140,11 @@ pub struct Allocation {
     pub allowed: Vec<(AgentId, Vec<StrategyId>)>,
     /// The cutoff of the upgrade pass, for information only.
     pub price: Option<f32>,
+    /// Whether a lower frame target can take something back: some agent's
+    /// plan runs above its floor — an upgrade, or a `Stable` envelope it keeps
+    /// — and is not pinned there. The frame governor does not lower the
+    /// multiplier without one.
+    pub lever: bool,
     /// The agents whose offer came after the request's `reply_by`: each keeps
     /// the envelope it had.
     pub late: Vec<AgentId>,
@@ -194,4 +199,25 @@ pub struct Report {
     /// was swapped in at its family's place; `None` on every other run. What
     /// a switch of row costs.
     pub switch: Option<Duration>,
+}
+
+/// What one frame cost the engine: the time it kept each device busy, waits
+/// for the display excluded. Sent to the DCC once per frame, after the frame.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct FrameReport {
+    /// The time the frame kept each device busy; `None` for a device the
+    /// frame did not measure (never zero for "unknown").
+    pub busy: PerDevice<Option<Duration>>,
+}
+
+impl FrameReport {
+    /// The frame's critical path: the longest busy time among the measured
+    /// devices; `None` when no device was measured.
+    pub fn critical(&self) -> Option<Duration> {
+        let busy = &self.busy;
+        [busy.cpu, busy.gpu, busy.npu, busy.other]
+            .into_iter()
+            .flatten()
+            .max()
+    }
 }

@@ -31,6 +31,7 @@ use crate::{GameWorld, InputEvent};
 
 mod bootstrap;
 mod frame;
+mod frame_clock;
 mod startup;
 
 pub use bootstrap::EngineBootstrap;
@@ -71,6 +72,9 @@ pub struct EngineCore<A: EngineApp> {
     /// The lane agents, typed, so their lanes are released when the engine
     /// stops.
     lane_agents: Vec<Arc<std::sync::Mutex<khora_agents::agent::LaneAgent>>>,
+    /// How long the frame in progress has kept the host busy, reported to
+    /// the DCC when the frame closes.
+    frame_clock: frame_clock::FrameClock,
 }
 
 impl<A: EngineApp> EngineCore<A> {
@@ -93,6 +97,7 @@ impl<A: EngineApp> EngineCore<A> {
             forwarded_mode: None,
             passes: Vec::new(),
             lane_agents: Vec::new(),
+            frame_clock: frame_clock::FrameClock::default(),
         }
     }
 

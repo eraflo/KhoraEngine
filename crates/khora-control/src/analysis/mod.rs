@@ -121,7 +121,8 @@ impl HeuristicEngine {
         }
 
         // ── 4. Frame Time Analysis ───────────────────────────────────────
-        let frame_time_id = MetricId::new("renderer", "frame_time");
+        // The frame's critical path, from the frame reports.
+        let frame_time_id = MetricId::new("frame", "critical_ms");
         let avg_frame_time = store.get_average(&frame_time_id);
         let has_enough_samples = store.get_sample_count(&frame_time_id) >= 10;
 

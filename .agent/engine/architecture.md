@@ -98,7 +98,7 @@ Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`,
 | `khora-core` | Foundation | Traits (`Lane`, `Agent`, `RenderSystem`, `PhysicsProvider`, `AudioDevice`, `LayoutSystem`, `Asset`, VFS), math (`Vec2/3/4`, `Mat3/4`, `Quaternion`, `Aabb`, `LinearRgba`, `simd`), GORNA types, error hierarchy, `ServiceRegistry`, `EngineContext`, the memory counters. |
 | `khora-macros` | Foundation | `#[derive(Component)]` proc macro. Path crate (not a workspace member). |
 | `khora-data` | Data | CRPECS ECS (`World`, storage, query, `SemanticDomain`, `ComponentProvenance`), SoA/AGDF layout (`LayoutAdvisor`, `Ucb1`), `Assets<T>`, UI components, Flows, `EcsMaintenance`, and **persistence** (`scene/`: `SceneRecord`, encodings text/compact/msgpack, schema-bound snapshot, prefab links, game `SaveRecord`, atomic `apply`, `LoadReport`). |
-| `khora-control` | Control | `DccService` (agent lifecycle), `GornaArbitrator` (budget fitting + replay), cost model, PID budget, Substrate dispatcher, situational `Context` (thermal/battery/phase). |
+| `khora-control` | Control | `DccService` (agent lifecycle), `GornaArbitrator` (budget fitting + replay), cost model, frame governor, Substrate dispatcher, situational `Context` (thermal/battery/phase). |
 | `khora-telemetry` | Infra | `TelemetryService`, `MetricsRegistry`, `MonitorRegistry`, telemetry event storage. |
 | `khora-lanes` | Lanes | Render (Unlit, LitForward, Forward+, StandardPbr, Shadow, Overlay: Grid/Wireframe/Gizmo, Skybox, UI), Physics (Standard, CCD), Audio (SpatialMixing, SourceUpdate), UI (StandardUi, TaffyLayout), Script (Budgeted). |
 | `khora-infra` | Infra | Default backends: `WgpuRenderSystem`/`WgpuDevice`, `WinitWindow` + input, Rapier3D physics, CPAL audio, Taffy layout, GPU/Memory/Vram monitors, `SaaTrackingAllocator`, `DefaultMixBus`. Each implements a `khora-core` trait and is swappable. |
@@ -146,7 +146,7 @@ Rust component: its script declares `Guard` (authored) and its state companion `
 | Components / registrations | `crates/khora-data/src/ecs/components/` |
 | Flows / DataSystems | `crates/khora-data/src/flow/`, `crates/khora-data/src/ecs/systems/` |
 | Persistence | `crates/khora-data/src/scene/` (`record/`, `encoding/`, `snapshot/`, `prefab/`, `save.rs`, `apply.rs`, `capture.rs`, `file.rs`, `retired.rs`), `crates/khora-core/src/ecs/persistent_id.rs`, `crates/khora-io/src/serialization.rs` |
-| DCC / GORNA / cost / PID | `crates/khora-control/src/dcc_service/`, `gorna/`, `cost_model.rs`; PID `crates/khora-control/src/pid.rs` |
+| DCC / GORNA / cost / governor | `crates/khora-control/src/dcc_service/`, `gorna/`, `cost_model.rs`; frame governor `crates/khora-control/src/governor/mod.rs` |
 | Substrate dispatcher | `crates/khora-control/src/substrate/` |
 | Render lanes / shaders | `crates/khora-lanes/src/render_lane/`; shaders in `crates/khora-infra/src/graphics/shader/shaders/` (`pipelines/`, `lib/`), composed by `graphics/wgpu/pipeline_system/mod.rs` |
 | Shadow / overlay / skybox / ui / physics / audio / script lanes | `crates/khora-lanes/src/{shadow_lane,overlay_lane,skybox_lane,ui_lane,physics_lane,audio_lane,script_lane}/` — one folder per agent |

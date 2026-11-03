@@ -39,7 +39,7 @@ report.
 
 ## 2 — Recognize which agent chose which strategy, and why
 
-Adaptation is two stages: **the heuristics decide a target**, then **the PID + arbitrator turn that
+Adaptation is two stages: **the heuristics decide a target**, then **the governor + arbitrator turn that
 target into a strategy per agent**. Reading a decision means tracing it back through both.
 
 ### Step A — read the reason off the GORNA Stream
@@ -60,23 +60,29 @@ tick, starting from a 60 FPS baseline target (16.66 ms):
 | **Memory pressure** | resident RAM nears the developer-set budget | Force negotiation, counts as pressure |
 
 The logs mirror the stream: the DCC thread emits `DCC Analysis: <alert>` at `info` for each alert in
-the report, and `DCC PID: multiplier=… (setpoint=…ms, measured=…ms, dt=…s)` at `debug`. Raise the log
+the report, and `DCC governor: multiplier=… (setpoint=…ms, N frames this tick)` at `debug`. Raise the log
 level on `khora_control` to see them outside the editor.
 
 ### Step B — understand the multiplier that scaled the budget
 
-The heuristics produce a single `suggested_latency_ms` **target**. A **PID controller** then drives
-the `global_budget_multiplier` so *measured* frame time tracks that target (`crates/khora-control/src/dcc_service/decision_loop.rs`, the DccService
-cold-path loop). Key behaviours when reading a decision:
+The heuristics produce a single `suggested_latency_ms` **target**. The **frame governor**
+(`crates/khora-control/src/governor/mod.rs`, driven from the DccService cold-path loop in
+`dcc_service/decision_loop.rs`) then moves the `global_budget_multiplier` so the frames' *measured*
+critical path settles under that target, with 10 % headroom. Key behaviours when reading a decision:
 
-- The multiplier only updates once there are at least `FRAME_TIME_MIN_SAMPLES` frame-time samples and
-  a non-zero measurement; before that it holds the PID's current output.
-- It is clamped to a **hard safety ceiling** on `Critical` thermal/battery or near-budget memory — that
-  cap is applied *after* the PID, so a critical signal overrides loop convergence immediately.
-- A change in the multiplier of more than `PID_RENEGOTIATE_DELTA` (0.05) since budgets were last
-  issued forces re-arbitration — **in both directions**. Pressure heuristics drive downgrades; this
-  delta is what drives *recovery* (the multiplier climbing back toward 1.0 re-issues budgets so agents
-  upgrade again). That is the mechanism behind "it upgraded right after a downgrade".
+- It decides only once there are at least `FRAME_TIME_MIN_SAMPLES` frame reports, and then only on
+  frames measured after its last change took effect (or at once after three frames in a row over the
+  setpoint).
+- A lone frame twice the setpoint is a hitch: it is left out, and the multiplier does not move.
+- It holds inside a band under its target, and after lowering it does not raise past the multiplier
+  that ran over for five seconds: that is why it settles instead of cycling between two rows.
+- It stops lowering when every agent already runs its floor row: nothing is left to give.
+- It is clamped to a **hard safety ceiling** on `Critical` thermal/battery or near-budget memory. That
+  cap is applied *after* the governor, so a critical signal overrides it immediately.
+- Any move of the published multiplier opens an epoch (`Trigger::FrameGovernor`), **in both
+  directions**. Pressure heuristics drive downgrades; this is what drives *recovery* (the multiplier
+  climbing back toward 1.0 re-issues budgets so agents upgrade again). That is the mechanism behind
+  "it upgraded right after a downgrade".
 
 ### Step C — recognize the death-spiral stop
 
@@ -154,7 +160,7 @@ trace captured so far (safe to call any time, e.g. to inspect mid-recording).
 
 1. **GORNA Stream** — read the switch reason (the `— <cause>` suffix).
 2. **Meters Wall + `DCC Analysis:` logs** — confirm which pressure signal actually fired.
-3. **`DCC PID:` debug log** — check `setpoint` vs `measured` and the `multiplier`; a move > 0.05
+3. **`DCC governor:` debug log** — check the `multiplier` against the `setpoint`; any move of it
    explains a re-arbitration.
 4. **Agent's `AdaptationMode`** — confirm the agent didn't override the fit.
 5. **Pin with `Manual`** — freeze the variable while you reproduce.

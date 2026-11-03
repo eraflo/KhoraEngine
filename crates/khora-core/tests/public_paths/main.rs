@@ -1110,6 +1110,7 @@ fn telemetry_event_variants(x: &khora_core::telemetry::event::TelemetryEvent) {
         khora_core::telemetry::event::TelemetryEvent::GpuReport(..) => {}
         khora_core::telemetry::event::TelemetryEvent::ModeChange(..) => {}
         khora_core::telemetry::event::TelemetryEvent::AgentReport(..) => {}
+        khora_core::telemetry::event::TelemetryEvent::FrameReport(..) => {}
         khora_core::telemetry::event::TelemetryEvent::WavePlan { .. } => {}
         khora_core::telemetry::event::TelemetryEvent::ComponentAccess { .. } => {}
     }

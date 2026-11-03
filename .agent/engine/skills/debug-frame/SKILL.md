@@ -12,7 +12,7 @@ description: Investigates a per-frame problem or a GORNA budget decision — wro
    `offer → allocate → decide → apply`.
 3. **Inspect the descent**: which row did the agent choose, within which envelope (`Report.over_budget`)?
    The share is in `crates/khora-control/src/gorna/decide.rs`; cost prediction in `cost_model.rs`;
-   PID output in `crates/khora-control/src/pid.rs`.
+   the multiplier in `crates/khora-control/src/governor/mod.rs`.
 4. **Substrate vs descent**: confirm whether the issue is in Pass A (DataSystems/Flows publishing Views) or
    Pass B (agent → lane). A missing/stale `View` in the `LaneBus` is a common cause of "nothing renders".
 5. **Replay**: GORNA replays recorded allocations (`DecisionTrace.epochs`, each an `EpochRecord` with its inputs) — use a recorded epoch to

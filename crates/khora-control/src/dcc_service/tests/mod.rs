@@ -12,11 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The DCC service: its thread, what it ingests, its forecast, its PID, and
-//! the order it initializes agents in. The protocol it speaks to the agents
-//! is in `protocol.rs`; when it opens an epoch, in `epochs.rs`.
+//! The DCC service: its thread, what it ingests, its forecast, its frame
+//! governor, and the order it initializes agents in. The protocol it speaks
+//! to the agents is in `protocol.rs`; when it opens an epoch, in `epochs.rs`;
+//! how the governor drives the multiplier in `frame_governor.rs`, and the
+//! loop it closes through GORNA, simulated, in `closed_loop.rs`.
 
+mod closed_loop;
 mod epochs;
+mod frame_governor;
 mod protocol;
 
 use super::forecast::forecast_frame_ms;
@@ -24,7 +28,8 @@ use super::*;
 use crate::cost_model::CostModel;
 use crate::EngineMode;
 use khora_core::agent::gorna::protocol::{
-    Allocation, Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report, Trigger,
+    Allocation, Confidence, Envelope, Epoch, FrameReport, Offer, OfferRequest, OfferRow, Report,
+    Trigger,
 };
 use khora_core::agent::gorna::{
     AgentId, AgentStatus, EpochRecord, NegotiationRequest, NegotiationResponse, ResourceBudget,
@@ -97,6 +102,7 @@ fn allocation(epoch: u64, trigger: Trigger, envelopes: Vec<(AgentId, Envelope)>)
         pins: Vec::new(),
         allowed: Vec::new(),
         price: None,
+        lever: false,
         late: Vec::new(),
     }
 }
@@ -207,10 +213,12 @@ impl Default for Health {
 }
 
 /// An agent that speaks the protocol: it offers one `LowPower` row of
-/// `floor`, and shares what it heard and how it is doing with the test.
+/// `floor` — and a `Balanced` row of `upgrade` when it has one — and shares
+/// what it heard and how it is doing with the test.
 struct Speaker {
     id: AgentId,
     floor: Duration,
+    upgrade: Option<Duration>,
     heard: Arc<Mutex<Heard>>,
     health: Arc<Mutex<Health>>,
 }
@@ -234,11 +242,31 @@ impl Ear {
 impl Speaker {
     /// `name`, offering one row of `floor` on the host.
     fn with_ear(name: &'static str, floor: Duration) -> (Arc<Mutex<dyn Agent>>, Ear) {
+        Self::offering(name, floor, None)
+    }
+
+    /// `name`, offering a floor row of `floor` and a `Balanced` row of
+    /// `upgrade` on the host: lowering the frame's target can take it off
+    /// its upgrade.
+    fn with_upgrade(
+        name: &'static str,
+        floor: Duration,
+        upgrade: Duration,
+    ) -> (Arc<Mutex<dyn Agent>>, Ear) {
+        Self::offering(name, floor, Some(upgrade))
+    }
+
+    fn offering(
+        name: &'static str,
+        floor: Duration,
+        upgrade: Option<Duration>,
+    ) -> (Arc<Mutex<dyn Agent>>, Ear) {
         let heard = Arc::new(Mutex::new(Heard::default()));
         let health = Arc::new(Mutex::new(Health::default()));
         let agent: Arc<Mutex<dyn Agent>> = Arc::new(Mutex::new(Speaker {
             id: AgentId::new(name),
             floor,
+            upgrade,
             heard: Arc::clone(&heard),
             health: Arc::clone(&health),
         }));
@@ -258,6 +286,26 @@ impl Speaker {
             quality: 0.4,
             confidence: Confidence::Quoted,
         }
+    }
+
+    /// The rows it offers: its floor, and its upgrade when it has one.
+    fn rows(&self) -> Vec<OfferRow> {
+        let mut rows = vec![self.floor_row()];
+        if let Some(upgrade) = self.upgrade {
+            rows.push(OfferRow {
+                id: StrategyId::Balanced,
+                cost: Cost {
+                    time: PerDevice {
+                        cpu: upgrade,
+                        ..PerDevice::default()
+                    },
+                    ..Cost::default()
+                },
+                quality: 1.0,
+                confidence: Confidence::Quoted,
+            });
+        }
+        rows
     }
 }
 
@@ -294,7 +342,7 @@ impl Agent for Speaker {
         Offer {
             agent: self.id,
             epoch: request.epoch,
-            rows: vec![self.floor_row()],
+            rows: self.rows(),
             floor: StrategyId::LowPower,
             current: StrategyId::LowPower,
             health: self.health.lock().expect("the health lock").health,
@@ -622,10 +670,13 @@ fn test_dcc_layout_advisor_produces_recommendation() {
     );
 }
 
+/// **A sustained overrun drives the multiplier down.** Frames of 40 ms, far
+/// over the 16.66 ms target, the host and the GPU both busy the whole frame:
+/// over several ticks the governor pulls the global budget multiplier below
+/// 1.0, never under its floor.
 #[test]
-fn test_pid_drives_multiplier_down_under_overrun() {
-    // A sustained frame time well above the 16.66ms target must make the PID
-    // loop pull the global budget multiplier below 1.0 over several ticks.
+fn a_sustained_overrun_drives_the_multiplier_down() {
+    let floor = DccConfig::default().frame_governor.output_min;
     let (mut dcc, rx) = DccService::new(DccConfig {
         tick_rate: 100,
         ..Default::default()
@@ -633,14 +684,11 @@ fn test_pid_drives_multiplier_down_under_overrun() {
     let tx = dcc.event_sender();
     dcc.start(rx);
 
-    let frame_time_id = MetricId::new("renderer", "frame_time");
-    // Feed a steady stream of 40ms frames (≫ the 16.66ms setpoint).
+    // Feed a steady stream of 40ms frames (≫ the 16.66ms setpoint), the host
+    // and the GPU both busy for the whole frame.
     for _ in 0..40 {
-        tx.send(TelemetryEvent::MetricUpdate {
-            id: frame_time_id.clone(),
-            value: MetricValue::Gauge(40.0),
-        })
-        .unwrap();
+        tx.send(TelemetryEvent::FrameReport(frame_report(40.0, Some(40.0))))
+            .unwrap();
         thread::sleep(Duration::from_millis(5));
     }
     thread::sleep(Duration::from_millis(100));
@@ -653,15 +701,532 @@ fn test_pid_drives_multiplier_down_under_overrun() {
         "sustained overrun should pull the multiplier below 1.0, got {multiplier}"
     );
     assert!(
-        multiplier >= 0.3,
-        "multiplier must respect the output floor, got {multiplier}"
+        multiplier >= floor,
+        "multiplier must respect the output floor {floor}, got {multiplier}"
+    );
+}
+
+// ── The frame report ──────────────────────────────────────────────
+
+/// A frame report: the host busy `cpu_ms`, the GPU `gpu_ms` when the frame
+/// measured it; no other device measured.
+fn frame_report(cpu_ms: f64, gpu_ms: Option<f64>) -> FrameReport {
+    let ms = |ms: f64| Duration::from_secs_f64(ms / 1_000.0);
+    FrameReport {
+        busy: PerDevice {
+            cpu: Some(ms(cpu_ms)),
+            gpu: gpu_ms.map(ms),
+            npu: None,
+            other: None,
+        },
+    }
+}
+
+/// A DCC ticking at 100 Hz, started, and the sender it listens on.
+fn listening() -> (DccService, crossbeam_channel::Sender<TelemetryEvent>) {
+    let (mut dcc, rx) = DccService::new(DccConfig {
+        tick_rate: 100,
+        ..Default::default()
+    });
+    let tx = dcc.event_sender();
+    dcc.start(rx);
+    (dcc, tx)
+}
+
+/// Sends `event` every 5 ms until the multiplier drops below 1.0 or `secs`
+/// seconds have passed; the multiplier it dropped to, if it did.
+fn feed_until_the_multiplier_drops(
+    dcc: &DccService,
+    tx: &crossbeam_channel::Sender<TelemetryEvent>,
+    secs: u64,
+    event: impl Fn() -> TelemetryEvent,
+) -> Option<f32> {
+    let dropped = wait_for(secs, || {
+        tx.send(event()).expect("the DCC listens");
+        dcc.get_context().global_budget_multiplier < 1.0
+    });
+    dropped.then(|| dcc.get_context().global_budget_multiplier)
+}
+
+/// Sends `event` `count` times, 5 ms apart — many more samples than the DCC
+/// waits for (`FRAME_TIME_MIN_SAMPLES`), over many DCC ticks — then waits a
+/// few ticks more; the lowest multiplier seen meanwhile.
+fn lowest_multiplier_while_feeding(
+    dcc: &DccService,
+    tx: &crossbeam_channel::Sender<TelemetryEvent>,
+    count: usize,
+    event: impl Fn() -> TelemetryEvent,
+) -> f32 {
+    assert!(count >= 4 * FRAME_TIME_MIN_SAMPLES);
+    let mut lowest = dcc.get_context().global_budget_multiplier;
+    for _ in 0..count {
+        tx.send(event()).expect("the DCC listens");
+        thread::sleep(Duration::from_millis(5));
+        lowest = lowest.min(dcc.get_context().global_budget_multiplier);
+    }
+    for _ in 0..20 {
+        thread::sleep(Duration::from_millis(5));
+        lowest = lowest.min(dcc.get_context().global_budget_multiplier);
+    }
+    lowest
+}
+
+/// **A host-bound frame pulls the multiplier down without GPU timing.**
+/// Frames keeping the host busy 40 ms, the GPU not measured, are frames of
+/// 40 ms: the governor pulls the multiplier below 1.0, never under its 0.3
+/// floor.
+#[test]
+fn a_host_bound_frame_without_gpu_timing_pulls_the_multiplier_down() {
+    let (mut dcc, tx) = listening();
+
+    let dropped = feed_until_the_multiplier_drops(&dcc, &tx, 5, || {
+        TelemetryEvent::FrameReport(frame_report(40.0, None))
+    });
+    dcc.stop();
+
+    let multiplier = dropped.expect("40 ms frames pull the multiplier below 1.0");
+    assert!(multiplier >= 0.3, "the output floor holds: {multiplier}");
+}
+
+/// **A GPU-bound frame pulls the multiplier down.** The host busy 5 ms, the
+/// GPU 40 ms: the frame's critical path is the GPU's, over the 16.66 ms
+/// target.
+#[test]
+fn a_gpu_bound_frame_pulls_the_multiplier_down() {
+    let (mut dcc, tx) = listening();
+
+    let dropped = feed_until_the_multiplier_drops(&dcc, &tx, 5, || {
+        TelemetryEvent::FrameReport(frame_report(5.0, Some(40.0)))
+    });
+    dcc.stop();
+
+    assert!(
+        dropped.is_some(),
+        "the GPU's 40 ms is the frame's critical path"
+    );
+}
+
+/// **The critical path is the slower device, not the sum.** The host busy
+/// 10 ms and the GPU 9 ms work side by side: the frame lasts 10 ms, within
+/// the 16.66 ms target, and the multiplier stays at 1.0 — though the two
+/// added up (19 ms) would overrun it. The DCC was listening: frames of 40 ms
+/// then pull the multiplier down.
+#[test]
+fn the_critical_path_is_the_slower_device_not_the_sum() {
+    let (mut dcc, tx) = listening();
+
+    let lowest = lowest_multiplier_while_feeding(&dcc, &tx, 60, || {
+        TelemetryEvent::FrameReport(frame_report(10.0, Some(9.0)))
+    });
+    let control = feed_until_the_multiplier_drops(&dcc, &tx, 5, || {
+        TelemetryEvent::FrameReport(frame_report(40.0, None))
+    });
+    dcc.stop();
+
+    assert!(
+        lowest >= 1.0,
+        "a 10 ms critical path leaves the multiplier at 1.0, lowest {lowest}"
+    );
+    assert!(
+        control.is_some(),
+        "the DCC reads frame reports: 40 ms frames pull the multiplier down"
+    );
+}
+
+/// **The renderer's frame-time metric no longer moves the multiplier.** A
+/// steady `renderer:frame_time` of 40 ms leaves it at 1.0: the frame's time
+/// comes from its report. The DCC was listening: frame reports of 40 ms then
+/// pull the multiplier down.
+#[test]
+fn the_renderer_frame_time_metric_no_longer_moves_the_multiplier() {
+    let (mut dcc, tx) = listening();
+
+    let lowest = lowest_multiplier_while_feeding(&dcc, &tx, 60, || TelemetryEvent::MetricUpdate {
+        id: MetricId::new("renderer", "frame_time"),
+        value: MetricValue::Gauge(40.0),
+    });
+    let control = feed_until_the_multiplier_drops(&dcc, &tx, 5, || {
+        TelemetryEvent::FrameReport(frame_report(40.0, None))
+    });
+    dcc.stop();
+
+    assert!(
+        lowest >= 1.0,
+        "a renderer:frame_time of 40 ms leaves the multiplier at 1.0, lowest {lowest}"
+    );
+    assert!(
+        control.is_some(),
+        "the DCC reads frame reports: 40 ms frames pull the multiplier down"
+    );
+}
+
+/// **Too few frames move nothing.** One report fewer than the DCC waits for
+/// (`FRAME_TIME_MIN_SAMPLES`), each of a 200 ms frame, leaves the multiplier
+/// at 1.0 over many DCC ticks: a lone hitch is not a trend. The next report
+/// completes the window and the governor pulls the multiplier down.
+#[test]
+fn fewer_frame_reports_than_the_dcc_waits_for_move_nothing() {
+    let (mut dcc, tx) = listening();
+    let hitch = || TelemetryEvent::FrameReport(frame_report(200.0, None));
+
+    for _ in 0..FRAME_TIME_MIN_SAMPLES - 1 {
+        tx.send(hitch()).expect("the DCC listens");
+    }
+    let mut lowest = dcc.get_context().global_budget_multiplier;
+    for _ in 0..40 {
+        thread::sleep(Duration::from_millis(5));
+        lowest = lowest.min(dcc.get_context().global_budget_multiplier);
+    }
+    tx.send(hitch()).expect("the DCC listens");
+    let control = wait_for(5, || dcc.get_context().global_budget_multiplier < 1.0);
+    dcc.stop();
+
+    assert!(
+        lowest >= 1.0,
+        "{} frame reports leave the multiplier at 1.0, lowest {lowest}",
+        FRAME_TIME_MIN_SAMPLES - 1
+    );
+    assert!(
+        control,
+        "the report completing the window moves the governor"
+    );
+}
+
+// ── The frame governor ────────────────────────────────────────────
+
+/// The frame-time target the DCC regulates on with no thermal, battery or
+/// memory pressure: the heuristics' setpoint for a default context.
+fn unpressured_setpoint_ms() -> f32 {
+    crate::analysis::HeuristicEngine
+        .analyze(
+            &crate::dcc_context::Context::default(),
+            &crate::metrics::MetricStore::new(),
+        )
+        .suggested_latency_ms
+}
+
+/// The frame time whose estimate lowers the multiplier from 1.0 to 0.75 in
+/// one decision: the governor's target (the setpoint less its headroom)
+/// over 0.75. Under twice the setpoint — load, never a hitch — and under the
+/// heuristics' 18 ms warning, so no other trigger joins in.
+fn frame_ms_lowering_by_a_quarter() -> f64 {
+    let governor = DccConfig::default().frame_governor;
+    f64::from(unpressured_setpoint_ms() * (1.0 - governor.headroom) / 0.75)
+}
+
+/// The multiplier clearly off the governor's floor: a quarter of its range
+/// above it.
+fn clearly_off_the_floor() -> f32 {
+    let governor = DccConfig::default().frame_governor;
+    governor.output_min + 0.25 * (governor.output_max - governor.output_min)
+}
+
+/// Sends `count` frames of `frame_ms` at once.
+fn burst(tx: &crossbeam_channel::Sender<TelemetryEvent>, count: usize, frame_ms: f64) {
+    for _ in 0..count {
+        tx.send(TelemetryEvent::FrameReport(frame_report(frame_ms, None)))
+            .expect("the DCC listens");
+    }
+}
+
+/// Sends, at once, as many frames as the DCC waits for, each lowering the
+/// multiplier by a quarter, then waits for the multiplier to drop; the
+/// multiplier it dropped to, if it did. All of them reach the governor
+/// before it decides, so it decides once, on frames of one length.
+fn lowered_by_a_quarter(
+    dcc: &DccService,
+    tx: &crossbeam_channel::Sender<TelemetryEvent>,
+) -> Option<f32> {
+    burst(tx, FRAME_TIME_MIN_SAMPLES, frame_ms_lowering_by_a_quarter());
+    let dropped = wait_for(2, || dcc.get_context().global_budget_multiplier < 1.0);
+    thread::sleep(Duration::from_millis(50));
+    dropped.then(|| dcc.get_context().global_budget_multiplier)
+}
+
+/// **A silence holds the multiplier.** Frames over the target pull the
+/// multiplier down; once the reports stop, it stays where the last frames
+/// left it — read twice a second apart, it has not moved — off its floor and
+/// below 1.0. The governor decides on the frames it observed: a tick that
+/// received none is no new measurement.
+#[test]
+fn a_silence_holds_the_multiplier_where_the_last_frames_left_it() {
+    let (mut dcc, tx) = listening();
+
+    let dropped = lowered_by_a_quarter(&dcc, &tx);
+    thread::sleep(Duration::from_millis(200));
+    let first = dcc.get_context().global_budget_multiplier;
+    thread::sleep(Duration::from_secs(1));
+    let second = dcc.get_context().global_budget_multiplier;
+    dcc.stop();
+
+    assert!(
+        dropped.is_some(),
+        "frames of {:.1} ms pull the multiplier below 1.0",
+        frame_ms_lowering_by_a_quarter()
+    );
+    assert!(
+        (first - second).abs() < 1e-3,
+        "with no frame reported, the multiplier holds: {first} then {second} a second later"
+    );
+    assert!(first < 1.0, "the multiplier stays down: {first}");
+    assert!(
+        first > clearly_off_the_floor(),
+        "the multiplier held off its floor: {first}"
+    );
+}
+
+/// **The multiplier leaves its floor as soon as frames run fast again.**
+/// Frames of 200 ms pin the multiplier at its floor, and go on for eight
+/// seconds of frame time after it — longer than the governor remembers the
+/// multiplier it lowered from. Then frames of 5 ms, well under the target:
+/// within two seconds the multiplier is clearly off its floor. The governor
+/// reads the frames it observes: the metric store's window, still full of
+/// 200 ms frames, would hold it far above the target for as many frames
+/// again.
+#[test]
+fn the_multiplier_leaves_its_floor_as_soon_as_frames_run_fast_again() {
+    let governor = DccConfig::default().frame_governor;
+    let (mut dcc, tx) = listening();
+
+    let floored = wait_for(5, || {
+        burst(&tx, 1, 200.0);
+        dcc.get_context().global_budget_multiplier <= governor.output_min + 1e-3
+    });
+    for _ in 0..40 {
+        burst(&tx, 1, 200.0);
+        thread::sleep(Duration::from_millis(5));
+    }
+    let recovered = wait_for(2, || {
+        burst(&tx, 5, 5.0);
+        dcc.get_context().global_budget_multiplier > clearly_off_the_floor()
+    });
+    let multiplier = dcc.get_context().global_budget_multiplier;
+    dcc.stop();
+
+    assert!(floored, "200 ms frames pin the multiplier at its floor");
+    assert!(
+        recovered,
+        "5 ms frames lift the multiplier above {} within two seconds, got {multiplier}",
+        clearly_off_the_floor()
+    );
+}
+
+/// A frame report that measured no device: its critical path is unknown.
+fn unmeasured_frame() -> TelemetryEvent {
+    TelemetryEvent::FrameReport(FrameReport {
+        busy: PerDevice {
+            cpu: None,
+            gpu: None,
+            npu: None,
+            other: None,
+        },
+    })
+}
+
+/// Sends `event` every 5 ms for `millis` milliseconds.
+fn feed_for(
+    tx: &crossbeam_channel::Sender<TelemetryEvent>,
+    millis: u64,
+    event: impl Fn() -> TelemetryEvent,
+) {
+    let deadline = std::time::Instant::now() + Duration::from_millis(millis);
+    while std::time::Instant::now() < deadline {
+        tx.send(event()).expect("the DCC listens");
+        thread::sleep(Duration::from_millis(5));
+    }
+}
+
+/// A hardware report of `thermal` on mains power.
+fn thermal_report(thermal: khora_core::platform::ThermalStatus) -> TelemetryEvent {
+    TelemetryEvent::HardwareReport(khora_core::telemetry::monitoring::HardwareReport {
+        thermal,
+        battery: khora_core::platform::BatteryLevel::Mains,
+        cpu_load: 0.2,
+        gpu_load: Some(0.2),
+        gpu_timings: None,
+    })
+}
+
+/// **A frame that measured nothing is not a frame of zero.** Each burst is
+/// one 40 ms frame and nine reports that measured no device: the frames the
+/// governor observes are the 40 ms ones alone, and they pull the multiplier
+/// down. Counted as frames of 0 ms, the nine would come between the 40 ms
+/// frames.
+#[test]
+fn reports_that_measured_no_device_are_not_frames() {
+    let (mut dcc, tx) = listening();
+
+    let dropped = wait_for(5, || {
+        burst(&tx, 1, 40.0);
+        for _ in 0..9 {
+            tx.send(unmeasured_frame()).expect("the DCC listens");
+        }
+        dcc.get_context().global_budget_multiplier < 1.0
+    });
+    dcc.stop();
+
+    assert!(
+        dropped,
+        "the 40 ms frames pull the multiplier down, the unmeasured reports aside"
+    );
+}
+
+/// **Frames of zero duration hold the multiplier.** Once frames over the
+/// target have pulled it down, a second of frames measured at 0 ms leaves it
+/// where it was: a frame of 0 ms is no measurement the governor acts on.
+#[test]
+fn frames_of_zero_duration_hold_the_multiplier() {
+    let (mut dcc, tx) = listening();
+
+    let dropped = lowered_by_a_quarter(&dcc, &tx);
+    thread::sleep(Duration::from_millis(200));
+    let first = dcc.get_context().global_budget_multiplier;
+    feed_for(&tx, 1_000, || {
+        TelemetryEvent::FrameReport(frame_report(0.0, None))
+    });
+    thread::sleep(Duration::from_millis(50));
+    let second = dcc.get_context().global_budget_multiplier;
+    dcc.stop();
+
+    assert!(
+        dropped.is_some(),
+        "the frames over the target pull the multiplier down"
+    );
+    assert!(
+        (first - second).abs() < 1e-3,
+        "frames of 0 ms hold the multiplier: {first} then {second}"
+    );
+}
+
+/// **A silence does not become one large step.** The multiplier was lowered
+/// by a quarter, then frames of 14 ms — inside the governor's band — hold
+/// it. After a second without frames, one frame of 30 ms: it weighs in the
+/// estimate as one frame of 30 ms, not as a second of them, and the
+/// multiplier barely moves.
+#[test]
+fn a_silence_does_not_become_one_large_step() {
+    let (mut dcc, tx) = listening();
+
+    let dropped = lowered_by_a_quarter(&dcc, &tx);
+    burst(&tx, 200, 14.0);
+    thread::sleep(Duration::from_millis(200));
+    let before = dcc.get_context().global_budget_multiplier;
+    thread::sleep(Duration::from_secs(1));
+    burst(&tx, 1, 30.0);
+    thread::sleep(Duration::from_millis(100));
+    let after = dcc.get_context().global_budget_multiplier;
+    dcc.stop();
+
+    assert!(
+        dropped.is_some(),
+        "the frames over the target pull the multiplier down"
+    );
+    assert!(
+        (before - after).abs() < 0.05,
+        "one frame after a silence moves the multiplier one frame's worth: {before} then {after}"
+    );
+}
+
+/// **The safety ceiling lifts back to the held multiplier.** With no frame
+/// reported, a Critical thermal state caps the multiplier at 0.4; once the
+/// device cools, the multiplier is the governor's held one again, neither
+/// the cap nor 1.0.
+#[test]
+fn a_held_multiplier_comes_back_once_the_safety_ceiling_lifts() {
+    use khora_core::platform::ThermalStatus;
+    let (mut dcc, tx) = listening();
+
+    let dropped = lowered_by_a_quarter(&dcc, &tx);
+    thread::sleep(Duration::from_millis(200));
+    let held = dcc.get_context().global_budget_multiplier;
+    tx.send(thermal_report(ThermalStatus::Critical))
+        .expect("the DCC listens");
+    let capped = wait_for(2, || {
+        dcc.get_context().global_budget_multiplier <= 0.4 + 1e-3
+    });
+    tx.send(thermal_report(ThermalStatus::Cool))
+        .expect("the DCC listens");
+    let back = wait_for(2, || {
+        (dcc.get_context().global_budget_multiplier - held).abs() < 1e-3
+    });
+    let multiplier = dcc.get_context().global_budget_multiplier;
+    dcc.stop();
+
+    assert!(
+        dropped.is_some(),
+        "the frames over the target pull the multiplier down"
+    );
+    assert!(held > 0.4 + 0.05, "held above the cap: {held}");
+    assert!(capped, "Critical thermal caps the multiplier at 0.4");
+    assert!(
+        back,
+        "once cool, the multiplier is the held {held} again, got {multiplier}"
+    );
+}
+
+/// **A long frame leaves the loop once it has passed.** Frames of 10 ms,
+/// well under the target, then one frame stalled ten seconds (a blocking
+/// load, a debugger break), then frames of 10 ms again: over the second of
+/// fast frames that follows, the multiplier stays within 0.05 of its rest.
+/// The long frame follows frames within the setpoint: a hitch, kept out of
+/// the governor's estimate.
+#[test]
+fn a_single_long_frame_does_not_pin_the_multiplier_once_it_has_passed() {
+    let fast = || TelemetryEvent::FrameReport(frame_report(10.0, None));
+    let (mut dcc, tx) = listening();
+
+    feed_for(&tx, 150, fast);
+    thread::sleep(Duration::from_millis(50));
+    let at_rest = dcc.get_context().global_budget_multiplier;
+    burst(&tx, 1, 10_000.0);
+    let mut lowest = at_rest;
+    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+    while std::time::Instant::now() < deadline {
+        tx.send(fast()).expect("the DCC listens");
+        thread::sleep(Duration::from_millis(5));
+        lowest = lowest.min(dcc.get_context().global_budget_multiplier);
+    }
+    dcc.stop();
+
+    assert!(
+        at_rest >= 1.0,
+        "10 ms frames leave the multiplier at rest: {at_rest}"
+    );
+    assert!(
+        lowest > 1.0 - 0.05,
+        "a ten-second frame among 10 ms ones moves the multiplier less than 0.05, lowest {lowest}"
+    );
+}
+
+/// **A lone hitch is not a trend.** Among frames of 10 ms, one frame of
+/// 100 ms: the multiplier stays at rest. The hitch follows a frame within
+/// the setpoint, so the governor keeps it out of its estimate.
+#[test]
+fn a_lone_hitch_among_fast_frames_leaves_the_multiplier_near_rest() {
+    let fast = || TelemetryEvent::FrameReport(frame_report(10.0, None));
+    let (mut dcc, tx) = listening();
+
+    feed_for(&tx, 150, fast);
+    thread::sleep(Duration::from_millis(50));
+    burst(&tx, 1, 100.0);
+    let mut lowest = dcc.get_context().global_budget_multiplier;
+    for _ in 0..60 {
+        tx.send(fast()).expect("the DCC listens");
+        thread::sleep(Duration::from_millis(5));
+        lowest = lowest.min(dcc.get_context().global_budget_multiplier);
+    }
+    dcc.stop();
+
+    assert!(
+        lowest >= 1.0,
+        "one 100 ms frame among 10 ms ones leaves the multiplier at 1.0, lowest {lowest}"
     );
 }
 
 #[test]
 fn test_critical_thermal_clamps_multiplier() {
     // A Critical thermal report must clamp the multiplier to the hard safety
-    // ceiling (0.4) immediately, regardless of the PID's current position.
+    // ceiling (0.4) immediately, regardless of the governor's current position.
     let (mut dcc, rx) = DccService::new(DccConfig {
         tick_rate: 100,
         ..Default::default()

@@ -71,37 +71,46 @@ small extras map — so that adding a resource dimension is a considered change,
 free-form bag each subsystem invents its own dialect for. The exhaustive field lists
 live in the rustdoc on `khora_core::agent::gorna`.
 
-## The cost model and the PID frame-budget controller
+## The cost model and the frame governor
 
-Two pieces turn raw telemetry into a budget, and the division of labour between them
+Two pieces turn measurements into a budget, and the division of labour between them
 is the heart of the current design.
 
 The **heuristics** shape a single *frame-time target* rather than scaling the budget
 directly. Thermal, battery, and engine-phase heuristics *relax* the target (a hot
-device aims for 30 FPS rather than 60); the cost-model forecast can *tighten* it
-pre-emptively. They answer the question "what frame time should we be aiming for?".
+device aims for 30 FPS rather than 60). They answer the question "what frame time
+should we be aiming for?". The cost-model forecast can *tighten* what GORNA shares
+pre-emptively: the target it allocates on, never the governor's setpoint, so one
+overrun is not cut twice.
 
-The actual `global_budget_multiplier` — the scalar applied to every agent's frame
-budget — is then driven by a **PID controller** that closes the loop on *measured*
-frame time versus that target. When frames run long the loop lowers the multiplier
-(agents pick cheaper strategies, frames speed up); when there is headroom it climbs
-back toward 1.0. This replaced an older static thermal/battery lookup that stepped
-the multiplier in coarse jumps and double-counted thermal and battery (once in the
-target, once in the multiplier). The controller uses the refinements a noisy,
-saturating, discrete-actuator plant needs — derivative-on-measurement with a low-
-pass filter, back-calculation anti-windup, setpoint weighting, and output clamping
-to `[floor, 1.0]`. On top of the loop sits a **hard safety ceiling** that caps the
-multiplier immediately on critical thermal/battery or near-budget memory pressure:
-the loop regulates the steady state, the ceiling handles emergencies.
+The actual `global_budget_multiplier` (the scalar applied to the frame target GORNA
+shares) is driven by the **frame governor** (`khora_control::governor`), from the
+frames' measured critical path: each frame's report says how long it kept each device
+busy, waits for the display excluded, and the governor reads the slowest one. It is a
+ratio law, the shape engines ship for dynamic resolution, not a PID: our loop moves by
+whole rows, a frame or two late, on measurements with long hitches, and those three
+things defeat a textbook PID. Each decision, the governor scales the multiplier by
+`target / estimate`, with the target 10 % under the setpoint. Around it:
 
-The **PID recovery loop** is what makes this bidirectional, and it is a recently
-completed piece rather than a future one. Pressure heuristics drive the *downgrades*
-by tightening the target and flagging a renegotiation. *Recovery* is driven by the
-multiplier itself: the DCC remembers the multiplier in effect when budgets were last
-issued, and re-arbitrates whenever the PID has since moved it by more than a small
-fixed delta (0.05) in either direction. Once measured frame time settles back under
-the setpoint the multiplier climbs, budgets are re-issued, and agents upgrade
-again — instead of staying pinned at a degraded strategy forever.
+- **a band** under the target where it holds, and **a memory**: after lowering, it does
+  not raise past the multiplier that ran over for five seconds. Together they stop the
+  multiplier from cycling between two neighbouring rows;
+- **fast down, slow up**: a lowering takes at most 30 % at once, a raise a quarter of
+  the way;
+- **decisions only on frames measured after the last change took effect**, or at once
+  after three frames in a row over the setpoint;
+- **hitches left out**: one frame twice the setpoint after normal ones is a load or a
+  stall, nothing a row could fix;
+- **no lever, no lowering**: when every agent already runs its floor, lowering further
+  would sacrifice nothing and gain nothing, so it stops.
+
+On top sits a **hard safety ceiling** that caps the published multiplier immediately
+on critical thermal/battery or near-budget memory pressure: the governor regulates the
+steady state, the ceiling handles emergencies. Every move of the published multiplier,
+either way, opens an epoch (`Trigger::FrameGovernor`). Pressure drives the downgrades;
+this is what drives *recovery*: once frames have room, the multiplier climbs, the
+budgets are re-issued, and agents upgrade again instead of staying pinned at a degraded
+strategy.
 
 **Empirical cost calibration** closes the other gap. Agents quote *static* estimates
 in their offers, but reality drifts from the quote per machine and per scene. The
@@ -214,5 +223,5 @@ serialises a wave that could have run concurrently, and nothing reddens.
 - [How-to: debug a frame](../how-to/debug-a-frame.md) — watch a live GORNA decision.
 - [Agents and Lanes](./agents-and-lanes.md) — what GORNA negotiates over.
 - [AGDF](./agdf.md) — the layout adaptation the DCC observes but does not auction.
-- [Glossary](../reference/glossary.md) — GORNA, DCC, AdaptationMode, cost model, PID
+- [Glossary](../reference/glossary.md) — GORNA, DCC, AdaptationMode, cost model, frame governor
   budget multiplier, death spiral.

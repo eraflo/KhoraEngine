@@ -271,7 +271,7 @@ negotiate; the Data layer does not. See [GORNA](../concepts/gorna.md).
 ### Headroom
 
 The slack between current resource use and the budget or safety ceiling. When the
-frame-time PID loop sees headroom (measured frame time under target), it climbs
+frame governor sees headroom (measured frame time under its target), it climbs
 the global budget multiplier back toward 1.0 so agents can upgrade to richer
 strategies; under pressure it lowers the multiplier. Memory headroom similarly
 gates whether a layout repack is allowed. See [GORNA](../concepts/gorna.md) and

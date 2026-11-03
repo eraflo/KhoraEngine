@@ -54,11 +54,13 @@ pub struct Context {
     /// performance degradation. Ranges from 0.0 (emergency) to 1.0 (full
     /// performance).
     ///
-    /// Driven by the DCC's frame-time **PID** controller (`crate::pid`),
-    /// not a static table: the loop asservits this value so the *measured* frame
-    /// time tracks the heuristic-suggested latency (`AnalysisReport::suggested_latency_ms`,
-    /// itself modulated by thermal/battery/phase). On `Critical` thermal/battery or
-    /// high memory pressure the DCC additionally clamps it to a hard safety ceiling.
+    /// Driven by the DCC's frame governor ([`crate::governor`]), not a static
+    /// table: it moves this value so the frames' measured critical path
+    /// settles under the heuristic-suggested latency
+    /// (`AnalysisReport::suggested_latency_ms`, itself modulated by
+    /// thermal/battery/phase), with headroom. On `Critical` thermal/battery or
+    /// high memory pressure the DCC additionally clamps it to a hard safety
+    /// ceiling.
     pub global_budget_multiplier: f32,
     /// System-memory pressure in `[0, 1]` — `current_ram_bytes / memory_budget_bytes`,
     /// or `0.0` when the budget is unset. A first-class resource signal alongside

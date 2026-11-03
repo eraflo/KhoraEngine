@@ -62,17 +62,18 @@ GORNA chooses *how* each agent runs every cold-path tick; the [GORNA](../concept
 full reference. For performance work, three pieces matter.
 
 **The frame budget.** Heuristics (thermal, battery, phase, frame-time, stutter, trend, CPU pressure,
-GPU pressure, memory pressure, death-spiral) collapse into a single frame-time **target**. A **PID
-controller** (`khora_control::pid`) then drives the `global_budget_multiplier` applied to every
-agent's budget, closing the loop on *measured* frame time versus that target. When frames run long the
+GPU pressure, memory pressure, death-spiral) collapse into a single frame-time **target**. The
+**frame governor** (`khora_control::governor`) then drives the `global_budget_multiplier` applied to
+the frame target GORNA shares, closing the loop on the frames' *measured* critical path versus that
+target. When frames run long the
 multiplier drops and agents pick cheaper strategies; when there is headroom it climbs back toward 1.0
 and agents upgrade. A hard safety ceiling caps the multiplier immediately on `Critical`
 thermal/battery or near-budget memory pressure.
 
 **Why an agent up/downgraded.** Read the **GORNA Stream** panel — each switch prints its reason
-("RenderAgent: LitForward → Forward+ — GPU pressure"). Re-arbitration fires when the PID multiplier
-has moved by more than `PID_RENEGOTIATE_DELTA` (0.05) since budgets were last issued, so a strategy
-change always traces back to a measured target/multiplier move. To walk a single decision step by
+("RenderAgent: LitForward → Forward+ — GPU pressure"). Re-arbitration fires whenever the governor's
+multiplier has moved since budgets were last issued, so a strategy change always traces back to a
+measured target/multiplier move. To walk a single decision step by
 step, use [Debug a frame](./debug-a-frame.md).
 
 **Calibration anchors quotes to reality.** Agents quote *static* cost estimates in `negotiate()`, but

@@ -111,7 +111,7 @@ fn test_high_frame_time_triggers_negotiation() {
     let ctx = simulation_context();
     let mut store = MetricStore::new();
 
-    let id = MetricId::new("renderer", "frame_time");
+    let id = MetricId::new("frame", "critical_ms");
     for _ in 0..20 {
         store.push(id.clone(), 22.0); // 22ms > 18ms warn threshold
     }
@@ -126,7 +126,7 @@ fn test_critical_frame_time_pressure() {
     let ctx = simulation_context();
     let mut store = MetricStore::new();
 
-    let id = MetricId::new("renderer", "frame_time");
+    let id = MetricId::new("frame", "critical_ms");
     for _ in 0..20 {
         store.push(id.clone(), 30.0); // 30ms > 25ms critical threshold
     }
@@ -134,6 +134,49 @@ fn test_critical_frame_time_pressure() {
     let report = engine.analyze(&ctx, &store);
     assert!(report.needs_negotiation);
     assert!(!report.alerts.is_empty());
+}
+
+/// **Ten frames over the critical threshold raise a critical alert.** The
+/// heuristics read the frame's critical path, `frame:critical_ms`: ten
+/// samples at 30 ms, over the 25 ms threshold, ask for a negotiation and say
+/// why.
+#[test]
+fn ten_critical_path_samples_over_the_threshold_raise_a_critical_alert() {
+    let engine = HeuristicEngine;
+    let ctx = simulation_context();
+    let mut store = MetricStore::new();
+
+    let id = MetricId::new("frame", "critical_ms");
+    for _ in 0..10 {
+        store.push(id.clone(), 30.0);
+    }
+
+    let report = engine.analyze(&ctx, &store);
+    assert!(report.needs_negotiation);
+    assert!(
+        report.alerts.iter().any(|a| a.contains("CRITICAL")),
+        "{:?}",
+        report.alerts
+    );
+}
+
+/// **The renderer's frame-time metric no longer reaches the heuristics.**
+/// The same ten samples at 30 ms, on `renderer:frame_time`, ask for nothing:
+/// the frame's time comes from its report, not from that metric.
+#[test]
+fn the_renderer_frame_time_metric_raises_nothing() {
+    let engine = HeuristicEngine;
+    let ctx = simulation_context();
+    let mut store = MetricStore::new();
+
+    let id = MetricId::new("renderer", "frame_time");
+    for _ in 0..10 {
+        store.push(id.clone(), 30.0);
+    }
+
+    let report = engine.analyze(&ctx, &store);
+    assert!(!report.needs_negotiation);
+    assert!(report.alerts.is_empty(), "{:?}", report.alerts);
 }
 
 // ── Stutter Detection ────────────────────────────────────────────
@@ -144,7 +187,7 @@ fn test_high_variance_stutter_detection() {
     let ctx = simulation_context();
     let mut store = MetricStore::new();
 
-    let id = MetricId::new("renderer", "frame_time");
+    let id = MetricId::new("frame", "critical_ms");
     // Alternating between 5ms and 30ms = extreme stutter
     for i in 0..20 {
         store.push(id.clone(), if i % 2 == 0 { 5.0 } else { 30.0 });

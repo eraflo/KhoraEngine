@@ -16,10 +16,13 @@
 //! scheduler, the render passes and presentation.
 
 use khora_control::substrate;
+use khora_core::agent::gorna::protocol::FrameReport;
+use khora_core::lane::cost::PerDevice;
 use khora_core::lane::io::{Target, TargetKey};
 use khora_core::lane::{ClearColor, ColorTarget, ColorTargetSize, DepthTarget};
 use khora_core::renderer::traits::RenderSystem;
 use khora_core::renderer::GraphicsDevice;
+use khora_core::telemetry::TelemetryEvent;
 use khora_core::Runtime;
 use khora_data::ecs::TickPhase;
 use khora_data::render::{submit_frame_graph, SharedFrameGraph};
@@ -58,6 +61,7 @@ impl<A: EngineApp> EngineCore<A> {
         self.run_scheduler(&frame_runtime_arc);
         self.end_render_frame(presents);
         self.run_maintenance();
+        self.close_frame();
     }
 
     /// Stage 6 — runs the end-of-tick `Maintenance`-phase `DataSystem`s
@@ -94,6 +98,9 @@ impl<A: EngineApp> EngineCore<A> {
     /// [`khora_core::platform::InputMap`] so app code can query actions
     /// (`is_pressed`, `just_pressed`) from the same frame's inputs.
     pub fn drain_inputs(&mut self) -> Vec<InputEvent> {
+        // The frame starts here, in every driver: from now until
+        // `close_frame`, what is not a wait for the display is the frame's.
+        self.frame_clock.open();
         if let Some(telemetry) = self.telemetry.as_mut() {
             let _ = telemetry.tick();
         }
@@ -183,7 +190,9 @@ impl<A: EngineApp> EngineCore<A> {
         let Ok(mut guard) = rs.lock() else {
             return false;
         };
-        match guard.begin_frame() {
+        // Acquiring the image blocks until the display gives one back: time
+        // the frame waited, not worked.
+        match self.frame_clock.wait(|| guard.begin_frame()) {
             Ok(targets) => {
                 if let Some(fctx) = &fctx {
                     // What a lane declaring `#[frame] target` draws into.
@@ -336,7 +345,8 @@ impl<A: EngineApp> EngineCore<A> {
             .map(|arc| (*arc).clone());
         if let Some(rs) = &render_system {
             if let Ok(mut guard) = rs.lock() {
-                if let Err(e) = guard.end_frame() {
+                // Presenting may block on the display too.
+                if let Err(e) = self.frame_clock.wait(|| guard.end_frame()) {
                     if e.is_fatal() {
                         log::error!("EngineCore: end_frame fatal error: {}", e);
                     } else {
@@ -354,6 +364,31 @@ impl<A: EngineApp> EngineCore<A> {
     pub fn end_render_frame(&mut self, presents: bool) {
         self.submit_passes(presents);
         self.present_frame(presents);
+    }
+
+    /// Last stage — closes the frame's clock and, when it measured the
+    /// frame, reports to the DCC how long the frame kept the host busy, the
+    /// waits for the display excluded.
+    pub fn close_frame(&mut self) {
+        let Some(busy) = self.frame_clock.close() else {
+            return;
+        };
+        let Some(dcc) = &self.dcc else {
+            return;
+        };
+        // The GPU is not timed yet: its busy time stays unmeasured, never
+        // zero. Best-effort, like the agents' reports.
+        let report = FrameReport {
+            busy: PerDevice {
+                cpu: Some(busy),
+                gpu: None,
+                npu: None,
+                other: None,
+            },
+        };
+        let _ = dcc
+            .event_sender()
+            .try_send(TelemetryEvent::FrameReport(report));
     }
 }
 

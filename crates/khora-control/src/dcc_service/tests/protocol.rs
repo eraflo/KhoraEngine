@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! What the running DCC says to its agents: offers asked, allocations
-//! published for the scheduler to lend, policies, the PID's effect on the
+//! published for the scheduler to lend, policies, the governor's effect on the
 //! envelopes, replay, the journal — and only to the agents active in the
 //! engine's mode.
 
@@ -398,31 +398,35 @@ fn a_manual_mode_set_on_the_dcc_pins_the_agent() {
     );
 }
 
-/// **The PID's recovery widens the envelope again.** A sustained 40 ms frame
-/// pulls the budget multiplier down until the agent's envelope shrinks below
-/// 11 ms (a 2 ms floor in 16.66 ms is lent about 13.7 ms); once frames
-/// settle at 5 ms, only the PID's drift can open an epoch, and the envelope
+/// **The governor's recovery widens the envelope again.** The agent offers a
+/// 2 ms floor and an 8 ms upgrade: at the 16.66 ms target it is lent about
+/// 14.9 ms. A sustained 40 ms frame pulls the budget multiplier down until
+/// its envelope shrinks below 11 ms; once frames settle at 5 ms — a burst of
+/// them each poll, so the frame time the governor remembers its cut for
+/// passes quickly — only the governor can open an epoch, and the envelope
 /// grows back above 12 ms. Without that trigger the agent would stay
 /// squeezed forever.
 #[test]
-fn the_pid_recovery_widens_the_envelope_again() {
+fn the_governors_recovery_widens_the_envelope_again() {
     let (mut dcc, rx) = recording(DccConfig::default());
-    let (agent, _ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    let (agent, _ear) = Speaker::with_upgrade(
+        "renderer",
+        Duration::from_millis(2),
+        Duration::from_millis(8),
+    );
     dcc.register_agent(agent, 1.0);
     let tx = dcc.event_sender();
     dcc.start(rx);
-    let frame_time_id = MetricId::new("renderer", "frame_time");
-    let feed = |ms: f64| {
-        tx.send(TelemetryEvent::MetricUpdate {
-            id: frame_time_id.clone(),
-            value: MetricValue::Gauge(ms),
-        })
-        .expect("the DCC listens");
+    let feed = |ms: f64, count: usize| {
+        for _ in 0..count {
+            tx.send(TelemetryEvent::FrameReport(frame_report(ms, None)))
+                .expect("the DCC listens");
+        }
     };
     let last_lent = || last_lent_to(&dcc, "renderer").map(|envelope| envelope.time.cpu);
 
     let squeezed = wait_for(5, || {
-        feed(40.0);
+        feed(40.0, 1);
         last_lent().is_some_and(|cpu| cpu < Duration::from_millis(11))
     });
     assert!(
@@ -432,7 +436,7 @@ fn the_pid_recovery_widens_the_envelope_again() {
     );
 
     let widened = wait_for(10, || {
-        feed(5.0);
+        feed(5.0, 10);
         last_lent().is_some_and(|cpu| cpu > Duration::from_millis(12))
     });
     let after = last_lent();

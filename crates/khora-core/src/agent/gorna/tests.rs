@@ -20,7 +20,8 @@
 use std::time::{Duration, Instant};
 
 use super::protocol::{
-    Allocation, Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report, Trigger,
+    Allocation, Confidence, Envelope, Epoch, FrameReport, Offer, OfferRequest, OfferRow, Report,
+    Trigger,
 };
 use super::{
     AdaptationMode, AgentHints, AgentId, AgentStatus, DecisionTrace, EpochRecord,
@@ -464,6 +465,7 @@ fn epoch_record(epoch: u64) -> EpochRecord {
             pins: vec![(ALPHA, StrategyId::LowPower)],
             allowed: vec![(BETA, vec![StrategyId::LowPower, StrategyId::Balanced])],
             price: Some(0.25),
+            lever: false,
             late: vec![BETA],
         },
         target: Duration::from_micros(16_667),
@@ -587,6 +589,35 @@ fn a_journal_keeps_a_free_upgrades_price() {
     );
 }
 
+/// **A journal keeps whether an epoch left a lever**, and one written before
+/// the lever was recorded reads back as leaving none. A replay puts the
+/// recorded allocation in force, and the frame governor reads its lever: an
+/// epoch that left one must not read back as all floors, nor the reverse.
+#[test]
+fn a_journal_keeps_whether_an_epoch_left_a_lever() {
+    let mut trace = journal(2);
+    trace.epochs[0].allocation.lever = true;
+
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let read: DecisionTrace = serde_json::from_str(&written).expect("a journal reads back");
+    assert!(read.epochs[0].allocation.lever, "written as {written}");
+    assert!(!read.epochs[1].allocation.lever, "written as {written}");
+
+    let mut older: serde_json::Value = serde_json::from_str(&written).expect("a journal is JSON");
+    for epoch in older["epochs"].as_array_mut().expect("the epochs") {
+        epoch["allocation"]
+            .as_object_mut()
+            .expect("an allocation")
+            .remove("lever")
+            .expect("the lever is written");
+    }
+    let read = serde_json::from_value::<DecisionTrace>(older).expect("an older journal reads");
+    assert!(
+        read.epochs.iter().all(|epoch| !epoch.allocation.lever),
+        "a journal without levers leaves none"
+    );
+}
+
 /// **A journal naming an agent its table does not hold is refused**, with the
 /// index and the table's size: an entry is never read back as some other
 /// agent, nor dropped.
@@ -626,5 +657,66 @@ fn a_journal_whose_price_is_not_a_number_still_reads_back() {
         read.epochs[1].allocation.price.is_some_and(f32::is_nan),
         "{:?}",
         read.epochs[1].allocation.price
+    );
+}
+
+// ── The frame report ──────────────────────────────────────────────
+
+/// A frame report measuring `cpu`, `gpu`, `npu` and `other`, each in
+/// milliseconds; `None` where the frame did not measure the device.
+fn frame(cpu: Option<u64>, gpu: Option<u64>, npu: Option<u64>, other: Option<u64>) -> FrameReport {
+    FrameReport {
+        busy: PerDevice {
+            cpu: cpu.map(Duration::from_millis),
+            gpu: gpu.map(Duration::from_millis),
+            npu: npu.map(Duration::from_millis),
+            other: other.map(Duration::from_millis),
+        },
+    }
+}
+
+/// **A frame that measured no device has no critical path.** "Not measured"
+/// is not zero: the report says nothing of the frame's time.
+#[test]
+fn a_frame_measuring_no_device_has_no_critical_path() {
+    assert_eq!(FrameReport::default().critical(), None);
+    assert_eq!(frame(None, None, None, None).critical(), None);
+}
+
+/// **The critical path is the slowest measured device.** The devices work
+/// side by side: the frame lasts as long as the busiest one, whichever it is.
+#[test]
+fn the_critical_path_is_the_slowest_measured_device() {
+    let ms = Duration::from_millis;
+    assert_eq!(frame(Some(5), None, None, None).critical(), Some(ms(5)));
+    assert_eq!(
+        frame(Some(5), Some(40), None, None).critical(),
+        Some(ms(40))
+    );
+    assert_eq!(
+        frame(Some(40), Some(5), None, None).critical(),
+        Some(ms(40))
+    );
+    assert_eq!(
+        frame(Some(3), Some(7), Some(12), Some(9)).critical(),
+        Some(ms(12)),
+        "the max, not the sum"
+    );
+    assert_eq!(frame(None, None, None, Some(8)).critical(), Some(ms(8)));
+}
+
+/// **An unmeasured device never wins over a measured one.** A frame that
+/// measured its host at zero and nothing else lasted zero on its critical
+/// path, not "unknown"; one that measured only its GPU lasts the GPU's time.
+#[test]
+fn an_unmeasured_device_never_wins_over_a_measured_one() {
+    assert_eq!(
+        frame(Some(0), None, None, None).critical(),
+        Some(Duration::ZERO),
+        "a measured zero is a time"
+    );
+    assert_eq!(
+        frame(None, Some(4), None, None).critical(),
+        Some(Duration::from_millis(4))
     );
 }

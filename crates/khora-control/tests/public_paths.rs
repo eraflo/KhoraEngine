@@ -54,8 +54,8 @@ mod every_pub_mod {
     use khora_control::dcc_context as _;
     use khora_control::dcc_service as _;
     use khora_control::gorna as _;
+    use khora_control::governor as _;
     use khora_control::metrics as _;
-    use khora_control::pid as _;
     use khora_control::plugin as _;
     use khora_control::scheduler as _;
     use khora_control::substrate as _;
@@ -108,7 +108,7 @@ fn dcc_config_fields(c: &khora_control::dcc_service::DccConfig) {
         &c.telemetry_buffer_size,
         &c.agent_lock_timeout_ms,
         &c.memory_budget_bytes,
-        &c.frame_pid,
+        &c.frame_governor,
         &c.min_epoch_ticks,
         &c.overruns_in_a_row,
     );
@@ -130,24 +130,27 @@ fn bid_fields(b: &khora_control::gorna::Bid) {
     let _ = (&b.offer, &b.importance, &b.mode, &b.hints, &b.kept, &b.late);
 }
 
-fn pid_config_fields(x: &khora_control::pid::PidConfig) {
+fn governor_config_fields(x: &khora_control::governor::GovernorConfig) {
     let _ = (
-        &x.kp,
-        &x.ki,
-        &x.kd,
-        &x.setpoint_weight_b,
-        &x.derivative_filter_n,
-        &x.kb,
+        &x.headroom,
+        &x.band,
+        &x.max_drop,
+        &x.rise,
+        &x.memory_seconds,
+        &x.panic_frames,
+        &x.hitch_ratio,
+        &x.filter_seconds,
+        &x.settle_frames,
         &x.output_min,
         &x.output_max,
     );
 }
 
-/// The DCC's frame PID is tuned with this crate's `PidConfig`.
-fn dcc_config_frame_pid(
+/// The DCC's frame governor is tuned with this crate's `GovernorConfig`.
+fn dcc_config_frame_governor(
     c: &khora_control::dcc_service::DccConfig,
-) -> &khora_control::pid::PidConfig {
-    &c.frame_pid
+) -> &khora_control::governor::GovernorConfig {
+    &c.frame_governor
 }
 
 /// `EnginePlugin::on_phase` takes an `impl Fn`, so it cannot be named as a
@@ -353,22 +356,21 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::metrics::MetricStore::get_min;
     let _ = khora_control::metrics::MetricStore::get_sample_count;
 
-    // --- module `pid`
-    let _ = type_name::<khora_control::pid::PidConfig>();
-    let _ = pid_config_fields as fn(&khora_control::pid::PidConfig);
-    is_debug::<khora_control::pid::PidConfig>();
-    is_clone::<khora_control::pid::PidConfig>();
-    is_copy::<khora_control::pid::PidConfig>();
-    is_partial_eq::<khora_control::pid::PidConfig>();
-    is_default::<khora_control::pid::PidConfig>();
-    let _ = type_name::<khora_control::pid::PidController>();
-    let _ = khora_control::pid::PidController::new;
-    let _ = khora_control::pid::PidController::update;
-    let _ = khora_control::pid::PidController::reset;
-    let _ = khora_control::pid::PidController::output;
-    let _ = khora_control::pid::PidController::config;
-    is_debug::<khora_control::pid::PidController>();
-    is_clone::<khora_control::pid::PidController>();
+    // --- module `governor`
+    let _ = type_name::<khora_control::governor::GovernorConfig>();
+    let _ = governor_config_fields as fn(&khora_control::governor::GovernorConfig);
+    is_debug::<khora_control::governor::GovernorConfig>();
+    is_clone::<khora_control::governor::GovernorConfig>();
+    is_copy::<khora_control::governor::GovernorConfig>();
+    is_partial_eq::<khora_control::governor::GovernorConfig>();
+    is_default::<khora_control::governor::GovernorConfig>();
+    let _ = type_name::<khora_control::governor::FrameGovernor>();
+    let _ = khora_control::governor::FrameGovernor::new;
+    let _ = khora_control::governor::FrameGovernor::observe;
+    let _ = khora_control::governor::FrameGovernor::decide;
+    let _ = khora_control::governor::FrameGovernor::multiplier;
+    is_debug::<khora_control::governor::FrameGovernor>();
+    is_clone::<khora_control::governor::FrameGovernor>();
 
     // --- module `plugin`
     let _ = type_name::<khora_control::plugin::EnginePlugin>();
@@ -414,8 +416,8 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = type_name::<khora_control::dcc_service::DccConfig>();
     let _ = type_name::<khora_control::dcc_service::DccService>();
     let _ = dcc_config_fields as fn(&khora_control::dcc_service::DccConfig);
-    let _ = dcc_config_frame_pid
-        as fn(&khora_control::dcc_service::DccConfig) -> &khora_control::pid::PidConfig;
+    let _ = dcc_config_frame_governor
+        as fn(&khora_control::dcc_service::DccConfig) -> &khora_control::governor::GovernorConfig;
     is_default::<khora_control::dcc_service::DccConfig>();
     is_clone::<khora_control::dcc_service::DccConfig>();
     is_debug::<khora_control::dcc_service::DccConfig>();

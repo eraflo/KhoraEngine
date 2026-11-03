@@ -120,6 +120,8 @@ pub fn decide(round: &Round<'_>) -> Allocation {
             allowed: Vec::new(),
             late,
             price: None,
+            // Every agent is lent its floor whatever the target.
+            lever: false,
         };
     }
 
@@ -146,10 +148,16 @@ pub fn decide(round: &Round<'_>) -> Allocation {
     }
 
     let price = upgrade(round, &bids, &mut plans);
+    let envelopes = share(round, &bids, &plans);
+    let lever = bids
+        .iter()
+        .zip(&plans)
+        .zip(&envelopes)
+        .any(|((bid, plan), (_, envelope))| above_floor(bid, plan, envelope));
     Allocation {
         epoch: round.epoch,
         trigger: round.trigger,
-        envelopes: share(round, &bids, &plans),
+        envelopes,
         pins: bids
             .iter()
             .filter_map(|bid| match bid.mode {
@@ -176,7 +184,26 @@ pub fn decide(round: &Round<'_>) -> Allocation {
             .collect(),
         late,
         price,
+        lever,
     }
+}
+
+/// Whether a lower frame target can take something back from `bid`: a row
+/// above its floor fits the envelope it is lent, so a smaller one makes it
+/// run a cheaper row. That covers a planned upgrade, a `Stable` envelope it
+/// keeps, and the slack share every envelope carries — an agent chooses its
+/// row within its envelope, whatever row the plan started it on. No target
+/// moves a row a `Manual` policy pins, nor what a late or busy agent keeps.
+fn above_floor(bid: &Bid, plan: &Plan, envelope: &Envelope) -> bool {
+    if matches!(bid.mode, AdaptationMode::Manual(_)) || bid.late || bid.offer.rows.is_empty() {
+        return false;
+    }
+    let floor = busiest(&plan.floor.time);
+    bid.offer
+        .rows
+        .iter()
+        .filter(|row| busiest(&row.cost.time) > floor)
+        .any(|row| fits_envelope(&row.cost, envelope))
 }
 
 /// What the round plans for one agent.

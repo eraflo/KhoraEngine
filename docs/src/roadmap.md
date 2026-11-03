@@ -169,6 +169,12 @@ what each means.
   caller today), implement `AoSoA`, and migrate a populated column live without
   breaking in-flight queries. The mini-game supplies the real load that is
   missing to measure whether it pays.
+- #292 **GPU time in the reports.** The DCC regulates on each frame's critical
+  path, but only the host is measured: the frame graph is never timed on the
+  GPU, so a GPU-bound frame stays invisible and the render rows are costed on
+  their CPU time alone. The work: timestamps around each submitted pass and the
+  whole graph, read back a frame or two late, into each drawing lane's report
+  and the frame's report.
 - #89 Design semantic interfaces and contracts v1
 - #92 Explore using specialized hardware (ML cores)
 - #129 Metrics system advanced features (labels, histograms, export)

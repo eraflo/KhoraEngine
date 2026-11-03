@@ -40,16 +40,14 @@ pub use config::DccConfig;
 /// Number of recent `(n, time)` samples each per-agent cost model retains.
 const COST_MODEL_CAPACITY: usize = 64;
 
-/// Minimum frame-time samples before the PID acts on the measurement. Below this
-/// the controller holds its current output rather than reacting to thin data.
+/// Minimum frame-time samples before the governor decides. Below this it holds
+/// its multiplier rather than reacting to thin data.
 const FRAME_TIME_MIN_SAMPLES: usize = 10;
 
-/// How far the PID's budget multiplier must drift from its value at the last
-/// budget issuance before the DCC re-arbitrates on its own. The pressure
-/// heuristics already force negotiation on the way *down*; this is what lets
-/// agents recover (upgrade) once measured frame time settles back under the
-/// setpoint, instead of staying pinned at a degraded strategy.
-const PID_RENEGOTIATE_DELTA: f32 = 0.05;
+/// How far the published budget multiplier must have moved since the last
+/// issuance for the DCC to re-arbitrate: any real move. The governor only
+/// changes it by whole steps, so this only tells a change from none.
+const MULTIPLIER_EPSILON: f32 = 1e-4;
 
 /// The Dynamic Context Core service.
 ///

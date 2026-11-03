@@ -14,12 +14,20 @@
 
 //! Event types for engine-wide telemetry.
 
-use crate::agent::gorna::protocol::Report;
+use crate::agent::gorna::protocol::{FrameReport, Report};
 use crate::agent::gorna::AgentId;
 use crate::telemetry::metrics::{MetricId, MetricValue};
 use crate::telemetry::monitoring::{GpuReport, HardwareReport, ResourceUsageReport};
 
-/// A high-level telemetry event produced by the Hot Path or hardware sensors.
+/// What reaches the DCC on its inbox. Two families share it:
+///
+/// - **The protocol's reports** — what the work cost and how it ran:
+///   [`AgentReport`](Self::AgentReport), [`FrameReport`](Self::FrameReport),
+///   [`WavePlan`](Self::WavePlan), [`ModeChange`](Self::ModeChange). Every
+///   time the DCC budgets from comes from one of them.
+/// - **The context** — the situation the work runs in, which no agent
+///   reports: memory, hardware health, the data layer's access patterns
+///   (the other variants).
 #[derive(Debug, Clone)]
 pub enum TelemetryEvent {
     /// A single metric sample update.
@@ -43,6 +51,9 @@ pub enum TelemetryEvent {
     /// fits its cost models, counts overruns and stalls, and journals each
     /// epoch from these. Best-effort, once per run.
     AgentReport(Report),
+    /// What one frame cost: the time it kept each device busy, waits for the
+    /// display excluded. Sent once per frame, after the frame.
+    FrameReport(FrameReport),
     /// The scheduler's per-frame **wave plan**: how the agents will actually be
     /// grouped for execution. Each inner list is one wave — agents that run
     /// concurrently — any agents whose declared contentions are disjoint;

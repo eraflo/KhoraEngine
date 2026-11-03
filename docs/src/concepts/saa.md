@@ -102,8 +102,8 @@ Agents submit desired needs with strategy costs; the DCC arbitrates against the
 global model and its goals; it grants each agent a budget (possibly less than
 requested); the agent then selects a strategy that fits. The DCC shapes a single
 frame-time target from a battery of heuristics each tick, and a closed-loop
-**PID controller** regulates the global budget so the *measured* frame time
-tracks that target.
+**frame governor** regulates the global budget so the frames' *measured* critical
+path settles under that target.
 
 ### 4. Adaptive Game Data Flows — the living representation
 

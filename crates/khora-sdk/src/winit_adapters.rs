@@ -432,13 +432,12 @@ impl<W: WindowProvider, A: EngineApp> WinitAppRunner<W, A> {
         // `ecs_maintenance`) never run in the production winit flow.
         self.engine.run_maintenance();
 
-        // Wait for hot-path tasks before returning so the next frame sees a
-        // settled GPU state.
-        if let Some(rt) = &self.tokio_runtime {
-            if let Some(fctx) = &self.frame_context {
-                rt.block_on(fctx.wait_for_all());
-            }
+        // Wait for hot-path tasks so the next frame sees a settled GPU state,
+        // then report the frame's busy time to the DCC: the frame ends here.
+        if let (Some(rt), Some(fctx)) = (&self.tokio_runtime, &self.frame_context) {
+            rt.block_on(fctx.wait_for_all());
         }
+        self.engine.close_frame();
     }
 }
 

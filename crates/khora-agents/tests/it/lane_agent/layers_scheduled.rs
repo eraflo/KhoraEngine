@@ -175,6 +175,7 @@ fn allocation(epoch: u64, micros: u64) -> Allocation {
         pins: Vec::new(),
         allowed: Vec::new(),
         price: None,
+        lever: false,
         late: Vec::new(),
     }
 }

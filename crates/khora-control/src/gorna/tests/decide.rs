@@ -821,7 +821,7 @@ fn a_stable_agent_keeps_its_envelope_unless_it_no_longer_fits() {
     };
 
     let roomier = stable(5_000);
-    let allocation = decide(&round(Trigger::PidDrift, 16_000, &roomier));
+    let allocation = decide(&round(Trigger::FrameGovernor, 16_000, &roomier));
     assert_eq!(lent_to(&allocation, "ash"), cpu_envelope(5_000), "kept");
 
     let tighter = stable(12_000);
@@ -935,4 +935,116 @@ fn a_bounded_agent_is_lent_room_for_an_allowed_row() {
         critical_path(&allocation, &[], |time| time.cpu) <= us(6_000),
         "{allocation:?}"
     );
+}
+
+/// **A `Stable` agent on its floor leaves no lever in the envelope it
+/// keeps.** `ash` offers its floor alone (2 ms), `Stable`. The first round
+/// lends it the floor and the slack: every agent runs its floor, there is no
+/// lever. The next round, at the same 16 ms, keeps that envelope — floor plus
+/// slack — and `ash` still has nothing but its floor to run: a lower target
+/// would take back slack it cannot use, never a row. The round leaves no
+/// lever either.
+#[test]
+fn a_stable_agent_on_its_floor_leaves_no_lever_in_the_envelope_it_keeps() {
+    let stable = |kept| {
+        let mut stable = bid(
+            offer("ash", vec![row(LowPower, 2_000, 0.4)], LowPower),
+            Important,
+        );
+        stable.mode = AdaptationMode::Stable;
+        stable.kept = kept;
+        [stable]
+    };
+
+    let first = decide(&round(Trigger::Initial, 16_000, &stable(None)));
+    assert!(!first.lever, "ash runs its floor: {first:?}");
+
+    let kept = lent_to(&first, "ash");
+    assert!(kept.time.cpu > us(2_000), "the slack is lent: {kept:?}");
+    let next = decide(&round(Trigger::Pressure, 16_000, &stable(Some(kept))));
+    assert_eq!(lent_to(&next, "ash"), kept, "the envelope is kept");
+    assert!(
+        !next.lever,
+        "ash still runs its floor, its only row: no lever in {next:?}"
+    );
+}
+
+/// **An agent busy through the round is no lever.** `ash` could not be
+/// asked — its lock was held through the deadline — so it offers no row and
+/// keeps the 5 ms it holds; `birch` offers its floor alone. No target this
+/// round changes what either runs: the allocation leaves no lever.
+#[test]
+fn an_agent_busy_through_the_round_is_no_lever() {
+    let mut busy = bid(
+        Offer {
+            agent: AgentId::new("ash"),
+            epoch: Epoch(7),
+            rows: Vec::new(),
+            floor: LowPower,
+            current: LowPower,
+            health: 1.0,
+        },
+        Optional,
+    );
+    busy.late = true;
+    busy.kept = Some(cpu_envelope(5_000));
+    let bids = [
+        busy,
+        bid(
+            offer("birch", vec![row(LowPower, 2_000, 0.4)], LowPower),
+            Important,
+        ),
+    ];
+
+    let allocation = decide(&round(Trigger::Pressure, 16_000, &bids));
+
+    assert_ne!(allocation.trigger, Trigger::Safety, "5 + 2 ms fit 16 ms");
+    assert_eq!(lent_to(&allocation, "ash"), cpu_envelope(5_000), "kept");
+    assert!(
+        !allocation.lever,
+        "neither agent has a row to give: no lever in {allocation:?}"
+    );
+}
+
+/// **A row pinned above the floor is no lever; an upgrade is one.** `ash`
+/// is pinned (`Manual`) to its 6 ms row, above its 1 ms floor: no target
+/// moves it, and with `birch` on its floor the allocation leaves no lever.
+/// Freed to `Learning`, `ash` takes the same row as an upgrade, and a lower
+/// target could take it back: the allocation leaves a lever.
+#[test]
+fn a_row_pinned_above_the_floor_is_no_lever_an_upgrade_is_one() {
+    let ash = |mode| {
+        let mut ash = bid(
+            offer(
+                "ash",
+                vec![row(LowPower, 1_000, 0.4), row(HighPerformance, 6_000, 1.0)],
+                LowPower,
+            ),
+            Important,
+        );
+        ash.mode = mode;
+        [
+            ash,
+            bid(
+                offer("birch", vec![row(LowPower, 2_000, 0.4)], LowPower),
+                Important,
+            ),
+        ]
+    };
+
+    let pinned = decide(&round(
+        Trigger::Pressure,
+        16_000,
+        &ash(AdaptationMode::Manual(HighPerformance)),
+    ));
+    assert_eq!(pinned.pins, vec![(AgentId::new("ash"), HighPerformance)]);
+    assert!(!pinned.lever, "a pin is no lever: {pinned:?}");
+
+    let free = decide(&round(
+        Trigger::Pressure,
+        16_000,
+        &ash(AdaptationMode::Learning),
+    ));
+    assert!(free.price.is_some(), "the upgrade is taken: {free:?}");
+    assert!(free.lever, "an upgrade is a lever: {free:?}");
 }

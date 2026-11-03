@@ -152,6 +152,9 @@ struct WrittenAllocation {
     pins: Vec<(Named, StrategyId)>,
     allowed: Vec<(Named, Vec<StrategyId>)>,
     price: Option<WrittenPrice>,
+    /// A journal from before the lever was written lends none.
+    #[serde(default)]
+    lever: bool,
     late: Vec<Named>,
 }
 
@@ -230,6 +233,7 @@ fn written_epoch(record: &EpochRecord, table: &mut Table) -> WrittenEpoch {
                 .map(|(agent, rows)| (table.of(*agent), rows.clone()))
                 .collect(),
             price: allocation.price.map(WrittenPrice::of),
+            lever: allocation.lever,
             late: allocation
                 .late
                 .iter()
@@ -294,6 +298,7 @@ fn read_epoch<E>(
                 .map(|(agent, rows)| Ok((named(agent)?, rows)))
                 .collect::<Result<_, E>>()?,
             price: allocation.price.map(WrittenPrice::value),
+            lever: allocation.lever,
             late: list(allocation.late)?,
         },
         target: written.target,

@@ -14,7 +14,7 @@
 
 //! Configuration of the DCC service.
 
-use crate::pid::PidConfig;
+use crate::governor::GovernorConfig;
 
 /// Configuration for the DCC Service.
 #[derive(Debug, Clone)]
@@ -33,11 +33,9 @@ pub struct DccConfig {
     /// the ceiling approaches. `None` disables the signal — chiefly useful on
     /// memory-constrained targets.
     pub memory_budget_bytes: Option<u64>,
-    /// Tuning for the frame-time PID that drives
+    /// Tuning for the frame governor that drives
     /// [`Context::global_budget_multiplier`](crate::dcc_context::Context::global_budget_multiplier).
-    /// The defaults are conservative gains for the ~20 Hz cold path; expose this
-    /// to retune per target without touching the loop.
-    pub frame_pid: PidConfig,
+    pub frame_governor: GovernorConfig,
     /// The fewest ticks an epoch lasts before another trigger opens the next
     /// one; a trigger raised sooner waits for it. `Safety` never waits.
     pub min_epoch_ticks: u32,
@@ -53,7 +51,7 @@ impl Default for DccConfig {
             telemetry_buffer_size: 1000,
             agent_lock_timeout_ms: 100,
             memory_budget_bytes: None,
-            frame_pid: PidConfig::default(),
+            frame_governor: GovernorConfig::default(),
             min_epoch_ticks: 3,
             overruns_in_a_row: 3,
         }

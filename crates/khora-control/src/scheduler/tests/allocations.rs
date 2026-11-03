@@ -175,6 +175,7 @@ pub(super) fn allocation(epoch: u64, named: &[(&'static str, u64)]) -> Allocatio
         pins: Vec::new(),
         allowed: Vec::new(),
         price: None,
+        lever: false,
         late: Vec::new(),
     }
 }
