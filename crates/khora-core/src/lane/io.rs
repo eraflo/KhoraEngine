@@ -35,7 +35,7 @@ use crate::math::Extent2D;
 use crate::renderer::api::command::CommandBufferId;
 use crate::renderer::api::frame::FrameContext;
 use crate::renderer::api::resource::{TextureFormat, TextureViewId};
-use crate::renderer::traits::CommandEncoder;
+use crate::renderer::traits::{CommandEncoder, PipelineSystem};
 use crate::renderer::GraphicsDevice;
 use crate::runtime::Runtime;
 
@@ -69,6 +69,21 @@ pub struct Target {
     pub color: TextureViewId,
     /// The depth attachment, if it has one.
     pub depth: Option<TextureViewId>,
+    /// Its size in pixels.
+    pub size: Extent2D,
+    /// Its formats and samples.
+    pub key: TargetKey,
+}
+
+/// The frame's target, read by a lane that depth-tests what it draws: the
+/// target with its depth attachment. A frame whose target has no depth is
+/// refused at the fetch, as a [`Reason::BadTarget`](super::guard::Reason).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SceneTarget {
+    /// The colour attachment.
+    pub color: TextureViewId,
+    /// The depth attachment.
+    pub depth: TextureViewId,
     /// Its size in pixels.
     pub size: Extent2D,
     /// Its formats and samples.
@@ -125,6 +140,7 @@ impl<T: ?Sized> std::ops::DerefMut for Locked<'_, T> {
 pub struct Pass<'f, P: PassSlot> {
     encoder: Box<dyn CommandEncoder>,
     device: &'f dyn GraphicsDevice,
+    pipelines: Option<&'f dyn PipelineSystem>,
     descriptor: P::Descriptor,
 }
 
@@ -152,8 +168,15 @@ impl<'f, P: PassSlot> Pass<'f, P> {
         Self {
             encoder: device.create_command_encoder(Some(std::any::type_name::<P>())),
             device,
+            pipelines: None,
             descriptor: P::descriptor(),
         }
+    }
+
+    /// The same pass, lending `pipelines` to the lane recording into it.
+    pub fn lending(mut self, pipelines: Option<&'f dyn PipelineSystem>) -> Self {
+        self.pipelines = pipelines;
+        self
     }
 
     /// The encoder the lane records the pass into.
@@ -165,6 +188,13 @@ impl<'f, P: PassSlot> Pass<'f, P> {
     /// uniforms through.
     pub fn device(&self) -> &'f dyn GraphicsDevice {
         self.device
+    }
+
+    /// The pipeline system the agent lent the sink the pass opened on, when it
+    /// lent one: what a lane resolves the pipelines it draws with through
+    /// while it records.
+    pub fn pipelines(&self) -> Option<&'f dyn PipelineSystem> {
+        self.pipelines
     }
 
     /// The descriptor the pass closes with.
@@ -466,6 +496,22 @@ impl<'f> InputSource<'f> {
         Ok(target)
     }
 
+    /// The frame's target, when it has a size and a depth attachment.
+    pub fn scene_target(&mut self, field: &'static str) -> Result<SceneTarget, InputRefusal> {
+        let target = self.target(field)?;
+        let depth = target.depth.ok_or(InputRefusal {
+            field,
+            source: SourceKind::Frame,
+            reason: Reason::BadTarget,
+        })?;
+        Ok(SceneTarget {
+            color: target.color,
+            depth,
+            size: target.size,
+            key: target.key,
+        })
+    }
+
     /// The colour the frame's target is cleared to.
     pub fn clear_color(&mut self, field: &'static str) -> Result<ClearColor, InputRefusal> {
         self.touch::<ClearColor>(field, SourceKind::Frame);
@@ -527,6 +573,8 @@ pub struct OutputSink<'f> {
     seed: Option<&'f OutputDeck>,
     /// The device `#[pass]` outputs open their encoder on.
     device: Option<&'f dyn GraphicsDevice>,
+    /// The pipeline system `#[pass]` outputs lend the lane.
+    pipelines: Option<&'f dyn PipelineSystem>,
 }
 
 impl<'f> OutputSink<'f> {
@@ -537,6 +585,7 @@ impl<'f> OutputSink<'f> {
             written: Vec::new(),
             seed: None,
             device: None,
+            pipelines: None,
         }
     }
 
@@ -557,6 +606,18 @@ impl<'f> OutputSink<'f> {
     /// The device `#[pass]` outputs open on, when the agent lent one.
     pub fn device(&self) -> Option<&'f dyn GraphicsDevice> {
         self.device
+    }
+
+    /// The same sink, its `#[pass]` outputs lending `pipelines` to the lane
+    /// that records into them.
+    pub fn with_pipelines(mut self, pipelines: &'f dyn PipelineSystem) -> Self {
+        self.pipelines = Some(pipelines);
+        self
+    }
+
+    /// The pipeline system `#[pass]` outputs lend, when the agent lent one.
+    pub fn pipelines(&self) -> Option<&'f dyn PipelineSystem> {
+        self.pipelines
     }
 
     /// What the slot `T` holds this frame so far, or its default.

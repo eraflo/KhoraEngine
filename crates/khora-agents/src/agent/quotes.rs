@@ -17,11 +17,12 @@
 
 use std::time::{Duration, Instant};
 
+use khora_core::lane::cost::Cost;
 use khora_core::lane::io::{Target, TargetKey};
 use khora_core::renderer::api::frame::FrameContext;
 use khora_core::EngineContext;
 
-use super::{lend, time_of, LaneAgent};
+use super::{lend, LaneAgent};
 
 /// How far the running row's quote may move from its value at the last full
 /// quote, as a fraction of that value, before every row is quoted again.
@@ -40,7 +41,7 @@ pub(super) struct FullQuote {
     pub(super) key: Option<TargetKey>,
     /// Every row's quote then, by row: the base each row's drift is measured
     /// from when it is the one running. `None` for a row left unquoted.
-    pub(super) bases: Vec<Option<Duration>>,
+    pub(super) bases: Vec<Option<Cost>>,
 }
 
 /// Whether `now` moved from `base` by more than [`QUOTE_DRIFT`] of it.
@@ -74,11 +75,7 @@ impl LaneAgent {
             key: frame
                 .and_then(|frame| frame.get::<Target>())
                 .map(|target| target.key),
-            bases: self
-                .quotes
-                .iter()
-                .map(|quote| quote.as_ref().map(time_of))
-                .collect(),
+            bases: self.quotes.clone(),
         });
     }
 

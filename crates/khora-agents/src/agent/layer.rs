@@ -18,7 +18,7 @@
 
 use std::any::TypeId;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::{Contention, Layer, LayerRun, Terms, Wake};
@@ -50,7 +50,7 @@ pub(super) struct LaneLayer {
     /// Whether the lane reads the frame's target and clear colour.
     reads_frame: bool,
     /// The time drift is measured from, with the full quote it comes from.
-    base: Option<(Option<Instant>, Duration)>,
+    base: Option<(Option<Instant>, Cost)>,
     /// Whether the last run's cost fitted the envelope.
     fitted: bool,
     /// The reason the last run's input was refused, if it was.
@@ -97,7 +97,7 @@ impl LaneLayer {
 
     /// Why the agent must choose again after a run that cost `cost`, on
     /// `terms`, on `frame`: the target changed, the quote stopped fitting,
-    /// drifted, or aged.
+    /// drifted — in time, or in the impact it names — or aged.
     fn watch(&mut self, cost: &Cost, terms: &Terms, frame: Option<&FrameContext>) -> Option<Wake> {
         let time = time_of(cost);
         // The row's quote at the last full quote is the base; a row unquoted
@@ -121,7 +121,9 @@ impl LaneLayer {
             Some(Wake::TargetChanged)
         } else if fitted && !self.fitted {
             Some(Wake::QuoteUnfit)
-        } else if base.is_none_or(|base| drifted(base, time)) {
+        } else if base
+            .is_none_or(|base| drifted(time_of(&base), time) || base.impact != cost.impact)
+        {
             Some(Wake::QuoteDrift)
         } else if terms
             .quoted_at
@@ -184,6 +186,9 @@ impl Layer for LaneLayer {
             let mut sink = OutputSink::new(&mut written).with_seed(context.deck);
             if let Some(device) = device.as_deref() {
                 sink = sink.with_device(device);
+            }
+            if let Some(pipelines) = pipelines.as_deref() {
+                sink = sink.with_pipelines(pipelines);
             }
             self.lane.run(self.level, &mut source, &mut sink, &mut gpu)
         };

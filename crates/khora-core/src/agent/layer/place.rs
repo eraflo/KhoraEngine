@@ -46,10 +46,10 @@ pub struct Terms {
     pub fixed_step: Option<Duration>,
     /// Whether the row is the floor, run because no row fitted the envelope.
     pub over_budget: bool,
-    /// The time the row was quoted at when the agent last quoted every row:
-    /// what its drift is measured from. `None` when it was not quoted then;
-    /// the layer's first run then sets the base.
-    pub quote: Option<Duration>,
+    /// The row's quote when the agent last quoted every row: what its drift
+    /// is measured from — its time, and the impact it named. `None` when it
+    /// was not quoted then; the layer's first run then sets the base.
+    pub quote: Option<Cost>,
     /// When the agent last quoted every row; `None` before it ever did.
     pub quoted_at: Option<Instant>,
     /// The frame's target key then; `None` when the family reads no target.

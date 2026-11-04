@@ -21,4 +21,6 @@
 pub struct DeviceCaps {
     /// Whether the graphics device has storage buffers.
     pub storage_buffers: bool,
+    /// Whether the graphics device runs compute shaders.
+    pub compute: bool,
 }

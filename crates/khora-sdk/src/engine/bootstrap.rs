@@ -505,22 +505,13 @@ fn register_builtin_agents(dcc: &DccService) {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .all_ids();
-    for builtin in [
-        khora_agents::render_agent::RENDERER,
-        khora_agents::script_agent::SCRIPT,
-    ] {
+    for builtin in [khora_agents::script_agent::SCRIPT] {
         if taken.contains(&builtin) {
             panic!(
                 "the engine cannot boot: an agent already negotiates as `{builtin}`, the name of the engine's own"
             );
         }
     }
-    dcc.register_agent(
-        Arc::new(Mutex::new(
-            khora_agents::render_agent::RenderAgent::default(),
-        )),
-        1.0,
-    );
     // Gameplay. Registered like any other consumer, which is the point of
     // giving scripting an agent at all: the DCC can tell it "you have
     // 0.4ms, hand back control", and Ergon is the only scripting language
@@ -538,10 +529,6 @@ fn register_builtin_agents(dcc: &DccService) {
         .agent_registry()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    registry.set_origin(
-        khora_agents::render_agent::RENDERER,
-        std::any::type_name::<khora_agents::render_agent::RenderAgent>(),
-    );
     registry.set_origin(
         khora_agents::script_agent::SCRIPT,
         std::any::type_name::<khora_agents::script_agent::ScriptAgent>(),

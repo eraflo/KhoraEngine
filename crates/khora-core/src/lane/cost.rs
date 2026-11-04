@@ -17,6 +17,8 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
+use super::level::Impact;
+
 /// One value per kind of device.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PerDevice<T> {
@@ -54,4 +56,8 @@ pub struct Cost {
     pub memory: PerDevice<u64>,
     /// How far the figures can be trusted.
     pub confidence: Confidence,
+    /// How much running the level on these inputs changes the result; `None`
+    /// means the level's own [`Level::impact`](super::level::Level::impact).
+    #[serde(default)]
+    pub impact: Option<Impact>,
 }

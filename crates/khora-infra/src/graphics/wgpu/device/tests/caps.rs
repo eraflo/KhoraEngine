@@ -74,3 +74,52 @@ fn the_wgpu_device_reports_storage_buffers() {
         wgpu::Limits::default().max_storage_buffers_per_shader_stage
     );
 }
+
+/// **The wgpu device reports compute shaders on this machine's GPU.** An
+/// adapter whose downlevel capabilities include compute shaders gives a
+/// device whose caps say so, so Forward+, which culls its lights in a compute
+/// pass, stays on the render family's menu.
+#[test]
+fn the_wgpu_device_reports_compute() {
+    let _turn = crate::graphics::wgpu::tests::gpu::exclusive_gpu();
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let Ok(adapter) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::default(),
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    })) else {
+        log::warn!("the_wgpu_device_reports_compute: no wgpu adapter, skipped");
+        return;
+    };
+    let downlevel = adapter.get_downlevel_capabilities().flags;
+    if !downlevel.contains(wgpu::DownlevelFlags::COMPUTE_SHADERS) {
+        log::warn!(
+            "the_wgpu_device_reports_compute: this adapter runs no compute shaders \
+             ({downlevel:?}), skipped"
+        );
+        return;
+    }
+    let (device, queue) =
+        match pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("the_wgpu_device_reports_compute"),
+            required_features: wgpu::Features::empty(),
+            required_limits: wgpu::Limits::default(),
+            experimental_features: wgpu::ExperimentalFeatures::default(),
+            memory_hints: wgpu::MemoryHints::default(),
+            trace: wgpu::Trace::Off,
+        })) {
+            Ok(pair) => pair,
+            Err(e) => {
+                log::warn!("the_wgpu_device_reports_compute: no device ({e}), skipped");
+                return;
+            }
+        };
+    let device = WgpuDevice::new(device, queue, Arc::new(GpuHealth::default()));
+
+    let caps = device.caps();
+
+    assert!(
+        caps.compute,
+        "an adapter running compute shaders reported {caps:?}"
+    );
+}

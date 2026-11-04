@@ -20,7 +20,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use khora_agents::registered_agent::lane_agents;
-use khora_agents::render_agent::RenderAgent;
 use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
 use khora_core::agent::registration::{check_registrations, BootError};
 use khora_core::agent::{
@@ -313,7 +312,13 @@ fn the_ui_agent_leaves_the_asset_store_to_the_residency() {
 fn the_ui_agent_contends_with_no_render_family_agent() {
     let ui = ui_agent().contention();
     let others = [
-        ("renderer", RenderAgent::default().contention()),
+        (
+            "renderer",
+            crate::render_family::fixtures::render_agent(
+                &crate::render_family::fixtures::EVERY_CAP,
+            )
+            .contention(),
+        ),
         (
             "shadows",
             crate::shadows_family::fixtures::shadow_agent().contention(),

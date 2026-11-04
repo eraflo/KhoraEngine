@@ -26,8 +26,6 @@
 //! | [`ColorTargetSize`]          | Size in pixels of the colour target           |
 //! | [`DepthTarget`]              | Texture view for depth testing                |
 //! | [`ClearColor`]               | Framebuffer clear colour                      |
-//! | [`ShadowAtlasView`]          | Shadow atlas view written by shadow lanes     |
-//! | [`ShadowComparisonSampler`]  | PCF comparison sampler for shadow sampling    |
 //!
 //! # Physics domain
 //!
@@ -42,7 +40,7 @@
 //! [`StreamInfo`](crate::audio::StreamInfo), so no separate context key is
 //! needed.
 
-use crate::renderer::api::resource::{SamplerId, TextureViewId};
+use crate::renderer::api::resource::TextureViewId;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Render domain
@@ -80,19 +78,10 @@ pub struct DepthTarget(pub TextureViewId);
 #[derive(Debug, Clone, Copy)]
 pub struct ClearColor(pub crate::math::LinearRgba);
 
-/// 2D shadow atlas texture view (directional / spot lights), written by
-/// shadow lanes after `execute()`.
-#[derive(Debug, Clone, Copy)]
-pub struct ShadowAtlasView(pub TextureViewId);
-
 /// Cube shadow atlas texture view (point lights), bound by lit shaders as
 /// `texture_depth_cube_array`. Written by shadow lanes after `execute()`.
 #[derive(Debug, Clone, Copy)]
 pub struct ShadowAtlasCubeView(pub TextureViewId);
-
-/// Shadow comparison sampler, written by shadow lanes after `execute()`.
-#[derive(Debug, Clone, Copy)]
-pub struct ShadowComparisonSampler(pub SamplerId);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Physics domain

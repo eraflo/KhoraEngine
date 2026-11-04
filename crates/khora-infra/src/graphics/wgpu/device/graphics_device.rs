@@ -931,15 +931,15 @@ impl GraphicsDevice for WgpuDevice {
     }
 
     /// Read from the device's limits: storage buffers are there when a
-    /// shader stage may bind at least one (a downlevel device, such as WebGL2,
-    /// allows none).
+    /// shader stage may bind at least one, compute shaders when a dispatch may
+    /// run at least one workgroup of one invocation (a downlevel device, such
+    /// as WebGL2, allows neither).
     fn caps(&self) -> DeviceCaps {
+        let limits = self.wgpu_device().limits();
         DeviceCaps {
-            storage_buffers: self
-                .wgpu_device()
-                .limits()
-                .max_storage_buffers_per_shader_stage
-                > 0,
+            storage_buffers: limits.max_storage_buffers_per_shader_stage > 0,
+            compute: limits.max_compute_workgroups_per_dimension > 0
+                && limits.max_compute_invocations_per_workgroup > 0,
         }
     }
 

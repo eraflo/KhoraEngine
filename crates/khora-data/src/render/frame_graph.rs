@@ -30,15 +30,15 @@ use khora_core::renderer::GraphicsDevice;
 /// Logical resource handle in the frame graph — used for declaring reads/writes.
 ///
 /// Resources here are *abstract*: the actual GPU views live in `FrameContext`
-/// (`ColorTarget`, `DepthTarget`, `ShadowAtlasView`). The graph only orders
-/// passes; it does not allocate or alias resources yet.
+/// (`ColorTarget`, `DepthTarget`) and the shadows family's `ShadowFrame`. The
+/// graph only orders passes; it does not allocate or alias resources yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ResourceId {
     /// Swapchain (or offscreen viewport) color attachment.
     Color,
     /// Frame depth attachment.
     Depth,
-    /// Shadow atlas — written by `ShadowAgent`, read by `RenderAgent`.
+    /// Shadow atlas — written by the shadows family, read by the render family.
     ShadowAtlas,
     /// Custom resource keyed by an opaque integer (plugin / future use).
     Custom(u64),
@@ -101,9 +101,30 @@ pub struct PassContribution {
     pub command_buffer: CommandBufferId,
 }
 
-/// Deck slot carrying the main scene pass, written by `RenderAgent`.
+/// Deck slot carrying the main scene pass, written by the render family.
 #[derive(Default)]
 pub struct ScenePassSlot(pub Option<PassContribution>);
+
+impl khora_core::lane::io::PassSlot for ScenePassSlot {
+    type Descriptor = PassDescriptor;
+
+    /// The opaque draws clear and fill the colour and the depth, sampling
+    /// the shadow atlas — the shadows family's, or the lane's neutral one —
+    /// so the shadow pass is always ordered first.
+    fn descriptor() -> PassDescriptor {
+        PassDescriptor::new("ScenePass")
+            .writes(ResourceId::Color)
+            .writes(ResourceId::Depth)
+            .reads(ResourceId::ShadowAtlas)
+    }
+
+    fn close(descriptor: PassDescriptor, command_buffer: CommandBufferId) -> Self {
+        Self(Some(PassContribution {
+            descriptor,
+            command_buffer,
+        }))
+    }
+}
 
 /// Deck slot carrying the UI pass, written by the UI family.
 #[derive(Default)]
@@ -152,7 +173,7 @@ impl khora_core::lane::io::PassSlot for SkyboxPassSlot {
 }
 
 /// Deck slot carrying the scene's **transparent** draws, written by
-/// `RenderAgent` alongside [`ScenePassSlot`].
+/// the render family alongside [`ScenePassSlot`].
 ///
 /// # Why the scene is two passes
 ///
@@ -175,6 +196,25 @@ impl khora_core::lane::io::PassSlot for SkyboxPassSlot {
 /// blends over the clear colour.
 #[derive(Default)]
 pub struct TransparentPassSlot(pub Option<PassContribution>);
+
+impl khora_core::lane::io::PassSlot for TransparentPassSlot {
+    type Descriptor = PassDescriptor;
+
+    /// Blended surfaces are depth-tested against the opaque scene and write
+    /// no depth, so two of them composite.
+    fn descriptor() -> PassDescriptor {
+        PassDescriptor::new("TransparentPass")
+            .writes(ResourceId::Color)
+            .reads(ResourceId::Depth)
+    }
+
+    fn close(descriptor: PassDescriptor, command_buffer: CommandBufferId) -> Self {
+        Self(Some(PassContribution {
+            descriptor,
+            command_buffer,
+        }))
+    }
+}
 
 /// Deck slot carrying the editor ground grid's pass, written by the grid
 /// family. Submitted after the UI.
@@ -425,17 +465,6 @@ register_pass!(GridPassSlot, after = [UiPassSlot]);
 register_pass!(WireframePassSlot, after = [GridPassSlot]);
 register_pass!(GizmoPassSlot, after = [WireframePassSlot]);
 
-/// Tag naming the encoder a lane records its transparent draws into.
-///
-/// A tag because [`LaneContext`](khora_core::lane::LaneContext) is keyed by
-/// type, so the opaque encoder and this one cannot both be a bare
-/// `dyn CommandEncoder` borrow: the agent lends it with
-/// `insert_slot_as::<TransparentEncoder, _>` and a lane takes it with
-/// `slot_as::<TransparentEncoder, dyn CommandEncoder>`. Only the lit lanes —
-/// the ones with a blended batch — look for it; every other lane keeps
-/// recording into the single encoder it always had.
-pub struct TransparentEncoder;
-
 /// Per-frame collection of recorded passes.
 ///
 /// Agents append passes during `execute()`. `submit_frame_graph` drains the
@@ -655,6 +684,94 @@ mod tests {
         assert_eq!(pass.descriptor.writes, [ResourceId::Color]);
         assert_eq!(pass.descriptor.reads, [ResourceId::Depth]);
         assert_eq!(pass.command_buffer, buf(9));
+    }
+
+    /// **The scene pass closes writing the colour and the depth, and reading
+    /// the shadow atlas.** The opaque draws clear and fill the frame's colour
+    /// and depth; they always sample the shadow atlas — the shadows family's,
+    /// or the lit lane's neutral one when there is none — so the frame graph
+    /// orders the shadow pass first whatever was drawn.
+    #[test]
+    fn the_scene_pass_closes_writing_the_colour_and_depth_and_reading_the_shadow_atlas() {
+        use khora_core::lane::io::PassSlot;
+
+        let closed = ScenePassSlot::close(ScenePassSlot::descriptor(), buf(14));
+        let Some(pass) = closed.0 else {
+            panic!("a closed scene pass slot holds its pass");
+        };
+        assert_eq!(pass.descriptor.name, "ScenePass");
+        let mut writes = pass.descriptor.writes.clone();
+        writes.sort_by_key(|id| format!("{id:?}"));
+        assert_eq!(writes, [ResourceId::Color, ResourceId::Depth]);
+        assert_eq!(pass.descriptor.reads, [ResourceId::ShadowAtlas]);
+        assert_eq!(pass.command_buffer, buf(14));
+    }
+
+    /// **The transparent pass closes writing the colour and reading the
+    /// depth.** A blended surface is depth-tested against the opaque scene
+    /// and writes no depth, so two of them composite.
+    #[test]
+    fn the_transparent_pass_closes_writing_the_colour_and_reading_the_depth() {
+        use khora_core::lane::io::PassSlot;
+
+        let closed = TransparentPassSlot::close(TransparentPassSlot::descriptor(), buf(15));
+        let Some(pass) = closed.0 else {
+            panic!("a closed transparent pass slot holds its pass");
+        };
+        assert_eq!(pass.descriptor.name, "TransparentPass");
+        assert_eq!(pass.descriptor.writes, [ResourceId::Color]);
+        assert_eq!(pass.descriptor.reads, [ResourceId::Depth]);
+        assert_eq!(pass.command_buffer, buf(15));
+    }
+
+    /// **The registered order folds the closed slots shadows, scene, sky,
+    /// glass.** The engine takes each slot's pass out of the deck in
+    /// `registered_pass_order()` and folds them into the frame graph in that
+    /// order: the shadow pass is registered before the scene pass that reads
+    /// its atlas, the scene before the sky that tests its depth, the sky
+    /// before the blended draws. The four passes as their slots close them,
+    /// taken and folded that way, compile to that order — whatever order the
+    /// lanes wrote them into the deck.
+    #[test]
+    fn the_registered_order_folds_shadows_scene_sky_then_glass() {
+        use khora_core::lane::io::PassSlot;
+        use khora_core::lane::OutputDeck;
+        use std::any::TypeId;
+
+        let order = registered_pass_order().expect("the registered passes have an order");
+        let place = |slot: TypeId| {
+            order
+                .iter()
+                .position(|registration| (registration.type_id)() == slot)
+                .expect("the slot is registered")
+        };
+        let places = [
+            place(TypeId::of::<ShadowPassSlot>()),
+            place(TypeId::of::<ScenePassSlot>()),
+            place(TypeId::of::<SkyboxPassSlot>()),
+            place(TypeId::of::<TransparentPassSlot>()),
+        ];
+        assert!(
+            places.windows(2).all(|pair| pair[0] < pair[1]),
+            "shadows, scene, sky, glass in the registered order: {places:?}"
+        );
+
+        let mut deck = OutputDeck::new();
+        *deck.slot::<ScenePassSlot>() = ScenePassSlot::close(ScenePassSlot::descriptor(), buf(21));
+        *deck.slot::<TransparentPassSlot>() =
+            TransparentPassSlot::close(TransparentPassSlot::descriptor(), buf(23));
+        *deck.slot::<ShadowPassSlot>() =
+            ShadowPassSlot::close(ShadowPassSlot::descriptor(), buf(20));
+        *deck.slot::<SkyboxPassSlot>() =
+            SkyboxPassSlot::close(SkyboxPassSlot::descriptor(), buf(22));
+        let mut graph = FrameGraph::new();
+        for registration in &order {
+            if let Some(pass) = (registration.take)(&mut deck) {
+                graph.add_pass(pass.descriptor, pass.command_buffer);
+            }
+        }
+
+        assert_eq!(graph.compile(), vec![buf(20), buf(21), buf(22), buf(23)]);
     }
 
     /// **The grid pass closes writing the colour and reading the depth.** The

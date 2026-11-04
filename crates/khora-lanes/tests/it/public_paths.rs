@@ -110,19 +110,6 @@ fn forward_plus_gpu_resources_rings(
     (&x.camera_ring, &x.model_ring)
 }
 
-fn forward_plus_lane_fields(x: &khora_lanes::render_lane::ForwardPlusLane) {
-    let _ = (&x.tile_config, &x.shader_complexity, &x.gpu_resources);
-}
-
-fn lit_forward_lane_fields(x: &khora_lanes::render_lane::LitForwardLane) {
-    let _ = (
-        &x.shader_complexity,
-        &x.max_directional_lights,
-        &x.max_point_lights,
-        &x.max_spot_lights,
-    );
-}
-
 fn shader_complexity_variants(x: &khora_lanes::render_lane::ShaderComplexity) {
     match x {
         khora_lanes::render_lane::ShaderComplexity::Unlit => {}
@@ -237,24 +224,11 @@ fn module_render_lane_paths_still_resolve() {
     is_debug::<khora_lanes::render_lane::ForwardPlusGpuResources>();
     is_default::<khora_lanes::render_lane::ForwardPlusGpuResources>();
     let _ = type_name::<khora_lanes::render_lane::ForwardPlusLane>();
-    let _ = forward_plus_lane_fields as fn(&khora_lanes::render_lane::ForwardPlusLane);
-    let _ = khora_lanes::render_lane::ForwardPlusLane::new;
-    let _ = khora_lanes::render_lane::ForwardPlusLane::with_config;
-    let _ = khora_lanes::render_lane::ForwardPlusLane::with_complexity;
-    let _ = khora_lanes::render_lane::ForwardPlusLane::tile_count;
-    let _ = khora_lanes::render_lane::ForwardPlusLane::total_tiles;
-    let _ = khora_lanes::render_lane::ForwardPlusLane::effective_light_count;
-    let _ = khora_lanes::render_lane::ForwardPlusLane::get_pipeline_for_material;
     is_default::<khora_lanes::render_lane::ForwardPlusLane>();
-    is_lane::<khora_lanes::render_lane::ForwardPlusLane>();
+    is_typed_lane::<khora_lanes::render_lane::ForwardPlusLane>();
     let _ = type_name::<khora_lanes::render_lane::LitForwardLane>();
-    let _ = lit_forward_lane_fields as fn(&khora_lanes::render_lane::LitForwardLane);
-    let _ = khora_lanes::render_lane::LitForwardLane::new;
-    let _ = khora_lanes::render_lane::LitForwardLane::with_complexity;
-    let _ = khora_lanes::render_lane::LitForwardLane::effective_light_counts;
-    let _ = khora_lanes::render_lane::LitForwardLane::get_pipeline_for_material;
     is_default::<khora_lanes::render_lane::LitForwardLane>();
-    is_lane::<khora_lanes::render_lane::LitForwardLane>();
+    is_typed_lane::<khora_lanes::render_lane::LitForwardLane>();
     let _ = type_name::<khora_lanes::render_lane::ShaderComplexity>();
     let _ = shader_complexity_variants as fn(&khora_lanes::render_lane::ShaderComplexity);
     let _ = khora_lanes::render_lane::ShaderComplexity::cost_multiplier;
@@ -268,13 +242,11 @@ fn module_render_lane_paths_still_resolve() {
     is_ord::<khora_lanes::render_lane::ShaderComplexity>();
     is_default::<khora_lanes::render_lane::ShaderComplexity>();
     let _ = type_name::<khora_lanes::render_lane::SimpleUnlitLane>();
-    let _ = khora_lanes::render_lane::SimpleUnlitLane::new;
-    let _ = khora_lanes::render_lane::SimpleUnlitLane::get_pipeline_for_material;
     is_default::<khora_lanes::render_lane::SimpleUnlitLane>();
-    is_lane::<khora_lanes::render_lane::SimpleUnlitLane>();
-    let _ = type_name::<khora_lanes::render_lane::StandardPbrLane>();
-    is_default::<khora_lanes::render_lane::StandardPbrLane>();
-    is_lane::<khora_lanes::render_lane::StandardPbrLane>();
+    let _ = type_name::<khora_lanes::render_lane::RenderFamily>();
+    is_lane_family::<khora_lanes::render_lane::RenderFamily>();
+    let _ = type_name::<khora_lanes::render_lane::RenderOutputs<'static>>();
+    is_typed_lane::<khora_lanes::render_lane::SimpleUnlitLane>();
 }
 
 #[test]
@@ -524,8 +496,8 @@ mod paths_used_by_other_crates {
     use khora_lanes::physics_lane::StandardPhysicsLane as _; // khora-agents
     use khora_lanes::render_lane::ForwardPlusLane as _; // khora-agents
     use khora_lanes::render_lane::LitForwardLane as _; // khora-agents
+    use khora_lanes::render_lane::RenderFamily as _; // khora-agents
     use khora_lanes::render_lane::SimpleUnlitLane as _; // khora-agents
-    use khora_lanes::render_lane::StandardPbrLane as _; // khora-agents
     use khora_lanes::script_lane::runtime::INITIAL_RATE as _; // khora-agents
     use khora_lanes::script_lane::BudgetedScriptLane as _; // khora-agents
     use khora_lanes::script_lane::Fuel as _; // khora-agents

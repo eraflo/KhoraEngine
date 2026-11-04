@@ -35,8 +35,8 @@ pub use editor_view::EditorViewportOverride;
 pub use frame_graph::{
     pass_order, registered_pass_order, submit_frame_graph, FrameGraph, GizmoPassSlot, GridPassSlot,
     PassContribution, PassDescriptor, PassOrderError, PassRegistration, ResourceId, ScenePassSlot,
-    ShadowPassSlot, SharedFrameGraph, SkyboxPassSlot, TransparentEncoder, TransparentPassSlot,
-    UiPassSlot, WireframePassSlot,
+    ShadowPassSlot, SharedFrameGraph, SkyboxPassSlot, TransparentPassSlot, UiPassSlot,
+    WireframePassSlot,
 };
 pub use gizmo::{GizmoFrame, GizmoView};
 pub use grid::{GridConfig, GridView};

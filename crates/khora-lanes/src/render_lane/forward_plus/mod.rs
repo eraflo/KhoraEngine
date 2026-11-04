@@ -37,59 +37,63 @@
 //! - **Suitable for**: Scenes with many lights (>20)
 //! - **Break-even point**: ~20 lights (vs standard forward rendering)
 //!
-//! # SAA Compliance (Symbiotic Adaptive Architecture)
+//! # As a lane of the render family
 //!
-//! This lane integrates with GORNA through:
-//! - `estimate_cost()`: Provides accurate cost estimation including compute overhead
-//! - Configurable tile size and max lights per tile
-//! - Runtime-adjustable configuration via `ForwardPlusTileConfig`
+//! Forward+ is the family's `HighPerformance` level: the reference image,
+//! however many lights the scene holds up to its light buffer's capacity. It
+//! needs storage buffers and compute shaders, so a device without them never
+//! offers it.
 
-use crate::render_lane::ShaderComplexity;
-use khora_data::render::RenderWorld;
+use std::time::Duration;
 
-use khora_core::asset::Material;
-use khora_core::math::Extent2D;
+use khora_core::agent::gorna::StrategyId;
+use khora_core::gpu::{DeviceCaps, GpuSetup};
+use khora_core::lane::contract::{Lane, LaneReport};
+use khora_core::lane::cost::{Cost, PerDevice};
+use khora_core::lane::io::TargetKey;
+use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::LaneError;
 use khora_core::renderer::api::gpu_scene::GpuMesh;
-use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
-use khora_core::renderer::api::pipeline::RenderPipelineId;
-use khora_core::renderer::traits::CommandEncoder;
 use khora_core::renderer::ForwardPlusTileConfig;
-use khora_data::assets::Assets;
-use std::sync::RwLock;
+
+use super::render_family::{LitInputs, RenderFamily, RenderOutputs};
+use super::scene_load::SceneLoad;
 
 mod gpu;
 mod gpu_resources;
+mod lane_gpu;
 mod render;
 mod tile_grid;
 
 pub use gpu_resources::ForwardPlusGpuResources;
+use lane_gpu::PlusGpu;
 use tile_grid::TileGrid;
 
-// --- Cost Estimation Constants ---
+const MIB: u64 = 1024 * 1024;
 
-/// Base cost per triangle rendered.
-const TRIANGLE_COST: f32 = 0.001;
+/// The lane's one level: the reference image, holding its uniform rings and
+/// its light lists.
+const LEVELS: [Level; 1] = [Level {
+    id: StrategyId::HighPerformance,
+    name: "forward+",
+    impact: Impact::None,
+    memory: PerDevice {
+        cpu: 0,
+        gpu: 4096 + 8 * MIB,
+        npu: 0,
+        other: 0,
+    },
+}];
 
-/// Cost per draw call issued.
-const DRAW_CALL_COST: f32 = 0.1;
-
-/// Fixed overhead for the compute pass (tile frustum + dispatch).
-const COMPUTE_PASS_OVERHEAD: f32 = 0.5;
-
-/// Cost factor per tile in the light culling pass.
-const PER_TILE_COST: f32 = 0.0001;
-
-/// Cost factor per light-tile intersection test.
-const LIGHT_TILE_TEST_COST: f32 = 0.00001;
-
-/// The colour target the cost model assumes when its context carries no
-/// [`ColorTargetSize`](khora_core::lane::ColorTargetSize) — GORNA negotiates
-/// on the DCC thread, outside any frame. It only weighs the estimate; the
-/// tiles actually culled always follow the frame's real target.
-const COST_REFERENCE_TARGET: Extent2D = Extent2D {
-    width: 1920,
-    height: 1080,
-};
+/// What the culling pass costs the device before any tile.
+const CULLING_GPU: Duration = Duration::from_micros(15);
+/// What culling one tile costs the device, in seconds.
+const TILE_GPU_SECS: f64 = 2e-8;
+/// What testing one light against one tile costs the device, in seconds.
+const LIGHT_TILE_GPU_SECS: f64 = 1e-9;
+/// What one light a pixel's tile keeps adds to shading it, against an unlit
+/// pixel. A tile keeps about the square root of the scene's lights.
+const LIGHT_SHADING: f64 = 0.15;
 
 /// Binding indices inside the group-3 *lighting* bind group, mirroring
 /// `forward_plus.wgsl`. Bindings 1/2/3 belong to the shared shadow
@@ -109,351 +113,111 @@ mod g3 {
     pub const SHADOW_VIEW_PROJS: u32 = 7;
 }
 
-/// A rendering lane that implements Forward+ (Tiled Forward) rendering.
-///
-/// Forward+ divides the screen into tiles and uses a compute shader to determine
-/// which lights affect each tile before the main render pass. This significantly
-/// reduces per-fragment lighting cost for scenes with many lights.
-///
-/// # Configuration
-///
-/// The lane is configured via `ForwardPlusTileConfig`, which controls:
-/// - **Tile size**: 16x16 or 32x32 pixels (trade-off between culling granularity and overhead)
-/// - **Max lights per tile**: Memory budget for per-tile light lists
-/// - **Depth pre-pass**: Optional optimization for depth-bounded light culling
+/// The Forward+ lane: lights culled per tile of the target by a compute
+/// pass, then every mesh shaded by its tile's lights.
+#[derive(Default)]
 pub struct ForwardPlusLane {
-    /// Tile configuration for light culling.
-    pub tile_config: ForwardPlusTileConfig,
-
-    /// Shader complexity for cost estimation.
-    pub shader_complexity: ShaderComplexity,
-
-    /// GPU resources for compute and render passes.
-    pub gpu_resources: std::sync::Mutex<ForwardPlusGpuResources>,
-
-    /// Backend pipeline system, retained so the render path can resolve the
-    /// per-material-variant pipeline (cheap cache hit). Set in `on_gpu_init`.
-    pipeline_system:
-        std::sync::OnceLock<std::sync::Arc<dyn khora_core::renderer::traits::PipelineSystem>>,
+    /// The tiles the target is cut into and the lights each holds.
+    tile_config: ForwardPlusTileConfig,
+    /// What the lane built on the device; `None` before the first prepare
+    /// and after shutdown.
+    gpu: Option<PlusGpu>,
 }
 
-impl Default for ForwardPlusLane {
-    fn default() -> Self {
-        Self {
-            tile_config: ForwardPlusTileConfig::default(),
-            shader_complexity: ShaderComplexity::SimpleLit,
-            gpu_resources: std::sync::Mutex::new(ForwardPlusGpuResources::default()),
-            pipeline_system: std::sync::OnceLock::new(),
-        }
-    }
-}
+impl Lane for ForwardPlusLane {
+    type Family = RenderFamily;
+    type Inputs<'f> = LitInputs<'f>;
 
-impl ForwardPlusLane {
-    /// Creates a new `ForwardPlusLane` with default settings.
-    ///
-    /// Default configuration:
-    /// - Tile size: 16x16 pixels
-    /// - Max lights per tile: 128
-    /// - No depth pre-pass
-    pub fn new() -> Self {
-        Self::default()
+    fn levels(&self) -> &[Level] {
+        &LEVELS
     }
 
-    /// Creates a new `ForwardPlusLane` with the specified configuration.
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - The tile configuration for light culling
-    pub fn with_config(config: ForwardPlusTileConfig) -> Self {
-        Self {
-            tile_config: config,
-            ..Default::default()
-        }
+    /// The light lists are storage buffers a compute pass fills.
+    fn supports(&self, caps: &DeviceCaps) -> bool {
+        caps.storage_buffers && caps.compute
     }
 
-    /// Creates a new `ForwardPlusLane` with the specified shader complexity.
-    pub fn with_complexity(complexity: ShaderComplexity) -> Self {
-        Self {
-            shader_complexity: complexity,
-            ..Default::default()
-        }
-    }
-
-    /// The number of tiles across and down a colour target of `target` pixels.
-    ///
-    /// The lane cuts whatever image the frame renders into — the window or
-    /// the editor's viewport — so the grid is derived from the frame's
-    /// [`ColorTargetSize`](khora_core::lane::ColorTargetSize), never stored.
-    pub fn tile_count(&self, target: Extent2D) -> (u32, u32) {
-        let grid = TileGrid::new(&self.tile_config, target);
-        (grid.tiles_x, grid.tiles_y)
-    }
-
-    /// The total number of tiles on a colour target of `target` pixels.
-    pub fn total_tiles(&self, target: Extent2D) -> u32 {
-        TileGrid::new(&self.tile_config, target).total()
-    }
-
-    /// Returns the effective number of lights in the scene.
-    ///
-    /// This counts all light types (directional, point, spot) that will be
-    /// processed by the light culling pass.
-    pub fn effective_light_count(&self, render_world: &RenderWorld) -> usize {
-        render_world.directional_light_count()
-            + render_world.point_light_count()
-            + render_world.spot_light_count()
-    }
-
-    /// Estimates the cost of the compute pass (light culling) on a colour
-    /// target of `target` pixels.
-    fn compute_pass_cost(&self, render_world: &RenderWorld, target: Extent2D) -> f32 {
-        let total_tiles = self.total_tiles(target) as f32;
-        let light_count = self.effective_light_count(render_world) as f32;
-
-        // Compute pass cost = overhead + per-tile cost + light-tile tests
-        COMPUTE_PASS_OVERHEAD
-            + (total_tiles * PER_TILE_COST)
-            + (total_tiles * light_count * LIGHT_TILE_TEST_COST)
-    }
-
-    /// Calculates the per-fragment light cost factor.
-    ///
-    /// For Forward+, this uses sqrt(total_lights) instead of linear scaling
-    /// because lights are culled per-tile, so each fragment only processes
-    /// a subset of lights.
-    fn fragment_light_factor(&self, render_world: &RenderWorld) -> f32 {
-        let total_lights = self.effective_light_count(render_world) as f32;
-
-        if total_lights == 0.0 {
-            return 1.0;
-        }
-
-        // Sublinear scaling: sqrt(lights) because of tile culling
-        // Clamped to max_lights_per_tile
-        let effective_lights = total_lights
-            .sqrt()
-            .min(self.tile_config.max_lights_per_tile as f32);
-
-        1.0 + (effective_lights * 0.02)
-    }
-}
-
-impl khora_core::lane::Lane for ForwardPlusLane {
-    fn strategy_name(&self) -> &'static str {
-        "ForwardPlus"
-    }
-
-    fn lane_kind(&self) -> khora_core::lane::LaneKind {
-        khora_core::lane::LaneKind::Render
-    }
-
-    fn estimate_cost(&self, ctx: &khora_core::lane::LaneContext) -> f32 {
-        let render_world = match ctx.get_ref::<khora_data::render::RenderWorld>() {
-            Some(render_world) => render_world,
-            None => return 1.0,
+    /// Builds the buffers, the rings and the neutral bindings once, and the
+    /// plain surface's pipeline for the target's key.
+    fn prepare(
+        &mut self,
+        _level: usize,
+        gpu: &mut GpuSetup<'_>,
+        key: Option<TargetKey>,
+    ) -> Result<(), LaneError> {
+        let device = gpu.device().ok_or(LaneError::missing("GraphicsDevice"))?;
+        let pipelines = gpu
+            .pipelines()
+            .ok_or(LaneError::missing("PipelineSystem"))?;
+        let plus = match &mut self.gpu {
+            Some(plus) => plus,
+            empty => empty.insert(
+                PlusGpu::build(device, pipelines)
+                    .map_err(|error| LaneError::InitializationFailed(Box::new(error)))?,
+            ),
         };
-        let gpu_meshes = match ctx.get::<std::sync::Arc<
-            std::sync::RwLock<
-                khora_data::assets::Assets<khora_core::renderer::api::gpu_scene::GpuMesh>,
-            >,
-        >>() {
-            Some(arc) => arc,
-            None => return 1.0,
-        };
-        let target = ctx
-            .get::<khora_core::lane::ColorTargetSize>()
-            .map_or(COST_REFERENCE_TARGET, |size| size.0);
-        self.estimate_render_cost(render_world, gpu_meshes, target)
-    }
-
-    fn on_initialize(
-        &self,
-        ctx: &mut khora_core::lane::LaneContext,
-    ) -> Result<(), khora_core::lane::LaneError> {
-        let device = ctx
-            .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
-            .ok_or(khora_core::lane::LaneError::missing(
-                "Arc<dyn GraphicsDevice>",
-            ))?
-            .clone();
-        let pipeline_system = ctx
-            .get::<std::sync::Arc<dyn khora_core::renderer::traits::PipelineSystem>>()
-            .ok_or(khora_core::lane::LaneError::missing(
-                "Arc<dyn PipelineSystem>",
-            ))?
-            .clone();
-        // Retain the system so the render hot path can resolve a pipeline per
-        // material variant (a cheap cache hit after first compile).
-        let _ = self.pipeline_system.set(pipeline_system.clone());
-        self.on_gpu_init(device.as_ref(), pipeline_system.as_ref())
-            .map_err(|e| khora_core::lane::LaneError::InitializationFailed(Box::new(e)))
-    }
-
-    fn execute(
-        &self,
-        ctx: &mut khora_core::lane::LaneContext,
-    ) -> Result<(), khora_core::lane::LaneError> {
-        use khora_core::lane::LaneError;
-        let device = ctx
-            .get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
-            .ok_or(LaneError::missing("Arc<dyn GraphicsDevice>"))?
-            .clone();
-        let gpu_meshes = ctx
-            .get::<std::sync::Arc<
-                std::sync::RwLock<
-                    khora_data::assets::Assets<khora_core::renderer::api::gpu_scene::GpuMesh>,
-                >,
-            >>()
-            .ok_or(LaneError::missing("Arc<RwLock<Assets<GpuMesh>>>"))?
-            .clone();
-        let mut encoder_guard = ctx
-            .slot::<dyn khora_core::renderer::traits::CommandEncoder>()
-            .ok_or(LaneError::missing("&mut dyn CommandEncoder"))?;
-        let encoder = &mut *encoder_guard;
-        let render_world = ctx
-            .get_ref::<khora_data::render::RenderWorld>()
-            .ok_or(LaneError::missing("&RenderWorld"))?;
-        let color_target = ctx
-            .get::<khora_core::lane::ColorTarget>()
-            .ok_or(LaneError::missing("ColorTarget"))?
-            .0;
-        let depth_target = ctx
-            .get::<khora_core::lane::DepthTarget>()
-            .ok_or(LaneError::missing("DepthTarget"))?
-            .0;
-        let clear_color = ctx
-            .get::<khora_core::lane::ClearColor>()
-            .ok_or(LaneError::missing("ClearColor"))?
-            .0;
-        // The tile grid is cut from the image this frame renders into.
-        let target = ctx
-            .get::<khora_core::lane::ColorTargetSize>()
-            .ok_or(LaneError::missing("ColorTargetSize"))?
-            .0;
-
-        let render_ctx = khora_core::renderer::api::frame::RenderContext::new(
-            &color_target,
-            Some(&depth_target),
-            clear_color,
-        );
-
-        // Read the per-frame `ShadowFrame` published by whichever shadow
-        // strategy ran. Mirror of LitForwardLane's pattern — single
-        // cross-lane channel.
-        let (shadow_entries, shadow_bindings) = ctx
-            .get::<khora_core::renderer::api::shadow::ShadowFrame>()
-            .map(|frame| (frame.entries.clone(), frame.bindings))
-            .unwrap_or_default();
-
-        let ibl_bindings = ctx
-            .get::<khora_core::renderer::api::ibl::IblGpuBindings>()
-            .copied();
-
-        // The second encoder, when the caller splits its passes. Absent in
-        // harnesses that drive the lane directly.
-        let mut transparent_encoder = ctx.slot_as::<khora_data::render::TransparentEncoder, dyn khora_core::renderer::traits::CommandEncoder>();
-
-        self.render(
-            render_world,
-            &shadow_entries,
-            shadow_bindings,
-            ibl_bindings,
-            device.as_ref(),
-            encoder,
-            transparent_encoder
-                .as_deref_mut()
-                .map(|encoder| encoder as &mut dyn CommandEncoder),
-            &render_ctx,
-            target,
-            &gpu_meshes,
-        );
+        if let Some(key) = key {
+            plus.retarget(device, pipelines, key)
+                .map_err(|error| LaneError::InitializationFailed(Box::new(error)))?;
+        }
         Ok(())
     }
 
-    fn on_shutdown(&self, ctx: &mut khora_core::lane::LaneContext) {
-        if let Some(device) = ctx.get::<std::sync::Arc<dyn khora_core::renderer::GraphicsDevice>>()
-        {
-            self.on_gpu_shutdown(device.as_ref());
+    /// Each mesh recorded on the host; on the device the culling of every
+    /// tile against every light, the triangles, and every pixel shaded by
+    /// the lights its tile keeps. Past the light buffer's capacity the frame
+    /// is not the reference image.
+    fn cost(&self, _level: usize, inputs: &LitInputs<'_>) -> Cost {
+        let load = SceneLoad::of(inputs.render_world, &inputs.target);
+        let lights = load.lights().min(gpu::LIGHT_BUFFER_CAPACITY);
+        let tiles = f64::from(TileGrid::new(&self.tile_config, inputs.target.size).total());
+        let culling = CULLING_GPU
+            + Duration::from_secs_f64(
+                tiles * TILE_GPU_SECS + tiles * lights as f64 * LIGHT_TILE_GPU_SECS,
+            );
+        let per_tile = (lights as f64)
+            .sqrt()
+            .min(f64::from(self.tile_config.max_lights_per_tile));
+        Cost {
+            time: PerDevice {
+                cpu: load.host_time(),
+                gpu: culling
+                    + load.geometry_time()
+                    + load.fill_time(1.0 + LIGHT_SHADING * per_tile),
+                ..PerDevice::default()
+            },
+            memory: LEVELS[0].memory,
+            impact: (load.lights() > gpu::LIGHT_BUFFER_CAPACITY).then_some(Impact::Minor),
+            ..Cost::default()
         }
     }
 
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
+    /// Culls the lights of every tile, then records the opaque meshes into
+    /// the scene pass — a clear without a camera — and the blended ones into
+    /// the transparent pass.
+    fn record(
+        &mut self,
+        _level: usize,
+        inputs: &mut LitInputs<'_>,
+        out: &mut RenderOutputs<'_>,
+    ) -> Result<LaneReport, LaneError> {
+        let plus = self.gpu.as_mut().ok_or(LaneError::NotInitialized)?;
+        let meshes = inputs.assets.store::<GpuMesh>();
+        let meshes = meshes.read().map_err(|_| LaneError::LockPoisoned {
+            context: "the GPU meshes",
+        })?;
+        plus.record(&self.tile_config, inputs, &meshes, out)
+            .map_err(|error| LaneError::ExecutionFailed(Box::new(error)))?;
+        Ok(LaneReport {
+            done: 1.0,
+            stalled: false,
+        })
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-impl ForwardPlusLane {
-    /// Returns the render pipeline for the given material (or default).
-    pub fn get_pipeline_for_material(
-        &self,
-        _material: Option<&khora_core::asset::AssetHandle<Box<dyn Material>>>,
-    ) -> RenderPipelineId {
-        // Return the stored pipeline. Fallback to pipeline 0 if on_gpu_init
-        // hasn't run yet OR if the mutex is poisoned (degraded rendering
-        // rather than crashing the frame loop — R7).
-        let resources = crate::lock_or_log!(
-            self.gpu_resources.lock(),
-            "ForwardPlusLane::get_pipeline_for_material",
-            RenderPipelineId(0)
-        );
-        resources.render_pipeline.unwrap_or(RenderPipelineId(0))
-    }
-
-    fn estimate_render_cost(
-        &self,
-        render_world: &RenderWorld,
-        gpu_meshes: &RwLock<Assets<GpuMesh>>,
-        target: Extent2D,
-    ) -> f32 {
-        let gpu_mesh_assets = crate::lock_or_log!(
-            gpu_meshes.read(),
-            "ForwardPlusLane::estimate_render_cost",
-            0.0
-        );
-
-        let mut total_triangles = 0u32;
-        let mut draw_call_count = 0u32;
-
-        for extracted_mesh in &render_world.meshes {
-            if let Some(gpu_mesh) = gpu_mesh_assets.get(&extracted_mesh.cpu_mesh_uuid) {
-                let triangle_count = match gpu_mesh.primitive_topology {
-                    PrimitiveTopology::TriangleList => gpu_mesh.index_count / 3,
-                    PrimitiveTopology::TriangleStrip => {
-                        if gpu_mesh.index_count >= 3 {
-                            gpu_mesh.index_count - 2
-                        } else {
-                            0
-                        }
-                    }
-                    PrimitiveTopology::LineList
-                    | PrimitiveTopology::LineStrip
-                    | PrimitiveTopology::PointList => 0,
-                };
-
-                total_triangles += triangle_count;
-                draw_call_count += 1;
-            }
+    fn shutdown(&mut self, gpu: &mut GpuSetup<'_>) {
+        if let (Some(plus), Some(device)) = (self.gpu.take(), gpu.device()) {
+            plus.destroy(device);
         }
-
-        // Base geometry cost
-        let geometry_cost =
-            (total_triangles as f32 * TRIANGLE_COST) + (draw_call_count as f32 * DRAW_CALL_COST);
-
-        // Shader complexity multiplier
-        let shader_multiplier = self.shader_complexity.cost_multiplier();
-
-        // Compute pass overhead
-        let compute_cost = self.compute_pass_cost(render_world, target);
-
-        // Per-fragment light factor (sublinear for Forward+)
-        let light_factor = self.fragment_light_factor(render_world);
-
-        // Total cost
-        compute_cost + (geometry_cost * shader_multiplier * light_factor)
     }
 }
 

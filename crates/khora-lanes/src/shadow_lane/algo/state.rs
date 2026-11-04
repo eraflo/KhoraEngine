@@ -306,7 +306,8 @@ impl ShadowGpu {
 }
 
 /// The comparison sampler both atlases are sampled through.
-fn shadow_sampler_descriptor() -> khora_core::renderer::api::resource::SamplerDescriptor<'static> {
+pub(crate) fn shadow_sampler_descriptor(
+) -> khora_core::renderer::api::resource::SamplerDescriptor<'static> {
     use khora_core::renderer::api::pipeline::enums::CompareFunction;
     use khora_core::renderer::api::resource::{
         AddressMode, FilterMode, MipmapFilterMode, SamplerDescriptor,

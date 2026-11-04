@@ -17,39 +17,31 @@
 //! frame path that sizes and dispatches from the colour target.
 
 use super::super::tile_grid::TileGrid;
-use super::super::{ForwardPlusGpuResources, ForwardPlusLane};
-use khora_core::lane::{ClearColor, ColorTarget, ColorTargetSize, DepthTarget, Lane, LaneContext};
+use super::super::ForwardPlusGpuResources;
 use khora_core::math::dimension::{Extent3D, Origin3D};
-use khora_core::math::{Extent2D, LinearRgba, Mat4, Vec3};
+use khora_core::math::Extent2D;
 use khora_core::renderer::api::command::{
-    BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
-    BindGroupLayoutId, CommandBufferId, ComputePassDescriptor, RenderPassDescriptor,
+    BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutId,
+    CommandBufferId, ComputePassDescriptor, RenderPassDescriptor,
 };
 use khora_core::renderer::api::device::{
     GraphicsAdapterInfo, GraphicsBackendType, RendererDeviceType,
 };
-use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::api::pipeline::{
-    ComputePipelineDescriptor, ComputePipelineId, ComputePipelineSpec, LayoutKey,
-    PipelineLayoutDescriptor, PipelineLayoutId, PipelineSpec, RenderPipelineDescriptor,
-    RenderPipelineId,
+    ComputePipelineDescriptor, ComputePipelineId, PipelineLayoutDescriptor, PipelineLayoutId,
+    RenderPipelineDescriptor, RenderPipelineId,
 };
 use khora_core::renderer::api::resource::texture::{
     SamplerDescriptor, SamplerId, TextureDescriptor, TextureId, TextureViewDescriptor,
     TextureViewId,
 };
 use khora_core::renderer::api::resource::{BufferDescriptor, BufferId, IndexFormat, TextureFormat};
-use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId, ShaderVariantKey};
-use khora_core::renderer::error::{RenderError, ResourceError};
-use khora_core::renderer::light::CullingUniformsData;
-use khora_core::renderer::traits::{
-    CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass,
-};
+use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId};
+use khora_core::renderer::error::ResourceError;
+use khora_core::renderer::traits::{CommandEncoder, ComputePass, GpuProfiler, RenderPass};
 use khora_core::renderer::{ForwardPlusTileConfig, GraphicsDevice, TileSize};
-use khora_data::assets::Assets;
-use khora_data::render::{ExtractedView, RenderWorld};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 /// The light-culling compute shader the light lists are bound to.
 const LIGHT_CULLING_WGSL: &str = include_str!(
@@ -153,16 +145,6 @@ impl RecordingDevice {
             .collect()
     }
 
-    fn created_bind_groups(&self) -> Vec<BindGroupId> {
-        self.events()
-            .into_iter()
-            .filter_map(|e| match e {
-                Event::CreateBindGroup(id) => Some(id),
-                _ => None,
-            })
-            .collect()
-    }
-
     fn destroyed_buffers(&self) -> Vec<BufferId> {
         self.events()
             .into_iter()
@@ -189,16 +171,6 @@ impl RecordingDevice {
             .find(|(buffer, _, _)| *buffer == id)
             .map(|(_, size, _)| size)
             .expect("buffer created by this device")
-    }
-
-    fn last_write_to(&self, id: BufferId) -> Option<Vec<u8>> {
-        self.writes
-            .lock()
-            .expect("writes lock")
-            .iter()
-            .rev()
-            .find(|(buffer, _)| *buffer == id)
-            .map(|(_, bytes)| bytes.clone())
     }
 }
 
@@ -429,51 +401,6 @@ impl GraphicsDevice for RecordingDevice {
     }
 }
 
-/// A pipeline system that answers every request with a fresh id.
-#[derive(Debug, Default)]
-struct FakePipelines {
-    next_id: AtomicUsize,
-}
-
-impl FakePipelines {
-    fn next(&self) -> usize {
-        self.next_id.fetch_add(1, Ordering::Relaxed) + 10_000_000
-    }
-}
-
-impl PipelineSystem for FakePipelines {
-    fn layout(
-        &self,
-        _device: &dyn GraphicsDevice,
-        _key: LayoutKey,
-        _variant: &ShaderVariantKey,
-    ) -> Result<BindGroupLayoutId, RenderError> {
-        Ok(BindGroupLayoutId(self.next()))
-    }
-    fn inline_layout(
-        &self,
-        _device: &dyn GraphicsDevice,
-        _label: &'static str,
-        _entries: &[BindGroupLayoutEntry],
-    ) -> Result<BindGroupLayoutId, RenderError> {
-        Ok(BindGroupLayoutId(self.next()))
-    }
-    fn pipeline(
-        &self,
-        _device: &dyn GraphicsDevice,
-        _spec: &PipelineSpec,
-    ) -> Result<RenderPipelineId, RenderError> {
-        Ok(RenderPipelineId(self.next()))
-    }
-    fn compute_pipeline(
-        &self,
-        _device: &dyn GraphicsDevice,
-        _spec: &ComputePipelineSpec,
-    ) -> Result<ComputePipelineId, RenderError> {
-        Ok(ComputePipelineId(self.next() as u64))
-    }
-}
-
 // --- Fixtures ---
 
 const CULLING_LAYOUT: BindGroupLayoutId = BindGroupLayoutId(1_000_001);
@@ -514,53 +441,6 @@ fn held(
         r.culling_bind_group,
         r.tile_capacity,
     )
-}
-
-/// A lane whose GPU initialisation ran on `device`.
-fn initialised_lane(lane: &ForwardPlusLane, device: &Arc<RecordingDevice>) {
-    let pipelines: Arc<dyn PipelineSystem> = Arc::new(FakePipelines::default());
-    let mut ctx = LaneContext::new();
-    ctx.insert(device.clone() as Arc<dyn GraphicsDevice>);
-    ctx.insert(pipelines);
-    lane.on_initialize(&mut ctx)
-        .expect("Forward+ initialises on a recording device");
-}
-
-/// Runs one Forward+ frame of a scene with one camera on a target of
-/// `target`, and returns the culling dispatches it recorded.
-fn run_frame(
-    lane: &ForwardPlusLane,
-    device: &Arc<RecordingDevice>,
-    target: Extent2D,
-) -> Vec<(u32, u32, u32)> {
-    let dispatches = Dispatches::default();
-    let mut encoder: Box<dyn CommandEncoder> = Box::new(RecordingEncoder {
-        dispatches: dispatches.clone(),
-    });
-    let gpu_meshes = Arc::new(RwLock::new(Assets::<GpuMesh>::new()));
-    let render_world = RenderWorld {
-        views: vec![ExtractedView {
-            view_proj: Mat4::IDENTITY,
-            position: Vec3::ZERO,
-        }],
-        ..Default::default()
-    };
-
-    let mut ctx = LaneContext::new();
-    ctx.insert(device.clone() as Arc<dyn GraphicsDevice>);
-    ctx.insert(gpu_meshes);
-    ctx.insert_slot(encoder.as_mut());
-    ctx.insert_ref(&render_world);
-    ctx.insert(ColorTarget(TextureViewId(1)));
-    ctx.insert(DepthTarget(TextureViewId(2)));
-    ctx.insert(ClearColor(LinearRgba::BLACK));
-    ctx.insert(ColorTargetSize(target));
-    lane.execute(&mut ctx)
-        .expect("a Forward+ frame on a sized target");
-    drop(ctx);
-
-    let recorded = dispatches.lock().expect("dispatches lock").clone();
-    recorded
 }
 
 // --- What the culling shader indexes ---
@@ -679,155 +559,4 @@ fn light_lists_requested_before_gpu_initialisation_fail_and_create_nothing() {
     assert!(result.is_err());
     assert_eq!(device.events(), vec![]);
     assert_eq!(held(&resources), (None, None, None, 0));
-}
-
-// --- The frame path ---
-
-#[test]
-fn each_frame_sizes_the_light_lists_and_the_dispatch_from_its_colour_target() {
-    let lane = ForwardPlusLane::new();
-    let device = Arc::new(RecordingDevice::default());
-    initialised_lane(&lane, &device);
-    let (tile_info, culling_uniforms) = {
-        let r = lane.gpu_resources.lock().expect("resources");
-        (
-            r.tile_info_buffer.expect("tile info buffer"),
-            r.culling_uniforms_buffer.expect("culling uniforms"),
-        )
-    };
-
-    // 1384 x 561: 87 x 36 tiles.
-    let dispatches = run_frame(&lane, &device, extent(1384, 561));
-    assert_eq!(dispatches, vec![(87, 36, 1)]);
-    let tile_info_bytes = device.last_write_to(tile_info).expect("tile info written");
-    let tile_info_words: Vec<u32> = tile_info_bytes
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|c| u32::from_le_bytes(*c))
-        .collect();
-    assert_eq!(tile_info_words, vec![87, 36, 16, 128]);
-    let culling: CullingUniformsData = bytemuck::pod_read_unaligned(
-        &device
-            .last_write_to(culling_uniforms)
-            .expect("culling uniforms written"),
-    );
-    assert_eq!(culling.screen_dimensions, [1384.0, 561.0]);
-    assert_eq!(culling.tile_count, [87, 36]);
-    {
-        let r = lane.gpu_resources.lock().expect("resources");
-        assert_eq!(r.tile_capacity, 87 * 36);
-        assert_eq!(
-            device.size_of(r.light_index_buffer.expect("index")),
-            87 * 36 * 128 * 4
-        );
-    }
-
-    // Shrinking: same buffers, a smaller dispatch.
-    let before = held(&lane.gpu_resources.lock().expect("resources"));
-    device.forget();
-    let dispatches = run_frame(&lane, &device, extent(640, 480));
-    assert_eq!(dispatches, vec![(40, 30, 1)]);
-    assert_eq!(held(&lane.gpu_resources.lock().expect("resources")), before);
-    assert!(device
-        .created_buffers()
-        .iter()
-        .all(|(_, _, label)| !label.contains("Light Index") && !label.contains("Light Grid")));
-
-    // Growing past the first size: regrown to exactly the new grid.
-    device.forget();
-    let dispatches = run_frame(&lane, &device, extent(2560, 1440));
-    assert_eq!(dispatches, vec![(160, 90, 1)]);
-    let r = lane.gpu_resources.lock().expect("resources");
-    assert_eq!(r.tile_capacity, 160 * 90);
-    assert_eq!(
-        device.size_of(r.light_index_buffer.expect("index")),
-        160 * 90 * 128 * 4
-    );
-    assert_eq!(
-        device.size_of(r.light_grid_buffer.expect("grid")),
-        160 * 90 * 2 * 4
-    );
-    let mut destroyed = device.destroyed_buffers();
-    destroyed.sort_by_key(|id| id.0);
-    let mut expected = vec![before.0.expect("old index"), before.1.expect("old grid")];
-    expected.sort_by_key(|id| id.0);
-    assert_eq!(destroyed, expected);
-    assert_eq!(
-        device.destroyed_bind_groups(),
-        vec![before.2.expect("old group")]
-    );
-}
-
-#[test]
-fn a_frame_on_a_target_without_area_dispatches_no_culling() {
-    let lane = ForwardPlusLane::new();
-    let device = Arc::new(RecordingDevice::default());
-    initialised_lane(&lane, &device);
-    run_frame(&lane, &device, extent(1024, 768));
-    let before = held(&lane.gpu_resources.lock().expect("resources"));
-    device.forget();
-
-    for target in [extent(0, 768), extent(1024, 0), extent(0, 0)] {
-        let dispatches = run_frame(&lane, &device, target);
-        assert_eq!(dispatches, vec![], "{target:?} has no tile to cull");
-    }
-    assert_eq!(held(&lane.gpu_resources.lock().expect("resources")), before);
-    assert!(device.destroyed_buffers().is_empty());
-}
-
-#[test]
-fn shutdown_after_a_regrow_frees_the_light_lists_and_a_reinitialised_lane_regrows_them() {
-    let lane = ForwardPlusLane::new();
-    let device = Arc::new(RecordingDevice::default());
-    initialised_lane(&lane, &device);
-    run_frame(&lane, &device, extent(1024, 768));
-    run_frame(&lane, &device, extent(1920, 1080));
-    let (index, light_grid, group, capacity) = held(&lane.gpu_resources.lock().expect("resources"));
-    assert_eq!(capacity, 120 * 68);
-    device.forget();
-
-    let mut ctx = LaneContext::new();
-    ctx.insert(device.clone() as Arc<dyn GraphicsDevice>);
-    lane.on_shutdown(&mut ctx);
-
-    {
-        let r = lane.gpu_resources.lock().expect("resources");
-        assert_eq!(
-            held(&r),
-            (None, None, None, 0),
-            "nothing is left after shutdown"
-        );
-        assert!(!r.is_initialized());
-    }
-    let destroyed = device.destroyed_buffers();
-    assert!(destroyed.contains(&index.expect("index")), "{destroyed:?}");
-    assert!(
-        destroyed.contains(&light_grid.expect("grid")),
-        "{destroyed:?}"
-    );
-    // The camera and model rings free their own bind groups too.
-    let destroyed_groups = device.destroyed_bind_groups();
-    assert!(
-        destroyed_groups.contains(&group.expect("group")),
-        "{destroyed_groups:?}"
-    );
-
-    // Initialised again, the first frame allocates for its own target.
-    initialised_lane(&lane, &device);
-    device.forget();
-    let dispatches = run_frame(&lane, &device, extent(1024, 768));
-    assert_eq!(dispatches, vec![(64, 48, 1)]);
-    let r = lane.gpu_resources.lock().expect("resources");
-    assert_eq!(r.tile_capacity, 64 * 48);
-    assert_eq!(
-        device.size_of(r.light_index_buffer.expect("index")),
-        64 * 48 * 128 * 4
-    );
-    assert_eq!(
-        device.created_bind_groups().len(),
-        1,
-        "{:?}",
-        device.events()
-    );
 }

@@ -18,6 +18,7 @@
 
 mod boot;
 mod compile_fail;
+mod cost_impact;
 mod fixed_step;
 mod fixtures;
 mod frame_inputs;
@@ -25,6 +26,7 @@ mod guards;
 mod inputs;
 mod outputs;
 mod pass_device;
+mod pass_pipelines;
 mod passes;
 mod phases;
 mod prepare_ahead;

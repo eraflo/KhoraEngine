@@ -44,6 +44,7 @@ mod overdraft;
 mod overlays;
 mod public_paths;
 mod rate_limited_behaviors;
+mod render;
 mod resumable_after_edits;
 mod resumable_edges;
 mod resume_tiers;

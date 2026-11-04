@@ -20,7 +20,7 @@ use std::time::Duration;
 use khora_core::agent::gorna::protocol::Envelope;
 use khora_core::agent::gorna::StrategyId;
 use khora_core::lane::cost::{Cost, PerDevice};
-use khora_core::lane::level::Level;
+use khora_core::lane::level::{Impact, Level};
 
 use super::LaneAgent;
 
@@ -44,6 +44,12 @@ pub(super) fn time_of(cost: &Cost) -> Duration {
         .max(cost.time.other)
 }
 
+/// How much running `level` on the inputs its `quote` priced changes the
+/// result: what the quote names, else the level's own impact.
+pub(super) fn impact_of(quote: Option<&Cost>, level: &Level) -> Impact {
+    quote.and_then(|cost| cost.impact).unwrap_or(level.impact)
+}
+
 /// Whether every device's `value` is within its `limit`.
 fn within<T: PartialOrd + Copy>(value: &PerDevice<T>, limit: &PerDevice<T>) -> bool {
     value.cpu <= limit.cpu
@@ -58,7 +64,8 @@ pub(super) fn fits(cost: &Cost, envelope: &Envelope) -> bool {
 }
 
 /// The row a family runs within `envelope`: among the rows of `menu` whose
-/// quote fits it on every device, the least impact, then the dearest; the
+/// quote fits it on every device, the least impact (the quote's, else the
+/// level's), then the dearest; the
 /// floor (the cheapest priced row) when none fits, and `default` when no row
 /// is priced. `pin` overrides the choice; `allowed` filters the rows.
 pub fn choose(
@@ -87,9 +94,8 @@ pub fn choose(
         .filter(|(_, cost)| fits(cost, envelope))
         // The least impact, then the dearest; the first row on a full tie.
         .min_by(|(a_row, a), (b_row, b)| {
-            menu[*a_row]
-                .impact
-                .cmp(&menu[*b_row].impact)
+            impact_of(Some(a), &menu[*a_row])
+                .cmp(&impact_of(Some(b), &menu[*b_row]))
                 .then(time_of(b).cmp(&time_of(a)))
                 .then(a_row.cmp(b_row))
         });

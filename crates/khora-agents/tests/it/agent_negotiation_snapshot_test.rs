@@ -15,16 +15,15 @@
 //! What every agent offers GORNA, pinned: the strategies, in order, with their
 //! VRAM quote, for an unconstrained request.
 //!
-//! Reorganising where lanes live must not change what the arbiter is offered.
-//! The render agent derives its offer from its lanes' `strategy_name()`, so a
-//! lane that goes missing or is renamed drops a strategy here. Timings are left
-//! out: they come from cost estimators, which are free to evolve.
+//! Reorganising where lanes live must not change what the arbiter is offered:
+//! each family offers one row per level of its lanes, so a lane that goes
+//! missing drops a strategy here. Timings are left out: they come from cost
+//! estimators, which are free to evolve.
 //!
 //! Nothing here needs a GPU: `negotiate` runs on the DCC thread against a stub
 //! scene.
 
 use khora_agents::agent::lane_agent;
-use khora_agents::render_agent::RenderAgent;
 use khora_agents::script_agent::ScriptAgent;
 use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
 use khora_core::agent::{Agent, EngineMode, ExecutionTiming};
@@ -36,6 +35,7 @@ use crate::overlay_families::fixtures::{
     agent_of, gizmo_registration, grid_registration, wireframe_registration,
 };
 use crate::physics_family::fixtures::physics_agent;
+use crate::render_family::fixtures::{render_agent, EVERY_CAP};
 use crate::shadows_family::fixtures::{shadow_agent, LEVEL_MEMORY};
 use crate::skybox_family::fixtures::skybox_agent;
 use crate::ui_family::fixtures::ui_agent;
@@ -64,17 +64,22 @@ fn offer(mut agent: impl Agent) -> (AgentId, Vec<(StrategyId, u64)>) {
     (agent.id(), strategies)
 }
 
+/// The render family's agent on a device with storage buffers and compute,
+/// before any frame: one row per lane — the unlit, the forward and the
+/// Forward+ lane — each quoting the graphics memory its level holds. No
+/// `Custom(1)`: the PBR lane is gone.
 #[test]
-fn render_agent_offers_one_strategy_per_lane_in_registration_order() {
+fn render_agent_offers_one_strategy_per_lane() {
+    let (id, mut strategies) = offer(render_agent(&EVERY_CAP));
+    strategies.sort_by_key(|(id, _)| format!("{id:?}"));
     assert_eq!(
-        offer(RenderAgent::default()),
+        (id, strategies),
         (
             AgentId::new("renderer"),
             vec![
-                (StrategyId::LowPower, 0),
                 (StrategyId::Balanced, 4096),
-                (StrategyId::Custom(1), 4096),
                 (StrategyId::HighPerformance, 4096 + 8 * MIB),
+                (StrategyId::LowPower, 0),
             ]
         )
     );

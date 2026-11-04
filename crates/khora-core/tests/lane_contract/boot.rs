@@ -318,6 +318,7 @@ fn an_unsupported_behaviour_leaves_the_menu() {
     let runtime = runtime_with_mix_settings();
     let no_storage = DeviceCaps {
         storage_buffers: false,
+        ..DeviceCaps::default()
     };
 
     let both = registration::<MixFamily>(ExecutionPhase::OUTPUT, &[mix_lane, storage_mix_lane]);

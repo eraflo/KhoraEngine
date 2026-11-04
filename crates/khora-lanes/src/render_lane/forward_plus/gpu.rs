@@ -16,14 +16,22 @@
 //! pipeline specs they are built from.
 
 use super::g3;
-
-use super::ForwardPlusLane;
+use super::ForwardPlusGpuResources;
+use crate::render_lane::culling::mesh_cull_mode;
+use crate::render_lane::util::target_state::{
+    scene_color_targets, scene_depth_state, scene_multisample,
+};
+use crate::render_lane::util::variant_pipelines::Surface;
 use crate::render_lane::util::{DynamicUniformRingBuffer, UniformRingBuffer};
+use khora_core::lane::io::TargetKey;
 use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
 use khora_core::renderer::api::pipeline::{
     ComputePipelineSpec, LayoutKey, LayoutSpec, PipelineSpec,
 };
 use khora_core::renderer::api::shader::ShaderVariantKey;
+use khora_core::renderer::error::RenderError;
+use khora_core::renderer::traits::PipelineSystem;
+use khora_core::renderer::GraphicsDevice;
 
 // ─── Free functions (CLAD: declarative specs + bespoke layouts) ───
 
@@ -145,33 +153,19 @@ fn fp_culling_layout_entries() -> Vec<khora_core::renderer::api::command::BindGr
     ]
 }
 
-/// The declarative render pipeline spec for Forward+ under a given material
-/// variant — built each call, deduped by the `PipelineSystem`. Canonical
-/// Camera/Material; bespoke Model + Lighting. The group-2 (Material) layout
-/// resolves to the variant's texture-binding set.
-pub(super) fn render_pipeline_spec(
-    device: &dyn khora_core::renderer::GraphicsDevice,
-    variant: ShaderVariantKey,
-    double_sided: bool,
-    mirrored: bool,
-    blend: bool,
-) -> PipelineSpec {
+/// The render pipeline spec of Forward+ for `surface` drawn into a target
+/// of `key`: canonical camera and material layouts, its own model and
+/// lighting ones; the group-2 layout resolves to the material variant's
+/// textures.
+pub(super) fn render_pipeline_spec(surface: &Surface, key: TargetKey) -> PipelineSpec {
     use khora_core::renderer::api::gpu_scene::Mesh;
-    use khora_core::renderer::api::pipeline::enums::CompareFunction;
-    use khora_core::renderer::api::pipeline::state::{
-        BlendStateDescriptor, ColorWrites, DepthBiasState, StencilFaceState,
-    };
-    use khora_core::renderer::api::pipeline::{
-        ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
-        PrimitiveStateDescriptor,
-    };
-    use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
+    use khora_core::renderer::api::pipeline::PrimitiveStateDescriptor;
     use std::borrow::Cow;
 
     PipelineSpec {
         label: "ForwardPlus Pipeline",
         shader: "khora::pipelines::forward_plus",
-        variant,
+        variant: surface.variant.clone(),
         bind_group_layouts: vec![
             LayoutSpec::Named(LayoutKey::Camera),
             LayoutSpec::Inline {
@@ -189,35 +183,12 @@ pub(super) fn render_pipeline_spec(
         fs_entry: Some("fs_main"),
         primitive: PrimitiveStateDescriptor {
             topology: PrimitiveTopology::TriangleList,
-            // Single-sided materials cull back faces; double-sided disable
-            // culling. The cull mode is part of the pipeline cache key.
-            cull_mode: super::super::culling::mesh_cull_mode(double_sided, mirrored),
+            cull_mode: mesh_cull_mode(surface.double_sided, surface.mirrored),
             ..Default::default()
         },
-        depth_stencil: Some(DepthStencilStateDescriptor {
-            format: TextureFormat::Depth32Float,
-            // Transparent surfaces depth-test but never depth-write; see
-            // `StandardPbrLane::pipeline_spec` for the rationale.
-            depth_write_enabled: !blend,
-            depth_compare: CompareFunction::Less,
-            stencil_front: StencilFaceState::default(),
-            stencil_back: StencilFaceState::default(),
-            stencil_read_mask: 0,
-            stencil_write_mask: 0,
-            bias: DepthBiasState::default(),
-        }),
-        color_targets: vec![ColorTargetStateDescriptor {
-            format: device
-                .get_surface_format()
-                .unwrap_or(TextureFormat::Rgba8UnormSrgb),
-            blend: blend.then(BlendStateDescriptor::alpha_blending),
-            write_mask: ColorWrites::ALL,
-        }],
-        multisample: MultisampleStateDescriptor {
-            count: SampleCount::X1,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
+        depth_stencil: scene_depth_state(key, surface.blend),
+        color_targets: scene_color_targets(key, surface.blend),
+        multisample: scene_multisample(key),
     }
 }
 
@@ -236,194 +207,138 @@ fn culling_pipeline_spec() -> ComputePipelineSpec {
     }
 }
 
-impl ForwardPlusLane {
-    pub(super) fn on_gpu_init(
-        &self,
-        device: &dyn khora_core::renderer::GraphicsDevice,
-        pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
-    ) -> Result<(), khora_core::renderer::error::RenderError> {
+impl ForwardPlusGpuResources {
+    /// Builds the layouts, the culling pipeline, the light buffers and the
+    /// rings. The light lists are sized from the target, so the first frame
+    /// builds them ([`ensure_tile_buffers`](Self::ensure_tile_buffers)). On a
+    /// failure, gives back what was already built.
+    pub(super) fn build(
+        device: &dyn GraphicsDevice,
+        pipelines: &dyn PipelineSystem,
+    ) -> Result<Self, RenderError> {
+        let mut resources = Self::default();
+        match resources.build_into(device, pipelines) {
+            Ok(()) => Ok(resources),
+            Err(error) => {
+                resources.destroy(device);
+                Err(error)
+            }
+        }
+    }
+
+    fn build_into(
+        &mut self,
+        device: &dyn GraphicsDevice,
+        pipelines: &dyn PipelineSystem,
+    ) -> Result<(), RenderError> {
         use khora_core::renderer::api::gpu_scene::ModelUniforms;
-        use khora_core::renderer::api::resource::CameraUniformData;
+        use khora_core::renderer::api::resource::{
+            BufferDescriptor, BufferUsage, CameraUniformData,
+        };
         use std::borrow::Cow;
 
-        log::info!("ForwardPlusLane: Initializing GPU resources...");
-
-        // Layouts — canonical Camera (group 0) + Material (group 2) come from
-        // the backend's cache (shared with the lit lanes); the per-draw Model
-        // (group 1), Forward+ lighting (group 3) and the compute culling layout
-        // are bespoke inline layouts shared with the lane's pipelines + buffers.
+        // The canonical camera and material layouts are shared with the
+        // other lit lanes; the model, lighting and culling ones are the lane's.
         let variant = ShaderVariantKey::empty();
-        let camera_layout = pipeline_system.layout(device, LayoutKey::Camera, &variant)?;
-        let material_layout = pipeline_system.layout(device, LayoutKey::Material, &variant)?;
-        let model_layout = pipeline_system.inline_layout(
-            device,
-            FP_MODEL_LAYOUT_LABEL,
-            &fp_model_layout_entries(),
-        )?;
-        let lighting_layout = pipeline_system.inline_layout(
+        let camera_layout = pipelines.layout(device, LayoutKey::Camera, &variant)?;
+        self.camera_layout = Some(camera_layout);
+        self.material_layout = Some(pipelines.layout(device, LayoutKey::Material, &variant)?);
+        let model_layout =
+            pipelines.inline_layout(device, FP_MODEL_LAYOUT_LABEL, &fp_model_layout_entries())?;
+        self.model_layout = Some(model_layout);
+        self.lighting_layout = Some(pipelines.inline_layout(
             device,
             FP_LIGHTING_LAYOUT_LABEL,
             &fp_lighting_layout_entries(),
-        )?;
-        let culling_layout = pipeline_system.inline_layout(
+        )?);
+        self.culling_layout = Some(pipelines.inline_layout(
             device,
             FP_CULLING_LAYOUT_LABEL,
             &fp_culling_layout_entries(),
-        )?;
+        )?);
+        self.culling_pipeline = Some(pipelines.compute_pipeline(device, &culling_pipeline_spec())?);
 
-        // Pipelines (compiled + cached by the backend). Warm the empty-variant
-        // render pipeline (untextured materials); textured variants compile
-        // lazily in the render path keyed by `GpuMaterial::variant`.
-        let pipeline_id = pipeline_system.pipeline(
-            device,
-            &render_pipeline_spec(device, ShaderVariantKey::empty(), false, false, false),
-        )?;
-        let culling_pipeline =
-            pipeline_system.compute_pipeline(device, &culling_pipeline_spec())?;
+        let buffer = |label: &'static str, size: u64, usage: BufferUsage| {
+            device
+                .create_buffer(&BufferDescriptor {
+                    label: Some(Cow::Borrowed(label)),
+                    size,
+                    usage,
+                    mapped_at_creation: false,
+                })
+                .map_err(RenderError::ResourceError)
+        };
+        let storage = BufferUsage::STORAGE | BufferUsage::COPY_DST;
+        let uniform = BufferUsage::UNIFORM | BufferUsage::COPY_DST;
+        self.light_buffer = Some(buffer(
+            "Forward+ Light Buffer",
+            (LIGHT_BUFFER_CAPACITY * std::mem::size_of::<khora_core::renderer::GpuLight>()) as u64,
+            storage,
+        )?);
+        self.tile_info_buffer = Some(buffer("Forward+ Tile Info", 256, uniform)?);
+        // One matrix per light, indexed as the light buffer is.
+        self.shadow_view_projs_buffer = Some(buffer(
+            "Forward+ Shadow ViewProj Buffer",
+            (LIGHT_BUFFER_CAPACITY * std::mem::size_of::<[[f32; 4]; 4]>()) as u64,
+            storage,
+        )?);
+        self.culling_uniforms_buffer = Some(buffer("Forward+ Culling Uniforms", 256, uniform)?);
 
-        // 3. Create Buffers and Rings
-
-        // Light Data Buffer
-        let light_buffer = device
-            .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
-                label: Some(Cow::Borrowed("Forward+ Light Buffer")),
-                size: (LIGHT_BUFFER_CAPACITY
-                    * std::mem::size_of::<khora_core::renderer::GpuLight>())
-                    as u64,
-                usage: khora_core::renderer::api::resource::BufferUsage::STORAGE
-                    | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
-                mapped_at_creation: false,
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // The per-tile light lists (index + grid) and the culling bind group
-        // over them are sized from the colour target, which is only known
-        // per frame: `render` allocates them (`ensure_tile_buffers`).
-
-        // Tile Info Buffer
-        let tile_info_buffer = device
-            .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
-                label: Some(Cow::Borrowed("Forward+ Tile Info")),
-                size: 256,
-                usage: khora_core::renderer::api::resource::BufferUsage::UNIFORM
-                    | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
-                mapped_at_creation: false,
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // Shadow view-projection matrices (one mat4 per light, indexed
-        // identically to `light_buffer`, so as many as it holds).
-        let shadow_view_projs_buffer = device
-            .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
-                label: Some(Cow::Borrowed("Forward+ Shadow ViewProj Buffer")),
-                size: (LIGHT_BUFFER_CAPACITY * std::mem::size_of::<[[f32; 4]; 4]>()) as u64,
-                usage: khora_core::renderer::api::resource::BufferUsage::STORAGE
-                    | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
-                mapped_at_creation: false,
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // Culling Uniforms
-        let culling_uniforms_buffer = device
-            .create_buffer(&khora_core::renderer::api::resource::BufferDescriptor {
-                label: Some(Cow::Borrowed("Forward+ Culling Uniforms")),
-                size: 256,
-                usage: khora_core::renderer::api::resource::BufferUsage::UNIFORM
-                    | khora_core::renderer::api::resource::BufferUsage::COPY_DST,
-                mapped_at_creation: false,
-            })
-            .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // Ring Buffers
-        let camera_ring = UniformRingBuffer::new(
-            device,
-            camera_layout,
-            0,
-            std::mem::size_of::<CameraUniformData>() as u64,
-            "Forward+ Camera Ring",
-        )
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        let model_ring = DynamicUniformRingBuffer::new(
-            device,
-            model_layout,
-            0,
-            std::mem::size_of::<ModelUniforms>() as u32,
-            crate::render_lane::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS,
-            crate::render_lane::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
-            "Forward+ Model Ring",
-        )
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        // Materials are no longer per-frame ring uniforms: each material is a
-        // cached `GpuMaterial` (uniforms + textures + group-2 bind group)
-        // produced by the data-layer projection. The lane just binds it.
-
-        // 4. Bind Groups
-
-        // The group-3 (lighting) bind group is rebuilt every frame in
-        // `render` because it combines the persistent light buffers with
-        // the per-frame shadow atlas views — it cannot be cached here.
-
-        // 5. Store all resources
-        let mut res = self.gpu_resources.lock().map_err(|_| {
-            khora_core::renderer::error::RenderError::ResourceError(
-                khora_core::renderer::error::ResourceError::BackendError(
-                    "ForwardPlusLane gpu_resources mutex poisoned".into(),
-                ),
+        self.camera_ring = Some(
+            UniformRingBuffer::new(
+                device,
+                camera_layout,
+                0,
+                std::mem::size_of::<CameraUniformData>() as u64,
+                "Forward+ Camera Ring",
             )
-        })?;
-        res.light_buffer = Some(light_buffer);
-        res.tile_info_buffer = Some(tile_info_buffer);
-        res.culling_uniforms_buffer = Some(culling_uniforms_buffer);
-        res.shadow_view_projs_buffer = Some(shadow_view_projs_buffer);
-        res.camera_layout = Some(camera_layout);
-        res.model_layout = Some(model_layout);
-        res.material_layout = Some(material_layout);
-        res.lighting_layout = Some(lighting_layout);
-        res.culling_layout = Some(culling_layout);
-        res.camera_ring = Some(camera_ring);
-        res.model_ring = Some(model_ring);
-        res.culling_pipeline = Some(culling_pipeline);
-        res.render_pipeline = Some(pipeline_id);
-
+            .map_err(RenderError::ResourceError)?,
+        );
+        self.model_ring = Some(
+            DynamicUniformRingBuffer::new(
+                device,
+                model_layout,
+                0,
+                std::mem::size_of::<ModelUniforms>() as u32,
+                crate::render_lane::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS,
+                crate::render_lane::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
+                "Forward+ Model Ring",
+            )
+            .map_err(RenderError::ResourceError)?,
+        );
         Ok(())
     }
 
-    pub(super) fn on_gpu_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
-        let mut resources = crate::lock_or_log!(
-            self.gpu_resources.lock(),
-            "ForwardPlusLane::on_gpu_shutdown"
-        );
-
-        if let Some(ring) = resources.camera_ring.take() {
+    /// Gives every buffer, ring and bind group back to the device. The
+    /// layouts and pipelines belong to the pipeline system.
+    pub(super) fn destroy(&mut self, device: &dyn GraphicsDevice) {
+        if let Some(ring) = self.camera_ring.take() {
             ring.destroy(device);
         }
-        if let Some(ring) = resources.model_ring.take() {
+        if let Some(ring) = self.model_ring.take() {
             ring.destroy(device);
         }
-
-        if let Some(id) = resources.light_buffer.take() {
-            device.destroy_buffer(id).ok();
+        if let Some(group) = self.culling_bind_group.take() {
+            if let Err(error) = device.destroy_bind_group(group) {
+                log::warn!("Forward+: the culling bind group could not be destroyed: {error:?}");
+            }
         }
-        if let Some(id) = resources.light_index_buffer.take() {
-            device.destroy_buffer(id).ok();
+        for buffer in [
+            self.light_buffer.take(),
+            self.light_index_buffer.take(),
+            self.light_grid_buffer.take(),
+            self.culling_uniforms_buffer.take(),
+            self.shadow_view_projs_buffer.take(),
+            self.tile_info_buffer.take(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if let Err(error) = device.destroy_buffer(buffer) {
+                log::warn!("Forward+: a buffer could not be destroyed: {error:?}");
+            }
         }
-        if let Some(id) = resources.light_grid_buffer.take() {
-            let _ = device.destroy_buffer(id);
-        }
-        if let Some(id) = resources.culling_bind_group.take() {
-            let _ = device.destroy_bind_group(id);
-        }
-        resources.tile_capacity = 0;
-        if let Some(id) = resources.culling_uniforms_buffer.take() {
-            let _ = device.destroy_buffer(id);
-        }
-        if let Some(id) = resources.shadow_view_projs_buffer.take() {
-            let _ = device.destroy_buffer(id);
-        }
-        if let Some(id) = resources.tile_info_buffer.take() {
-            let _ = device.destroy_buffer(id);
-        }
+        self.tile_capacity = 0;
+        self.render_pipeline = None;
     }
 }

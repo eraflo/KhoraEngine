@@ -16,10 +16,9 @@
 //! the lane reads that target's size from its context.
 
 use super::super::tile_grid::TileGrid;
-use super::super::{ForwardPlusGpuResources, ForwardPlusLane};
-use khora_core::lane::{ClearColor, ColorTarget, ColorTargetSize, DepthTarget, Lane, LaneContext};
+use super::super::ForwardPlusGpuResources;
 use khora_core::math::dimension::{Extent3D, Origin3D};
-use khora_core::math::{Extent2D, LinearRgba};
+use khora_core::math::Extent2D;
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutId,
     BindingResource, CommandBufferId, ComputePassDescriptor, RenderPassDescriptor,
@@ -27,7 +26,6 @@ use khora_core::renderer::api::command::{
 use khora_core::renderer::api::device::{
     GraphicsAdapterInfo, GraphicsBackendType, RendererDeviceType,
 };
-use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::api::pipeline::{
     ComputePipelineDescriptor, ComputePipelineId, PipelineLayoutDescriptor, PipelineLayoutId,
     RenderPipelineDescriptor, RenderPipelineId,
@@ -41,10 +39,8 @@ use khora_core::renderer::api::shader::{ShaderModuleDescriptor, ShaderModuleId};
 use khora_core::renderer::error::ResourceError;
 use khora_core::renderer::traits::{CommandEncoder, ComputePass, GpuProfiler, RenderPass};
 use khora_core::renderer::{ForwardPlusTileConfig, GraphicsDevice, TileSize};
-use khora_data::assets::Assets;
-use khora_data::render::RenderWorld;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Mutex;
 
 // --- A device that records the resources it is asked for ---
 
@@ -633,76 +629,4 @@ fn a_failed_regrow_keeps_the_previous_light_lists() {
     assert!(!device
         .destroyed_bind_groups()
         .contains(&old_group.expect("bind group")));
-}
-
-// --- The lane reads the target size from its context ---
-
-#[test]
-fn execute_without_the_colour_target_size_fails_naming_it() {
-    let lane = ForwardPlusLane::new();
-    let device: Arc<dyn GraphicsDevice> = Arc::new(RecordingDevice::default());
-    let gpu_meshes = Arc::new(RwLock::new(Assets::<GpuMesh>::new()));
-    let render_world = RenderWorld::default();
-    let mut encoder: Box<dyn CommandEncoder> = Box::new(MockCommandEncoder);
-
-    let mut ctx = LaneContext::new();
-    ctx.insert(device);
-    ctx.insert(gpu_meshes);
-    ctx.insert_slot(encoder.as_mut());
-    ctx.insert_ref(&render_world);
-    ctx.insert(ColorTarget(TextureViewId(1)));
-    ctx.insert(DepthTarget(TextureViewId(2)));
-    ctx.insert(ClearColor(LinearRgba::BLACK));
-
-    let err = lane
-        .execute(&mut ctx)
-        .expect_err("a frame without a ColorTargetSize has no tile grid");
-    assert!(err.to_string().contains("ColorTargetSize"), "{err}");
-}
-
-/// The lane's cost estimate for an empty scene on a target of `target`
-/// (`None`: no `ColorTargetSize` in the context).
-fn cost_on(lane: &ForwardPlusLane, target: Option<Extent2D>) -> f32 {
-    let gpu_meshes = Arc::new(RwLock::new(Assets::<GpuMesh>::new()));
-    let render_world = RenderWorld::default();
-    let mut ctx = LaneContext::new();
-    ctx.insert(gpu_meshes);
-    ctx.insert_ref(&render_world);
-    if let Some(target) = target {
-        ctx.insert(ColorTargetSize(target));
-    }
-    lane.estimate_cost(&ctx)
-}
-
-#[test]
-fn the_cost_estimate_counts_the_tiles_of_the_colour_target() {
-    let lane = ForwardPlusLane::new();
-    let large = cost_on(
-        &lane,
-        Some(Extent2D {
-            width: 3840,
-            height: 2160,
-        }),
-    );
-    let small = cost_on(
-        &lane,
-        Some(Extent2D {
-            width: 640,
-            height: 480,
-        }),
-    );
-    assert!(
-        large > small,
-        "a 4K target has more tiles to cull than a 640x480 one ({large} vs {small})"
-    );
-
-    // Without a frame (the negotiation thread), the cost model assumes 1080p.
-    let reference = cost_on(
-        &lane,
-        Some(Extent2D {
-            width: 1920,
-            height: 1080,
-        }),
-    );
-    assert_eq!(cost_on(&lane, None), reference);
 }

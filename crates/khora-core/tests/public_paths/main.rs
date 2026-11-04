@@ -474,14 +474,6 @@ fn shadow_atlas_cube_view_fields(x: &khora_core::lane::context_keys::ShadowAtlas
     let _ = (&x.0,);
 }
 
-fn shadow_atlas_view_fields(x: &khora_core::lane::context_keys::ShadowAtlasView) {
-    let _ = (&x.0,);
-}
-
-fn shadow_comparison_sampler_fields(x: &khora_core::lane::context_keys::ShadowComparisonSampler) {
-    let _ = (&x.0,);
-}
-
 fn extended_memory_stats_fields(x: &khora_core::memory::ExtendedMemoryStats) {
     let _ = (
         &x.current_allocated_bytes,
@@ -2126,27 +2118,6 @@ fn module_lane_paths_still_resolve() {
     is_debug::<khora_core::lane::context_keys::ShadowAtlasCubeView>();
     is_clone::<khora_core::lane::context_keys::ShadowAtlasCubeView>();
     is_copy::<khora_core::lane::context_keys::ShadowAtlasCubeView>();
-    let _ = type_name::<khora_core::lane::context_keys::ShadowAtlasView>();
-    let _ = type_name::<khora_core::lane::ShadowAtlasView>();
-    same_type(
-        PhantomData::<khora_core::lane::ShadowAtlasView>,
-        PhantomData::<khora_core::lane::context_keys::ShadowAtlasView>,
-    );
-    let _ = shadow_atlas_view_fields as fn(&khora_core::lane::context_keys::ShadowAtlasView);
-    is_debug::<khora_core::lane::context_keys::ShadowAtlasView>();
-    is_clone::<khora_core::lane::context_keys::ShadowAtlasView>();
-    is_copy::<khora_core::lane::context_keys::ShadowAtlasView>();
-    let _ = type_name::<khora_core::lane::context_keys::ShadowComparisonSampler>();
-    let _ = type_name::<khora_core::lane::ShadowComparisonSampler>();
-    same_type(
-        PhantomData::<khora_core::lane::ShadowComparisonSampler>,
-        PhantomData::<khora_core::lane::context_keys::ShadowComparisonSampler>,
-    );
-    let _ = shadow_comparison_sampler_fields
-        as fn(&khora_core::lane::context_keys::ShadowComparisonSampler);
-    is_debug::<khora_core::lane::context_keys::ShadowComparisonSampler>();
-    is_clone::<khora_core::lane::context_keys::ShadowComparisonSampler>();
-    is_copy::<khora_core::lane::context_keys::ShadowComparisonSampler>();
     let _ = type_name::<khora_core::lane::deck::OutputDeck>();
     let _ = type_name::<khora_core::lane::OutputDeck>();
     same_type(
@@ -3274,8 +3245,6 @@ mod paths_used_by_other_crates {
     use khora_core::lane::LaneRegistry as _; // khora-agents
     use khora_core::lane::OutputDeck as _; // khora-agents, khora-control, khora-data, khora-io, khora-lanes
     use khora_core::lane::PhysicsDeltaTime as _; // khora-agents, khora-lanes
-    use khora_core::lane::ShadowAtlasView as _; // khora-agents, khora-lanes
-    use khora_core::lane::ShadowComparisonSampler as _; // khora-agents, khora-lanes
     use khora_core::math as _; // khora-sdk (glob re-export)
     use khora_core::math::affine_transform::AffineTransform as _; // khora-agents, khora-data, khora-lanes
     use khora_core::math::dimension as _; // khora-infra

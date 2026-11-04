@@ -58,7 +58,7 @@ pub mod offset {
 /// [`fill_ibl_bind_group_entries`] without inspecting fields. Holds only
 /// opaque resource IDs (no handles), so it is `Copy` — the IBL bake is static
 /// after startup, so the same IDs are bound every frame.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IblGpuBindings {
     /// Full-resolution environment cube view (the linear-HDR sky the whole
     /// bake derives from). Not part of the lit lanes' group-3 IBL block — it is

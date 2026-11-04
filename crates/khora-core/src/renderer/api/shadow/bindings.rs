@@ -45,7 +45,7 @@ pub mod binding {
 /// [`fill_shadow_bind_group_entries`] without inspecting fields. Which
 /// concrete strategy filled it (`StandardShadowsLane`,
 /// `LowResShadowsLane`, …) is invisible at this seam.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShadowGpuBindings {
     /// 2D depth-array atlas view (directional / spot lights).
     pub atlas_2d: TextureViewId,

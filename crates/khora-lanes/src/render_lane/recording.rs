@@ -34,21 +34,74 @@
 //! [`TransparentPassSlot`](khora_data::render::TransparentPassSlot) for why the
 //! alternative — drawing the sky first — was rejected on SAA grounds.
 
+use khora_core::lane::io::SceneTarget;
+use khora_core::math::LinearRgba;
 use khora_core::renderer::api::command::{
     BindGroupId, DrawCommand, LoadOp, Operations, RenderPassColorAttachment,
     RenderPassDepthStencilAttachment, RenderPassDescriptor, StoreOp,
 };
-use khora_core::renderer::api::frame::RenderContext;
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::traits::{CommandEncoder, RenderPass};
 
+/// The colour attachment of a scene pass into `target`, cleared or loaded.
+pub(crate) fn scene_color(
+    target: &SceneTarget,
+    load: LoadOp<LinearRgba>,
+) -> RenderPassColorAttachment<'_> {
+    RenderPassColorAttachment {
+        view: &target.color,
+        resolve_target: None,
+        ops: Operations {
+            load,
+            store: StoreOp::Store,
+        },
+        base_array_layer: 0,
+        base_mip_level: 0,
+    }
+}
+
+/// The depth attachment of a scene pass into `target`, cleared to the far
+/// plane or loaded.
+pub(crate) fn scene_depth(
+    target: &SceneTarget,
+    load: LoadOp<f32>,
+) -> RenderPassDepthStencilAttachment<'_> {
+    RenderPassDepthStencilAttachment {
+        view: &target.depth,
+        depth_ops: Some(Operations {
+            load,
+            store: StoreOp::Store,
+        }),
+        stencil_ops: None,
+        base_array_layer: 0,
+    }
+}
+
+/// Records a scene pass that only clears `target`: its colour to `clear`,
+/// its depth to the far plane. A frame with no camera still shows the clear
+/// colour.
+pub(crate) fn record_clear(
+    encoder: &mut dyn CommandEncoder,
+    target: &SceneTarget,
+    clear: LinearRgba,
+    label: &'static str,
+) {
+    let color = [scene_color(target, LoadOp::Clear(clear))];
+    let descriptor = RenderPassDescriptor {
+        label: Some(label),
+        color_attachments: &color,
+        depth_stencil_attachment: Some(scene_depth(target, LoadOp::Clear(1.0))),
+    };
+    // Dropping the pass ends it: the clear is recorded without a draw.
+    let _ = encoder.begin_render_pass(&descriptor);
+}
+
 /// Records a batch of draw commands into an open render pass.
 ///
-/// The three lit lanes had this loop written out identically, and each now
-/// calls it twice — once for the opaque batch, once for the blended one, into
-/// two different passes. Setting the pipeline only when it changes relies on
-/// the caller having sorted by pipeline (opaque) or by depth (transparent,
-/// where correct compositing outranks batching).
+/// Each lit lane calls it twice — once for the opaque batch, once for the
+/// blended one, into two different passes. Setting the pipeline only when it
+/// changes relies on the caller having sorted by pipeline (opaque) or by
+/// depth (transparent, where correct compositing outranks batching).
 pub(crate) fn record_draws<'a>(
     pass: &mut dyn RenderPass<'a>,
     commands: impl Iterator<Item = &'a DrawCommand>,
@@ -72,73 +125,27 @@ pub(crate) fn record_draws<'a>(
     }
 }
 
-/// Records the scene's blended draws into their own command buffer.
+/// Records the scene's blended draws into the transparent pass's encoder,
+/// loading the colour and the depth the opaque pass and the sky left.
 ///
-/// # Why this is not the same pass as the opaque draws
-///
-/// A blended surface must not write depth — two of them could not composite if
-/// it did. So it leaves the pixel at the far plane, and the skybox paints
-/// exactly the pixels left at the far plane. With one pass for the whole scene
-/// the sky ran afterwards and repainted the glass: a transparent sphere against
-/// the sky vanished, while the half of it overlapping the floor survived,
-/// because there the floor had written depth.
-///
-/// Splitting the scene lets the engine fold the sky **between** the opaque
-/// draws that give it a depth buffer to test against and the blended draws that
-/// composite over it. See
-/// [`TransparentPassSlot`](khora_data::render::TransparentPassSlot) for why the
-/// alternative — drawing the sky first — was rejected on SAA grounds.
-///
-/// Does nothing when there is nothing to blend, so the common frame contributes
-/// no second command buffer at all.
+/// Records nothing when there is nothing to blend: the pass is still closed,
+/// empty, so its slot never carries a stale pass.
 pub(crate) fn record_transparent_pass(
-    encoder: Option<&mut (dyn CommandEncoder + '_)>,
+    encoder: &mut dyn CommandEncoder,
     transparent_draws: &[(f32, DrawCommand)],
-    render_ctx: &RenderContext,
+    target: &SceneTarget,
     camera_bind_group: &BindGroupId,
     lighting_bind_group: &BindGroupId,
 ) {
     if transparent_draws.is_empty() {
         return;
     }
-
-    let Some(encoder) = encoder else {
-        // No second encoder: a caller that does not split its passes (a test
-        // harness, or a lane driven outside `RenderAgent`). Blended geometry is
-        // then not drawn at all rather than drawn in the wrong pass — the
-        // failure that is visible rather than the one that looks almost right.
-        log::debug!("record_transparent_pass: no transparent encoder, skipping blended draws");
-        return;
-    };
-
-    // `Load` on both attachments: the opaque pass cleared and filled them, and
-    // the sky has painted the background in between.
-    let color_attachment = RenderPassColorAttachment {
-        view: render_ctx.color_target,
-        resolve_target: None,
-        ops: Operations {
-            load: LoadOp::Load,
-            store: StoreOp::Store,
-        },
-        base_array_layer: 0,
-        base_mip_level: 0,
-    };
+    let color = [scene_color(target, LoadOp::Load)];
     let descriptor = RenderPassDescriptor {
         label: Some("Scene Transparent Pass"),
-        color_attachments: &[color_attachment],
-        depth_stencil_attachment: render_ctx.depth_target.map(|depth_view| {
-            RenderPassDepthStencilAttachment {
-                view: depth_view,
-                depth_ops: Some(Operations {
-                    load: LoadOp::Load,
-                    store: StoreOp::Store,
-                }),
-                stencil_ops: None,
-                base_array_layer: 0,
-            }
-        }),
+        color_attachments: &color,
+        depth_stencil_attachment: Some(scene_depth(target, LoadOp::Load)),
     };
-
     let mut pass = encoder.begin_render_pass(&descriptor);
     pass.set_bind_group(0, camera_bind_group, &[]);
     pass.set_bind_group(3, lighting_bind_group, &[]);

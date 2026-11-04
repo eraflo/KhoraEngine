@@ -16,9 +16,11 @@
 
 mod block;
 pub mod dynamic_uniform_ring_buffer;
-pub(crate) mod release;
+pub(crate) mod kept_bind_groups;
+pub(crate) mod target_state;
 mod uniform_layout;
 pub mod uniform_ring_buffer;
+pub(crate) mod variant_pipelines;
 
 pub(crate) use block::Block;
 pub use dynamic_uniform_ring_buffer::DynamicUniformRingBuffer;

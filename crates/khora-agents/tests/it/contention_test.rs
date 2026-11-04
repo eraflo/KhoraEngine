@@ -20,8 +20,7 @@
 //! a wave that could have run concurrently. Only the real declarations can show
 //! that, so they are asserted here.
 
-use khora_agents::render_agent::RenderAgent;
-use khora_core::agent::{Agent, AgentAccess};
+use khora_core::agent::Agent;
 use khora_data::ui::UiImageAtlas;
 use std::any::TypeId;
 use std::sync::Arc;
@@ -29,6 +28,7 @@ use std::sync::Arc;
 use crate::overlay_families::fixtures::{
     agent_of, gizmo_registration, grid_registration, wireframe_registration,
 };
+use crate::render_family::fixtures::{render_agent, EVERY_CAP};
 use crate::ui_family::fixtures::ui_agent;
 
 /// **The gain the contract was written for.** Both are `SharedWorld`, both sit
@@ -37,7 +37,7 @@ use crate::ui_family::fixtures::ui_agent;
 /// did. Now something can, and the answer is that they do not.
 #[test]
 fn the_render_and_ui_agents_do_not_contend() {
-    let render = RenderAgent::default().contention();
+    let render = render_agent(&EVERY_CAP).contention();
     let ui = ui_agent().contention();
 
     assert!(
@@ -52,7 +52,7 @@ fn the_render_and_ui_agents_do_not_contend() {
 #[test]
 fn the_agents_sharing_read_only_handles_do_not_contend() {
     let all = [
-        RenderAgent::default().contention(),
+        render_agent(&EVERY_CAP).contention(),
         crate::shadows_family::fixtures::shadow_agent().contention(),
         crate::skybox_family::fixtures::skybox_agent().contention(),
         agent_of(grid_registration()).contention(),
@@ -77,7 +77,7 @@ fn the_agents_sharing_read_only_handles_do_not_contend() {
 #[test]
 fn each_render_agent_writes_a_slot_of_its_own() {
     let slots: Vec<_> = [
-        RenderAgent::default().contention(),
+        render_agent(&EVERY_CAP).contention(),
         crate::shadows_family::fixtures::shadow_agent().contention(),
         crate::skybox_family::fixtures::skybox_agent().contention(),
         agent_of(grid_registration()).contention(),
@@ -123,17 +123,5 @@ fn ui_agent_reads_the_atlas_without_locking_it() {
     assert!(
         !contention.writes.contains(&atlas),
         "the atlas is read, not locked: it must not sit under `writes`"
-    );
-}
-
-/// The active camera reaches the renderer through the `CameraView` the SDK
-/// prepares the frame from, so the render agent reads the bus and nothing of
-/// the `World`.
-#[test]
-fn render_agent_is_world_free() {
-    assert_eq!(
-        RenderAgent::default().access(),
-        AgentAccess::Isolated,
-        "the render agent no longer reads the World"
     );
 }

@@ -85,6 +85,18 @@ pub struct UniformRingBuffer {
     label: &'static str,
 }
 
+/// Gives back the slots a ring built before one of its creations was refused.
+fn give_back(device: &dyn GraphicsDevice, slots: &[RingSlot], label: &str) {
+    for slot in slots {
+        if let Err(e) = device.destroy_bind_group(slot.bind_group) {
+            log::warn!("UniformRingBuffer({label}): Failed to destroy bind group: {e:?}");
+        }
+        if let Err(e) = device.destroy_buffer(slot.buffer) {
+            log::warn!("UniformRingBuffer({label}): Failed to destroy buffer: {e:?}");
+        }
+    }
+}
+
 impl UniformRingBuffer {
     /// Creates a new `UniformRingBuffer` with pre-allocated GPU resources.
     ///
@@ -117,14 +129,20 @@ impl UniformRingBuffer {
                 _ => Cow::Owned(format!("{label} [slot {i}]")),
             };
 
-            let buffer = device.create_buffer(&BufferDescriptor {
+            let buffer = match device.create_buffer(&BufferDescriptor {
                 label: Some(buffer_label),
                 size: data_size,
                 usage: BufferUsage::UNIFORM | BufferUsage::COPY_DST,
                 mapped_at_creation: false,
-            })?;
+            }) {
+                Ok(buffer) => buffer,
+                Err(error) => {
+                    give_back(device, &slots, label);
+                    return Err(error);
+                }
+            };
 
-            let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            let bind_group = match device.create_bind_group(&BindGroupDescriptor {
                 label: Some(label),
                 layout,
                 entries: &[BindGroupEntry {
@@ -136,7 +154,16 @@ impl UniformRingBuffer {
                     }),
                     _phantom: std::marker::PhantomData,
                 }],
-            })?;
+            }) {
+                Ok(bind_group) => bind_group,
+                Err(error) => {
+                    if let Err(e) = device.destroy_buffer(buffer) {
+                        log::warn!("UniformRingBuffer({label}): Failed to destroy buffer: {e:?}");
+                    }
+                    give_back(device, &slots, label);
+                    return Err(error);
+                }
+            };
 
             slots.push(RingSlot { buffer, bind_group });
         }

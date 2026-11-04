@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Lanes of the `RenderAgent`: the strategies that draw the scene.
+//! The render family's lanes: the strategies that draw the scene.
 //!
 //! The per-frame `RenderWorld` and the extraction logic live in
 //! [`khora_data::render`]. The shadow, overlay, skybox and UI lanes, drawn by
@@ -21,11 +21,12 @@
 mod culling;
 mod forward_plus;
 mod lit_forward;
+mod neutral;
 mod recording;
+mod render_family;
+mod scene_load;
 mod shader_complexity;
-pub(crate) use recording::{record_draws, record_transparent_pass};
 mod simple_unlit;
-mod standard_pbr;
 pub mod util;
 
 /// Squared distance from the camera to a model's origin — the sort key the lit
@@ -49,9 +50,9 @@ pub(crate) fn camera_distance_sq(
 
 pub use forward_plus::*;
 pub use lit_forward::*;
+pub use render_family::*;
 pub use shader_complexity::ShaderComplexity;
 pub use simple_unlit::*;
-pub use standard_pbr::StandardPbrLane;
 
 #[cfg(test)]
 mod transparency_tests {

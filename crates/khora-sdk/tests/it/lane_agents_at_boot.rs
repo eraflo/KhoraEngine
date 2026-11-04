@@ -378,6 +378,7 @@ fn probe_menu(engine: &EngineCore<Game>) -> Vec<StrategyId> {
 fn boot_reads_the_device_caps_from_the_installed_device() {
     let with_storage = Arc::new(QueueLog::with_caps(DeviceCaps {
         storage_buffers: true,
+        ..DeviceCaps::default()
     }));
     let mut runtime = Runtime::new();
     runtime

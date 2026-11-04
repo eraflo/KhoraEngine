@@ -41,6 +41,7 @@ mod quotes_follow_the_target;
 mod reload_after_an_emptied_module;
 mod removed_phases;
 mod render_doubles;
+mod render_family_at_boot;
 mod runtime_config_file;
 mod script_catalog;
 mod script_problems;

@@ -15,10 +15,27 @@
 //! GPU resources of the lane: creation, release, and the layouts and
 //! pipeline specs they are built from.
 
-use super::SimpleUnlitLane;
+use std::borrow::Cow;
+
+use crate::render_lane::util::dynamic_uniform_ring_buffer::{
+    DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
+};
+use crate::render_lane::util::target_state::{
+    scene_color_targets, scene_depth_state, scene_multisample,
+};
+use crate::render_lane::util::{DynamicUniformRingBuffer, UniformRingBuffer};
+use khora_core::lane::io::TargetKey;
+use khora_core::renderer::api::gpu_scene::{Mesh, ModelUniforms};
+use khora_core::renderer::api::material::MaterialUniforms;
 use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
-use khora_core::renderer::api::pipeline::{LayoutKey, LayoutSpec, PipelineSpec};
+use khora_core::renderer::api::pipeline::{
+    LayoutKey, LayoutSpec, PipelineSpec, PrimitiveStateDescriptor, RenderPipelineId,
+};
+use khora_core::renderer::api::resource::CameraUniformData;
 use khora_core::renderer::api::shader::ShaderVariantKey;
+use khora_core::renderer::error::RenderError;
+use khora_core::renderer::traits::PipelineSystem;
+use khora_core::renderer::GraphicsDevice;
 
 // ─── Free functions (CLAD: declarative pipeline spec + bespoke layouts) ───
 
@@ -69,22 +86,10 @@ fn unlit_material_layout_entries() -> Vec<khora_core::renderer::api::command::Bi
     }]
 }
 
-/// The declarative pipeline spec for SimpleUnlit — built each call, deduped by
-/// the `PipelineSystem`. Camera is the canonical layout; model + material are
-/// bespoke inline layouts shared with the lane's ring buffers.
-fn pipeline_spec(device: &dyn khora_core::renderer::GraphicsDevice) -> PipelineSpec {
-    use khora_core::renderer::api::gpu_scene::Mesh;
-    use khora_core::renderer::api::pipeline::enums::CompareFunction;
-    use khora_core::renderer::api::pipeline::state::{
-        ColorWrites, DepthBiasState, StencilFaceState,
-    };
-    use khora_core::renderer::api::pipeline::{
-        ColorTargetStateDescriptor, DepthStencilStateDescriptor, MultisampleStateDescriptor,
-        PrimitiveStateDescriptor,
-    };
-    use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
-    use std::borrow::Cow;
-
+/// The pipeline spec of the unlit lane for a target of `key`: the canonical
+/// camera layout, and the lane's own model and material layouts shared with
+/// its rings.
+fn pipeline_spec(key: TargetKey) -> PipelineSpec {
     PipelineSpec {
         label: "SimpleUnlit Pipeline",
         shader: "khora::pipelines::unlit",
@@ -107,143 +112,110 @@ fn pipeline_spec(device: &dyn khora_core::renderer::GraphicsDevice) -> PipelineS
             topology: PrimitiveTopology::TriangleList,
             ..Default::default()
         },
-        depth_stencil: Some(DepthStencilStateDescriptor {
-            format: TextureFormat::Depth32Float,
-            depth_write_enabled: true,
-            depth_compare: CompareFunction::Less,
-            stencil_front: StencilFaceState::default(),
-            stencil_back: StencilFaceState::default(),
-            stencil_read_mask: 0,
-            stencil_write_mask: 0,
-            bias: DepthBiasState::default(),
-        }),
-        color_targets: vec![ColorTargetStateDescriptor {
-            format: device
-                .get_surface_format()
-                .unwrap_or(TextureFormat::Rgba8UnormSrgb),
-            blend: None,
-            write_mask: ColorWrites::ALL,
-        }],
-        multisample: MultisampleStateDescriptor {
-            count: SampleCount::X1,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
+        depth_stencil: scene_depth_state(key, false),
+        color_targets: scene_color_targets(key, false),
+        multisample: scene_multisample(key),
     }
 }
 
-impl SimpleUnlitLane {
-    pub(super) fn on_gpu_init(
-        &self,
-        device: &dyn khora_core::renderer::GraphicsDevice,
-        pipeline_system: &dyn khora_core::renderer::traits::PipelineSystem,
-    ) -> Result<(), khora_core::renderer::error::RenderError> {
-        use crate::render_lane::util::UniformRingBuffer;
-        use khora_core::renderer::api::gpu_scene::ModelUniforms;
-        use khora_core::renderer::api::resource::CameraUniformData;
+/// What the unlit lane keeps on the device: its uniform rings, and the
+/// pipeline of the target it draws into.
+pub(super) struct UnlitGpu {
+    pub(super) camera_ring: UniformRingBuffer,
+    pub(super) model_ring: DynamicUniformRingBuffer,
+    pub(super) material_ring: DynamicUniformRingBuffer,
+    /// The pipeline and the key it was built for; `None` until a target is
+    /// known.
+    pub(super) pipeline: Option<(TargetKey, RenderPipelineId)>,
+}
 
-        log::info!("SimpleUnlitLane: Initializing GPU resources...");
-
-        // The camera layout is the canonical engine layout (shared with the
-        // lit lanes); the model + material layouts are bespoke to this unlit
-        // strategy (single dynamic-offset uniforms, no PBR textures), resolved
-        // as inline layouts so the ring buffers + pipeline share one id.
+impl UnlitGpu {
+    /// Builds the rings against the layouts the pipeline system holds; a
+    /// ring the device refuses gives back the ones already built.
+    pub(super) fn build(
+        device: &dyn GraphicsDevice,
+        pipelines: &dyn PipelineSystem,
+    ) -> Result<Self, RenderError> {
         let variant = ShaderVariantKey::empty();
-        let camera_layout = pipeline_system.layout(device, LayoutKey::Camera, &variant)?;
-        let model_layout = pipeline_system.inline_layout(
+        let camera_layout = pipelines.layout(device, LayoutKey::Camera, &variant)?;
+        let model_layout = pipelines.inline_layout(
             device,
             UNLIT_MODEL_LAYOUT_LABEL,
             &unlit_model_layout_entries(),
         )?;
-        let material_layout = pipeline_system.inline_layout(
+        let material_layout = pipelines.inline_layout(
             device,
             UNLIT_MATERIAL_LAYOUT_LABEL,
             &unlit_material_layout_entries(),
         )?;
-
-        // Pipeline (compiled + cached by the backend).
-        let pipeline_id = pipeline_system.pipeline(device, &pipeline_spec(device))?;
-
-        // Init-once writes — `set` returns Err if already initialized,
-        // which we ignore: a second `on_initialize` is a logic bug
-        // upstream, not a runtime failure.
-        let _ = self.camera_layout.set(camera_layout);
-        let _ = self.model_layout.set(model_layout);
-        let _ = self.material_layout.set(material_layout);
-        let _ = self.pipeline.set(pipeline_id);
 
         let camera_ring = UniformRingBuffer::new(
             device,
             camera_layout,
             0,
             std::mem::size_of::<CameraUniformData>() as u64,
-            "Camera Uniform Ring Runlit",
+            "SimpleUnlit Camera Ring",
         )
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        *khora_core::lane::lock::mutex_lock_render(
-            &self.camera_ring,
-            "SimpleUnlit init.camera_ring",
-        )? = Some(camera_ring);
-
-        let model_ring = crate::render_lane::util::DynamicUniformRingBuffer::new(
+        .map_err(RenderError::ResourceError)?;
+        let model_ring = match DynamicUniformRingBuffer::new(
             device,
             model_layout,
             0,
             std::mem::size_of::<ModelUniforms>() as u32,
-            crate::render_lane::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS,
-            crate::render_lane::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
-            "Model Dynamic Ring Runlit",
-        )
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
-
-        *khora_core::lane::lock::mutex_lock_render(
-            &self.model_ring,
-            "SimpleUnlit init.model_ring",
-        )? = Some(model_ring);
-
-        let material_ring = crate::render_lane::util::DynamicUniformRingBuffer::new(
+            DEFAULT_MAX_ELEMENTS,
+            MIN_UNIFORM_ALIGNMENT,
+            "SimpleUnlit Model Ring",
+        ) {
+            Ok(ring) => ring,
+            Err(error) => {
+                camera_ring.destroy(device);
+                return Err(RenderError::ResourceError(error));
+            }
+        };
+        let material_ring = match DynamicUniformRingBuffer::new(
             device,
             material_layout,
-            0, // Binding size
-            std::mem::size_of::<khora_core::renderer::api::material::MaterialUniforms>() as u32,
-            crate::render_lane::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS,
-            crate::render_lane::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
-            "Material Dynamic Ring Runlit",
-        )
-        .map_err(khora_core::renderer::error::RenderError::ResourceError)?;
+            0,
+            std::mem::size_of::<MaterialUniforms>() as u32,
+            DEFAULT_MAX_ELEMENTS,
+            MIN_UNIFORM_ALIGNMENT,
+            "SimpleUnlit Material Ring",
+        ) {
+            Ok(ring) => ring,
+            Err(error) => {
+                camera_ring.destroy(device);
+                model_ring.destroy(device);
+                return Err(RenderError::ResourceError(error));
+            }
+        };
+        Ok(Self {
+            camera_ring,
+            model_ring,
+            material_ring,
+            pipeline: None,
+        })
+    }
 
-        *khora_core::lane::lock::mutex_lock_render(
-            &self.material_ring,
-            "SimpleUnlit init.material_ring",
-        )? = Some(material_ring);
-
+    /// The pipeline for a target of `key`: the one built while the key
+    /// holds, else a new one.
+    pub(super) fn retarget(
+        &mut self,
+        device: &dyn GraphicsDevice,
+        pipelines: &dyn PipelineSystem,
+        key: TargetKey,
+    ) -> Result<(), RenderError> {
+        if self.pipeline.map(|(built_for, _)| built_for) != Some(key) {
+            let pipeline = pipelines.pipeline(device, &pipeline_spec(key))?;
+            self.pipeline = Some((key, pipeline));
+        }
         Ok(())
     }
 
-    pub(super) fn on_gpu_shutdown(&self, device: &dyn khora_core::renderer::GraphicsDevice) {
-        // Ring buffers own their GPU buffers + bind groups; the pipeline and
-        // bind-group layouts are owned + cached by the `PipelineSystem`
-        // backend, so the lane must not destroy them here.
-        if let Some(ring) = self.camera_ring.lock().ok().and_then(|mut g| g.take()) {
-            ring.destroy(device);
-        }
-        if let Some(ring) = self.model_ring.lock().ok().and_then(|mut g| g.take()) {
-            ring.destroy(device);
-        }
-        if let Some(ring) = self.material_ring.lock().ok().and_then(|mut g| g.take()) {
-            ring.destroy(device);
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn simple_unlit_pipeline_binds_the_mesh_vertex() {
-        let spec = pipeline_spec(&crate::tests::SpecOnlyDevice);
-        crate::tests::assert_binds_the_mesh_vertex(&spec);
+    /// Gives the rings back to the device. The layouts and the pipeline
+    /// belong to the pipeline system.
+    pub(super) fn destroy(self, device: &dyn GraphicsDevice) {
+        self.camera_ring.destroy(device);
+        self.model_ring.destroy(device);
+        self.material_ring.destroy(device);
     }
 }

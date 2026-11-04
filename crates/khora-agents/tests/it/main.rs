@@ -45,7 +45,7 @@ mod physics_family;
 mod physics_lane_contacts_test;
 mod prefabs_spawned_in_play;
 mod public_paths;
-mod render_agent_gorna_test;
+mod render_family;
 mod save_mid_attack_test;
 mod scene_edit_after_save;
 mod scheduled_behaviors_in_negotiation;

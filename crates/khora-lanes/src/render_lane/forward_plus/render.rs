@@ -12,462 +12,332 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Recording the lane's draw calls for one frame.
+//! Recording the lane's culling pass and draw calls for one frame.
 
 use super::g3;
-use khora_data::render::RenderWorld;
-
-use super::gpu::render_pipeline_spec;
+use super::gpu::{render_pipeline_spec, LIGHT_BUFFER_CAPACITY};
+use super::lane_gpu::PlusGpu;
 use super::tile_grid::TileGrid;
-use super::ForwardPlusLane;
-use khora_core::math::Extent2D;
-use khora_core::renderer::api::command::{
-    ComputePassDescriptor, LoadOp, Operations, RenderPassColorAttachment,
-    RenderPassDepthStencilAttachment, RenderPassDescriptor, StoreOp,
+use crate::render_lane::camera_distance_sq;
+use crate::render_lane::recording::{
+    record_clear, record_draws, record_transparent_pass, scene_color, scene_depth,
 };
-use khora_core::renderer::api::frame::RenderContext;
-use khora_core::renderer::api::gpu_scene::GpuMesh;
-use khora_core::renderer::api::pipeline::RenderPipelineId;
+use crate::render_lane::render_family::{LitInputs, RenderOutputs};
+use crate::render_lane::util::variant_pipelines::Surface;
+use khora_core::math::Mat4;
+use khora_core::renderer::api::command::{
+    BindGroupDescriptor, BindGroupEntry, ComputePassDescriptor, DrawCommand, LoadOp,
+    RenderPassDescriptor,
+};
+use khora_core::renderer::api::gpu_scene::{GpuMesh, ModelUniforms};
+use khora_core::renderer::api::ibl::fill_ibl_bind_group_entries;
 use khora_core::renderer::api::resource::CameraUniformData;
-use khora_core::renderer::traits::CommandEncoder;
+use khora_core::renderer::api::shadow::bindings::fill_shadow_bind_group_entries;
+use khora_core::renderer::api::shadow::ShadowEntry;
+use khora_core::renderer::error::{RenderError, ResourceError};
+use khora_core::renderer::light::CullingUniformsData;
+use khora_core::renderer::{ForwardPlusTileConfig, GpuLight};
 use khora_data::assets::Assets;
-use std::sync::RwLock;
 
-impl ForwardPlusLane {
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn render(
-        &self,
-        render_world: &RenderWorld,
-        shadow_entries: &khora_core::renderer::api::shadow::ShadowEntries,
-        shadow_bindings: Option<khora_core::renderer::api::shadow::ShadowGpuBindings>,
-        ibl_bindings: Option<khora_core::renderer::api::ibl::IblGpuBindings>,
-        device: &dyn khora_core::renderer::GraphicsDevice,
-        encoder: &mut dyn CommandEncoder,
-        transparent_encoder: Option<&mut dyn CommandEncoder>,
-        render_ctx: &RenderContext,
-        target: Extent2D,
-        gpu_meshes: &RwLock<Assets<GpuMesh>>,
-    ) {
-        let mut resources =
-            crate::lock_or_log!(self.gpu_resources.lock(), "ForwardPlusLane::render");
+/// The first group-3 binding of the image-based lighting, after the light
+/// buffers, the shadow atlases and the tile lists.
+const IBL_BASE: u32 = 8;
 
-        // 1. Get Active Camera View.
-        //
-        // When no camera is present (e.g. editor viewport before any in-scene
-        // camera is added), a clear render pass must still be submitted
-        let Some(view) = render_world.views.first() else {
-            let color_attachment = khora_core::renderer::api::command::RenderPassColorAttachment {
-                view: render_ctx.color_target,
-                resolve_target: None,
-                ops: khora_core::renderer::api::command::Operations {
-                    load: khora_core::renderer::api::command::LoadOp::Clear(render_ctx.clear_color),
-                    store: khora_core::renderer::api::command::StoreOp::Store,
-                },
-                base_array_layer: 0,
-                base_mip_level: 0,
-            };
-            let clear_desc = khora_core::renderer::api::command::RenderPassDescriptor {
-                label: Some("ForwardPlus Clear-Only Pass"),
-                color_attachments: &[color_attachment],
-                depth_stencil_attachment: render_ctx.depth_target.map(|depth_view| {
-                    khora_core::renderer::api::command::RenderPassDepthStencilAttachment {
-                        view: depth_view,
-                        depth_ops: Some(khora_core::renderer::api::command::Operations {
-                            load: khora_core::renderer::api::command::LoadOp::Clear(1.0),
-                            store: khora_core::renderer::api::command::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                        base_array_layer: 0,
-                    }
-                }),
-            };
-            let _ = encoder.begin_render_pass(&clear_desc);
-            return;
+/// A buffer the lane builds at its prepare, missing at a record.
+fn not_built(what: &str) -> RenderError {
+    RenderError::ResourceError(ResourceError::BackendError(format!(
+        "Forward+: {what} is not built"
+    )))
+}
+
+impl PlusGpu {
+    /// Records the frame: a clear when the world has no camera; else the
+    /// culling of every tile of the target, then the opaque meshes into the
+    /// scene pass and the blended ones into the transparent pass.
+    pub(super) fn record(
+        &mut self,
+        config: &ForwardPlusTileConfig,
+        inputs: &LitInputs<'_>,
+        gpu_meshes: &Assets<GpuMesh>,
+        out: &mut RenderOutputs<'_>,
+    ) -> Result<(), RenderError> {
+        let target = inputs.target;
+        let clear = inputs.clear_color.0;
+        let device = out.scene.device();
+        let Some(view) = inputs.render_world.views.first() else {
+            record_clear(
+                out.scene.encoder(),
+                &target,
+                clear,
+                "ForwardPlus Clear-Only Pass",
+            );
+            return Ok(());
         };
+        let resources = &mut self.resources;
 
-        // 2. Prepare Camera Uniforms (Group 0)
-        let camera_uniforms = CameraUniformData {
+        let camera = CameraUniformData {
             view_projection: view.view_proj.to_cols_array_2d(),
             camera_position: [view.position.x, view.position.y, view.position.z, 1.0],
         };
+        let camera_ring = resources
+            .camera_ring
+            .as_mut()
+            .ok_or_else(|| not_built("the camera ring"))?;
+        camera_ring.advance();
+        camera_ring
+            .write(device, bytemuck::bytes_of(&camera))
+            .map_err(RenderError::ResourceError)?;
+        let camera_bind_group = *camera_ring.current_bind_group();
 
-        let camera_bind_group = if let Some(ref mut ring) = resources.camera_ring {
-            ring.advance();
-            if let Err(e) = ring.write(device, bytemuck::bytes_of(&camera_uniforms)) {
-                log::error!("Failed to write camera ring buffer: {:?}", e);
-                return;
-            }
-            *ring.current_bind_group()
-        } else {
-            return;
-        };
-
-        // 3. The tile grid of the image this frame renders into. The light
+        // The tile grid of the image this frame renders into; the light
         // lists grow with it before anything indexes them.
-        let config = self.tile_config;
-        let grid = TileGrid::new(&config, target);
-        if let Err(e) = resources.ensure_tile_buffers(device, &config, &grid) {
-            log::error!("ForwardPlusLane::render: light list allocation failed: {e:?}");
-            return;
-        }
+        let grid = TileGrid::new(config, target.size);
+        resources
+            .ensure_tile_buffers(device, config, &grid)
+            .map_err(RenderError::ResourceError)?;
+        let tile_info = grid.tile_info(config.max_lights_per_tile);
+        let tile_info_buffer = resources
+            .tile_info_buffer
+            .ok_or_else(|| not_built("the tile info"))?;
+        device
+            .write_buffer(tile_info_buffer, 0, bytemuck::cast_slice(&tile_info))
+            .map_err(RenderError::ResourceError)?;
 
-        // Prepare Tile Info (sent to Group 3)
-        if let Some(tile_buffer) = resources.tile_info_buffer {
-            let tile_info = grid.tile_info(config.max_lights_per_tile);
-            if let Err(e) = device.write_buffer(tile_buffer, 0, bytemuck::cast_slice(&tile_info)) {
-                log::error!("ForwardPlusLane::render: tile info buffer write failed: {e:?}");
-            }
-        }
-
-        // 4. Update Light Data — fold per-light shadow metadata from the
-        // ShadowFrame into each GpuLight, and accumulate a parallel
-        // `shadow_view_projs` buffer indexed identically to `lights`.
-        //
-        // Directional / spot: `shadow_map_index` = 2D atlas layer,
-        // `shadow_view_projs[i]` carries the per-light VP matrix.
-        // Point: `shadow_map_index` = cube atlas index,
-        // `shadow_far_plane` = perspective far plane used by the shadow
-        // pass (matches `ShadowEntry::Cube.far_plane`).
-        use khora_core::renderer::api::shadow::ShadowEntry;
-        // The light buffer holds a fixed number of lights; the ones past it
-        // are not shaded (the culling pass is told only the lights it holds).
-        let capacity = super::gpu::LIGHT_BUFFER_CAPACITY;
-        if render_world.lights.len() > capacity {
-            log::warn!(
-                "ForwardPlusLane: {} lights in the scene, the light buffer holds {capacity}; \
-                 the rest are not shaded",
-                render_world.lights.len()
+        // Each light with its shadow entry: the atlas layer (or cube) it
+        // samples, and its view-projection in a parallel buffer. The buffer
+        // holds a fixed number; the ones past it are not shaded, and the
+        // quote says so.
+        let shadow_entries = inputs
+            .shadows
+            .map(|frame| &frame.entries)
+            .cloned()
+            .unwrap_or_default();
+        let world_lights = &inputs.render_world.lights;
+        if world_lights.len() > LIGHT_BUFFER_CAPACITY {
+            log::debug!(
+                "Forward+: {} lights, the light buffer holds {LIGHT_BUFFER_CAPACITY}",
+                world_lights.len()
             );
         }
-        let lights: Vec<_> = render_world
-            .lights
+        let lights: Vec<GpuLight> = world_lights
             .iter()
-            .take(capacity)
+            .take(LIGHT_BUFFER_CAPACITY)
             .enumerate()
-            .map(|(i, l)| {
-                let mut gl = khora_core::renderer::GpuLight::from_parts(
-                    [l.position.x, l.position.y, l.position.z],
-                    [l.direction.x, l.direction.y, l.direction.z],
-                    &l.light_type,
+            .map(|(index, light)| {
+                let mut gpu_light = GpuLight::from_parts(
+                    [light.position.x, light.position.y, light.position.z],
+                    [light.direction.x, light.direction.y, light.direction.z],
+                    &light.light_type,
                 );
-                match shadow_entries.get(i) {
+                match shadow_entries.get(index) {
                     Some(ShadowEntry::Atlas2D { atlas_index, .. }) => {
-                        gl.shadow_map_index = *atlas_index;
+                        gpu_light.shadow_map_index = *atlas_index;
                     }
                     Some(ShadowEntry::Cube {
                         cube_array_index,
                         far_plane,
                         ..
                     }) => {
-                        gl.shadow_map_index = *cube_array_index;
-                        gl.shadow_far_plane = *far_plane;
+                        gpu_light.shadow_map_index = *cube_array_index;
+                        gpu_light.shadow_far_plane = *far_plane;
                     }
                     None => {}
                 }
-                gl
+                gpu_light
             })
             .collect();
-
-        if let Some(light_buffer) = resources.light_buffer {
-            if let Err(e) = device.write_buffer(light_buffer, 0, bytemuck::cast_slice(&lights)) {
-                log::error!("ForwardPlusLane::render: light data buffer write failed: {e:?}");
-            }
-        }
-
-        // Parallel shadow view-projection matrices — directional / spot
-        // pull from the entry's `view_proj`, everything else gets the
-        // identity (bypassed via `shadow_map_index < 0` early-out in
-        // `sample_shadow_pcf`).
-        let shadow_view_projs: Vec<[[f32; 4]; 4]> = render_world
-            .lights
-            .iter()
-            .take(capacity)
-            .enumerate()
-            .map(|(i, _)| match shadow_entries.get(i) {
+        let shadow_view_projs: Vec<[[f32; 4]; 4]> = (0..lights.len())
+            .map(|index| match shadow_entries.get(index) {
                 Some(ShadowEntry::Atlas2D { view_proj, .. }) => view_proj.to_cols_array_2d(),
-                _ => khora_core::math::Mat4::IDENTITY.to_cols_array_2d(),
+                _ => Mat4::IDENTITY.to_cols_array_2d(),
             })
             .collect();
-
-        if let Some(svp_buffer) = resources.shadow_view_projs_buffer {
-            if !shadow_view_projs.is_empty() {
-                if let Err(e) =
-                    device.write_buffer(svp_buffer, 0, bytemuck::cast_slice(&shadow_view_projs))
-                {
-                    log::error!(
-                        "ForwardPlusLane::render: shadow view-proj buffer write failed: {e:?}"
-                    );
-                }
-            }
+        let light_buffer = resources
+            .light_buffer
+            .ok_or_else(|| not_built("the light buffer"))?;
+        let shadow_view_projs_buffer = resources
+            .shadow_view_projs_buffer
+            .ok_or_else(|| not_built("the shadow matrices"))?;
+        if !lights.is_empty() {
+            device
+                .write_buffer(light_buffer, 0, bytemuck::cast_slice(&lights))
+                .map_err(RenderError::ResourceError)?;
+            device
+                .write_buffer(
+                    shadow_view_projs_buffer,
+                    0,
+                    bytemuck::cast_slice(&shadow_view_projs),
+                )
+                .map_err(RenderError::ResourceError)?;
         }
+        let culling = CullingUniformsData {
+            view_projection: view.view_proj.to_cols_array_2d(),
+            screen_dimensions: grid.screen_dimensions(),
+            tile_count: [grid.tiles_x, grid.tiles_y],
+            num_lights: lights.len() as u32,
+            tile_size: grid.tile_size,
+            max_lights_per_tile: config.max_lights_per_tile,
+            _padding: 0,
+        };
+        let culling_buffer = resources
+            .culling_uniforms_buffer
+            .ok_or_else(|| not_built("the culling uniforms"))?;
+        device
+            .write_buffer(culling_buffer, 0, bytemuck::bytes_of(&culling))
+            .map_err(RenderError::ResourceError)?;
 
-        // Prepare and write Culling Uniforms
-        if let Some(culling_buffer) = resources.culling_uniforms_buffer {
-            let culling_data = khora_core::renderer::light::CullingUniformsData {
-                view_projection: view.view_proj.to_cols_array_2d(),
-                screen_dimensions: grid.screen_dimensions(),
-                tile_count: [grid.tiles_x, grid.tiles_y],
-                num_lights: lights.len() as u32,
-                tile_size: grid.tile_size,
-                max_lights_per_tile: config.max_lights_per_tile,
-                _padding: 0,
-            };
-
-            if let Err(e) =
-                device.write_buffer(culling_buffer, 0, bytemuck::bytes_of(&culling_data))
-            {
-                log::error!("ForwardPlusLane::render: culling uniforms buffer write failed: {e:?}");
-            }
-        }
-
-        // Run Culling Compute Pass — one workgroup per tile.
-        if let (Some(culling_pipeline), Some(culling_bg), true) = (
+        // One workgroup per tile, before the draws that read the lists.
+        if let (Some(pipeline), Some(group), true) = (
             resources.culling_pipeline,
             resources.culling_bind_group,
             grid.total() > 0,
         ) {
-            let mut compute_pass = encoder.begin_compute_pass(&ComputePassDescriptor {
-                label: Some("Forward+ Light Culling Pass"),
-                timestamp_writes: None,
-            });
-            compute_pass.set_pipeline(&culling_pipeline);
-            compute_pass.set_bind_group(0, &culling_bg, &[]);
-            compute_pass.dispatch_workgroups(grid.tiles_x, grid.tiles_y, 1);
+            let mut pass = out
+                .scene
+                .encoder()
+                .begin_compute_pass(&ComputePassDescriptor {
+                    label: Some("Forward+ Light Culling Pass"),
+                    timestamp_writes: None,
+                });
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &group, &[]);
+            pass.dispatch_workgroups(grid.tiles_x, grid.tiles_y, 1);
         }
 
-        // 5. Prepare Per-Mesh Data (Dynamic Uniforms). Opaque draws batch by
-        // pipeline; blended draws are deferred to a back-to-front sorted batch.
-        let mut draw_commands = Vec::new();
-        let mut transparent_draws: Vec<(f32, khora_core::renderer::api::command::DrawCommand)> =
-            Vec::new();
-
-        if let Some(ref mut ring) = resources.model_ring {
-            ring.advance();
-        }
-
-        // Fallback pipeline (empty variant) used only if the per-variant
-        // resolve fails.
-        let fallback_pipeline = resources.render_pipeline.unwrap_or(RenderPipelineId(0));
-
-        let gpu_mesh_assets = crate::lock_or_log!(gpu_meshes.read(), "ForwardPlusLane::render");
-        for extracted_mesh in &render_world.meshes {
-            if let Some(gpu_mesh_handle) = gpu_mesh_assets.get(&extracted_mesh.cpu_mesh_uuid) {
-                // The material projection tags every rendered entity with a
-                // `GpuMaterial` before RenderFlow runs.
-                let Some(gpu_material) = &extracted_mesh.gpu_material else {
-                    continue;
-                };
-
-                // Resolve the pipeline for this material's texture variant
-                // (cheap cache hit after first compile; never retained).
-                let pipeline_id = self
-                    .pipeline_system
-                    .get()
-                    .map(|ps| {
-                        ps.pipeline(
-                            device,
-                            &render_pipeline_spec(
-                                device,
-                                gpu_material.variant.clone(),
-                                gpu_material.double_sided,
-                                extracted_mesh.mirrored,
-                                gpu_material.blend,
-                            ),
-                        )
-                    })
-                    .transpose()
-                    .unwrap_or_else(|e| {
-                        log::error!("ForwardPlusLane: pipeline resolve failed: {:?}", e);
-                        None
-                    })
-                    .unwrap_or(fallback_pipeline);
-
-                // Compute Matrices
-                let model_mat = extracted_mesh.transform.to_matrix();
-                let normal_mat = model_mat.inverse().unwrap_or_default().transpose();
-
-                let model_uniforms = khora_core::renderer::api::gpu_scene::ModelUniforms {
-                    model_matrix: model_mat.to_cols_array_2d(),
-                    normal_matrix: normal_mat.to_cols_array_2d(),
-                };
-
-                // Model transform → dynamic ring; material → cached GpuMaterial.
-                let (model_bg, model_offset) = if let Some(ref mut ring) = resources.model_ring {
-                    let offset = match ring.push(device, bytemuck::bytes_of(&model_uniforms)) {
-                        Ok(off) => off,
-                        Err(_) => continue,
-                    };
-                    (*ring.current_bind_group(), offset)
-                } else {
-                    continue;
-                };
-
-                let command = khora_core::renderer::api::command::DrawCommand {
-                    pipeline: pipeline_id,
-                    vertex_buffer: gpu_mesh_handle.vertex_buffer,
-                    index_buffer: gpu_mesh_handle.index_buffer,
-                    index_count: gpu_mesh_handle.index_count,
-                    index_format: gpu_mesh_handle.index_format,
-                    model_bind_group: Some(model_bg),
-                    model_offset,
-                    material_bind_group: Some(gpu_material.bind_group),
-                    material_offset: 0,
-                };
-                if gpu_material.blend {
-                    transparent_draws.push((
-                        crate::render_lane::camera_distance_sq(&model_mat, view.position),
-                        command,
-                    ));
-                } else {
-                    draw_commands.push(command);
-                }
-            }
-        }
-
-        // Batch by pipeline (variant): one `set_pipeline` per variant.
-        draw_commands.sort_by_key(|cmd| cmd.pipeline.0);
-        // Transparent draws sort farthest-first instead: correct compositing
-        // outranks pipeline batching.
-        transparent_draws
-            .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-
-        // 6. Render Pass
-        let color_attachment = RenderPassColorAttachment {
-            view: render_ctx.color_target,
-            resolve_target: None,
-            ops: Operations {
-                load: LoadOp::Clear(render_ctx.clear_color),
-                store: StoreOp::Store,
-            },
-            base_array_layer: 0,
-            base_mip_level: 0,
-        };
-
-        let render_pass_desc = RenderPassDescriptor {
-            label: Some("ForwardPlus Render Pass"),
-            color_attachments: &[color_attachment],
-            depth_stencil_attachment: render_ctx.depth_target.map(|depth_view| {
-                RenderPassDepthStencilAttachment {
-                    view: depth_view,
-                    depth_ops: Some(Operations {
-                        load: LoadOp::Clear(1.0),
-                        store: StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                    base_array_layer: 0,
-                }
-            }),
-        };
-
-        // Build the per-frame group-3 (lighting) bind group. It packs
-        // the lighting domain into one group per the canonical 4-group
-        // render convention: the light list (0), the shadow atlases
-        // (1/2/3, from the shared `khora::shadow::bindings` contract),
-        // the per-tile culling results (4/5/6) and the shadow
-        // view-projections (7). It mixes persistent light buffers with
-        // the per-frame shadow atlas views, so it cannot be cached.
-        //
-        // If no shadow strategy ran this frame, skip — wgpu requires
-        // every pipeline-declared group to be bound.
-        let Some(shadow_bindings) = shadow_bindings else {
-            log::warn!(
-                "ForwardPlusLane: ShadowGpuBindings not available (shadow agent inactive?), skipping render"
-            );
-            return;
-        };
-        let (
-            Some(lighting_layout),
-            Some(light_buffer),
-            Some(light_index_buffer),
-            Some(light_grid_buffer),
-            Some(tile_info_buffer),
-            Some(shadow_view_projs_buffer),
-        ) = (
-            resources.lighting_layout,
-            resources.light_buffer,
-            resources.light_index_buffer,
-            resources.light_grid_buffer,
-            resources.tile_info_buffer,
-            resources.shadow_view_projs_buffer,
-        )
+        // The group-3 bind group: the light list (0), the shadow atlases
+        // (1/2/3), the tile lists (4/5/6), the shadow matrices (7) and the
+        // environment (8..12) — the shadows family's and the bake's, or the
+        // lane's own neutral ones.
+        let shadows = inputs
+            .shadows
+            .and_then(|frame| frame.bindings)
+            .unwrap_or(self.neutral.shadows);
+        let ibl = inputs.ibl.bindings().unwrap_or(self.neutral.ibl);
+        let layout = resources
+            .lighting_layout
+            .ok_or_else(|| not_built("the lighting layout"))?;
+        let (Some(light_index_buffer), Some(light_grid_buffer)) =
+            (resources.light_index_buffer, resources.light_grid_buffer)
         else {
-            log::warn!("ForwardPlusLane: lighting GPU resources not initialized, skipping render");
-            return;
+            return Err(not_built("the light lists"));
         };
+        let lighting_bind_group = self
+            .lighting_group
+            .get((light_index_buffer, shadows, ibl), device, || {
+                let mut entries = vec![BindGroupEntry::buffer(g3::LIGHTS, light_buffer, 0, None)];
+                fill_shadow_bind_group_entries(&shadows, &mut entries);
+                entries.extend([
+                    BindGroupEntry::buffer(g3::LIGHT_INDICES, light_index_buffer, 0, None),
+                    BindGroupEntry::buffer(g3::LIGHT_GRID, light_grid_buffer, 0, None),
+                    BindGroupEntry::buffer(g3::TILE_INFO, tile_info_buffer, 0, None),
+                    BindGroupEntry::buffer(
+                        g3::SHADOW_VIEW_PROJS,
+                        shadow_view_projs_buffer,
+                        0,
+                        None,
+                    ),
+                ]);
+                fill_ibl_bind_group_entries(&ibl, IBL_BASE, &mut entries);
+                device.create_bind_group(&BindGroupDescriptor {
+                    label: Some("Forward+ Lighting Bind Group"),
+                    layout,
+                    entries: &entries,
+                })
+            })
+            .map_err(RenderError::ResourceError)?;
 
-        use khora_core::renderer::api::command::{BindGroupDescriptor, BindGroupEntry};
-        let mut lighting_entries: Vec<BindGroupEntry> = Vec::with_capacity(8);
-        lighting_entries.push(BindGroupEntry::buffer(g3::LIGHTS, light_buffer, 0, None));
-        // Bindings 1/2/3 — shadow atlas 2D + sampler + cube atlas.
-        khora_core::renderer::api::shadow::bindings::fill_shadow_bind_group_entries(
-            &shadow_bindings,
-            &mut lighting_entries,
-        );
-        lighting_entries.push(BindGroupEntry::buffer(
-            g3::LIGHT_INDICES,
-            light_index_buffer,
-            0,
-            None,
-        ));
-        lighting_entries.push(BindGroupEntry::buffer(
-            g3::LIGHT_GRID,
-            light_grid_buffer,
-            0,
-            None,
-        ));
-        lighting_entries.push(BindGroupEntry::buffer(
-            g3::TILE_INFO,
-            tile_info_buffer,
-            0,
-            None,
-        ));
-        lighting_entries.push(BindGroupEntry::buffer(
-            g3::SHADOW_VIEW_PROJS,
-            shadow_view_projs_buffer,
-            0,
-            None,
-        ));
-        // Bindings 8..12 — image-based lighting (Forward+ packs its culling
-        // buffers at 4..8, so IBL follows at 8).
-        let Some(ibl) = ibl_bindings else {
-            log::warn!("ForwardPlusLane: IBL bindings not available, skipping render");
-            return;
-        };
-        khora_core::renderer::api::ibl::fill_ibl_bind_group_entries(&ibl, 8, &mut lighting_entries);
-        let lighting_bg = match device.create_bind_group(&BindGroupDescriptor {
-            label: Some("forward_plus_lighting_bind_group"),
-            layout: lighting_layout,
-            entries: &lighting_entries,
-        }) {
-            Ok(bg) => bg,
-            Err(e) => {
-                log::error!(
-                    "ForwardPlusLane: failed to create lighting bind group: {:?}",
-                    e
-                );
-                return;
+        let model_ring = resources
+            .model_ring
+            .as_mut()
+            .ok_or_else(|| not_built("the model ring"))?;
+        model_ring.advance();
+        let lent = out.scene.pipelines();
+        let plain = resources.render_pipeline;
+        let mut opaque = Vec::with_capacity(inputs.render_world.meshes.len());
+        let mut blended: Vec<(f32, DrawCommand)> = Vec::new();
+        for mesh in &inputs.render_world.meshes {
+            let Some(gpu_mesh) = gpu_meshes.get(&mesh.cpu_mesh_uuid) else {
+                continue;
+            };
+            // The material projection tags every rendered entity with a
+            // `GpuMaterial` before the render flow runs.
+            let Some(material) = &mesh.gpu_material else {
+                continue;
+            };
+            let surface = Surface {
+                variant: material.variant.clone(),
+                double_sided: material.double_sided,
+                mirrored: mesh.mirrored,
+                blend: material.blend,
+            };
+            let pipeline = match self
+                .pipelines
+                .get(&surface, device, lent, render_pipeline_spec)
+            {
+                Ok(Some(pipeline)) => pipeline,
+                Ok(None) => match plain {
+                    Some(pipeline) => pipeline,
+                    None => continue,
+                },
+                Err(error) => {
+                    log::error!("Forward+: no pipeline for {surface:?}: {error:?}");
+                    continue;
+                }
+            };
+            let model = mesh.transform.to_matrix();
+            // A degenerate transform has no normal matrix: nothing to draw.
+            let Some(inverse) = model.inverse() else {
+                continue;
+            };
+            let model_uniforms = ModelUniforms {
+                model_matrix: model.to_cols_array_2d(),
+                normal_matrix: inverse.transpose().to_cols_array_2d(),
+            };
+            let model_offset = model_ring
+                .push(device, bytemuck::bytes_of(&model_uniforms))
+                .map_err(RenderError::ResourceError)?;
+            let draw = DrawCommand {
+                pipeline,
+                vertex_buffer: gpu_mesh.vertex_buffer,
+                index_buffer: gpu_mesh.index_buffer,
+                index_format: gpu_mesh.index_format,
+                index_count: gpu_mesh.index_count,
+                model_bind_group: Some(*model_ring.current_bind_group()),
+                model_offset,
+                material_bind_group: Some(material.bind_group),
+                material_offset: 0,
+            };
+            if material.blend {
+                blended.push((camera_distance_sq(&model, view.position), draw));
+            } else {
+                opaque.push(draw);
             }
-        };
+        }
+        // One `set_pipeline` per variant across the pass; blending is
+        // order-dependent, so the blended draws go farthest first instead.
+        opaque.sort_by_key(|draw| draw.pipeline.0);
+        blended.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
         {
-            let mut render_pass = encoder.begin_render_pass(&render_pass_desc);
-            render_pass.set_bind_group(0, &camera_bind_group, &[]);
-            render_pass.set_bind_group(3, &lighting_bg, &[]);
-            crate::render_lane::record_draws(render_pass.as_mut(), draw_commands.iter());
+            let color = [scene_color(&target, LoadOp::Clear(clear))];
+            let descriptor = RenderPassDescriptor {
+                label: Some("ForwardPlus Render Pass"),
+                color_attachments: &color,
+                depth_stencil_attachment: Some(scene_depth(&target, LoadOp::Clear(1.0))),
+            };
+            let encoder = out.scene.encoder();
+            let mut pass = encoder.begin_render_pass(&descriptor);
+            pass.set_bind_group(0, &camera_bind_group, &[]);
+            pass.set_bind_group(3, &lighting_bind_group, &[]);
+            record_draws(pass.as_mut(), opaque.iter());
         }
-
-        // The blended half goes into its own command buffer, so the engine can
-        // fold the skybox pass between the two. Keeping it here would have the
-        // sky repaint the glass: a blended surface writes no depth, and the sky
-        // paints exactly the pixels left at the far plane.
-        crate::render_lane::record_transparent_pass(
-            transparent_encoder,
-            &transparent_draws,
-            render_ctx,
+        record_transparent_pass(
+            out.transparent.encoder(),
+            &blended,
+            &target,
             &camera_bind_group,
-            &lighting_bg,
+            &lighting_bind_group,
         );
-
-        let _ = device.destroy_bind_group(lighting_bg);
+        Ok(())
     }
 }

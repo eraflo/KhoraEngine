@@ -60,8 +60,8 @@ mod layer;
 mod quotes;
 mod wake;
 
-use choice::time_of;
 pub use choice::{choose, Choice};
+use choice::{impact_of, time_of};
 use quotes::FullQuote;
 pub use quotes::{QUOTE_DRIFT, QUOTE_MAX_AGE};
 
@@ -361,7 +361,7 @@ impl Agent for LaneAgent {
                 OfferRow {
                     id: row.id,
                     cost,
-                    quality: level.impact.quality(),
+                    quality: impact_of(quote.as_ref(), level).quality(),
                     confidence,
                 }
             })

@@ -141,25 +141,6 @@ fn the_shadows_family_boots_with_the_asset_store() {
     assert_eq!(ids, vec![AgentId::new("shadows")]);
 }
 
-/// **The renderer waits on the shadows agent, by its name.** The lit lanes
-/// read the shadow frame, so the scene renderer declares a hard dependency on
-/// the agent that draws it: the target is the very name the shadows family
-/// registers, or the scheduler would wait on an agent that never runs.
-#[test]
-fn the_renderer_waits_on_the_shadows_agent() {
-    let shadows = shadows_registration().agent;
-    let timing = khora_agents::render_agent::RenderAgent::default().execution_timing();
-
-    assert!(
-        timing.dependencies.iter().any(|dependency| {
-            dependency.target == shadows
-                && matches!(dependency.kind, khora_core::agent::DependencyKind::Hard)
-        }),
-        "the renderer depends hard on `{shadows}`: {:?}",
-        timing.dependencies
-    );
-}
-
 /// Boot refuses the shadows family on a runtime without the asset store,
 /// naming the family and the resource: the lane could never draw a mesh.
 #[test]

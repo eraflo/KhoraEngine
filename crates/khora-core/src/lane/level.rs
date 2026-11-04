@@ -17,11 +17,13 @@
 //! A lane offers its levels to GORNA as menu rows. Each row is named by a
 //! [`StrategyId`], unique within its family.
 
+use serde::{Deserialize, Serialize};
+
 use super::cost::PerDevice;
 use crate::agent::gorna::StrategyId;
 
 /// How much a level changes what the family's readers see.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Impact {
     /// The reference result.
     None,

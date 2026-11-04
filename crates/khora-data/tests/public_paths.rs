@@ -1936,7 +1936,6 @@ fn module_render_paths_still_resolve() {
     let _ = type_name::<khora_data::render::SkyboxPassSlot>();
     let _ = skybox_pass_slot_fields as fn(&khora_data::render::SkyboxPassSlot);
     is_default::<khora_data::render::SkyboxPassSlot>();
-    let _ = type_name::<khora_data::render::TransparentEncoder>();
     let _ = type_name::<khora_data::render::TransparentPassSlot>();
     let _ = transparent_pass_slot_fields as fn(&khora_data::render::TransparentPassSlot);
     is_default::<khora_data::render::TransparentPassSlot>();
@@ -2700,7 +2699,6 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ = type_name::<khora_data::render::GridView>(); // khora-agents, khora-editor (as khora_sdk::khora_data::…), khora-lanes, khora-sdk
     let _ = type_name::<khora_data::render::WireframeView>(); // khora-agents, khora-editor (as khora_sdk::khora_data::…), khora-lanes, khora-sdk
     let _ = type_name::<khora_data::render::SkyboxPassSlot>(); // khora-agents, khora-sdk
-    let _ = type_name::<khora_data::render::TransparentEncoder>(); // khora-agents, khora-lanes
     let _ = type_name::<khora_data::render::TransparentPassSlot>(); // khora-agents, khora-sdk
     let _ = type_name::<khora_data::render::UiPassSlot>(); // khora-agents, khora-sdk
     let _ = type_name::<khora_data::render::WireframeConfig>(); // khora-lanes

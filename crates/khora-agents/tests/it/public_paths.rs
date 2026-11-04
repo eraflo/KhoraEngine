@@ -34,12 +34,7 @@
 use std::any::type_name;
 
 fn is_agent<T: khora_core::agent::Agent>() {}
-fn is_clone<T: Clone>() {}
-fn is_copy<T: Copy>() {}
-fn is_debug<T: std::fmt::Debug>() {}
 fn is_default<T: Default>() {}
-fn is_eq<T: Eq>() {}
-fn is_partial_eq<T: PartialEq>() {}
 
 // ---------------------------------------------------------------------------
 // Every `pub mod`, down to the leaves.
@@ -54,34 +49,11 @@ mod every_pub_mod {
     use khora_agents::ui_agent as _;
 }
 
-// ---------------------------------------------------------------------------
-// Public fields (read through a reference) and enum variants (matched
-// exhaustively). Nothing is constructed.
-// ---------------------------------------------------------------------------
-
-fn rendering_strategy_variants(x: &khora_agents::render_agent::RenderingStrategy) {
-    match x {
-        khora_agents::render_agent::RenderingStrategy::Unlit => {}
-        khora_agents::render_agent::RenderingStrategy::LitForward => {}
-        khora_agents::render_agent::RenderingStrategy::StandardPbr => {}
-        khora_agents::render_agent::RenderingStrategy::ForwardPlus => {}
-        khora_agents::render_agent::RenderingStrategy::Auto => {}
-    }
-}
-
+/// The render agent is the render family's `LaneAgent`: its module keeps
+/// only the name the skybox and the overlays wait on.
 #[test]
 fn module_render_agent_paths_still_resolve() {
-    let _ = type_name::<khora_agents::render_agent::RenderAgent>();
-    is_agent::<khora_agents::render_agent::RenderAgent>();
-    is_default::<khora_agents::render_agent::RenderAgent>();
-    let _ = type_name::<khora_agents::render_agent::RenderingStrategy>();
-    let _ = rendering_strategy_variants as fn(&khora_agents::render_agent::RenderingStrategy);
-    is_debug::<khora_agents::render_agent::RenderingStrategy>();
-    is_clone::<khora_agents::render_agent::RenderingStrategy>();
-    is_copy::<khora_agents::render_agent::RenderingStrategy>();
-    is_partial_eq::<khora_agents::render_agent::RenderingStrategy>();
-    is_eq::<khora_agents::render_agent::RenderingStrategy>();
-    is_default::<khora_agents::render_agent::RenderingStrategy>();
+    let _: khora_core::agent::gorna::AgentId = khora_agents::render_agent::RENDERER;
 }
 
 #[test]
@@ -100,6 +72,6 @@ fn module_script_agent_paths_still_resolve() {
 
 #[test]
 fn associated_items_used_by_other_crates_still_resolve() {
-    let _ = khora_agents::render_agent::RenderAgent::default; // khora-sdk
+    let _ = khora_agents::render_agent::RENDERER; // khora-sdk
     let _ = khora_agents::script_agent::ScriptAgent::default; // khora-sdk
 }

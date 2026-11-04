@@ -12,22 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Acts as the **[A]gent** for the rendering subsystem, fulfilling the role of an ISA.
+//! The render family's agent: its registration, and nothing else.
 //!
-//! This module provides the high-level, tactical logic for rendering scenes. It
-//! determines *which* rendering strategy to use and in what order, but delegates
-//! the actual GPU command generation to the various `render_lanes`.
-//!
-//! As an **Intelligent Subsystem Agent (ISA)**, its responsibilities will include:
-//! - Analyzing the scene's complexity (e.g., light count, geometry density) and
-//!   reporting performance metrics (GPU time, VRAM usage) to the DCC.
-//! - Managing a portfolio of rendering strategies, such as `SimpleUnlitLane`,
-//!   `ForwardPlusLane`, or a future `DeferredLane`.
-//! - Selecting the optimal rendering strategy based on the budget allocated by GORNA
-//!   and the current performance goals (e.g., prioritizing framerate vs. visual quality).
+//! The engine boots one [`LaneAgent`](crate::agent::LaneAgent) from it,
+//! offering three ways to draw the scene to GORNA: the unlit lane, the forward
+//! lane and Forward+ (on a device with storage buffers and compute). Each
+//! frame the agent hands the chosen lane the bus's `RenderWorld`, the frame's
+//! target and clear colour, the shadows family's frame and the IBL bake, opens
+//! the scene and transparent passes on the device, and commits them closed.
 
 mod agent;
-mod strategy;
 
 pub use agent::*;
-pub use strategy::*;

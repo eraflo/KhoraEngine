@@ -120,6 +120,7 @@ fn an_unsupported_behaviour_leaves_the_agent_menu() {
         &STORAGE_OR_PLAIN,
         &DeviceCaps {
             storage_buffers: true,
+            ..DeviceCaps::default()
         },
     );
     let ids = offered(&mut with_storage);

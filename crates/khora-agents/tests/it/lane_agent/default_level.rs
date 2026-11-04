@@ -129,6 +129,7 @@ fn a_default_level_only_an_unsupported_lane_offers_is_refused_at_boot() {
         &runtime,
         &DeviceCaps {
             storage_buffers: true,
+            ..DeviceCaps::default()
         },
     );
     match with_storage {

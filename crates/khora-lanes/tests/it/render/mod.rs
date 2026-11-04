@@ -12,14 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Shutting the Forward+ lane down gives back every GPU object it created.
+//! The render family's three lanes — `SimpleUnlitLane`, `LitForwardLane`,
+//! `ForwardPlusLane` — run on the typed contract: fetched from an
+//! `InputSource` holding the frame's target and clear colour and the shadow
+//! frame on the deck, their two passes committed through an `OutputSink`
+//! whose passes open on a ledger device and lend its pipeline system.
 
-use super::*;
-
-/// The Forward+ lane owns its rings, its light, index, grid, culling-uniform,
-/// shadow and tile-info buffers and its culling bind group; the layouts and
-/// pipelines belong to the `PipelineSystem`.
-#[test]
-fn forward_plus_shutdown_destroys_every_buffer_it_created() {
-    crate::tests::assert_shutdown_destroys_what_it_created(&ForwardPlusLane::new());
-}
+mod bindings;
+mod cost;
+mod failures;
+mod fixtures;
+mod forward_plus;
+mod forward_plus_group_3;
+mod levels;
+mod lifecycle;
+mod light_buffer_capacity;
+mod passes;
+mod pipelines;

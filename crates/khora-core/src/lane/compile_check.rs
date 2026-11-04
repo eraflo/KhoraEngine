@@ -31,8 +31,8 @@ use super::contract::Lane;
 use super::family::LaneFamily;
 use super::guard::{InputRefusal, OutputRefusal, Reason, SinkKind, SourceKind};
 use super::io::{
-    Budget, Declaration, FixedStep, InputSource, Locked, OutputSink, Pass, PassSlot, Target,
-    TargetKey,
+    Budget, Declaration, FixedStep, InputSource, Locked, OutputSink, Pass, PassSlot, SceneTarget,
+    Target, TargetKey,
 };
 use super::LaneError;
 use crate::residency::{Residency, Resident};
@@ -208,6 +208,18 @@ impl FrameField for Target {
         Some(self.key)
     }
 }
+/// Read as the frame's [`Target`]: the same source, refused without depth.
+impl FrameField for SceneTarget {
+    fn declare(d: &mut Declaration, field: &'static str) {
+        d.read::<Target>(field, SourceKind::Frame);
+    }
+    fn fetch(src: &mut InputSource<'_>, field: &'static str) -> Result<Self, InputRefusal> {
+        src.scene_target(field)
+    }
+    fn target_key(&self) -> Option<TargetKey> {
+        Some(self.key)
+    }
+}
 impl FrameField for FixedStep {
     fn declare(d: &mut Declaration, field: &'static str) {
         d.read::<FixedStep>(field, SourceKind::Frame);
@@ -253,7 +265,7 @@ impl<'f, P: PassSlot> PassField<'f> for Pass<'f, P> {
             kind: "pass encoder",
             key: format!("`{field}` ({}): no device lent", std::any::type_name::<P>()),
         })?;
-        Ok(Pass::open(device))
+        Ok(Pass::open(device).lending(sink.pipelines()))
     }
     fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal> {
         let closed = self.close().ok_or(OutputRefusal {
