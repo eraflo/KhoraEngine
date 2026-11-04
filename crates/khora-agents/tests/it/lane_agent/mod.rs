@@ -15,7 +15,9 @@
 //! `LaneAgent`, the one agent behaviour, and the registrations it is built
 //! from.
 
+mod cheaper_lane_runs;
 mod choice;
+mod choice_across_lanes;
 mod default_level;
 mod envelope;
 mod execution;
@@ -26,6 +28,7 @@ mod impact_change;
 mod layers;
 mod layers_reinstated;
 mod layers_scheduled;
+mod lever_across_lanes;
 mod menu;
 mod offer;
 mod offer_during_a_swap;

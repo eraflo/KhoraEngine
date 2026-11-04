@@ -38,7 +38,7 @@ use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::Reason;
 use khora_core::lane::io::TargetKey;
-use khora_core::lane::level::Level;
+use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{LaneError, LaneKind, OutputDeck};
 use khora_core::Runtime;
 
@@ -96,7 +96,13 @@ const fn holding(id: StrategyId, name: &'static str) -> Level {
     }
 }
 
-const CHEAP_LEVELS: &[Level] = &[holding(StrategyId::LowPower, "cheap")];
+/// The cheap lane draws a worse result than the dear one, so the agent moves
+/// to the dear lane whenever its price fits — of two lanes of one impact it
+/// would keep the cheaper.
+const CHEAP_LEVELS: &[Level] = &[Level {
+    impact: Impact::Minor,
+    ..holding(StrategyId::LowPower, "cheap")
+}];
 const DEAR_LEVELS: &[Level] = &[holding(StrategyId::HighPerformance, "dear")];
 
 /// `micros` on the host, holding [`HOLDS`] bytes of graphics memory.
@@ -174,7 +180,8 @@ macro_rules! swap_lane {
 swap_lane!(CheapLane, "cheap", CHEAP_LEVELS, 100);
 swap_lane!(DearLane, "dear", DEAR_LEVELS, 200);
 
-/// A cheap lane of 100 µs, the default, and a dear one of 200 µs.
+/// A cheap lane of 100 µs and a `Minor` impact, the default, and a dear one of
+/// 200 µs and no impact.
 static SWAPPING: AgentRegistration = khora_core::register_agent! {
     family: SwapFamily,
     phase: ExecutionPhase::OUTPUT,
@@ -480,10 +487,15 @@ fn a_refused_input_wakes_the_agent_with_its_reason() {
 /// How long the slow lane takes to prepare.
 const SLOW_PREPARE: Duration = Duration::from_millis(5);
 
-const QUICK_LEVELS: &[Level] = &[level(StrategyId::LowPower, "quick")];
+/// The quick lane draws a worse result than the slow one, so the agent
+/// moves to the slow lane when its price fits.
+const QUICK_LEVELS: &[Level] = &[Level {
+    impact: Impact::Minor,
+    ..level(StrategyId::LowPower, "quick")
+}];
 const SLOW_LEVELS: &[Level] = &[level(StrategyId::HighPerformance, "slow")];
 
-/// Prepares at once; costs 100 µs.
+/// Prepares at once; costs 100 µs, at a `Minor` impact.
 #[derive(Default)]
 pub struct QuickLane;
 
@@ -517,7 +529,7 @@ impl Lane for QuickLane {
     }
 }
 
-/// Takes [`SLOW_PREPARE`] to prepare; costs 200 µs.
+/// Takes [`SLOW_PREPARE`] to prepare; costs 200 µs, at no impact.
 #[derive(Default)]
 pub struct SlowLane;
 

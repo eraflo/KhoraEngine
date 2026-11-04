@@ -12,11 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The choice, as the pure function of the envelope, the quotes, the menu, a
-//! pin and an allowed list: among the rows whose quote fits the envelope on
-//! every device, the least impact, then the dearest; the floor and
+//! The choice, as the pure function of the envelope, the quotes, the menu,
+//! the lane of each row, a pin and an allowed list: among the rows whose quote
+//! fits the envelope on every device, the least impact, then the dearest
+//! level of each lane, then the cheapest of those lanes; the floor and
 //! `over_budget` when none fits; the default level when nothing is priced. A
 //! pin overrides it; an allowed list filters the rows.
+//!
+//! The menus here are one lane's levels, so the choice between lanes plays no
+//! part; `choice_across_lanes` covers it.
 
 use std::time::Duration;
 
@@ -54,9 +58,15 @@ fn host(micros: u64) -> Option<Cost> {
     })
 }
 
-/// The row [`choose`] picks with no pin and every row allowed.
+/// The row [`choose`] picks with no pin and every row allowed, `menu` being
+/// the levels of one lane.
 fn chosen(envelope: &Envelope, quotes: &[Option<Cost>], menu: &[Level], default: usize) -> Choice {
-    choose(envelope, quotes, menu, default, None, None)
+    choose(envelope, quotes, menu, &one_lane(menu), default, None, None)
+}
+
+/// The lane of every row of `menu`, when its rows are the levels of one lane.
+fn one_lane(menu: &[Level]) -> Vec<usize> {
+    vec![0; menu.len()]
 }
 
 /// A choice of `row` within the envelope.
@@ -67,7 +77,7 @@ fn within(row: usize) -> Choice {
     }
 }
 
-/// Six rows, in no order of cost or impact: a Major one, a Minor one, three
+/// Six levels of one lane, in no order of cost or impact: a Major one, a Minor one, three
 /// without impact — two cheap, one dear — and one without impact never
 /// priced.
 const MENU: &[Level] = &[
@@ -78,6 +88,9 @@ const MENU: &[Level] = &[
     row(StrategyId::HighPerformance, Impact::None),
     row(StrategyId::Custom(3), Impact::None),
 ];
+
+/// [`MENU`]'s lanes: its rows are one lane's levels.
+const MENU_LANES: &[usize] = &[0; 6];
 
 /// [`MENU`]'s quotes: 100, 300, 150, 200 and 900 µs, the last row unpriced.
 fn menu_quotes() -> Vec<Option<Cost>> {
@@ -248,6 +261,7 @@ fn a_pin_overrides_the_choice_and_allowed_rows_filter_it() {
         &envelope,
         &quotes,
         MENU,
+        MENU_LANES,
         0,
         Some(StrategyId::HighPerformance),
         None,
@@ -258,6 +272,7 @@ fn a_pin_overrides_the_choice_and_allowed_rows_filter_it() {
         &envelope,
         &[None, None, None, None, None, None],
         MENU,
+        MENU_LANES,
         0,
         Some(StrategyId::Balanced),
         None,
@@ -266,7 +281,15 @@ fn a_pin_overrides_the_choice_and_allowed_rows_filter_it() {
 
     let allowed = [StrategyId::LowPower, StrategyId::Custom(1)];
     assert_eq!(
-        choose(&envelope, &quotes, MENU, 0, None, Some(&allowed)),
+        choose(
+            &envelope,
+            &quotes,
+            MENU,
+            MENU_LANES,
+            0,
+            None,
+            Some(&allowed)
+        ),
         within(2),
         "the best allowed row"
     );
@@ -281,6 +304,7 @@ fn a_pin_naming_no_row_is_ignored() {
             &host_envelope(400),
             &menu_quotes(),
             MENU,
+            MENU_LANES,
             0,
             Some(StrategyId::Custom(42)),
             None,
@@ -301,6 +325,7 @@ fn when_no_allowed_row_fits_the_floor_is_the_cheapest_allowed_row() {
             &host_envelope(120),
             &menu_quotes(),
             MENU,
+            MENU_LANES,
             0,
             None,
             Some(&allowed)
@@ -324,6 +349,7 @@ fn when_no_allowed_row_is_priced_the_row_that_runs_is_still_allowed() {
         &host_envelope(400),
         &menu_quotes(),
         MENU,
+        MENU_LANES,
         0,
         None,
         Some(&allowed),

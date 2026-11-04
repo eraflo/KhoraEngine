@@ -15,12 +15,13 @@
 //! A quote that names its own impact is ranked by it: a lane that cannot
 //! honour its level on a frame (a forward lane past its light caps) is chosen
 //! as the worse result it would draw, and offered at that quality. A quote
-//! that names none takes its level's. The rule itself does not change: among
-//! the rows that fit, the least impact, then the dearest.
+//! that names none takes its level's. The rule is the same with or without
+//! a named impact: among the rows that fit, the least impact, then the
+//! dearest level of each lane, then the cheapest of those lanes.
 //!
-//! The menus mirror the render family's: an unlit `LowPower` row of a major
-//! impact, a forward `Balanced` row and a Forward+ `HighPerformance` row,
-//! both the reference image.
+//! The menus mirror the render family's: three one-level lanes, an unlit
+//! `LowPower` row of a major impact, a forward `Balanced` row and a Forward+
+//! `HighPerformance` row, both the reference image.
 
 use std::time::Duration;
 
@@ -60,6 +61,9 @@ const MENU: &[Level] = &[
     row(StrategyId::HighPerformance, Impact::None),
 ];
 
+/// [`MENU`]'s lanes: one level each.
+const MENU_LANES: &[usize] = &[0, 1, 2];
+
 /// A host-only quote of `micros`, naming `impact`.
 fn quote(micros: u64, impact: Option<Impact>) -> Option<Cost> {
     Some(Cost {
@@ -75,7 +79,15 @@ fn quote(micros: u64, impact: Option<Impact>) -> Option<Cost> {
 /// The row [`choose`] picks within `micros` µs, with no pin and every row
 /// allowed, starting on the forward row.
 fn chosen_within(micros: u64, quotes: &[Option<Cost>]) -> Choice {
-    choose(&host_envelope(micros), quotes, MENU, 1, None, None)
+    choose(
+        &host_envelope(micros),
+        quotes,
+        MENU,
+        MENU_LANES,
+        1,
+        None,
+        None,
+    )
 }
 
 /// A choice of `row` within the envelope.
@@ -89,15 +101,15 @@ fn within(row: usize) -> Choice {
 // ─── The choice ─────────────────────────────────────────────────────────────
 
 /// **A quote past its caps is chosen as the worse result it draws.** All
-/// three rows fit 1 ms. The forward row is the dearest, at 900 µs, but past
-/// its light caps its quote says `Minor`: Forward+, at 600 µs and no impact,
-/// is chosen — the menu's equal impacts would have kept the dearer forward
-/// row.
+/// three rows fit 1 ms. The forward row is the cheaper of the two lanes the
+/// menu says draw the reference image, at 300 µs, but past its light caps its
+/// quote says `Minor`: Forward+, at 600 µs and no impact, is chosen — the
+/// menu's equal impacts would have kept the cheaper forward lane.
 #[test]
 fn a_quote_past_its_caps_loses_to_a_row_without_impact() {
     let quotes = [
         quote(100, None),
-        quote(900, Some(Impact::Minor)),
+        quote(300, Some(Impact::Minor)),
         quote(600, None),
     ];
 
@@ -124,39 +136,41 @@ fn a_quote_past_its_caps_still_beats_a_major_row() {
 
 /// **A quote naming its level's own impact is ranked as one naming none.**
 /// The forward row quotes `Some(None)` within its caps: it ties with
-/// Forward+ on impact, and the dearer of the two is taken.
+/// Forward+ on impact, and the cheaper of the two lanes, the forward one at
+/// 300 µs, is taken.
 #[test]
 fn a_quote_naming_no_impact_explicitly_ranks_as_its_level() {
     let quotes = [
         quote(100, None),
-        quote(900, Some(Impact::None)),
+        quote(300, Some(Impact::None)),
         quote(600, None),
     ];
 
     assert_eq!(chosen_within(1_000, &quotes), within(1));
 }
 
-/// **Within its caps the forward row loses to a dearer Forward+.** Both draw
-/// the reference image and both fit, so the rule — least impact, then the
-/// dearest — takes Forward+ at 600 µs over the forward row at 300 µs. The
-/// forward row runs when Forward+ does not fit.
-///
-/// This pins the rule as the plan states it ("unchanged: least impact, then
-/// dearest"): a cheaper forward lane within its caps does **not** win on
-/// price.
+/// **Within its caps the forward row beats a dearer Forward+.** Both lanes
+/// draw the reference image and both fit, so the cheaper lane — the forward
+/// row at 300 µs — is taken over Forward+ at 600 µs: the same image for less.
+/// When only the unlit row fits, it runs.
 #[test]
-fn within_its_caps_the_forward_row_loses_to_a_dearer_forward_plus() {
+fn within_its_caps_the_forward_row_beats_a_dearer_forward_plus() {
     let quotes = [quote(100, None), quote(300, None), quote(600, None)];
 
     assert_eq!(
         chosen_within(1_000, &quotes),
-        within(2),
-        "equal impact: the dearest"
+        within(1),
+        "equal impact, two lanes: the cheaper"
     );
     assert_eq!(
         chosen_within(400, &quotes),
         within(1),
         "Forward+ does not fit: the forward row"
+    );
+    assert_eq!(
+        chosen_within(250, &quotes),
+        within(0),
+        "only the unlit row fits"
     );
 }
 
@@ -215,7 +229,8 @@ impl Lane for CappedLane {
     }
 }
 
-/// A Forward+ lane: half the load in µs, and never an impact.
+/// A Forward+ lane: twice the load in µs (its tiles cost more than the
+/// forward lane's few lights), and never an impact.
 #[derive(Default)]
 pub struct TiledLane;
 
@@ -230,7 +245,7 @@ impl Lane for TiledLane {
     fn cost(&self, _level: usize, inputs: &LoadOnly<'_>) -> Cost {
         Cost {
             time: PerDevice {
-                cpu: Duration::from_micros(u64::from(inputs.load.0) / 2),
+                cpu: Duration::from_micros(u64::from(inputs.load.0) * 2),
                 ..PerDevice::default()
             },
             ..Cost::default()
@@ -329,11 +344,11 @@ fn lane_running_after(frames: u64, load: u32) -> &'static str {
 }
 
 /// **The agent leaves a lane past its caps for one that keeps the image.**
-/// On a load past the cap, the capped lane is the dearer (100 µs against
-/// 50 µs) and both fit 1 ms; the menu says both draw the reference image, but
+/// On a load past the cap, the capped lane is the cheaper (100 µs against
+/// 200 µs) and both fit 1 ms; the menu says both draw the reference image, but
 /// the capped lane's quote says `Minor`. Once both are quoted the agent runs
-/// the tiled lane. Within the cap the capped lane, the dearer of two equal
-/// results, keeps running.
+/// the tiled lane. Within the cap (50 µs against 100 µs) the capped lane, the
+/// cheaper of two lanes drawing the same image, keeps running.
 #[test]
 fn the_agent_leaves_a_lane_past_its_caps_for_one_that_keeps_the_image() {
     assert_eq!(
@@ -344,6 +359,6 @@ fn the_agent_leaves_a_lane_past_its_caps_for_one_that_keeps_the_image() {
     assert_eq!(
         lane_running_after(4, CAP),
         "capped",
-        "within the cap: the dearer of two equal results"
+        "within the cap: the cheaper of two equal results"
     );
 }

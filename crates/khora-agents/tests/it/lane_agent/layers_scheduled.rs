@@ -31,7 +31,7 @@ use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::TargetKey;
-use khora_core::lane::level::Level;
+use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{LaneError, LaneKind};
 use khora_core::Runtime;
 use khora_data::ecs::World;
@@ -56,7 +56,13 @@ static LOW_PREPARES: AtomicUsize = AtomicUsize::new(0);
 /// See [`TICK_PREPARES`].
 static HIGH_PREPARES: AtomicUsize = AtomicUsize::new(0);
 
-const LOW_LEVELS: &[Level] = &[level(StrategyId::LowPower, "low")];
+/// The low lane draws a worse result than the high one, so the agent moves
+/// to the high lane whenever its price fits — of two lanes of one impact it
+/// would keep the cheaper.
+const LOW_LEVELS: &[Level] = &[Level {
+    impact: Impact::Minor,
+    ..level(StrategyId::LowPower, "low")
+}];
 const HIGH_LEVELS: &[Level] = &[level(StrategyId::HighPerformance, "high")];
 const TICK_LEVELS: &[Level] = &[level(StrategyId::Balanced, "tick")];
 
@@ -137,7 +143,7 @@ static TICKING: AgentRegistration = khora_core::register_agent! {
     lanes: [TickLane],
 };
 
-/// A lane of 100 µs, then one of 200 µs.
+/// A lane of 100 µs and a `Minor` impact, then one of 200 µs and no impact.
 static LOW_OR_HIGH: AgentRegistration = khora_core::register_agent! {
     family: ScheduledFamily,
     phase: ExecutionPhase::OUTPUT,

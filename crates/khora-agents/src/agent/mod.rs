@@ -48,7 +48,7 @@ use khora_core::gpu::{DeviceCaps, GpuSetup};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::erased::AnyLane;
 use khora_core::lane::io::{Budget, FixedStep, InputSource, Target};
-use khora_core::lane::level::Level;
+use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::ClearColor;
 use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::traits::PipelineSystem;
@@ -61,7 +61,7 @@ mod quotes;
 mod wake;
 
 pub use choice::{choose, Choice};
-use choice::{impact_of, time_of};
+use choice::{dominated, impact_of, time_of};
 use quotes::FullQuote;
 pub use quotes::{QUOTE_DRIFT, QUOTE_MAX_AGE};
 
@@ -324,10 +324,13 @@ impl Agent for LaneAgent {
         }
     }
 
-    /// Every row at its quote: `Measured` for the row that ran it, `Quoted`
-    /// for the others, `Assumed` at its level's memory for a row not priced.
-    /// The floor is the cheapest priced row, the default level while none is;
-    /// the current row is the one running — installed, not merely staged.
+    /// Every row the agent can run, at its quote: `Measured` for the row that
+    /// ran it, `Quoted` for the others, `Assumed` at its level's memory for a
+    /// row not priced. A priced row another lane's row dominates is left out:
+    /// the agent never runs it while that row stands, so it is no step the
+    /// DCC can lend for. The floor is the cheapest priced row, the default
+    /// level while none is; the current row is the one running — installed,
+    /// not merely staged.
     fn offer(&mut self, request: &OfferRequest) -> Offer {
         let (ran, running) = {
             let place = Arc::clone(&self.place);
@@ -337,12 +340,38 @@ impl Agent for LaneAgent {
             self.absorb_last_run(&place);
             (self.ran(&place), self.running(&place))
         };
+        // The rows that can stand in for another: priced, not failed, allowed.
+        let allowed = self.lent.as_ref().and_then(|lent| lent.allowed.clone());
+        let standing: Vec<(usize, usize, Cost, Impact)> = self
+            .menu
+            .iter()
+            .zip(&self.quotes)
+            .zip(&self.levels)
+            .enumerate()
+            .filter(|(index, ((row, _), _))| {
+                !self.failed[*index]
+                    && allowed
+                        .as_ref()
+                        .is_none_or(|allowed| allowed.contains(&row.id))
+            })
+            .filter_map(|(index, ((row, quote), level))| {
+                quote.map(|cost| (index, row.lane, cost, impact_of(Some(&cost), level)))
+            })
+            .collect();
         let rows = self
             .menu
             .iter()
             .zip(&self.quotes)
             .zip(&self.levels)
             .enumerate()
+            .filter(|(index, ((row, quote), level))| {
+                quote.as_ref().is_none_or(|cost| {
+                    !dominated(
+                        (*index, row.lane, cost, impact_of(Some(cost), level)),
+                        &standing,
+                    )
+                })
+            })
             .map(|(index, ((row, quote), level))| {
                 let (cost, confidence) = match quote {
                     Some(cost) if Some(index) == ran => (*cost, Confidence::Measured),

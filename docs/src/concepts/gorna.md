@@ -115,8 +115,11 @@ for the row running, a *quote* for the others (the lane prices itself on the fra
 inputs without running). With its envelope it picks:
 
 1. among the rows whose price fits the envelope on every device, the one of least
-   impact — the most faithful — and, between equals, the dearest: more work done,
-   more voices, more lights;
+   impact — the most faithful. Between equals, within one lane, the dearest level:
+   more work done, more voices, more lights. Between two lanes, the cheapest: two
+   lanes of equal impact give the same result, so the cheaper way wins — the forward
+   renderer while the scene has few lights, Forward+ once it has more than the
+   forward pass shades;
 2. if none fits, its **floor**, and its report says it ran over budget — it never
    overruns in silence;
 3. before anything is priced, the default level its registration names.
@@ -315,9 +318,18 @@ an exact solver stays the fallback for small menus. The envelope sent is
 
 **The agent's choice** at frame *t*, from its fresh prices *ĉ*<sup>t</sup>:
 
-> *r*<sub>t</sub> = the row of least impact, then dearest, among those with
-> *ĉ*<sup>t</sup><sub>a,r</sub> ≤ *b*<sub>a</sub>; *r*<sub>t</sub> = *f*<sub>a</sub>,
-> flagged over budget, when there is none.
+> Let *F* be the rows with *ĉ*<sup>t</sup><sub>a,r</sub> ≤ *b*<sub>a</sub>, and
+> *F*<sup>∗</sup> those of least impact in *F*. For each lane *ℓ*, let *r*<sub>ℓ</sub>
+> be its dearest row in *F*<sup>∗</sup>. Then *r*<sub>t</sub> is the cheapest of the
+> *r*<sub>ℓ</sub> (the first on a tie); *r*<sub>t</sub> = *f*<sub>a</sub>, flagged
+> over budget, when *F* is empty.
+>
+> Within a lane, a dearer level of equal impact does more of the same work; across
+> lanes, equal impact means the same result, so the cheaper lane leaves more of the
+> envelope unspent. So the offer leaves out every row another lane's row
+> *dominates* — no worse impact, no dearer on any device — since the agent never
+> runs it while that row stands: the DCC sees only the steps an envelope can buy,
+> and a dearer lane of equal quality is never taken for a lever.
 
 **Propositions.**
 

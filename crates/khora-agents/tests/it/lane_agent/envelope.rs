@@ -46,8 +46,8 @@ use khora_core::Runtime;
 
 use super::fixtures::{
     budget, host_envelope, lend, level, locked, offer_request, place_of, recorded_level, request,
-    run, runtime, FirstLane, LadderLane, Load, LoadOnly, Plan, ProbeFamily, ProbeOutputs, Recorded,
-    Tally, TallyLock, ANY_MEMORY, LADDER,
+    run, runtime, LadderLane, Load, LoadOnly, Plan, ProbeFamily, ProbeOutputs, Recorded, Tally,
+    TallyLock, ANY_MEMORY, LADDER,
 };
 
 /// The ladder, starting on its dearest level.
@@ -259,6 +259,44 @@ fn micros(budget: Budget) -> u32 {
 
 const BUDGETED_LEVELS: &[Level] = &[level(StrategyId::Balanced, "budgeted")];
 const ECHO_LEVELS: &[Level] = &[level(StrategyId::HighPerformance, "echo")];
+/// The plain lane draws a worse result than the echo lane, so the echo
+/// lane's row, though dearer, is a row the agent would run: it is offered.
+const PLAIN_LEVELS: &[Level] = &[Level {
+    impact: Impact::Minor,
+    ..level(StrategyId::LowPower, "plain")
+}];
+
+/// One `LowPower` level of a `Minor` impact, free, reading the load; does
+/// not read a budget.
+#[derive(Default)]
+pub struct PlainLane;
+
+impl Lane for PlainLane {
+    type Family = ProbeFamily;
+    type Inputs<'f> = LoadOnly<'f>;
+
+    fn levels(&self) -> &[Level] {
+        PLAIN_LEVELS
+    }
+
+    fn cost(&self, _level: usize, _inputs: &LoadOnly<'_>) -> Cost {
+        Cost::default()
+    }
+
+    fn record(
+        &mut self,
+        level: usize,
+        inputs: &mut LoadOnly<'_>,
+        out: &mut ProbeOutputs,
+    ) -> Result<LaneReport, LaneError> {
+        out.recorded = Recorded {
+            lane: "plain",
+            level,
+            record: inputs.load.0,
+        };
+        Ok(LaneReport::default())
+    }
+}
 
 /// One level, costed by the load, recording the budget it was lent.
 #[derive(Default)]
@@ -340,7 +378,8 @@ static BUDGETED: AgentRegistration = khora_core::register_agent! {
 };
 
 /// A lane that does not read a budget, which runs, then one that quotes the
-/// budget it is lent, which is only quoted.
+/// budget it is lent, which is only quoted; the second draws the better
+/// result, so its dearer row is still offered.
 static PLAIN_THEN_ECHO: AgentRegistration = khora_core::register_agent! {
     family: ProbeFamily,
     phase: ExecutionPhase::OUTPUT,
@@ -348,7 +387,7 @@ static PLAIN_THEN_ECHO: AgentRegistration = khora_core::register_agent! {
     after: [],
     modes: [],
     fixed_step: None,
-    lanes: [FirstLane, EchoLane],
+    lanes: [PlainLane, EchoLane],
 };
 
 /// What `deck`'s last record says it was lent, in µs.
@@ -411,7 +450,7 @@ fn a_quote_is_lent_the_envelope_not_the_frame_time() {
     run(&mut agent, 1, &runtime(100, Plan::default()), &mut deck);
     assert_eq!(
         deck.get::<Recorded>().map(|recorded| recorded.lane),
-        Some("first"),
+        Some("plain"),
         "the plain lane ran, the only one allowed"
     );
 

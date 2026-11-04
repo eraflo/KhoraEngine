@@ -80,8 +80,9 @@ fn recorded(lane: &'static str, level: usize, out: &mut ProbeOutputs) -> LaneRep
     }
 }
 
-/// The forward lane's shape: it prices only what it shades, so its time is
-/// the same at the cap and past it; past it, its quote says `Minor`.
+/// The forward lane's shape: the cheaper lane, pricing only what it shades,
+/// so its time is the same at the cap and past it; past it, its quote says
+/// `Minor`.
 #[derive(Default)]
 pub struct CappedAtFlatTime;
 
@@ -94,7 +95,7 @@ impl Lane for CappedAtFlatTime {
     }
 
     fn cost(&self, _level: usize, inputs: &LoadOnly<'_>) -> Cost {
-        cost(100, (inputs.load.0 > CAP).then_some(Impact::Minor))
+        cost(50, (inputs.load.0 > CAP).then_some(Impact::Minor))
     }
 
     fn record(
@@ -107,7 +108,7 @@ impl Lane for CappedAtFlatTime {
     }
 }
 
-/// Forward+'s shape: cheaper, the reference result at any load.
+/// Forward+'s shape: dearer, the reference result at any load.
 #[derive(Default)]
 pub struct TiledAtFlatTime;
 
@@ -120,7 +121,7 @@ impl Lane for TiledAtFlatTime {
     }
 
     fn cost(&self, _level: usize, _inputs: &LoadOnly<'_>) -> Cost {
-        cost(50, None)
+        cost(100, None)
     }
 
     fn record(
@@ -146,10 +147,10 @@ static CAPPED_THEN_TILED: AgentRegistration = khora_core::register_agent! {
 
 /// **A running row whose quote turns `Minor` at the same time is left within
 /// a few frames.** Lent 1 ms, both rows fit; at the cap both draw the
-/// reference image, so the dearer capped row runs. The load then passes the
-/// cap: the capped row's time is unchanged, but its quote now says `Minor`,
-/// and the tiled row draws the reference image. Within five frames — far
-/// less than the second a full quote takes to age — the tiled row runs.
+/// reference image, so the capped row, the cheaper lane, runs. The load then
+/// passes the cap: the capped row's time is unchanged, but its quote now says
+/// `Minor`, and the tiled row draws the reference image. Within five frames —
+/// far less than the second a full quote takes to age — the tiled row runs.
 #[test]
 fn a_running_row_whose_impact_worsens_at_the_same_time_is_left_at_once() {
     let mut agent = lane_agent(&CAPPED_THEN_TILED, &DeviceCaps::default());
@@ -166,7 +167,7 @@ fn a_running_row_whose_impact_worsens_at_the_same_time_is_left_at_once() {
     }
     assert_eq!(
         lane, "capped",
-        "at the cap: the dearer of two equal results"
+        "at the cap: the cheaper lane of two equal results"
     );
 
     let past_cap = runtime(CAP + 1, Plan::default());

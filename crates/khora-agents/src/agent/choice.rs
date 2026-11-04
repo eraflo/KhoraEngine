@@ -63,15 +63,44 @@ pub(super) fn fits(cost: &Cost, envelope: &Envelope) -> bool {
     within(&cost.time, &envelope.time) && within(&cost.memory, &envelope.memory)
 }
 
+/// Whether the agent never runs `row` while another lane's row stands: one of
+/// `others` — `(row, lane, quote, impact)` — in another lane, of no worse
+/// impact, no dearer on any device, in time or memory, and better on one of
+/// them or listed first. [`choose`] takes the cheapest lane between equals,
+/// so the dominating row fits wherever `row` does and is taken instead.
+pub(super) fn dominated(
+    row: (usize, usize, &Cost, Impact),
+    others: &[(usize, usize, Cost, Impact)],
+) -> bool {
+    let (index, lane, cost, impact) = row;
+    others
+        .iter()
+        .any(|(other, other_lane, other_cost, other_impact)| {
+            *other_lane != lane
+                && *other_impact <= impact
+                && within(&other_cost.time, &cost.time)
+                && within(&other_cost.memory, &cost.memory)
+                && (*other_impact < impact
+                    || other_cost.time != cost.time
+                    || other_cost.memory != cost.memory
+                    || *other < index)
+        })
+}
+
 /// The row a family runs within `envelope`: among the rows of `menu` whose
 /// quote fits it on every device, the least impact (the quote's, else the
-/// level's), then the dearest; the
-/// floor (the cheapest priced row) when none fits, and `default` when no row
-/// is priced. `pin` overrides the choice; `allowed` filters the rows.
+/// level's); between equals, the dearest level of each lane, then the
+/// cheapest of those lanes. The floor (the cheapest priced row) when none
+/// fits, and `default` when no row is priced. `pin` overrides the choice;
+/// `allowed` filters the rows.
+///
+/// `lanes[row]` is the lane `row` belongs to: a lane's rows are its levels,
+/// cheapest first.
 pub fn choose(
     envelope: &Envelope,
     quotes: &[Option<Cost>],
     menu: &[Level],
+    lanes: &[usize],
     default: usize,
     pin: Option<StrategyId>,
     allowed: Option<&[StrategyId]>,
@@ -89,16 +118,35 @@ pub fn choose(
         .filter(|(_, level)| allowed.is_none_or(|allowed| allowed.contains(&level.id)))
         .filter_map(|(row, _)| quotes.get(row).copied().flatten().map(|cost| (row, cost)))
         .collect();
-    let best = priced
+    // A row its menu names no lane for stands alone.
+    let lane_of = |row: usize| lanes.get(row).map_or(usize::MAX - row, |lane| *lane);
+    let fitting: Vec<(usize, Cost, Impact)> = priced
         .iter()
         .filter(|(_, cost)| fits(cost, envelope))
-        // The least impact, then the dearest; the first row on a full tie.
-        .min_by(|(a_row, a), (b_row, b)| {
-            impact_of(Some(a), &menu[*a_row])
-                .cmp(&impact_of(Some(b), &menu[*b_row]))
-                .then(time_of(b).cmp(&time_of(a)))
-                .then(a_row.cmp(b_row))
-        });
+        .map(|(row, cost)| (*row, *cost, impact_of(Some(cost), &menu[*row])))
+        .collect();
+    // The least impact first. Between equals, each lane's dearest level — more
+    // of the same work — then the cheapest of those lanes, which give the same
+    // result; the first row on a full tie.
+    let least = fitting.iter().map(|(_, _, impact)| *impact).min();
+    let mut per_lane: Vec<(usize, Duration)> = Vec::new();
+    for (row, cost, impact) in &fitting {
+        if Some(*impact) != least {
+            continue;
+        }
+        let time = time_of(cost);
+        match per_lane
+            .iter_mut()
+            .find(|(kept, _)| lane_of(*kept) == lane_of(*row))
+        {
+            Some(kept) if time > kept.1 => *kept = (*row, time),
+            Some(_) => {}
+            None => per_lane.push((*row, time)),
+        }
+    }
+    let best = per_lane
+        .iter()
+        .min_by(|(a_row, a), (b_row, b)| a.cmp(b).then(a_row.cmp(b_row)));
     if let Some((row, _)) = best {
         return Choice {
             row: *row,
@@ -145,10 +193,12 @@ impl LaneAgent {
             .zip(&self.failed)
             .map(|(quote, failed)| quote.filter(|_| !failed))
             .collect();
+        let lanes: Vec<usize> = self.menu.iter().map(|row| row.lane).collect();
         let choice = choose(
             &lent.envelope,
             &quotes,
             &self.levels,
+            &lanes,
             self.default_row,
             lent.pin,
             lent.allowed.as_deref(),
