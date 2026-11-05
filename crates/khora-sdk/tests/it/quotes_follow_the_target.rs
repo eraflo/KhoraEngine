@@ -189,6 +189,7 @@ impl Lane for DrawingLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }
@@ -220,6 +221,7 @@ impl Lane for WaitingLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }

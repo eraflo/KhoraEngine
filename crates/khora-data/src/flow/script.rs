@@ -35,7 +35,8 @@ use std::collections::HashSet;
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::math::{Quaternion, Vec3};
-use khora_core::script::{ScriptSnapshot, ScriptValue};
+use khora_core::projection::Interest;
+use khora_core::script::{ScriptReads, ScriptSnapshot, ScriptValue};
 use khora_core::Runtime;
 
 use crate::ecs::{SemanticDomain, World};
@@ -248,12 +249,13 @@ impl Flow for ScriptFlow {
         }
         view.resumed = !self.ran;
 
-        // Only what some loaded program reads, and nothing at all when none
-        // reads anything: a projection is a copy of every column it names.
+        // Only what the demand wants — the installed programs' reads and an
+        // incoming module's — and nothing at all when nothing is wanted: a
+        // projection is a copy of every column it names.
         let reads = runtime
             .resources
-            .get::<std::sync::Arc<khora_core::script::ScriptCatalog>>()
-            .map(|catalog| catalog.reads())
+            .get::<std::sync::Arc<Interest<ScriptReads>>>()
+            .map(|demand| demand.wanted())
             .unwrap_or_default();
         if !reads.is_empty() {
             view.components = std::sync::Arc::new(world.project_components(&reads));
@@ -556,8 +558,9 @@ mod tests {
     use std::cell::Cell;
     use std::sync::Arc;
 
+    use khora_core::projection::Interest;
     use khora_core::script::{
-        ComponentName, ComponentProjection, ErgonType, FieldValueError, ScriptCatalog, ScriptField,
+        ComponentName, ComponentProjection, ErgonType, FieldValueError, ScriptField, ScriptReads,
     };
     use khora_macros::Component;
 
@@ -625,13 +628,18 @@ mod tests {
         world
     }
 
-    /// A runtime whose catalog reads `reads`, and the catalog.
-    fn reading(reads: &[&str]) -> (Runtime, Arc<ScriptCatalog>) {
-        let catalog = Arc::new(ScriptCatalog::default());
-        catalog.set_reads(reads.iter().map(|name| ComponentName::new(*name)).collect());
+    fn component_names(names: &[&str]) -> Vec<ComponentName> {
+        names.iter().map(|name| ComponentName::new(*name)).collect()
+    }
+
+    /// A runtime whose demand on the flow holds `reads`, as what the
+    /// installed programs read (owner `"loaded"`), and the demand.
+    fn reading(reads: &[&str]) -> (Runtime, Arc<Interest<ScriptReads>>) {
+        let demand = Arc::new(Interest::<ScriptReads>::new());
+        demand.announce("loaded", component_names(reads));
         let mut runtime = Runtime::default();
-        runtime.resources.insert(Arc::clone(&catalog));
-        (runtime, catalog)
+        runtime.resources.insert(Arc::clone(&demand));
+        (runtime, demand)
     }
 
     /// The components one frame of the flow projects over `world`.
@@ -657,9 +665,9 @@ mod tests {
     }
 
     /// **Zero work when nothing reads.** A read component is projected — its
-    /// column copied — and once no loaded program reads it, nothing is, and no
-    /// page is touched: no row is even cloned. A runtime with no catalog at
-    /// all projects nothing either.
+    /// column copied — and once nobody wants it, nothing is, and no page is
+    /// touched: no row is even cloned. A runtime with no demand at all
+    /// projects nothing either.
     #[test]
     fn nothing_is_projected_when_nothing_reads() {
         let mut world = world_with_tally();
@@ -671,14 +679,14 @@ mod tests {
                 },
             ));
         }
-        let (runtime, catalog) = reading(&["Tally"]);
+        let (runtime, demand) = reading(&["Tally"]);
 
         reset_counts();
         let read = components_of(&world, &runtime);
         assert_eq!(names(&read), vec!["Tally"], "read, so projected");
         assert!(clones() > 0, "a read component's column is copied");
 
-        catalog.set_reads(Vec::new());
+        demand.withdraw("loaded");
         reset_counts();
         let unread = components_of(&world, &runtime);
         assert!(
@@ -690,7 +698,7 @@ mod tests {
 
         reset_counts();
         let without = components_of(&world, &Runtime::default());
-        assert!(without.names().is_empty(), "no catalog, nothing projected");
+        assert!(without.names().is_empty(), "no demand, nothing projected");
         assert_eq!(clones(), 0);
     }
 
@@ -716,7 +724,7 @@ mod tests {
             Collider::default(),
         ));
         let other = world.spawn((Transform::identity(), Tally { count: Counted(1) }));
-        let (runtime, _catalog) = reading(&["RigidBody"]);
+        let (runtime, _demand) = reading(&["RigidBody"]);
 
         let projection = components_of(&world, &runtime);
 
@@ -731,6 +739,38 @@ mod tests {
         assert_eq!(mass_of(heavy), Some(ScriptValue::Float(40.0)));
         assert!(!bodies.has(other));
         assert_eq!(bodies.get(other), None);
+    }
+
+    /// **The flow projects what the demand wants, whoever wants it**: the
+    /// installed programs' reads and an incoming module's together, each
+    /// once; once the module's entry is withdrawn — its program installed,
+    /// reading nothing more — only the installed programs' reads are.
+    #[test]
+    fn the_flow_projects_exactly_what_the_demand_wants() {
+        let mut world = world_with_tally();
+        world.spawn((
+            Transform::identity(),
+            RigidBody::default(),
+            Collider::default(),
+            Tally { count: Counted(3) },
+        ));
+        let (runtime, demand) = reading(&["RigidBody"]);
+        demand.announce(
+            "module:ai/guard.erg",
+            component_names(&["Tally", "RigidBody"]),
+        );
+
+        let mut both = names(&components_of(&world, &runtime));
+        both.sort();
+        assert_eq!(
+            both,
+            vec!["RigidBody", "Tally"],
+            "the union of both owners, each once, and not the unread collider"
+        );
+
+        demand.withdraw("module:ai/guard.erg");
+        let installed = components_of(&world, &runtime);
+        assert_eq!(names(&installed), vec!["RigidBody"]);
     }
 
     /// The total rows the page columns of component `key` hold, orphans
@@ -782,7 +822,7 @@ mod tests {
             3,
             "two orphan rows are left behind, beside the live one"
         );
-        let (runtime, _catalog) = reading(&["RigidBody"]);
+        let (runtime, _demand) = reading(&["RigidBody"]);
 
         let projection = components_of(&world, &runtime);
         let bodies = projection.component("RigidBody").expect("projected");
@@ -817,7 +857,7 @@ mod tests {
             }
         }
         let picked = picked.expect("spawned");
-        let (runtime, _catalog) = reading(&["Tally"]);
+        let (runtime, _demand) = reading(&["Tally"]);
 
         reset_counts();
         let projection = components_of(&world, &runtime);
@@ -859,7 +899,7 @@ mod tests {
             )
             .expect("attached");
         let silent = world.spawn(Transform::identity());
-        let (runtime, _catalog) = reading(&["Signal"]);
+        let (runtime, _demand) = reading(&["Signal"]);
 
         let projection = components_of(&world, &runtime);
         let signals = projection.component("Signal").expect("projected");
@@ -882,7 +922,7 @@ mod tests {
     #[test]
     fn a_read_component_nobody_holds_is_projected_empty() {
         let world = world_with_tally();
-        let (runtime, _catalog) = reading(&["Collider", "Shield"]);
+        let (runtime, _demand) = reading(&["Collider", "Shield"]);
 
         let projection = components_of(&world, &runtime);
 

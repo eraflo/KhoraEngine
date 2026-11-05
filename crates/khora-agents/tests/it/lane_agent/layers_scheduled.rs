@@ -122,6 +122,7 @@ macro_rules! scheduled_lane {
                 Ok(LaneReport {
                     done: 1.0,
                     stalled: false,
+                    message: None,
                 })
             }
         }

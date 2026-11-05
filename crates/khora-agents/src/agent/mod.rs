@@ -48,7 +48,7 @@ use khora_core::gpu::{DeviceCaps, GpuSetup};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::erased::AnyLane;
 use khora_core::lane::io::{Budget, FixedStep, InputSource, Target};
-use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::level::Level;
 use khora_core::lane::ClearColor;
 use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::traits::PipelineSystem;
@@ -61,7 +61,7 @@ mod quotes;
 mod wake;
 
 pub use choice::{choose, Choice};
-use choice::{dominated, impact_of, time_of};
+use choice::{dominated, quality_of, time_of};
 use quotes::FullQuote;
 pub use quotes::{QUOTE_DRIFT, QUOTE_MAX_AGE};
 
@@ -342,7 +342,7 @@ impl Agent for LaneAgent {
         };
         // The rows that can stand in for another: priced, not failed, allowed.
         let allowed = self.lent.as_ref().and_then(|lent| lent.allowed.clone());
-        let standing: Vec<(usize, usize, Cost, Impact)> = self
+        let standing: Vec<(usize, usize, Cost, f32)> = self
             .menu
             .iter()
             .zip(&self.quotes)
@@ -355,7 +355,7 @@ impl Agent for LaneAgent {
                         .is_none_or(|allowed| allowed.contains(&row.id))
             })
             .filter_map(|(index, ((row, quote), level))| {
-                quote.map(|cost| (index, row.lane, cost, impact_of(Some(&cost), level)))
+                quote.map(|cost| (index, row.lane, cost, quality_of(Some(&cost), level)))
             })
             .collect();
         let rows = self
@@ -367,7 +367,7 @@ impl Agent for LaneAgent {
             .filter(|(index, ((row, quote), level))| {
                 quote.as_ref().is_none_or(|cost| {
                     !dominated(
-                        (*index, row.lane, cost, impact_of(Some(cost), level)),
+                        (*index, row.lane, cost, quality_of(Some(cost), level)),
                         &standing,
                     )
                 })
@@ -390,7 +390,7 @@ impl Agent for LaneAgent {
                 OfferRow {
                     id: row.id,
                     cost,
-                    quality: impact_of(quote.as_ref(), level).quality(),
+                    quality: quality_of(quote.as_ref(), level),
                     confidence,
                 }
             })
@@ -517,8 +517,9 @@ impl Agent for LaneAgent {
         let mut contention = running
             .and_then(|lane| self.contentions.get(lane).cloned())
             .unwrap_or_else(Contention::none);
-        // Quoting the other lanes reads their inputs too: reads only, since a
-        // quote writes nothing and takes no lock.
+        // Quoting the other lanes reaches their inputs too: what they read,
+        // and the locks they take — a quote takes a free lock for as long as
+        // it prices the lane. It writes no deck slot.
         for (lane, other) in self.contentions.iter().enumerate() {
             if Some(lane) == running {
                 continue;
@@ -526,6 +527,11 @@ impl Agent for LaneAgent {
             for read in &other.reads {
                 if !contention.reads.contains(read) {
                     contention.reads.push(*read);
+                }
+            }
+            for lock in &other.writes {
+                if !contention.writes.contains(lock) {
+                    contention.writes.push(*lock);
                 }
             }
         }

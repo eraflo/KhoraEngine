@@ -131,6 +131,7 @@ impl Pump {
                 &mut OutputDeck::new(),
                 khora_data::ecs::SystemContext {
                     since: khora_data::ecs::Tick(0),
+                    resumed: false,
                 },
             );
             for reload in self
@@ -481,6 +482,7 @@ fn deleting_a_script_another_mounted_root_also_provides_does_not_withdraw_it() {
             &mut OutputDeck::new(),
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
         for reload in runtime

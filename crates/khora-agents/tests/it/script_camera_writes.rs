@@ -83,6 +83,7 @@ fn checked(world: &mut World) -> Vec<Problem> {
         &mut OutputDeck::new(),
         khora_data::ecs::SystemContext {
             since: khora_data::ecs::Tick(0),
+            resumed: false,
         },
     );
     problems.all()

@@ -307,6 +307,7 @@ impl Lane for LadderLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: inputs.plan.stall,
+            message: None,
         })
     }
 }

@@ -84,6 +84,7 @@ inventory::submit! {
         order_hint: -10,
         runs_after: &[],
         observes: &[],
+        modes: &[],
     }
 }
 

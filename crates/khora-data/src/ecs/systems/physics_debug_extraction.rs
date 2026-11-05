@@ -81,5 +81,6 @@ inventory::submit! {
         order_hint: 100, // After transform_propagation (which runs at default 0).
         runs_after: &["transform_propagation"],
         observes: &[],
+        modes: &[],
     }
 }

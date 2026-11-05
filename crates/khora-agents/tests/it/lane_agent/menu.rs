@@ -211,6 +211,36 @@ fn locks_follow_the_installed_layer_and_reads_cover_every_quoted_lane() {
     );
 }
 
+/// **The agent declares the locks of every lane it quotes.** A wake's full
+/// quote tries the lock of a locking lane that does not run — briefly, never
+/// waiting — so the agent's own contention, the event pass's permit, locks
+/// the second lane's tally while the first lane runs; the installed layer's
+/// does not.
+#[test]
+fn the_agent_declares_the_locks_of_every_lane_it_quotes() {
+    let tally_lock = TypeId::of::<Arc<Mutex<Tally>>>();
+    let runtime = runtime(1, Plan::default());
+    let mut deck = OutputDeck::new();
+    let mut agent = lane_agent(&TWO_LANES, &DeviceCaps::default());
+
+    agent.apply_budget(budget(StrategyId::LowPower));
+    run(&mut agent, 1, &runtime, &mut deck);
+
+    assert_eq!(
+        deck.get::<Recorded>().map(|recorded| recorded.lane),
+        Some("first"),
+        "the premise: the first lane runs"
+    );
+    assert!(
+        agent.contention().may_lock(tally_lock),
+        "the second lane is quoted under its lock, so the agent declares it"
+    );
+    assert!(
+        !locked(&place_of(&agent)).contention().may_lock(tally_lock),
+        "the installed layer, the first lane, takes no lock"
+    );
+}
+
 /// A lane agent never touches the world: it reads through its lane's inputs
 /// and writes through its family's outputs, so it may join any wave's worker
 /// pool.

@@ -186,6 +186,7 @@ impl Lane for TwoPassLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }
@@ -312,6 +313,7 @@ impl Lane for TwoDrawsLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }

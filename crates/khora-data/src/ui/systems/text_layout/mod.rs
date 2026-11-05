@@ -227,6 +227,7 @@ inventory::submit! {
             ComponentKey::of::<UiText>,
             ComponentKey::of::<HandleComponent<Font>>,
         ],
+        modes: &[],
     }
 }
 

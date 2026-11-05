@@ -191,6 +191,7 @@ pub(crate) fn write_back(world: &mut World, report: &ScriptRunReport) {
         &mut deck,
         khora_data::ecs::SystemContext {
             since: khora_data::ecs::Tick(0),
+            resumed: false,
         },
     );
 }

@@ -109,7 +109,15 @@ fn ecs_maintenance() -> fn(&mut World, &Runtime, &mut OutputDeck, SystemContext)
 fn run_ecs_maintenance(world: &mut World) {
     let runtime = Runtime::default();
     let mut deck = OutputDeck::new();
-    ecs_maintenance()(world, &runtime, &mut deck, SystemContext { since: Tick(0) });
+    ecs_maintenance()(
+        world,
+        &runtime,
+        &mut deck,
+        SystemContext {
+            since: Tick(0),
+            resumed: false,
+        },
+    );
 }
 
 // --- when a column is freed ---
@@ -229,6 +237,64 @@ fn world_with_no_observer_run() -> World {
     let mut world = world();
     advance_to(&mut world, 2);
     world
+}
+
+/// **An observer skipped since it last ran does not hold a column back, and
+/// its resuming read misses nothing.** The watcher ran at 3, then was skipped
+/// — outside its engine modes — while `b` was written at 5. The column is
+/// freed though the watcher has not seen that write: its floor rises to 5, so
+/// the watcher's read since 3, when it resumes, still sees `b` changed. Once
+/// the watcher runs again it holds back as any observer does: a write after
+/// that run keeps the column's row ticks.
+#[test]
+fn a_skipped_observer_does_not_hold_a_column_back_and_its_resuming_read_misses_nothing() {
+    let mut world = world();
+    advance_to(&mut world, 2);
+    let a = world.spawn(Position(1));
+    let b = world.spawn(Position(2));
+    run_observer(&mut world, WATCHER, 3);
+    advance_to(&mut world, 4);
+    world.note_observer_skip(WATCHER);
+    assert!(world.observer_resumes(WATCHER), "skipped, it resumes");
+    advance_to(&mut world, 5);
+    write_position(&mut world, b, 20);
+    run_observer(&mut world, OTHER, 6);
+    advance_to(&mut world, 40);
+
+    assert_eq!(
+        world.free_quiet_row_ticks(10),
+        1,
+        "the watcher last ran at 3, before the write at 5, but it is skipped: freed"
+    );
+    let column = column_of(&world, b, position());
+    assert!(column.rows.is_none(), "freed: {:?}", column.rows);
+    assert_eq!(column.floor, Tick(5), "φ := σ, above what the watcher saw");
+    assert!(
+        changed::<Position>(&world, 3).contains(&b),
+        "the watcher's resuming read since 3 still sees b: {:?}",
+        changed::<Position>(&world, 3)
+    );
+    assert_eq!(
+        changed::<Position>(&world, 3),
+        sorted(vec![a, b]),
+        "under the floor, every row of the column"
+    );
+
+    run_observer(&mut world, WATCHER, 41);
+    assert!(
+        !world.observer_resumes(WATCHER),
+        "ran again: no longer skipped"
+    );
+    advance_to(&mut world, 42);
+    write_position(&mut world, a, 10);
+    run_observer(&mut world, OTHER, 43);
+    advance_to(&mut world, 100);
+    assert_eq!(
+        world.free_quiet_row_ticks(10),
+        0,
+        "the watcher ran at 41, before the write at 42, and is not skipped: kept"
+    );
+    assert_eq!(changed::<Position>(&world, 41), vec![a]);
 }
 
 /// **A column written often is never freed**: each run writes it, so it is

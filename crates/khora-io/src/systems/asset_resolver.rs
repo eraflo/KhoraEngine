@@ -394,6 +394,7 @@ inventory::submit! {
         // compared against them.
         runs_after: &["asset_reload"],
         observes: &[],
+        modes: &[],
     }
 }
 
@@ -476,6 +477,7 @@ mod tests {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
 
@@ -513,6 +515,7 @@ mod tests {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
         let first = world
@@ -527,6 +530,7 @@ mod tests {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
         let second = world
@@ -559,6 +563,7 @@ mod tests {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
         let uuid_a = world
@@ -588,6 +593,7 @@ mod tests {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
 
@@ -623,6 +629,7 @@ mod tests {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
         let uuid = world
@@ -641,6 +648,7 @@ mod tests {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
 
@@ -679,6 +687,7 @@ mod tests {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
         let uuid_a = world
@@ -703,6 +712,7 @@ mod tests {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
 
@@ -784,6 +794,7 @@ mod tests {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
 
@@ -832,6 +843,7 @@ mod tests {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
 
@@ -873,6 +885,7 @@ mod tests {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
 
@@ -934,6 +947,7 @@ mod tests {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
 
@@ -1016,6 +1030,7 @@ mod tests {
                     &mut deck,
                     khora_data::ecs::SystemContext {
                         since: khora_data::ecs::Tick(0),
+                        resumed: false,
                     },
                 );
                 asset_resolver_system(
@@ -1024,6 +1039,7 @@ mod tests {
                     &mut deck,
                     khora_data::ecs::SystemContext {
                         since: khora_data::ecs::Tick(0),
+                        resumed: false,
                     },
                 );
             }
@@ -1513,6 +1529,7 @@ mod tests {
                     &mut deck,
                     khora_data::ecs::SystemContext {
                         since: khora_data::ecs::Tick(0),
+                        resumed: false,
                     },
                 );
             }

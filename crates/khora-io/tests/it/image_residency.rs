@@ -287,6 +287,7 @@ impl Project {
                 &mut deck,
                 khora_data::ecs::SystemContext {
                     since: khora_data::ecs::Tick(0),
+                    resumed: false,
                 },
             );
         }
@@ -413,6 +414,7 @@ fn a_refused_image_leaves_the_atlas_room_for_the_next() {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
     };
@@ -482,6 +484,7 @@ fn a_replaced_image_moves_to_its_new_rect() {
             &mut deck,
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
     };

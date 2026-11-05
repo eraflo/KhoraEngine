@@ -58,7 +58,8 @@ use std::sync::Arc;
 use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::OutputDeck;
 use khora_core::problems::Problems;
-use khora_core::script::ScriptCatalog;
+use khora_core::projection::Interest;
+use khora_core::script::ScriptReads;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 use khora_script::reload::ScriptReload;
@@ -273,26 +274,26 @@ pub fn load_all(
     load(script_root, pending, declarations, None, None)
 }
 
-/// [`load_all`], announcing what each compiled module reads to `catalog` — as
-/// the pump does for a module it recompiles — so the flow projects those
-/// components the frame the program lands.
+/// [`load_all`], announcing what each compiled module reads to `reads`, under
+/// the owner `module:<name>` — as the pump does for a module it recompiles —
+/// so the flow projects those components the frame the program lands.
 ///
 /// What each compile found goes to `problems`, located.
 pub fn load_all_announcing(
     script_root: &Path,
     pending: &PendingReloads,
     declarations: &PendingDeclarations,
-    catalog: &ScriptCatalog,
+    reads: &Interest<ScriptReads>,
     problems: Option<&Problems>,
 ) -> usize {
-    load(script_root, pending, declarations, Some(catalog), problems)
+    load(script_root, pending, declarations, Some(reads), problems)
 }
 
 fn load(
     script_root: &Path,
     pending: &PendingReloads,
     declarations: &PendingDeclarations,
-    catalog: Option<&ScriptCatalog>,
+    reads: Option<&Interest<ScriptReads>>,
     problems: Option<&Problems>,
 ) -> usize {
     let loader = PreludeLoader::new(DiskLoader::new(script_root));
@@ -307,8 +308,8 @@ fn load(
         match compiled.program {
             Some(program) => {
                 send_declared(&program, declarations, &mut sent);
-                if let Some(catalog) = catalog {
-                    announce(catalog, &module, &program);
+                if let Some(reads) = reads {
+                    announce(reads, &module, &program);
                 }
                 pending.send(ScriptReload {
                     module,
@@ -461,7 +462,7 @@ fn recompile(
     let affected = importers_of(&on_disk, changed);
     let loader = PreludeLoader::new(DiskLoader::new(script_root));
     let declarations = runtime.resources.get::<PendingDeclarations>();
-    let catalog = runtime.resources.get::<Arc<ScriptCatalog>>();
+    let reads = runtime.resources.get::<Arc<Interest<ScriptReads>>>();
     let problems = runtime.resources.get::<Arc<Problems>>();
     let mut sent = BTreeSet::new();
 
@@ -533,8 +534,8 @@ fn recompile(
                 // projects those components the frame the program lands, and
                 // the program is not held back a frame over rows the World has
                 // already laid out for it.
-                if let Some(catalog) = catalog {
-                    announce(catalog, &module, &program);
+                if let Some(reads) = reads {
+                    announce(reads, &module, &program);
                 }
                 pending.send(ScriptReload {
                     module,
@@ -553,16 +554,14 @@ fn recompile(
     }
 }
 
-/// Tells the catalog what `module`'s program reads, ahead of the lane
-/// installing it.
-fn announce(catalog: &ScriptCatalog, module: &str, program: &Program) {
-    catalog.announce(
-        module.to_owned(),
+/// Announces what `module`'s program reads, ahead of the lane installing it.
+fn announce(reads: &Interest<ScriptReads>, module: &str, program: &Program) {
+    reads.announce(
+        ScriptReads::incoming(module),
         program
             .reads
             .iter()
-            .map(|read| khora_core::script::ComponentName::new(read.as_str()))
-            .collect(),
+            .map(|read| khora_core::script::ComponentName::new(read.as_str())),
     );
 }
 
@@ -574,6 +573,7 @@ inventory::submit! {
         order_hint: -10,
         runs_after: &[],
         observes: &[],
+        modes: &[],
     }
 }
 

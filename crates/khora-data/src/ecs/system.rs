@@ -41,6 +41,7 @@
 //!         order_hint: 0,
 //!         runs_after: &[],
 //!         observes: &[],
+//!         modes: &[],
 //!     }
 //! }
 //! ```
@@ -50,6 +51,7 @@
 //! See [`TickPhase`] for the available phases and their intended use.
 
 use crate::ecs::{ComponentKey, Tick, World};
+use khora_core::agent::EngineMode;
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
 
@@ -87,6 +89,11 @@ pub struct SystemContext {
     /// first time. `world.query::<(…, Changed<T>)>().since(ctx.since)` reads
     /// what changed since its last run.
     pub since: Tick,
+    /// Whether this run starts the system over on this world: its first run
+    /// on it, or its first run after the runner skipped it (it was outside
+    /// its [`DataSystemRegistration::modes`]). `false` on a run that follows
+    /// its previous run with no skip between.
+    pub resumed: bool,
 }
 
 /// Registration entry for a [`DataSystem`].
@@ -124,6 +131,10 @@ pub struct DataSystemRegistration {
     /// records each as observed ([`World::observe`]); the runner keeps the
     /// system's last-seen tick. Empty by default.
     pub observes: &'static [fn() -> ComponentKey],
+    /// The engine modes the system runs in; empty means every mode. Outside
+    /// them the runner skips it — a runtime holding no `SharedEngineMode` is
+    /// a game that only ever plays.
+    pub modes: &'static [EngineMode],
 }
 
 inventory::collect!(DataSystemRegistration);

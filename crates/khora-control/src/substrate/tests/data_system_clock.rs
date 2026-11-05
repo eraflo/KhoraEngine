@@ -62,6 +62,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
         observes: &[ComponentKey::of::<Watched>],
+        modes: &[],
     }
 }
 inventory::submit! {
@@ -72,6 +73,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[FIRST],
         observes: &[ComponentKey::of::<Watched>],
+        modes: &[],
     }
 }
 

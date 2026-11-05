@@ -154,7 +154,8 @@ fn script_components_register_while_editing() {
 // ─── Played ─────────────────────────────────────────────────────────────────
 
 /// One running session, wired as the engine wires one: the reload and
-/// declaration channels, the catalog, the scripting world.
+/// declaration channels, the catalog, the demand on the script flow, the
+/// scripting world.
 struct Session {
     world: World,
     flow: ScriptFlow,
@@ -174,6 +175,11 @@ impl Session {
         runtime.resources.insert(reloads.clone());
         runtime.resources.insert(engine_event_channel());
         runtime.resources.insert(Arc::new(ScriptCatalog::default()));
+        runtime
+            .resources
+            .insert(Arc::new(khora_core::projection::Interest::<
+                khora_core::script::ScriptReads,
+            >::new()));
 
         let mut agent = ScriptAgent::default();
         agent.apply_budget(ResourceBudget {

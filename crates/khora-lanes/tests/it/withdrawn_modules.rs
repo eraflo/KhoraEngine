@@ -17,7 +17,7 @@
 //! unmounted — takes the module's program out of the lane: its instances no
 //! longer run, yet they are kept with their fields, so the module coming back
 //! carries them on as a reload does. A version of it still waiting for its
-//! components is dropped with it, what it read leaves the catalog, and each
+//! components is dropped with it, what it read leaves the demand, and each
 //! instance left without its module is reported as an error.
 
 use std::sync::Arc;
@@ -26,7 +26,8 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::{Lane, LaneContext, OutputDeck};
 use khora_core::problems::{Problem, ProblemSeverity};
-use khora_core::script::{ComponentName, ScriptCatalog, ScriptEvent, ScriptValue};
+use khora_core::projection::Interest;
+use khora_core::script::{ComponentName, ScriptCatalog, ScriptEvent, ScriptReads, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
 use khora_script::arena::Persisted;
@@ -126,12 +127,14 @@ fn guards(entities: &[EntityId]) -> ScriptView {
     view(&instances)
 }
 
-/// The lane with what the engine hands it: its channels and the catalog.
+/// The lane with what the engine hands it: its channels, the catalog and the
+/// demand on the script flow.
 struct Stage {
     runtime: ScriptRuntime,
     reloads: Channel<ScriptReload>,
     events: Channel<ScriptEvent>,
     catalog: Arc<ScriptCatalog>,
+    demand: Arc<Interest<ScriptReads>>,
 }
 
 impl Stage {
@@ -144,6 +147,7 @@ impl Stage {
             reloads: Channel::bounded(64, WhenFull::DropOldest),
             events: Channel::bounded(64, WhenFull::DropOldest),
             catalog: Arc::new(ScriptCatalog::default()),
+            demand: Arc::new(Interest::new()),
         }
     }
 
@@ -176,6 +180,7 @@ impl Stage {
             ctx.insert_ref(&self.reloads);
             ctx.insert_ref(&self.events);
             ctx.insert_ref(&self.catalog);
+            ctx.insert_ref(&self.demand);
             lane.execute(&mut ctx).expect("the lane runs");
         }
         self.runtime.last_report().clone()
@@ -206,10 +211,10 @@ impl Stage {
         )
     }
 
-    /// Whether the catalog lists `component` as read.
+    /// Whether the demand on the script flow wants `component`.
     fn reads(&self, component: &str) -> bool {
-        self.catalog
-            .reads()
+        self.demand
+            .wanted()
             .contains(&ComponentName::new(component))
     }
 }
@@ -327,10 +332,10 @@ fn a_module_reloaded_after_a_withdrawal_runs_again_with_its_fields_kept() {
 
 // ─── What it read, and what was waiting ────────────────────────────────────
 
-/// **A withdrawn module's reads leave the catalog**: the next frame's view
+/// **A withdrawn module's reads leave the demand**: the next frame's view
 /// need not project what nothing loaded reads any more.
 #[test]
-fn a_withdrawn_modules_reads_leave_the_catalog() {
+fn a_withdrawn_modules_reads_leave_the_demand() {
     let mut stage = Stage::new(MODULE, COUNTING_READS_MARKER);
     let guard = entity(0);
     stage.frame(&guards(&[guard]));
@@ -341,14 +346,14 @@ fn a_withdrawn_modules_reads_leave_the_catalog() {
 
     assert!(
         !stage.reads("Marker"),
-        "the catalog still lists `Marker`: {:?}",
-        stage.catalog.reads()
+        "the demand still wants `Marker`: {:?}",
+        stage.demand.wanted()
     );
 }
 
 /// **A withdrawal drops a version of the module still waiting for its
 /// components**: the waiting code was deleted with its file and never runs —
-/// its reads leave the catalog, nothing of the module is loaded, and its
+/// its reads leave the demand, nothing of the module is loaded, and its
 /// instance is reported as left without its module.
 #[test]
 fn a_withdrawal_drops_a_version_of_its_module_still_waiting() {
@@ -371,7 +376,7 @@ fn a_withdrawal_drops_a_version_of_its_module_still_waiting() {
     assert!(
         !stage.reads("Marker"),
         "the waiting version's reads are gone: {:?}",
-        stage.catalog.reads()
+        stage.demand.wanted()
     );
     assert_eq!(
         about(&stage.runtime.running_problems(), guard).len(),

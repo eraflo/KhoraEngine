@@ -50,6 +50,12 @@ pub(super) fn impact_of(quote: Option<&Cost>, level: &Level) -> Impact {
     quote.and_then(|cost| cost.impact).unwrap_or(level.impact)
 }
 
+/// What running `level` on the inputs its `quote` priced is worth: the
+/// quality of its impact times the share of the work it serves.
+pub(super) fn quality_of(quote: Option<&Cost>, level: &Level) -> f32 {
+    impact_of(quote, level).quality() * quote.map_or(1.0, Cost::served)
+}
+
 /// Whether every device's `value` is within its `limit`.
 fn within<T: PartialOrd + Copy>(value: &PerDevice<T>, limit: &PerDevice<T>) -> bool {
     value.cpu <= limit.cpu
@@ -64,23 +70,23 @@ pub(super) fn fits(cost: &Cost, envelope: &Envelope) -> bool {
 }
 
 /// Whether the agent never runs `row` while another lane's row stands: one of
-/// `others` — `(row, lane, quote, impact)` — in another lane, of no worse
-/// impact, no dearer on any device, in time or memory, and better on one of
+/// `others` — `(row, lane, quote, quality)` — in another lane, of no worse
+/// quality, no dearer on any device, in time or memory, and better on one of
 /// them or listed first. [`choose`] takes the cheapest lane between equals,
 /// so the dominating row fits wherever `row` does and is taken instead.
 pub(super) fn dominated(
-    row: (usize, usize, &Cost, Impact),
-    others: &[(usize, usize, Cost, Impact)],
+    row: (usize, usize, &Cost, f32),
+    others: &[(usize, usize, Cost, f32)],
 ) -> bool {
-    let (index, lane, cost, impact) = row;
+    let (index, lane, cost, quality) = row;
     others
         .iter()
-        .any(|(other, other_lane, other_cost, other_impact)| {
+        .any(|(other, other_lane, other_cost, other_quality)| {
             *other_lane != lane
-                && *other_impact <= impact
+                && *other_quality >= quality
                 && within(&other_cost.time, &cost.time)
                 && within(&other_cost.memory, &cost.memory)
-                && (*other_impact < impact
+                && (*other_quality > quality
                     || other_cost.time != cost.time
                     || other_cost.memory != cost.memory
                     || *other < index)
@@ -88,8 +94,9 @@ pub(super) fn dominated(
 }
 
 /// The row a family runs within `envelope`: among the rows of `menu` whose
-/// quote fits it on every device, the least impact (the quote's, else the
-/// level's); between equals, the dearest level of each lane, then the
+/// quote fits it on every device, the best quality — the quality of the
+/// impact (the quote's, else the level's) times the share of the work the
+/// quote serves; between equals, the dearest level of each lane, then the
 /// cheapest of those lanes. The floor (the cheapest priced row) when none
 /// fits, and `default` when no row is priced. `pin` overrides the choice;
 /// `allowed` filters the rows.
@@ -120,18 +127,21 @@ pub fn choose(
         .collect();
     // A row its menu names no lane for stands alone.
     let lane_of = |row: usize| lanes.get(row).map_or(usize::MAX - row, |lane| *lane);
-    let fitting: Vec<(usize, Cost, Impact)> = priced
+    let fitting: Vec<(usize, Cost, f32)> = priced
         .iter()
         .filter(|(_, cost)| fits(cost, envelope))
-        .map(|(row, cost)| (*row, *cost, impact_of(Some(cost), &menu[*row])))
+        .map(|(row, cost)| (*row, *cost, quality_of(Some(cost), &menu[*row])))
         .collect();
-    // The least impact first. Between equals, each lane's dearest level — more
+    // The best quality first. Between equals, each lane's dearest level — more
     // of the same work — then the cheapest of those lanes, which give the same
     // result; the first row on a full tie.
-    let least = fitting.iter().map(|(_, _, impact)| *impact).min();
+    let best = fitting
+        .iter()
+        .map(|(_, _, quality)| *quality)
+        .max_by(f32::total_cmp);
     let mut per_lane: Vec<(usize, Duration)> = Vec::new();
-    for (row, cost, impact) in &fitting {
-        if Some(*impact) != least {
+    for (row, cost, quality) in &fitting {
+        if Some(*quality) != best {
             continue;
         }
         let time = time_of(cost);
@@ -144,10 +154,10 @@ pub fn choose(
             None => per_lane.push((*row, time)),
         }
     }
-    let best = per_lane
+    let cheapest = per_lane
         .iter()
         .min_by(|(a_row, a), (b_row, b)| a.cmp(b).then(a_row.cmp(b_row)));
-    if let Some((row, _)) = best {
+    if let Some((row, _)) = cheapest {
         return Choice {
             row: *row,
             over_budget: false,

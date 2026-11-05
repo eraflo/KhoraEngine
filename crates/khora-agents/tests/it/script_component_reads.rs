@@ -31,8 +31,10 @@ use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::event::Channel;
 use khora_core::lane::{LaneBus, OutputDeck};
+use khora_core::projection::Interest;
 use khora_core::script::{
-    engine_event_channel, ComponentName, ComponentProjection, ScriptCatalog, ScriptValue,
+    engine_event_channel, ComponentName, ComponentProjection, ScriptCatalog, ScriptReads,
+    ScriptValue,
 };
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::{
@@ -73,9 +75,10 @@ fn body(mass: f32) -> RigidBody {
     }
 }
 
-/// One running session, wired the way the engine wires one: the catalog the
-/// lane writes and the flow reads, the channels a compiled module's
-/// declarations and program arrive by.
+/// One running session, wired the way the engine wires one: the demand the
+/// lane announces the loaded programs' reads to and the flow projects, the
+/// catalog, the channels a compiled module's declarations and program arrive
+/// by.
 struct Session {
     world: World,
     flow: ScriptFlow,
@@ -83,7 +86,7 @@ struct Session {
     scripts: Arc<Mutex<ScriptRuntime>>,
     reloads: Channel<ScriptReload>,
     declarations: PendingDeclarations,
-    catalog: Arc<ScriptCatalog>,
+    reads: Arc<Interest<ScriptReads>>,
     runtime: Arc<Runtime>,
 }
 
@@ -97,6 +100,7 @@ impl Session {
         let reloads = khora_io::script::hot_reload::reload_channel();
         let declarations = declaration_channel();
         let catalog = Arc::new(ScriptCatalog::default());
+        let reads = Arc::new(Interest::<ScriptReads>::new());
 
         let mut runtime = Runtime::default();
         runtime.services.insert(Arc::clone(&scripts));
@@ -106,7 +110,8 @@ impl Session {
             .resources
             .insert(Arc::new(Mutex::new(DeclaredComponents::default())));
         runtime.resources.insert(engine_event_channel());
-        runtime.resources.insert(Arc::clone(&catalog));
+        runtime.resources.insert(catalog);
+        runtime.resources.insert(Arc::clone(&reads));
 
         let mut agent = ScriptAgent::default();
         // The DCC does this every frame; without it there is no fuel.
@@ -124,7 +129,7 @@ impl Session {
             scripts,
             reloads,
             declarations,
-            catalog,
+            reads,
             runtime: Arc::new(runtime),
         };
         session.load(program);
@@ -534,17 +539,12 @@ fn engine_systems_see_only_the_boundary() {
 
 // ─── The read set ───────────────────────────────────────────────────────────
 
-fn sorted(mut names: Vec<ComponentName>) -> Vec<ComponentName> {
-    names.sort();
-    names
-}
-
 fn names_of(list: &[&str]) -> Vec<ComponentName> {
     list.iter().map(|name| ComponentName::new(*name)).collect()
 }
 
 /// **Nothing reads, nothing is projected.** A program with no `Get` or `Has`
-/// leaves the catalog empty and the view without a component.
+/// leaves the demand empty and the view without a component.
 #[test]
 fn a_program_that_reads_nothing_projects_nothing() {
     let mut world = World::new();
@@ -560,8 +560,8 @@ fn a_program_that_reads_nothing_projects_nothing() {
         assert!(projected.names().is_empty(), "nothing is projected");
     }
     assert!(
-        session.catalog.reads().is_empty(),
-        "the catalog reads nothing"
+        session.reads.wanted().is_empty(),
+        "the demand wants nothing"
     );
 }
 
@@ -579,7 +579,7 @@ fn the_read_set_follows_reloads() {
     for _ in 0..3 {
         session.frame();
     }
-    assert_eq!(sorted(session.catalog.reads()), names_of(&["RigidBody"]));
+    assert_eq!(session.reads.wanted(), names_of(&["RigidBody"]));
     let before = session.frame();
     assert!(before.component("RigidBody").is_some());
     assert!(before.component("Collider").is_none());
@@ -601,9 +601,9 @@ fn the_read_set_follows_reloads() {
         "the frame the reload arrives in was projected before it"
     );
     assert_eq!(
-        sorted(session.catalog.reads()),
+        session.reads.wanted(),
         names_of(&["Collider", "RigidBody"]),
-        "the reload's reads join the catalog"
+        "the reload's reads join the demand"
     );
     let next = session.frame();
     assert!(
@@ -770,8 +770,8 @@ fn a_reload_that_stops_reading_stops_projecting() {
     session.frame();
 
     assert!(
-        session.catalog.reads().is_empty(),
-        "the catalog follows the reload"
+        session.reads.wanted().is_empty(),
+        "the demand follows the reload"
     );
     assert!(
         session.frame().names().is_empty(),
@@ -903,13 +903,13 @@ fn get_of_a_declared_component() {
 
 // ─── Declared and reported ──────────────────────────────────────────────────
 
-/// **The agent declares the catalog it writes**, so a concurrent wave never
-/// holds it beside the lane — and `EngineContext::locked` lets it through.
+/// **The agent declares the demand its lane announces to**, so
+/// `EngineContext` lets it through.
 #[test]
-fn the_agent_declares_the_catalog_it_writes() {
+fn the_agent_declares_the_demand_its_lane_announces_to() {
     let contention = ScriptAgent::default().contention();
 
-    assert!(contention.may_lock(TypeId::of::<Arc<ScriptCatalog>>()));
+    assert!(contention.may_reach(TypeId::of::<Arc<Interest<ScriptReads>>>()));
 }
 
 /// **The cost of reads is visible.** The rows the frame projected reach the

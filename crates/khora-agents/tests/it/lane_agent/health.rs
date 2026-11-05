@@ -138,6 +138,7 @@ impl Lane for EffortLane {
         Ok(LaneReport {
             done: effort.done,
             stalled: effort.stalls,
+            message: None,
         })
     }
 }

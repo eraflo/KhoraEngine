@@ -134,6 +134,7 @@ inventory::submit! {
         // frame's last word.
         runs_after: &["script_commands"],
         observes: &[],
+        modes: &[],
     }
 }
 
@@ -162,6 +163,7 @@ mod tests {
             &mut OutputDeck::new(),
             crate::ecs::SystemContext {
                 since: crate::ecs::Tick(0),
+                resumed: false,
             },
         );
     }

@@ -120,6 +120,7 @@ inventory::submit! {
         order_hint: 20,
         runs_after: &[],
         observes: &[],
+        modes: &[],
     }
 }
 
@@ -159,6 +160,7 @@ mod tests {
             &mut OutputDeck::new(),
             crate::ecs::SystemContext {
                 since: crate::ecs::Tick(0),
+                resumed: false,
             },
         );
     }

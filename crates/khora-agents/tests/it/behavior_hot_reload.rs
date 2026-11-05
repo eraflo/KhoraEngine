@@ -293,9 +293,9 @@ fn an_installed_reload_leaves_no_announcement_behind() {
     session.frame(0.016);
 
     assert!(
-        session.catalog().reads().is_empty(),
+        session.reads().wanted().is_empty(),
         "the announcement of the installed program lingers: {:?}",
-        session.catalog().reads()
+        session.reads().wanted()
     );
 }
 

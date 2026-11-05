@@ -196,6 +196,7 @@ impl Lane for GizmoLane {
         let done = LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         };
         let lines = &inputs.gizmos.0.lines;
         if lines.is_empty() {

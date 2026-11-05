@@ -14,7 +14,7 @@
 
 //! A quote: the cost of every level of a lane that does not run, on this
 //! frame's inputs. The inputs are fetched and every level costed; nothing is
-//! prepared, recorded or written, and no lock is ever taken.
+//! prepared, recorded or written, and a lock is only tried, never waited for.
 
 use std::sync::{Arc, Mutex};
 
@@ -25,7 +25,7 @@ use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::erased::{AnyLane, Erased, RunOutcome};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::SourceKind;
-use khora_core::lane::io::{FrameId, InputSource, Locked, OutputSink, Target, TargetKey};
+use khora_core::lane::io::{Budget, FrameId, InputSource, Locked, OutputSink, Target, TargetKey};
 use khora_core::lane::level::Level;
 use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
 use khora_core::math::Extent2D;
@@ -148,6 +148,7 @@ impl Lane for TargetLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }
@@ -323,12 +324,13 @@ impl Lane for LockingLane {
     }
 }
 
-/// **A lane that locks is never quoted, and quoting it takes no lock.** Every
-/// input it reads is there and its lock is free, yet the quote is `None`: the
-/// source was asked for nothing — not the setting, not the lock — and the
-/// lane's `cost` was never called.
+/// **A lane whose lock is free is quoted, and its lock is let go.** The
+/// counter is free: the quote takes it without waiting, fetches every input
+/// the lane reads — the setting, and the lock — and costs every level on
+/// them. Once quoted, the counter is free again and as it was: a quote
+/// records nothing.
 #[test]
-fn a_lane_with_a_locked_input_is_not_quoted_and_takes_no_lock() {
+fn a_lane_whose_lock_is_free_is_quoted_and_lets_the_lock_go() {
     let log = Log::default();
     let lane = Erased::new(LockingLane {
         log: Arc::clone(&log),
@@ -345,24 +347,142 @@ fn a_lane_with_a_locked_input_is_not_quoted_and_takes_no_lock() {
         (quote, source.touched())
     };
 
-    assert!(quote.is_none(), "a locking lane is not quoted: {quote:?}");
+    let quoted: Option<Vec<u64>> =
+        quote.map(|costs| costs.iter().map(|cost| cost.memory.gpu).collect());
+    assert_eq!(
+        quoted,
+        Some(vec![4, 8]),
+        "both levels, costed on the setting's gain of 4"
+    );
+    assert_eq!(
+        log_of(&log),
+        vec![Event::Cost(0), Event::Cost(1)],
+        "a quote costs the levels and asks nothing else of the lane"
+    );
     assert!(
-        touched.inputs().is_empty(),
-        "the quote fetched nothing, so took no lock: {:?}",
+        touched
+            .inputs()
+            .iter()
+            .any(|input| input.field == "counter" && input.kind == SourceKind::Locked),
+        "the quote took the lock: {:?}",
         touched
             .inputs()
             .iter()
             .map(|input| (input.field, input.kind == SourceKind::Locked))
             .collect::<Vec<_>>()
     );
+    assert_eq!(
+        counter.try_lock().map(|counter| counter.0).ok(),
+        Some(0),
+        "the counter is free again, and untouched"
+    );
+}
+
+/// **A lane whose lock is held elsewhere is not quoted, and the quote does
+/// not wait for it.** Another thread holds the counter. The lane was lent a
+/// budget of 200 ms — a run would wait that long for its lock — yet the quote
+/// gives up at once: it tries the lock and never waits. The lane is not
+/// costed on inputs it could not have.
+#[test]
+fn a_lane_whose_lock_is_held_elsewhere_is_not_quoted_and_the_quote_never_waits() {
+    let log = Log::default();
+    let lane = Erased::new(LockingLane {
+        log: Arc::clone(&log),
+    });
+    let counter: SharedCounter = Arc::new(Mutex::new(Counter(0)));
+    let bus = LaneBus::new();
+    let mut runtime = Runtime::new();
+    runtime.resources.insert(MixSettings { gain: 4.0 });
+    runtime.resources.insert(Arc::clone(&counter));
+
+    let (held, release) = (
+        Arc::new(std::sync::Barrier::new(2)),
+        Arc::new(std::sync::Barrier::new(2)),
+    );
+    let holder = {
+        let (counter, held, release) = (
+            Arc::clone(&counter),
+            Arc::clone(&held),
+            Arc::clone(&release),
+        );
+        std::thread::spawn(move || {
+            let _guard = counter.lock().unwrap_or_else(|e| e.into_inner());
+            held.wait();
+            release.wait();
+        })
+    };
+    held.wait();
+
+    let started = std::time::Instant::now();
+    let quote = {
+        let mut source = InputSource::new(FrameId(1), &bus, &runtime).with_budget(Budget {
+            time: std::time::Duration::from_millis(200),
+        });
+        lane.quote(&mut source)
+    };
+    let waited = started.elapsed();
+    release.wait();
+    holder.join().expect("the holder panicked");
+
+    assert!(quote.is_none(), "a held lock gives no quote: {quote:?}");
+    assert!(
+        waited < std::time::Duration::from_millis(50),
+        "the quote waited {waited:?} for a lock held elsewhere"
+    );
     assert!(
         log_of(&log).is_empty(),
         "nothing costed: {:?}",
         log_of(&log)
     );
+}
+
+/// **A quote leaves its source waiting as before, with no deadline started.**
+/// Another thread holds the counter; the quote of the locking lane gives up
+/// on it at once. The holder then lets go 20 ms later: a lock fetched through
+/// the same source afterwards — as a run on it would — waits for it within the
+/// lane's 200 ms budget and gets it, the quote having neither left the source
+/// refusing at once nor started the fetch's lock deadline.
+#[test]
+fn a_quote_leaves_its_source_waiting_with_no_deadline_started() {
+    let log = Log::default();
+    let lane = Erased::new(LockingLane {
+        log: Arc::clone(&log),
+    });
+    let counter: SharedCounter = Arc::new(Mutex::new(Counter(0)));
+    let bus = LaneBus::new();
+    let mut runtime = Runtime::new();
+    runtime.resources.insert(MixSettings { gain: 4.0 });
+    runtime.resources.insert(Arc::clone(&counter));
+
+    let (held, quoted) = (
+        Arc::new(std::sync::Barrier::new(2)),
+        Arc::new(std::sync::Barrier::new(2)),
+    );
+    let holder = {
+        let (counter, held, quoted) =
+            (Arc::clone(&counter), Arc::clone(&held), Arc::clone(&quoted));
+        std::thread::spawn(move || {
+            let guard = counter.lock().unwrap_or_else(|e| e.into_inner());
+            held.wait();
+            quoted.wait();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            drop(guard);
+        })
+    };
+    held.wait();
+
+    let mut source = InputSource::new(FrameId(1), &bus, &runtime).with_budget(Budget {
+        time: std::time::Duration::from_millis(200),
+    });
+    let quote = lane.quote(&mut source);
+    quoted.wait();
+    let locked = source.lock::<Counter>("counter").map(|counter| counter.0);
+    holder.join().expect("the holder panicked");
+
+    assert!(quote.is_none(), "the premise: a held lock gives no quote");
     assert_eq!(
-        counter.try_lock().map(|counter| counter.0).ok(),
-        Some(0),
-        "the counter is free and untouched"
+        locked.map_err(|refusal| refusal.reason),
+        Ok(0),
+        "after the quote, the source waits for a lock again, within the budget"
     );
 }

@@ -14,6 +14,7 @@
 
 //! Running the registered `DataSystem`s of a tick phase, in dependency order.
 
+use khora_core::agent::{EngineMode, SharedEngineMode};
 use khora_core::graph::topological_sort;
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
@@ -50,14 +51,27 @@ pub fn run_data_systems(
 
     sort_systems(&mut systems);
 
+    // The mode the application set; a runtime without one is a game, played.
+    let mode = runtime
+        .resources
+        .get::<SharedEngineMode>()
+        .and_then(|shared| shared.read().ok().map(|mode| mode.clone()))
+        .unwrap_or(EngineMode::Playing);
+
     // Each run writes at a tick of its own, which is what the system has
     // seen once it returns; the clock then moves past it. It is handed the
     // tick of its previous run on this world: what changed since is what it
-    // has not seen.
+    // has not seen. A system outside its modes is skipped, and the world
+    // notes it, so its next run is told it resumes.
     for sys in systems {
         let observer = Observer::DataSystem(sys.name);
+        if !sys.modes.is_empty() && !sys.modes.contains(&mode) {
+            world.note_observer_skip(observer);
+            continue;
+        }
         let ctx = SystemContext {
             since: world.observer_last_seen(observer),
+            resumed: world.observer_resumes(observer),
         };
         let tick = world.begin_run();
         (sys.run)(world, runtime, deck, ctx);
@@ -166,6 +180,7 @@ mod tests {
             order_hint: 10,
             runs_after: &[],
             observes: &[],
+            modes: &[],
         }
     }
     inventory::submit! {
@@ -176,6 +191,7 @@ mod tests {
             order_hint: 0,
             runs_after: &[],
             observes: &[],
+            modes: &[],
         }
     }
     inventory::submit! {
@@ -186,6 +202,7 @@ mod tests {
             order_hint: -5,
             runs_after: &["test_a"], // Forces c after a despite lower hint.
             observes: &[],
+            modes: &[],
         }
     }
 

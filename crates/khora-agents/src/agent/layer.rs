@@ -97,7 +97,8 @@ impl LaneLayer {
 
     /// Why the agent must choose again after a run that cost `cost`, on
     /// `terms`, on `frame`: the target changed, the quote stopped fitting,
-    /// drifted — in time, or in the impact it names — or aged.
+    /// drifted — in time, in the impact it names or in the share of the work
+    /// it serves — or aged.
     fn watch(&mut self, cost: &Cost, terms: &Terms, frame: Option<&FrameContext>) -> Option<Wake> {
         let time = time_of(cost);
         // The row's quote at the last full quote is the base; a row unquoted
@@ -121,9 +122,11 @@ impl LaneLayer {
             Some(Wake::TargetChanged)
         } else if fitted && !self.fitted {
             Some(Wake::QuoteUnfit)
-        } else if base
-            .is_none_or(|base| drifted(time_of(&base), time) || base.impact != cost.impact)
-        {
+        } else if base.is_none_or(|base| {
+            drifted(time_of(&base), time)
+                || base.impact != cost.impact
+                || base.served() != cost.served()
+        }) {
             Some(Wake::QuoteDrift)
         } else if terms
             .quoted_at
@@ -212,7 +215,8 @@ impl Layer for LaneLayer {
             RunOutcome::Recorded(report) => {
                 self.done = report.done;
                 self.stalled = report.stalled;
-                self.message.clear();
+                // What the lane says of a recorded run, or nothing.
+                self.message = report.message.unwrap_or_default();
                 match run.costs.get(self.level) {
                     Some(cost) => self.watch(cost, terms, frame.as_deref()),
                     None => None,

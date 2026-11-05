@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 
 use khora_core::lane::OutputDeck;
 use khora_core::problems::Problems;
-use khora_core::script::ScriptCatalog;
+use khora_core::projection::Interest;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
 use khora_io::asset::AssetWatch;
@@ -87,7 +87,7 @@ fn a_clash_only_the_importer_finds_survives_the_clashing_modules_own_compile() {
         &assets.path().join("scripts"),
         &pending,
         &declarations,
-        &ScriptCatalog::default(),
+        &Interest::new(),
         Some(&problems),
     );
 
@@ -176,6 +176,7 @@ fn a_deleted_module_leaves_no_problem_under_its_name() {
             &mut OutputDeck::new(),
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
         if problems.of_module("other.erg").0 > 0 {

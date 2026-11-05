@@ -56,6 +56,7 @@ fn record(lane: &'static str, level: usize, out: &mut ProbeOutputs) -> LaneRepor
     LaneReport {
         done: 1.0,
         stalled: false,
+        message: None,
     }
 }
 

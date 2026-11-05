@@ -249,6 +249,7 @@ impl Lane for WireframeLane {
         let done = LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         };
         let config = &inputs.wireframe.0;
         if !config.enabled {

@@ -121,6 +121,7 @@ impl Lane for SketchLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }

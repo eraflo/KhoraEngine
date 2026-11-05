@@ -70,6 +70,7 @@ fn run_until(name: &str, runtime: &Runtime, mut done: impl FnMut() -> bool) {
             &mut OutputDeck::new(),
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
         std::thread::sleep(Duration::from_millis(50));

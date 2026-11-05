@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Applying the modules an author just recompiled, and keeping the catalog of
-//! what the loaded programs read.
+//! Applying the modules an author just recompiled, and announcing to the
+//! script flow what the loaded programs read.
 
 use std::sync::Arc;
 
-use khora_core::script::{ComponentName, ComponentProjection, ScriptCatalog};
+use khora_core::projection::Interest;
+use khora_core::script::{ComponentName, ComponentProjection, ScriptReads};
 use khora_script::reload::ScriptReload;
 
 use crate::script_lane::ScriptRuntime;
@@ -30,13 +31,13 @@ use crate::script_lane::ScriptRuntime;
 ///
 /// A program that reads a component this frame's view did not project waits
 /// for the next frame, whose view will — its first `Get` must not read `null`
-/// for a component that exists. Without a catalog, nothing projects, so
+/// for a component that exists. Without a demand, nothing projects, so
 /// nothing waits.
 pub(crate) fn apply_reloads(
     runtime: &mut ScriptRuntime,
     reloads: &[ScriptReload],
     projected: &ComponentProjection,
-    catalog: Option<&Arc<ScriptCatalog>>,
+    demand: Option<&Arc<Interest<ScriptReads>>>,
 ) {
     // A waiting version a newer reload of the same module replaced is code
     // the author has already thrown away: it never runs.
@@ -51,8 +52,8 @@ pub(crate) fn apply_reloads(
                 "hot-reload: `{}` is gone, its instances stop",
                 reload.module
             );
-            if let Some(catalog) = catalog {
-                catalog.settle(&reload.module);
+            if let Some(demand) = demand {
+                demand.withdraw(&ScriptReads::incoming(&reload.module));
             }
             continue;
         };
@@ -60,13 +61,13 @@ pub(crate) fn apply_reloads(
             .reads
             .iter()
             .any(|read| projected.component(read).is_none());
-        if catalog.is_some() && unprojected {
+        if demand.is_some() && unprojected {
             runtime.defer(reload);
             continue;
         }
         apply(runtime, &reload);
-        if let Some(catalog) = catalog {
-            catalog.settle(&reload.module);
+        if let Some(demand) = demand {
+            demand.withdraw(&ScriptReads::incoming(&reload.module));
         }
     }
 }
@@ -93,14 +94,14 @@ fn apply(runtime: &mut ScriptRuntime, reload: &ScriptReload) {
     }
 }
 
-/// Writes to `catalog` every component the loaded programs read — and the
+/// Announces to `demand` every component the loaded programs read — and the
 /// waiting ones, so the next frame projects what they need.
 ///
 /// Recomputed every frame from the programs themselves rather than only on a
 /// reload: a handful of programs is cheap to walk, and a program installed any
 /// other way is not missed.
-pub(crate) fn publish_reads(runtime: &ScriptRuntime, catalog: &ScriptCatalog) {
-    let reads = runtime
+pub(crate) fn publish_reads(runtime: &ScriptRuntime, demand: &Interest<ScriptReads>) {
+    let reads: Vec<ComponentName> = runtime
         .programs()
         .flat_map(|program| program.reads.iter())
         .chain(
@@ -112,5 +113,5 @@ pub(crate) fn publish_reads(runtime: &ScriptRuntime, catalog: &ScriptCatalog) {
         )
         .map(|read| ComponentName::new(read.as_str()))
         .collect();
-    catalog.set_reads(reads);
+    demand.announce(ScriptReads::LOADED, reads);
 }

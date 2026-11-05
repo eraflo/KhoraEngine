@@ -131,6 +131,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
         observes: &[ComponentKey::of::<UiText>],
+        modes: &[],
     }
 }
 ```
@@ -139,11 +140,17 @@ inventory::submit! {
 answer is row by row rather than page by page. A component is watched because an
 observer declares it — never discovered by polling.
 
+`modes` names the engine modes the system runs in; empty means every mode. Outside
+them the runner skips it and keeps its tick, so its next run sees what changed while
+it was away, and `ctx.resumed` tells that run it resumes — as it tells the system's
+first run on a world.
+
 ## Forgetting quietly
 
 Row ticks cost eight bytes per row. A column that has been quiet for a while —
 `QUIET_ROW_TICKS`, 12 300 ticks, about five seconds of the sandbox at 60 frames a
-second — and whose last write every observer has already seen, drops them:
+second — and whose last write every observer has already seen (a system skipped
+outside its modes does not hold it back), drops them:
 `ecs_maintenance` does it every frame. The floor rises to the summary, and the
 next write brings the stickers back, zeroed under the floor. A reader that had
 seen everything loses nothing; a late one is handed the whole page, as in step 5

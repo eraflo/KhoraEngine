@@ -29,9 +29,10 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::{Lane, LaneContext, OutputDeck};
 use khora_core::math::Vec3;
+use khora_core::projection::Interest;
 use khora_core::script::{
-    BehaviorUpdate, BehaviorWriteback, CommandBuffer, ScriptCatalog, ScriptEvent, ScriptValue,
-    WorldCommand,
+    BehaviorUpdate, BehaviorWriteback, CommandBuffer, ScriptCatalog, ScriptEvent, ScriptReads,
+    ScriptValue, WorldCommand,
 };
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRuntime};
@@ -122,6 +123,7 @@ struct Stage {
     reloads: Channel<ScriptReload>,
     events: Channel<ScriptEvent>,
     catalog: Arc<ScriptCatalog>,
+    demand: Arc<Interest<ScriptReads>>,
 }
 
 /// What one frame handed over: the commands in the deck, in order, and the
@@ -165,6 +167,7 @@ impl Stage {
             reloads: Channel::bounded(64, WhenFull::DropOldest),
             events: Channel::bounded(64, WhenFull::DropOldest),
             catalog: Arc::new(ScriptCatalog::default()),
+            demand: Arc::new(Interest::new()),
         }
     }
 
@@ -189,6 +192,7 @@ impl Stage {
             ctx.insert_ref(&self.reloads);
             ctx.insert_ref(&self.events);
             ctx.insert_ref(&self.catalog);
+            ctx.insert_ref(&self.demand);
             lane.execute(&mut ctx).expect("the lane runs");
         }
         Handed {

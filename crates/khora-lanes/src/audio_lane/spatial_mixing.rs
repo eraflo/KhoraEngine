@@ -192,6 +192,7 @@ impl Lane for SpatialMixingLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }

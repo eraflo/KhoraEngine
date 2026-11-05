@@ -35,6 +35,7 @@ pub mod memory;
 pub mod physics;
 pub mod platform;
 pub mod problems;
+pub mod projection;
 pub mod renderer;
 pub mod residency;
 pub mod runtime;

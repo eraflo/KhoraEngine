@@ -139,6 +139,7 @@ impl Lane for LitForwardLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 

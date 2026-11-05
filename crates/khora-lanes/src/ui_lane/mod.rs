@@ -291,6 +291,7 @@ impl Lane for UiLane {
         let done = LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         };
         let scene = inputs.scene;
         if scene.nodes.is_empty() && scene.texts.is_empty() {

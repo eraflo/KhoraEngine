@@ -89,6 +89,7 @@ inventory::submit! {
         order_hint: 10,
         runs_after: &[],
         observes: &[],
+        modes: &[],
     }
 }
 
@@ -127,6 +128,7 @@ mod tests {
             deck,
             crate::ecs::SystemContext {
                 since: crate::ecs::Tick(0),
+                resumed: false,
             },
         );
     }

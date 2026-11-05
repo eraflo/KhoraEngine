@@ -595,5 +595,6 @@ inventory::submit! {
         order_hint: -9,
         runs_after: &["script_hot_reload"],
         observes: &[],
+        modes: &[],
     }
 }

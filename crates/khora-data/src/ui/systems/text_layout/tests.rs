@@ -221,6 +221,7 @@ impl Scene {
             &mut OutputDeck::new(),
             SystemContext {
                 since: self.last_seen,
+                resumed: false,
             },
         );
         self.world.end_run();

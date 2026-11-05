@@ -200,6 +200,7 @@ inventory::submit! {
         order_hint: 20,
         runs_after: &[],
         observes: &[],
+        modes: &[],
     }
 }
 

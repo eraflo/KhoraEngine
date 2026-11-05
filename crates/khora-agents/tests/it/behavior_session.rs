@@ -23,7 +23,10 @@ use khora_control::substrate::run_data_systems;
 use khora_core::ecs::entity::EntityId;
 use khora_core::event::Channel;
 use khora_core::lane::{Lane, LaneContext, OutputDeck};
-use khora_core::script::{engine_event_channel, CommandBuffer, ScriptCatalog, ScriptEvent};
+use khora_core::projection::Interest;
+use khora_core::script::{
+    engine_event_channel, CommandBuffer, ScriptCatalog, ScriptEvent, ScriptReads,
+};
 use khora_core::script::{ScriptValue, WorldCommand};
 use khora_core::Runtime;
 use khora_data::ecs::{ComponentKey, TickPhase, World};
@@ -85,6 +88,7 @@ pub(crate) struct Session {
     reloads: Channel<ScriptReload>,
     events: Channel<ScriptEvent>,
     catalog: Arc<ScriptCatalog>,
+    reads: Arc<Interest<ScriptReads>>,
 }
 
 impl Session {
@@ -106,6 +110,7 @@ impl Session {
         let reloads = khora_io::script::hot_reload::reload_channel();
         let events = engine_event_channel();
         let catalog = Arc::new(ScriptCatalog::default());
+        let reads = Arc::new(Interest::<ScriptReads>::new());
 
         let mut runtime = Runtime::default();
         runtime.resources.insert(declarations.clone());
@@ -113,6 +118,7 @@ impl Session {
             .resources
             .insert(Arc::new(Mutex::new(DeclaredComponents::default())));
         runtime.resources.insert(Arc::clone(&catalog));
+        runtime.resources.insert(Arc::clone(&reads));
         prepare(&mut runtime);
 
         let mut session = Self {
@@ -125,6 +131,7 @@ impl Session {
             reloads,
             events,
             catalog,
+            reads,
         };
         for &(module, _) in project {
             declarations.send(declarations_of(project, module));
@@ -184,6 +191,7 @@ impl Session {
             ctx.insert_ref(&self.reloads);
             ctx.insert_ref(&self.events);
             ctx.insert_ref(&self.catalog);
+            ctx.insert_ref(&self.reads);
             self.lane.execute(&mut ctx).expect("the script lane runs");
         }
         also(deck.slot::<CommandBuffer>());
@@ -198,17 +206,17 @@ impl Session {
     /// `modules` saved by their author, recompiled among `project`, handed
     /// over the way the hot-reload pump hands them before the next frame's
     /// boundary: what each declares, what its program reads announced to the
-    /// catalog, and the program.
+    /// demand as `module:<name>`, and the program.
     pub(crate) fn recompile(&self, project: Project, modules: &[&str]) {
         for &module in modules {
             let program = compile(project, module);
-            self.catalog.announce(
-                module,
+            self.reads.announce(
+                format!("module:{module}"),
                 program
                     .reads
                     .iter()
                     .map(|read| khora_core::script::ComponentName::new(read.as_str()))
-                    .collect(),
+                    .collect::<Vec<_>>(),
             );
             self.hand_over(module, program);
         }
@@ -235,9 +243,10 @@ impl Session {
         });
     }
 
-    /// The catalog the lane writes and the flow reads.
-    pub(crate) fn catalog(&self) -> &ScriptCatalog {
-        &self.catalog
+    /// The demand the lane announces the loaded programs' reads to and the
+    /// flow projects.
+    pub(crate) fn reads(&self) -> &Interest<ScriptReads> {
+        &self.reads
     }
 }
 

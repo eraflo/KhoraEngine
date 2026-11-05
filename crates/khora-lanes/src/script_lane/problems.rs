@@ -152,5 +152,6 @@ khora_script::inventory::submit! {
         run: |_, runtime, _, _| report_running_problems(runtime),
         runs_after: &["behavior_writeback"],
         observes: &[],
+        modes: &[],
     }
 }

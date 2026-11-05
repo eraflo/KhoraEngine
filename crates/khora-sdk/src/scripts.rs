@@ -23,7 +23,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use khora_core::problems::{ProblemSource, Problems};
-use khora_core::script::ScriptCatalog;
+use khora_core::projection::Interest;
+use khora_core::script::{ScriptCatalog, ScriptReads};
 use khora_core::Runtime;
 use khora_io::asset::AssetWatch;
 use khora_io::script::declarations::{
@@ -59,7 +60,8 @@ pub use khora_io::script::mounted::MountedScripts;
 /// Puts what scripting needs into `runtime`, each only where it is absent:
 /// the engine's [`AssetWatch`], the queues of compiled programs and of
 /// declarations, the engine's event channel, the memory of who declares
-/// what, the [`ScriptCatalog`], and the record of what is mounted — and the
+/// what, the [`ScriptCatalog`], the script flow's demand of what scripts read,
+/// and the record of what is mounted — and the
 /// engine's [`Problems`] list, which scripts report to among others (the
 /// components' checks, the scene loads), so it is in place whether or not
 /// the application has scripts.
@@ -91,6 +93,9 @@ pub fn install(runtime: &mut Runtime) {
     if resources.get::<Arc<ScriptCatalog>>().is_none() {
         resources.insert(Arc::new(ScriptCatalog::default()));
     }
+    if resources.get::<Arc<Interest<ScriptReads>>>().is_none() {
+        resources.insert(Arc::new(Interest::<ScriptReads>::new()));
+    }
     if resources.get::<Arc<Problems>>().is_none() {
         resources.insert(Arc::new(Problems::default()));
     }
@@ -103,7 +108,7 @@ pub fn install(runtime: &mut Runtime) {
 /// engine's `AssetWatch`, reports every `.erg` outside its [`SCRIPT_DIR`] to
 /// the `Problems` — never compiled — then compiles every module under
 /// `assets_root/scripts`, sends what they declare and what they compiled to,
-/// and announces what each reads to the `ScriptCatalog`.
+/// and announces what each reads to the script flow's demand.
 ///
 /// Returns how many modules compiled. Safe to call with a directory that does
 /// not exist — a project without scripts is not an error, and neither is a
@@ -163,12 +168,12 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> usize {
             module_names(&script_dir),
         );
     }
-    let loaded = match runtime.resources.get::<Arc<ScriptCatalog>>() {
-        Some(catalog) => load_all_announcing(
+    let loaded = match runtime.resources.get::<Arc<Interest<ScriptReads>>>() {
+        Some(reads) => load_all_announcing(
             &script_dir,
             pending,
             declarations,
-            catalog,
+            reads,
             runtime.resources.get::<Arc<Problems>>().map(Arc::as_ref),
         ),
         None => load_all(&script_dir, pending, declarations),
@@ -254,9 +259,9 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
             withdraw(pending, module);
         }
     }
-    if let Some(catalog) = runtime.resources.get::<Arc<ScriptCatalog>>() {
+    if let Some(reads) = runtime.resources.get::<Arc<Interest<ScriptReads>>>() {
         for module in &modules {
-            catalog.settle(module);
+            reads.withdraw(&ScriptReads::incoming(module));
         }
     }
     // A module no longer mounted has nothing wrong with it to show.

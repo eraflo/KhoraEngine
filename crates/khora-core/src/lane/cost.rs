@@ -60,4 +60,42 @@ pub struct Cost {
     /// means the level's own [`Level::impact`](super::level::Level::impact).
     #[serde(default)]
     pub impact: Option<Impact>,
+    /// The share of the frame's due work the level serves on these inputs,
+    /// from `0.0` to `1.0`; `None` means all of it. A row's quality is its
+    /// impact's quality times this share.
+    #[serde(default)]
+    pub share: Option<f32>,
+}
+
+impl Cost {
+    /// The share of the due work served, read as a number from `0.0` to
+    /// `1.0`: all of it without a `share`; a share above one is all of it,
+    /// and one below zero or not a number is none of it.
+    pub fn served(&self) -> f32 {
+        match self.share {
+            None => 1.0,
+            Some(share) if share.is_nan() => 0.0,
+            Some(share) => share.clamp(0.0, 1.0),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **A cost saved before quotes named a share reads back serving all the
+    /// work**: `share` is `None` when the field is absent.
+    #[test]
+    fn a_cost_without_a_share_field_reads_back_with_no_share() {
+        let mut saved = serde_json::to_value(Cost::default()).expect("a cost serialises");
+        saved
+            .as_object_mut()
+            .expect("a cost is an object")
+            .remove("share");
+
+        let read: Cost = serde_json::from_value(saved).expect("a cost without a share reads");
+
+        assert_eq!(read.share, None);
+    }
 }

@@ -211,6 +211,7 @@ impl Lane for ForwardPlusLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 

@@ -402,6 +402,7 @@ inventory::submit! {
         order_hint: -6,
         runs_after: &[],
         observes: &[],
+        modes: &[],
     }
 }
 
@@ -485,6 +486,7 @@ mod tests {
                 &mut deck,
                 khora_data::ecs::SystemContext {
                     since: khora_data::ecs::Tick(0),
+                    resumed: false,
                 },
             );
             (data_system("asset_resolver").run)(
@@ -493,6 +495,7 @@ mod tests {
                 &mut deck,
                 khora_data::ecs::SystemContext {
                     since: khora_data::ecs::Tick(0),
+                    resumed: false,
                 },
             );
         }

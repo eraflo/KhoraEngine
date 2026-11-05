@@ -64,5 +64,6 @@ inventory::submit! {
         order_hint: 1,
         runs_after: &["ecs_maintenance"],
         observes: &[],
+        modes: &[],
     }
 }

@@ -57,6 +57,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
         observes: &[ComponentKey::of::<WatchedBySystem>],
+        modes: &[],
     }
 }
 

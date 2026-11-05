@@ -328,6 +328,7 @@ impl Lane for BudgetedLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }
@@ -363,6 +364,7 @@ impl Lane for EchoLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }
@@ -609,6 +611,7 @@ impl Lane for ReaderLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }
@@ -644,6 +647,7 @@ impl Lane for LockerLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }

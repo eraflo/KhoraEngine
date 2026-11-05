@@ -26,7 +26,8 @@ use std::time::{Duration, Instant};
 
 use khora_sdk::khora_core::agent::{EngineMode, SharedEngineMode};
 use khora_sdk::khora_core::ecs::entity::EntityId;
-use khora_sdk::khora_core::script::{ComponentName, ScriptCatalog, ScriptValue};
+use khora_sdk::khora_core::projection::Interest;
+use khora_sdk::khora_core::script::{ComponentName, ScriptReads, ScriptValue};
 use khora_sdk::khora_data::ecs::ScriptRole;
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::{
@@ -154,14 +155,14 @@ fn watches(engine: &EngineCore<Tool>, root: &Path) -> bool {
         .any(|watched| std::fs::canonicalize(watched).ok().as_ref() == Some(&root))
 }
 
-/// What the engine's catalog says the scripts read.
+/// What the engine's demand on the script flow says the scripts read.
 fn reads(engine: &EngineCore<Tool>) -> Vec<ComponentName> {
     engine
         .runtime()
         .resources
-        .get::<Arc<ScriptCatalog>>()
-        .expect("the engine holds a ScriptCatalog")
-        .reads()
+        .get::<Arc<Interest<ScriptReads>>>()
+        .expect("the engine holds the demand on the script flow")
+        .wanted()
 }
 
 /// Whether the World's registry lists `name`.

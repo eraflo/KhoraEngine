@@ -83,6 +83,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
         observes: &[ComponentKey::of::<Beacon>],
+        modes: &[],
     }
 }
 inventory::submit! {
@@ -93,6 +94,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
         observes: &[],
+        modes: &[],
     }
 }
 

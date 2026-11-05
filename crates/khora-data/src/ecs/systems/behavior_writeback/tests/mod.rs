@@ -185,6 +185,7 @@ fn run(world: &mut World, deck: &mut OutputDeck) {
         deck,
         crate::ecs::SystemContext {
             since: crate::ecs::Tick(0),
+            resumed: false,
         },
     );
 }

@@ -167,6 +167,7 @@ macro_rules! swap_lane {
                 Ok(LaneReport {
                     done: 1.0,
                     stalled: false,
+                    message: None,
                 })
             }
 
@@ -525,6 +526,7 @@ impl Lane for QuickLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }
@@ -569,6 +571,7 @@ impl Lane for SlowLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }

@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 
 use khora_core::lane::OutputDeck;
 use khora_core::problems::{ProblemSeverity, Problems};
-use khora_core::script::ScriptCatalog;
+use khora_core::projection::Interest;
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
 use khora_io::asset::AssetWatch;
@@ -81,7 +81,7 @@ fn load_then_fix_helper(import: &str) -> (Vec<String>, Vec<String>) {
         &assets.path().join("scripts"),
         pending,
         &declaration_channel(),
-        &ScriptCatalog::default(),
+        &Interest::new(),
         Some(&problems),
     );
     assert!(
@@ -103,6 +103,7 @@ fn load_then_fix_helper(import: &str) -> (Vec<String>, Vec<String>) {
             &mut OutputDeck::new(),
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
         sent.extend(pending.drain().into_iter().map(|reload| reload.module));
@@ -162,7 +163,7 @@ fn a_load_reports_a_missing_import_under_the_importer_at_the_import() {
         &assets.path().join("scripts"),
         &reload_channel(),
         &declaration_channel(),
-        &ScriptCatalog::default(),
+        &Interest::new(),
         Some(&problems),
     );
 

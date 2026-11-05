@@ -1079,6 +1079,7 @@ fn pump_until_recompiled(runtime: &khora_core::Runtime) {
             &mut khora_core::lane::OutputDeck::new(),
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
         std::thread::sleep(std::time::Duration::from_millis(50));

@@ -19,7 +19,8 @@
 //! (10 %) from its value at the last full quote, or for the last full quote
 //! growing older than [`QUOTE_MAX_AGE`]. The run that finds the drift or the
 //! age raises the wake; the next frame's event pass answers it. Otherwise
-//! the other lanes' quotes stand. A lane that locks is never quoted.
+//! the other lanes' quotes stand. A lane that locks is quoted when its lock
+//! is free, tried without waiting; held elsewhere, it stays unquoted.
 //!
 //! The lanes that do not run count their quotes: their `cost` is called only
 //! by a quote, once per level, and each has one level.
@@ -95,6 +96,24 @@ fn frame(load: u32, plan: Plan, counts: &Counts) -> Arc<Runtime> {
 /// A frame that runs as planned.
 fn plain(load: u32, counts: &Counts) -> Arc<Runtime> {
     frame(load, Plan::default(), counts)
+}
+
+/// Runs one frame of `agent` on `runtime` while another holder keeps the
+/// frame's tally.
+fn run_holding_the_tally(
+    agent: &mut LaneAgent,
+    frame: u64,
+    runtime: &Arc<Runtime>,
+    deck: &mut OutputDeck,
+) {
+    let tally = Arc::clone(
+        runtime
+            .resources
+            .get::<Arc<Mutex<Tally>>>()
+            .expect("the frame's tally"),
+    );
+    let _held_elsewhere = tally.lock().expect("the tally is free");
+    run(agent, frame, runtime, deck);
 }
 
 // ─── Inputs ─────────────────────────────────────────────────────────────────
@@ -217,6 +236,7 @@ impl Lane for RunningLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }
@@ -252,11 +272,12 @@ impl Lane for QuotedLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }
 
-/// Locks the tally; would quote between the two others, counting its costs.
+/// Locks the tally; quotes between the two others, counting its costs.
 #[derive(Default)]
 pub struct LockingLane;
 
@@ -288,6 +309,7 @@ impl Lane for LockingLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }
@@ -457,14 +479,14 @@ fn a_full_quote_older_than_the_max_age_requotes_the_other_lanes() {
     assert_eq!(counts.quoted(), 2, "an old quote is made again");
 }
 
-/// **A lane that locks stays unquoted, and is never the cheaper row.** The
-/// locking lane would quote between the running lane and the quoted one, so,
-/// quoted, it would be the row a failure falls back to. It is never quoted
-/// (its `cost` is never called), and when the running lane fails the agent,
-/// woken by the failure, falls back across lanes to the quoted one, which
-/// records from the frame after.
+/// **A lane whose lock is free is quoted, and is the cheaper row a failure
+/// falls back to.** The locking lane quotes 80 µs, between the running lane's
+/// 100 and the quoted one's 50: its tally free, the first run's full quote
+/// prices it, and when the running lane fails the agent, woken by the
+/// failure, falls back to it — the next cheaper row — which records from the
+/// frame after.
 #[test]
-fn a_locking_lane_stays_unquoted_and_is_not_picked_as_cheaper() {
+fn a_locking_lane_whose_lock_is_free_is_quoted_and_picked_as_cheaper() {
     let counts = Counts::default();
     let mut agent = running_agent(&WITH_A_LOCKING_LANE);
     let mut deck = OutputDeck::new();
@@ -474,6 +496,7 @@ fn a_locking_lane_stays_unquoted_and_is_not_picked_as_cheaper() {
     };
 
     run(&mut agent, 1, &plain(100, &counts), &mut deck);
+    assert_eq!(counts.locked(), 1, "the full quote priced the locking lane");
     run(
         &mut agent,
         2,
@@ -481,6 +504,43 @@ fn a_locking_lane_stays_unquoted_and_is_not_picked_as_cheaper() {
         &mut deck,
     );
     run(&mut agent, 3, &frame(100, failing, &counts), &mut deck);
+
+    assert_eq!(
+        locked(&place_of(&agent)).staged_row(),
+        Some(StrategyId::Balanced),
+        "the failure falls back to the next cheaper row, the locking lane"
+    );
+    run(&mut agent, 4, &plain(100, &counts), &mut deck);
+    assert_eq!(
+        deck.get::<Recorded>().map(|recorded| recorded.lane),
+        Some("locking"),
+        "the locking lane runs from the frame start after the wake"
+    );
+}
+
+/// **A lane whose lock is held elsewhere stays unquoted, and is not the
+/// cheaper row.** Another holder keeps the tally through the first three
+/// frames: the full quote cannot price the locking lane (its `cost` is never
+/// called), so when the running lane fails the agent falls back across lanes
+/// to the quoted one, which records from the frame after.
+#[test]
+fn a_locking_lane_whose_lock_is_held_stays_unquoted_and_is_not_picked_as_cheaper() {
+    let counts = Counts::default();
+    let mut agent = running_agent(&WITH_A_LOCKING_LANE);
+    let mut deck = OutputDeck::new();
+    let failing = Plan {
+        fail_levels: vec![0],
+        ..Plan::default()
+    };
+
+    run_holding_the_tally(&mut agent, 1, &plain(100, &counts), &mut deck);
+    run_holding_the_tally(
+        &mut agent,
+        2,
+        &frame(100, failing.clone(), &counts),
+        &mut deck,
+    );
+    run_holding_the_tally(&mut agent, 3, &frame(100, failing, &counts), &mut deck);
 
     assert_eq!(counts.locked(), 0, "the locking lane was never quoted");
     assert_eq!(
@@ -499,7 +559,6 @@ fn a_locking_lane_stays_unquoted_and_is_not_picked_as_cheaper() {
         StrategyId::LowPower,
         "once installed, the quoted lane is the row the agent runs"
     );
-    assert_eq!(counts.locked(), 0, "still never quoted");
 }
 
 /// **The drift is measured from the running row's own quote at the last full
@@ -587,8 +646,8 @@ fn a_running_lane_refused_its_input_is_not_offered_at_its_old_quote() {
 
 /// **Once every row was quoted, a row without a quote is not offered.** Before
 /// any run the locking lane's row is offered like every other; after the first
-/// run's full quote it has no price — a lane that locks is never quoted — and
-/// GORNA is offered only the two rows that have one.
+/// run's full quote it has no price — its tally was held elsewhere, so it could
+/// not be quoted — and GORNA is offered only the two rows that have one.
 #[test]
 fn after_a_full_quote_a_row_without_a_quote_is_not_offered() {
     let counts = Counts::default();
@@ -599,7 +658,7 @@ fn after_a_full_quote_a_row_without_a_quote_is_not_offered() {
         "before any run every row is offered"
     );
 
-    run(&mut agent, 1, &plain(100, &counts), &mut deck);
+    run_holding_the_tally(&mut agent, 1, &plain(100, &counts), &mut deck);
 
     let offered: Vec<StrategyId> = agent
         .negotiate(request())
@@ -616,8 +675,9 @@ fn after_a_full_quote_a_row_without_a_quote_is_not_offered() {
 
 /// **A row GORNA moves to that was unquoted at the last full quote is quoted
 /// with every other row on its first run, and measured from that run after.**
-/// The locking lane is never quoted, so the first frame's full quote leaves
-/// it without a base. GORNA moves to it, and it runs from the frame after:
+/// The locking lane's tally is held elsewhere through the first frame, so the
+/// first frame's full quote leaves it without a base. GORNA moves to it, and
+/// it runs from the frame after:
 /// that first run counts as drifted and wakes the agent, which quotes the
 /// quoted lane again on the next frame. Its next run, on the same load, is
 /// measured from its own price and quotes nothing more.
@@ -627,7 +687,7 @@ fn a_row_unquoted_at_the_full_quote_requotes_on_its_first_run_only() {
     let mut agent = running_agent(&WITH_A_LOCKING_LANE);
     let mut deck = OutputDeck::new();
 
-    run(&mut agent, 1, &plain(100, &counts), &mut deck);
+    run_holding_the_tally(&mut agent, 1, &plain(100, &counts), &mut deck);
     assert_eq!(counts.quoted(), 1, "the first frame's full quote");
 
     agent.apply_budget(budget(StrategyId::Balanced));
@@ -698,9 +758,9 @@ fn a_one_lane_family_refused_after_it_was_priced_is_still_offered() {
 /// **A lane whose lock was not obtained in time keeps its price.** The locking
 /// lane runs and is priced by its run; on the next two frames another holder
 /// keeps the tally, and the lock times out — the agent is woken by the first.
-/// Nothing it needs is missing — the lock was busy — and a lane that locks is
-/// never quoted, only priced by its own runs: dropped from the menu now, it
-/// could never be offered again.
+/// Nothing it needs is missing — the lock was busy — and a running lane is
+/// priced by its own runs alone: dropped from the menu now, it could not be
+/// offered again until it ran.
 #[test]
 fn a_lock_not_obtained_in_time_keeps_the_running_lanes_price() {
     let counts = Counts::default();
@@ -793,6 +853,7 @@ impl Lane for BudgetedLane {
         Ok(LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         })
     }
 }

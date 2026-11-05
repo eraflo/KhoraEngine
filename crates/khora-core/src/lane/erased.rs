@@ -20,7 +20,7 @@ use std::any::TypeId;
 use super::contract::{Lane, LaneReport};
 use super::cost::Cost;
 use super::family::LaneFamily;
-use super::guard::{InputRefusal, InputWarning, OutputRefusal, SourceKind};
+use super::guard::{InputRefusal, InputWarning, OutputRefusal};
 use super::io::{Declaration, InputSource, LaneInputs, LaneOutputs, OutputSink, TargetKey};
 use super::level::Level;
 use super::LaneError;
@@ -92,8 +92,9 @@ pub trait AnyLane: Send {
     /// without running the lane: the inputs are fetched and each level is
     /// costed, but nothing is prepared, recorded or written.
     ///
-    /// `None` when an input is refused, and for a lane that declares a
-    /// `#[locked]` input: quoting never takes a lock.
+    /// `None` when an input is refused. A `#[locked]` input is taken only if
+    /// its lock is free, and let go before the quote returns: a quote never
+    /// waits, so a lock held elsewhere leaves the lane unquoted.
     fn quote(&self, inputs: &mut InputSource<'_>) -> Option<Vec<Cost>>;
 
     /// Prepares the lane at `level` for this frame's inputs — the target it
@@ -171,20 +172,18 @@ impl<L: Lane> AnyLane for Erased<L> {
     }
 
     fn quote(&self, inputs: &mut InputSource<'_>) -> Option<Vec<Cost>> {
-        let locks = self
-            .declaration()
-            .inputs()
-            .iter()
-            .any(|input| input.kind == SourceKind::Locked);
-        if locks {
-            return None;
-        }
-        let fetched = <L::Inputs<'_> as LaneInputs<'_>>::fetch(inputs).ok()?;
-        Some(
-            (0..self.lane.levels().len())
-                .map(|level| self.lane.cost(level, &fetched))
-                .collect(),
-        )
+        let waited = inputs.set_waiting(false);
+        // The fetched inputs — and any lock they hold — drop before the
+        // source waits again.
+        let costs = <L::Inputs<'_> as LaneInputs<'_>>::fetch(inputs)
+            .ok()
+            .map(|fetched| {
+                (0..self.lane.levels().len())
+                    .map(|level| self.lane.cost(level, &fetched))
+                    .collect()
+            });
+        inputs.set_waiting(waited);
+        costs
     }
 
     fn prepare(

@@ -86,6 +86,7 @@ fn saves_under_two_roots_read_in_one_frame_are_each_recompiled() {
         &mut OutputDeck::new(),
         khora_data::ecs::SystemContext {
             since: khora_data::ecs::Tick(0),
+            resumed: false,
         },
     );
 

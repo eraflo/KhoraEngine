@@ -22,7 +22,8 @@ use std::time::{Duration, Instant};
 
 use khora_sdk::khora_core::agent::{EngineMode, SharedEngineMode};
 use khora_sdk::khora_core::ecs::entity::EntityId;
-use khora_sdk::khora_core::script::{ComponentName, ScriptCatalog, ScriptValue};
+use khora_sdk::khora_core::projection::Interest;
+use khora_sdk::khora_core::script::{ComponentName, ScriptReads, ScriptValue};
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::{
     AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
@@ -140,9 +141,9 @@ fn reads(engine: &EngineCore<Tool>) -> Vec<ComponentName> {
     engine
         .runtime()
         .resources
-        .get::<Arc<ScriptCatalog>>()
-        .expect("the engine holds a ScriptCatalog")
-        .reads()
+        .get::<Arc<Interest<ScriptReads>>>()
+        .expect("the engine holds the demand on the script flow")
+        .wanted()
 }
 
 fn spawn_greeter(engine: &mut EngineCore<Tool>) -> EntityId {

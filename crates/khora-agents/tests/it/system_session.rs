@@ -27,8 +27,10 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 use khora_core::event::Channel;
 use khora_core::lane::{Lane, LaneContext, OutputDeck};
+use khora_core::projection::Interest;
 use khora_core::script::{
-    engine_event_channel, CommandBuffer, ComponentName, ScriptCatalog, ScriptEvent, WorldCommand,
+    engine_event_channel, CommandBuffer, ComponentName, ScriptCatalog, ScriptEvent, ScriptReads,
+    WorldCommand,
 };
 use khora_core::Runtime;
 use khora_data::ecs::{TickPhase, World};
@@ -53,6 +55,7 @@ pub(crate) struct SystemSession {
     reloads: Channel<ScriptReload>,
     events: Channel<ScriptEvent>,
     catalog: Arc<ScriptCatalog>,
+    reads: Arc<Interest<ScriptReads>>,
 }
 
 impl SystemSession {
@@ -69,6 +72,7 @@ impl SystemSession {
         let reloads = khora_io::script::hot_reload::reload_channel();
         let events = engine_event_channel();
         let catalog = Arc::new(ScriptCatalog::default());
+        let reads = Arc::new(Interest::<ScriptReads>::new());
         let mode: SharedEngineMode = Arc::new(RwLock::new(mode));
 
         let mut runtime = Runtime::default();
@@ -77,6 +81,7 @@ impl SystemSession {
             .resources
             .insert(Arc::new(Mutex::new(DeclaredComponents::default())));
         runtime.resources.insert(Arc::clone(&catalog));
+        runtime.resources.insert(Arc::clone(&reads));
         runtime.resources.insert(Arc::clone(&mode));
 
         let mut session = Self {
@@ -90,6 +95,7 @@ impl SystemSession {
             reloads,
             events,
             catalog,
+            reads,
         };
         session.recompile(
             project,
@@ -148,6 +154,7 @@ impl SystemSession {
             ctx.insert_ref(&self.reloads);
             ctx.insert_ref(&self.events);
             ctx.insert_ref(&self.catalog);
+            ctx.insert_ref(&self.reads);
             self.lane.execute(&mut ctx).expect("the script lane runs");
         }
         self.boundary(TickPhase::Maintenance, &mut deck);
@@ -158,13 +165,13 @@ impl SystemSession {
     pub(crate) fn recompile(&self, project: Project, modules: &[&str]) {
         for &module in modules {
             let program = compile(project, module);
-            self.catalog.announce(
-                module,
+            self.reads.announce(
+                format!("module:{module}"),
                 program
                     .reads
                     .iter()
                     .map(|read| ComponentName::new(read.as_str()))
-                    .collect(),
+                    .collect::<Vec<_>>(),
             );
             self.hand_over(module, program);
         }

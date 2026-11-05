@@ -12,13 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The catalog of what loaded scripts read is wired for every application:
-//! the bootstrap inserts it beside the reload channel, so the script lane has
-//! somewhere to write the read set and the script flow somewhere to read it.
+//! The catalog of what loaded scripts declare, and the demand of what they
+//! read, are wired for every application: the bootstrap inserts them beside
+//! the reload channel, so the script lane and the hot-reload pump have
+//! somewhere to announce what scripts read, and the script flow somewhere to
+//! read it.
 
 use std::sync::Arc;
 
-use khora_sdk::khora_core::script::ScriptCatalog;
+use khora_sdk::khora_core::projection::Interest;
+use khora_sdk::khora_core::script::{ScriptCatalog, ScriptReads};
 use khora_sdk::{
     AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
     Runtime, WindowConfig,
@@ -42,8 +45,8 @@ impl EngineApp for Game {
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
 }
 
-/// **The bootstrap inserts the catalog**, empty until a program that reads
-/// something is loaded.
+/// **The bootstrap inserts the catalog**, declaring nothing until a module is
+/// loaded.
 #[test]
 fn the_bootstrap_inserts_the_script_catalog() {
     let mut engine = EngineCore::<Game>::new();
@@ -56,7 +59,23 @@ fn the_bootstrap_inserts_the_script_catalog() {
         .cloned()
         .expect("the bootstrap inserts the script catalog");
     assert!(
-        catalog.reads().is_empty(),
-        "nothing is loaded, nothing read"
+        catalog.declared().is_empty(),
+        "nothing is loaded, nothing declared"
     );
+}
+
+/// **The bootstrap inserts the demand on the script flow**, wanting nothing
+/// until a program that reads something is loaded.
+#[test]
+fn the_bootstrap_inserts_the_demand_on_the_script_flow() {
+    let mut engine = EngineCore::<Game>::new();
+    engine.bootstrap(Game, Runtime::new());
+
+    let reads = engine
+        .runtime()
+        .resources
+        .get::<Arc<Interest<ScriptReads>>>()
+        .cloned()
+        .expect("the bootstrap inserts the demand on the script flow");
+    assert!(reads.wanted().is_empty(), "nothing is loaded, nothing read");
 }

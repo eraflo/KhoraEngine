@@ -234,6 +234,7 @@ inventory::submit! {
             ComponentKey::of::<UiTextLayout>,
             ComponentKey::of::<HandleComponent<Font>>,
         ],
+        modes: &[],
     }
 }
 

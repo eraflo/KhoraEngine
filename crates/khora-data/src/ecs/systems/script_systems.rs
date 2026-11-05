@@ -25,7 +25,7 @@
 //! back the world Play started from, takes it away.
 
 use crate::ecs::SystemContext;
-use khora_core::agent::SharedEngineMode;
+use khora_core::agent::EngineMode;
 use khora_core::ecs::PersistentId;
 use khora_core::lane::OutputDeck;
 use khora_core::script::ScriptValue;
@@ -40,18 +40,10 @@ pub fn singleton_id(system: &str) -> PersistentId {
 
 fn script_systems(
     world: &mut World,
-    runtime: &Runtime,
+    _runtime: &Runtime,
     _deck: &mut OutputDeck,
     _ctx: SystemContext,
 ) {
-    let playing = runtime
-        .resources
-        .get::<SharedEngineMode>()
-        .and_then(|shared| shared.read().ok().map(|mode| mode.runs_gameplay()))
-        .unwrap_or(true);
-    if !playing {
-        return;
-    }
     // Every name, and whether it is a system a script declares now: anything
     // else — a behavior, a component, a system no script declares — keeps no
     // entity.
@@ -111,5 +103,25 @@ inventory::submit! {
         run: script_systems,
         runs_after: &["script_components"],
         observes: &[],
+        modes: &[EngineMode::Playing],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::agent::EngineMode;
+
+    /// **Script systems are declared for play alone**: the runner, not the
+    /// system, keeps them from running while an editor edits a scene — and
+    /// hands them `resumed` when play starts again.
+    #[test]
+    fn script_systems_are_registered_to_run_only_while_playing() {
+        let registration = inventory::iter::<DataSystemRegistration>
+            .into_iter()
+            .find(|system| system.name == "script_systems")
+            .expect("script_systems is registered");
+
+        assert_eq!(registration.modes, &[EngineMode::Playing]);
     }
 }

@@ -205,6 +205,7 @@ impl Lane for SkyboxLane {
         let done = LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         };
         let Some(ibl) = inputs.ibl.bindings() else {
             return Ok(done);

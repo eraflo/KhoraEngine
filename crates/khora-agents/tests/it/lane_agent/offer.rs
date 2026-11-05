@@ -18,6 +18,7 @@
 //! at its memory and no time. The floor is the cheapest priced row, else the
 //! default level. A report names the row that ran and the epoch it ran in.
 
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use khora_agents::agent::{lane_agent, LaneAgent};
@@ -33,7 +34,7 @@ use khora_core::lane::{LaneError, OutputDeck};
 
 use super::fixtures::{
     host_envelope, offer_request, run, runtime, LoadOnly, Plan, ProbeFamily, ProbeOutputs,
-    Recorded, TallyLock,
+    Recorded, Tally, TallyLock,
 };
 
 /// The graphics memory the locking lane's level holds.
@@ -94,6 +95,7 @@ fn record(lane: &'static str, level: usize, out: &mut ProbeOutputs) -> LaneRepor
     LaneReport {
         done: 1.0,
         stalled: false,
+        message: None,
     }
 }
 
@@ -123,7 +125,8 @@ impl Lane for DearLane {
     }
 }
 
-/// Locks the tally, so it is never quoted; holds [`LOCKED_MEMORY`].
+/// Locks the tally, so it is quoted only while the tally is free; holds
+/// [`LOCKED_MEMORY`].
 #[derive(Default)]
 pub struct LockedLane;
 
@@ -196,18 +199,28 @@ fn row_of(offer: &Offer, id: StrategyId) -> OfferRow {
         .unwrap_or_else(|| panic!("{id:?} is offered: {:?}", offer.rows))
 }
 
-/// The agent, lent 1 ms, after one frame on a load of 100.
+/// The agent, lent 1 ms, after one frame on a load of 100 during which
+/// another holder kept the tally — so the locking lane could not be quoted.
 fn after_one_frame() -> LaneAgent {
     let mut agent = lane_agent(&OFFERED, &DeviceCaps::default());
     agent.apply(Epoch(1), &host_envelope(1_000), None, None);
     let mut deck = OutputDeck::new();
-    run(&mut agent, 1, &runtime(100, Plan::default()), &mut deck);
+    let frame = runtime(100, Plan::default());
+    let tally = Arc::clone(
+        frame
+            .resources
+            .get::<Arc<Mutex<Tally>>>()
+            .expect("the frame's tally"),
+    );
+    let _held_elsewhere = tally.lock().expect("the tally is free");
+    run(&mut agent, 1, &frame, &mut deck);
     agent
 }
 
 /// **An offer names its floor and each row's confidence.** After one frame on
 /// a load of 100, the dear lane ran and is priced at 100 µs, the cheap lane
-/// was quoted at 50 µs, and the locking lane was never quoted. Every row is
+/// was quoted at 50 µs, and the locking lane, its tally held elsewhere, was
+/// not quoted. Every row is
 /// offered: the cheap one `Quoted`, the dear one priced by its run, the
 /// locking one `Assumed`, at its memory and no time. The floor is the
 /// cheapest *priced* row, the cheap one — not the locking one, offered at no
@@ -268,6 +281,25 @@ fn an_offer_names_the_floor_and_each_rows_confidence() {
         "health in range, got {}",
         offer.health
     );
+}
+
+/// **A locking lane whose tally is free is offered at its quote.** After one
+/// frame on a load of 100 with the tally free, the locking lane was quoted
+/// beside the cheap one: it is offered `Quoted` at its 10 µs, and, the
+/// cheapest priced row, it is the floor.
+#[test]
+fn a_locking_lane_whose_lock_is_free_is_offered_at_its_quote() {
+    let mut agent = lane_agent(&OFFERED, &DeviceCaps::default());
+    agent.apply(Epoch(1), &host_envelope(1_000), None, None);
+    let mut deck = OutputDeck::new();
+    run(&mut agent, 1, &runtime(100, Plan::default()), &mut deck);
+
+    let offer = agent.offer(&offer_request(2));
+
+    let locked = row_of(&offer, StrategyId::Balanced);
+    assert_eq!(locked.confidence, Confidence::Quoted, "quoted, never run");
+    assert_eq!(locked.cost.time.cpu, Duration::from_micros(10));
+    assert_eq!(offer.floor, StrategyId::Balanced, "the cheapest priced row");
 }
 
 /// **Before any run, every row is assumed and the floor is the default

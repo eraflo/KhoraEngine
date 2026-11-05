@@ -107,6 +107,7 @@ impl Registration {
             &mut OutputDeck::new(),
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
     }

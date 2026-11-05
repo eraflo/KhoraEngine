@@ -154,6 +154,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
         observes: &[],
+        modes: &[],
     }
 }
 
@@ -491,6 +492,7 @@ mod tests {
             let system = Observer::DataSystem("transform_propagation");
             let ctx = SystemContext {
                 since: world.observer_last_seen(system),
+                resumed: false,
             };
             let tick = world.begin_run();
             let mut deck = OutputDeck::new();

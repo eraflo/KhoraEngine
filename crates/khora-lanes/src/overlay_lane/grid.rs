@@ -195,6 +195,7 @@ impl Lane for GridLane {
         let done = LaneReport {
             done: 1.0,
             stalled: false,
+            message: None,
         };
         if !inputs.grid.0.enabled {
             return Ok(done);

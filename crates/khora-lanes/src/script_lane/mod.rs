@@ -74,7 +74,8 @@ use std::sync::Arc;
 use self::reload::{apply_reloads, publish_reads};
 use khora_core::event::Channel;
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, OutputDeck};
-use khora_core::script::{BehaviorWriteback, CommandBuffer, ScriptEvent};
+use khora_core::projection::Interest;
+use khora_core::script::{BehaviorWriteback, CommandBuffer, ScriptEvent, ScriptReads};
 use khora_core::Stopwatch;
 use khora_data::flow::ScriptView;
 use khora_script::native::Host;
@@ -133,12 +134,10 @@ impl Lane for BudgetedScriptLane {
 
         // Applied before anything runs, so a frame never executes the version
         // the author has just replaced.
-        let catalog = ctx
-            .get_ref::<Arc<khora_core::script::ScriptCatalog>>()
-            .map(Arc::clone);
-        apply_reloads(runtime, &reloads, &view.components, catalog.as_ref());
-        if let Some(catalog) = &catalog {
-            publish_reads(runtime, catalog);
+        let demand = ctx.get_ref::<Arc<Interest<ScriptReads>>>().map(Arc::clone);
+        apply_reloads(runtime, &reloads, &view.components, demand.as_ref());
+        if let Some(demand) = &demand {
+            publish_reads(runtime, demand);
         }
 
         // A play session starting over starts from its scene: what was raised

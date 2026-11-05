@@ -27,7 +27,8 @@ use std::sync::Arc;
 use khora_core::ecs::entity::EntityId;
 use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::{Lane, LaneContext, OutputDeck};
-use khora_core::script::{ScriptCatalog, ScriptEvent, ScriptValue};
+use khora_core::projection::Interest;
+use khora_core::script::{ScriptCatalog, ScriptEvent, ScriptReads, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRuntime};
 use khora_script::arena::Persisted;
@@ -116,12 +117,14 @@ fn view(entities: &[EntityId], resumed: bool) -> ScriptView {
     }
 }
 
-/// The lane with what the engine hands it: its channels and the catalog.
+/// The lane with what the engine hands it: its channels, the catalog and the
+/// demand on the script flow.
 struct Stage {
     runtime: ScriptRuntime,
     reloads: Channel<ScriptReload>,
     events: Channel<ScriptEvent>,
     catalog: Arc<ScriptCatalog>,
+    demand: Arc<Interest<ScriptReads>>,
 }
 
 impl Stage {
@@ -133,6 +136,7 @@ impl Stage {
             reloads: Channel::bounded(64, WhenFull::DropOldest),
             events: Channel::bounded(64, WhenFull::DropOldest),
             catalog: Arc::new(ScriptCatalog::default()),
+            demand: Arc::new(Interest::new()),
         }
     }
 
@@ -148,6 +152,7 @@ impl Stage {
         ctx.insert_ref(&self.reloads);
         ctx.insert_ref(&self.events);
         ctx.insert_ref(&self.catalog);
+        ctx.insert_ref(&self.demand);
         lane.execute(&mut ctx).expect("the lane runs");
     }
 

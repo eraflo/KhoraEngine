@@ -26,12 +26,16 @@ use super::LaneError;
 use crate::gpu::{DeviceCaps, GpuSetup};
 
 /// What a lane says about the work it recorded.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct LaneReport {
     /// How much of the frame's work was done, from `0.0` to `1.0`.
     pub done: f32,
     /// Whether the lane could not progress.
     pub stalled: bool,
+    /// What the lane has to say of this run — the agent's status message
+    /// while it records; `None` says nothing, and clears what an earlier run
+    /// said.
+    pub message: Option<String>,
 }
 
 /// One behaviour of a family: the per-frame work, at one of its levels.

@@ -266,6 +266,7 @@ fn boundary(
         &mut deck,
         crate::ecs::SystemContext {
             since: crate::ecs::Tick(0),
+            resumed: false,
         },
     );
     system("behavior_writeback")(
@@ -274,6 +275,7 @@ fn boundary(
         &mut deck,
         crate::ecs::SystemContext {
             since: crate::ecs::Tick(0),
+            resumed: false,
         },
     );
     lost_writes()

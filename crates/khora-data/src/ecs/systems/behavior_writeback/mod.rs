@@ -74,6 +74,7 @@ inventory::submit! {
         run: behavior_writeback,
         runs_after: &[],
         observes: &[],
+        modes: &[],
     }
 }
 

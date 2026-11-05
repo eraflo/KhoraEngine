@@ -181,6 +181,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &["transform_propagation"],
         observes: &[],
+        modes: &[],
     }
 }
 

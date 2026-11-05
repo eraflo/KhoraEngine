@@ -42,6 +42,7 @@ pub mod event;
 pub mod field;
 pub mod frozen;
 pub mod projection;
+pub mod reads;
 pub mod snapshot;
 pub mod table;
 pub mod value;
@@ -61,6 +62,7 @@ pub use event::{
 pub use field::{ErgonType, FieldHints, FieldRange, FieldValueError, ScriptField};
 pub use frozen::{FrozenFrame, FrozenLocal, FrozenMachine, FrozenValue, PendingBody};
 pub use projection::{ColumnSnapshot, ComponentProjection, FrameComponents, ProjectedComponent};
+pub use reads::ScriptReads;
 pub use snapshot::{
     InstanceLifecycle, PendingSequence, RecordedFault, ScriptSnapshot, TimerRemaining,
 };

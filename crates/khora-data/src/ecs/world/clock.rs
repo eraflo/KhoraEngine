@@ -29,6 +29,10 @@ pub(super) struct WorldClock {
     pub(super) observed: std::collections::HashSet<ComponentKey>,
     /// Each observer's last-seen tick on this world.
     pub(super) last_seen: std::collections::HashMap<Observer, Tick>,
+    /// The observers that were skipped since they last ran: their next run
+    /// resumes. Their last-seen tick stays, so that run sees what changed
+    /// while they were away.
+    pub(super) skipped: std::collections::HashSet<Observer>,
 }
 
 impl Default for WorldClock {
@@ -39,6 +43,7 @@ impl Default for WorldClock {
             tick: Tick(1),
             observed: std::collections::HashSet::new(),
             last_seen: std::collections::HashMap::new(),
+            skipped: std::collections::HashSet::new(),
         }
     }
 }
@@ -183,8 +188,17 @@ impl World {
         let now = self.clock.tick;
         // What every observer has seen: the least last-seen tick of the
         // ledger. An observer that never ran here holds nothing back — it
-        // reads every row on its first run anyway.
-        let seen = self.clock.last_seen.values().copied().min();
+        // reads every row on its first run anyway — and neither does one
+        // skipped since it last ran: freed rows read as written at the
+        // column's floor, which it has not seen, so its resuming run still
+        // sees every one of them changed.
+        let seen = self
+            .clock
+            .last_seen
+            .iter()
+            .filter(|(observer, _)| !self.clock.skipped.contains(observer))
+            .map(|(_, tick)| *tick)
+            .min();
         let mut freed = 0;
         for page in &mut self.storage.pages {
             for ticks in page.ticks.values_mut() {
@@ -202,6 +216,19 @@ impl World {
     /// Records that `observer` ran on this world at `tick`.
     pub fn note_observer_run(&mut self, observer: Observer, tick: Tick) {
         self.clock.last_seen.insert(observer, tick);
+        self.clock.skipped.remove(&observer);
+    }
+
+    /// Records that `observer` was due and did not run — outside the engine
+    /// modes it runs in. Its last-seen tick stays where it was.
+    pub fn note_observer_skip(&mut self, observer: Observer) {
+        self.clock.skipped.insert(observer);
+    }
+
+    /// Whether `observer`'s next run on this world resumes: it never ran
+    /// here, or it was skipped since it last did.
+    pub fn observer_resumes(&self, observer: Observer) -> bool {
+        !self.clock.last_seen.contains_key(&observer) || self.clock.skipped.contains(&observer)
     }
 
     /// The tick the row of `key` on `entity` is known to have been written by

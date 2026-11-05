@@ -12,15 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The hot-reload pump announces what a recompiled module will read, beside
-//! the program it sends — so the frame that relays a behavior's rows out for
-//! the new code also projects what the new code reads, and the lane swaps
-//! the program in that same frame. An edit that does not compile sends
-//! nothing, and announces nothing.
+//! The hot-reload pump announces what a recompiled module will read to the
+//! demand on the script flow, as the owner `module:<name>`, before it sends
+//! the program — so the frame that relays a behavior's rows out for the new
+//! code also projects what the new code reads, and the lane swaps the program
+//! in that same frame. An edit that does not compile sends nothing, and
+//! announces nothing.
 
 use std::sync::Arc;
 
-use khora_core::script::{ComponentName, ScriptCatalog};
+use khora_core::projection::Interest;
+use khora_core::script::{ComponentName, ScriptReads};
 use khora_data::ecs::World;
 use khora_io::script::declarations::declaration_channel;
 use khora_io::script::hot_reload::{load_all, reload_channel, PendingReloads};
@@ -46,6 +48,7 @@ fn pump_until_recompiled(runtime: &khora_core::Runtime) {
             &mut khora_core::lane::OutputDeck::new(),
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
+                resumed: false,
             },
         );
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -61,13 +64,13 @@ fn pump_until_recompiled(runtime: &khora_core::Runtime) {
 }
 
 /// A project under `scripts/game/` holding `files`, mounted — and a runtime
-/// whose pump watches it, with the catalog the flow reads.
+/// whose pump watches it, with the demand the flow projects.
 fn mounted(
     files: &[(&str, &str)],
 ) -> (
     tempfile::TempDir,
     khora_core::Runtime,
-    Arc<ScriptCatalog>,
+    Arc<Interest<ScriptReads>>,
     std::path::PathBuf,
 ) {
     let assets = tempfile::TempDir::new().expect("a temp dir");
@@ -82,27 +85,29 @@ fn mounted(
         &declaration_channel(),
     );
 
-    let catalog = Arc::new(ScriptCatalog::default());
+    let demand = Arc::new(Interest::<ScriptReads>::new());
     let mut runtime = khora_core::Runtime::default();
     let watch = khora_io::asset::AssetWatch::default();
     watch.watch(assets.path()).expect("watches the assets");
     runtime.resources.insert(Arc::new(watch));
     runtime.resources.insert(reload_channel());
     runtime.resources.insert(declaration_channel());
-    runtime.resources.insert(Arc::clone(&catalog));
-    (assets, runtime, catalog, game)
+    runtime.resources.insert(Arc::clone(&demand));
+    (assets, runtime, demand, game)
 }
 
-/// **The pump announces what the recompiled program reads.** The guard
-/// starts reading the collider; the frame the pump sends it, the catalog
-/// already names the collider — before any lane has installed the program.
+/// **The pump announces what the recompiled program reads, as its module.**
+/// The guard starts reading the collider; the frame the pump sends it, the
+/// demand already wants the collider — before any lane has installed the
+/// program — and wants it for the owner `module:game/guard.erg`: withdrawing
+/// that owner, as installing the program does, leaves nothing wanted.
 #[test]
 fn the_pump_announces_what_a_recompiled_module_reads() {
-    let (_assets, runtime, catalog, game) = mounted(&[(
+    let (_assets, runtime, demand, game) = mounted(&[(
         "guard.erg",
         "behavior Guard { int ticks = 0; void Update(float dt) { ticks += 1; } }",
     )]);
-    assert!(catalog.reads().is_empty(), "the premise: nothing read");
+    assert!(demand.wanted().is_empty(), "the premise: nothing wanted");
 
     std::fs::write(
         game.join("guard.erg"),
@@ -117,10 +122,29 @@ fn the_pump_announces_what_a_recompiled_module_reads() {
     .expect("edits");
     pump_until_recompiled(&runtime);
 
+    let sent: Vec<String> = runtime
+        .resources
+        .get::<PendingReloads>()
+        .expect("a reload channel")
+        .drain()
+        .into_iter()
+        .map(|reload| reload.module)
+        .collect();
     assert!(
-        catalog.reads().contains(&ComponentName::new("Collider")),
-        "the incoming program's reads are announced: {:?}",
-        catalog.reads()
+        sent.iter().any(|module| module == "game/guard.erg"),
+        "the pump sent the guard: {sent:?}"
+    );
+    assert!(
+        demand.covers(&[ComponentName::new("Collider")]),
+        "the incoming program's reads are announced with it: {:?}",
+        demand.wanted()
+    );
+
+    demand.withdraw("module:game/guard.erg");
+    assert!(
+        demand.wanted().is_empty(),
+        "announced as the module, and as nothing else: {:?}",
+        demand.wanted()
     );
 }
 
@@ -130,7 +154,7 @@ fn the_pump_announces_what_a_recompiled_module_reads() {
 /// saved alongside it is recompiled as usual.
 #[test]
 fn an_edit_that_does_not_compile_announces_nothing_and_sends_nothing() {
-    let (_assets, runtime, catalog, game) = mounted(&[(
+    let (_assets, runtime, demand, game) = mounted(&[(
         "guard.erg",
         "behavior Guard { int ticks = 0; void Update(float dt) { ticks += 1; } }",
     )]);
@@ -168,8 +192,8 @@ fn an_edit_that_does_not_compile_announces_nothing_and_sends_nothing() {
         "a broken save sent declarations, which would relay the rows out: {declared:?}"
     );
     assert!(
-        catalog.reads().is_empty(),
+        demand.wanted().is_empty(),
         "a broken save announced reads: {:?}",
-        catalog.reads()
+        demand.wanted()
     );
 }

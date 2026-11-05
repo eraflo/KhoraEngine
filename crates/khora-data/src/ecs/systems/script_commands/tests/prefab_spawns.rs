@@ -102,6 +102,7 @@ fn frame(world: &mut World, runtime: &Runtime, commands: Vec<WorldCommand>) {
         &mut deck,
         crate::ecs::SystemContext {
             since: crate::ecs::Tick(0),
+            resumed: false,
         },
     );
 }

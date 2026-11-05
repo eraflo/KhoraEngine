@@ -27,7 +27,8 @@ use khora_core::agent::{
 use khora_core::event::Channel;
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::{LaneContext, LaneRegistry};
-use khora_core::script::{BehaviorWriteback, CommandBuffer, ScriptEvent};
+use khora_core::projection::Interest;
+use khora_core::script::{BehaviorWriteback, CommandBuffer, ScriptEvent, ScriptReads};
 use khora_core::EngineContext;
 use khora_data::flow::ScriptView;
 use khora_lanes::script_lane::runtime::UNKNOWN_TURN;
@@ -265,10 +266,10 @@ impl Agent for ScriptAgent {
         // queue) because the deck lent below borrows the context exclusively.
         let reloads = context.locked::<Channel<ScriptReload>>().cloned();
         let events = context.locked::<Channel<ScriptEvent>>().cloned();
-        // What the loaded programs read, written by the lane for the flow.
-        let catalog = context
-            .locked::<Arc<khora_core::script::ScriptCatalog>>()
-            .cloned();
+        // What the loaded programs read, announced by the lane to the flow.
+        // Read, not locked: the demand is a leaf lock of its own, shared by
+        // every announcer.
+        let demand = context.resource::<Arc<Interest<ScriptReads>>>().cloned();
 
         let mut ctx = LaneContext::new();
         // `view` is borrowed from the LaneBus, read-only for the frame.
@@ -294,8 +295,8 @@ impl Agent for ScriptAgent {
         if let Some(events) = &events {
             ctx.insert_ref(events);
         }
-        if let Some(catalog) = &catalog {
-            ctx.insert_ref(catalog);
+        if let Some(demand) = &demand {
+            ctx.insert_ref(demand);
         }
 
         let Some(lane) = self.lanes.get(self.current_lane) else {
@@ -369,8 +370,8 @@ impl Agent for ScriptAgent {
             .locking::<Channel<ScriptReload>>()
             .locking::<Channel<ScriptEvent>>()
             .locking::<Arc<Mutex<ScriptRuntime>>>()
-            // Written by the lane: the read set the flow projects next frame.
-            .locking::<Arc<khora_core::script::ScriptCatalog>>()
+            // Announced to by the lane: what the flow projects next frame.
+            .reading::<Arc<Interest<ScriptReads>>>()
     }
 
     fn execution_timing(&self) -> ExecutionTiming {

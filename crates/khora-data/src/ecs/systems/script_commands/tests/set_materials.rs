@@ -34,6 +34,7 @@ fn frame(world: &mut World, commands: Vec<WorldCommand>) {
         &mut deck,
         crate::ecs::SystemContext {
             since: crate::ecs::Tick(0),
+            resumed: false,
         },
     );
 }
@@ -186,6 +187,7 @@ fn setting_a_material_on_a_prefab_spawns_root_in_the_same_batch() {
         &mut deck,
         crate::ecs::SystemContext {
             since: crate::ecs::Tick(0),
+            resumed: false,
         },
     );
 
