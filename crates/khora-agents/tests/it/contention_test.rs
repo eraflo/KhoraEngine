@@ -125,3 +125,38 @@ fn ui_agent_reads_the_atlas_without_locking_it() {
         "the atlas is read, not locked: it must not sit under `writes`"
     );
 }
+
+/// **The script agent leaves the engine's channels and the demand to the
+/// intake.** The `script_intake` data system drains the reload and event
+/// channels and announces to the demand before the flow projects; the agent's
+/// lane only runs behaviors. Declaring a lock on a channel it no longer
+/// drains would serialise every other user of that channel for nothing. It
+/// still locks the scripting world its lane runs against.
+#[test]
+fn the_script_agent_locks_neither_engine_channel_nor_reaches_the_demand() {
+    use khora_core::event::Channel;
+    use khora_core::projection::Interest;
+    use khora_core::script::{ScriptEvent, ScriptReads};
+    use khora_lanes::script_lane::ScriptRuntime;
+    use khora_script::reload::ScriptReload;
+    use std::sync::Mutex;
+
+    let contention = khora_agents::script_agent::ScriptAgent::default().contention();
+
+    assert!(
+        !contention.may_reach(TypeId::of::<Channel<ScriptReload>>()),
+        "the reload channel is the intake's"
+    );
+    assert!(
+        !contention.may_reach(TypeId::of::<Channel<ScriptEvent>>()),
+        "the event channel is the intake's"
+    );
+    assert!(
+        !contention.may_reach(TypeId::of::<Arc<Interest<ScriptReads>>>()),
+        "the demand is announced to by the intake"
+    );
+    assert!(
+        contention.may_lock(TypeId::of::<Arc<Mutex<ScriptRuntime>>>()),
+        "the lane still runs against the scripting world"
+    );
+}

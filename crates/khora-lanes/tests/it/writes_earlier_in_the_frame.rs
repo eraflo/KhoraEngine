@@ -35,7 +35,7 @@ use khora_core::script::{
     ScriptValue, WorldCommand,
 };
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRuntime};
+use khora_lanes::script_lane::{take_in, BudgetedScriptLane, Fuel, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::reload::ScriptReload;
 use khora_script::vm::{Program, Value};
@@ -180,6 +180,15 @@ impl Stage {
     /// One frame through the lane, its deck's command buffer already holding
     /// `before` — what another lane queued earlier in the tick.
     fn frame(&mut self, view: &ScriptView, before: &[WorldCommand]) -> Handed {
+        // Taken in first, as the `script_intake` system does before the flow
+        // projects.
+        take_in(
+            &mut self.runtime,
+            Some(&self.reloads),
+            Some(&self.events),
+            Some(&self.demand),
+            view.resumed,
+        );
         let lane = BudgetedScriptLane::new();
         let mut deck = OutputDeck::new();
         deck.slot::<CommandBuffer>().extend(before.iter().cloned());
@@ -189,10 +198,7 @@ impl Stage {
             ctx.insert(Fuel(u64::MAX));
             ctx.insert_slot(&mut self.runtime);
             ctx.insert_slot(&mut deck);
-            ctx.insert_ref(&self.reloads);
-            ctx.insert_ref(&self.events);
             ctx.insert_ref(&self.catalog);
-            ctx.insert_ref(&self.demand);
             lane.execute(&mut ctx).expect("the lane runs");
         }
         Handed {

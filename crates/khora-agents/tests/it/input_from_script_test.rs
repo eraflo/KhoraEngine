@@ -122,6 +122,8 @@ fn run_one_frame(
     bus.publish(a_scene_with_the_player(input));
 
     let mut deck = OutputDeck::new();
+    // What the engine handed over is taken in first, as the boundary does.
+    crate::script_intake::run_intake(runtime);
     let permit = agent.contention();
     {
         let mut ctx = EngineContext::for_agent(

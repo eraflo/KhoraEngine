@@ -122,6 +122,8 @@ fn run_one_frame(
     let mut bus = LaneBus::new();
     bus.publish(a_scene_with_one_hovering_sphere(delta_seconds));
     let mut deck = OutputDeck::new();
+    // What the engine handed over is taken in first, as the boundary does.
+    crate::script_intake::run_intake(runtime);
     let permit = agent.contention();
     {
         let mut ctx = EngineContext::for_agent(

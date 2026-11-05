@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A hot reload lands in step with the frame, through the lane itself.
+//! A hot reload lands in step with the frame, taken in before the lane runs.
 //!
 //! A module whose reload still waits for the components it reads runs none
 //! of its instances — never the old code over rows already relaid for the
@@ -32,7 +32,7 @@ use khora_core::script::{
 };
 use khora_core::script::{ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
+use khora_lanes::script_lane::{take_in, BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::reload::ScriptReload;
 use khora_script::vm::{Program, Value};
@@ -83,8 +83,9 @@ fn view(module: &str, entities: &[EntityId], delta: f32) -> ScriptView {
     }
 }
 
-/// The lane with what the engine hands it: its channels, the catalog and the
-/// demand on the script flow.
+/// The scripting world with what the engine hands it — its channels, the
+/// catalog and the demand on the script flow — taken in before each frame's
+/// lane, as the `script_intake` system does.
 struct Stage {
     runtime: ScriptRuntime,
     reloads: Channel<ScriptReload>,
@@ -118,6 +119,15 @@ impl Stage {
     /// One frame through the lane: what it reported, and the instance
     /// states it handed to the writeback.
     fn frame(&mut self, view: &ScriptView, fuel: u64) -> (ScriptRunReport, Vec<BehaviorUpdate>) {
+        // What the engine handed over is taken in first, as the
+        // `script_intake` system does before the flow projects.
+        take_in(
+            &mut self.runtime,
+            Some(&self.reloads),
+            Some(&self.events),
+            Some(&self.demand),
+            view.resumed,
+        );
         let lane = BudgetedScriptLane::new();
         let mut deck = OutputDeck::new();
         {
@@ -126,10 +136,7 @@ impl Stage {
             ctx.insert(Fuel(fuel));
             ctx.insert_slot(&mut self.runtime);
             ctx.insert_slot(&mut deck);
-            ctx.insert_ref(&self.reloads);
-            ctx.insert_ref(&self.events);
             ctx.insert_ref(&self.catalog);
-            ctx.insert_ref(&self.demand);
             lane.execute(&mut ctx).expect("the lane runs");
         }
         let updates = deck.slot::<BehaviorWriteback>().drain().collect();

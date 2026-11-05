@@ -36,7 +36,7 @@ use khora_core::Runtime;
 use khora_data::ecs::{TickPhase, World};
 use khora_data::flow::{Flow, ScriptFlow, ScriptView};
 use khora_io::script::declarations::{declaration_channel, DeclaredComponents};
-use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRuntime};
+use khora_lanes::script_lane::{take_in, BudgetedScriptLane, Fuel, ScriptRuntime};
 use khora_script::reload::ScriptReload;
 use khora_script::vm::Program;
 
@@ -56,6 +56,9 @@ pub(crate) struct SystemSession {
     events: Channel<ScriptEvent>,
     catalog: Arc<ScriptCatalog>,
     reads: Arc<Interest<ScriptReads>>,
+    /// Whether the last frame played, and took in what the engine handed
+    /// over: a playing frame after one that did not starts play over.
+    took_in: bool,
 }
 
 impl SystemSession {
@@ -96,6 +99,7 @@ impl SystemSession {
             events,
             catalog,
             reads,
+            took_in: false,
         };
         session.recompile(
             project,
@@ -135,11 +139,23 @@ impl SystemSession {
     /// never executed and the runtime keeps every instance as it stood.
     pub(crate) fn frame_after(&mut self, delta: f32, before: &[WorldCommand]) {
         self.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
+        let playing = self.mode.read().expect("the mode lock").runs_gameplay();
+        // What the engine handed over is taken in before the flow projects,
+        // in play alone, as the `script_intake` system does at the boundary.
+        if playing {
+            take_in(
+                &mut self.scripts,
+                Some(&self.reloads),
+                Some(&self.events),
+                Some(&self.reads),
+                !self.took_in,
+            );
+        }
+        self.took_in = playing;
         let mut view = self.project();
         view.delta_seconds = delta;
         let mut deck = OutputDeck::new();
         deck.slot::<CommandBuffer>().extend(before.iter().cloned());
-        let playing = self.mode.read().expect("the mode lock").runs_gameplay();
         if playing {
             let mut ctx = LaneContext::new();
             ctx.insert_ref(&view);
@@ -151,10 +167,7 @@ impl SystemSession {
             ctx.insert(Fuel(self.fuel));
             ctx.insert_slot(&mut self.scripts);
             ctx.insert_slot(&mut deck);
-            ctx.insert_ref(&self.reloads);
-            ctx.insert_ref(&self.events);
             ctx.insert_ref(&self.catalog);
-            ctx.insert_ref(&self.reads);
             self.lane.execute(&mut ctx).expect("the script lane runs");
         }
         self.boundary(TickPhase::Maintenance, &mut deck);

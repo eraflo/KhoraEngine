@@ -319,6 +319,8 @@ fn a_spawn_through_the_scripting_agent_takes_its_id_from_the_worlds_reserver() {
             reserver: world.reserver(),
         });
         let mut deck = OutputDeck::new();
+        // What the engine handed over is taken in first, as the boundary does.
+        crate::script_intake::run_intake(&runtime);
         let permit = agent.contention();
         {
             let mut ctx = EngineContext::for_agent(

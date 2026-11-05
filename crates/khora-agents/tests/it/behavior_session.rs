@@ -33,7 +33,7 @@ use khora_data::ecs::{ComponentKey, TickPhase, World};
 use khora_data::flow::{Flow, ScriptFlow, ScriptView};
 use khora_io::script::declarations::{declaration_channel, DeclaredComponents, ScriptDeclarations};
 use khora_io::script::mirror::PreludeLoader;
-use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRuntime};
+use khora_lanes::script_lane::{take_in, BudgetedScriptLane, Fuel, ScriptRuntime};
 use khora_script::reload::ScriptReload;
 use khora_script::vm::Program;
 use khora_script::{compile_module, Diagnostic, MemoryLoader};
@@ -89,6 +89,9 @@ pub(crate) struct Session {
     events: Channel<ScriptEvent>,
     catalog: Arc<ScriptCatalog>,
     reads: Arc<Interest<ScriptReads>>,
+    /// Whether a frame took in what the engine handed over: the next one
+    /// does not start play over.
+    took_in: bool,
 }
 
 impl Session {
@@ -132,6 +135,7 @@ impl Session {
             events,
             catalog,
             reads,
+            took_in: false,
         };
         for &(module, _) in project {
             declarations.send(declarations_of(project, module));
@@ -164,6 +168,16 @@ impl Session {
     /// asked for.
     pub(crate) fn frame_with(&mut self, delta: f32, also: impl FnOnce(&mut CommandBuffer)) {
         self.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
+        // What the engine handed over is taken in before the flow projects,
+        // as the `script_intake` system does at the boundary.
+        take_in(
+            &mut self.scripts,
+            Some(&self.reloads),
+            Some(&self.events),
+            Some(&self.reads),
+            !self.took_in,
+        );
+        self.took_in = true;
         let mut view = self.project();
         view.delta_seconds = delta;
         let mut deck = OutputDeck::new();
@@ -188,10 +202,7 @@ impl Session {
             ctx.insert(Fuel(self.fuel));
             ctx.insert_slot(&mut self.scripts);
             ctx.insert_slot(&mut deck);
-            ctx.insert_ref(&self.reloads);
-            ctx.insert_ref(&self.events);
             ctx.insert_ref(&self.catalog);
-            ctx.insert_ref(&self.reads);
             self.lane.execute(&mut ctx).expect("the script lane runs");
         }
         also(deck.slot::<CommandBuffer>());
@@ -243,7 +254,7 @@ impl Session {
         });
     }
 
-    /// The demand the lane announces the loaded programs' reads to and the
+    /// The demand the intake announces the loaded programs' reads to and the
     /// flow projects.
     pub(crate) fn reads(&self) -> &Interest<ScriptReads> {
         &self.reads

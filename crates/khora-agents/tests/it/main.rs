@@ -55,6 +55,7 @@ mod script_component_writes;
 mod script_defined_components;
 mod script_delivery_test;
 mod script_fuel_each_frame;
+mod script_intake;
 mod script_offer_rows;
 mod shadows_family;
 mod shadows_through_the_frame_graph;

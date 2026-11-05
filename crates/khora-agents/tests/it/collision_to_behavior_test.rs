@@ -98,6 +98,8 @@ fn run_one_frame(agent: &mut ScriptAgent, runtime: &Arc<Runtime>) -> Vec<WorldCo
     let mut bus = LaneBus::new();
     bus.publish(a_scene_with_a_guard());
     let mut deck = OutputDeck::new();
+    // What the engine handed over is taken in first, as the boundary does.
+    crate::script_intake::run_intake(runtime);
     let permit = agent.contention();
     {
         let mut ctx = EngineContext::for_agent(

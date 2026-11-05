@@ -127,6 +127,8 @@ impl Session {
         let mut bus = LaneBus::new();
         bus.publish(view);
         let mut deck = OutputDeck::new();
+        // What the engine handed over is taken in first, as the boundary does.
+        crate::script_intake::run_intake(&self.runtime);
         let permit = self.agent.contention();
         {
             let mut ctx = EngineContext::for_agent(

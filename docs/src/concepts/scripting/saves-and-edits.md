@@ -36,6 +36,12 @@ part-way through, a fault. A scene never does.
 Hot-reload replaces a module's program while the game runs. Two things must
 survive it: what each instance *is*, and what each instance is *doing*.
 
+The new program lands at the start of a frame of play, before the world is
+projected for the scripts. The `script_intake` data system installs it, once
+the script flow's demand covers every component it reads. The compiler
+announced those reads when it handed the program over, so its first `Get`
+finds a component that exists rather than `null`.
+
 A module can also go: its file deleted, its folder moved out of `scripts/`,
 its project closed. Its program leaves with it — nothing keeps running code
 whose file is gone — and every instance of it stops, says so in Problems, and

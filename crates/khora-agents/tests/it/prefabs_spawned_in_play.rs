@@ -347,6 +347,8 @@ fn the_scripting_agent_hands_its_lane_the_prefab_catalog() {
                 prefabs: Some(Arc::clone(&listed)),
             });
             let mut deck = OutputDeck::new();
+            // What the engine handed over is taken in first, as the boundary does.
+            crate::script_intake::run_intake(&runtime);
             let permit = agent.contention();
             {
                 let mut ctx = EngineContext::for_agent(

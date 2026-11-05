@@ -21,7 +21,6 @@
 //! scripts queued. A behavior writes what it read into its own fields, which
 //! the test reads back from the scripting world.
 
-use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 
 use khora_agents::script_agent::ScriptAgent;
@@ -76,7 +75,7 @@ fn body(mass: f32) -> RigidBody {
 }
 
 /// One running session, wired the way the engine wires one: the demand the
-/// lane announces the loaded programs' reads to and the flow projects, the
+/// intake announces the loaded programs' reads to and the flow projects, the
 /// catalog, the channels a compiled module's declarations and program arrive
 /// by.
 struct Session {
@@ -566,13 +565,23 @@ fn a_program_that_reads_nothing_projects_nothing() {
 }
 
 /// **The read set follows reloads.** A program reading `RigidBody` projects
-/// `RigidBody` alone; a reload adding a `Get(Collider)` projects `Collider`
-/// from the next frame on — the frame the reload arrives in was projected
-/// before it was applied.
+/// `RigidBody` alone. A reload adding a `Get(Collider)`, sent without the
+/// pump's announcement, is not covered by the demand the frame it arrives:
+/// the intake keeps it waiting and announces what it will read before the
+/// flow runs, so that very frame already projects `Collider` beside
+/// `RigidBody` while the old program stays installed. The next frame's intake
+/// installs it, and its first `Get(Collider)` reads the collider, not `null`.
 #[test]
 fn the_read_set_follows_reloads() {
     let mut world = World::new();
-    let probe = world.spawn((Transform::identity(), body(2.0), Collider::default()));
+    let probe = world.spawn((
+        Transform::identity(),
+        body(2.0),
+        Collider {
+            friction: 0.9,
+            ..Collider::default()
+        },
+    ));
     let mut session = Session::over(world, build(READS_ITS_OWN_BODY));
     session.attach(probe, "Probe", &[]);
 
@@ -591,26 +600,35 @@ fn the_read_set_follows_reloads() {
              float friction = -1.0;
              void Update(float dt) {
                  if (var b = this.Get(RigidBody)) { mass = b.mass; }
-                 if (var c = this.Get(Collider)) { friction = c.friction; }
+                 if (var c = this.Get(Collider)) { friction = c.friction; } else { friction = -2.0; }
              }
          }",
     ));
     let arriving = session.frame();
-    assert!(
-        arriving.component("Collider").is_none(),
-        "the frame the reload arrives in was projected before it"
-    );
     assert_eq!(
         session.reads.wanted(),
         names_of(&["Collider", "RigidBody"]),
-        "the reload's reads join the demand"
+        "the waiting reload's reads join the demand before the flow runs"
     );
-    let next = session.frame();
     assert!(
-        next.component("Collider").is_some(),
-        "the next frame projects them"
+        arriving.component("Collider").is_some(),
+        "the frame the reload arrives in already projects what it will read"
     );
+    assert!(arriving.component("RigidBody").is_some());
+    assert_eq!(
+        session.float(probe, "Probe", "friction"),
+        None,
+        "the reload waits that frame: the installed program has no `friction`"
+    );
+
+    let next = session.frame();
+    assert!(next.component("Collider").is_some());
     assert!(next.component("RigidBody").is_some());
+    assert_eq!(
+        session.float(probe, "Probe", "friction"),
+        Some(0.9),
+        "installed the next frame, its first `Get(Collider)` read the collider"
+    );
 }
 
 /// **A program whose reads grew waits a frame**, so its first `Get` never
@@ -902,15 +920,6 @@ fn get_of_a_declared_component() {
 }
 
 // ─── Declared and reported ──────────────────────────────────────────────────
-
-/// **The agent declares the demand its lane announces to**, so
-/// `EngineContext` lets it through.
-#[test]
-fn the_agent_declares_the_demand_its_lane_announces_to() {
-    let contention = ScriptAgent::default().contention();
-
-    assert!(contention.may_reach(TypeId::of::<Arc<Interest<ScriptReads>>>()));
-}
 
 /// **The cost of reads is visible.** The rows the frame projected reach the
 /// lane's report and the agent's status.

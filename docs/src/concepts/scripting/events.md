@@ -15,7 +15,7 @@ Two queues feed one delivery:
 | Source | Route |
 |---|---|
 | Behavior → behavior | waits on the `ScriptRuntime`, never leaves scripting |
-| Engine → behavior (a collision) | a bounded `Channel<ScriptEvent>` the engine fills and the lane drains |
+| Engine → behavior (a collision) | a bounded `Channel<ScriptEvent>` the engine fills and the `script_intake` data system drains into the same mail, before the frame runs |
 
 They stay apart on purpose. Script-to-script mail routed through a shared
 resource would cost two frames of latency and a deck slot nothing else reads.

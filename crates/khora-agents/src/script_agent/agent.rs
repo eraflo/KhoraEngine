@@ -24,16 +24,13 @@ use khora_core::agent::gorna::{
 use khora_core::agent::{
     Agent, AgentAccess, AgentImportance, Contention, ExecutionPhase, ExecutionTiming,
 };
-use khora_core::event::Channel;
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::{LaneContext, LaneRegistry};
-use khora_core::projection::Interest;
-use khora_core::script::{BehaviorWriteback, CommandBuffer, ScriptEvent, ScriptReads};
+use khora_core::script::{BehaviorWriteback, CommandBuffer};
 use khora_core::EngineContext;
 use khora_data::flow::ScriptView;
 use khora_lanes::script_lane::runtime::UNKNOWN_TURN;
 use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
-use khora_script::reload::ScriptReload;
 
 /// The strategist that negotiates for gameplay.
 ///
@@ -261,16 +258,6 @@ impl Agent for ScriptAgent {
             return;
         };
 
-        // The two queues the engine fills, handed over rather than drained
-        // here: the agent wires, the lane works. Cloned (a handle to the same
-        // queue) because the deck lent below borrows the context exclusively.
-        let reloads = context.locked::<Channel<ScriptReload>>().cloned();
-        let events = context.locked::<Channel<ScriptEvent>>().cloned();
-        // What the loaded programs read, announced by the lane to the flow.
-        // Read, not locked: the demand is a leaf lock of its own, shared by
-        // every announcer.
-        let demand = context.resource::<Arc<Interest<ScriptReads>>>().cloned();
-
         let mut ctx = LaneContext::new();
         // `view` is borrowed from the LaneBus, read-only for the frame.
         ctx.insert_ref(view);
@@ -288,16 +275,6 @@ impl Agent for ScriptAgent {
         ctx.insert_slot(&mut *runtime);
         // `deck` is borrowed from EngineContext for this call.
         ctx.insert_slot(&mut *context.deck);
-
-        if let Some(reloads) = &reloads {
-            ctx.insert_ref(reloads);
-        }
-        if let Some(events) = &events {
-            ctx.insert_ref(events);
-        }
-        if let Some(demand) = &demand {
-            ctx.insert_ref(demand);
-        }
 
         let Some(lane) = self.lanes.get(self.current_lane) else {
             log::error!("ScriptAgent: lane `{}` is missing", self.current_lane);
@@ -358,20 +335,14 @@ impl Agent for ScriptAgent {
         // Both slots the lane fills, not just the interesting one. A slot
         // written but not declared is one the check cannot see, so the collision
         // it exists to catch would surface as a lost writeback at the merge.
-        //
-        // The two queues are `locking` rather than `reading` because draining
-        // is a write: a second agent reading one of them beside this drain
-        // would see events this agent has already taken.
+        // The engine's queues and the demand are the `script_intake` data
+        // system's, taken in before the flow projects.
         Contention::none()
             .writing_deck([
                 TypeId::of::<CommandBuffer>(),
                 TypeId::of::<BehaviorWriteback>(),
             ])
-            .locking::<Channel<ScriptReload>>()
-            .locking::<Channel<ScriptEvent>>()
             .locking::<Arc<Mutex<ScriptRuntime>>>()
-            // Announced to by the lane: what the flow projects next frame.
-            .reading::<Arc<Interest<ScriptReads>>>()
     }
 
     fn execution_timing(&self) -> ExecutionTiming {
@@ -402,6 +373,7 @@ mod tests {
     use super::*;
     use khora_core::ecs::entity::EntityId;
     use khora_core::lane::{LaneBus, OutputDeck};
+    use khora_core::script::ScriptEvent;
     use khora_core::{Runtime, WorldAccess};
     use khora_data::flow::{ScriptInstance, ScriptProgram};
     use std::sync::Arc;

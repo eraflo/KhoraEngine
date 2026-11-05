@@ -15,10 +15,8 @@
 //! Applying the modules an author just recompiled, and announcing to the
 //! script flow what the loaded programs read.
 
-use std::sync::Arc;
-
 use khora_core::projection::Interest;
-use khora_core::script::{ComponentName, ComponentProjection, ScriptReads};
+use khora_core::script::{ComponentName, ScriptReads};
 use khora_script::reload::ScriptReload;
 
 use crate::script_lane::ScriptRuntime;
@@ -29,15 +27,15 @@ use crate::script_lane::ScriptRuntime;
 /// a rename drops a field's value, and an author who is not told is left to
 /// discover it in whatever the guard does next.
 ///
-/// A program that reads a component this frame's view did not project waits
-/// for the next frame, whose view will — its first `Get` must not read `null`
-/// for a component that exists. Without a demand, nothing projects, so
-/// nothing waits.
+/// A program whose reads `demand` does not cover waits for a later frame,
+/// whose projection will hold them — its first `Get` must not read `null` for
+/// a component that exists. What was announced before the script flow runs
+/// is projected that frame, so a program the pump announced lands at once.
+/// Without a demand, nothing projects, so nothing waits.
 pub(crate) fn apply_reloads(
     runtime: &mut ScriptRuntime,
     reloads: &[ScriptReload],
-    projected: &ComponentProjection,
-    demand: Option<&Arc<Interest<ScriptReads>>>,
+    demand: Option<&Interest<ScriptReads>>,
 ) {
     // A waiting version a newer reload of the same module replaced is code
     // the author has already thrown away: it never runs.
@@ -57,11 +55,12 @@ pub(crate) fn apply_reloads(
             }
             continue;
         };
-        let unprojected = program
+        let reads: Vec<ComponentName> = program
             .reads
             .iter()
-            .any(|read| projected.component(read).is_none());
-        if demand.is_some() && unprojected {
+            .map(|read| ComponentName::new(read.as_str()))
+            .collect();
+        if demand.is_some_and(|demand| !demand.covers(&reads)) {
             runtime.defer(reload);
             continue;
         }
@@ -95,7 +94,8 @@ fn apply(runtime: &mut ScriptRuntime, reload: &ScriptReload) {
 }
 
 /// Announces to `demand` every component the loaded programs read — and the
-/// waiting ones, so the next frame projects what they need.
+/// waiting ones, so the script flow, which runs next, projects what they
+/// need.
 ///
 /// Recomputed every frame from the programs themselves rather than only on a
 /// reload: a handful of programs is cheap to walk, and a program installed any

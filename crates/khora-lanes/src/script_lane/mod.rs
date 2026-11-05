@@ -47,6 +47,7 @@ mod fixed_step;
 mod frame;
 mod fuel;
 mod hooks;
+pub mod intake;
 mod mail;
 pub mod persistence;
 mod problems;
@@ -64,6 +65,7 @@ pub mod watchdog;
 mod tests;
 
 pub use frame::run_behaviors;
+pub use intake::take_in;
 pub use report::{Resumed, ScriptRunReport, Slow};
 pub use runtime::{Body, Demand, Instance, Pending, ReloadReport, ScriptRuntime};
 pub use watchdog::{WATCHDOG_FAULT, WATCHDOG_WARN};
@@ -71,15 +73,11 @@ pub use watchdog::{WATCHDOG_FAULT, WATCHDOG_WARN};
 use std::any::Any;
 use std::sync::Arc;
 
-use self::reload::{apply_reloads, publish_reads};
-use khora_core::event::Channel;
 use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, OutputDeck};
-use khora_core::projection::Interest;
-use khora_core::script::{BehaviorWriteback, CommandBuffer, ScriptEvent, ScriptReads};
+use khora_core::script::{BehaviorWriteback, CommandBuffer};
 use khora_core::Stopwatch;
 use khora_data::flow::ScriptView;
 use khora_script::native::Host;
-use khora_script::reload::ScriptReload;
 
 /// Runs each entity's behavior until the frame's fuel is gone.
 #[derive(Debug, Default)]
@@ -116,39 +114,13 @@ impl Lane for BudgetedScriptLane {
             .get::<Fuel>()
             .ok_or_else(|| LaneError::missing("Fuel"))?;
 
-        // The channels the engine fills. Read here rather than by the agent:
-        // draining one and acting on it is work, and work is what a lane is.
-        let reloads = ctx
-            .get_ref::<Channel<ScriptReload>>()
-            .map(|c| c.drain())
-            .unwrap_or_default();
-        let mut from_engine = ctx
-            .get_ref::<Channel<ScriptEvent>>()
-            .map(|c| c.drain())
-            .unwrap_or_default();
-
+        // What the engine handed the scripting world — recompiled modules and
+        // its events — was taken in before the flow projected, by the
+        // `script_intake` data system: the lane runs behaviours alone.
         let mut runtime_guard = ctx
             .slot::<ScriptRuntime>()
             .ok_or_else(|| LaneError::missing("&mut ScriptRuntime"))?;
         let runtime = &mut *runtime_guard;
-
-        // Applied before anything runs, so a frame never executes the version
-        // the author has just replaced.
-        let demand = ctx.get_ref::<Arc<Interest<ScriptReads>>>().map(Arc::clone);
-        apply_reloads(runtime, &reloads, &view.components, demand.as_ref());
-        if let Some(demand) = &demand {
-            publish_reads(runtime, demand);
-        }
-
-        // A play session starting over starts from its scene: what was raised
-        // in the last one — by scripts, or by the engine since nothing ran —
-        // belongs to a world that is gone, and could reach an entity whose id
-        // was given again. The first session keeps what was sent before it.
-        let played_before = runtime.note_frame();
-        if view.resumed && played_before {
-            runtime.take_pending();
-            from_engine.clear();
-        }
 
         // A view that holds nothing while instances are still held has just
         // lost its last ones: they are told goodbye like any that leave.
@@ -158,29 +130,20 @@ impl Lane for BudgetedScriptLane {
             if view.resumed {
                 runtime.retain_live(|_| false);
             }
-            // Nothing to run, but the mail must still be kept: the engine's
-            // channel has already been drained, and events dropped here would
-            // be gone with no trace of having existed.
-            let mut waiting = runtime.take_pending();
-            for event in from_engine {
-                waiting.push(event);
-            }
-            runtime.set_pending(waiting);
+            // Nothing to run, and the mail stays where the intake put it, for
+            // a frame that can deliver it.
             runtime.set_last_report(ScriptRunReport::default());
             drop(runtime_guard);
             ctx.insert(ScriptRunReport::default());
             return Ok(());
         }
 
-        // One queue, two producers: what scripts raised last frame, and what the
-        // engine raised through its channel. Neither is delivered in the frame
-        // it was produced — an event handled where it was raised opens a cascade
-        // with no bound, and a budget that cannot bound the work is not a
-        // budget.
-        let mut events = runtime.take_pending();
-        for event in from_engine {
-            events.push(event);
-        }
+        // One queue, two producers: what scripts raised last frame, and what
+        // the engine raised through its channel, joined by the intake. Neither
+        // is delivered in the frame it was produced — an event handled where it
+        // was raised opens a cascade with no bound, and a budget that cannot
+        // bound the work is not a budget.
+        let events = runtime.take_pending();
 
         let mut deck_guard = ctx
             .slot::<OutputDeck>()
