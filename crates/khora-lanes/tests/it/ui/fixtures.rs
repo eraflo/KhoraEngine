@@ -1128,6 +1128,7 @@ impl Glyphs {
             SystemContext {
                 since: self.last_seen,
                 resumed: false,
+                scope: None,
             },
         );
         self.world.end_run();

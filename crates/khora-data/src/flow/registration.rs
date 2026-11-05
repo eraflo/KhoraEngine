@@ -63,7 +63,24 @@ pub fn run_flow_cached<F: super::Flow>(
     runtime: &Runtime,
     ctx: FlowContext,
 ) {
-    let key = flow.cache_key(world, runtime);
+    // A view projected within one scope is not the view of another, nor of
+    // the same scope once the marker moved: the scope and the entities it
+    // admits are part of every key. The marker may live in any domain, so no
+    // epoch the Flow folds is sure to move with it.
+    let key = flow.cache_key(world, runtime).map(|key| match ctx.scope {
+        None => key,
+        Some(scope) => {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            scope.hash(&mut hasher);
+            let mut admitted = world.holders(scope);
+            admitted.sort_by_key(|entity| (entity.index, entity.generation));
+            for entity in admitted {
+                (entity.index, entity.generation).hash(&mut hasher);
+            }
+            super::combine_cache_key([key, hasher.finish()])
+        }
+    });
     if let (Some(k), Some((cached_key, cached_view))) = (key, cache.as_ref()) {
         if k == *cached_key {
             bus.publish(cached_view.clone());

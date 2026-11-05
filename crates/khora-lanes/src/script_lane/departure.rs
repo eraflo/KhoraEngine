@@ -16,10 +16,27 @@
 //! from an entity that lives on — and forgetting them.
 
 use khora_core::ecs::entity::EntityId;
+use khora_script::native::Host;
 
+use super::frame::FUEL_PER_BEHAVIOR;
+use super::hooks::say_goodbye;
+use super::report::ScriptRunReport;
 use super::runtime::ScriptRuntime;
 
 impl ScriptRuntime {
+    /// Forgets the instances `left` names, by entity and behavior, without a
+    /// farewell: they left the family's scope while still attached.
+    pub(super) fn forget(&mut self, left: &[(EntityId, String)]) {
+        if left.is_empty() {
+            return;
+        }
+        self.retain_behaviors(|entity, behavior| {
+            !left
+                .iter()
+                .any(|(gone, name)| *gone == entity && name == behavior)
+        });
+    }
+
     /// Instances whose entity the predicate no longer keeps, and which have not
     /// yet said goodbye.
     ///
@@ -78,5 +95,47 @@ impl ScriptRuntime {
         self.instances
             .retain(|(entity, behavior), _| alive(*entity, behavior));
         self.attached.retain(alive);
+    }
+}
+
+/// Runs `OnDespawn` for every instance whose entity has left the view.
+///
+/// The other half of the farewell: a script that despawns itself is told at the
+/// moment it decides, and everything else — an editor deletion, another system's
+/// despawn — is noticed here, one frame later. That lateness is not an oversight
+/// but the earliest a lane reading a projection can know, and it is why the
+/// script-initiated path exists at all.
+pub(super) fn farewell_departed(
+    live: &impl Fn(khora_core::ecs::entity::EntityId, &str) -> bool,
+    positions: &std::collections::HashMap<
+        khora_core::ecs::entity::EntityId,
+        khora_core::math::Vec3,
+    >,
+    runtime: &mut ScriptRuntime,
+    host: &mut Host,
+    fuel: u64,
+    report: &mut ScriptRunReport,
+) {
+    for (entity, behavior, module) in runtime.departed_behaviors(live) {
+        let left = fuel.saturating_sub(report.spent);
+        if left == 0 {
+            return;
+        }
+        let Some(program) = runtime.program(&module).cloned() else {
+            continue;
+        };
+
+        host.entity = Some(entity);
+        // An entity that has left the view has no pose to give: `Position()`
+        // faults rather than answering with where it used to be — the other
+        // half of why a script that despawns itself is told at the moment it
+        // decides. A behavior detached from an entity still in the view reads
+        // where it is.
+        host.position = positions.get(&entity).copied();
+        host.fields = std::mem::take(&mut runtime.instance(entity, &behavior).fields);
+        let ran = std::time::Instant::now();
+        report.spent += say_goodbye(&program, &behavior, host, left.min(FUEL_PER_BEHAVIOR));
+        report.turns_time += ran.elapsed();
+        host.fields = khora_script::arena::PersistentStore::new();
     }
 }

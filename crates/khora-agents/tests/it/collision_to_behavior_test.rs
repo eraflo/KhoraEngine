@@ -71,6 +71,7 @@ fn entity(index: u32) -> EntityId {
 
 fn a_scene_with_a_guard() -> ScriptView {
     ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

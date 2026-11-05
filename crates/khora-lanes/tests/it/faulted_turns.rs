@@ -109,6 +109,7 @@ fn projection() -> ComponentProjection {
 fn view() -> ScriptView {
     let behaviors = [("Before", BEFORE), ("Faulty", FAULTY), ("After", AFTER)];
     ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

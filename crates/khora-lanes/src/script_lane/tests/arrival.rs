@@ -65,6 +65,7 @@ event Spotted(int by);
 
 fn view(delta: f32, arrival: Option<ScriptArrival>) -> ScriptView {
     ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

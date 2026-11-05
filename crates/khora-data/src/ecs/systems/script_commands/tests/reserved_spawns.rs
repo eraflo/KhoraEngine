@@ -42,6 +42,7 @@ fn frame(world: &mut World, commands: Vec<WorldCommand>) {
         crate::ecs::SystemContext {
             since: crate::ecs::Tick(0),
             resumed: false,
+            scope: None,
         },
     );
 }
@@ -56,6 +57,7 @@ fn frame_without_scripts(world: &mut World) {
         crate::ecs::SystemContext {
             since: crate::ecs::Tick(0),
             resumed: false,
+            scope: None,
         },
     );
 }

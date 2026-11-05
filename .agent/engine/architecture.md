@@ -189,7 +189,12 @@ sends `TelemetryEvent::ActivationChanged(inactive)`: the DCC keeps it in `Contex
 run reports, and opens an epoch (`AgentsChanged`); only active families are asked to offer and are lent.
 DataSystems and Flows declare a `Role` (`khora-data/src/ecs/role.rs`): `Upkeep` runs every frame,
 `Serves(φ)` is skipped while φ is off and resumes with `SystemContext.resumed` /
-`FlowContext { resumed }`. A family's channels declare a `Mailbox` (`khora-core/src/event/mailbox.rs`):
+`FlowContext { resumed }`. A family may be **scoped** (`scope(family, marker_name)`): it counts as on,
+the substrate resolves the marker (`role_scope`, `khora-control/src/substrate/data_system_runner.rs`) and
+hands `SystemContext.scope` / `FlowContext.scope`; Flows project what `Selection::admits`
+(`khora-data/src/flow/selection.rs`), cached views are keyed by the scope and who it admits, and
+`ScriptView.left_scope` makes the lane forget without a farewell. Scripts and audio honour it; physics
+does not yet. A family's channels declare a `Mailbox` (`khora-core/src/event/mailbox.rs`):
 `BetweenSessions::Drop` mail is emptied at each boundary while the family is off, `Hold` is kept. Family
 ids: `khora_core::{script::SCRIPT, physics::PHYSICS, audio::AUDIO}`. The editor's transport
 (`khora-editor/src/commands/transport.rs`, `process_transport` in `before_frame`) switches SCRIPT, PHYSICS

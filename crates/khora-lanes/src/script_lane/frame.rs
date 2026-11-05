@@ -22,6 +22,7 @@ use khora_data::flow::ScriptView;
 use khora_script::native::Host;
 
 use super::arrival::{arrive, Arriving};
+use super::departure::farewell_departed;
 use super::hooks::{despawns_itself, say_goodbye, TurnStart};
 use super::mail::{keep, sit_out};
 use super::persistence;
@@ -35,7 +36,7 @@ use super::turn::{run_one, Invocation, Outcome, Progress};
 /// A ceiling per behavior, not per frame: without it the first behavior in the
 /// view could spend everything, and which one that is depends on scene order
 /// rather than on anything the author decided.
-const FUEL_PER_BEHAVIOR: u64 = 100_000;
+pub(super) const FUEL_PER_BEHAVIOR: u64 = 100_000;
 
 /// Runs every behavior the view lists, until the fuel is gone.
 ///
@@ -75,6 +76,9 @@ pub fn run_behaviors(
     if view.resumed {
         runtime.retain_behaviors(is_live);
     }
+    // An instance that left the family's scope is still attached: it was not
+    // despawned, and is forgotten without a farewell.
+    runtime.forget(&view.left_scope);
     // Where each entity still in the view is: a behavior detached from one
     // reads its position in its farewell.
     let positions: std::collections::HashMap<_, _> = view
@@ -653,46 +657,4 @@ pub fn run_behaviors(
     }
 
     report
-}
-
-/// Runs `OnDespawn` for every instance whose entity has left the view.
-///
-/// The other half of the farewell: a script that despawns itself is told at the
-/// moment it decides, and everything else — an editor deletion, another system's
-/// despawn — is noticed here, one frame later. That lateness is not an oversight
-/// but the earliest a lane reading a projection can know, and it is why the
-/// script-initiated path exists at all.
-pub(super) fn farewell_departed(
-    live: &impl Fn(khora_core::ecs::entity::EntityId, &str) -> bool,
-    positions: &std::collections::HashMap<
-        khora_core::ecs::entity::EntityId,
-        khora_core::math::Vec3,
-    >,
-    runtime: &mut ScriptRuntime,
-    host: &mut Host,
-    fuel: u64,
-    report: &mut ScriptRunReport,
-) {
-    for (entity, behavior, module) in runtime.departed_behaviors(live) {
-        let left = fuel.saturating_sub(report.spent);
-        if left == 0 {
-            return;
-        }
-        let Some(program) = runtime.program(&module).cloned() else {
-            continue;
-        };
-
-        host.entity = Some(entity);
-        // An entity that has left the view has no pose to give: `Position()`
-        // faults rather than answering with where it used to be — the other
-        // half of why a script that despawns itself is told at the moment it
-        // decides. A behavior detached from an entity still in the view reads
-        // where it is.
-        host.position = positions.get(&entity).copied();
-        host.fields = std::mem::take(&mut runtime.instance(entity, &behavior).fields);
-        let ran = std::time::Instant::now();
-        report.spent += say_goodbye(&program, &behavior, host, left.min(FUEL_PER_BEHAVIOR));
-        report.turns_time += ran.elapsed();
-        host.fields = khora_script::arena::PersistentStore::new();
-    }
 }

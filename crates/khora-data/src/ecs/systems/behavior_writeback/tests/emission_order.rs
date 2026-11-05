@@ -267,6 +267,7 @@ fn boundary(
         crate::ecs::SystemContext {
             since: crate::ecs::Tick(0),
             resumed: false,
+            scope: None,
         },
     );
     system("behavior_writeback")(
@@ -276,6 +277,7 @@ fn boundary(
         crate::ecs::SystemContext {
             since: crate::ecs::Tick(0),
             resumed: false,
+            scope: None,
         },
     );
     lost_writes()

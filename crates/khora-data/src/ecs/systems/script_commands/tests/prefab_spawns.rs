@@ -103,6 +103,7 @@ fn frame(world: &mut World, runtime: &Runtime, commands: Vec<WorldCommand>) {
         crate::ecs::SystemContext {
             since: crate::ecs::Tick(0),
             resumed: false,
+            scope: None,
         },
     );
 }

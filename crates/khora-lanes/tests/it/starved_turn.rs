@@ -60,6 +60,7 @@ fn subject() -> EntityId {
 
 fn view_of(behavior: &str, delta: f32, arriving: Option<ScriptSnapshot>) -> ScriptView {
     ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,
@@ -414,6 +415,7 @@ fn one_instances_wait_is_not_anothers_resume_delay() {
     };
     // The waiter's turn comes first, so its wait is set before the guard runs.
     let view = |delta: f32| ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

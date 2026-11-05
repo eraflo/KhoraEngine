@@ -53,6 +53,7 @@ fn subject() -> EntityId {
 
 fn view_of(observed: Option<ScriptSnapshot>) -> ScriptView {
     ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

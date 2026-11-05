@@ -69,6 +69,7 @@ fn subject() -> EntityId {
 /// would on the frame it first appears.
 fn view_of(behavior: &str, delta: f32, arrival: Option<ScriptArrival>) -> ScriptView {
     ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         delta_seconds: delta,
@@ -190,7 +191,10 @@ impl Scene {
     /// What the substrate hands the flow this frame: a resumption on its
     /// first run, and on its first run after the scripts were off.
     fn context(&mut self) -> FlowContext {
-        let ctx = FlowContext { resumed: !self.ran };
+        let ctx = FlowContext {
+            resumed: !self.ran,
+            scope: None,
+        };
         self.ran = true;
         ctx
     }

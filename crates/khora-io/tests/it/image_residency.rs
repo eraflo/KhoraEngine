@@ -288,6 +288,7 @@ impl Project {
                 khora_data::ecs::SystemContext {
                     since: khora_data::ecs::Tick(0),
                     resumed: false,
+                    scope: None,
                 },
             );
         }
@@ -415,6 +416,7 @@ fn a_refused_image_leaves_the_atlas_room_for_the_next() {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
     };
@@ -485,6 +487,7 @@ fn a_replaced_image_moves_to_its_new_rect() {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
     };

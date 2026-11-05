@@ -66,6 +66,7 @@ fn runtime_of(source: &str) -> ScriptRuntime {
 /// session, if any.
 fn view(observed: Option<ScriptSnapshot>) -> ScriptView {
     ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

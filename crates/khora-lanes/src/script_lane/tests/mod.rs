@@ -99,6 +99,7 @@ pub(super) fn entity(index: u32) -> EntityId {
 /// A view of `count` guards, entities 0..count.
 pub(super) fn view_of(count: u32) -> ScriptView {
     ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,
@@ -316,6 +317,7 @@ fn a_recycled_index_does_not_inherit_the_old_instances_state() {
         generation: 2,
     };
     let view = ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,
@@ -373,6 +375,7 @@ fn a_faulting_behavior_is_disabled_rather_than_retried() {
     let mut host = Host::new();
 
     let view = ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

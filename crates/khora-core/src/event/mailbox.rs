@@ -257,6 +257,27 @@ mod tests {
         assert_eq!(channel::<Watched>(&runtime).discarded(), 0);
     }
 
+    /// **A scoped family keeps its mail**: it is on, so the boundary leaves
+    /// its `Drop` mailboxes for it to read.
+    #[test]
+    fn a_scoped_family_keeps_its_mail() {
+        let runtime = runtime_with_mail();
+        let activation = Activation::new([LISTENER, KEEPER, WATCHER]);
+        activation
+            .scope(LISTENER, "Preview")
+            .expect("a known family");
+        activation.settle();
+
+        discard_mail_of_inactive(&activation, &runtime);
+
+        assert_eq!(
+            channel::<Taken>(&runtime).len(),
+            2,
+            "the scoped listener's mail is delivered"
+        );
+        assert_eq!(channel::<Taken>(&runtime).discarded(), 0);
+    }
+
     /// **A request not yet settled empties nothing**: the boundary empties
     /// the mail of a family off in the state in force.
     #[test]

@@ -72,6 +72,7 @@ pub(crate) fn run_intake(runtime: &Runtime) {
         SystemContext {
             since: Tick(0),
             resumed: false,
+            scope: None,
         },
     );
 }
@@ -297,7 +298,14 @@ fn a_reload_the_pump_handed_over_is_installed_before_the_flow_and_reads_its_comp
     let runtime = Arc::clone(&wiring.runtime);
     wiring.pre_extract(&mut world);
     let mut flow = ScriptFlow::default();
-    let selection = flow.select(&world, &runtime, FlowContext { resumed: true });
+    let selection = flow.select(
+        &world,
+        &runtime,
+        FlowContext {
+            resumed: true,
+            scope: None,
+        },
+    );
     let mut view = flow.project(&world, &selection, &runtime);
     view.delta_seconds = 0.016;
     let mut bus = LaneBus::new();

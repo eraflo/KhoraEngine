@@ -107,6 +107,7 @@ fn view(instances: &[(EntityId, &str, &str)]) -> ScriptView {
         });
     }
     ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

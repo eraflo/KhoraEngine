@@ -177,6 +177,7 @@ fn a_deleted_module_leaves_no_problem_under_its_name() {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
         if problems.of_module("other.erg").0 > 0 {

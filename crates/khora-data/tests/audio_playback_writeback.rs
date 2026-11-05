@@ -74,6 +74,7 @@ fn a_playback_update_lands_on_the_source_it_was_made_for() {
         khora_data::ecs::SystemContext {
             since: khora_data::ecs::Tick(0),
             resumed: false,
+            scope: None,
         },
     );
 

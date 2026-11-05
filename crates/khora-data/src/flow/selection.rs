@@ -14,7 +14,11 @@
 
 //! Per-frame selection produced by [`Flow::select`](super::Flow::select).
 
+use std::collections::HashSet;
+
 use khora_core::ecs::entity::EntityId;
+
+use crate::ecs::{ComponentKey, World};
 
 /// A snapshot of entities selected by a `Flow` for the current tick.
 ///
@@ -25,6 +29,9 @@ use khora_core::ecs::entity::EntityId;
 pub struct Selection {
     /// Entity IDs deemed relevant for this domain this tick.
     pub entities: Vec<EntityId>,
+    /// The entities the family's scope admits, when it is scoped: those
+    /// holding its marker. `None` admits every entity.
+    scope: Option<HashSet<EntityId>>,
 }
 
 impl Selection {
@@ -35,7 +42,25 @@ impl Selection {
 
     /// Creates a selection from a pre-built entity list.
     pub fn from_entities(entities: Vec<EntityId>) -> Self {
-        Self { entities }
+        Self {
+            entities,
+            scope: None,
+        }
+    }
+
+    /// This selection limited to the entities of `world` holding the marker
+    /// `scope` names ([`FlowContext::scope`](super::FlowContext::scope));
+    /// unlimited when `scope` is `None`.
+    pub fn within(mut self, world: &World, scope: Option<ComponentKey>) -> Self {
+        self.scope = scope.map(|marker| world.holders(marker).into_iter().collect());
+        self
+    }
+
+    /// Whether the family's scope admits `entity`: always, unscoped.
+    pub fn admits(&self, entity: EntityId) -> bool {
+        self.scope
+            .as_ref()
+            .is_none_or(|scope| scope.contains(&entity))
     }
 
     /// Number of selected entities.

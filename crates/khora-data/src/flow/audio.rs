@@ -123,7 +123,7 @@ impl Flow for AudioFlow {
         ]))
     }
 
-    fn project(&self, world: &World, _sel: &Selection, _runtime: &Runtime) -> Self::View {
+    fn project(&self, world: &World, sel: &Selection, _runtime: &Runtime) -> Self::View {
         let source_count = world.query::<&AudioSource>().count();
         let listener = world
             .query::<(&AudioListener, &GlobalTransform)>()
@@ -131,6 +131,10 @@ impl Flow for AudioFlow {
             .map(|(_, t)| t.0);
         let listener_position = listener.map(|t| t.translation());
 
+        // The listener is the scene's, scoped or not: a sound previewed is
+        // heard from where the scene is heard. The sources are those the
+        // family's scope admits.
+        //
         // Snapshot every source so the mixing lane never needs to touch
         // the World. The snapshot copy is cheap because `state` is a
         // small `Option<PlaybackState>` and `handle` is an `Arc`.
@@ -140,6 +144,9 @@ impl Flow for AudioFlow {
         for (entity, source, transform) in
             world.query::<(EntityId, &AudioSource, &GlobalTransform)>()
         {
+            if !sel.admits(entity) {
+                continue;
+            }
             sources.push(AudioSourceSnapshot {
                 entity,
                 handle: source.handle.clone(),

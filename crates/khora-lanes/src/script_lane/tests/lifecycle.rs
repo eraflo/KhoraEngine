@@ -289,6 +289,7 @@ fn a_farewell_already_said_is_not_said_again() {
 
     // The boundary applied the despawn, so the next view no longer lists it.
     let empty = ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

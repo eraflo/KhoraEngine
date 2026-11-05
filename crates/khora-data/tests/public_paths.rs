@@ -2838,5 +2838,8 @@ fn role_and_flow_context_paths_are_public() {
     let _: fn(Roles, &Families) -> Checked = khora_data::ecs::check_roles;
     let _ = khora_data::ecs::registered_roles;
     let _ = type_name::<khora_data::flow::FlowContext>();
-    let _ = khora_data::flow::FlowContext { resumed: true };
+    let _ = khora_data::flow::FlowContext {
+        resumed: true,
+        scope: None,
+    };
 }

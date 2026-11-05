@@ -53,6 +53,7 @@ mod running_problems;
 mod saved_structs_into_edited_types;
 mod saves;
 mod scheduled_scene;
+mod scoped_scripts;
 mod script_intake;
 mod shadows;
 mod skybox;

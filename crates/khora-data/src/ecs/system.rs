@@ -93,6 +93,13 @@ pub struct SystemContext {
     /// family that was off, [`DataSystemRegistration::role`]). `false` on a
     /// run that follows its previous run with no skip between.
     pub resumed: bool,
+    /// The marker the system's family is limited to, when the family is
+    /// scoped (`khora_core::agent::State::Scoped`): a system reading the
+    /// World works on the entities holding it. `None` for a family on
+    /// unscoped, and for an [`Upkeep`](Role::Upkeep) system. A marker name
+    /// the world does not know is the key a component declared under that
+    /// name would have, [`ComponentKey::named`], which no entity holds.
+    pub scope: Option<ComponentKey>,
 }
 
 /// Registration entry for a [`DataSystem`].

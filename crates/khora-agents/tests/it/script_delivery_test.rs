@@ -47,6 +47,7 @@ const MODULE: &str = "ai/guard.erg";
 /// this scene" exit.
 fn a_scene_with_one_script() -> ScriptView {
     ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

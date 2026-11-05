@@ -106,6 +106,7 @@ fn view(behaviors: &[(&str, &[EntityId])]) -> ScriptView {
         })
         .collect();
     ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

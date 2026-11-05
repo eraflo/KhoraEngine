@@ -493,6 +493,7 @@ mod tests {
             let ctx = SystemContext {
                 since: world.observer_last_seen(system),
                 resumed: false,
+                scope: None,
             };
             let tick = world.begin_run();
             let mut deck = OutputDeck::new();

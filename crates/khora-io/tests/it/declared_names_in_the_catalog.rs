@@ -111,6 +111,7 @@ impl Engine {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
     }

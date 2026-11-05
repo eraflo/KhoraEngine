@@ -19,7 +19,7 @@
 //! when the engine [`settle`](Activation::settle)s it, so a whole frame — its
 //! DataSystems, its Flows, its agents and the DCC — sees one state.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use super::gorna::AgentId;
@@ -31,6 +31,9 @@ pub enum State {
     On,
     /// The family does not run.
     Off,
+    /// The family runs, on the entities holding the marker component
+    /// registered under this name only.
+    Scoped(&'static str),
 }
 
 /// A request named a family the engine does not know.
@@ -57,8 +60,10 @@ pub struct Activation {
 #[derive(Debug, Default)]
 struct Switches {
     known: BTreeSet<AgentId>,
-    requested_off: BTreeSet<AgentId>,
-    off: BTreeSet<AgentId>,
+    /// Every family not plainly on, as requested; a family absent is on.
+    requested: BTreeMap<AgentId, State>,
+    /// The same, in force.
+    in_force: BTreeMap<AgentId, State>,
     generation: u64,
 }
 
@@ -84,36 +89,61 @@ impl Activation {
 
     /// Requests `family` on, from the next [`settle`](Self::settle).
     pub fn activate(&self, family: AgentId) -> Result<(), UnknownFamily> {
-        self.request(family, |off| {
-            off.remove(&family);
-        })
+        self.request(family, State::On)
     }
 
     /// Requests `family` off, from the next [`settle`](Self::settle).
     pub fn deactivate(&self, family: AgentId) -> Result<(), UnknownFamily> {
-        self.request(family, |off| {
-            off.insert(family);
-        })
+        self.request(family, State::Off)
+    }
+
+    /// Requests `family` on, limited to the entities holding the component
+    /// registered as `marker`, from the next [`settle`](Self::settle). A
+    /// scoped family counts as on.
+    ///
+    /// The scope is honoured by the family's Flows and the systems that read
+    /// the World for it — the scripting and audio families today. The physics
+    /// family does not honour one yet: its provider steps every body it was
+    /// given, so a scoped physics family runs as one plainly on.
+    pub fn scope(&self, family: AgentId, marker: &'static str) -> Result<(), UnknownFamily> {
+        self.request(family, State::Scoped(marker))
     }
 
     /// The state in force of `family`. A family the engine does not know is
     /// never switched, so it is on.
     pub fn state(&self, family: AgentId) -> State {
-        if self.read().off.contains(&family) {
-            State::Off
-        } else {
-            State::On
-        }
+        self.read()
+            .in_force
+            .get(&family)
+            .copied()
+            .unwrap_or(State::On)
     }
 
-    /// Whether `family` is on, in the state in force.
+    /// Whether `family` runs, in the state in force: on, or scoped.
     pub fn is_active(&self, family: AgentId) -> bool {
-        self.state(family) == State::On
+        self.state(family) != State::Off
     }
 
-    /// The families off, in the state in force.
+    /// The families off, in the state in force. A scoped family is not one.
     pub fn inactive(&self) -> BTreeSet<AgentId> {
-        self.read().off.clone()
+        self.read()
+            .in_force
+            .iter()
+            .filter(|(_, state)| **state == State::Off)
+            .map(|(family, _)| *family)
+            .collect()
+    }
+
+    /// The families scoped in the state in force, each with its marker.
+    pub fn scopes(&self) -> Vec<(AgentId, &'static str)> {
+        self.read()
+            .in_force
+            .iter()
+            .filter_map(|(family, state)| match state {
+                State::Scoped(marker) => Some((*family, *marker)),
+                _ => None,
+            })
+            .collect()
     }
 
     /// A number that moves each time the state in force changes, never
@@ -126,25 +156,24 @@ impl Activation {
     /// changed it.
     pub fn settle(&self) -> bool {
         let mut switches = self.write();
-        if switches.requested_off == switches.off {
+        if switches.requested == switches.in_force {
             return false;
         }
-        switches.off = switches.requested_off.clone();
+        switches.in_force = switches.requested.clone();
         switches.generation += 1;
         true
     }
 
-    fn request(
-        &self,
-        family: AgentId,
-        change: impl FnOnce(&mut BTreeSet<AgentId>),
-    ) -> Result<(), UnknownFamily> {
+    fn request(&self, family: AgentId, state: State) -> Result<(), UnknownFamily> {
         let mut switches = self.write();
         if !switches.known.contains(&family) {
             log::warn!("a request to switch `{family}`, which is no registered family, is refused");
             return Err(UnknownFamily(family));
         }
-        change(&mut switches.requested_off);
+        match state {
+            State::On => switches.requested.remove(&family),
+            other => switches.requested.insert(family, other),
+        };
         Ok(())
     }
 
@@ -264,6 +293,131 @@ mod tests {
         assert_eq!(activation.generation(), start);
         assert_eq!(activation.state(stranger), State::On);
         assert!(activation.inactive().is_empty());
+    }
+
+    /// **A scoped family is on, limited to its marker.** Requested, the scope
+    /// waits for the boundary like any request; settled, the family reports
+    /// its marker, counts as active and is not among the families off.
+    #[test]
+    fn a_scoped_family_is_on_and_reports_its_marker() {
+        let activation = engine();
+
+        assert_eq!(activation.scope(SCRIPT, "Preview"), Ok(()));
+        assert_eq!(
+            activation.state(SCRIPT),
+            State::On,
+            "requested, not in force"
+        );
+
+        assert!(activation.settle(), "the state in force changed");
+        assert_eq!(activation.state(SCRIPT), State::Scoped("Preview"));
+        assert!(activation.is_active(SCRIPT), "a scoped family is on");
+        assert!(
+            activation.inactive().is_empty(),
+            "a scoped family is not off: {:?}",
+            activation.inactive()
+        );
+        assert_eq!(activation.state(AUDIO), State::On, "the others unscoped");
+    }
+
+    /// **`activate` and `deactivate` replace a scope**, and a scope replaces
+    /// a family switched off: the last request before the boundary is the
+    /// state in force.
+    #[test]
+    fn activate_and_deactivate_replace_a_scope() {
+        let activation = engine();
+
+        activation.scope(AUDIO, "Preview").expect("a known family");
+        activation.settle();
+        activation.deactivate(AUDIO).expect("a known family");
+        assert!(activation.settle());
+        assert_eq!(
+            activation.state(AUDIO),
+            State::Off,
+            "off replaces the scope"
+        );
+        assert_eq!(activation.inactive(), BTreeSet::from([AUDIO]));
+
+        activation.scope(AUDIO, "Preview").expect("a known family");
+        assert!(activation.settle());
+        assert_eq!(
+            activation.state(AUDIO),
+            State::Scoped("Preview"),
+            "a scope replaces off"
+        );
+        assert!(activation.inactive().is_empty());
+
+        activation.activate(AUDIO).expect("a known family");
+        assert!(activation.settle());
+        assert_eq!(activation.state(AUDIO), State::On, "on replaces the scope");
+    }
+
+    /// **The generation moves when the marker changes, and only then.** The
+    /// same scope requested again, or a scope taken back before the boundary,
+    /// changes nothing; another marker, or leaving the scope, does.
+    #[test]
+    fn the_generation_moves_when_the_scope_changes_and_not_for_the_same_scope() {
+        let activation = engine();
+        let start = activation.generation();
+
+        activation.scope(SCRIPT, "Preview").expect("a known family");
+        activation.activate(SCRIPT).expect("a known family");
+        assert!(!activation.settle(), "taken back before the boundary");
+        assert_eq!(activation.generation(), start);
+
+        activation.scope(SCRIPT, "Preview").expect("a known family");
+        assert!(activation.settle(), "on to scoped");
+        let scoped = activation.generation();
+        assert_ne!(scoped, start);
+
+        activation.scope(SCRIPT, "Preview").expect("a known family");
+        assert!(!activation.settle(), "the same scope again");
+        assert_eq!(activation.generation(), scoped);
+
+        activation
+            .scope(SCRIPT, "Inspected")
+            .expect("a known family");
+        assert!(activation.settle(), "another marker");
+        let moved = activation.generation();
+        assert_ne!(moved, scoped);
+        assert_eq!(activation.state(SCRIPT), State::Scoped("Inspected"));
+
+        activation.activate(SCRIPT).expect("a known family");
+        assert!(activation.settle(), "scoped to on");
+        assert_ne!(activation.generation(), moved);
+    }
+
+    /// **A scope naming an unknown family is refused**, and changes nothing.
+    #[test]
+    fn a_scope_for_an_unknown_family_is_refused() {
+        let activation = engine();
+        let stranger = AgentId::new("stranger");
+        let start = activation.generation();
+
+        assert_eq!(
+            activation.scope(stranger, "Preview"),
+            Err(UnknownFamily(stranger))
+        );
+
+        assert!(!activation.settle());
+        assert_eq!(activation.generation(), start);
+        assert_eq!(activation.state(stranger), State::On);
+    }
+
+    /// **The scopes in force, each with its marker**: a scope requested is
+    /// not listed before it settles, and one replaced is not listed after.
+    #[test]
+    fn the_scopes_in_force_are_listed_with_their_markers() {
+        let activation = engine();
+        activation.scope(AUDIO, "Preview").expect("a known family");
+        assert!(activation.scopes().is_empty(), "requested, not in force");
+
+        activation.settle();
+        assert_eq!(activation.scopes(), vec![(AUDIO, "Preview")]);
+
+        activation.activate(AUDIO).expect("a known family");
+        activation.settle();
+        assert!(activation.scopes().is_empty(), "replaced by on");
     }
 
     /// **The switch is shared**: threads requesting, reading and settling at

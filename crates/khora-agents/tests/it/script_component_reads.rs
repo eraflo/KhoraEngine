@@ -166,6 +166,7 @@ impl Session {
         self.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
         let ctx = FlowContext {
             resumed: !self.projected,
+            scope: None,
         };
         self.projected = true;
         let selection = self.flow.select(&self.world, &self.runtime, ctx);

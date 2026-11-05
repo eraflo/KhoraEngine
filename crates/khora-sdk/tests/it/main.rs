@@ -49,6 +49,7 @@ mod script_problems_after_unmount;
 mod scripts_mount_sequences;
 mod scripts_mounted_while_running;
 mod scripts_outside_the_script_folder;
+mod scripts_scoped_to_a_marker;
 mod scripts_switched_on_in_before_frame;
 mod scripts_unmounted_after_play;
 mod staged_bootstrap;

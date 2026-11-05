@@ -295,6 +295,7 @@ fn a_spawn_through_the_scripting_agent_takes_its_id_from_the_worlds_reserver() {
     for _ in 0..3 {
         let mut bus = LaneBus::new();
         bus.publish(ScriptView {
+            left_scope: Vec::new(),
             fixed_steps: 0,
             fixed_delta_seconds: 0.0,
             resumed: false,

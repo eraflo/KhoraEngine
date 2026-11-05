@@ -117,6 +117,10 @@ pub struct ScriptView {
     /// left meanwhile left while nothing was playing: it is forgotten, not bid
     /// farewell.
     pub resumed: bool,
+    /// The instances that left the scripting family's scope this frame, by
+    /// entity and behavior: still attached, so not despawned — forgotten,
+    /// not bid farewell.
+    pub left_scope: Vec<(EntityId, String)>,
     /// The distinct behaviors in the scene, referenced by index.
     pub programs: Vec<ScriptProgram>,
     /// Every entity running one, in a stable order.
@@ -175,6 +179,15 @@ pub struct ScriptFlow {
     /// The pairs attached for the first time this frame, computed in
     /// `select` for `project` — which is `&self` and cannot work it out.
     attached_newcomers: HashSet<(EntityId, String)>,
+    /// The pairs that left the family's scope this frame while still
+    /// attached: forgotten, not bid farewell — they were not despawned.
+    left_scope: Vec<(EntityId, String)>,
+    /// The pairs outside the scope since they left it, still attached. One
+    /// that comes back arrives afresh: the state companion its last run in
+    /// the scope left is not a save it is loaded from.
+    out_of_scope: HashSet<(EntityId, String)>,
+    /// The newcomers this frame that are such a return, computed in `select`.
+    returning: HashSet<(EntityId, String)>,
 }
 
 impl Flow for ScriptFlow {
@@ -185,7 +198,33 @@ impl Flow for ScriptFlow {
 
     fn select(&mut self, world: &World, _runtime: &Runtime, ctx: FlowContext) -> Selection {
         self.resumed = ctx.resumed;
-        let (attached, with_state) = super::behaviors::attached(world);
+        let selection = Selection::new().within(world, ctx.scope);
+        let (everywhere, with_state) = super::behaviors::attached(world);
+        // Only what the scope admits is attached for the family; what it
+        // stops admitting while still attached left the scope, and what it
+        // starts admitting arrives.
+        let attached: HashSet<_> = everywhere
+            .iter()
+            .filter(|(entity, _)| selection.admits(*entity))
+            .cloned()
+            .collect();
+        let mut left_scope: Vec<_> = self
+            .attached
+            .iter()
+            .filter(|pair| everywhere.contains(*pair) && !attached.contains(*pair))
+            .cloned()
+            .collect();
+        left_scope
+            .sort_by(|(a, x), (b, y)| (a.index, a.generation, x).cmp(&(b.index, b.generation, y)));
+        self.returning = attached
+            .iter()
+            .filter(|pair| !self.attached.contains(*pair) && self.out_of_scope.contains(*pair))
+            .cloned()
+            .collect();
+        self.out_of_scope.extend(left_scope.iter().cloned());
+        self.out_of_scope
+            .retain(|pair| everywhere.contains(pair) && !attached.contains(pair));
+        self.left_scope = left_scope;
         self.attached_newcomers = attached
             .iter()
             .filter(|pair| {
@@ -196,10 +235,10 @@ impl Flow for ScriptFlow {
             .collect();
         self.attached = attached;
         self.with_state = with_state;
-        Selection::new()
+        selection
     }
 
-    fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
+    fn project(&self, world: &World, sel: &Selection, runtime: &Runtime) -> Self::View {
         // The frame's clock: its delta, and the fixed steps it took for a
         // script's `FixedUpdate` — none without a clock.
         let (delta_seconds, fixed_steps, fixed_delta_seconds) = runtime
@@ -243,7 +282,14 @@ impl Flow for ScriptFlow {
             view.components = std::sync::Arc::new(world.project_components(&reads));
         }
 
-        super::behaviors::project_behaviors(world, &self.attached_newcomers, &mut view);
+        view.left_scope = self.left_scope.clone();
+        super::behaviors::project_behaviors(
+            world,
+            sel,
+            &self.attached_newcomers,
+            &self.returning,
+            &mut view,
+        );
         view
     }
 
@@ -265,7 +311,10 @@ mod tests {
     /// skipped it would never see an authored field.
     fn project(world: &World) -> ScriptView {
         let mut flow = ScriptFlow::default();
-        let first = FlowContext { resumed: true };
+        let first = FlowContext {
+            resumed: true,
+            scope: None,
+        };
         let selection = flow.select(world, &Runtime::default(), first);
         flow.project(world, &selection, &Runtime::default())
     }
@@ -389,7 +438,14 @@ mod tests {
 
     /// One frame of the flow over `runtime`, its first.
     fn frame(flow: &mut ScriptFlow, world: &World, runtime: &Runtime) -> ScriptView {
-        let selection = flow.select(world, runtime, FlowContext { resumed: true });
+        let selection = flow.select(
+            world,
+            runtime,
+            FlowContext {
+                resumed: true,
+                scope: None,
+            },
+        );
         flow.project(world, &selection, runtime)
     }
 
@@ -397,7 +453,14 @@ mod tests {
     /// substrate hands it.
     fn run(flow: &mut ScriptFlow, world: &World, resumed: bool) -> ScriptView {
         let runtime = Runtime::default();
-        let selection = flow.select(world, &runtime, FlowContext { resumed });
+        let selection = flow.select(
+            world,
+            &runtime,
+            FlowContext {
+                resumed,
+                scope: None,
+            },
+        );
         flow.project(world, &selection, &runtime)
     }
 

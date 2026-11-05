@@ -73,6 +73,7 @@ fn frame(
     events: &EventQueue,
 ) -> Option<ScriptSnapshot> {
     let view = ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

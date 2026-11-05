@@ -73,12 +73,15 @@ pub(super) fn attached(world: &World) -> (Pairs, Pairs) {
     (attached, with_state)
 }
 
-/// Adds to `view` an instance per behavior component each entity holds,
-/// each carrying its row; `newcomers` — the pairs new this frame — also
-/// carry what they arrive with.
+/// Adds to `view` an instance per behavior component each entity the
+/// `selection` admits holds, each carrying its row; `newcomers` — the pairs
+/// new this frame — also carry what they arrive with, and those `returning`
+/// into the scope arrive afresh.
 pub(super) fn project_behaviors(
     world: &World,
+    selection: &super::Selection,
     newcomers: &HashSet<(EntityId, String)>,
+    returning: &HashSet<(EntityId, String)>,
     view: &mut ScriptView,
 ) {
     for behavior in world.behavior_components() {
@@ -97,12 +100,16 @@ pub(super) fn project_behaviors(
             .components()
             .key_named(&format!("{}{STATE_SUFFIX}", behavior.name));
         let mut rows = world.declared_rows(behavior.key);
-        rows.retain(|(entity, _)| runs_on(world, &behavior, *entity));
+        rows.retain(|(entity, _)| selection.admits(*entity) && runs_on(world, &behavior, *entity));
         rows.sort_by_key(|(entity, _)| (entity.index, entity.generation));
         for (entity, fields) in rows {
+            let pair = (entity, behavior.name.to_owned());
+            // A return into the scope arrives afresh: what its companion
+            // holds is its last run in the scope, not a save.
+            let observed_from = companion.filter(|_| !returning.contains(&pair));
             let arrival = newcomers
-                .contains(&(entity, behavior.name.to_owned()))
-                .then(|| arrival_of(world, entity, &fields, companion));
+                .contains(&pair)
+                .then(|| arrival_of(world, entity, &fields, observed_from));
             let transform = world.get::<Transform>(entity).copied();
             view.instances.push(ScriptInstance {
                 entity,

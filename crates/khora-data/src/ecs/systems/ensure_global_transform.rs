@@ -98,6 +98,7 @@ mod tests {
             crate::ecs::SystemContext {
                 since: crate::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
     }

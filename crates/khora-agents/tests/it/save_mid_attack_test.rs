@@ -129,6 +129,7 @@ impl Session {
     fn frame(&mut self, delta: f32) {
         let ctx = FlowContext {
             resumed: !self.projected,
+            scope: None,
         };
         self.projected = true;
         let selection = self.flow.select(&self.world, &self.runtime, ctx);

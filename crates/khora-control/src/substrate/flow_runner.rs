@@ -22,7 +22,7 @@
 
 use std::sync::Arc;
 
-use super::data_system_runner::role_runs;
+use super::data_system_runner::role_scope;
 use khora_core::agent::Activation;
 use khora_core::lane::LaneBus;
 use khora_core::Runtime;
@@ -41,12 +41,13 @@ pub fn run_flows(world: &mut World, bus: &mut LaneBus, runtime: &Runtime) {
     // world notes it, so its next run is told it resumes.
     for reg in inventory::iter::<FlowRegistration> {
         let observer = Observer::Flow(reg.name);
-        if !role_runs(reg.role, activation.map(|a| a.as_ref())) {
+        let Some(scope) = role_scope(reg.role, activation.map(|a| a.as_ref()), world) else {
             world.note_observer_skip(observer);
             continue;
-        }
+        };
         let ctx = FlowContext {
             resumed: world.observer_resumes(observer),
+            scope,
         };
         let tick = world.begin_run();
         (reg.run)(world, bus, runtime, ctx);

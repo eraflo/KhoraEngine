@@ -131,6 +131,7 @@ fn many_texts_sharing_a_font_do_not_copy_it_once_each() {
         SystemContext {
             since: Tick(0),
             resumed: false,
+            scope: None,
         },
     );
     let grew = PEAK.load(Ordering::Relaxed).saturating_sub(before);

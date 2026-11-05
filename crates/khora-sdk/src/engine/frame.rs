@@ -280,11 +280,26 @@ impl<A: EngineApp> EngineCore<A> {
             return;
         };
         let was_off = activation.inactive();
+        let was_scoped = activation.scopes();
         let changed = activation.settle();
         let mut off = activation.inactive();
         off.extend(was_off);
         khora_core::event::discard_mail_of(&off, &self.runtime);
         if changed {
+            // A scope whose marker the world does not know works on nothing:
+            // said once, when that scope takes effect.
+            if let Some(world) = self.game_world.as_mut() {
+                let components = world.inner_world().components();
+                for (family, marker) in activation.scopes() {
+                    if !was_scoped.contains(&(family, marker))
+                        && components.key_named(marker).is_none()
+                    {
+                        log::warn!(
+                            "the family `{family}` is scoped to `{marker}`, which no component is registered as: it works on no entity"
+                        );
+                    }
+                }
+            }
             if let Some(dcc) = &self.dcc {
                 let _ = dcc.event_sender().send(
                     khora_core::telemetry::TelemetryEvent::ActivationChanged(activation.inactive()),

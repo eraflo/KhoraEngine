@@ -85,6 +85,7 @@ pub fn view(module: &str, behaviors: &[(&str, &[u32])], delta: f32) -> ScriptVie
         })
         .collect();
     ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

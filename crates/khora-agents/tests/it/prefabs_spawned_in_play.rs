@@ -317,6 +317,7 @@ fn the_scripting_agent_hands_its_lane_the_prefab_catalog() {
         for frame in 0..3 {
             let mut bus = LaneBus::new();
             bus.publish(ScriptView {
+                left_scope: Vec::new(),
                 fixed_steps: 0,
                 fixed_delta_seconds: 0.0,
                 resumed: false,

@@ -21,7 +21,16 @@ switches one with `activate(family)` / `deactivate(family)` on the
 Requests land at the frame boundary, when the SDK calls `settle()` once per frame
 before the first DataSystem phase, so the whole frame sees one state. A family
 off is not asked to offer, is lent nothing, and does not run; the DCC hears of a
-change as `TelemetryEvent::ActivationChanged` and opens an epoch. See
+change as `TelemetryEvent::ActivationChanged` and opens an epoch.
+
+A family can also be switched on **within a scope**: `scope(family, "Preview")`
+runs it on the entities holding the component registered as `Preview` only — the
+same work on fewer things, a sound previewed in the editor or one script run
+while editing. A scoped family counts as on. The substrate hands the marker's key
+to the family's systems and Flows (`SystemContext::scope`, `FlowContext::scope`);
+a Flow projects only what its `Selection` admits, and an entity entering the
+scope arrives while one leaving it is forgotten, not bid farewell. The scripting
+and audio families honour a scope; the physics family does not yet. See
 [Role](#role), [Mailbox](#mailbox) and
 [The frame](../concepts/the-frame.md#the-simulation-clock).
 

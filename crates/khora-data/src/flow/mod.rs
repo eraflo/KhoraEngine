@@ -136,10 +136,13 @@ pub trait Flow: Send + Sync {
     const ROLE: Role;
 
     /// Stage 1 — read-only selection of relevant entities. `ctx` says whether
-    /// this run starts the Flow over ([`FlowContext::resumed`]).
+    /// this run starts the Flow over ([`FlowContext::resumed`]) and what its
+    /// family is limited to ([`FlowContext::scope`]): the default selects
+    /// nothing in particular, within the scope, and a Flow of a family projects
+    /// only what the selection [`admits`](Selection::admits).
     fn select(&mut self, world: &World, runtime: &Runtime, ctx: FlowContext) -> Selection {
-        let _ = (world, runtime, ctx);
-        Selection::new()
+        let _ = runtime;
+        Selection::new().within(world, ctx.scope)
     }
 
     /// Stage 2 — read-only projection of the world into a View.

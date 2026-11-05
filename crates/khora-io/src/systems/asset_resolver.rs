@@ -478,6 +478,7 @@ mod tests {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
 
@@ -516,6 +517,7 @@ mod tests {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
         let first = world
@@ -531,6 +533,7 @@ mod tests {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
         let second = world
@@ -564,6 +567,7 @@ mod tests {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
         let uuid_a = world
@@ -594,6 +598,7 @@ mod tests {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
 
@@ -630,6 +635,7 @@ mod tests {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
         let uuid = world
@@ -649,6 +655,7 @@ mod tests {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
 
@@ -688,6 +695,7 @@ mod tests {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
         let uuid_a = world
@@ -713,6 +721,7 @@ mod tests {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
 
@@ -795,6 +804,7 @@ mod tests {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
 
@@ -844,6 +854,7 @@ mod tests {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
 
@@ -886,6 +897,7 @@ mod tests {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
 
@@ -948,6 +960,7 @@ mod tests {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
 
@@ -1031,6 +1044,7 @@ mod tests {
                     khora_data::ecs::SystemContext {
                         since: khora_data::ecs::Tick(0),
                         resumed: false,
+                        scope: None,
                     },
                 );
                 asset_resolver_system(
@@ -1040,6 +1054,7 @@ mod tests {
                     khora_data::ecs::SystemContext {
                         since: khora_data::ecs::Tick(0),
                         resumed: false,
+                        scope: None,
                     },
                 );
             }
@@ -1530,6 +1545,7 @@ mod tests {
                     khora_data::ecs::SystemContext {
                         since: khora_data::ecs::Tick(0),
                         resumed: false,
+                        scope: None,
                     },
                 );
             }

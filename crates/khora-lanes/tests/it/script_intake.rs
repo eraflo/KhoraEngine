@@ -172,6 +172,7 @@ impl Wired {
             SystemContext {
                 since: Tick(0),
                 resumed,
+                scope: None,
             },
         );
     }
@@ -487,6 +488,7 @@ fn without_a_scripting_world_the_channels_keep_their_contents() {
         SystemContext {
             since: Tick(0),
             resumed: false,
+            scope: None,
         },
     );
 
@@ -547,6 +549,7 @@ fn the_lane_leaves_the_engine_channels_alone() {
     });
     events.send(hit(1));
     let view = ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         resumed: false,

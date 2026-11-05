@@ -61,7 +61,7 @@ fn collision_to_script(
     world: &mut World,
     runtime: &Runtime,
     _deck: &mut OutputDeck,
-    _ctx: SystemContext,
+    ctx: SystemContext,
 ) {
     let Some(collisions) = runtime.resources.get::<Channel<Collision>>() else {
         return;
@@ -85,10 +85,14 @@ fn collision_to_script(
         .into_iter()
         .map(|behavior| behavior.key)
         .collect();
+    // Who is told follows who runs: under a scope, only an entity holding
+    // the marker.
     let scripted = |entity| {
-        behaviors
-            .iter()
-            .any(|key| world.row(entity, *key).is_some())
+        ctx.scope
+            .is_none_or(|marker| world.row(entity, marker).is_some())
+            && behaviors
+                .iter()
+                .any(|key| world.row(entity, *key).is_some())
     };
 
     for contact in contacts {
@@ -172,6 +176,7 @@ mod tests {
             crate::ecs::SystemContext {
                 since: crate::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
     }
@@ -522,5 +527,45 @@ mod tests {
         runtime.resources.insert(collision_channel());
 
         run(&mut world, &runtime);
+    }
+
+    /// **Who is told follows who runs, under a scope too.** The scripts are
+    /// limited to `Preview`: a contact between an unmarked scripted entity and
+    /// a marked one tells the marked one only — the unmarked one is not run,
+    /// and its event would only take a place in the bounded channel.
+    #[test]
+    fn a_scoped_contact_tells_only_the_entity_in_the_scope() {
+        let mut world = World::new();
+        let guard = guard_behavior(&mut world);
+        let preview = declare(&mut world, "Preview", None);
+        let marked = holding(&mut world, guard);
+        world
+            .add_runtime_component(marked, preview, &ScriptValue::Unit)
+            .expect("the marker attaches");
+        let outside = holding(&mut world, guard);
+        let (runtime, collisions, events) = wired();
+        collisions.send(Collision {
+            kind: CollisionKind::Started,
+            a: outside,
+            b: marked,
+        });
+
+        collision_to_script(
+            &mut world,
+            &runtime,
+            &mut OutputDeck::new(),
+            crate::ecs::SystemContext {
+                since: crate::ecs::Tick(0),
+                resumed: false,
+                scope: Some(preview),
+            },
+        );
+
+        let raised = events.drain();
+        assert_eq!(
+            raised.iter().map(|e| e.target).collect::<Vec<_>>(),
+            vec![marked],
+            "only the entity the scope admits is told: {raised:?}"
+        );
     }
 }

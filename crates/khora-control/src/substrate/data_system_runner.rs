@@ -14,12 +14,12 @@
 
 //! Running the registered `DataSystem`s of a tick phase, in dependency order.
 
-use khora_core::agent::Activation;
+use khora_core::agent::{Activation, State};
 use khora_core::graph::topological_sort;
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
 use khora_data::ecs::{
-    DataSystemRegistration, Observer, Role, SystemContext, Tick, TickPhase, World,
+    ComponentKey, DataSystemRegistration, Observer, Role, SystemContext, Tick, TickPhase, World,
 };
 use std::collections::HashMap;
 
@@ -62,13 +62,14 @@ pub fn run_data_systems(
     // skipped, and the world notes it, so its next run is told it resumes.
     for sys in systems {
         let observer = Observer::DataSystem(sys.name);
-        if !role_runs(sys.role, activation.map(|a| a.as_ref())) {
+        let Some(scope) = role_scope(sys.role, activation.map(|a| a.as_ref()), world) else {
             world.note_observer_skip(observer);
             continue;
-        }
+        };
         let ctx = SystemContext {
             since: world.observer_last_seen(observer),
             resumed: world.observer_resumes(observer),
+            scope,
         };
         let tick = world.begin_run();
         (sys.run)(world, runtime, deck, ctx);
@@ -77,13 +78,31 @@ pub fn run_data_systems(
     }
 }
 
-/// Whether a registration of `role` runs this frame: upkeep always, the
-/// work of a family only while the family is on. A runtime with no
-/// [`Activation`] has every family on.
-pub(crate) fn role_runs(role: Role, activation: Option<&Activation>) -> bool {
-    match role {
-        Role::Upkeep => true,
-        Role::Serves(family) => activation.is_none_or(|activation| activation.is_active(family)),
+/// Whether a registration of `role` runs this frame, and on what: `None`
+/// when it is skipped (it serves a family off); `Some(None)` when it runs on
+/// everything (upkeep, or a family plainly on); `Some(Some(key))` when its
+/// family is scoped to the marker registered as `key`'s name. A runtime with
+/// no [`Activation`] has every family on.
+///
+/// A marker the world does not know resolves to the key of its name, which no
+/// entity holds: the family works on nothing until something declares it.
+pub(crate) fn role_scope(
+    role: Role,
+    activation: Option<&Activation>,
+    world: &World,
+) -> Option<Option<ComponentKey>> {
+    let Role::Serves(family) = role else {
+        return Some(None);
+    };
+    match activation.map_or(State::On, |activation| activation.state(family)) {
+        State::On => Some(None),
+        State::Off => None,
+        State::Scoped(marker) => Some(Some(
+            world
+                .components()
+                .key_named(marker)
+                .unwrap_or_else(|| ComponentKey::named(marker)),
+        )),
     }
 }
 

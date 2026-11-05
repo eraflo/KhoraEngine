@@ -277,3 +277,62 @@ fn an_agent_whose_family_is_off_is_lent_the_allocation_once_it_is_on() {
         "the renderer is not lent the same allocation twice"
     );
 }
+
+/// Limits `family` to the marker `Preview` and settles, as the frame boundary
+/// does.
+fn scope_to_preview(activation: &Activation, family: AgentId) {
+    activation.scope(family, "Preview").expect("a known family");
+    activation.settle();
+}
+
+/// **A scoped family's agent runs**: a family limited to a marker is on. Off
+/// first, then scoped, it runs from the frame the scope is in force.
+#[test]
+fn a_scoped_familys_agent_runs() {
+    let (mut scheduler, runs) = one_script();
+    let mut world = World::new();
+    let (runtime, activation) = runtime_with(&[SCRIPT]);
+    switch(&activation, SCRIPT, false);
+    scheduler.run_frame(&mut world, Arc::clone(&runtime));
+    assert_eq!(runs.load(Ordering::SeqCst), 0, "off: it did not run");
+
+    scope_to_preview(&activation, SCRIPT);
+    scheduler.run_frame(&mut world, Arc::clone(&runtime));
+    scheduler.run_frame(&mut world, Arc::clone(&runtime));
+
+    assert_eq!(runs.load(Ordering::SeqCst), 2, "scoped: it runs");
+}
+
+/// **A scoped family's agent is lent its allocation**, like any family on,
+/// before it runs.
+#[test]
+fn a_scoped_familys_agent_is_lent_its_allocation() {
+    let log = SharedLog::default();
+    let registry = Arc::new(Mutex::new(AgentRegistry::new()));
+    let mut scheduler = scheduler_over(&registry);
+    let channel = scheduler.budget_channel().clone();
+    {
+        let mut agents = registry.lock().expect("the registry lock");
+        agents.register(Arc::new(Mutex::new(Hand::new("renderer", &log))), 2.0);
+        agents.register(Arc::new(Mutex::new(Hand::new("script", &log))), 1.0);
+    }
+    let (runtime, activation) = runtime_with(&[AgentId::new("renderer"), SCRIPT]);
+    scope_to_preview(&activation, SCRIPT);
+    let mut world = World::new();
+
+    channel.publish(allocation(1, &[("renderer", 3_000), ("script", 2_000)]));
+    scheduler.run_frame(&mut world, Arc::clone(&runtime));
+
+    assert_eq!(
+        lent_to(&log, "script"),
+        vec![(Epoch(1), envelope(2_000))],
+        "a scoped family is lent"
+    );
+    assert!(
+        log.lock()
+            .expect("the log lock")
+            .ran
+            .contains(&(SCRIPT, Some(Epoch(1)))),
+        "and lent before it runs"
+    );
+}

@@ -70,6 +70,7 @@ fn register(world: &mut World, runtime: &Runtime, batch: Vec<ScriptDeclarations>
         khora_data::ecs::SystemContext {
             since: khora_data::ecs::Tick(0),
             resumed: false,
+            scope: None,
         },
     );
 }

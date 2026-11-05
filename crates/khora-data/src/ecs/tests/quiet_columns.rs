@@ -116,6 +116,7 @@ fn run_ecs_maintenance(world: &mut World) {
         SystemContext {
             since: Tick(0),
             resumed: false,
+            scope: None,
         },
     );
 }

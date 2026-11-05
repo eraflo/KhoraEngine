@@ -53,6 +53,7 @@ fn subject() -> EntityId {
 /// A hand-built view of the one subject, with no arrival.
 fn view_of(behavior: &str, delta: f32) -> ScriptView {
     ScriptView {
+        left_scope: Vec::new(),
         fixed_steps: 0,
         fixed_delta_seconds: 0.0,
         delta_seconds: delta,
@@ -128,7 +129,10 @@ impl Game {
     }
 
     fn view(&mut self) -> ScriptView {
-        let ctx = FlowContext { resumed: !self.ran };
+        let ctx = FlowContext {
+            resumed: !self.ran,
+            scope: None,
+        };
         self.ran = true;
         let selection = self.flow.select(&self.world, &self.runtime, ctx);
         self.flow.project(&self.world, &selection, &self.runtime)

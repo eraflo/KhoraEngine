@@ -104,6 +104,7 @@ fn load_then_fix_helper(import: &str) -> (Vec<String>, Vec<String>) {
             khora_data::ecs::SystemContext {
                 since: khora_data::ecs::Tick(0),
                 resumed: false,
+                scope: None,
             },
         );
         sent.extend(pending.drain().into_iter().map(|reload| reload.module));
