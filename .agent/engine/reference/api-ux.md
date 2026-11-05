@@ -21,8 +21,10 @@ private.
   `SerializationServiceError`, `serialize_subtree` / `instantiate_subtree`, `ComponentRegistration`;
   everything else (`PrefabSource`, `instantiate_prefab`, `ReportKind`) via the `khora_sdk::khora_data`
   re-export. `AssetPrefabs` (`khora-io`) is not reachable from the SDK — the bootstrap installs it.
-- `EngineApp::initial_mode()` (`traits.rs`, default `EngineMode::Playing`) seeds `SharedEngineMode`;
-  `EngineMode`, `SharedEngineMode`, `DccService` are re-exported. Scripts run only while `Playing`.
+- No engine mode: `khora_sdk::Activation` (re-export of `khora_core::agent::Activation`) is published as
+  `Arc<Activation>` before `setup`; every family starts on, `activate`/`deactivate` are requests settled
+  at the next frame boundary (`before_frame` is the app's last place before it). `DccService` is
+  re-exported too. Scripts run only while `khora_core::script::SCRIPT` is on.
 - `run_default` loads the packed default scene with `SerializationService::with_prefabs(AssetPrefabs)`
   and logs each `LoadReport` entry.
 

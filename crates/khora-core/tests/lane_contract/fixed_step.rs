@@ -108,7 +108,6 @@ fn tick_registration(fixed_step: Option<Duration>) -> AgentRegistration {
         phase: ExecutionPhase::TRANSFORM,
         importance: AgentImportance::Critical,
         after: &[],
-        modes: &[],
         fixed_step,
         default_level: None,
         module: module_path!(),

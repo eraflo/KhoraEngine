@@ -25,9 +25,7 @@ use khora_core::agent::gorna::{
     AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId,
 };
 use khora_core::agent::registration::{check_registrations, BootError};
-use khora_core::agent::{
-    Agent, AgentAccess, AgentImportance, EngineMode, ExecutionPhase, ExecutionTiming,
-};
+use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase, ExecutionTiming};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
@@ -44,7 +42,6 @@ fn unconstrained() -> NegotiationRequest {
         target_latency: Duration::from_millis(16),
         priority_weight: 1.0,
         constraints: ResourceConstraints::default(),
-        current_mode: EngineMode::Playing,
         agent_timing: ExecutionTiming::default(),
     }
 }
@@ -73,10 +70,6 @@ fn the_physics_family_is_registered_once() {
     assert_eq!(registration.semantics, Semantics::Exact);
     assert_eq!(registration.phase, ExecutionPhase::TRANSFORM);
     assert_eq!(registration.importance, AgentImportance::Critical);
-    assert!(
-        registration.modes.is_empty(),
-        "physics runs in every mode; a paused clock is what stills it"
-    );
     assert_eq!(
         registration.fixed_step,
         Some(PhysicsSettings::default().step),

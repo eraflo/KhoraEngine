@@ -57,7 +57,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
         observes: &[ComponentKey::of::<WatchedBySystem>],
-        modes: &[],
+        role: crate::ecs::Role::Upkeep,
     }
 }
 
@@ -69,6 +69,7 @@ impl Flow for WatchingFlow {
     type View = ();
     const DOMAIN: SemanticDomain = SemanticDomain::Ui;
     const NAME: &'static str = "world_clock_test_watching_flow";
+    const ROLE: crate::ecs::Role = crate::ecs::Role::Upkeep;
 
     fn project(&self, _world: &World, _sel: &Selection, _runtime: &Runtime) {}
 }

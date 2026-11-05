@@ -27,7 +27,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use khora_data::ecs::{DataSystemRegistration, SystemContext, TickPhase, World};
+//! use khora_data::ecs::{DataSystemRegistration, Role, SystemContext, TickPhase, World};
 //!
 //! pub fn my_system(world: &mut World, runtime: &Runtime, deck: &mut OutputDeck, ctx: SystemContext) {
 //!     // ...
@@ -41,7 +41,7 @@
 //!         order_hint: 0,
 //!         runs_after: &[],
 //!         observes: &[],
-//!         modes: &[],
+//!         role: Role::Upkeep,
 //!     }
 //! }
 //! ```
@@ -50,8 +50,7 @@
 //!
 //! See [`TickPhase`] for the available phases and their intended use.
 
-use crate::ecs::{ComponentKey, Tick, World};
-use khora_core::agent::EngineMode;
+use crate::ecs::{ComponentKey, Role, Tick, World};
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
 
@@ -90,9 +89,9 @@ pub struct SystemContext {
     /// what changed since its last run.
     pub since: Tick,
     /// Whether this run starts the system over on this world: its first run
-    /// on it, or its first run after the runner skipped it (it was outside
-    /// its [`DataSystemRegistration::modes`]). `false` on a run that follows
-    /// its previous run with no skip between.
+    /// on it, or its first run after the runner skipped it (it serves a
+    /// family that was off, [`DataSystemRegistration::role`]). `false` on a
+    /// run that follows its previous run with no skip between.
     pub resumed: bool,
 }
 
@@ -131,10 +130,9 @@ pub struct DataSystemRegistration {
     /// records each as observed ([`World::observe`]); the runner keeps the
     /// system's last-seen tick. Empty by default.
     pub observes: &'static [fn() -> ComponentKey],
-    /// The engine modes the system runs in; empty means every mode. Outside
-    /// them the runner skips it — a runtime holding no `SharedEngineMode` is
-    /// a game that only ever plays.
-    pub modes: &'static [EngineMode],
+    /// Whose work the system is: [`Role::Upkeep`] runs every frame;
+    /// [`Role::Serves`] is skipped while its family is off. No default.
+    pub role: Role,
 }
 
 inventory::collect!(DataSystemRegistration);

@@ -128,7 +128,6 @@ fn the_audio_family_is_registered_once() {
     assert_eq!(registration.semantics, Semantics::Presentation);
     assert_eq!(registration.phase, ExecutionPhase::TRANSFORM);
     assert_eq!(registration.importance, AgentImportance::Important);
-    assert!(registration.modes.is_empty(), "audio runs in every mode");
     assert_eq!(registration.fixed_step, None, "audio runs every frame");
     let lanes: Vec<&'static str> = registration
         .lanes

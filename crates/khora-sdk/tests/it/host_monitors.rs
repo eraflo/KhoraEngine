@@ -19,7 +19,6 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
-use khora_sdk::khora_core::agent::EngineMode;
 use khora_sdk::khora_core::telemetry::monitoring::{ResourceMonitor, ResourceUsageReport};
 use khora_sdk::{
     AgentProvider, DccService, EngineApp, EngineCore, GameWorld, HostMonitors, InputEvent,
@@ -42,9 +41,6 @@ impl EngineApp for Idle {
     }
     fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {}
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
-    fn initial_mode(&self) -> EngineMode {
-        EngineMode::Playing
-    }
 }
 
 /// A VRAM monitor a host built, as a renderer's `init` returns it.

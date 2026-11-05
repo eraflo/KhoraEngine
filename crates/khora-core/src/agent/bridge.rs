@@ -22,20 +22,15 @@ use super::gorna::protocol::{Confidence, Envelope, Epoch, Offer, OfferRequest, O
 use super::gorna::{
     NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId, StrategyOption,
 };
-use super::{Agent, EngineMode};
+use super::Agent;
 use crate::lane::cost::{Cost, PerDevice};
 
-/// The options `agent` negotiates for a frame of `target` in `mode`.
-fn options<A: Agent + ?Sized>(
-    agent: &mut A,
-    target: Duration,
-    mode: EngineMode,
-) -> Vec<StrategyOption> {
+/// The options `agent` negotiates for a frame of `target`.
+fn options<A: Agent + ?Sized>(agent: &mut A, target: Duration) -> Vec<StrategyOption> {
     let request = NegotiationRequest {
         target_latency: target,
         priority_weight: 1.0,
         constraints: ResourceConstraints::default(),
-        current_mode: mode,
         agent_timing: agent.execution_timing(),
     };
     agent.negotiate(request).strategies
@@ -49,7 +44,7 @@ fn cheapest<'o>(options: impl Iterator<Item = &'o StrategyOption>) -> Option<&'o
 /// Every option as a row at its time on the host and its graphics memory;
 /// the cheapest is the floor.
 pub(crate) fn offer<A: Agent + ?Sized>(agent: &mut A, request: &OfferRequest) -> Offer {
-    let options = options(agent, request.target, request.mode.clone());
+    let options = options(agent, request.target);
     let status = agent.report_status();
     let rows = options
         .iter()
@@ -95,8 +90,7 @@ pub(crate) fn apply<A: Agent + ?Sized>(
     // The bridge offers each option's time on the host: it is fitted, and
     // limited, on the host's time.
     let time = envelope.time.cpu;
-    // An old agent's options do not depend on the mode it is asked in.
-    let options = options(agent, time, EngineMode::Playing);
+    let options = options(agent, time);
     let pinned = pin.filter(|pin| options.iter().any(|option| option.id == *pin));
     let candidates: Vec<&StrategyOption> = options
         .iter()

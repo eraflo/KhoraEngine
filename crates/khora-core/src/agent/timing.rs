@@ -25,8 +25,8 @@ use super::execution_phase::ExecutionPhase;
 /// Scheduler uses this information to order and potentially skip agents
 /// based on the current phase, budget, and dependencies.
 ///
-/// **Note**: Mode filtering is done at registration time via
-/// `DccService::register_agent_for_mode()`, not via this struct.
+/// Whether an agent runs at all in a frame is its family's state in force
+/// ([`Activation`](crate::agent::Activation)), not this struct's.
 #[derive(Debug, Clone)]
 pub struct ExecutionTiming {
     /// Phases where this agent CAN execute.

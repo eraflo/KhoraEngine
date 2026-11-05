@@ -18,7 +18,6 @@
 //! entities a scene authored stay in the scene; and a system become a
 //! behavior gives up its entity while the behavior's holders run.
 
-use khora_core::agent::EngineMode;
 use khora_core::scene::SerializationGoal;
 use khora_core::script::ScriptValue;
 use khora_data::ecs::{Transform, World};
@@ -91,11 +90,7 @@ fn a_behavior_become_a_system_runs_once_a_frame_whatever_held_it() {
 #[test]
 fn an_authored_holder_of_a_behavior_become_a_system_stays_in_the_scene() {
     let service = SerializationService::new();
-    let mut session = SystemSession::in_mode(
-        World::new(),
-        AS_BEHAVIOR,
-        EngineMode::Custom("editor".to_owned()),
-    );
+    let mut session = SystemSession::with_scripts_off(World::new(), AS_BEHAVIOR);
     let holder = session.world.spawn(Transform::identity());
     attach(
         &mut session.world,

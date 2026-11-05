@@ -33,7 +33,6 @@ khora_script::inventory::submit! {
         phase: ExecutionPhase::OUTPUT,
         importance: AgentImportance::Critical,
         after: [],
-        modes: [],
         fixed_step: None,
         // The reference image until the DCC lends an envelope.
         default_level: StrategyId::Balanced,

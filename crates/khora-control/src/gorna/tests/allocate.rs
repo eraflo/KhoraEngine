@@ -49,7 +49,7 @@ fn lock<A>(agent: &Arc<Mutex<A>>) -> std::sync::MutexGuard<'_, A> {
 
 /// **A round asks each agent once, for its epoch, and lends nothing
 /// itself.** The request carries the round's epoch, the frame's target (the
-/// analysis' latency under the budget multiplier) and the context's mode. The
+/// analysis' latency under the budget multiplier). The
 /// round decides the agent's envelope but never calls its `apply` — the
 /// scheduler lends it at its next frame start — nor its `negotiate` or
 /// `apply_budget`. Each round opens a later epoch.
@@ -58,7 +58,6 @@ fn a_round_asks_each_agent_once_and_lends_nothing_itself() {
     let (bidder, agent) = shared(Bidder::single("ash", 2_000));
     let mut arbitrator = arbitrator();
     let context = Context {
-        mode: EngineMode::Custom("editor".to_owned()),
         global_budget_multiplier: 0.5,
         ..Default::default()
     };
@@ -80,7 +79,6 @@ fn a_round_asks_each_agent_once_and_lends_nothing_itself() {
             "20 ms × 0.5: {:?}",
             request.target
         );
-        assert_eq!(request.mode, EngineMode::Custom("editor".to_owned()));
         assert!(
             bidder.lent.is_empty(),
             "the round applied nothing: {:?}",

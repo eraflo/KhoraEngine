@@ -17,7 +17,7 @@
 
 use khora_agents::agent::{set_fixed_step, LaneAgent};
 use khora_agents::registered_agent::{lane_agents_in, registered_agents};
-use khora_control::{DccConfig, DccService, EngineMode};
+use khora_control::{DccConfig, DccService};
 use khora_core::agent::{Agent, ExecutionPhase};
 use khora_core::Runtime;
 use khora_data::render::{FrameGraph, SharedFrameGraph};
@@ -71,7 +71,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
     }
 
     fn begin_with(app: A, mut runtime: Runtime, input_events: Channel<InputEvent>) -> Self {
-        let (dcc, dcc_rx, telemetry, game_world) = populate(&app, &mut runtime, &input_events);
+        let (dcc, dcc_rx, telemetry, game_world) = populate(&mut runtime, &input_events);
         let phase_order = phase_order(&app.custom_phases(), &app.removed_phases());
         Self {
             app,
@@ -106,6 +106,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
         register_builtin_agents(&self.dcc);
         self.lane_agents = register_lane_agents(&self.dcc, &shared, &self.phase_order);
         refuse_stranded_agents(&self.dcc, &self.phase_order);
+        super::families::admit_families(&self.dcc, &shared);
         self.shared = Some(shared);
     }
 
@@ -208,8 +209,7 @@ impl<A: EngineApp> EngineCore<A> {
 
 /// Creates the DCC, telemetry and the game world, and fills `runtime` with
 /// every engine entry `app.setup` may read.
-fn populate<A: EngineApp>(
-    app: &A,
+fn populate(
     runtime: &mut Runtime,
     input_events: &Channel<InputEvent>,
 ) -> (DccService, EventReceiver, TelemetryService, GameWorld) {
@@ -414,12 +414,10 @@ fn populate<A: EngineApp>(
         Arc::new(std::sync::RwLock::new(khora_core::time::Time::default()));
     runtime.resources.insert(time);
 
-    // The engine mode — which agents run. The app writes it (an editor
-    // switches between editing and playing), the scheduler reads it once
-    // per frame, and it starts where the app says.
-    let mode: khora_core::agent::SharedEngineMode =
-        Arc::new(std::sync::RwLock::new(app.initial_mode()));
-    runtime.resources.insert(mode);
+    // Which families run, known from setup on.
+    runtime
+        .resources
+        .insert(super::families::engine_activation());
 
     // TransformInterpolation — engine-owned per-entity "previous pose" store
     // the capture pass fills and the render projection blends by the
@@ -515,14 +513,13 @@ fn register_builtin_agents(dcc: &DccService) {
     // Gameplay. Registered like any other consumer, which is the point of
     // giving scripting an agent at all: the DCC can tell it "you have
     // 0.4ms, hand back control", and Ergon is the only scripting language
-    // in reach that can be told that. It runs only while the game does:
-    // an editor editing a scene is not playing it.
-    dcc.register_agent_for_mode(
+    // in reach that can be told that. It runs while its family is on: an
+    // editor editing a scene switches it off.
+    dcc.register_agent(
         Arc::new(Mutex::new(
             khora_agents::script_agent::ScriptAgent::default(),
         )),
         1.0,
-        vec![EngineMode::Playing],
     );
     // Where they come from, for tools: their types' paths.
     let mut registry = dcc
@@ -628,11 +625,7 @@ fn register_lane_agents(
         .zip(agents)
         .map(|(registration, agent)| {
             let agent = Arc::new(Mutex::new(agent));
-            dcc.register_agent_for_mode(
-                agent.clone() as Arc<Mutex<dyn Agent>>,
-                1.0,
-                registration.modes.to_vec(),
-            );
+            dcc.register_agent(agent.clone() as Arc<Mutex<dyn Agent>>, 1.0);
             dcc.agent_registry()
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())

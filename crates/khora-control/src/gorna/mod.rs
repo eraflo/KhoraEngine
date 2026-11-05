@@ -143,8 +143,7 @@ impl GornaArbitrator {
     }
 
     /// One round of the protocol: asks every agent in `agents` for an offer
-    /// (one `OfferRequest` for the round's epoch, the frame's target and the
-    /// context's mode), calibrates the quoted rows by `measured_costs`, and
+    /// (one `OfferRequest` for the round's epoch and the frame's target), calibrates the quoted rows by `measured_costs`, and
     /// [`decide`]s each agent's envelope, pin and allowed rows. Returns the
     /// allocation, which stays in force until the next round; the round
     /// lends nothing itself — the scheduler lends the allocation at its next
@@ -220,7 +219,6 @@ impl GornaArbitrator {
                 epoch,
                 target,
                 pressure: 0.0,
-                mode: context.mode.clone(),
                 reply_by: Instant::now() + self.lock_timeout,
             };
             let mut offer = agent.offer(&request);

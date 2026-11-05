@@ -197,15 +197,20 @@ impl DccService {
                                 ctx.hardware.gpu_load
                             );
                         }
-                        TelemetryEvent::ModeChange(new_mode) => {
+                        TelemetryEvent::ActivationChanged(inactive) => {
                             let mut ctx = context.write().unwrap_or_else(|e| e.into_inner());
-                            log::debug!("DCC Mode: {:?} → {:?}", ctx.mode, new_mode);
-                            if ctx.mode != new_mode {
-                                epochs.raise(Trigger::ModeChanged);
-                                // Runs of another mode say nothing of this one.
+                            log::debug!("DCC families off: {:?} → {:?}", ctx.inactive, inactive);
+                            if ctx.inactive != inactive {
+                                // The agents asked change with the families on:
+                                // raised here rather than left to the next
+                                // tick's comparison, which a switch made before
+                                // the agents were first seen would not see.
+                                epochs.raise(Trigger::AgentsChanged);
+                                // Runs with other families on say nothing of
+                                // these.
                                 reports.clear();
                             }
-                            ctx.mode = new_mode;
+                            ctx.inactive = inactive;
                         }
                         TelemetryEvent::AgentReport(run) => {
                             // A run's report feeds the agent's empirical cost
@@ -404,13 +409,13 @@ impl DccService {
                     }
                 }
 
-                // 3. GORNA. Only the agents active in the engine's mode take
-                //    part; a due trigger opens an epoch. The allocation is
-                //    published for the scheduler, which lends it at its next
-                //    frame start: this thread never lends.
+                // 3. GORNA. Only the agents of the families on take part; a
+                //    due trigger opens an epoch. The allocation is published
+                //    for the scheduler, which lends it at its next frame
+                //    start: this thread never lends.
                 let agents: Vec<Arc<std::sync::Mutex<dyn Agent>>> = {
                     let registry = registry.lock().unwrap_or_else(|e| e.into_inner());
-                    registry.iter_for_mode(&ctx_copy.mode).cloned().collect()
+                    registry.iter_active(&ctx_copy.inactive).cloned().collect()
                 };
                 epochs.observe(&agents);
                 // With no agent to lend it to, a change has nothing to wait

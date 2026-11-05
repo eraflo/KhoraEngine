@@ -35,6 +35,7 @@
 //!     khora_data::flow::FlowRegistration {
 //!         name: MyFlow::NAME,
 //!         domain: MyFlow::DOMAIN,
+//!         role: MyFlow::ROLE,
 //!         run: my_flow_runner_trampoline,
 //!     }
 //! }
@@ -44,6 +45,7 @@ pub mod audio;
 mod behaviors;
 pub mod camera;
 pub mod companion;
+mod flow_context;
 pub mod physics;
 pub mod prefab_catalog;
 mod registration;
@@ -58,6 +60,7 @@ pub use audio::{
     AudioFlow, AudioPlaybackUpdate, AudioPlaybackWriteback, AudioSourceSnapshot, AudioView,
 };
 pub use camera::{CameraFlow, CameraView};
+pub use flow_context::FlowContext;
 pub use physics::{PhysicsFlow, PhysicsStepResult, PhysicsView};
 pub use prefab_catalog::{PrefabCatalogFlow, PrefabCatalogView};
 pub use registration::*;
@@ -70,7 +73,7 @@ pub use ui::UiFlow;
 
 use khora_core::Runtime;
 
-use crate::ecs::{SemanticDomain, World};
+use crate::ecs::{Role, SemanticDomain, World};
 
 /// The typed interface between the Data layer and Lanes.
 ///
@@ -88,8 +91,8 @@ use crate::ecs::{SemanticDomain, World};
 /// data layer's domain set.)
 ///
 /// ```ignore
-/// use khora_data::ecs::{SemanticDomain, World};
-/// use khora_data::flow::{Flow, Selection};
+/// use khora_data::ecs::{Role, SemanticDomain, World};
+/// use khora_data::flow::{Flow, FlowContext, Selection};
 /// use khora_core::Runtime;
 ///
 /// #[derive(Clone)]
@@ -103,8 +106,9 @@ use crate::ecs::{SemanticDomain, World};
 ///     type View = MyView;
 ///     const DOMAIN: SemanticDomain = SemanticDomain::Render;
 ///     const NAME: &'static str = "MyFlow";
+///     const ROLE: Role = Role::Upkeep;
 ///
-///     fn select(&mut self, world: &World, _runtime: &Runtime) -> Selection {
+///     fn select(&mut self, world: &World, _runtime: &Runtime, _ctx: FlowContext) -> Selection {
 ///         // Pick the entities this domain cares about.
 ///         Selection::new()
 ///     }
@@ -127,9 +131,14 @@ pub trait Flow: Send + Sync {
     /// Stable identifier — used for telemetry and ordering.
     const NAME: &'static str;
 
-    /// Stage 1 — read-only selection of relevant entities.
-    fn select(&mut self, world: &World, runtime: &Runtime) -> Selection {
-        let _ = (world, runtime);
+    /// Whose work the Flow projects for: [`Role::Upkeep`] runs every frame;
+    /// [`Role::Serves`] is skipped while its family is off. No default.
+    const ROLE: Role;
+
+    /// Stage 1 — read-only selection of relevant entities. `ctx` says whether
+    /// this run starts the Flow over ([`FlowContext::resumed`]).
+    fn select(&mut self, world: &World, runtime: &Runtime, ctx: FlowContext) -> Selection {
+        let _ = (world, runtime, ctx);
         Selection::new()
     }
 

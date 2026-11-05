@@ -138,7 +138,14 @@ fn tick_phase_variants(x: &khora_data::ecs::system::TickPhase) {
 }
 
 fn data_system_registration_fields(x: &khora_data::ecs::system::DataSystemRegistration) {
-    let _ = (&x.name, &x.phase, &x.run, &x.order_hint, &x.runs_after);
+    let _ = (
+        &x.name,
+        &x.phase,
+        &x.run,
+        &x.order_hint,
+        &x.runs_after,
+        &x.role,
+    );
 }
 
 fn apply_error_variants(x: &khora_data::ecs::systems::script_commands::ApplyError) {
@@ -602,7 +609,7 @@ fn selection_fields(x: &khora_data::flow::Selection) {
 }
 
 fn flow_registration_fields(x: &khora_data::flow::FlowRegistration) {
-    let _ = (&x.name, &x.domain, &x.run);
+    let _ = (&x.name, &x.domain, &x.role, &x.run);
 }
 
 fn environment_map_fields(x: &khora_data::gpu::ibl::EnvironmentMap) {
@@ -935,6 +942,7 @@ impl khora_data::flow::Flow for ProbeFlow {
     type View = ();
     const DOMAIN: khora_data::ecs::SemanticDomain = khora_data::ecs::SemanticDomain::Ui;
     const NAME: &'static str = "public_paths_probe_flow";
+    const ROLE: khora_data::ecs::Role = khora_data::ecs::Role::Upkeep;
 
     fn project(
         &self,
@@ -2815,4 +2823,20 @@ fn derive_generated_mirrors_still_resolve() {
     let _ = type_name::<khora_data::ui::SerializableUiText>();
     let _ = type_name::<khora_data::SerializableUiText>();
     is_from::<khora_data::ui::components::UiText, khora_data::ui::components::SerializableUiText>();
+}
+
+/// The roles of the data layer's registrations, and what a Flow is handed.
+#[test]
+fn role_and_flow_context_paths_are_public() {
+    let _ = type_name::<khora_data::ecs::Role>();
+    let _ = khora_data::ecs::Role::Upkeep;
+    let _ = khora_data::ecs::Role::Serves;
+    let _ = type_name::<khora_data::ecs::ServesUnknownFamily>();
+    type Roles = Vec<(&'static str, khora_data::ecs::Role)>;
+    type Families = std::collections::BTreeSet<khora_core::agent::gorna::AgentId>;
+    type Checked = Result<(), khora_data::ecs::ServesUnknownFamily>;
+    let _: fn(Roles, &Families) -> Checked = khora_data::ecs::check_roles;
+    let _ = khora_data::ecs::registered_roles;
+    let _ = type_name::<khora_data::flow::FlowContext>();
+    let _ = khora_data::flow::FlowContext { resumed: true };
 }

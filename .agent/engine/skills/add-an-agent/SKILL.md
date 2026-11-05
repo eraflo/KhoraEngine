@@ -22,8 +22,8 @@ a GORNA budget. Non-negotiating work uses a service (`AssetService`, `EcsMainten
    `id`, `negotiate`, `apply_budget`, `report_status`, `on_initialize` (initialise the lanes), `execute`
    (dispatch the lane), `as_any`/`as_any_mut`.
 3. Declare `ExecutionTiming` (allowed phases, default phase, priority, importance, fixed timestep, dependencies),
-   `access()` and `contention()` (RULES §5). Engine modes are **not** part of the timing: they are passed at
-   registration (step 5).
+   `access()` and `contention()` (RULES §5). Whether the agent runs is **not** part of the timing: the
+   `Activation` switches it at run time (step 5).
 4. In `negotiate`, return `NegotiationResponse` options (time, VRAM) per strategy; in `apply_budget`, pick the
    strategy the arbitrator granted; in `execute`, look services up through `context.resource` / `context.locked`
    (never `context.runtime`), put what the lane needs into a fresh `LaneContext` (a type map: `insert`,
@@ -31,9 +31,10 @@ a GORNA budget. Non-negotiating work uses a service (`AssetService`, `EcsMainten
 5. Register the agent. An engine agent goes in `crates/khora-sdk/src/engine/bootstrap.rs` next to the
    existing agents; a game or host agent goes through `AgentProvider::register_agents` (see
    `docs/src/how-to/add-an-agent.md`). Both call:
-   `dcc.register_agent(agent, priority)` (every mode) or
-   `dcc.register_agent_for_mode(agent, priority, vec![EngineMode::Playing])` (only those modes — how
-   `ScriptAgent` stays off while the editor edits). The scheduler reads `SharedEngineMode` once per frame.
+   `dcc.register_agent(agent, priority)`. The agent is a family and starts on; the app switches it with
+   `activate`/`deactivate` on the `Arc<Activation>` resource, settled at the next frame boundary (how
+   `ScriptAgent` is off while the editor edits). A DataSystem or Flow doing its work declares
+   `Role::Serves(<its AgentId>)`; one keeping a data invariant declares `Role::Upkeep`.
 
 ## Hard rules
 - **No method outside the `Agent` trait** — no `start/stop`, builders, or accessors. Private free functions

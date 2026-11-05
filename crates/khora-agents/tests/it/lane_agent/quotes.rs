@@ -320,7 +320,6 @@ static RUNNING_AND_QUOTED: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [RunningLane, QuotedLane],
 };
@@ -331,7 +330,6 @@ static WITH_A_LOCKING_LANE: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [RunningLane, LockingLane, QuotedLane],
 };
@@ -863,7 +861,6 @@ static BUDGETED: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [BudgetedLane],
 };

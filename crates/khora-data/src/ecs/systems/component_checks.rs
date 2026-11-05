@@ -134,7 +134,7 @@ inventory::submit! {
         // frame's last word.
         runs_after: &["script_commands"],
         observes: &[],
-        modes: &[],
+        role: crate::ecs::Role::Upkeep,
     }
 }
 

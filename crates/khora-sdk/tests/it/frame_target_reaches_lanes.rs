@@ -209,7 +209,6 @@ static TARGET_PROBE: AgentRegistration = khora_sdk::khora_core::register_agent! 
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [TargetProbeLane],
 };
@@ -219,7 +218,6 @@ static CLEAR_PROBE: AgentRegistration = khora_sdk::khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [ClearProbeLane],
 };

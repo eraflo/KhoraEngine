@@ -24,7 +24,7 @@ watching a live decision, [How-to: debug a frame](../how-to/debug-a-frame.md).
 <ol class="kp-steps-text">
 <li><strong>Every run, a report.</strong> Each agent says which way of working it ran, how long it took on each device, and how much of its work it got done.</li>
 <li><strong>Something changed.</strong> The shadows took longer than their quote said. The DCC opens a new <em>epoch</em>, a numbered round of the dialogue.</li>
-<li><strong>A call for offers.</strong> The DCC asks every agent the current mode runs for an offer, and tells them the frame's target time.</li>
+<li><strong>A call for offers.</strong> The DCC asks every agent switched on for an offer, and tells them the frame's target time.</li>
 <li><strong>The offers.</strong> Each agent answers with its menu: every way it can do its work (a <em>row</em>), with its cost on each device, its quality, how sure the price is, and its floor — the cheapest row that keeps the game right.</li>
 <li><strong>The envelopes.</strong> The DCC shares the frame's time out and publishes one <em>envelope</em> per agent: how much time and memory it may use. Never a row. Every agent receives it at the same next frame start.</li>
 <li><strong>Each chooses.</strong> Every agent picks the best row whose price fits in its envelope. If nothing fits, it runs its floor and says so in its report.</li>
@@ -61,14 +61,14 @@ bid again.
 
 | Message | From → to | Carries | When |
 |---|---|---|---|
-| `OfferRequest` | DCC → agent | the epoch, the frame's target time, the pressure, the mode, a deadline | when an epoch opens |
+| `OfferRequest` | DCC → agent | the epoch, the frame's target time, the pressure, a deadline | when an epoch opens |
 | `Offer` | agent → DCC | every row: its cost per device, its quality, its confidence (`Measured`, `Quoted`, `Assumed`); the floor; the row running; its health | in reply, from prices the agent already holds — no lane runs on the DCC's thread |
 | `Allocation` | DCC → every agent | the epoch, why it opened, one **envelope** per agent (time per device, memory), a developer's pinned or allowed rows | published at once, lent at the next frame start |
 | `Report` | agent → DCC | the row that ran, its time on each device, the share of its work done, its health, whether it was over budget or stalled, what a switch of row cost | after every run |
 
 An epoch opens on a trigger: the first round, pressure from a heuristic (heat,
 battery, memory), the cost model forecasting a breach, the frame-time controller
-drifting, a mode change, an agent arriving or leaving, a developer policy changing,
+drifting, an agent arriving or leaving (a family switched on or off counts), a developer policy changing,
 an agent stalled and unhealthy, overruns several frames in a row, a periodic
 refresh — or an emergency (`Safety`). An epoch lasts at least a few ticks, except
 for an emergency. The exhaustive field lists live in the rustdoc on
@@ -143,9 +143,12 @@ tells that part of the story.
 - **An agent busy at a frame start** (the DCC is reading its offer) is not waited
   for: it runs that frame on what it holds, and is handed what it missed at the next
   frame start.
-- **An agent that arrives or leaves** — scripts run only while the game is playing —
-  opens an epoch (`AgentsChanged`, `ModeChanged`). Only the agents active in the mode
-  are asked for offers and given envelopes.
+- **An agent that arrives or leaves** — a family switched on or off, as the editor
+  does with scripts, physics and audio at Play and Stop — opens an epoch
+  (`AgentsChanged`). The switch lands at a frame boundary, and the DCC hears of it as
+  `TelemetryEvent::ActivationChanged`: it keeps the families off in `Context.inactive`
+  and clears its run reports. Only the active families are asked for offers and given
+  envelopes.
 - **An emergency** (heat, memory and overruns together: the *death spiral*) is an
   allocation like the others, marked `Safety`: each envelope is its agent's floor.
   It overrides developer control — safety wins — and it does not assume a row is
@@ -295,7 +298,7 @@ a wave that could have run concurrently, and nothing reddens.
 
 *This part is for readers who want the guarantees stated precisely.*
 
-**Notation.** *A*<sub>m</sub> is the set of agents active in the mode *m*. The menu
+**Notation.** *A* is the set of families switched on for the epoch (the [activation](../reference/glossary.md#activation)); only they are asked to offer and lent an envelope. The menu
 of an agent *a* is a set of rows *r*, each with a cost *c*<sub>a,r</sub> ∈ ℕ<sup>D</sup>
 — integer microseconds on each device *d* — a memory *μ*<sub>a,r</sub>, and a quality
 *q*<sub>a,r</sub> ∈ [0, 1] from its `Impact`. The floor of *a* is *f*<sub>a</sub>, its

@@ -177,7 +177,6 @@ mod trait_items {
         let _ = <T as khora_sdk::EngineApp>::new;
         let _ = <T as khora_sdk::EngineApp>::setup;
         let _ = <T as khora_sdk::EngineApp>::update;
-        let _ = <T as khora_sdk::EngineApp>::initial_mode;
         let _ = <T as khora_sdk::EngineApp>::on_shutdown;
         let _ = <T as khora_sdk::EngineApp>::intercept_window_event;
         let _ = <T as khora_sdk::EngineApp>::before_frame;
@@ -472,10 +471,10 @@ fn module_crate_root_paths_still_resolve() {
         PhantomData::<khora_sdk::EngineHint>,
         PhantomData::<khora_core::agent::gorna::EngineHint>,
     );
-    let _ = type_name::<khora_sdk::EngineMode>();
+    let _ = type_name::<khora_sdk::Activation>();
     same_type(
-        PhantomData::<khora_sdk::EngineMode>,
-        PhantomData::<khora_core::agent::EngineMode>,
+        PhantomData::<khora_sdk::Activation>,
+        PhantomData::<khora_core::agent::Activation>,
     );
     let _ = type_name::<khora_sdk::EntityIcon>();
     same_type(
@@ -2077,8 +2076,8 @@ fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_sdk::tool_ui::TextAlign::Center; // hub
     let _: fn(std::path::PathBuf) -> anyhow::Result<khora_sdk::AssetWatcher> =
         khora_sdk::AssetWatcher::new; // sandbox
-    let _ = khora_sdk::EngineMode::Custom; // khora-editor
-    let _ = khora_sdk::EngineMode::Playing; // khora-editor
+    let _ = khora_sdk::Activation::activate; // khora-editor
+    let _ = khora_sdk::Activation::deactivate; // khora-editor
     let _ = khora_sdk::EnvironmentMap::from_asset; // sandbox
     let _ = khora_sdk::KeyCode::F2; // khora-editor
     let _ = khora_sdk::MetricsRegistry::new; // khora-editor

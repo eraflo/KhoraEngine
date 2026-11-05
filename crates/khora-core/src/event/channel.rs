@@ -116,6 +116,8 @@ struct Ring<T> {
     capacity: usize,
     when_full: WhenFull,
     dropped: u64,
+    /// Unread items discarded on purpose, apart from overflow.
+    discarded: u64,
 }
 
 // Written out rather than derived: a derive would demand `T: Clone`, which an
@@ -143,6 +145,7 @@ impl<T: Supersedes> Channel<T> {
                 capacity,
                 when_full,
                 dropped: 0,
+                discarded: 0,
             })),
             named: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -268,6 +271,57 @@ impl<T: Supersedes> Channel<T> {
             return;
         };
         ring.items.retain(|item| keep(item));
+    }
+
+    /// Discards every unread item, as a reader that takes them would have
+    /// taken them: the channel is left empty and any cursor points past what
+    /// was discarded. Counted by [`discarded`](Self::discarded), never by
+    /// [`dropped`](Self::dropped): nothing overflowed.
+    pub fn discard_unread(&self) {
+        let Ok(mut ring) = self.ring.write() else {
+            log::error!(
+                "the {} channel is poisoned; nothing is discarded",
+                std::any::type_name::<T>()
+            );
+            return;
+        };
+        let unread = ring.items.len() as u64;
+        ring.base += unread;
+        ring.discarded += unread;
+        ring.items.clear();
+    }
+
+    /// Moves the named `reader` past everything it has not read, as if it had
+    /// read it. The items stay for the channel's other readers; what this
+    /// reader skipped is counted by [`discarded`](Self::discarded).
+    pub fn skip_to_end(&self, reader: &'static str) {
+        let Ok(mut named) = self.named.lock() else {
+            log::error!(
+                "the {} channel's cursors are poisoned; {reader} keeps its place",
+                std::any::type_name::<T>()
+            );
+            return;
+        };
+        let Ok(mut ring) = self.ring.write() else {
+            log::error!(
+                "the {} channel is poisoned; {reader} keeps its place",
+                std::any::type_name::<T>()
+            );
+            return;
+        };
+        let end = ring.base + ring.items.len() as u64;
+        let cursor = named.entry(reader).or_default();
+        let from = cursor.0.max(ring.base);
+        ring.discarded += end - from;
+        cursor.0 = end;
+    }
+
+    /// How many unread items were discarded on purpose
+    /// ([`discard_unread`](Self::discard_unread),
+    /// [`skip_to_end`](Self::skip_to_end)), since the channel was made —
+    /// apart from what overflow [`dropped`](Self::dropped).
+    pub fn discarded(&self) -> u64 {
+        self.ring.read().map(|ring| ring.discarded).unwrap_or(0)
     }
 
     /// How many sends were lost, since the channel was made.

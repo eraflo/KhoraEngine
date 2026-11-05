@@ -24,7 +24,7 @@ use std::time::Duration;
 use khora_sdk::khora_core::agent::gorna::{
     AgentId, NegotiationRequest, ResourceConstraints, StrategyId,
 };
-use khora_sdk::khora_core::agent::{EngineMode, ExecutionPhase, ExecutionTiming};
+use khora_sdk::khora_core::agent::{ExecutionPhase, ExecutionTiming};
 use khora_sdk::khora_core::gpu::DeviceCaps;
 use khora_sdk::khora_core::renderer::GraphicsDevice;
 use khora_sdk::{
@@ -60,9 +60,15 @@ fn renderer_menu(engine: &EngineCore<Game>) -> Vec<StrategyId> {
     let dcc = engine.dcc().expect("bootstrapped");
     let registry = dcc.agent_registry().lock().expect("the registry lock");
     let renderer = registry
-        .collect_for_phase(ExecutionPhase::OUTPUT, &EngineMode::Playing)
-        .into_iter()
-        .map(|(agent, ..)| agent)
+        .iter()
+        .filter(|agent| {
+            agent.lock().is_ok_and(|agent| {
+                agent
+                    .execution_timing()
+                    .allowed_phases
+                    .contains(&ExecutionPhase::OUTPUT)
+            })
+        })
         .find(|agent| agent.lock().is_ok_and(|agent| agent.id() == RENDERER))
         .expect("the renderer is registered in OUTPUT");
     let mut renderer = renderer.lock().expect("the renderer's lock");
@@ -71,7 +77,6 @@ fn renderer_menu(engine: &EngineCore<Game>) -> Vec<StrategyId> {
             target_latency: Duration::from_micros(16_667),
             priority_weight: 1.0,
             constraints: ResourceConstraints::default(),
-            current_mode: EngineMode::Playing,
             agent_timing: ExecutionTiming::default(),
         })
         .strategies

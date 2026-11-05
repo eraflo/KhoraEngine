@@ -17,7 +17,7 @@ requires is `EngineApp + AgentProvider + PhaseProvider`.
 
 | Trait | Role | rustdoc |
 |---|---|---|
-| [`EngineApp`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.EngineApp.html) | Application lifecycle — `window_config`, `new`, `setup`, `update`, `initial_mode`, `on_shutdown`, plus optional editor-overlay hooks. | link |
+| [`EngineApp`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.EngineApp.html) | Application lifecycle — `window_config`, `new`, `setup`, `update`, `on_shutdown`, plus optional editor-overlay hooks. | link |
 | [`AgentProvider`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.AgentProvider.html) | Register custom agents with the DCC. | link |
 | [`PhaseProvider`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.PhaseProvider.html) | Insert or remove custom `ExecutionPhase`s. | link |
 | [`WindowProvider`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.WindowProvider.html) | Abstracts the platform window backend (default: winit). | link |
@@ -32,12 +32,13 @@ The methods the engine calls on your app type:
 | `new() -> Self` | Once, after window creation — no engine context yet. |
 | `setup(&mut self, world: &mut GameWorld, runtime: &Runtime)` | Once, after engine init — spawn entities, cache handles. |
 | `update(&mut self, world: &mut GameWorld, inputs: &[InputEvent])` | Every frame — game logic. |
-| `initial_mode(&self) -> EngineMode` | Once, at bootstrap — the [engine mode](#engine-modes) the app starts in (default `Playing`). |
 | `on_shutdown(&mut self)` | Once, on exit (default no-op). |
 
 The optional hooks `intercept_window_event`, `before_frame`, `before_agents`, and
 `after_agents` exist so the editor can run an egui overlay around the engine's
-frame loop. Most games leave them at their default no-ops.
+frame loop. Most games leave them at their default no-ops. `before_frame` runs
+before the engine fixes the frame: a family switched on or off there (see
+[Activation](#activation--which-families-run)) is in force for that whole frame.
 
 `setup` and the optional hooks receive `&Runtime` — the engine's injection bundle
 (see [Runtime](#runtime--the-injection-bundle) below).
@@ -49,8 +50,9 @@ fn register_agents(&self, dcc: &DccService, runtime: &mut Runtime);
 ```
 
 Called once during boot. Empty for a vanilla game; this is where a custom AI,
-scripting, or networking agent calls `dcc.register_agent(...)` or
-`dcc.register_agent_for_mode(...)`. See
+scripting, or networking agent calls `dcc.register_agent(...)`. The agents
+registered here are admitted to the [`Activation`](#activation--which-families-run)
+after the hook returns, and start on. See
 [Add an agent](../how-to/add-an-agent.md).
 
 ### `PhaseProvider` — custom execution phases
@@ -225,22 +227,35 @@ values follow the [W3C UI Events](https://www.w3.org/TR/uievents-code/) code nam
 [`InputEvent`](https://eraflo.github.io/KhoraEngine/api/khora_core/platform/enum.InputEvent.html)
 rustdoc for the full variant list.
 
-## Engine modes
+## Activation — which families run
 
-`EngineMode` (re-exported from `khora-control`) gates **which agents run** each
-frame. The base engine knows only `EngineMode::Playing`; any other mode is a
-`EngineMode::Custom(name)` an app defines. An agent registered through
-`DccService::register_agent_for_mode` runs only in the modes it names — the
-engine registers its `ScriptAgent` this way, for `Playing` only, so scripts never
-run while the editor is editing a scene.
+The engine has no mode. It runs **families** — the lane families, the script
+agent, the app's own agents — and an app switches them on and off.
+`khora_sdk::Activation` (from `khora_core::agent`) is published in the runtime
+as `Arc<Activation>` before the app's `setup`. Every family starts on.
 
-The current mode is the `SharedEngineMode` resource. An app picks the starting
-mode with `EngineApp::initial_mode` (default `Playing`) and may write the
-resource at any time; the scheduler reads it once per frame. The editor writes
-it every frame from its transport — `Custom("editor")` while editing, `Playing`
-while playing or paused. `EngineMode` is distinct from `PlayMode` (`Editing` /
-`Playing` / `Paused`), the editor's own UI-state enum re-exported from
-`khora_core::ui::editor`, which never reaches the scheduler directly. See
+```rust
+if let Some(activation) = runtime.resources.get::<Arc<Activation>>() {
+    // A request: scripts stop at the next frame boundary.
+    let _ = activation.deactivate(khora_core::script::SCRIPT);
+}
+```
+
+`activate` and `deactivate` are requests. A family the activation does not know
+is refused with `UnknownFamily`, and logged. The SDK settles the requests once
+per frame, after `before_frame` and before the first DataSystem phase, so every
+phase, Flow, the scheduler and the DCC see one state; a request made later
+counts from the next frame. A family off is not asked to offer, is lent nothing,
+and does not run. The DataSystems and Flows declared `Role::Serves(family)` are
+skipped with it, and its `BetweenSessions::Drop` mailboxes are emptied at each
+boundary. The family ids live beside their domain:
+`khora_core::script::SCRIPT`, `khora_core::physics::PHYSICS`,
+`khora_core::audio::AUDIO`; a custom agent's is its `AgentId`.
+
+The editor switches scripting, physics and audio off while editing and on at
+Play. That is the editor's choice, made from `PlayMode` (`Editing` / `Playing` /
+`Paused`), its own UI-state enum re-exported from `khora_core::ui::editor`, which
+the engine never reads. See
 [The frame](../concepts/the-frame.md#the-simulation-clock).
 
 ## SDK re-exports
@@ -254,7 +269,7 @@ alone. The major groups:
 | App traits | `EngineApp`, `AgentProvider`, `PhaseProvider`, `WindowProvider` |
 | Bootstrap | `run_winit`, `run_default`, `WinitAppRunner`, `WinitWindowProvider` |
 | Window | `WindowConfig`, `WindowIcon`, `PRIMARY_VIEWPORT` |
-| Runtime / control | `Runtime`, `Services`, `Backends`, `Resources`, `DccService`, `DccConfig`, `EngineMode`, `SharedEngineMode`, `EngineContext`, `AgentRegistry` |
+| Runtime / control | `Runtime`, `Services`, `Backends`, `Resources`, `DccService`, `DccConfig`, `Activation`, `EngineContext`, `AgentRegistry` |
 | Core types | `ExecutionPhase`, `ExecutionTiming`, `AgentId`, `AgentStatus`, `StrategyId`, `AgentImportance` |
 | Telemetry | `TelemetryService`, `TelemetryEvent`, `MonitoredResourceType`, `MetricsRegistry`, `MonitorRegistry` |
 | Monitors | `MemoryMonitor` |
@@ -277,7 +292,7 @@ The exact list is in
 | Load an asset | `runtime.services.get::<Arc<Mutex<AssetService>>>()` |
 | Save or load a game | `world.save_game(...)` / `world.load_game(...)` |
 | Save or load a scene | `SerializationService::new()` + `save_world` / `replace_world` |
-| Choose which agents run | write the `SharedEngineMode` resource |
+| Choose which families run | `activate` / `deactivate` on the `Arc<Activation>` resource |
 | Switch backends | Edit your `run_winit` bootstrap closure (`runtime.backends.insert(...)`) |
 | Add a custom agent | Implement `Agent`, register in `AgentProvider::register_agents` |
 | Add a custom phase | Return it from `PhaseProvider::custom_phases` |

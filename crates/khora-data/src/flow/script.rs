@@ -40,7 +40,7 @@ use khora_core::script::{ScriptReads, ScriptSnapshot, ScriptValue};
 use khora_core::Runtime;
 
 use crate::ecs::{SemanticDomain, World};
-use crate::flow::{Flow, Selection};
+use crate::flow::{Flow, FlowContext, Selection};
 use crate::register_flow;
 
 /// A distinct behavior appearing in the scene.
@@ -112,9 +112,9 @@ pub struct ScriptView {
     /// The fixed simulation step, in seconds: what a `FixedUpdate` is given.
     pub fixed_delta_seconds: f32,
 
-    /// Whether this is the first frame of play after frames where gameplay did
-    /// not run — an editor's Play, a game back from a tool mode. What left
-    /// meanwhile left while nothing was playing: it is forgotten, not bid
+    /// Whether this is the first frame the scripts run after frames they did
+    /// not — the scripting family switched back on, an editor's Play. What
+    /// left meanwhile left while nothing was playing: it is forgotten, not bid
     /// farewell.
     pub resumed: bool,
     /// The distinct behaviors in the scene, referenced by index.
@@ -154,13 +154,12 @@ impl ScriptView {
 /// Projects the scene's scripts into a [`ScriptView`].
 #[derive(Default)]
 pub struct ScriptFlow {
-    /// Whether gameplay runs this frame. Where it does not — an editor
-    /// editing a scene, a game in a tool mode — nothing is projected and
-    /// nothing is remembered: an entity seen before carries on when play
-    /// resumes, and one that appeared meanwhile arrives then.
-    running: bool,
-    /// Whether gameplay ran the frame before.
-    ran: bool,
+    /// Whether this run starts the scripts over, as the substrate said: the
+    /// flow's first run, or its first after frames the scripting family was
+    /// off and the flow was skipped. Nothing is remembered while it is
+    /// skipped: an entity seen before carries on when the scripts resume, and
+    /// one that appeared meanwhile arrives then.
+    resumed: bool,
     /// The `(entity, behavior)` pairs a behavior's component attaches, as
     /// last seen.
     ///
@@ -178,28 +177,14 @@ pub struct ScriptFlow {
     attached_newcomers: HashSet<(EntityId, String)>,
 }
 
-/// Whether the frame's mode runs gameplay. A runtime without a mode is a game
-/// that only ever plays.
-fn gameplay_runs(runtime: &Runtime) -> bool {
-    runtime
-        .resources
-        .get::<khora_core::agent::SharedEngineMode>()
-        .and_then(|shared| shared.read().ok().map(|mode| mode.runs_gameplay()))
-        .unwrap_or(true)
-}
-
 impl Flow for ScriptFlow {
     type View = ScriptView;
     const DOMAIN: SemanticDomain = SemanticDomain::Script;
     const NAME: &'static str = "script";
+    const ROLE: crate::ecs::Role = crate::ecs::Role::Serves(khora_core::script::SCRIPT);
 
-    fn select(&mut self, world: &World, runtime: &Runtime) -> Selection {
-        self.ran = self.running;
-        self.running = gameplay_runs(runtime);
-        if !self.running {
-            self.attached_newcomers.clear();
-            return Selection::new();
-        }
+    fn select(&mut self, world: &World, _runtime: &Runtime, ctx: FlowContext) -> Selection {
+        self.resumed = ctx.resumed;
         let (attached, with_state) = super::behaviors::attached(world);
         self.attached_newcomers = attached
             .iter()
@@ -244,10 +229,7 @@ impl Flow for ScriptFlow {
                 .unwrap_or_default(),
             ..Default::default()
         };
-        if !self.running {
-            return view;
-        }
-        view.resumed = !self.ran;
+        view.resumed = self.resumed;
 
         // Only what the demand wants — the installed programs' reads and an
         // incoming module's — and nothing at all when nothing is wanted: a
@@ -283,7 +265,8 @@ mod tests {
     /// skipped it would never see an authored field.
     fn project(world: &World) -> ScriptView {
         let mut flow = ScriptFlow::default();
-        let selection = flow.select(world, &Runtime::default());
+        let first = FlowContext { resumed: true };
+        let selection = flow.select(world, &Runtime::default(), first);
         flow.project(world, &selection, &Runtime::default())
     }
 
@@ -402,80 +385,67 @@ mod tests {
         assert_eq!(view.instances[0].scale, Vec3::ONE);
     }
 
-    // ─── Gameplay runs only while the game is played ────────────────────────
+    // ─── Resuming after the scripting family was off ────────────────────────
 
-    /// A runtime whose frame mode is the shared handle returned with it.
-    fn runtime_in(
-        mode: khora_core::agent::EngineMode,
-    ) -> (Runtime, khora_core::agent::SharedEngineMode) {
-        let shared: khora_core::agent::SharedEngineMode =
-            std::sync::Arc::new(std::sync::RwLock::new(mode));
-        let mut runtime = Runtime::default();
-        runtime.resources.insert(shared.clone());
-        (runtime, shared)
-    }
-
+    /// One frame of the flow over `runtime`, its first.
     fn frame(flow: &mut ScriptFlow, world: &World, runtime: &Runtime) -> ScriptView {
-        let selection = flow.select(world, runtime);
+        let selection = flow.select(world, runtime, FlowContext { resumed: true });
         flow.project(world, &selection, runtime)
     }
 
-    /// **The editor is not the game.** In a mode where gameplay does not run,
-    /// the flow projects nothing, so no behavior runs. With no mode at all —
-    /// a host that never installed one — gameplay runs, as it always has.
+    /// One frame of the flow, as the substrate runs it: `resumed` is what the
+    /// substrate hands it.
+    fn run(flow: &mut ScriptFlow, world: &World, resumed: bool) -> ScriptView {
+        let runtime = Runtime::default();
+        let selection = flow.select(world, &runtime, FlowContext { resumed });
+        flow.project(world, &selection, &runtime)
+    }
+
+    /// **The view says it resumes when the substrate says so.** The first run
+    /// is a resumption, the next is not; a run handed `resumed` after frames
+    /// the flow was skipped is one again, and the run after it is not.
     #[test]
-    fn the_flow_projects_nothing_while_gameplay_does_not_run() {
+    fn the_view_resumes_when_the_substrate_says_it_resumes() {
         let mut world = World::new();
         let guard = declare_behavior(&mut world, "ai/guard.erg", "Guard");
         let entity = world.spawn(Transform::identity());
         attach_behavior(&mut world, entity, guard, 100);
+        let mut flow = ScriptFlow::default();
 
-        let unset = Runtime::default();
-        assert_eq!(
-            frame(&mut ScriptFlow::default(), &world, &unset).len(),
-            1,
-            "no mode: gameplay runs"
-        );
-
-        let (editing, _) = runtime_in(khora_core::agent::EngineMode::Custom("editor".to_owned()));
+        assert!(run(&mut flow, &world, true).resumed, "the first run");
+        assert!(!run(&mut flow, &world, false).resumed);
+        // Skipped meanwhile: the substrate does not run it.
         assert!(
-            frame(&mut ScriptFlow::default(), &world, &editing).is_empty(),
-            "editing: nothing runs"
+            run(&mut flow, &world, true).resumed,
+            "the first run after a skip"
         );
+        assert!(!run(&mut flow, &world, false).resumed);
     }
 
-    /// **Returning to play carries on.** A game that leaves play — a tool, a
-    /// photo mode — and comes back finds its instances where it left them: an
-    /// entity already seen does not arrive again, and the first frame back
-    /// says it is a resumption. An entity spawned while play was away is new,
-    /// and arrives with its authored fields.
+    /// **Returning to play carries on.** A game whose scripts go off — a
+    /// tool, a photo mode — and come back finds its instances where it left
+    /// them: an entity already seen does not arrive again, and the first frame
+    /// back says it is a resumption. An entity spawned while the scripts were
+    /// off is new, and arrives with its authored fields.
     #[test]
     fn returning_to_play_carries_on_without_arriving_again() {
         let mut world = World::new();
         let guard = declare_behavior(&mut world, "ai/guard.erg", "Guard");
         let seen = world.spawn(Transform::identity());
         attach_behavior(&mut world, seen, guard, 100);
-        let (runtime, mode) = runtime_in(khora_core::agent::EngineMode::Playing);
         let mut flow = ScriptFlow::default();
 
-        let first = frame(&mut flow, &world, &runtime);
+        let first = run(&mut flow, &world, true);
         assert!(first.instances[0].arrival.is_some(), "the first frame");
-        let second = frame(&mut flow, &world, &runtime);
+        let second = run(&mut flow, &world, false);
         assert_eq!(second.instances[0].arrival, None, "then no arrival");
         assert!(!second.resumed);
 
-        *mode.write().expect("the mode lock") =
-            khora_core::agent::EngineMode::Custom("editor".to_owned());
-        assert!(frame(&mut flow, &world, &runtime).is_empty(), "editing");
+        // The scripts are off: the substrate skips the flow while one spawns.
         let spawned = world.spawn(Transform::identity());
         attach_behavior(&mut world, spawned, guard, 70);
-        assert!(
-            frame(&mut flow, &world, &runtime).is_empty(),
-            "still editing"
-        );
 
-        *mode.write().expect("the mode lock") = khora_core::agent::EngineMode::Playing;
-        let back = frame(&mut flow, &world, &runtime);
+        let back = run(&mut flow, &world, true);
         assert!(back.resumed, "the first frame back is a resumption");
         let arrival_of = |view: &ScriptView, entity| {
             view.instances
@@ -497,7 +467,7 @@ mod tests {
             "the entity spawned meanwhile arrives, as authored"
         );
 
-        let after = frame(&mut flow, &world, &runtime);
+        let after = run(&mut flow, &world, false);
         assert!(!after.resumed, "the frame after is no resumption");
         assert!(
             after

@@ -231,7 +231,6 @@ static DRAWING_AND_WAITING: AgentRegistration = khora_sdk::khora_core::register_
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [DrawingLane, WaitingLane],
 };

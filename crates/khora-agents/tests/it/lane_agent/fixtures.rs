@@ -39,9 +39,7 @@ use khora_core::agent::gorna::{
     AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId,
 };
 use khora_core::agent::registration::AgentRegistration;
-use khora_core::agent::{
-    Agent, AgentImportance, EngineMode, ExecutionPhase, ExecutionTiming, Place, Wake,
-};
+use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming, Place, Wake};
 use khora_core::gpu::{DeviceCaps, GpuSetup};
 use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
@@ -528,7 +526,6 @@ pub static LADDER: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::TRANSFORM,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [LadderLane],
 };
@@ -536,13 +533,12 @@ pub static LADDER: AgentRegistration = khora_core::register_agent! {
 /// The step [`FIXED_LADDER`] runs at.
 pub const FIXED_STEP: Duration = Duration::from_micros(16_667);
 
-/// The ladder at a fixed step, critical, after physics, while playing.
+/// The ladder at a fixed step, critical, after physics.
 pub static FIXED_LADDER: AgentRegistration = khora_core::register_agent! {
     family: ProbeFamily,
     phase: ExecutionPhase::TRANSFORM,
     importance: AgentImportance::Critical,
     after: [AgentId::new("physics")],
-    modes: [EngineMode::Playing],
     fixed_step: Some(FIXED_STEP),
     lanes: [LadderLane],
 };
@@ -553,7 +549,6 @@ pub static TWO_LANES: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [FirstLane, SecondLane],
 };
@@ -564,7 +559,6 @@ pub static STORAGE_OR_PLAIN: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [StorageLane, FirstLane],
 };
@@ -575,7 +569,6 @@ pub static RELEASING: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [ReleasingLaneA, ReleasingLaneB],
 };
@@ -586,7 +579,6 @@ pub static OTHER: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [OtherLane],
 };
@@ -642,7 +634,6 @@ pub fn request() -> NegotiationRequest {
         target_latency: Duration::from_micros(16_667),
         priority_weight: 1.0,
         constraints: ResourceConstraints::default(),
-        current_mode: EngineMode::Playing,
         agent_timing: ExecutionTiming::default(),
     }
 }
@@ -782,7 +773,6 @@ pub fn offer_request(epoch: u64) -> OfferRequest {
         epoch: Epoch(epoch),
         target: Duration::from_micros(16_667),
         pressure: 0.0,
-        mode: EngineMode::Playing,
         reply_by: Instant::now() + Duration::from_secs(1),
     }
 }

@@ -19,16 +19,21 @@
 //! queued for the old world — what scripts raised in its last frame, and what
 //! the engine put on its channel while nothing played — belongs to entities
 //! that may no longer exist, or whose ids now name someone else. None of it
-//! is delivered after Play. What the new session raises is, as ever, the
-//! next frame.
+//! is delivered after Play: the intake clears what scripts raised on the
+//! session's first frame, and the frame boundary drops the engine's events
+//! at each frame the scripting family is off — its `ScriptEvent` mailbox
+//! drops between sessions. What the new session raises is, as ever, the next
+//! frame.
 
 use std::sync::Arc;
 
+use khora_core::agent::Activation;
 use khora_core::ecs::entity::EntityId;
-use khora_core::event::{Channel, WhenFull};
+use khora_core::event::{discard_mail_of_inactive, Channel, WhenFull};
 use khora_core::lane::{Lane, LaneContext, OutputDeck};
 use khora_core::projection::Interest;
-use khora_core::script::{ScriptCatalog, ScriptEvent, ScriptReads, ScriptValue};
+use khora_core::script::{ScriptCatalog, ScriptEvent, ScriptReads, ScriptValue, SCRIPT};
+use khora_core::Runtime;
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{take_in, BudgetedScriptLane, Fuel, ScriptRuntime};
 use khora_script::arena::Persisted;
@@ -126,19 +131,45 @@ struct Stage {
     events: Channel<ScriptEvent>,
     catalog: Arc<ScriptCatalog>,
     demand: Arc<Interest<ScriptReads>>,
+    /// The engine's switch, and the runtime holding it and the event
+    /// channel: what the frame boundary reads.
+    activation: Arc<Activation>,
+    engine: Runtime,
 }
 
 impl Stage {
     fn new(source: &str) -> Self {
         let mut runtime = ScriptRuntime::new();
         runtime.add_program(MODULE, program(source));
+        let events = Channel::bounded(64, WhenFull::DropOldest);
+        let activation = Arc::new(Activation::new([SCRIPT]));
+        let mut engine = Runtime::new();
+        engine.resources.insert(events.clone());
+        engine.resources.insert(Arc::clone(&activation));
         Self {
             runtime,
             reloads: Channel::bounded(64, WhenFull::DropOldest),
-            events: Channel::bounded(64, WhenFull::DropOldest),
+            events,
             catalog: Arc::new(ScriptCatalog::default()),
             demand: Arc::new(Interest::new()),
+            activation,
+            engine,
         }
+    }
+
+    /// Stop: a frame whose boundary settles the scripting family off and
+    /// drops its mail, as the engine's does; the lane does not run.
+    fn stopped_frame(&mut self) {
+        self.activation.deactivate(SCRIPT).expect("a known family");
+        self.activation.settle();
+        discard_mail_of_inactive(&self.activation, &self.engine);
+    }
+
+    /// Play: the boundary settles the scripting family on.
+    fn play(&mut self) {
+        self.activation.activate(SCRIPT).expect("a known family");
+        self.activation.settle();
+        discard_mail_of_inactive(&self.activation, &self.engine);
     }
 
     /// One frame through the lane.
@@ -215,6 +246,8 @@ fn the_engine_backlog_from_before_stop_does_not_reach_an_entity_after_play() {
     stage.engine_hits(guard(), 10);
 
     // Stop, then Play.
+    stage.stopped_frame();
+    stage.play();
     stage.frame(&view(&[guard()], true));
 
     assert_eq!(
@@ -236,6 +269,8 @@ fn mail_held_over_an_empty_play_does_not_reach_a_later_entity() {
     assert_eq!(stage.runtime.pending_len(), 1, "the premise: a hit queued");
 
     // Stop, then Play on a scene with no guard; then one spawns.
+    stage.stopped_frame();
+    stage.play();
     stage.frame(&view(&[], true));
     stage.frame(&view(&[guard()], false));
 

@@ -25,7 +25,6 @@
 //! back the world Play started from, takes it away.
 
 use crate::ecs::SystemContext;
-use khora_core::agent::EngineMode;
 use khora_core::ecs::PersistentId;
 use khora_core::lane::OutputDeck;
 use khora_core::script::ScriptValue;
@@ -103,25 +102,25 @@ inventory::submit! {
         run: script_systems,
         runs_after: &["script_components"],
         observes: &[],
-        modes: &[EngineMode::Playing],
+        role: crate::ecs::Role::Serves(khora_core::script::SCRIPT),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::agent::EngineMode;
+    use crate::ecs::Role;
 
-    /// **Script systems are declared for play alone**: the runner, not the
-    /// system, keeps them from running while an editor edits a scene — and
-    /// hands them `resumed` when play starts again.
+    /// **Script systems serve the scripting family**: the runner, not the
+    /// system, keeps them from running while scripts are off — and hands them
+    /// `resumed` when scripts come back on.
     #[test]
-    fn script_systems_are_registered_to_run_only_while_playing() {
+    fn script_systems_serve_the_scripting_family() {
         let registration = inventory::iter::<DataSystemRegistration>
             .into_iter()
             .find(|system| system.name == "script_systems")
             .expect("script_systems is registered");
 
-        assert_eq!(registration.modes, &[EngineMode::Playing]);
+        assert_eq!(registration.role, Role::Serves(khora_core::script::SCRIPT));
     }
 }

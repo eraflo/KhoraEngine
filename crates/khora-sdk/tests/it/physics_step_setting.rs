@@ -25,7 +25,7 @@ use std::time::Duration;
 use khora_sdk::khora_core::agent::gorna::{
     AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId,
 };
-use khora_sdk::khora_core::agent::{Agent, EngineMode, ExecutionTiming};
+use khora_sdk::khora_core::agent::{Agent, ExecutionTiming};
 use khora_sdk::khora_core::ecs::entity::EntityId;
 use khora_sdk::khora_core::lane::{LaneBus, OutputDeck};
 use khora_sdk::khora_core::math::{Quat, Ray, Vec3};
@@ -185,7 +185,6 @@ fn unconstrained() -> NegotiationRequest {
         target_latency: Duration::from_millis(16),
         priority_weight: 1.0,
         constraints: ResourceConstraints::default(),
-        current_mode: EngineMode::Playing,
         agent_timing: ExecutionTiming::default(),
     }
 }

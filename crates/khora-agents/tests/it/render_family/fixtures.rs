@@ -23,7 +23,6 @@ use khora_agents::agent::{lane_agent, LaneAgent};
 use khora_agents::registered_agent::registered_agents;
 use khora_core::agent::gorna::protocol::{Epoch, OfferRequest};
 use khora_core::agent::registration::AgentRegistration;
-use khora_core::agent::EngineMode;
 use khora_core::gpu::DeviceCaps;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
@@ -92,7 +91,6 @@ pub fn offer_request(epoch: u64) -> OfferRequest {
         epoch: Epoch(epoch),
         target: Duration::from_micros(16_667),
         pressure: 0.0,
-        mode: EngineMode::Playing,
         reply_by: Instant::now() + Duration::from_secs(1),
     }
 }

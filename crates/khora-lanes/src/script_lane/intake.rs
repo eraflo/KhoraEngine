@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Taking in, every frame of play and before the script flow projects, what
-//! the engine handed the scripting world: the recompiled modules and the
-//! engine's events.
+//! Taking in, every frame the scripting family is on and before the script
+//! flow projects, what the engine handed the scripting world: the recompiled
+//! modules and the engine's events.
 
 use std::sync::{Arc, Mutex};
 
-use khora_core::agent::EngineMode;
-use khora_core::event::Channel;
+use khora_core::event::{BetweenSessions, Channel, Mailbox, Reader};
 use khora_core::projection::Interest;
-use khora_core::script::{ScriptEvent, ScriptReads};
+use khora_core::script::{ScriptEvent, ScriptReads, SCRIPT};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, SystemContext, TickPhase};
 use khora_script::reload::ScriptReload;
@@ -29,7 +28,7 @@ use khora_script::reload::ScriptReload;
 use super::reload::{apply_reloads, publish_reads};
 use super::runtime::ScriptRuntime;
 
-/// Takes in what the engine handed `scripts` since the last frame of play.
+/// Takes in what the engine handed `scripts` since its last frame.
 ///
 /// Drains `reloads` and `events`; the events join the runtime's mail. Applies
 /// each reload whose program's reads `demand` covers — one whose reads it
@@ -40,9 +39,11 @@ use super::runtime::ScriptRuntime;
 /// [`ScriptReads::incoming`] entry of each module installed or gone. Without
 /// a demand nothing waits.
 ///
-/// `resumed` is true on a run that starts play over (the system's
-/// `SystemContext::resumed`): when a session already played on `scripts`,
-/// the mail is cleared — what was pending and what was drained this frame.
+/// `resumed` is true on a run that starts the scripts over (the system's
+/// `SystemContext::resumed`: its first run, or its first after the family was
+/// off): the scripting world's own mail is cleared, and what the channel
+/// held joins the mail — the frame boundary emptied it while the family was
+/// off, so what it holds was sent for this session.
 pub fn take_in(
     scripts: &mut ScriptRuntime,
     reloads: Option<&Channel<ScriptReload>>,
@@ -60,14 +61,11 @@ pub fn take_in(
         publish_reads(scripts, demand);
     }
 
-    // A play session starting over starts from its scene: what was raised
-    // in the last one — by scripts, or by the engine since nothing ran —
-    // belongs to a world that is gone, and could reach an entity whose id
-    // was given again. The first session keeps what was sent before it.
-    let played_before = scripts.note_frame();
-    if resumed && played_before {
+    // A session starting over starts from its scene: what scripts raised in
+    // the last one belongs to a world that is gone, and could reach an entity
+    // whose id was given again.
+    if resumed {
         scripts.take_pending();
-        return;
     }
 
     // One queue, two producers: what scripts raised last frame, then what
@@ -100,6 +98,17 @@ fn script_intake(runtime: &Runtime, ctx: SystemContext) {
     );
 }
 
+// The scripting family's mailboxes. An engine event is raised for the world
+// as it is now: one raised while the scripts were off is not delivered to the
+// next session. A recompiled module is the author's latest version, whatever
+// was playing: it waits for the scripts to come back on.
+khora_script::inventory::submit! {
+    Mailbox::of::<ScriptEvent>(SCRIPT, Reader::Take, BetweenSessions::Drop)
+}
+khora_script::inventory::submit! {
+    Mailbox::of::<ScriptReload>(SCRIPT, Reader::Take, BetweenSessions::Hold)
+}
+
 khora_script::inventory::submit! {
     DataSystemRegistration {
         name: "script_intake",
@@ -111,6 +120,6 @@ khora_script::inventory::submit! {
         run: |_, runtime, _, ctx| script_intake(runtime, ctx),
         runs_after: &["script_components"],
         observes: &[],
-        modes: &[EngineMode::Playing],
+        role: khora_data::ecs::Role::Serves(khora_core::script::SCRIPT),
     }
 }

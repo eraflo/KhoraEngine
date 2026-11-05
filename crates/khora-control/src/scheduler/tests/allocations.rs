@@ -25,9 +25,7 @@ use khora_core::agent::gorna::protocol::{Allocation, Envelope, Epoch, Trigger};
 use khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
 };
-use khora_core::agent::{
-    Agent, AgentDependency, EngineMode, ExecutionPhase, ExecutionTiming, SharedEngineMode,
-};
+use khora_core::agent::{Agent, AgentDependency, ExecutionPhase, ExecutionTiming};
 use khora_core::lane::cost::PerDevice;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -188,14 +186,6 @@ pub(super) fn scheduler_over(registry: &Arc<Mutex<AgentRegistry>>) -> ExecutionS
     )
 }
 
-/// A runtime carrying the frame's mode, and the handle that writes it.
-pub(super) fn runtime_in(mode: EngineMode) -> (Arc<Runtime>, SharedEngineMode) {
-    let shared: SharedEngineMode = Arc::new(RwLock::new(mode));
-    let mut runtime = Runtime::new();
-    runtime.resources.insert(Arc::clone(&shared));
-    (Arc::new(runtime), shared)
-}
-
 /// A timing that runs once a frame, in `OUTPUT` alone, at `priority` within
 /// it (higher runs first) — so a test's agent runs once per frame, in the
 /// order the test means.
@@ -252,7 +242,7 @@ fn an_allocation_applies_at_the_next_frame_start_for_every_agent() {
         2.0,
     );
     register(&registry, Hand::new("birch", &log).after("ash"), 1.0);
-    let (runtime, _mode) = runtime_in(EngineMode::Playing);
+    let runtime = Arc::new(Runtime::new());
     let mut world = World::new();
     let (ash, birch) = (AgentId::new("ash"), AgentId::new("birch"));
 
@@ -303,7 +293,7 @@ fn an_agent_busy_at_a_frame_start_is_lent_at_the_next_one() {
         .lock()
         .expect("the registry lock")
         .register(ash.clone(), 1.0);
-    let (runtime, _mode) = runtime_in(EngineMode::Playing);
+    let runtime = Arc::new(Runtime::new());
     let mut world = World::new();
 
     channel.publish(allocation(1, &[("ash", 3_000)]));
@@ -350,7 +340,7 @@ fn an_agent_the_allocation_does_not_name_keeps_what_it_holds() {
     let channel = scheduler.budget_channel().clone();
     register(&registry, Hand::new("ash", &log), 2.0);
     register(&registry, Hand::new("birch", &log).after("ash"), 1.0);
-    let (runtime, _mode) = runtime_in(EngineMode::Playing);
+    let runtime = Arc::new(Runtime::new());
     let mut world = World::new();
 
     channel.publish(allocation(1, &[("ash", 3_000), ("birch", 4_000)]));
@@ -373,56 +363,6 @@ fn an_agent_the_allocation_does_not_name_keeps_what_it_holds() {
     );
 }
 
-/// **An agent not active in the frame's mode is lent the allocation once it
-/// is.** The script runs in `Playing` only. While the editor edits, the
-/// allocation naming it is lent to the renderer but not to the script, which
-/// does not run; when the game plays, the allocation still in force is lent
-/// to the script at that frame's start, before it runs, and the renderer is
-/// not lent it twice.
-#[test]
-fn an_agent_not_active_in_the_mode_is_lent_the_allocation_once_it_is() {
-    let log = SharedLog::default();
-    let registry = Arc::new(Mutex::new(AgentRegistry::new()));
-    let mut scheduler = scheduler_over(&registry);
-    let channel = scheduler.budget_channel().clone();
-    register(&registry, Hand::new("renderer", &log), 2.0);
-    registry
-        .lock()
-        .expect("the registry lock")
-        .register_for_mode(
-            Arc::new(Mutex::new(Hand::new("script", &log))),
-            1.0,
-            vec![EngineMode::Playing],
-        );
-    let (runtime, mode) = runtime_in(EngineMode::Custom("editor".to_owned()));
-    let mut world = World::new();
-
-    channel.publish(allocation(1, &[("renderer", 3_000), ("script", 2_000)]));
-    scheduler.run_frame(&mut world, Arc::clone(&runtime));
-    assert_eq!(lent_to(&log, "renderer"), vec![(Epoch(1), envelope(3_000))]);
-    assert!(
-        lent_to(&log, "script").is_empty(),
-        "the editor runs no script, and lends it nothing"
-    );
-
-    *mode.write().expect("the mode lock") = EngineMode::Playing;
-    scheduler.run_frame(&mut world, Arc::clone(&runtime));
-    assert_eq!(
-        lent_to(&log, "script"),
-        vec![(Epoch(1), envelope(2_000))],
-        "lent once it plays"
-    );
-    assert!(
-        ran(&log).contains(&(AgentId::new("script"), Some(Epoch(1)))),
-        "and lent before it runs"
-    );
-    assert_eq!(
-        lent_to(&log, "renderer").len(),
-        1,
-        "the renderer is not lent the same allocation twice"
-    );
-}
-
 /// **A newly published allocation is lent whatever its epoch's number.** A
 /// replay lends a trace recorded earlier, whose epochs may be numbered below
 /// the live epoch in force: epoch 2, published after epoch 5, is lent.
@@ -433,7 +373,7 @@ fn a_new_allocation_is_lent_whatever_its_epoch_number() {
     let mut scheduler = scheduler_over(&registry);
     let channel = scheduler.budget_channel().clone();
     register(&registry, Hand::new("ash", &log), 1.0);
-    let (runtime, _mode) = runtime_in(EngineMode::Playing);
+    let runtime = Arc::new(Runtime::new());
     let mut world = World::new();
 
     channel.publish(allocation(5, &[("ash", 3_000)]));
@@ -459,7 +399,7 @@ fn an_agent_replaced_under_its_name_is_lent_the_allocation_in_force() {
     let mut scheduler = scheduler_over(&registry);
     let channel = scheduler.budget_channel().clone();
     register(&registry, Hand::new("ash", &log), 1.0);
-    let (runtime, _mode) = runtime_in(EngineMode::Playing);
+    let runtime = Arc::new(Runtime::new());
     let mut world = World::new();
 
     channel.publish(allocation(1, &[("ash", 3_000)]));
@@ -491,7 +431,7 @@ fn the_same_allocation_published_twice_is_lent_twice() {
     let mut scheduler = scheduler_over(&registry);
     let channel = scheduler.budget_channel().clone();
     register(&registry, Hand::new("ash", &log), 1.0);
-    let (runtime, _mode) = runtime_in(EngineMode::Playing);
+    let runtime = Arc::new(Runtime::new());
     let mut world = World::new();
 
     channel.publish(allocation(1, &[("ash", 3_000)]));
@@ -575,7 +515,7 @@ fn a_fixed_step_an_allocation_sets_cuts_the_frame_it_is_lent_in() {
         1.0,
     );
     let mut scheduler = scheduler_over(&registry);
-    let (runtime, _mode) = runtime_in(EngineMode::Playing);
+    let runtime = Arc::new(Runtime::new());
 
     scheduler
         .budget_channel()
@@ -604,7 +544,7 @@ fn an_agent_busy_when_a_replayed_epoch_is_taken_is_still_lent_it() {
         .expect("the registry lock")
         .register(ash.clone(), 2.0);
     register(&registry, Hand::new("birch", &log).after("ash"), 1.0);
-    let (runtime, _mode) = runtime_in(EngineMode::Playing);
+    let runtime = Arc::new(Runtime::new());
     let mut world = World::new();
 
     channel.publish_in_turn(allocation(41, &[("ash", 3_000), ("birch", 4_000)]));

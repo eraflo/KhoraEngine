@@ -73,13 +73,14 @@ pub trait WindowProvider: 'static {
 
 /// Allows the application to register custom agents with the DCC.
 ///
-/// This is where an application's own, mode-specific agents are registered.
+/// This is where an application's own agents are registered.
 /// The engine calls this method once during initialization, after the DCC is created.
 pub trait AgentProvider {
     /// Register agents with the DCC service.
     ///
-    /// Use `dcc.register_agent(agent, priority)` for agents active in all modes.
-    /// Use `dcc.register_agent_for_mode(agent, priority, modes)` for mode-specific agents.
+    /// Use `dcc.register_agent(agent, priority)`. Each runs while its family
+    /// is on: the runtime's [`Activation`](khora_core::agent::Activation)
+    /// switches it, from `setup` on.
     ///
     /// The `runtime` bundle provides access to engine services / backends /
     /// resources that agents may need.
@@ -188,15 +189,6 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync + 'static {
     /// Called every frame to update game logic.
     fn update(&mut self, world: &mut GameWorld, inputs: &[InputEvent]);
 
-    /// The engine mode the application starts in — written into the
-    /// runtime's `SharedEngineMode` at bootstrap.
-    ///
-    /// Default: [`EngineMode::Playing`](khora_core::agent::EngineMode::Playing)
-    /// — a game is played from its first frame.
-    fn initial_mode(&self) -> khora_core::agent::EngineMode {
-        khora_core::agent::EngineMode::Playing
-    }
-
     /// Called during shutdown to clean up application resources.
     fn on_shutdown(&mut self) {}
 
@@ -216,6 +208,11 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync + 'static {
     /// Optional: called once per frame BEFORE [`update`](Self::update).
     /// Use to begin a UI overlay frame (e.g., `egui::Context::begin_frame`) and
     /// render shell chrome (menus, docks, panels) that produces UI commands.
+    ///
+    /// It is the application's place before the engine fixes the frame: the
+    /// families it switches on or off here
+    /// ([`Activation`](khora_core::agent::Activation)) are in force for this
+    /// whole frame. A switch requested later counts from the next frame.
     fn before_frame(
         &mut self,
         _world: &mut GameWorld,

@@ -175,11 +175,11 @@ ships too (see the decision-tracer answer above). What remains on the
 
 ### Why did my script not run in the editor?
 
-Because nobody pressed Play. Scripts run only while the game does: the script
-agent is registered for `EngineMode::Playing`, and while you edit a scene the
-editor runs its own mode, `EngineMode::Custom("editor")`. Press Play and they
-start; pause and they keep running at a delta of zero, because a paused game is
-still the game. A game launched without the editor starts in `Playing`. See
+Because nobody pressed Play. The engine has no mode; it switches families on
+and off. While you edit a scene, the editor switches the scripting family off
+(with physics and audio). Press Play and it switches them on; pause and scripts
+keep running at a delta of zero, because a paused game is still the game. A
+game launched without the editor keeps every family on. See
 [The frame](./concepts/the-frame.md#the-simulation-clock).
 
 ### I renamed a component and my scene won't load. Why?

@@ -19,7 +19,6 @@
 
 use std::sync::Arc;
 
-use khora_sdk::khora_core::agent::EngineMode;
 use khora_sdk::khora_core::problems::Problems;
 use khora_sdk::{
     AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
@@ -41,9 +40,6 @@ impl EngineApp for Game {
     }
     fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {}
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
-    fn initial_mode(&self) -> EngineMode {
-        EngineMode::Custom("game".to_owned())
-    }
 }
 
 /// An engine bootstrapped from an empty runtime, with no script mounted and

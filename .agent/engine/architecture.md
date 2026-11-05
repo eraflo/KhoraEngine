@@ -164,23 +164,36 @@ run_winit::<W, MyApp>(bootstrap)    ← entry point
   └─ window opened
   └─ bootstrap(window, runtime, _)  ← user registers backends into runtime.backends/resources
   └─ MyApp::new()                   ← simple constructor, no context
-  └─ engine init                    ← default services, SharedEngineMode = app.initial_mode(),
-                                       DCC + agents registered (ScriptAgent for Playing only)
+  └─ engine init                    ← default services, DCC + agents registered,
+                                       Arc<Activation> published (every family on); app agents
+                                       admitted after register_agents; Role::Serves checked
   └─ GameWorld::set_prefabs(…)      ← when an AssetService is present (AssetPrefabs)
   └─ MyApp::setup(world, runtime)   ← cache services, spawn entities
 Per frame:
+  app.before_frame(…)               ← the editor switches families here (transport)
+  activation.settle()               ← frame boundary: one state for the whole frame; Drop
+                                       mailboxes of families off emptied; ActivationChanged → DCC
   app.update(world, inputs)         ← user game logic
   world maintenance (DataSystems)   ← ECS GC, transform propagation, provider sync
-  scheduler.run_frame()             ← reads SharedEngineMode ONCE, then Substrate Pass + agents
+  scheduler.run_frame()             ← Substrate Pass + the active families' agents
 ```
 
-**Engine mode.** `EngineApp::initial_mode()` (default `EngineMode::Playing`) seeds the
-`SharedEngineMode` resource at bootstrap (`khora-sdk/src/engine/bootstrap.rs`). The scheduler reads it
-once per frame (`khora-control/src/scheduler/frame.rs`), so flows and agents agree on the frame's mode;
-the frame loop forwards changes to the DCC as `TelemetryEvent::ModeChange`. Agents registered with
-`register_agent_for_mode` run only in their modes. The editor writes the mode before the agents
-(`drive_engine_mode`, `khora-editor/src/app/mod.rs`): `PlayMode::Editing → EngineMode::Custom("editor")`,
-`Playing`/`Paused → EngineMode::Playing` — so no script runs while a scene is being edited.
+**Activation (no engine mode).** The engine has no mode; families are switched on and off.
+`khora_core::agent::Activation` (`khora-core/src/agent/activation.rs`) is published as `Arc<Activation>`
+at bootstrap (`khora-sdk/src/engine/bootstrap.rs`), knowing every registered family (lane families, the
+script agent, the app's agents). Every family starts on; `activate`/`deactivate` are requests, an unknown
+family is refused (`UnknownFamily`). `run_app_update` (`khora-sdk/src/engine/frame.rs`) opens with
+`settle()`, after `before_frame` and before the first DataSystem phase, so every phase, Flow, the
+scheduler and the DCC see one state; a later request counts from the next frame. On a change the SDK
+sends `TelemetryEvent::ActivationChanged(inactive)`: the DCC keeps it in `Context.inactive`, clears its
+run reports, and opens an epoch (`AgentsChanged`); only active families are asked to offer and are lent.
+DataSystems and Flows declare a `Role` (`khora-data/src/ecs/role.rs`): `Upkeep` runs every frame,
+`Serves(φ)` is skipped while φ is off and resumes with `SystemContext.resumed` /
+`FlowContext { resumed }`. A family's channels declare a `Mailbox` (`khora-core/src/event/mailbox.rs`):
+`BetweenSessions::Drop` mail is emptied at each boundary while the family is off, `Hold` is kept. Family
+ids: `khora_core::{script::SCRIPT, physics::PHYSICS, audio::AUDIO}`. The editor's transport
+(`khora-editor/src/commands/transport.rs`, `process_transport` in `before_frame`) switches SCRIPT, PHYSICS
+and AUDIO off while editing (scale 1) and on at Play; Pause only sets the scale to 0.
 
 App implements `EngineApp + AgentProvider + PhaseProvider` (composite SDK trait). Detail in
 [`../../docs/src/concepts/the-frame.md`](../../docs/src/concepts/the-frame.md).
@@ -206,9 +219,9 @@ pub trait Agent: Send + Sync {
 | `OverlayAgent` | Render | parallel post-render lanes: Grid → Wireframe → Gizmo |
 | `SkyboxAgent` | Render | environment background (`Skybox` lane) |
 | `PhysicsAgent` | Physics | Standard / Simplified |
-| `UiAgent` | Ui | Layout + Render (editor mode) |
+| `UiAgent` | Ui | Layout + Render |
 | `AudioAgent` | Audio | source count / quality |
-| `ScriptAgent` | Script | `Budgeted` lane; LowPower / Balanced / HighPerformance fuel — registered for `EngineMode::Playing` only |
+| `ScriptAgent` | Script | `Budgeted` lane; LowPower / Balanced / HighPerformance fuel — family `SCRIPT`, off while the editor edits |
 
 WGSL composition: the `.wgsl` files live in `khora-infra/src/graphics/shader/shaders/`
 (`pipelines/` entry points, `lib/` reusable modules) and are embedded with `include_str!`.

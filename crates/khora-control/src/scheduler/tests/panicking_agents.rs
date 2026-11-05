@@ -26,9 +26,7 @@ use khora_core::agent::dependency::{AgentDependency, DependencyKind};
 use khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
 };
-use khora_core::agent::{
-    Agent, AgentAccess, Contention, EngineMode, ExecutionPhase, ExecutionTiming, SharedEngineMode,
-};
+use khora_core::agent::{Agent, AgentAccess, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::any::TypeId;
@@ -168,10 +166,7 @@ impl Agent for Steady {
 }
 
 fn playing() -> Arc<Runtime> {
-    let mode: SharedEngineMode = Arc::new(RwLock::new(EngineMode::Playing));
-    let mut runtime = Runtime::new();
-    runtime.resources.insert(mode);
-    Arc::new(runtime)
+    Arc::new(Runtime::new())
 }
 
 fn flaky(access: AgentAccess, panics_on: Vec<usize>, runs: &Arc<AtomicUsize>) -> Flaky {

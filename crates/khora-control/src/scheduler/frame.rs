@@ -26,7 +26,7 @@ use crate::substrate;
 use khora_core::agent::completion::AgentCompletionMap;
 use khora_core::agent::completion::CompletionOutcome;
 use khora_core::agent::gorna::AgentId;
-use khora_core::agent::{Agent, EngineMode, ExecutionPhase};
+use khora_core::agent::{Activation, Agent, ExecutionPhase};
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::{HostViews, LaneBus, OutputDeck};
 use khora_core::renderer::traits::PipelineSystem;
@@ -34,6 +34,7 @@ use khora_core::renderer::GraphicsDevice;
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::World;
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, TryLockError};
 use std::time::Instant;
 
@@ -102,32 +103,29 @@ impl ExecutionScheduler {
             found.clear();
         }
 
-        // 1a. Read the frame's mode, once: the one the application set in the
-        //     runtime, or the context's where it set none. Flows read the same
-        //     resource after this, so flows and agents agree on the frame; the
-        //     fixed agents below are the ones this mode runs.
-        let mode = runtime
+        // 1a. Read the families off, once: the state in force the frame
+        //     boundary settled, which the Flows and DataSystems read too, so
+        //     the whole frame agrees. A runtime with no activation runs every
+        //     family.
+        let inactive = runtime
             .resources
-            .get::<khora_core::agent::SharedEngineMode>()
-            .and_then(|shared| shared.read().ok().map(|mode| mode.clone()))
-            .unwrap_or_else(|| {
-                let ctx = self.context.read().unwrap_or_else(|e| e.into_inner());
-                ctx.mode.clone()
-            });
+            .get::<Arc<Activation>>()
+            .map(|activation| activation.inactive())
+            .unwrap_or_default();
 
         // 1a-bis. Lend the allocation in force, before anything locks an
         //     agent: the whole frame runs on one epoch.
-        self.lend_allocation(&mode);
+        self.lend_allocation(&inactive);
 
         // 1a-ter. The frame start of every family running as layers: the
         //     layer staged at its place is swapped in, at the same place.
-        let layered = self.layered_agents(&mode);
+        let layered = self.layered_agents(&inactive);
         swap_layers(&layered, &runtime);
 
         // 1b. Real frame delta + fixed-timestep accumulator bookkeeping.
         let now = self.frame_start;
         let tick = khora_core::time::DEFAULT_FIXED_DELTA_SECONDS;
-        let fixed_steps = self.declared_fixed_steps(&mode);
+        let fixed_steps = self.declared_fixed_steps(&inactive);
         let dt = match self.last_frame_instant {
             Some(prev) => now.duration_since(prev).as_secs_f32(),
             // First frame: advance by exactly one tick (no real history).
@@ -199,7 +197,7 @@ impl ExecutionScheduler {
 
         // 3. Publish how agents will be grouped into concurrent waves this
         //    frame, so the DCC can budget each wave by its critical path.
-        self.emit_wave_plan(&mode);
+        self.emit_wave_plan(&inactive);
 
         // 4. Build the per-frame substrate: typed input bus and output deck.
         //    The deck is moved into the scheduler's `last_deck` slot at the
@@ -244,7 +242,7 @@ impl ExecutionScheduler {
                         phase,
                         world,
                         &runtime,
-                        &mode,
+                        &inactive,
                         &completion_map,
                         &bus,
                         &mut deck,
@@ -276,7 +274,7 @@ impl ExecutionScheduler {
                 phase,
                 world,
                 &runtime,
-                &mode,
+                &inactive,
                 &completion_map,
                 &bus,
                 &mut deck,
@@ -311,25 +309,25 @@ impl ExecutionScheduler {
         }
     }
 
-    /// Lends every agent `mode` runs what it is owed, under its lock, at the
+    /// Lends every agent of a family on what it is owed, under its lock, at the
     /// frame start: each replayed allocation taken since it was last handed
     /// one, in order, then the one in force — which the whole frame runs on.
     /// The DCC never lends. An agent busy now (asked for an offer) is not
     /// waited for: it runs this frame on what it holds, and is handed what it
-    /// missed at the next frame start. An agent the mode does not run is lent
+    /// missed at the next frame start. An agent whose family is off is lent
     /// once it runs. An allocation that does not name an agent leaves it with
     /// what it holds.
-    fn lend_allocation(&mut self, mode: &EngineMode) {
+    fn lend_allocation(&mut self, inactive: &BTreeSet<AgentId>) {
         let Some(current) = self.taken.last().map(|((place, _), _)| *place) else {
             return;
         };
         let agents: Vec<Arc<Mutex<dyn Agent>>> = {
             let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-            registry.iter_for_mode(mode).cloned().collect()
+            registry.iter_active(inactive).cloned().collect()
         };
         // Agents removed since are forgotten.
         self.lent.retain(|(agent, _)| agent.strong_count() > 0);
-        // The oldest place an agent active in the mode was handed: what was
+        // The oldest place an agent of a family on was handed: what was
         // taken before it is owed to none of them any more.
         let mut oldest_handed = Some(current);
         for agent_mutex in &agents {
@@ -369,14 +367,14 @@ impl ExecutionScheduler {
         }
     }
 
-    /// Every agent `mode` runs that declares a positive `fixed_timestep`, with
+    /// Every agent of a family on that declares a positive `fixed_timestep`, with
     /// that step in seconds — read each frame, so a step GORNA changed in
-    /// `apply_budget` takes effect on the next frame. An agent the mode does
-    /// not run keeps no clock: it owes nothing for the time it sat out.
-    fn declared_fixed_steps(&self, mode: &EngineMode) -> Vec<(AgentId, f32)> {
+    /// `apply_budget` takes effect on the next frame. An agent whose family is off
+    /// keeps no clock: it owes nothing for the time it sat out.
+    fn declared_fixed_steps(&self, inactive: &BTreeSet<AgentId>) -> Vec<(AgentId, f32)> {
         let agents: Vec<Arc<Mutex<dyn Agent>>> = {
             let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-            registry.iter_for_mode(mode).cloned().collect()
+            registry.iter_active(inactive).cloned().collect()
         };
         agents
             .iter()
@@ -388,12 +386,12 @@ impl ExecutionScheduler {
             .collect()
     }
 
-    /// Every agent `mode` runs as layers, with its lock and what the
+    /// Every agent of a family on that runs as layers, with its lock and what the
     /// scheduler knows of it.
-    fn layered_agents(&self, mode: &EngineMode) -> Vec<LayeredAgent> {
+    fn layered_agents(&self, inactive: &BTreeSet<AgentId>) -> Vec<LayeredAgent> {
         let agents: Vec<Arc<Mutex<dyn Agent>>> = {
             let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-            registry.iter_for_mode(mode).cloned().collect()
+            registry.iter_active(inactive).cloned().collect()
         };
         agents
             .into_iter()

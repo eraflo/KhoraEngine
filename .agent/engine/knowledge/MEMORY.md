@@ -57,10 +57,15 @@ Commits `4df3d77`…`42434eb` on `dev`. Detail: `reference/ecs-data.md` §Persis
   now. `GameWorld::{save_game, load_game, set_prefabs}`; `SerializationService::{save_game, load_game}`.
   Provenance decides scene content; `resumable` adds `Runtime` state to game saves (a behavior's
   `Guard#state`).
-- **Scripts only while Playing**: `ScriptAgent` registered via `register_agent_for_mode(…, [Playing])`,
-  `ScriptFlow` gated on `EngineMode::runs_gameplay()`; editor maps Editing → `Custom("editor")`,
-  Playing/Paused → `Playing`; `EngineApp::initial_mode()` seeds `SharedEngineMode`, read once per frame
-  by the scheduler. `InstanceLifecycle` recorded in the save; `OnLoad` fires only on a save restore.
+- **Scripts only while their family is on** (no engine mode): `Arc<Activation>` (`khora-core/src/agent/
+  activation.rs`) knows every family, all start on, `settle()` at the start of `run_app_update` (after
+  `before_frame`, before the first DataSystem phase). DataSystems/Flows declare `Role::{Upkeep, Serves(φ)}`
+  (`khora-data/src/ecs/role.rs`, boot `check_roles`), `resumed` on the first run after a skip; family mail
+  declares a `Mailbox` (`Drop` emptied while off, `Hold` kept). DCC gets `TelemetryEvent::ActivationChanged`
+  → `Context.inactive`, epoch `AgentsChanged`. Editor transport (`commands/transport.rs`, `before_frame`)
+  switches SCRIPT/PHYSICS/AUDIO off while editing (scale 1), on at Play; Pause = scale 0. Physics is off
+  while editing (it used to run at scale 0). `InstanceLifecycle` recorded in the save; `OnLoad` fires only
+  on a save restore.
 - **Prefab links**: `PrefabInstance { prefab }` on the root (`ToolAuthored`); records keep instances as
   `InstanceRecord { root, prefab, delta }` (collapse on save, expand on load — a prefab edit reaches
   every non-overridden field). Needs a `PrefabSource` (`AssetPrefabs`). `.kprefab` = compact scene file.
@@ -339,7 +344,7 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la cl�
   `transform_propagation` moved to a `DataSystem`; `Flow` trait + `register_flow!`; `RenderFlow`/
   `ShadowFlow`/`PhysicsFlow`/`AudioFlow`; asset decoders moved to `khora-io`; `Flow::adapt` removed.
 - **SAA lifecycle refactor**: `Agent` trait cleanup (`on_initialize`/`execute`), new `ExecutionPhase`
-  (Init/Observe/Transform/Mutate/Output/Finalize) + `EngineMode`, `ExecutionScheduler` + `BudgetChannel`
+  (Init/Observe/Transform/Mutate/Output/Finalize) + an engine mode (since replaced by the `Activation`), `ExecutionScheduler` + `BudgetChannel`
   + `EnginePlugin`, `khora-io` crate split out.
 - **Editor**: component serialization via `#[derive(Component)]`, Add/Remove Component UI, prefab
   extract/instantiate (`.kprefab`), drag-and-drop reparenting, Save-As goal picker.

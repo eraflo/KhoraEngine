@@ -32,7 +32,6 @@ khora_script::inventory::submit! {
         phase: ExecutionPhase::OUTPUT,
         importance: AgentImportance::Optional,
         after: [crate::render_agent::RENDERER],
-        modes: [],
         fixed_step: None,
         lanes: [GridLane],
     })
@@ -44,7 +43,6 @@ khora_script::inventory::submit! {
         phase: ExecutionPhase::OUTPUT,
         importance: AgentImportance::Optional,
         after: [crate::render_agent::RENDERER],
-        modes: [],
         fixed_step: None,
         lanes: [WireframeLane],
     })
@@ -56,7 +54,6 @@ khora_script::inventory::submit! {
         phase: ExecutionPhase::OUTPUT,
         importance: AgentImportance::Optional,
         after: [crate::render_agent::RENDERER],
-        modes: [],
         fixed_step: None,
         lanes: [GizmoLane],
     })

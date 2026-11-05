@@ -15,17 +15,14 @@
 //! The scheduler lends an allocation to every agent the registry holds —
 //! with no list kept by hand beside it, which can forget one.
 
-use super::allocations::{
-    allocation, envelope, lent_to, runtime_in, scheduler_over, Hand, SharedLog,
-};
+use super::allocations::{allocation, envelope, lent_to, scheduler_over, Hand, SharedLog};
 use crate::agent_registry::AgentRegistry;
 use khora_core::agent::gorna::protocol::Epoch;
-use khora_core::agent::EngineMode;
+use khora_core::Runtime;
 use khora_data::ecs::World;
 use std::sync::{Arc, Mutex};
 
-/// An agent registered for every mode and one registered for `Playing` only
-/// are both lent what the allocation names for them, while the game plays.
+/// Two registered agents are both lent what the allocation names for them.
 /// An agent the registry does not hold is named in vain: nothing is lent to
 /// it, and nothing fails.
 #[test]
@@ -35,14 +32,10 @@ fn the_scheduler_lends_every_agent_the_registry_holds() {
     {
         let mut agents = registry.lock().expect("the registry lock");
         agents.register(Arc::new(Mutex::new(Hand::new("audio", &log))), 1.0);
-        agents.register_for_mode(
-            Arc::new(Mutex::new(Hand::new("script", &log))),
-            0.5,
-            vec![EngineMode::Playing],
-        );
+        agents.register(Arc::new(Mutex::new(Hand::new("script", &log))), 0.5);
     }
     let mut scheduler = scheduler_over(&registry);
-    let (runtime, _mode) = runtime_in(EngineMode::Playing);
+    let runtime = Arc::new(Runtime::new());
 
     scheduler.budget_channel().publish(allocation(
         1,

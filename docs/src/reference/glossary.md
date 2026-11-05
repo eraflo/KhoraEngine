@@ -11,6 +11,20 @@ first mention.
 
 ---
 
+### Activation
+
+Which families run. The engine has no mode: every registered family — the lane
+families, the script agent, an app's own agents — starts on, and an application
+switches one with `activate(family)` / `deactivate(family)` on the
+`Arc<Activation>` resource (`khora_core::agent::Activation`, re-exported as
+`khora_sdk::Activation`). A family it does not know is refused (`UnknownFamily`).
+Requests land at the frame boundary, when the SDK calls `settle()` once per frame
+before the first DataSystem phase, so the whole frame sees one state. A family
+off is not asked to offer, is lent nothing, and does not run; the DCC hears of a
+change as `TelemetryEvent::ActivationChanged` and opens an epoch. See
+[Role](#role), [Mailbox](#mailbox) and
+[The frame](../concepts/the-frame.md#the-simulation-clock).
+
 ### AdaptationMode
 
 The per-agent dial that bounds how freely GORNA may shape an agent's envelope.
@@ -37,8 +51,8 @@ fits, and installs it as a [layer](#layer-and-place); it is woken only by events
 Every family's agent is the same `LaneAgent`, built from the family's registration;
 an agent implements only the `Agent` trait. It is *not* a controller (the DCC
 decides how much) and *not* a worker (lanes do the work). Rendering and scripting
-still have hand-written agents (`RenderAgent`, `ScriptAgent`, the latter for
-`EngineMode::Playing` only). See [Agents and Lanes](../concepts/agents-and-lanes.md).
+still have hand-written agents (`RenderAgent`, `ScriptAgent`). Any agent can be
+switched off and on through the [Activation](#activation). See [Agents and Lanes](../concepts/agents-and-lanes.md).
 Also called an **ISA** (Intelligent Subsystem Agent).
 
 ### Asset reference (Ergon)
@@ -129,8 +143,9 @@ sync, plus maintenance write-backs. New invariants are added data-driven, by
 submitting a `DataSystemRegistration` rather than wiring a system manually. A
 Each run is handed a `SystemContext`, whose `since` is the tick of the system's
 previous run, so it can read only what changed since (`Changed<T>`). DataSystem is
-*not* an agent: it has no strategies to negotiate. See
-[The frame](../concepts/the-frame.md) and [TickPhase](#executionphase--tickphase).
+*not* an agent: it has no strategies to negotiate. Every registration declares
+its [role](#role). See [The frame](../concepts/the-frame.md) and
+[TickPhase](#executionphase--tickphase).
 
 ### DCC — Dynamic Context Core
 
@@ -162,18 +177,6 @@ Inspector draws it as a typed card; a declared component no module declares any
 more is **orphaned**: kept with its data, flagged, never deleted. See
 [Editor — Scripts](./editor.md#07--scripts).
 
-### EngineMode / PlayMode
-
-**`EngineMode`** decides which agents run in a frame: the scheduler reads the
-`SharedEngineMode` resource once per frame and skips any agent registered (through
-`DccService::register_agent_for_mode`) for other modes. The engine defines
-`Playing`; anything else is `Custom(name)`. The script agent is registered for
-`Playing` only. **`PlayMode`** (`Editing` / `Playing` / `Paused`) is the editor's
-transport state; the editor turns it into an engine mode every frame —
-`Custom("editor")` while editing, `Playing` while playing or paused — and into a
-time scale. See [The frame](../concepts/the-frame.md#the-simulation-clock) and
-[SDK surface](./sdk.md#engine-modes).
-
 ### Envelope
 
 What GORNA lends an agent for an [epoch](#epoch-gorna): how much time on each device
@@ -185,7 +188,7 @@ planned for the agent plus its part of the slack; the agent chooses within it. S
 
 One numbered round of the GORNA dialogue: `OfferRequest`, `Offer`, `Allocation`,
 then a `Report` after every run until the next one. An epoch opens on a trigger
-(pressure, drift, a mode or agent change, overruns, a refresh, an emergency) and is
+(pressure, drift, an agent arriving, leaving or switched on or off, overruns, a refresh, an emergency) and is
 lent to every agent at the same frame start. Not to be confused with a
 [change epoch](#change-epoch). See [GORNA](../concepts/gorna.md).
 
@@ -198,8 +201,8 @@ suspended, so the next frame resumes rather than restarts. Runs inside a fuel
 budget converted from the time GORNA allocated, and degrades by deferring whole
 behaviors rather than thinning every one. A script declares behaviors (one
 entity's logic) and [systems](#system-ergon) (one rule over the rows of a
-[query](#query-ergon)). Scripts run only in
-`EngineMode::Playing`. See [Scripting](../concepts/scripting/index.md) and the
+[query](#query-ergon)). Scripts run only while the scripting family
+(`khora_core::script::SCRIPT`) is on; the editor switches it off while editing. See [Scripting](../concepts/scripting/index.md) and the
 [Ergon reference](./ergon.md).
 
 ### Event (Ergon)
@@ -261,7 +264,8 @@ A read-only per-domain projector that derives a typed **View** of the World
 for the frame budget; they are the *only* legitimate producer of the Views lanes
 consume. New flows are registered data-driven via `register_flow!`. Some flows
 opt into per-domain change-epoch caching to skip re-projection when nothing
-changed. Lives in `khora-data/src/flow/`. See [AGDF](../concepts/agdf.md) and
+changed. Every Flow declares its [role](#role) (`const ROLE`). Lives in
+`khora-data/src/flow/`. See [AGDF](../concepts/agdf.md) and
 [Data and the ECS](../concepts/ecs.md).
 
 ### Game save / SaveRecord
@@ -346,6 +350,17 @@ the scene no longer has. None of these is an error and none is silent. A load
 that cannot be adapted — an unknown component type — fails instead, and leaves
 the world as it was. See [Serialization](../concepts/serialization.md).
 
+### Mailbox
+
+What becomes of a family's mail while the family is off. Declared once beside
+the reader: `inventory::submit! { Mailbox::of::<T>(family, reader, between) }`
+(`khora-core/src/event/mailbox.rs`), where the reader is `Reader::Take` or
+`Reader::Cursor(name)` and `between` is `BetweenSessions::Drop` or `Hold`. At each
+frame boundary, a family off for the coming frame has its `Drop` mailboxes
+emptied, counted by `Channel::discarded()` apart from overflow. Scripting drops
+`ScriptEvent` and collisions, and holds `ScriptReload`. See
+[Activation](#activation).
+
 ### Named argument (Ergon)
 
 `Move(3.0, speed: 2.0)` — an argument given by its parameter's name, after the
@@ -385,6 +400,14 @@ a text under a namespace of its own, fixed forever, and lives in the authored
 namespace: a [system](#system-ergon)'s entity is `named("system:Name")`, the same
 in every save. See [Data and the ECS](../concepts/ecs.md) and
 [Serialization](../concepts/serialization.md).
+
+### PlayMode
+
+The editor's transport state: `Editing`, `Playing`, `Paused`. It is not engine
+vocabulary. The editor turns it into two things every frame, in `before_frame`:
+the families off (scripting, physics and audio while editing, none otherwise),
+through the [Activation](#activation), and a time scale (`0` while paused, `1`
+otherwise). See [Editor — Play mode](./editor.md#04--play-mode).
 
 ### Prefab / prefab instance / override
 
@@ -445,6 +468,16 @@ its fingerprint), **rebuilt** (each frame laid out again at the same named
 from its entry with its original arguments). When none holds, the body is
 abandoned and the behavior's [`OnResumeFailed`](#onload--onresumefailed) runs.
 See the [Ergon reference](./ergon.md).
+
+### Role
+
+Whose work a DataSystem or a Flow is, declared by every registration with no
+default (`khora_data::ecs::Role`). `Upkeep` is a data invariant and runs every
+frame. `Serves(family)` is the family's work, or what that work produces; it is
+skipped while the family is off. On its first run on a world, and its first run
+after a skip, a system sees `SystemContext.resumed` and a Flow's `select` sees
+`FlowContext { resumed: true }`. The boot refuses a `Serves` that names no
+registered family. See [Activation](#activation).
 
 ### SAA — Symbiotic Adaptive Architecture
 

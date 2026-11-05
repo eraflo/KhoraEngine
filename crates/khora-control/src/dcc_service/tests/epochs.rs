@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! When the running DCC opens an epoch: a mode change, a new agent, agents
+//! When the running DCC opens an epoch: a family switched on or off, a new agent, agents
 //! over budget, a stalled agent — never sooner than the epoch's minimum,
 //! except for `Safety`.
 
@@ -34,10 +34,39 @@ fn quick() -> DccConfig {
     }
 }
 
-/// **A mode change opens an epoch**, with the `ModeChanged` trigger.
+/// A DCC holding a renderer and an audio agent, whose epochs may follow one
+/// another every tick.
+fn two_speakers(config: DccConfig) -> (DccService, Receiver<TelemetryEvent>, Ear, Ear) {
+    let (dcc, rx) = recording(config);
+    let (renderer, renderer_ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    let (audio, audio_ear) = Speaker::with_ear("audio", Duration::from_millis(1));
+    dcc.register_agent(renderer, 1.0);
+    dcc.register_agent(audio, 0.5);
+    (dcc, rx, renderer_ear, audio_ear)
+}
+
+/// The families now off, as the frame boundary tells the DCC.
+fn switched_off(names: &[&'static str]) -> TelemetryEvent {
+    TelemetryEvent::ActivationChanged(names.iter().map(|name| AgentId::new(name)).collect())
+}
+
+/// Whether an `AgentsChanged` epoch opened that names no envelope for
+/// `name`.
+fn opened_without(dcc: &DccService, name: &'static str) -> bool {
+    epochs(dcc).iter().any(|epoch| {
+        epoch.trigger == Trigger::AgentsChanged
+            && epoch
+                .envelopes
+                .iter()
+                .all(|(id, _)| *id != AgentId::new(name))
+    })
+}
+
+/// **A family switched off opens an epoch**: the agents taking part changed,
+/// so an `AgentsChanged` epoch opens, lending nothing to the family off.
 #[test]
-fn a_mode_change_opens_an_epoch() {
-    let (mut dcc, rx, _ear) = one_speaker(quick());
+fn a_family_switched_off_opens_an_epoch_without_it() {
+    let (mut dcc, rx, _renderer, _audio) = two_speakers(quick());
     let tx = dcc.event_sender();
     dcc.start(rx);
     assert!(
@@ -45,11 +74,8 @@ fn a_mode_change_opens_an_epoch() {
         "the first epoch"
     );
 
-    tx.send(TelemetryEvent::ModeChange(EngineMode::Custom(
-        "editor".to_owned(),
-    )))
-    .expect("the DCC listens");
-    let opened = wait_for(3, || opened_by(&dcc, Trigger::ModeChanged));
+    tx.send(switched_off(&["audio"])).expect("the DCC listens");
+    let opened = wait_for(3, || opened_without(&dcc, "audio"));
     let recorded = epochs(&dcc);
     dcc.stop();
 
@@ -269,12 +295,12 @@ fn the_overruns_an_epoch_answered_open_no_other() {
 }
 
 /// **An epoch lasts at least its minimum.** With a minimum of 30 ticks
-/// (300 ms at 100 Hz), a mode change right after the first epoch opens no
-/// epoch at once; it is not lost either: its epoch opens once the minimum
-/// has passed.
+/// (300 ms at 100 Hz), a family switched off right after the first epoch
+/// opens no epoch at once; it is not lost either: its epoch opens once the
+/// minimum has passed.
 #[test]
 fn an_epoch_lasts_at_least_its_minimum_ticks() {
-    let (mut dcc, rx, _ear) = one_speaker(DccConfig {
+    let (mut dcc, rx, _renderer, _audio) = two_speakers(DccConfig {
         min_epoch_ticks: 30,
         ..Default::default()
     });
@@ -282,13 +308,10 @@ fn an_epoch_lasts_at_least_its_minimum_ticks() {
     dcc.start(rx);
     assert!(wait_for(3, || opened_by(&dcc, Trigger::Initial)));
 
-    tx.send(TelemetryEvent::ModeChange(EngineMode::Custom(
-        "editor".to_owned(),
-    )))
-    .expect("the DCC listens");
+    tx.send(switched_off(&["audio"])).expect("the DCC listens");
     thread::sleep(Duration::from_millis(120));
     let too_soon = epochs(&dcc);
-    let later = wait_for(5, || opened_by(&dcc, Trigger::ModeChanged));
+    let later = wait_for(5, || opened_without(&dcc, "audio"));
     dcc.stop();
 
     assert_eq!(
@@ -296,7 +319,7 @@ fn an_epoch_lasts_at_least_its_minimum_ticks() {
         1,
         "no second epoch within 12 ticks: {too_soon:?}"
     );
-    assert!(later, "the mode change opens its epoch after the minimum");
+    assert!(later, "the switch opens its epoch after the minimum");
 }
 
 /// **`Safety` does not wait for the epoch to end.** Under a minimum of
@@ -490,13 +513,13 @@ fn an_agent_busy_when_an_epoch_opens_does_not_reopen_it() {
     assert_eq!(tracker.due(0), None, "the same agents, no new epoch");
 }
 
-/// **A mode change during a replay opens an epoch once the replay ends.**
-/// The replay lends recorded allocations for 20 ticks; the engine changes
-/// mode meanwhile. The trigger is not dropped: when live arbitration
-/// resumes, a `ModeChanged` epoch opens for the agents of the new mode.
+/// **A family switched off during a replay opens an epoch once the replay
+/// ends.** The replay lends recorded allocations for 20 ticks; a family is
+/// switched off meanwhile. The change is not dropped: when live arbitration
+/// resumes, an `AgentsChanged` epoch opens for the families on.
 #[test]
-fn a_mode_change_during_a_replay_opens_an_epoch_after_it() {
-    let (mut dcc, rx, _ear) = one_speaker(quick());
+fn a_family_switched_off_during_a_replay_opens_an_epoch_after_it() {
+    let (mut dcc, rx, _renderer, _audio) = two_speakers(quick());
     dcc.replay_decisions(DecisionTrace {
         epochs: (1..=20)
             .map(|epoch| record(allocation(epoch, Trigger::Refresh, Vec::new())))
@@ -504,18 +527,15 @@ fn a_mode_change_during_a_replay_opens_an_epoch_after_it() {
     });
     let tx = dcc.event_sender();
     dcc.start(rx);
-    tx.send(TelemetryEvent::ModeChange(EngineMode::Custom(
-        "editor".to_owned(),
-    )))
-    .expect("the DCC listens");
+    tx.send(switched_off(&["audio"])).expect("the DCC listens");
 
     let replayed = wait_for(3, || !dcc.is_replaying());
-    let opened = wait_for(2, || opened_by(&dcc, Trigger::ModeChanged));
+    let opened = wait_for(2, || opened_without(&dcc, "audio"));
     let live = epochs(&dcc);
     dcc.stop();
 
     assert!(replayed, "the replay ran out");
-    assert!(opened, "the mode change opened its epoch: {live:?}");
+    assert!(opened, "the switch opened its epoch: {live:?}");
 }
 
 /// **An agent replaced by another opens an epoch**, even when the newcomer's

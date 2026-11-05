@@ -1,6 +1,6 @@
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::registration::AgentRegistration;
-use khora_core::agent::{AgentImportance, EngineMode, ExecutionPhase};
+use khora_core::agent::{AgentImportance, ExecutionPhase};
 use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::erased::AnyLane;
@@ -54,7 +54,6 @@ static AUDIO: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [AgentId::new("physics")],
-    modes: [EngineMode::Playing],
     fixed_step: None,
     lanes: [MixLane],
 };
@@ -64,7 +63,6 @@ static AUDIO_REF: &AgentRegistration = &khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: Some(std::time::Duration::from_millis(16)),
     lanes: [MixLane,],
 };

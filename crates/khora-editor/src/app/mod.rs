@@ -26,8 +26,8 @@ use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
 use khora_sdk::khora_core::ui::EditorOverlay;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::winit;
+use khora_sdk::DccService;
 use khora_sdk::{AgentProvider, GameWorld, Runtime};
-use khora_sdk::{DccService, PlayMode};
 use khora_sdk::{EditorShell, EditorState, LogEntry};
 
 use crate::camera::EditorCamera;
@@ -47,20 +47,6 @@ mod startup;
 
 #[cfg(test)]
 mod tests;
-
-/// The name of the editor's own engine mode: editing a scene, not playing it.
-const EDITOR_MODE: &str = "editor";
-
-/// The engine mode a frame runs in, from where the editor's transport stands.
-///
-/// Editing is the editor's own mode — not the game, so no script runs. A
-/// paused game is still the game: its scripts run, at a delta of zero.
-pub(crate) fn engine_mode_for(play_mode: PlayMode) -> khora_sdk::EngineMode {
-    match play_mode {
-        PlayMode::Editing => khora_sdk::EngineMode::Custom(EDITOR_MODE.to_owned()),
-        PlayMode::Playing | PlayMode::Paused => khora_sdk::EngineMode::Playing,
-    }
-}
 
 pub struct EditorApp {
     camera: Arc<Mutex<EditorCamera>>,
@@ -449,65 +435,6 @@ fn revert_prefab_instance(
             }
         }
         Err(e) => log::error!("Failed to read the prefab to revert to: {e}"),
-    }
-}
-
-impl EditorApp {
-    /// Tells the engine how fast the simulated world should run.
-    ///
-    /// One of the two things `PlayMode` causes to cross into the engine — the
-    /// engine mode, which decides whether scripts run, is the other. The scale
-    /// crosses as a number: `0.0` is what a pause menu or a cutscene sets too,
-    /// so the editor is one caller among several rather than a special case the
-    /// engine has to know about.
-    ///
-    /// Before this, a rigid body fell while nobody had pressed Play — the
-    /// engine had no way to be told the world was not meant to be running, and
-    /// the transport pill's claim to "tell the truth about what the engine is
-    /// doing" was decoration.
-    fn drive_simulation_clock(&self, runtime: &Runtime) {
-        let Some(shared) = runtime.resources.get::<khora_sdk::prelude::SharedTime>() else {
-            return;
-        };
-        let play_mode = self
-            .editor_state
-            .lock()
-            .ok()
-            .map(|state| state.play_mode)
-            .unwrap_or(PlayMode::Editing);
-
-        // `Paused` stops it for the same reason `Editing` does: the author is
-        // looking at a frozen world in both, and the difference between them is
-        // what the editor draws, not what the simulation does.
-        let scale = match play_mode {
-            PlayMode::Playing => 1.0,
-            PlayMode::Editing | PlayMode::Paused => 0.0,
-        };
-        if let Ok(mut time) = shared.write() {
-            time.set_scale(scale);
-        }
-    }
-
-    /// Tells the engine which mode this frame runs in: the editor's own while
-    /// editing — no script runs, the scene is the author's — and the game's
-    /// once Play is pressed. Written before the agents, so the whole frame
-    /// runs in one mode.
-    fn drive_engine_mode(&self, runtime: &Runtime) {
-        let Some(shared) = runtime.resources.get::<khora_sdk::SharedEngineMode>() else {
-            return;
-        };
-        let play_mode = self
-            .editor_state
-            .lock()
-            .ok()
-            .map(|state| state.play_mode)
-            .unwrap_or(PlayMode::Editing);
-        let mode = engine_mode_for(play_mode);
-        if let Ok(mut current) = shared.write() {
-            if *current != mode {
-                *current = mode;
-            }
-        }
     }
 }
 

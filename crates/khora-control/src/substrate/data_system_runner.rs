@@ -14,11 +14,13 @@
 
 //! Running the registered `DataSystem`s of a tick phase, in dependency order.
 
-use khora_core::agent::{EngineMode, SharedEngineMode};
+use khora_core::agent::Activation;
 use khora_core::graph::topological_sort;
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, Observer, SystemContext, Tick, TickPhase, World};
+use khora_data::ecs::{
+    DataSystemRegistration, Observer, Role, SystemContext, Tick, TickPhase, World,
+};
 use std::collections::HashMap;
 
 /// Runs every [`DataSystemRegistration`] declared for the given phase, in a
@@ -51,21 +53,16 @@ pub fn run_data_systems(
 
     sort_systems(&mut systems);
 
-    // The mode the application set; a runtime without one is a game, played.
-    let mode = runtime
-        .resources
-        .get::<SharedEngineMode>()
-        .and_then(|shared| shared.read().ok().map(|mode| mode.clone()))
-        .unwrap_or(EngineMode::Playing);
+    let activation = runtime.resources.get::<std::sync::Arc<Activation>>();
 
     // Each run writes at a tick of its own, which is what the system has
     // seen once it returns; the clock then moves past it. It is handed the
     // tick of its previous run on this world: what changed since is what it
-    // has not seen. A system outside its modes is skipped, and the world
-    // notes it, so its next run is told it resumes.
+    // has not seen. A system serving a family off in the state in force is
+    // skipped, and the world notes it, so its next run is told it resumes.
     for sys in systems {
         let observer = Observer::DataSystem(sys.name);
-        if !sys.modes.is_empty() && !sys.modes.contains(&mode) {
+        if !role_runs(sys.role, activation.map(|a| a.as_ref())) {
             world.note_observer_skip(observer);
             continue;
         }
@@ -77,6 +74,16 @@ pub fn run_data_systems(
         (sys.run)(world, runtime, deck, ctx);
         world.note_observer_run(observer, tick);
         world.end_run();
+    }
+}
+
+/// Whether a registration of `role` runs this frame: upkeep always, the
+/// work of a family only while the family is on. A runtime with no
+/// [`Activation`] has every family on.
+pub(crate) fn role_runs(role: Role, activation: Option<&Activation>) -> bool {
+    match role {
+        Role::Upkeep => true,
+        Role::Serves(family) => activation.is_none_or(|activation| activation.is_active(family)),
     }
 }
 
@@ -180,7 +187,7 @@ mod tests {
             order_hint: 10,
             runs_after: &[],
             observes: &[],
-            modes: &[],
+            role: Role::Upkeep,
         }
     }
     inventory::submit! {
@@ -191,7 +198,7 @@ mod tests {
             order_hint: 0,
             runs_after: &[],
             observes: &[],
-            modes: &[],
+            role: Role::Upkeep,
         }
     }
     inventory::submit! {
@@ -202,7 +209,7 @@ mod tests {
             order_hint: -5,
             runs_after: &["test_a"], // Forces c after a despite lower hint.
             observes: &[],
-            modes: &[],
+            role: Role::Upkeep,
         }
     }
 

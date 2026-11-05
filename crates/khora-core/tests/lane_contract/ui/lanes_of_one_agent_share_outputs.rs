@@ -101,7 +101,6 @@ const AUDIO: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [MixLane, LayoutLane],
 };

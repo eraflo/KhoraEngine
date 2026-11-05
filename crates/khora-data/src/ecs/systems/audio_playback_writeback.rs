@@ -58,6 +58,6 @@ inventory::submit! {
         order_hint: 10, // After physics_world_writeback (default 0).
         runs_after: &[],
         observes: &[],
-        modes: &[],
+        role: crate::ecs::Role::Serves(khora_core::audio::AUDIO),
     }
 }

@@ -14,17 +14,13 @@
 
 use super::*;
 use crate::metrics::MetricStore;
-use khora_core::agent::EngineMode;
 
 fn default_context() -> Context {
     Context::default()
 }
 
 fn simulation_context() -> Context {
-    Context {
-        mode: EngineMode::Playing,
-        ..Default::default()
-    }
+    Context::default()
 }
 
 // ── Phase Heuristics ─────────────────────────────────────────────

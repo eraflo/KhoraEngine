@@ -30,7 +30,7 @@ use khora_core::agent::gorna::protocol::{
     Confidence, Epoch, Offer, OfferRequest, OfferRow, Trigger,
 };
 use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, StrategyId};
-use khora_core::agent::{Agent, AgentImportance, EngineMode};
+use khora_core::agent::{Agent, AgentImportance};
 use khora_core::lane::cost::{Cost, PerDevice, PerLink};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::{EngineContext, Runtime, WorldAccess};
@@ -101,7 +101,6 @@ fn request() -> OfferRequest {
         epoch: Epoch(1),
         target: TARGET,
         pressure: 0.0,
-        mode: EngineMode::Playing,
         reply_by: Instant::now() + Duration::from_secs(1),
     }
 }

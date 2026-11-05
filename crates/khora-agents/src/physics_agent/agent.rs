@@ -27,7 +27,6 @@ khora_script::inventory::submit! {
         phase: ExecutionPhase::TRANSFORM,
         importance: AgentImportance::Critical,
         after: [],
-        modes: [],
         // The default; the engine sets the game's `physics.step` at boot.
         fixed_step: Some(PhysicsSettings::DEFAULT_STEP),
         lanes: [StandardPhysicsLane],

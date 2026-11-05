@@ -52,6 +52,7 @@ impl Flow for CameraFlow {
 
     const DOMAIN: SemanticDomain = SemanticDomain::Render;
     const NAME: &'static str = "camera";
+    const ROLE: crate::ecs::Role = crate::ecs::Role::Upkeep;
 
     fn project(&self, world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
         let view = extract_active_camera_view(world, target_aspect(runtime)).or_else(|| {

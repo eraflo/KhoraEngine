@@ -28,7 +28,6 @@ khora_script::inventory::submit! {
         // Not debug viz: the background survives budget pressure.
         importance: AgentImportance::Important,
         after: [crate::render_agent::RENDERER],
-        modes: [],
         fixed_step: None,
         lanes: [SkyboxLane],
     })

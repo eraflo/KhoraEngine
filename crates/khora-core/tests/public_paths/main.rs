@@ -89,7 +89,6 @@ mod every_pub_mod {
     use khora_core::agent::execution_phase as _;
     use khora_core::agent::gorna as _;
     use khora_core::agent::gorna::protocol as _;
-    use khora_core::agent::mode as _;
     use khora_core::agent::timing as _;
     use khora_core::asset as _;
     use khora_core::asset::font as _;
@@ -173,7 +172,6 @@ fn dependency_condition_variants(x: &khora_core::agent::dependency::DependencyCo
     match x {
         khora_core::agent::dependency::DependencyCondition::IfTargetActive => {}
         khora_core::agent::dependency::DependencyCondition::IfBudgetAbove(..) => {}
-        khora_core::agent::dependency::DependencyCondition::IfEngineMode(..) => {}
     }
 }
 
@@ -182,13 +180,6 @@ fn dependency_kind_variants(x: &khora_core::agent::dependency::DependencyKind) {
         khora_core::agent::dependency::DependencyKind::Hard => {}
         khora_core::agent::dependency::DependencyKind::Soft => {}
         khora_core::agent::dependency::DependencyKind::Parallel => {}
-    }
-}
-
-fn engine_mode_variants(x: &khora_core::agent::mode::EngineMode) {
-    match x {
-        khora_core::agent::mode::EngineMode::Playing => {}
-        khora_core::agent::mode::EngineMode::Custom(..) => {}
     }
 }
 
@@ -374,7 +365,6 @@ fn negotiation_request_fields(x: &khora_core::agent::gorna::NegotiationRequest) 
         &x.target_latency,
         &x.priority_weight,
         &x.constraints,
-        &x.current_mode,
         &x.agent_timing,
     );
 }
@@ -1104,7 +1094,7 @@ fn telemetry_event_variants(x: &khora_core::telemetry::event::TelemetryEvent) {
             ) = (resource, usage);
         }
         khora_core::telemetry::event::TelemetryEvent::HardwareReport(..) => {}
-        khora_core::telemetry::event::TelemetryEvent::ModeChange(..) => {}
+        khora_core::telemetry::event::TelemetryEvent::ActivationChanged(..) => {}
         khora_core::telemetry::event::TelemetryEvent::AgentReport(..) => {}
         khora_core::telemetry::event::TelemetryEvent::FrameReport(..) => {}
         khora_core::telemetry::event::TelemetryEvent::WavePlan { .. } => {}
@@ -1566,26 +1556,6 @@ fn module_agent_paths_still_resolve() {
     is_eq::<khora_core::agent::execution_phase::ExecutionPhase>();
     is_hash::<khora_core::agent::execution_phase::ExecutionPhase>();
     is_display::<khora_core::agent::execution_phase::ExecutionPhase>();
-    let _ = type_name::<khora_core::agent::mode::EngineMode>();
-    let _ = type_name::<khora_core::agent::EngineMode>();
-    same_type(
-        PhantomData::<khora_core::agent::EngineMode>,
-        PhantomData::<khora_core::agent::mode::EngineMode>,
-    );
-    let _ = engine_mode_variants as fn(&khora_core::agent::mode::EngineMode);
-    let _ = khora_core::agent::mode::EngineMode::from_name;
-    let _ = khora_core::agent::mode::EngineMode::name;
-    let _ = khora_core::agent::mode::EngineMode::runs_gameplay;
-    let _ = type_name::<khora_core::agent::mode::SharedEngineMode>();
-    same_type(
-        PhantomData::<khora_core::agent::SharedEngineMode>,
-        PhantomData::<khora_core::agent::mode::SharedEngineMode>,
-    );
-    is_debug::<khora_core::agent::mode::EngineMode>();
-    is_clone::<khora_core::agent::mode::EngineMode>();
-    is_partial_eq::<khora_core::agent::mode::EngineMode>();
-    is_eq::<khora_core::agent::mode::EngineMode>();
-    is_hash::<khora_core::agent::mode::EngineMode>();
     let _ = type_name::<khora_core::agent::timing::AgentImportance>();
     let _ = type_name::<khora_core::agent::AgentImportance>();
     same_type(
@@ -3182,7 +3152,6 @@ mod paths_used_by_other_crates {
     use khora_core::agent::gorna::StrategyId as _; // khora-agents, khora-control, khora-sdk
     use khora_core::agent::gorna::StrategyId::Balanced as _; // khora-agents
     use khora_core::agent::gorna::StrategyOption as _; // khora-agents, khora-control
-    use khora_core::agent::mode::EngineMode::Playing as _; // khora-agents
     use khora_core::agent::timing::AgentImportance as _; // khora-control
     use khora_core::agent::Agent as _; // khora-agents, khora-control
     use khora_core::agent::AgentAccess as _; // khora-agents, khora-control
@@ -3190,8 +3159,6 @@ mod paths_used_by_other_crates {
     use khora_core::agent::AgentImportance as _; // khora-agents, khora-control, khora-sdk
     use khora_core::agent::Contention as _; // khora-agents, khora-control
     use khora_core::agent::DependencyKind as _; // khora-agents
-    use khora_core::agent::EngineMode as _; // khora-agents, khora-control
-    use khora_core::agent::EngineMode::Playing as _; // khora-agents
     use khora_core::agent::ExecutionPhase as _; // khora-agents, khora-control, khora-sdk
     use khora_core::agent::ExecutionTiming as _; // khora-agents, khora-sdk
     use khora_core::asset::asset_key as _; // khora-editor (as khora_sdk::khora_core::…), khora-io
@@ -3558,7 +3525,7 @@ mod paths_used_by_other_crates {
     use khora_core::telemetry::ResourceMonitor as _; // khora-infra, khora-telemetry
     use khora_core::telemetry::ResourceUsageReport as _; // khora-infra
     use khora_core::telemetry::TelemetryEvent as _; // khora-control, khora-sdk
-    use khora_core::telemetry::TelemetryEvent::ModeChange as _; // khora-sdk
+    use khora_core::telemetry::TelemetryEvent::ActivationChanged as _; // khora-sdk
     use khora_core::telemetry::VramProvider as _; // khora-infra
     use khora_core::time::SharedTime as _; // khora-agents, khora-control, khora-data, khora-sdk
     use khora_core::time::Time as _; // khora-control, khora-sdk
@@ -3697,3 +3664,44 @@ fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_core::time::Time::default; // khora-agents, khora-sdk
     let _ = khora_core::ui::UiTheme::default; // khora-editor (as khora_sdk::khora_core::…)
 }
+
+/// Which families run, the family ids beside their domains, and the mailboxes.
+#[test]
+fn activation_and_mailbox_paths_are_public() {
+    let _ = type_name::<khora_core::agent::activation::Activation>();
+    same_type(
+        PhantomData::<khora_core::agent::Activation>,
+        PhantomData::<khora_core::agent::activation::Activation>,
+    );
+    let _: fn(Vec<khora_core::agent::gorna::AgentId>) -> khora_core::agent::Activation =
+        khora_core::agent::Activation::new;
+    let _ = khora_core::agent::Activation::activate;
+    let _ = khora_core::agent::Activation::deactivate;
+    let _ = khora_core::agent::Activation::state;
+    let _ = khora_core::agent::Activation::is_active;
+    let _ = khora_core::agent::Activation::inactive;
+    let _ = khora_core::agent::Activation::generation;
+    let _ = khora_core::agent::Activation::settle;
+    let _ = khora_core::agent::State::On;
+    let _ = khora_core::agent::State::Off;
+    let _ = khora_core::agent::UnknownFamily(khora_core::script::SCRIPT);
+    is_send_sync::<khora_core::agent::Activation>();
+    let _: khora_core::agent::gorna::AgentId = khora_core::script::SCRIPT;
+    let _: khora_core::agent::gorna::AgentId = khora_core::physics::PHYSICS;
+    let _: khora_core::agent::gorna::AgentId = khora_core::audio::AUDIO;
+    let _ = type_name::<khora_core::event::mailbox::Mailbox>();
+    same_type(
+        PhantomData::<khora_core::event::Mailbox>,
+        PhantomData::<khora_core::event::mailbox::Mailbox>,
+    );
+    let _ = khora_core::event::Reader::Take;
+    let _ = khora_core::event::Reader::Cursor("reader");
+    let _ = khora_core::event::BetweenSessions::Drop;
+    let _ = khora_core::event::BetweenSessions::Hold;
+    let _ = khora_core::event::discard_mail_of_inactive;
+    let _ = khora_core::event::Channel::<khora_core::script::ScriptEvent>::discard_unread;
+    let _ = khora_core::event::Channel::<khora_core::script::ScriptEvent>::skip_to_end;
+    let _ = khora_core::event::Channel::<khora_core::script::ScriptEvent>::discarded;
+}
+
+fn is_send_sync<T: Send + Sync>() {}

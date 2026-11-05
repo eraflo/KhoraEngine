@@ -28,7 +28,6 @@ khora_script::inventory::submit! {
         phase: ExecutionPhase::OUTPUT,
         importance: AgentImportance::Important,
         after: [],
-        modes: [],
         fixed_step: None,
         lanes: [UiLane],
     })

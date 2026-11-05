@@ -18,18 +18,17 @@
 //! full link of the crate's dependency tree. New integration tests join this
 //! binary as a module instead of adding a file at the root of `tests/`.
 
+mod activation;
 mod camera_aspect_follows_target;
 mod camera_view_prepares_the_frame;
 mod declared_components;
 mod editor_shader_sources;
-mod engine_mode;
 mod engine_names;
 mod frame_report;
 mod frame_target_reaches_lanes;
 mod game_saves;
 mod host_monitors;
 mod lane_agents_at_boot;
-mod mode_to_dcc;
 mod overlay_families;
 mod overlay_host_views;
 mod pass_order;
@@ -50,6 +49,7 @@ mod script_problems_after_unmount;
 mod scripts_mount_sequences;
 mod scripts_mounted_while_running;
 mod scripts_outside_the_script_folder;
+mod scripts_switched_on_in_before_frame;
 mod scripts_unmounted_after_play;
 mod staged_bootstrap;
 mod system_components;

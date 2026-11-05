@@ -18,7 +18,6 @@
 //! behavior it turns into; a game save holding a system's entity loads into
 //! a project that renamed the system.
 
-use khora_core::agent::EngineMode;
 use khora_core::asset::AssetUUID;
 use khora_core::scene::SerializationGoal;
 use khora_core::script::ScriptValue;
@@ -84,11 +83,7 @@ fn a_behavior_become_a_system_and_back_resumes_its_holders_from_their_fields() {
 #[test]
 fn a_behavior_become_a_system_and_back_keeps_its_authored_fields_in_the_scene() {
     let service = SerializationService::new();
-    let mut session = SystemSession::in_mode(
-        World::new(),
-        BEAT_BEHAVIOR,
-        EngineMode::Custom("editor".to_owned()),
-    );
+    let mut session = SystemSession::with_scripts_off(World::new(), BEAT_BEHAVIOR);
     let holder = session.world.spawn(Transform::identity());
     attach(
         &mut session.world,

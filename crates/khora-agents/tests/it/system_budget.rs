@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use khora_agents::script_agent::ScriptAgent;
 use khora_core::agent::gorna::{NegotiationRequest, ResourceConstraints, StrategyId};
-use khora_core::agent::{Agent, EngineMode, ExecutionTiming};
+use khora_core::agent::{Agent, ExecutionTiming};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::script::ScriptValue;
 use khora_core::{EngineContext, Runtime, WorldAccess};
@@ -94,7 +94,6 @@ fn rows_priced(rows: i64) -> Duration {
         target_latency: target,
         priority_weight: 1.0,
         constraints: ResourceConstraints::default(),
-        current_mode: EngineMode::Playing,
         agent_timing: ExecutionTiming::default(),
     });
     let balanced = response

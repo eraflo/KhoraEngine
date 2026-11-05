@@ -24,7 +24,6 @@ use std::time::Duration;
 
 use super::execution_phase::ExecutionPhase;
 use super::gorna::{AgentId, StrategyId};
-use super::mode::EngineMode;
 use super::timing::AgentImportance;
 use crate::gpu::DeviceCaps;
 use crate::lane::erased::AnyLane;
@@ -56,8 +55,6 @@ pub struct AgentRegistration {
     pub importance: AgentImportance,
     /// The agents it runs after within its phase.
     pub after: &'static [AgentId],
-    /// The modes it runs in; empty means every mode.
-    pub modes: &'static [EngineMode],
     /// The fixed step it runs at, if it does not run every frame.
     pub fixed_step: Option<Duration>,
     /// The level the agent starts on, by strategy id: the first row of its
@@ -485,7 +482,6 @@ fn written_earlier(
 ///     phase: ExecutionPhase::OUTPUT,
 ///     importance: AgentImportance::Important,
 ///     after: [],
-///     modes: [],
 ///     fixed_step: None,
 ///     lanes: [SpatialMixingLane],
 /// };
@@ -506,7 +502,6 @@ macro_rules! register_agent {
         phase: $phase:expr,
         importance: $importance:expr,
         after: [$($after:expr),* $(,)?],
-        modes: [$($mode:expr),* $(,)?],
         fixed_step: $fixed_step:expr,
         $(default_level: $default_level:expr,)?
         lanes: [$($lane:ty),+ $(,)?] $(,)?
@@ -523,7 +518,6 @@ macro_rules! register_agent {
             phase: $phase,
             importance: $importance,
             after: &[$($after),*],
-            modes: &[$($mode),*],
             fixed_step: $fixed_step,
             default_level: $crate::register_agent!(@default_level $($default_level)?),
             module: ::core::module_path!(),

@@ -209,8 +209,9 @@ impl AgentProvider for MyGame {
 No special bootstrap is needed — the same `run_winit::<WinitWindowProvider,
 MyGame>(...)` call from the first lesson picks up the registration.
 
-> To restrict an agent to certain engine modes, use
-> `dcc.register_agent_for_mode(agent, priority, modes)` instead.
+> The agent starts on. To switch it off and on while the game runs, call
+> `deactivate(id)` and `activate(id)` on the `Arc<Activation>` resource
+> (`khora_sdk::Activation`); the switch lands at the next frame boundary.
 
 ## Step 4 — Run it
 

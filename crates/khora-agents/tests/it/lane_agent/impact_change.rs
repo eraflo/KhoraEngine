@@ -140,7 +140,6 @@ static CAPPED_THEN_TILED: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Critical,
     after: [],
-    modes: [],
     fixed_step: None,
     default_level: StrategyId::Balanced,
     lanes: [CappedAtFlatTime, TiledAtFlatTime],

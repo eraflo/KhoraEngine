@@ -1,6 +1,6 @@
 <svg id="fig-editor-play-modes" class="kp-figure" viewBox="0 0 760 276" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="kp-play-title kp-play-desc">
   <title id="kp-play-title">Editing, playing, paused: what runs in each</title>
-  <desc id="kp-play-desc">Editing runs the editor's own engine mode, in which no script runs. Play snapshots the scene and switches to the Playing mode: scripts run, and every scripted entity arrives fresh and runs OnSpawn. Pause keeps the Playing mode with a delta of zero, so scripts still run but time stands still. Stop, from playing or paused, restores the snapshot and returns to editing; the next Play starts fresh again, never with OnLoad.</desc>
+  <desc id="kp-play-desc">Editing has the scripting, physics and audio families switched off, so no script runs. Play snapshots the scene and switches them on: scripts run, and every scripted entity arrives fresh and runs OnSpawn. Pause leaves them on with a delta of zero, so scripts still run but time stands still. Stop, from playing or paused, restores the snapshot and returns to editing; the next Play starts fresh again, never with OnLoad.</desc>
   <style>
     #fig-editor-play-modes { width: 100%; height: auto; display: block; margin: 1.5rem 0; }
     #fig-editor-play-modes .kp-bg { fill: var(--k-bg-0, #090d17); }
@@ -19,19 +19,19 @@
   <!-- editing -->
   <rect class="kp-card" x="16" y="40" width="200" height="124" rx="6"/>
   <text class="kp-station" x="32" y="68">editing</text>
-  <text class="kp-note" x="32" y="88">Custom("editor")</text>
+  <text class="kp-note" x="32" y="88">script, physics, audio off</text>
   <text class="kp-label" x="32" y="120">no script runs</text>
   <text class="kp-label" x="32" y="140">you change the scene</text>
   <!-- playing -->
   <rect class="kp-card-on" x="280" y="40" width="200" height="124" rx="6"/>
   <text class="kp-station" x="296" y="68">playing</text>
-  <text class="kp-note" x="296" y="88">EngineMode::Playing</text>
+  <text class="kp-note" x="296" y="88">every family on</text>
   <text class="kp-label" x="296" y="120">scripts run</text>
   <text class="kp-label" x="296" y="140">each entity: OnSpawn</text>
   <!-- paused -->
   <rect class="kp-card" x="544" y="40" width="200" height="124" rx="6"/>
   <text class="kp-station" x="560" y="68">paused</text>
-  <text class="kp-note" x="560" y="88">EngineMode::Playing</text>
+  <text class="kp-note" x="560" y="88">every family on, scale 0</text>
   <text class="kp-label" x="560" y="120">scripts run, delta 0</text>
   <text class="kp-label" x="560" y="140">time stands still</text>
   <!-- play -->

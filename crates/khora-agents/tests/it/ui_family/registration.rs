@@ -22,9 +22,7 @@ use std::time::Duration;
 use khora_agents::registered_agent::lane_agents;
 use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
 use khora_core::agent::registration::{check_registrations, BootError};
-use khora_core::agent::{
-    Agent, AgentAccess, AgentImportance, EngineMode, ExecutionPhase, ExecutionTiming,
-};
+use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase, ExecutionTiming};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
@@ -54,7 +52,6 @@ fn the_ui_family_is_registered_once() {
     assert_eq!(registration.agent, AgentId::new("ui"));
     assert_eq!(registration.kind, LaneKind::Ui);
     assert_eq!(registration.semantics, Semantics::Presentation);
-    assert!(registration.modes.is_empty(), "the UI draws in every mode");
     assert_eq!(registration.fixed_step, None, "the UI draws every frame");
     let lanes: Vec<&'static str> = registration
         .lanes
@@ -363,7 +360,6 @@ fn the_ui_agent_offers_one_balanced_strategy() {
             target_latency: Duration::from_micros(16_667),
             priority_weight: 1.0,
             constraints: ResourceConstraints::default(),
-            current_mode: EngineMode::Playing,
             agent_timing: ExecutionTiming::default(),
         })
         .strategies

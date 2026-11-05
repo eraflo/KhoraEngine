@@ -16,7 +16,6 @@
 
 use crate::budget_channel::BudgetChannel;
 use crate::dcc_context::Context;
-use crate::EngineMode;
 use crossbeam_channel::{Receiver, Sender};
 use khora_core::agent::Agent;
 use khora_core::platform::HardwareMonitor;
@@ -273,24 +272,11 @@ impl DccService {
     /// Registers an agent with a priority value.
     ///
     /// Higher priority values mean the agent is updated first in each frame.
-    /// The agent is active in all engine modes.
+    /// It runs while its family is on
+    /// ([`Activation`](khora_core::agent::Activation)).
     pub fn register_agent(&self, agent: Arc<std::sync::Mutex<dyn Agent>>, priority: f32) {
         let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
         registry.register(agent, priority);
-    }
-
-    /// Registers an agent with a priority value, active only in the specified modes.
-    ///
-    /// Higher priority values mean the agent is updated first in each frame.
-    /// If `modes` is empty, the agent is active in all modes.
-    pub fn register_agent_for_mode(
-        &self,
-        agent: Arc<std::sync::Mutex<dyn Agent>>,
-        priority: f32,
-        modes: Vec<EngineMode>,
-    ) {
-        let mut registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-        registry.register_for_mode(agent, priority, modes);
     }
 
     /// Returns the agent registry for use by the Scheduler.

@@ -26,7 +26,6 @@ khora_script::inventory::submit! {
         phase: ExecutionPhase::TRANSFORM,
         importance: AgentImportance::Important,
         after: [],
-        modes: [],
         fixed_step: None,
         lanes: [SpatialMixingLane],
     })

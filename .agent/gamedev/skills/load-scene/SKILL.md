@@ -49,7 +49,7 @@ Two different documents, both `SceneFile`s:
 - Treat scene/save bytes as untrusted input — handle every `Result`, never `unwrap()`.
 - Keep the base level a save was taken against; a save alone cannot be loaded.
 - Reference assets by handle; don't inline raw data.
-- Scripts run only while the engine mode is `Playing` (the default for a game); `OnLoad` fires once per
+- Scripts run only while the scripting family is on (every family is on in a game by default); `OnLoad` fires once per
   instance restored from a save.
 
 For shipping packed scenes, see [`../pack-and-ship/SKILL.md`](../pack-and-ship/SKILL.md). Verify by loading

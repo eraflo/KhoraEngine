@@ -14,7 +14,6 @@
 
 //! Context for the Dynamic Context Core.
 
-pub use khora_core::agent::EngineMode;
 pub use khora_core::platform::{BatteryLevel, ThermalStatus};
 
 /// Hardware context observed by the DCC.
@@ -48,8 +47,10 @@ pub struct HardwareState {
 pub struct Context {
     /// Observed hardware state.
     pub hardware: HardwareState,
-    /// Current engine mode.
-    pub mode: EngineMode,
+    /// The families off in the state in force, as the last
+    /// [`ActivationChanged`](khora_core::telemetry::TelemetryEvent::ActivationChanged)
+    /// said: their agents are neither asked nor lent.
+    pub inactive: std::collections::BTreeSet<khora_core::agent::gorna::AgentId>,
     /// Global budget multiplier applied to all frame budgets for graceful
     /// performance degradation. Ranges from 0.0 (emergency) to 1.0 (full
     /// performance).
@@ -74,7 +75,7 @@ impl Default for Context {
     fn default() -> Self {
         Self {
             hardware: HardwareState::default(),
-            mode: EngineMode::Playing,
+            inactive: std::collections::BTreeSet::new(),
             global_budget_multiplier: 1.0,
             memory_pressure: 0.0,
         }
@@ -136,7 +137,7 @@ mod tests {
     fn test_default_context_full_budget() {
         let ctx = Context::default();
         assert_eq!(ctx.global_budget_multiplier, 1.0);
-        assert_eq!(ctx.mode, EngineMode::Playing);
+        assert!(ctx.inactive.is_empty(), "every family on");
     }
 
     #[test]

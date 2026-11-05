@@ -92,7 +92,7 @@ fn hardware_state_fields(h: &khora_control::dcc_context::HardwareState) {
 fn context_fields(c: &khora_control::dcc_context::Context) {
     let _ = (
         &c.hardware,
-        &c.mode,
+        &c.inactive,
         &c.global_budget_multiplier,
         &c.memory_pressure,
     );
@@ -179,7 +179,6 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = type_name::<khora_control::AnalysisReport>();
     let _ = type_name::<khora_control::BatteryLevel>();
     let _ = type_name::<khora_control::Context>();
-    let _ = type_name::<khora_control::EngineMode>();
     let _ = type_name::<khora_control::HardwareState>();
     let _ = type_name::<khora_control::ThermalStatus>();
     let _ = type_name::<khora_control::GornaArbitrator>();
@@ -199,10 +198,6 @@ fn every_public_path_of_khora_control_still_resolves() {
     same_type(
         PhantomData::<khora_control::Context>,
         PhantomData::<khora_control::dcc_context::Context>,
-    );
-    same_type(
-        PhantomData::<khora_control::EngineMode>,
-        PhantomData::<khora_control::dcc_context::EngineMode>,
     );
     same_type(
         PhantomData::<khora_control::HardwareState>,
@@ -256,15 +251,10 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::budget_channel::BudgetChannel::latest;
 
     // --- module `dcc_context` (re-exports of `khora_core` enums + own items)
-    let _ = type_name::<khora_control::dcc_context::EngineMode>();
     let _ = type_name::<khora_control::dcc_context::BatteryLevel>();
     let _ = type_name::<khora_control::dcc_context::ThermalStatus>();
     let _ = type_name::<khora_control::dcc_context::HardwareState>();
     let _ = type_name::<khora_control::dcc_context::Context>();
-    same_type(
-        PhantomData::<khora_control::dcc_context::EngineMode>,
-        PhantomData::<khora_core::agent::EngineMode>,
-    );
     same_type(
         PhantomData::<khora_control::dcc_context::BatteryLevel>,
         PhantomData::<khora_core::platform::BatteryLevel>,
@@ -388,7 +378,6 @@ fn every_public_path_of_khora_control_still_resolves() {
     is_default::<khora_control::agent_registry::AgentRegistry>();
     let _ = khora_control::agent_registry::AgentRegistry::new;
     let _ = khora_control::agent_registry::AgentRegistry::register;
-    let _ = khora_control::agent_registry::AgentRegistry::register_for_mode;
     let _ = khora_control::agent_registry::AgentRegistry::len;
     let _ = khora_control::agent_registry::AgentRegistry::is_empty;
     let _ = khora_control::agent_registry::AgentRegistry::iter;
@@ -439,7 +428,6 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::dcc_service::DccService::set_hardware_monitor;
     let _ = khora_control::dcc_service::DccService::hardware_monitor;
     let _ = khora_control::dcc_service::DccService::register_agent;
-    let _ = khora_control::dcc_service::DccService::register_agent_for_mode;
     let _ = khora_control::dcc_service::DccService::start;
     let _ = khora_control::dcc_service::DccService::stop;
     let _ = khora_control::dcc_service::DccService::agent_registry;
@@ -473,7 +461,7 @@ fn every_public_path_of_khora_control_still_resolves() {
 // ---------------------------------------------------------------------------
 
 // khora-sdk/src/engine/ (and khora-sdk/src/lib.rs for the last three)
-use khora_control::{substrate, DccConfig, DccService, EngineMode};
+use khora_control::{substrate, DccConfig, DccService};
 // khora-sdk/src/lib.rs
 use khora_control::agent_registry::AgentRegistry;
 use khora_control::Context as DccContext;
@@ -489,7 +477,6 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ = type_name::<khora_control::HardwareState>();
     let _ = type_name::<DccConfig>();
     let _ = type_name::<DccService>();
-    let _ = type_name::<EngineMode>();
     let _ = khora_control::ExecutionScheduler::new;
     // khora-sdk/src/lib.rs
     let _ = type_name::<AgentRegistry>();

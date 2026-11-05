@@ -14,7 +14,6 @@
 
 //! Agent dependency system for execution ordering.
 
-use super::mode::EngineMode;
 use crate::agent::gorna::{AgentId, StrategyId};
 
 /// A dependency declaration from one agent to another.
@@ -46,6 +45,4 @@ pub enum DependencyCondition {
     IfTargetActive,
     /// Only depends on the target if the current budget >= this strategy.
     IfBudgetAbove(StrategyId),
-    /// Only depends on the target in this engine mode.
-    IfEngineMode(EngineMode),
 }

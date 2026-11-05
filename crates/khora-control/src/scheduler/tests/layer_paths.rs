@@ -16,10 +16,9 @@
 //! world, inline in a concurrent wave with a shared world, on the worker pool,
 //! and once per fixed sub-step.
 
-use super::allocations::runtime_in;
 use super::layers::{reports, scheduling, shared, taken, Brush, Painter, Plain, SharedLog};
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{AgentAccess, EngineMode, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{AgentAccess, ExecutionPhase, ExecutionTiming};
 use khora_data::ecs::World;
 use std::sync::Arc;
 use std::time::Duration;
@@ -105,7 +104,7 @@ fn a_fixed_step_family_runs_its_layer_once_per_sub_step() {
         );
         let (mut scheduler, _rx) = scheduling(vec![metronome, painter]);
         scheduler.set_parallel_execution(parallel);
-        let (runtime, _mode) = runtime_in(EngineMode::Playing);
+        let runtime = Arc::new(khora_core::Runtime::new());
 
         scheduler.run_frame(&mut World::new(), runtime);
 

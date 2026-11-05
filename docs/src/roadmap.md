@@ -112,7 +112,8 @@ budget needs stopping to be ordinary. So Khora has its own — **Ergon**
   save goes through the same tiers ([Ergon reference](./reference/ergon.md))
 - ~~Lifecycle~~ — `OnSpawn`, `OnDespawn`, `OnLoad` (once, when an instance is
   restored from a save), recorded in the save rather than inferred; and scripts
-  run only while the game does — the editor's own engine mode runs no script
+  run only while the scripting family is on — the editor switches it off while
+  editing
 
 **Open:** the mini-game in `examples/sandbox` with all gameplay in Ergon, and the
 `criterion` bench that goes with it (1000 behaviors under 0.5 ms). Both are what

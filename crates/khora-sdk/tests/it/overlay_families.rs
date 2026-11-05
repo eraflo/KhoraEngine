@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use khora_sdk::khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
 };
-use khora_sdk::khora_core::agent::{Agent, AgentAccess, Contention, EngineMode};
+use khora_sdk::khora_core::agent::{Agent, AgentAccess, Contention};
 use khora_sdk::khora_core::lane::io::PassSlot;
 use khora_sdk::khora_core::renderer::api::command::CommandBufferId;
 use khora_sdk::khora_core::renderer::GraphicsDevice;
@@ -228,9 +228,16 @@ fn the_engine_boots_one_agent_per_overlay() {
     let dcc = engine.dcc().expect("bootstrapped");
     let registry = dcc.agent_registry().lock().expect("the registry lock");
     let output: Vec<AgentId> = registry
-        .collect_for_phase(ExecutionPhase::OUTPUT, &EngineMode::Playing)
-        .into_iter()
-        .filter_map(|(agent, ..)| agent.lock().ok().map(|agent| agent.id()))
+        .iter()
+        .filter(|agent| {
+            agent.lock().is_ok_and(|agent| {
+                agent
+                    .execution_timing()
+                    .allowed_phases
+                    .contains(&ExecutionPhase::OUTPUT)
+            })
+        })
+        .filter_map(|agent| agent.lock().ok().map(|agent| agent.id()))
         .collect();
     for overlay in [
         AgentId::new("grid"),

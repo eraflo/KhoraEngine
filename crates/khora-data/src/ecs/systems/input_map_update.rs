@@ -83,7 +83,7 @@ inventory::submit! {
         order_hint: -100,
         runs_after: &[],
         observes: &[],
-        modes: &[],
+        role: crate::ecs::Role::Upkeep,
     }
 }
 

@@ -262,10 +262,7 @@ pub struct ScriptRuntime {
     /// buffers its own output is an agent that has stopped being a strategist
     /// (`RULES.md` §8). This *is* the scripting world's pending mail, and the
     /// runtime is the scripting world.
-    pending: EventQueue,
-    /// Whether a frame has run here — what tells a play session starting
-    /// over from the first one.
-    played: bool,
+    pub(super) pending: EventQueue,
     /// What the last run did, for the agent's `report_status`.
     ///
     /// Same reason: per-frame numbers do not live as agent state — the
@@ -327,7 +324,6 @@ impl Default for ScriptRuntime {
             programs: HashMap::new(),
             instances: HashMap::new(),
             pending: EventQueue::new(),
-            played: false,
             last_report: ScriptRunReport::default(),
             last_unloaded: 0,
             rate: INITIAL_RATE,
@@ -363,11 +359,6 @@ impl ScriptRuntime {
     /// delivered is one that can be delivered twice.
     pub fn take_pending(&mut self) -> EventQueue {
         std::mem::take(&mut self.pending)
-    }
-
-    /// Records a frame run; whether one had run before it.
-    pub fn note_frame(&mut self) -> bool {
-        std::mem::replace(&mut self.played, true)
     }
 
     /// Puts mail back, to be delivered by a frame that can.

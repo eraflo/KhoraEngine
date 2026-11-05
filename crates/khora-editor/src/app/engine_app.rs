@@ -80,12 +80,10 @@ impl EngineApp for EditorApp {
         }
     }
 
-    /// Editing, not playing: no script runs until Play is pressed.
-    fn initial_mode(&self) -> khora_sdk::EngineMode {
-        super::engine_mode_for(khora_sdk::PlayMode::Editing)
-    }
-
     fn setup(&mut self, world: &mut GameWorld, runtime: &Runtime) {
+        // Editing, not playing: the scene's scripts, physics and sounds run
+        // only once Play is pressed.
+        commands::start_editing(runtime);
         self.cache_services(runtime);
         self.register_panels(runtime);
         self.open_cli_project(world, runtime);
@@ -282,82 +280,17 @@ impl EngineApp for EditorApp {
         self.end_startup();
     }
 
-    fn before_frame(
-        &mut self,
-        _world: &mut GameWorld,
-        runtime: &Runtime,
-        window: &dyn KhoraWindow,
-    ) {
-        self.drop_finished_loading_screen();
-        // Switch the renderer to offscreen-viewport mode BEFORE
-        // `begin_render_frame` runs, so the per-frame `FrameContext`
-        // receives the viewport color/depth targets (instead of the
-        // swapchain) and agents paint into the texture displayed by the
-        // egui viewport panel.
-        if let Some(rs_arc) = runtime
-            .backends
-            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
-            .cloned()
-        {
-            if let Ok(mut rs) = rs_arc.lock() {
-                rs.set_render_to_viewport(true);
-            }
-        }
-
-        let Some(overlay_arc) = self.overlay.as_ref() else {
-            return;
-        };
-        let Some(raw_window) = self.raw_window.as_ref() else {
-            return;
-        };
-
-        let (w_px, h_px) = window.inner_size();
-        let screen = OverlayScreenDescriptor {
-            width_px: w_px,
-            height_px: h_px,
-            scale_factor: window.scale_factor() as f32,
-        };
-
-        if let Ok(mut overlay) = overlay_arc.lock() {
-            overlay.begin_frame((&**raw_window) as &dyn std::any::Any, screen);
-        }
-
-        if let Some(shell) = self.shell.as_ref() {
-            if let Ok(mut shell) = shell.lock() {
-                shell.show_frame();
-            }
-        }
-
-        // The panel is laid out: the viewport target takes its shape, so the
-        // cameras projected this frame read the panel's real aspect. A hidden
-        // panel asks for nothing and the target keeps its last size.
-        let viewport_rect = self
-            .editor_state
-            .lock()
-            .ok()
-            .and_then(|s| s.viewport_screen_rect);
-        if let (Some(rect), Some(rs_arc)) = (
-            viewport_rect,
-            runtime
-                .backends
-                .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
-                .cloned(),
-        ) {
-            if let Ok(mut rs) = rs_arc.lock() {
-                if let Some(wgpu_rs) = rs.as_any_mut().downcast_mut::<WgpuRenderSystem>() {
-                    let (width, height) = crate::panels::viewport::target_size_for(rect);
-                    wgpu_rs.request_viewport_size(width, height);
-                }
-            }
+    fn before_frame(&mut self, world: &mut GameWorld, runtime: &Runtime, window: &dyn KhoraWindow) {
+        self.show_frame(runtime, window);
+        // The shell has been shown, so a click on Play this frame is pending:
+        // the transport is processed now, before the engine fixes the frame,
+        // so the frame is wholly edited or wholly played.
+        if commands::process_transport(world, &self.editor_state, runtime) {
+            commands::forget_history(&self.command_history);
         }
     }
 
     fn before_agents(&mut self, world: &mut GameWorld, runtime: &Runtime) {
-        // First: the mode decides which agents run this frame, the scale
-        // whether they integrate at all.
-        self.drive_engine_mode(runtime);
-        self.drive_simulation_clock(runtime);
-
         if let Some(pvfs_arc) = self.project_vfs.as_ref() {
             hot_reload::pump(pvfs_arc, &self.editor_state);
         }
@@ -562,6 +495,76 @@ impl EngineApp for EditorApp {
             let overlay_ref: &mut dyn EditorOverlay = &mut **overlay;
             if let Err(e) = rs.render_overlay(overlay_ref, screen) {
                 log::error!("editor: render_overlay failed: {e:?}");
+            }
+        }
+    }
+}
+
+impl EditorApp {
+    /// The editor's shell for this frame: the renderer switched to the
+    /// viewport, the overlay begun, the panels shown and the viewport target
+    /// sized from its panel.
+    fn show_frame(&mut self, runtime: &Runtime, window: &dyn KhoraWindow) {
+        self.drop_finished_loading_screen();
+        // Switch the renderer to offscreen-viewport mode BEFORE
+        // `begin_render_frame` runs, so the per-frame `FrameContext`
+        // receives the viewport color/depth targets (instead of the
+        // swapchain) and agents paint into the texture displayed by the
+        // egui viewport panel.
+        if let Some(rs_arc) = runtime
+            .backends
+            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+            .cloned()
+        {
+            if let Ok(mut rs) = rs_arc.lock() {
+                rs.set_render_to_viewport(true);
+            }
+        }
+
+        let Some(overlay_arc) = self.overlay.as_ref() else {
+            return;
+        };
+        let Some(raw_window) = self.raw_window.as_ref() else {
+            return;
+        };
+
+        let (w_px, h_px) = window.inner_size();
+        let screen = OverlayScreenDescriptor {
+            width_px: w_px,
+            height_px: h_px,
+            scale_factor: window.scale_factor() as f32,
+        };
+
+        if let Ok(mut overlay) = overlay_arc.lock() {
+            overlay.begin_frame((&**raw_window) as &dyn std::any::Any, screen);
+        }
+
+        if let Some(shell) = self.shell.as_ref() {
+            if let Ok(mut shell) = shell.lock() {
+                shell.show_frame();
+            }
+        }
+
+        // The panel is laid out: the viewport target takes its shape, so the
+        // cameras projected this frame read the panel's real aspect. A hidden
+        // panel asks for nothing and the target keeps its last size.
+        let viewport_rect = self
+            .editor_state
+            .lock()
+            .ok()
+            .and_then(|s| s.viewport_screen_rect);
+        if let (Some(rect), Some(rs_arc)) = (
+            viewport_rect,
+            runtime
+                .backends
+                .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
+                .cloned(),
+        ) {
+            if let Ok(mut rs) = rs_arc.lock() {
+                if let Some(wgpu_rs) = rs.as_any_mut().downcast_mut::<WgpuRenderSystem>() {
+                    let (width, height) = crate::panels::viewport::target_size_for(rect);
+                    wgpu_rs.request_viewport_size(width, height);
+                }
             }
         }
     }

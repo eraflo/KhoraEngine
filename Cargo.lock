@@ -2725,6 +2725,7 @@ dependencies = [
  "async-trait",
  "bytemuck",
  "criterion",
+ "inventory",
  "khora-macros",
  "log",
  "raw-window-handle",

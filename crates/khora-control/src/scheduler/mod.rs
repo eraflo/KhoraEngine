@@ -24,13 +24,13 @@ use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::timing::AgentImportance;
-use khora_core::agent::{AgentDependency, EngineMode, ExecutionPhase};
+use khora_core::agent::{AgentDependency, ExecutionPhase};
 use khora_core::graph::topological_sort;
 use khora_core::lane::OutputDeck;
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::Runtime;
 use known::KnownAgents;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 use waves::{build_wave_metas, partition_waves};
@@ -83,7 +83,7 @@ pub struct ExecutionScheduler {
     budget_channel: BudgetChannel,
     /// What the frame starts took from the channel, oldest first, each with
     /// whether it was published in turn: the one in force last, and before it
-    /// the replayed ones an agent active in the mode has not been lent yet.
+    /// the replayed ones an agent of a family on has not been lent yet.
     taken: Vec<(Publication, bool)>,
     /// Each agent seen at a frame start, by a weak reference to its lock,
     /// with the place of the last publication it was handed: what it is owed
@@ -91,7 +91,6 @@ pub struct ExecutionScheduler {
     lent: Vec<(Weak<Mutex<dyn khora_core::agent::Agent>>, u64)>,
     plugins: Vec<EnginePlugin>,
     phase_order: Vec<ExecutionPhase>,
-    context: Arc<std::sync::RwLock<Context>>,
     frame_start: Instant,
     frame_budget: Duration,
     /// Output deck retained across the tick boundary so the engine I/O
@@ -141,11 +140,13 @@ pub struct ExecutionScheduler {
 }
 
 impl ExecutionScheduler {
-    /// Creates a new scheduler. The ids are no longer read: every agent of
-    /// `registry` is lent the allocations the DCC publishes.
+    /// Creates a new scheduler. The ids and the context are no longer read:
+    /// every agent of `registry` is lent the allocations the DCC publishes,
+    /// and the families a frame runs are the runtime's
+    /// [`Activation`](khora_core::agent::Activation).
     pub fn new(
         registry: Arc<Mutex<AgentRegistry>>,
-        context: Arc<std::sync::RwLock<Context>>,
+        _context: Arc<std::sync::RwLock<Context>>,
         _agent_ids: &[AgentId],
     ) -> Self {
         Self {
@@ -155,7 +156,6 @@ impl ExecutionScheduler {
             lent: Vec::new(),
             plugins: Vec::new(),
             phase_order: ExecutionPhase::DEFAULT_ORDER.to_vec(),
-            context,
             frame_start: Instant::now(),
             frame_budget: Duration::from_millis(16),
             last_deck: OutputDeck::new(),
@@ -239,7 +239,7 @@ impl ExecutionScheduler {
     /// No-op when telemetry is disabled or parallel execution is off — serial
     /// execution runs every agent as its own singleton, so summing per-agent
     /// costs (the DCC's fallback with no plan) is already exact.
-    fn emit_wave_plan(&self, mode: &EngineMode) {
+    fn emit_wave_plan(&self, inactive: &BTreeSet<AgentId>) {
         let Some(tx) = &self.telemetry else { return };
         if !self.parallel_execution {
             return;
@@ -251,7 +251,7 @@ impl ExecutionScheduler {
         // share a wave.
         let mut waves: Vec<Vec<AgentId>> = Vec::new();
         for &phase in &self.phase_order {
-            let agents = self.phase_slots(phase, mode);
+            let agents = self.phase_slots(phase, inactive);
             if agents.is_empty() {
                 continue;
             }
@@ -315,13 +315,13 @@ impl ExecutionScheduler {
         self.phase_order.retain(|p| *p != phase);
     }
 
-    /// The agents `mode` runs in `phase`, each with its importance, priority
+    /// The agents of the families on in `phase`, each with its importance, priority
     /// and dependencies. An agent running as layers is not locked: its
     /// timing is the one it declared when the scheduler met it.
-    fn phase_slots(&self, phase: ExecutionPhase, mode: &EngineMode) -> Vec<AgentSlot> {
+    fn phase_slots(&self, phase: ExecutionPhase, inactive: &BTreeSet<AgentId>) -> Vec<AgentSlot> {
         let agents: Vec<Arc<Mutex<dyn khora_core::agent::Agent>>> = {
             let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
-            registry.iter_for_mode(mode).cloned().collect()
+            registry.iter_active(inactive).cloned().collect()
         };
         agents
             .into_iter()

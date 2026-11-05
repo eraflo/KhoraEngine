@@ -20,21 +20,37 @@
 //! that lanes (in Pass B) read pre-projected, AGDF-adapted Views instead of
 //! querying the World directly.
 
+use std::sync::Arc;
+
+use super::data_system_runner::role_runs;
+use khora_core::agent::Activation;
 use khora_core::lane::LaneBus;
 use khora_core::Runtime;
 use khora_data::ecs::{Observer, Tick, World};
-use khora_data::flow::FlowRegistration;
+use khora_data::flow::{FlowContext, FlowRegistration};
 
 /// Executes every registered Flow on the World, publishing each View into the
 /// bus. Flows are **read-only projectors**: they do not mutate the World and do
 /// not compete for the frame budget (only agents do), so no budget is passed.
 pub fn run_flows(world: &mut World, bus: &mut LaneBus, runtime: &Runtime) {
+    let activation = runtime.resources.get::<Arc<Activation>>();
+
     // Each run reads at a tick of its own, which is what the Flow has seen
-    // once it returns; the clock then moves past it.
+    // once it returns; the clock then moves past it. A Flow projecting for a
+    // family off in the state in force is skipped and publishes nothing; the
+    // world notes it, so its next run is told it resumes.
     for reg in inventory::iter::<FlowRegistration> {
+        let observer = Observer::Flow(reg.name);
+        if !role_runs(reg.role, activation.map(|a| a.as_ref())) {
+            world.note_observer_skip(observer);
+            continue;
+        }
+        let ctx = FlowContext {
+            resumed: world.observer_resumes(observer),
+        };
         let tick = world.begin_run();
-        (reg.run)(world, bus, runtime);
-        world.note_observer_run(Observer::Flow(reg.name), tick);
+        (reg.run)(world, bus, runtime, ctx);
+        world.note_observer_run(observer, tick);
         world.end_run();
     }
 }

@@ -227,7 +227,7 @@ inventory::submit! {
             ComponentKey::of::<UiText>,
             ComponentKey::of::<HandleComponent<Font>>,
         ],
-        modes: &[],
+        role: crate::ecs::Role::Upkeep,
     }
 }
 

@@ -33,7 +33,7 @@ use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::script::{engine_event_channel, ScriptCatalog, ScriptValue};
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::{DataSystemRegistration, SemanticDomain, TickPhase, Transform, World};
-use khora_data::flow::{Flow, ScriptFlow};
+use khora_data::flow::{Flow, FlowContext, ScriptFlow};
 use khora_io::script::declarations::{declaration_channel, DeclaredComponents, ScriptDeclarations};
 use khora_io::script::mirror::PreludeLoader;
 use khora_lanes::script_lane::ScriptRuntime;
@@ -159,6 +159,9 @@ fn script_components_register_while_editing() {
 struct Session {
     world: World,
     flow: ScriptFlow,
+    /// Whether the flow ran before, as the substrate keeps it: its first run
+    /// is a resumption.
+    projected: bool,
     agent: ScriptAgent,
     scripts: Arc<Mutex<ScriptRuntime>>,
     runtime: Arc<Runtime>,
@@ -192,6 +195,7 @@ impl Session {
         let session = Self {
             world,
             flow: ScriptFlow::default(),
+            projected: false,
             agent,
             scripts,
             runtime: Arc::new(runtime),
@@ -213,7 +217,11 @@ impl Session {
     /// scripts, then `Maintenance` applying what they queued.
     fn frame(&mut self) {
         self.register();
-        let selection = self.flow.select(&self.world, &self.runtime);
+        let ctx = FlowContext {
+            resumed: !self.projected,
+        };
+        self.projected = true;
+        let selection = self.flow.select(&self.world, &self.runtime, ctx);
         let mut view = self.flow.project(&self.world, &selection, &self.runtime);
         view.delta_seconds = 0.016;
         let mut bus = LaneBus::new();

@@ -43,6 +43,10 @@ pub use query::CharacterControllerOptions;
 pub use query::RaycastHit;
 pub use settings::PhysicsSettings;
 
+/// The physics family: the agent that steps the simulation, and what
+/// switches it on and off ([`Activation`](crate::agent::Activation)).
+pub const PHYSICS: crate::agent::gorna::AgentId = crate::agent::gorna::AgentId::new("physics");
+
 /// Interface contract for any physics engine implementation (e.g., Rapier).
 pub trait PhysicsProvider: Send + Sync {
     /// Advances the simulation by `dt` seconds.

@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_agents::registered_agent::RegisteredAgent;
 use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_sdk::khora_core::agent::{AgentImportance, EngineMode, ExecutionPhase};
+use khora_sdk::khora_core::agent::{AgentImportance, ExecutionPhase};
 use khora_sdk::khora_core::gpu::{DeviceCaps, GpuSetup};
 use khora_sdk::khora_core::lane::contract::{Lane, LaneReport};
 use khora_sdk::khora_core::lane::cost::{Cost, PerDevice};
@@ -38,6 +38,7 @@ use khora_sdk::khora_core::lane::io::{
 use khora_sdk::khora_core::lane::level::{Impact, Level};
 use khora_sdk::khora_core::lane::{LaneError, LaneKind};
 use khora_sdk::khora_core::renderer::GraphicsDevice;
+use khora_sdk::Activation;
 use khora_sdk::{
     AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
     Runtime, WindowConfig,
@@ -229,7 +230,6 @@ khora_sdk::inventory::submit! {
         phase: ExecutionPhase::OUTPUT,
         importance: AgentImportance::Optional,
         after: [],
-        modes: [EngineMode::Playing],
         fixed_step: None,
         lanes: [FirstProbeLane, SecondProbeLane, StorageProbeLane],
     })
@@ -255,14 +255,20 @@ impl EngineApp for Game {
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
 }
 
-/// The agents `engine` runs in `phase` and `mode`.
-fn agents_in(engine: &EngineCore<Game>, phase: ExecutionPhase, mode: &EngineMode) -> Vec<AgentId> {
+/// The agents `engine` registers in `phase`.
+fn agents_in(engine: &EngineCore<Game>, phase: ExecutionPhase) -> Vec<AgentId> {
     let dcc = engine.dcc().expect("bootstrapped");
     let registry = dcc.agent_registry().lock().expect("the registry lock");
     registry
-        .collect_for_phase(phase, mode)
-        .into_iter()
-        .filter_map(|(agent, ..)| agent.lock().ok().map(|agent| agent.id()))
+        .iter()
+        .filter_map(|agent| {
+            let agent = agent.lock().ok()?;
+            agent
+                .execution_timing()
+                .allowed_phases
+                .contains(&phase)
+                .then(|| agent.id())
+        })
         .collect()
 }
 
@@ -274,7 +280,7 @@ fn bootstrap_registers_one_lane_agent_per_collected_registration() {
     let mut engine = EngineCore::<Game>::new();
     engine.bootstrap(Game, Runtime::new());
 
-    let output = agents_in(&engine, ExecutionPhase::OUTPUT, &EngineMode::Playing);
+    let output = agents_in(&engine, ExecutionPhase::OUTPUT);
     assert!(
         output.contains(&AgentId::new("ecs")),
         "the probe family's agent runs in OUTPUT: {output:?}"
@@ -285,22 +291,24 @@ fn bootstrap_registers_one_lane_agent_per_collected_registration() {
     );
 }
 
-/// A registration's modes are the modes its agent runs in: the probe runs
-/// while the game is played, not in a tool's mode.
+/// **A linked family is known to the engine's activation**, and starts on:
+/// the probe's agent can be switched off by name, as any family registered
+/// through `register_agent!` can.
 #[test]
-fn a_lane_agent_runs_only_in_its_registrations_modes() {
+fn a_linked_family_is_known_to_the_engines_activation() {
     let mut engine = EngineCore::<Game>::new();
     engine.bootstrap(Game, Runtime::new());
+    let activation = engine
+        .runtime()
+        .resources
+        .get::<Arc<Activation>>()
+        .cloned()
+        .expect("the bootstrap publishes the engine's activation");
 
-    let tool = EngineMode::Custom("tool".to_owned());
-    assert!(
-        agents_in(&engine, ExecutionPhase::OUTPUT, &EngineMode::Playing)
-            .contains(&AgentId::new("ecs"))
-    );
-    assert!(
-        !agents_in(&engine, ExecutionPhase::OUTPUT, &tool).contains(&AgentId::new("ecs")),
-        "registered for Playing only"
-    );
+    assert!(activation.is_active(AgentId::new("ecs")), "on at boot");
+    assert_eq!(activation.deactivate(AgentId::new("ecs")), Ok(()));
+    activation.settle();
+    assert!(!activation.is_active(AgentId::new("ecs")));
 }
 
 /// **Stopping the engine releases every lane, before the device goes.** Each
@@ -347,9 +355,15 @@ fn probe_menu(engine: &EngineCore<Game>) -> Vec<StrategyId> {
     let dcc = engine.dcc().expect("bootstrapped");
     let registry = dcc.agent_registry().lock().expect("the registry lock");
     let probe = registry
-        .collect_for_phase(ExecutionPhase::OUTPUT, &EngineMode::Playing)
-        .into_iter()
-        .map(|(agent, ..)| agent)
+        .iter()
+        .filter(|agent| {
+            agent.lock().is_ok_and(|agent| {
+                agent
+                    .execution_timing()
+                    .allowed_phases
+                    .contains(&ExecutionPhase::OUTPUT)
+            })
+        })
         .find(|agent| {
             agent
                 .lock()
@@ -362,7 +376,6 @@ fn probe_menu(engine: &EngineCore<Game>) -> Vec<StrategyId> {
             target_latency: std::time::Duration::from_micros(16_667),
             priority_weight: 1.0,
             constraints: ResourceConstraints::default(),
-            current_mode: EngineMode::Playing,
             agent_timing: ExecutionTiming::default(),
         })
         .strategies

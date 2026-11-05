@@ -19,7 +19,6 @@
 //! second; a reload removing the system takes it away; a scene never holds
 //! it, and a game save keeps it, its fields and its timers, so play resumes.
 
-use khora_core::agent::EngineMode;
 use khora_core::asset::AssetUUID;
 use khora_core::scene::SerializationGoal;
 use khora_data::ecs::{Transform, World};
@@ -61,12 +60,11 @@ fn the_singleton_is_one_entity_holding_the_system_and_its_state() {
     assert!(!id.is_created(), "a named identity is not a created one");
 }
 
-/// **No singleton while nothing plays**: an editor editing a scene spawns
-/// none, however many frames go by.
+/// **No singleton while the scripts are off**: an editor editing a scene
+/// spawns none, however many frames go by.
 #[test]
-fn no_singleton_is_spawned_while_not_playing() {
-    let mut session =
-        SystemSession::in_mode(World::new(), CLOCK, EngineMode::Custom("editor".to_owned()));
+fn no_singleton_is_spawned_while_the_scripts_are_off() {
+    let mut session = SystemSession::with_scripts_off(World::new(), CLOCK);
     for _ in 0..3 {
         session.frame(0.1);
     }

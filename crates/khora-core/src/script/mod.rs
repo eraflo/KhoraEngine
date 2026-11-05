@@ -68,3 +68,7 @@ pub use snapshot::{
 };
 pub use value::ScriptValue;
 pub use writeback::{BehaviorUpdate, BehaviorWriteback};
+
+/// The scripting family: the agent that runs the scene's behaviors, and what
+/// switches them on and off ([`Activation`](crate::agent::Activation)).
+pub const SCRIPT: crate::agent::gorna::AgentId = crate::agent::gorna::AgentId::new("script");

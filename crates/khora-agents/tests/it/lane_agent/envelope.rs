@@ -56,7 +56,6 @@ static LADDER_ON_HIGH: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::TRANSFORM,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     default_level: StrategyId::HighPerformance,
     lanes: [LadderLane],
@@ -374,7 +373,6 @@ static BUDGETED: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [BudgetedLane],
 };
@@ -387,7 +385,6 @@ static PLAIN_THEN_ECHO: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [PlainLane, EchoLane],
 };
@@ -658,7 +655,6 @@ static READER_THEN_LOCKER: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [ReaderLane, LockerLane],
 };
@@ -735,7 +731,6 @@ static LADDER_THEN_LOCKER: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::TRANSFORM,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [LadderLane, LockerLane],
 };

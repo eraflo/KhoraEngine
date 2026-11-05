@@ -145,10 +145,12 @@ run first next turn; the count a game integrates does not depend on the budget.
 
 ## Scripts run only while the game runs
 
-The script agent is registered for one engine mode: `Playing`. In the editor,
-**editing** is the editor's own mode, and no script runs while you arrange a
-scene; Play switches to `Playing`, and **pause** keeps it — scripts still run, at
-a delta of zero.
+Scripting is a family, `khora_core::script::SCRIPT`, and the engine runs it only
+while it is switched on. Every family starts on, so a game runs its scripts
+without asking. The editor switches scripting off while you arrange a scene;
+Play switches it on, and **pause** leaves it on — scripts still run, at a delta
+of zero. The script DataSystems and the script Flow are `Role::Serves(SCRIPT)`:
+they are skipped while the family is off, as the agent is.
 
 <div class="kp-figure-frame">
 
@@ -157,8 +159,10 @@ a delta of zero.
 </div>
 
 Play does not resume anything: every scripted entity arrives fresh and runs
-`OnSpawn`. Stop puts the scene back as it was. A shipped game starts in the mode
-its `EngineApp::initial_mode` says — `Playing` unless it says otherwise.
+`OnSpawn`. Stop puts the scene back as it was. Mail sent to scripts while they
+are off — a `ScriptEvent`, a collision — is dropped at the frame boundary, so
+it never reaches the next Play. A shipped game keeps scripting on unless it
+switches it off through the `Activation`.
 
 Not running is not absent. The editor mounts the open project's scripts when it
 opens it, and a save recompiles the module while you edit as while you play.

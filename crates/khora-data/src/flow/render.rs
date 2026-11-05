@@ -49,6 +49,7 @@ impl Flow for RenderFlow {
 
     const DOMAIN: SemanticDomain = SemanticDomain::Render;
     const NAME: &'static str = "render";
+    const ROLE: crate::ecs::Role = crate::ecs::Role::Upkeep;
 
     /// The projection below reads mesh/material handles, `Light` and
     /// `Camera` (Render domain), `GlobalTransform` (Spatial domain), and —

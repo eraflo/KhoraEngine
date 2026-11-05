@@ -21,8 +21,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use khora_sdk::{
-    AgentProvider, AssetChangeEvent, AssetWatch, DccService, EngineApp, EngineCore, EngineMode,
-    GameWorld, InputEvent, MetricsRegistry, PhaseProvider, Runtime, WindowConfig,
+    AgentProvider, AssetChangeEvent, AssetWatch, DccService, EngineApp, EngineCore, GameWorld,
+    InputEvent, MetricsRegistry, PhaseProvider, Runtime, WindowConfig,
 };
 
 use khora_sdk::editor_ui::EditorState;
@@ -47,14 +47,13 @@ impl EngineApp for Editing {
     fn new() -> Self {
         Editing
     }
-    fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {}
-    fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
-    fn initial_mode(&self) -> EngineMode {
-        EngineMode::Custom("editor".to_owned())
+    fn setup(&mut self, _world: &mut GameWorld, runtime: &Runtime) {
+        crate::commands::start_editing(runtime);
     }
+    fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
 }
 
-/// A headless engine in the editor's mode.
+/// A headless engine editing, as the editor opens.
 fn engine() -> EngineCore<Editing> {
     let mut engine = EngineCore::<Editing>::new();
     engine.bootstrap(Editing, Runtime::new());

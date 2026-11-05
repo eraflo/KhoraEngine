@@ -62,7 +62,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
         observes: &[ComponentKey::of::<Watched>],
-        modes: &[],
+        role: khora_data::ecs::Role::Upkeep,
     }
 }
 inventory::submit! {
@@ -73,7 +73,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[FIRST],
         observes: &[ComponentKey::of::<Watched>],
-        modes: &[],
+        role: khora_data::ecs::Role::Upkeep,
     }
 }
 

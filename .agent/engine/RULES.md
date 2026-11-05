@@ -98,7 +98,7 @@ and [`security-privacy.md`](./security-privacy.md).
 
 ## 7b — Ergon (scripting)
 
-- Scripts run only in `EngineMode::Playing`: `ScriptAgent` is registered with `DccService::register_agent_for_mode(…, vec![EngineMode::Playing])` and `ScriptFlow` projects nothing unless `EngineMode::runs_gameplay()`. An editor editing a scene runs no script.
+- Scripts run only while the scripting family (`khora_core::script::SCRIPT`) is on. The engine has no mode: the editor switches the family off while editing, through the `Activation` resource. The script DataSystems and `ScriptFlow` are `Role::Serves(SCRIPT)`, so they are skipped while it is off, as `ScriptAgent` is. An editor editing a scene runs no script.
 - A new statement kind must give its key in `khora-script/src/bytecode/keys.rs` (every match there is exhaustive) and name its sites (`bytecode/sites.rs`) — otherwise a suspended frame cannot be found again after an edit.
 - A new `Instruction` needs an arm in `bytecode/fingerprint.rs` (exhaustive match) that hashes **what it names** (callee, native, literal, field — never an index), and a deliberate fuel cost (`Instruction::cost` in `vm/instruction.rs`; a native is charged its declared cost).
 

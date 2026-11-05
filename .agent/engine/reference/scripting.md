@@ -17,7 +17,8 @@ edge lands on one), a function's entry, just after a call returns, after an `awa
 machine that suspended, so the next frame resumes rather than restarts. Past its fuel a run continues
 only to the next safepoint; that overdraft is bounded by `Program::max_overdraft` (the costliest acyclic
 stretch between two checks, computed at seal time in `bytecode/fingerprint.rs`). Suspension is the
-normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
+normal path, not an error path. Scripts run **only while the scripting family (`khora_core::script::SCRIPT`) is on**; the editor
+switches it off while editing.
 
 ## Key files
 - Language: `crates/khora-script/src/` — `lexer/`, `parser/`, `ast/`, `bytecode/`, `vm/`, `types/`.
@@ -56,8 +57,13 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   resumable by `khora-io/src/script/declarations.rs`; its fields `khora-data/src/flow/companion/`),
   written back by `khora-data/src/ecs/systems/behavior_writeback/` from `BehaviorWriteback`
   (`khora-core/src/script/writeback.rs`).
-- Mode gate: `khora-data/src/flow/script.rs` (`gameplay_runs` → `EngineMode::runs_gameplay`) and the
-  `register_agent_for_mode(…, vec![EngineMode::Playing])` call in `khora-sdk/src/engine/bootstrap.rs`.
+- Activation gate: `ScriptFlow` (`khora-data/src/flow/script.rs`, `const ROLE = Role::Serves(SCRIPT)`) and
+  the script DataSystems (`script_intake`, `script_systems`, `script_commands`, `behavior_writeback`,
+  `collision_to_script`) serve SCRIPT, so they are skipped while it is off, as `ScriptAgent` is.
+  `script_hot_reload`, `script_components`, `script_problems` are `Upkeep`. Mailboxes: `ScriptEvent`
+  Take/Drop, `ScriptReload` Take/Hold (`khora-lanes/src/script_lane/intake.rs`), `Collision`
+  Cursor("collision_to_script")/Drop. On `resumed`, the intake clears only the scripting world's own
+  pending mail.
 - Conformance suite: `crates/khora-script/tests/it/conformance.rs` (`SHIPPED` / `PENDING` rows); resume
   suites beside it (`safepoints.rs`, `sites.rs`, `fingerprints.rs`, `freeze.rs`, `rebuilt_frames.rs`,
   `resume_tiers.rs`).
@@ -256,7 +262,7 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   Vec<DeclaredComponent{name, module, domain, fields: {name, ty: ErgonType, default}}>` (sorted). The compile
   path (`load_all`, the pump) sends one `ScriptDeclarations` per declaring module on
   `Channel<ScriptDeclarations>`; the `script_components` DataSystem (PreExtract, after `script_hot_reload`,
-  **every mode**) runs `khora_io::script::declarations::apply_declarations`: register, relayout (a type change
+  `Role::Upkeep`, **whether scripting is on or off**) runs `khora_io::script::declarations::apply_declarations`: register, relayout (a type change
   the storage kind hides is reset via `relayout_resetting`), `move_component_domain`, orphan (never delete),
   adopt; a second module declaring an owned name is refused (`report.refused`). The editor mounts the open
   project (see *Scripts in the editor* below), so it knows project components before any scene loads.
@@ -278,8 +284,8 @@ normal path, not an error path. Scripts run **only in `EngineMode::Playing`**.
   (`SubjectCalls`, refused at the system's call), `state`, `become`, `on`, `async`/`await`,
   `OnSpawn`/`OnDespawn`. A system's name is not in the checker's `components`: no script `Get`/`Set`/
   `Add`/`Remove`/`Has`/queries it. **One singleton entity per system**: the `script_systems` DataSystem
-  (`khora-data/src/ecs/systems/script_systems.rs`, PreExtract after `script_components`, only while
-  `runs_gameplay()`) finds or spawns `PersistentId::named("system:Name")` (`singleton_id`; `NAMED`
+  (`khora-data/src/ecs/systems/script_systems.rs`, PreExtract after `script_components`,
+  `Role::Serves(SCRIPT)`) finds or spawns `PersistentId::named("system:Name")` (`singleton_id`; `NAMED`
   namespace in `khora-core/src/ecs/persistent_id.rs` is fixed forever) holding `Name` at its defaults —
   the lane gives it `Name#state` like any behavior — and despawns it when the name is no longer a
   declared system. `flow/behaviors.rs::runs_on`: a system's row runs only on its singleton (other holders
@@ -389,7 +395,7 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** �
   unmount(&Runtime, assets)}` (`MountedScripts`): mount arms the root, compiles every module, sends
   declarations + programs, announces reads; callable any frame. The editor follows the open project
   (`khora-editor/src/project_scripts/::follow_open_project`); `ProjectVfs::open_watched` reads the shared
-  watch. Declarations register in every mode; programs wait for Play (only the lane drains them).
+  watch. Declarations register whether scripting is on or off; programs wait for Play (only the lane drains them).
   Positions: `khora-script/src/source_map.rs` — modules laid end to end in one offset space
   (`Lexed::shifted`), `CompileOutcome.sources.locate(span) -> Location{module, line, column}`. Problems:
   `khora_core::problems::Problems` (`Arc`, `Runtime.resources`; scripts are some of its sources), sources

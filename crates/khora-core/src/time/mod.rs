@@ -73,10 +73,6 @@ pub struct Time {
     ///
     /// **Not an editor concept.** It is the pause menu, the slow-motion hit,
     /// the fast-forward of a strategy game — things a game wants on its own.
-    /// The editor happens to be one caller among them: it sets `0.0` while
-    /// editing, which is why a body no longer falls before anybody pressed
-    /// Play. Its own `PlayMode` stays where it belongs and never reaches the
-    /// engine; what crosses is a number any game could set.
     ///
     /// Negative values are refused by [`set_scale`](Self::set_scale) — running
     /// a solver backwards is not a slower forward, and every integrator here

@@ -152,8 +152,11 @@ negotiable; `Critical` and `Important` always run.
 The engine's own agents are registered in `khora-sdk/src/engine/bootstrap.rs`; an agent a game or a host adds goes through this hook instead.
 
 Game and host code register agents through the `AgentProvider::register_agents` hook.
-Wrap the agent in `Arc<Mutex<…>>` and hand it to the DCC with a priority. Use
-`register_agent_for_mode` to restrict it to specific engine modes.
+Wrap the agent in `Arc<Mutex<…>>` and hand it to the DCC with a priority. The
+agent is a family of its own and starts on. To switch it off and on at run
+time, call `deactivate(id)` and `activate(id)` on the `Arc<Activation>`
+resource, with the agent's `AgentId`; the switch lands at the next frame
+boundary.
 
 ```rust
 impl AgentProvider for MyGame {

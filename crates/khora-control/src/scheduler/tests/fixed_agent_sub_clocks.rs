@@ -28,7 +28,7 @@ use khora_core::agent::dependency::{AgentDependency, DependencyKind};
 use khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
 };
-use khora_core::agent::{Agent, AgentAccess, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Activation, Agent, AgentAccess, ExecutionPhase, ExecutionTiming};
 use khora_core::time::{SharedTime, Time, DEFAULT_FIXED_DELTA_SECONDS};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -168,6 +168,15 @@ struct Rig {
 
 impl Rig {
     fn new(specs: Vec<Spec>) -> Self {
+        Self::over(specs, None)
+    }
+
+    /// A rig whose runtime holds `activation`.
+    fn switchable(specs: Vec<Spec>, activation: Arc<Activation>) -> Self {
+        Self::over(specs, Some(activation))
+    }
+
+    fn over(specs: Vec<Spec>, activation: Option<Arc<Activation>>) -> Self {
         let registry = Arc::new(Mutex::new(AgentRegistry::new()));
         let mut handles = Vec::new();
         for spec in &specs {
@@ -191,6 +200,9 @@ impl Rig {
         let time: SharedTime = Arc::new(RwLock::new(Time::default()));
         let mut runtime = Runtime::new();
         runtime.resources.insert(Arc::clone(&time));
+        if let Some(activation) = activation {
+            runtime.resources.insert(activation);
+        }
         Self {
             scheduler,
             agents: handles,
@@ -343,4 +355,37 @@ fn an_agent_switching_between_fixed_and_unfixed_runs_once_a_frame() {
             if fixed { "fixed" } else { "unfixed" }
         );
     }
+}
+
+/// **A fixed agent whose family is off keeps no clock.** Physics at 60 Hz
+/// runs a step a frame; switched off for thirty frames, it runs none, and the
+/// time those frames lasted is not owed to it: switched on again, its first
+/// frame runs one step, not a burst catching up the frames it was off.
+#[test]
+fn a_fixed_agent_whose_family_is_off_keeps_no_clock() {
+    let physics = AgentId::new("physics");
+    let activation = Arc::new(Activation::new([physics]));
+    let mut rig = Rig::switchable(vec![Spec::fixed(physics, 60.0)], Arc::clone(&activation));
+
+    for _ in 0..10 {
+        rig.frame_of(1.0 / 60.0);
+    }
+    let on = rig.agents[0].seen().runs;
+    assert!(on >= 9, "it steps while on: {on} runs");
+
+    activation.deactivate(physics).expect("a known family");
+    activation.settle();
+    for _ in 0..30 {
+        rig.frame_of(1.0 / 60.0);
+    }
+    assert_eq!(rig.agents[0].seen().runs, on, "no step while off");
+
+    activation.activate(physics).expect("a known family");
+    activation.settle();
+    rig.frame_of(1.0 / 60.0);
+    let back = rig.agents[0].seen().runs - on;
+    assert!(
+        (1..=2).contains(&back),
+        "the first frame back runs a step, not the {back} the frames off would owe"
+    );
 }

@@ -23,7 +23,7 @@ use crate::telemetry::monitoring::{HardwareReport, MonitoredResourceType, Resour
 ///
 /// - **The protocol's reports** — what the work cost and how it ran:
 ///   [`AgentReport`](Self::AgentReport), [`FrameReport`](Self::FrameReport),
-///   [`WavePlan`](Self::WavePlan), [`ModeChange`](Self::ModeChange). Every
+///   [`WavePlan`](Self::WavePlan), [`ActivationChanged`](Self::ActivationChanged). Every
 ///   time the DCC budgets from comes from one of them.
 /// - **The context** — the situation the work runs in, which no agent
 ///   reports: memory, hardware health, the data layer's access patterns
@@ -48,8 +48,9 @@ pub enum TelemetryEvent {
     },
     /// A physical hardware health report (thermal, CPU load).
     HardwareReport(HardwareReport),
-    /// The engine's mode changed — which agents run.
-    ModeChange(crate::agent::EngineMode),
+    /// The families off in the state in force changed, at a frame boundary:
+    /// the families now off ([`Activation::inactive`](crate::agent::Activation::inactive)).
+    ActivationChanged(std::collections::BTreeSet<AgentId>),
     /// An agent's report on one run, collected by the scheduler right after
     /// the run: the row that ran, the time it took on each device (the host's
     /// as the scheduler measured it), and the workload the run did. The DCC

@@ -50,7 +50,7 @@ macro_rules! register_residency {
                 order_hint: 0,
                 runs_after: &["asset_reload", "asset_resolver" $(, $after)*],
                 observes: &[],
-                modes: &[],
+                role: $crate::ecs::Role::Upkeep,
             }
         }
     };

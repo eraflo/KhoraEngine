@@ -148,7 +148,6 @@ static EFFORT: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::TRANSFORM,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [EffortLane],
 };

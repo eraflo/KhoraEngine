@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use khora_sdk::khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
 };
-use khora_sdk::khora_core::agent::{Agent, EngineMode, SharedEngineMode};
+use khora_sdk::khora_core::agent::Agent;
 use khora_sdk::khora_core::EngineContext;
 use khora_sdk::{
     AgentProvider, DccService, EngineApp, EngineBootstrap, EngineCore, GameWorld, InputEvent,
@@ -45,9 +45,8 @@ struct Staged {
     counters: Counters,
 }
 
-fn staged_mode() -> EngineMode {
-    EngineMode::Custom("staged".to_owned())
-}
+/// The family the app switches off in its setup.
+const AUDIO: AgentId = khora_sdk::khora_core::audio::AUDIO;
 
 /// The app's agent: counts its `on_initialize` calls.
 struct CountingInit {
@@ -106,13 +105,16 @@ impl EngineApp for Staged {
             counters: Counters::default(),
         }
     }
-    fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {
+    fn setup(&mut self, _world: &mut GameWorld, runtime: &Runtime) {
         self.counters.setups.fetch_add(1, Ordering::SeqCst);
+        runtime
+            .resources
+            .get::<Arc<khora_sdk::Activation>>()
+            .expect("the bootstrap publishes the engine's activation")
+            .deactivate(AUDIO)
+            .expect("the audio family is known at setup");
     }
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
-    fn initial_mode(&self) -> EngineMode {
-        staged_mode()
-    }
 }
 
 /// A [`Staged`] app and the counters it writes to.
@@ -138,17 +140,21 @@ fn bootstrap_in_stages(app: Staged) -> EngineCore<Staged> {
     core
 }
 
-/// Ticks until the DCC runs in the app's mode, or panics after a few seconds.
+/// Ticks until the DCC knows the family the app switched off, or panics
+/// after a few seconds.
 fn tick_until_the_dcc_agrees(engine: &mut EngineCore<Staged>) {
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline {
         engine.tick();
-        if engine.dcc().map(|dcc| dcc.get_context().mode) == Some(staged_mode()) {
+        if engine
+            .dcc()
+            .is_some_and(|dcc| dcc.get_context().inactive.contains(&AUDIO))
+        {
             return;
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    panic!("timed out waiting for the DCC to run in the app's mode");
+    panic!("timed out waiting for the DCC to learn the family the app switched off");
 }
 
 #[test]
@@ -168,13 +174,17 @@ fn bootstrapping_in_stages_leaves_the_engine_as_one_bootstrap_does() {
         reference.dcc().expect("the reference DCC").agent_count(),
         "the same agents are registered"
     );
-    let mode = core
+    let activation = core
         .runtime()
         .resources
-        .get::<SharedEngineMode>()
+        .get::<Arc<khora_sdk::Activation>>()
         .cloned()
         .expect("the runtime the engine holds carries the engine's own entries");
-    assert_eq!(*mode.read().expect("the mode lock"), staged_mode());
+    core.tick();
+    assert!(
+        !activation.is_active(AUDIO),
+        "the activation setup switched is the one the engine settles"
+    );
 
     assert_eq!(one_shot.setups.load(Ordering::SeqCst), 1);
     assert_eq!(

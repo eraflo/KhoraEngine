@@ -41,7 +41,6 @@ fn mix_in(phase: ExecutionPhase) -> AgentRegistration {
         phase,
         importance: AgentImportance::Important,
         after: &[],
-        modes: &[],
         fixed_step: None,
         default_level: None,
         module: module_path!(),

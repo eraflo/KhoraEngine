@@ -23,7 +23,6 @@ use std::sync::Arc;
 
 use khora_agents::agent::LaneAgent;
 use khora_sdk::khora_core::agent::gorna::AgentId;
-use khora_sdk::khora_core::agent::EngineMode;
 use khora_sdk::khora_core::asset::AssetUUID;
 use khora_sdk::khora_core::lane::io::PassSlot;
 use khora_sdk::khora_core::ui::text::{
@@ -67,24 +66,29 @@ fn the_engine_boots_the_ui_family_as_one_lane_agent() {
 
     let dcc = engine.dcc().expect("bootstrapped");
     let registry = dcc.agent_registry().lock().expect("the registry lock");
-    for mode in [EngineMode::Playing, EngineMode::Custom("tool".to_owned())] {
-        let ui: Vec<bool> = registry
-            .collect_for_phase(ExecutionPhase::OUTPUT, &mode)
-            .into_iter()
-            .filter_map(|(agent, ..)| {
+    let ui: Vec<bool> = registry
+        .iter()
+        .filter(|agent| {
+            agent.lock().is_ok_and(|agent| {
                 agent
-                    .lock()
-                    .ok()
-                    .filter(|agent| agent.id() == AgentId::new("ui"))
-                    .map(|agent| agent.as_any().is::<LaneAgent>())
+                    .execution_timing()
+                    .allowed_phases
+                    .contains(&ExecutionPhase::OUTPUT)
             })
-            .collect();
-        assert_eq!(
-            ui,
-            [true],
-            "{mode:?}: one UI agent in OUTPUT, the lane agent of the UI family"
-        );
-    }
+        })
+        .filter_map(|agent| {
+            agent
+                .lock()
+                .ok()
+                .filter(|agent| agent.id() == AgentId::new("ui"))
+                .map(|agent| agent.as_any().is::<LaneAgent>())
+        })
+        .collect();
+    assert_eq!(
+        ui,
+        [true],
+        "one UI agent in OUTPUT, the lane agent of the UI family"
+    );
 }
 
 /// **The UI pass composites after the transparent pass and before the

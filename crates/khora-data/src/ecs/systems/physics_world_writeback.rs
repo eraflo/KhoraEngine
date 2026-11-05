@@ -187,6 +187,6 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
         observes: &[],
-        modes: &[],
+        role: crate::ecs::Role::Serves(khora_core::physics::PHYSICS),
     }
 }

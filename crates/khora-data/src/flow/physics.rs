@@ -94,6 +94,7 @@ impl Flow for PhysicsFlow {
 
     const DOMAIN: SemanticDomain = SemanticDomain::Physics;
     const NAME: &'static str = "physics";
+    const ROLE: crate::ecs::Role = crate::ecs::Role::Serves(khora_core::physics::PHYSICS);
 
     fn project(&self, world: &World, _sel: &Selection, _runtime: &Runtime) -> Self::View {
         let active_bodies = world.query::<&RigidBody>().count();
@@ -143,7 +144,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
         observes: &[],
-        modes: &[],
+        role: crate::ecs::Role::Serves(khora_core::physics::PHYSICS),
     }
 }
 

@@ -27,7 +27,6 @@ mod importance;
 use super::*;
 use crate::analysis::AnalysisReport;
 use crate::dcc_context::Context;
-use crate::EngineMode;
 use khora_core::agent::gorna::protocol::{
     Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
 };
@@ -160,7 +159,6 @@ fn frame_of(latency_ms: f32) -> AnalysisReport {
 /// Playing, at the full budget, on a machine that says nothing of its memory.
 fn playing() -> Context {
     Context {
-        mode: EngineMode::Playing,
         global_budget_multiplier: 1.0,
         ..Default::default()
     }

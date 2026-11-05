@@ -26,9 +26,7 @@ use crate::scheduler::*;
 use khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
 };
-use khora_core::agent::{
-    Agent, AgentAccess, Contention, EngineMode, ExecutionPhase, ExecutionTiming, SharedEngineMode,
-};
+use khora_core::agent::{Agent, AgentAccess, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::any::TypeId;
@@ -109,10 +107,7 @@ impl Agent for SubStepper {
 }
 
 fn playing() -> Arc<Runtime> {
-    let mode: SharedEngineMode = Arc::new(RwLock::new(EngineMode::Playing));
-    let mut runtime = Runtime::new();
-    runtime.resources.insert(mode);
-    Arc::new(runtime)
+    Arc::new(Runtime::new())
 }
 
 /// What [`Gathered`] holds after one frame of the gathering agent beside its

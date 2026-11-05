@@ -42,6 +42,7 @@ impl Flow for ReservationFlow {
     type View = ReservationView;
     const DOMAIN: SemanticDomain = SemanticDomain::Script;
     const NAME: &'static str = "reservations";
+    const ROLE: crate::ecs::Role = crate::ecs::Role::Upkeep;
 
     fn project(&self, world: &World, _sel: &Selection, _runtime: &Runtime) -> Self::View {
         ReservationView {

@@ -109,6 +109,7 @@ impl Flow for AudioFlow {
 
     const DOMAIN: SemanticDomain = SemanticDomain::Audio;
     const NAME: &'static str = "audio";
+    const ROLE: crate::ecs::Role = crate::ecs::Role::Serves(khora_core::audio::AUDIO);
 
     /// The projection below reads only `AudioSource` / `AudioListener`
     /// (Audio domain) and `GlobalTransform` (Spatial domain) — no runtime

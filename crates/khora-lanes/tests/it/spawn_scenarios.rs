@@ -31,7 +31,7 @@ use khora_core::script::{EventQueue, PendingBody, ScriptSnapshot, ScriptValue};
 use khora_core::Runtime;
 use khora_data::ecs::{Transform, World};
 use khora_data::flow::{
-    Flow, ScriptArrival, ScriptFlow, ScriptInstance, ScriptProgram, ScriptView,
+    Flow, FlowContext, ScriptArrival, ScriptFlow, ScriptInstance, ScriptProgram, ScriptView,
 };
 use khora_lanes::script_lane::{run_behaviors, ScriptRunReport, ScriptRuntime};
 use khora_script::arena::Persisted;
@@ -143,6 +143,8 @@ struct Scene {
     world: World,
     flow: ScriptFlow,
     entity: EntityId,
+    /// Whether the flow ran the frame before, as the substrate keeps it.
+    ran: bool,
 }
 
 impl Scene {
@@ -157,6 +159,7 @@ impl Scene {
             world,
             flow: ScriptFlow::default(),
             entity,
+            ran: false,
         };
         (scene, runtime)
     }
@@ -184,10 +187,19 @@ impl Scene {
         entity
     }
 
+    /// What the substrate hands the flow this frame: a resumption on its
+    /// first run, and on its first run after the scripts were off.
+    fn context(&mut self) -> FlowContext {
+        let ctx = FlowContext { resumed: !self.ran };
+        self.ran = true;
+        ctx
+    }
+
     /// This frame's view, as the flow projects it.
     fn view(&mut self, delta: f32) -> ScriptView {
         let runtime = Runtime::default();
-        let selection = self.flow.select(&self.world, &runtime);
+        let ctx = self.context();
+        let selection = self.flow.select(&self.world, &runtime, ctx);
         let mut view = self.flow.project(&self.world, &selection, &runtime);
         view.delta_seconds = delta;
         view
@@ -686,21 +698,18 @@ fn an_entity_that_left_while_the_game_was_away_is_dropped_without_a_farewell() {
     assert_eq!(runtime.instance_count(), 1);
 }
 
-/// **The same, on the road the frame takes.** A game leaves play, an entity
-/// is despawned meanwhile, the game comes back: the flow says the frame is a
-/// resumption, and the lane drops the instance without its `OnDespawn` while
-/// the other runs on.
+/// **The same, on the road the frame takes.** A game's scripts go off, an
+/// entity is despawned meanwhile, the scripts come back on: the flow says the
+/// frame is a resumption, and the lane drops the instance without its
+/// `OnDespawn` while the other runs on.
 #[test]
 fn returning_to_play_drops_what_left_without_a_farewell_through_the_flow() {
-    use khora_core::agent::{EngineMode, SharedEngineMode};
-
     let (mut scene, mut runtime) = Scene::placed(KEEPER, "Keeper", &[]);
     let left = scene.spawn("Keeper");
-    let mode: SharedEngineMode = std::sync::Arc::new(std::sync::RwLock::new(EngineMode::Playing));
-    let mut engine = Runtime::default();
-    engine.resources.insert(mode.clone());
+    let engine = Runtime::default();
     let view = |scene: &mut Scene| {
-        let selection = scene.flow.select(&scene.world, &engine);
+        let ctx = scene.context();
+        let selection = scene.flow.select(&scene.world, &engine, ctx);
         scene.flow.project(&scene.world, &selection, &engine)
     };
     let mut host = Host::new();
@@ -709,14 +718,10 @@ fn returning_to_play_drops_what_left_without_a_farewell_through_the_flow() {
     frame(&mut runtime, &mut host, &playing, u64::MAX);
     assert_eq!(runtime.instance_count(), 2);
 
-    *mode.write().expect("the mode lock") = EngineMode::Custom("tool".to_owned());
-    // The scripting agent does not run outside play: the flow projects, the
-    // lane is not called.
-    view(&mut scene);
+    // The scripts off: the substrate skips the flow, the lane is not called.
+    scene.ran = false;
     scene.world.despawn(left);
-    view(&mut scene);
 
-    *mode.write().expect("the mode lock") = EngineMode::Playing;
     let back = view(&mut scene);
     assert!(back.resumed, "the first frame back is a resumption");
     let (_, raised) = frame(&mut runtime, &mut host, &back, u64::MAX);

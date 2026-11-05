@@ -14,6 +14,7 @@
 
 //! Traits for autonomous engine subsystems (Agents).
 
+pub mod activation;
 mod bridge;
 pub mod completion;
 pub mod contention;
@@ -21,7 +22,6 @@ pub mod dependency;
 pub mod execution_phase;
 pub mod gorna;
 pub mod layer;
-pub mod mode;
 pub mod registration;
 pub mod timing;
 
@@ -34,12 +34,12 @@ use crate::EngineContext;
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 
+pub use activation::{Activation, State, UnknownFamily};
 pub use completion::{AgentCompletionMap, AgentDone, CompletionOutcome};
 pub use contention::Contention;
 pub use dependency::{AgentDependency, DependencyCondition, DependencyKind};
 pub use execution_phase::ExecutionPhase;
 pub use layer::{LastRun, Layer, LayerRun, Place, Terms, Wake, KEEP_EPOCHS};
-pub use mode::{EngineMode, SharedEngineMode};
 pub use registration::{check_registrations, AgentRegistration, BootError};
 pub use timing::{AgentImportance, ExecutionTiming};
 

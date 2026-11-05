@@ -394,7 +394,7 @@ inventory::submit! {
         // compared against them.
         runs_after: &["asset_reload"],
         observes: &[],
-        modes: &[],
+        role: khora_data::ecs::Role::Upkeep,
     }
 }
 

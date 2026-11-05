@@ -15,17 +15,17 @@
 //! A project's systems and behaviors played over a world (Ergon spec 10):
 //! one session wired the way the engine wires one — declarations and
 //! programs on their channels, what each program reads announced to the
-//! catalog, the engine's mode, the `PreExtract` data systems, the flow, the
-//! script lane run with a chosen fuel, then `Maintenance` applying and
-//! writing back.
+//! catalog, the engine's `Activation` when the test switches the scripts,
+//! the `PreExtract` data systems, the flow, the script lane run with a chosen
+//! fuel, then `Maintenance` applying and writing back.
 
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 use khora_control::substrate::run_data_systems;
-use khora_core::agent::{EngineMode, SharedEngineMode};
+use khora_core::agent::Activation;
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
-use khora_core::event::Channel;
+use khora_core::event::{discard_mail_of_inactive, Channel};
 use khora_core::lane::{Lane, LaneContext, OutputDeck};
 use khora_core::projection::Interest;
 use khora_core::script::{
@@ -34,7 +34,7 @@ use khora_core::script::{
 };
 use khora_core::Runtime;
 use khora_data::ecs::{TickPhase, World};
-use khora_data::flow::{Flow, ScriptFlow, ScriptView};
+use khora_data::flow::{Flow, FlowContext, ScriptFlow, ScriptView};
 use khora_io::script::declarations::{declaration_channel, DeclaredComponents};
 use khora_lanes::script_lane::{take_in, BudgetedScriptLane, Fuel, ScriptRuntime};
 use khora_script::reload::ScriptReload;
@@ -42,16 +42,22 @@ use khora_script::vm::Program;
 
 use super::behavior_session::{compile, declared_in, key, Project, PLENTY};
 
-/// One running session over a world, in a mode the test chooses.
+/// One running session over a world, its scripts on or off as the test
+/// switches them.
 pub(crate) struct SystemSession {
     pub(crate) world: World,
     pub(crate) scripts: ScriptRuntime,
     /// The fuel each frame's lane runs with.
     pub(crate) fuel: u64,
     flow: ScriptFlow,
+    /// Whether the flow ran before, as the substrate keeps it: its first run
+    /// is a resumption.
+    projected: bool,
     lane: BudgetedScriptLane,
     runtime: Arc<Runtime>,
-    mode: SharedEngineMode,
+    /// The engine's switch, when the test switches the scripts; without
+    /// one, every family is on.
+    activation: Option<Arc<Activation>>,
     reloads: Channel<ScriptReload>,
     events: Channel<ScriptEvent>,
     catalog: Arc<ScriptCatalog>,
@@ -64,19 +70,35 @@ pub(crate) struct SystemSession {
 impl SystemSession {
     /// A session over `world` playing `project`.
     pub(crate) fn new(world: World, project: Project) -> Self {
-        Self::in_mode(world, project, EngineMode::Playing)
+        Self::over(world, project, None)
     }
 
-    /// A session over `world`, in `mode`, with `project`'s modules handed
-    /// over: every module's declarations registered at once and its program
-    /// waiting for the lane, what it reads announced.
-    pub(crate) fn in_mode(world: World, project: Project, mode: EngineMode) -> Self {
+    /// A session over `world` playing `project`, whose scripts the test
+    /// switches with [`set_scripts`](Self::set_scripts).
+    pub(crate) fn switchable(world: World, project: Project) -> Self {
+        let activation = Arc::new(Activation::new([khora_core::script::SCRIPT]));
+        Self::over(world, project, Some(activation))
+    }
+
+    /// A session over `world` whose scripts are off — an editor editing a
+    /// scene — until [`set_scripts`](Self::set_scripts) switches them on.
+    pub(crate) fn with_scripts_off(world: World, project: Project) -> Self {
+        let activation = Arc::new(Activation::new([khora_core::script::SCRIPT]));
+        activation
+            .deactivate(khora_core::script::SCRIPT)
+            .expect("a known family");
+        Self::over(world, project, Some(activation))
+    }
+
+    /// A session over `world`, with `project`'s modules handed over: every
+    /// module's declarations registered at once and its program waiting for
+    /// the lane, what it reads announced.
+    fn over(world: World, project: Project, activation: Option<Arc<Activation>>) -> Self {
         let declarations = declaration_channel();
         let reloads = khora_io::script::hot_reload::reload_channel();
         let events = engine_event_channel();
         let catalog = Arc::new(ScriptCatalog::default());
         let reads = Arc::new(Interest::<ScriptReads>::new());
-        let mode: SharedEngineMode = Arc::new(RwLock::new(mode));
 
         let mut runtime = Runtime::default();
         runtime.resources.insert(declarations.clone());
@@ -85,16 +107,19 @@ impl SystemSession {
             .insert(Arc::new(Mutex::new(DeclaredComponents::default())));
         runtime.resources.insert(Arc::clone(&catalog));
         runtime.resources.insert(Arc::clone(&reads));
-        runtime.resources.insert(Arc::clone(&mode));
+        if let Some(activation) = &activation {
+            runtime.resources.insert(Arc::clone(activation));
+        }
 
         let mut session = Self {
             world,
             scripts: ScriptRuntime::new(),
             fuel: PLENTY,
             flow: ScriptFlow::default(),
+            projected: false,
             lane: BudgetedScriptLane::new(),
             runtime: Arc::new(runtime),
-            mode,
+            activation,
             reloads,
             events,
             catalog,
@@ -105,13 +130,32 @@ impl SystemSession {
             project,
             &project.iter().map(|(m, _)| *m).collect::<Vec<_>>(),
         );
+        session.settle();
         session.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
         session
     }
 
-    /// Switches the engine's mode, as the editor's Play and Stop do.
-    pub(crate) fn set_mode(&self, mode: EngineMode) {
-        *self.mode.write().expect("the mode lock") = mode;
+    /// Requests the scripts on or off, as the editor's Play and Stop do; it
+    /// counts from the next frame.
+    pub(crate) fn set_scripts(&self, on: bool) {
+        let activation = self.activation.as_ref().expect("a switchable session");
+        if on {
+            activation.activate(khora_core::script::SCRIPT)
+        } else {
+            activation.deactivate(khora_core::script::SCRIPT)
+        }
+        .expect("a known family");
+    }
+
+    /// The frame boundary, as the SDK runs it: the requests settled, the mail
+    /// of a family off for the frame dropped. Whether the scripts are on.
+    fn settle(&self) -> bool {
+        let Some(activation) = &self.activation else {
+            return true;
+        };
+        activation.settle();
+        discard_mail_of_inactive(activation, &self.runtime);
+        activation.is_active(khora_core::script::SCRIPT)
     }
 
     fn boundary(&mut self, phase: TickPhase, deck: &mut OutputDeck) {
@@ -120,7 +164,11 @@ impl SystemSession {
 
     /// The flow's view of the world as it is, without running anything.
     pub(crate) fn project(&mut self) -> ScriptView {
-        let selection = self.flow.select(&self.world, &self.runtime);
+        let ctx = FlowContext {
+            resumed: !self.projected,
+        };
+        self.projected = true;
+        let selection = self.flow.select(&self.world, &self.runtime, ctx);
         self.flow.project(&self.world, &selection, &self.runtime)
     }
 
@@ -133,15 +181,15 @@ impl SystemSession {
     /// holding `before` when the scripts run — what another lane queued
     /// earlier in the tick, which no script sees.
     ///
-    /// The flow projects every frame, as the engine's flows do; the script
-    /// lane runs only while the mode plays, because the engine registers the
-    /// script agent for `EngineMode::Playing` alone — outside it the lane is
-    /// never executed and the runtime keeps every instance as it stood.
+    /// While the scripts are off, the substrate skips the flow and the
+    /// script lane is never executed: the runtime keeps every instance as it
+    /// stood.
     pub(crate) fn frame_after(&mut self, delta: f32, before: &[WorldCommand]) {
+        let playing = self.settle();
         self.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
-        let playing = self.mode.read().expect("the mode lock").runs_gameplay();
         // What the engine handed over is taken in before the flow projects,
-        // in play alone, as the `script_intake` system does at the boundary.
+        // while the scripts are on, as the `script_intake` system does at
+        // the boundary.
         if playing {
             take_in(
                 &mut self.scripts,
@@ -152,7 +200,16 @@ impl SystemSession {
             );
         }
         self.took_in = playing;
-        let mut view = self.project();
+        if !playing {
+            // The substrate skips a flow serving a family off: its next run
+            // is a resumption.
+            self.projected = false;
+        }
+        let mut view = if playing {
+            self.project()
+        } else {
+            ScriptView::default()
+        };
         view.delta_seconds = delta;
         let mut deck = OutputDeck::new();
         deck.slot::<CommandBuffer>().extend(before.iter().cloned());

@@ -91,7 +91,7 @@ What this engine does not yet answer, and where the next iteration should go.
 
 ## 08 — UI
 
-1. **In-game UI.** `UiAgent` is registered for every engine mode and draws whatever UI components the world holds, through `UiFlow`; there is no `allowed_modes` setting — an agent is scoped to modes only by registering it through `DccService::register_agent_for_mode`. What a play-mode HUD still lacks is an input model: how focus and pointer events are routed between the game and its UI.
+1. **In-game UI.** `UiAgent` is a family that starts on and stays on in the editor, editing or playing; it draws whatever UI components the world holds, through `UiFlow`. A game that wants it off switches it off through the `Activation` resource. What a play-mode HUD still lacks is an input model: how focus and pointer events are routed between the game and its UI.
 2. **Animations on UI.** No tween / spring system today. Probably belongs as a separate lane that mutates UI components over time.
 3. **Accessibility.** Screen reader hooks, contrast modes. Not designed yet.
 

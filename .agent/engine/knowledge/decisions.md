@@ -86,9 +86,12 @@ Durable decisions and their rationale. Append when a new structural decision lan
     the delta. A prefab edit reaches every instance field that was not overridden. Placement (root
     translation/rotation) and the link itself are never overrides.
 
-18. **Scripts run only while Playing** — an editor editing a scene is not playing it. Enforced by mode
-    registration (`register_agent_for_mode`) and the `ScriptFlow` gate, not by each script. The mode is a
-    runtime resource the app writes and the scheduler reads once per frame.
+18. **Scripts run only while their family is on** — an editor editing a scene is not playing it. The
+    engine has no mode: Play and Stop are the editor's, which switches the scripting family
+    (`khora_core::script::SCRIPT`, with physics and audio) off while editing through the `Activation`
+    resource. Enforced by the activation and by roles — the script DataSystems and `ScriptFlow` are
+    `Role::Serves(SCRIPT)` — not by each script. Requests settle once per frame at the frame boundary, so
+    a whole frame sees one state; mail sent to scripts while they are off is dropped (`Mailbox`, `Drop`).
 
 19. **Tiered resume for suspended script bodies** — one path for next frame, hot reload and game load:
     exact → unchanged → rebuilt at the same named site → restarted with the original arguments →

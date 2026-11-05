@@ -74,7 +74,7 @@ inventory::submit! {
         run: behavior_writeback,
         runs_after: &[],
         observes: &[],
-        modes: &[],
+        role: crate::ecs::Role::Serves(khora_core::script::SCRIPT),
     }
 }
 

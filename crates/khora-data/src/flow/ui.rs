@@ -49,6 +49,7 @@ impl Flow for UiFlow {
 
     const DOMAIN: SemanticDomain = SemanticDomain::Ui;
     const NAME: &'static str = "ui";
+    const ROLE: crate::ecs::Role = crate::ecs::Role::Upkeep;
 
     fn project(&self, world: &World, _sel: &Selection, _runtime: &Runtime) -> Self::View {
         let mut scene = UiScene::default();

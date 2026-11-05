@@ -14,8 +14,8 @@
 
 //! What the running DCC says to its agents: offers asked, allocations
 //! published for the scheduler to lend, policies, the governor's effect on the
-//! envelopes, replay, the journal — and only to the agents active in the
-//! engine's mode.
+//! envelopes, replay, the journal — and only to the agents of the families
+//! on.
 
 use super::*;
 
@@ -713,11 +713,11 @@ fn a_system_ram_report_leaves_the_vram_alone() {
     assert_eq!(vram, Some(724 * MIB), "a RAM report keeps the VRAM figure");
 }
 
-/// **Only the agents active in the mode are asked.** A script registered for
-/// `Playing` alone is neither asked for an offer nor named by an epoch while
-/// the editor edits; once the game plays, it is.
+/// **Only the families on are asked.** While the script family is off, the
+/// script is neither asked for an offer nor named by an epoch; once it is on
+/// again, it is.
 #[test]
-fn only_agents_active_in_the_mode_are_asked() {
+fn only_the_families_on_are_asked() {
     let (mut dcc, rx) = recording(DccConfig {
         min_epoch_ticks: 1,
         ..Default::default()
@@ -725,32 +725,32 @@ fn only_agents_active_in_the_mode_are_asked() {
     let (always, _always_ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
     let (script, script_ear) = Speaker::with_ear("script", Duration::from_millis(1));
     dcc.register_agent(always, 1.0);
-    dcc.register_agent_for_mode(script, 0.5, vec![EngineMode::Playing]);
+    dcc.register_agent(script, 0.5);
     let tx = dcc.event_sender();
-    tx.send(TelemetryEvent::ModeChange(EngineMode::Custom(
-        "editor".to_owned(),
-    )))
+    tx.send(TelemetryEvent::ActivationChanged(
+        [AgentId::new("script")].into_iter().collect(),
+    ))
     .expect("the DCC listens");
     dcc.start(rx);
 
-    let editing = wait_for(3, || names(&dcc, "renderer"));
-    let while_editing = epochs(&dcc);
-    let script_asked_while_editing = script_ear.heard().asked.len();
-    assert!(editing, "the agent active in every mode is named");
-    assert_eq!(script_asked_while_editing, 0, "the script is not asked");
+    let off = wait_for(3, || names(&dcc, "renderer"));
+    let while_off = epochs(&dcc);
+    let script_asked_while_off = script_ear.heard().asked.len();
+    assert!(off, "the family on is named");
+    assert_eq!(script_asked_while_off, 0, "the script is not asked");
     assert!(
-        while_editing.iter().all(|epoch| epoch
+        while_off.iter().all(|epoch| epoch
             .envelopes
             .iter()
             .all(|(id, _)| *id != AgentId::new("script"))),
-        "no envelope for the script: {while_editing:?}"
+        "no envelope for the script: {while_off:?}"
     );
 
-    tx.send(TelemetryEvent::ModeChange(EngineMode::Playing))
+    tx.send(TelemetryEvent::ActivationChanged(Default::default()))
         .expect("the DCC listens");
-    let playing = wait_for(3, || names(&dcc, "script"));
+    let on = wait_for(3, || names(&dcc, "script"));
     dcc.stop();
-    assert!(playing, "once the game plays, the script is named");
+    assert!(on, "once on, the script is named");
     assert!(!script_ear.heard().asked.is_empty());
 }
 

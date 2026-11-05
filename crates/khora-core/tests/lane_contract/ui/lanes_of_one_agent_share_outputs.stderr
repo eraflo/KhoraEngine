@@ -1,7 +1,7 @@
 error[E0271]: type mismatch resolving `<LayoutLane as Lane>::Family == AudioFamily`
-   --> tests/lane_contract/ui/lanes_of_one_agent_share_outputs.rs:106:22
+   --> tests/lane_contract/ui/lanes_of_one_agent_share_outputs.rs:105:22
     |
-106 |     lanes: [MixLane, LayoutLane],
+105 |     lanes: [MixLane, LayoutLane],
     |                      ^^^^^^^^^^ type mismatch resolving `<LayoutLane as Lane>::Family == AudioFamily`
     |
 note: expected this to be `AudioFamily`

@@ -24,7 +24,7 @@ use khora_core::ecs::EntityReserver;
 use khora_core::script::ScriptValue;
 use khora_core::Runtime;
 use khora_data::ecs::{Name, PrefabInstance, Transform};
-use khora_data::flow::{Flow, PrefabCatalogFlow, PrefabCatalogView};
+use khora_data::flow::{Flow, FlowContext, PrefabCatalogFlow, PrefabCatalogView};
 use khora_data::scene::{instantiate_prefab_at, NoPrefabs, PrefabCatalog};
 
 use super::declared_components::field_of;
@@ -288,12 +288,12 @@ fn the_catalog_flow_publishes_the_runtimes_catalog() {
     runtime.resources.insert(catalog);
     let mut flow = PrefabCatalogFlow;
 
-    let selection = flow.select(&world, &runtime);
+    let selection = flow.select(&world, &runtime, FlowContext::default());
     let view: PrefabCatalogView = flow.project(&world, &selection, &runtime);
     assert_eq!(view.prefabs.as_deref(), Some(&BTreeSet::from([prefab])));
 
     let none = Runtime::default();
-    let selection = flow.select(&world, &none);
+    let selection = flow.select(&world, &none, FlowContext::default());
     assert!(flow.project(&world, &selection, &none).prefabs.is_none());
 }
 

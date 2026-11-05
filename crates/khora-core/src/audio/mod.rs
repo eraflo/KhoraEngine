@@ -24,3 +24,7 @@ pub mod mix_bus;
 
 pub use device::{AudioDevice, AudioStream, StreamInfo};
 pub use mix_bus::AudioMixBus;
+
+/// The audio family: the agent that mixes the scene's sounds, and what
+/// switches them on and off ([`Activation`](crate::agent::Activation)).
+pub const AUDIO: crate::agent::gorna::AgentId = crate::agent::gorna::AgentId::new("audio");

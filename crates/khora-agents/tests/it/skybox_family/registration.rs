@@ -23,8 +23,7 @@ use khora_agents::registered_agent::lane_agents;
 use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
 use khora_core::agent::registration::{check_registrations, BootError};
 use khora_core::agent::{
-    Agent, AgentAccess, AgentImportance, DependencyKind, EngineMode, ExecutionPhase,
-    ExecutionTiming,
+    Agent, AgentAccess, AgentImportance, DependencyKind, ExecutionPhase, ExecutionTiming,
 };
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
@@ -55,7 +54,6 @@ fn the_skybox_family_is_registered_once() {
     assert_eq!(registration.kind, LaneKind::Render);
     assert_eq!(registration.semantics, Semantics::Presentation);
     assert_eq!(registration.importance, AgentImportance::Important);
-    assert!(registration.modes.is_empty(), "the sky draws in every mode");
     assert_eq!(registration.fixed_step, None, "the sky draws every frame");
     let lanes: Vec<&'static str> = registration
         .lanes
@@ -243,7 +241,6 @@ fn the_skybox_agent_offers_one_balanced_strategy() {
             target_latency: Duration::from_micros(16_667),
             priority_weight: 1.0,
             constraints: ResourceConstraints::default(),
-            current_mode: EngineMode::Playing,
             agent_timing: ExecutionTiming::default(),
         })
         .strategies

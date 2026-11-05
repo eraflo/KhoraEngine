@@ -20,7 +20,7 @@
 use crate::substrate::{flow_last_seen, run_flows};
 use khora_core::lane::LaneBus;
 use khora_core::Runtime;
-use khora_data::ecs::{SemanticDomain, Tick, World};
+use khora_data::ecs::{Role, SemanticDomain, Tick, World};
 use khora_data::flow::{Flow, FlowRegistration, Selection};
 use std::sync::Mutex;
 
@@ -39,6 +39,7 @@ impl Flow for ClockProbeFlow {
     type View = ();
     const DOMAIN: SemanticDomain = SemanticDomain::Ui;
     const NAME: &'static str = "flow_clock_probe";
+    const ROLE: Role = Role::Upkeep;
 
     fn project(&self, world: &World, _sel: &Selection, _runtime: &Runtime) {
         RUNS.lock()

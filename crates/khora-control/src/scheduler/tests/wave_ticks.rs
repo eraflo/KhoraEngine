@@ -306,12 +306,7 @@ fn each_fixed_sub_step_runs_at_a_tick_of_its_own() {
         let mut scheduler =
             ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
         scheduler.set_parallel_execution(parallel);
-        let mode: khora_core::agent::SharedEngineMode =
-            Arc::new(RwLock::new(khora_core::agent::EngineMode::Playing));
-        let mut runtime = Runtime::new();
-        runtime.resources.insert(mode);
-
-        scheduler.run_frame(&mut World::new(), Arc::new(runtime));
+        scheduler.run_frame(&mut World::new(), Arc::new(Runtime::new()));
 
         let seen = seen.lock().expect("the seen lock").clone();
         assert!(

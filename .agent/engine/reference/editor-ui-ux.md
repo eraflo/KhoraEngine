@@ -63,8 +63,9 @@ transform gizmos, dock layout, theme, and the egui/Taffy plumbing.
   and the `OverlayAgent` renders them. The backend owns no pipeline.
 - UI layout through the `LayoutSystem` trait — never call Taffy directly from agents.
 - Reach egui only through `khora_sdk::tool_ui` / `editor_ui` — never depend on `egui`/`eframe` directly.
-- The editor runs in `EngineMode::Custom("editor")` while editing; Play/Pause map to `EngineMode::Playing`
-  (`engine_mode_for`). Never run gameplay while editing.
+- The engine has no mode; Play/Stop are the editor's. `start_editing` (in `setup`) switches SCRIPT, PHYSICS
+  and AUDIO off; `process_transport` (`commands/transport.rs`, in `before_frame`) switches them on at Play
+  and off at Stop, Pause only sets the time scale to 0. Never run gameplay while editing.
 - Play captures a `FastestLoad` snapshot in memory; Stop restores it atomically with the same
   `PersistentId`s. Scenes on disk are `EditorInterchange` (compact).
 

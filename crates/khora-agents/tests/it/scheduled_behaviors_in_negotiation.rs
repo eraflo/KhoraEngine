@@ -25,7 +25,7 @@ use std::time::Duration;
 
 use khora_agents::script_agent::ScriptAgent;
 use khora_core::agent::gorna::{AgentStatus, NegotiationRequest, ResourceConstraints, StrategyId};
-use khora_core::agent::{Agent, EngineMode, ExecutionTiming};
+use khora_core::agent::{Agent, ExecutionTiming};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::{Transform, World};
@@ -101,7 +101,6 @@ fn estimate(session: &mut Session, strategy: StrategyId) -> Duration {
             target_latency: Duration::from_secs_f64(f64::from(FRAME)),
             priority_weight: 1.0,
             constraints: ResourceConstraints::default(),
-            current_mode: EngineMode::Playing,
             agent_timing: ExecutionTiming::default(),
         })
     });

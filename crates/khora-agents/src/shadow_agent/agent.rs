@@ -27,7 +27,6 @@ khora_script::inventory::submit! {
         phase: ExecutionPhase::OBSERVE,
         importance: AgentImportance::Important,
         after: [],
-        modes: [],
         fixed_step: None,
         lanes: [ShadowsLane],
     })

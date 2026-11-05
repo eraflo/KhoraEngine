@@ -41,6 +41,7 @@ impl Flow for PrefabCatalogFlow {
     type View = PrefabCatalogView;
     const DOMAIN: SemanticDomain = SemanticDomain::Script;
     const NAME: &'static str = "prefab_catalog";
+    const ROLE: crate::ecs::Role = crate::ecs::Role::Upkeep;
 
     fn project(&self, _world: &World, _sel: &Selection, runtime: &Runtime) -> Self::View {
         PrefabCatalogView {

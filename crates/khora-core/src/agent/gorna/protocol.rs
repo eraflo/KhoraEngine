@@ -23,7 +23,6 @@ use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
 use super::{AgentId, StrategyId};
-use crate::agent::mode::EngineMode;
 use crate::agent::Agent;
 use crate::lane::cost::{Cost, PerDevice};
 
@@ -44,8 +43,6 @@ pub enum Trigger {
     ForecastBreach,
     /// The frame governor changed the budget multiplier.
     FrameGovernor,
-    /// The engine mode changed.
-    ModeChanged,
     /// An agent was registered or unregistered.
     AgentsChanged,
     /// A developer policy changed.
@@ -69,8 +66,6 @@ pub struct OfferRequest {
     pub target: Duration,
     /// How hard the machine is pressed, from `0.0` (not at all) to `1.0`.
     pub pressure: f32,
-    /// The engine mode.
-    pub mode: EngineMode,
     /// An offer made after this keeps the agent's envelope.
     pub reply_by: Instant,
 }

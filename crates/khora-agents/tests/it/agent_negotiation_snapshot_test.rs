@@ -26,7 +26,7 @@
 use khora_agents::agent::lane_agent;
 use khora_agents::script_agent::ScriptAgent;
 use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
-use khora_core::agent::{Agent, EngineMode, ExecutionTiming};
+use khora_core::agent::{Agent, ExecutionTiming};
 use khora_core::gpu::DeviceCaps;
 use std::time::Duration;
 
@@ -47,7 +47,6 @@ fn unconstrained() -> NegotiationRequest {
         target_latency: Duration::from_millis(16),
         priority_weight: 1.0,
         constraints: ResourceConstraints::default(),
-        current_mode: EngineMode::Playing,
         agent_timing: ExecutionTiming::default(),
     }
 }

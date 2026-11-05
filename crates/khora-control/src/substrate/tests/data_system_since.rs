@@ -83,7 +83,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
         observes: &[ComponentKey::of::<Beacon>],
-        modes: &[],
+        role: khora_data::ecs::Role::Upkeep,
     }
 }
 inventory::submit! {
@@ -94,7 +94,7 @@ inventory::submit! {
         order_hint: 0,
         runs_after: &[],
         observes: &[],
-        modes: &[],
+        role: khora_data::ecs::Role::Upkeep,
     }
 }
 

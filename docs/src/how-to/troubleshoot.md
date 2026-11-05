@@ -150,12 +150,13 @@ its own sub-step size — precision, not time — via its GORNA strategy. See [G
 
 - The entity has **no `RigidBody`** (or it is fixed/kinematic rather than dynamic), so the provider
   never integrates it.
-- **The simulation is not stepping.** Physics only steps in an engine mode that runs the
-  `PhysicsAgent`. In the editor, physics runs in *Playing* mode, not while editing — see
+- **The simulation is not stepping.** Physics steps only while the physics family
+  (`khora_core::physics::PHYSICS`) is on and the clock's scale is above zero. In the editor,
+  physics is off while editing and on while playing; Pause keeps it on at a scale of 0 — see
   [Editor — Play mode](../reference/editor.md).
 
-**Fix.** Confirm the entity carries a dynamic `RigidBody`, and that you are in a mode where the
-physics agent is active.
+**Fix.** Confirm the entity carries a dynamic `RigidBody`, that physics is switched on (in the
+editor: press Play), and that the game is not paused.
 
 ### Fast bodies pass through thin colliders (tunneling)
 
@@ -194,8 +195,8 @@ fixed step for stiff constraints. See [Physics](../concepts/physics.md).
 ## Audio
 
 Audio runs through the `AudioDevice` trait (CPAL backend) and the spatial mixing lane
-(`crates/khora-lanes/src/audio_lane/`). As with physics, the `AudioAgent` only runs in a mode that
-enables it (e.g. *Playing* in the editor).
+(`crates/khora-lanes/src/audio_lane/`). As with physics, the `AudioAgent` only runs while the audio
+family (`khora_core::audio::AUDIO`) is on; the editor switches it off while editing.
 
 ### No spatialization — sound plays but is not panned by position
 
@@ -209,15 +210,16 @@ on the active camera or the player.
 
 **Cause.** Check, in order:
 
-- The **audio agent is running** — you are in a mode that enables audio (not editor-edit mode).
+- The **audio family is on** — `khora_core::audio::AUDIO` is not switched off. In the editor, audio is off
+  while editing and on while playing.
 - The **source is actually playing** — it has audio data and is in a playing state, not stopped or at
   zero gain.
 - A **CPAL output device exists and opened** — on a headless CI box or a machine with no default
   output, the device may fail to open. A stream-level failure is reported through the CPAL error
   callback as `audio stream error: …` (`crates/khora-infra/src/audio/cpal/device.rs`).
 
-**Fix.** Confirm a working default output device, a playing source with non-zero gain, and an active
-audio mode. See [Audio](../concepts/audio.md).
+**Fix.** Confirm a working default output device, a playing source with non-zero gain, and the audio
+family switched on. See [Audio](../concepts/audio.md).
 
 ### A corrupt or unsupported audio file does not crash the engine
 

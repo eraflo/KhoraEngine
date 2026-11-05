@@ -17,7 +17,8 @@
 use khora_core::lane::LaneBus;
 use khora_core::Runtime;
 
-use crate::ecs::{ComponentKey, SemanticDomain, World};
+use crate::ecs::{ComponentKey, Role, SemanticDomain, World};
+use crate::flow::FlowContext;
 
 /// Registration entry for a [`Flow`](super::Flow) — submitted by each
 /// concrete Flow implementation via [`inventory::submit!`].
@@ -32,8 +33,10 @@ pub struct FlowRegistration {
     pub name: &'static str,
     /// Domain this Flow serves — matches `Flow::DOMAIN`.
     pub domain: SemanticDomain,
+    /// Whose work it projects for — matches `Flow::ROLE`.
+    pub role: Role,
     /// Trampoline that runs select + project and publishes the View.
-    pub run: fn(&mut World, &mut LaneBus, &Runtime),
+    pub run: fn(&mut World, &mut LaneBus, &Runtime, FlowContext),
     /// Components this Flow watches for change, by key. The `World` records
     /// each as observed ([`World::observe`]); the runner keeps the Flow's
     /// last-seen tick. Empty by default (`register_flow!(MyFlow)`).
@@ -58,6 +61,7 @@ pub fn run_flow_cached<F: super::Flow>(
     world: &mut World,
     bus: &mut LaneBus,
     runtime: &Runtime,
+    ctx: FlowContext,
 ) {
     let key = flow.cache_key(world, runtime);
     if let (Some(k), Some((cached_key, cached_view))) = (key, cache.as_ref()) {
@@ -67,7 +71,7 @@ pub fn run_flow_cached<F: super::Flow>(
         }
     }
 
-    let sel = flow.select(world, runtime);
+    let sel = flow.select(world, runtime, ctx);
     let view = flow.project(world, &sel, runtime);
     *cache = key.map(|k| (k, view.clone()));
     bus.publish(view);
@@ -99,6 +103,7 @@ macro_rules! register_flow {
                 world: &mut $crate::ecs::World,
                 bus: &mut khora_core::lane::LaneBus,
                 runtime: &khora_core::Runtime,
+                ctx: $crate::flow::FlowContext,
             ) {
                 use std::sync::{Mutex, OnceLock};
                 // The flow instance and its view cache live together behind
@@ -114,12 +119,13 @@ macro_rules! register_flow {
                     .lock()
                     .expect("Flow mutex poisoned");
                 let (flow, cache) = &mut *state;
-                $crate::flow::run_flow_cached(flow, cache, world, bus, runtime);
+                $crate::flow::run_flow_cached(flow, cache, world, bus, runtime, ctx);
             }
             inventory::submit! {
                 $crate::flow::FlowRegistration {
                     name: <$flow_ty as $crate::flow::Flow>::NAME,
                     domain: <$flow_ty as $crate::flow::Flow>::DOMAIN,
+                    role: <$flow_ty as $crate::flow::Flow>::ROLE,
                     run: run_flow,
                     observes: &[$($crate::ecs::ComponentKey::of::<$observed>),*],
                 }
@@ -135,8 +141,8 @@ mod tests {
     use khora_core::lane::LaneBus;
     use khora_core::Runtime;
 
-    use crate::ecs::{AudioListener, AudioSource, SemanticDomain, World};
-    use crate::flow::{combine_cache_key, AudioFlow, AudioView, Flow, Selection};
+    use crate::ecs::{AudioListener, AudioSource, Role, SemanticDomain, World};
+    use crate::flow::{combine_cache_key, AudioFlow, AudioView, Flow, FlowContext, Selection};
 
     /// Minimal view carrying the projection count of the flow that built it.
     #[derive(Debug, Clone, PartialEq)]
@@ -157,6 +163,7 @@ mod tests {
 
         const DOMAIN: SemanticDomain = SemanticDomain::Audio;
         const NAME: &'static str = "counted_test";
+        const ROLE: Role = Role::Upkeep;
 
         fn cache_key(&self, world: &World, _runtime: &Runtime) -> Option<u64> {
             Some(combine_cache_key([
@@ -184,6 +191,7 @@ mod tests {
 
         const DOMAIN: SemanticDomain = SemanticDomain::Audio;
         const NAME: &'static str = "uncached_test";
+        const ROLE: Role = Role::Upkeep;
 
         fn project(&self, _world: &World, _sel: &Selection, _runtime: &Runtime) -> CountedView {
             CountedView {
@@ -200,7 +208,14 @@ mod tests {
         let mut cache = None;
 
         let mut bus = LaneBus::new();
-        super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
+        super::run_flow_cached(
+            &mut flow,
+            &mut cache,
+            &mut world,
+            &mut bus,
+            &runtime,
+            FlowContext::default(),
+        );
         assert_eq!(flow.projections.load(Ordering::Relaxed), 1);
         assert_eq!(
             bus.get::<CountedView>(),
@@ -210,7 +225,14 @@ mod tests {
         // Nothing mutated the world: the second run must republish the
         // cached view instead of projecting again.
         let mut bus = LaneBus::new();
-        super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
+        super::run_flow_cached(
+            &mut flow,
+            &mut cache,
+            &mut world,
+            &mut bus,
+            &runtime,
+            FlowContext::default(),
+        );
         assert_eq!(
             flow.projections.load(Ordering::Relaxed),
             1,
@@ -231,14 +253,28 @@ mod tests {
         let mut cache = None;
 
         let mut bus = LaneBus::new();
-        super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
+        super::run_flow_cached(
+            &mut flow,
+            &mut cache,
+            &mut world,
+            &mut bus,
+            &runtime,
+            FlowContext::default(),
+        );
         assert_eq!(flow.projections.load(Ordering::Relaxed), 1);
 
         // Mutate the Audio domain — the key changes, the cache must miss.
         world.spawn(AudioListener);
 
         let mut bus = LaneBus::new();
-        super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
+        super::run_flow_cached(
+            &mut flow,
+            &mut cache,
+            &mut world,
+            &mut bus,
+            &runtime,
+            FlowContext::default(),
+        );
         assert_eq!(
             flow.projections.load(Ordering::Relaxed),
             2,
@@ -263,7 +299,14 @@ mod tests {
         world.spawn(AudioSource::default());
 
         let mut bus = LaneBus::new();
-        super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
+        super::run_flow_cached(
+            &mut flow,
+            &mut cache,
+            &mut world,
+            &mut bus,
+            &runtime,
+            FlowContext::default(),
+        );
         assert_eq!(flow.projections.load(Ordering::Relaxed), 1);
         // The clock moves past the setup, as it does between runs.
         world.end_run();
@@ -273,7 +316,14 @@ mod tests {
         assert_eq!(sources, 1);
 
         let mut bus = LaneBus::new();
-        super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
+        super::run_flow_cached(
+            &mut flow,
+            &mut cache,
+            &mut world,
+            &mut bus,
+            &runtime,
+            FlowContext::default(),
+        );
         assert_eq!(
             flow.projections.load(Ordering::Relaxed),
             1,
@@ -285,7 +335,14 @@ mod tests {
             .expect("the listener is there") = AudioListener;
 
         let mut bus = LaneBus::new();
-        super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
+        super::run_flow_cached(
+            &mut flow,
+            &mut cache,
+            &mut world,
+            &mut bus,
+            &runtime,
+            FlowContext::default(),
+        );
         assert_eq!(
             flow.projections.load(Ordering::Relaxed),
             2,
@@ -302,7 +359,14 @@ mod tests {
 
         for expected in 1..=3 {
             let mut bus = LaneBus::new();
-            super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
+            super::run_flow_cached(
+                &mut flow,
+                &mut cache,
+                &mut world,
+                &mut bus,
+                &runtime,
+                FlowContext::default(),
+            );
             assert_eq!(flow.projections.load(Ordering::Relaxed), expected);
             assert!(
                 cache.is_none(),
@@ -320,7 +384,14 @@ mod tests {
 
         // Prime the cache with an empty scene.
         let mut bus = LaneBus::new();
-        super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
+        super::run_flow_cached(
+            &mut flow,
+            &mut cache,
+            &mut world,
+            &mut bus,
+            &runtime,
+            FlowContext::default(),
+        );
         let view = bus.get::<AudioView>().expect("AudioFlow publishes a view");
         assert_eq!(view.source_count, 0);
 
@@ -329,7 +400,14 @@ mod tests {
         world.spawn(AudioSource::default());
 
         let mut bus = LaneBus::new();
-        super::run_flow_cached(&mut flow, &mut cache, &mut world, &mut bus, &runtime);
+        super::run_flow_cached(
+            &mut flow,
+            &mut cache,
+            &mut world,
+            &mut bus,
+            &runtime,
+            FlowContext::default(),
+        );
         let view = bus.get::<AudioView>().expect("AudioFlow publishes a view");
         assert_eq!(
             view.source_count, 1,

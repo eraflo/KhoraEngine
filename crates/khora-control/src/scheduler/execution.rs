@@ -24,11 +24,12 @@ use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::gorna::protocol::Report;
 use khora_core::agent::gorna::{AgentFrameStatus, AgentFrameStatusMap, AgentId};
 use khora_core::agent::timing::AgentImportance;
-use khora_core::agent::{Agent, AgentAccess, AgentDependency, EngineMode, ExecutionPhase, Place};
+use khora_core::agent::{Agent, AgentAccess, AgentDependency, ExecutionPhase, Place};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::World;
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -39,14 +40,14 @@ impl ExecutionScheduler {
         phase: ExecutionPhase,
         world: &mut World,
         runtime: &Arc<Runtime>,
-        mode: &EngineMode,
+        inactive: &BTreeSet<AgentId>,
         completion_map: &Arc<AgentCompletionMap>,
         bus: &Arc<LaneBus>,
         deck: &mut OutputDeck,
         selection: AgentSelection,
     ) {
-        // Collect agents for this phase and mode
-        let agents = self.phase_slots(phase, mode);
+        // Collect this phase's agents, among the families on
+        let agents = self.phase_slots(phase, inactive);
 
         // Partition by whether the agent declares a fixed timestep, so the
         // fixed-update sub-loop and the once-per-frame loop never double-run

@@ -60,7 +60,6 @@ fn registration<F: LaneFamily>(
         phase,
         importance: AgentImportance::Important,
         after: &[],
-        modes: &[],
         fixed_step: None,
         default_level: None,
         module: module_path!(),
@@ -768,7 +767,6 @@ fn a_family_declares_its_agent() {
         phase: ExecutionPhase::OUTPUT,
         importance: AgentImportance::Important,
         after: [],
-        modes: [],
         fixed_step: None,
         lanes: [StorytellerLane],
     };
@@ -777,7 +775,6 @@ fn a_family_declares_its_agent() {
         phase: ExecutionPhase::OUTPUT,
         importance: AgentImportance::Important,
         after: [],
-        modes: [],
         fixed_step: None,
         lanes: [ChoirLane],
     };

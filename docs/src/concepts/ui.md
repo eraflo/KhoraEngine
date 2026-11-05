@@ -72,8 +72,9 @@ on that device.
 The `UiAgent` is one of the built-in agents `EngineCore` registers, so it runs for every SDK application, not only the editor. Its negotiation surface is minimal — one
 strategy, no real GORNA pressure yet — because editor UI complexity hasn't demanded
 density tiers (full / simplified / hidden chrome) that the design leaves room for.
-In-game (play-mode) UI is on the roadmap; the path is mostly a matter of which modes
-the agent is allowed to run in, plus deciding the input model. The retained-mode,
+In-game (play-mode) UI is on the roadmap; the agent already runs whether the game is edited
+or played, and an app can switch it off through the `Activation`; what is left is
+deciding the input model. The retained-mode,
 ECS-driven shape is the same either way.
 
 ## Next steps

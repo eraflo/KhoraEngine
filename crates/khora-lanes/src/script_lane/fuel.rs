@@ -73,8 +73,18 @@ impl ScriptRuntime {
     pub fn demand(&self, frame: f32) -> Demand {
         let unknown = UNKNOWN_TURN.as_secs_f64() * 1_000.0 * self.rate;
         let known = self.known_turns();
+        // The entities mail waits for: a turn that had nothing to do cost
+        // nothing, and says nothing of one that delivers mail. Priced at what
+        // it took, an instance whose mail then arrives would be lent no fuel,
+        // be deferred, and never measure again.
+        let mailed: std::collections::HashSet<_> = self
+            .pending
+            .as_slice()
+            .iter()
+            .map(|event| event.target)
+            .collect();
         let (mut all, mut critical) = (0.0_f64, 0.0_f64);
-        for ((_, behavior), instance) in &self.instances {
+        for ((entity, behavior), instance) in &self.instances {
             if instance.disabled {
                 continue;
             }
@@ -91,6 +101,10 @@ impl ScriptRuntime {
                     .get(&(instance.module.as_str(), behavior.as_str()))
                     .copied()
             });
+            let cost = match cost {
+                Some(cost) if cost <= 0.0 && mailed.contains(entity) => None,
+                cost => cost,
+            };
             let fuel = cost.unwrap_or(unknown) * share;
             all += fuel;
             if schedule.critical {

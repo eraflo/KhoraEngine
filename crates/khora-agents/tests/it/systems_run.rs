@@ -19,7 +19,6 @@
 //! systems taking their turns in one list, by module and then by where each
 //! is written.
 
-use khora_core::agent::EngineMode;
 use khora_core::script::ScriptValue;
 use khora_data::ecs::{Transform, World};
 
@@ -53,12 +52,11 @@ fn a_systems_update_runs_every_frame_and_its_fields_persist() {
     );
 }
 
-/// **A system does not run while the game does not play**: an editor
-/// editing a scene runs no system, and its first frame of Play does.
+/// **A system does not run while the scripts are off**: an editor editing a
+/// scene runs no system, and its first frame of Play does.
 #[test]
-fn a_system_runs_only_while_playing() {
-    let mut session =
-        SystemSession::in_mode(World::new(), CLOCK, EngineMode::Custom("editor".to_owned()));
+fn a_system_runs_only_while_the_scripts_are_on() {
+    let mut session = SystemSession::with_scripts_off(World::new(), CLOCK);
     for _ in 0..3 {
         session.frame(0.25);
     }
@@ -68,7 +66,7 @@ fn a_system_runs_only_while_playing() {
         "registered, and held by nothing while editing"
     );
 
-    session.set_mode(EngineMode::Playing);
+    session.set_scripts(true);
     session.frame(0.25);
     session.frame(0.25);
     let clock = the_holder(&session.world, "Clock");

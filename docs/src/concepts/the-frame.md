@@ -171,25 +171,40 @@ body integrates, no script timer counts down, and rendering carries on at real
 time because it reads `interpolation_alpha`, not this. Between the two it is
 slow motion; above it, fast forward.
 
-That one number is how the editor stops the world while nobody has pressed
-Play. `PlayMode` stays inside `khora-editor` and never becomes engine
-vocabulary — the editor writes a scale, exactly as a pause menu or a cutscene
-would, and is one caller among several rather than a case the engine knows
-about. `Time::scale` is private and reachable only through `set_scale`, which
+That one number is how the editor pauses a game. `PlayMode` stays inside
+`khora-editor` and never becomes engine vocabulary — the editor writes a
+scale, exactly as a pause menu or a cutscene would, and is one caller among
+several rather than a case the engine knows about. `Time::scale` is private and reachable only through `set_scale`, which
 clamps at zero: running a solver backwards is not a slower forward, and every
 integrator here assumes time moves one way.
 
-The scale says whether time passes; it does not say *which agents run*. That
-is the **engine mode**, the `SharedEngineMode` resource the scheduler reads
-once per frame: an agent registered for particular modes
-(`DccService::register_agent_for_mode`) is skipped in any other. The editor
-writes both at the top of every frame, in `before_agents` — the mode first,
-then the scale (`khora-editor/src/app/mod.rs`). Editing runs the editor's own
-mode, `EngineMode::Custom("editor")`, so the script agent — registered for
-`EngineMode::Playing` only — does not run while an author edits a scene.
-Playing and Paused both run `EngineMode::Playing`: a paused game is still the
-game, its scripts run at a delta of zero. A game without an editor stays in
-the mode its app's `initial_mode` returned, `Playing` by default.
+The scale says whether time passes; it does not say *which families run*.
+That is the **activation**, the `Arc<Activation>` resource the SDK publishes
+before the app's `setup` (`khora_core::agent::Activation`). It knows every
+registered family — the lane families, the script agent, the app's own agents
+— and every family starts on. `activate(family)` and `deactivate(family)` are
+requests; a family it does not know is refused (`UnknownFamily`) and logged.
+
+The requests land at the **frame boundary**: the SDK calls `settle()` once per
+frame, after the app's `before_frame` and before the first DataSystem phase.
+Every phase, every Flow, the scheduler and the DCC then see one state; a
+request made later in the frame counts from the next one. A family off is not
+asked to offer, is lent nothing, and does not run. The DataSystems and Flows
+that do its work are skipped too, by their **role**: each one declares
+`Role::Upkeep` (a data invariant, run every frame) or `Role::Serves(family)`
+(skipped while the family is off). On its first run after a skip, a system
+sees `SystemContext.resumed`, and a Flow's `select` sees
+`FlowContext { resumed: true }`. Mail sent to a family while it is off is
+dropped at the boundary if its mailbox says `BetweenSessions::Drop`.
+
+The editor switches the families in `before_frame`
+(`khora-editor/src/commands/transport.rs`). Editing has scripting
+(`khora_core::script::SCRIPT`), physics (`khora_core::physics::PHYSICS`) and
+audio (`khora_core::audio::AUDIO`) off, at a scale of 1: nothing steps
+because nothing that steps runs. Play switches the three on. Pause leaves them
+on and sets the scale to 0: a paused game is still the game, its scripts run
+at a delta of zero. A game without an editor keeps every family on unless it
+switches one off.
 
 Applied once, in the scheduler. An agent deciding for itself whether time
 passes would be a dozen places to disagree about what "paused" means.

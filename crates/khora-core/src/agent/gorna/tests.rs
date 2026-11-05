@@ -27,7 +27,7 @@ use super::{
     AdaptationMode, AgentHints, AgentId, AgentStatus, DecisionTrace, EpochRecord,
     NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId, StrategyOption,
 };
-use crate::agent::{Agent, EngineMode};
+use crate::agent::Agent;
 use crate::lane::cost::{Cost, PerDevice};
 use crate::EngineContext;
 
@@ -120,7 +120,6 @@ fn request() -> OfferRequest {
         epoch: Epoch(3),
         target: Duration::from_micros(16_667),
         pressure: 0.0,
-        mode: EngineMode::Playing,
         reply_by: Instant::now() + Duration::from_secs(1),
     }
 }
@@ -198,17 +197,16 @@ fn old_agents_answer_through_the_bridge() {
     );
 }
 
-/// The bridge asks `negotiate` with the request's target and mode, so an old
-/// agent sees the frame it is offering for.
+/// The bridge asks `negotiate` with the request's target, so an old agent
+/// sees the frame it is offering for.
 #[test]
-fn the_bridge_offer_asks_negotiate_for_the_requests_target_and_mode() {
+fn the_bridge_offer_asks_negotiate_for_the_requests_target() {
     let mut agent = Old::new();
 
     let _ = agent.offer(&request());
 
     let asked = agent.asked.last().expect("the bridge asked negotiate");
     assert_eq!(asked.target_latency, Duration::from_micros(16_667));
-    assert_eq!(asked.current_mode, EngineMode::Playing);
 }
 
 /// **The bridge applies the dearest option that fits on time and memory**,

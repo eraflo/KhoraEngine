@@ -12,22 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **A `DataSystem` runs in its modes, and knows when it starts over.**
-//! `run_data_systems` skips a system whose `modes` do not hold the engine's
-//! mode (a runtime holding no `SharedEngineMode` is playing), and hands it
+//! **A `DataSystem` serving a family runs while the family is on, and knows
+//! when it starts over.** `run_data_systems` skips a `Role::Serves(φ)` system
+//! while φ is off in the runtime's `Activation` — in its state in force, not
+//! a request made since — runs a `Role::Upkeep` system whatever is off (a
+//! runtime holding no `Activation` has every family on), and hands a system
 //! `resumed: true` on its first run on a world and on its first run after a
 //! skip — `false` on a run that follows its previous one.
 
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 use crate::substrate::run_data_systems;
-use khora_core::agent::{EngineMode, SharedEngineMode};
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::Activation;
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, SystemContext, Tick, TickPhase, World};
+use khora_data::ecs::{DataSystemRegistration, Role, SystemContext, Tick, TickPhase, World};
 
-const PLAYING_ONLY: &str = "data_system_modes_playing_only";
-const EVERY_MODE: &str = "data_system_modes_every_mode";
+/// The family the serving probe works for.
+const FAMILY: AgentId = AgentId::new("data_system_activation_family");
+
+const SERVING: &str = "data_system_activation_serving";
+const UPKEEP: &str = "data_system_activation_upkeep";
 const PHASE: TickPhase = TickPhase::PostSimulation;
 
 /// One run of a probe: on which world, which probe, what it was handed and
@@ -57,51 +63,54 @@ fn note(probe: &'static str, world: &World, ctx: SystemContext) {
         });
 }
 
-fn playing_only(world: &mut World, _: &Runtime, _: &mut OutputDeck, ctx: SystemContext) {
-    note(PLAYING_ONLY, world, ctx);
+fn serving(world: &mut World, _: &Runtime, _: &mut OutputDeck, ctx: SystemContext) {
+    note(SERVING, world, ctx);
 }
 
-fn every_mode(world: &mut World, _: &Runtime, _: &mut OutputDeck, ctx: SystemContext) {
-    note(EVERY_MODE, world, ctx);
+fn upkeep(world: &mut World, _: &Runtime, _: &mut OutputDeck, ctx: SystemContext) {
+    note(UPKEEP, world, ctx);
 }
 
 inventory::submit! {
     DataSystemRegistration {
-        name: PLAYING_ONLY,
+        name: SERVING,
         phase: PHASE,
-        run: playing_only,
+        run: serving,
         order_hint: 0,
         runs_after: &[],
         observes: &[],
-        modes: &[EngineMode::Playing],
+        role: Role::Serves(FAMILY),
     }
 }
 inventory::submit! {
     DataSystemRegistration {
-        name: EVERY_MODE,
+        name: UPKEEP,
         phase: PHASE,
-        run: every_mode,
+        run: upkeep,
         order_hint: 0,
         runs_after: &[],
         observes: &[],
-        modes: &[],
+        role: Role::Upkeep,
     }
 }
 
-/// A runtime whose engine mode is `mode`, and the mode, to switch it.
-fn runtime_in(mode: EngineMode) -> (Runtime, SharedEngineMode) {
-    let shared: SharedEngineMode = Arc::new(RwLock::new(mode));
+/// A runtime holding an `Activation` that knows `FAMILY`, and the activation,
+/// to switch it.
+fn runtime_with_activation() -> (Runtime, Arc<Activation>) {
+    let activation = Arc::new(Activation::new([FAMILY]));
     let mut runtime = Runtime::new();
-    runtime.resources.insert(Arc::clone(&shared));
-    (runtime, shared)
+    runtime.resources.insert(Arc::clone(&activation));
+    (runtime, activation)
 }
 
-fn editing() -> EngineMode {
-    EngineMode::Custom("editor".to_owned())
-}
-
-fn switch(shared: &SharedEngineMode, mode: EngineMode) {
-    *shared.write().unwrap_or_else(|e| e.into_inner()) = mode;
+/// Switches `FAMILY` and settles, as the frame boundary does.
+fn switch(activation: &Activation, on: bool) {
+    if on {
+        activation.activate(FAMILY).expect("a known family");
+    } else {
+        activation.deactivate(FAMILY).expect("a known family");
+    }
+    activation.settle();
 }
 
 fn run_phase(world: &mut World, runtime: &Runtime) {
@@ -125,61 +134,77 @@ fn resumed_of(probe: &str, world: &World) -> Vec<bool> {
         .collect()
 }
 
-/// **A system for `Playing` is skipped while editing and runs while
-/// playing.** Two editing passes run it never — the system for every mode
-/// runs in both — then a playing pass runs it.
+/// **A system serving a family is skipped while the family is off and runs
+/// once it is on.** Two passes with the family off run it never — the upkeep
+/// system runs in both — then a pass with it on runs it. A runtime holding no
+/// `Activation` has every family on.
 #[test]
-fn a_playing_only_system_is_skipped_while_editing_and_runs_while_playing() {
+fn a_serving_system_is_skipped_while_its_family_is_off_and_runs_once_it_is_on() {
+    let mut unswitched = World::new();
+    run_phase(&mut unswitched, &Runtime::new());
+    assert_eq!(
+        runs_of(SERVING, &unswitched).len(),
+        1,
+        "no activation: every family is on"
+    );
+
     let mut world = World::new();
-    let (runtime, mode) = runtime_in(editing());
+    let (runtime, activation) = runtime_with_activation();
+    switch(&activation, false);
 
     run_phase(&mut world, &runtime);
     run_phase(&mut world, &runtime);
     assert!(
-        runs_of(PLAYING_ONLY, &world).is_empty(),
-        "skipped while editing: {:?}",
-        runs_of(PLAYING_ONLY, &world)
+        runs_of(SERVING, &world).is_empty(),
+        "skipped while its family is off: {:?}",
+        runs_of(SERVING, &world)
     );
     assert_eq!(
-        runs_of(EVERY_MODE, &world).len(),
+        runs_of(UPKEEP, &world).len(),
         2,
         "the phase itself ran, twice"
     );
 
-    switch(&mode, EngineMode::Playing);
+    switch(&activation, true);
     run_phase(&mut world, &runtime);
     assert_eq!(
-        runs_of(PLAYING_ONLY, &world).len(),
+        runs_of(SERVING, &world).len(),
         1,
-        "it runs once the engine plays"
+        "it runs once its family is on"
     );
 }
 
-/// **A runtime with no mode is playing**: a game that only ever plays runs
-/// its `Playing` systems.
+/// **The runner reads the state in force.** A request not yet settled — made
+/// later in the frame — changes nothing for the phases still to run.
 #[test]
-fn a_runtime_without_a_mode_runs_a_playing_only_system() {
+fn a_request_not_yet_settled_does_not_skip_a_system() {
     let mut world = World::new();
+    let (runtime, activation) = runtime_with_activation();
 
-    run_phase(&mut world, &Runtime::new());
+    activation.deactivate(FAMILY).expect("a known family");
+    run_phase(&mut world, &runtime);
+    assert_eq!(runs_of(SERVING, &world).len(), 1, "still on in force");
 
-    assert_eq!(runs_of(PLAYING_ONLY, &world).len(), 1);
+    activation.settle();
+    run_phase(&mut world, &runtime);
+    assert_eq!(runs_of(SERVING, &world).len(), 1, "off once settled");
 }
 
-/// **An empty `modes` is every mode**: the system runs while editing and
-/// while playing, and, never skipped, starts over only on its first run.
+/// **An upkeep system runs whatever is off**, and, never skipped, starts over
+/// only on its first run.
 #[test]
-fn a_system_with_no_modes_runs_in_every_mode() {
+fn an_upkeep_system_runs_whatever_is_off() {
     let mut world = World::new();
-    let (runtime, mode) = runtime_in(editing());
+    let (runtime, activation) = runtime_with_activation();
 
+    switch(&activation, false);
     run_phase(&mut world, &runtime);
-    switch(&mode, EngineMode::Playing);
+    switch(&activation, true);
     run_phase(&mut world, &runtime);
-    switch(&mode, editing());
+    switch(&activation, false);
     run_phase(&mut world, &runtime);
 
-    assert_eq!(resumed_of(EVERY_MODE, &world), vec![true, false, false]);
+    assert_eq!(resumed_of(UPKEEP, &world), vec![true, false, false]);
 }
 
 /// **`resumed` is true on a system's first run on a world, and false on the
@@ -187,34 +212,34 @@ fn a_system_with_no_modes_runs_in_every_mode() {
 #[test]
 fn resumed_is_true_on_the_first_run_and_false_on_the_next_ones() {
     let mut world = World::new();
-    let (runtime, _mode) = runtime_in(EngineMode::Playing);
+    let (runtime, _activation) = runtime_with_activation();
 
     run_phase(&mut world, &runtime);
     run_phase(&mut world, &runtime);
     run_phase(&mut world, &runtime);
 
-    assert_eq!(resumed_of(PLAYING_ONLY, &world), vec![true, false, false]);
+    assert_eq!(resumed_of(SERVING, &world), vec![true, false, false]);
 }
 
-/// **`resumed` is true again on the first run after a skip** — play stopped
-/// and started again — and false on the run after. A skip leaves what the
-/// system has seen as it was: the run after it is handed the tick of the
+/// **`resumed` is true again on the first run after a skip** — the family
+/// switched off and on again — and false on the run after. A skip leaves what
+/// the system has seen as it was: the run after it is handed the tick of the
 /// system's last run, so it reads what changed while it was off.
 #[test]
 fn resumed_is_true_again_on_the_first_run_after_a_skip() {
     let mut world = World::new();
-    let (runtime, mode) = runtime_in(EngineMode::Playing);
+    let (runtime, activation) = runtime_with_activation();
 
     run_phase(&mut world, &runtime);
     run_phase(&mut world, &runtime);
-    switch(&mode, editing());
+    switch(&activation, false);
     run_phase(&mut world, &runtime);
     run_phase(&mut world, &runtime);
-    switch(&mode, EngineMode::Playing);
+    switch(&activation, true);
     run_phase(&mut world, &runtime);
     run_phase(&mut world, &runtime);
 
-    let runs = runs_of(PLAYING_ONLY, &world);
+    let runs = runs_of(SERVING, &world);
     assert_eq!(
         runs.iter().map(|run| run.resumed).collect::<Vec<_>>(),
         vec![true, false, true, false],
@@ -230,7 +255,7 @@ fn resumed_is_true_again_on_the_first_run_after_a_skip() {
 /// running on the new one is no skip on the old one.
 #[test]
 fn a_new_world_starts_a_system_over() {
-    let (runtime, _mode) = runtime_in(EngineMode::Playing);
+    let (runtime, _activation) = runtime_with_activation();
     let mut old = World::new();
     run_phase(&mut old, &runtime);
     run_phase(&mut old, &runtime);
@@ -240,6 +265,6 @@ fn a_new_world_starts_a_system_over() {
     run_phase(&mut new, &runtime);
     run_phase(&mut old, &runtime);
 
-    assert_eq!(resumed_of(PLAYING_ONLY, &new), vec![true]);
-    assert_eq!(resumed_of(PLAYING_ONLY, &old), vec![true, false, false]);
+    assert_eq!(resumed_of(SERVING, &new), vec![true]);
+    assert_eq!(resumed_of(SERVING, &old), vec![true, false, false]);
 }

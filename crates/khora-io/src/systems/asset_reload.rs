@@ -402,7 +402,7 @@ inventory::submit! {
         order_hint: -6,
         runs_after: &[],
         observes: &[],
-        modes: &[],
+        role: khora_data::ecs::Role::Upkeep,
     }
 }
 

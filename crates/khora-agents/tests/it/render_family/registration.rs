@@ -114,10 +114,6 @@ fn the_render_family_is_registered_once_with_three_lanes() {
     assert_eq!(registration.kind, LaneKind::Render);
     assert_eq!(registration.semantics, Semantics::Presentation);
     assert_eq!(registration.importance, AgentImportance::Critical);
-    assert!(
-        registration.modes.is_empty(),
-        "the scene draws in every mode"
-    );
     assert_eq!(registration.fixed_step, None, "the scene draws every frame");
     let lanes: Vec<&'static str> = registration
         .lanes

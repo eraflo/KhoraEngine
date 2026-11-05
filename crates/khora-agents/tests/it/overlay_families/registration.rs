@@ -23,8 +23,7 @@ use khora_agents::registered_agent::lane_agents;
 use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
 use khora_core::agent::registration::{check_registrations, AgentRegistration, BootError};
 use khora_core::agent::{
-    Agent, AgentAccess, AgentImportance, DependencyKind, EngineMode, ExecutionPhase,
-    ExecutionTiming,
+    Agent, AgentAccess, AgentImportance, DependencyKind, ExecutionPhase, ExecutionTiming,
 };
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
@@ -110,7 +109,6 @@ fn the_overlay_agents_are_optional_and_run_after_the_renderer() {
         assert_eq!(registration.phase, ExecutionPhase::OUTPUT, "{name}");
         assert_eq!(registration.after, [AgentId::new("renderer")], "{name}");
         assert_eq!(registration.importance, AgentImportance::Optional, "{name}");
-        assert!(registration.modes.is_empty(), "{name}: in every mode");
         assert_eq!(registration.fixed_step, None, "{name}: every frame");
 
         let timing = agent_of(registration).execution_timing();
@@ -400,7 +398,6 @@ fn each_overlay_agent_offers_one_balanced_strategy() {
                 target_latency: Duration::from_micros(16_667),
                 priority_weight: 1.0,
                 constraints: ResourceConstraints::default(),
-                current_mode: EngineMode::Playing,
                 agent_timing: ExecutionTiming::default(),
             })
             .strategies

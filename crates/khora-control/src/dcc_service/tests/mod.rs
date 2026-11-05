@@ -28,7 +28,6 @@ mod protocol;
 use super::forecast::forecast_frame_ms;
 use super::*;
 use crate::cost_model::CostModel;
-use crate::EngineMode;
 use khora_core::agent::gorna::protocol::{
     Allocation, Confidence, Envelope, Epoch, FrameReport, Offer, OfferRequest, OfferRow, Report,
     Trigger,
@@ -456,23 +455,28 @@ fn test_dcc_service_lifecycle() {
     assert!(!dcc.running.load(Ordering::SeqCst));
 }
 
+/// **The DCC's context holds the families off**, as the frame boundary
+/// last said.
 #[test]
-fn test_dcc_mode_change_ingestion() {
+fn the_context_holds_the_families_off() {
     let (mut dcc, rx) = DccService::new(DccConfig::default());
     let tx = dcc.event_sender();
     dcc.start(rx);
+    let off: std::collections::BTreeSet<AgentId> =
+        [AgentId::new("script"), AgentId::new("physics")]
+            .into_iter()
+            .collect();
 
-    tx.send(TelemetryEvent::ModeChange(EngineMode::Custom(
-        "Editor".to_string(),
-    )))
-    .unwrap();
-
-    thread::sleep(Duration::from_millis(100));
-
-    let ctx = dcc.get_context();
-    assert_eq!(ctx.mode, EngineMode::Custom("Editor".to_string()));
-
+    tx.send(TelemetryEvent::ActivationChanged(off.clone()))
+        .expect("the DCC listens");
+    let held = wait_for(3, || dcc.get_context().inactive == off);
     dcc.stop();
+
+    assert!(
+        held,
+        "the context's families off: {:?}",
+        dcc.get_context().inactive
+    );
 }
 
 #[test]

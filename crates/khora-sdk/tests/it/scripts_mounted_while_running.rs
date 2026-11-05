@@ -24,7 +24,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use khora_sdk::khora_core::agent::{EngineMode, SharedEngineMode};
 use khora_sdk::khora_core::ecs::entity::EntityId;
 use khora_sdk::khora_core::projection::Interest;
 use khora_sdk::khora_core::script::{ComponentName, ScriptReads, ScriptValue};
@@ -50,11 +49,15 @@ impl EngineApp for Tool {
     fn new() -> Self {
         Tool
     }
-    fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {}
-    fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
-    fn initial_mode(&self) -> EngineMode {
-        EngineMode::Custom("tool".to_owned())
+    fn setup(&mut self, _world: &mut GameWorld, runtime: &Runtime) {
+        runtime
+            .resources
+            .get::<std::sync::Arc<khora_sdk::Activation>>()
+            .expect("the bootstrap publishes the engine's activation")
+            .deactivate(khora_sdk::khora_core::script::SCRIPT)
+            .expect("the scripting family is known at setup");
     }
+    fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
 }
 
 /// Counts its announcements in a field.
@@ -201,13 +204,13 @@ fn greeted(engine: &mut EngineCore<Tool>, entity: EntityId) -> Option<ScriptValu
 
 /// Plays the game.
 fn play(engine: &EngineCore<Tool>) {
-    let mode = engine
+    engine
         .runtime()
         .resources
-        .get::<SharedEngineMode>()
-        .cloned()
-        .expect("the bootstrap publishes the frame's mode");
-    *mode.write().expect("the mode lock") = EngineMode::Playing;
+        .get::<std::sync::Arc<khora_sdk::Activation>>()
+        .expect("the bootstrap publishes the engine's activation")
+        .activate(khora_sdk::khora_core::script::SCRIPT)
+        .expect("a known family");
 }
 
 // ─── Mounting ───────────────────────────────────────────────────────────────

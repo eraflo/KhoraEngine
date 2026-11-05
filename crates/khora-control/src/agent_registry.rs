@@ -17,11 +17,12 @@
 use khora_core::agent::dependency::AgentDependency;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::timing::AgentImportance;
-use khora_core::agent::{Agent, EngineMode, ExecutionPhase};
+use khora_core::agent::{Agent, ExecutionPhase};
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 /// Tuple returned by [`AgentRegistry::collect_for_phase`] for each agent
-/// matching the requested phase and mode: `(agent, importance, priority,
+/// matching the requested phase, among the families on: `(agent, importance, priority,
 /// dependencies)`.
 pub type PhaseAgentEntry = (
     Arc<Mutex<dyn Agent>>,
@@ -36,9 +37,6 @@ struct AgentEntry {
     /// The agent's name, read once: it never changes.
     id: AgentId,
     priority: f32,
-    /// Modes in which this agent is active.
-    /// Empty = active in all modes.
-    active_modes: Vec<EngineMode>,
 }
 
 /// Registry that manages all registered agents with automatic priority ordering.
@@ -80,22 +78,10 @@ impl AgentRegistry {
 
     /// Registers an agent with the given priority.
     ///
-    /// Higher priority values mean the agent is updated first.
-    /// The agent is active in all engine modes.
+    /// Higher priority values mean the agent is updated first. Whether it
+    /// runs in a frame is its family's state in force
+    /// ([`Activation`](khora_core::agent::Activation)), not the registry's.
     pub fn register(&mut self, agent: Arc<Mutex<dyn Agent>>, priority: f32) {
-        self.register_for_mode(agent, priority, vec![]);
-    }
-
-    /// Registers an agent with the given priority, active only in the specified modes.
-    ///
-    /// Higher priority values mean the agent is updated first.
-    /// If `modes` is empty, the agent is active in all modes.
-    pub fn register_for_mode(
-        &mut self,
-        agent: Arc<Mutex<dyn Agent>>,
-        priority: f32,
-        modes: Vec<EngineMode>,
-    ) {
         let id = agent
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -113,17 +99,15 @@ impl AgentRegistry {
             return;
         }
         log::info!(
-            "AgentRegistry: Registered {:?} (priority={:.2}, modes={:?})",
+            "AgentRegistry: Registered {:?} (priority={:.2})",
             id,
-            priority,
-            modes
+            priority
         );
 
         self.entries.push(AgentEntry {
             agent,
             id,
             priority,
-            active_modes: modes,
         });
         self.entries.sort_by(|a, b| {
             b.priority
@@ -147,16 +131,15 @@ impl AgentRegistry {
         self.entries.iter().map(|e| &e.agent)
     }
 
-    /// Returns an iterator over the agents active in `mode`, in priority
-    /// order (highest first). An agent registered with no modes is active in
-    /// every mode.
-    pub fn iter_for_mode<'a>(
+    /// Returns an iterator over the agents whose family is not in
+    /// `inactive`, in priority order (highest first).
+    pub fn iter_active<'a>(
         &'a self,
-        mode: &'a EngineMode,
+        inactive: &'a BTreeSet<AgentId>,
     ) -> impl Iterator<Item = &'a Arc<Mutex<dyn Agent>>> + 'a {
         self.entries
             .iter()
-            .filter(move |e| e.active_modes.is_empty() || e.active_modes.contains(mode))
+            .filter(move |e| !inactive.contains(&e.id))
             .map(|e| &e.agent)
     }
 
@@ -224,26 +207,23 @@ impl AgentRegistry {
             .map(|entry| entry.agent.clone())
     }
 
-    /// Collects agents that are allowed to run in the given phase and mode.
-    /// Returns a list of (agent, importance, priority, dependencies).
+    /// Collects the agents allowed to run in the given phase whose family is
+    /// not in `inactive`. Returns a list of (agent, importance, priority,
+    /// dependencies).
     pub fn collect_for_phase(
         &self,
         phase: ExecutionPhase,
-        mode: &EngineMode,
+        inactive: &BTreeSet<AgentId>,
     ) -> Vec<PhaseAgentEntry> {
         self.entries
             .iter()
+            .filter(|entry| !inactive.contains(&entry.id))
             .filter_map(|entry| {
                 let agent = entry.agent.lock().ok()?;
                 let timing = agent.execution_timing();
 
                 // Filter by phase
                 if !timing.allowed_phases.contains(&phase) {
-                    return None;
-                }
-
-                // Filter by mode (empty = all modes)
-                if !entry.active_modes.is_empty() && !entry.active_modes.contains(mode) {
                     return None;
                 }
 

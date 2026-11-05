@@ -22,14 +22,11 @@
 //! what the engine keeps of the instance is its state companion
 //! `Guard#state` — what a game save restores.
 
-use std::sync::{Arc, RwLock};
-
-use khora_core::agent::{EngineMode, SharedEngineMode};
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, InstanceLifecycle, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_core::Runtime;
 use khora_data::ecs::{Transform, World};
-use khora_data::flow::{Flow, ScriptFlow, ScriptInstance, ScriptProgram, ScriptView};
+use khora_data::flow::{Flow, FlowContext, ScriptFlow, ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{run_behaviors, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::native::Host;
@@ -109,34 +106,38 @@ fn never_spawned(saved: ScriptSnapshot) -> ScriptSnapshot {
     old
 }
 
-/// A world projected through the real flow under the frame's mode.
+/// A world projected through the real flow, as the substrate runs it: told
+/// it resumes on its first run and on its first run after frames the
+/// scripting family was off.
 struct Game {
     world: World,
     flow: ScriptFlow,
     runtime: Runtime,
-    mode: SharedEngineMode,
+    /// Whether the flow ran the frame before.
+    ran: bool,
 }
 
 impl Game {
     fn new(world: World) -> Self {
-        let mode: SharedEngineMode = Arc::new(RwLock::new(EngineMode::Playing));
-        let mut runtime = Runtime::default();
-        runtime.resources.insert(Arc::clone(&mode));
         Self {
             world,
             flow: ScriptFlow::default(),
-            runtime,
-            mode,
+            runtime: Runtime::default(),
+            ran: false,
         }
     }
 
     fn view(&mut self) -> ScriptView {
-        let selection = self.flow.select(&self.world, &self.runtime);
+        let ctx = FlowContext { resumed: !self.ran };
+        self.ran = true;
+        let selection = self.flow.select(&self.world, &self.runtime, ctx);
         self.flow.project(&self.world, &selection, &self.runtime)
     }
 
-    fn set_mode(&self, mode: EngineMode) {
-        *self.mode.write().expect("the mode lock") = mode;
+    /// A frame with the scripting family off: the substrate skips the flow,
+    /// and the lane does not run.
+    fn scripts_off(&mut self) {
+        self.ran = false;
     }
 }
 
@@ -324,8 +325,8 @@ const ANNOUNCER: &str = r#"behavior Guard {
                           event Loaded;
                           event Spawned;"#;
 
-/// **Leaving the game for a moment is not loading a save.** A game that
-/// switches to a mode of its own — a photo mode, a cutscene tool — and back
+/// **Leaving the game for a moment is not loading a save.** A game whose
+/// scripts go off for a while — a photo mode, a cutscene tool — and back on
 /// keeps its world: nothing was restored. But the flow forgets what it had
 /// seen, so every entity arrives again carrying the state companion the
 /// writeback recorded, and the lane takes that for a save: `OnLoad` runs for
@@ -351,12 +352,9 @@ fn returning_to_play_from_another_mode_is_not_a_load() {
         "the writeback recorded its state companion"
     );
 
-    // A frame in another mode: the scripting agent is registered for
-    // `Playing` only, so the lane does not run; the flow still selects.
-    game.set_mode(EngineMode::Custom("photo".to_owned()));
-    assert!(game.view().is_empty(), "nothing projected");
+    // A frame with the scripts off: neither the flow nor the lane runs.
+    game.scripts_off();
 
-    game.set_mode(EngineMode::Playing);
     for _ in 0..2 {
         let view = game.view();
         let report = run_behaviors(&view, &EventQueue::new(), &mut runtime, &mut host, 1_000);
@@ -413,13 +411,11 @@ fn an_entity_that_left_while_play_was_away_gets_no_farewell_later() {
     lane_frame(&view, &mut runtime);
     assert!(runtime.peek(gone, "Guard").is_some(), "it runs");
 
-    // Away from play: the entity leaves, and nothing scripted is left.
-    game.set_mode(EngineMode::Custom("photo".to_owned()));
-    assert!(game.view().is_empty());
+    // The scripts off: the entity leaves, and nothing scripted is left.
+    game.scripts_off();
     game.world.despawn(gone);
 
     // Back: the first frame says it resumes, and has nothing to run.
-    game.set_mode(EngineMode::Playing);
     let back = game.view();
     assert!(back.resumed, "the first frame back resumes");
     assert!(back.is_empty(), "nothing scripted");

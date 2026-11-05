@@ -35,7 +35,7 @@ use khora_core::scene::SerializationGoal;
 use khora_core::script::{engine_event_channel, ScriptEvent, ScriptValue};
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::{Name, TickPhase, Transform, World};
-use khora_data::flow::{Flow, ScriptFlow};
+use khora_data::flow::{Flow, FlowContext, ScriptFlow};
 use khora_io::script::declarations::{apply_declarations, DeclaredComponents};
 use khora_io::serialization::SerializationService;
 use khora_lanes::script_lane::ScriptRuntime;
@@ -77,6 +77,9 @@ fn declare(world: &mut World) {
 struct Session {
     world: World,
     flow: ScriptFlow,
+    /// Whether the flow ran before, as the substrate keeps it: its first run
+    /// is a resumption.
+    projected: bool,
     agent: ScriptAgent,
     scripts: Arc<Mutex<ScriptRuntime>>,
     events: Channel<ScriptEvent>,
@@ -110,6 +113,7 @@ impl Session {
         Self {
             world,
             flow: ScriptFlow::default(),
+            projected: false,
             agent,
             scripts,
             events,
@@ -120,7 +124,11 @@ impl Session {
     /// One frame of `delta` seconds: project, run the agent, then the
     /// frame-boundary systems that write back what it observed.
     fn frame(&mut self, delta: f32) {
-        let selection = self.flow.select(&self.world, &self.runtime);
+        let ctx = FlowContext {
+            resumed: !self.projected,
+        };
+        self.projected = true;
+        let selection = self.flow.select(&self.world, &self.runtime, ctx);
         let mut view = self.flow.project(&self.world, &selection, &self.runtime);
         view.delta_seconds = delta;
 

@@ -40,7 +40,7 @@ use khora_data::ecs::{
     Collider, ComponentProvenance, FieldKind, PackedField, PackedLayout, RigidBody,
     RuntimeComponentDecl, SemanticDomain, TickPhase, Transform, World,
 };
-use khora_data::flow::{Flow, ScriptFlow};
+use khora_data::flow::{Flow, FlowContext, ScriptFlow};
 use khora_io::script::declarations::{
     declaration_channel, DeclaredComponents, PendingDeclarations,
 };
@@ -81,6 +81,9 @@ fn body(mass: f32) -> RigidBody {
 struct Session {
     world: World,
     flow: ScriptFlow,
+    /// Whether the flow ran before, as the substrate keeps it: its first run
+    /// is a resumption.
+    projected: bool,
     agent: ScriptAgent,
     scripts: Arc<Mutex<ScriptRuntime>>,
     reloads: Channel<ScriptReload>,
@@ -124,6 +127,7 @@ impl Session {
         let mut session = Self {
             world,
             flow: ScriptFlow::default(),
+            projected: false,
             agent,
             scripts,
             reloads,
@@ -160,7 +164,11 @@ impl Session {
     /// applied, and what the flow projected.
     fn run_scripts(&mut self) -> (OutputDeck, Arc<ComponentProjection>) {
         self.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
-        let selection = self.flow.select(&self.world, &self.runtime);
+        let ctx = FlowContext {
+            resumed: !self.projected,
+        };
+        self.projected = true;
+        let selection = self.flow.select(&self.world, &self.runtime, ctx);
         let mut view = self.flow.project(&self.world, &selection, &self.runtime);
         view.delta_seconds = 0.016;
         let projected = Arc::clone(&view.components);

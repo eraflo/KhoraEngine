@@ -21,7 +21,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use khora_sdk::khora_core::agent::EngineMode;
 use khora_sdk::khora_core::problems::{ProblemSeverity, Problems};
 use khora_sdk::{
     AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
@@ -41,11 +40,15 @@ impl EngineApp for Tool {
     fn new() -> Self {
         Tool
     }
-    fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {}
-    fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
-    fn initial_mode(&self) -> EngineMode {
-        EngineMode::Custom("tool".to_owned())
+    fn setup(&mut self, _world: &mut GameWorld, runtime: &Runtime) {
+        runtime
+            .resources
+            .get::<std::sync::Arc<khora_sdk::Activation>>()
+            .expect("the bootstrap publishes the engine's activation")
+            .deactivate(khora_sdk::khora_core::script::SCRIPT)
+            .expect("the scripting family is known at setup");
     }
+    fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
 }
 
 /// A fresh assets root holding `scripts/<module>` for each of `modules`,

@@ -16,7 +16,9 @@ use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_core::agent::gorna::protocol::{Confidence, Offer, OfferRequest, OfferRow};
+use khora_core::agent::gorna::protocol::{
+    Confidence, Epoch, Offer, OfferRequest, OfferRow, Report,
+};
 use khora_core::agent::gorna::{
     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
     StrategyOption,
@@ -49,6 +51,11 @@ pub struct ScriptAgent {
     /// The time the budget lent: turned into fuel every frame, at the rate
     /// and past the overhead the lane measured last.
     lent: Duration,
+    /// Whether a budget was ever applied. Until one is, the agent runs at its
+    /// default level ([`default_level`]) — as a lane family runs its default
+    /// layer until the DCC names it — so a family switched on runs from its
+    /// first frame, without waiting for the DCC's next epoch.
+    budgeted: bool,
     /// Shared handle to the scripting world.
     ///
     /// A handle, not the thing. [`negotiate`](Agent::negotiate),
@@ -68,6 +75,7 @@ impl Default for ScriptAgent {
             current_lane: "Budgeted",
             current_strategy: StrategyId::Balanced,
             lent: Duration::ZERO,
+            budgeted: false,
             runtime: None,
         }
     }
@@ -121,6 +129,17 @@ fn pricing(runtime: &ScriptRuntime, frame: Duration) -> Pricing {
     }
 }
 
+/// The time the agent runs on before any budget: its full row, every due
+/// turn priced as the runs measured it, and each instance of `view` priced as
+/// a turn not yet measured — on the first frame of a session the scripting
+/// world has not met its instances yet, and a price of what it knows would buy
+/// none of them.
+fn default_level(runtime: &ScriptRuntime, view: &ScriptView) -> Duration {
+    let frame = Duration::from_secs_f32(khora_core::time::DEFAULT_FIXED_DELTA_SECONDS);
+    let arriving = u32::try_from(view.len()).unwrap_or(u32::MAX);
+    pricing(runtime, frame).full + UNKNOWN_TURN * arriving
+}
+
 /// Reads something off the scripting world without blocking.
 ///
 /// `try_lock` rather than `lock`: the guard is only ever held inside `execute`,
@@ -139,7 +158,7 @@ fn peek<T>(
 }
 
 /// The script runner's name.
-pub const SCRIPT: AgentId = AgentId::new("script");
+pub const SCRIPT: AgentId = khora_core::script::SCRIPT;
 
 impl Agent for ScriptAgent {
     fn id(&self) -> AgentId {
@@ -216,6 +235,7 @@ impl Agent for ScriptAgent {
         // rate the **lane** measured last, so a rate corrected between two
         // allocations is used at once.
         self.lent = budget.time_limit;
+        self.budgeted = true;
         log::debug!(
             "ScriptAgent: {:?} — {:.3}ms lent",
             budget.strategy_id,
@@ -269,7 +289,12 @@ impl Agent for ScriptAgent {
         if let Some(prefabs) = context.bus.get::<khora_data::flow::PrefabCatalogView>() {
             ctx.insert_ref(prefabs);
         }
-        ctx.insert(Fuel(runtime.fuel_for(self.lent)));
+        let lent = if self.budgeted {
+            self.lent
+        } else {
+            default_level(&runtime, view)
+        };
+        ctx.insert(Fuel(runtime.fuel_for(lent)));
         // The guard is held for the whole of this call, outliving `ctx`, and
         // the contention declaration is what keeps a concurrent agent out of it.
         ctx.insert_slot(&mut *runtime);
@@ -282,6 +307,31 @@ impl Agent for ScriptAgent {
         };
         if let Err(error) = lane.execute(&mut ctx) {
             log::error!("Script lane {} failed: {error}", lane.strategy_name());
+        }
+    }
+
+    /// What the last run did, for the DCC. A run that deferred turns says
+    /// so: the envelope did not buy the work due, and enough such runs in a
+    /// row open an epoch that prices it again — an envelope lent before the
+    /// scripts were loaded is not kept for good.
+    fn report(&self) -> Report {
+        let status = self.report_status();
+        let report = peek(
+            &self.runtime,
+            |runtime| runtime.last_report().clone(),
+            ScriptRunReport::default(),
+        );
+        Report {
+            agent: self.id(),
+            epoch: Epoch::default(),
+            row: status.current_strategy,
+            measured: PerDevice::default(),
+            done: status.health_score,
+            health: status.health_score,
+            over_budget: report.deferred > 0,
+            stalled: status.is_stalled,
+            workload: None,
+            switch: None,
         }
     }
 
@@ -482,8 +532,18 @@ mod tests {
         );
     }
 
-    /// **Deferring is the design working, so it must not lose anything.** With
-    /// no budget there is no fuel and every behavior is deferred; the event
+    /// A budget of `time_limit`, as the DCC lends one.
+    fn lend(agent: &mut ScriptAgent, time_limit: Duration) {
+        agent.apply_budget(ResourceBudget {
+            strategy_id: StrategyId::Balanced,
+            time_limit,
+            memory_limit: None,
+            extra_params: Default::default(),
+        });
+    }
+
+    /// **Deferring is the design working, so it must not lose anything.** Lent
+    /// nothing, there is no fuel and every behavior is deferred; the event
     /// waits for a frame that can deliver it rather than going out with the one
     /// that could not.
     ///
@@ -493,11 +553,50 @@ mod tests {
     fn a_deferred_behavior_keeps_what_it_was_never_told() {
         let (runtime, shared) = wired();
         let mut agent = ScriptAgent::default();
+        lend(&mut agent, Duration::ZERO);
         leave_mail(&shared);
 
         run_one_frame(&mut agent, &runtime);
 
         assert_eq!(waiting(&shared), 1, "still waiting to be told");
+    }
+
+    /// **An agent never lent a budget runs its default level**, as a lane
+    /// family runs its default layer until the DCC names one: the first frame
+    /// of a family switched on has fuel, and the mail is delivered.
+    #[test]
+    fn an_agent_never_lent_a_budget_runs_its_default_level() {
+        let (runtime, shared) = wired();
+        let mut agent = ScriptAgent::default();
+        leave_mail(&shared);
+
+        run_one_frame(&mut agent, &runtime);
+
+        assert_eq!(
+            waiting(&shared),
+            0,
+            "the default level ran the turn, so the mail was offered"
+        );
+    }
+
+    /// **A run that deferred turns reports itself over budget**, so the DCC
+    /// opens an epoch that prices the scripts again; a run that deferred
+    /// nothing does not.
+    #[test]
+    fn a_run_that_deferred_turns_reports_over_budget() {
+        let (runtime, shared) = wired();
+        let mut agent = ScriptAgent::default();
+        lend(&mut agent, Duration::ZERO);
+        leave_mail(&shared);
+        run_one_frame(&mut agent, &runtime);
+        assert!(agent.report().over_budget, "lent nothing, it deferred");
+
+        lend(&mut agent, Duration::from_millis(1));
+        run_one_frame(&mut agent, &runtime);
+        assert!(
+            !agent.report().over_budget,
+            "lent enough, it deferred nothing"
+        );
     }
 
     /// And once there is fuel, it is delivered and does not come back. A fix
@@ -507,12 +606,7 @@ mod tests {
     fn a_behavior_that_gets_its_turn_is_told_once() {
         let (runtime, shared) = wired();
         let mut agent = ScriptAgent::default();
-        agent.apply_budget(ResourceBudget {
-            strategy_id: StrategyId::Balanced,
-            time_limit: Duration::from_millis(1),
-            memory_limit: None,
-            extra_params: Default::default(),
-        });
+        lend(&mut agent, Duration::from_millis(1));
         leave_mail(&shared);
 
         run_one_frame(&mut agent, &runtime);
@@ -553,7 +647,6 @@ mod tests {
             target_latency: Duration::from_millis(16),
             priority_weight: 1.0,
             constraints: Default::default(),
-            current_mode: khora_core::agent::EngineMode::Playing,
             agent_timing: agent.execution_timing(),
         };
 

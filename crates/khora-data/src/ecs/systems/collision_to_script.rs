@@ -120,8 +120,19 @@ inventory::submit! {
         order_hint: 20,
         runs_after: &[],
         observes: &[],
-        modes: &[],
+        role: crate::ecs::Role::Serves(khora_core::script::SCRIPT),
     }
+}
+
+// The contacts this system reads for the scripts, by its own cursor: a
+// contact made while the scripts were off is not delivered to their next
+// session. The channel's other readers keep theirs.
+inventory::submit! {
+    khora_core::event::Mailbox::of::<Collision>(
+        khora_core::script::SCRIPT,
+        khora_core::event::Reader::Cursor("collision_to_script"),
+        khora_core::event::BetweenSessions::Drop,
+    )
 }
 
 #[cfg(test)]

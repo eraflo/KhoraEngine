@@ -82,6 +82,7 @@ impl Flow for ShadowFlow {
     // No dedicated shadow domain — bucketed under Render for budget purposes.
     const DOMAIN: SemanticDomain = SemanticDomain::Render;
     const NAME: &'static str = "shadow";
+    const ROLE: crate::ecs::Role = crate::ecs::Role::Upkeep;
 
     /// Same inputs as `RenderFlow`: `Light` / `Camera` (Render domain),
     /// `GlobalTransform` (Spatial domain), `primary_view`'s editor viewport

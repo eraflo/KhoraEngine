@@ -20,7 +20,7 @@
 //! The engine owns: DCC, scheduler, telemetry, runtime containers, frame loop.
 //! The app owns: window, renderer, agents, phases, game logic.
 
-use khora_control::{DccService, EngineMode};
+use khora_control::DccService;
 use khora_core::event::Channel;
 use khora_core::Runtime;
 use khora_telemetry::TelemetryService;
@@ -30,6 +30,7 @@ use crate::traits::EngineApp;
 use crate::{GameWorld, InputEvent};
 
 mod bootstrap;
+mod families;
 mod frame;
 mod frame_clock;
 mod startup;
@@ -64,8 +65,6 @@ pub struct EngineCore<A: EngineApp> {
     /// from its own position, none taking events from the others. It replaced
     /// an unbounded `VecDeque` that only this struct could reach.
     input_events: Channel<InputEvent>,
-    /// The engine mode last told to the DCC.
-    forwarded_mode: Option<EngineMode>,
     /// Every registered pass slot, in the order the frame submits them.
     /// Ordered once at boot, which refuses a cycle in their `after` edges.
     passes: Vec<&'static khora_data::render::PassRegistration>,
@@ -88,13 +87,12 @@ impl<A: EngineApp> EngineCore<A> {
             scheduler: None,
             context: Arc::new(RwLock::new(khora_control::Context {
                 hardware: khora_control::HardwareState::default(),
-                mode: EngineMode::Playing,
+                inactive: Default::default(),
                 global_budget_multiplier: 1.0,
                 memory_pressure: 0.0,
             })),
             runtime: Arc::new(Runtime::new()),
             input_events: khora_core::platform::input_channel(),
-            forwarded_mode: None,
             passes: Vec::new(),
             lane_agents: Vec::new(),
             frame_clock: frame_clock::FrameClock::default(),

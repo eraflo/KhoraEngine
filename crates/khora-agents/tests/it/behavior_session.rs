@@ -30,7 +30,7 @@ use khora_core::script::{
 use khora_core::script::{ScriptValue, WorldCommand};
 use khora_core::Runtime;
 use khora_data::ecs::{ComponentKey, TickPhase, World};
-use khora_data::flow::{Flow, ScriptFlow, ScriptView};
+use khora_data::flow::{Flow, FlowContext, ScriptFlow, ScriptView};
 use khora_io::script::declarations::{declaration_channel, DeclaredComponents, ScriptDeclarations};
 use khora_io::script::mirror::PreludeLoader;
 use khora_lanes::script_lane::{take_in, BudgetedScriptLane, Fuel, ScriptRuntime};
@@ -83,6 +83,9 @@ pub(crate) struct Session {
     /// The fuel each frame's lane runs with.
     pub(crate) fuel: u64,
     flow: ScriptFlow,
+    /// Whether the flow ran before, as the substrate keeps it: its first run
+    /// is a resumption.
+    projected: bool,
     lane: BudgetedScriptLane,
     runtime: Arc<Runtime>,
     reloads: Channel<ScriptReload>,
@@ -129,6 +132,7 @@ impl Session {
             scripts: ScriptRuntime::new(),
             fuel: PLENTY,
             flow: ScriptFlow::default(),
+            projected: false,
             lane: BudgetedScriptLane::new(),
             runtime: Arc::new(runtime),
             reloads,
@@ -154,7 +158,11 @@ impl Session {
 
     /// The flow's view of the world as it is, without running anything.
     pub(crate) fn project(&mut self) -> ScriptView {
-        let selection = self.flow.select(&self.world, &self.runtime);
+        let ctx = FlowContext {
+            resumed: !self.projected,
+        };
+        self.projected = true;
+        let selection = self.flow.select(&self.world, &self.runtime, ctx);
         self.flow.project(&self.world, &selection, &self.runtime)
     }
 

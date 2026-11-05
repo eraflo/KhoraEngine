@@ -120,7 +120,13 @@ impl<A: EngineApp> EngineCore<A> {
     /// Stage 2 — run `app.update`, ECS maintenance, mesh sync, and scene/UI
     /// extractions. Called between [`drain_inputs`](Self::drain_inputs) and
     /// [`begin_render_frame`](Self::begin_render_frame).
+    ///
+    /// It opens with the frame boundary: the families the app switched on or
+    /// off — in its [`before_frame`](EngineApp::before_frame), or before — are
+    /// settled, so every phase of the frame, the scheduler and the DCC see one
+    /// state. A request made after counts from the next frame.
     pub fn run_app_update(&mut self, inputs: &[InputEvent]) {
+        self.settle_activation();
         let (Some(app), Some(gw)) = (self.app.as_mut(), self.game_world.as_mut()) else {
             return;
         };
@@ -244,7 +250,6 @@ impl<A: EngineApp> EngineCore<A> {
     /// Stage 4 — dispatch the scheduler so all registered agents execute
     /// their phases for this frame.
     pub fn run_scheduler(&mut self, frame_runtime_arc: &Arc<Runtime>) {
-        self.forward_mode(frame_runtime_arc);
         let Some(gw) = self.game_world.as_mut() else {
             return;
         };
@@ -260,29 +265,32 @@ impl<A: EngineApp> EngineCore<A> {
         }
     }
 
-    /// Tells the DCC the frame's mode when it changed, so the arbitration it
-    /// runs on its own thread budgets the agents this mode runs. The
-    /// scheduler reads the mode itself, this frame; the DCC learns it as soon
-    /// as its next tick.
-    fn forward_mode(&mut self, runtime: &Runtime) {
-        let Some(mode) = runtime
+    /// The frame boundary: makes the families requested on or off the state
+    /// in force, empties the mail sent to a family while it was off — in the
+    /// frame that ended or for the coming one — and tells the DCC when the
+    /// families off changed, so the arbitration it runs on its own thread
+    /// budgets only the families on.
+    fn settle_activation(&mut self) {
+        let Some(activation) = self
+            .runtime
             .resources
-            .get::<khora_core::agent::SharedEngineMode>()
-            .and_then(|shared| shared.read().ok().map(|mode| mode.clone()))
+            .get::<Arc<khora_core::agent::Activation>>()
+            .cloned()
         else {
             return;
         };
-        if self.forwarded_mode.as_ref() == Some(&mode) {
-            return;
+        let was_off = activation.inactive();
+        let changed = activation.settle();
+        let mut off = activation.inactive();
+        off.extend(was_off);
+        khora_core::event::discard_mail_of(&off, &self.runtime);
+        if changed {
+            if let Some(dcc) = &self.dcc {
+                let _ = dcc.event_sender().send(
+                    khora_core::telemetry::TelemetryEvent::ActivationChanged(activation.inactive()),
+                );
+            }
         }
-        if let Some(dcc) = &self.dcc {
-            let _ = dcc
-                .event_sender()
-                .send(khora_core::telemetry::TelemetryEvent::ModeChange(
-                    mode.clone(),
-                ));
-        }
-        self.forwarded_mode = Some(mode);
     }
 
     /// Stage 5a — submit recorded passes from the [`FrameGraph`](khora_data::render::FrameGraph) to the GPU.

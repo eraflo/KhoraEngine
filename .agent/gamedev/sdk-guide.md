@@ -51,9 +51,11 @@ fn main() -> anyhow::Result<()> {
 - `new()` → simple constructor, **no engine context yet**.
 - `setup(world, runtime)` → cache services from `runtime.resources`, spawn your initial entities.
 - `update(world, inputs)` → your per-frame game logic. The engine renders/simulates around you.
-- `initial_mode()` → the `EngineMode` the engine starts in (default `EngineMode::Playing`), written into
-  the `SharedEngineMode` runtime resource; the scheduler reads it once per frame. **Ergon scripts run
-  only while the mode is `Playing`** — a tool mode (`EngineMode::Custom(..)`) runs no script.
+- There is no engine mode. Every family (rendering, physics, audio, scripting, your own agents) starts
+  on; switch one with `activate`/`deactivate` on the `Arc<Activation>` runtime resource
+  (`khora_sdk::Activation`). A switch is a request and lands at the next frame boundary, so a switch made
+  in `before_frame` holds for that whole frame. **Ergon scripts run only while the scripting family
+  (`khora_core::script::SCRIPT`) is on**; a game keeps it on unless it switches it off.
 
 `AgentProvider`/`PhaseProvider` are usually empty for a game — they exist for advanced extension.
 

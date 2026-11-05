@@ -14,11 +14,11 @@
 
 //! Tests of the execution scheduler, one file per concern.
 
+mod activation;
 mod agent_ids;
 mod allocations;
 mod concurrent_exec;
 mod deck_writes;
-mod engine_mode;
 mod fixed_agent_sub_clocks;
 mod host_views;
 mod layer_panics;

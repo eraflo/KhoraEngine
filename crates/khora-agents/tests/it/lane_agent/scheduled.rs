@@ -24,7 +24,7 @@ use khora_agents::registered_agent::lane_agents;
 use khora_control::{AgentRegistry, Context, ExecutionScheduler};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::{AgentRegistration, BootError};
-use khora_core::agent::{Agent, AgentImportance, EngineMode, ExecutionPhase, SharedEngineMode};
+use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::Cost;
@@ -276,7 +276,6 @@ static LIGHT: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::TRANSFORM,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [LightLane],
 };
@@ -287,7 +286,6 @@ static FIXED_LIGHT: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::TRANSFORM,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: Some(Duration::from_millis(4)),
     lanes: [LightLane],
 };
@@ -298,7 +296,6 @@ static EYE: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [EyeLane],
 };
@@ -309,7 +306,6 @@ static FIXED_EYE: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: Some(Duration::from_millis(4)),
     lanes: [EyeLane],
 };
@@ -320,7 +316,6 @@ static IDLE: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [IdleLane],
 };
@@ -331,7 +326,6 @@ static STRAY: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [StrayLane],
 };
@@ -339,10 +333,7 @@ static STRAY: AgentRegistration = khora_core::register_agent! {
 // ─── Driving a frame ────────────────────────────────────────────────────────
 
 fn playing() -> Arc<Runtime> {
-    let mode: SharedEngineMode = Arc::new(RwLock::new(EngineMode::Playing));
-    let mut runtime = Runtime::new();
-    runtime.resources.insert(mode);
-    Arc::new(runtime)
+    Arc::new(Runtime::new())
 }
 
 /// Boots `registrations` as the engine does, then runs one frame.
@@ -557,7 +548,6 @@ static TICKING: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::TRANSFORM,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: Some(Duration::from_millis(4)),
     lanes: [TickLane],
 };
@@ -569,7 +559,6 @@ static PARTNER: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::TRANSFORM,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: Some(Duration::from_millis(4)),
     lanes: [PartnerLane],
 };
@@ -607,7 +596,6 @@ static FINAL_LIGHT: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::FINALIZE,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [LightLane],
 };
@@ -618,7 +606,6 @@ static LATE_EYE: AgentRegistration = khora_core::register_agent! {
     phase: LATE,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [EyeLane],
 };

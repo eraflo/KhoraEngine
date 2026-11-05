@@ -184,7 +184,6 @@ static OFFERED: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     default_level: StrategyId::HighPerformance,
     lanes: [DearLane, LockedLane, CheapLane],

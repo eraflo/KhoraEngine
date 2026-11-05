@@ -188,7 +188,6 @@ static SWAPPING: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [CheapLane, DearLane],
 };
@@ -582,7 +581,6 @@ static QUICK_THEN_SLOW: AgentRegistration = khora_core::register_agent! {
     phase: ExecutionPhase::OUTPUT,
     importance: AgentImportance::Important,
     after: [],
-    modes: [],
     fixed_step: None,
     lanes: [QuickLane, SlowLane],
 };

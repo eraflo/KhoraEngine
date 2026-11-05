@@ -247,3 +247,87 @@ fn a_clone_shares_the_stream() {
 fn a_channel_that_can_hold_nothing_is_refused() {
     let _: Channel<Happening> = Channel::bounded(0, WhenFull::DropOldest);
 }
+
+// ─── Discarding on purpose ──────────────────────────────────────────────────
+
+/// **`discard_unread` empties the channel, and counts what it discarded apart
+/// from what overflowed.** A channel of two takes three items — one overflows
+/// — then discards the two it holds.
+#[test]
+fn discard_unread_empties_the_channel_and_counts_apart_from_overflow() {
+    let events = channel(2);
+    events.send(Happening(1));
+    events.send(Happening(2));
+    events.send(Happening(3));
+    assert_eq!(events.dropped(), 1, "the premise: one overflowed");
+
+    events.discard_unread();
+
+    assert!(events.is_empty());
+    assert_eq!(events.discarded(), 2);
+    assert_eq!(events.dropped(), 1, "a discard is no overflow");
+}
+
+/// **A reader does not hear what was discarded**, and hears what follows.
+#[test]
+fn a_reader_hears_only_what_follows_a_discard() {
+    let events = channel(8);
+    let mut cursor = Cursor::default();
+    events.send(Happening(1));
+    events.send(Happening(2));
+
+    events.discard_unread();
+    events.send(Happening(3));
+
+    assert_eq!(events.read(&mut cursor), vec![Happening(3)]);
+    assert_eq!(events.drain(), vec![Happening(3)]);
+}
+
+/// **`skip_to_end` moves one named reader past its unread items** and no
+/// other: the items stay for the channel's other readers, and the reader
+/// hears what is sent after.
+#[test]
+fn skip_to_end_moves_one_named_reader_past_its_unread_items() {
+    let events = channel(8);
+    events.send(Happening(1));
+    events.send(Happening(2));
+
+    events.skip_to_end("skipped");
+
+    assert!(events.read_for("skipped").is_empty());
+    assert_eq!(
+        events.read_for("other"),
+        vec![Happening(1), Happening(2)],
+        "another reader keeps them"
+    );
+    assert_eq!(events.len(), 2, "the items stay");
+    events.send(Happening(3));
+    assert_eq!(events.read_for("skipped"), vec![Happening(3)]);
+    assert_eq!(events.dropped(), 0);
+}
+
+/// **`skip_to_end` counts only what the reader had not read.** It read two
+/// items; a third arrives; skipping discards one.
+#[test]
+fn skip_to_end_counts_only_what_the_reader_had_not_read() {
+    let events = channel(8);
+    events.send(Happening(1));
+    events.send(Happening(2));
+    assert_eq!(events.read_for("reader").len(), 2);
+    events.send(Happening(3));
+
+    events.skip_to_end("reader");
+
+    assert_eq!(events.discarded(), 1);
+    assert!(events.read_for("reader").is_empty());
+}
+
+/// A channel nobody discarded from has discarded nothing.
+#[test]
+fn a_new_channel_has_discarded_nothing() {
+    let events: Channel<Happening> = channel(4);
+    events.send(Happening(1));
+    let _ = events.drain();
+
+    assert_eq!(events.discarded(), 0, "a drain is a read, not a discard");
+}

@@ -31,6 +31,7 @@ pub(crate) mod history;
 mod material;
 mod prefab;
 mod scene;
+mod transport;
 
 pub use asset_ops::process_pending_asset_file_ops;
 pub use asset_ops::process_pending_assign_texture;
@@ -45,6 +46,9 @@ pub use scene::browse_and_open_project;
 pub use scene::load_scene_dispatch;
 pub use scene::run_build_game;
 pub use scene::save_scene_dispatch;
+#[cfg(test)]
+pub use transport::PLAY_FAMILIES;
+pub use transport::{process_transport, start_editing};
 
 /// Process every pending menu action queued in `EditorState`. Drains
 /// `pending_browse_project_folder` and `pending_menu_action` in turn.
@@ -67,10 +71,18 @@ pub fn process_menu_actions(
         }
     }
 
-    let action = editor_state
-        .lock()
-        .ok()
-        .and_then(|mut s| s.pending_menu_action.take());
+    // The transport is processed before the frame (`process_transport`): an
+    // action of its asked since is left for the next frame's.
+    let action = editor_state.lock().ok().and_then(|mut s| {
+        if s.pending_menu_action
+            .as_deref()
+            .is_some_and(transport::is_transport)
+        {
+            None
+        } else {
+            s.pending_menu_action.take()
+        }
+    });
 
     let Some(action) = action else { return };
 
@@ -85,12 +97,6 @@ pub fn process_menu_actions(
         "quit" => {
             log::info!("Quit requested from menu");
             std::process::exit(0);
-        }
-        "play" => apply_play(world, editor_state),
-        "pause" => apply_pause(editor_state),
-        "stop" => {
-            apply_stop(world, editor_state);
-            forget_history(command_history);
         }
         "save" => apply_save(project_vfs.as_ref(), world, editor_state),
         // Save-As does NOT expose an encoding picker. The engine knows

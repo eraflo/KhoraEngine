@@ -16,20 +16,19 @@
 //! script flow projects.** The `script_intake` data system, every frame of
 //! play: it drains the reload and event channels, installs each recompiled
 //! module whose reads the demand on the script flow covers — the others wait
-//! — announces what the installed programs read, and clears the mail when
-//! play starts over. The lane only runs behaviors: it leaves the channels
-//! alone.
+//! — announces what the installed programs read, and clears the scripting
+//! world's own mail when the scripting family resumes. The lane only runs
+//! behaviors: it leaves the channels alone.
 
 use std::sync::{Arc, Mutex};
 
-use khora_core::agent::EngineMode;
 use khora_core::ecs::entity::EntityId;
 use khora_core::event::{Channel, WhenFull};
 use khora_core::lane::{Lane, LaneContext, OutputDeck};
 use khora_core::projection::Interest;
 use khora_core::script::{ComponentName, ScriptEvent, ScriptReads, ScriptValue};
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, SystemContext, Tick, TickPhase, World};
+use khora_data::ecs::{DataSystemRegistration, Role, SystemContext, Tick, TickPhase, World};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::{take_in, BudgetedScriptLane, Fuel, ScriptRuntime};
 use khora_script::reload::ScriptReload;
@@ -206,16 +205,21 @@ impl Wired {
 
 // ─── Registration ──────────────────────────────────────────────────────────
 
-/// **A `PreExtract` system of play alone, after the declarations.** Before
-/// the flows project (they run after `PreExtract`), after `script_components`
-/// — itself after the hot-reload pump — so a reload's components exist when
-/// its program is installed; skipped while editing.
+/// **A `PreExtract` system of the scripting family, after the
+/// declarations.** Before the flows project (they run after `PreExtract`),
+/// after `script_components` — itself after the hot-reload pump — so a
+/// reload's components exist when its program is installed; skipped while
+/// the scripting family is off.
 #[test]
-fn the_intake_is_a_pre_extract_system_of_play_after_the_declarations() {
+fn the_intake_is_a_pre_extract_system_of_the_scripting_family_after_the_declarations() {
     let system = intake();
 
     assert_eq!(system.phase, TickPhase::PreExtract);
-    assert_eq!(system.modes, &[EngineMode::Playing], "played only");
+    assert_eq!(
+        system.role,
+        Role::Serves(khora_core::script::SCRIPT),
+        "the scripting family's"
+    );
     assert!(
         system.runs_after.contains(&"script_components"),
         "after the declarations: {:?}",
@@ -367,8 +371,8 @@ fn after_the_intake_the_installed_reads_are_wanted_as_loaded_alone() {
     );
 }
 
-/// **A reload is taken in on the frame play starts over**, the mail cleared
-/// beside it.
+/// **A reload is taken in on the frame the scripting family resumes**, the
+/// mail cleared beside it.
 #[test]
 fn a_reload_is_installed_on_the_frame_play_starts_over() {
     let wired = Wired::new(Some(COUNTING));
@@ -414,11 +418,13 @@ fn engine_events_are_drained_into_the_mail() {
     assert_eq!(wired.pending(), 3, "what waited, then the engine's two");
 }
 
-/// **Play starting over clears the mail** — what was pending from the last
-/// session, and what the engine put on its channel since: both belong to a
-/// world that is gone.
+/// **Resuming clears the scripting world's own mail, and keeps the
+/// channel's.** What scripts raised in the last session belongs to a world
+/// that is gone; what is on the engine's channel was sent for this session —
+/// the frame boundary emptied it while the family was off — so it joins the
+/// mail.
 #[test]
-fn the_mail_is_cleared_when_play_resumes_after_a_session_played() {
+fn resuming_clears_the_runtimes_own_mail_and_keeps_the_channels() {
     let wired = Wired::new(Some(COUNTING));
     wired.run(false);
     wired.leave_mail(2);
@@ -426,21 +432,26 @@ fn the_mail_is_cleared_when_play_resumes_after_a_session_played() {
 
     wired.run(true);
 
-    assert_eq!(wired.pending(), 0, "nothing of the old session is kept");
-    assert!(wired.events.is_empty(), "the backlog was drained, not left");
+    assert_eq!(
+        wired.pending(),
+        1,
+        "the last session's two are gone, the channel's one is kept"
+    );
+    assert!(wired.events.is_empty(), "the channel was drained, not left");
 }
 
-/// **The first session keeps what was sent before it.** The first run is
-/// `resumed` too, but nothing played before it.
+/// **The first session is no exception.** A first run is `resumed` too: the
+/// scripting world's own mail is cleared on it as on any resumption, and the
+/// channel's is kept — there is no "if a session already played".
 #[test]
-fn the_first_session_keeps_the_mail_sent_before_it() {
+fn a_first_run_clears_the_runtimes_own_mail_like_any_resumption() {
     let wired = Wired::new(Some(COUNTING));
     wired.leave_mail(1);
     wired.events.send(hit(5));
 
     wired.run(true);
 
-    assert_eq!(wired.pending(), 2, "kept for the first frame of play");
+    assert_eq!(wired.pending(), 1, "the channel's hit alone");
 }
 
 /// **A frame that does not start play over keeps the mail**, however many

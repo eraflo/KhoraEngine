@@ -21,7 +21,6 @@ mod tests;
 
 pub use decision_trace::{DecisionTrace, EpochRecord};
 
-use crate::agent::mode::EngineMode;
 use crate::agent::timing::{AgentImportance, ExecutionTiming};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -195,8 +194,6 @@ pub struct NegotiationRequest {
     pub priority_weight: f32,
     /// Hard resource constraints that any proposed strategy must respect.
     pub constraints: ResourceConstraints,
-    /// The current engine mode.
-    pub current_mode: EngineMode,
     /// The timing declared by the agent. GORNA can read this for decisions.
     pub agent_timing: ExecutionTiming,
 }

@@ -12,39 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The editor's engine mode: it starts editing, which is not the game, and
-//! each frame's mode follows the transport.
-
-use khora_sdk::{EngineApp, EngineMode, PlayMode};
-
-use super::{engine_mode_for, EditorApp};
-
-fn editor_mode() -> EngineMode {
-    EngineMode::Custom("editor".to_owned())
-}
-
-/// **The editor is not the game.** It starts in its own mode, so no script
-/// runs before anyone presses Play.
-#[test]
-fn the_editor_starts_in_its_own_mode() {
-    let app = <EditorApp as EngineApp>::new();
-
-    assert_eq!(app.initial_mode(), editor_mode());
-}
-
-/// Editing is the editor's mode; Play is the game.
-#[test]
-fn editing_is_the_editors_mode_and_playing_is_the_game() {
-    assert_eq!(engine_mode_for(PlayMode::Editing), editor_mode());
-    assert_eq!(engine_mode_for(PlayMode::Playing), EngineMode::Playing);
-}
-
-/// **A paused game is still the game.** Its scripts run — at a delta of
-/// zero — as a pause menu needs.
-#[test]
-fn a_paused_game_is_still_the_game() {
-    assert_eq!(engine_mode_for(PlayMode::Paused), EngineMode::Playing);
-}
+//! The editor application's own state, kept across frames.
 
 /// The inspector's view of the inspected entity against its instance's
 /// prefab, kept across frames: it follows what the world says the entity

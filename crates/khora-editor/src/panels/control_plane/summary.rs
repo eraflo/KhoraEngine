@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The summary bar: frame time, budget, mode.
+//! The summary bar: frame time, budget, the families off.
 
 use khora_sdk::editor_ui::*;
 use khora_sdk::DccContext;
@@ -55,10 +55,7 @@ impl ControlPlanePanel {
             theme.text,
         );
         let mode_str: String = dcc
-            .map(|c| match &c.mode {
-                khora_sdk::EngineMode::Playing => "Playing".to_owned(),
-                khora_sdk::EngineMode::Custom(name) => name.clone(),
-            })
+            .map(|c| families_off_label(&c.inactive))
             .unwrap_or_else(|| "—".to_owned());
         let mult = dcc.map(|c| c.global_budget_multiplier).unwrap_or(1.0);
         // Sub-text on two compact lines so it doesn't run into the stats grid.
@@ -194,5 +191,49 @@ impl ControlPlanePanel {
                 );
             }
         }
+    }
+}
+
+/// What the summary bar says of the families off: every one by name, or that
+/// none is.
+pub(super) fn families_off_label(
+    inactive: &std::collections::BTreeSet<khora_sdk::AgentId>,
+) -> String {
+    if inactive.is_empty() {
+        return "every family on".to_owned();
+    }
+    let names: Vec<String> = inactive.iter().map(|family| family.to_string()).collect();
+    format!("off: {}", names.join(", "))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use khora_sdk::AgentId;
+
+    use super::families_off_label;
+
+    /// **The Control Plane shows the families off**, each by name.
+    #[test]
+    fn the_summary_names_every_family_off() {
+        let off = BTreeSet::from([AgentId::new("physics"), AgentId::new("script")]);
+
+        let label = families_off_label(&off);
+
+        assert!(label.contains("physics"), "{label}");
+        assert!(label.contains("script"), "{label}");
+    }
+
+    /// With every family on, the summary names none, and says something.
+    #[test]
+    fn the_summary_names_no_family_when_every_one_is_on() {
+        let label = families_off_label(&BTreeSet::new());
+
+        assert!(!label.is_empty());
+        assert!(
+            !label.contains("script") && !label.contains("physics"),
+            "{label}"
+        );
     }
 }

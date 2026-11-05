@@ -22,7 +22,6 @@
 //! Game time is the `dt` the frames are given; where the plan leaves open
 //! whether the frame a body starts in counts, the bounds allow either.
 
-use khora_core::agent::EngineMode;
 use khora_core::asset::AssetUUID;
 use khora_core::ecs::entity::EntityId;
 use khora_core::scene::SerializationGoal;
@@ -79,13 +78,21 @@ struct Watched {
     session: SystemSession,
     slow: Vec<Slow>,
     frames: usize,
-    /// Whether the mode plays — the lane runs, and reports, only then.
+    /// Whether the scripts are on — the lane runs, and reports, only then.
     playing: bool,
 }
 
 impl Watched {
     fn new(world: World, project: Project) -> Self {
-        let mut session = SystemSession::new(world, project);
+        Self::watching(SystemSession::new(world, project))
+    }
+
+    /// A watched session whose scripts the test switches.
+    fn switchable(world: World, project: Project) -> Self {
+        Self::watching(SystemSession::switchable(world, project))
+    }
+
+    fn watching(mut session: SystemSession) -> Self {
         session.fuel = SLICE;
         Self {
             session,
@@ -95,10 +102,10 @@ impl Watched {
         }
     }
 
-    /// Switches the engine's mode, as the editor's Play and Stop do.
-    fn set_mode(&mut self, mode: EngineMode) {
-        self.playing = mode.runs_gameplay();
-        self.session.set_mode(mode);
+    /// Switches the scripts on or off, as the editor's Play and Stop do.
+    fn set_scripts(&mut self, on: bool) {
+        self.playing = on;
+        self.session.set_scripts(on);
     }
 
     /// `count` frames of one second.
@@ -233,21 +240,20 @@ fn an_edit_re_enables_a_system_the_watchdog_faulted() {
     );
 }
 
-/// **Frames the game does not play do not count**: a spinning behavior run
+/// **Frames with the scripts off do not count**: a spinning behavior run
 /// eight seconds, then a hundred frames in the editor, is not reported, and
 /// is within five seconds more of play; run to fifty-eight, then a hundred
 /// frames in the editor, it has not faulted, and has within six more.
 #[test]
-fn frames_while_not_playing_do_not_count() {
-    let mut watched = Watched::new(World::new(), SPINNER);
+fn frames_with_the_scripts_off_do_not_count() {
+    let mut watched = Watched::switchable(World::new(), SPINNER);
     let spinner = watched.session.world.spawn(Transform::identity());
     attach(&mut watched.session.world, spinner, "Spinner", &[]);
-    let editor = || EngineMode::Custom("editor".to_owned());
 
     watched.seconds(8);
-    watched.set_mode(editor());
+    watched.set_scripts(false);
     watched.seconds(100);
-    watched.set_mode(EngineMode::Playing);
+    watched.set_scripts(true);
     watched.seconds(1);
     assert!(
         watched
@@ -267,9 +273,9 @@ fn frames_while_not_playing_do_not_count() {
 
     let played = watched.frames - 100;
     watched.seconds(58 - played);
-    watched.set_mode(editor());
+    watched.set_scripts(false);
     watched.seconds(100);
-    watched.set_mode(EngineMode::Playing);
+    watched.set_scripts(true);
     assert!(
         !faulted(&watched.session.world, spinner, "Spinner"),
         "58 s of play"

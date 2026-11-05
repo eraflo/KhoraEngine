@@ -31,7 +31,7 @@ The editor application — panels, gizmos, play mode, scene I/O.
 
 `khora-editor` is a separate binary built on the SDK. It opens a project (a folder containing `.kscene` files and assets), authors scenes through ECS-aware panels, and previews them with **play mode** — a one-button switch between editing and full simulation.
 
-The editor is not a separate engine. It uses the same agents, lanes, and ECS as a shipping game. What Play changes is the *engine mode* — scripts run only while the game does — the *simulation clock*, and what the panels do on top of the world.
+The editor is not a separate engine. It uses the same agents, lanes, and ECS as a shipping game. What Play changes is *which families run* — scripts, physics and audio run only while the game does — the *simulation clock*, and what the panels do on top of the world. The engine has no mode: Play and Stop are the editor's, and it tells the engine by switching families on and off.
 
 The visual language — colors, typography, panels, voice — is documented in [Editor design system](../design/editor.md). This chapter covers the **architecture**, not the look.
 
@@ -88,43 +88,50 @@ When you press **Play**:
 
 1. The current world is serialized using `SerializationGoal::FastestLoad` (a schema-bound snapshot), in memory.
 2. The editor's `PlayMode` (UI state) becomes `Playing`.
-3. The engine mode becomes `Playing`: the script agent starts, and every scripted entity arrives fresh and runs `OnSpawn`.
-4. The simulation clock scale goes to `1.0`.
+3. The scripting, physics and audio families are switched on: scripts start, and every scripted entity arrives fresh and runs `OnSpawn`.
+4. The simulation clock scale stays at `1.0`.
 5. The play camera takes over from the editor camera.
 
-**Pause** keeps the engine mode at `Playing` and sets the clock scale to `0.0`: scripts still take their turns, with a delta of zero, so nothing that counts time moves.
+**Pause** switches no family and sets the clock scale to `0.0`: scripts still take their turns, with a delta of zero, so nothing that counts time moves.
 
 When you press **Stop** — from playing or paused:
 
 1. The snapshot is restored with `replace_world`: atomic, every persistent id kept, every runtime `EntityId` fresh — the selection is cleared.
-2. The editor's `PlayMode` becomes `Editing`, the engine mode the editor's own, `Custom("editor")`, and the clock scale `0.0`.
+2. The editor's `PlayMode` becomes `Editing`; scripting, physics and audio are switched off, and the clock scale goes back to `1.0`.
 3. The editor camera resumes.
 
 Stop is not a load of a game save: the next Play is a fresh start again, with `OnSpawn`, never `OnLoad`. A component whose schema the engine cannot trace whole is not guarded by the snapshot's fingerprint, so a world holding one is snapshotted as a compact record instead. See [Serialization](../concepts/serialization.md).
 
 | Aspect | Editing | Playing | Paused |
 |---|---|---|---|
-| Engine mode | `Custom("editor")` | `Playing` | `Playing` |
+| Families off | scripting, physics, audio | none | none |
 | Scripts | do not run | run | run, delta `0` |
+| Physics, audio | do not run | run | run; physics does not step at scale `0` |
 | Other agents | all | all | all |
-| Simulation clock | `Time::scale == 0.0` — no fixed sub-steps run | `1.0` | `0.0` |
+| Simulation clock | `1.0` — nothing that steps runs | `1.0` | `0.0` — no fixed sub-steps run |
 | Camera | Editor camera (free orbit) | Scene cameras (active ones) | Scene cameras |
 | Input | Editor input (gizmos, selection) | Game input (player controls) | Game input |
 | ECS | Mutable — user edits directly | Snapshot taken — original world preserved | as Playing |
 
-> **Two things cross from the editor into the engine, both written every frame:**
-> the clock's **scale** and the **engine mode**. `PlayMode` itself — buttons,
-> panel visibility — stays in the editor.
+> **Two things cross from the editor into the engine, both set every frame in
+> `before_frame`** (`khora-editor/src/commands/transport.rs`): the clock's
+> **scale** and the **families off**. `PlayMode` itself — buttons, panel
+> visibility — stays in the editor.
 >
 > The scale makes the editor one caller among several: at `0.0` the fixed-step
 > accumulator never fills, so no body integrates and no script timer counts
 > down, while rendering carries on at real time — a pause menu, a cutscene and a
 > slow-motion hit write the same number.
 >
-> The mode scopes agents: the script agent is registered for `Playing` only
-> (`DccService::register_agent_for_mode`), so the editor's own mode is a world
-> nobody's gameplay runs in. A shipped game starts in its
-> `EngineApp::initial_mode` — `Playing` by default.
+> The families are switched through the `Arc<Activation>` resource. `setup`
+> opens editing with scripting (`khora_core::script::SCRIPT`), physics
+> (`khora_core::physics::PHYSICS`) and audio (`khora_core::audio::AUDIO`) off.
+> The switch lands at the frame boundary, before the first DataSystem phase, so
+> a frame is wholly edited or wholly played. A family off is not lent a budget
+> and does not run; the DataSystems and Flows that serve it
+> (`Role::Serves(family)`) are skipped, and mail sent to it while it is off is
+> dropped. A shipped game keeps every family on. The Control Plane summary shows
+> the families off.
 
 > **Physics state is not preserved across play mode.** Velocities, contacts, and sleep state are reset on restore. The ECS components are restored exactly; the physics world rebuilds from those components.
 
