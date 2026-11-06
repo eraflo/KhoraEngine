@@ -109,6 +109,8 @@ pub struct ScriptRunReport {
     pub critical_spent: u64,
     /// How many `[Critical]` instances this frame had no fuel for.
     pub critical_deferred: usize,
+    /// The `[Critical]` behaviours whose instances waited, by name, once each.
+    pub critical_deferred_behaviors: Vec<String>,
     /// Bodies this frame found running past the watchdog's first limit.
     pub slow: Vec<Slow>,
 }

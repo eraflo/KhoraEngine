@@ -35,8 +35,9 @@ projected. The two middle roles are not interchangeable:
   much time there is.
 
 **The agent owns the choice. The lane owns the work.** A new subsystem is a new
-family — lanes and a registration — never a new agent type. (`RenderAgent` and
-`ScriptAgent` are the last two hand-written agents; they become families as well.)
+family — lanes and a registration — never a new agent type. Every family the
+engine ships, rendering and scripting included, is one: the only agent is the
+`LaneAgent` each registration boots.
 
 ## Why agents are kept so thin
 
@@ -57,7 +58,7 @@ arbitrary:
   `Runtime::backends`, where the physics provider and the scripting runtime both
   live; anything measured per frame belongs in a shared slot the way
   `AgentFrameStatusMap` does. State on an agent is the first symptom of lane
-  logic leaking upward — `ScriptAgent` carried an entire language runtime
+  logic leaking upward — the old hand-written script agent carried an entire language runtime
   before this rule was applied to it, and what that cost was not correctness but
   reach: nothing else could see the live behaviors.
 - **Strategist, never worker or controller.** An agent does not contain pipeline

@@ -23,7 +23,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_agents::script_agent::ScriptAgent;
+use crate::script_family::fixtures::{publish_script_views, script_agent};
+use khora_agents::agent::LaneAgent;
 use khora_core::agent::gorna::{ResourceBudget, StrategyId};
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
@@ -101,7 +102,7 @@ fn a_scene_with_the_player(input: khora_core::platform::InputSnapshot) -> Script
 /// One frame of the real descent: the input data system folds the events into
 /// the map, the flow snapshots it, the agent runs the lane.
 fn run_one_frame(
-    agent: &mut ScriptAgent,
+    agent: &mut LaneAgent,
     world: &mut World,
     runtime: &Arc<Runtime>,
 ) -> Vec<WorldCommand> {
@@ -120,7 +121,7 @@ fn run_one_frame(
             .project(world, &khora_data::flow::Selection::new(), runtime)
             .input
     };
-    bus.publish(a_scene_with_the_player(input));
+    publish_script_views(&mut bus, a_scene_with_the_player(input));
 
     let mut deck = OutputDeck::new();
     // What the engine handed over is taken in first, as the boundary does.
@@ -142,7 +143,7 @@ fn run_one_frame(
         .to_vec()
 }
 
-fn wired() -> (Arc<Runtime>, Channel<InputEvent>, ScriptAgent) {
+fn wired() -> (Arc<Runtime>, Channel<InputEvent>, LaneAgent) {
     let mut map = InputMap::new();
     map.bind("jump", InputBinding::Key(KeyCode::Space));
 
@@ -168,7 +169,7 @@ fn wired() -> (Arc<Runtime>, Channel<InputEvent>, ScriptAgent) {
     runtime.resources.insert(Arc::new(Mutex::new(map)));
     runtime.resources.insert(reloads);
 
-    let mut agent = ScriptAgent::default();
+    let mut agent = script_agent();
     agent.apply_budget(ResourceBudget {
         strategy_id: StrategyId::Balanced,
         time_limit: std::time::Duration::from_millis(1),

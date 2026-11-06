@@ -23,7 +23,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_agents::script_agent::ScriptAgent;
+use khora_agents::agent::LaneAgent;
 use khora_control::substrate::run_data_systems;
 use khora_core::agent::gorna::{ResourceBudget, StrategyId};
 use khora_core::agent::Agent;
@@ -52,6 +52,7 @@ use khora_script::vm::{Program, Value};
 use khora_script::{compile_module, Diagnostic, MemoryLoader, ENGINE_COMPONENTS_MODULE};
 
 use super::behavior_session::{attach, declared_in};
+use crate::script_family::fixtures::{publish_script_views, script_agent};
 
 const MODULE: &str = "game/probe.erg";
 
@@ -84,7 +85,7 @@ struct Session {
     /// Whether the flow ran before, as the substrate keeps it: its first run
     /// is a resumption.
     projected: bool,
-    agent: ScriptAgent,
+    agent: LaneAgent,
     scripts: Arc<Mutex<ScriptRuntime>>,
     reloads: Channel<ScriptReload>,
     declarations: PendingDeclarations,
@@ -115,7 +116,7 @@ impl Session {
         runtime.resources.insert(catalog);
         runtime.resources.insert(Arc::clone(&reads));
 
-        let mut agent = ScriptAgent::default();
+        let mut agent = script_agent();
         // The DCC does this every frame; without it there is no fuel.
         agent.apply_budget(ResourceBudget {
             strategy_id: StrategyId::Balanced,
@@ -175,7 +176,7 @@ impl Session {
         let projected = Arc::clone(&view.components);
 
         let mut bus = LaneBus::new();
-        bus.publish(view);
+        publish_script_views(&mut bus, view);
         let mut deck = OutputDeck::new();
         let permit = self.agent.contention();
         {
@@ -931,7 +932,7 @@ fn get_of_a_declared_component() {
 // ─── Declared and reported ──────────────────────────────────────────────────
 
 /// **The cost of reads is visible.** The rows the frame projected reach the
-/// lane's report and the agent's status.
+/// lane's run report, kept on the scripting world.
 #[test]
 fn the_report_counts_the_projected_rows() {
     let mut world = World::new();
@@ -955,10 +956,5 @@ fn the_report_counts_the_projected_rows() {
         .expect("the scripting world")
         .last_report()
         .projected_rows;
-    assert_eq!(rows, 4);
-    let status = session.agent.report_status().message;
-    assert!(
-        status.contains("4") && status.contains("projected"),
-        "the status names the rows projected; got {status:?}"
-    );
+    assert_eq!(rows, 4, "the run report on the scripting world counts them");
 }

@@ -173,7 +173,8 @@ impl<'f> InputSource<'f> {
     /// The runtime entry registered as `Arc<Mutex<T>>`, locked.
     ///
     /// Every lock of one fetch is waited for within one deadline: the lane's
-    /// budget ([`LOCK_WAIT`] without one, at most [`MAX_LOCK_WAIT`]) from the
+    /// budget ([`LOCK_WAIT`] without one or with one of no time, at most
+    /// [`MAX_LOCK_WAIT`]) from the
     /// first wait. A lock held elsewhere — or already held by this very
     /// fetch — is refused as `LockTimedOut` rather than blocking the lane and
     /// its worker; at once, on a source that does not wait.
@@ -194,8 +195,11 @@ impl<'f> InputSource<'f> {
                 Err(TryLockError::WouldBlock) => Err(refuse(Reason::LockTimedOut)),
             };
         }
+        // A budget of no time buys no work, not no wait: a lane lent nothing
+        // waits as one never lent.
         let wait = self
             .budget
+            .filter(|budget| !budget.time.is_zero())
             .map_or(LOCK_WAIT, |budget| budget.time)
             .min(MAX_LOCK_WAIT);
         let deadline = *self
@@ -262,6 +266,13 @@ impl<'f> InputSource<'f> {
             source: SourceKind::Frame,
             reason: Reason::Missing,
         })
+    }
+
+    /// The budget the lane was lent, zero included; `None` when it was lent
+    /// none — its agent was never budgeted.
+    pub fn lent_budget(&mut self, field: &'static str) -> Option<Budget> {
+        self.touch::<Budget>(field, SourceKind::Budget);
+        self.budget
     }
 
     /// The lane's budget, when it has a positive one.

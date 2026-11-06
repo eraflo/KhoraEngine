@@ -103,7 +103,7 @@ Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`,
 | `khora-lanes` | Lanes | Render (Unlit, LitForward, Forward+, StandardPbr, Shadow, Overlay: Grid/Wireframe/Gizmo, Skybox, UI), Physics (Standard, CCD), Audio (SpatialMixing, SourceUpdate), UI (StandardUi, TaffyLayout), Script (Budgeted). |
 | `khora-infra` | Infra | Default backends: `WgpuRenderSystem`/`WgpuDevice`, `WinitWindow` + input, Rapier3D physics, CPAL audio, Taffy layout, GPU/Memory/Vram monitors, `SaaTrackingAllocator`, `DefaultMixBus`. Each implements a `khora-core` trait and is swappable. |
 | `khora-io` | Data | `AssetService`, `SerializationService` (scene save/load, game `save_game`/`load_game`, `AssetPrefabs`), VFS, `AssetIo`, `PackLoader`/`FileLoader`, decoders (glTF, OBJ, Symphonia audio, texture, font). |
-| `khora-agents` | Agents | `RenderAgent`, `ShadowAgent`, `OverlayAgent`, `SkyboxAgent`, `PhysicsAgent`, `UiAgent`, `AudioAgent`, `ScriptAgent` + `PhysicsQueryService`. |
+| `khora-agents` | Agents | One `LaneAgent` per family registration (render, shadows, overlays, skybox, physics, ui, audio, script) + `PhysicsQueryService`. |
 | `khora-sdk` | Public API | `EngineCore` + `run_winit` entry, `GameWorld` (safe ECS façade), `EngineApp`/`AgentProvider`/`PhaseProvider` traits, `WindowConfig`, `Vessel` + `spawn_plane`/`spawn_cube_at`/`spawn_sphere`, `prelude`. **The only crate game devs import.** |
 | `khora-editor` | Application | Editor app on the SDK — panels, gizmos, dock, hot-reload, command palette. |
 | `khora-runtime` | Application | Generic player binary stamped with packed assets; boots via `khora_sdk::run_default`. |
@@ -226,7 +226,7 @@ pub trait Agent: Send + Sync {
 | `PhysicsAgent` | Physics | Standard / Simplified |
 | `UiAgent` | Ui | Layout + Render |
 | `AudioAgent` | Audio | source count / quality |
-| `ScriptAgent` | Script | `Budgeted` lane; LowPower / Balanced / HighPerformance fuel — family `SCRIPT`, off while the editor edits |
+| script family (`LaneAgent`) | Script | `BudgetedScriptLane`, typed; LowPower "critical" / Balanced "whole" (default) — family `SCRIPT`, off while the editor edits |
 
 WGSL composition: the `.wgsl` files live in `khora-infra/src/graphics/shader/shaders/`
 (`pipelines/` entry points, `lib/` reusable modules) and are embedded with `include_str!`.

@@ -29,13 +29,12 @@ use khora_core::Runtime;
 /// The app switches them (an editor switches its scripts, physics and audio
 /// off while it edits), and each request takes effect at the next frame
 /// boundary, so a whole frame sees one state. Known from setup on: the
-/// engine's lane families and its script agent; an application's own agents
+/// engine's lane families; an application's own agents
 /// are admitted once they are registered ([`admit_families`]).
 pub(super) fn engine_activation() -> Arc<Activation> {
     let families = registered_agents()
         .into_iter()
-        .map(|registration| registration.agent)
-        .chain([khora_agents::script_agent::SCRIPT]);
+        .map(|registration| registration.agent);
     Arc::new(Activation::new(families))
 }
 

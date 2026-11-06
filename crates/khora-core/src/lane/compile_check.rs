@@ -183,6 +183,18 @@ impl BudgetField for Budget {
         src.budget(field)
     }
 }
+/// A lane that can run before its agent was lent anything declares
+/// `Option<Budget>`: `None` until a budget is lent — a budget of zero is one,
+/// and buys nothing — and the lane decides what it runs on meanwhile: its
+/// level's own price on the frame's inputs, say.
+impl BudgetField for Option<Budget> {
+    fn declare(d: &mut Declaration, field: &'static str) {
+        d.read::<Budget>(field, SourceKind::Budget);
+    }
+    fn fetch(src: &mut InputSource<'_>, field: &'static str) -> Result<Self, InputRefusal> {
+        Ok(src.lent_budget(field))
+    }
+}
 
 /// A field type `#[frame]` accepts: the frame's `Target` or `ClearColor`.
 #[diagnostic::on_unimplemented(

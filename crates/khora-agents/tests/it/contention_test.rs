@@ -126,10 +126,10 @@ fn ui_agent_reads_the_atlas_without_locking_it() {
     );
 }
 
-/// **The script agent leaves the engine's channels and the demand to the
-/// intake.** The `script_intake` data system drains the reload and event
-/// channels and announces to the demand before the flow projects; the agent's
-/// lane only runs behaviors. Declaring a lock on a channel it no longer
+/// **The script family's agent leaves the engine's channels and the demand to
+/// the intake.** The `script_intake` data system drains the reload and event
+/// channels and announces to the demand before the flow projects; the
+/// family's lane only runs behaviors. Declaring a lock on a channel it no longer
 /// drains would serialise every other user of that channel for nothing. It
 /// still locks the scripting world its lane runs against.
 #[test]
@@ -141,7 +141,7 @@ fn the_script_agent_locks_neither_engine_channel_nor_reaches_the_demand() {
     use khora_script::reload::ScriptReload;
     use std::sync::Mutex;
 
-    let contention = khora_agents::script_agent::ScriptAgent::default().contention();
+    let contention = crate::script_family::fixtures::script_agent().contention();
 
     assert!(
         !contention.may_reach(TypeId::of::<Channel<ScriptReload>>()),

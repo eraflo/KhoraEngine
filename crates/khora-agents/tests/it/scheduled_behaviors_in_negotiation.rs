@@ -12,25 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **GORNA hears the scheduling attributes** through the script agent: its
-//! full row weighs a rate-limited instance by the share of frames it runs
-//! (`min(1, rate × frame delta)` of an instance); its floor is priced at
-//! the lane's overhead and what the critical behaviors need, and nothing
-//! more when none is critical; its status names the critical instances a
-//! frame deferred; and a frame a rate-limited instance skips is not a
-//! deferral, so it does not lower the agent's health.
+//! **GORNA hears the scheduling attributes** through the script lane's
+//! quotes: its whole level weighs a rate-limited instance by the share of
+//! frames it runs (`min(1, rate × frame delta)` of an instance, the frame
+//! being the view's); its critical level is priced at the lane's overhead and
+//! what the critical behaviors need, and nothing more when none is critical;
+//! its report names the critical behaviors a frame deferred; and a frame a
+//! rate-limited instance skips is not a deferral, so the run is wholly done.
 
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_agents::script_agent::ScriptAgent;
-use khora_core::agent::gorna::{AgentStatus, NegotiationRequest, ResourceConstraints, StrategyId};
-use khora_core::agent::{Agent, ExecutionTiming};
-use khora_core::lane::{LaneBus, OutputDeck};
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::agent::gorna::StrategyId;
 use khora_data::ecs::{Transform, World};
 
 use super::behavior_session::{attach, Project, Session, PLENTY};
+use crate::script_family::fixtures::price_of;
 
 /// A frame of 1/60 s.
 const FRAME: f32 = 1.0 / 60.0;
@@ -62,61 +58,12 @@ fn session_of(project: Project, behavior: &str, count: usize) -> Session {
     session
 }
 
-/// `read` of a script agent handed the session's scripting world, as the
-/// engine hands it; the world goes back to the session after.
-fn with_agent<T>(session: &mut Session, read: impl FnOnce(&mut ScriptAgent) -> T) -> T {
-    let shared = Arc::new(Mutex::new(std::mem::take(&mut session.scripts)));
-    let answer = {
-        let mut runtime = Runtime::default();
-        runtime.services.insert(Arc::clone(&shared));
-        let runtime = Arc::new(runtime);
-        let mut agent = ScriptAgent::default();
-        let bus = LaneBus::new();
-        let mut deck = OutputDeck::new();
-        let permit = agent.contention();
-        {
-            let mut ctx = EngineContext::for_agent(
-                WorldAccess::None,
-                Arc::clone(&runtime),
-                &bus,
-                &mut deck,
-                &permit,
-                Some(agent.id()),
-            );
-            agent.on_initialize(&mut ctx);
-        }
-        read(&mut agent)
-    };
-    session.scripts = Arc::try_unwrap(shared)
-        .expect("the agent is gone, and its handle with it")
-        .into_inner()
-        .expect("the scripting world's lock is not poisoned");
-    answer
-}
-
-/// The time the agent offers `strategy` for, negotiating for 1/60-s frames.
+/// The time the lane quotes `strategy` at, on the last 1/60-s frame's view.
 fn estimate(session: &mut Session, strategy: StrategyId) -> Duration {
-    let response = with_agent(session, |agent| {
-        agent.negotiate(NegotiationRequest {
-            target_latency: Duration::from_secs_f64(f64::from(FRAME)),
-            priority_weight: 1.0,
-            constraints: ResourceConstraints::default(),
-            agent_timing: ExecutionTiming::default(),
-        })
-    });
-    response
-        .strategies
-        .iter()
-        .find(|option| option.id == strategy)
-        .map(|option| option.estimated_time)
-        .unwrap_or_else(|| panic!("a {strategy:?} offer"))
+    price_of(&session.quote(), strategy).time.cpu
 }
 
-fn status(session: &mut Session) -> AgentStatus {
-    with_agent(session, |agent| agent.report_status())
-}
-
-/// The work the Balanced row prices for sixty `Tick`s of `project` after
+/// The work the whole level prices for sixty `Tick`s of `project` after
 /// three frames: its time past the lane's measured overhead, in the fuel
 /// that time buys at the measured rate — what the sessions' own timings
 /// cannot tell apart.
@@ -132,7 +79,7 @@ fn balanced_work_for_sixty(project: Project) -> f64 {
 
 /// **A rate-limited instance is priced as the share of frames it runs.**
 /// Sixty `Tick`s at 10 Hz in 1/60-s frames run a sixth of the frames each:
-/// the work the full row prices is at most a third of sixty unrated ones'.
+/// the work the whole level prices is at most a third of sixty unrated ones'.
 /// At 120 Hz — more than once a frame — an instance counts as one, and the
 /// work is the unrated one.
 #[test]
@@ -168,7 +115,7 @@ const PLAIN_HEAVY: Project = &[(
 )];
 
 /// Four `Heavy`s of `project` after three frames with plenty of fuel: the
-/// LowPower estimate, the lane's measured overhead, and what the frame's
+/// critical level's quote, the lane's measured overhead, and what the frame's
 /// spending costs at the measured rate.
 fn low_power_and_last_cost(project: Project) -> (Duration, Duration, Duration) {
     let mut session = session_of(project, "Heavy", 4);
@@ -182,7 +129,7 @@ fn low_power_and_last_cost(project: Project) -> (Duration, Duration, Duration) {
     (estimate(&mut session, StrategyId::LowPower), overhead, cost)
 }
 
-/// **The cheapest strategy covers what the critical behaviors need.** Four
+/// **The critical level covers what the critical behaviors need.** Four
 /// `[Critical]` `Heavy`s spend a few thousand instructions a frame; LowPower
 /// is the lane's overhead and that demand, converted at the measured rate.
 /// The same four without `[Critical]` are not floored at their spending:
@@ -214,11 +161,12 @@ const VITAL_AND_PLAIN: Project = &[(
      behavior Plain { int ticks = 0; void Update(float dt) { ticks += 1; } }",
 )];
 
-/// **The status names the critical instances a frame deferred.** Seven
-/// `Vital`s, critical, and four `Plain`s; a frame with no fuel defers all
-/// eleven. The status message says how many of them were critical: seven.
+/// **The lane's report names the critical behaviors a frame deferred.**
+/// Seven `Vital`s, critical, and four `Plain`s; a frame with no fuel defers
+/// all eleven. The report's message names `Vital`, the deferral the game
+/// cannot do without.
 #[test]
-fn the_status_names_how_many_critical_instances_were_deferred() {
+fn the_lane_report_names_the_critical_behaviors_deferred() {
     let mut session = Session::new(World::new(), VITAL_AND_PLAIN);
     for (behavior, count) in [("Vital", 7), ("Plain", 4)] {
         for _ in 0..count {
@@ -239,23 +187,22 @@ fn the_status_names_how_many_critical_instances_were_deferred() {
         session.scripts.last_report()
     );
 
-    let message = status(&mut session).message;
-    let numbers: Vec<&str> = message
-        .split(|c: char| !c.is_ascii_digit())
-        .filter(|word| !word.is_empty())
-        .collect();
+    let message = session
+        .lane_report
+        .clone()
+        .and_then(|report| report.message)
+        .unwrap_or_default();
     assert!(
-        message.to_lowercase().contains("critical") && numbers.contains(&"7"),
-        "the status names the seven critical instances deferred: {message:?}"
+        message.contains("Vital"),
+        "the report names the critical behavior deferred: {message:?}"
     );
 }
 
-/// **A frame a rate-limited instance skips does not lower the agent's
-/// health.** Twelve `Tick`s at 10 Hz in 1/60-s frames with plenty of fuel:
-/// most frames run only some of them, none is deferred, and every frame's
-/// status reports full health.
+/// **A frame a rate-limited instance skips is not a deferral.** Twelve
+/// `Tick`s at 10 Hz in 1/60-s frames with plenty of fuel: most frames run
+/// only some of them, none is deferred, and every frame's run is wholly done.
 #[test]
-fn rate_skipped_frames_do_not_lower_the_script_agents_health() {
+fn rate_skipped_frames_leave_the_run_wholly_done() {
     let mut session = session_of(TEN_HERTZ, "Tick", 12);
     for _ in 0..12 {
         session.frame(FRAME);
@@ -267,11 +214,10 @@ fn rate_skipped_frames_do_not_lower_the_script_agents_health() {
         let report = session.scripts.last_report().clone();
         assert_eq!(report.deferred, 0, "frame {at}: {report:?}");
         skipped_some |= report.completed < 12;
-        let status = status(&mut session);
+        let lane = session.lane_report.clone().expect("the frame ran the lane");
         assert_eq!(
-            status.health_score, 1.0,
-            "frame {at}: a skipped turn is not a deferral — {}",
-            status.message
+            lane.done, 1.0,
+            "frame {at}: a skipped turn is not a deferral — {lane:?}"
         );
     }
     assert!(

@@ -21,7 +21,8 @@
 
 use std::sync::Arc;
 
-use khora_agents::script_agent::ScriptAgent;
+use crate::script_family::fixtures::{publish_script_views, script_agent};
+use khora_agents::agent::LaneAgent;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{LaneBus, OutputDeck};
@@ -95,9 +96,9 @@ fn a_scene_with_a_guard() -> ScriptView {
 }
 
 /// Runs one frame of the agent, returning the commands its behaviors queued.
-fn run_one_frame(agent: &mut ScriptAgent, runtime: &Arc<Runtime>) -> Vec<WorldCommand> {
+fn run_one_frame(agent: &mut LaneAgent, runtime: &Arc<Runtime>) -> Vec<WorldCommand> {
     let mut bus = LaneBus::new();
-    bus.publish(a_scene_with_a_guard());
+    publish_script_views(&mut bus, a_scene_with_a_guard());
     let mut deck = OutputDeck::new();
     // What the engine handed over is taken in first, as the boundary does.
     crate::script_intake::run_intake(runtime);
@@ -149,7 +150,7 @@ fn a_touched_event_reaches_the_behavior_that_declared_the_handler() {
     runtime_with_reload.resources.insert(reloads);
     let runtime = Arc::new(runtime_with_reload);
 
-    let mut agent = ScriptAgent::default();
+    let mut agent = script_agent();
     // The DCC does this every frame; without it the agent has no fuel and
     // defers everything, which is a budget of nothing rather than a bug.
     agent.apply_budget(khora_core::agent::gorna::ResourceBudget {

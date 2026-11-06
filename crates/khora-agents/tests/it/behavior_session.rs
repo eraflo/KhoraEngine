@@ -15,14 +15,18 @@
 //! A project's behaviors played as components (Ergon spec 09): one session
 //! wired the way the engine wires one — declarations and programs on their
 //! channels, the `PreExtract` registration, the flow, the script lane run
-//! with a chosen fuel, then `Maintenance` applying and writing back.
+//! with a chosen fuel, at a chosen level, through an `InputSource` as its
+//! family's agent lends one — then `Maintenance` applying and writing back.
 
 use std::sync::{Arc, Mutex};
 
 use khora_control::substrate::run_data_systems;
+use khora_core::agent::gorna::StrategyId;
 use khora_core::ecs::entity::EntityId;
 use khora_core::event::Channel;
-use khora_core::lane::{Lane, LaneContext, OutputDeck};
+use khora_core::lane::contract::LaneReport;
+use khora_core::lane::cost::Cost;
+use khora_core::lane::OutputDeck;
 use khora_core::projection::Interest;
 use khora_core::script::{
     engine_event_channel, CommandBuffer, ScriptCatalog, ScriptEvent, ScriptReads,
@@ -33,10 +37,12 @@ use khora_data::ecs::{ComponentKey, TickPhase, World};
 use khora_data::flow::{Flow, FlowContext, ScriptFlow, ScriptView};
 use khora_io::script::declarations::{declaration_channel, DeclaredComponents, ScriptDeclarations};
 use khora_io::script::mirror::PreludeLoader;
-use khora_lanes::script_lane::{take_in, BudgetedScriptLane, Fuel, ScriptRuntime};
+use khora_lanes::script_lane::{take_in, ScriptRuntime};
 use khora_script::reload::ScriptReload;
 use khora_script::vm::Program;
 use khora_script::{compile_module, Diagnostic, MemoryLoader};
+
+use super::script_family::fixtures::{quote_lane, run_lane, LaneFrame};
 
 /// Far more fuel than any frame of these tests spends.
 pub(crate) const PLENTY: u64 = 10_000_000;
@@ -82,15 +88,19 @@ pub(crate) struct Session {
     pub(crate) scripts: ScriptRuntime,
     /// The fuel each frame's lane runs with.
     pub(crate) fuel: u64,
+    /// The level each frame's lane runs at.
+    pub(crate) level: StrategyId,
+    /// What the last frame's lane reported.
+    pub(crate) lane_report: Option<LaneReport>,
+    /// The last frame's view, as the lane read it.
+    last_view: Option<ScriptView>,
     flow: ScriptFlow,
     /// Whether the flow ran before, as the substrate keeps it: its first run
     /// is a resumption.
     projected: bool,
-    lane: BudgetedScriptLane,
     runtime: Arc<Runtime>,
     reloads: Channel<ScriptReload>,
     events: Channel<ScriptEvent>,
-    catalog: Arc<ScriptCatalog>,
     reads: Arc<Interest<ScriptReads>>,
     /// Whether a frame took in what the engine handed over: the next one
     /// does not start play over.
@@ -123,7 +133,7 @@ impl Session {
         runtime
             .resources
             .insert(Arc::new(Mutex::new(DeclaredComponents::default())));
-        runtime.resources.insert(Arc::clone(&catalog));
+        runtime.resources.insert(catalog);
         runtime.resources.insert(Arc::clone(&reads));
         prepare(&mut runtime);
 
@@ -131,13 +141,14 @@ impl Session {
             world,
             scripts: ScriptRuntime::new(),
             fuel: PLENTY,
+            level: StrategyId::Balanced,
+            lane_report: None,
+            last_view: None,
             flow: ScriptFlow::default(),
             projected: false,
-            lane: BudgetedScriptLane::new(),
             runtime: Arc::new(runtime),
             reloads,
             events,
-            catalog,
             reads,
             took_in: false,
         };
@@ -190,32 +201,41 @@ impl Session {
         let mut view = self.project();
         view.delta_seconds = delta;
         let mut deck = OutputDeck::new();
-        {
-            let mut ctx = LaneContext::new();
-            ctx.insert_ref(&view);
-            // Where a spawn takes its entity's id, as the agent hands it on.
-            let reservations = khora_data::flow::ReservationView {
+        // Where a spawn takes its entity's id, and the prefabs it may name —
+        // the runtime's catalog, or none to check against — as the flows
+        // publish them.
+        let frame = LaneFrame {
+            view: &view,
+            reservations: khora_data::flow::ReservationView {
                 reserver: self.world.reserver(),
-            };
-            ctx.insert_ref(&reservations);
-            // The prefabs a spawn may name, as the agent hands them on: the
-            // runtime's catalog, or none to check against.
-            let prefabs = khora_data::flow::PrefabCatalogView {
+            },
+            prefabs: khora_data::flow::PrefabCatalogView {
                 prefabs: self
                     .runtime
                     .resources
                     .get::<khora_data::scene::PrefabCatalog>()
                     .map(khora_data::scene::PrefabCatalog::snapshot),
-            };
-            ctx.insert_ref(&prefabs);
-            ctx.insert(Fuel(self.fuel));
-            ctx.insert_slot(&mut self.scripts);
-            ctx.insert_slot(&mut deck);
-            ctx.insert_ref(&self.catalog);
-            self.lane.execute(&mut ctx).expect("the script lane runs");
-        }
+            },
+            level: self.level,
+        };
+        self.lane_report = Some(run_lane(frame, &mut self.scripts, self.fuel, &mut deck));
+        self.last_view = Some(view);
         also(deck.slot::<CommandBuffer>());
         self.boundary(TickPhase::Maintenance, &mut deck);
+    }
+
+    /// The last frame's view, as the lane read it.
+    pub(crate) fn last_view(&self) -> ScriptView {
+        self.last_view
+            .clone()
+            .expect("a frame ran before its view is read")
+    }
+
+    /// Every level's price on the last frame's view, as the agent quotes the
+    /// lane between two frames.
+    pub(crate) fn quote(&mut self) -> Vec<(StrategyId, Cost)> {
+        let view = self.last_view();
+        quote_lane(LaneFrame::of(&view), &mut self.scripts)
     }
 
     /// Raises `event` from the engine, for the next frame to deliver.

@@ -291,6 +291,37 @@ fn bootstrap_registers_one_lane_agent_per_collected_registration() {
     );
 }
 
+/// **The script family boots like any other.** Its registration is
+/// collected with the others and its agent is a `LaneAgent`, running as
+/// layers at its place — no hand-written script agent registered beside the
+/// families. It runs in `TRANSFORM`, and it is the one agent named `script`.
+#[test]
+fn the_script_family_boots_as_a_lane_agent_from_its_registration() {
+    let mut engine = EngineCore::<Game>::new();
+    engine.bootstrap(Game, Runtime::new());
+
+    let transform = agents_in(&engine, ExecutionPhase::TRANSFORM);
+    let named_script = transform
+        .iter()
+        .filter(|id| **id == khora_sdk::khora_core::script::SCRIPT)
+        .count();
+    assert_eq!(
+        named_script, 1,
+        "one script agent, in TRANSFORM: {transform:?}"
+    );
+    let dcc = engine.dcc().expect("bootstrapped");
+    let registry = dcc.agent_registry().lock().expect("the registry lock");
+    let agent = registry
+        .get_by_id(khora_sdk::khora_core::script::SCRIPT)
+        .expect("the script agent is registered");
+    let layered = agent.lock().is_ok_and(|agent| agent.place().is_some());
+    assert!(
+        layered,
+        "the script agent is the family's `LaneAgent`, running as layers; origin {:?}",
+        registry.origin(khora_sdk::khora_core::script::SCRIPT)
+    );
+}
+
 /// **A linked family is known to the engine's activation**, and starts on:
 /// the probe's agent can be switched off by name, as any family registered
 /// through `register_agent!` can.

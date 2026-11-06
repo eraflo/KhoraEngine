@@ -59,8 +59,8 @@ device supports) to GORNA, receives an [envelope](#envelope), chooses the row th
 fits, and installs it as a [layer](#layer-and-place); it is woken only by events.
 Every family's agent is the same `LaneAgent`, built from the family's registration;
 an agent implements only the `Agent` trait. It is *not* a controller (the DCC
-decides how much) and *not* a worker (lanes do the work). Rendering and scripting
-still have hand-written agents (`RenderAgent`, `ScriptAgent`). Any agent can be
+decides how much) and *not* a worker (lanes do the work). No hand-written agent
+is left: rendering and scripting are families like the others. Any agent can be
 switched off and on through the [Activation](#activation). See [Agents and Lanes](../concepts/agents-and-lanes.md).
 Also called an **ISA** (Intelligent Subsystem Agent).
 

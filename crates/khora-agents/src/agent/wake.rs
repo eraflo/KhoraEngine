@@ -156,7 +156,13 @@ impl LaneAgent {
             let mut lane = (self.makers[row.lane])();
             let started = Instant::now();
             let prepared = {
-                let mut source = lend(context, self.time_limit, self.fixed_step, lane_frame);
+                let mut source = lend(
+                    context,
+                    self.time_limit,
+                    self.budget_lent,
+                    self.fixed_step,
+                    lane_frame,
+                );
                 lane.prepare(row.level, &mut source, &mut gpu)
             };
             let switch = started.elapsed();
@@ -212,6 +218,7 @@ impl LaneAgent {
                 .map_or(Epoch::default(), |lent| lent.epoch),
             envelope: self.lent.as_ref().map(|lent| lent.envelope),
             time_limit: self.time_limit,
+            budget_lent: self.budget_lent,
             fixed_step: self.fixed_step,
             over_budget: self.over_budget,
             quote: full.and_then(|full| full.bases.get(self.current).copied().flatten()),

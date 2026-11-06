@@ -19,6 +19,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use super::frame::FUEL_PER_BEHAVIOR;
 use super::runtime::{Demand, Instance, ScriptRuntime, RATE_BLEND, UNKNOWN_TURN};
 use super::turn::Outcome;
 
@@ -67,8 +68,13 @@ impl ScriptRuntime {
     /// what its last whole turn took — never a piece of one, or a budget cut
     /// would lower the price that buys it back. An instance with no whole
     /// turn yet is priced at what its behavior's other instances took, and
-    /// at [`UNKNOWN_TURN`] when none of them has finished one either. A
-    /// rate-limited instance counts for the share of frames it runs, as in
+    /// at [`UNKNOWN_TURN`] when none of them has finished one either — or at
+    /// twice what its turn in progress has spent, when that is more, up to what
+    /// one frame may spend on an instance: a turn heavier than the guess is
+    /// bought back in a few frames, never starved by a guess that stays the
+    /// same, and one that never finishes costs a frame's worth. An instance whose module is not compiled
+    /// runs nothing and costs nothing. A rate-limited instance counts for the
+    /// share of frames it runs, as in
     /// [`weighted_instances`](Self::weighted_instances).
     pub fn demand(&self, frame: f32) -> Demand {
         let unknown = UNKNOWN_TURN.as_secs_f64() * 1_000.0 * self.rate;
@@ -88,9 +94,11 @@ impl ScriptRuntime {
             if instance.disabled {
                 continue;
             }
-            let schedule = self
-                .program(&instance.module)
-                .and_then(|program| program.layout(behavior))
+            let Some(program) = self.program(&instance.module) else {
+                continue;
+            };
+            let schedule = program
+                .layout(behavior)
                 .map(|layout| layout.schedule)
                 .unwrap_or_default();
             let share = schedule
@@ -105,7 +113,15 @@ impl ScriptRuntime {
                 Some(cost) if cost <= 0.0 && mailed.contains(entity) => None,
                 cost => cost,
             };
-            let fuel = cost.unwrap_or(unknown) * share;
+            // Doubled toward what the turn may need, never past what one
+            // frame may spend on an instance: a turn that never finishes is
+            // priced at a frame's worth, not at everything it has spent.
+            let unfinished = || {
+                unknown
+                    .max(2.0 * instance.piece_spent as f64)
+                    .min(FUEL_PER_BEHAVIOR as f64)
+            };
+            let fuel = cost.unwrap_or_else(unfinished) * share;
             all += fuel;
             if schedule.critical {
                 critical += fuel;
@@ -152,7 +168,7 @@ impl ScriptRuntime {
         let known = self.known_turns();
         self.instances
             .iter()
-            .filter(|(_, instance)| !instance.disabled)
+            .filter(|(_, instance)| !instance.disabled && self.program(&instance.module).is_some())
             .all(|((_, behavior), instance)| {
                 instance.full_turn.is_some()
                     || known.contains_key(&(instance.module.as_str(), behavior.as_str()))
@@ -161,7 +177,7 @@ impl ScriptRuntime {
 
     /// The mean whole turn of each behavior, by module and name, over the
     /// instances that have finished one.
-    fn known_turns(&self) -> HashMap<(&str, &str), f64> {
+    pub(super) fn known_turns(&self) -> HashMap<(&str, &str), f64> {
         let mut sums: HashMap<(&str, &str), (f64, u32)> = HashMap::new();
         for ((_, behavior), instance) in &self.instances {
             if let (false, Some(cost)) = (instance.disabled, instance.full_turn) {

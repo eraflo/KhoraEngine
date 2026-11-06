@@ -90,7 +90,7 @@ impl LaneAgent {
     ) {
         let budget = self.time_limit;
         let quoted = {
-            let mut source = lend(context, budget, self.fixed_step, frame);
+            let mut source = lend(context, budget, self.budget_lent, self.fixed_step, frame);
             self.lanes[lane]
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())

@@ -31,11 +31,6 @@
 //! tree it was written against. Nothing is constructed; the tests only have to
 //! type-check.
 
-use std::any::type_name;
-
-fn is_agent<T: khora_core::agent::Agent>() {}
-fn is_default<T: Default>() {}
-
 // ---------------------------------------------------------------------------
 // Every `pub mod`, down to the leaves.
 // ---------------------------------------------------------------------------
@@ -56,13 +51,6 @@ fn module_render_agent_paths_still_resolve() {
     let _: khora_core::agent::gorna::AgentId = khora_agents::render_agent::RENDERER;
 }
 
-#[test]
-fn module_script_agent_paths_still_resolve() {
-    let _ = type_name::<khora_agents::script_agent::ScriptAgent>();
-    is_default::<khora_agents::script_agent::ScriptAgent>();
-    is_agent::<khora_agents::script_agent::ScriptAgent>();
-}
-
 // ---------------------------------------------------------------------------
 // Paths other crates of the workspace spell today (`crates/`, `examples/`,
 // `xtask/`; brace imports expanded). The trailing comment names
@@ -73,5 +61,4 @@ fn module_script_agent_paths_still_resolve() {
 #[test]
 fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_agents::render_agent::RENDERER; // khora-sdk
-    let _ = khora_agents::script_agent::ScriptAgent::default; // khora-sdk
 }

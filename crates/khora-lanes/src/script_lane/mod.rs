@@ -48,6 +48,7 @@ mod frame;
 mod fuel;
 mod hooks;
 pub mod intake;
+mod levels;
 mod mail;
 pub mod persistence;
 mod problems;
@@ -56,6 +57,7 @@ mod reload;
 pub mod report;
 pub mod resumption;
 pub mod runtime;
+mod script_family;
 mod shares;
 mod state_update;
 mod turn;
@@ -68,15 +70,19 @@ pub use frame::run_behaviors;
 pub use intake::take_in;
 pub use report::{Resumed, ScriptRunReport, Slow};
 pub use runtime::{Body, Demand, Instance, Pending, ReloadReport, ScriptRuntime};
+pub use script_family::{ScriptFamily, ScriptOutputs};
 pub use watchdog::{WATCHDOG_FAULT, WATCHDOG_WARN};
 
-use std::any::Any;
 use std::sync::Arc;
 
-use khora_core::lane::{Lane, LaneContext, LaneError, LaneKind, OutputDeck};
-use khora_core::script::{BehaviorWriteback, CommandBuffer};
+use khora_core::lane::contract::LaneReport;
+use khora_core::lane::cost::Cost;
+use khora_core::lane::io::{Budget, Locked};
+use khora_core::lane::level::Level;
+use khora_core::lane::LaneError;
 use khora_core::Stopwatch;
-use khora_data::flow::ScriptView;
+use khora_data::flow::{PrefabCatalogView, ReservationView, ScriptView};
+use khora_macros::LaneInputs;
 use khora_script::native::Host;
 
 /// Runs each entity's behavior until the frame's fuel is gone.
@@ -90,52 +96,78 @@ impl BudgetedScriptLane {
     }
 }
 
-impl Lane for BudgetedScriptLane {
-    fn strategy_name(&self) -> &'static str {
-        "Budgeted"
+/// What the script lane reads each frame: the Views the script flows
+/// published, the scripting world, locked for the run, and the time its agent
+/// lent it.
+#[derive(LaneInputs)]
+pub struct ScriptInputs<'f> {
+    /// The behaviours the frame runs, and what they may read.
+    #[bus]
+    pub view: &'f ScriptView,
+    /// Where a spawn takes its entity's id.
+    #[bus]
+    pub reservations: &'f ReservationView,
+    /// The prefabs a spawn may name.
+    #[bus]
+    pub prefabs: &'f PrefabCatalogView,
+    /// The scripting world, locked while the behaviours run.
+    #[locked]
+    pub runtime: Locked<'f, ScriptRuntime>,
+    /// The time the run may spend, turned into fuel at the measured rate;
+    /// `None` until the agent is lent one.
+    #[budget]
+    pub budget: Option<Budget>,
+}
+
+impl khora_core::lane::contract::Lane for BudgetedScriptLane {
+    type Family = ScriptFamily;
+    type Inputs<'f> = ScriptInputs<'f>;
+
+    fn levels(&self) -> &[Level] {
+        &levels::LEVELS
     }
 
-    fn lane_kind(&self) -> LaneKind {
-        LaneKind::Script
+    fn cost(&self, level: usize, inputs: &ScriptInputs<'_>) -> Cost {
+        levels::price(level, &inputs.runtime, inputs.view)
     }
 
-    fn estimate_cost(&self, ctx: &LaneContext) -> f32 {
-        // Proportional to how many behaviors are live, which is the only thing
-        // about the coming frame the lane can know before running it.
-        ctx.get_ref::<ScriptView>()
-            .map_or(1.0, |view| view.len() as f32)
-    }
-
-    fn execute(&self, ctx: &mut LaneContext) -> Result<(), LaneError> {
-        let view = ctx
-            .get_ref::<ScriptView>()
-            .ok_or_else(|| LaneError::missing("&ScriptView"))?;
-        let fuel = *ctx
-            .get::<Fuel>()
-            .ok_or_else(|| LaneError::missing("Fuel"))?;
+    fn record(
+        &mut self,
+        level: usize,
+        inputs: &mut ScriptInputs<'_>,
+        out: &mut ScriptOutputs,
+    ) -> Result<LaneReport, LaneError> {
+        let view = inputs.view;
+        // Lent nothing yet — a family just switched on, before the DCC named
+        // it — the lane runs its level at its own price on this frame.
+        let time = match inputs.budget {
+            Some(budget) => budget.time,
+            None => levels::price(level, &inputs.runtime, view).time.cpu,
+        };
+        let runtime = &mut *inputs.runtime;
+        let mut fuel = runtime.fuel_for(time);
+        // The critical level serves the `[Critical]` turns alone: the others
+        // wait for a frame that can afford them.
+        if level == levels::CRITICAL {
+            fuel = fuel.min(levels::need(runtime, view).critical);
+        }
 
         // What the engine handed the scripting world — recompiled modules and
         // its events — was taken in before the flow projected, by the
         // `script_intake` data system: the lane runs behaviours alone.
-        let mut runtime_guard = ctx
-            .slot::<ScriptRuntime>()
-            .ok_or_else(|| LaneError::missing("&mut ScriptRuntime"))?;
-        let runtime = &mut *runtime_guard;
-
+        //
         // A view that holds nothing while instances are still held has just
         // lost its last ones: they are told goodbye like any that leave.
         if view.is_empty() && (view.resumed || runtime.instance_count() == 0) {
-            // Play resuming on an empty scene still forgets what left while it
-            // was away — or a later frame would bid it farewell.
+            // Resuming on an empty scene still forgets what left while it was
+            // away — or a later frame would bid it farewell.
             if view.resumed {
                 runtime.retain_live(|_| false);
             }
             // Nothing to run, and the mail stays where the intake put it, for
             // a frame that can deliver it.
             runtime.set_last_report(ScriptRunReport::default());
-            drop(runtime_guard);
-            ctx.insert(ScriptRunReport::default());
-            return Ok(());
+            return Ok(report_of(&ScriptRunReport::default()));
         }
 
         // One queue, two producers: what scripts raised last frame, and what
@@ -145,25 +177,14 @@ impl Lane for BudgetedScriptLane {
         // bound the work is not a budget.
         let events = runtime.take_pending();
 
-        let mut deck_guard = ctx
-            .slot::<OutputDeck>()
-            .ok_or_else(|| LaneError::missing("&mut OutputDeck"))?;
-        let deck = &mut *deck_guard;
-
         let clock = Stopwatch::new();
-        let mut host = Host::new().with_arena(runtime.take_arena());
-        // A spawn takes its id from the world's reserver; run without one, its
-        // ids are the host's own.
-        if let Some(reservations) = ctx.get_ref::<khora_data::flow::ReservationView>() {
-            host = host.with_reserver(std::sync::Arc::clone(&reservations.reserver));
-        }
+        let mut host = Host::new()
+            .with_arena(runtime.take_arena())
+            .with_reserver(Arc::clone(&inputs.reservations.reserver));
         // A prefab spawn naming none the project holds faults its turn; with
         // no catalog to check against, any is let through to the applier.
-        if let Some(prefabs) = ctx
-            .get_ref::<khora_data::flow::PrefabCatalogView>()
-            .and_then(|view| view.prefabs.as_ref())
-        {
-            host = host.with_prefabs(std::sync::Arc::clone(prefabs));
+        if let Some(prefabs) = inputs.prefabs.prefabs.as_ref() {
+            host = host.with_prefabs(Arc::clone(prefabs));
         }
         // Once for the frame, not once per behavior: input is a fact about
         // the frame, and every behavior in it must see the same one.
@@ -171,24 +192,23 @@ impl Lane for BudgetedScriptLane {
         // The frame's working set: what the view projected, with this frame's
         // own writes over it as they are queued.
         host.components = khora_core::script::FrameComponents::new(Arc::clone(&view.components));
-        let mut report = run_behaviors(view, &events, runtime, &mut host, fuel.0);
+        let mut report = run_behaviors(view, &events, runtime, &mut host, fuel);
         report.projected_rows = view.components.rows();
         report.swept_rows = host.swept;
         report.raised = host.take_events();
 
         // Handed over together with the arena reset, so no command can
-        // outlive the frame memory it might have referred to.
-        // Where each turn stands among the frame's commands, counted from
-        // those the slot already holds.
-        let held = deck.slot::<CommandBuffer>().len();
+        // outlive the frame memory it might have referred to. Where each turn
+        // stands among the frame's commands, counted from those the slot
+        // already holds.
+        let held = out.commands.len();
         for update in &mut report.state {
             update.read_until += held;
             update.emitted_after += held;
         }
-        deck.slot::<CommandBuffer>().extend(host.end_frame());
+        out.commands.extend(host.end_frame());
         runtime.return_arena(host.take_arena());
-        deck.slot::<BehaviorWriteback>()
-            .extend(report.state.iter().cloned());
+        out.writeback.extend(report.state.iter().cloned());
 
         if let Some(elapsed) = clock.elapsed() {
             runtime.observe(report.spent, report.turns_time, elapsed);
@@ -210,26 +230,31 @@ impl Lane for BudgetedScriptLane {
             waiting.push(event);
         }
         runtime.set_pending(waiting);
-        runtime.set_last_report(report.clone());
-
-        drop(deck_guard);
-        drop(runtime_guard);
-        ctx.insert(report);
-        Ok(())
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+        let lane_report = report_of(&report);
+        runtime.set_last_report(report);
+        Ok(lane_report)
     }
 }
 
-/// The frame's fuel allowance, put into the context by the agent.
-///
-/// A newtype so it cannot be confused with any other `u64` the context happens
-/// to carry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Fuel(pub u64);
+/// What a run tells its agent: the share of its turns that ran, whether a
+/// behaviour faulted, and which `[Critical]` behaviours waited.
+fn report_of(report: &ScriptRunReport) -> LaneReport {
+    let attempted = report.completed + report.deferred;
+    let done = if attempted == 0 {
+        1.0
+    } else {
+        report.completed as f32 / attempted as f32
+    };
+    let message = (!report.critical_deferred_behaviors.is_empty()).then(|| {
+        format!(
+            "{} critical instance(s) deferred: {}",
+            report.critical_deferred,
+            report.critical_deferred_behaviors.join(", ")
+        )
+    });
+    LaneReport {
+        done,
+        stalled: report.faulted > 0,
+        message,
+    }
+}

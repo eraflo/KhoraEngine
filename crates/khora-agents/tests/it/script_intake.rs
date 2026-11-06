@@ -26,7 +26,6 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_agents::script_agent::ScriptAgent;
 use khora_control::substrate::run_data_systems;
 use khora_core::agent::gorna::{ResourceBudget, StrategyId};
 use khora_core::agent::{Activation, Agent};
@@ -51,6 +50,7 @@ use khora_script::reload::ScriptReload;
 use khora_script::vm::Value;
 
 use super::behavior_session::attach;
+use crate::script_family::fixtures::{publish_script_views, script_agent};
 
 /// The registered `script_intake` data system.
 fn intake() -> &'static DataSystemRegistration {
@@ -309,8 +309,8 @@ fn a_reload_the_pump_handed_over_is_installed_before_the_flow_and_reads_its_comp
     let mut view = flow.project(&world, &selection, &runtime);
     view.delta_seconds = 0.016;
     let mut bus = LaneBus::new();
-    bus.publish(view);
-    let mut agent = ScriptAgent::default();
+    publish_script_views(&mut bus, view);
+    let mut agent = script_agent();
     agent.apply_budget(ResourceBudget {
         strategy_id: StrategyId::Balanced,
         time_limit: std::time::Duration::from_millis(50),

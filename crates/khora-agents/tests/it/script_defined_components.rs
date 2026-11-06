@@ -23,7 +23,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_agents::script_agent::ScriptAgent;
+use khora_agents::agent::LaneAgent;
 use khora_control::substrate::run_data_systems;
 use khora_core::agent::gorna::{ResourceBudget, StrategyId};
 use khora_core::agent::Agent;
@@ -43,6 +43,7 @@ use khora_script::vm::{Program, Value};
 use khora_script::{compile_module, Diagnostic, MemoryLoader};
 
 use super::behavior_session::{attach, declared_in};
+use crate::script_family::fixtures::{publish_script_views, script_agent};
 
 const HEALTH_MODULE: &str = "game/health.erg";
 const MEDIC_MODULE: &str = "game/medic.erg";
@@ -162,7 +163,7 @@ struct Session {
     /// Whether the flow ran before, as the substrate keeps it: its first run
     /// is a resumption.
     projected: bool,
-    agent: ScriptAgent,
+    agent: LaneAgent,
     scripts: Arc<Mutex<ScriptRuntime>>,
     runtime: Arc<Runtime>,
 }
@@ -184,7 +185,7 @@ impl Session {
                 khora_core::script::ScriptReads,
             >::new()));
 
-        let mut agent = ScriptAgent::default();
+        let mut agent = script_agent();
         agent.apply_budget(ResourceBudget {
             strategy_id: StrategyId::Balanced,
             time_limit: std::time::Duration::from_millis(50),
@@ -226,7 +227,7 @@ impl Session {
         let mut view = self.flow.project(&self.world, &selection, &self.runtime);
         view.delta_seconds = 0.016;
         let mut bus = LaneBus::new();
-        bus.publish(view);
+        publish_script_views(&mut bus, view);
         let mut deck = OutputDeck::new();
         let permit = self.agent.contention();
         {

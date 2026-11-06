@@ -102,6 +102,9 @@ pub struct LaneAgent {
     quotes: Vec<Option<Cost>>,
     /// The time GORNA allowed the agent.
     time_limit: Duration,
+    /// Whether GORNA allowed the agent anything yet: until it has, a lane
+    /// taking `Option<Budget>` runs on its own price.
+    budget_lent: bool,
     /// The simulated time one run advances, for a fixed-step family: its
     /// registration's, or the game's setting. No budget changes it.
     fixed_step: Option<Duration>,
@@ -184,6 +187,7 @@ pub fn lane_agent(registration: &'static AgentRegistration, caps: &DeviceCaps) -
         menu,
         current,
         time_limit: Duration::ZERO,
+        budget_lent: false,
         fixed_step: registration.fixed_step,
         levels,
         default_row: current,
@@ -201,11 +205,12 @@ pub fn lane_agent(registration: &'static AgentRegistration, caps: &DeviceCaps) -
 fn lend<'c>(
     context: &'c EngineContext<'_>,
     time_limit: Duration,
+    budget_lent: bool,
     fixed_step: Option<Duration>,
     frame: Option<&FrameContext>,
 ) -> InputSource<'c> {
     let mut source = context.input_source();
-    if !time_limit.is_zero() {
+    if budget_lent || !time_limit.is_zero() {
         source = source.with_budget(Budget { time: time_limit });
     }
     if let Some(step) = fixed_step {
@@ -298,6 +303,7 @@ impl Agent for LaneAgent {
                 self.over_budget = false;
                 self.current = row;
                 self.time_limit = budget.time_limit;
+                self.budget_lent = true;
                 self.locked_place().raise(Wake::Allocated);
             }
             None => log::warn!(
@@ -428,6 +434,7 @@ impl Agent for LaneAgent {
     ) {
         let time = &envelope.time;
         self.time_limit = time.cpu.max(time.gpu).max(time.npu).max(time.other);
+        self.budget_lent = true;
         // A new allocation gives every row its chance again.
         self.failed.iter_mut().for_each(|failed| *failed = false);
         self.lent = Some(Lent {

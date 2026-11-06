@@ -23,15 +23,16 @@
 //! is saved with the array's elements (`FrozenValue::Array`).
 
 use khora_core::ecs::entity::EntityId;
-use khora_core::lane::{Lane, LaneContext, OutputDeck};
+use khora_core::lane::OutputDeck;
 use khora_core::script::{EventQueue, FrozenValue, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRunReport, ScriptRuntime};
+use khora_lanes::script_lane::{ScriptRunReport, ScriptRuntime};
 use khora_script::bridge::from_persisted;
 use khora_script::vm::Program;
 use khora_script::{check, compile, ergon_fn, lex, parse};
 
 use super::saves::every_encoding;
+use super::script_lane_run::{run_lane, LaneFrame};
 
 /// Text no literal of the scripts below spells.
 #[ergon_fn(name = "ArrayFieldTail")]
@@ -91,18 +92,11 @@ fn runtime_of(source: &str) -> ScriptRuntime {
     runtime
 }
 
-/// One frame through the lane itself, the way the scripting agent runs it.
+/// One frame through the lane itself, the way the script family's agent runs
+/// it.
 fn lane_frame(view: &ScriptView, runtime: &mut ScriptRuntime) -> ScriptRunReport {
-    let lane = BudgetedScriptLane::new();
     let mut deck = OutputDeck::new();
-    {
-        let mut ctx = LaneContext::new();
-        ctx.insert_ref(view);
-        ctx.insert(Fuel(u64::MAX));
-        ctx.insert_slot(&mut *runtime);
-        ctx.insert_slot(&mut deck);
-        lane.execute(&mut ctx).expect("the lane runs");
-    }
+    run_lane(LaneFrame::of(view), runtime, u64::MAX, &mut deck);
     runtime.last_report().clone()
 }
 

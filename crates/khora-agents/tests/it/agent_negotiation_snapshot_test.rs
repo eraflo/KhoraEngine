@@ -24,7 +24,6 @@
 //! scene.
 
 use khora_agents::agent::lane_agent;
-use khora_agents::script_agent::ScriptAgent;
 use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
 use khora_core::agent::{Agent, ExecutionTiming};
 use khora_core::gpu::DeviceCaps;
@@ -36,6 +35,7 @@ use crate::overlay_families::fixtures::{
 };
 use crate::physics_family::fixtures::physics_agent;
 use crate::render_family::fixtures::{render_agent, EVERY_CAP};
+use crate::script_family::fixtures::script_agent;
 use crate::shadows_family::fixtures::{shadow_agent, LEVEL_MEMORY};
 use crate::skybox_family::fixtures::skybox_agent;
 use crate::ui_family::fixtures::ui_agent;
@@ -182,13 +182,13 @@ fn audio_agent_offers_three_tiers_from_low_power_up() {
     );
 }
 
-/// The script agent, before any frame: two rows, cheapest first — the floor
-/// its critical behaviors need, `LowPower`, and its full demand, `Balanced`
-/// — and no VRAM.
+/// The script family's agent, before any frame: two rows, cheapest first —
+/// its critical level, `LowPower`, and its whole level, `Balanced` — and no
+/// VRAM.
 #[test]
-fn script_agent_offers_three_tiers_from_low_power_up() {
+fn script_agent_offers_a_critical_row_then_a_whole_one() {
     assert_eq!(
-        offer(ScriptAgent::default()),
+        offer(script_agent()),
         (
             AgentId::new("script"),
             vec![(StrategyId::LowPower, 0), (StrategyId::Balanced, 0)]

@@ -55,6 +55,8 @@ mod saves;
 mod scheduled_scene;
 mod scoped_scripts;
 mod script_intake;
+mod script_lane_run;
+mod script_levels;
 mod shadows;
 mod skybox;
 mod spatial_mixing;

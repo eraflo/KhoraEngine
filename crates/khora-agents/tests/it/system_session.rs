@@ -17,16 +17,19 @@
 //! programs on their channels, what each program reads announced to the
 //! catalog, the engine's `Activation` when the test switches the scripts,
 //! the `PreExtract` data systems, the flow, the script lane run with a chosen
-//! fuel, then `Maintenance` applying and writing back.
+//! fuel through an `InputSource` as its family's agent lends one, then
+//! `Maintenance` applying and writing back.
 
 use std::sync::{Arc, Mutex};
 
 use khora_control::substrate::run_data_systems;
+use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Activation;
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 use khora_core::event::{discard_mail_of_inactive, Channel};
-use khora_core::lane::{Lane, LaneContext, OutputDeck};
+use khora_core::lane::cost::Cost;
+use khora_core::lane::OutputDeck;
 use khora_core::projection::Interest;
 use khora_core::script::{
     engine_event_channel, CommandBuffer, ComponentName, ScriptCatalog, ScriptEvent, ScriptReads,
@@ -36,11 +39,12 @@ use khora_core::Runtime;
 use khora_data::ecs::{TickPhase, World};
 use khora_data::flow::{Flow, FlowContext, ScriptFlow, ScriptView};
 use khora_io::script::declarations::{declaration_channel, DeclaredComponents};
-use khora_lanes::script_lane::{take_in, BudgetedScriptLane, Fuel, ScriptRuntime};
+use khora_lanes::script_lane::{take_in, ScriptRuntime};
 use khora_script::reload::ScriptReload;
 use khora_script::vm::Program;
 
 use super::behavior_session::{compile, declared_in, key, Project, PLENTY};
+use super::script_family::fixtures::{no_prefabs, quote_lane, run_lane, LaneFrame};
 
 /// One running session over a world, its scripts on or off as the test
 /// switches them.
@@ -49,18 +53,18 @@ pub(crate) struct SystemSession {
     pub(crate) scripts: ScriptRuntime,
     /// The fuel each frame's lane runs with.
     pub(crate) fuel: u64,
+    /// The last playing frame's view, as the lane read it.
+    last_view: Option<ScriptView>,
     flow: ScriptFlow,
     /// Whether the flow ran before, as the substrate keeps it: its first run
     /// is a resumption.
     projected: bool,
-    lane: BudgetedScriptLane,
     runtime: Arc<Runtime>,
     /// The engine's switch, when the test switches the scripts; without
     /// one, every family is on.
     activation: Option<Arc<Activation>>,
     reloads: Channel<ScriptReload>,
     events: Channel<ScriptEvent>,
-    catalog: Arc<ScriptCatalog>,
     reads: Arc<Interest<ScriptReads>>,
     /// Whether the last frame played, and took in what the engine handed
     /// over: a playing frame after one that did not starts play over.
@@ -105,7 +109,7 @@ impl SystemSession {
         runtime
             .resources
             .insert(Arc::new(Mutex::new(DeclaredComponents::default())));
-        runtime.resources.insert(Arc::clone(&catalog));
+        runtime.resources.insert(catalog);
         runtime.resources.insert(Arc::clone(&reads));
         if let Some(activation) = &activation {
             runtime.resources.insert(Arc::clone(activation));
@@ -115,14 +119,13 @@ impl SystemSession {
             world,
             scripts: ScriptRuntime::new(),
             fuel: PLENTY,
+            last_view: None,
             flow: ScriptFlow::default(),
             projected: false,
-            lane: BudgetedScriptLane::new(),
             runtime: Arc::new(runtime),
             activation,
             reloads,
             events,
-            catalog,
             reads,
             took_in: false,
         };
@@ -215,20 +218,29 @@ impl SystemSession {
         let mut deck = OutputDeck::new();
         deck.slot::<CommandBuffer>().extend(before.iter().cloned());
         if playing {
-            let mut ctx = LaneContext::new();
-            ctx.insert_ref(&view);
-            // Where a spawn takes its entity's id, as the agent hands it on.
-            let reservations = khora_data::flow::ReservationView {
-                reserver: self.world.reserver(),
+            // Where a spawn takes its entity's id, as the flow publishes it.
+            let frame = LaneFrame {
+                view: &view,
+                reservations: khora_data::flow::ReservationView {
+                    reserver: self.world.reserver(),
+                },
+                prefabs: no_prefabs(),
+                level: StrategyId::Balanced,
             };
-            ctx.insert_ref(&reservations);
-            ctx.insert(Fuel(self.fuel));
-            ctx.insert_slot(&mut self.scripts);
-            ctx.insert_slot(&mut deck);
-            ctx.insert_ref(&self.catalog);
-            self.lane.execute(&mut ctx).expect("the script lane runs");
+            run_lane(frame, &mut self.scripts, self.fuel, &mut deck);
+            self.last_view = Some(view);
         }
         self.boundary(TickPhase::Maintenance, &mut deck);
+    }
+
+    /// Every level's price on the last playing frame's view, as the agent
+    /// quotes the lane between two frames.
+    pub(crate) fn quote(&mut self) -> Vec<(StrategyId, Cost)> {
+        let view = self
+            .last_view
+            .clone()
+            .expect("a playing frame ran before the lane is quoted");
+        quote_lane(LaneFrame::of(&view), &mut self.scripts)
     }
 
     /// `modules` recompiled among `project` and handed over the way the

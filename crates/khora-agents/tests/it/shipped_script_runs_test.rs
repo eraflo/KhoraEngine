@@ -29,7 +29,8 @@
 
 use std::sync::Arc;
 
-use khora_agents::script_agent::ScriptAgent;
+use crate::script_family::fixtures::{publish_script_views, script_agent};
+use khora_agents::agent::LaneAgent;
 use khora_core::agent::gorna::{ResourceBudget, StrategyId};
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
@@ -116,12 +117,12 @@ fn a_scene_with_one_hovering_sphere(delta_seconds: f32) -> ScriptView {
 
 /// Runs one frame, returning what the behaviours queued.
 fn run_one_frame(
-    agent: &mut ScriptAgent,
+    agent: &mut LaneAgent,
     runtime: &Arc<Runtime>,
     delta_seconds: f32,
 ) -> Vec<WorldCommand> {
     let mut bus = LaneBus::new();
-    bus.publish(a_scene_with_one_hovering_sphere(delta_seconds));
+    publish_script_views(&mut bus, a_scene_with_one_hovering_sphere(delta_seconds));
     let mut deck = OutputDeck::new();
     // What the engine handed over is taken in first, as the boundary does.
     crate::script_intake::run_intake(runtime);
@@ -140,8 +141,8 @@ fn run_one_frame(
     deck.take::<CommandBuffer>().as_slice().to_vec()
 }
 
-fn budgeted() -> ScriptAgent {
-    let mut agent = ScriptAgent::default();
+fn budgeted() -> LaneAgent {
+    let mut agent = script_agent();
     // The DCC does this every frame. Without it there is no fuel, every
     // behaviour is deferred, and the test would prove nothing about the
     // behaviour while looking like it passed.

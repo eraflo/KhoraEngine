@@ -27,7 +27,7 @@ use std::sync::Arc;
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::event::{Channel, WhenFull};
-use khora_core::lane::{Lane, LaneContext, OutputDeck};
+use khora_core::lane::OutputDeck;
 use khora_core::math::Vec3;
 use khora_core::projection::Interest;
 use khora_core::script::{
@@ -35,11 +35,13 @@ use khora_core::script::{
     ScriptValue, WorldCommand,
 };
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{take_in, BudgetedScriptLane, Fuel, ScriptRuntime};
+use khora_lanes::script_lane::{take_in, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::reload::ScriptReload;
 use khora_script::vm::{Program, Value};
 use khora_script::{compile_module, Diagnostic, MemoryLoader};
+
+use super::script_lane_run::{run_lane_beside, LaneFrame};
 
 const MODULE: &str = "ai/guard.erg";
 
@@ -190,18 +192,16 @@ impl Stage {
             Some(&self.demand),
             view.resumed,
         );
-        let lane = BudgetedScriptLane::new();
         let mut deck = OutputDeck::new();
         deck.slot::<CommandBuffer>().extend(before.iter().cloned());
-        {
-            let mut ctx = LaneContext::new();
-            ctx.insert_ref(view);
-            ctx.insert(Fuel(u64::MAX));
-            ctx.insert_slot(&mut self.runtime);
-            ctx.insert_slot(&mut deck);
-            ctx.insert_ref(&self.catalog);
-            lane.execute(&mut ctx).expect("the lane runs");
-        }
+        let catalog = Arc::clone(&self.catalog);
+        run_lane_beside(
+            LaneFrame::of(view),
+            &mut self.runtime,
+            u64::MAX,
+            &mut deck,
+            |engine| engine.resources.insert(catalog),
+        );
         Handed {
             commands: deck.slot::<CommandBuffer>().as_slice().to_vec(),
             updates: deck.slot::<BehaviorWriteback>().drain().collect(),
@@ -360,4 +360,17 @@ fn a_set_queued_after_the_turn_is_not_read_and_sits_after_it() {
         handed.set_of(RUNNER),
         update.emitted_after
     );
+}
+
+/// **A frame with no behaviour keeps the commands queued before it.** The
+/// scene holds no script: the lane has nothing to run, and the three
+/// commands another lane queued earlier in the tick are still the frame's.
+#[test]
+fn a_frame_with_no_behaviour_keeps_the_commands_queued_before_it() {
+    let mut stage = Stage::new();
+    let before = queued_elsewhere(3);
+
+    let handed = stage.frame(&view(&[]), &before);
+
+    assert_eq!(handed.commands, before, "nothing ran, nothing was lost");
 }

@@ -653,6 +653,15 @@ pub fn run_behaviors(
         if super::rate::schedule_of(runtime, group_program).critical {
             report.critical_spent += report.spent - spent_before;
             report.critical_deferred += report.deferred - deferred_before;
+            if report.deferred > deferred_before
+                && !report
+                    .critical_deferred_behaviors
+                    .contains(&group_program.behavior)
+            {
+                report
+                    .critical_deferred_behaviors
+                    .push(group_program.behavior.clone());
+            }
         }
     }
 

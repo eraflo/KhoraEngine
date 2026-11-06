@@ -183,6 +183,7 @@ impl Layer for LaneLayer {
             let mut source = lend(
                 context,
                 terms.time_limit,
+                terms.budget_lent,
                 terms.fixed_step,
                 frame.as_deref(),
             );

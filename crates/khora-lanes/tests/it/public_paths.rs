@@ -43,7 +43,6 @@ fn is_debug<T: std::fmt::Debug>() {}
 fn is_default<T: Default>() {}
 fn is_deserialize_owned<T: serde::de::DeserializeOwned>() {}
 fn is_eq<T: Eq>() {}
-fn is_lane<T: khora_core::lane::Lane>() {}
 fn is_lane_family<T: khora_core::lane::family::LaneFamily>() {}
 fn is_typed_lane<T: khora_core::lane::contract::Lane>() {}
 fn is_ord<T: Ord>() {}
@@ -116,10 +115,6 @@ fn shader_complexity_variants(x: &khora_lanes::render_lane::ShaderComplexity) {
         khora_lanes::render_lane::ShaderComplexity::SimpleLit => {}
         khora_lanes::render_lane::ShaderComplexity::FullPBR => {}
     }
-}
-
-fn fuel_fields(x: &khora_lanes::script_lane::Fuel) {
-    let _ = (&x.0,);
 }
 
 fn script_run_report_fields(x: &khora_lanes::script_lane::report::ScriptRunReport) {
@@ -339,14 +334,11 @@ fn module_script_lane_paths_still_resolve() {
     let _ = khora_lanes::script_lane::BudgetedScriptLane::new;
     is_debug::<khora_lanes::script_lane::BudgetedScriptLane>();
     is_default::<khora_lanes::script_lane::BudgetedScriptLane>();
-    is_lane::<khora_lanes::script_lane::BudgetedScriptLane>();
-    let _ = type_name::<khora_lanes::script_lane::Fuel>();
-    let _ = fuel_fields as fn(&khora_lanes::script_lane::Fuel);
-    is_debug::<khora_lanes::script_lane::Fuel>();
-    is_clone::<khora_lanes::script_lane::Fuel>();
-    is_copy::<khora_lanes::script_lane::Fuel>();
-    is_partial_eq::<khora_lanes::script_lane::Fuel>();
-    is_eq::<khora_lanes::script_lane::Fuel>();
+    is_typed_lane::<khora_lanes::script_lane::BudgetedScriptLane>();
+    let _ = type_name::<khora_lanes::script_lane::ScriptFamily>();
+    let _ = type_name::<khora_lanes::script_lane::ScriptInputs<'static>>();
+    let _ = type_name::<khora_lanes::script_lane::ScriptOutputs>();
+    is_lane_family::<khora_lanes::script_lane::ScriptFamily>();
     let _ = khora_lanes::script_lane::resumption::resume;
     let _ = khora_lanes::script_lane::resumption::carry;
     let _ = khora_lanes::script_lane::persistence::snapshot_from_store;
@@ -500,7 +492,7 @@ mod paths_used_by_other_crates {
     use khora_lanes::render_lane::SimpleUnlitLane as _; // khora-agents
     use khora_lanes::script_lane::runtime::INITIAL_RATE as _; // khora-agents
     use khora_lanes::script_lane::BudgetedScriptLane as _; // khora-agents
-    use khora_lanes::script_lane::Fuel as _; // khora-agents
+    use khora_lanes::script_lane::ScriptFamily as _; // khora-agents
     use khora_lanes::script_lane::ScriptRunReport as _; // khora-agents
     use khora_lanes::script_lane::ScriptRuntime as _; // khora-agents, khora-sdk
     use khora_lanes::shadow_lane::ShadowsFamily as _; // khora-agents

@@ -253,14 +253,14 @@ fn a_null_prefab_faults_the_turn_and_spawns_nothing() {
     );
 }
 
-/// **The scripting agent hands its lane the prefab catalog.** Run through the
-/// agent itself, a spawn of a prefab the published catalog does not hold
+/// **The script family's agent hands its lane the prefab catalog.** Run
+/// through the agent itself, a spawn of a prefab the published catalog does not hold
 /// queues nothing; one it holds is queued.
 #[test]
 fn the_scripting_agent_hands_its_lane_the_prefab_catalog() {
     use std::collections::BTreeSet;
 
-    use khora_agents::script_agent::ScriptAgent;
+    use crate::script_family::fixtures::script_agent;
     use khora_core::agent::Agent;
     use khora_core::lane::{LaneBus, OutputDeck};
     use khora_core::script::{CommandBuffer, WorldCommand};
@@ -304,7 +304,7 @@ fn the_scripting_agent_hands_its_lane_the_prefab_catalog() {
 
         let mut world = World::new();
         let gun = world.spawn(Transform::identity());
-        let mut agent = ScriptAgent::default();
+        let mut agent = script_agent();
         agent.apply_budget(khora_core::agent::gorna::ResourceBudget {
             strategy_id: khora_core::agent::gorna::StrategyId::Balanced,
             time_limit: std::time::Duration::from_millis(1),

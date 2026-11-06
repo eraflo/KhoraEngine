@@ -243,14 +243,14 @@ fn a_refused_spawn_leaves_a_handle_that_names_nothing() {
     assert_eq!(int(&session.world, spawner, "Health", "current"), Some(50));
 }
 
-/// **The scripting agent hands its lane the world's reserver.** A spawn run
+/// **The script family's agent hands its lane the world's reserver.** A spawn run
 /// through the agent itself — not a session that wires the lane by hand —
 /// carries an id the world handed out, so the frame's end can commit it.
 #[test]
 fn a_spawn_through_the_scripting_agent_takes_its_id_from_the_worlds_reserver() {
     use std::sync::Arc;
 
-    use khora_agents::script_agent::ScriptAgent;
+    use crate::script_family::fixtures::script_agent;
     use khora_core::agent::Agent;
     use khora_core::lane::{LaneBus, OutputDeck};
     use khora_core::script::{CommandBuffer, WorldCommand};
@@ -283,7 +283,7 @@ fn a_spawn_through_the_scripting_agent_takes_its_id_from_the_worlds_reserver() {
 
     let mut world = World::new();
     let maker = world.spawn(Transform::identity());
-    let mut agent = ScriptAgent::default();
+    let mut agent = script_agent();
     agent.apply_budget(khora_core::agent::gorna::ResourceBudget {
         strategy_id: khora_core::agent::gorna::StrategyId::Balanced,
         time_limit: std::time::Duration::from_millis(1),
@@ -319,6 +319,9 @@ fn a_spawn_through_the_scripting_agent_takes_its_id_from_the_worlds_reserver() {
         bus.publish(ReservationView {
             reserver: world.reserver(),
         });
+        // No catalog to check a prefab against, as a runtime without one
+        // publishes.
+        bus.publish(crate::script_family::fixtures::no_prefabs());
         let mut deck = OutputDeck::new();
         // What the engine handed over is taken in first, as the boundary does.
         crate::script_intake::run_intake(&runtime);

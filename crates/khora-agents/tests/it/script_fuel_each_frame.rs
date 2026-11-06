@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **The script agent reckons its fuel each frame.** What the DCC lends is a
-//! time, kept as it was lent; the fuel that time buys is reckoned in every
-//! `execute`, at the rate and overhead the lane has measured by then — never
-//! a fuel frozen when the allocation came in, which a rate measured since
-//! would leave wrong for the rest of the epoch.
+//! **The script family reckons its fuel each frame.** What the DCC lends is a
+//! time, kept as it was lent and handed to the lane as its budget; the fuel
+//! that time buys is reckoned in every run, at the rate and overhead the lane
+//! has measured by then — never a fuel frozen when the allocation came in,
+//! which a rate measured since would leave wrong for the rest of the epoch.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_agents::script_agent::ScriptAgent;
+use khora_agents::agent::LaneAgent;
 use khora_core::agent::gorna::{ResourceBudget, StrategyId};
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
@@ -31,6 +31,7 @@ use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::ScriptRuntime;
 
 use super::behavior_session::{compile, Project};
+use crate::script_family::fixtures::{publish_script_views, script_agent};
 
 /// `Spin`: an `Update` that never finishes, so every frame spends all the
 /// fuel it is handed.
@@ -81,9 +82,9 @@ fn wired() -> (Arc<Runtime>, Arc<Mutex<ScriptRuntime>>) {
 }
 
 /// One frame of the agent over the scene.
-fn run_one_frame(agent: &mut ScriptAgent, runtime: &Arc<Runtime>) {
+fn run_one_frame(agent: &mut LaneAgent, runtime: &Arc<Runtime>) {
     let mut bus = LaneBus::new();
-    bus.publish(scene());
+    publish_script_views(&mut bus, scene());
     let mut deck = OutputDeck::new();
     let permit = agent.contention();
     let mut ctx = EngineContext::for_agent(
@@ -124,7 +125,7 @@ fn spent(shared: &Arc<Mutex<ScriptRuntime>>) -> u64 {
 #[test]
 fn a_rate_measured_between_two_frames_changes_the_fuel_of_the_second() {
     let (runtime, shared) = wired();
-    let mut agent = ScriptAgent::default();
+    let mut agent = script_agent();
     agent.apply_budget(ResourceBudget {
         strategy_id: StrategyId::Balanced,
         time_limit: Duration::from_millis(1),

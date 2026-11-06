@@ -22,7 +22,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_agents::script_agent::ScriptAgent;
+use khora_agents::agent::LaneAgent;
 use khora_control::substrate::run_data_systems;
 use khora_core::agent::gorna::{ResourceBudget, StrategyId};
 use khora_core::agent::Agent;
@@ -42,6 +42,7 @@ use khora_lanes::script_lane::ScriptRuntime;
 use khora_script::arena::Persisted;
 
 use super::behavior_session::{attach, compile, declared_in, edit, int, Project};
+use crate::script_family::fixtures::{publish_script_views, script_agent};
 
 const MODULE: &str = "ai/guard.erg";
 
@@ -80,7 +81,7 @@ struct Session {
     /// Whether the flow ran before, as the substrate keeps it: its first run
     /// is a resumption.
     projected: bool,
-    agent: ScriptAgent,
+    agent: LaneAgent,
     scripts: Arc<Mutex<ScriptRuntime>>,
     events: Channel<ScriptEvent>,
     runtime: Arc<Runtime>,
@@ -100,7 +101,7 @@ impl Session {
         runtime.services.insert(Arc::clone(&scripts));
         runtime.resources.insert(events.clone());
 
-        let mut agent = ScriptAgent::default();
+        let mut agent = script_agent();
         // The DCC does this every frame; without it there is no fuel and
         // every behavior is deferred.
         agent.apply_budget(ResourceBudget {
@@ -134,7 +135,7 @@ impl Session {
         view.delta_seconds = delta;
 
         let mut bus = LaneBus::new();
-        bus.publish(view);
+        publish_script_views(&mut bus, view);
         let mut deck = OutputDeck::new();
         // What the engine handed over is taken in first, as the boundary does.
         crate::script_intake::run_intake(&self.runtime);

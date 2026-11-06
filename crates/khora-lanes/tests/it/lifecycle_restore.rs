@@ -382,19 +382,14 @@ const LEAVER: &str = r#"behavior Guard {
                        }
                        event Bye;"#;
 
-/// One frame through the lane itself, the way the scripting agent runs it.
+/// One frame through the lane itself, the way the script family's agent runs
+/// it.
 fn lane_frame(view: &ScriptView, runtime: &mut ScriptRuntime) {
-    use khora_core::lane::{Lane, LaneContext, OutputDeck};
-    use khora_lanes::script_lane::{BudgetedScriptLane, Fuel};
+    use super::script_lane_run::{run_lane, LaneFrame};
+    use khora_core::lane::OutputDeck;
 
-    let lane = BudgetedScriptLane::new();
     let mut deck = OutputDeck::new();
-    let mut ctx = LaneContext::new();
-    ctx.insert_ref(view);
-    ctx.insert(Fuel(u64::MAX));
-    ctx.insert_slot(runtime);
-    ctx.insert_slot(&mut deck);
-    lane.execute(&mut ctx).expect("the lane runs");
+    run_lane(LaneFrame::of(view), runtime, u64::MAX, &mut deck);
 }
 
 /// **What left while play was away is forgotten — even when nothing is

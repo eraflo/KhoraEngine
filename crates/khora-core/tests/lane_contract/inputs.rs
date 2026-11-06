@@ -139,3 +139,54 @@ fn a_raw_identifier_field_is_named_without_its_prefix() {
         })
     );
 }
+
+/// A lane that can run before its agent lends it anything.
+#[derive(khora_macros::LaneInputs)]
+struct MaybeBudgeted {
+    #[budget]
+    budget: Option<Budget>,
+}
+
+/// **An optional budget is `None` until one is lent**, a zero one included,
+/// and is declared like any budget: a lane reading it is never refused for
+/// the lack of one.
+#[test]
+fn an_optional_budget_is_none_until_one_is_lent() {
+    let frame = FrameId(3);
+    let bus = LaneBus::new();
+    let runtime = Runtime::new();
+
+    let mut unlent = InputSource::new(frame, &bus, &runtime);
+    let inputs = MaybeBudgeted::fetch(&mut unlent).expect("never refused for no budget");
+    assert_eq!(inputs.budget, None);
+
+    let mut zero = InputSource::new(frame, &bus, &runtime).with_budget(Budget {
+        time: Duration::ZERO,
+    });
+    assert_eq!(
+        MaybeBudgeted::fetch(&mut zero)
+            .expect("a zero budget is lent")
+            .budget,
+        Some(Budget {
+            time: Duration::ZERO
+        })
+    );
+
+    let lent = Budget {
+        time: Duration::from_millis(1),
+    };
+    let mut source = InputSource::new(frame, &bus, &runtime).with_budget(lent);
+    assert_eq!(
+        MaybeBudgeted::fetch(&mut source).expect("lent").budget,
+        Some(lent)
+    );
+
+    let mut declared = Declaration::default();
+    MaybeBudgeted::declare(&mut declared);
+    assert_eq!(
+        entries(declared.inputs()),
+        [("budget", SourceKind::Budget, TypeId::of::<Budget>())]
+            .into_iter()
+            .collect()
+    );
+}

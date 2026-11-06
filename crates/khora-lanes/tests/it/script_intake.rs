@@ -24,16 +24,18 @@ use std::sync::{Arc, Mutex};
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::event::{Channel, WhenFull};
-use khora_core::lane::{Lane, LaneContext, OutputDeck};
+use khora_core::lane::OutputDeck;
 use khora_core::projection::Interest;
 use khora_core::script::{ComponentName, ScriptEvent, ScriptReads, ScriptValue};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, Role, SystemContext, Tick, TickPhase, World};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{take_in, BudgetedScriptLane, Fuel, ScriptRuntime};
+use khora_lanes::script_lane::{take_in, ScriptRuntime};
 use khora_script::reload::ScriptReload;
 use khora_script::vm::Program;
 use khora_script::{compile_module, Diagnostic, MemoryLoader};
+
+use super::script_lane_run::{run_lane_beside, LaneFrame};
 
 const MODULE: &str = "ai/guard.erg";
 
@@ -533,8 +535,9 @@ fn take_in_drains_both_channels_into_the_scripting_world() {
 
 // ─── The lane leaves the channels alone ────────────────────────────────────
 
-/// **The lane runs behaviors; it takes nothing in.** Handed the channels
-/// all the same, a lane run leaves the reload and the event where they are,
+/// **The lane runs behaviors; it takes nothing in.** With the channels and
+/// the demand in the runtime beside the scripting world, as the engine
+/// registers them, a lane run leaves the reload and the event where they are,
 /// and installs nothing.
 #[test]
 fn the_lane_leaves_the_engine_channels_alone() {
@@ -572,19 +575,17 @@ fn the_lane_leaves_the_engine_channels_alone() {
     };
 
     let mut deck = OutputDeck::new();
-    {
-        let mut ctx = LaneContext::new();
-        ctx.insert_ref(&view);
-        ctx.insert(Fuel(u64::MAX));
-        ctx.insert_slot(&mut scripts);
-        ctx.insert_slot(&mut deck);
-        ctx.insert_ref(&reloads);
-        ctx.insert_ref(&events);
-        ctx.insert_ref(&demand);
-        BudgetedScriptLane::new()
-            .execute(&mut ctx)
-            .expect("the lane runs");
-    }
+    run_lane_beside(
+        LaneFrame::of(&view),
+        &mut scripts,
+        u64::MAX,
+        &mut deck,
+        |engine| {
+            engine.resources.insert(reloads.clone());
+            engine.resources.insert(events.clone());
+            engine.resources.insert(Arc::clone(&demand));
+        },
+    );
 
     assert_eq!(reloads.len(), 1, "the reload is left for the intake");
     assert_eq!(events.len(), 1, "the event is left for the intake");

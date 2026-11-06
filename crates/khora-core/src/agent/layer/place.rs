@@ -40,8 +40,13 @@ pub struct Terms {
     /// The envelope the DCC lent; `None` while none was, which limits
     /// nothing — the kept layers' memory included.
     pub envelope: Option<Envelope>,
-    /// The time lent to a `#[budget]` lane; zero lends none.
+    /// The time lent to a `#[budget]` lane; zero lends none, unless
+    /// `budget_lent` says a budget of zero was lent.
     pub time_limit: Duration,
+    /// Whether the agent was lent a budget at all: a lane taking
+    /// `Option<Budget>` reads `None` until it is, and `time_limit` once it
+    /// is — zero included.
+    pub budget_lent: bool,
     /// The simulated time one run advances, for a fixed-step family.
     pub fixed_step: Option<Duration>,
     /// Whether the row is the floor, run because no row fitted the envelope.

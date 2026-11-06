@@ -22,13 +22,15 @@
 //! field the save lacks is filled whole, as a literal leaving it out would be.
 
 use khora_core::ecs::entity::EntityId;
-use khora_core::lane::{Lane, LaneContext, OutputDeck};
+use khora_core::lane::OutputDeck;
 use khora_core::script::{ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{BudgetedScriptLane, Fuel, ScriptRuntime};
+use khora_lanes::script_lane::ScriptRuntime;
 use khora_script::bridge::from_persisted;
 use khora_script::vm::Program;
 use khora_script::{check, compile, lex, parse};
+
+use super::script_lane_run::{run_lane, LaneFrame};
 
 const MODULE: &str = "saved_structs_into_edited_types.erg";
 
@@ -82,15 +84,9 @@ fn loaded(source: &str, saved: ScriptSnapshot) -> ScriptRuntime {
     let mut runtime = ScriptRuntime::new();
     runtime.add_program(MODULE, build(source));
     for observed in [Some(saved), None] {
-        let lane = BudgetedScriptLane::new();
         let mut deck = OutputDeck::new();
         let view = view_of(observed);
-        let mut ctx = LaneContext::new();
-        ctx.insert_ref(&view);
-        ctx.insert(Fuel(u64::MAX));
-        ctx.insert_slot(&mut runtime);
-        ctx.insert_slot(&mut deck);
-        lane.execute(&mut ctx).expect("the lane runs");
+        run_lane(LaneFrame::of(&view), &mut runtime, u64::MAX, &mut deck);
     }
     runtime
 }

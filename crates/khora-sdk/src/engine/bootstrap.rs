@@ -103,7 +103,6 @@ impl<A: EngineApp> EngineBootstrap<A> {
         };
         self.app.register_agents(&self.dcc, &mut runtime);
         let shared = Arc::new(runtime);
-        register_builtin_agents(&self.dcc);
         self.lane_agents = register_lane_agents(&self.dcc, &shared, &self.phase_order);
         refuse_stranded_agents(&self.dcc, &self.phase_order);
         super::families::admit_families(&self.dcc, &shared);
@@ -449,9 +448,9 @@ fn populate(
 
     // The scripting world — compiled programs, live behavior instances, the
     // mail behaviors owe each other. Registered here rather than owned by
-    // `ScriptAgent` for the same reason the physics provider is: an
-    // agent chooses a lane against a budget, and a subsystem's state is not
-    // strategy state. It also means anything that legitimately needs to see
+    // the script family's agent for the same reason the physics provider
+    // is: an agent chooses a lane against a budget, and a subsystem's state
+    // is not strategy state. It also means anything that legitimately needs to see
     // live behaviors — an inspector, a debugger — can, without going
     // through the agent.
     let script_runtime: Arc<Mutex<khora_lanes::script_lane::ScriptRuntime>> =
@@ -489,47 +488,6 @@ fn populate(
     khora_io::script::declarations::register_pending(game_world.inner_world_mut(), runtime);
 
     (dcc, dcc_rx, telemetry, game_world)
-}
-
-/// The engine's built-in agents, always present. Agents implement only the
-/// `Agent` trait + `Default`, so construction goes through `Default::default()`.
-fn register_builtin_agents(dcc: &DccService) {
-    // An agent's name is free text: a game agent registered first under one
-    // of these names would leave the engine's own out, and no frame could
-    // recover it. Boot refuses that, as it refuses a family whose name is
-    // taken.
-    let taken = dcc
-        .agent_registry()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .all_ids();
-    for builtin in [khora_agents::script_agent::SCRIPT] {
-        if taken.contains(&builtin) {
-            panic!(
-                "the engine cannot boot: an agent already negotiates as `{builtin}`, the name of the engine's own"
-            );
-        }
-    }
-    // Gameplay. Registered like any other consumer, which is the point of
-    // giving scripting an agent at all: the DCC can tell it "you have
-    // 0.4ms, hand back control", and Ergon is the only scripting language
-    // in reach that can be told that. It runs while its family is on: an
-    // editor editing a scene switches it off.
-    dcc.register_agent(
-        Arc::new(Mutex::new(
-            khora_agents::script_agent::ScriptAgent::default(),
-        )),
-        1.0,
-    );
-    // Where they come from, for tools: their types' paths.
-    let mut registry = dcc
-        .agent_registry()
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    registry.set_origin(
-        khora_agents::script_agent::SCRIPT,
-        std::any::type_name::<khora_agents::script_agent::ScriptAgent>(),
-    );
 }
 
 /// The order the scheduler runs the phases in: the built-in ones, the app's

@@ -59,7 +59,7 @@ switches it off while editing.
   (`khora-core/src/script/writeback.rs`).
 - Activation gate: `ScriptFlow` (`khora-data/src/flow/script.rs`, `const ROLE = Role::Serves(SCRIPT)`) and
   the script DataSystems (`script_intake`, `script_systems`, `script_commands`, `behavior_writeback`,
-  `collision_to_script`) serve SCRIPT, so they are skipped while it is off, as `ScriptAgent` is.
+  `collision_to_script`) serve SCRIPT, so they are skipped while it is off, as the family's agent is.
   `script_hot_reload`, `script_components`, `script_problems` are `Upkeep`. Mailboxes: `ScriptEvent`
   Take/Drop, `ScriptReload` Take/Hold (`khora-lanes/src/script_lane/intake.rs`), `Collision`
   Cursor("collision_to_script")/Drop. On `resumed`, the intake clears only the scripting world's own
@@ -88,8 +88,16 @@ switches it off while editing.
   writes keep their order. A sweep's rows are taken once; structural changes in the body are commands.
 - **A script never writes the `World`.** Its effects are queued as `WorldCommand`s and applied by a
   data system during `Maintenance`. This is what lets the script lane run world-free.
-- **The agent chooses a lane; the lane does the work.** `ScriptAgent` holds lanes, current lane,
-  strategy, fuel and a handle to the shared `ScriptRuntime` — nothing else. Applying reloads, draining
+- **The agent chooses a level; the lane does the work.** The script family (`ScriptFamily`,
+  `khora-lanes/src/script_lane/script_family.rs`; registration in `khora-agents/src/script_agent/`)
+  is a `LaneAgent` like every family. `BudgetedScriptLane` is typed: `#[bus] ScriptView,
+  ReservationView, PrefabCatalogView`, `#[locked] ScriptRuntime`, `#[budget] Option<Budget>` (`None`
+  until the agent is lent one: the lane then runs its level at its own price), outputs `#[deck]
+  CommandBuffer, BehaviorWriteback`. Two levels (`levels.rs`): `LowPower` "critical" (fuel capped at the
+  critical demand, `share` = the critical share) and `Balanced` "whole", the default. The frame length
+  is the view's `delta_seconds` (0 counts every rate-limited behaviour as due); an instance of the view
+  the runtime has not met yet is priced at `UNKNOWN_TURN`. `done` = completed / (completed + deferred),
+  `stalled` when a behaviour faulted, the message names the critical behaviours deferred. Applying reloads, draining
   channels, delivering events and keeping counters all live in the lane (`RULES.md` §8).
 - **`ScriptRuntime` lives in `Runtime::services`** as `Arc<Mutex<ScriptRuntime>>`, like the physics
   provider. The agent locks it for the duration of `execute` and declares it in `contention()`.

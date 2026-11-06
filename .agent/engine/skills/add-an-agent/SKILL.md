@@ -11,8 +11,8 @@ a GORNA budget. Non-negotiating work uses a service (`AssetService`, `EcsMainten
 
 > **A new subsystem is a family, not an agent** (RULES §8): its lanes and one `register_agent!`
 > registration (phase, importance, lanes, default level); its agent is the one `LaneAgent`, which runs the
-> lanes as layers. The steps below write a hand-written agent — what only `RenderAgent` and `ScriptAgent`
-> still are.
+> lanes as layers. No hand-written agent is left in the engine; the steps below are what one would
+> take, for a subsystem that genuinely cannot be a family.
 
 ## Steps
 1. Name the agent: `AgentId::new("<name>")` — for a lane family, its `LaneFamily::AGENT` constant. The core
@@ -33,7 +33,7 @@ a GORNA budget. Non-negotiating work uses a service (`AssetService`, `EcsMainten
    `docs/src/how-to/add-an-agent.md`). Both call:
    `dcc.register_agent(agent, priority)`. The agent is a family and starts on; the app switches it with
    `activate`/`deactivate` on the `Arc<Activation>` resource, settled at the next frame boundary (how
-   `ScriptAgent` is off while the editor edits). A DataSystem or Flow doing its work declares
+   the script family is off while the editor edits). A DataSystem or Flow doing its work declares
    `Role::Serves(<its AgentId>)`; one keeping a data invariant declares `Role::Upkeep`.
 
 ## Hard rules

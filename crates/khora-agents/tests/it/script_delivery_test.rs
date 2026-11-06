@@ -25,7 +25,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_agents::script_agent::ScriptAgent;
+use khora_agents::agent::LaneAgent;
 use khora_core::agent::gorna::{ResourceBudget, StrategyId};
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
@@ -39,6 +39,7 @@ use khora_script::arena::Persisted;
 use khora_script::reload::ScriptReload;
 use khora_script::vm::{Program, Value};
 
+use crate::script_family::fixtures::{publish_script_views, script_agent};
 use crate::script_intake::run_intake;
 
 const MODULE: &str = "ai/guard.erg";
@@ -88,9 +89,9 @@ fn damaged() -> ScriptEvent {
 /// Runs one frame of the agent against `runtime`, stamped with exactly the
 /// permit the scheduler would stamp — a test that granted more would be testing
 /// a context the engine never builds.
-fn run_one_frame(agent: &mut ScriptAgent, runtime: &Arc<Runtime>) {
+fn run_one_frame(agent: &mut LaneAgent, runtime: &Arc<Runtime>) {
     let mut bus = LaneBus::new();
-    bus.publish(a_scene_with_one_script());
+    publish_script_views(&mut bus, a_scene_with_one_script());
     let mut deck = OutputDeck::new();
     let permit = agent.contention();
     let mut ctx = EngineContext::for_agent(
@@ -180,7 +181,7 @@ fn an_engine_event_taken_in_is_delivered_that_frame() {
         .add_program(MODULE, program);
     runtime.resources.insert(events.clone());
     let runtime = Arc::new(runtime);
-    let mut agent = ScriptAgent::default();
+    let mut agent = script_agent();
     agent.apply_budget(ResourceBudget {
         strategy_id: StrategyId::Balanced,
         time_limit: std::time::Duration::from_millis(50),
@@ -228,7 +229,7 @@ fn the_agents_frame_leaves_both_queues_to_the_intake() {
     runtime.resources.insert(events.clone());
     let runtime = Arc::new(runtime);
 
-    run_one_frame(&mut ScriptAgent::default(), &runtime);
+    run_one_frame(&mut script_agent(), &runtime);
 
     assert_eq!(reloads.len(), 1, "the reload is the intake's to take");
     assert_eq!(events.len(), 1, "the event is the intake's to take");
@@ -249,7 +250,7 @@ fn an_engine_event_waits_in_the_channel_while_no_script_runs() {
     // No view published: the flow has not run, or the scene holds no scripts.
     let bus = LaneBus::new();
     let mut deck = OutputDeck::new();
-    let mut agent = ScriptAgent::default();
+    let mut agent = script_agent();
     let permit = agent.contention();
     let mut ctx = EngineContext::for_agent(
         WorldAccess::None,
@@ -275,5 +276,5 @@ fn an_agent_whose_queues_are_absent_still_runs() {
     let (runtime, _) = a_runtime_with_scripting();
     let runtime = Arc::new(runtime);
     run_intake(&runtime);
-    run_one_frame(&mut ScriptAgent::default(), &runtime);
+    run_one_frame(&mut script_agent(), &runtime);
 }

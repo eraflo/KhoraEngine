@@ -940,3 +940,72 @@ fn a_lane_that_needs_a_budget_runs_when_driven_as_gorna_drives_it() {
         agent.report_status().message
     );
 }
+
+/// Runs one frame of `agent` while another thread holds the frame's tally
+/// for `held`, from just before the run starts.
+fn run_while_the_tally_is_held_for(
+    agent: &mut LaneAgent,
+    frame: u64,
+    runtime: &Arc<Runtime>,
+    deck: &mut OutputDeck,
+    held: Duration,
+) {
+    let tally = Arc::clone(
+        runtime
+            .resources
+            .get::<Arc<Mutex<Tally>>>()
+            .expect("the frame's tally"),
+    );
+    let taken = Arc::new(std::sync::Barrier::new(2));
+    let holder = {
+        let taken = Arc::clone(&taken);
+        std::thread::spawn(move || {
+            let _guard = tally.lock().expect("the tally is free");
+            taken.wait();
+            // Spun rather than slept: a sleep's resolution would dwarf it.
+            let since = std::time::Instant::now();
+            while since.elapsed() < held {
+                std::hint::spin_loop();
+            }
+        })
+    };
+    taken.wait();
+    run(agent, frame, runtime, deck);
+    holder.join().expect("the holder lets go");
+}
+
+/// **A lane that takes no budget waits for its lock as long when its agent
+/// is lent no time as when it was never lent any.** The locking lane reads
+/// no `#[budget]`; lent a budget of zero, it is still a lane given no time to
+/// spend, so a lock held elsewhere for a fraction of [`LOCK_WAIT`] is waited
+/// for and the lane records — as it does before any budget is lent.
+///
+/// [`LOCK_WAIT`]: khora_core::lane::io::LOCK_WAIT
+#[test]
+fn a_lane_lent_no_time_waits_for_its_lock_as_one_never_lent() {
+    let counts = Counts::default();
+    let held = khora_core::lane::io::LOCK_WAIT / 4;
+
+    let mut agent = lane_agent(&WITH_A_LOCKING_LANE, &DeviceCaps::default());
+    agent.apply_budget(ResourceBudget {
+        time_limit: Duration::ZERO,
+        ..budget(StrategyId::Balanced)
+    });
+    let mut deck = OutputDeck::new();
+    run(&mut agent, 1, &plain(100, &counts), &mut deck);
+    assert_eq!(
+        deck.get::<Recorded>().map(|recorded| recorded.lane),
+        Some("locking"),
+        "set-up: the locking lane is installed and records"
+    );
+
+    let mut deck = OutputDeck::new();
+    run_while_the_tally_is_held_for(&mut agent, 2, &plain(100, &counts), &mut deck, held);
+
+    assert_eq!(
+        deck.get::<Recorded>().map(|recorded| recorded.lane),
+        Some("locking"),
+        "the lane waited {held:?} for its lock, as a lane never lent waits up to LOCK_WAIT: {:?}",
+        agent.report_status().message
+    );
+}

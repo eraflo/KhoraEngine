@@ -30,16 +30,18 @@ use std::sync::Arc;
 use khora_core::agent::Activation;
 use khora_core::ecs::entity::EntityId;
 use khora_core::event::{discard_mail_of_inactive, Channel, WhenFull};
-use khora_core::lane::{Lane, LaneContext, OutputDeck};
+use khora_core::lane::OutputDeck;
 use khora_core::projection::Interest;
 use khora_core::script::{ScriptCatalog, ScriptEvent, ScriptReads, ScriptValue, SCRIPT};
 use khora_core::Runtime;
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{take_in, BudgetedScriptLane, Fuel, ScriptRuntime};
+use khora_lanes::script_lane::{take_in, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::reload::ScriptReload;
 use khora_script::vm::{Program, Value};
 use khora_script::{compile_module, Diagnostic, MemoryLoader};
+
+use super::script_lane_run::{run_lane_beside, LaneFrame};
 
 const MODULE: &str = "ai/guard.erg";
 
@@ -184,15 +186,15 @@ impl Stage {
             Some(&self.demand),
             view.resumed,
         );
-        let lane = BudgetedScriptLane::new();
         let mut deck = OutputDeck::new();
-        let mut ctx = LaneContext::new();
-        ctx.insert_ref(view);
-        ctx.insert(Fuel(u64::MAX));
-        ctx.insert_slot(&mut self.runtime);
-        ctx.insert_slot(&mut deck);
-        ctx.insert_ref(&self.catalog);
-        lane.execute(&mut ctx).expect("the lane runs");
+        let catalog = Arc::clone(&self.catalog);
+        run_lane_beside(
+            LaneFrame::of(view),
+            &mut self.runtime,
+            u64::MAX,
+            &mut deck,
+            |engine| engine.resources.insert(catalog),
+        );
     }
 
     /// `Damaged(amount)` at `target`, as the engine's channel carries it.
