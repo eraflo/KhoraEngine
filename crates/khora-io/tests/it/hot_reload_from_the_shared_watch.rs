@@ -22,7 +22,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use khora_core::lane::OutputDeck;
+use khora_core::lane::{OutputDeck, Reserve, Staging};
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
     BindGroupLayoutId, CommandBufferId,
@@ -43,8 +43,9 @@ use khora_core::renderer::traits::{CommandEncoder, GraphicsDevice, PipelineSyste
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
 use khora_io::asset::AssetWatch;
-use khora_io::script::declarations::declaration_channel;
-use khora_io::script::hot_reload::{reload_channel, PendingReloads};
+use khora_script::reload::ScriptReload;
+
+use crate::filed_compiles;
 
 /// How long a save may take to reach a pump.
 const MAX_WAIT: Duration = Duration::from_secs(10);
@@ -58,7 +59,8 @@ fn data_system(name: &str) -> &'static DataSystemRegistration {
 }
 
 /// Runs the data system `name` over `runtime` until `done` holds, or the wait
-/// ran out. The watch reports from the OS's own thread.
+/// ran out. The watch reports from the OS's own thread. After the script
+/// pump, what it filed is compiled, as the compile family does.
 fn run_until(name: &str, runtime: &Runtime, mut done: impl FnMut() -> bool) {
     let system = data_system(name);
     let mut world = World::new();
@@ -74,12 +76,16 @@ fn run_until(name: &str, runtime: &Runtime, mut done: impl FnMut() -> bool) {
                 scope: None,
             },
         );
+        if name == "script_hot_reload" {
+            filed_compiles::compile_filed(runtime);
+        }
         std::thread::sleep(Duration::from_millis(50));
     }
 }
 
-/// A runtime holding the engine's watch with every root of `roots` armed, and
-/// the queues the script pump fills.
+/// A runtime holding the engine's watch with every root of `roots` armed, the
+/// channel the script pump files into and the reserve the compile stages
+/// into.
 fn watching(roots: &[&Path]) -> (Runtime, Arc<AssetWatch>) {
     let watch = Arc::new(AssetWatch::default());
     for root in roots {
@@ -87,23 +93,19 @@ fn watching(roots: &[&Path]) -> (Runtime, Arc<AssetWatch>) {
     }
     let mut runtime = Runtime::default();
     runtime.resources.insert(Arc::clone(&watch));
-    runtime.resources.insert(reload_channel());
-    runtime.resources.insert(declaration_channel());
+    filed_compiles::install(&mut runtime);
     std::thread::sleep(Duration::from_millis(150));
     (runtime, watch)
 }
 
-/// The modules the script pump sent so far, leaving them queued.
+/// The modules the compile staged so far, leaving them staged.
 fn sent(runtime: &Runtime) -> Vec<String> {
-    let pending = runtime
-        .resources
-        .get::<PendingReloads>()
-        .expect("a reload channel");
-    let drained = pending.drain();
-    let modules = drained.iter().map(|reload| reload.module.clone()).collect();
-    for reload in drained {
-        pending.send(reload);
-    }
+    let reserve = runtime.resources.get::<Reserve>().expect("the reserve");
+    let taken = reserve.take::<ScriptReload>();
+    let modules = taken.iter().map(|reload| reload.module.clone()).collect();
+    let mut staging = Staging::new();
+    staging.stage(taken);
+    reserve.receive(staging);
     modules
 }
 

@@ -14,17 +14,18 @@
 
 //! **The scripting world takes in what the engine handed it before the
 //! script flow projects.** The `script_intake` data system, every frame of
-//! play: it drains the reload and event channels, installs each recompiled
+//! play: it takes the reloads the compile family staged in the runtime's
+//! reserve, drains the event channel, installs each recompiled
 //! module whose reads the demand on the script flow covers — the others wait
 //! — announces what the installed programs read, and clears the scripting
 //! world's own mail when the scripting family resumes. The lane only runs
-//! behaviors: it leaves the channels alone.
+//! behaviors: it leaves the reserve and the channel alone.
 
 use std::sync::{Arc, Mutex};
 
 use khora_core::ecs::entity::EntityId;
 use khora_core::event::{Channel, WhenFull};
-use khora_core::lane::OutputDeck;
+use khora_core::lane::{OutputDeck, Reserve, Staging};
 use khora_core::projection::Interest;
 use khora_core::script::{ComponentName, ScriptEvent, ScriptReads, ScriptValue};
 use khora_core::Runtime;
@@ -102,13 +103,21 @@ fn intake() -> &'static DataSystemRegistration {
         .expect("a `script_intake` data system is registered")
 }
 
+/// Stages `reload` into `reserve`, as the scheduler hands a compile run's
+/// staging over at a frame start.
+fn stage(reserve: &Reserve, reload: ScriptReload) {
+    let mut staging = Staging::new();
+    staging.stage(vec![reload]);
+    reserve.receive(staging);
+}
+
 /// A runtime wired the way the engine wires one for scripts: the scripting
-/// world among the services, the two channels and the demand among the
-/// resources.
+/// world among the services, the reserve, the event channel and the demand
+/// among the resources.
 struct Wired {
     runtime: Runtime,
     scripts: Arc<Mutex<ScriptRuntime>>,
-    reloads: Channel<ScriptReload>,
+    reloads: Reserve,
     events: Channel<ScriptEvent>,
     demand: Arc<Interest<ScriptReads>>,
 }
@@ -121,7 +130,7 @@ impl Wired {
             scripts.add_program(MODULE, program(source));
         }
         let scripts = Arc::new(Mutex::new(scripts));
-        let reloads = Channel::bounded(64, WhenFull::DropOldest);
+        let reloads = Reserve::new();
         let events = Channel::bounded(64, WhenFull::DropOldest);
         let demand = Arc::new(Interest::<ScriptReads>::new());
         let mut runtime = Runtime::default();
@@ -138,17 +147,20 @@ impl Wired {
         }
     }
 
-    /// `source` recompiled as `MODULE`, sent with nothing announced.
+    /// `source` recompiled as `MODULE`, staged with nothing announced.
     fn reload(&self, source: &str) {
-        self.reloads.send(ScriptReload {
-            module: MODULE.to_owned(),
-            program: Some(program(source)),
-        });
+        stage(
+            &self.reloads,
+            ScriptReload {
+                module: MODULE.to_owned(),
+                program: Some(program(source)),
+            },
+        );
     }
 
-    /// `source` recompiled as `MODULE` and handed over as the hot-reload
-    /// pump hands it: what it reads announced as `module:<name>`, then the
-    /// program sent.
+    /// `source` recompiled as `MODULE` and handed over as the compile family
+    /// hands it: what it reads announced as `module:<name>`, then the program
+    /// staged.
     fn reload_announced(&self, source: &str) {
         let compiled = program(source);
         self.demand.announce(
@@ -159,10 +171,13 @@ impl Wired {
                 .map(|read| ComponentName::new(read.as_str()))
                 .collect::<Vec<_>>(),
         );
-        self.reloads.send(ScriptReload {
-            module: MODULE.to_owned(),
-            program: Some(compiled),
-        });
+        stage(
+            &self.reloads,
+            ScriptReload {
+                module: MODULE.to_owned(),
+                program: Some(compiled),
+            },
+        );
     }
 
     /// One run of the registered intake; `resumed` as the runner says.
@@ -208,23 +223,29 @@ impl Wired {
 
 // ─── Registration ──────────────────────────────────────────────────────────
 
-/// **A `PreExtract` system of the scripting family, after the
-/// declarations.** Before the flows project (they run after `PreExtract`),
-/// after `script_components` — itself after the hot-reload pump — so a
-/// reload's components exist when its program is installed; skipped while
+/// **A system of the scripting family that installs a reload after its
+/// declarations are registered, before the flows project.** It runs in the
+/// frame's `Boundary` or its `PreExtract` (the flows project after
+/// `PreExtract`); `script_components` registers the declarations in
+/// `Boundary` (pinned in khora-agents' `script_defined_components`), so the
+/// intake runs in a later phase, or after it in the same one. Skipped while
 /// the scripting family is off.
 #[test]
-fn the_intake_is_a_pre_extract_system_of_the_scripting_family_after_the_declarations() {
+fn the_intake_is_a_system_of_the_scripting_family_after_the_declarations() {
     let system = intake();
 
-    assert_eq!(system.phase, TickPhase::PreExtract);
+    assert!(
+        matches!(system.phase, TickPhase::Boundary | TickPhase::PreExtract),
+        "before the flows project: {:?}",
+        system.phase
+    );
     assert_eq!(
         system.role,
         Role::Serves(khora_core::script::SCRIPT),
         "the scripting family's"
     );
     assert!(
-        system.runs_after.contains(&"script_components"),
+        system.phase != TickPhase::Boundary || system.runs_after.contains(&"script_components"),
         "after the declarations: {:?}",
         system.runs_after
     );
@@ -234,7 +255,7 @@ fn the_intake_is_a_pre_extract_system_of_the_scripting_family_after_the_declarat
 
 /// **A reload whose reads the demand covers is installed by the intake** —
 /// before any lane runs: the program is in the scripting world when the
-/// intake returns, and the channel is empty.
+/// intake returns, and the reserve holds no reload.
 #[test]
 fn a_covered_reload_is_installed_by_the_intake() {
     let wired = Wired::new(Some(COUNTING));
@@ -247,7 +268,10 @@ fn a_covered_reload_is_installed_by_the_intake() {
         Some(fingerprint(READS_MARKER)),
         "the new program is installed"
     );
-    assert!(wired.reloads.is_empty(), "the reload channel is drained");
+    assert!(
+        wired.reloads.is_empty::<ScriptReload>(),
+        "the staged reload is taken"
+    );
 }
 
 /// **A reload whose reads the demand does not cover waits, and lands once
@@ -267,7 +291,10 @@ fn an_uncovered_reload_waits_and_is_installed_once_covered() {
         Some(fingerprint(COUNTING)),
         "the reload waits: the old program stays"
     );
-    assert!(wired.reloads.is_empty(), "taken out of the channel to wait");
+    assert!(
+        wired.reloads.is_empty::<ScriptReload>(),
+        "taken out of the reserve to wait"
+    );
     assert!(
         wired.demand.covers(&names(&["Marker"])),
         "the waiting program's reads are announced: {:?}",
@@ -330,10 +357,13 @@ fn a_gone_module_is_withdrawn_with_its_entry() {
     wired
         .demand
         .announce(ScriptReads::incoming(MODULE), names(&["Marker"]));
-    wired.reloads.send(ScriptReload {
-        module: MODULE.to_owned(),
-        program: None,
-    });
+    stage(
+        &wired.reloads,
+        ScriptReload {
+            module: MODULE.to_owned(),
+            program: None,
+        },
+    );
 
     wired.run(false);
 
@@ -385,6 +415,39 @@ fn a_reload_is_installed_on_the_frame_play_starts_over() {
     wired.run(true);
 
     assert_eq!(wired.installed(), Some(fingerprint(READS_MARKER)));
+}
+
+/// **A reload staged while the scripting family is off waits in the reserve,
+/// and lands on the first frame back.** The intake does not run while the
+/// family is off: frames go by, and the reload is still in the reserve,
+/// neither installed nor lost. The first run back — a resumption — installs
+/// it, before the scripts run again.
+#[test]
+fn a_reload_staged_while_the_scripts_are_off_waits_and_lands_on_the_first_frame_back() {
+    let wired = Wired::new(Some(COUNTING));
+    wired.run(false);
+    wired.reload_announced(READS_MARKER);
+
+    // Three frames off: nothing runs the intake.
+    assert_eq!(
+        wired.reloads.len::<ScriptReload>(),
+        1,
+        "the reload waits in the reserve while the scripts are off"
+    );
+    assert_eq!(
+        wired.installed(),
+        Some(fingerprint(COUNTING)),
+        "nothing installed it while the scripts were off"
+    );
+
+    wired.run(true);
+
+    assert_eq!(
+        wired.installed(),
+        Some(fingerprint(READS_MARKER)),
+        "the first frame back installs the reload that waited"
+    );
+    assert!(wired.reloads.is_empty::<ScriptReload>());
 }
 
 /// **Without a demand, nothing waits**: nothing projects what scripts read,
@@ -472,9 +535,9 @@ fn the_mail_is_kept_on_a_frame_that_does_not_resume() {
 }
 
 /// **No scripting world, nothing taken**: an engine that registers none
-/// keeps its channels' contents rather than losing them.
+/// keeps what its reserve and its channel hold rather than losing it.
 #[test]
-fn without_a_scripting_world_the_channels_keep_their_contents() {
+fn without_a_scripting_world_the_reserve_and_the_channel_keep_their_contents() {
     let wired = Wired::new(None);
     let mut runtime = Runtime::default();
     runtime.resources.insert(wired.reloads.clone());
@@ -494,37 +557,36 @@ fn without_a_scripting_world_the_channels_keep_their_contents() {
         },
     );
 
-    assert_eq!(wired.reloads.len(), 1);
+    assert_eq!(wired.reloads.len::<ScriptReload>(), 1);
     assert_eq!(wired.events.len(), 1);
 }
 
 // ─── `take_in`, the body over a locked scripting world ─────────────────────
 
-/// **`take_in` drains both channels into the scripting world it is handed**:
-/// the covered reload installed, the event in the mail.
+/// **`take_in` takes the reloads and drains the event channel into the
+/// scripting world it is handed**: the covered reload installed, the event in
+/// the mail.
 #[test]
-fn take_in_drains_both_channels_into_the_scripting_world() {
+fn take_in_takes_the_reloads_and_the_events_into_the_scripting_world() {
     let mut scripts = ScriptRuntime::new();
     scripts.add_program(MODULE, program(COUNTING));
-    let reloads = Channel::bounded(8, WhenFull::DropOldest);
     let events = Channel::bounded(8, WhenFull::DropOldest);
     let demand = Interest::<ScriptReads>::new();
     demand.announce(ScriptReads::incoming(MODULE), names(&["Marker"]));
-    reloads.send(ScriptReload {
-        module: MODULE.to_owned(),
-        program: Some(program(READS_MARKER)),
-    });
     events.send(hit(1));
 
     take_in(
         &mut scripts,
-        Some(&reloads),
+        vec![ScriptReload {
+            module: MODULE.to_owned(),
+            program: Some(program(READS_MARKER)),
+        }],
         Some(&events),
         Some(&demand),
         false,
     );
 
-    assert!(reloads.is_empty() && events.is_empty());
+    assert!(events.is_empty());
     assert_eq!(
         scripts.program(MODULE).map(|program| program.fingerprint()),
         Some(fingerprint(READS_MARKER))
@@ -533,23 +595,26 @@ fn take_in_drains_both_channels_into_the_scripting_world() {
     assert_eq!(demand.wanted(), names(&["Marker"]));
 }
 
-// ─── The lane leaves the channels alone ────────────────────────────────────
+// ─── The lane leaves the reserve and the channel alone ─────────────────────
 
-/// **The lane runs behaviors; it takes nothing in.** With the channels and
-/// the demand in the runtime beside the scripting world, as the engine
-/// registers them, a lane run leaves the reload and the event where they are,
-/// and installs nothing.
+/// **The lane runs behaviors; it takes nothing in.** With the reserve, the
+/// event channel and the demand in the runtime beside the scripting world, as
+/// the engine registers them, a lane run leaves the reload and the event
+/// where they are, and installs nothing.
 #[test]
-fn the_lane_leaves_the_engine_channels_alone() {
+fn the_lane_leaves_the_reserve_and_the_event_channel_alone() {
     let mut scripts = ScriptRuntime::new();
     scripts.add_program(MODULE, program(COUNTING));
-    let reloads: Channel<ScriptReload> = Channel::bounded(8, WhenFull::DropOldest);
+    let reloads = Reserve::new();
     let events: Channel<ScriptEvent> = Channel::bounded(8, WhenFull::DropOldest);
     let demand = Arc::new(Interest::<ScriptReads>::new());
-    reloads.send(ScriptReload {
-        module: MODULE.to_owned(),
-        program: Some(program(READS_MARKER)),
-    });
+    stage(
+        &reloads,
+        ScriptReload {
+            module: MODULE.to_owned(),
+            program: Some(program(READS_MARKER)),
+        },
+    );
     events.send(hit(1));
     let view = ScriptView {
         left_scope: Vec::new(),
@@ -587,7 +652,11 @@ fn the_lane_leaves_the_engine_channels_alone() {
         },
     );
 
-    assert_eq!(reloads.len(), 1, "the reload is left for the intake");
+    assert_eq!(
+        reloads.len::<ScriptReload>(),
+        1,
+        "the reload is left for the intake"
+    );
     assert_eq!(events.len(), 1, "the event is left for the intake");
     assert_eq!(
         scripts.program(MODULE).map(|program| program.fingerprint()),

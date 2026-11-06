@@ -26,48 +26,84 @@ use crate::script::hot_reload::module_names;
 use crate::script::layout::script_dir;
 
 /// The modules each mounted root brought in, by root: what an unmount takes
-/// back, and what a folder gone from a script folder held.
+/// back, and what a folder gone from a script folder held. And the roots
+/// unmounted since, until mounted again: a compile that finishes for one of
+/// them brings none of its modules back.
 #[derive(Debug, Default)]
-pub struct MountedScripts(Mutex<BTreeMap<PathBuf, BTreeSet<String>>>);
+pub struct MountedScripts(Mutex<Records>);
+
+#[derive(Debug, Default)]
+struct Records {
+    by_root: BTreeMap<PathBuf, BTreeSet<String>>,
+    closed: BTreeSet<PathBuf>,
+}
 
 impl MountedScripts {
     /// Records `modules` as brought in by `root`.
     pub fn record(&self, root: &Path, modules: impl IntoIterator<Item = String>) {
-        let mut mounted = self.lock();
-        mounted.entry(key(root)).or_default().extend(modules);
+        let mut records = self.lock();
+        let root = key(root);
+        records.closed.remove(&root);
+        records.by_root.entry(root).or_default().extend(modules);
     }
 
-    /// Forgets `root`, returning the modules it had brought in.
+    /// Forgets `root`, returning the modules it had brought in. The root is
+    /// closed until it is recorded again.
     pub fn forget(&self, root: &Path) -> BTreeSet<String> {
-        self.lock().remove(&key(root)).unwrap_or_default()
+        let mut records = self.lock();
+        let root = key(root);
+        let modules = records.by_root.remove(&root).unwrap_or_default();
+        records.closed.insert(root);
+        modules
     }
 
-    /// Records one module `root` now brings in: one the pump compiled.
+    /// Records one module `root` now brings in: one the pump compiled. Not
+    /// into a root closed since: a compile finishing after its root was
+    /// unmounted must not bring it back.
     pub fn record_module(&self, root: &Path, module: &str) {
-        self.record(root, [module.to_owned()]);
+        let mut records = self.lock();
+        let root = key(root);
+        if records.closed.contains(&root) {
+            return;
+        }
+        records
+            .by_root
+            .entry(root)
+            .or_default()
+            .insert(module.to_owned());
+    }
+
+    /// Whether `root` was unmounted and not mounted again since.
+    pub fn is_closed(&self, root: &Path) -> bool {
+        self.lock().closed.contains(&key(root))
     }
 
     /// Forgets one module of `root`: one the pump withdrew.
     pub fn forget_module(&self, root: &Path, module: &str) {
-        if let Some(recorded) = self.lock().get_mut(&key(root)) {
+        if let Some(recorded) = self.lock().by_root.get_mut(&key(root)) {
             recorded.remove(module);
         }
     }
 
     /// Every root with a record, as the records key them: made absolute.
     pub fn roots(&self) -> Vec<PathBuf> {
-        self.lock().keys().cloned().collect()
+        self.lock().by_root.keys().cloned().collect()
     }
 
     /// The modules recorded for `root`.
     pub fn modules_of(&self, root: &Path) -> BTreeSet<String> {
-        self.lock().get(&key(root)).cloned().unwrap_or_default()
+        self.lock()
+            .by_root
+            .get(&key(root))
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// The modules the roots still mounted bring in — recorded at their mount,
     /// and on disk now.
     pub fn others(&self) -> BTreeSet<String> {
         self.lock()
+            .by_root
             .iter()
             .flat_map(|(root, recorded)| {
                 recorded.iter().cloned().chain(
@@ -79,7 +115,7 @@ impl MountedScripts {
             .collect()
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<PathBuf, BTreeSet<String>>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Records> {
         match self.0.lock() {
             Ok(mounted) => mounted,
             Err(poisoned) => poisoned.into_inner(),
@@ -150,5 +186,31 @@ mod tests {
         let mounted = MountedScripts::default();
         mounted.forget_module(Path::new("nowhere"), "x.erg");
         assert!(mounted.modules_of(Path::new("nowhere")).is_empty());
+    }
+
+    /// **A root unmounted is closed until it is mounted again**, and a
+    /// module recorded into a closed root does not bring it back: a compile
+    /// finishing after its root closed leaves no trace of it. A root never
+    /// mounted is not closed.
+    #[test]
+    fn a_module_recorded_after_its_root_is_forgotten_does_not_bring_it_back() {
+        let mounted = MountedScripts::default();
+        let root = Path::new("project");
+
+        assert!(!mounted.is_closed(root), "never mounted is not closed");
+        mounted.record(root, ["a.erg".to_owned()]);
+        mounted.record_module(root, "b.erg");
+        assert_eq!(
+            mounted.modules_of(root),
+            BTreeSet::from(["a.erg".to_owned(), "b.erg".to_owned()])
+        );
+
+        mounted.forget(root);
+        mounted.record_module(root, "c.erg");
+        assert!(mounted.is_closed(root));
+        assert!(mounted.modules_of(root).is_empty(), "not brought back");
+
+        mounted.record(root, ["a.erg".to_owned()]);
+        assert!(!mounted.is_closed(root), "mounted again");
     }
 }

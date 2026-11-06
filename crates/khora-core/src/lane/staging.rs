@@ -17,6 +17,7 @@
 
 use std::any::{Any, TypeId};
 
+use super::lease::Lease;
 use super::reserve::Staged;
 
 /// The reserve's queues: one per output type, each a `Vec` of that type.
@@ -35,14 +36,28 @@ pub(super) trait Batch: Send {
     fn extend(&mut self, other: Box<dyn Any + Send>);
     /// The type it carries.
     fn type_of(&self) -> TypeId;
+    /// What the batch holds to, if anything.
+    fn lease(&self) -> Option<&Lease>;
+    /// Gives back what every item holds: the batch is not taken in.
+    fn abandon(self: Box<Self>);
 }
 
-/// The outputs of one type.
-pub(super) struct Typed<T: Staged>(pub(super) Vec<T>);
+/// The outputs of one type, under a lease or not.
+pub(super) struct Typed<T: Staged>(pub(super) Vec<T>, pub(super) Option<Lease>);
 
 impl<T: Staged> Batch for Typed<T> {
     fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+
+    fn lease(&self) -> Option<&Lease> {
+        self.1.as_ref()
+    }
+
+    fn abandon(self: Box<Self>) {
+        for item in self.0 {
+            item.abandon();
+        }
     }
 
     fn join(self: Box<Self>, queues: &mut Queues) {
@@ -114,13 +129,25 @@ impl Staging {
         if items.is_empty() {
             return;
         }
+        // Into the last batch of the type when it holds to no lease; a new
+        // one otherwise, so a lease never covers what was staged without it.
         match self
             .batches
             .iter_mut()
+            .rev()
             .find(|batch| batch.type_of() == TypeId::of::<T>())
         {
-            Some(batch) => batch.extend(Box::new(Typed(items))),
-            None => self.batches.push(Box::new(Typed(items))),
+            Some(batch) if batch.lease().is_none() => batch.extend(Box::new(Typed(items, None))),
+            _ => self.batches.push(Box::new(Typed(items, None))),
+        }
+    }
+
+    /// Adds `items` under `lease`, after what was staged before: the reserve
+    /// takes them in only if the lease still holds when it receives them, and
+    /// abandons them otherwise.
+    pub fn stage_while<T: Staged>(&mut self, items: Vec<T>, lease: Lease) {
+        if !items.is_empty() {
+            self.batches.push(Box::new(Typed(items, Some(lease))));
         }
     }
 

@@ -338,11 +338,11 @@ impl<'f, T: Default + Clone + Any + Send + Sync> DeckOutputField<'f> for T {
     }
 }
 
-/// A field type output `#[staged]` accepts: `Vec<T>` of a [`Staged`] output,
-/// kept in the family's reserve across frames.
+/// A field type output `#[staged]` accepts: `Vec<T>` or [`Leases<T>`] of a
+/// [`Staged`] output, kept in the family's reserve across frames.
 #[diagnostic::on_unimplemented(
-    message = "`#[staged]` writes to the family's reserve: the field must be `Vec<T>` of a `Staged` output, not `{Self}`",
-    label = "not a `Vec` of staged outputs"
+    message = "`#[staged]` writes to the family's reserve: the field must be `Vec<T>` or `Leases<T>` of a `Staged` output, not `{Self}`",
+    label = "not staged outputs"
 )]
 pub trait StagedField<'f>: Sized {
     /// Declares the output staged.
@@ -361,6 +361,24 @@ impl<'f, T: Staged> StagedField<'f> for Vec<T> {
     }
     fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal> {
         sink.stage(field, self)
+    }
+}
+
+impl<'f, T: Staged> StagedField<'f> for super::Leases<T> {
+    fn declare(d: &mut Declaration, field: &'static str) {
+        d.write::<T>(field, SinkKind::Staged);
+    }
+    fn open(_sink: &mut OutputSink<'f>, _field: &'static str) -> Result<Self, LaneError> {
+        Ok(Self::default())
+    }
+    fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal> {
+        for (items, lease) in self.into_groups() {
+            match lease {
+                Some(lease) => sink.stage_while(field, items, lease)?,
+                None => sink.stage(field, items)?,
+            }
+        }
+        Ok(())
     }
 }
 

@@ -22,6 +22,7 @@ mod array_fields;
 mod behavior_budgets;
 mod behavior_cursors;
 mod behavior_fuel_shares;
+mod compile_lane;
 mod critical_behaviors;
 mod declared_behaviors;
 mod durable_text;

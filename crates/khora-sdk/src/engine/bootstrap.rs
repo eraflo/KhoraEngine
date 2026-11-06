@@ -415,7 +415,15 @@ fn populate(
 
     // The reserve: what the families at the background staged, kept across
     // frames until a frame's `Boundary` systems take it.
-    runtime.resources.insert(khora_core::lane::Reserve::new());
+    // Kept when the host installed one already: a mount before the bootstrap
+    // staged into it.
+    if runtime
+        .resources
+        .get::<khora_core::lane::Reserve>()
+        .is_none()
+    {
+        runtime.resources.insert(khora_core::lane::Reserve::new());
+    }
 
     // Which families run, known from setup on.
     runtime
@@ -489,6 +497,11 @@ fn populate(
     // they were compiled as they were mounted, so a game attaches its
     // behaviors from its first entities. The frame boundary then finds
     // nothing pending, and registers nothing twice.
+    // No frame has started and nothing runs in the background yet: what the
+    // host staged lands now, in order.
+    if let Some(reserve) = runtime.resources.get::<khora_core::lane::Reserve>() {
+        reserve.land_from_host();
+    }
     khora_io::script::declarations::register_pending(game_world.inner_world_mut(), runtime);
 
     (dcc, dcc_rx, telemetry, game_world)
@@ -525,7 +538,10 @@ fn refuse_stranded_agents(dcc: &DccService, order: &[ExecutionPhase]) {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let phases = agent.execution_timing().allowed_phases;
-        if !phases.iter().any(|phase| order.contains(phase)) {
+        // The background runs off the frame: no phase order holds it.
+        let runs =
+            |phase: &ExecutionPhase| *phase == ExecutionPhase::BACKGROUND || order.contains(phase);
+        if !phases.iter().any(runs) {
             panic!(
                 "the engine cannot boot: the agent {:?} runs only in {phases:?}, which the app removed",
                 agent.id()

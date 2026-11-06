@@ -16,7 +16,7 @@
 //! `Boundary` takes it; a newer output of one key replaces a waiting one,
 //! which is abandoned and never applied.
 
-use khora_core::lane::{Reserve, Staging};
+use khora_core::lane::{Lease, Reserve, Staging};
 
 use crate::bakery::{abandoned, batches, Abandoned, Loaf, Note};
 
@@ -154,4 +154,65 @@ fn a_staging_says_whether_it_holds_anything() {
     let log = Abandoned::default();
     assert!(Staging::new().is_empty());
     assert!(!run_staging(&log, &[(1, 1)]).is_empty());
+}
+
+/// **What the host stages lands at the next frame start, after the runs that
+/// ended**: nothing is held before it lands, and once landed it is the later
+/// word — a host's loaf of a key replaces the loaf a run staged for it.
+#[test]
+fn what_the_host_stages_lands_after_the_runs_that_ended() {
+    let log = Abandoned::default();
+    let reserve = Reserve::new();
+
+    reserve.stage_from_host(run_staging(&log, &[(1, 2)]));
+    assert_eq!(
+        reserve.len::<Loaf>(),
+        0,
+        "nothing lands before a frame start"
+    );
+
+    reserve.receive(run_staging(&log, &[(1, 1)]));
+    reserve.land_from_host();
+
+    assert_eq!(batches(&reserve.take::<Loaf>()), vec![(1, 2)]);
+    assert_eq!(
+        abandoned(&log),
+        vec![(1, 1)],
+        "the run's loaf was overtaken"
+    );
+}
+
+/// **Outputs staged under a lease count only while it holds when the reserve
+/// takes them in**: the lease is asked at receipt, not when they were staged;
+/// a lease that stopped holding has its outputs abandoned — nothing of them
+/// waits, nothing they would have superseded is touched — while what the same
+/// run staged without it, or under a lease that holds, is taken in.
+#[test]
+fn outputs_under_a_lease_that_stopped_holding_are_abandoned_at_receipt() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    let log = Abandoned::default();
+    let reserve = Reserve::new();
+    reserve.receive(run_staging(&log, &[(1, 1)]));
+
+    let open = Arc::new(AtomicBool::new(true));
+    let closed_later = {
+        let open = Arc::clone(&open);
+        Lease::new(move || open.load(Ordering::SeqCst))
+    };
+    let mut staging = Staging::new();
+    staging.stage_while(vec![Loaf::new(1, 2, &log)], closed_later);
+    staging.stage(vec![Loaf::new(2, 1, &log)]);
+    staging.stage_while(vec![Loaf::new(3, 1, &log)], Lease::new(|| true));
+
+    open.store(false, Ordering::SeqCst);
+    reserve.receive(staging);
+
+    assert_eq!(
+        batches(&reserve.take::<Loaf>()),
+        vec![(1, 1), (2, 1), (3, 1)],
+        "the waiting loaf of key 1 kept, the others taken in"
+    );
+    assert_eq!(abandoned(&log), vec![(1, 2)], "the leased loaf abandoned");
 }

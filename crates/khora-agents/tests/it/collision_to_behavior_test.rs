@@ -29,7 +29,6 @@ use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::script::{engine_event_channel, ScriptEvent, ScriptValue, WorldCommand};
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_io::script::hot_reload::reload_channel;
 use khora_script::reload::ScriptReload;
 
 const MODULE: &str = "ai/guard.erg";
@@ -127,14 +126,17 @@ fn run_one_frame(agent: &mut LaneAgent, runtime: &Arc<Runtime>) -> Vec<WorldComm
 #[test]
 fn a_touched_event_reaches_the_behavior_that_declared_the_handler() {
     let events = engine_event_channel();
-    // The program reaches the agent the way every program does — through the
-    // reload channel the hot-reload pump fills. There is no other road in, and
-    // a test that invented one would be testing a road production does not use.
-    let reloads = reload_channel();
-    reloads.send(ScriptReload {
-        module: MODULE.to_owned(),
-        program: Some(compile(GUARD)),
-    });
+    // The program reaches the agent the way every program does — staged in the
+    // reserve by the compile family. There is no other road in, and a test
+    // that invented one would be testing a road production does not use.
+    let reloads = khora_core::lane::Reserve::new();
+    crate::staged_reloads::stage(
+        &reloads,
+        ScriptReload {
+            module: MODULE.to_owned(),
+            program: Some(compile(GUARD)),
+        },
+    );
     let mut runtime_with_reload = Runtime::default();
     // The scripting world, as `EngineBuilder` registers it. The agent
     // holds a handle to it, not the thing.

@@ -30,11 +30,10 @@ use khora_data::ecs::{
     Collider, ComponentKey, ComponentProvenance, SemanticDomain, Transform, World,
 };
 use khora_io::script::declarations::{
-    apply_declarations, declaration_channel, DeclarationReport, DeclaredComponents,
-    ScriptDeclarations,
+    apply_declarations, DeclarationReport, DeclaredComponents, ScriptDeclarations,
 };
-use khora_io::script::hot_reload::{load_all, reload_channel};
 use khora_io::script::mirror::PreludeLoader;
+use khora_io::script::project_compiler::ProjectCompiler;
 use khora_script::vm::{Machine, Program, Run, Value};
 use khora_script::{compile_module, Diagnostic, Host, MemoryLoader};
 
@@ -747,12 +746,13 @@ fn an_unchanged_declaration_moves_no_domain_epoch() {
 
 // ─── What the engine sends ──────────────────────────────────────────────────
 
-/// **The mount sends each declaring module's components once**, whichever
-/// modules import it; a module that declares nothing sends nothing. The two
+/// **The mount's compile hands each declaring module's components on once**,
+/// whichever modules import it; a module that declares nothing hands nothing
+/// on. The two
 /// importers write `Health` from plain functions — a behavior is a component
 /// of its own, and would be a declaration of theirs.
 #[test]
-fn load_all_sends_each_declaring_module_once() {
+fn compile_all_hands_each_declaring_module_on_once() {
     let dir = tempfile::TempDir::new().expect("a temp dir");
     std::fs::create_dir_all(dir.path().join("game")).expect("makes a subdir");
     std::fs::write(dir.path().join("game/health.erg"), HEALTH).expect("writes");
@@ -772,16 +772,11 @@ fn load_all_sends_each_declaring_module_once() {
     )
     .expect("writes");
 
-    let pending = reload_channel();
-    let declared = declaration_channel();
-    assert_eq!(
-        load_all(dir.path(), &pending, &declared),
-        4,
-        "every module compiled"
-    );
+    let compiled = ProjectCompiler::default().compile_all(dir.path());
+    assert_eq!(compiled.reloads.len(), 4, "every module compiled");
 
-    let sent: Vec<(String, Vec<String>)> = declared
-        .drain()
+    let sent: Vec<(String, Vec<String>)> = compiled
+        .declarations
         .into_iter()
         .map(|batch| {
             (
@@ -1057,35 +1052,28 @@ fn a_duration_field_reads_back_as_its_seconds() {
     assert_eq!(probe, Value::Bool(true));
 }
 
-// ─── What the hot-reload pump sends ─────────────────────────────────────────
+// ─── What a hot reload stages ───────────────────────────────────────────────
 
-/// Runs the hot-reload pump over `runtime` until it has recompiled something,
-/// or a few seconds passed: the watcher reports from its own thread.
+/// Runs the hot-reload pump over `runtime`, compiling what it files, until
+/// something was recompiled, or a few seconds passed: the watcher reports
+/// from its own thread.
 fn pump_until_recompiled(runtime: &khora_core::Runtime) {
-    let pump = inventory::iter::<khora_data::ecs::DataSystemRegistration>
-        .into_iter()
-        .find(|system| system.name == "script_hot_reload")
-        .expect("the pump is registered");
-    let pending = runtime
+    let reserve = runtime
         .resources
-        .get::<khora_io::script::hot_reload::PendingReloads>()
-        .expect("a reload channel");
+        .get::<khora_core::lane::Reserve>()
+        .expect("the reserve");
     let mut world = World::new();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while pending.is_empty() && std::time::Instant::now() < deadline {
-        (pump.run)(
-            &mut world,
-            runtime,
-            &mut khora_core::lane::OutputDeck::new(),
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+    while reserve.is_empty::<khora_script::reload::ScriptReload>()
+        && std::time::Instant::now() < deadline
+    {
+        crate::filed_compiles::run_pump(&mut world, runtime);
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
-    assert!(!pending.is_empty(), "the pump recompiled nothing");
+    assert!(
+        !reserve.is_empty::<khora_script::reload::ScriptReload>(),
+        "nothing was recompiled"
+    );
 }
 
 /// **An importer's components follow a struct it imports.** `Route.start`
@@ -1107,22 +1095,24 @@ fn an_edit_to_an_imported_struct_reaches_the_importers_components() {
     )
     .expect("writes");
 
-    // The mount, then the registration of what it sent.
-    let declared = declaration_channel();
-    load_all(&assets.path().join("scripts"), &reload_channel(), &declared);
+    // The mount, then the registration of what it compiled.
+    let mounted = ProjectCompiler::default().compile_all(&assets.path().join("scripts"));
     let mut world = World::new();
     let mut state = DeclaredComponents::default();
-    apply_declarations(&mut world, &mut state, &declared.drain());
+    apply_declarations(&mut world, &mut state, &mounted.declarations);
 
     let mut runtime = khora_core::Runtime::default();
     let watch = khora_io::asset::AssetWatch::default();
     watch.watch(assets.path()).expect("watches the assets");
     runtime.resources.insert(Arc::new(watch));
-    runtime.resources.insert(reload_channel());
-    runtime.resources.insert(declared.clone());
+    crate::filed_compiles::install(&mut runtime);
     std::fs::write(&shapes, "struct Point { int x; int y = 9; }").expect("edits");
     pump_until_recompiled(&runtime);
-    apply_declarations(&mut world, &mut state, &declared.drain());
+    apply_declarations(
+        &mut world,
+        &mut state,
+        &crate::filed_compiles::staged_declarations(&runtime),
+    );
 
     let route = key(&world, "Route");
     let layout = world

@@ -53,6 +53,9 @@ pub trait Staged: Supersedes + Sized + Send + 'static {
 #[derive(Default, Clone)]
 pub struct Reserve {
     queues: Arc<Mutex<Queues>>,
+    /// What the host staged since the last frame start, in order: it lands
+    /// at the next one, after the background runs that ended.
+    from_host: Arc<Mutex<Vec<Staging>>>,
 }
 
 impl std::fmt::Debug for Reserve {
@@ -71,12 +74,43 @@ impl Reserve {
 
     /// Takes in what one run staged: each output waits behind those of its
     /// type already held, and replaces — abandoning it — a waiting one it
-    /// supersedes. What the scheduler does with a run's staging at the frame
-    /// start after the run ended.
+    /// supersedes. Outputs staged under a [`Lease`](super::Lease) that no
+    /// longer holds are abandoned instead. What the scheduler does with a
+    /// run's staging at the frame start after the run ended.
     pub fn receive(&self, staging: Staging) {
-        let mut queues = self.lock();
         for batch in staging.into_batches() {
-            batch.join(&mut queues);
+            // Asked with the reserve's lock not held: a lease may lock.
+            if batch.lease().is_some_and(|lease| !lease.holds()) {
+                batch.abandon();
+                continue;
+            }
+            batch.join(&mut self.lock());
+        }
+    }
+
+    /// Stages `staging` from the host — a mount, an unmount — to land at the
+    /// next frame start, after what the background runs that ended by then
+    /// staged: the host's action, the later one, has the last word over a run
+    /// it overtook.
+    pub fn stage_from_host(&self, staging: Staging) {
+        self.from_host
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(staging);
+    }
+
+    /// Lands what the host staged since the last frame start, in the order
+    /// it was staged. What the scheduler's frame start does once the ended
+    /// background runs are received.
+    pub fn land_from_host(&self) {
+        let staged = std::mem::take(
+            &mut *self
+                .from_host
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        );
+        for staging in staged {
+            self.receive(staging);
         }
     }
 

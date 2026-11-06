@@ -18,8 +18,9 @@
 //! its instances live on. When the module comes back, every instance keeps
 //! its values **by name**, as any other reload carries them.
 //!
-//! Driven by hand through the two queues the hot-reload pump fills, so the
-//! order of what reaches the engine is the test's, not a file watcher's.
+//! Driven by hand through the engine's reserve, where the compile family
+//! stages what it compiles, so the order of what reaches the engine is the
+//! test's, not a file watcher's.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -33,10 +34,9 @@ use khora_sdk::{
     InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 
-use khora_io::script::declarations::{
-    declaration_channel, PendingDeclarations, ScriptDeclarations,
-};
-use khora_io::script::hot_reload::{load_all, reload_channel, PendingReloads};
+use khora_io::script::declarations::ScriptDeclarations;
+use khora_io::script::project_compiler::{Compiled, ProjectCompiler};
+use khora_sdk::khora_core::lane::{Reserve, Staging};
 
 const MODULE: &str = "mover.erg";
 
@@ -80,14 +80,21 @@ impl EngineApp for AttachingMover {
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
 }
 
+/// Stages `compiled` into `reserve`, as a frame start hands a compile run's
+/// staging over.
+fn stage(reserve: &Reserve, compiled: Compiled) {
+    let mut staging = Staging::new();
+    staging.stage(compiled.reloads);
+    staging.stage(compiled.declarations);
+    reserve.receive(staging);
+}
+
 /// A headless game with no file watcher: what reaches it is what the test
-/// sends through `pending` and `declarations`.
+/// stages in the engine's reserve.
 struct Game {
     engine: EngineCore<AttachingMover>,
     entity: EntityId,
     scripts: PathBuf,
-    pending: PendingReloads,
-    declarations: PendingDeclarations,
 }
 
 impl Game {
@@ -102,15 +109,15 @@ impl Game {
         std::fs::create_dir_all(&scripts).expect("a scratch script directory");
         std::fs::write(scripts.join(MODULE), MOVER).expect("the script is written");
 
-        let (pending, declarations) = (reload_channel(), declaration_channel());
+        // Mounted before the bootstrap, as an application's launcher mounts:
+        // the bootstrap keeps the reserve it finds, and registers what it
+        // holds before `setup`.
+        let compiled = ProjectCompiler::default().compile_all(&scripts);
+        assert_eq!(compiled.reloads.len(), 1, "`{MODULE}` compiles");
+        let reserve = Reserve::new();
+        stage(&reserve, compiled);
         let mut runtime = Runtime::new();
-        runtime.resources.insert(pending.clone());
-        runtime.resources.insert(declarations.clone());
-        assert_eq!(
-            load_all(&scripts, &pending, &declarations),
-            1,
-            "`{MODULE}` compiles"
-        );
+        runtime.resources.insert(reserve);
 
         let mut engine = EngineCore::<AttachingMover>::new();
         engine.bootstrap(AttachingMover::new(), runtime);
@@ -122,31 +129,29 @@ impl Game {
             engine,
             entity,
             scripts,
-            pending,
-            declarations,
         }
     }
 
-    /// What the pump sends for `MODULE` saved as `source`: its program, and
-    /// what it declares now — nothing, when it declares nothing.
+    /// What the compile stages for `MODULE` saved as `source`: its program,
+    /// and what it declares now — nothing, when it declares nothing.
     fn save(&self, source: &str) {
         std::fs::write(self.scripts.join(MODULE), source).expect("the script is saved");
-        let declared = declaration_channel();
-        assert_eq!(
-            load_all(&self.scripts, &self.pending, &declared),
-            1,
-            "it compiles"
-        );
-        let mut sets = declared.drain();
-        if sets.is_empty() {
-            sets.push(ScriptDeclarations {
+        let mut compiled = ProjectCompiler::default().compile_all(&self.scripts);
+        assert_eq!(compiled.reloads.len(), 1, "it compiles");
+        if compiled.declarations.is_empty() {
+            compiled.declarations.push(ScriptDeclarations {
                 module: MODULE.to_owned(),
                 components: Vec::new(),
             });
         }
-        for set in sets {
-            self.declarations.send(set);
-        }
+        stage(
+            self.engine
+                .runtime()
+                .resources
+                .get::<Reserve>()
+                .expect("the engine's reserve"),
+            compiled,
+        );
     }
 
     /// Ticks until `done` holds, or panics after a few seconds with `what`.
@@ -154,7 +159,7 @@ impl Game {
     /// Not a fixed number of frames: the scripting agent runs on the budget
     /// the DCC grants it, from its own thread, and a frame of a machine under
     /// load may come before that budget does — the behavior and the reloads
-    /// it drains then wait for the next one.
+    /// the intake takes then wait for the next one.
     fn tick_until(&mut self, what: &str, mut done: impl FnMut(&mut Self) -> bool) {
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline {

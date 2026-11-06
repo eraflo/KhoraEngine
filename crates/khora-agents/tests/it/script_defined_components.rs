@@ -14,10 +14,10 @@
 
 //! A project's own components, end to end (Ergon spec 08).
 //!
-//! The declarations travel the way the engine sends them — on the
-//! declarations channel, beside the program on the reload channel — and are
-//! registered by the `PreExtract` data system, in every mode: an editor
-//! editing a scene, with no script running, knows `Health` too. Then a
+//! The declarations travel the way the engine sends them — staged in the
+//! reserve by the compile family, beside the program — and are registered by
+//! the `Boundary` data system, in every mode: an editor editing a scene, with
+//! no script running, knows `Health` too. Then a
 //! behavior writes and reads the component frame after frame, through the
 //! flow, the lane and the applier.
 
@@ -28,13 +28,12 @@ use khora_control::substrate::run_data_systems;
 use khora_core::agent::gorna::{ResourceBudget, StrategyId};
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
-use khora_core::event::Channel;
-use khora_core::lane::{LaneBus, OutputDeck};
+use khora_core::lane::{LaneBus, OutputDeck, Reserve};
 use khora_core::script::{engine_event_channel, ScriptCatalog, ScriptValue};
 use khora_core::{EngineContext, Runtime, WorldAccess};
-use khora_data::ecs::{DataSystemRegistration, SemanticDomain, TickPhase, Transform, World};
+use khora_data::ecs::{DataSystemRegistration, Role, SemanticDomain, TickPhase, Transform, World};
 use khora_data::flow::{Flow, FlowContext, ScriptFlow};
-use khora_io::script::declarations::{declaration_channel, DeclaredComponents, ScriptDeclarations};
+use khora_io::script::declarations::{DeclaredComponents, ScriptDeclarations};
 use khora_io::script::mirror::PreludeLoader;
 use khora_lanes::script_lane::ScriptRuntime;
 use khora_script::arena::Persisted;
@@ -81,9 +80,9 @@ fn health_declarations() -> ScriptDeclarations {
     declared_in(HEALTH_MODULE, &compile(HEALTH_MODULE))
 }
 
-/// The resources the registration reads: the channel the compile path sends
-/// on, and the state the registration keeps between frames.
-fn registration_runtime(declarations: &Channel<ScriptDeclarations>) -> Runtime {
+/// The resources the registration reads: the reserve the compile family
+/// stages into, and the state the registration keeps between frames.
+fn registration_runtime(declarations: &Reserve) -> Runtime {
     let mut runtime = Runtime::default();
     runtime.resources.insert(declarations.clone());
     runtime
@@ -94,39 +93,35 @@ fn registration_runtime(declarations: &Channel<ScriptDeclarations>) -> Runtime {
 
 // ─── Registration, in every mode ────────────────────────────────────────────
 
-/// **The registration is a `PreExtract` data system after the hot-reload
-/// pump**, so a reload's components exist before the lane installs the
-/// program compiled with them.
+/// **The registration is an upkeep system of the frame's `Boundary`**, so a
+/// reload's components exist before the intake installs the program compiled
+/// with them, and are registered while the scripts are off too.
 #[test]
-fn script_components_register_at_the_frame_boundary_after_the_pump() {
+fn script_components_register_at_the_frame_boundary_as_upkeep() {
     let system = khora_script::inventory::iter::<DataSystemRegistration>
         .into_iter()
         .find(|system| system.name == "script_components")
         .expect("a `script_components` data system is registered");
 
-    assert_eq!(system.phase, TickPhase::PreExtract);
-    assert!(
-        system.runs_after.contains(&"script_hot_reload"),
-        "runs after the pump: {:?}",
-        system.runs_after
-    );
+    assert_eq!(system.phase, TickPhase::Boundary);
+    assert_eq!(system.role, Role::Upkeep, "in every mode");
 }
 
 /// **An editor editing a scene knows `Health`.** No script agent, no lane,
 /// nothing running gameplay: the boundary's data systems alone register what
-/// the compile path sent.
+/// the compile family staged.
 #[test]
 fn script_components_register_while_editing() {
-    let declarations = declaration_channel();
+    let declarations = Reserve::new();
     let runtime = registration_runtime(&declarations);
     let mut world = World::new();
-    declarations.send(health_declarations());
+    crate::staged_reloads::stage(&declarations, health_declarations());
 
     run_data_systems(
         &mut world,
         &runtime,
         &mut OutputDeck::new(),
-        TickPhase::PreExtract,
+        TickPhase::Boundary,
     );
 
     let health = world
@@ -140,22 +135,25 @@ fn script_components_register_while_editing() {
             .map(|vtable| vtable.domain),
         Some(SemanticDomain::Physics)
     );
-    assert!(declarations.is_empty(), "the channel is drained");
+    assert!(
+        declarations.is_empty::<ScriptDeclarations>(),
+        "the staged declarations are taken"
+    );
 
     // The next frame has nothing to register, and keeps what it registered.
     run_data_systems(
         &mut world,
         &runtime,
         &mut OutputDeck::new(),
-        TickPhase::PreExtract,
+        TickPhase::Boundary,
     );
     assert_eq!(world.components().key_named("Health"), Some(health));
 }
 
 // ─── Played ─────────────────────────────────────────────────────────────────
 
-/// One running session, wired as the engine wires one: the reload and
-/// declaration channels, the catalog, the demand on the script flow, the
+/// One running session, wired as the engine wires one: the reserve the
+/// compile family stages into, the catalog, the demand on the script flow, the
 /// scripting world.
 struct Session {
     world: World,
@@ -169,14 +167,12 @@ struct Session {
 }
 
 impl Session {
-    fn new(world: World) -> (Self, Channel<ScriptReload>, Channel<ScriptDeclarations>) {
+    fn new(world: World) -> (Self, Reserve) {
         let scripts = Arc::new(Mutex::new(ScriptRuntime::new()));
-        let reloads = khora_io::script::hot_reload::reload_channel();
-        let declarations = declaration_channel();
+        let reserve = Reserve::new();
 
-        let mut runtime = registration_runtime(&declarations);
+        let mut runtime = registration_runtime(&reserve);
         runtime.services.insert(Arc::clone(&scripts));
-        runtime.resources.insert(reloads.clone());
         runtime.resources.insert(engine_event_channel());
         runtime.resources.insert(Arc::new(ScriptCatalog::default()));
         runtime
@@ -201,23 +197,29 @@ impl Session {
             scripts,
             runtime: Arc::new(runtime),
         };
-        (session, reloads, declarations)
+        (session, reserve)
     }
 
-    /// The boundary's `PreExtract` systems: what was declared is registered.
+    /// The frame's `Boundary` systems: what was declared is registered.
     fn register(&mut self) {
+        run_data_systems(
+            &mut self.world,
+            &self.runtime,
+            &mut OutputDeck::new(),
+            TickPhase::Boundary,
+        );
+    }
+
+    /// One frame: the `Boundary` and `PreExtract` systems, the projection,
+    /// the scripts, then `Maintenance` applying what they queued.
+    fn frame(&mut self) {
+        self.register();
         run_data_systems(
             &mut self.world,
             &self.runtime,
             &mut OutputDeck::new(),
             TickPhase::PreExtract,
         );
-    }
-
-    /// One frame: the boundary's `PreExtract` systems, the projection, the
-    /// scripts, then `Maintenance` applying what they queued.
-    fn frame(&mut self) {
-        self.register();
         let ctx = FlowContext {
             resumed: !self.projected,
             scope: None,
@@ -263,8 +265,8 @@ impl Session {
 }
 
 /// **A program using a component its project declares runs once the
-/// component is registered** — both sent in the same frame, as a mount or a
-/// hot reload sends them: the behavior adds `Health`, reads its own write,
+/// component is registered** — both staged before the same frame, as a mount
+/// or a hot reload stages them: the behavior adds `Health`, reads its own write,
 /// and the `World` holds the row with the declared default for the field it
 /// did not name. The medic is attached by its own component, registered
 /// beforehand.
@@ -272,8 +274,8 @@ impl Session {
 fn a_behavior_adds_and_reads_a_component_its_project_declares() {
     let mut world = World::new();
     let medic = world.spawn(Transform::identity());
-    let (mut session, reloads, declarations) = Session::new(world);
-    declarations.send(declared_in(MEDIC_MODULE, &compile(MEDIC_MODULE)));
+    let (mut session, reserve) = Session::new(world);
+    crate::staged_reloads::stage(&reserve, declared_in(MEDIC_MODULE, &compile(MEDIC_MODULE)));
     session.register();
     attach(&mut session.world, medic, "Medic", &[]);
     assert!(
@@ -281,11 +283,14 @@ fn a_behavior_adds_and_reads_a_component_its_project_declares() {
         "the premise: `Health` is not registered yet"
     );
 
-    declarations.send(health_declarations());
-    reloads.send(ScriptReload {
-        module: MEDIC_MODULE.to_owned(),
-        program: Some(compile(MEDIC_MODULE)),
-    });
+    crate::staged_reloads::stage(&reserve, health_declarations());
+    crate::staged_reloads::stage(
+        &reserve,
+        ScriptReload {
+            module: MEDIC_MODULE.to_owned(),
+            program: Some(compile(MEDIC_MODULE)),
+        },
+    );
 
     let mut frames = 0;
     while session.seen(medic) != Some(7) {

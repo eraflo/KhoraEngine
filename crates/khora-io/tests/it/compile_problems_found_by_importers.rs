@@ -23,17 +23,18 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use khora_core::lane::OutputDeck;
 use khora_core::problems::Problems;
 use khora_core::projection::Interest;
+use khora_core::script::ScriptReads;
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, World};
+use khora_data::ecs::World;
 use khora_io::asset::AssetWatch;
-use khora_io::script::declarations::declaration_channel;
-use khora_io::script::hot_reload::{load_all_announcing, reload_channel, PendingReloads};
 use khora_io::script::mirror::PreludeLoader;
 use khora_io::script::problems::report_compile;
+use khora_io::script::project_compiler::ProjectCompiler;
 use khora_script::{compile_module, MemoryLoader};
+
+use crate::filed_compiles;
 
 /// How long a save may take to reach the pump.
 const MAX_WAIT: Duration = Duration::from_secs(10);
@@ -46,13 +47,6 @@ const SHARED_C: &str = "fn int Shared() { return 2; }\n";
 const IMPORTS_BOTH: &str = "import \"b.erg\";\nimport \"c.erg\";\nfn void Main() { }\n";
 
 const CLASH: &str = "`Shared` is declared in both `b.erg` and `c.erg`";
-
-fn data_system(name: &str) -> &'static DataSystemRegistration {
-    inventory::iter::<DataSystemRegistration>
-        .into_iter()
-        .find(|system| system.name == name)
-        .unwrap_or_else(|| panic!("`{name}` is registered"))
-}
 
 /// Writes `scripts/<module>` under `assets`; returns the file.
 fn script(assets: &Path, module: &str, source: &str) -> PathBuf {
@@ -79,17 +73,17 @@ fn a_clash_only_the_importer_finds_survives_the_clashing_modules_own_compile() {
     script(assets.path(), "a.erg", IMPORTS_BOTH);
     script(assets.path(), "b.erg", SHARED_B);
     script(assets.path(), "c.erg", SHARED_C);
-    let problems = Problems::default();
-    let pending = reload_channel();
-    let declarations = declaration_channel();
+    let problems = Arc::new(Problems::default());
+    let mut runtime = Runtime::default();
+    runtime.resources.insert(Arc::clone(&problems));
+    runtime
+        .resources
+        .insert(Arc::new(Interest::<ScriptReads>::new()));
 
-    let loaded = load_all_announcing(
-        &assets.path().join("scripts"),
-        &pending,
-        &declarations,
-        &Interest::new(),
-        Some(&problems),
-    );
+    let loaded = ProjectCompiler::from_runtime(&runtime)
+        .compile_all(&assets.path().join("scripts"))
+        .reloads
+        .len();
 
     assert_eq!(
         loaded, 2,
@@ -156,8 +150,7 @@ fn a_deleted_module_leaves_no_problem_under_its_name() {
     let problems = Arc::new(Problems::default());
     let mut runtime = Runtime::default();
     runtime.resources.insert(Arc::clone(&watch));
-    runtime.resources.insert(reload_channel());
-    runtime.resources.insert(declaration_channel());
+    filed_compiles::install(&mut runtime);
     runtime.resources.insert(Arc::clone(&problems));
     std::thread::sleep(Duration::from_millis(150));
 
@@ -166,26 +159,16 @@ fn a_deleted_module_leaves_no_problem_under_its_name() {
     // up with the deletion.
     std::thread::sleep(Duration::from_millis(100));
     std::fs::write(&other, "fn float Other() { return Abs(true); }\n").expect("saves");
-    let system = data_system("script_hot_reload");
     let mut world = World::new();
     let deadline = Instant::now() + MAX_WAIT;
     while Instant::now() < deadline {
-        (system.run)(
-            &mut world,
-            &runtime,
-            &mut OutputDeck::new(),
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+        filed_compiles::run_pump(&mut world, &runtime);
         if problems.of_module("other.erg").0 > 0 {
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    let _ = runtime.resources.get::<PendingReloads>().map(|p| p.drain());
+    let _ = filed_compiles::staged_reloads(&runtime);
     assert_eq!(
         problems.of_module("other.erg").0,
         1,

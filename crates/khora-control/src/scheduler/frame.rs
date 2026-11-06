@@ -63,6 +63,10 @@ impl ExecutionScheduler {
         for (report, ms) in self.background.finish(runtime) {
             self.publish_report(Some(report), ms, 0.0);
         }
+        // Then what the host staged since: later than any run that ended.
+        if let Some(reserve) = runtime.look_up::<khora_core::lane::Reserve>() {
+            reserve.land_from_host();
+        }
         // The allocation in force is lent before anything locks an agent: the
         // whole frame runs on one epoch. Then every family running as layers
         // has the layer staged at its place swapped in, at the same place.

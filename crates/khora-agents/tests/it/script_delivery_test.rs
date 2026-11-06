@@ -33,7 +33,6 @@ use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::script::{engine_event_channel, ScriptEvent};
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_io::script::hot_reload::reload_channel;
 use khora_lanes::script_lane::ScriptRuntime;
 use khora_script::arena::Persisted;
 use khora_script::reload::ScriptReload;
@@ -114,21 +113,27 @@ fn a_runtime_with_scripting() -> (Runtime, Arc<Mutex<ScriptRuntime>>) {
     (runtime, scripts)
 }
 
-/// **A queued reload reaches the scripting world**, taken by the intake from
-/// the channel the pump fills.
+/// **A staged reload reaches the scripting world**, taken by the intake from
+/// the reserve the compile family stages into.
 #[test]
-fn a_queued_reload_reaches_the_scripting_world_through_the_intake() {
-    let reloads = reload_channel();
-    reloads.send(ScriptReload {
-        module: MODULE.to_owned(),
-        program: Some(Program::default()),
-    });
+fn a_staged_reload_reaches_the_scripting_world_through_the_intake() {
+    let reloads = khora_core::lane::Reserve::new();
+    crate::staged_reloads::stage(
+        &reloads,
+        ScriptReload {
+            module: MODULE.to_owned(),
+            program: Some(Program::default()),
+        },
+    );
     let (mut runtime, scripts) = a_runtime_with_scripting();
     runtime.resources.insert(reloads.clone());
 
     run_intake(&runtime);
 
-    assert!(reloads.is_empty(), "the intake drained the queue");
+    assert!(
+        reloads.is_empty::<ScriptReload>(),
+        "the intake took the staged reload"
+    );
     assert!(
         scripts
             .lock()
@@ -217,11 +222,14 @@ fn an_engine_event_taken_in_is_delivered_that_frame() {
 /// frame's boundary.
 #[test]
 fn the_agents_frame_leaves_both_queues_to_the_intake() {
-    let reloads = reload_channel();
-    reloads.send(ScriptReload {
-        module: MODULE.to_owned(),
-        program: Some(Program::default()),
-    });
+    let reloads = khora_core::lane::Reserve::new();
+    crate::staged_reloads::stage(
+        &reloads,
+        ScriptReload {
+            module: MODULE.to_owned(),
+            program: Some(Program::default()),
+        },
+    );
     let events = engine_event_channel();
     events.send(damaged());
     let (mut runtime, _) = a_runtime_with_scripting();
@@ -231,7 +239,11 @@ fn the_agents_frame_leaves_both_queues_to_the_intake() {
 
     run_one_frame(&mut script_agent(), &runtime);
 
-    assert_eq!(reloads.len(), 1, "the reload is the intake's to take");
+    assert_eq!(
+        reloads.len::<ScriptReload>(),
+        1,
+        "the reload is the intake's to take"
+    );
     assert_eq!(events.len(), 1, "the event is the intake's to take");
 }
 

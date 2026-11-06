@@ -357,18 +357,23 @@ fn the_engines_registrations_declare_their_roles() {
 }
 
 /// **The scripting family's mailboxes, as the engine declares them.** The
-/// engine's events are taken and dropped between sessions; a recompiled
-/// module is taken and held for the next session; a contact is read by the
-/// `collision_to_script` cursor and dropped between sessions.
+/// engine's events are taken and dropped between sessions; a contact is read
+/// by the `collision_to_script` cursor and dropped between sessions. A
+/// recompiled module has no mailbox: it waits in the reserve, which holds it
+/// across sessions. The compile family takes the pump's requests and holds
+/// them between sessions.
 #[test]
 fn the_scripting_familys_mailboxes_are_declared() {
     use khora_sdk::khora_core::event::{BetweenSessions, Mailbox, Reader};
 
-    let declared = |message: &str| {
-        let found: Vec<&Mailbox> = khora_sdk::inventory::iter::<Mailbox>
+    let mailboxes = |message: &str| -> Vec<&Mailbox> {
+        khora_sdk::inventory::iter::<Mailbox>
             .into_iter()
             .filter(|mailbox| (mailbox.message)().ends_with(message))
-            .collect();
+            .collect()
+    };
+    let declared = |message: &str| {
+        let found = mailboxes(message);
         assert_eq!(found.len(), 1, "one mailbox of {message}: {found:?}");
         (found[0].family, found[0].reader, found[0].between_sessions)
     };
@@ -377,9 +382,17 @@ fn the_scripting_familys_mailboxes_are_declared() {
         declared("::ScriptEvent"),
         (SCRIPT, Reader::Take, BetweenSessions::Drop)
     );
+    assert!(
+        mailboxes("::ScriptReload").is_empty(),
+        "a recompiled module waits in the reserve, not a mailbox"
+    );
     assert_eq!(
-        declared("::ScriptReload"),
-        (SCRIPT, Reader::Take, BetweenSessions::Hold)
+        declared("::CompileRequest"),
+        (
+            khora_sdk::AgentId::new("compile"),
+            Reader::Take,
+            BetweenSessions::Hold
+        )
     );
     assert_eq!(
         declared("::Collision"),

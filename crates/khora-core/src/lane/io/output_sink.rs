@@ -109,6 +109,25 @@ impl<'f> OutputSink<'f> {
         Ok(())
     }
 
+    /// Stages `items`, written to `field`, under `lease`: the reserve takes
+    /// them in only while it holds.
+    pub fn stage_while<T: Staged>(
+        &mut self,
+        field: &'static str,
+        items: Vec<T>,
+        lease: crate::lane::Lease,
+    ) -> Result<(), OutputRefusal> {
+        let Some(staging) = self.staging.as_deref_mut() else {
+            return Err(OutputRefusal {
+                field,
+                sink: SinkKind::Staged,
+                reason: Reason::Missing,
+            });
+        };
+        staging.stage_while(items, lease);
+        Ok(())
+    }
+
     /// What the slot `T` holds this frame so far, or its default.
     pub fn opening<T: Default + Clone + Any + Send + Sync>(&self) -> T {
         self.seed

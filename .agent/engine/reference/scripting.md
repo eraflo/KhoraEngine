@@ -61,9 +61,23 @@ switches it off while editing.
   the script DataSystems (`script_intake`, `script_systems`, `script_commands`, `behavior_writeback`,
   `collision_to_script`) serve SCRIPT, so they are skipped while it is off, as the family's agent is.
   `script_hot_reload`, `script_components`, `script_problems` are `Upkeep`. Mailboxes: `ScriptEvent`
-  Take/Drop, `ScriptReload` Take/Hold (`khora-lanes/src/script_lane/intake.rs`), `Collision`
-  Cursor("collision_to_script")/Drop. On `resumed`, the intake clears only the scripting world's own
-  pending mail.
+  Take/Drop (`khora-lanes/src/script_lane/intake.rs`), `Collision` Cursor("collision_to_script")/Drop,
+  `CompileRequest` Take/Hold of the `compile` family. On `resumed`, the intake clears only the scripting
+  world's own pending mail.
+- **Compiling is a family of its own, off the frame.** The pump (`script_hot_reload`, PreExtract,
+  `khora-io/src/script/hot_reload.rs`) only files one `CompileRequest` per root on `Channel<CompileRequest>`
+  and reports misplaced files. The `compile` family (`khora-lanes/src/compile_lane/`, registration
+  `khora-agents/src/compile_agent/agent.rs`, `ExecutionPhase::BACKGROUND`) takes the requests and calls the
+  runtime's `Arc<dyn ScriptCompiler>` (trait and types in `khora-script/src/toolchain/`; the engine's is
+  `khora-io/src/script/project_compiler.rs` `ProjectCompiler`: importers, compile, problems, the `Interest`
+  announce, `MountedScripts`), staging `ScriptReload` and `ScriptDeclarations` in the `Reserve`. At the
+  boundary, `script_components` (`TickPhase::Boundary`, Upkeep) registers the declarations — while the
+  scripts are off too — and the intake (`Serves(SCRIPT)`) installs the reloads, which wait in the reserve
+  while SCRIPT is off. `scripts::mount` compiles synchronously (`compile_all`) and `unmount` withdraws;
+  both stage from the host (`Reserve::stage_from_host`), landing at the next frame start after the ended
+  background runs. A compile for a root unmounted since (`MountedScripts::is_closed`) withdraws instead,
+  and a mounted root's result is staged under a `Lease` on the root staying mounted (`compile_leased`): one
+  unmounted while the run is out has it abandoned when the reserve takes it in.
 - Conformance suite: `crates/khora-script/tests/it/conformance.rs` (`SHIPPED` / `PENDING` rows); resume
   suites beside it (`safepoints.rs`, `sites.rs`, `fingerprints.rs`, `freeze.rs`, `rebuilt_frames.rs`,
   `resume_tiers.rs`).
@@ -268,9 +282,9 @@ switches it off while editing.
   `SourceLoader::engine_components` (every registration name + `formerly`, from `PreludeLoader`) is refused at
   its span; duplicate fields, `Map` fields and non-finite literals too. `Program.declared:
   Vec<DeclaredComponent{name, module, domain, fields: {name, ty: ErgonType, default}}>` (sorted). The compile
-  path (`load_all`, the pump) sends one `ScriptDeclarations` per declaring module on
-  `Channel<ScriptDeclarations>`; the `script_components` DataSystem (PreExtract, after `script_hot_reload`,
-  `Role::Upkeep`, **whether scripting is on or off**) runs `khora_io::script::declarations::apply_declarations`: register, relayout (a type change
+  path (`ProjectCompiler::compile_all` at a mount, the compile family on a save) stages one
+  `ScriptDeclarations` per declaring module in the `Reserve`; the `script_components` DataSystem
+  (`TickPhase::Boundary`, `Role::Upkeep`, **whether scripting is on or off**) runs `khora_io::script::declarations::apply_declarations`: register, relayout (a type change
   the storage kind hides is reset via `relayout_resetting`), `move_component_domain`, orphan (never delete),
   adopt; a second module declaring an owned name is refused (`report.refused`). The editor mounts the open
   project (see *Scripts in the editor* below), so it knows project components before any scene loads.

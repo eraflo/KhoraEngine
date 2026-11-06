@@ -23,28 +23,20 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use khora_core::lane::OutputDeck;
 use khora_core::problems::{Problem, ProblemSeverity, Problems};
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, World};
+use khora_data::ecs::World;
 use khora_io::asset::AssetWatch;
-use khora_io::script::declarations::declaration_channel;
-use khora_io::script::hot_reload::{reload_channel, PendingReloads};
+
+use crate::filed_compiles;
 
 /// How long a save may take to reach the pump.
 const MAX_WAIT: Duration = Duration::from_secs(10);
 
 const LANTERN: &str = "behavior Lantern { int lit = 0; }";
 
-fn data_system(name: &str) -> &'static DataSystemRegistration {
-    inventory::iter::<DataSystemRegistration>
-        .into_iter()
-        .find(|system| system.name == name)
-        .unwrap_or_else(|| panic!("`{name}` is registered"))
-}
-
-/// The pump, its queues and the problems it reports into, over one assets
-/// root that holds an empty `scripts/` folder.
+/// The pump, the compile of what it files, and the problems both report
+/// into, over one assets root that holds an empty `scripts/` folder.
 struct Pump {
     runtime: Runtime,
     problems: Arc<Problems>,
@@ -60,8 +52,7 @@ impl Pump {
         let problems = Arc::new(Problems::default());
         let mut runtime = Runtime::default();
         runtime.resources.insert(Arc::clone(&watch));
-        runtime.resources.insert(reload_channel());
-        runtime.resources.insert(declaration_channel());
+        filed_compiles::install(&mut runtime);
         runtime.resources.insert(Arc::clone(&problems));
         std::thread::sleep(Duration::from_millis(150));
         Self {
@@ -71,36 +62,19 @@ impl Pump {
         }
     }
 
-    /// Runs the pump until `done` holds of the problems and of every module
-    /// sent so far, or the wait ran out; returns the modules sent.
+    /// Runs the pump, compiling what it files, until `done` holds of the
+    /// problems and of every module staged so far, or the wait ran out;
+    /// returns the modules staged.
     fn run_until(
         &self,
         mut done: impl FnMut(&Problems, &BTreeSet<String>) -> bool,
     ) -> BTreeSet<String> {
-        let system = data_system("script_hot_reload");
         let mut world = World::new();
         let mut sent = BTreeSet::new();
         let deadline = Instant::now() + MAX_WAIT;
         while Instant::now() < deadline {
-            (system.run)(
-                &mut world,
-                &self.runtime,
-                &mut OutputDeck::new(),
-                khora_data::ecs::SystemContext {
-                    since: khora_data::ecs::Tick(0),
-                    resumed: false,
-                    scope: None,
-                },
-            );
-            sent.extend(
-                self.runtime
-                    .resources
-                    .get::<PendingReloads>()
-                    .expect("a reload channel")
-                    .drain()
-                    .into_iter()
-                    .map(|reload| reload.module),
-            );
+            filed_compiles::run_pump(&mut world, &self.runtime);
+            sent.extend(filed_compiles::staged_modules(&self.runtime));
             if done(&self.problems, &sent) {
                 break;
             }

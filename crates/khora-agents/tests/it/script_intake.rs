@@ -14,12 +14,12 @@
 
 //! **The scripting world takes in what the engine handed it at the frame
 //! boundary, while the scripting family is on.** The `script_intake` data
-//! system runs in `PreExtract` — after the hot-reload pump and the
-//! declarations, before the script flow projects — so a recompiled module the
-//! pump announced is installed before the flow projects what it reads, and
-//! its first `Get` finds the component. While the family is off it is
-//! skipped: the reloads wait in their channel, the engine's events are
-//! dropped at each boundary; resuming clears the last session's own mail.
+//! system runs after the declarations are registered at the frame's
+//! `Boundary`, before the script flow projects — so a recompiled module the
+//! compile family announced and staged is installed before the flow projects
+//! what it reads, and its first `Get` finds the component. While the family
+//! is off it is skipped: the reloads wait in the reserve, the engine's events
+//! are dropped at each boundary; resuming clears the last session's own mail.
 //!
 //! Also the helper the harnesses that run the script agent without a
 //! `PreExtract` boundary call before it: [`run_intake`].
@@ -30,7 +30,7 @@ use khora_control::substrate::run_data_systems;
 use khora_core::agent::gorna::{ResourceBudget, StrategyId};
 use khora_core::agent::{Activation, Agent};
 use khora_core::event::{discard_mail_of_inactive, Channel};
-use khora_core::lane::{LaneBus, OutputDeck};
+use khora_core::lane::{LaneBus, OutputDeck, Reserve, Staging};
 use khora_core::projection::Interest;
 use khora_core::script::{
     engine_event_channel, ComponentName, ScriptCatalog, ScriptEvent, ScriptReads, ScriptValue,
@@ -40,10 +40,8 @@ use khora_data::ecs::{
     DataSystemRegistration, RigidBody, SystemContext, Tick, TickPhase, Transform, World,
 };
 use khora_data::flow::{Flow, FlowContext, ScriptFlow};
-use khora_io::script::declarations::{
-    declaration_channel, DeclaredComponents, PendingDeclarations,
-};
-use khora_io::script::hot_reload::{load_all_announcing, reload_channel, PendingReloads};
+use khora_io::script::declarations::DeclaredComponents;
+use khora_io::script::project_compiler::ProjectCompiler;
 use khora_lanes::script_lane::ScriptRuntime;
 use khora_script::arena::Persisted;
 use khora_script::reload::ScriptReload;
@@ -100,13 +98,12 @@ behavior Guard {
 
 /// The engine's script resources, as `khora_sdk::scripts::install` and the
 /// bootstrap put them in a runtime: the scripting world among the services;
-/// the channels, the declarations, the catalog and the demand among the
-/// resources; and, when the test switches the scripting family, the engine's
-/// `Activation`.
+/// the reserve, the event channel, the declarations, the catalog and the
+/// demand among the resources; and, when the test switches the scripting
+/// family, the engine's `Activation`.
 struct Wiring {
     scripts: Arc<Mutex<ScriptRuntime>>,
-    reloads: PendingReloads,
-    declarations: PendingDeclarations,
+    reserve: Reserve,
     events: Channel<ScriptEvent>,
     demand: Arc<Interest<ScriptReads>>,
     activation: Option<Arc<Activation>>,
@@ -134,14 +131,12 @@ impl Wiring {
 
     fn over(activation: Option<Arc<Activation>>) -> Self {
         let scripts = Arc::new(Mutex::new(ScriptRuntime::new()));
-        let reloads = reload_channel();
-        let declarations = declaration_channel();
+        let reserve = Reserve::new();
         let events = engine_event_channel();
         let demand = Arc::new(Interest::<ScriptReads>::new());
         let mut runtime = Runtime::default();
         runtime.services.insert(Arc::clone(&scripts));
-        runtime.resources.insert(reloads.clone());
-        runtime.resources.insert(declarations.clone());
+        runtime.resources.insert(reserve.clone());
         runtime
             .resources
             .insert(Arc::new(Mutex::new(DeclaredComponents::default())));
@@ -153,8 +148,7 @@ impl Wiring {
         }
         Self {
             scripts,
-            reloads,
-            declarations,
+            reserve,
             events,
             demand,
             activation,
@@ -175,13 +169,19 @@ impl Wiring {
     }
 
     /// The frame boundary, as the SDK runs it — the requests settled, the
-    /// mail of a family off for the frame dropped — then the frame's
-    /// `PreExtract` systems over `world`.
+    /// mail of a family off for the frame dropped, the `Boundary` systems —
+    /// then the frame's `PreExtract` systems over `world`.
     fn pre_extract(&self, world: &mut World) {
         if let Some(activation) = &self.activation {
             activation.settle();
             discard_mail_of_inactive(activation, &self.runtime);
         }
+        run_data_systems(
+            world,
+            &self.runtime,
+            &mut OutputDeck::new(),
+            TickPhase::Boundary,
+        );
         run_data_systems(
             world,
             &self.runtime,
@@ -215,8 +215,8 @@ impl Wiring {
         scripts.set_pending(pending);
     }
 
-    /// `HEARING` compiled as `ai/guard.erg`, sent with what it reads (nothing)
-    /// announced, as the pump sends it.
+    /// `HEARING` compiled as `ai/guard.erg`, staged with what it reads
+    /// (nothing) announced, as the compile family stages it.
     fn send_the_guard(&self) {
         let result = khora_script::compile_module(
             &khora_script::MemoryLoader::new().with("ai/guard.erg", HEARING),
@@ -225,10 +225,13 @@ impl Wiring {
         let program = result.program.expect("the guard compiles");
         self.demand
             .announce(ScriptReads::incoming("ai/guard.erg"), Vec::new());
-        self.reloads.send(ScriptReload {
-            module: "ai/guard.erg".to_owned(),
-            program: Some(program),
-        });
+        crate::staged_reloads::stage(
+            &self.reserve,
+            ScriptReload {
+                module: "ai/guard.erg".to_owned(),
+                program: Some(program),
+            },
+        );
     }
 }
 
@@ -243,30 +246,28 @@ fn a_hit() -> ScriptEvent {
     .with(ScriptValue::Int(1))
 }
 
-// ─── A reload the pump handed over, end to end ─────────────────────────────
+// ─── A reload the compile handed over, end to end ──────────────────────────
 
-/// **A module the pump handed over is installed at the boundary, before the
-/// flow projects, and its first `Get` reads the component.** The pump's
-/// route — what `mount` and a recompile take — announces what the program
-/// reads as `module:<name>` and sends it. The frame's `PreExtract` systems
+/// **A module the project compiler handed over is installed at the boundary,
+/// before the flow projects, and its first `Get` reads the component.** The
+/// compile's route — what `mount` and a recompile take — announces what the
+/// program reads as `module:<name>` and stages it. The frame's systems
 /// install it: the program is in the scripting world before any lane runs.
 /// The flow then projects what it reads, and the probe's very first `Get`
 /// finds its rigid body rather than `null`.
 #[test]
-fn a_reload_the_pump_handed_over_is_installed_before_the_flow_and_reads_its_component_at_once() {
+fn a_reload_the_compile_handed_over_is_installed_before_the_flow_and_reads_its_component_at_once() {
     let wiring = Wiring::new();
     let assets = tempfile::TempDir::new().expect("a temp dir");
     let scripts_dir = assets.path().join("scripts");
     std::fs::create_dir_all(scripts_dir.join("game")).expect("makes the script root");
     std::fs::write(scripts_dir.join(MODULE), READS_ITS_OWN_BODY).expect("writes");
-    let sent = load_all_announcing(
-        &scripts_dir,
-        &wiring.reloads,
-        &wiring.declarations,
-        &wiring.demand,
-        None,
-    );
-    assert_eq!(sent, 1, "the premise: the probe compiled");
+    let compiled = ProjectCompiler::from_runtime(&wiring.runtime).compile_all(&scripts_dir);
+    assert_eq!(compiled.reloads.len(), 1, "the premise: the probe compiled");
+    let mut staging = Staging::new();
+    staging.stage(compiled.reloads);
+    staging.stage(compiled.declarations);
+    wiring.reserve.receive(staging);
     assert!(
         wiring.demand.covers(&[ComponentName::new("RigidBody")]),
         "the premise: what it reads is announced"
@@ -286,7 +287,10 @@ fn a_reload_the_pump_handed_over_is_installed_before_the_flow_and_reads_its_comp
         wiring.installed(MODULE),
         "the boundary installed the program before any lane ran"
     );
-    assert!(wiring.reloads.is_empty(), "the reload channel is drained");
+    assert!(
+        wiring.reserve.is_empty::<ScriptReload>(),
+        "the staged reload is taken"
+    );
     assert!(
         wiring.demand.covers(&[ComponentName::new("RigidBody")]),
         "what it reads is still wanted, now as loaded: {:?}",
@@ -351,7 +355,7 @@ fn a_reload_the_pump_handed_over_is_installed_before_the_flow_and_reads_its_comp
 
 /// **Nothing is taken in while the scripts are off; a reload waits for them,
 /// an event sent meanwhile is not delivered.** The boundary skips the intake:
-/// the reload stays in its channel (its mailbox holds between sessions),
+/// the reload stays in the reserve, which holds it across frames,
 /// nothing is installed; the engine's event is dropped at the boundary (its
 /// mailbox drops between sessions). Once the scripts are on, the reload is
 /// installed and the mail is empty.
@@ -365,7 +369,11 @@ fn nothing_is_taken_in_while_the_scripts_are_off_and_reloads_wait_for_them() {
     wiring.pre_extract(&mut world);
     wiring.pre_extract(&mut world);
 
-    assert_eq!(wiring.reloads.len(), 1, "the reload waits for the scripts");
+    assert_eq!(
+        wiring.reserve.len::<ScriptReload>(),
+        1,
+        "the reload waits for the scripts"
+    );
     assert!(
         wiring.events.is_empty(),
         "the event sent while the scripts were off is dropped"
@@ -377,7 +385,7 @@ fn nothing_is_taken_in_while_the_scripts_are_off_and_reloads_wait_for_them() {
     wiring.pre_extract(&mut world);
 
     assert!(wiring.installed("ai/guard.erg"), "installed once on");
-    assert!(wiring.reloads.is_empty());
+    assert!(wiring.reserve.is_empty::<ScriptReload>());
     assert_eq!(
         wiring.pending(),
         0,

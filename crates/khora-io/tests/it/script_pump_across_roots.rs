@@ -19,21 +19,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, World};
+use khora_data::ecs::World;
 use khora_io::asset::{AssetChangeEvent, AssetWatch};
-use khora_io::script::declarations::declaration_channel;
-use khora_io::script::hot_reload::{reload_channel, PendingReloads};
+
+use crate::filed_compiles;
 
 const MAX_WAIT: Duration = Duration::from_secs(10);
-
-fn data_system(name: &str) -> &'static DataSystemRegistration {
-    inventory::iter::<DataSystemRegistration>
-        .into_iter()
-        .find(|system| system.name == name)
-        .unwrap_or_else(|| panic!("`{name}` is registered"))
-}
 
 /// Writes `scripts/<module>` under `assets`.
 fn script(assets: &Path, module: &str, source: &str) {
@@ -47,7 +39,8 @@ fn mentions(events: &[AssetChangeEvent], rel_path: &str) -> bool {
 }
 
 /// **Two roots saved in one frame are both recompiled**, each against its
-/// own script root: one pump run over both changes sends both modules.
+/// own script root: one pump run over both changes files one request per
+/// root, and their compiles stage both modules.
 #[test]
 fn saves_under_two_roots_read_in_one_frame_are_each_recompiled() {
     let first = tempfile::TempDir::new().expect("a temp dir");
@@ -60,8 +53,7 @@ fn saves_under_two_roots_read_in_one_frame_are_each_recompiled() {
     watch.watch(second.path()).expect("watches the second");
     let mut runtime = Runtime::default();
     runtime.resources.insert(Arc::clone(&watch));
-    runtime.resources.insert(reload_channel());
-    runtime.resources.insert(declaration_channel());
+    filed_compiles::install(&mut runtime);
     std::thread::sleep(Duration::from_millis(150));
 
     script(first.path(), "left.erg", "behavior Left { int n = 1; }");
@@ -80,25 +72,21 @@ fn saves_under_two_roots_read_in_one_frame_are_each_recompiled() {
         "the premise: both saves came back: {heard:?}"
     );
 
-    (data_system("script_hot_reload").run)(
-        &mut World::new(),
-        &runtime,
-        &mut OutputDeck::new(),
-        khora_data::ecs::SystemContext {
-            since: khora_data::ecs::Tick(0),
-            resumed: false,
-            scope: None,
-        },
-    );
+    filed_compiles::run_pump_alone(&mut World::new(), &runtime);
 
-    let mut sent: Vec<String> = runtime
-        .resources
-        .get::<PendingReloads>()
-        .expect("a reload channel")
-        .drain()
-        .into_iter()
-        .map(|reload| reload.module)
-        .collect();
+    let filed = filed_compiles::filed(&runtime);
+    let mut roots: Vec<_> = filed.iter().map(|request| request.root.clone()).collect();
+    roots.sort();
+    roots.dedup();
+    assert_eq!(roots.len(), 2, "one request per root: {filed:?}");
+    let compiler = khora_io::script::project_compiler::ProjectCompiler::from_runtime(&runtime);
+    for request in &filed {
+        filed_compiles::stage(
+            &runtime,
+            khora_script::toolchain::ScriptCompiler::compile(&compiler, request),
+        );
+    }
+    let mut sent = filed_compiles::staged_modules(&runtime);
     sent.sort();
     assert_eq!(sent, vec!["left.erg".to_owned(), "right.erg".to_owned()]);
 }

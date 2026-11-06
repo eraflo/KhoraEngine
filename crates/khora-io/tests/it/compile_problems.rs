@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **What the hot-reload pump compiles, it reports** (Ergon spec 11): each
-//! module it recompiles leaves its diagnostics in the runtime's
+//! **What the hot-reload pump files, the compile reports** (Ergon spec 11):
+//! each module recompiled leaves its diagnostics in the runtime's
 //! `Problems`, located — module, line, column — through the program's
 //! source map. A diagnostic located in an imported module is reported under
 //! that module, once; the warnings of a module that compiled are reported
@@ -23,13 +23,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use khora_core::lane::OutputDeck;
 use khora_core::problems::{Problem, ProblemSeverity, Problems};
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, World};
+use khora_data::ecs::World;
 use khora_io::asset::AssetWatch;
-use khora_io::script::declarations::declaration_channel;
-use khora_io::script::hot_reload::{reload_channel, PendingReloads};
+
+use crate::filed_compiles;
 
 /// How long a save may take to reach the pump.
 const MAX_WAIT: Duration = Duration::from_secs(10);
@@ -43,15 +42,8 @@ const PARSE_ERROR: &str = "// a broken helper\nfn void ( ) { }\n";
 /// A behavior that compiles with one warning, line 3, column 10.
 const UNREACHABLE_ARM: &str = "behavior Guard {\n    void Update(float dt) { match (n) { int x => { }\n         _ => { } } }\n    int n = 0;\n}\n";
 
-fn data_system(name: &str) -> &'static DataSystemRegistration {
-    inventory::iter::<DataSystemRegistration>
-        .into_iter()
-        .find(|system| system.name == name)
-        .unwrap_or_else(|| panic!("`{name}` is registered"))
-}
-
-/// The pump, its queues and the problems it reports into, over one assets
-/// root.
+/// The pump, the compile of what it files, and the problems the compile
+/// reports into, over one assets root.
 struct Pump {
     runtime: Runtime,
     problems: Arc<Problems>,
@@ -59,15 +51,15 @@ struct Pump {
 }
 
 impl Pump {
-    /// A runtime watching `assets`, with the script queues and the problems.
+    /// A runtime watching `assets`, with the request channel, the reserve and
+    /// the problems.
     fn over(assets: &Path) -> Self {
         let watch = Arc::new(AssetWatch::default());
         watch.watch(assets).expect("watches the root");
         let problems = Arc::new(Problems::default());
         let mut runtime = Runtime::default();
         runtime.resources.insert(Arc::clone(&watch));
-        runtime.resources.insert(reload_channel());
-        runtime.resources.insert(declaration_channel());
+        filed_compiles::install(&mut runtime);
         runtime.resources.insert(Arc::clone(&problems));
         std::thread::sleep(Duration::from_millis(150));
         Self {
@@ -77,22 +69,13 @@ impl Pump {
         }
     }
 
-    /// Runs the pump until `done` holds of the problems, or the wait ran out.
+    /// Runs the pump, and compiles what it filed, until `done` holds of the
+    /// problems, or the wait ran out.
     fn run_until(&self, mut done: impl FnMut(&Problems) -> bool) {
-        let system = data_system("script_hot_reload");
         let mut world = World::new();
         let deadline = Instant::now() + MAX_WAIT;
         while Instant::now() < deadline {
-            (system.run)(
-                &mut world,
-                &self.runtime,
-                &mut OutputDeck::new(),
-                khora_data::ecs::SystemContext {
-                    since: khora_data::ecs::Tick(0),
-                    resumed: false,
-                    scope: None,
-                },
-            );
+            filed_compiles::run_pump(&mut world, &self.runtime);
             if done(&self.problems) {
                 return;
             }
@@ -100,16 +83,9 @@ impl Pump {
         }
     }
 
-    /// The modules the pump sent, drained.
+    /// The modules the compile staged, taken.
     fn sent(&self) -> Vec<String> {
-        self.runtime
-            .resources
-            .get::<PendingReloads>()
-            .expect("a reload channel")
-            .drain()
-            .into_iter()
-            .map(|reload| reload.module)
-            .collect()
+        filed_compiles::staged_modules(&self.runtime)
     }
 }
 
@@ -175,7 +151,7 @@ fn a_fixed_save_clears_the_modules_problems() {
 }
 
 /// **An imported module's error is reported under that module, once** —
-/// though the pump compiles it twice, as itself and inside the module that
+/// though the compile builds it twice, as itself and inside the module that
 /// imports it.
 #[test]
 fn an_imported_modules_error_is_reported_under_it_once() {

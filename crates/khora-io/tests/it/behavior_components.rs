@@ -552,28 +552,30 @@ fn a_behavior_registered_from_a_save_gains_its_role_when_its_module_declares_it(
     );
 }
 
-// ─── Registered from the runtime's channel ──────────────────────────────────
+// ─── Registered from the runtime's reserve ──────────────────────────────────
 
-/// A runtime holding the declaration channel and the registration's shared
-/// memory, as the engine's bootstrap leaves it.
+/// A runtime holding the reserve and the registration's shared memory, as the
+/// engine's bootstrap leaves it.
 fn registration_runtime() -> khora_core::Runtime {
-    use khora_io::script::declarations::declaration_channel;
     use std::sync::{Arc, Mutex};
     let mut runtime = khora_core::Runtime::new();
-    runtime.resources.insert(declaration_channel());
+    runtime.resources.insert(khora_core::lane::Reserve::new());
     runtime
         .resources
         .insert(Arc::new(Mutex::new(DeclaredComponents::default())));
     runtime
 }
 
-/// What `runtime`'s compile path sent and no frame boundary drained yet.
+/// What the compile staged in `runtime`'s reserve and no frame boundary took
+/// yet.
 fn send(runtime: &khora_core::Runtime, declarations: ScriptDeclarations) {
+    let mut staging = khora_core::lane::Staging::new();
+    staging.stage(vec![declarations]);
     runtime
         .resources
-        .get::<khora_io::script::declarations::PendingDeclarations>()
-        .expect("the runtime holds the declaration channel")
-        .send(declarations);
+        .get::<khora_core::lane::Reserve>()
+        .expect("the runtime holds the reserve")
+        .receive(staging);
 }
 
 /// The registration memory `runtime` shares.
@@ -587,7 +589,7 @@ fn shared_state(
         .expect("the runtime holds the registration state")
 }
 
-/// **What the compile path sent is registered on demand**, before any frame
+/// **What the compile staged is registered on demand**, before any frame
 /// boundary: the behavior and its companion are in the world with their
 /// roles, and the runtime's shared memory knows which module declares them.
 #[test]
@@ -626,12 +628,12 @@ fn pending_declarations_are_registered_with_their_roles() {
     );
 }
 
-/// **The channel is drained**: called again with nothing sent since, the
-/// registration registers nothing — what the frame boundary's data system
-/// finds after the bootstrap registered the initial load.
+/// **The staged declarations are taken**: called again with nothing staged
+/// since, the registration registers nothing — what the frame boundary's data
+/// system finds after the bootstrap registered the initial load.
 #[test]
-fn registering_pending_declarations_drains_the_channel() {
-    use khora_io::script::declarations::{register_pending, PendingDeclarations};
+fn registering_pending_declarations_takes_them_from_the_reserve() {
+    use khora_io::script::declarations::register_pending;
     let runtime = registration_runtime();
     send(&runtime, declarations("ai/guard.erg", GUARD));
     let mut world = World::new();
@@ -641,9 +643,9 @@ fn registering_pending_declarations_drains_the_channel() {
     assert!(
         runtime
             .resources
-            .get::<PendingDeclarations>()
-            .expect("the channel")
-            .is_empty(),
+            .get::<khora_core::lane::Reserve>()
+            .expect("the reserve")
+            .is_empty::<ScriptDeclarations>(),
         "nothing left for the frame boundary"
     );
     assert_eq!(
@@ -693,10 +695,10 @@ fn registering_with_nothing_pending_reports_nothing() {
     );
 }
 
-/// **A runtime with no channel** — an application that mounts no script —
+/// **A runtime with no reserve** — an application that mounts no script —
 /// registers nothing, and does not panic.
 #[test]
-fn registering_without_a_declaration_channel_reports_nothing() {
+fn registering_without_a_reserve_reports_nothing() {
     use khora_io::script::declarations::register_pending;
     let runtime = khora_core::Runtime::new();
     let mut world = World::new();
@@ -711,9 +713,9 @@ fn registering_without_a_declaration_channel_reports_nothing() {
 /// nothing, and does not panic: there is nowhere to remember who owns what.
 #[test]
 fn registering_without_a_registration_state_reports_nothing() {
-    use khora_io::script::declarations::{declaration_channel, register_pending};
+    use khora_io::script::declarations::register_pending;
     let mut runtime = khora_core::Runtime::new();
-    runtime.resources.insert(declaration_channel());
+    runtime.resources.insert(khora_core::lane::Reserve::new());
     send(&runtime, declarations("ai/guard.erg", GUARD));
     let mut world = World::new();
 

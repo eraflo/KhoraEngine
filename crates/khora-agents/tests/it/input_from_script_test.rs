@@ -35,7 +35,6 @@ use khora_core::script::WorldCommand;
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::{TickPhase, World};
 use khora_data::flow::{ScriptFlow, ScriptInstance, ScriptProgram, ScriptView};
-use khora_io::script::hot_reload::reload_channel;
 use khora_script::reload::ScriptReload;
 
 const MODULE: &str = "player.erg";
@@ -148,11 +147,14 @@ fn wired() -> (Arc<Runtime>, Channel<InputEvent>, LaneAgent) {
     map.bind("jump", InputBinding::Key(KeyCode::Space));
 
     let events = input_channel();
-    let reloads = reload_channel();
-    reloads.send(ScriptReload {
-        module: MODULE.to_owned(),
-        program: Some(compile(PLAYER)),
-    });
+    let reloads = khora_core::lane::Reserve::new();
+    crate::staged_reloads::stage(
+        &reloads,
+        ScriptReload {
+            module: MODULE.to_owned(),
+            program: Some(compile(PLAYER)),
+        },
+    );
 
     let mut runtime = Runtime::default();
     // The scripting world, as `EngineBuilder` registers it. The agent

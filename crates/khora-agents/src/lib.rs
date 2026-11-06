@@ -20,6 +20,7 @@
 
 pub mod agent;
 pub mod audio_agent;
+pub mod compile_agent;
 pub mod overlay_agent;
 pub mod physics_agent;
 pub mod registered_agent;

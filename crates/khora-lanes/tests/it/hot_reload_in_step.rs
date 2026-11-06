@@ -126,7 +126,7 @@ impl Stage {
         // `script_intake` system does before the flow projects.
         take_in(
             &mut self.runtime,
-            Some(&self.reloads),
+            self.reloads.drain(),
             Some(&self.events),
             Some(&self.demand),
             view.resumed,

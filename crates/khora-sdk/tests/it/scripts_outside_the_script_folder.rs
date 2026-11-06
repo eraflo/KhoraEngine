@@ -21,7 +21,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use khora_io::script::hot_reload::PendingReloads;
+use khora_io::script::project_compiler::ScriptReload;
+use khora_sdk::khora_core::lane::Reserve;
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity, Problems};
 use khora_sdk::Runtime;
 
@@ -77,13 +78,16 @@ fn problems(runtime: &Runtime) -> Arc<Problems> {
         .expect("scripting installs the Problems")
 }
 
-/// The modules mount sent to be installed, sorted.
+/// The modules mount staged to be installed, sorted — read once they have
+/// landed in the reserve, as the next frame start lands what the host staged.
 fn sent(runtime: &Runtime) -> Vec<String> {
-    let mut modules: Vec<String> = runtime
+    let reserve = runtime
         .resources
-        .get::<PendingReloads>()
-        .expect("scripting installs the reload queue")
-        .drain()
+        .get::<Reserve>()
+        .expect("scripting installs the reserve");
+    reserve.land_from_host();
+    let mut modules: Vec<String> = reserve
+        .take::<ScriptReload>()
         .into_iter()
         .map(|reload| reload.module)
         .collect();

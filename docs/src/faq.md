@@ -197,7 +197,11 @@ and loads skip it. Either way the load's `LoadReport` says what it adapted. See
 ### What happens to a running script when I edit it?
 
 The edited module recompiles — with every module that imports it — and replaces
-the old program only if it compiles. Live instances keep their fields, matched by
+the old program only if it compiles. The compile runs off the frame, in the
+`compile` family, so a large project never stalls a frame: the new program lands
+at a frame boundary a few frames later. While the scripts are off (an editor
+editing a scene), what the module declares registers at once, and the program
+waits for Play. Live instances keep their fields, matched by
 name. A body that was part-way through, stopped by its fuel budget or at an
 `await`, is carried into the new code in tiers: unchanged if its functions did
 not change, rebuilt at the same named places if they did, or restarted from the

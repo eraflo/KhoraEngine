@@ -256,7 +256,6 @@ fn a_spawn_through_the_scripting_agent_takes_its_id_from_the_worlds_reserver() {
     use khora_core::script::{CommandBuffer, WorldCommand};
     use khora_core::{EngineContext, Runtime, WorldAccess};
     use khora_data::flow::{ReservationView, ScriptInstance, ScriptProgram, ScriptView};
-    use khora_io::script::hot_reload::reload_channel;
     use khora_script::reload::ScriptReload;
 
     const MODULE: &str = "game/maker.erg";
@@ -268,11 +267,14 @@ fn a_spawn_through_the_scripting_agent_takes_its_id_from_the_worlds_reserver() {
     );
     let checked = khora_script::check(&parsed.module);
     assert!(checked.diagnostics.is_empty(), "{:?}", checked.diagnostics);
-    let reloads = reload_channel();
-    reloads.send(ScriptReload {
-        module: MODULE.to_owned(),
-        program: Some(khora_script::compile(&parsed.module).program),
-    });
+    let reloads = khora_core::lane::Reserve::new();
+    crate::staged_reloads::stage(
+        &reloads,
+        ScriptReload {
+            module: MODULE.to_owned(),
+            program: Some(khora_script::compile(&parsed.module).program),
+        },
+    );
     let mut runtime = Runtime::default();
     runtime.services.insert(Arc::new(std::sync::Mutex::new(
         khora_lanes::script_lane::ScriptRuntime::new(),

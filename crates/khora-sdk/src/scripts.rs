@@ -22,18 +22,18 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use khora_core::lane::Reserve;
 use khora_core::problems::{ProblemSource, Problems};
 use khora_core::projection::Interest;
 use khora_core::script::{ScriptCatalog, ScriptReads};
 use khora_core::Runtime;
 use khora_io::asset::AssetWatch;
-use khora_io::script::declarations::{
-    declaration_channel, DeclaredComponents, PendingDeclarations, ScriptDeclarations,
-};
-use khora_io::script::hot_reload::{
-    load_all, load_all_announcing, module_names, reload_channel, withdraw, PendingReloads,
-};
+use khora_io::script::declarations::{DeclaredComponents, ScriptDeclarations};
+use khora_io::script::hot_reload::{module_names, request_channel};
 use khora_io::script::layout::script_dir;
+use khora_io::script::project_compiler::{
+    CompileRequest, Compiled, ProjectCompiler, ScriptCompiler, ScriptReload,
+};
 
 /// The module the engine serves its components as: a script imports it, and
 /// no project holds it as a file.
@@ -75,17 +75,22 @@ pub fn install(runtime: &mut Runtime) {
     if resources.get::<Arc<AssetWatch>>().is_none() {
         resources.insert(Arc::new(AssetWatch::default()));
     }
-    if resources.get::<PendingReloads>().is_none() {
-        resources.insert(reload_channel());
+    // What the background staged waits here for a frame's boundary: the
+    // programs and declarations compiled off the frame among it.
+    if resources.get::<Reserve>().is_none() {
+        resources.insert(Reserve::new());
+    }
+    if resources
+        .get::<khora_core::event::Channel<CompileRequest>>()
+        .is_none()
+    {
+        resources.insert(request_channel());
     }
     if resources
         .get::<khora_core::event::Channel<khora_core::script::ScriptEvent>>()
         .is_none()
     {
         resources.insert(khora_core::script::engine_event_channel());
-    }
-    if resources.get::<PendingDeclarations>().is_none() {
-        resources.insert(declaration_channel());
     }
     if resources.get::<Arc<Mutex<DeclaredComponents>>>().is_none() {
         resources.insert(Arc::new(Mutex::new(DeclaredComponents::default())));
@@ -101,6 +106,11 @@ pub fn install(runtime: &mut Runtime) {
     }
     if resources.get::<Arc<MountedScripts>>().is_none() {
         resources.insert(Arc::new(MountedScripts::default()));
+    }
+    // The compile family's compiler, reporting to what is installed above.
+    if resources.get::<Arc<dyn ScriptCompiler>>().is_none() {
+        let compiler: Arc<dyn ScriptCompiler> = Arc::new(ProjectCompiler::from_runtime(runtime));
+        runtime.resources.insert(compiler);
     }
 }
 
@@ -150,12 +160,9 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> usize {
     let Some(script_dir) = script_dir(assets_root) else {
         return 0;
     };
-    let (Some(pending), Some(declarations)) = (
-        runtime.resources.get::<PendingReloads>(),
-        runtime.resources.get::<PendingDeclarations>(),
-    ) else {
+    let Some(reserve) = runtime.resources.get::<Reserve>() else {
         log::error!(
-            "scripts: the engine's script queues are missing — `scripts::install` was not run, so {} cannot load",
+            "scripts: the engine holds no reserve — `scripts::install` was not run, so {} cannot load",
             script_dir.display()
         );
         return 0;
@@ -168,21 +175,25 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> usize {
             module_names(&script_dir),
         );
     }
-    let loaded = match runtime.resources.get::<Arc<Interest<ScriptReads>>>() {
-        Some(reads) => load_all_announcing(
-            &script_dir,
-            pending,
-            declarations,
-            reads,
-            runtime.resources.get::<Arc<Problems>>().map(Arc::as_ref),
-        ),
-        None => load_all(&script_dir, pending, declarations),
-    };
+    // Compiled now, as the mount is asked for; staged like what the compile
+    // family hands on, so it lands at the next frame's boundary.
+    let compiled = ProjectCompiler::from_runtime(runtime).compile_all(&script_dir);
+    let loaded = compiled.reloads.len();
+    stage(reserve, compiled);
     log::info!(
         "scripts: {loaded} module(s) loaded from {}",
         script_dir.display()
     );
     loaded
+}
+
+/// Stages `compiled` from the host in `reserve`: it lands at a frame start
+/// once every compile under way now has ended, for the boundary to apply.
+fn stage(reserve: &Reserve, compiled: Compiled) {
+    let mut staging = khora_core::lane::Staging::new();
+    staging.stage(compiled.declarations);
+    staging.stage(compiled.reloads);
+    reserve.stage_from_host(staging);
 }
 
 /// The name the engine's watch knows `assets_root` by — the root as first
@@ -243,21 +254,39 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .unmounting(modules.iter().cloned());
     }
-    if let Some(declarations) = runtime.resources.get::<PendingDeclarations>() {
-        for module in &modules {
-            declarations.send(ScriptDeclarations {
-                module: module.clone(),
-                components: Vec::new(),
-            });
-        }
+    // A compile the pump filed for this root before it closed is dropped;
+    // and what one already under way hands on is taken in ahead of what this
+    // stages below, however late it ends.
+    if let Some(requests) = runtime
+        .resources
+        .get::<khora_core::event::Channel<CompileRequest>>()
+    {
+        requests.retain(|request| request.root != named && request.root != assets_root);
     }
-    // A withdrawal supersedes a reload still queued for the module, and
-    // takes an installed program out of the runtime: a closed project's
-    // scripts stop, whether or not the game ran them yet.
-    if let Some(pending) = runtime.resources.get::<PendingReloads>() {
-        for module in &modules {
-            withdraw(pending, module);
-        }
+    // Each module declares nothing and runs nothing any more. A withdrawal
+    // supersedes a reload still waiting for the module, and takes an
+    // installed program out of the runtime: a closed project's scripts stop,
+    // whether or not the game ran them yet.
+    if let Some(reserve) = runtime.resources.get::<Reserve>() {
+        stage(
+            reserve,
+            Compiled {
+                declarations: modules
+                    .iter()
+                    .map(|module| ScriptDeclarations {
+                        module: module.clone(),
+                        components: Vec::new(),
+                    })
+                    .collect(),
+                reloads: modules
+                    .iter()
+                    .map(|module| ScriptReload {
+                        module: module.clone(),
+                        program: None,
+                    })
+                    .collect(),
+            },
+        );
     }
     if let Some(reads) = runtime.resources.get::<Arc<Interest<ScriptReads>>>() {
         for module in &modules {

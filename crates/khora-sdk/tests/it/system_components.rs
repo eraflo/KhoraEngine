@@ -24,8 +24,8 @@ use khora_sdk::khora_core::script::ScriptValue;
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::{DeclaredComponentError, GameWorld};
 
-use khora_io::script::declarations::{apply_declarations, declaration_channel, DeclaredComponents};
-use khora_io::script::hot_reload::{load_all, reload_channel};
+use khora_io::script::declarations::{apply_declarations, DeclaredComponents};
+use khora_io::script::project_compiler::ProjectCompiler;
 
 const MODULE: &str = "clock.erg";
 
@@ -56,17 +56,13 @@ fn scripts_with_clock() -> PathBuf {
 /// it from the initial load.
 fn world_declaring_clock() -> GameWorld {
     let root = scripts_with_clock();
-    let (pending, declarations) = (reload_channel(), declaration_channel());
-    assert_eq!(
-        load_all(&root.join("scripts"), &pending, &declarations),
-        1,
-        "`{MODULE}` compiles"
-    );
+    let compiled = ProjectCompiler::default().compile_all(&root.join("scripts"));
+    assert_eq!(compiled.reloads.len(), 1, "`{MODULE}` compiles");
     let mut world = GameWorld::new();
     let report = apply_declarations(
         world.inner_world_mut(),
         &mut DeclaredComponents::default(),
-        &declarations.drain(),
+        &compiled.declarations,
     );
     let _ = std::fs::remove_dir_all(&root);
     for name in ["Clock", "Clock#state", "Guard", "Loot"] {

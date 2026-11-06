@@ -15,7 +15,7 @@
 //! A script reads the engine's components, end to end.
 //!
 //! Compiled against the mirrors the engine really serves, delivered the way
-//! the engine delivers a program — through the reload channel — and run frame
+//! the engine delivers a program — staged in the reserve — and run frame
 //! after frame over a real `World`: the flow projects what the loaded programs
 //! read, the agent runs the lane, and the `Maintenance` phase applies what the
 //! scripts queued. A behavior writes what it read into its own fields, which
@@ -28,8 +28,7 @@ use khora_control::substrate::run_data_systems;
 use khora_core::agent::gorna::{ResourceBudget, StrategyId};
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
-use khora_core::event::Channel;
-use khora_core::lane::{LaneBus, OutputDeck};
+use khora_core::lane::{LaneBus, OutputDeck, Reserve};
 use khora_core::projection::Interest;
 use khora_core::script::{
     engine_event_channel, ComponentName, ComponentProjection, ScriptCatalog, ScriptReads,
@@ -41,9 +40,7 @@ use khora_data::ecs::{
     RuntimeComponentDecl, SemanticDomain, TickPhase, Transform, World,
 };
 use khora_data::flow::{Flow, FlowContext, ScriptFlow};
-use khora_io::script::declarations::{
-    declaration_channel, DeclaredComponents, PendingDeclarations,
-};
+use khora_io::script::declarations::DeclaredComponents;
 use khora_io::script::mirror::PreludeLoader;
 use khora_lanes::script_lane::ScriptRuntime;
 use khora_script::arena::Persisted;
@@ -77,8 +74,8 @@ fn body(mass: f32) -> RigidBody {
 
 /// One running session, wired the way the engine wires one: the demand the
 /// intake announces the loaded programs' reads to and the flow projects, the
-/// catalog, the channels a compiled module's declarations and program arrive
-/// by.
+/// catalog, the reserve a compiled module's declarations and program arrive
+/// in.
 struct Session {
     world: World,
     flow: ScriptFlow,
@@ -87,8 +84,7 @@ struct Session {
     projected: bool,
     agent: LaneAgent,
     scripts: Arc<Mutex<ScriptRuntime>>,
-    reloads: Channel<ScriptReload>,
-    declarations: PendingDeclarations,
+    reserve: Reserve,
     reads: Arc<Interest<ScriptReads>>,
     runtime: Arc<Runtime>,
 }
@@ -100,15 +96,13 @@ impl Session {
     /// a game's `setup`, so they can be attached before the first frame.
     fn over(world: World, program: Program) -> Self {
         let scripts = Arc::new(Mutex::new(ScriptRuntime::new()));
-        let reloads = khora_io::script::hot_reload::reload_channel();
-        let declarations = declaration_channel();
+        let reserve = Reserve::new();
         let catalog = Arc::new(ScriptCatalog::default());
         let reads = Arc::new(Interest::<ScriptReads>::new());
 
         let mut runtime = Runtime::default();
         runtime.services.insert(Arc::clone(&scripts));
-        runtime.resources.insert(reloads.clone());
-        runtime.resources.insert(declarations.clone());
+        runtime.resources.insert(reserve.clone());
         runtime
             .resources
             .insert(Arc::new(Mutex::new(DeclaredComponents::default())));
@@ -131,24 +125,27 @@ impl Session {
             projected: false,
             agent,
             scripts,
-            reloads,
-            declarations,
+            reserve,
             reads,
             runtime: Arc::new(runtime),
         };
         session.load(program);
+        session.boundary(TickPhase::Boundary, &mut OutputDeck::new());
         session.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
         session
     }
 
-    /// Sends `program` as the new `MODULE`, with what it declares, as a
-    /// hot-reload would.
+    /// Stages `program` as the new `MODULE`, with what it declares, as the
+    /// compile family does for a hot-reload.
     fn load(&self, program: Program) {
-        self.declarations.send(declared_in(MODULE, &program));
-        self.reloads.send(ScriptReload {
-            module: MODULE.to_owned(),
-            program: Some(program),
-        });
+        crate::staged_reloads::stage(&self.reserve, declared_in(MODULE, &program));
+        crate::staged_reloads::stage(
+            &self.reserve,
+            ScriptReload {
+                module: MODULE.to_owned(),
+                program: Some(program),
+            },
+        );
     }
 
     fn boundary(&mut self, phase: TickPhase, deck: &mut OutputDeck) {
@@ -164,6 +161,7 @@ impl Session {
     /// run the scripts. Returns the deck holding what they queued, not yet
     /// applied, and what the flow projected.
     fn run_scripts(&mut self) -> (OutputDeck, Arc<ComponentProjection>) {
+        self.boundary(TickPhase::Boundary, &mut OutputDeck::new());
         self.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
         let ctx = FlowContext {
             resumed: !self.projected,
@@ -738,7 +736,7 @@ fn a_program_waiting_for_its_reads_is_not_reported_unloaded() {
 }
 
 /// **A waiting reload replaced before it installs never runs.** Two saves of
-/// one module are one reload when they meet in the channel; one that meets the
+/// one module are one reload when they meet in the reserve; one that meets the
 /// other only after the first started waiting must not run the replaced code
 /// for a frame either.
 #[test]

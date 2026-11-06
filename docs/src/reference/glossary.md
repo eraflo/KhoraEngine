@@ -476,7 +476,11 @@ yet, by output type (`khora_core::lane::Reserve`, a runtime resource). A run's
 `#[staged]` outputs reach it at the frame start after the run ended — never in
 the middle of a frame — and a `Boundary` DataSystem takes them. An output
 implements `Staged`: a newer one of the same key (its `Supersedes`) replaces a
-waiting one, which goes through `Staged::abandon` and is never applied. See
+waiting one, which goes through `Staged::abandon` and is never applied.
+Outputs staged under a `Lease` (`khora_core::lane::Lease`; a `#[staged]` field
+of type `Leases<T>`) count only if the lease still holds when the reserve takes
+them in. The project a compile was for may have closed while the compile ran:
+its result is then abandoned. See
 [ExecutionPhase / TickPhase](#executionphase--tickphase).
 
 ### ResourceBudget

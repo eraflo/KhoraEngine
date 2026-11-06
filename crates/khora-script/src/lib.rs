@@ -65,6 +65,7 @@ pub mod parser;
 pub mod pipeline;
 pub mod reload;
 pub mod source_map;
+pub mod toolchain;
 pub mod types;
 pub mod vm;
 

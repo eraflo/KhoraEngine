@@ -89,6 +89,7 @@ pub mod erased;
 pub mod family;
 pub mod guard;
 pub mod io;
+pub mod lease;
 pub mod level;
 pub mod reserve;
 pub mod staging;
@@ -101,6 +102,7 @@ pub use deck::OutputDeck;
 
 pub use host_views::HostViews;
 
+pub use lease::{Lease, Leases};
 pub use reserve::{Reserve, Staged};
 
 pub use staging::Staging;

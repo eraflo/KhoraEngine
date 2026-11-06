@@ -30,8 +30,8 @@ use super::runtime::ScriptRuntime;
 
 /// Takes in what the engine handed `scripts` since its last frame.
 ///
-/// Drains `reloads` and `events`; the events join the runtime's mail. Applies
-/// each reload whose program's reads `demand` covers — one whose reads it
+/// Takes `reloads` and drains `events`; the events join the runtime's mail.
+/// Applies each reload whose program's reads `demand` covers — one whose reads it
 /// does not cover waits for a later frame, and a newer reload of the same
 /// module replaces a waiting one; a reload with no program withdraws its
 /// module. Then announces to `demand`, as [`ScriptReads::LOADED`], what the
@@ -46,12 +46,11 @@ use super::runtime::ScriptRuntime;
 /// off, so what it holds was sent for this session.
 pub fn take_in(
     scripts: &mut ScriptRuntime,
-    reloads: Option<&Channel<ScriptReload>>,
+    reloads: Vec<ScriptReload>,
     events: Option<&Channel<ScriptEvent>>,
     demand: Option<&Interest<ScriptReads>>,
     resumed: bool,
 ) {
-    let reloads = reloads.map(Channel::drain).unwrap_or_default();
     let drained = events.map(Channel::drain).unwrap_or_default();
 
     // Applied before anything runs, so a frame never executes the version
@@ -78,8 +77,11 @@ pub fn take_in(
 }
 
 /// The intake over the engine's scripting world, when there is one; without
-/// it, the channels keep what they hold. It reads the runtime only: the world
-/// and the deck it is handed stay untouched.
+/// it, the reserve and the event channel keep what they hold. It reads the
+/// runtime only: the world and the deck it is handed stay untouched. The
+/// reloads the compile family staged wait in the reserve while the scripting
+/// family is off — this system does not run then — and are installed on the
+/// first frame back.
 fn script_intake(runtime: &Runtime, ctx: SystemContext) {
     let Some(scripts) = runtime.look_up::<Arc<Mutex<ScriptRuntime>>>() else {
         return;
@@ -89,7 +91,7 @@ fn script_intake(runtime: &Runtime, ctx: SystemContext) {
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     take_in(
         &mut scripts,
-        runtime.look_up::<Channel<ScriptReload>>(),
+        ctx.staged::<ScriptReload>(runtime),
         runtime.look_up::<Channel<ScriptEvent>>(),
         runtime
             .look_up::<Arc<Interest<ScriptReads>>>()
@@ -98,27 +100,23 @@ fn script_intake(runtime: &Runtime, ctx: SystemContext) {
     );
 }
 
-// The scripting family's mailboxes. An engine event is raised for the world
-// as it is now: one raised while the scripts were off is not delivered to the
-// next session. A recompiled module is the author's latest version, whatever
-// was playing: it waits for the scripts to come back on.
+// The scripting family's mailbox. An engine event is raised for the world as
+// it is now: one raised while the scripts were off is not delivered to the
+// next session. A recompiled module is no mail: it waits in the reserve, the
+// author's latest version, for the scripts to come back on.
 khora_script::inventory::submit! {
     Mailbox::of::<ScriptEvent>(SCRIPT, Reader::Take, BetweenSessions::Drop)
-}
-khora_script::inventory::submit! {
-    Mailbox::of::<ScriptReload>(SCRIPT, Reader::Take, BetweenSessions::Hold)
 }
 
 khora_script::inventory::submit! {
     DataSystemRegistration {
         name: "script_intake",
         phase: TickPhase::PreExtract,
-        // After the hot-reload pump announced what a recompiled module reads,
-        // and after the declarations are registered; before the script flow
-        // projects, which runs after this phase.
+        // After the declarations were registered, at the frame boundary;
+        // before the script flow projects, which runs after this phase.
         order_hint: -7,
         run: |_, runtime, _, ctx| script_intake(runtime, ctx),
-        runs_after: &["script_components"],
+        runs_after: &[],
         observes: &[],
         role: khora_data::ecs::Role::Serves(khora_core::script::SCRIPT),
     }

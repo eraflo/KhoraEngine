@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! **Unmounting a root withdraws its modules** — queued or installed: it
-//! sends a `ScriptReload` with no program for each module it takes back, so
+//! **Unmounting a root withdraws its modules** — waiting or installed: it
+//! stages a `ScriptReload` with no program for each module it takes back, so
 //! a program the lane already runs stops as surely as one still waiting in
-//! the queue. A module another mounted root also provides is its, and stays.
+//! the reserve. A module another mounted root also provides is its, and stays.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use khora_io::script::hot_reload::PendingReloads;
+use khora_io::script::project_compiler::ScriptReload;
 use khora_sdk::khora_core::ecs::entity::EntityId;
+use khora_sdk::khora_core::lane::{Reserve, Staging};
 use khora_sdk::khora_core::script::ScriptValue;
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::{
@@ -165,26 +166,28 @@ fn play(engine: &EngineCore<Tool>) {
         .expect("a known family");
 }
 
-/// What the engine's reload queue holds — each module, and whether it
-/// brings a program — left queued.
+/// What the engine's reserve holds of reloads — each module, and whether it
+/// brings a program — left staged. Read once what the host staged has
+/// landed, as the next frame start lands it.
 fn queued(engine: &EngineCore<Tool>) -> Vec<(String, bool)> {
-    let pending = engine
+    let reserve = engine
         .runtime()
         .resources
-        .get::<PendingReloads>()
-        .expect("the engine holds the reload queue");
-    let drained = pending.drain();
-    let held = drained
+        .get::<Reserve>()
+        .expect("the engine holds the reserve");
+    reserve.land_from_host();
+    let taken = reserve.take::<ScriptReload>();
+    let held = taken
         .iter()
         .map(|reload| (reload.module.clone(), reload.program.is_some()))
         .collect();
-    for reload in drained {
-        pending.send(reload);
-    }
+    let mut staging = Staging::new();
+    staging.stage(taken);
+    reserve.receive(staging);
     held
 }
 
-/// The modules the queue holds a withdrawal for.
+/// The modules the reserve holds a withdrawal for.
 fn withdrawals(engine: &EngineCore<Tool>) -> Vec<String> {
     let mut modules: Vec<String> = queued(engine)
         .into_iter()

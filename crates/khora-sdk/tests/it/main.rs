@@ -47,6 +47,7 @@ mod script_catalog;
 mod script_problems;
 mod script_problems_after_remount;
 mod script_problems_after_unmount;
+mod scripts_compiled_off_the_frame;
 mod scripts_mount_sequences;
 mod scripts_mounted_while_running;
 mod scripts_outside_the_script_folder;

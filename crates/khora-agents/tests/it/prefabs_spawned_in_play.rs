@@ -269,7 +269,6 @@ fn the_scripting_agent_hands_its_lane_the_prefab_catalog() {
         PrefabCatalogView, ReservationView, ScriptArrival, ScriptInstance, ScriptProgram,
         ScriptView,
     };
-    use khora_io::script::hot_reload::reload_channel;
     use khora_script::reload::ScriptReload;
 
     const MODULE: &str = "game/gun.erg";
@@ -289,11 +288,14 @@ fn the_scripting_agent_hands_its_lane_the_prefab_catalog() {
         );
         let checked = khora_script::check(&parsed.module);
         assert!(checked.diagnostics.is_empty(), "{:?}", checked.diagnostics);
-        let reloads = reload_channel();
-        reloads.send(ScriptReload {
-            module: MODULE.to_owned(),
-            program: Some(khora_script::compile(&parsed.module).program),
-        });
+        let reloads = khora_core::lane::Reserve::new();
+        crate::staged_reloads::stage(
+            &reloads,
+            ScriptReload {
+                module: MODULE.to_owned(),
+                program: Some(khora_script::compile(&parsed.module).program),
+            },
+        );
         let mut runtime = Runtime::default();
         runtime.services.insert(
             Arc::new(Mutex::new(khora_lanes::script_lane::ScriptRuntime::new()))

@@ -24,27 +24,21 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use khora_core::lane::OutputDeck;
 use khora_core::problems::{ProblemSeverity, Problems};
 use khora_core::projection::Interest;
+use khora_core::script::ScriptReads;
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, World};
+use khora_data::ecs::World;
 use khora_io::asset::AssetWatch;
-use khora_io::script::declarations::declaration_channel;
-use khora_io::script::hot_reload::{load_all_announcing, reload_channel, PendingReloads};
+use khora_io::script::project_compiler::ProjectCompiler;
+
+use crate::filed_compiles;
 
 /// How long a save may take to reach the pump.
 const MAX_WAIT: Duration = Duration::from_secs(10);
 
 /// A parse error.
 const PARSE_ERROR: &str = "// a broken helper\nfn void ( ) { }\n";
-
-fn data_system(name: &str) -> &'static DataSystemRegistration {
-    inventory::iter::<DataSystemRegistration>
-        .into_iter()
-        .find(|system| system.name == name)
-        .unwrap_or_else(|| panic!("`{name}` is registered"))
-}
 
 /// Writes `scripts/<module>` under `assets`; returns the file.
 fn script(assets: &Path, module: &str, source: &str) -> PathBuf {
@@ -54,9 +48,9 @@ fn script(assets: &Path, module: &str, source: &str) -> PathBuf {
     path
 }
 
-/// The project loaded, then `helper.erg` fixed and the pump run until no
-/// problem is left or the wait runs out: what is left, and the modules the
-/// pump sent.
+/// The project loaded, then `helper.erg` fixed and the pump run — what it
+/// files compiled — until no problem is left or the wait runs out: what is
+/// left, and the modules the compile staged.
 fn load_then_fix_helper(import: &str) -> (Vec<String>, Vec<String>) {
     let assets = tempfile::TempDir::new().expect("a temp dir");
     let helper = script(assets.path(), "helper.erg", PARSE_ERROR);
@@ -70,44 +64,25 @@ fn load_then_fix_helper(import: &str) -> (Vec<String>, Vec<String>) {
     let problems = Arc::new(Problems::default());
     let mut runtime = Runtime::default();
     runtime.resources.insert(Arc::clone(&watch));
-    runtime.resources.insert(reload_channel());
-    runtime.resources.insert(declaration_channel());
+    filed_compiles::install(&mut runtime);
     runtime.resources.insert(Arc::clone(&problems));
-    let pending = runtime
+    runtime
         .resources
-        .get::<PendingReloads>()
-        .expect("a reload channel");
-    load_all_announcing(
-        &assets.path().join("scripts"),
-        pending,
-        &declaration_channel(),
-        &Interest::new(),
-        Some(&problems),
-    );
+        .insert(Arc::new(Interest::<ScriptReads>::new()));
+    ProjectCompiler::from_runtime(&runtime).compile_all(&assets.path().join("scripts"));
     assert!(
         !problems.all().is_empty(),
         "the premise: the broken helper is shown"
     );
-    pending.drain();
     std::thread::sleep(Duration::from_millis(150));
 
     std::fs::write(&helper, "fn void Help() { }\n").expect("saves the fix");
-    let system = data_system("script_hot_reload");
     let mut world = World::new();
     let mut sent = Vec::new();
     let deadline = Instant::now() + MAX_WAIT;
     while Instant::now() < deadline {
-        (system.run)(
-            &mut world,
-            &runtime,
-            &mut OutputDeck::new(),
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
-        sent.extend(pending.drain().into_iter().map(|reload| reload.module));
+        filed_compiles::run_pump(&mut world, &runtime);
+        sent.extend(filed_compiles::staged_modules(&runtime));
         if problems.all().is_empty() && sent.contains(&"main.erg".to_owned()) {
             break;
         }
@@ -158,15 +133,17 @@ fn a_load_reports_a_missing_import_under_the_importer_at_the_import() {
         "main.erg",
         "// the entry\nimport \"absent.erg\";\nfn void Main() { }\n",
     );
-    let problems = Problems::default();
+    let problems = Arc::new(Problems::default());
+    let mut runtime = Runtime::default();
+    runtime.resources.insert(Arc::clone(&problems));
+    runtime
+        .resources
+        .insert(Arc::new(Interest::<ScriptReads>::new()));
 
-    let loaded = load_all_announcing(
-        &assets.path().join("scripts"),
-        &reload_channel(),
-        &declaration_channel(),
-        &Interest::new(),
-        Some(&problems),
-    );
+    let loaded = ProjectCompiler::from_runtime(&runtime)
+        .compile_all(&assets.path().join("scripts"))
+        .reloads
+        .len();
 
     assert_eq!(loaded, 0, "the premise: `main.erg` does not compile");
     let all = problems.all();

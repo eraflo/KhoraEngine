@@ -25,3 +25,4 @@ pub mod layout;
 pub mod mirror;
 pub mod mounted;
 pub mod problems;
+pub mod project_compiler;

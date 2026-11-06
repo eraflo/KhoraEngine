@@ -29,8 +29,8 @@ use khora_sdk::{
     InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 
-use khora_io::script::declarations::{apply_declarations, declaration_channel, DeclaredComponents};
-use khora_io::script::hot_reload::{load_all, reload_channel};
+use khora_io::script::declarations::{apply_declarations, DeclaredComponents};
+use khora_io::script::project_compiler::ProjectCompiler;
 
 const MODULE: &str = "guard.erg";
 
@@ -61,17 +61,13 @@ fn scripts_with_guard() -> PathBuf {
 /// from the initial load.
 fn world_declaring_guard() -> GameWorld {
     let root = scripts_with_guard();
-    let (pending, declarations) = (reload_channel(), declaration_channel());
-    assert_eq!(
-        load_all(&root.join("scripts"), &pending, &declarations),
-        1,
-        "`{MODULE}` compiles"
-    );
+    let compiled = ProjectCompiler::default().compile_all(&root.join("scripts"));
+    assert_eq!(compiled.reloads.len(), 1, "`{MODULE}` compiles");
     let mut world = GameWorld::new();
     let report = apply_declarations(
         world.inner_world_mut(),
         &mut DeclaredComponents::default(),
-        &declarations.drain(),
+        &compiled.declarations,
     );
     assert!(
         report.registered.contains(&"Guard".to_owned())
@@ -264,16 +260,18 @@ fn a_behaviors_state_companion_cannot_be_attached_by_name() {
 fn an_orphaned_behavior_is_not_declared() {
     let root = scripts_with_guard();
     let scripts = root.join("scripts");
-    let (pending, declarations) = (reload_channel(), declaration_channel());
+    let compiler = ProjectCompiler::default();
     let mut state = DeclaredComponents::default();
     let mut world = GameWorld::new();
-    assert_eq!(load_all(&scripts, &pending, &declarations), 1);
-    apply_declarations(world.inner_world_mut(), &mut state, &declarations.drain());
+    let first = compiler.compile_all(&scripts);
+    assert_eq!(first.reloads.len(), 1);
+    apply_declarations(world.inner_world_mut(), &mut state, &first.declarations);
 
     std::fs::write(scripts.join(MODULE), "component Loot { int value = 1; }")
         .expect("the script is rewritten");
-    assert_eq!(load_all(&scripts, &pending, &declarations), 1);
-    let report = apply_declarations(world.inner_world_mut(), &mut state, &declarations.drain());
+    let second = compiler.compile_all(&scripts);
+    assert_eq!(second.reloads.len(), 1);
+    let report = apply_declarations(world.inner_world_mut(), &mut state, &second.declarations);
     assert!(
         report.orphaned.contains(&"Guard".to_owned()),
         "`Guard` is orphaned: {report:?}"

@@ -39,7 +39,6 @@ use khora_data::ecs::SystemContext;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
-use khora_core::event::{Channel, Supersedes, WhenFull};
 use khora_core::lane::OutputDeck;
 use khora_core::Runtime;
 use khora_data::ecs::ScriptRole;
@@ -50,41 +49,9 @@ use khora_data::ecs::{
 use khora_script::modules::behaviors::STATE_SUFFIX;
 use khora_script::vm::{DeclaredComponent, DeclaredKind};
 
-/// The components one module declares, as it last compiled — none when it
-/// declares none, or no longer exists.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ScriptDeclarations {
-    /// The module, by its path.
-    pub module: String,
-    /// What it declares.
-    pub components: Vec<DeclaredComponent>,
-}
-
-impl Supersedes for ScriptDeclarations {
-    const COALESCES: bool = true;
-
-    /// A module's newer set replaces its older one: only what the file says
-    /// now is registered.
-    fn supersedes(&self, earlier: &Self) -> bool {
-        self.module == earlier.module
-    }
-}
-
-/// Where the compile path leaves what modules declare, for the frame
-/// boundary to register.
-pub type PendingDeclarations = Channel<ScriptDeclarations>;
-
-/// How many modules' declarations may wait for a frame boundary.
-///
-/// Drained every frame in every mode, so only the initial load fills it — one
-/// set per declaring module, coalesced per module. Large, because a set lost
-/// is a component a scene or a script then cannot find.
-const DECLARATION_BACKLOG: usize = 1 << 16;
-
-/// A channel for what modules declare.
-pub fn declaration_channel() -> PendingDeclarations {
-    Channel::bounded(DECLARATION_BACKLOG, WhenFull::Reject)
-}
+/// The components one module declares, as it last compiled — defined with
+/// the toolchain, where the compile family stages it.
+pub use khora_script::toolchain::ScriptDeclarations;
 
 /// What the registration remembers between frames: which module declares
 /// each component, and which components no module declares any more.
@@ -532,18 +499,18 @@ fn layout_of(component: &DeclaredComponent) -> Result<PackedLayout, khora_data::
     )
 }
 
-/// Registers in `world` what the compile path left in `runtime`'s
-/// [`PendingDeclarations`], with the runtime's shared
+/// Registers in `world` what the compile path staged in `runtime`'s
+/// [`Reserve`](khora_core::lane::Reserve), with the runtime's shared
 /// `Arc<Mutex<DeclaredComponents>>` as the registration's memory.
 ///
-/// Drains the channel: a second call registers nothing until the compile path
-/// sends again. An empty report when the runtime holds no channel, no state,
-/// or nothing is pending.
+/// Takes what the reserve holds: a second call registers nothing until the
+/// compile path stages again. An empty report when the runtime holds no
+/// reserve, no state, or nothing is staged.
 pub fn register_pending(world: &mut World, runtime: &Runtime) -> DeclarationReport {
-    let Some(pending) = runtime.resources.get::<PendingDeclarations>() else {
+    let Some(reserve) = runtime.look_up::<khora_core::lane::Reserve>() else {
         return DeclarationReport::default();
     };
-    let batch = pending.drain();
+    let batch = reserve.take::<ScriptDeclarations>();
     if batch.is_empty() {
         return DeclarationReport::default();
     }
@@ -587,13 +554,15 @@ fn script_components_system(
     register_pending(world, runtime);
 }
 
+// At the frame boundary, whatever families are on: an editor editing a
+// scene registers what a script it saves declares.
 inventory::submit! {
     DataSystemRegistration {
         name: "script_components",
-        phase: TickPhase::PreExtract,
+        phase: TickPhase::Boundary,
         run: script_components_system,
-        order_hint: -9,
-        runs_after: &["script_hot_reload"],
+        order_hint: 0,
+        runs_after: &[],
         observes: &[],
         role: khora_data::ecs::Role::Upkeep,
     }

@@ -27,14 +27,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use khora_core::lane::OutputDeck;
 use khora_core::problems::Problems;
 use khora_core::Runtime;
-use khora_data::ecs::{DataSystemRegistration, World};
+use khora_data::ecs::World;
 use khora_io::asset::AssetWatch;
-use khora_io::script::declarations::{declaration_channel, PendingDeclarations};
-use khora_io::script::hot_reload::{reload_channel, PendingReloads};
 use khora_io::script::mounted::MountedScripts;
+
+use crate::filed_compiles;
 
 /// How long a change may take to reach the pump.
 const MAX_WAIT: Duration = Duration::from_secs(10);
@@ -43,13 +42,6 @@ const GUARD: &str = "component Alert { int level = 0; }
                      behavior Guard { int ticks = 0; void Update(float dt) { ticks += 1; } }";
 const SCOUT: &str = "behavior Scout { int seen = 0; }";
 const KEEPER: &str = "behavior Keeper { int kept = 0; }";
-
-fn data_system(name: &str) -> &'static DataSystemRegistration {
-    inventory::iter::<DataSystemRegistration>
-        .into_iter()
-        .find(|system| system.name == name)
-        .unwrap_or_else(|| panic!("`{name}` is registered"))
-}
 
 /// What the pump queued, by module.
 #[derive(Debug, Default)]
@@ -88,8 +80,7 @@ impl Pump {
         let mounted = Arc::new(MountedScripts::default());
         let mut runtime = Runtime::default();
         runtime.resources.insert(Arc::clone(&watch));
-        runtime.resources.insert(reload_channel());
-        runtime.resources.insert(declaration_channel());
+        filed_compiles::install(&mut runtime);
         runtime.resources.insert(Arc::new(Problems::default()));
         runtime.resources.insert(Arc::clone(&mounted));
         std::thread::sleep(Duration::from_millis(150));
@@ -117,43 +108,22 @@ impl Pump {
         );
     }
 
-    /// Runs the pump until `done` holds of everything it queued so far, or
-    /// the wait ran out; returns what it queued.
+    /// Runs the pump, compiling what it files, until `done` holds of
+    /// everything staged so far, or the wait ran out; returns what was
+    /// staged.
     fn run_until(&self, mut done: impl FnMut(&Sent) -> bool) -> Sent {
-        let system = data_system("script_hot_reload");
         let mut world = World::new();
         let mut sent = Sent::default();
         let deadline = Instant::now() + MAX_WAIT;
         while Instant::now() < deadline {
-            (system.run)(
-                &mut world,
-                &self.runtime,
-                &mut OutputDeck::new(),
-                khora_data::ecs::SystemContext {
-                    since: khora_data::ecs::Tick(0),
-                    resumed: false,
-                    scope: None,
-                },
-            );
-            for reload in self
-                .runtime
-                .resources
-                .get::<PendingReloads>()
-                .expect("a reload channel")
-                .drain()
-            {
+            filed_compiles::run_pump(&mut world, &self.runtime);
+            for reload in filed_compiles::staged_reloads(&self.runtime) {
                 match reload.program {
                     Some(_) => sent.compiled.insert(reload.module),
                     None => sent.withdrawn.insert(reload.module),
                 };
             }
-            for declared in self
-                .runtime
-                .resources
-                .get::<PendingDeclarations>()
-                .expect("a declaration channel")
-                .drain()
-            {
+            for declared in filed_compiles::staged_declarations(&self.runtime) {
                 if declared.components.is_empty() {
                     sent.emptied.insert(declared.module);
                 }
@@ -466,44 +436,25 @@ fn deleting_a_script_another_mounted_root_also_provides_does_not_withdraw_it() {
     }
     let mut runtime = Runtime::default();
     runtime.resources.insert(Arc::clone(&watch));
-    runtime.resources.insert(reload_channel());
-    runtime.resources.insert(declaration_channel());
+    filed_compiles::install(&mut runtime);
     runtime.resources.insert(Arc::clone(&mounted));
     std::thread::sleep(Duration::from_millis(150));
 
     std::fs::remove_file(first.path().join("scripts/main.erg")).expect("deletes the first's");
-    let system = data_system("script_hot_reload");
     let mut last_word: Option<bool> = None;
     let mut heard = false;
     let deadline = Instant::now() + MAX_WAIT;
     while Instant::now() < deadline && !heard {
-        (system.run)(
-            &mut World::new(),
-            &runtime,
-            &mut OutputDeck::new(),
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
-        for reload in runtime
-            .resources
-            .get::<PendingReloads>()
-            .expect("a reload channel")
-            .drain()
-        {
+        filed_compiles::run_pump(&mut World::new(), &runtime);
+        for reload in filed_compiles::staged_reloads(&runtime) {
             if reload.module == "main.erg" {
                 last_word = Some(reload.program.is_some());
                 heard = true;
             }
         }
-        // The deletion reached the pump once it queued anything for the module.
-        heard |= runtime
-            .resources
-            .get::<PendingDeclarations>()
-            .expect("a declaration channel")
-            .drain()
+        // The deletion reached the pump once anything was staged for the
+        // module.
+        heard |= filed_compiles::staged_declarations(&runtime)
             .iter()
             .any(|declared| declared.module == "main.erg");
         std::thread::sleep(Duration::from_millis(50));

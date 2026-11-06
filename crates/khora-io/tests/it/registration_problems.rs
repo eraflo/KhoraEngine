@@ -22,12 +22,11 @@
 use std::sync::{Arc, Mutex};
 
 use khora_core::lane::OutputDeck;
+use khora_core::lane::{Reserve, Staging};
 use khora_core::problems::{Problem, ProblemSeverity, Problems};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, World};
-use khora_io::script::declarations::{
-    declaration_channel, DeclaredComponents, PendingDeclarations, ScriptDeclarations,
-};
+use khora_io::script::declarations::{DeclaredComponents, ScriptDeclarations};
 use khora_io::script::mirror::PreludeLoader;
 use khora_script::{compile_module, MemoryLoader};
 
@@ -69,7 +68,7 @@ impl Registration {
     fn new() -> Self {
         let problems = Arc::new(Problems::default());
         let mut runtime = Runtime::default();
-        runtime.resources.insert(declaration_channel());
+        runtime.resources.insert(Reserve::new());
         runtime
             .resources
             .insert(Arc::new(Mutex::new(DeclaredComponents::default())));
@@ -83,14 +82,13 @@ impl Registration {
 
     /// One frame boundary registering `batch`.
     fn apply(&mut self, batch: Vec<ScriptDeclarations>) {
-        let pending = self
-            .runtime
+        let mut staging = Staging::new();
+        staging.stage(batch);
+        self.runtime
             .resources
-            .get::<PendingDeclarations>()
-            .expect("a declaration channel");
-        for declarations in batch {
-            pending.send(declarations);
-        }
+            .get::<Reserve>()
+            .expect("the reserve")
+            .receive(staging);
         (data_system("script_components").run)(
             &mut self.world,
             &self.runtime,

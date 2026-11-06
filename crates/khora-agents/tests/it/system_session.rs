@@ -13,10 +13,10 @@
 // limitations under the License.
 
 //! A project's systems and behaviors played over a world (Ergon spec 10):
-//! one session wired the way the engine wires one — declarations and
-//! programs on their channels, what each program reads announced to the
-//! catalog, the engine's `Activation` when the test switches the scripts,
-//! the `PreExtract` data systems, the flow, the script lane run with a chosen
+//! one session wired the way the engine wires one — declarations staged in
+//! the reserve and programs waiting for the intake, what each program reads
+//! announced to the catalog, the engine's `Activation` when the test switches
+//! the scripts, the `Boundary` and `PreExtract` data systems, the flow, the script lane run with a chosen
 //! fuel through an `InputSource` as its family's agent lends one, then
 //! `Maintenance` applying and writing back.
 
@@ -27,9 +27,9 @@ use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Activation;
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
-use khora_core::event::{discard_mail_of_inactive, Channel};
+use khora_core::event::{discard_mail_of_inactive, Channel, WhenFull};
 use khora_core::lane::cost::Cost;
-use khora_core::lane::OutputDeck;
+use khora_core::lane::{OutputDeck, Reserve};
 use khora_core::projection::Interest;
 use khora_core::script::{
     engine_event_channel, CommandBuffer, ComponentName, ScriptCatalog, ScriptEvent, ScriptReads,
@@ -38,12 +38,12 @@ use khora_core::script::{
 use khora_core::Runtime;
 use khora_data::ecs::{TickPhase, World};
 use khora_data::flow::{Flow, FlowContext, ScriptFlow, ScriptView};
-use khora_io::script::declarations::{declaration_channel, DeclaredComponents};
+use khora_io::script::declarations::DeclaredComponents;
 use khora_lanes::script_lane::{take_in, ScriptRuntime};
 use khora_script::reload::ScriptReload;
 use khora_script::vm::Program;
 
-use super::behavior_session::{compile, declared_in, key, Project, PLENTY};
+use super::behavior_session::{compile, declared_in, key, stage_declarations, Project, PLENTY};
 use super::script_family::fixtures::{no_prefabs, quote_lane, run_lane, LaneFrame};
 
 /// One running session over a world, its scripts on or off as the test
@@ -98,8 +98,8 @@ impl SystemSession {
     /// module's declarations registered at once and its program waiting for
     /// the lane, what it reads announced.
     fn over(world: World, project: Project, activation: Option<Arc<Activation>>) -> Self {
-        let declarations = declaration_channel();
-        let reloads = khora_io::script::hot_reload::reload_channel();
+        let declarations = Reserve::new();
+        let reloads = Channel::bounded(1024, WhenFull::DropOldest);
         let events = engine_event_channel();
         let catalog = Arc::new(ScriptCatalog::default());
         let reads = Arc::new(Interest::<ScriptReads>::new());
@@ -134,6 +134,7 @@ impl SystemSession {
             &project.iter().map(|(m, _)| *m).collect::<Vec<_>>(),
         );
         session.settle();
+        session.boundary(TickPhase::Boundary, &mut OutputDeck::new());
         session.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
         session
     }
@@ -190,6 +191,7 @@ impl SystemSession {
     /// stood.
     pub(crate) fn frame_after(&mut self, delta: f32, before: &[WorldCommand]) {
         let playing = self.settle();
+        self.boundary(TickPhase::Boundary, &mut OutputDeck::new());
         self.boundary(TickPhase::PreExtract, &mut OutputDeck::new());
         // What the engine handed over is taken in before the flow projects,
         // while the scripts are on, as the `script_intake` system does at
@@ -197,7 +199,7 @@ impl SystemSession {
         if playing {
             take_in(
                 &mut self.scripts,
-                Some(&self.reloads),
+                self.reloads.drain(),
                 Some(&self.events),
                 Some(&self.reads),
                 !self.took_in,
@@ -261,11 +263,13 @@ impl SystemSession {
     }
 
     fn hand_over(&self, module: &str, program: Program) {
-        self.runtime
-            .resources
-            .get::<khora_io::script::declarations::PendingDeclarations>()
-            .expect("a declaration channel")
-            .send(declared_in(module, &program));
+        stage_declarations(
+            self.runtime
+                .resources
+                .get::<Reserve>()
+                .expect("the runtime's reserve"),
+            declared_in(module, &program),
+        );
         self.reloads.send(ScriptReload {
             module: module.to_owned(),
             program: Some(program),

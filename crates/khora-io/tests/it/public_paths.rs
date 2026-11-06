@@ -685,9 +685,16 @@ fn module_script_compile_paths_still_resolve() {
 
 #[test]
 fn module_script_hot_reload_paths_still_resolve() {
-    let _ = type_name::<khora_io::script::hot_reload::PendingReloads>();
-    let _ = khora_io::script::hot_reload::load_all;
-    let _ = khora_io::script::hot_reload::reload_channel;
+    let _ = khora_io::script::hot_reload::module_names;
+}
+
+#[test]
+fn module_script_project_compiler_paths_resolve() {
+    fn is_script_compiler<T: khora_script::toolchain::ScriptCompiler>() {}
+    let _ = type_name::<khora_io::script::project_compiler::ProjectCompiler>();
+    let _: fn(&khora_core::Runtime) -> khora_io::script::project_compiler::ProjectCompiler =
+        khora_io::script::project_compiler::ProjectCompiler::from_runtime;
+    is_script_compiler::<khora_io::script::project_compiler::ProjectCompiler>();
 }
 
 #[test]
@@ -802,11 +809,10 @@ mod paths_used_by_other_crates {
     use khora_io::asset::PACK_HEADER_SIZE as _; // khora-sdk
     use khora_io::asset::PACK_MAGIC as _; // khora-sdk
     use khora_io::script::compile::DiskLoader as _; // khora-agents
-    use khora_io::script::hot_reload::load_all as _; // khora-sdk
-    use khora_io::script::hot_reload::reload_channel as _; // khora-agents, khora-sdk
-    use khora_io::script::hot_reload::PendingReloads as _; // khora-sdk
+    use khora_io::script::hot_reload::module_names as _; // khora-sdk
     use khora_io::script::layout::is_script_file as _; // khora-sdk
     use khora_io::script::layout::module_of as _; // khora-sdk
     use khora_io::script::layout::SCRIPT_DIR as _; // khora-sdk
+    use khora_io::script::project_compiler::ProjectCompiler as _; // khora-agents, khora-sdk
     use khora_io::serialization::SerializationService as _; // khora-sdk
 }

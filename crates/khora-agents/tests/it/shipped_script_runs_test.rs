@@ -21,7 +21,7 @@
 //! correct entity produced no behaviour and no message.
 //!
 //! This test walks the real road end to end — the module is read from disk,
-//! compiled, sent through the reload channel, drained by the agent, run by the
+//! compiled, staged in the reserve, taken by the intake, run by the
 //! lane against an instance, and its effect observed as a queued
 //! [`WorldCommand`]. It uses the sandbox's own `hover.erg` rather than a string
 //! literal, so the example the documentation shows is the example that is
@@ -72,11 +72,14 @@ fn wired() -> Option<Arc<Runtime>> {
     );
     let program = compiled.program.expect("a program with no diagnostics");
 
-    let reloads = khora_io::script::hot_reload::reload_channel();
-    reloads.send(ScriptReload {
-        module: MODULE.to_owned(),
-        program: Some(program),
-    });
+    let reloads = khora_core::lane::Reserve::new();
+    crate::staged_reloads::stage(
+        &reloads,
+        ScriptReload {
+            module: MODULE.to_owned(),
+            program: Some(program),
+        },
+    );
 
     let mut runtime = Runtime::default();
     runtime.services.insert(Arc::new(std::sync::Mutex::new(
@@ -202,9 +205,7 @@ fn an_unloaded_module_is_counted_not_ignored() {
         khora_lanes::script_lane::ScriptRuntime::new(),
     ))
         as Arc<std::sync::Mutex<khora_lanes::script_lane::ScriptRuntime>>);
-    runtime
-        .resources
-        .insert(khora_io::script::hot_reload::reload_channel());
+    runtime.resources.insert(khora_core::lane::Reserve::new());
     let runtime = Arc::new(runtime);
 
     let mut agent = budgeted();
