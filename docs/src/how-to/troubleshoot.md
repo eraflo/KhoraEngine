@@ -28,13 +28,14 @@ with `cargo +1.95 check --workspace --all-features --all-targets`.
 
 ### `target/` grows very large
 
-**Cause.** Expected for a workspace this size — but Khora already trims it: dev builds use
-`debug = "line-tables-only"` (stack traces with file + line, no per-symbol type tables) and strip
-debuginfo from dependencies, saving roughly 30–50% of `target/` size per profile. You still get
-panic backtraces and `RUST_BACKTRACE=1`.
+**Cause.** Expected for a workspace this size — but Khora already trims it: dev builds carry no
+debuginfo (`debug = 0`, so no PDB per test binary on Windows), the workspace crates declare no
+optional feature (one build of the engine for the editor, `cargo t` and the gate), and targets
+without tests are not built as tests. A panic still names its file and line.
 
 **Fix.** `cargo clean` reclaims everything. If you need to step through values in a debugger,
-temporarily set `debug = 2` in a local `Cargo.toml` override rather than committing it. Release
+build with `CARGO_PROFILE_DEV_DEBUG=2` (or `line-tables-only` for lines in backtraces) rather than
+committing a change to `Cargo.toml`. Release
 artifacts are larger because `[profile.release]` enables `lto` and `codegen-units = 1`.
 
 ### `cargo deny check` fails in CI or locally

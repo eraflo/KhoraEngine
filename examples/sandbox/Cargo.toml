@@ -9,6 +9,10 @@ description = "Sandbox example demonstrating high-level game logic"
 [[bin]]
 name = "sandbox"
 path = "src/main.rs"
+# The example game holds no test of its own: built as a test it would link the
+# whole engine for nothing. `xtask`'s manifest checks keep a test from hiding
+# here.
+test = false
 
 [dependencies]
 khora-sdk = { path = "../../crates/khora-sdk" }

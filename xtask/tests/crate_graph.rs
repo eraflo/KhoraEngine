@@ -384,6 +384,144 @@ impl CrateGraph {
     }
 }
 
+/// **No workspace crate has an optional feature, and none is switched on from
+/// outside.** Cargo identifies a crate by its feature set: `cargo gate` and
+/// `cargo t` pass `--all-features`, `cargo run -p khora-editor` does not, so
+/// one optional feature low in the graph builds the whole engine twice
+/// (RULES §2b). Every dependency table is read — shipped, dev and per target.
+#[test]
+fn no_workspace_crate_has_an_optional_feature() {
+    let root = repo_root();
+    let workspace = read_manifest(&root.join("Cargo.toml"));
+    let workspace = workspace
+        .get("workspace")
+        .and_then(Value::as_table)
+        .unwrap_or_else(|| panic!("the root manifest has no [workspace]"));
+    const ALL_TABLES: &[&str] = &[
+        "dependencies",
+        "dev-dependencies",
+        "dev_dependencies",
+        "build-dependencies",
+        "build_dependencies",
+    ];
+    let mut read = 0;
+    let mut problems = Vec::new();
+    for dir in members(&root, workspace) {
+        let manifest = read_manifest(&dir.join("Cargo.toml"));
+        let name = package_name(&manifest, &dir);
+        read += 1;
+        if let Some(features) = manifest.get("features").and_then(Value::as_table) {
+            if !features.is_empty() {
+                let listed: Vec<&String> = features.keys().collect();
+                problems.push(format!("{name}: declares features {listed:?}"));
+            }
+        }
+        let mut tables: Vec<&Table> = ALL_TABLES
+            .iter()
+            .filter_map(|key| manifest.get(*key).and_then(Value::as_table))
+            .collect();
+        if let Some(targets) = manifest.get("target").and_then(Value::as_table) {
+            for target in targets.values().filter_map(Value::as_table) {
+                tables.extend(
+                    ALL_TABLES
+                        .iter()
+                        .filter_map(|key| target.get(*key).and_then(Value::as_table)),
+                );
+            }
+        }
+        for table in tables {
+            for (dep, spec) in table {
+                let Some(spec) = spec.as_table() else {
+                    continue;
+                };
+                if spec.contains_key("path") && spec.contains_key("features") {
+                    problems.push(format!("{name}: switches on features of `{dep}`"));
+                }
+            }
+        }
+    }
+    assert!(
+        read > 10,
+        "the reader found only {read} workspace manifests"
+    );
+    assert!(
+        problems.is_empty(),
+        "optional features in the workspace, each a second build of the engine:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// **A target that opts out of the tests holds none.** A target with
+/// `test = false` is not built as a test — each such build would link the
+/// whole engine for nothing — so a `#[test]` or `#[cfg(test)]` written in its
+/// sources would never run. Every source file under the directory of such a
+/// target's root file is read, its modules included.
+#[test]
+fn a_target_that_opts_out_of_the_tests_holds_none() {
+    let root = repo_root();
+    let workspace = read_manifest(&root.join("Cargo.toml"));
+    let workspace = workspace
+        .get("workspace")
+        .and_then(Value::as_table)
+        .unwrap_or_else(|| panic!("the root manifest has no [workspace]"));
+    let mut opted_out = 0;
+    let mut problems = Vec::new();
+    for dir in members(&root, workspace) {
+        let manifest = read_manifest(&dir.join("Cargo.toml"));
+        for (kind, default) in [("lib", "src/lib.rs"), ("bin", "src/main.rs")] {
+            let targets: Vec<&Table> = match manifest.get(kind) {
+                Some(Value::Table(table)) => vec![table],
+                Some(Value::Array(array)) => array.iter().filter_map(Value::as_table).collect(),
+                _ => Vec::new(),
+            };
+            for target in targets {
+                if target.get("test").and_then(Value::as_bool) != Some(false) {
+                    continue;
+                }
+                opted_out += 1;
+                let file = target
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .unwrap_or(default);
+                let sources = dir.join(file);
+                let sources = sources.parent().unwrap_or(&dir);
+                for path in rust_files(sources) {
+                    let text = fs::read_to_string(&path).unwrap_or_default();
+                    if text.contains("#[test]") || text.contains("#[cfg(test)]") {
+                        problems.push(path.display().to_string());
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        opted_out > 0,
+        "the reader found no target with `test = false`"
+    );
+    assert!(
+        problems.is_empty(),
+        "tests in a target marked `test = false`, which never run:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// Every `.rs` file under `dir`, its subdirectories included.
+fn rust_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    let Ok(entries) = fs::read_dir(dir) else {
+        return files;
+    };
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.is_dir() {
+            files.extend(rust_files(&path));
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            files.push(path);
+        }
+    }
+    files
+}
+
 /// The member directories `workspace.members` names; `dir/*` expands to every
 /// child directory holding a `Cargo.toml`.
 fn members(root: &Path, workspace: &Table) -> Vec<PathBuf> {

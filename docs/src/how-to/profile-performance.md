@@ -206,7 +206,7 @@ epoch, so they never invalidate a cached View.
 
 ## Practical tips
 
-- **Always measure in `--release`.** Dev builds use `opt-level = 1` and `line-tables-only` debuginfo;
+- **Always measure in `--release`.** Dev builds use `opt-level = 0` (dependencies at 2) and no debuginfo;
   release enables `lto` and `codegen-units = 1`. Per-frame numbers from a dev build are not
   representative.
 - **Pre-size allocations in lanes.** Allocation churn is a real frame-hitch cause — the DCC raises a

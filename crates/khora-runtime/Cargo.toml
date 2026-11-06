@@ -9,6 +9,9 @@ description = "Generic Khora game runtime — the binary the editor's Build feat
 [[bin]]
 name = "khora-runtime"
 path = "src/main.rs"
+# The player holds no test of its own: built as a test it would link the whole
+# engine for nothing. `xtask`'s manifest checks keep a test from hiding here.
+test = false
 
 [dependencies]
 khora-sdk = { path = "../khora-sdk" }

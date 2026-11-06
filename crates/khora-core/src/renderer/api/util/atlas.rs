@@ -25,7 +25,6 @@ use std::borrow::Cow;
 
 /// A rect within a texture atlas (UV coordinates).
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AtlasRect {
     /// Minimum UV coordinates (top-left).
     pub min: crate::math::Vec2,

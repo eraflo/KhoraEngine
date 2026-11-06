@@ -949,3 +949,69 @@ describe('a failed full clean is retried at the next session', () => {
     assert.equal(fs.existsSync(path.join(target, 'debug')), false);
   });
 });
+
+// ── sweep: stale side dirs, and incremental caches before a full clean ─────
+
+describe('sweep — stale side dirs', () => {
+  test('a side dir unused for maxAgeDays is removed; a fresh one, doc/ and the profiles are kept', async (t) => {
+    const target = path.join(tmpRoot(t), 'target');
+    const miriFile = path.join(target, 'miri', 'debug', 'deps', 'old.rlib');
+    writeBytes(miriFile, 64);
+    for (const p of [miriFile, path.dirname(miriFile), path.join(target, 'miri', 'debug'), path.join(target, 'miri')]) {
+      setMtime(p, NOW - 10 * DAY);
+    }
+    const fresh = path.join(target, 'nightly-clippy', 'debug', 'x.rmeta');
+    writeBytes(fresh, 64);
+    for (const p of [fresh, path.dirname(fresh), path.join(target, 'nightly-clippy')]) setMtime(p, NOW - 1 * DAY);
+    const doc = path.join(target, 'doc', 'index.html');
+    writeBytes(doc, 32);
+    for (const p of [doc, path.join(target, 'doc')]) setMtime(p, NOW - 100 * DAY);
+
+    const r = await sweep(target, { maxAgeDays: 3, now: NOW });
+
+    assert.equal(fs.existsSync(path.join(target, 'miri')), false, 'the stale side dir must be gone');
+    assert.equal(fs.existsSync(fresh), true, 'a side dir used recently is kept');
+    assert.equal(fs.existsSync(doc), true, 'doc/ is never a side dir');
+    assert.deepEqual(norm(r.removed), norm([path.join(target, 'miri')]));
+    assert.equal(r.fullClean, false);
+  });
+});
+
+describe('sweep — incremental caches before a full clean', () => {
+  test('over maxGb, dropping every incremental cache that brings the profiles under keeps the build', async (t) => {
+    const target = path.join(tmpRoot(t), 'target');
+    const fresh = session(target, 'debug', 's-fresh', { ageMs: 1 * DAY, bytes: 3000 });
+    const lib = path.join(target, 'debug', 'deps', 'kept.rlib');
+    writeBytes(lib, 200);
+
+    const r = await sweep(target, { maxAgeDays: 3, maxGb: 1e-6, now: NOW }); // ≈ 1073 bytes
+
+    assert.equal(fs.existsSync(fresh), false, 'the fresh incremental cache goes first');
+    assert.equal(fs.existsSync(lib), true, 'the built artifacts stay');
+    assert.equal(r.fullClean, false, 'under the limit once the caches are gone');
+    assert.deepEqual(norm(r.removed), norm([fresh]));
+  });
+
+  test('when the profiles are still over without their incremental caches, they are cleaned whole', async (t) => {
+    const target = path.join(tmpRoot(t), 'target');
+    session(target, 'debug', 's-fresh', { ageMs: 1 * DAY, bytes: 100 });
+    writeBytes(path.join(target, 'debug', 'deps', 'big.rlib'), 3000);
+
+    const r = await sweep(target, { maxAgeDays: 3, maxGb: 1e-6, now: NOW });
+
+    assert.equal(r.fullClean, true);
+    assert.equal(fs.existsSync(path.join(target, 'debug')), false);
+    assert.deepEqual(r.errors, []);
+  });
+
+  test('a dry run reports the caches it would drop and keeps them', async (t) => {
+    const target = path.join(tmpRoot(t), 'target');
+    const fresh = session(target, 'debug', 's-fresh', { ageMs: 1 * DAY, bytes: 3000 });
+
+    const r = await sweep(target, { maxAgeDays: 3, maxGb: 1e-6, dryRun: true, now: NOW });
+
+    assert.equal(fs.existsSync(fresh), true);
+    assert.equal(r.fullClean, false);
+    assert.deepEqual(norm(r.removed), norm([fresh]));
+  });
+});

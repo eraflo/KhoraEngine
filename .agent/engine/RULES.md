@@ -25,6 +25,32 @@ and [`security-privacy.md`](./security-privacy.md).
 - All workspace tests must pass before declaring work complete (~2520 today; treat the live count as truth).
 - No Vulkan validation errors when running `cargo run -p sandbox`; confirm the frame loop is clean for GPU work.
 
+## 2b — Build cost (read before adding a dependency, a feature or a target)
+
+What makes the build slow and `target/` large is how many times the whole engine is compiled and linked,
+not how many lines it has. In 2026-11 it reached 57 min per gate and 50 GB, until the causes below were removed.
+Measurements and levers: `docs/research/2026-11-06_build-time-and-target-size.md`.
+
+- **No optional feature in a workspace crate.** No `[features]` table in a workspace crate's manifest, and no
+  `features = [...]` on a dependency that points to a workspace crate. Cargo identifies a crate by its feature
+  set: `cargo gate` and `cargo t` pass `--all-features`, `cargo run -p khora-editor` does not. A single
+  optional feature low in the graph builds the whole engine twice. The `xtask` manifest checks enforce this.
+- **One feature set per third-party dependency.** Declare a dependency once, in `[workspace.dependencies]`
+  when several crates use it, with every feature it needs. Never enable extra features of it from
+  `[dev-dependencies]` or from a single crate: tests and runs would then build it, and everything above it,
+  twice. Check with `cargo tree -e features -i <dep>` before adding one, and prefer a dependency already in
+  the tree to a new one.
+- **Heavy dependencies stay high.** Never add wgpu, egui, rapier, winit or `windows` to a floor crate
+  (`khora-core`, `khora-data`, `khora-script`, `khora-control`): each one reaches every test binary above it.
+- **No new test binary per file.** A crate's integration tests are modules of its one `tests/it/` binary.
+  Each test binary links the whole engine. A separate binary needs a reason written at its top, such as a
+  global allocator.
+- **A target with no test sets `test = false`.** For example a bin or an example program. The gate runs
+  cargo's default test targets, which leave it out. `--all-targets` would build it anyway, because an
+  explicit selection overrides `test = false`. An `xtask` check fails if a test is written in such a target.
+- **No debuginfo in dev builds** (`debug = 0`). Don't turn it back on in `Cargo.toml`: build with
+  `CARGO_PROFILE_DEV_DEBUG=2` (or `line-tables-only`) when you need a debugger.
+
 ## 3 — Architecture rules
 
 - Respect the CLAD dependency graph; dependencies flow **downward only**. Each

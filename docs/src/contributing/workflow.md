@@ -38,7 +38,7 @@ Pass` job aggregates them):
 |---|---|---|
 | **Format** | `cargo fmt --all -- --check` | Must report no changes. |
 | **Lint** | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Warnings are errors. |
-| **Test — Linux** | `cargo nextest run --workspace --all-targets --all-features` | Runs on `ubuntu-latest`. |
+| **Test — Linux** | `cargo nextest run --workspace --all-features --locked`, then the same with `--bench '*'` | Runs on `ubuntu-latest`. Cargo's default targets leave out a target marked `test = false`; `--all-targets` would build it anyway. |
 | **Test — Windows** | same | Runs on `windows-latest`. |
 | **Test — macOS** | same | Runs on `macos-latest`. |
 | **Doctests** | `cargo test --workspace --doc --all-features --locked` | Separate job — `nextest` does **not** run doctests, so rustdoc `# Examples` are verified only here. |

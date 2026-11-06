@@ -22,6 +22,17 @@ use std::time::Instant;
 // sets recompiles the crates they touch.
 const SCOPE: [&str; 3] = ["--workspace", "--all-targets", "--all-features"];
 
+// The tests are built from cargo's default targets — which leave out a
+// target marked `test = false` — and then from the benches, whose functions
+// run as smoke tests. Each test target is a binary linking the whole engine,
+// so one holding no test costs a full link for nothing: such a target sets
+// `test = false` in its manifest (an `xtask` check keeps a test from hiding
+// there). Naming `--lib --bins --tests` instead would build those targets
+// anyway, since an explicit selection overrides `test = false`. The benches
+// are named by `--bench *`: `--benches` would take every target with
+// `bench = true`, libs and bins included, and run their tests a second time.
+const BENCHES: [&str; 2] = ["--bench", "*"];
+
 pub fn build() -> Result<()> {
     print_task_start("Building All Crates", HAMMER, BLUE);
     println!(
@@ -35,7 +46,7 @@ pub fn build() -> Result<()> {
 pub fn test() -> Result<()> {
     print_task_start("Running All Tests", TEST_TUBE, GREEN);
     println!(
-        "{}💡 Info:{} Running tests using cargo-nextest with all features and targets",
+        "{}💡 Info:{} Running tests using cargo-nextest with all features, then the benches as smoke tests",
         BOLD, RESET
     );
     // `xtask` is excluded from the workspace pass and tested on its own: on
@@ -49,7 +60,6 @@ pub fn test() -> Result<()> {
             SCOPE[0],
             "--exclude",
             "xtask",
-            SCOPE[1],
             SCOPE[2],
             "--locked",
         ],
@@ -58,8 +68,21 @@ pub fn test() -> Result<()> {
     execute_command(
         "cargo",
         &[
-            "nextest", "run", "-p", "xtask", SCOPE[1], SCOPE[2], "--locked",
+            "nextest",
+            "run",
+            SCOPE[0],
+            "--exclude",
+            "xtask",
+            BENCHES[0],
+            BENCHES[1],
+            SCOPE[2],
+            "--locked",
         ],
+        "Bench smoke tests",
+    )?;
+    execute_command(
+        "cargo",
+        &["nextest", "run", "-p", "xtask", SCOPE[2], "--locked"],
         "xtask tests",
     )?;
     Ok(())

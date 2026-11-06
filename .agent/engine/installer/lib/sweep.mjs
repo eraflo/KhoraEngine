@@ -1,5 +1,8 @@
-// Cleans cargo's target/ directory: stale incremental caches always, and the
-// debug/release profiles when they grow past a size limit.
+// Cleans cargo's target/ directory: stale incremental caches and stale side
+// directories (miri, a nightly clippy, scratch dirs) always; then, when the
+// debug/release profiles grow past a size limit, every incremental cache
+// first — cheap to rebuild — and the profiles whole only if that was not
+// enough.
 //
 // rustc keeps one incremental cache per crate and per configuration, and
 // nothing ever deletes the ones a configuration change leaves behind; cargo
@@ -17,6 +20,10 @@ const GIB = 1024 ** 3;
 const STAMP = '.khora-sweep-stamp';
 /** The profiles a full clean removes; `doc/` and anything else are kept. */
 const PROFILES = ['debug', 'release'];
+/** Top-level dirs never removed as stale side dirs. */
+const KEPT = [...PROFILES, 'doc'];
+/** How deep a side dir is read to find when it was last used. */
+const SIDE_DEPTH = 3;
 
 /** Paths of the incremental dirs last touched more than `maxAgeDays` ago. */
 export function staleIncrementalDirs(entries, nowMs, maxAgeDays) {
@@ -81,6 +88,40 @@ function lastSweep(targetDir, nowMs) {
   }
 }
 
+/** The newest mtime of `dir` and of what lies under it, `depth` levels down. */
+function newestMtime(dir, depth) {
+  let newest = 0;
+  try { newest = fs.statSync(dir).mtimeMs; } catch { return 0; }
+  if (depth <= 0) return newest;
+  let children;
+  try { children = fs.readdirSync(dir, { withFileTypes: true }); } catch { return newest; }
+  for (const child of children) {
+    const p = path.join(dir, child.name);
+    const m = child.isDirectory() ? newestMtime(p, depth - 1) : (() => {
+      try { return fs.statSync(p).mtimeMs; } catch { return 0; }
+    })();
+    if (m > newest) newest = m;
+  }
+  return newest;
+}
+
+/**
+ * Top-level dirs of `targetDir` other than the profiles and `doc/` — miri's,
+ * a nightly clippy's, a scratch target — whose newest content is older than
+ * `maxAgeDays`, with their sizes. A dir that holds a recent build is kept.
+ */
+function staleSideDirs(targetDir, nowMs, maxAgeDays) {
+  const limit = maxAgeDays * DAY_MS;
+  return subdirs(targetDir)
+    .filter((dir) => !KEPT.includes(path.basename(dir)))
+    .filter((dir) => nowMs - newestMtime(dir, SIDE_DEPTH) > limit);
+}
+
+/** Every incremental session dir left in the profiles a full clean removes. */
+function profileIncrementalDirs(targetDir) {
+  return PROFILES.flatMap((p) => subdirs(path.join(targetDir, p, 'incremental')));
+}
+
 /** Whether `dir` lies inside one of the profiles a full clean removes. */
 function inProfiles(targetDir, dir) {
   return PROFILES.some((p) => {
@@ -135,11 +176,44 @@ export async function sweep(
     else result.removed.push(path.resolve(dir));
   }
 
-  // (b) the build profiles, when they are still too large
+  // (a2) stale side dirs: miri's, a nightly clippy's, scratch targets
+  for (const dir of staleSideDirs(targetDir, now, maxAgeDays)) {
+    if (dryRun) {
+      staleBytes += sizeOf(dir);
+      result.removed.push(path.resolve(dir));
+      continue;
+    }
+    const err = remove(dir);
+    if (err) result.errors.push(err);
+    else result.removed.push(path.resolve(dir));
+  }
+
+  // (b) the build profiles, when they are still too large: every incremental
+  // cache first — rustc rebuilds one from the crate alone, the dependencies
+  // stay built — and the profiles whole only if they still are.
   const profileDirs = PROFILES.map((p) => path.join(targetDir, p)).filter((d) => fs.existsSync(d));
   const profileSizes = profileDirs.map(sizeOf);
-  const profileBytes = profileSizes.reduce((a, b) => a + b, 0) - staleProfileBytes;
+  let profileBytes = profileSizes.reduce((a, b) => a + b, 0) - staleProfileBytes;
   let wouldFree = 0;
+  if (shouldFullClean(profileBytes, maxGb * GIB)) {
+    const removedNow = new Set(result.removed);
+    for (const dir of profileIncrementalDirs(targetDir)) {
+      if (removedNow.has(path.resolve(dir))) continue;
+      const bytes = sizeOf(dir);
+      if (dryRun) {
+        wouldFree += bytes;
+        profileBytes -= bytes;
+        result.removed.push(path.resolve(dir));
+        continue;
+      }
+      const err = remove(dir);
+      if (err) result.errors.push(err);
+      else {
+        result.removed.push(path.resolve(dir));
+        profileBytes -= bytes;
+      }
+    }
+  }
   if (shouldFullClean(profileBytes, maxGb * GIB)) {
     result.fullClean = true;
     profileDirs.forEach((dir) => {
@@ -148,7 +222,7 @@ export async function sweep(
       if (err) result.errors.push(err);
       else result.removed.push(path.resolve(dir));
     });
-    wouldFree = profileBytes;
+    wouldFree += profileBytes;
   }
 
   if (dryRun) {

@@ -54,19 +54,19 @@ license = "Apache-2.0"
 # optimisation. Dependencies are built once and cached, so they get optimised
 # (below) — wgpu, rapier and the rest stay fast at run time.
 opt-level = 0
-# Drop full debuginfo from dev builds. With `line-tables-only` we still get
-# stack traces (file + line numbers in panics, RUST_BACKTRACE=1, profiler
-# samples) but skip the per-symbol type tables that account for the bulk
-# of `target/` size on Windows MSVC and Linux gcc/clang. Saves ~30-50% on
-# disk per profile, with no observable effect on debugging unless you're
-# stepping through values in a debugger (in which case temporarily set
-# debug = 2 in your local Cargo.toml override).
-debug = "line-tables-only"
-# Strip debuginfo from dependencies so re-fetching crates doesn't re-bloat
-# target/. Workspace crates keep their `debug` setting from above.
+# No debuginfo in dev builds, the tests' included (`cargo test` builds every
+# crate but the test executable itself with this profile). The workspace
+# links some fifty binaries, each with the whole engine: on Windows each link
+# wrote a PDB of over 100 MB, gigabytes in all, and writing them was a large
+# part of every link. A panic still names its file and line — `Location` is
+# compiled in, not read from debuginfo; a backtrace names its functions, not
+# their lines. To step through code in a debugger, or get lines in a
+# backtrace, build with `CARGO_PROFILE_DEV_DEBUG=line-tables-only` (or `2`):
+# the workspace's crates then carry it, the dependencies stay without.
+debug = 0
 [profile.dev.package."*"]
 opt-level = 2
-debug = "line-tables-only"
+debug = 0
 
 [profile.release]
 lto = true      # Link-Time Optimization for release

@@ -84,12 +84,18 @@ jobs:
         uses: taiki-e/install-action@nextest
 
       - name: Build
-        # Build all targets in the workspace, with all features
-        run: cargo build --verbose --workspace --all-targets --all-features
+        # The apps link (the runtime and sandbox are not built as tests).
+        # Examples and benches are checked by clippy and tested below.
+        run: cargo build --verbose --workspace --all-features --locked
 
       - name: Run tests
-        # Run tests using cargo-nextest for faster execution
-        run: cargo nextest run --verbose --workspace --all-targets --all-features
+        # Cargo's default targets, which leave out a target marked
+        # `test = false`: `--all-targets` would build those as tests anyway.
+        # The same split as `cargo gate` (xtask/src/commands/ci.rs).
+        run: cargo nextest run --verbose --workspace --all-features --locked
+
+      - name: Run the benches as smoke tests
+        run: cargo nextest run --verbose --workspace --bench '*' --all-features --locked
 
   build_and_test_windows:
     name: Build & Test (Windows)
@@ -118,11 +124,18 @@ jobs:
         uses: taiki-e/install-action@nextest
 
       - name: Build
-        run: cargo build --verbose --workspace --all-targets --all-features
+        # The apps link (the runtime and sandbox are not built as tests).
+        # Examples and benches are checked by clippy and tested below.
+        run: cargo build --verbose --workspace --all-features --locked
 
       - name: Run tests
-        # Run tests using cargo-nextest for faster execution
-        run: cargo nextest run --verbose --workspace --all-targets --all-features
+        # Cargo's default targets, which leave out a target marked
+        # `test = false`: `--all-targets` would build those as tests anyway.
+        # The same split as `cargo gate` (xtask/src/commands/ci.rs).
+        run: cargo nextest run --verbose --workspace --all-features --locked
+
+      - name: Run the benches as smoke tests
+        run: cargo nextest run --verbose --workspace --bench '*' --all-features --locked
 
   build_and_test_macos:
     name: Build & Test (macOS)
@@ -151,11 +164,18 @@ jobs:
         uses: taiki-e/install-action@nextest
 
       - name: Build
-        run: cargo build --verbose --workspace --all-targets --all-features
+        # The apps link (the runtime and sandbox are not built as tests).
+        # Examples and benches are checked by clippy and tested below.
+        run: cargo build --verbose --workspace --all-features --locked
 
       - name: Run tests
-        # Run tests using cargo-nextest for faster execution
-        run: cargo nextest run --verbose --workspace --all-targets --all-features
+        # Cargo's default targets, which leave out a target marked
+        # `test = false`: `--all-targets` would build those as tests anyway.
+        # The same split as `cargo gate` (xtask/src/commands/ci.rs).
+        run: cargo nextest run --verbose --workspace --all-features --locked
+
+      - name: Run the benches as smoke tests
+        run: cargo nextest run --verbose --workspace --bench '*' --all-features --locked
   # cargo-nextest (used by the build_and_test_* jobs) does NOT run doctests,
   # so rustdoc examples would go unverified. This job runs them explicitly.
   doctests:

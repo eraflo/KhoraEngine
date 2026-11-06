@@ -106,13 +106,30 @@ mdbook serve docs --open
 
 ## Keeping `target/` in check
 
-`[profile.dev]` already uses `debug = "line-tables-only"` workspace-wide, which
-strips most debuginfo while keeping panics and `RUST_BACKTRACE=1` useful. When the
-build directory still grows too large, `cargo clean` resets it; for a lighter
-touch, `cargo install cargo-cache` then `cargo cache --autoclean` drops stale
-incremental and registry artifacts without forcing a full rebuild. If you need a
-real debugger and line tables aren't enough, override `debug = 2` in a local
-`Cargo.toml` patch kept out of git.
+What makes `target/` large is not the number of lines but the number of times the
+whole engine is built and linked. Three settings keep that down:
+
+- **No debuginfo in dev builds** (`[profile.dev] debug = 0`, dependencies too).
+  The workspace links some fifty binaries, each with the whole engine, and on
+  Windows each link wrote a PDB of over 100 MB. A panic still names its file and
+  line (`Location` is compiled in); a backtrace names functions without lines.
+  To debug, build with `CARGO_PROFILE_DEV_DEBUG=line-tables-only` (or `2`).
+- **One feature set.** The workspace crates declare no optional feature, so
+  `cargo run -p khora-editor`, `cargo t` and `cargo gate` (which passes
+  `--all-features`) build the same engine instead of one each. Don't add an
+  optional feature to a workspace crate without weighing that.
+- **No test build for a target without tests.** A target that holds no test
+  sets `test = false` (`sandbox`, `khora-runtime`). The gate runs cargo's
+  default test targets, which leave those out, then the benches as smoke tests
+  (`--bench '*'`; `--all-targets` would build the left-out targets anyway, as
+  an explicit selection overrides `test = false`). An `xtask` check fails if a test is written in a target
+  marked `test = false`.
+
+The rest is pruned at the start of each agent session by
+`khora-ai.mjs sweep` (see `.agent/engine/knowledge/context.md`): incremental
+caches unused for 3 days, stale side dirs (`miri`, a nightly clippy), then,
+past 20 GiB, every incremental cache before the profiles themselves.
+`cargo clean` resets everything.
 
 ---
 
