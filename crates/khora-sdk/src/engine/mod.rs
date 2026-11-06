@@ -179,6 +179,11 @@ impl<A: EngineApp> EngineCore<A> {
     /// Note: renderer shutdown is the responsibility of the application,
     /// since the renderer was created and registered by the app's bootstrap closure.
     pub fn shutdown(&mut self) {
+        // The work off the frame comes home first, so the lanes it holds are
+        // shut down below with the rest.
+        if let Some(scheduler) = self.scheduler.as_mut() {
+            scheduler.wind_down();
+        }
         // Every lane gives back what it built on the device, while the device
         // is still in the runtime.
         let device = self

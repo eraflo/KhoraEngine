@@ -27,6 +27,7 @@ mod fixtures;
 mod health;
 mod impact_change;
 mod lane_message;
+mod layer_preparations;
 mod layers;
 mod layers_reinstated;
 mod layers_scheduled;

@@ -20,9 +20,10 @@ use std::any::TypeId;
 use std::sync::{Arc, MutexGuard};
 use std::time::Instant;
 
+use khora_core::agent::contention::Contention;
 use khora_core::agent::gorna::protocol::{Epoch, Report};
 use khora_core::agent::gorna::StrategyId;
-use khora_core::agent::{Agent, Place, Terms, Wake};
+use khora_core::agent::{Agent, Layer, Place, Preparation, Terms, Wake};
 use khora_core::lane::erased::NotPrepared;
 use khora_core::lane::guard::Reason;
 use khora_core::renderer::api::frame::FrameContext;
@@ -125,14 +126,17 @@ impl LaneAgent {
 
     /// Installs the row chosen at `place`: nothing when it is installed or
     /// staged already; the layer kept for it, reinstated, preparing nothing;
-    /// or a new layer, prepared beside the installed one on this frame's
-    /// inputs and staged. A row that fails to prepare is failed, and the row
-    /// the agent falls back to is installed instead.
+    /// beside an installed layer, a preparation of the new one, left at the
+    /// place for the scheduler to run off the frame while the installed one
+    /// keeps running; or, into an empty place, a new layer prepared here on
+    /// this frame's inputs and installed at once. A row that fails to prepare
+    /// here is failed, and the row the agent falls back to is installed
+    /// instead.
     pub(super) fn install(
         &mut self,
         place: &mut Place,
         context: &EngineContext<'_>,
-        frame: Option<&FrameContext>,
+        frame: Option<&Arc<FrameContext>>,
     ) {
         let device = context.resource::<Arc<dyn GraphicsDevice>>().cloned();
         let pipelines = context.resource::<Arc<dyn PipelineSystem>>().cloned();
@@ -153,6 +157,11 @@ impl LaneAgent {
                         .contains(&TypeId::of::<Arc<FrameContext>>())
                 })
                 .and(frame);
+            if place.installed_row().is_some() {
+                place.request_preparation(self.preparation(row, lane_frame.cloned()));
+                return;
+            }
+            let lane_frame = lane_frame.map(|frame| &**frame);
             let mut lane = (self.makers[row.lane])();
             let started = Instant::now();
             let prepared = {
@@ -208,6 +217,81 @@ impl LaneAgent {
         }
     }
 
+    /// The preparation of `row`'s layer, off the frame: a fresh lane, made
+    /// here, prepared by the job on the context the scheduler lends it — the
+    /// inputs lent as for a run, on `frame` when the lane reads it — under
+    /// the lane's own declaration and the graphics it prepares with. A lane
+    /// that fails to prepare is shut down, and the job says why.
+    fn preparation(&self, row: Row, frame: Option<Arc<FrameContext>>) -> Preparation {
+        let mut lane = (self.makers[row.lane])();
+        let contention = self
+            .contentions
+            .get(row.lane)
+            .cloned()
+            .unwrap_or_else(Contention::none)
+            .reading::<Arc<dyn GraphicsDevice>>()
+            .reading::<Arc<dyn PipelineSystem>>();
+        let (time_limit, budget_lent, fixed_step) =
+            (self.time_limit, self.budget_lent, self.fixed_step);
+        let family = self.registration.family_name;
+        Preparation::new(row.id, contention, move |context| {
+            let device = context.resource::<Arc<dyn GraphicsDevice>>().cloned();
+            let pipelines = context.resource::<Arc<dyn PipelineSystem>>().cloned();
+            let mut gpu = gpu_with(device.as_deref(), pipelines.as_deref());
+            let prepared = {
+                let mut source = lend(
+                    context,
+                    time_limit,
+                    budget_lent,
+                    fixed_step,
+                    frame.as_deref(),
+                );
+                lane.prepare(row.level, &mut source, &mut gpu)
+            };
+            match prepared {
+                // A refused input leaves the target unknown: the first run
+                // prepares the layer.
+                Ok(()) | Err(NotPrepared::Refused(_)) => {
+                    let layer: Box<dyn Layer> =
+                        Box::new(LaneLayer::new(lane, row.level, row.id, family, row.memory));
+                    Ok(layer)
+                }
+                Err(NotPrepared::Failed(error)) => {
+                    let name = lane.name().to_owned();
+                    lane.shutdown(&mut gpu);
+                    Err(format!(
+                        "{family}: `{name}` could not be prepared at row {:?}: {error}",
+                        row.id
+                    ))
+                }
+            }
+        })
+    }
+
+    /// Answers a preparation that failed off the frame for `id`'s row: the
+    /// row is failed, as one failing to prepare here is. Returns the row the
+    /// agent is left on when there is nothing to fall back to.
+    fn prepare_failed(&mut self, id: StrategyId) -> Option<usize> {
+        let failed = self.menu.iter().position(|row| row.id == id)?;
+        self.fail(failed);
+        (self.current == failed).then_some(failed)
+    }
+
+    /// Stages `row`'s layer unprepared: what is left when it failed to
+    /// prepare and there is nothing to fall back to — it runs, and fails
+    /// where it can be seen.
+    fn stage_unprepared(&self, row: usize, place: &mut Place) {
+        let row = self.menu[row];
+        let layer = LaneLayer::new(
+            (self.makers[row.lane])(),
+            row.level,
+            row.id,
+            self.registration.family_name,
+            row.memory,
+        );
+        place.stage(Box::new(layer), std::time::Duration::ZERO);
+    }
+
     /// The terms the chosen row runs on.
     pub(super) fn terms(&self) -> Terms {
         let full = self.full_quote.as_ref();
@@ -261,6 +345,7 @@ impl LaneAgent {
         if !why.is_empty() {
             self.wake(&why, &mut place, context);
         }
+        self.prepare_here(&mut place, context);
         {
             let device = context.resource::<Arc<dyn GraphicsDevice>>().cloned();
             let pipelines = context.resource::<Arc<dyn PipelineSystem>>().cloned();
@@ -271,7 +356,25 @@ impl LaneAgent {
         if !why.is_empty() {
             self.wake(&why, &mut place, context);
         }
+        self.prepare_here(&mut place, context);
         report
+    }
+
+    /// Runs here, at once, the preparation the agent left at `place`, for a
+    /// caller with no scheduler to run it off the frame; one that fails is
+    /// answered at once too, so the row fallen back to is prepared as well.
+    fn prepare_here(&mut self, place: &mut Place, context: &mut EngineContext<'_>) {
+        for _ in 0..=self.menu.len() {
+            let Some(preparation) = place.take_preparation() else {
+                return;
+            };
+            place.prepared(preparation.run(context));
+            let why = place.take_wakes();
+            if why.is_empty() {
+                return;
+            }
+            self.wake(&why, place, context);
+        }
     }
     /// Takes in what the last run found, answers each wake, quotes every lane
     /// when the quotes may no longer hold, chooses the row within the
@@ -285,6 +388,9 @@ impl LaneAgent {
         self.absorb_last_run(place);
         let ran = self.ran(place);
         let mut full = false;
+        // A row that failed to prepare off the frame, with nothing to fall
+        // back to.
+        let mut stranded = None;
         for wake in why {
             match wake {
                 Wake::FirstFrame | Wake::QuoteDrift | Wake::QuoteAge | Wake::TargetChanged => {
@@ -309,6 +415,9 @@ impl LaneAgent {
                     }
                 }
                 Wake::Allocated | Wake::QuoteUnfit => {}
+                Wake::PrepareFailed(row) => {
+                    stranded = self.prepare_failed(*row);
+                }
             }
         }
         let frame = self.frame(context);
@@ -327,7 +436,10 @@ impl LaneAgent {
             self.quote_lane(lane, context, frame.as_deref());
         }
         self.choose_row();
-        self.install(place, context, frame.as_deref());
+        match stranded.filter(|&row| row == self.current) {
+            Some(row) => self.stage_unprepared(row, place),
+            None => self.install(place, context, frame.as_ref()),
+        }
         place.set_terms(self.terms());
     }
 }

@@ -24,7 +24,11 @@
 //! only if its place holds a wake; then the installed layer runs, on its own
 //! contention. So a wake a run raises is answered in the next frame's event
 //! pass, and a layer the agent stages there runs from the frame after; a
-//! layer staged into an empty place (the first frame) runs at once. An
+//! layer staged into an empty place (the first frame) runs at once. A switch
+//! the agent leaves at its place as a preparation is run after the event
+//! pass and handed back at once ([`prepare_waiting`]): the scheduler runs it
+//! off the frame and hands it back at the next frame start, so a preparation
+//! that takes no time is swapped in at that start either way. An
 //! allocation lent between two frames ([`lend`], `apply`, `apply_budget`) is
 //! answered in the next frame's event pass.
 
@@ -688,6 +692,7 @@ pub fn run_sub_steps(
         let mut held = locked(&place);
         agent.wake(&why, &mut held, &mut context);
     }
+    prepare_waiting(&place, runtime, &bus, id);
 
     (0..steps)
         .map(|_| {
@@ -704,6 +709,31 @@ pub fn run_sub_steps(
             held.run(&mut context)
         })
         .collect()
+}
+
+/// Runs the preparation waiting at `place`, if one is, as the scheduler
+/// does — on a context of its own contention, a scratch deck — and hands
+/// what it gave back to the place at once: the scheduler runs it off the
+/// frame and hands it back at the next frame start, which, for a preparation
+/// that takes no time, stages its layer for the same swap.
+pub fn prepare_waiting(place: &Mutex<Place>, runtime: &Arc<Runtime>, bus: &LaneBus, id: AgentId) {
+    let Some(preparation) = locked(place).take_preparation() else {
+        return;
+    };
+    let permit = preparation.contention();
+    let mut scratch = OutputDeck::new();
+    let prepared = {
+        let mut context = EngineContext::for_agent(
+            WorldAccess::None,
+            Arc::clone(runtime),
+            bus,
+            &mut scratch,
+            &permit,
+            Some(id),
+        );
+        preparation.run(&mut context)
+    };
+    locked(place).prepared(prepared);
 }
 
 /// `agent`'s place: a `LaneAgent` runs as layers.

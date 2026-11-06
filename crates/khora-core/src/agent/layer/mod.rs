@@ -24,12 +24,14 @@
 //! down: swapping back to it within that time prepares nothing.
 
 mod place;
+mod preparation;
 mod wake;
 
 #[cfg(test)]
 mod tests;
 
 pub use place::{CheckedOut, LastRun, Place, Terms, KEEP_EPOCHS};
+pub use preparation::{Preparation, Prepared};
 pub use wake::Wake;
 
 use std::time::Duration;

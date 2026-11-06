@@ -14,6 +14,7 @@
 
 //! Why a layered agent is woken.
 
+use crate::agent::gorna::StrategyId;
 use crate::lane::guard::Reason;
 
 /// Why a layered agent is woken. Nothing else calls it: on a frame without a
@@ -37,4 +38,7 @@ pub enum Wake {
     LaneFailed,
     /// An input was refused, and why.
     InputRefused(Reason),
+    /// The layer of this row, prepared off the frame, could not be
+    /// prepared: the installed layer runs on.
+    PrepareFailed(StrategyId),
 }

@@ -240,6 +240,15 @@ impl ExecutionScheduler {
         self.parallel_execution = enabled;
     }
 
+    /// Waits for the work off the frame — the background runs and the layer
+    /// preparations under way — to end, and hands it back to the families'
+    /// places, so shutting the lanes down after it shuts every layer down.
+    /// What an engine does before it shuts its lanes down; dropping the
+    /// scheduler does it too.
+    pub fn wind_down(&mut self) {
+        self.background.wind_down();
+    }
+
     /// Publishes the current frame's [`TelemetryEvent::WavePlan`] to the DCC so
     /// the cold-path cost model can budget a concurrent wave by its critical
     /// path (`max`) rather than the sum of its members.

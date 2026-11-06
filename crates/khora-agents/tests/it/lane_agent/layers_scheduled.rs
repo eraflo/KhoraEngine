@@ -18,7 +18,7 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use khora_agents::agent::lane_agent;
 use khora_control::{AgentRegistry, Context, ExecutionScheduler};
@@ -226,9 +226,11 @@ fn a_lane_agent_is_neither_called_nor_locked_on_a_quiet_frame() {
 
 /// **An allocation swaps a lane agent's layer at a frame start.** Epoch 1
 /// lends 250 µs: the first frame runs the 200 µs lane. Epoch 2 lends 150 µs:
-/// its frame prepares the 100 µs lane beside the installed one, which still
-/// records; the next frame records on the new lane without preparing it
-/// again.
+/// its frame leaves the 100 µs lane's preparation to the scheduler, which
+/// prepares it beside the installed one, off the frame, while that one still
+/// records. Once the preparation ended, the next frame start swaps the new
+/// lane in: that frame records on it — its instance's first record — without
+/// preparing it again.
 #[test]
 fn an_allocation_swaps_a_lane_agents_layer_at_a_frame_start() {
     let agent: Arc<Mutex<dyn Agent>> =
@@ -248,6 +250,18 @@ fn an_allocation_swaps_a_lane_agents_layer_at_a_frame_start() {
         Some(("high", 2)),
         "the installed layer runs while the new one is prepared"
     );
+    // The preparation runs on the scheduler's background pool: wait, running
+    // no frame, until it has prepared the lane, then long enough for its
+    // result to be on its way back to the place.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while LOW_PREPARES.load(Ordering::SeqCst) == 0 {
+        assert!(
+            Instant::now() < deadline,
+            "the low lane was never prepared beside the installed one"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    std::thread::sleep(Duration::from_millis(50));
     assert_eq!(LOW_PREPARES.load(Ordering::SeqCst), 1, "prepared beside");
 
     scheduler.run_frame(&mut world, Arc::clone(&runtime));

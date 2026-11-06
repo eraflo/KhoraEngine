@@ -22,6 +22,12 @@
 //! held across frames; at the frame start after the run ended, the layer is
 //! checked back in and what it staged goes to the runtime's
 //! [`Reserve`], for the frame's `Boundary` systems.
+//!
+//! The same pool prepares the layers the families switch to, whatever their
+//! phase: a [`Preparation`] an agent left at its place runs there, one per
+//! family at a time, while the installed layer keeps running, and what it
+//! gave goes back to the place at the frame start after it ended — in time
+//! for that frame start's swap.
 
 use std::collections::HashSet;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -30,7 +36,7 @@ use std::time::Instant;
 
 use khora_core::agent::gorna::protocol::Report;
 use khora_core::agent::gorna::AgentId;
-use khora_core::agent::{CheckedOut, ExecutionPhase, LayerRun, Place};
+use khora_core::agent::{CheckedOut, ExecutionPhase, LayerRun, Place, Preparation, Prepared};
 use khora_core::event::{Mailbox, Reader};
 use khora_core::lane::{LaneBus, OutputDeck, Reserve, Staging};
 use khora_core::{EngineContext, Runtime, WorldAccess};
@@ -49,24 +55,38 @@ struct Finished {
     ms: f64,
 }
 
-/// The runs of the families at the background: those under way, and the
-/// pool they run on.
+/// A preparation that ended, on its way back to its place.
+struct Ready {
+    id: AgentId,
+    place: Arc<std::sync::Mutex<Place>>,
+    prepared: Prepared,
+}
+
+/// The runs of the families at the background and the preparations of their
+/// layers: those under way, and the pool they run on.
 pub(super) struct Background {
     pool: WorkerPool,
     running: HashSet<AgentId>,
     finished_tx: Sender<Finished>,
     finished_rx: Receiver<Finished>,
+    preparing: HashSet<AgentId>,
+    ready_tx: Sender<Ready>,
+    ready_rx: Receiver<Ready>,
 }
 
 impl Background {
     /// Runs on a pool of `threads` of their own.
     pub(super) fn new(threads: usize) -> Self {
         let (finished_tx, finished_rx) = channel();
+        let (ready_tx, ready_rx) = channel();
         Self {
             pool: WorkerPool::new(threads),
             running: HashSet::new(),
             finished_tx,
             finished_rx,
+            preparing: HashSet::new(),
+            ready_tx,
+            ready_rx,
         }
     }
 
@@ -138,6 +158,44 @@ impl Background {
         }
     }
 
+    /// Starts the preparation waiting at the place of every family in
+    /// `layered` with none under way, on the frame's `bus`: each runs under
+    /// its own contention, and nothing waits for it.
+    pub(super) fn prepare(
+        &mut self,
+        layered: &[LayeredAgent],
+        runtime: &Arc<Runtime>,
+        bus: &Arc<LaneBus>,
+    ) {
+        for (_, id, layered) in layered {
+            if self.preparing.contains(id) {
+                continue;
+            }
+            let Some(preparation) = locked(&layered.place).take_preparation() else {
+                continue;
+            };
+            self.preparing.insert(*id);
+            let (id, place, runtime, bus) = (
+                *id,
+                Arc::clone(&layered.place),
+                Arc::clone(runtime),
+                Arc::clone(bus),
+            );
+            let ready = self.ready_tx.clone();
+            self.pool
+                .submit(move || run_preparation(id, place, preparation, &runtime, &bus, &ready));
+        }
+    }
+
+    /// Hands back to its place what every preparation that ended gave: the
+    /// layer to stage or keep, or the failure to wake the agent for.
+    pub(super) fn take_prepared(&mut self) {
+        for ready in self.ready_rx.try_iter() {
+            self.preparing.remove(&ready.id);
+            locked(&ready.place).prepared(ready.prepared);
+        }
+    }
+
     /// Takes back every run that ended: its layer to its place, what it
     /// staged to the runtime's reserve. Returns the runs' reports, each with
     /// the host time it took.
@@ -159,6 +217,77 @@ impl Background {
         }
         reports
     }
+}
+
+impl Background {
+    /// Waits for every run and every preparation under way to end, and hands
+    /// each back to its place: a layer out comes home, a prepared one is
+    /// staged or kept — so whatever shuts the places down next shuts every
+    /// layer down, none lost on the way. What the runs staged is dropped: no
+    /// frame will apply it.
+    pub(super) fn wind_down(&mut self) {
+        let wait = std::time::Duration::from_millis(5);
+        while !self.running.is_empty() || !self.preparing.is_empty() {
+            self.take_prepared();
+            for finished in self.finished_rx.try_iter() {
+                self.running.remove(&finished.id);
+                let _ = locked(&finished.place).check_in(finished.out, finished.run);
+            }
+            // Every job sends what it gave, panicked or not: the wait ends.
+            if !self.preparing.is_empty() {
+                if let Ok(ready) = self.ready_rx.recv_timeout(wait) {
+                    self.preparing.remove(&ready.id);
+                    locked(&ready.place).prepared(ready.prepared);
+                }
+            } else if let Ok(finished) = self.finished_rx.recv_timeout(wait) {
+                self.running.remove(&finished.id);
+                let _ = locked(&finished.place).check_in(finished.out, finished.run);
+            }
+        }
+    }
+}
+
+impl Drop for Background {
+    fn drop(&mut self) {
+        self.wind_down();
+    }
+}
+
+/// Runs `preparation` of `id`'s layer on a context of its own, and sends what
+/// it gave back to `place` through `ready`. A preparation that panics gives
+/// no layer: the place wakes the agent as for one that failed.
+fn run_preparation(
+    id: AgentId,
+    place: Arc<std::sync::Mutex<Place>>,
+    preparation: Preparation,
+    runtime: &Arc<Runtime>,
+    bus: &Arc<LaneBus>,
+    ready: &Sender<Ready>,
+) {
+    let row = preparation.row();
+    let permit = preparation.contention();
+    let mut deck = OutputDeck::new();
+    let mut prepared = None;
+    let ran = {
+        let mut context = EngineContext::for_agent(
+            WorldAccess::None,
+            Arc::clone(runtime),
+            bus,
+            &mut deck,
+            &permit,
+            Some(id),
+        );
+        run_guarded(id, || prepared = Some(preparation.run(&mut context)))
+    };
+    let prepared = match prepared {
+        Some(prepared) if ran => prepared,
+        _ => Prepared::failed(row, format!("the preparation of `{id}`'s layer panicked")),
+    };
+    let _ = ready.send(Ready {
+        id,
+        place,
+        prepared,
+    });
 }
 
 /// Whether a `Take` mailbox of `family`, on one of the channels `taken`,

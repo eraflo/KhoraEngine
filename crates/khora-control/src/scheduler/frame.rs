@@ -63,6 +63,9 @@ impl ExecutionScheduler {
         for (report, ms) in self.background.finish(runtime) {
             self.publish_report(Some(report), ms, 0.0);
         }
+        // And the layers prepared off the frame, in time for this frame
+        // start's swap; a failed one wakes its agent at the event pass.
+        self.background.take_prepared();
         // Then what the host staged since: later than any run that ended.
         if let Some(reserve) = runtime.look_up::<khora_core::lane::Reserve>() {
             reserve.land_from_host();
@@ -262,6 +265,9 @@ impl ExecutionScheduler {
         // 5c. The families at the background with mail start a run off the
         //     frame, on this frame's bus; nothing waits for it.
         self.background.start(&layered, &runtime, &bus);
+        // 5d. The layers the event pass asked to prepare start too, beside
+        //     the installed ones, which keep running until they land.
+        self.background.prepare(&layered, &runtime, &bus);
 
         // 6. Fixed-update sub-loop. When an agent declares a fixed step, the
         //    fixed-timestep agents advance their discrete sub-steps before the

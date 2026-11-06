@@ -233,10 +233,8 @@ fn lend<'c>(
 pub fn set_fixed_step(agent: &mut LaneAgent, step: Duration) {
     if agent.fixed_step.is_some() && !step.is_zero() {
         agent.fixed_step = Some(step);
-        let mut place = agent.locked_place();
-        let mut terms = place.terms().clone();
-        terms.fixed_step = agent.fixed_step;
-        place.set_terms(terms);
+        let step = agent.fixed_step;
+        agent.locked_place().set_fixed_step(step);
     }
 }
 

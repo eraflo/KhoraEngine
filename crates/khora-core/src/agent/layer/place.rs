@@ -33,6 +33,14 @@ use crate::EngineContext;
 pub const KEEP_EPOCHS: u32 = 3;
 
 /// What the agent lent its installed layer: the terms every run is made on.
+///
+/// Two parts. The agent's — `epoch`, `envelope`, `time_limit`,
+/// `budget_lent`, `fixed_step`, `over_budget`, `quoted_at`, `target` — is
+/// what the DCC lent the family and how the agent answered it, from its last
+/// full quote, whatever layer runs it: set while another layer is on its way
+/// in, it applies to the installed one at once, so its reports answer the
+/// epoch lent. The row's — its `quote`, its own price — applies from that
+/// row's swap.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Terms {
     /// The epoch the agent runs in.
@@ -59,6 +67,17 @@ pub struct Terms {
     pub quoted_at: Option<Instant>,
     /// The frame's target key then; `None` when the family reads no target.
     pub target: Option<TargetKey>,
+}
+
+impl Terms {
+    /// `lent` with the row's part of these terms: their quote, the row's
+    /// own price, kept.
+    fn lending(&self, lent: &Terms) -> Terms {
+        Terms {
+            quote: self.quote,
+            ..lent.clone()
+        }
+    }
 }
 
 /// A layer at the place, with the time its preparation took while its first
@@ -113,6 +132,14 @@ pub struct Place {
     /// The row of the installed layer while it is checked out for a run off
     /// the frame; `None` while it is home.
     out: Option<StrategyId>,
+    /// The preparation left for a runner and not taken yet.
+    waiting: Option<super::Preparation>,
+    /// The row of the preparation a runner took and has not handed back.
+    under_way: Option<StrategyId>,
+    /// The row the agent last asked a preparation for, while it still wants
+    /// it: what a preparation's layer is staged for. A stage or a reinstate
+    /// since means the agent wants another layer.
+    wanted: Option<StrategyId>,
 }
 
 /// The installed layer of a place, checked out for one run off the frame,
@@ -160,6 +187,9 @@ impl Place {
             staged_terms: None,
             last: LastRun::default(),
             out: None,
+            waiting: None,
+            under_way: None,
+            wanted: None,
         }
     }
 
@@ -239,13 +269,24 @@ impl Place {
     }
 
     /// Sets the terms the installed layer runs on, from its next run. While
-    /// a layer is staged they are the staged layer's: they apply from its
-    /// swap, and the installed layer keeps its own until then.
+    /// a layer is staged, or prepared, they are that layer's, whole from its
+    /// swap; the installed layer runs on their agent's part at once and keeps
+    /// its own row's part until then.
     pub fn set_terms(&mut self, terms: Terms) {
-        if self.staged.is_some() {
+        if self.staged.is_some() || self.pending_row().is_some() {
+            self.terms = self.terms.lending(&terms);
             self.staged_terms = Some(terms);
         } else {
             self.terms = terms;
+        }
+    }
+
+    /// Sets the step every layer of the place runs at — the installed one
+    /// and one on its way in — leaving the rest of their terms as they are.
+    pub fn set_fixed_step(&mut self, step: Option<Duration>) {
+        self.terms.fixed_step = step;
+        if let Some(staged) = self.staged_terms.as_mut() {
+            staged.fixed_step = step;
         }
     }
 
@@ -258,8 +299,14 @@ impl Place {
     /// Stages `layer`, prepared in `switch`, to be swapped in at the next
     /// frame start. Into a place with nothing installed it is installed at
     /// once: no frame runs without a layer. A layer staged before it and
-    /// never swapped in is kept ready.
+    /// never swapped in is kept ready. A preparation asked for before is no
+    /// longer wanted: one waiting is dropped, one under way kept once it ends.
     pub fn stage(&mut self, layer: Box<dyn Layer>, switch: Duration) {
+        self.unwant();
+        self.stage_held(layer, switch);
+    }
+
+    fn stage_held(&mut self, layer: Box<dyn Layer>, switch: Duration) {
         let mut held = Held {
             layer,
             switch: Some(switch),
@@ -276,15 +323,23 @@ impl Place {
 
     /// Stages the kept layer of `row` again, preparing nothing; whether one
     /// was kept. The installed layer's own row unstages what was staged,
-    /// keeping it ready; the staged layer's own row changes nothing.
+    /// keeping it ready; the staged layer's own row changes nothing. A
+    /// preparation asked for before is no longer wanted, once one is found.
     pub fn reinstate(&mut self, row: StrategyId) -> bool {
+        let found = self.installed_row() == Some(row)
+            || self.staged_row() == Some(row)
+            || self.kept.iter().any(|kept| kept.layer.row() == row);
+        if !found {
+            return false;
+        }
+        self.unwant();
         if self.installed_row() == Some(row) {
             if let Some(staged) = self.staged.take() {
                 self.keep(staged.layer);
             }
-            if let Some(terms) = self.staged_terms.take() {
-                self.terms = terms;
-            }
+            // The row's part was the staged layer's; the agent's part
+            // applies already.
+            self.staged_terms = None;
             return true;
         }
         if self.staged_row() == Some(row) {
@@ -294,8 +349,85 @@ impl Place {
             return false;
         };
         let kept = self.kept.remove(index);
-        self.stage(kept.layer, Duration::ZERO);
+        self.stage_held(kept.layer, Duration::ZERO);
         true
+    }
+
+    /// Forgets the preparation asked for: one waiting is dropped, and the
+    /// layer of one under way will be kept rather than staged.
+    fn unwant(&mut self) {
+        self.waiting = None;
+        self.wanted = None;
+    }
+
+    /// Leaves `preparation` at the place, to be taken by whoever runs it
+    /// ([`take_preparation`](Self::take_preparation)); the installed layer
+    /// runs on meanwhile. Its row is the one wanted from now: a preparation
+    /// waiting and not yet taken is replaced by it, and the layer of one
+    /// under way is kept ready once it ends.
+    pub fn request_preparation(&mut self, preparation: super::Preparation) {
+        // A layer staged before is not the one wanted any more.
+        if let Some(staged) = self.staged.take() {
+            self.keep(staged.layer);
+        }
+        self.wanted = Some(preparation.row());
+        self.waiting = Some(preparation);
+    }
+
+    /// Takes the preparation waiting at the place, for its runner; `None`
+    /// while none waits.
+    pub fn take_preparation(&mut self) -> Option<super::Preparation> {
+        let preparation = self.waiting.take()?;
+        self.under_way = Some(preparation.row());
+        Some(preparation)
+    }
+
+    /// The row of the preparation the place waits for — waiting to be taken
+    /// or under way — if it waits for one.
+    pub fn pending_row(&self) -> Option<StrategyId> {
+        let pending = self
+            .waiting
+            .as_ref()
+            .map(super::Preparation::row)
+            .or(self.under_way);
+        self.wanted.filter(|_| pending.is_some())
+    }
+
+    /// Takes back what a preparation gave. A layer whose row is still the
+    /// one wanted is staged, with the time its preparation took; one whose
+    /// row no longer is is kept ready. A preparation that gave no layer
+    /// raises [`Wake::PrepareFailed`] for its row.
+    pub fn prepared(&mut self, prepared: super::Prepared) {
+        let row = prepared.row();
+        if self.under_way == Some(row) {
+            self.under_way = None;
+        }
+        let wanted = self.wanted == Some(row);
+        match prepared.into_outcome() {
+            Ok((layer, took)) if wanted => {
+                self.wanted = None;
+                if self.waiting.as_ref().map(super::Preparation::row) == Some(row) {
+                    self.waiting = None;
+                }
+                self.stage_held(layer, took);
+            }
+            Ok((layer, _)) => self.keep(layer),
+            Err(message) => {
+                log::warn!(
+                    "the layer of row {row:?} of `{}` could not be prepared: {message}",
+                    self.agent
+                );
+                if wanted {
+                    self.wanted = None;
+                    // The terms were the failed layer's: the agent sets new
+                    // ones when it chooses again.
+                    if self.staged.is_none() {
+                        self.staged_terms = None;
+                    }
+                    self.raise(Wake::PrepareFailed(row));
+                }
+            }
+        }
     }
 
     /// Records that an allocation for `epoch` was lent to the agent: the
