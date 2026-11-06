@@ -413,6 +413,10 @@ fn populate(
         Arc::new(std::sync::RwLock::new(khora_core::time::Time::default()));
     runtime.resources.insert(time);
 
+    // The reserve: what the families at the background staged, kept across
+    // frames until a frame's `Boundary` systems take it.
+    runtime.resources.insert(khora_core::lane::Reserve::new());
+
     // Which families run, known from setup on.
     runtime
         .resources

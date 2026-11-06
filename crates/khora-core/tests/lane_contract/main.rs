@@ -16,6 +16,9 @@
 //! the guards a fetch runs, the boot checks over every agent registration, and
 //! the compile errors the derives and `register_agent!` give.
 
+mod background;
+mod background_outputs;
+mod bakery;
 mod boot;
 mod compile_fail;
 mod cost_impact;
@@ -31,5 +34,8 @@ mod passes;
 mod phases;
 mod prepare_ahead;
 mod quote;
+mod reserve;
 mod run;
+mod staged;
+mod take;
 mod target_key_pipelines;

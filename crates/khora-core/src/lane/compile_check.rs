@@ -34,7 +34,9 @@ use super::io::{
     Budget, Declaration, FixedStep, InputSource, Locked, OutputSink, Pass, PassSlot, SceneTarget,
     Target, TargetKey,
 };
+use super::reserve::Staged;
 use super::LaneError;
+use crate::event::Supersedes;
 use crate::residency::{Residency, Resident};
 
 /// What the derive does with one input field.
@@ -196,6 +198,27 @@ impl BudgetField for Option<Budget> {
     }
 }
 
+/// A field type `#[take]` accepts: `Vec<T>`, the requests the family's
+/// `Take` mailbox on the runtime's `Channel<T>` holds, drained.
+#[diagnostic::on_unimplemented(
+    message = "`#[take]` drains the family's mailbox: the field must be `Vec<T>` of a `Supersedes` item, not `{Self}`",
+    label = "not a `Vec` of requests"
+)]
+pub trait TakeField<'f>: Sized {
+    /// Declares the channel taken from.
+    fn declare(d: &mut Declaration, field: &'static str);
+    /// Drains the channel.
+    fn fetch(src: &mut InputSource<'f>, field: &'static str) -> Result<Self, InputRefusal>;
+}
+impl<'f, T: Supersedes + Clone + Send + Sync + 'static> TakeField<'f> for Vec<T> {
+    fn declare(d: &mut Declaration, field: &'static str) {
+        d.read::<crate::event::Channel<T>>(field, SourceKind::Take);
+    }
+    fn fetch(src: &mut InputSource<'f>, field: &'static str) -> Result<Self, InputRefusal> {
+        src.take(field)
+    }
+}
+
 /// A field type `#[frame]` accepts: the frame's `Target` or `ClearColor`.
 #[diagnostic::on_unimplemented(
     message = "`#[frame]` gives the frame's `Target`, `ClearColor` or `FixedStep`, not `{Self}`",
@@ -315,6 +338,32 @@ impl<'f, T: Default + Clone + Any + Send + Sync> DeckOutputField<'f> for T {
     }
 }
 
+/// A field type output `#[staged]` accepts: `Vec<T>` of a [`Staged`] output,
+/// kept in the family's reserve across frames.
+#[diagnostic::on_unimplemented(
+    message = "`#[staged]` writes to the family's reserve: the field must be `Vec<T>` of a `Staged` output, not `{Self}`",
+    label = "not a `Vec` of staged outputs"
+)]
+pub trait StagedField<'f>: Sized {
+    /// Declares the output staged.
+    fn declare(d: &mut Declaration, field: &'static str);
+    /// Opens the field for one record: nothing staged yet.
+    fn open(sink: &mut OutputSink<'f>, field: &'static str) -> Result<Self, LaneError>;
+    /// Stages what the lane wrote.
+    fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal>;
+}
+impl<'f, T: Staged> StagedField<'f> for Vec<T> {
+    fn declare(d: &mut Declaration, field: &'static str) {
+        d.write::<T>(field, SinkKind::Staged);
+    }
+    fn open(_sink: &mut OutputSink<'f>, _field: &'static str) -> Result<Self, LaneError> {
+        Ok(Vec::new())
+    }
+    fn commit(self, sink: &mut OutputSink<'f>, field: &'static str) -> Result<(), OutputRefusal> {
+        sink.stage(field, self)
+    }
+}
+
 /// Checks a `#[bus]` field's type.
 pub const fn bus_field<'f, T: BusField<'f>>() -> InputOps<'f, T> {
     InputOps {
@@ -363,6 +412,14 @@ pub const fn budget_field<'f, T: BudgetField>() -> InputOps<'f, T> {
         target: no_target::<T>,
     }
 }
+/// Checks a `#[take]` field's type.
+pub const fn take_field<'f, T: TakeField<'f>>() -> InputOps<'f, T> {
+    InputOps {
+        declare: <T as TakeField<'f>>::declare,
+        fetch: <T as TakeField<'f>>::fetch,
+        target: no_target::<T>,
+    }
+}
 /// Checks a `#[frame]` field's type.
 pub const fn frame_field<'f, T: FrameField>() -> InputOps<'f, T> {
     InputOps {
@@ -385,6 +442,15 @@ pub const fn deck_output_field<'f, T: DeckOutputField<'f>>() -> OutputOps<'f, T>
         declare: <T as DeckOutputField<'f>>::declare,
         open: <T as DeckOutputField<'f>>::open,
         commit: <T as DeckOutputField<'f>>::commit,
+    }
+}
+
+/// Checks an output `#[staged]` field's type.
+pub const fn staged_field<'f, T: StagedField<'f>>() -> OutputOps<'f, T> {
+    OutputOps {
+        declare: <T as StagedField<'f>>::declare,
+        open: <T as StagedField<'f>>::open,
+        commit: <T as StagedField<'f>>::commit,
     }
 }
 

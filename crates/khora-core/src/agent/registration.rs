@@ -179,6 +179,68 @@ pub enum BootError {
         /// The level it names.
         level: StrategyId,
     },
+    /// A lane of a family at [`ExecutionPhase::BACKGROUND`] reads a source
+    /// that lives inside one frame — a View, the frame's target, a deck slot,
+    /// a resident, a lock. A background run spans frames: it may read only
+    /// `#[take]`, `#[resource]` and `#[budget]`.
+    BackgroundInput {
+        /// The family.
+        family: &'static str,
+        /// The lane, by type name.
+        lane: &'static str,
+        /// The field reading it.
+        field: &'static str,
+        /// Where the field reads from.
+        source: SourceKind,
+    },
+    /// A lane of a family at [`ExecutionPhase::BACKGROUND`] writes a slot of
+    /// one frame — a deck slot, a pass. A background run spans frames: what it
+    /// hands on is `#[staged]`, kept in the reserve until a frame's boundary.
+    BackgroundOutput {
+        /// The family.
+        family: &'static str,
+        /// The lane, by type name.
+        lane: &'static str,
+        /// The field writing it.
+        field: &'static str,
+        /// Where the field writes.
+        sink: SinkKind,
+    },
+    /// A lane of a family in a frame phase writes a `#[staged]` output. A
+    /// staged output is what a run off the frame hands on; a frame's lane
+    /// writes the frame's deck.
+    StagedInFrame {
+        /// The family.
+        family: &'static str,
+        /// The lane, by type name.
+        lane: &'static str,
+        /// The field staging it.
+        field: &'static str,
+    },
+    /// Two families take one channel. A `Take` reader is the channel's one
+    /// reader: two of them would split its requests by timing alone, one of
+    /// them off the frame where no wave orders it against the other.
+    ChannelTakenTwice {
+        /// The channel's type name.
+        channel: &'static str,
+        /// The family that takes it first, in registration order.
+        first: &'static str,
+        /// The other.
+        second: &'static str,
+    },
+    /// A `#[take]` field drains a channel that no
+    /// [`Reader::Take`](crate::event::Reader::Take) mailbox of the family
+    /// declares, so nothing says the family is the one reader of it.
+    TakeWithoutMailbox {
+        /// The family.
+        family: &'static str,
+        /// The lane, by type name.
+        lane: &'static str,
+        /// The field taking it.
+        field: &'static str,
+        /// The channel's type name.
+        channel: &'static str,
+    },
 }
 
 impl std::fmt::Display for BootError {
@@ -256,6 +318,49 @@ impl std::fmt::Display for BootError {
                 f,
                 "the family `{family}` starts on {level:?}, which none of its lanes offers"
             ),
+            Self::BackgroundInput {
+                family,
+                lane,
+                field,
+                source,
+            } => write!(
+                f,
+                "`{lane}` of `{family}` runs in the background, yet reads `{field}` from {source:?}: a background lane reads only `#[take]`, `#[resource]` and `#[budget]`"
+            ),
+            Self::BackgroundOutput {
+                family,
+                lane,
+                field,
+                sink,
+            } => write!(
+                f,
+                "`{lane}` of `{family}` runs in the background, yet writes `{field}` to {sink:?}: a background lane hands on only `#[staged]` outputs"
+            ),
+            Self::StagedInFrame {
+                family,
+                lane,
+                field,
+            } => write!(
+                f,
+                "`{lane}` of `{family}` stages `{field}`, yet runs in a frame phase: only a lane at the background stages its outputs"
+            ),
+            Self::ChannelTakenTwice {
+                channel,
+                first,
+                second,
+            } => write!(
+                f,
+                "`{first}` and `{second}` both take `{channel}`: a channel has one taker"
+            ),
+            Self::TakeWithoutMailbox {
+                family,
+                lane,
+                field,
+                channel,
+            } => write!(
+                f,
+                "`{lane}` of `{family}` takes `{channel}` in `{field}`, which no `Take` mailbox of `{family}` declares"
+            ),
         }
     }
 }
@@ -324,9 +429,17 @@ pub fn check_registrations_in(
         })
         .collect();
 
+    super::background_checks::check_one_taker(registrations, &menus)?;
     for (registration, lanes) in registrations.iter().zip(&menus) {
         let family = registration.family_name;
-        if !phase_order.contains(&registration.phase) {
+        super::background_checks::check_takes(registration, lanes)?;
+        let background = registration.phase == ExecutionPhase::BACKGROUND;
+        if background {
+            super::background_checks::check_background(family, lanes)?;
+        } else {
+            super::background_checks::check_nothing_staged(family, lanes)?;
+        }
+        if !background && !phase_order.contains(&registration.phase) {
             return Err(BootError::PhaseNotRun {
                 family,
                 phase: registration.phase,

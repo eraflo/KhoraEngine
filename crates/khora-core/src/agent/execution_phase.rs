@@ -40,6 +40,14 @@ impl ExecutionPhase {
     /// Cleanup, telemetry, end-of-frame tasks.
     pub const FINALIZE: Self = Self(5);
 
+    /// Off the frame: a family placed here runs its installed layer on a
+    /// thread the frame's waves leave free, one run at a time, possibly over
+    /// several frames, when its `#[take]` mailbox holds a request. It is in
+    /// no phase order — the phase loop never runs it — and its `#[staged]`
+    /// outputs are applied at the `Boundary` of the first frame after its run
+    /// ends. The ID reserved by [`custom`](Self::custom).
+    pub const BACKGROUND: Self = Self(255);
+
     /// Default phase order — used if no custom order is set.
     pub const DEFAULT_ORDER: &'static [Self] = &[
         Self::INIT,
@@ -86,6 +94,7 @@ impl std::fmt::Display for ExecutionPhase {
             3 => write!(f, "Mutate"),
             4 => write!(f, "Output"),
             5 => write!(f, "Finalize"),
+            255 => write!(f, "Background"),
             _ => write!(f, "Custom({})", self.0),
         }
     }

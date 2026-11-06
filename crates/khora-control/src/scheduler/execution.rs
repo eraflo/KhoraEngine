@@ -484,7 +484,7 @@ impl ExecutionScheduler {
     /// `ms` on the host: the host time at least what the scheduler measured,
     /// and the world's entity count `workload_n` where the agent counted no
     /// workload of its own. Best-effort, like all telemetry.
-    fn publish_report(&self, report: Option<Report>, ms: f64, workload_n: f64) {
+    pub(super) fn publish_report(&self, report: Option<Report>, ms: f64, workload_n: f64) {
         let (Some(tx), Some(mut report)) = (&self.telemetry, report) else {
             return;
         };

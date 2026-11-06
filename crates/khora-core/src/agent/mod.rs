@@ -15,6 +15,7 @@
 //! Traits for autonomous engine subsystems (Agents).
 
 pub mod activation;
+mod background_checks;
 mod bridge;
 pub mod completion;
 pub mod contention;
@@ -39,7 +40,7 @@ pub use completion::{AgentCompletionMap, AgentDone, CompletionOutcome};
 pub use contention::Contention;
 pub use dependency::{AgentDependency, DependencyCondition, DependencyKind};
 pub use execution_phase::ExecutionPhase;
-pub use layer::{LastRun, Layer, LayerRun, Place, Terms, Wake, KEEP_EPOCHS};
+pub use layer::{CheckedOut, LastRun, Layer, LayerRun, Place, Terms, Wake, KEEP_EPOCHS};
 pub use registration::{check_registrations, AgentRegistration, BootError};
 pub use timing::{AgentImportance, ExecutionTiming};
 

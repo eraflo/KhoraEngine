@@ -18,7 +18,7 @@
 
 use std::time::{Duration, Instant};
 
-use super::{Layer, Wake};
+use super::{Layer, LayerRun, Wake};
 use crate::agent::contention::Contention;
 use crate::agent::gorna::protocol::{Envelope, Epoch, Report};
 use crate::agent::gorna::{AgentId, StrategyId};
@@ -110,6 +110,39 @@ pub struct Place {
     /// and apply from its swap.
     staged_terms: Option<Terms>,
     last: LastRun,
+    /// The row of the installed layer while it is checked out for a run off
+    /// the frame; `None` while it is home.
+    out: Option<StrategyId>,
+}
+
+/// The installed layer of a place, checked out for one run off the frame,
+/// with the terms it runs on. The place holds nothing of it meanwhile, so no
+/// lock is held across frames; it comes back through [`Place::check_in`].
+pub struct CheckedOut {
+    held: Held,
+    terms: Terms,
+}
+
+impl CheckedOut {
+    /// The row the layer runs.
+    pub fn row(&self) -> StrategyId {
+        self.held.layer.row()
+    }
+
+    /// One run of the layer, on the terms it was checked out with.
+    pub fn run(&mut self, context: &mut EngineContext<'_>) -> LayerRun {
+        self.held.layer.run(&self.terms, context)
+    }
+
+    /// What the layer competes for: the permit its run is stamped with.
+    pub fn contention(&self) -> Contention {
+        self.held.layer.contention()
+    }
+
+    /// What the run staged, for the reserve.
+    pub fn staged(&mut self) -> crate::lane::Staging {
+        self.held.layer.staged()
+    }
 }
 
 impl Place {
@@ -126,12 +159,48 @@ impl Place {
             terms: Terms::default(),
             staged_terms: None,
             last: LastRun::default(),
+            out: None,
         }
+    }
+
+    /// Checks the installed layer out for one run off the frame: `None` while
+    /// nothing is installed, or it is out already. Until it is checked in, the
+    /// place swaps in no staged layer and runs nothing.
+    pub fn check_out(&mut self) -> Option<CheckedOut> {
+        if self.out.is_some() {
+            return None;
+        }
+        let held = self.installed.take()?;
+        self.out = Some(held.layer.row());
+        Some(CheckedOut {
+            held,
+            terms: self.terms.clone(),
+        })
+    }
+
+    /// Takes back the layer `out` held, with what its `run` gave back, and
+    /// reports the run as [`run`](Self::run) does. A layer staged while it was
+    /// out waits for the next frame start.
+    pub fn check_in(&mut self, out: CheckedOut, run: LayerRun) -> Report {
+        let CheckedOut { mut held, terms } = out;
+        self.out = None;
+        let row = held.layer.row();
+        let switch = held.switch.take();
+        self.installed = Some(held);
+        self.report(row, &terms, switch, run)
+    }
+
+    /// Whether the installed layer is checked out for a run off the frame.
+    pub fn is_out(&self) -> bool {
+        self.out.is_some()
     }
 
     /// The row of the layer installed, if one is.
     pub fn installed_row(&self) -> Option<StrategyId> {
-        self.installed.as_ref().map(|held| held.layer.row())
+        self.installed
+            .as_ref()
+            .map(|held| held.layer.row())
+            .or(self.out)
     }
 
     /// The row of the layer staged for the next frame start, if one is.
@@ -195,7 +264,7 @@ impl Place {
             layer,
             switch: Some(switch),
         };
-        if self.installed.is_none() {
+        if self.installed.is_none() && self.out.is_none() {
             held.layer.installed();
             self.installed = Some(held);
             return;
@@ -245,6 +314,14 @@ impl Place {
     /// kept layer with no epoch left and, oldest first, those the envelope's
     /// memory cannot hold beside the installed one.
     pub fn start_frame(&mut self, gpu: &mut GpuSetup<'_>) {
+        // A layer out for a run off the frame is swapped once it is back.
+        if self.out.is_none() {
+            self.swap_staged();
+        }
+        self.shut_down_spent(gpu);
+    }
+
+    fn swap_staged(&mut self) {
         if let Some(mut staged) = self.staged.take() {
             staged.layer.installed();
             if let Some(old) = self.installed.replace(staged) {
@@ -254,6 +331,9 @@ impl Place {
                 self.terms = terms;
             }
         }
+    }
+
+    fn shut_down_spent(&mut self, gpu: &mut GpuSetup<'_>) {
         let mut index = 0;
         while index < self.kept.len() {
             if self.kept[index].epochs == 0 {
@@ -280,6 +360,19 @@ impl Place {
         let run = held.layer.run(&self.terms, context);
         let row = held.layer.row();
         let switch = held.switch.take();
+        let terms = self.terms.clone();
+        Some(self.report(row, &terms, switch, run))
+    }
+
+    /// Keeps the wake `run` raised and what it gave back, and reports it on
+    /// `terms`.
+    fn report(
+        &mut self,
+        row: StrategyId,
+        terms: &Terms,
+        switch: Option<Duration>,
+        run: LayerRun,
+    ) -> Report {
         if let Some(why) = run.wake {
             self.raise(why);
         }
@@ -292,12 +385,12 @@ impl Place {
         };
         let report = Report {
             agent: self.agent,
-            epoch: self.terms.epoch,
+            epoch: terms.epoch,
             row,
             measured: run.measured,
             done,
-            health: on_time(self.terms.time_limit, &run.measured).min(done),
-            over_budget: self.terms.over_budget,
+            health: on_time(terms.time_limit, &run.measured).min(done),
+            over_budget: terms.over_budget,
             stalled: run.stalled,
             workload: None,
             switch,
@@ -307,7 +400,7 @@ impl Place {
             costs: run.costs,
             message: run.message,
         };
-        Some(report)
+        report
     }
 
     /// What the installed layer competes for; nothing while none is.

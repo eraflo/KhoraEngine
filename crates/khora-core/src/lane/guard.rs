@@ -44,6 +44,9 @@ pub enum SourceKind {
     Locked,
     /// `#[budget]`: the frame's budget.
     Budget,
+    /// `#[take]`: the requests waiting in the family's `Take` mailbox,
+    /// drained.
+    Take,
     /// `#[scope]`: the parallel scope.
     Scope,
 }
@@ -56,6 +59,9 @@ pub enum SinkKind {
     Pass,
     /// `#[deck]`: CPU data for another domain.
     Deck,
+    /// `#[staged]`: outputs kept in the family's reserve across frames,
+    /// applied at a frame's `Boundary`.
+    Staged,
 }
 
 /// Why a field was refused.

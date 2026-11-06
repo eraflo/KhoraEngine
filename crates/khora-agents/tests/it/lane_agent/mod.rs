@@ -15,6 +15,7 @@
 //! `LaneAgent`, the one agent behaviour, and the registrations it is built
 //! from.
 
+mod background;
 mod cheaper_lane_runs;
 mod choice;
 mod choice_across_lanes;

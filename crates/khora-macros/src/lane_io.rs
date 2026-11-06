@@ -34,11 +34,11 @@ use syn::{
 
 /// The input attributes, in the order the "names no source" message lists them.
 const INPUT_SOURCES: &[&str] = &[
-    "bus", "frame", "deck", "resident", "resource", "locked", "budget", "scope",
+    "bus", "frame", "deck", "resident", "resource", "locked", "take", "budget", "scope",
 ];
 
 /// The output attributes.
-const OUTPUT_SINKS: &[&str] = &["pass", "deck"];
+const OUTPUT_SINKS: &[&str] = &["pass", "deck", "staged"];
 
 /// The impl header's pieces: the struct's generics with the frame lifetime
 /// `'f` in them, the lifetime itself, and the struct's own type generics.
@@ -240,8 +240,22 @@ fn lane_inputs(input: &DeriveInput) -> syn::Result<impl ToTokens> {
             fn fetch(
                 #src: &mut ::khora_core::lane::io::InputSource<#frame>,
             ) -> ::core::result::Result<Self, ::khora_core::lane::guard::InputRefusal> {
-                #(#fetches)*
-                ::core::result::Result::Ok(Self { #(#idents),* })
+                // What a `#[take]` drained goes back to its channel when a
+                // later field is refused: the lane never saw it.
+                let fetched = (|| -> ::core::result::Result<Self, ::khora_core::lane::guard::InputRefusal> {
+                    #(#fetches)*
+                    ::core::result::Result::Ok(Self { #(#idents),* })
+                })();
+                match fetched {
+                    ::core::result::Result::Ok(fetched) => {
+                        #src.keep_takes();
+                        ::core::result::Result::Ok(fetched)
+                    }
+                    ::core::result::Result::Err(refusal) => {
+                        #src.restore_takes();
+                        ::core::result::Result::Err(refusal)
+                    }
+                }
             }
             fn target_key(&self) -> ::core::option::Option<::khora_core::lane::io::TargetKey> {
                 ::core::option::Option::None #(#targets)*

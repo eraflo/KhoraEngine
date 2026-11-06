@@ -51,16 +51,23 @@
 //! See [`TickPhase`] for the available phases and their intended use.
 
 use crate::ecs::{ComponentKey, Role, Tick, World};
-use khora_core::lane::OutputDeck;
+use khora_core::lane::{OutputDeck, Staged};
 use khora_core::Runtime;
 
 /// Tick phases at which [`DataSystem`]s are dispatched.
 ///
 /// The order below reflects their position in the engine tick:
-/// `PreSimulation` runs first (before any agent simulates), `Maintenance`
-/// runs last (after all agent work is finished).
+/// `Boundary` runs first (the frame boundary, before any agent simulates),
+/// `Maintenance` runs last (after all agent work is finished).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TickPhase {
+    /// The frame boundary: runs once the families on and off are settled, the
+    /// allocation is lent and the layers are swapped, before
+    /// `PreSimulation`. Where what spans frames lands: a system here takes
+    /// what the background runs staged ([`SystemContext::staged`]), so a
+    /// frame sees background work only as applied at its own boundary.
+    Boundary,
+
     /// Runs before any simulation. Input-driven mutations, scene events,
     /// anything that should be visible to agents at the start of their
     /// frame.
@@ -100,6 +107,20 @@ pub struct SystemContext {
     /// the world does not know is the key a component declared under that
     /// name would have, [`ComponentKey::named`], which no entity holds.
     pub scope: Option<ComponentKey>,
+}
+
+impl SystemContext {
+    /// Takes everything the runtime's
+    /// [`Reserve`](khora_core::lane::Reserve) holds of `T`, oldest first:
+    /// what the background runs staged and no boundary took yet. Nothing when
+    /// the runtime holds no reserve. Read in [`TickPhase::Boundary`], where a
+    /// frame applies what spans frames.
+    pub fn staged<T: Staged>(&self, runtime: &Runtime) -> Vec<T> {
+        runtime
+            .look_up::<khora_core::lane::Reserve>()
+            .map(|reserve| reserve.take::<T>())
+            .unwrap_or_default()
+    }
 }
 
 /// Registration entry for a [`DataSystem`].

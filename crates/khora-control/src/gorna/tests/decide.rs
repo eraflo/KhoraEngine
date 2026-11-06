@@ -45,6 +45,7 @@ fn round<'a>(trigger: Trigger, target_us: u64, bids: &'a [Bid]) -> Round<'a> {
         memory: PerDevice::default(),
         link_rate: PerLink::default(),
         waves: &[],
+        background: &[],
         bids,
     }
 }
@@ -1047,4 +1048,49 @@ fn a_row_pinned_above_the_floor_is_no_lever_an_upgrade_is_one() {
     ));
     assert!(free.price.is_some(), "the upgrade is taken: {free:?}");
     assert!(free.lever, "an upgrade is a lever: {free:?}");
+}
+
+// ── Work off the frame ────────────────────────────────────────────
+
+/// **An agent at the background adds nothing to the frame's critical
+/// path.** `oven` runs off the frame: its 5 ms floor does not count against
+/// the 1 ms target, so the round is admitted on `ash`'s floor alone, and
+/// `ash` is lent exactly what it would be lent were `oven` not there. `oven`
+/// is still lent an envelope, which bounds its time at the background.
+#[test]
+fn an_agent_at_the_background_adds_nothing_to_the_critical_path() {
+    let ash = || {
+        bid(
+            offer(
+                "ash",
+                vec![row(LowPower, 800, 0.4), row(HighPerformance, 950, 1.0)],
+                LowPower,
+            ),
+            Important,
+        )
+    };
+    let oven = bid(
+        offer("oven", vec![row(LowPower, 5_000, 0.4)], LowPower),
+        Optional,
+    );
+    let alone = [ash()];
+    let beside_the_oven = [ash(), oven];
+    let background = [AgentId::new("oven")];
+
+    let without = decide(&round(Trigger::Refresh, 1_000, &alone));
+    let with = decide(&Round {
+        background: &background,
+        ..round(Trigger::Refresh, 1_000, &beside_the_oven)
+    });
+
+    assert_eq!(
+        with.trigger,
+        Trigger::Refresh,
+        "the oven's floor is off the frame"
+    );
+    assert_eq!(lent_to(&with, "ash"), lent_to(&without, "ash"));
+    assert!(
+        lent_to(&with, "oven").time.cpu >= us(5_000),
+        "the oven is lent at least its floor: {with:?}"
+    );
 }

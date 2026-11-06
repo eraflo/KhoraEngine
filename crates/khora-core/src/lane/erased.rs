@@ -173,6 +173,7 @@ impl<L: Lane> AnyLane for Erased<L> {
 
     fn quote(&self, inputs: &mut InputSource<'_>) -> Option<Vec<Cost>> {
         let waited = inputs.set_waiting(false);
+        let took = inputs.set_taking(false);
         // The fetched inputs — and any lock they hold — drop before the
         // source waits again.
         let costs = <L::Inputs<'_> as LaneInputs<'_>>::fetch(inputs)
@@ -183,6 +184,7 @@ impl<L: Lane> AnyLane for Erased<L> {
                     .collect()
             });
         inputs.set_waiting(waited);
+        inputs.set_taking(took);
         costs
     }
 
@@ -199,8 +201,11 @@ impl<L: Lane> AnyLane for Erased<L> {
                 received: format!("level {level} of {levels}"),
             }));
         }
-        let fetched =
-            <L::Inputs<'_> as LaneInputs<'_>>::fetch(inputs).map_err(NotPrepared::Refused)?;
+        // Preparing takes no request: they are for the runs.
+        let took = inputs.set_taking(false);
+        let fetched = <L::Inputs<'_> as LaneInputs<'_>>::fetch(inputs);
+        inputs.set_taking(took);
+        let fetched = fetched.map_err(NotPrepared::Refused)?;
         let key = fetched.target_key();
         self.lane
             .prepare(level, gpu, key)

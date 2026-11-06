@@ -130,6 +130,7 @@ fn layout_advisor_fields(x: &khora_data::ecs::layout::LayoutAdvisor) {
 
 fn tick_phase_variants(x: &khora_data::ecs::system::TickPhase) {
     match x {
+        khora_data::ecs::system::TickPhase::Boundary => {}
         khora_data::ecs::system::TickPhase::PreSimulation => {}
         khora_data::ecs::system::TickPhase::PostSimulation => {}
         khora_data::ecs::system::TickPhase::PreExtract => {}

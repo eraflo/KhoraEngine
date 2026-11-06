@@ -180,6 +180,7 @@ fn a_dearer_lane_of_equal_impact_is_no_lever() {
         memory: PerDevice::default(),
         link_rate: PerLink::default(),
         waves: &[],
+        background: &[],
         bids: &bids,
     });
     let lent = allocation

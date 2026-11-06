@@ -196,6 +196,7 @@ impl Loop {
             memory: PerDevice::default(),
             link_rate: PerLink::default(),
             waves: &[],
+            background: &[],
             bids: &bids,
         })
     }

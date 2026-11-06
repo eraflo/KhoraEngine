@@ -27,7 +27,7 @@ use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::erased::{AnyLane, RunOutcome};
 use khora_core::lane::guard::Reason;
 use khora_core::lane::io::{OutputSink, Target};
-use khora_core::lane::OutputDeck;
+use khora_core::lane::{OutputDeck, Staging};
 use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
@@ -62,6 +62,9 @@ pub(super) struct LaneLayer {
     done: f32,
     /// Whether the last recorded run could not progress.
     stalled: bool,
+    /// What the runs staged through `#[staged]` outputs and the scheduler has
+    /// not taken yet.
+    staging: Staging,
 }
 
 impl LaneLayer {
@@ -92,6 +95,7 @@ impl LaneLayer {
             message: String::new(),
             done: 1.0,
             stalled: false,
+            staging: Staging::new(),
         }
     }
 
@@ -157,6 +161,10 @@ impl Layer for LaneLayer {
         self.row
     }
 
+    fn staged(&mut self) -> Staging {
+        std::mem::take(&mut self.staging)
+    }
+
     fn contention(&self) -> Contention {
         self.contention.clone()
     }
@@ -187,7 +195,9 @@ impl Layer for LaneLayer {
                 terms.fixed_step,
                 frame.as_deref(),
             );
-            let mut sink = OutputSink::new(&mut written).with_seed(context.deck);
+            let mut sink = OutputSink::new(&mut written)
+                .with_seed(context.deck)
+                .with_staging(&mut self.staging);
             if let Some(device) = device.as_deref() {
                 sink = sink.with_device(device);
             }

@@ -255,6 +255,7 @@ fn with_free_frame_time_gorna_lends_the_script_family_its_whole_level() {
         memory: PerDevice::default(),
         link_rate: PerLink::default(),
         waves: &[],
+        background: &[],
         bids: &bids,
     });
     let envelope = allocation

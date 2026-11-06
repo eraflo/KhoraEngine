@@ -127,6 +127,12 @@ impl<A: EngineApp> EngineCore<A> {
     /// state. A request made after counts from the next frame.
     pub fn run_app_update(&mut self, inputs: &[InputEvent]) {
         self.settle_activation();
+        // The scheduler's frame start: the allocation lent, the staged layers
+        // swapped in, and what the background runs that ended staged handed
+        // to the reserve — all before the frame's first DataSystem.
+        if let Some(scheduler) = self.scheduler.as_mut() {
+            scheduler.begin_frame(&self.runtime);
+        }
         let (Some(app), Some(gw)) = (self.app.as_mut(), self.game_world.as_mut()) else {
             return;
         };
@@ -136,6 +142,15 @@ impl<A: EngineApp> EngineCore<A> {
         // built. We pass a transient empty deck so `DataSystem`s that
         // happen to read it observe an empty slot — they simply no-op.
         let mut deck = khora_core::lane::OutputDeck::new();
+
+        // The boundary: what the work that spans frames staged is applied
+        // here, on the frame's World, before anything of the frame reads it.
+        substrate::run_data_systems(
+            gw.inner_world_mut(),
+            runtime,
+            &mut deck,
+            TickPhase::Boundary,
+        );
 
         // Substrate Pass — pre-simulation invariants (input-driven mutations,
         // scene events that must be visible to agents).

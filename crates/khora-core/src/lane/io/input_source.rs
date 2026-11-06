@@ -19,6 +19,7 @@ use std::sync::{Arc, Mutex, TryLockError};
 use std::time::{Duration, Instant};
 
 use super::{Budget, Declaration, FixedStep, FrameId, Locked, SceneTarget, Target};
+use crate::event::Supersedes;
 use crate::lane::context_keys::ClearColor;
 use crate::lane::guard::{InputRefusal, InputWarning, Reason, SourceKind, Validate};
 use crate::lane::{LaneBus, OutputDeck};
@@ -50,6 +51,12 @@ pub struct InputSource<'f> {
     lock_deadline: Option<Instant>,
     /// Whether a lock held elsewhere is waited for; a quote never waits.
     waits: bool,
+    /// Whether a `#[take]` drains its channel: a run does; a quote or a
+    /// preparation reads what it holds and leaves it for the run.
+    takes: bool,
+    /// How to give back what each `#[take]` of the fetch under way drained,
+    /// should a later field be refused.
+    taken: Vec<(&'f dyn crate::event::Restore, Box<dyn std::any::Any + Send>)>,
     touched: Declaration,
     warnings: Vec<InputWarning>,
 }
@@ -68,6 +75,8 @@ impl<'f> InputSource<'f> {
             step: None,
             lock_deadline: None,
             waits: true,
+            takes: true,
+            taken: Vec::new(),
             touched: Declaration::default(),
             warnings: Vec::new(),
         }
@@ -108,6 +117,27 @@ impl<'f> InputSource<'f> {
     /// `LockTimedOut`, and no deadline is started.
     pub fn set_waiting(&mut self, waits: bool) -> bool {
         std::mem::replace(&mut self.waits, waits)
+    }
+
+    /// Keeps what the fetch's `#[take]`s drained: the fetch succeeded, and the
+    /// lane has the requests.
+    pub fn keep_takes(&mut self) {
+        self.taken.clear();
+    }
+
+    /// Gives back what the fetch's `#[take]`s drained, at the front of their
+    /// channels: a later field was refused, and the lane never saw them.
+    pub fn restore_takes(&mut self) {
+        for (channel, items) in self.taken.drain(..).rev() {
+            channel.restore_any(items);
+        }
+    }
+
+    /// Sets whether a `#[take]` drains its channel, returning what it was:
+    /// a quote or a preparation fetches the lane's inputs without taking the
+    /// requests a run is for.
+    pub fn set_taking(&mut self, takes: bool) -> bool {
+        std::mem::replace(&mut self.takes, takes)
     }
 
     /// The frame the source is for.
@@ -215,6 +245,26 @@ impl<'f> InputSource<'f> {
                 Err(TryLockError::WouldBlock) => std::thread::yield_now(),
             }
         }
+    }
+
+    /// Every request the runtime's `Channel<T>` holds, drained: what a
+    /// `#[take]` field reads. A source not taking ([`set_taking`](Self::set_taking))
+    /// reads them and leaves them. Refused as `Missing` when the runtime
+    /// holds no such channel.
+    pub fn take<T: Supersedes + Clone + Send + Sync + 'static>(
+        &mut self,
+        field: &'static str,
+    ) -> Result<Vec<T>, InputRefusal> {
+        let takes = self.takes;
+        let channel = self.entry::<crate::event::Channel<T>>(field, SourceKind::Take)?;
+        if !takes {
+            return Ok(channel.read(&mut crate::event::Cursor::default()));
+        }
+        let drained = channel.drain();
+        if !drained.is_empty() {
+            self.taken.push((channel, Box::new(drained.clone())));
+        }
+        Ok(drained)
     }
 
     /// The frame's target, when it has a size.

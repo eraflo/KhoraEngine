@@ -30,12 +30,17 @@ use std::collections::HashMap;
 /// the plain per-agent sum. A model for an agent absent from the plan is
 /// likewise summed as its own singleton (conservative).
 ///
+/// An agent of `background` runs off the frame, at
+/// [`ExecutionPhase::BACKGROUND`](khora_core::agent::ExecutionPhase::BACKGROUND):
+/// it adds nothing to the frame, whatever its model.
+///
 /// Returns `None` until at least one agent has enough distinct-`n` samples to
 /// fit a model — before that the DCC has nothing to anticipate with.
 pub(super) fn forecast_frame_ms(
     models: &HashMap<AgentId, CostModel>,
     workloads: &HashMap<AgentId, f64>,
     wave_plan: &[Vec<AgentId>],
+    background: &[AgentId],
 ) -> Option<f64> {
     let predict = |id: &AgentId| {
         let n = *workloads.get(id)?;
@@ -48,6 +53,9 @@ pub(super) fn forecast_frame_ms(
         let mut slowest: Option<f64> = None;
         for id in wave {
             planned.insert(*id);
+            if background.contains(id) {
+                continue;
+            }
             if let Some(ms) = predict(id) {
                 slowest = Some(slowest.map_or(ms, |s: f64| s.max(ms)));
             }
@@ -58,7 +66,10 @@ pub(super) fn forecast_frame_ms(
         }
     }
     // Any model not covered by the plan is its own singleton wave.
-    for id in models.keys().filter(|id| !planned.contains(*id)) {
+    for id in models
+        .keys()
+        .filter(|id| !planned.contains(*id) && !background.contains(*id))
+    {
         if let Some(ms) = predict(id) {
             total += ms;
             any = true;

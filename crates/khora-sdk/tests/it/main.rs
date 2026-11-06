@@ -24,6 +24,7 @@ mod camera_view_prepares_the_frame;
 mod declared_components;
 mod editor_shader_sources;
 mod engine_names;
+mod frame_boundary;
 mod frame_report;
 mod frame_target_reaches_lanes;
 mod game_saves;

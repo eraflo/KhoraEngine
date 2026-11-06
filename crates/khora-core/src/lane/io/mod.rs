@@ -288,7 +288,9 @@ impl Declaration {
         for input in &self.inputs {
             let (into, ty) = match input.kind {
                 SourceKind::Resource | SourceKind::Resident => (&mut contention.reads, input.ty),
-                SourceKind::Locked => (&mut contention.writes, input.ty),
+                // Draining a channel empties it for every other reader: a
+                // take is a lock of the channel.
+                SourceKind::Locked | SourceKind::Take => (&mut contention.writes, input.ty),
                 // The agent lends the frame's target and clear colour from
                 // the `FrameContext`, so reading either reads it.
                 SourceKind::Frame
@@ -304,6 +306,11 @@ impl Declaration {
             }
         }
         for output in &self.outputs {
+            // A staged output goes into the run's own staging, then the
+            // reserve: no slot of the frame's deck.
+            if output.kind == SinkKind::Staged {
+                continue;
+            }
             if !contention.deck.contains(&output.ty) {
                 contention.deck.push(output.ty);
             }

@@ -35,6 +35,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 use waves::{build_wave_metas, partition_waves};
 
+mod background;
 mod execution;
 mod frame;
 mod known;
@@ -137,6 +138,11 @@ pub struct ExecutionScheduler {
     /// Every agent met, with its name and, for one running as layers, its
     /// place and declarations: a quiet frame locks no such agent.
     known: KnownAgents,
+    /// The runs of the families at the background, off the frame.
+    background: background::Background,
+    /// Whether the host began the frame (`begin_frame`) since the last
+    /// `run_frame`: a frame not begun is begun by `run_frame` itself.
+    begun: bool,
 }
 
 impl ExecutionScheduler {
@@ -169,6 +175,8 @@ impl ExecutionScheduler {
             pool: WorkerPool::new(default_pool_size()),
             undeclared_deck_writes: Mutex::new(Vec::new()),
             known: KnownAgents::default(),
+            background: background::Background::new(default_background_size()),
+            begun: false,
         }
     }
 
@@ -419,6 +427,16 @@ fn sort_agents(mut agents: Vec<AgentSlot>, known: &KnownAgents) -> Vec<AgentSlot
 
 /// Worker-pool size: one thread per available core minus two (reserved for the
 /// main/render thread and the DCC cold thread), clamped to `[1, 16]`.
+/// The threads the background runs get, apart from the waves' pool: a long
+/// run never queues in front of a wave's jobs. A quarter of the cores, at
+/// least one.
+fn default_background_size() -> usize {
+    std::thread::available_parallelism()
+        .map(|cores| cores.get() / 4)
+        .unwrap_or(1)
+        .clamp(1, 8)
+}
+
 fn default_pool_size() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get().saturating_sub(2))

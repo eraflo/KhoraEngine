@@ -80,6 +80,8 @@ pub struct GornaArbitrator {
     /// refreshed by the DCC each tick via [`set_wave_plan`](Self::set_wave_plan).
     /// Empty means serial execution.
     wave_plan: Vec<Vec<AgentId>>,
+    /// The agents the last round found at the background, off the frame.
+    background: Vec<AgentId>,
     /// The last epoch opened.
     epoch: Epoch,
     /// The allocation in force, until the next round.
@@ -102,6 +104,7 @@ impl GornaArbitrator {
             lock_timeout,
             modes: HashMap::new(),
             wave_plan: Vec::new(),
+            background: Vec::new(),
             epoch: Epoch::default(),
             in_force: None,
             offers: Vec::new(),
@@ -135,6 +138,13 @@ impl GornaArbitrator {
     /// DCC calibrated them by what it measured.
     pub fn offers(&self) -> &[Offer] {
         &self.offers
+    }
+
+    /// The agents the last round found at
+    /// [`ExecutionPhase::BACKGROUND`](khora_core::agent::ExecutionPhase::BACKGROUND):
+    /// they add nothing to the frame's critical path.
+    pub fn background(&self) -> &[AgentId] {
+        &self.background
     }
 
     /// The target time for the frame the last round shared.
@@ -180,6 +190,7 @@ impl GornaArbitrator {
         // Agents removed since the last round are forgotten.
         self.known.retain(|(weak, _)| weak.strong_count() > 0);
         let mut bids = Vec::with_capacity(agents.len());
+        let mut background: Vec<AgentId> = Vec::new();
         for agent_mutex in agents {
             let weak = Arc::downgrade(agent_mutex);
             let Some(mut agent) = try_lock_agent_with_timeout(agent_mutex, self.lock_timeout)
@@ -223,9 +234,13 @@ impl GornaArbitrator {
             };
             let mut offer = agent.offer(&request);
             let late = Instant::now() > request.reply_by;
-            let importance = agent.execution_timing().importance;
+            let timing = agent.execution_timing();
+            let importance = timing.importance;
             let id = agent.id();
             drop(agent);
+            if timing.default_phase == khora_core::agent::ExecutionPhase::BACKGROUND {
+                background.push(id);
+            }
             self.offers.push(offer.clone());
             calibrate(&mut offer, measured_costs.get(&id).copied());
             bids.push(Bid {
@@ -252,8 +267,10 @@ impl GornaArbitrator {
             memory,
             link_rate: PerLink::default(),
             waves: &self.wave_plan,
+            background: &background,
             bids: &bids,
         });
+        self.background = background;
         self.in_force = Some(allocation.clone());
         allocation
     }

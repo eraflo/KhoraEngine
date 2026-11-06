@@ -66,8 +66,13 @@ pub struct Mailbox {
     pub between_sessions: BetweenSessions,
     /// The channel's item type, by name, for diagnostics.
     pub message: fn() -> &'static str,
+    /// The runtime entry the mailbox is: `Channel<T>`, by type — what a
+    /// `#[take]` field declares.
+    pub channel: fn() -> std::any::TypeId,
     /// Discards what `reader` has not read of the runtime's `Channel<T>`.
     empty: fn(&Runtime, Reader),
+    /// Whether the runtime's `Channel<T>` holds anything.
+    holds: fn(&Runtime) -> bool,
 }
 
 impl Mailbox {
@@ -82,7 +87,9 @@ impl Mailbox {
             reader,
             between_sessions,
             message: std::any::type_name::<T>,
+            channel: std::any::TypeId::of::<Channel<T>>,
             empty: empty_channel::<T>,
+            holds: channel_holds::<T>,
         }
     }
 
@@ -92,6 +99,12 @@ impl Mailbox {
     /// nothing to discard.
     pub fn empty(&self, runtime: &Runtime) {
         (self.empty)(runtime, self.reader);
+    }
+
+    /// Whether `runtime`'s channel holds mail: what wakes a background run
+    /// of a family taking it. A runtime without the channel holds none.
+    pub fn holds_mail(&self, runtime: &Runtime) -> bool {
+        (self.holds)(runtime)
     }
 }
 
@@ -107,6 +120,13 @@ impl std::fmt::Debug for Mailbox {
 }
 
 inventory::collect!(Mailbox);
+
+fn channel_holds<T: Supersedes + Clone + Send + Sync + 'static>(runtime: &Runtime) -> bool {
+    runtime
+        .resources
+        .get::<Channel<T>>()
+        .is_some_and(|channel| !channel.is_empty())
+}
 
 fn empty_channel<T: Supersedes + Clone + Send + Sync + 'static>(runtime: &Runtime, reader: Reader) {
     let Some(channel) = runtime.resources.get::<Channel<T>>() else {

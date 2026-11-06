@@ -321,9 +321,12 @@ impl DccService {
                 //     so GORNA downgrades *before* the frame actually overruns —
                 //     turning the reactive loop predictive (model proposes,
                 //     measurement disposes).
-                if let Some(predicted_ms) =
-                    forecast_frame_ms(&cost_models, &workloads, &latest_wave_plan)
-                {
+                if let Some(predicted_ms) = forecast_frame_ms(
+                    &cost_models,
+                    &workloads,
+                    &latest_wave_plan,
+                    arbitrator.background(),
+                ) {
                     if predicted_ms > report.suggested_latency_ms as f64 {
                         let ratio = (report.suggested_latency_ms as f64 / predicted_ms)
                             .clamp(0.5, 1.0) as f32;

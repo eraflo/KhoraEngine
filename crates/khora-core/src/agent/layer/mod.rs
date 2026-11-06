@@ -29,7 +29,7 @@ mod wake;
 #[cfg(test)]
 mod tests;
 
-pub use place::{LastRun, Place, Terms, KEEP_EPOCHS};
+pub use place::{CheckedOut, LastRun, Place, Terms, KEEP_EPOCHS};
 pub use wake::Wake;
 
 use std::time::Duration;
@@ -66,6 +66,14 @@ pub trait Layer: Send {
 
     /// Releases what the layer's lane built on the device.
     fn shutdown(&mut self, gpu: &mut GpuSetup<'_>);
+
+    /// Takes what the layer's runs staged through `#[staged]` outputs since
+    /// it was last asked, for the scheduler to hand to the runtime's
+    /// [`Reserve`](crate::lane::Reserve) at a frame start. Defaults to
+    /// nothing.
+    fn staged(&mut self) -> crate::lane::Staging {
+        crate::lane::Staging::new()
+    }
 
     /// Called each time the layer is installed at its place: first, or
     /// swapped back in from the layers kept. What it watches its runs for

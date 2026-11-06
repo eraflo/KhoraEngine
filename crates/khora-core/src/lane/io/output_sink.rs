@@ -18,6 +18,8 @@ use std::any::{Any, TypeId};
 
 use super::PassSlot;
 use crate::lane::guard::{OutputRefusal, Reason, SinkKind};
+use crate::lane::reserve::Staged;
+use crate::lane::staging::Staging;
 use crate::lane::OutputDeck;
 use crate::renderer::traits::PipelineSystem;
 use crate::renderer::GraphicsDevice;
@@ -34,6 +36,8 @@ pub struct OutputSink<'f> {
     device: Option<&'f dyn GraphicsDevice>,
     /// The pipeline system `#[pass]` outputs lend the lane.
     pipelines: Option<&'f dyn PipelineSystem>,
+    /// Where `#[staged]` outputs go: the staging of a background run.
+    staging: Option<&'f mut Staging>,
 }
 
 impl<'f> OutputSink<'f> {
@@ -45,6 +49,7 @@ impl<'f> OutputSink<'f> {
             seed: None,
             device: None,
             pipelines: None,
+            staging: None,
         }
     }
 
@@ -77,6 +82,31 @@ impl<'f> OutputSink<'f> {
     /// The pipeline system `#[pass]` outputs lend, when the agent lent one.
     pub fn pipelines(&self) -> Option<&'f dyn PipelineSystem> {
         self.pipelines
+    }
+
+    /// The same sink, its `#[staged]` outputs going into `staging`: what one
+    /// run staged, handed to the family's reserve once the run is over.
+    pub fn with_staging(mut self, staging: &'f mut Staging) -> Self {
+        self.staging = Some(staging);
+        self
+    }
+
+    /// Stages `items` into the run's staging. Refused as `Missing`, naming
+    /// `field`, by a sink lent no staging.
+    pub fn stage<T: Staged>(
+        &mut self,
+        field: &'static str,
+        items: Vec<T>,
+    ) -> Result<(), OutputRefusal> {
+        let Some(staging) = self.staging.as_deref_mut() else {
+            return Err(OutputRefusal {
+                field,
+                sink: SinkKind::Staged,
+                reason: Reason::Missing,
+            });
+        };
+        staging.stage(items);
+        Ok(())
     }
 
     /// What the slot `T` holds this frame so far, or its default.

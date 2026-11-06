@@ -65,6 +65,10 @@ pub struct Round<'a> {
     /// The scheduler's waves: the agents of one wave run side by side, so a
     /// wave costs its slowest member. An agent in no wave runs alone.
     pub waves: &'a [Vec<AgentId>],
+    /// The agents that run off the frame, at
+    /// [`ExecutionPhase::BACKGROUND`](khora_core::agent::ExecutionPhase::BACKGROUND):
+    /// they add nothing to the frame's critical path.
+    pub background: &'a [AgentId],
     /// Every agent asked, with its offer.
     pub bids: &'a [Bid],
 }
@@ -437,6 +441,10 @@ fn critical_paths(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> PerDevice
     let mut alone = PerDevice::<u64>::default();
     let mut waves = vec![PerDevice::<u64>::default(); round.waves.len()];
     for (bid, plan) in bids.iter().zip(plans) {
+        // Off the frame: its time is the free threads', not the frame's.
+        if round.background.contains(&bid.offer.agent) {
+            continue;
+        }
         let (time, _, transfer) = plan.asks(&bid.offer.rows);
         let moving = transfer_micros(&transfer, &round.link_rate);
         let wave = round

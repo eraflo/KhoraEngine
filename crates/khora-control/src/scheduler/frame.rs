@@ -39,6 +39,39 @@ use std::sync::{Arc, Mutex, TryLockError};
 use std::time::Instant;
 
 impl ExecutionScheduler {
+    /// The frame start, before any DataSystem of the frame runs: the budget
+    /// the DCC published is taken, the allocation in force is lent, every
+    /// family's staged layer is swapped in, and the background runs that
+    /// ended since are returned — their layers to their places, what they
+    /// staged to the runtime's [`Reserve`](khora_core::lane::Reserve). The
+    /// host calls it once the families on and off are settled, before the
+    /// frame's `Boundary` systems; [`run_frame`](Self::run_frame) then runs
+    /// the frame on what it fixed. A frame [`run_frame`](Self::run_frame)
+    /// finds not begun, it begins itself.
+    pub fn begin_frame(&mut self, runtime: &Runtime) {
+        // The budget the DCC published since the last frame.
+        if let Some(next) = self.budget_channel.take() {
+            self.taken.push(next);
+        }
+        let inactive = runtime
+            .resources
+            .get::<Arc<Activation>>()
+            .map(|activation| activation.inactive())
+            .unwrap_or_default();
+        // The runs that ended since come back first: a layer staged while its
+        // family's run was out swaps in now that it is home.
+        for (report, ms) in self.background.finish(runtime) {
+            self.publish_report(Some(report), ms, 0.0);
+        }
+        // The allocation in force is lent before anything locks an agent: the
+        // whole frame runs on one epoch. Then every family running as layers
+        // has the layer staged at its place swapped in, at the same place.
+        self.lend_allocation(&inactive);
+        let layered = self.layered_agents(&inactive);
+        swap_layers(&layered, runtime);
+        self.begun = true;
+    }
+
     /// Executes the complete frame cycle.
     ///
     /// This is called every frame by the engine loop.
@@ -94,9 +127,10 @@ impl ExecutionScheduler {
         runtime: Arc<Runtime>,
         before_agents: impl FnOnce(&LaneBus),
     ) {
-        // 1. Sync budgets from cold thread
-        if let Some(next) = self.budget_channel.take() {
-            self.taken.push(next);
+        // 1. The frame start, unless the host began the frame itself.
+        if !std::mem::take(&mut self.begun) {
+            self.begin_frame(&runtime);
+            self.begun = false;
         }
         self.frame_start = Instant::now();
         if let Ok(mut found) = self.undeclared_deck_writes.lock() {
@@ -113,14 +147,9 @@ impl ExecutionScheduler {
             .map(|activation| activation.inactive())
             .unwrap_or_default();
 
-        // 1a-bis. Lend the allocation in force, before anything locks an
-        //     agent: the whole frame runs on one epoch.
-        self.lend_allocation(&inactive);
-
-        // 1a-ter. The frame start of every family running as layers: the
-        //     layer staged at its place is swapped in, at the same place.
+        // 1a-bis. The families running as layers, the frame start having
+        //     lent and swapped.
         let layered = self.layered_agents(&inactive);
-        swap_layers(&layered, &runtime);
 
         // 1b. Real frame delta + fixed-timestep accumulator bookkeeping.
         let now = self.frame_start;
@@ -225,6 +254,10 @@ impl ExecutionScheduler {
         // and the worker pool needs an owned `Arc<LaneBus>` to make a concurrent
         // wave's `Isolated` jobs `'static`. Serial paths deref it to `&LaneBus`.
         let bus = Arc::new(bus);
+
+        // 5c. The families at the background with mail start a run off the
+        //     frame, on this frame's bus; nothing waits for it.
+        self.background.start(&layered, &runtime, &bus);
 
         // 6. Fixed-update sub-loop. When an agent declares a fixed step, the
         //    fixed-timestep agents advance their discrete sub-steps before the

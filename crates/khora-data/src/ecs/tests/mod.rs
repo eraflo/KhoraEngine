@@ -37,6 +37,7 @@ mod relayout;
 mod runtime_components;
 mod runtime_rows;
 mod spawn_refusal;
+mod staged_outputs;
 mod system_components;
 mod tick_invariants;
 mod ticks_unsaved;

@@ -14,6 +14,7 @@
 
 //! Tests of the Substrate Pass runners, one file per concern.
 
+mod boundary;
 mod data_system_activation;
 mod data_system_clock;
 mod data_system_since;

@@ -194,7 +194,15 @@ the substrate resolves the marker (`role_scope`, `khora-control/src/substrate/da
 hands `SystemContext.scope` / `FlowContext.scope`; Flows project what `Selection::admits`
 (`khora-data/src/flow/selection.rs`), cached views are keyed by the scope and who it admits, and
 `ScriptView.left_scope` makes the lane forget without a farewell. Scripts and audio honour it; physics
-does not yet. A family's channels declare a `Mailbox` (`khora-core/src/event/mailbox.rs`):
+does not yet. **Work that spans frames:** a family at `ExecutionPhase::BACKGROUND` has its
+installed layer checked out of its place (`Place::check_out`) and run off the frame on the scheduler's
+background pool (`khora-control/src/scheduler/background.rs`) when a `Take` mailbox of a channel its lane
+takes holds mail; one run per family; boot (`check_background`, `check_takes`, `check_one_taker`,
+`check_nothing_staged` in `khora-core/src/agent/registration.rs`) admits only `#[take]`, `#[resource]`,
+`#[budget]` inputs and `#[staged]` outputs there. `begin_frame` (called by the SDK after settle) brings
+ended runs home, hands their `Staging` to the runtime's `Reserve` (`khora-core/src/lane/reserve.rs`),
+lends and swaps; `TickPhase::Boundary` systems then take `SystemContext::staged::<T>()`. The cost model
+skips background agents (`Round.background`, `forecast_frame_ms`). A family's channels declare a `Mailbox` (`khora-core/src/event/mailbox.rs`):
 `BetweenSessions::Drop` mail is emptied at each boundary while the family is off, `Hold` is kept. Family
 ids: `khora_core::{script::SCRIPT, physics::PHYSICS, audio::AUDIO}`. The editor's transport
 (`khora-editor/src/commands/transport.rs`, `process_transport` in `before_frame`) switches SCRIPT, PHYSICS

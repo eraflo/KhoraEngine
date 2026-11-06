@@ -52,6 +52,23 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, RwLock};
 
+/// A channel that takes back, at its front, what a drain took: a fetch
+/// refused after its `#[take]` gives the requests back through it. Erased, so
+/// the source holds channels of any item.
+pub trait Restore: Sync {
+    /// Puts back `items`, a `Vec` of the channel's items drained from it; an
+    /// item of another type is dropped.
+    fn restore_any(&self, items: Box<dyn std::any::Any + Send>);
+}
+
+impl<T: Supersedes + Send + Sync + 'static> Restore for Channel<T> {
+    fn restore_any(&self, items: Box<dyn std::any::Any + Send>) {
+        if let Ok(items) = items.downcast::<Vec<T>>() {
+            self.restore(*items);
+        }
+    }
+}
+
 /// Whether a newly sent item makes an already-queued one obsolete.
 ///
 /// The rule lives on the item because it is a fact about the item: two saves of
@@ -254,6 +271,24 @@ impl<T: Supersedes> Channel<T> {
         };
         ring.base += ring.items.len() as u64;
         ring.items.drain(..).collect()
+    }
+
+    /// Puts `items`, taken by a drain, back at the front of the channel, in
+    /// their order: the reader that drained them could not use them. They
+    /// are held whatever the capacity — they were held a moment ago.
+    pub fn restore(&self, items: Vec<T>) {
+        let Ok(mut ring) = self.ring.write() else {
+            log::error!(
+                "the {} channel is poisoned; {} item(s) given back are lost",
+                std::any::type_name::<T>(),
+                items.len()
+            );
+            return;
+        };
+        ring.base = ring.base.saturating_sub(items.len() as u64);
+        for item in items.into_iter().rev() {
+            ring.items.push_front(item);
+        }
     }
 
     /// Keeps only the held items `keep` accepts.

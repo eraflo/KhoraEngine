@@ -232,12 +232,21 @@ Two distinct ordered-slot enums, easy to confuse:
 - **`ExecutionPhase`** orders **agent** execution within a frame:
   `Init`, `Observe`, `Transform`, `Mutate`, `Output`, `Finalize`, plus optional
   custom phases. Each agent declares the phases it may run in; the Scheduler runs
-  them in order. See [Agents and Lanes](../concepts/agents-and-lanes.md) and
+  them in order. One place is outside the frame: **`ExecutionPhase::BACKGROUND`**.
+  A family there has its layer run off the frame, on a pool of its own, when its
+  `Take` [mailbox](#mailbox) holds mail — one run at a time, however many frames
+  it takes. Its lanes read only `#[take]` (the requests, drained), `#[resource]`
+  and `#[budget]`, and hand on only `#[staged]` outputs, kept in the
+  [Reserve](#reserve) until a frame's boundary; boot refuses anything else. See
+  [Agents and Lanes](../concepts/agents-and-lanes.md) and
   [The frame](../concepts/the-frame.md).
 - **`TickPhase`** orders the Data layer's **DataSystem** invariants around the
-  app's update — `PreSimulation`, `PostSimulation`, `PreExtract`, and the
-  `Maintenance` pass — independent of agent phases. See
-  [The frame](../concepts/the-frame.md).
+  app's update — `Boundary` first, then `PreSimulation`, `PostSimulation`,
+  `PreExtract`, and the `Maintenance` pass — independent of agent phases.
+  `Boundary` runs right after the families are settled and the scheduler's frame
+  start (`begin_frame`: the allocation lent, the layers swapped, the background
+  runs that ended brought home): its systems apply what the background staged,
+  through `SystemContext::staged::<T>()`. See [The frame](../concepts/the-frame.md).
 
 ### Field attributes (Ergon)
 
@@ -459,6 +468,16 @@ at once, so the turn can keep it and queue writes on it. The world's
 `EntityReserver` hands ids out without a lock; Maintenance commits each one a
 spawn accepted and releases the rest, every frame — an index reused gets a new
 generation. See [Scripting](../concepts/scripting/writing.md#an-entity-named-before-it-exists).
+
+### Reserve
+
+What the runs of the families at the background staged and no frame applied
+yet, by output type (`khora_core::lane::Reserve`, a runtime resource). A run's
+`#[staged]` outputs reach it at the frame start after the run ended — never in
+the middle of a frame — and a `Boundary` DataSystem takes them. An output
+implements `Staged`: a newer one of the same key (its `Supersedes`) replaces a
+waiting one, which goes through `Staged::abandon` and is never applied. See
+[ExecutionPhase / TickPhase](#executionphase--tickphase).
 
 ### ResourceBudget
 

@@ -90,6 +90,8 @@ pub mod family;
 pub mod guard;
 pub mod io;
 pub mod level;
+pub mod reserve;
+pub mod staging;
 
 pub use bus::LaneBus;
 
@@ -98,6 +100,10 @@ pub use context_keys::*;
 pub use deck::OutputDeck;
 
 pub use host_views::HostViews;
+
+pub use reserve::{Reserve, Staged};
+
+pub use staging::Staging;
 
 pub use lock::{
     mutex_lock, mutex_lock_render, read_lock, read_lock_render, write_lock, write_lock_render,

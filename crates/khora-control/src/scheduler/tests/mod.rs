@@ -17,6 +17,8 @@
 mod activation;
 mod agent_ids;
 mod allocations;
+mod background;
+mod begin_frame;
 mod concurrent_exec;
 mod deck_writes;
 mod fixed_agent_sub_clocks;

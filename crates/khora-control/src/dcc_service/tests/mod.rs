@@ -503,7 +503,7 @@ fn the_forecast_sums_agent_models_on_the_critical_path() {
     // No models yet → nothing to anticipate.
     let mut models: HashMap<AgentId, CostModel> = HashMap::new();
     let mut workloads: HashMap<AgentId, f64> = HashMap::new();
-    assert!(forecast_frame_ms(&models, &workloads, &[]).is_none());
+    assert!(forecast_frame_ms(&models, &workloads, &[], &[]).is_none());
 
     // Renderer: linear 3·n; Physics: linear 2·n; both at n = 100.
     let mut renderer = CostModel::new(16);
@@ -518,15 +518,53 @@ fn the_forecast_sums_agent_models_on_the_critical_path() {
     workloads.insert(AgentId::new("physics"), 100.0);
 
     // Serial (empty plan): 300 + 200 = 500ms (within fit tolerance).
-    let total = forecast_frame_ms(&models, &workloads, &[]).expect("a fit is available");
+    let total = forecast_frame_ms(&models, &workloads, &[], &[]).expect("a fit is available");
     assert!((total - 500.0).abs() < 1.0, "serial forecast = {total}");
 
     // Concurrent wave [Renderer, Physics]: critical path = max(300, 200).
     let plan = vec![vec![AgentId::new("renderer"), AgentId::new("physics")]];
-    let concurrent = forecast_frame_ms(&models, &workloads, &plan).expect("a fit is available");
+    let concurrent =
+        forecast_frame_ms(&models, &workloads, &plan, &[]).expect("a fit is available");
     assert!(
         (concurrent - 300.0).abs() < 1.0,
         "concurrent forecast = {concurrent}"
+    );
+}
+
+/// **The forecast leaves an agent at the background off the frame.** The
+/// renderer costs 3·n and the oven 2·n, both at n = 100: the oven runs off
+/// the frame, so the frame is forecast at the renderer's 300 ms, serial or
+/// with the oven in the wave plan.
+#[test]
+fn the_forecast_leaves_an_agent_at_the_background_off_the_frame() {
+    let mut renderer = CostModel::new(16);
+    let mut oven = CostModel::new(16);
+    for n in [10.0, 20.0, 40.0] {
+        renderer.record(n, 3.0 * n);
+        oven.record(n, 2.0 * n);
+    }
+    let models: HashMap<AgentId, CostModel> = [
+        (AgentId::new("renderer"), renderer),
+        (AgentId::new("oven"), oven),
+    ]
+    .into();
+    let workloads: HashMap<AgentId, f64> = [
+        (AgentId::new("renderer"), 100.0),
+        (AgentId::new("oven"), 100.0),
+    ]
+    .into();
+    let background = [AgentId::new("oven")];
+
+    let serial =
+        forecast_frame_ms(&models, &workloads, &[], &background).expect("a fit is available");
+    assert!((serial - 300.0).abs() < 1.0, "serial forecast = {serial}");
+
+    let planned = vec![vec![AgentId::new("renderer")], vec![AgentId::new("oven")]];
+    let with_a_plan =
+        forecast_frame_ms(&models, &workloads, &planned, &background).expect("a fit is available");
+    assert!(
+        (with_a_plan - 300.0).abs() < 1.0,
+        "forecast with a plan = {with_a_plan}"
     );
 }
 
@@ -553,7 +591,7 @@ fn each_agent_is_forecast_at_its_own_workload() {
     ]
     .into();
 
-    let total = forecast_frame_ms(&models, &workloads, &[]).expect("a fit is available");
+    let total = forecast_frame_ms(&models, &workloads, &[], &[]).expect("a fit is available");
     assert!((total - 320.0).abs() < 1.0, "forecast = {total}");
 }
 

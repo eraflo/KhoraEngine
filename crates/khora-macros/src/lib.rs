@@ -88,8 +88,9 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
 /// Every field names where it comes from: `#[bus]` (`&'f V`, a View),
 /// `#[frame]` (`Target`, `ClearColor`), `#[deck]` (`Option<&'f T>`, a slot an
 /// earlier phase wrote), `#[resident]` (`&'f Resident<R>`), `#[resource]`
-/// (`&'f T`, read without locking), `#[locked]` (`Locked<'f, T>`), `#[budget]`
-/// (`Budget`) or `#[scope]`. `#[bus(validate)]` and `#[deck(validate)]` run the
+/// (`&'f T`, read without locking), `#[locked]` (`Locked<'f, T>`), `#[take]`
+/// (`Vec<T>`, the family's `Take` mailbox drained), `#[budget]` (`Budget`) or
+/// `#[scope]`. `#[bus(validate)]` and `#[deck(validate)]` run the
 /// value's `Validate` check.
 ///
 /// ```ignore
@@ -103,7 +104,7 @@ pub fn derive_component(input: TokenStream) -> TokenStream {
 /// ```
 #[proc_macro_derive(
     LaneInputs,
-    attributes(bus, frame, deck, resident, resource, locked, budget, scope)
+    attributes(bus, frame, deck, resident, resource, locked, take, budget, scope)
 )]
 pub fn derive_lane_inputs(input: TokenStream) -> TokenStream {
     lane_io::derive_lane_inputs(input)
@@ -112,8 +113,10 @@ pub fn derive_lane_inputs(input: TokenStream) -> TokenStream {
 /// Derives `khora_core::lane::io::LaneOutputs` for a family's outputs.
 ///
 /// Every field names where it goes: `#[pass]` (`Pass<'f, P>`, GPU commands for
-/// pass slot `P`) or `#[deck]` (an owned value a later phase reads).
-#[proc_macro_derive(LaneOutputs, attributes(pass, deck))]
+/// pass slot `P`), `#[deck]` (an owned value a later phase reads) or
+/// `#[staged]` (`Vec<T>` of `Staged` outputs, kept in the family's reserve
+/// until a frame's `Boundary`).
+#[proc_macro_derive(LaneOutputs, attributes(pass, deck, staged))]
 pub fn derive_lane_outputs(input: TokenStream) -> TokenStream {
     lane_io::derive_lane_outputs(input)
 }
