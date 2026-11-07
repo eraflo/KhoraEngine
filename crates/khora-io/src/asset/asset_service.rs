@@ -123,6 +123,14 @@ pub struct AssetService {
     pub(super) installers: HashMap<TypeId, super::off_frame::Installer>,
     /// Each asset's generation, which a decode in flight holds to.
     pub(super) generations: Arc<Generations>,
+    /// The changed assets whose new value is still being decoded, for the
+    /// `asset_reload` system to refresh their copies once it lands.
+    reloading: HashSet<AssetUUID>,
+    /// The last good copy of each asset being decoded again, by asset and
+    /// type: what a reference resolved meanwhile is served, as the copies
+    /// the engine holds are. Never in the cache, so the new value replaces
+    /// it when it lands.
+    pub(super) meanwhile: HashMap<(AssetUUID, TypeId), Box<dyn Any + Send + Sync>>,
 }
 
 /// Sends `AssetChanged(uuid)` on `changes`, noting in `lost` if the full
@@ -176,6 +184,8 @@ impl AssetService {
             pending: HashSet::new(),
             installers: HashMap::new(),
             generations: Arc::new(Generations::default()),
+            reloading: HashSet::new(),
+            meanwhile: HashMap::new(),
         })
     }
 
@@ -513,6 +523,26 @@ impl AssetService {
     /// caught mid-write, indexed without its parts) is not gone: its file
     /// is read again when it changes.
     pub fn is_gone(&mut self, uuid: &AssetUUID) -> bool {
+        if self.gone_from_index(uuid) {
+            return true;
+        }
+        if self.reader.index.get_metadata(uuid).is_some() {
+            return false;
+        }
+        // A part whose container is still indexed: gone when the container
+        // opens and no longer holds it.
+        let container = self
+            .served_subs
+            .iter()
+            .find(|(_, subs)| subs.contains(uuid))
+            .map(|(container, _)| *container);
+        container.is_some_and(|container| self.open_container(container).is_ok())
+    }
+
+    /// Whether the index alone says `uuid` left the project: it is not
+    /// indexed and, for a part, its container is not indexed either. Reads no
+    /// file — what decides a removed asset on the frame its change is seen.
+    pub fn gone_from_index(&self, uuid: &AssetUUID) -> bool {
         if self.reader.index.get_metadata(uuid).is_some() {
             return false;
         }
@@ -521,13 +551,21 @@ impl AssetService {
             .iter()
             .find(|(_, subs)| subs.contains(uuid))
             .map(|(container, _)| *container);
-        let Some(container) = container else {
-            return true;
-        };
-        if self.reader.index.get_metadata(&container).is_none() {
-            return true;
+        match container {
+            Some(container) => self.reader.index.get_metadata(&container).is_none(),
+            None => true,
         }
-        self.open_container(container).is_ok()
+    }
+
+    /// The changed assets whose new value is still being decoded, taken:
+    /// what the `asset_reload` system refreshes once each lands.
+    pub(crate) fn take_reloading(&mut self) -> HashSet<AssetUUID> {
+        std::mem::take(&mut self.reloading)
+    }
+
+    /// Keeps `uuids` as the changed assets still being decoded.
+    pub(crate) fn keep_reloading(&mut self, uuids: HashSet<AssetUUID>) {
+        self.reloading.extend(uuids);
     }
 
     /// Serves `handle` for `uuid` until `uuid` is invalidated again: the

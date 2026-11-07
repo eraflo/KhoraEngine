@@ -86,6 +86,15 @@ pub(crate) mod test_support {
     /// under its lease, and received by the runtime's `Reserve` — as a frame
     /// start receives them. Returns how many requests it took.
     pub(crate) fn decode_filed(runtime: &Runtime) -> usize {
+        decode_filed_while(runtime, || {})
+    }
+
+    /// [`decode_filed`], with `during` run once every filed request is
+    /// decoded and before the reserve receives them: what the host does
+    /// while the decode family's run is out (a file saved again, an asset
+    /// invalidated), checked by each decode's lease when the frame start
+    /// receives it.
+    pub(crate) fn decode_filed_while(runtime: &Runtime, during: impl FnOnce()) -> usize {
         let service = runtime
             .services
             .get::<Arc<Mutex<AssetService>>>()
@@ -99,9 +108,13 @@ pub(crate) mod test_support {
             .decode_requests()
             .drain();
         let decoding: Arc<dyn AssetDecoding> = AssetService::decoding(service);
+        let decoded: Vec<_> = filed
+            .iter()
+            .map(|request| decoding.decode_leased(request))
+            .collect();
+        during();
         let mut staging = Staging::new();
-        for request in &filed {
-            let (decoded, lease) = decoding.decode_leased(request);
+        for (decoded, lease) in decoded {
             match lease {
                 Some(lease) => staging.stage_while(vec![decoded], lease),
                 None => staging.stage(vec![decoded]),

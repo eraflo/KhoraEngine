@@ -87,23 +87,32 @@ impl EngineApp for Game {
 }
 
 /// What the watched mesh decoder saw: the threads it decoded on, how many
-/// decodes it made, and — when it holds its first decode — whether that one
+/// decodes it made, and — when it holds one of its decodes — whether that one
 /// started and whether the test released it.
 #[derive(Default)]
 struct DecodeLog {
     threads: Mutex<Vec<ThreadId>>,
     calls: AtomicUsize,
-    hold_first: bool,
+    /// The decode held, counted from 0, if any.
+    hold: Mutex<Option<usize>>,
     entered: AtomicBool,
     released: AtomicBool,
 }
 
 impl DecodeLog {
     fn holding_the_first() -> Arc<Self> {
-        Arc::new(Self {
-            hold_first: true,
-            ..Self::default()
-        })
+        let log = Arc::new(Self::default());
+        log.hold_the_next();
+        log
+    }
+
+    /// Holds the next decode the decoder makes.
+    fn hold_the_next(&self) {
+        *self
+            .hold
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            Some(self.calls.load(Ordering::SeqCst));
     }
 
     fn threads(&self) -> Vec<ThreadId> {
@@ -119,8 +128,8 @@ impl DecodeLog {
 }
 
 /// The engine's mesh decoder, watched: it records the thread of every
-/// decode, and holds its first one until released (at most [`HOLD`]) when
-/// asked to.
+/// decode, and holds the one it was asked to until released (at most
+/// [`HOLD`]).
 struct WatchedMeshes {
     inner: MeshDispatcher,
     log: Arc<DecodeLog>,
@@ -141,8 +150,13 @@ impl AssetDecoder<Mesh> for WatchedMeshes {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .push(std::thread::current().id());
-        let first = self.log.calls.fetch_add(1, Ordering::SeqCst) == 0;
-        if first && self.log.hold_first {
+        let call = self.log.calls.fetch_add(1, Ordering::SeqCst);
+        let held = *self
+            .log
+            .hold
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if Some(call) == held {
             self.log.entered.store(true, Ordering::SeqCst);
             let deadline = Instant::now() + HOLD;
             while !self.log.released.load(Ordering::SeqCst) && Instant::now() < deadline {
@@ -525,5 +539,104 @@ fn a_mesh_changed_while_its_decode_is_in_flight_never_installs_the_stale_one() {
             "the triangle decoded before the change is never shown"
         );
         now == Some(6)
+    });
+}
+
+// ─── A mesh changed on disk ─────────────────────────────────────────────────
+
+/// **A mesh whose file changes is decoded again off the frame's thread, and
+/// its entity shows the last good mesh until the new one lands.** The
+/// triangle resolves; the file becomes a quad and the asset is invalidated,
+/// as the editor's hot reload does. Every decode made since ran on another
+/// thread than the frames', and no frame showed the entity without a mesh.
+#[test]
+fn a_mesh_changed_on_disk_is_decoded_again_off_the_frame_thread() {
+    let project = Project::with_mesh("reloaded-off-thread", TRIANGLE_OBJ);
+    let log = Arc::new(DecodeLog::default());
+    let assets = project.service(&log);
+    let mut engine = game_engine(&assets);
+    frame(&mut engine);
+    let entity = spawn_mesh(&mut engine);
+    frames_until(&mut engine, "the triangle to resolve", |engine| {
+        resolved_vertices(engine, entity) == Some(3)
+    });
+    let before = log.threads().len();
+
+    project.save(QUAD_OBJ);
+    assets
+        .lock()
+        .expect("the service's lock")
+        .invalidate(&mesh_uuid());
+    frames_until(&mut engine, "the quad to resolve", |engine| {
+        let now = resolved_vertices(engine, entity);
+        assert!(
+            now == Some(3) || now == Some(6),
+            "the entity shows the last good mesh until the new one lands: {now:?}"
+        );
+        now == Some(6)
+    });
+
+    let frame_thread = std::thread::current().id();
+    let reloads = log.threads()[before..].to_vec();
+    assert!(!reloads.is_empty(), "the changed mesh was decoded again");
+    assert!(
+        reloads.iter().all(|thread| *thread != frame_thread),
+        "no decode of the change ran on the frame's thread: {reloads:?} (frames on \
+         {frame_thread:?})"
+    );
+}
+
+/// **A slow decode of a changed mesh never lengthens a frame**: while the
+/// decoder holds the decode of the change, the frames go on at their pace and
+/// show the last good mesh; once released, the new mesh lands.
+#[test]
+fn a_slow_reload_never_lengthens_a_frame_and_the_old_mesh_shows_meanwhile() {
+    let project = Project::with_mesh("slow-reload", TRIANGLE_OBJ);
+    let log = Arc::new(DecodeLog::default());
+    let assets = project.service(&log);
+    let mut engine = game_engine(&assets);
+    frame(&mut engine);
+    let entity = spawn_mesh(&mut engine);
+    frames_until(&mut engine, "the triangle to resolve", |engine| {
+        resolved_vertices(engine, entity) == Some(3)
+    });
+
+    log.hold_the_next();
+    project.save(QUAD_OBJ);
+    assets
+        .lock()
+        .expect("the service's lock")
+        .invalidate(&mesh_uuid());
+
+    // Every frame from the change, until the held decode was out for five
+    // more frames, is timed.
+    let mut longest = Duration::ZERO;
+    let mut after_entered = 0;
+    let mut shown_while_held = Vec::new();
+    for _ in 0..MAX_FRAMES {
+        let started = Instant::now();
+        frame(&mut engine);
+        longest = longest.max(started.elapsed());
+        if log.entered.load(Ordering::SeqCst) {
+            shown_while_held.push(resolved_vertices(&mut engine, entity));
+            after_entered += 1;
+            if after_entered > 5 {
+                break;
+            }
+        }
+    }
+    log.release();
+
+    assert!(after_entered > 0, "the held decode started");
+    assert!(
+        longest < LONG_FRAME,
+        "a frame lasted {longest:?} while the decode of the change was held"
+    );
+    assert!(
+        shown_while_held.iter().all(|shown| *shown == Some(3)),
+        "the last good triangle shows while the change decodes: {shown_while_held:?}"
+    );
+    frames_until(&mut engine, "the quad to resolve once released", |engine| {
+        resolved_vertices(engine, entity) == Some(6)
     });
 }

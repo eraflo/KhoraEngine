@@ -43,6 +43,22 @@ pub(super) type Installer = fn(&mut AssetService, &AssetStore, AssetUUID, Box<dy
 
 impl AssetService {
     pub(super) fn request_off_frame<A: Asset>(&mut self, uuid: &AssetUUID) -> Requested<A> {
+        match self.request_decoded::<A>(uuid) {
+            // Being decoded again after a change: the last good copy serves
+            // meanwhile.
+            Requested::Pending => self
+                .meanwhile
+                .get(&(*uuid, TypeId::of::<A>()))
+                .and_then(|copy| copy.downcast_ref::<AssetHandle<A>>())
+                .map_or(Requested::Pending, |copy| Requested::Ready(copy.clone())),
+            requested => requested,
+        }
+    }
+
+    /// What [`request`](Self::request) answers, without the last good copy
+    /// served while an asset is decoded again: whether its new value landed.
+    /// What the `asset_reload` system asks.
+    pub(crate) fn request_decoded<A: Asset>(&mut self, uuid: &AssetUUID) -> Requested<A> {
         let type_id = TypeId::of::<A>();
         let storage = self
             .storages
@@ -111,6 +127,23 @@ impl AssetService {
             self.served_subs.entry(container).or_default().insert(uuid);
         }
         install(self, store, uuid, value);
+    }
+
+    /// Serves `handle`, the copy the engine holds of `uuid`, to a reference
+    /// resolved while `uuid` is decoded again after a change — not a copy a
+    /// replaced service served, which is no copy of this project's asset.
+    pub(crate) fn serve_meanwhile<A: Asset>(&mut self, uuid: &AssetUUID, handle: AssetHandle<A>) {
+        if self.inherited_mut().contains(uuid) {
+            return;
+        }
+        self.meanwhile
+            .insert((*uuid, TypeId::of::<A>()), Box::new(handle));
+    }
+
+    /// Stops serving a last good copy of `uuid` as an `A`: its reload is
+    /// settled — landed, kept, or gone.
+    pub(crate) fn settle_meanwhile<A: Asset>(&mut self, uuid: &AssetUUID) {
+        self.meanwhile.remove(&(*uuid, TypeId::of::<A>()));
     }
 
     /// Hands this service the decode requests `outgoing` filed on: the
@@ -185,6 +218,8 @@ fn install<A: Asset>(
     {
         assets.insert(uuid, handle.clone());
     }
+    // The new value serves from now on, in place of the last good copy.
+    service.settle_meanwhile::<A>(&uuid);
     if fresh {
         service.load_count += 1;
     }
