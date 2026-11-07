@@ -82,7 +82,7 @@ use khora_data::ecs::{
 use khora_data::AssetStore;
 
 use super::ui_asset_resolver;
-use crate::asset::AssetService;
+use crate::asset::{AssetService, Requested};
 
 /// One pending material resolution: the entity to tag, the resolved handle to
 /// store under `uuid`, and whether the entity already carried a (now stale)
@@ -165,28 +165,24 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
                         );
                         continue;
                     };
-                    let loaded = match service.lock() {
-                        Ok(mut svc) => svc.load::<Box<dyn Material>>(uuid),
+                    let requested = match service.lock() {
+                        Ok(mut svc) => svc.request::<Box<dyn Material>>(uuid),
                         Err(_) => {
                             log::error!("asset_resolver: AssetService mutex poisoned.");
                             continue;
                         }
                     };
-                    match loaded {
-                        Ok(handle) => pending.push(ResolvedMaterial {
+                    // Decoded off the frame: the entity waits for it, and
+                    // resolves on a pass after it landed. One that failed
+                    // (logged when it landed) waits for its file to change;
+                    // never a fallback.
+                    if let Requested::Ready(handle) = requested {
+                        pending.push(ResolvedMaterial {
                             entity,
                             uuid: *uuid,
                             handle,
                             had_stale_handle,
-                        }),
-                        Err(e) => {
-                            // No decoder yet (the `.kmat` decoder lands later) or
-                            // a genuine load failure: log + skip, never fall back.
-                            log::error!(
-                                "asset_resolver: failed to load material asset {uuid:?} for \
-                                 entity {entity:?}: {e:#}"
-                            );
-                        }
+                        });
                     }
                 }
             }
@@ -237,10 +233,11 @@ fn resolve_materials(world: &mut World, runtime: &Runtime) {
     }
 }
 
-/// Decodes into `textures` every texture `material` names that it does not
-/// hold yet. A texture that fails to load is logged and skipped: the material
-/// waits for it, and it is tried again when the entity's material ref changes
-/// or when the texture's file changes (see `asset_reload`).
+/// Asks for every texture `material` names that `textures` does not hold
+/// yet: one cached is stored now, one being decoded off the frame is stored
+/// when it lands (`asset_intake`). The material's projection waits for all of
+/// them. A texture that failed waits for its file to change (see
+/// `asset_reload`).
 pub(super) fn load_textures(
     material: &dyn Material,
     entity: EntityId,
@@ -255,23 +252,24 @@ pub(super) fn load_textures(
         if held {
             continue;
         }
-        let loaded = match service.lock() {
-            Ok(mut svc) => svc.load::<CpuTexture>(&uuid),
+        let requested = match service.lock() {
+            Ok(mut svc) => svc.request::<CpuTexture>(&uuid),
             Err(_) => {
                 log::error!("asset_resolver: AssetService mutex poisoned.");
                 return;
             }
         };
-        match loaded {
-            Ok(texture) => {
+        match requested {
+            Requested::Ready(texture) => {
                 textures
                     .write()
                     .unwrap_or_else(|e| e.into_inner())
                     .insert(uuid, texture);
             }
-            Err(e) => log::error!(
-                "asset_resolver: failed to load texture {uuid:?} of the material on entity \
-                 {entity:?}: {e:#}"
+            Requested::Pending => {}
+            Requested::Failed => log::debug!(
+                "asset_resolver: texture {uuid:?} of the material on entity {entity:?} \
+                 failed to decode; it waits for its file to change"
             ),
         }
     }
@@ -316,28 +314,23 @@ fn resolve_meshes(world: &mut World, runtime: &Runtime) {
                         );
                         continue;
                     };
-                    let loaded = match service.lock() {
-                        Ok(mut svc) => svc.load::<Mesh>(uuid),
+                    let requested = match service.lock() {
+                        Ok(mut svc) => svc.request::<Mesh>(uuid),
                         Err(_) => {
                             log::error!("asset_resolver: AssetService mutex poisoned.");
                             continue;
                         }
                     };
-                    match loaded {
-                        Ok(handle) => pending.push(ResolvedMesh {
+                    // Decoded off the frame: the entity waits for it. One
+                    // that failed (logged when it landed) waits for its file
+                    // to change; never a fallback to a default.
+                    if let Requested::Ready(handle) = requested {
+                        pending.push(ResolvedMesh {
                             entity,
                             uuid: *uuid,
                             handle,
                             had_stale_handle,
-                        }),
-                        Err(e) => {
-                            // No mesh decoder registered or a genuine load
-                            // failure: log + skip, never fall back to a default.
-                            log::error!(
-                                "asset_resolver: failed to load mesh asset {uuid:?} for \
-                                 entity {entity:?}: {e:#}"
-                            );
-                        }
+                        });
                     }
                 }
             }
@@ -452,6 +445,24 @@ mod tests {
             }),
             uuid,
         }
+    }
+
+    /// Frames of the resolver until what it asked for is decoded off the
+    /// frame and taken in at a boundary (the runtime holds the reserve the
+    /// decode family stages into).
+    fn resolve_settled(world: &mut World, runtime: &Runtime) {
+        crate::systems::asset_intake::test_support::settle(runtime, world, |world| {
+            asset_resolver_system(
+                world,
+                runtime,
+                &mut OutputDeck::default(),
+                khora_data::ecs::SystemContext {
+                    since: khora_data::ecs::Tick(0),
+                    resumed: false,
+                    scope: None,
+                },
+            );
+        });
     }
 
     #[test]
@@ -789,6 +800,7 @@ mod tests {
         let store = AssetStore::new();
         let mut runtime = Runtime::default();
         runtime.resources.insert(store.clone());
+        runtime.resources.insert(khora_core::lane::Reserve::new());
         runtime
             .services
             .insert(Arc::new(Mutex::new(service)) as Arc<Mutex<AssetService>>);
@@ -796,17 +808,8 @@ mod tests {
         let mut world = World::new();
         let entity = world.spawn(MaterialRef::Asset(uuid));
 
-        let mut deck = OutputDeck::default();
-        asset_resolver_system(
-            &mut world,
-            &runtime,
-            &mut deck,
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+        // Decoded off the frame: resolved once its decode was taken in.
+        resolve_settled(&mut world, &runtime);
 
         let resolved = world
             .get::<HandleComponent<Box<dyn Material>>>(entity)
@@ -945,6 +948,7 @@ mod tests {
         let store = AssetStore::new();
         let mut runtime = Runtime::default();
         runtime.resources.insert(store.clone());
+        runtime.resources.insert(khora_core::lane::Reserve::new());
         runtime
             .services
             .insert(Arc::new(Mutex::new(service)) as Arc<Mutex<AssetService>>);
@@ -952,17 +956,8 @@ mod tests {
         let mut world = World::new();
         let entity = world.spawn(MeshRef::Asset(uuid));
 
-        let mut deck = OutputDeck::default();
-        asset_resolver_system(
-            &mut world,
-            &runtime,
-            &mut deck,
-            khora_data::ecs::SystemContext {
-                since: khora_data::ecs::Tick(0),
-                resumed: false,
-                scope: None,
-            },
-        );
+        // Decoded off the frame: resolved once its decode was taken in.
+        resolve_settled(&mut world, &runtime);
 
         let resolved = world
             .get::<HandleComponent<Mesh>>(entity)
@@ -1020,6 +1015,7 @@ mod tests {
                 let store = AssetStore::new();
                 let mut runtime = Runtime::default();
                 runtime.resources.insert(store.clone());
+                runtime.resources.insert(khora_core::lane::Reserve::new());
                 runtime.services.insert(service.clone());
                 Self {
                     dir,
@@ -1029,34 +1025,38 @@ mod tests {
                 }
             }
 
-            /// One engine tick of the asset systems: the copies of changed
-            /// assets are refreshed, then the authored refs are resolved.
+            /// One engine tick of the asset systems — the copies of changed
+            /// assets are refreshed, then the authored refs are resolved —
+            /// and the frames after it until what they asked for is decoded
+            /// off the frame and taken in at a boundary.
             fn tick(&self, world: &mut World) {
-                let mut deck = OutputDeck::default();
                 let asset_reload = inventory::iter::<DataSystemRegistration>
                     .into_iter()
                     .find(|system| system.name == "asset_reload")
                     .expect("`asset_reload` is registered");
-                (asset_reload.run)(
-                    world,
-                    &self.runtime,
-                    &mut deck,
-                    khora_data::ecs::SystemContext {
-                        since: khora_data::ecs::Tick(0),
-                        resumed: false,
-                        scope: None,
-                    },
-                );
-                asset_resolver_system(
-                    world,
-                    &self.runtime,
-                    &mut deck,
-                    khora_data::ecs::SystemContext {
-                        since: khora_data::ecs::Tick(0),
-                        resumed: false,
-                        scope: None,
-                    },
-                );
+                crate::systems::asset_intake::test_support::settle(&self.runtime, world, |world| {
+                    let mut deck = OutputDeck::default();
+                    (asset_reload.run)(
+                        world,
+                        &self.runtime,
+                        &mut deck,
+                        khora_data::ecs::SystemContext {
+                            since: khora_data::ecs::Tick(0),
+                            resumed: false,
+                            scope: None,
+                        },
+                    );
+                    asset_resolver_system(
+                        world,
+                        &self.runtime,
+                        &mut deck,
+                        khora_data::ecs::SystemContext {
+                            since: khora_data::ecs::Tick(0),
+                            resumed: false,
+                            scope: None,
+                        },
+                    );
+                });
             }
 
             fn texture(&self, uuid: &AssetUUID) -> Option<AssetHandle<CpuTexture>> {
@@ -1293,8 +1293,12 @@ mod tests {
             );
         }
 
+        /// A texture whose decode failed is not decoded again until an asset
+        /// changes: not on the next frames, and not when the material naming
+        /// it is edited — only a change to a file can fix what made it fail.
+        /// Once its file is announced changed, it loads.
         #[test]
-        fn a_failed_texture_is_retried_only_when_the_material_ref_changes() {
+        fn a_failed_texture_is_retried_once_an_asset_changes_not_when_its_material_ref_does() {
             let tex_path = "textures/late.png";
             let tex = AssetUUID::new_v5(tex_path);
             let project = Project::new(&[(tex_path, b"not yet an image".to_vec())]);
@@ -1307,8 +1311,8 @@ mod tests {
             project.tick(&mut world);
             assert!(project.texture(&tex).is_none(), "undecodable bytes fail");
 
-            // The file becomes a valid image, but the material ref is unchanged:
-            // steady state does no work, so nothing retries the texture.
+            // The file becomes a valid image, unannounced: a decode tried
+            // again would find it.
             write_file(project.dir.path(), tex_path, &png(2, 2));
             project.tick(&mut world);
             assert!(
@@ -1316,8 +1320,8 @@ mod tests {
                 "an unchanged material ref does not retry its failed texture"
             );
 
-            // Editing the material (a new ref) resolves it again, and its
-            // texture with it.
+            // Editing the material (a new ref) resolves it again, but its
+            // failed texture still waits for an asset to change.
             assert!(world.set_component(
                 entity,
                 MaterialRef::inline(Box::new(StandardMaterial {
@@ -1328,9 +1332,17 @@ mod tests {
             ));
             project.tick(&mut world);
             assert!(
-                project.texture(&tex).is_some(),
-                "a changed material ref loads its texture"
+                project.texture(&tex).is_none(),
+                "a changed material ref does not retry its failed texture"
             );
+
+            // The file is announced changed, as the editor's hot reload does.
+            project.service.lock().unwrap().invalidate(&tex);
+            project.tick(&mut world);
+            let texture = project
+                .texture(&tex)
+                .expect("the texture loads once its file is announced changed");
+            assert_eq!((texture.size.width, texture.size.height), (2, 2));
         }
 
         /// End to end: once the resolver ran, every texture the resolved
@@ -1387,6 +1399,7 @@ mod tests {
             let store = AssetStore::new();
             let mut runtime = Runtime::default();
             runtime.resources.insert(store.clone());
+            runtime.resources.insert(khora_core::lane::Reserve::new());
             runtime.services.insert(service.clone());
             Project {
                 dir,
@@ -1527,6 +1540,7 @@ mod tests {
                 let store = AssetStore::new();
                 let mut runtime = Runtime::default();
                 runtime.resources.insert(store.clone());
+                runtime.resources.insert(khora_core::lane::Reserve::new());
                 runtime.services.insert(service.clone());
                 Self {
                     _dir: dir,
@@ -1536,18 +1550,10 @@ mod tests {
                 }
             }
 
+            /// Frames of the resolver until what it asked for is decoded off
+            /// the frame and taken in at a boundary.
             fn resolve(&self, world: &mut World) {
-                let mut deck = OutputDeck::default();
-                asset_resolver_system(
-                    world,
-                    &self.runtime,
-                    &mut deck,
-                    khora_data::ecs::SystemContext {
-                        since: khora_data::ecs::Tick(0),
-                        resumed: false,
-                        scope: None,
-                    },
-                );
+                resolve_settled(world, &self.runtime);
             }
 
             fn font(&self, uuid: &AssetUUID) -> Option<AssetHandle<Font>> {

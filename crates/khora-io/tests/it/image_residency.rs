@@ -21,8 +21,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use khora_core::asset::AssetUUID;
-use khora_core::lane::OutputDeck;
+use khora_core::asset::{AssetDecoding, AssetUUID};
+use khora_core::lane::{OutputDeck, Reserve, Staging};
 use khora_core::math::dimension::{Extent3D, Origin3D};
 use khora_core::math::Vec2;
 use khora_core::renderer::api::command::{
@@ -231,8 +231,8 @@ fn png(rgba: [u8; 4]) -> Vec<u8> {
 }
 
 /// A project on disk whose assets hold one UI image, opened as the editor
-/// opens one and served into a runtime with a device, an asset store and the
-/// UI atlas.
+/// opens one and served into a runtime with a device, an asset store, the UI
+/// atlas and the reserve the decode family stages its decodes into.
 struct Project {
     _dir: tempfile::TempDir,
     root: PathBuf,
@@ -240,6 +240,7 @@ struct Project {
     store: AssetStore,
     device: Arc<UploadLog>,
     atlas: Arc<UiImageAtlas>,
+    reserve: Reserve,
     runtime: Runtime,
 }
 
@@ -258,9 +259,11 @@ impl Project {
         let store = AssetStore::new();
         let device = Arc::new(UploadLog::default());
         let atlas = Arc::new(UiImageAtlas::new());
+        let reserve = Reserve::new();
         let mut runtime = Runtime::default();
         runtime.resources.insert(store.clone());
         runtime.resources.insert(Arc::clone(&atlas));
+        runtime.resources.insert(reserve.clone());
         runtime.services.insert(Arc::clone(&service));
         runtime
             .backends
@@ -272,15 +275,22 @@ impl Project {
             store,
             device,
             atlas,
+            reserve,
             runtime,
         }
     }
 
-    /// One frame of the PreExtract systems the image goes through: the
-    /// reload, the resolver, then the residency.
+    /// One frame of the systems the image goes through: the boundary's
+    /// intake of what was decoded off the frame, then the PreExtract reload,
+    /// resolver and residency.
     fn frame(&self, world: &mut World) {
         let mut deck = OutputDeck::new();
-        for name in ["asset_reload", "asset_resolver", "image_on_gpu"] {
+        for name in [
+            "asset_intake",
+            "asset_reload",
+            "asset_resolver",
+            "image_on_gpu",
+        ] {
             (data_system(name).run)(
                 world,
                 &self.runtime,
@@ -292,6 +302,41 @@ impl Project {
                 },
             );
         }
+    }
+
+    /// One run of the decode family, played by hand: the decodes the frames
+    /// filed, decoded through the service's `AssetDecoding` under their lease
+    /// and received by the reserve. Returns how many it took.
+    fn decode_filed(&self) -> usize {
+        let filed = self
+            .service
+            .lock()
+            .expect("the service")
+            .decode_requests()
+            .drain();
+        let decoding: Arc<dyn AssetDecoding> = AssetService::decoding(&self.service);
+        let mut staging = Staging::new();
+        for request in &filed {
+            let (decoded, lease) = decoding.decode_leased(request);
+            match lease {
+                Some(lease) => staging.stage_while(vec![decoded], lease),
+                None => staging.stage(vec![decoded]),
+            }
+        }
+        self.reserve.receive(staging);
+        filed.len()
+    }
+
+    /// Frames, with the decode family's run between them, until a frame
+    /// files no decode: what the frames asked for is decoded and taken in.
+    fn settle(&self, world: &mut World) {
+        for _ in 0..8 {
+            self.frame(world);
+            if self.decode_filed() == 0 {
+                return;
+            }
+        }
+        panic!("the frames still file decodes after 8 frames");
     }
 
     /// What the editor does when the image's file is saved again: the new
@@ -323,9 +368,9 @@ fn write_image(root: &Path, bytes: &[u8]) {
 }
 
 /// **An image changed on disk is uploaded again.** A UI image is uploaded
-/// once, and not again while its file stays the same; once the file is saved
-/// with other pixels, the next frames upload it once more, with the new
-/// pixels, and the atlas still places it.
+/// once it is decoded, and not again while its file stays the same; once the
+/// file is saved with other pixels, the next frames upload it once more, with
+/// the new pixels, and the atlas still places it.
 #[test]
 fn an_image_changed_on_disk_is_uploaded_again() {
     let project = Project::with_image(&png([255, 0, 0, 255]));
@@ -340,7 +385,7 @@ fn an_image_changed_on_disk_is_uploaded_again() {
         UiImage { texture: uuid },
     ));
 
-    project.frame(&mut world);
+    project.settle(&mut world);
     project.frame(&mut world);
     let first = project.device.uploads_of(2, 2);
     assert_eq!(
@@ -355,7 +400,7 @@ fn an_image_changed_on_disk_is_uploaded_again() {
     );
 
     project.save_image(&png([0, 255, 0, 255]));
-    project.frame(&mut world);
+    project.settle(&mut world);
     project.frame(&mut world);
     let all = project.device.uploads_of(2, 2);
     assert_eq!(all.len(), 2, "the changed image is uploaded once more");

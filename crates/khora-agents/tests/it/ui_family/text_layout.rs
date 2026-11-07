@@ -15,11 +15,12 @@
 //! Texts laid out by the real shaper, through the `PreExtract` phase the
 //! engine runs before the flows project the UI.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use khora_control::substrate::run_data_systems;
 use khora_core::asset::font::Font;
-use khora_core::lane::OutputDeck;
+use khora_core::asset::AssetDecoding;
+use khora_core::lane::{OutputDeck, Reserve, Staging};
 use khora_core::ui::text::TextShaper;
 use khora_core::Runtime;
 use khora_data::ecs::{TickPhase, World};
@@ -126,6 +127,49 @@ fn pre_extract(world: &mut World, runtime: &Runtime) {
     );
 }
 
+/// How many frames [`settle`] runs before it calls the systems stuck.
+const SETTLE_FRAMES: usize = 8;
+
+/// Frames of the engine's asset and UI systems until the fonts they asked for
+/// are decoded off the frame and taken in. Each frame takes in, at its
+/// boundary, the decodes landed in the runtime's reserve (`asset_intake`),
+/// then runs `PreExtract`; between two frames the decode family's run is
+/// played by hand: what the runtime's asset service filed, decoded through
+/// its `AssetDecoding` under each request's lease, and received by the
+/// reserve. Done on the first frame that files nothing.
+fn settle(world: &mut World, runtime: &Runtime) {
+    let service = runtime
+        .services
+        .get::<Arc<Mutex<khora_io::asset::AssetService>>>()
+        .expect("the runtime holds an asset service");
+    let reserve = runtime
+        .look_up::<Reserve>()
+        .expect("the runtime holds the reserve the decode family stages into");
+    for _ in 0..SETTLE_FRAMES {
+        khora_io::systems::asset_intake::take_in_decoded(runtime);
+        pre_extract(world, runtime);
+        let filed = service
+            .lock()
+            .expect("the service")
+            .decode_requests()
+            .drain();
+        if filed.is_empty() {
+            return;
+        }
+        let decoding: Arc<dyn AssetDecoding> = khora_io::asset::AssetService::decoding(service);
+        let mut staging = Staging::new();
+        for request in &filed {
+            let (decoded, lease) = decoding.decode_leased(request);
+            match lease {
+                Some(lease) => staging.stage_while(vec![decoded], lease),
+                None => staging.stage(vec![decoded]),
+            }
+        }
+        reserve.receive(staging);
+    }
+    panic!("the asset systems still file decodes after {SETTLE_FRAMES} frames");
+}
+
 /// **A text whose font was refused stays without a layout when edited.** A
 /// reload that hands the shaper data it cannot read takes the text's layout
 /// away; editing the text afterwards must not bring back a layout shaped in
@@ -169,13 +213,12 @@ fn a_text_whose_font_was_refused_stays_without_a_layout_when_edited() {
 }
 
 /// **An edited font file is registered again and its texts reshaped.** The
-/// editor's hot reload invalidates the file's asset; the next `PreExtract`
-/// (`asset_reload`, `asset_resolver`, `ui_text_layout`) must bring the new
-/// file to the text's font handle, so that the shaper is handed it.
+/// editor's hot reload invalidates the file's asset; the next frames
+/// (`asset_reload`, `asset_resolver`, `ui_text_layout`, with what they ask
+/// for decoded off the frame) must bring the new file to the text's font
+/// handle, so that the shaper is handed it.
 #[test]
 fn an_edited_font_file_is_registered_again_with_the_shaper() {
-    use std::sync::Mutex;
-
     use khora_data::ecs::HandleComponent;
     use khora_data::AssetStore;
     use khora_io::asset::{AssetIdRegistry, AssetService};
@@ -202,6 +245,7 @@ fn an_edited_font_file_is_registered_again_with_the_shaper() {
     });
     let mut runtime = Runtime::new();
     runtime.resources.insert(AssetStore::new());
+    runtime.resources.insert(Reserve::new());
     runtime.services.insert(service.clone());
     let backend: Arc<dyn TextShaper> = shaper.clone();
     runtime.backends.insert(backend);
@@ -216,8 +260,7 @@ fn an_edited_font_file_is_registered_again_with_the_shaper() {
             ..Default::default()
         },
     ));
-    pre_extract(&mut world, &runtime);
-    pre_extract(&mut world, &runtime);
+    settle(&mut world, &runtime);
     assert_eq!(
         world.get::<UiTextLayout>(entity).expect("laid out").font,
         font
@@ -229,8 +272,7 @@ fn an_edited_font_file_is_registered_again_with_the_shaper() {
     edited.extend_from_slice(&[0; 64]);
     std::fs::write(&file, &edited).expect("the edit");
     service.lock().expect("the service").invalidate(&font);
-    pre_extract(&mut world, &runtime);
-    pre_extract(&mut world, &runtime);
+    settle(&mut world, &runtime);
 
     assert_eq!(
         world
@@ -253,11 +295,12 @@ fn an_edited_font_file_is_registered_again_with_the_shaper() {
     );
 }
 
-/// A loose-file project served into a runtime with Parley as its shaper.
+/// A loose-file project served into a runtime with Parley as its shaper and
+/// the reserve the decode family stages into.
 struct FontProject {
     _dir: tempfile::TempDir,
     root: std::path::PathBuf,
-    service: Arc<std::sync::Mutex<khora_io::asset::AssetService>>,
+    service: Arc<Mutex<khora_io::asset::AssetService>>,
     runtime: Runtime,
 }
 
@@ -275,9 +318,10 @@ impl FontProject {
             Arc::new(khora_telemetry::MetricsRegistry::new()),
         )
         .expect("the project opens");
-        let service = Arc::new(std::sync::Mutex::new(service));
+        let service = Arc::new(Mutex::new(service));
         let mut runtime = Runtime::new();
         runtime.resources.insert(khora_data::AssetStore::new());
+        runtime.resources.insert(Reserve::new());
         runtime.services.insert(service.clone());
         let shaper: Arc<dyn TextShaper> = Arc::new(ParleyShaper::new());
         runtime.backends.insert(shaper);
@@ -324,13 +368,12 @@ fn a_deleted_font_file_takes_its_texts_layouts_away() {
     let project = FontProject::new(&[(path, INTER)]);
     let mut world = World::new();
     let entity = FontProject::text(&mut world, khora_core::asset::AssetUUID::new_v5(path));
-    pre_extract(&mut world, &project.runtime);
+    settle(&mut world, &project.runtime);
     assert!(world.get::<UiTextLayout>(entity).is_some(), "laid out");
 
     std::fs::remove_file(project.root.join("assets").join(path)).expect("deleted");
     project.reindex_and_invalidate(path);
-    pre_extract(&mut world, &project.runtime);
-    pre_extract(&mut world, &project.runtime);
+    settle(&mut world, &project.runtime);
 
     assert!(world.get::<UiTextLayout>(entity).is_none());
     assert!(world.get::<UiText>(entity).is_some(), "the text stays");
@@ -344,13 +387,12 @@ fn a_font_file_created_after_its_text_lays_the_text_out() {
     let mut world = World::new();
     let font = khora_core::asset::AssetUUID::new_v5(path);
     let entity = FontProject::text(&mut world, font);
-    pre_extract(&mut world, &project.runtime);
+    settle(&mut world, &project.runtime);
     assert!(world.get::<UiTextLayout>(entity).is_none(), "no file yet");
 
     std::fs::write(project.root.join("assets").join(path), INTER).expect("created");
     project.reindex_and_invalidate(path);
-    pre_extract(&mut world, &project.runtime);
-    pre_extract(&mut world, &project.runtime);
+    settle(&mut world, &project.runtime);
 
     assert_eq!(
         world.get::<UiTextLayout>(entity).expect("laid out").font,
@@ -367,16 +409,16 @@ fn a_font_file_rewritten_lays_its_text_out_again_once_whole() {
     let project = FontProject::new(&[(path, INTER)]);
     let mut world = World::new();
     let entity = FontProject::text(&mut world, khora_core::asset::AssetUUID::new_v5(path));
-    pre_extract(&mut world, &project.runtime);
+    settle(&mut world, &project.runtime);
     assert!(world.get::<UiTextLayout>(entity).is_some());
 
     let file = project.root.join("assets").join(path);
     std::fs::write(&file, &INTER[..64]).expect("half written");
     project.reindex_and_invalidate(path);
-    pre_extract(&mut world, &project.runtime);
+    settle(&mut world, &project.runtime);
     std::fs::write(&file, INTER).expect("written");
     project.reindex_and_invalidate(path);
-    pre_extract(&mut world, &project.runtime);
+    settle(&mut world, &project.runtime);
 
     assert!(
         world.get::<UiTextLayout>(entity).is_some(),

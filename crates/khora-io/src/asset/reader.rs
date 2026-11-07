@@ -60,23 +60,9 @@ pub(super) type Opened = (
     Vec<String>,
 );
 
-/// What one [`AssetReader::decode`] produced.
-#[derive(Debug)]
-pub struct Decoded {
-    /// The asset decoded.
-    pub uuid: AssetUUID,
-    /// The Rust type asked for (`TypeId::of::<A>()`): `value`, when `Ok`,
-    /// holds an `A`.
-    pub type_id: TypeId,
-    /// The decoded asset, or why it could not be decoded (not indexed, no
-    /// decoder, unreadable bytes, integrity failure, another type than asked
-    /// for).
-    pub value: Result<Box<dyn Any + Send>, String>,
-    /// Each container file the decode opened (a glTF read for one of its
-    /// parts, or decoded whole), with the files it read besides its own, as
-    /// asset keys. Empty for a file that is no container.
-    pub external_files: Vec<(AssetUUID, Vec<String>)>,
-}
+/// What one [`AssetReader::decode`] produced; defined in `khora-core`, where
+/// the decode family's lane names it.
+pub use khora_core::asset::Decoded;
 
 impl AssetReader {
     /// Decodes the asset `uuid` as the Rust type `type_id`: from its own

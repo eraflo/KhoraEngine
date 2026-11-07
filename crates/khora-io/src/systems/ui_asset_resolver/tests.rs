@@ -84,6 +84,7 @@ impl Project {
         let store = AssetStore::new();
         let mut runtime = Runtime::default();
         runtime.resources.insert(store.clone());
+        runtime.resources.insert(khora_core::lane::Reserve::new());
         runtime.services.insert(service.clone());
         Self {
             dir,
@@ -98,10 +99,14 @@ impl Project {
         self.dir.path().join(rel)
     }
 
-    /// One frame of the resolver's UI passes.
+    /// Frames of the resolver's UI passes until what they asked for is
+    /// decoded off the frame and taken in at a boundary. Panics when they
+    /// keep asking — for an asset pending or failed.
     fn resolve(&self, world: &mut World) {
-        resolve_ui_fonts(world, &self.runtime);
-        resolve_ui_images(world, &self.runtime);
+        crate::systems::asset_intake::test_support::settle(&self.runtime, world, |world| {
+            resolve_ui_fonts(world, &self.runtime);
+            resolve_ui_images(world, &self.runtime);
+        });
     }
 
     fn reads(&self) -> usize {

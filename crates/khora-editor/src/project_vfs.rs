@@ -175,6 +175,9 @@ impl ProjectVfs {
             // project's `textures/a.png` is the same uuid: what the engine
             // took from the service moving out may be stale now.
             target.announce_replacing(&own);
+            // The engine's decode family takes from the channel the service
+            // moving out filed on: the one moving in files there now.
+            target.adopt_decode_requests(&mut own);
         }
         self.asset_service = Arc::clone(shared);
     }

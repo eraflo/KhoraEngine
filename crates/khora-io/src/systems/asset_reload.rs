@@ -414,7 +414,7 @@ mod tests {
 
     use khora_core::asset::{AssetHandle, AssetUUID, Material, StandardMaterial};
     use khora_core::ecs::entity::EntityId;
-    use khora_core::lane::OutputDeck;
+    use khora_core::lane::{OutputDeck, Reserve};
     use khora_core::renderer::api::command::BindGroupId;
     use khora_core::renderer::api::gpu_scene::{GpuMesh, Mesh};
     use khora_core::renderer::api::material::GpuMaterial;
@@ -467,6 +467,7 @@ mod tests {
             let store = AssetStore::new();
             let mut runtime = Runtime::default();
             runtime.resources.insert(store.clone());
+            runtime.resources.insert(Reserve::new());
             runtime.services.insert(service.clone());
             Self {
                 _dir: dir,
@@ -477,29 +478,25 @@ mod tests {
             }
         }
 
-        /// One engine tick of the asset systems: the reload, then the resolver.
+        /// One engine tick of the asset systems — the reload, then the
+        /// resolver — and the frames after it until what they asked for is
+        /// decoded off the frame and taken in at a boundary.
         fn tick(&self, world: &mut World) {
-            let mut deck = OutputDeck::default();
-            (data_system("asset_reload").run)(
-                world,
-                &self.runtime,
-                &mut deck,
-                khora_data::ecs::SystemContext {
-                    since: khora_data::ecs::Tick(0),
-                    resumed: false,
-                    scope: None,
-                },
-            );
-            (data_system("asset_resolver").run)(
-                world,
-                &self.runtime,
-                &mut deck,
-                khora_data::ecs::SystemContext {
-                    since: khora_data::ecs::Tick(0),
-                    resumed: false,
-                    scope: None,
-                },
-            );
+            crate::systems::asset_intake::test_support::settle(&self.runtime, world, |world| {
+                let mut deck = OutputDeck::default();
+                for name in ["asset_reload", "asset_resolver"] {
+                    (data_system(name).run)(
+                        world,
+                        &self.runtime,
+                        &mut deck,
+                        khora_data::ecs::SystemContext {
+                            since: khora_data::ecs::Tick(0),
+                            resumed: false,
+                            scope: None,
+                        },
+                    );
+                }
+            });
         }
 
         /// Rewrites the file at `rel` under the assets folder.

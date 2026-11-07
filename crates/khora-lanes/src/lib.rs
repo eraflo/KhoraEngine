@@ -20,6 +20,7 @@
 
 pub mod audio_lane;
 pub mod compile_lane;
+pub mod decode_lane;
 pub mod overlay_lane;
 pub mod physics_lane;
 pub mod render_lane;

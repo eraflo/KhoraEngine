@@ -21,6 +21,8 @@
 mod asset_watch;
 mod asset_watch_repeated_saves;
 mod asset_watch_root_spellings;
+mod assets_requested_off_the_frame;
+mod assets_resolved_once_decoded;
 mod behavior_components;
 mod compile_problems;
 mod compile_problems_found_by_importers;

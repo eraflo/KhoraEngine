@@ -40,7 +40,7 @@ use khora_data::ecs::{HandleComponent, World};
 use khora_data::ui::{UiImage, UiText};
 use khora_data::AssetStore;
 
-use crate::asset::AssetService;
+use crate::asset::{AssetService, Requested};
 
 /// What the resolver does to one text's font handle.
 enum FontChange {
@@ -81,26 +81,23 @@ pub(crate) fn resolve_ui_fonts(world: &mut World, runtime: &Runtime) {
                 );
                 continue;
             };
-            let loaded = match service.lock() {
-                // Already reported; tried again once an asset changes.
-                Ok(svc) if svc.has_failed(&text.font) => continue,
-                Ok(mut svc) => svc.load::<Font>(&text.font),
+            let requested = match service.lock() {
+                Ok(mut svc) => svc.request::<Font>(&text.font),
                 Err(_) => {
                     log::error!("asset_resolver: AssetService mutex poisoned.");
                     continue;
                 }
             };
-            match loaded {
-                Ok(handle) => changes.push(FontChange::Resolve {
+            // Decoded off the frame: the text waits for it. One that failed
+            // (logged when it landed) is asked for again once an asset
+            // changes.
+            if let Requested::Ready(handle) = requested {
+                changes.push(FontChange::Resolve {
                     entity,
                     uuid: text.font,
                     handle,
                     had_stale_handle: current.is_some(),
-                }),
-                Err(e) => log::error!(
-                    "asset_resolver: failed to load font {:?} for entity {entity:?}: {e:#}",
-                    text.font
-                ),
+                });
             }
         }
     }
@@ -169,23 +166,20 @@ pub(crate) fn resolve_ui_images(world: &World, runtime: &Runtime) {
         return;
     };
     for uuid in missing {
-        let loaded = match service.lock() {
-            // Already reported; tried again once an asset changes.
-            Ok(svc) if svc.has_failed(&uuid) => continue,
-            Ok(mut svc) => svc.load::<CpuTexture>(&uuid),
+        let requested = match service.lock() {
+            Ok(mut svc) => svc.request::<CpuTexture>(&uuid),
             Err(_) => {
                 log::error!("asset_resolver: AssetService mutex poisoned.");
                 return;
             }
         };
-        match loaded {
-            Ok(texture) => {
-                textures
-                    .write()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .insert(uuid, texture);
-            }
-            Err(e) => log::error!("asset_resolver: failed to load UI image {uuid:?}: {e:#}"),
+        // One being decoded off the frame is stored when it lands; one that
+        // failed is asked for again once an asset changes.
+        if let Requested::Ready(texture) = requested {
+            textures
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(uuid, texture);
         }
     }
 }

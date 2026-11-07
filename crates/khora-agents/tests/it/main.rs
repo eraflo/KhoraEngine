@@ -34,6 +34,7 @@ mod behaviors_on_one_entity;
 mod collision_to_behavior_test;
 mod compile_family;
 mod contention_test;
+mod decode_family;
 mod faulted_turns_in_play;
 mod frame_e2e_test;
 mod garbage_collector_test;

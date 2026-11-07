@@ -25,6 +25,7 @@ mod behavior_fuel_shares;
 mod compile_lane;
 mod critical_behaviors;
 mod declared_behaviors;
+mod decode_lane;
 mod durable_text;
 mod faulted_turns;
 mod fixed_update_owed;

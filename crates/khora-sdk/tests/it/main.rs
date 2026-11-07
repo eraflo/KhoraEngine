@@ -19,6 +19,7 @@
 //! binary as a module instead of adding a file at the root of `tests/`.
 
 mod activation;
+mod assets_decoded_off_the_frame;
 mod camera_aspect_follows_target;
 mod camera_view_prepares_the_frame;
 mod declared_components;

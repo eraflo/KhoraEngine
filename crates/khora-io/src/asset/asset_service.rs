@@ -36,18 +36,25 @@ use super::decoder_registry::DecoderRegistry;
 use super::decoders::audio::SymphoniaDecoder;
 use super::decoders::mesh::{FileSystemResolver, GltfContainer, MeshDispatcher};
 use super::file::FileLoader;
+use super::generations::Generations;
 use super::id_registry::AssetIdRegistry;
 use super::index_builder::IndexBuilder;
 use super::io::AssetIo;
 use super::manifest::PackManifest;
 use super::reader::AssetReader;
+use khora_core::asset::DecodeRequest;
+
 use crate::asset::AssetIndex;
+
+/// How many decode requests wait for the decode family before a new one is
+/// refused — and asked for again on a later frame.
+pub(super) const REQUEST_BACKLOG: usize = 4096;
 
 /// Trait-object adapter so the service's storage map can dispatch
 /// per-uuid removal without knowing the concrete `A` at the call site.
 ///
 /// One impl exists for every `Assets<A: Asset>` (see the blanket below).
-trait AnyAssets: Any + Send + Sync {
+pub(super) trait AnyAssets: Any + Send + Sync {
     /// Removes the cached handle for `uuid` if present. Returns `true` if
     /// something was removed.
     fn remove_uuid(&mut self, uuid: &AssetUUID) -> bool;
@@ -75,9 +82,9 @@ pub struct AssetService {
     /// containers, the manifest — shared with whoever decodes off this
     /// service's lock. Replaced, never changed in place, while a reader is
     /// out: a reader keeps the index it was taken with.
-    reader: Arc<AssetReader>,
-    storages: HashMap<TypeId, Box<dyn AnyAssets>>,
-    load_count: usize,
+    pub(super) reader: Arc<AssetReader>,
+    pub(super) storages: HashMap<TypeId, Box<dyn AnyAssets>>,
+    pub(super) load_count: usize,
     /// Each opened container, by the container file's uuid: opened once,
     /// shared by every sub-asset extracted from it.
     opened: HashMap<AssetUUID, Arc<dyn Any + Send + Sync>>,
@@ -85,10 +92,10 @@ pub struct AssetService {
     /// file's uuid. Never emptied: invalidating the container drops and
     /// announces each of them, even once a new index no longer lists them
     /// and even after a reload of the container failed.
-    served_subs: HashMap<AssetUUID, HashSet<AssetUUID>>,
+    pub(super) served_subs: HashMap<AssetUUID, HashSet<AssetUUID>>,
     /// Every asset [`load`](Self::load) ever decoded: what the engine may
     /// hold a copy of.
-    served: HashSet<AssetUUID>,
+    pub(super) served: HashSet<AssetUUID>,
     /// The assets whose bytes changed, for the engine to replace its copies.
     changes: Channel<AssetChanged>,
     /// Set when `changes` dropped an announcement it had no room for.
@@ -100,12 +107,22 @@ pub struct AssetService {
     /// The files, by asset key, each opened container reads besides its
     /// own: a change to one of them is a change to the container. Kept
     /// across invalidations, like `served_subs`.
-    external_files: HashMap<AssetUUID, Vec<String>>,
+    pub(super) external_files: HashMap<AssetUUID, Vec<String>>,
     /// The assets whose last [`load`](Self::load) failed. Forgotten as soon
     /// as any asset changes or the index is replaced: whatever made a load
     /// fail (a broken file, a missing part) can only be fixed by such a
     /// change, so it is the moment to try again.
-    failed: HashSet<AssetUUID>,
+    pub(super) failed: HashSet<AssetUUID>,
+    /// Where [`request`](Self::request) files a decode for the decode family
+    /// to take off the frame.
+    pub(super) requests: Channel<DecodeRequest>,
+    /// The assets, by uuid and type, a decode is filed for and not taken in:
+    /// asked for again meanwhile, they file nothing more.
+    pub(super) pending: HashSet<(AssetUUID, TypeId)>,
+    /// How each type a request named goes into the caches once decoded.
+    pub(super) installers: HashMap<TypeId, super::off_frame::Installer>,
+    /// Each asset's generation, which a decode in flight holds to.
+    pub(super) generations: Arc<Generations>,
 }
 
 /// Sends `AssetChanged(uuid)` on `changes`, noting in `lost` if the full
@@ -155,6 +172,10 @@ impl AssetService {
             inherited: Mutex::new(HashSet::new()),
             external_files: HashMap::new(),
             failed: HashSet::new(),
+            requests: Channel::bounded(REQUEST_BACKLOG, WhenFull::Reject),
+            pending: HashSet::new(),
+            installers: HashMap::new(),
+            generations: Arc::new(Generations::default()),
         })
     }
 
@@ -309,6 +330,30 @@ impl AssetService {
         Ok(handle)
     }
 
+    /// The handle of `uuid` when it is cached; otherwise files one
+    /// [`DecodeRequest`](khora_core::asset::DecodeRequest) for its current
+    /// generation on [`decode_requests`](Self::decode_requests) — once while
+    /// it is pending — and answers [`Requested::Pending`](super::Requested),
+    /// or [`Requested::Failed`](super::Requested) once its last decode failed
+    /// and nothing changed since.
+    pub fn request<A: Asset>(&mut self, uuid: &AssetUUID) -> super::requested::Requested<A> {
+        self.request_off_frame(uuid)
+    }
+
+    /// The channel this service files its decode requests on, shared: the
+    /// decode family takes them from the runtime's copy.
+    pub fn decode_requests(&self) -> Channel<khora_core::asset::DecodeRequest> {
+        self.requests.clone()
+    }
+
+    /// The decode family's [`AssetDecoding`](khora_core::asset::AssetDecoding)
+    /// over the service `shared` holds: it decodes with that service's
+    /// current reader without holding its lock across the decode, and leases
+    /// each result on the asset's generation.
+    pub fn decoding(shared: &Arc<Mutex<Self>>) -> Arc<dyn khora_core::asset::AssetDecoding> {
+        Arc::new(super::off_frame::ServiceDecoding::new(shared))
+    }
+
     /// Decodes the asset `uuid` names: from its own bytes, or, for a
     /// sub-asset, extracted from its opened container, which it returns too.
     fn decode_uncached<A: Asset>(&mut self, uuid: &AssetUUID) -> Result<(A, Option<AssetUUID>)> {
@@ -424,6 +469,11 @@ impl AssetService {
                 .index
                 .get_metadata(&file)
                 .map(|metadata| khora_core::asset::asset_key(&metadata.source_path));
+            // A decode in flight names the files it read beside its own by
+            // key: the key moves with the file, under the uuid it gives.
+            if let Some(key) = &key {
+                self.generations.bump(&AssetUUID::new_v5(key));
+            }
             let names_file = |external: &String| {
                 key.as_ref() == Some(external) || AssetUUID::new_v5(external) == file
             };
@@ -442,6 +492,9 @@ impl AssetService {
         let mut any = self.opened.remove(uuid).is_some();
         let subs = self.served_subs.get(uuid);
         for target in std::iter::once(uuid).chain(subs.into_iter().flatten()) {
+            // A decode in flight that read it is of the bytes before the
+            // change: it is never installed.
+            self.generations.bump(target);
             for storage in self.storages.values_mut() {
                 if storage.remove_uuid(target) {
                     any = true;
@@ -500,7 +553,7 @@ impl AssetService {
     }
 
     /// The inherited set, poisoning ignored: it holds plain uuids.
-    fn inherited_mut(&self) -> std::sync::MutexGuard<'_, HashSet<AssetUUID>> {
+    pub(super) fn inherited_mut(&self) -> std::sync::MutexGuard<'_, HashSet<AssetUUID>> {
         self.inherited
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -540,6 +593,9 @@ impl AssetService {
             AssetIndex::new(index_bytes).context("Failed to decode replacement VFS index bytes")?;
         self.reader_mut().index = Arc::new(new_index);
         self.failed.clear();
+        // Every decode in flight read the old index.
+        self.generations.bump_all();
+        self.pending.clear();
         Ok(())
     }
 
