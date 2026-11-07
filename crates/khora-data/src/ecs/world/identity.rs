@@ -169,7 +169,23 @@ impl World {
     /// else, until it is spawned or released.
     pub fn reserve_entity(&mut self) -> EntityId {
         self.settle_reservations();
-        let entity = self.entities.reserve();
+        let entity = if self.entities.has_freed() {
+            self.entities.reserve()
+        } else if let Some(ready) = self.reserver.take_ready() {
+            // Held back for the reserver already: reserved as it is, once a
+            // fresh index a hold gave back meanwhile has its slot.
+            self.settle_reservations();
+            ready
+        } else {
+            // A slot past the end of the store, its index claimed from the
+            // reserver first: see `create_entity`.
+            let entity = EntityId {
+                index: self.reserver.claim_fresh(),
+                generation: 0,
+            };
+            self.settle_reservations();
+            entity
+        };
         self.after_allocation();
         entity
     }

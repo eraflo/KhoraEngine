@@ -130,6 +130,11 @@ impl AssetReader {
         Ok(value)
     }
 
+    /// The index this reader reads assets through.
+    pub fn index(&self) -> &AssetIndex {
+        &self.index
+    }
+
     /// The index entry of `uuid` and its default source.
     pub(super) fn source_of(&self, uuid: &AssetUUID) -> Result<(&AssetMetadata, &AssetSource)> {
         let metadata = self

@@ -42,6 +42,7 @@ mod hot_reload_of_removed_scripts;
 mod image_residency;
 mod prefab_assets;
 mod prefab_scenes;
+mod prefabs_read_off_the_frame;
 mod project_compiler;
 mod public_paths;
 mod registration_problems;

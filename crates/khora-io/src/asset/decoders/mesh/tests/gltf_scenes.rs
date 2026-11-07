@@ -989,6 +989,26 @@ fn the_scene_sub_asset_loads_as_a_prefab_through_the_service() {
     );
 }
 
+/// The scene sub-asset reads, through the shared reader, as the prefab the
+/// service loads: a glTF's scene is a prefab a project's scenes link to,
+/// and the editor reads every prefab through the reader.
+#[test]
+fn the_scene_sub_asset_reads_as_a_prefab_through_the_shared_reader() {
+    let project = Project::with_file(&TwoNodes::default().glb());
+    let assets = project.open();
+    let reader = crate::serialization::ReaderPrefabs::new(
+        assets.lock().expect("the asset service").reader(),
+    );
+    let read = khora_data::scene::PrefabSource::prefab(&reader, sub("scene"))
+        .unwrap_or_else(|e| panic!("the scene reads as a prefab: {e}"));
+    let through_service = khora_data::scene::PrefabSource::prefab(
+        &AssetPrefabs::new(Arc::clone(&assets)),
+        sub("scene"),
+    )
+    .expect("the service reads it");
+    assert_eq!(read, through_service);
+}
+
 /// A level with one instance of the glTF's default scene, as dropped in the
 /// editor, and the instance root's identity.
 fn level(assets: &Arc<Mutex<AssetService>>) -> (World, PersistentId) {

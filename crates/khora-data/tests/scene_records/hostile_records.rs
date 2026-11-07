@@ -448,6 +448,43 @@ fn failed_loads_give_back_every_reserved_slot() {
     assert!(spawned.index < 16, "{spawned:?}");
 }
 
+/// A failed load, with no frame after it — an editor that is not playing —
+/// leaves the slots its world's despawns freed to the world's next spawns:
+/// sixty-four entities spawned again after sixty-four were despawned and a
+/// load of sixty-four failed take back the despawned slots rather than grow
+/// the store past them.
+#[test]
+fn a_failed_load_leaves_freed_slots_to_the_next_spawns() {
+    let mut src = World::new();
+    for i in 0..64 {
+        src.spawn((Transform::identity(), Name::new(format!("e{i}"))));
+    }
+    let mut bad = capture_world(&src).expect("captures");
+    let first = bad.entities[0];
+    *value_mut(&mut bad, first, "Transform") = Record::Str("nope".into());
+
+    let mut world = World::new();
+    let gone: Vec<EntityId> = (0..64)
+        .map(|_| world.spawn(Transform::identity()))
+        .collect();
+    let highest = gone.iter().map(|id| id.index).max().expect("spawned");
+    for entity in &gone {
+        assert!(world.despawn(*entity));
+    }
+    assert!(apply(&mut world, &bad, Identity::Keep).is_err());
+
+    let again: Vec<EntityId> = (0..64)
+        .map(|_| world.spawn(Transform::identity()))
+        .collect();
+    let past: Vec<&EntityId> = again.iter().filter(|id| id.index > highest).collect();
+    assert!(
+        past.is_empty(),
+        "{} spawns grew the store past index {highest} although 64 slots were freed: {:?}",
+        past.len(),
+        past.first()
+    );
+}
+
 /// Coverage: the `Identity::Keep` collision path. The same authored scene
 /// loaded twice into one world: the second copy's identities are taken, so
 /// it gets fresh ones — four distinct ids — and each copy's hierarchy stays

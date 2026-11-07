@@ -21,7 +21,9 @@ pub mod domain;
 pub mod entity;
 pub mod entity_reserver;
 pub mod persistent_id;
+pub mod reservation_hold;
 
 pub use domain::SemanticDomain;
 pub use entity_reserver::EntityReserver;
 pub use persistent_id::PersistentId;
+pub use reservation_hold::ReservationHold;

@@ -37,7 +37,7 @@ use khora_core::ecs::PersistentId;
 use khora_core::scene::{SceneFile, SAVE_MAGIC_BYTES};
 use serde::{Deserialize, Serialize};
 
-use super::apply::{prepare_kept, Identity, LoadFailure, Prepared};
+use super::apply::{prepare_kept, prepare_kept_with, Identity, LoadFailure, Prepared};
 use super::capture::{capture_game, capture_world, SaveError};
 use super::component_registration::{registration_named, Kept};
 use super::declared::{declarations_of, described, register_all, DeclaredRecord};
@@ -481,6 +481,16 @@ pub fn promote(base: &SceneRecord, save: &SaveRecord) -> SceneRecord {
 /// keeps to resume.
 pub fn prepare_game(world: &mut World, record: &SceneRecord) -> Result<Prepared, LoadFailure> {
     prepare_kept(world, record, Kept::Game)
+}
+
+/// [`prepare_game`], without the world: what it reads of the world is
+/// `catalog`, and the ids it reserves are held by `hold`.
+pub fn prepare_game_with(
+    catalog: &crate::scene::LoadCatalog,
+    hold: khora_core::ecs::ReservationHold,
+    record: &SceneRecord,
+) -> Result<Prepared, LoadFailure> {
+    prepare_kept_with(catalog, hold, record, Kept::Game)
 }
 
 /// `save`, written with `encoding` behind a save header.

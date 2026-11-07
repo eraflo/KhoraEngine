@@ -22,11 +22,12 @@ use khora_core::ecs::PersistentId;
 
 use super::apply::Loaded;
 use super::record::{EntityRef, RecordError, ReferenceReader, ReportEntry, ReportKind};
-use crate::ecs::World;
 
 /// Resolves the references a record holds to the ids reserved for this load.
 pub(super) struct Resolver<'w, 'r> {
-    pub(super) world: &'w mut World,
+    /// The entity a reference to nothing names.
+    pub(super) nowhere: EntityId,
+    pub(super) _world: std::marker::PhantomData<&'w ()>,
     pub(super) reserved: &'r HashMap<PersistentId, EntityId>,
     /// The entity and component being read, for report entries.
     pub(super) current: Option<(PersistentId, Loaded)>,
@@ -55,6 +56,6 @@ impl ReferenceReader for Resolver<'_, '_> {
             path: String::new(),
             kind: ReportKind::DeadReference,
         });
-        Ok(self.world.nowhere())
+        Ok(self.nowhere)
     }
 }

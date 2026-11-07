@@ -359,8 +359,11 @@ fn a_write_to_a_refused_foreign_spawn_never_lands_on_a_live_entity() {
     let mut world = World::new();
     let original = world.spawn((Transform::identity(), Name("Original".to_owned())));
     // A reserver no world owns — a host run without the world's — hands out
-    // the very id the world's first entity holds.
-    let foreign = khora_core::ecs::EntityReserver::new().reserve();
+    // the very id the world's first entity holds: its fresh indices start
+    // at that entity's slot, whichever slot a fresh world gave it.
+    let stranger = khora_core::ecs::EntityReserver::new();
+    let _ = stranger.fresh_since(original.index);
+    let foreign = stranger.reserve();
     assert_eq!(foreign, original, "the ids alias");
 
     frame(

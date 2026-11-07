@@ -61,6 +61,7 @@ mod prefab_refusals;
 mod prefab_sample;
 mod prefab_scale;
 mod prefab_structure;
+mod prepared_off_the_frame;
 mod references;
 mod renames;
 mod retired_script_components;

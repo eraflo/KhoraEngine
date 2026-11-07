@@ -477,25 +477,6 @@ impl khora_sdk::khora_data::scene::PrefabSource for ProjectPrefabs<'_> {
     }
 }
 
-/// The project's prefabs, read through a VFS the caller already holds.
-pub struct HeldPrefabs<'a>(std::cell::RefCell<&'a mut ProjectVfs>);
-
-impl<'a> HeldPrefabs<'a> {
-    /// Reads prefabs through `pvfs`.
-    pub fn new(pvfs: &'a mut ProjectVfs) -> Self {
-        Self(std::cell::RefCell::new(pvfs))
-    }
-}
-
-impl khora_sdk::khora_data::scene::PrefabSource for HeldPrefabs<'_> {
-    fn prefab(
-        &self,
-        id: AssetUUID,
-    ) -> std::result::Result<khora_sdk::khora_data::scene::SceneRecord, String> {
-        self.0.borrow_mut().prefab_record(id)
-    }
-}
-
 impl ProjectVfs {
     /// The asset id of the file a write to `rel_path` lands on.
     ///

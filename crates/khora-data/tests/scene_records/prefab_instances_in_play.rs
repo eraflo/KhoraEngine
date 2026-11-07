@@ -408,3 +408,57 @@ fn an_instance_made_in_play_survives_a_game_save() {
     );
     assert_eq!(loaded.iter_entities().count(), 7);
 }
+
+/// The time `spawns` script prefab spawns of a one-entity prefab take in a
+/// world declaring `declared` components of twenty fields each.
+fn prefab_spawn_time(declared: usize, spawns: usize) -> std::time::Duration {
+    use khora_data::ecs::{FieldKind, SemanticDomain};
+    let mut src = World::new();
+    let bullet = src.spawn((Transform::identity(), Name::new("Bullet")));
+    src.mark_authored(bullet).expect("authored");
+    let id = AssetUUID::new();
+    let library = Library::default().with(
+        id,
+        khora_data::scene::capture_subtree(&src, bullet).expect("captures"),
+    );
+    let mut world = World::new();
+    for i in 0..declared {
+        let fields = (0..20)
+            .map(|f| {
+                super::declared_components::field(
+                    &format!("f{f}"),
+                    FieldKind::Int,
+                    ScriptValue::Int(0),
+                )
+            })
+            .collect();
+        super::declared_components::declare(
+            &mut world,
+            &format!("Declared{i}"),
+            SemanticDomain::Script,
+            fields,
+        );
+    }
+    let started = std::time::Instant::now();
+    for _ in 0..spawns {
+        let entity = world.reserver().reserve();
+        instantiate_prefab_at(&mut world, entity, id, &library).expect("the bullet spawns");
+    }
+    started.elapsed()
+}
+
+/// **A script's prefab spawn costs the same however many components the
+/// game declares.** Spawning a one-entity prefab reads a handful of
+/// components; a world declaring four hundred others must not make each
+/// spawn pay for all of them.
+#[test]
+fn a_prefab_spawn_does_not_pay_for_every_declared_component() {
+    let few = prefab_spawn_time(0, 300);
+    let many = prefab_spawn_time(400, 300);
+    let ratio = many.as_secs_f64() / few.as_secs_f64().max(1e-6);
+    assert!(
+        ratio < 1.5,
+        "300 prefab spawns took {few:?} with no declared component and {many:?} with 400 \
+         ({ratio:.1}x)"
+    );
+}

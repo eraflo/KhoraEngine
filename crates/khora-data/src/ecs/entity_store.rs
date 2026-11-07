@@ -132,6 +132,11 @@ impl EntityStore {
     }
 
     /// How many slots the store holds: alive, dead and held back.
+    /// Whether a slot freed by a despawn waits to be reused.
+    pub fn has_freed(&self) -> bool {
+        !self.freed_entities.is_empty()
+    }
+
     pub fn slots(&self) -> usize {
         self.entities.len()
     }

@@ -39,6 +39,7 @@ use khora_core::script::{ErgonType, ScriptValue};
 
 use super::asset_kinds::{kinds_conflict, value_holds_asset};
 use super::component_registration::{registration_named, Kept, Staged, StagedComponent};
+use super::load_catalog::LoadCatalog;
 use super::record::{
     from_record, to_record, EntityRef, Record, RecordError, ReferenceReader, ReferenceWriter,
     ReportEntry, ReportKind,
@@ -281,7 +282,7 @@ pub(crate) fn declarations_of(world: &World) -> Vec<DeclaredRecord> {
 /// world a record is read into under those declarations rather than its own.
 pub(crate) fn register_all(world: &mut World, declared: &[DeclaredRecord]) {
     for each in declared {
-        let Ok(load) = plan(world, each) else {
+        let Ok(load) = plan(&world.load_catalog(), each) else {
             continue;
         };
         if let Some(register) = load.register {
@@ -374,7 +375,7 @@ pub(crate) struct DeclaredLoad {
 
 /// Plans reading the file's `declared` component into `world`. Refused when
 /// its name is a Rust component's.
-pub(crate) fn plan(world: &World, declared: &DeclaredRecord) -> Result<DeclaredLoad, String> {
+pub(crate) fn plan(world: &LoadCatalog, declared: &DeclaredRecord) -> Result<DeclaredLoad, String> {
     let name = declared.name.as_str();
     let fields = declared
         .fields
@@ -409,7 +410,7 @@ pub(crate) fn plan(world: &World, declared: &DeclaredRecord) -> Result<DeclaredL
 /// game save resumes from when `resumable` — into `world`. Refused when its
 /// name is a Rust component's.
 pub(crate) fn plan_fields(
-    world: &World,
+    world: &LoadCatalog,
     name: &str,
     file_domain: SemanticDomain,
     fields: Vec<PackedField>,
@@ -422,17 +423,16 @@ pub(crate) fn plan_fields(
     if registration_named(name).is_some() {
         return Err(refused());
     }
-    let live = match world.components().key_named(name) {
-        Some(ComponentKey::Rust(_)) => return Err(refused()),
-        Some(key) => world.components().vtable(key).and_then(|vtable| {
-            Some((
-                vtable.domain,
-                Arc::new(vtable.columns.packed()?.clone()),
-                vtable.resumable,
-            ))
-        }),
-        None => None,
-    };
+    if world.names_rust(name) {
+        return Err(refused());
+    }
+    let live = world.declared(name).map(|declared| {
+        (
+            declared.domain,
+            Arc::clone(&declared.layout),
+            declared.resumable,
+        )
+    });
     let file_fields = fields.iter().map(|field| field.name.clone()).collect();
     let rekinded_fields = match &live {
         Some((_, layout, _)) => fields

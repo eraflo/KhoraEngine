@@ -26,11 +26,13 @@ pub mod shape;
 pub mod apply;
 mod asset_kinds;
 pub mod capture;
+mod commit;
 pub mod declared;
 pub mod encoding;
 mod entity_refs;
 pub mod file;
 pub mod inspector_json;
+pub mod load_catalog;
 pub mod positional;
 pub mod prefab;
 pub mod record;
@@ -45,7 +47,7 @@ pub use component_registration::*;
 pub use material_registration::*;
 pub use shape::{ComponentShape, FieldSchema};
 
-pub use apply::{apply, prepare, Applied, Identity, LoadFailure, Prepared};
+pub use apply::{apply, prepare, prepare_with, Applied, Identity, LoadFailure, Prepared};
 pub use asset_kinds::read_into;
 pub use capture::{capture_subtree, capture_world, SaveError};
 pub use declared::{DeclaredFieldRecord, DeclaredRecord};
@@ -53,6 +55,7 @@ pub use encoding::{
     encoding_named, CompactEncoding, EncodingError, MsgPackEncoding, SceneEncoding, TextEncoding,
 };
 pub use file::{encoding_of, read_scene_file, write_scene_file, SceneFileReadError};
+pub use load_catalog::{CatalogDeclared, LoadCatalog};
 pub use prefab::{
     apply_to_prefab, collapse, expand, expand_reporting, instance_of, instantiate_prefab,
     instantiate_prefab_at, instantiate_subtree, prefab_world, serialize_prefab, serialize_subtree,
@@ -60,7 +63,7 @@ pub use prefab::{
 };
 pub use retired::{is_retired, RetiredComponent};
 pub use save::{
-    about_what_loads, capture_save, compose, compose_reporting, prepare_game, promote,
-    read_save_file, write_save_file, RemovedComponents, SaveRecord,
+    about_what_loads, capture_save, compose, compose_reporting, prepare_game, prepare_game_with,
+    promote, read_save_file, write_save_file, RemovedComponents, SaveRecord,
 };
 pub use scene_record::{InstanceRecord, PageRecord, SceneRecord};

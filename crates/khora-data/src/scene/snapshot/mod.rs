@@ -185,6 +185,33 @@ pub fn write_snapshot(world: &World) -> Result<SceneFile, SaveError> {
 /// registrations, reserving an id for each of its entities, without adding
 /// anything — committed through the shared [`Prepared::commit`].
 pub fn prepare_snapshot(world: &mut World, file: &SceneFile) -> Result<Prepared, LoadFailure> {
+    // As many ids made ready as the snapshot holds entities, so restores in
+    // a row reuse the slots each one freed.
+    let wanted = Snapshot::read(&file.payload).map_or(0, |snapshot| snapshot.entities.len());
+    let (catalog, hold) = super::apply::readings(world, wanted);
+    prepare_parsed(&catalog, hold, file)
+}
+
+/// [`prepare_snapshot`], without the world: what it reads of the world is
+/// `catalog`, and the ids it reserves are held by `hold`.
+pub fn prepare_snapshot_with(
+    world: &crate::scene::LoadCatalog,
+    hold: khora_core::ecs::ReservationHold,
+    file: &SceneFile,
+) -> Result<Prepared, LoadFailure> {
+    let mut prepared = prepare_parsed(world, hold, file)?;
+    prepared.set_source(super::apply::Source::Snapshot(std::sync::Arc::new(
+        file.clone(),
+    )));
+    Ok(prepared)
+}
+
+/// The snapshot `file` holds, read and checked against `world`.
+fn prepare_parsed(
+    world: &crate::scene::LoadCatalog,
+    hold: khora_core::ecs::ReservationHold,
+    file: &SceneFile,
+) -> Result<Prepared, LoadFailure> {
     let refused = |message: String| failure(message, LoadReport::default());
     let encoding = encoding_of(file);
     if encoding != SNAPSHOT_ENCODING_ID {
@@ -233,6 +260,7 @@ pub fn prepare_snapshot(world: &mut World, file: &SceneFile) -> Result<Prepared,
         .collect();
     let mut prepared = prepare_pages(
         world,
+        hold,
         &snapshot.entities,
         None,
         plans,

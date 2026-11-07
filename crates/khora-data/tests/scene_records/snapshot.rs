@@ -337,3 +337,36 @@ fn a_dead_reference_in_a_snapshot_names_the_nowhere_entity() {
     assert_eq!(fields(&dst, holder_third), [nowhere; 2]);
     assert!(!dst.contains(nowhere));
 }
+
+/// **Restoring a snapshot again and again reuses the slots the previous
+/// restore freed** — the editor's Play then Stop, each Stop replacing the
+/// played world with the snapshot taken at Play: the old entities despawn as
+/// the snapshot's arrive, and the next restore takes their slots rather than
+/// growing the store by a world's worth each time.
+#[test]
+fn restoring_a_snapshot_repeatedly_reuses_the_freed_slots() {
+    let mut world = World::new();
+    for i in 0..32 {
+        world.spawn((Transform::identity(), Name::new(format!("e{i}"))));
+    }
+    let file = snapshot_of(&world);
+    let mut highest = 0;
+    for round in 0..20 {
+        let prepared = prepare_snapshot(&mut world, &file)
+            .unwrap_or_else(|e| panic!("round {round}: the snapshot prepares: {e}"));
+        let old: Vec<EntityId> = world.iter_entities().collect();
+        for entity in old {
+            assert!(world.despawn(entity));
+        }
+        let applied = prepared.commit(&mut world, Identity::Keep);
+        highest = applied
+            .entities
+            .iter()
+            .map(|(_, entity)| entity.index)
+            .fold(highest, u32::max);
+    }
+    assert!(
+        highest < 3 * 32,
+        "twenty restores of 32 entities reached index {highest}: each grew the store"
+    );
+}

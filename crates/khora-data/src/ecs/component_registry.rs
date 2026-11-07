@@ -215,6 +215,9 @@ pub struct ComponentRegistry {
     by_name: HashMap<Arc<str>, ComponentKey>,
     /// Per-component online access-pattern counters (layout adaptation).
     access: HashMap<ComponentKey, AccessCounters>,
+    /// Moves whenever what a load reads of the registry changes: a component
+    /// registered or declared, relaid out, moved, or kept otherwise.
+    generation: u64,
 }
 
 impl ComponentRegistry {
@@ -226,6 +229,13 @@ impl ComponentRegistry {
     /// The key of the component named `name` (its short name), if registered.
     pub fn key_named(&self, name: &str) -> Option<ComponentKey> {
         self.by_name.get(name).copied()
+    }
+
+    /// Moves whenever a component is registered or declared, relaid out,
+    /// moved to another domain, or given another provenance: what a load
+    /// prepared against the registry reads.
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// The number of registered components.
@@ -338,6 +348,7 @@ impl ComponentRegistry {
     }
 
     fn insert(&mut self, vtable: ComponentVTable) {
+        self.generation += 1;
         self.by_name.insert(vtable.name.clone(), vtable.key);
         self.access.entry(vtable.key).or_default();
         self.vtables.insert(vtable.key, vtable);
@@ -363,6 +374,9 @@ impl ComponentRegistry {
         resumable: bool,
     ) {
         if let Some(vtable) = self.vtables.get_mut(&key) {
+            if vtable.provenance != provenance || vtable.resumable != resumable {
+                self.generation += 1;
+            }
             vtable.provenance = provenance;
             vtable.resumable = resumable;
         }
@@ -385,6 +399,7 @@ impl ComponentRegistry {
     /// Replaces a declared component's column operations — its new fields.
     pub(crate) fn set_columns(&mut self, key: ComponentKey, columns: Arc<dyn ColumnOps>) {
         if let Some(vtable) = self.vtables.get_mut(&key) {
+            self.generation += 1;
             vtable.columns = columns;
         }
     }
@@ -393,6 +408,9 @@ impl ComponentRegistry {
     /// move.
     pub(crate) fn set_domain(&mut self, key: ComponentKey, domain: SemanticDomain) {
         if let Some(vtable) = self.vtables.get_mut(&key) {
+            if vtable.domain != domain {
+                self.generation += 1;
+            }
             vtable.domain = domain;
         }
     }

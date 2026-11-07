@@ -35,7 +35,7 @@ use khora_data::scene::{
     TextEncoding,
 };
 
-use crate::asset::{AssetService, PrefabAsset};
+use crate::asset::{AssetReader, AssetService, PrefabAsset};
 
 /// Scene format version produced by today's writers.
 pub const CURRENT_SCENE_VERSION: u32 = SCENE_FORMAT_VERSION as u32;
@@ -359,6 +359,43 @@ impl PrefabSource for AssetPrefabs {
             .lock()
             .map_err(|_| "the asset service is poisoned".to_owned())?;
         read_prefab(&mut assets, id)
+    }
+}
+
+/// The prefabs of a project, read through a shared [`AssetReader`]: on any
+/// thread, without the [`AssetService`]'s lock, and without its cache — a
+/// prefab is decoded from its file each time it is read.
+pub struct ReaderPrefabs {
+    reader: Arc<AssetReader>,
+}
+
+impl ReaderPrefabs {
+    /// Reads prefabs through `reader`.
+    pub fn new(reader: Arc<AssetReader>) -> Self {
+        Self { reader }
+    }
+}
+
+impl PrefabSource for ReaderPrefabs {
+    fn prefab(&self, id: AssetUUID) -> Result<SceneRecord, String> {
+        match self.reader.index().get_metadata(&id) {
+            Some(metadata) if metadata.asset_type_name == PREFAB => {}
+            Some(metadata) => {
+                return Err(format!(
+                    "the asset {id} is a {}, not a prefab",
+                    metadata.asset_type_name
+                ))
+            }
+            None => return Err(format!("the project holds no asset {id}")),
+        }
+        let decoded = self
+            .reader
+            .decode(&id, std::any::TypeId::of::<PrefabAsset>())
+            .value?;
+        decoded
+            .downcast::<PrefabAsset>()
+            .map(|prefab| prefab.0)
+            .map_err(|_| format!("the asset {id} did not decode as a prefab"))
     }
 }
 

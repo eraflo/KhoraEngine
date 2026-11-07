@@ -33,10 +33,13 @@ use std::sync::Arc;
 use khora_core::ecs::entity::EntityId;
 use khora_core::ecs::PersistentId;
 
+use khora_core::ecs::ReservationHold;
+
 use super::component_registration::{
     registration_named, ComponentRegistration, Kept, Staged, StagedComponent,
 };
 use super::declared::{plan, DeclaredLoad};
+use super::load_catalog::LoadCatalog;
 use super::record::{LoadReport, RecordError, ReferenceReader, ReportEntry, ReportKind};
 use super::resolver::Resolver;
 use super::retired::is_retired;
@@ -99,34 +102,53 @@ pub fn apply(
 #[must_use = "a prepared load holds reserved ids until it is committed or abandoned"]
 pub struct Prepared {
     /// Every recorded entity and the id reserved for it, in record order.
-    entities: Vec<(PersistentId, EntityId)>,
+    pub(super) entities: Vec<(PersistentId, EntityId)>,
     /// The id reserved before the load, which giving up does not release.
-    given: Option<EntityId>,
-    pages: Vec<PreparedPage>,
+    pub(super) given: Option<EntityId>,
+    pub(super) pages: Vec<PreparedPage>,
     /// Values of components declared while the engine runs that this world
     /// keeps in another domain than the file did: attached once the pages
     /// are placed, each into its entity's page of the world's domain.
-    moved: Vec<(EntityId, ComponentKey, Box<dyn StagedComponent>)>,
+    pub(super) moved: Vec<(EntityId, ComponentKey, Box<dyn StagedComponent>)>,
     /// The hierarchy the record brings: each loaded child and its loaded
     /// parent, checked for cycles. A `Parent` naming anything else — gone,
     /// outside the record — is not kept.
-    hierarchy: LoadedHierarchy,
+    pub(super) hierarchy: LoadedHierarchy,
     /// The declarations the file describes and the world does not have yet:
     /// registered when the load commits, never before.
-    register: Vec<RuntimeComponentDecl>,
-    report: LoadReport,
+    pub(super) register: Vec<RuntimeComponentDecl>,
+    pub(super) report: LoadReport,
+    /// What holds the reserved ids until the load commits them; dropped
+    /// with the load, it gives them back.
+    pub(super) hold: ReservationHold,
+    /// The generation of the catalogue the load was prepared against.
+    pub(super) generation: u64,
+    /// What a load prepared off the frame was read from, to prepare it again
+    /// against the world as it is when it commits, should its components
+    /// have changed in between. `None` for a load prepared and committed in
+    /// one go, which nothing can change in between.
+    pub(super) source: Option<Source>,
+}
+
+/// What a load prepared off the frame was read from.
+#[derive(Clone)]
+pub(super) enum Source {
+    /// A record, kept as it keeps its components.
+    Record(Arc<SceneRecord>, Kept),
+    /// A snapshot file.
+    Snapshot(Arc<khora_core::scene::SceneFile>),
 }
 
 /// One page record, read: its signature and, per row, a value per column.
-struct PreparedPage {
+pub(super) struct PreparedPage {
     /// The page's components, sorted as CRPECS keys a page.
-    signature: Vec<ComponentKey>,
+    pub(super) signature: Vec<ComponentKey>,
     /// Each row's entity and its values, one per signature component.
-    rows: Vec<(EntityId, StagedRow)>,
+    pub(super) rows: Vec<(EntityId, StagedRow)>,
 }
 
 /// One row's values, staged: a value per component of its page.
-type StagedRow = Vec<(ComponentKey, Box<dyn StagedComponent>)>;
+pub(super) type StagedRow = Vec<(ComponentKey, Box<dyn StagedComponent>)>;
 
 /// A component a load reads: a Rust one, through its registration, or one
 /// declared while the engine runs, through the file's declaration.
@@ -159,7 +181,7 @@ impl Loaded {
 /// Plans every component the record declares, refusing one named like a
 /// Rust component — whether a page holds it or not.
 pub(super) fn plan_declared(
-    world: &World,
+    world: &LoadCatalog,
     record: &SceneRecord,
     report: &LoadReport,
 ) -> Result<HashMap<String, Arc<DeclaredLoad>>, LoadFailure> {
@@ -201,6 +223,30 @@ pub fn prepare(world: &mut World, record: &SceneRecord) -> Result<Prepared, Load
     prepare_kept(world, record, Kept::Scene)
 }
 
+/// What a load reads of `world` to be prepared, and a hold for the ids it
+/// reserves: the synchronous loads prepare as the off-frame ones do. The
+/// `wanted` ids a load of that many entities reserves are made ready from
+/// slots despawns freed first, so loads in a row with no frame between them
+/// reuse the store rather than grow it.
+pub(super) fn readings(world: &mut World, wanted: usize) -> (Arc<LoadCatalog>, ReservationHold) {
+    world.ready_reservations(wanted);
+    (world.load_catalog(), world.hold_reservations())
+}
+
+/// [`prepare`], without the world: what it reads of the world is `catalog`,
+/// and the ids it reserves are held by `hold` until the load is committed,
+/// abandoned or dropped. Runs on any thread; only
+/// [`commit`](Prepared::commit) needs the world.
+pub fn prepare_with(
+    catalog: &LoadCatalog,
+    hold: ReservationHold,
+    record: &SceneRecord,
+) -> Result<Prepared, LoadFailure> {
+    let mut prepared = prepare_given(catalog, hold, record, Kept::Scene, None)?;
+    prepared.source = Some(Source::Record(Arc::new(record.clone()), Kept::Scene));
+    Ok(prepared)
+}
+
 /// [`prepare`], the entity known as `given.0` landing at `given.1` — an id
 /// reserved before the load, which the load neither reserves nor gives back.
 pub(crate) fn prepare_at(
@@ -208,7 +254,8 @@ pub(crate) fn prepare_at(
     record: &SceneRecord,
     given: (PersistentId, EntityId),
 ) -> Result<Prepared, LoadFailure> {
-    prepare_given(world, record, Kept::Scene, Some(given))
+    let (catalog, hold) = readings(world, record.entities.len());
+    prepare_given(&catalog, hold, record, Kept::Scene, Some(given))
 }
 
 /// [`prepare`], keeping the components `kept` keeps and skipping, reported,
@@ -218,11 +265,25 @@ pub(super) fn prepare_kept(
     record: &SceneRecord,
     kept: Kept,
 ) -> Result<Prepared, LoadFailure> {
-    prepare_given(world, record, kept, None)
+    let (catalog, hold) = readings(world, record.entities.len());
+    prepare_given(&catalog, hold, record, kept, None)
+}
+
+/// [`prepare_kept`], without the world.
+pub(super) fn prepare_kept_with(
+    catalog: &LoadCatalog,
+    hold: ReservationHold,
+    record: &SceneRecord,
+    kept: Kept,
+) -> Result<Prepared, LoadFailure> {
+    let mut prepared = prepare_given(catalog, hold, record, kept, None)?;
+    prepared.source = Some(Source::Record(Arc::new(record.clone()), kept));
+    Ok(prepared)
 }
 
 fn prepare_given(
-    world: &mut World,
+    world: &LoadCatalog,
+    hold: ReservationHold,
     record: &SceneRecord,
     kept: Kept,
     given: Option<(PersistentId, EntityId)>,
@@ -345,6 +406,7 @@ fn prepare_given(
 
     let mut prepared = prepare_pages(
         world,
+        hold,
         &record.entities,
         given,
         plans,
@@ -385,7 +447,8 @@ pub(super) struct PagePlan<'r> {
 /// the page, the column's position in the file and the row — and reads the
 /// hierarchy. On any failure, nothing stays reserved.
 pub(super) fn prepare_pages(
-    world: &mut World,
+    world: &LoadCatalog,
+    hold: ReservationHold,
     entities: &[PersistentId],
     given: Option<(PersistentId, EntityId)>,
     plans: Vec<PagePlan<'_>>,
@@ -415,7 +478,7 @@ pub(super) fn prepare_pages(
             // Where the file kept it: what decides whether its pages fit
             // together.
             let domain = match loaded {
-                Loaded::Rust(reg) => world.component_domain(reg.type_id),
+                Loaded::Rust(reg) => world.domain_of(ComponentKey::Rust(reg.type_id)),
                 Loaded::Declared(load) => Some(load.file_domain),
             };
             let Some(domain) = domain else {
@@ -475,12 +538,13 @@ pub(super) fn prepare_pages(
         .iter()
         .map(|id| match given {
             Some((known, entity)) if known == *id => (*id, entity),
-            _ => (*id, world.reserve_entity()),
+            _ => (*id, hold.reserve()),
         })
         .collect();
     let given = given.map(|(_, entity)| entity);
     let mut references = Resolver {
-        world,
+        nowhere: world.nowhere(),
+        _world: std::marker::PhantomData,
         reserved: &reserved,
         current: None,
         bound: None,
@@ -566,10 +630,8 @@ pub(super) fn prepare_pages(
         },
     };
     let (None, Some(hierarchy)) = (&error, hierarchy) else {
+        // The hold, dropped here, gives every id it reserved back.
         let message = error.unwrap_or_default();
-        for entity in reserved.values().filter(|entity| Some(**entity) != given) {
-            world.release_reserved(*entity);
-        }
         return Err(failure(message, report));
     };
     Ok(Prepared {
@@ -580,6 +642,9 @@ pub(super) fn prepare_pages(
         hierarchy,
         register: Vec::new(),
         report,
+        hold,
+        generation: world.generation(),
+        source: None,
     })
 }
 
@@ -589,98 +654,22 @@ impl Prepared {
         self.entities.iter().map(|(_, entity)| *entity).collect()
     }
 
+    /// The generation of the catalogue the load was prepared against: a
+    /// load prepared before the world's components changed carries an older
+    /// one than [`World::load_catalog`] gives now.
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// What the load was read from, to prepare it again should its world's
+    /// components change before it commits.
+    pub(super) fn set_source(&mut self, source: Source) {
+        self.source = Some(source);
+    }
+
     /// The declarations to register when the load commits.
     pub(super) fn set_register(&mut self, register: Vec<RuntimeComponentDecl>) {
         self.register = register;
-    }
-
-    /// Adds everything, giving the entities `identity`'s identities: each
-    /// page built row by row, then the hierarchy rebuilt from each entity's
-    /// `Parent`.
-    pub fn commit(self, world: &mut World, identity: Identity) -> Applied {
-        // What the file describes and the world did not have: registered
-        // first, so the pages holding it can be built.
-        for declaration in self.register {
-            let name = declaration.name.clone();
-            if let Err(error) = world.register_runtime_component(declaration) {
-                log::error!("the file's `{name}` could not be registered: {error}");
-            }
-        }
-        let placed: HashSet<EntityId> = self
-            .pages
-            .iter()
-            .filter(|page| !page.signature.is_empty())
-            .flat_map(|page| page.rows.iter().map(|(entity, _)| *entity))
-            .collect();
-        // Which saved identities are free is decided against the world as
-        // it was before this load: only an entity the load did not bring can
-        // make a newcomer give its identity up.
-        let kept: Vec<bool> = self
-            .entities
-            .iter()
-            .map(|&(id, _)| identity == Identity::Keep && world.entity_with_id(id).is_none())
-            .collect();
-        for &(_, entity) in &self.entities {
-            world.bring_reserved_to_life(entity, !placed.contains(&entity));
-        }
-        for (&(id, entity), &kept) in self.entities.iter().zip(&kept) {
-            if kept {
-                world.set_persistent_id(entity, id);
-            }
-        }
-        // The rest take a fresh identity of their kind; under `Fresh`, every
-        // entity is a new authored one.
-        for (&(id, entity), &kept) in self.entities.iter().zip(&kept) {
-            if kept {
-                continue;
-            }
-            if identity == Identity::Keep && id.is_created() {
-                world.assign_created_id(entity);
-            } else {
-                world.mark_authored(entity);
-            }
-        }
-
-        // `Parent` is recorded; `Children` is derived from it. The hierarchy
-        // module writes both as the rows are placed.
-        let mut hierarchy = self.hierarchy;
-        for page in self.pages {
-            if page.signature.is_empty() {
-                continue;
-            }
-            for (entity, values) in page.rows {
-                let placed =
-                    world.place_loaded_row(entity, &page.signature, &mut hierarchy, |target| {
-                        for (key, value) in values {
-                            if let Some(column) = target.columns.get_mut(&key) {
-                                value.push_into(column.as_mut());
-                            }
-                        }
-                    });
-                if !placed {
-                    log::error!("a loaded page row could not be placed for {entity:?}");
-                }
-            }
-        }
-        world.finish_loaded_hierarchy(hierarchy);
-        for (entity, key, value) in self.moved {
-            if let Err(error) = value.commit(world, entity) {
-                log::error!("a loaded {key:?} could not join {entity:?}: {error}");
-            }
-        }
-        Applied {
-            entities: self.entities,
-            report: self.report,
-        }
-    }
-
-    /// Gives every reserved id back, adding nothing.
-    pub fn abandon(self, world: &mut World) {
-        for (_, entity) in self.entities {
-            if Some(entity) != self.given {
-                world.release_reserved(entity);
-            }
-        }
     }
 }
 

@@ -100,6 +100,13 @@ pub enum ReportKind {
         /// What the check says is wrong, naming the value.
         message: String,
     },
+    /// The load could not land at all and added nothing: prepared for
+    /// another world, or prepared before the world's components changed and
+    /// failing when prepared again against them.
+    NotLoaded {
+        /// Why it could not.
+        reason: String,
+    },
 }
 
 impl std::fmt::Display for ReportEntry {
@@ -127,6 +134,7 @@ impl std::fmt::Display for ReportEntry {
                 "the save changed an entity the scene no longer has; its changes were dropped",
             )?,
             ReportKind::Unusable { message } => write!(f, "`{place}` is unusable: {message}")?,
+            ReportKind::NotLoaded { reason } => write!(f, "nothing was loaded: {reason}")?,
         }
         if let Some(component) = &self.component {
             write!(f, " (component {component}")?;

@@ -184,6 +184,34 @@ impl World {
         &self.storage.registry
     }
 
+    /// What preparing a load reads of this world, as it is now: shared, and
+    /// readable on any thread. Its generation moves whenever a component is
+    /// registered, declared, relaid out, moved to another domain or given
+    /// another provenance.
+    pub fn load_catalog(&self) -> Arc<crate::scene::LoadCatalog> {
+        let nowhere = self
+            .nowhere
+            .expect("a world makes its nowhere entity as it is created");
+        let generation = self.storage.registry.generation();
+        let mut cached = self
+            .load_catalog
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match &*cached {
+            // Built once per change of the components: a load in a frame —
+            // a prefab spawned by a script — pays nothing more.
+            Some(catalog) if catalog.generation() == generation => Arc::clone(catalog),
+            _ => {
+                let catalog = Arc::new(crate::scene::LoadCatalog::of(
+                    &self.storage.registry,
+                    nowhere,
+                ));
+                *cached = Some(Arc::clone(&catalog));
+                catalog
+            }
+        }
+    }
+
     /// Registers the Rust component `T` in `domain`, refusing a short name
     /// another Rust type has. Registering it again in the domain it has
     /// returns its id.

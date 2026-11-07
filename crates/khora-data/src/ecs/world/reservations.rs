@@ -35,6 +35,44 @@ impl World {
         Arc::clone(&self.reserver)
     }
 
+    /// A hold over this world's reserver: ids a load prepared off the frame
+    /// reserves through it are not released at a frame's end, until the load
+    /// commits them, or is abandoned or dropped.
+    pub fn hold_reservations(&self) -> khora_core::ecs::ReservationHold {
+        self.reserver.hold()
+    }
+
+    /// Makes at least `wanted` ids ready for the reserver to hand out first,
+    /// from slots despawns freed — none past the end of the store — so the
+    /// reservations a load is about to make reuse the store.
+    pub fn ready_reservations(&mut self, wanted: usize) {
+        self.settle_reservations();
+        let missing = wanted.saturating_sub(self.reserver.ready_len());
+        let recycled: Vec<EntityId> = (0..missing)
+            .map_while(|_| self.entities.reserve_recycled())
+            .collect();
+        self.reserver.refill(recycled);
+    }
+
+    /// Brings `entity`, an id `hold` reserved, to life as a load commits it:
+    /// `false`, changing nothing, for an id the hold does not hold, or one
+    /// another world's reserver gave.
+    pub(crate) fn commit_held(
+        &mut self,
+        hold: &khora_core::ecs::ReservationHold,
+        entity: EntityId,
+        empty: bool,
+    ) -> bool {
+        if !hold.is_over(&self.reserver) {
+            return false;
+        }
+        self.settle_reservations();
+        if !hold.commit(entity) {
+            return false;
+        }
+        self.bring_reserved_to_life(entity, empty)
+    }
+
     /// Turns the ids the reserver handed out past the end of the store into
     /// reserved slots, so a spawn can commit them.
     pub fn settle_reservations(&mut self) {

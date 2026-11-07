@@ -30,15 +30,15 @@ use khora_core::ecs::entity::EntityId;
 
 use crate::ecs::{Transform, World};
 
-/// A world that has lived a little: five entities spawned, two despawned, a
-/// reference to nothing made, and one frame's reservations settled — so the
-/// reserver hands out recycled indices as well as fresh ones.
+/// A world that has lived a little: five entities spawned, two despawned,
+/// and one frame's reservations settled — so the reserver hands out recycled
+/// indices as well as fresh ones. Its nowhere entity is the one it was made
+/// with.
 fn lived_in() -> (World, Vec<EntityId>) {
     let mut world = World::new();
     let spawned: Vec<EntityId> = (0..5).map(|_| world.spawn(Transform::identity())).collect();
     assert!(world.despawn(spawned[1]));
     assert!(world.despawn(spawned[3]));
-    world.nowhere();
     world.settle_reservations();
     world.release_unspent();
     let live = vec![spawned[0], spawned[2], spawned[4]];
@@ -52,7 +52,9 @@ fn lived_in() -> (World, Vec<EntityId>) {
 #[test]
 fn reserved_ids_are_distinct_and_none_is_alive() {
     let (mut world, live) = lived_in();
-    let nowhere = world.nowhere_entity().expect("the world made one");
+    let nowhere = world
+        .nowhere_entity()
+        .expect("a world is made with its nowhere entity");
     let reserver = world.reserver();
 
     let reserved: Vec<EntityId> = (0..300).map(|_| reserver.reserve()).collect();
@@ -229,5 +231,49 @@ fn a_steady_spawn_and_despawn_rate_keeps_the_indices_bounded() {
         (highest as usize) < 4 * PER_FRAME,
         "{FRAMES} frames of {PER_FRAME} spawns and despawns reached index {highest}: \
          the store grew instead of reusing what was despawned"
+    );
+}
+
+/// **A world is made with its nowhere entity**, the one a reference to
+/// nothing loads as: no load has to make it, so preparing a load never
+/// changes the world. It is not alive, has no identity, is handed to no
+/// reservation and no spawn, cannot be brought to life nor released, and
+/// asking for it again gives the same entity.
+#[test]
+fn a_new_world_has_its_nowhere_entity() {
+    let mut world = World::new();
+    let nowhere = world
+        .nowhere_entity()
+        .expect("a world is made with its nowhere entity");
+
+    assert!(!world.contains(nowhere), "nowhere is not alive");
+    assert_eq!(
+        world.persistent_id(nowhere),
+        None,
+        "nowhere has no identity"
+    );
+    assert_eq!(world.nowhere(), nowhere, "asking for it makes no other");
+
+    let reserver = world.reserver();
+    let reserved: Vec<EntityId> = (0..64).map(|_| reserver.reserve()).collect();
+    world.settle_reservations();
+    let spawned: Vec<EntityId> = (0..64)
+        .map(|_| world.spawn(Transform::identity()))
+        .collect();
+    for id in reserved.iter().chain(&spawned) {
+        assert_ne!(id.index, nowhere.index, "{id:?} was handed nowhere's slot");
+    }
+    world.release_unspent();
+
+    assert!(
+        !world.spawn_reserved(nowhere),
+        "nowhere was brought to life"
+    );
+    world.release_reserved(nowhere);
+    assert!(!world.contains(nowhere));
+    assert_eq!(world.nowhere_entity(), Some(nowhere));
+    assert!(
+        World::new().nowhere_entity().is_some(),
+        "every world is made with one"
     );
 }

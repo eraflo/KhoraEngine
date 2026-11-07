@@ -158,7 +158,7 @@ pub use khora_io::asset::{
     PACK_HEADER_SIZE, PACK_MAGIC,
 };
 pub use khora_io::serialization::{
-    prefab_catalog, read_prefab, SerializationService, SerializationServiceError,
+    prefab_catalog, read_prefab, ReaderPrefabs, SerializationService, SerializationServiceError,
 };
 pub use khora_telemetry::MetricsRegistry;
 

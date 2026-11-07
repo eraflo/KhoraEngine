@@ -21,7 +21,7 @@
 //! you might want to open a scene from outside the current project) and fall
 //! back to direct `std::fs` only in that case.
 
-use crate::project_vfs::{HeldPrefabs, ProjectVfs};
+use crate::project_vfs::ProjectVfs;
 use khora_sdk::khora_core::asset::asset_key;
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity, ProblemSource};
 use khora_sdk::prelude::ecs::*;
@@ -114,7 +114,10 @@ pub fn save_scene_in_project_with_goal(
 ) -> bool {
     // Prefab instances are written as links to their prefabs.
     let service = SerializationService::new();
-    let saved = service.save_world_with(world.inner_world(), goal, &HeldPrefabs::new(pvfs));
+    // Read through the project's shared reader: no lock held while a prefab
+    // decodes, the files as they are now.
+    let prefabs = khora_sdk::ReaderPrefabs::new(pvfs.assets().reader());
+    let saved = service.save_world_with(world.inner_world(), goal, &prefabs);
     let scene_file = match saved {
         Ok(f) => f,
         Err(e) => {
@@ -201,11 +204,8 @@ pub fn load_scene_in_project_with_report(
 
     // Prefab instances are expanded from their prefabs as they are now.
     let service = SerializationService::new();
-    let loaded = service.replace_world_with(
-        &scene_file,
-        world.inner_world_mut(),
-        &HeldPrefabs::new(pvfs),
-    );
+    let prefabs = khora_sdk::ReaderPrefabs::new(pvfs.assets().reader());
+    let loaded = service.replace_world_with(&scene_file, world.inner_world_mut(), &prefabs);
     match loaded {
         Ok(report) => {
             log_report(rel_path_fwd_slash, &report);

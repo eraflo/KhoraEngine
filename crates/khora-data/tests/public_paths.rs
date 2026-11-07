@@ -2079,6 +2079,9 @@ fn report_kind_variants(x: &khora_data::scene::record::ReportKind) {
         khora_data::scene::record::ReportKind::Unusable { message } => {
             let _ = message;
         }
+        khora_data::scene::record::ReportKind::NotLoaded { reason } => {
+            let _ = reason;
+        }
     }
 }
 

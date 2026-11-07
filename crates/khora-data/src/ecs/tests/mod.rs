@@ -25,6 +25,7 @@ mod entity_count_unwind;
 mod entity_reservations;
 mod hierarchy;
 mod hierarchy_writers;
+mod load_catalog;
 mod mut_guard;
 mod no_change_missed;
 mod observed_row_arrays;
@@ -34,6 +35,7 @@ mod query_mut_writes;
 mod query_plan_after_registration;
 mod quiet_columns;
 mod relayout;
+mod reservation_holds;
 mod runtime_components;
 mod runtime_rows;
 mod spawn_refusal;
@@ -141,6 +143,9 @@ fn test_spawn_single_entity() {
     // Define the component data we want to spawn.
     let position = Position(10);
     let velocity = Velocity(-5);
+    // A fresh world may already hold slots back (its nowhere entity): the
+    // spawn adds one slot to whatever it holds.
+    let slots_before = world.entities.len();
 
     // --- 2. ACTION ---
     // Spawn a new entity with the component bundle.
@@ -149,20 +154,24 @@ fn test_spawn_single_entity() {
     // --- 3. ASSERTIONS ---
     // Verify that the world state is exactly as we expect it to be.
 
-    // Check the returned EntityId.
-    assert_eq!(entity_id.index, 0, "The first entity should have index 0");
+    // Check the returned EntityId: a slot never used before.
+    assert_eq!(
+        entity_id.index as usize, slots_before,
+        "The first entity should take the first unused slot"
+    );
     assert_eq!(
         entity_id.generation, 0,
         "The first entity should have generation 0"
     );
+    assert_eq!(world.entity_count(), 1, "One entity is alive");
 
     // Check the world's entity list.
     assert_eq!(
         world.entities.len(),
-        1,
-        "There should be one entity entry in the world"
+        slots_before + 1,
+        "The spawn should add one entity entry to the world"
     );
-    let (stored_id, metadata_opt) = world.entities.get(0).unwrap();
+    let (stored_id, metadata_opt) = world.entities.get(entity_id.index as usize).unwrap();
     assert!(metadata_opt.is_some(), "Entity slot should be occupied");
 
     let metadata = metadata_opt.as_ref().unwrap();
@@ -215,6 +224,7 @@ fn test_despawn_single_entity() {
     world.register_component::<Position>(SemanticDomain::Spatial);
     world.register_component::<Velocity>(SemanticDomain::Spatial);
 
+    let slots_before = world.entities.len();
     let entity_id = world.spawn((Position(10), Velocity(-5)));
 
     // --- 2. ACTION ---
@@ -222,14 +232,20 @@ fn test_despawn_single_entity() {
 
     // --- 3. ASSERTIONS ---
     assert!(despawn_result);
+    assert_eq!(world.entity_count(), 0, "No entity is alive");
 
-    // Check entity list and free list.
-    assert_eq!(world.entities.len(), 1);
+    // Check entity list and free list: the slot stays, freed.
+    assert_eq!(world.entities.len(), slots_before + 1);
     assert!(
-        world.entities.get(0).unwrap().1.is_none(),
+        world
+            .entities
+            .get(entity_id.index as usize)
+            .unwrap()
+            .1
+            .is_none(),
         "The entity's metadata slot should now be None"
     );
-    assert_eq!(world.entities.freed_entities, vec![0]);
+    assert_eq!(world.entities.freed_entities, vec![entity_id.index]);
 
     // Check the page's state.
     assert_eq!(world.storage.pages.len(), 1);
@@ -252,23 +268,27 @@ fn test_entity_id_recycling_and_aba_protection() {
     // --- 2. ACTION & ASSERTIONS ---
 
     // --- Part A: Spawn and Despawn ---
-    // Spawn the first entity.
+    // Spawn the first entity. Its index is whichever slot is free first —
+    // a world may hold a slot back from its start (its nowhere entity).
     let id_a = world.spawn((Position(1), Velocity(1)));
-    assert_eq!(id_a.index, 0);
+    let slot = id_a.index as usize;
     assert_eq!(id_a.generation, 0);
 
     // Despawn it to free up its index.
     let despawn_result_a = world.despawn(id_a);
     assert!(despawn_result_a);
-    assert_eq!(world.entities.freed_entities, vec![0]); // Index 0 is now free.
-    assert!(world.entities.get(0).unwrap().1.is_none());
+    assert_eq!(world.entities.freed_entities, vec![id_a.index]); // Its index is now free.
+    assert!(world.entities.get(slot).unwrap().1.is_none());
 
     // --- Part B: Recycle the ID ---
-    // Spawn a second entity. It should reuse the index 0.
+    // Spawn a second entity. It should reuse the freed index.
     let id_b = world.spawn((Position(2), Velocity(2)));
 
     // Assert that the new ID has the same index but an incremented generation.
-    assert_eq!(id_b.index, 0, "The recycled entity should have index 0");
+    assert_eq!(
+        id_b.index, id_a.index,
+        "The recycled entity should reuse the freed index"
+    );
     assert_eq!(
         id_b.generation, 1,
         "The generation should be incremented to 1"
@@ -278,7 +298,7 @@ fn test_entity_id_recycling_and_aba_protection() {
         "The free list should be empty again"
     );
     assert!(
-        world.entities.get(0).unwrap().1.is_some(),
+        world.entities.get(slot).unwrap().1.is_some(),
         "The slot should be occupied again"
     );
 
@@ -295,10 +315,10 @@ fn test_entity_id_recycling_and_aba_protection() {
     // Verify that the world state was NOT affected by the failed despawn.
     // The entity `id_b` should still be alive and well.
     assert!(
-        world.entities.get(0).unwrap().1.is_some(),
+        world.entities.get(slot).unwrap().1.is_some(),
         "The slot for id_b should not have been freed"
     );
-    let (current_id, _) = world.entities.get(0).unwrap();
+    let (current_id, _) = world.entities.get(slot).unwrap();
     assert_eq!(
         *current_id, id_b,
         "The entity in the world should still be id_b"
@@ -312,7 +332,7 @@ fn test_entity_id_recycling_and_aba_protection() {
         "Despawning with the correct ID should succeed"
     );
     assert!(
-        world.entities.get(0).unwrap().1.is_none(),
+        world.entities.get(slot).unwrap().1.is_none(),
         "The slot should be free again after the correct despawn"
     );
 }
@@ -568,6 +588,8 @@ fn test_tuple_query_matches_entities_with_all_components() {
 fn test_spawn_with_unregistered_component() {
     // --- 1. ARRANGE ---
     let mut world = World::default();
+    // A fresh world may already hold slots back (its nowhere entity).
+    let slots_before = world.entities.len();
 
     // NOTE: We do NOT register the `Position` component.
     // world.register_component::<Position>(SemanticDomain::Spatial);
@@ -587,7 +609,11 @@ fn test_spawn_with_unregistered_component() {
         ),
         "an unregistered component is refused: {result:?}"
     );
-    assert_eq!(world.entities.len(), 0, "no entity slot was allocated");
+    assert_eq!(
+        world.entities.len(),
+        slots_before,
+        "no entity slot was allocated"
+    );
     assert_eq!(world.entity_count(), 0);
     assert_eq!(
         world.storage.pages.len(),

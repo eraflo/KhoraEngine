@@ -98,6 +98,9 @@ pub struct World {
     /// The world's clock, the keys observers watch, and each observer's
     /// last-seen tick.
     clock: clock::WorldClock,
+    /// The load catalogue last built, rebuilt only once the components
+    /// changed.
+    load_catalog: std::sync::Mutex<Option<std::sync::Arc<crate::scene::LoadCatalog>>>,
 }
 
 /// Source of process-unique [`World::instance_id`] values.
@@ -109,7 +112,28 @@ impl World {
         // What a script reserved first, so a spawn here never takes an index
         // a reservation already holds.
         self.settle_reservations();
-        let entity = self.entities.create_entity();
+        let entity = if self.entities.has_freed() {
+            self.entities.create_entity()
+        } else if let Some(ready) = self.reserver.take_ready() {
+            // A slot held back for the reserver — left ready by a load or a
+            // frame — filled before the store grows. A fresh index a hold
+            // gave back from another thread since the settle above has no
+            // slot yet: settled now.
+            self.settle_reservations();
+            self.entities.commit_reserved(ready);
+            ready
+        } else {
+            // A slot past the end of the store: its index claimed from the
+            // reserver first, so a reservation made from another thread
+            // meanwhile — a load prepared off the frame — never gets it too.
+            let entity = EntityId {
+                index: self.reserver.claim_fresh(),
+                generation: 0,
+            };
+            self.settle_reservations();
+            self.entities.commit_reserved(entity);
+            entity
+        };
         self.after_allocation();
         entity
     }
@@ -195,7 +219,11 @@ impl World {
             reserver: std::sync::Arc::new(khora_core::ecs::EntityReserver::new()),
             instance_id: WORLD_INSTANCE_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             clock: clock::WorldClock::default(),
+            load_catalog: std::sync::Mutex::new(None),
         };
+        // The entity a reference to nothing names exists from the start: a
+        // load prepared off the frame names it without touching the world.
+        world.nowhere();
         // Every key a registration watches is observed from the first frame.
         for reg in inventory::iter::<crate::ecs::DataSystemRegistration> {
             for key in reg.observes {
