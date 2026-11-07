@@ -41,6 +41,7 @@ open = "5"
 
 # Zip extraction for engine downloads
 zip = "9"
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 
 # Image decoding (for window icon from PNG)
 

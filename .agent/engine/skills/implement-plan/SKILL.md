@@ -26,9 +26,15 @@ The **Implement** phase of [`../../workflow-rpi.md`](../../workflow-rpi.md). Goa
    `cargo run -p sandbox`.
 7. **Compact** — update the plan's **Status** checklist in place: mark the phase done, record any
    deviation from the plan and why, note the live test count. Then drop the phase's working detail from
-   context and move to the next phase.
+   context.
+8. **Stop and report** — the step ends here. Tell the owner what was done, what the breaker found, which
+   existing tests changed and why, the gate's result and what is left open, and wait for them to check it
+   before the commit and before the next phase. Never start the next phase on your own: a "continue"
+   covers the step it answers, not the ones after it.
 
 ## Rules
+- **Stop at every step (invariable).** Each phase or sub-step ends with a report and a wait for the
+  owner's check; no chaining into the next one.
 - The plan is the source of truth. If reality contradicts it, **stop and amend the plan** (and surface it),
   don't silently improvise a different design.
 - Never mark a phase done while its tests fail or a step was skipped — report it honestly instead.

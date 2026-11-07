@@ -47,6 +47,18 @@ jobs:
         # Check that all code in the workspace is correctly formatted
         run: cargo fmt --all -- --check
 
+      - name: Install cargo-hakari
+        uses: taiki-e/install-action@cargo-hakari
+
+      - name: Check the feature unification
+        # The workspace-hack must match the dependencies: every third-party
+        # dependency builds with one feature set, whichever crate is built
+        # (RULES §2b). Run `cargo hakari generate` and `cargo hakari
+        # manage-deps` locally, and commit what they change.
+        run: |
+          cargo hakari generate --diff
+          cargo hakari manage-deps --dry-run
+
       - name: Run Clippy (Linter)
         # Run Clippy on the entire workspace, for all targets, with all features.
         # `-D warnings` turns Clippy warnings into errors.

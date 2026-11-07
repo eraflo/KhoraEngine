@@ -70,6 +70,7 @@ eframe = { version = "0.34", default-features = false, features = [
     "wayland",
     "x11",
 ] }
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 
 # The platform's VRAM budget, read through each wgpu backend's hal. The
 # versions are the ones wgpu-hal 29 already builds, so none is duplicated.

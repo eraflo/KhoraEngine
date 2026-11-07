@@ -22,6 +22,7 @@ members = [
     "crates/khora-tool-ui",
     # Examples and tools
     "examples/sandbox",
+    "workspace-hack",
     "xtask",
 ]
 

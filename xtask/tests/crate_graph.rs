@@ -36,6 +36,12 @@ const SHIPPED_TABLES: &[&str] = &["dependencies", "build-dependencies", "build_d
 /// Crates outside the CLAD tiers: build tooling, not engine or game code.
 const UNTIERED: &[&str] = &["xtask"];
 
+/// Crates that carry no code and are left out of the graph: the
+/// `workspace-hack` cargo-hakari generates, which only unifies the features
+/// of the third-party dependencies (RULES §2b), so an edge to it is no
+/// dependency of one engine crate on another.
+const BUILD_ONLY: &[&str] = &["workspace-hack"];
+
 /// The first-party crates each tiered crate may list directly (RULES §3).
 ///
 /// `khora-agents` may take everything above it except `khora-tool-ui`: the
@@ -321,6 +327,9 @@ impl CrateGraph {
         while let Some(dir) = queue.pop_front() {
             let manifest = read_manifest(&dir.join("Cargo.toml"));
             let name = package_name(&manifest, &dir);
+            if BUILD_ONLY.contains(&name.as_str()) {
+                continue;
+            }
             let mut deps = BTreeSet::new();
             for table in shipped_tables(&manifest) {
                 for (key, spec) in table {
@@ -328,7 +337,11 @@ impl CrateGraph {
                         continue;
                     };
                     let target_manifest = read_manifest(&target.join("Cargo.toml"));
-                    deps.insert(package_name(&target_manifest, &target));
+                    let target_name = package_name(&target_manifest, &target);
+                    if BUILD_ONLY.contains(&target_name.as_str()) {
+                        continue;
+                    }
+                    deps.insert(target_name);
                     if seen.insert(target.clone()) {
                         queue.push_back(target);
                     }

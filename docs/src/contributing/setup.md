@@ -35,7 +35,12 @@ later incremental builds are fast.
 
 ## 2. Run the tests
 
-The primary check is the gate — what CI runs, with CI's flags:
+The primary check is the gate — what CI runs, with CI's flags. It needs two
+cargo tools, installed once:
+
+```bash
+cargo install cargo-nextest cargo-hakari --locked
+```
 
 ```bash
 cargo gate
@@ -114,10 +119,13 @@ whole engine is built and linked. Three settings keep that down:
   Windows each link wrote a PDB of over 100 MB. A panic still names its file and
   line (`Location` is compiled in); a backtrace names functions without lines.
   To debug, build with `CARGO_PROFILE_DEV_DEBUG=line-tables-only` (or `2`).
-- **One feature set.** The workspace crates declare no optional feature, so
-  `cargo run -p khora-editor`, `cargo t` and `cargo gate` (which passes
-  `--all-features`) build the same engine instead of one each. Don't add an
-  optional feature to a workspace crate without weighing that.
+- **One feature set.** The workspace crates declare no optional feature, and
+  the third-party dependencies build with one feature set each, unified by the
+  `workspace-hack` crate that `cargo hakari` generates. So
+  `cargo run -p khora-editor`, `cargo t -p <crate>` and `cargo gate` build the
+  same engine, not one each. After adding or changing a dependency, run
+  `cargo hakari generate` and `cargo hakari manage-deps`; the gate fails until
+  you do.
 - **No test build for a target without tests.** A target that holds no test
   sets `test = false` (`sandbox`, `khora-runtime`). The gate runs cargo's
   default test targets, which leave those out, then the benches as smoke tests

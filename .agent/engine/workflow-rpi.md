@@ -38,7 +38,12 @@ Research ──► Plan ──► Implement ──► compact back into the plan
    4. **Fix** — the main agent, until the breaker's tests pass. At most two breaker rounds; what remains
       is reported to the human, never dropped.
    5. **Gate** (`cargo gate`, once per phase, see [`skills/build-and-test`](./skills/build-and-test/SKILL.md)),
-      then **compact status back into the plan file**, and move to the next phase.
+      then **compact status back into the plan file**.
+   6. **Stop at the step** — every phase or sub-step (a *palier*) ends with a stop: report what was done,
+      what the breaker found, what changed in existing tests and why, the gate's result, and what is
+      left open; then **wait for the owner to check it**. Never chain into the next step on your own, even
+      when the previous message said "continue": "continue" covers the step it answers, not the ones
+      after it. Invariable (owner, 2026-11-07).
 
 ## Context discipline (the whole point)
 

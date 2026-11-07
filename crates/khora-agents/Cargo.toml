@@ -13,6 +13,7 @@ khora-lanes = { path = "../khora-lanes" }
 khora-script = { path = "../khora-script" }
 
 log = "0.4"
+workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 
 [dev-dependencies]
 khora-control = { path = "../khora-control" }

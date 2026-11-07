@@ -37,6 +37,7 @@ Pass` job aggregates them):
 | Gate | Command | Notes |
 |---|---|---|
 | **Format** | `cargo fmt --all -- --check` | Must report no changes. |
+| **Feature unification** | `cargo hakari generate --diff` and `cargo hakari manage-deps --dry-run` | The `workspace-hack` must match the dependencies; run both without the flag and commit what changes. |
 | **Lint** | `cargo clippy --workspace --all-targets --all-features -- -D warnings` | Warnings are errors. |
 | **Test — Linux** | `cargo nextest run --workspace --all-features --locked`, then the same with `--bench '*'` | Runs on `ubuntu-latest`. Cargo's default targets leave out a target marked `test = false`; `--all-targets` would build it anyway. |
 | **Test — Windows** | same | Runs on `windows-latest`. |

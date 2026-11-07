@@ -2703,6 +2703,7 @@ dependencies = [
  "khora-telemetry",
  "log",
  "tempfile",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -2774,6 +2775,7 @@ dependencies = [
  "trash",
  "walkdir",
  "winresource",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -2793,6 +2795,7 @@ dependencies = [
  "serde",
  "serde_json",
  "winresource",
+ "workspace-hack",
  "zip",
 ]
 
@@ -2827,6 +2830,7 @@ dependencies = [
  "wgpu",
  "windows 0.62.2",
  "winit",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -2859,6 +2863,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tobj",
  "walkdir",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -2876,6 +2881,7 @@ dependencies = [
  "ron",
  "serde",
  "serde_json",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -2895,6 +2901,7 @@ dependencies = [
  "env_logger",
  "khora-sdk",
  "log",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -2931,6 +2938,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "winit",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -5033,6 +5041,7 @@ dependencies = [
  "env_logger",
  "khora-sdk",
  "log",
+ "workspace-hack",
 ]
 
 [[package]]
@@ -7408,6 +7417,75 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser",
+]
+
+[[package]]
+name = "workspace-hack"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "arrayvec",
+ "bitflags 2.13.0",
+ "block2 0.6.2",
+ "bytemuck",
+ "byteorder",
+ "cc",
+ "crossbeam-utils",
+ "dispatch2",
+ "either",
+ "flate2",
+ "form_urlencoded",
+ "getrandom 0.3.4",
+ "getrandom 0.4.2",
+ "half",
+ "hashbrown 0.17.1",
+ "icu_locale_core",
+ "icu_provider",
+ "image",
+ "libc",
+ "linux-raw-sys 0.12.1",
+ "litemap",
+ "log",
+ "memchr",
+ "num-rational",
+ "num-traits",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
+ "objc2-io-kit",
+ "once_cell",
+ "percent-encoding",
+ "potential_utf",
+ "proc-macro2",
+ "raw-window-handle",
+ "regex",
+ "regex-automata",
+ "regex-syntax",
+ "rustix 1.1.4",
+ "scopeguard",
+ "serde",
+ "serde_core",
+ "serde_json",
+ "smallvec",
+ "stable_deref_trait",
+ "syn 2.0.117",
+ "tinystr",
+ "tokio",
+ "toml",
+ "typenum",
+ "url",
+ "winapi",
+ "windows 0.62.2",
+ "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
+ "writeable",
+ "yoke",
+ "zerocopy",
+ "zerofrom",
+ "zerotrie",
+ "zerovec",
 ]
 
 [[package]]

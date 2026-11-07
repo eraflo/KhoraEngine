@@ -109,6 +109,25 @@ pub fn format() -> Result<()> {
     Ok(())
 }
 
+/// The workspace-hack is up to date: every third-party dependency builds
+/// with one feature set, whichever crate a command builds (RULES §2b). Fails
+/// when a dependency changed without `cargo hakari generate` and `cargo hakari
+/// manage-deps` — run them, and commit what they change.
+pub fn hakari() -> Result<()> {
+    print_task_start("Checking the feature unification", MAGNIFIER, CYAN);
+    execute_command(
+        "cargo",
+        &["hakari", "generate", "--diff"],
+        "Hakari (workspace-hack contents)",
+    )?;
+    execute_command(
+        "cargo",
+        &["hakari", "manage-deps", "--dry-run"],
+        "Hakari (workspace-hack dependencies)",
+    )?;
+    Ok(())
+}
+
 pub fn clippy() -> Result<()> {
     print_task_start("Running Clippy", CLIPPY, YELLOW);
     println!(
@@ -136,12 +155,13 @@ pub fn doc_test() -> Result<()> {
     Ok(())
 }
 
-/// What CI checks, in the order that fails fastest: format, clippy, tests,
-/// doc tests. Stops at the first failure. Run it once, when a change is done;
+/// What CI checks, in the order that fails fastest: format, the feature
+/// unification, clippy, tests, doc tests. Stops at the first failure. Run it once, when a change is done;
 /// while iterating, `cargo t -p <crate> [filter]`.
 pub fn gate() -> Result<()> {
     let start_time = Instant::now();
     format()?;
+    hakari()?;
     clippy()?;
     test()?;
     doc_test()?;

@@ -40,6 +40,12 @@ Measurements and levers: `docs/research/2026-11-06_build-time-and-target-size.md
   `[dev-dependencies]` or from a single crate: tests and runs would then build it, and everything above it,
   twice. Check with `cargo tree -e features -i <dep>` before adding one, and prefer a dependency already in
   the tree to a new one.
+- **The `workspace-hack` unifies what is left** (`cargo-hakari`, config `.config/hakari.toml`): `cargo t -p
+  <crate>` resolves features for that crate alone, `cargo gate` for the whole workspace, and without it they
+  build two different engines. After adding, removing or changing a dependency, run `cargo hakari generate`
+  then `cargo hakari manage-deps`, and commit what they change; `cargo gate` fails until you do. Never edit
+  `workspace-hack/Cargo.toml` by hand. The floor crates and `xtask` stay out of it (they would pull in
+  `windows`, `tokio`…), as the config says.
 - **Heavy dependencies stay high.** Never add wgpu, egui, rapier, winit or `windows` to a floor crate
   (`khora-core`, `khora-data`, `khora-script`, `khora-control`): each one reaches every test binary above it.
 - **No new test binary per file.** A crate's integration tests are modules of its one `tests/it/` binary.
@@ -147,6 +153,10 @@ Measurements and levers: `docs/research/2026-11-06_build-time-and-target-size.md
 - Don't modify `.github/workflows/` without asking.
 
 ## 10 — Permission model
+
+- **Stop at every step (invariable, owner 2026-11-07).** Each phase or sub-step of a plan ends with a
+  report and a wait for the owner to check what was done; never chain into the next step on your own.
+  See [`workflow-rpi.md`](./workflow-rpi.md).
 
 - **No prompt:** read any file, run `cargo gate` / `cargo t` / `cargo run`, query the codegraph MCP, lint.
 - **Ask first:** installing dependencies, any `git` write op (commit/push/branch/reset), deleting files or branches, full release builds, modifying CI.
