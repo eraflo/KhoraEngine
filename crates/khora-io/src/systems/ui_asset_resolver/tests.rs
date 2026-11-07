@@ -39,7 +39,7 @@ struct CountingIo {
 }
 
 impl AssetIo for CountingIo {
-    fn load_bytes(&mut self, source: &AssetSource) -> anyhow::Result<Vec<u8>> {
+    fn load_bytes(&self, source: &AssetSource) -> anyhow::Result<Vec<u8>> {
         self.reads.fetch_add(1, Ordering::Relaxed);
         self.inner.load_bytes(source)
     }

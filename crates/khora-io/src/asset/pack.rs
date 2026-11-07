@@ -154,6 +154,67 @@ impl PackLoader {
         out.write_all(&header.to_bytes())
             .context("Failed to write pack header")
     }
+
+    /// Reads exactly `size` bytes of the pack file starting at byte `at`
+    /// (from the start of the file), without moving a cursor shared with
+    /// other reads: several threads read one loader at once.
+    fn read_at(&self, at: u64, size: u64) -> Result<Vec<u8>> {
+        // An entry the file cannot hold is refused before anything is
+        // allocated for it: a corrupt index must not ask for more memory
+        // than the pack has bytes.
+        let file_len = self
+            .pack_file
+            .metadata()
+            .context("Failed to read the pack file's length")?
+            .len();
+        if at.checked_add(size).is_none_or(|end| end > file_len) {
+            bail!(
+                "Pack entry of {size} bytes at {at} runs past the end of the {file_len}-byte file"
+            );
+        }
+        let len = usize::try_from(size).context("Pack entry is larger than memory")?;
+        let mut buffer = vec![0u8; len];
+        let mut filled = 0;
+        while filled < len {
+            let read = read_once(&self.pack_file, &mut buffer[filled..], at + filled as u64)
+                .with_context(|| format!("Failed to read {size} bytes at {at} from pack"))?;
+            if read == 0 {
+                bail!(
+                    "Pack entry of {size} bytes at {at} runs past the end of the file \
+                     ({filled} bytes read)"
+                );
+            }
+            filled += read;
+        }
+        Ok(buffer)
+    }
+}
+
+/// The most LZ4 can expand one compressed byte to.
+const LZ4_MAX_RATIO: u64 = 255;
+/// Room for the end of an LZ4 block, which carries a few literals.
+const LZ4_SLACK: u64 = 64;
+
+/// One positioned read of `file` into `buf` at `offset`: what the platform
+/// reads without moving a cursor shared with other readers (Windows moves
+/// the handle's own position, never relied on here).
+#[cfg(windows)]
+fn read_once(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<usize> {
+    std::os::windows::fs::FileExt::seek_read(file, buf, offset)
+}
+
+#[cfg(unix)]
+fn read_once(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<usize> {
+    std::os::unix::fs::FileExt::read_at(file, buf, offset)
+}
+
+#[cfg(not(any(windows, unix)))]
+fn read_once(file: &File, buf: &mut [u8], offset: u64) -> std::io::Result<usize> {
+    let _ = (file, buf, offset);
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "positioned reads are not supported on this platform",
+    ))
 }
 
 fn read_and_validate_header(file: &mut File) -> Result<PackHeader> {
@@ -197,7 +258,7 @@ fn read_and_validate_header(file: &mut File) -> Result<PackHeader> {
 }
 
 impl AssetIo for PackLoader {
-    fn load_bytes(&mut self, source: &AssetSource) -> Result<Vec<u8>> {
+    fn load_bytes(&self, source: &AssetSource) -> Result<Vec<u8>> {
         match source {
             AssetSource::Packed {
                 offset,
@@ -205,25 +266,32 @@ impl AssetIo for PackLoader {
                 uncompressed_size,
                 compression,
             } => {
-                let mut buffer = vec![0; *size as usize];
                 // Asset offsets in `index.bin` are relative to the start
                 // of the asset region (i.e. after the header). We add the
                 // header size here so the index never has to know about
                 // the on-disk header.
-                self.pack_file
-                    .seek(SeekFrom::Start(PACK_HEADER_SIZE + *offset))
-                    .context("Failed to seek to asset location in pack file")?;
-                self.pack_file
-                    .read_exact(&mut buffer)
-                    .context("Failed to read asset bytes from pack file")?;
+                let at = PACK_HEADER_SIZE.checked_add(*offset).ok_or_else(|| {
+                    anyhow::anyhow!("Pack entry offset {offset} is past any pack file")
+                })?;
+                let buffer = self.read_at(at, *size)?;
 
                 match compression {
                     CompressionKind::None => Ok(buffer),
                     CompressionKind::Lz4 => {
-                        let decompressed =
-                            lz4_flex::block::decompress(&buffer, *uncompressed_size as usize)
-                                .map_err(|e| anyhow::anyhow!("LZ4 decompress failed: {}", e))?;
-                        if decompressed.len() != *uncompressed_size as usize {
+                        // LZ4 expands a byte to at most 255: a larger claim
+                        // is a corrupt index, refused before it is allocated.
+                        let bound = size.saturating_mul(LZ4_MAX_RATIO).saturating_add(LZ4_SLACK);
+                        if *uncompressed_size > bound {
+                            bail!(
+                                "Pack: LZ4 entry of {size} bytes claims {uncompressed_size} \
+                                 bytes uncompressed, more than LZ4 can produce"
+                            );
+                        }
+                        let uncompressed = usize::try_from(*uncompressed_size)
+                            .context("Pack entry is larger than memory")?;
+                        let decompressed = lz4_flex::block::decompress(&buffer, uncompressed)
+                            .map_err(|e| anyhow::anyhow!("LZ4 decompress failed: {}", e))?;
+                        if decompressed.len() != uncompressed {
                             bail!(
                                 "Pack: LZ4-decompressed size {} != recorded uncompressed_size {}",
                                 decompressed.len(),
@@ -318,7 +386,7 @@ mod tests {
         let mut bytes = valid_header_bytes(1).to_vec();
         bytes.extend_from_slice(b"PAYLOAD");
         let f = write_pack(dir.path(), &bytes);
-        let mut loader = PackLoader::new(f).unwrap();
+        let loader = PackLoader::new(f).unwrap();
         let got = loader
             .load_bytes(&AssetSource::Packed {
                 offset: 0,
@@ -338,7 +406,7 @@ mod tests {
         let mut bytes = valid_header_bytes(1).to_vec();
         bytes.extend_from_slice(&compressed);
         let f = write_pack(dir.path(), &bytes);
-        let mut loader = PackLoader::new(f).unwrap();
+        let loader = PackLoader::new(f).unwrap();
         let got = loader
             .load_bytes(&AssetSource::Packed {
                 offset: 0,
@@ -358,11 +426,219 @@ mod tests {
         let mut bytes = valid_header_bytes(1).to_vec();
         bytes.extend_from_slice(b"PAYLOAD");
         let f = write_pack(dir.path(), &bytes);
-        let mut loader = PackLoader::new(f).unwrap();
+        let loader = PackLoader::new(f).unwrap();
         let result = loader.load_bytes(&AssetSource::Sub {
             container: khora_core::asset::AssetUUID::new_v5("models/hero.glb"),
             label: "mesh/Body".to_string(),
         });
         assert!(result.is_err(), "a Sub source has no packed bytes");
+    }
+
+    /// One loader is shared by every thread decoding assets. Reads of
+    /// different entries at once never mix: each returns its own entry's
+    /// bytes, compressed or not, wherever another thread is reading.
+    #[test]
+    fn a_pack_read_from_many_threads_at_once_returns_each_entry_exactly() {
+        const ENTRIES: usize = 24;
+        const THREADS: usize = 8;
+        const READS: usize = 400;
+
+        let payloads: Vec<Vec<u8>> = (0..ENTRIES)
+            .map(|i| {
+                (0..(97 + i * 53))
+                    .map(|j| ((i * 31 + j * 7) % 251) as u8)
+                    .collect()
+            })
+            .collect();
+        let mut bytes = valid_header_bytes(ENTRIES as u32).to_vec();
+        let mut sources = Vec::with_capacity(ENTRIES);
+        for (i, payload) in payloads.iter().enumerate() {
+            let offset = (bytes.len() as u64) - PACK_HEADER_SIZE;
+            if i % 3 == 0 {
+                let compressed = lz4_flex::block::compress(payload);
+                bytes.extend_from_slice(&compressed);
+                sources.push(AssetSource::Packed {
+                    offset,
+                    size: compressed.len() as u64,
+                    uncompressed_size: payload.len() as u64,
+                    compression: CompressionKind::Lz4,
+                });
+            } else {
+                bytes.extend_from_slice(payload);
+                sources.push(AssetSource::Packed {
+                    offset,
+                    size: payload.len() as u64,
+                    uncompressed_size: payload.len() as u64,
+                    compression: CompressionKind::None,
+                });
+            }
+        }
+        let dir = tempdir().unwrap();
+        let loader = PackLoader::new(write_pack(dir.path(), &bytes)).unwrap();
+
+        std::thread::scope(|scope| {
+            for thread in 0..THREADS {
+                let (loader, sources, payloads) = (&loader, &sources, &payloads);
+                scope.spawn(move || {
+                    for read in 0..READS {
+                        let i = (thread * 5 + read * 3) % ENTRIES;
+                        let got = loader
+                            .load_bytes(&sources[i])
+                            .unwrap_or_else(|e| panic!("entry {i} reads: {e:#}"));
+                        assert_eq!(got, payloads[i], "entry {i}, thread {thread}, read {read}");
+                    }
+                });
+            }
+        });
+    }
+
+    /// Reading leaves nothing behind for the next read: the same entry
+    /// read after others is the same bytes.
+    #[test]
+    fn a_pack_entry_read_again_after_others_returns_the_same_bytes() {
+        let dir = tempdir().unwrap();
+        let mut bytes = valid_header_bytes(2).to_vec();
+        bytes.extend_from_slice(b"FIRST-ENTRY");
+        bytes.extend_from_slice(b"SECOND");
+        let loader = PackLoader::new(write_pack(dir.path(), &bytes)).unwrap();
+        let first = AssetSource::Packed {
+            offset: 0,
+            size: 11,
+            uncompressed_size: 11,
+            compression: CompressionKind::None,
+        };
+        let second = AssetSource::Packed {
+            offset: 11,
+            size: 6,
+            uncompressed_size: 6,
+            compression: CompressionKind::None,
+        };
+
+        assert_eq!(loader.load_bytes(&second).unwrap(), b"SECOND");
+        assert_eq!(loader.load_bytes(&first).unwrap(), b"FIRST-ENTRY");
+        assert_eq!(loader.load_bytes(&second).unwrap(), b"SECOND");
+        assert_eq!(loader.load_bytes(&first).unwrap(), b"FIRST-ENTRY");
+    }
+
+    /// An entry recorded past the end of the pack is an error, not a short
+    /// or zero-filled read.
+    #[test]
+    fn a_pack_entry_past_the_end_of_the_file_is_an_error() {
+        let dir = tempdir().unwrap();
+        let mut bytes = valid_header_bytes(1).to_vec();
+        bytes.extend_from_slice(b"SHORT");
+        let loader = PackLoader::new(write_pack(dir.path(), &bytes)).unwrap();
+        let result = loader.load_bytes(&AssetSource::Packed {
+            offset: 2,
+            size: 10,
+            uncompressed_size: 10,
+            compression: CompressionKind::None,
+        });
+        assert!(result.is_err(), "a truncated entry is refused: {result:?}");
+    }
+
+    /// The pack holding one 7-byte `PAYLOAD` entry, as a loader.
+    fn one_entry_loader(dir: &std::path::Path) -> PackLoader {
+        let mut bytes = valid_header_bytes(1).to_vec();
+        bytes.extend_from_slice(b"PAYLOAD");
+        PackLoader::new(write_pack(dir, &bytes)).unwrap()
+    }
+
+    /// A corrupt index can record any size: an entry no memory could hold is
+    /// refused as an error, never a panic of the thread decoding it.
+    #[test]
+    fn a_pack_entry_larger_than_any_memory_is_an_error_not_a_panic() {
+        let dir = tempdir().unwrap();
+        let loader = one_entry_loader(dir.path());
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            loader.load_bytes(&AssetSource::Packed {
+                offset: 0,
+                size: u64::MAX,
+                uncompressed_size: u64::MAX,
+                compression: CompressionKind::None,
+            })
+        }));
+        match result {
+            Ok(read) => assert!(read.is_err(), "an impossible size is refused: {read:?}"),
+            Err(_) => panic!("an entry of u64::MAX bytes panics the read"),
+        }
+    }
+
+    /// A corrupt index can record any offset: one whose end lies past every
+    /// file is an error, never an overflow panic.
+    #[test]
+    fn a_pack_entry_at_an_offset_past_any_file_is_an_error_not_a_panic() {
+        let dir = tempdir().unwrap();
+        let loader = one_entry_loader(dir.path());
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            loader.load_bytes(&AssetSource::Packed {
+                offset: u64::MAX - 4,
+                size: 7,
+                uncompressed_size: 7,
+                compression: CompressionKind::None,
+            })
+        }));
+        match result {
+            Ok(read) => assert!(read.is_err(), "an impossible offset is refused: {read:?}"),
+            Err(_) => panic!("an entry at offset u64::MAX - 4 panics the read"),
+        }
+    }
+
+    /// A compressed entry recording an uncompressed size no memory could hold
+    /// is refused as an error, never a panic.
+    #[test]
+    fn a_compressed_pack_entry_claiming_an_impossible_size_is_an_error_not_a_panic() {
+        let dir = tempdir().unwrap();
+        let compressed = lz4_flex::block::compress(b"PAYLOAD");
+        let mut bytes = valid_header_bytes(1).to_vec();
+        bytes.extend_from_slice(&compressed);
+        let loader = PackLoader::new(write_pack(dir.path(), &bytes)).unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            loader.load_bytes(&AssetSource::Packed {
+                offset: 0,
+                size: compressed.len() as u64,
+                uncompressed_size: u64::MAX,
+                compression: CompressionKind::Lz4,
+            })
+        }));
+        match result {
+            Ok(read) => assert!(read.is_err(), "an impossible size is refused: {read:?}"),
+            Err(_) => panic!("an LZ4 entry claiming u64::MAX bytes panics the read"),
+        }
+    }
+
+    /// An entry of no bytes reads as no bytes, wherever it is recorded.
+    #[test]
+    fn a_zero_size_pack_entry_reads_as_no_bytes() {
+        let dir = tempdir().unwrap();
+        let loader = one_entry_loader(dir.path());
+        for offset in [0, 7] {
+            let got = loader
+                .load_bytes(&AssetSource::Packed {
+                    offset,
+                    size: 0,
+                    uncompressed_size: 0,
+                    compression: CompressionKind::None,
+                })
+                .unwrap();
+            assert!(got.is_empty(), "offset {offset}: {got:?}");
+        }
+    }
+
+    /// The last entry of the pack, ending exactly at the end of the file,
+    /// reads whole.
+    #[test]
+    fn a_pack_entry_ending_at_the_end_of_the_file_reads_whole() {
+        let dir = tempdir().unwrap();
+        let loader = one_entry_loader(dir.path());
+        let got = loader
+            .load_bytes(&AssetSource::Packed {
+                offset: 3,
+                size: 4,
+                uncompressed_size: 4,
+                compression: CompressionKind::None,
+            })
+            .unwrap();
+        assert_eq!(got, b"LOAD");
     }
 }

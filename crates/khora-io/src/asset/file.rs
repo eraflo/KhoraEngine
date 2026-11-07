@@ -43,7 +43,7 @@ impl FileLoader {
 }
 
 impl AssetIo for FileLoader {
-    fn load_bytes(&mut self, source: &AssetSource) -> Result<Vec<u8>> {
+    fn load_bytes(&self, source: &AssetSource) -> Result<Vec<u8>> {
         match source {
             AssetSource::Path(rel) => {
                 let full_path = self.root.join(rel);
@@ -97,7 +97,7 @@ mod tests {
             .write_bytes(Path::new("textures/foo.png"), b"PNG")
             .unwrap();
 
-        let mut reader = FileLoader::new(dir.path());
+        let reader = FileLoader::new(dir.path());
         let bytes = reader
             .load_bytes(&AssetSource::Path(PathBuf::from("textures/foo.png")))
             .unwrap();
@@ -108,11 +108,52 @@ mod tests {
     #[test]
     fn load_bytes_refuses_a_sub_source() {
         let dir = tempdir().unwrap();
-        let mut reader = FileLoader::new(dir.path());
+        let reader = FileLoader::new(dir.path());
         let result = reader.load_bytes(&AssetSource::Sub {
             container: khora_core::asset::AssetUUID::new_v5("models/hero.glb"),
             label: "mesh/Body".to_string(),
         });
         assert!(result.is_err(), "a Sub source has no file to read");
+    }
+
+    /// One loader is shared by every thread decoding assets: each read
+    /// returns its own file's bytes, whatever the other threads read.
+    #[test]
+    fn a_file_loader_read_from_many_threads_at_once_returns_each_file_exactly() {
+        const FILES: usize = 16;
+        const THREADS: usize = 8;
+        const READS: usize = 200;
+
+        let dir = tempdir().unwrap();
+        let writer = FileLoader::new(dir.path());
+        let contents: Vec<Vec<u8>> = (0..FILES)
+            .map(|i| {
+                (0..(64 + i * 37))
+                    .map(|j| ((i * 31 + j) % 251) as u8)
+                    .collect()
+            })
+            .collect();
+        for (i, bytes) in contents.iter().enumerate() {
+            writer
+                .write_bytes(Path::new(&format!("blobs/{i}.bin")), bytes)
+                .unwrap();
+        }
+
+        let loader = FileLoader::new(dir.path());
+        std::thread::scope(|scope| {
+            for thread in 0..THREADS {
+                let (loader, contents) = (&loader, &contents);
+                scope.spawn(move || {
+                    for read in 0..READS {
+                        let i = (thread * 7 + read) % FILES;
+                        let source = AssetSource::Path(PathBuf::from(format!("blobs/{i}.bin")));
+                        let bytes = loader
+                            .load_bytes(&source)
+                            .unwrap_or_else(|e| panic!("file {i} reads: {e:#}"));
+                        assert_eq!(bytes, contents[i], "file {i}, thread {thread}, read {read}");
+                    }
+                });
+            }
+        });
     }
 }

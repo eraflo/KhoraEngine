@@ -69,6 +69,8 @@ fn is_asset_decoder_script_module<
 fn is_asset_decoder_sound_data<T: khora_io::asset::AssetDecoder<khora_data::assets::SoundData>>() {}
 fn is_asset_io<T: khora_io::asset::AssetIo>() {}
 fn is_asset_writer<T: khora_io::asset::AssetWriter>() {}
+fn is_send_sync_static<T: Send + Sync + 'static>() {}
+fn is_send_static<T: Send + 'static>() {}
 fn is_clone<T: Clone>() {}
 fn is_collect<T: inventory::Collect>() {}
 
@@ -175,6 +177,13 @@ fn asset_container_trait_items<T: khora_io::asset::AssetContainer>() {
 
 fn manifest_entry_fields(x: &khora_io::asset::ManifestEntry) {
     let _ = (&x.uuid, &x.blake3, &x.size);
+}
+
+fn decoded_fields(x: &khora_io::asset::Decoded) {
+    let _: &khora_core::asset::AssetUUID = &x.uuid;
+    let _: &std::any::TypeId = &x.type_id;
+    let _: &Result<Box<dyn std::any::Any + Send>, String> = &x.value;
+    let _: &Vec<(khora_core::asset::AssetUUID, Vec<String>)> = &x.external_files;
 }
 
 fn pack_header_fields(x: &khora_io::asset::PackHeader) {
@@ -315,6 +324,19 @@ fn module_asset_paths_still_resolve() {
     let _ = khora_io::asset::AssetService::reindex;
     let _ = khora_io::asset::AssetService::load_count;
     let _ = khora_io::asset::AssetService::cached_type_count;
+    let _: fn(&khora_io::asset::AssetService) -> std::sync::Arc<khora_io::asset::AssetReader> =
+        khora_io::asset::AssetService::reader;
+    let _ = type_name::<khora_io::asset::AssetReader>();
+    let _: fn(
+        &khora_io::asset::AssetReader,
+        &khora_core::asset::AssetUUID,
+        std::any::TypeId,
+    ) -> khora_io::asset::Decoded = khora_io::asset::AssetReader::decode;
+    is_send_sync_static::<khora_io::asset::AssetReader>();
+    let _ = type_name::<khora_io::asset::Decoded>();
+    let _ = decoded_fields as fn(&khora_io::asset::Decoded);
+    is_debug::<khora_io::asset::Decoded>();
+    is_send_static::<khora_io::asset::Decoded>();
     let _ = type_name::<khora_io::asset::AssetWatcher>();
     let _: fn(std::path::PathBuf) -> anyhow::Result<khora_io::asset::AssetWatcher> =
         khora_io::asset::AssetWatcher::new;

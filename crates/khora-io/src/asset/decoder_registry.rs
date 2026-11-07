@@ -109,9 +109,10 @@ impl DecoderMetrics {
 }
 
 /// Registry of asset decoders, keyed by type name.
+#[derive(Clone)]
 pub struct DecoderRegistry {
-    metrics: DecoderMetrics,
-    decoders: HashMap<String, Box<dyn AnyDecoder>>,
+    metrics: Arc<DecoderMetrics>,
+    decoders: HashMap<String, Arc<dyn AnyDecoder>>,
 }
 
 impl DecoderRegistry {
@@ -119,7 +120,7 @@ impl DecoderRegistry {
     pub fn new(metrics_registry: Arc<MetricsRegistry>) -> Self {
         Self {
             decoders: HashMap::new(),
-            metrics: DecoderMetrics::new(&metrics_registry),
+            metrics: Arc::new(DecoderMetrics::new(&metrics_registry)),
         }
     }
 
@@ -131,7 +132,7 @@ impl DecoderRegistry {
     ) {
         let wrapped = DecoderWrapper(decoder, std::marker::PhantomData);
         self.decoders
-            .insert(type_name.to_string(), Box::new(wrapped));
+            .insert(type_name.to_string(), Arc::new(wrapped));
     }
 
     /// Decodes an asset of the specified type from raw bytes.
@@ -148,12 +149,7 @@ impl DecoderRegistry {
         bytes: &[u8],
         source_path: &Path,
     ) -> Result<A> {
-        let decoder = self
-            .decoders
-            .get(type_name)
-            .ok_or_else(|| anyhow!("No decoder registered for asset type '{}'", type_name))?;
-
-        let asset_any = decoder.decode_any(bytes, source_path, &self.metrics)?;
+        let asset_any = self.decode_any_at(type_name, bytes, source_path)?;
         let asset_boxed = asset_any.downcast::<A>().map_err(|_| {
             anyhow!(
                 "Decoder for type '{}' returned a different asset type than requested.",
@@ -161,5 +157,22 @@ impl DecoderRegistry {
             )
         })?;
         Ok(*asset_boxed)
+    }
+}
+
+impl DecoderRegistry {
+    /// Decodes the bytes of the file at `source_path` with the decoder
+    /// registered for `type_name`, as whatever type it produces.
+    pub(crate) fn decode_any_at(
+        &self,
+        type_name: &str,
+        bytes: &[u8],
+        source_path: &Path,
+    ) -> Result<Box<dyn Any + Send>> {
+        let decoder = self
+            .decoders
+            .get(type_name)
+            .ok_or_else(|| anyhow!("No decoder registered for asset type '{}'", type_name))?;
+        decoder.decode_any(bytes, source_path, &self.metrics)
     }
 }

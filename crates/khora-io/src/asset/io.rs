@@ -24,7 +24,11 @@ use std::path::Path;
 /// The `AssetService` dispatches to this trait based on the `AssetSource` variant.
 pub trait AssetIo: Send + Sync {
     /// Loads raw bytes from the given asset source.
-    fn load_bytes(&mut self, source: &AssetSource) -> Result<Vec<u8>>;
+    ///
+    /// Takes `&self`: one backend serves reads from several threads at once,
+    /// each read returning exactly its own source's bytes. A backend holds no
+    /// cursor or other per-read state shared between calls.
+    fn load_bytes(&self, source: &AssetSource) -> Result<Vec<u8>>;
 }
 
 /// Sibling trait to [`AssetIo`] for editor-time *writing* of assets back to

@@ -20,6 +20,7 @@ mod gltf_decoding;
 mod gltf_scenes;
 mod gltf_sub_assets;
 mod obj_decoding;
+mod shared_reader;
 
 use super::{GltfDecoder, NoOpResourceResolver, ObjDecoder};
 use crate::asset::AssetDecoder;

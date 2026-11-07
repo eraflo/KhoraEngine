@@ -40,6 +40,7 @@ use super::id_registry::AssetIdRegistry;
 use super::index_builder::IndexBuilder;
 use super::io::AssetIo;
 use super::manifest::PackManifest;
+use super::reader::AssetReader;
 use crate::asset::AssetIndex;
 
 /// Trait-object adapter so the service's storage map can dispatch
@@ -70,19 +71,13 @@ impl<A: Asset + Send + Sync + 'static> AnyAssets for Assets<A> {
 /// Provides on-demand asset loading through a VFS → IO → Decode → Store pipeline.
 /// Registered in `ServiceRegistry` and accessed by game code via `AppContext`.
 pub struct AssetService {
-    index: AssetIndex,
-    io: Box<dyn AssetIo>,
-    decoders: DecoderRegistry,
+    /// What decoding reads — the index, the IO, the decoders, the
+    /// containers, the manifest — shared with whoever decodes off this
+    /// service's lock. Replaced, never changed in place, while a reader is
+    /// out: a reader keeps the index it was taken with.
+    reader: Arc<AssetReader>,
     storages: HashMap<TypeId, Box<dyn AnyAssets>>,
     load_count: usize,
-    /// When `Some`, every byte slice produced by `io.load_bytes` is
-    /// re-hashed against the manifest before reaching the decoder.
-    /// Constructed by the runtime only when `RuntimeConfig::verify_integrity`
-    /// is set and `manifest.bin` is present next to `data.pack`.
-    manifest: Option<PackManifest>,
-    /// The containers that open files holding sub-assets, by the file's
-    /// index type.
-    containers: HashMap<String, Arc<dyn AssetContainer>>,
     /// Each opened container, by the container file's uuid: opened once,
     /// shared by every sub-asset extracted from it.
     opened: HashMap<AssetUUID, Arc<dyn Any + Send + Sync>>,
@@ -139,13 +134,19 @@ impl AssetService {
             .context("Failed to initialize AssetIndex from index bytes")?;
 
         Ok(Self {
-            index,
-            io,
-            decoders: DecoderRegistry::new(metrics_registry),
+            // When `Some`, every byte slice read is re-hashed against the
+            // manifest before reaching the decoder: built by the runtime only
+            // when `RuntimeConfig::verify_integrity` is set and
+            // `manifest.bin` sits next to `data.pack`.
+            reader: Arc::new(AssetReader {
+                index: Arc::new(index),
+                io: Arc::from(io),
+                decoders: DecoderRegistry::new(metrics_registry),
+                containers: HashMap::new(),
+                manifest: manifest.map(Arc::new),
+            }),
             storages: HashMap::new(),
             load_count: 0,
-            manifest,
-            containers: HashMap::new(),
             opened: HashMap::new(),
             served_subs: HashMap::new(),
             served: HashSet::new(),
@@ -160,7 +161,23 @@ impl AssetService {
     /// Returns a reference to the underlying VFS for metadata enumeration
     /// (asset browser) and direct UUID lookup.
     pub fn index(&self) -> &AssetIndex {
-        &self.index
+        &self.reader.index
+    }
+
+    /// The reader decoding this service's assets now: its index, decoders,
+    /// containers, manifest and IO, shared. It decodes on any thread without
+    /// this service's lock, and fills none of its caches.
+    ///
+    /// A reader taken before a [`reindex`](Self::reindex) keeps the index
+    /// it was taken with; take it again for the new one.
+    pub fn reader(&self) -> Arc<AssetReader> {
+        Arc::clone(&self.reader)
+    }
+
+    /// The reader to change: this service's own, or a copy when a reader
+    /// handed out still holds it, which keeps what it was taken with.
+    fn reader_mut(&mut self) -> &mut AssetReader {
+        Arc::make_mut(&mut self.reader)
     }
 
     /// Registers a decoder for a specific asset type.
@@ -169,16 +186,19 @@ impl AssetService {
         type_name: &str,
         decoder: impl super::decoder::AssetDecoder<A> + Send + Sync + 'static,
     ) {
-        self.decoders.register::<A>(type_name, decoder);
+        self.reader_mut().decoders.register::<A>(type_name, decoder);
     }
 
     /// Whether the file `uuid` names can hold sub-assets (a glTF can): when
     /// its bytes change, its parts may have changed too, and the index must
     /// list them again.
     pub fn may_hold_sub_assets(&self, uuid: &AssetUUID) -> bool {
-        self.index.get_metadata(uuid).is_some_and(|metadata| {
-            super::container::type_may_hold_sub_assets(&metadata.asset_type_name)
-        })
+        self.reader
+            .index
+            .get_metadata(uuid)
+            .is_some_and(|metadata| {
+                super::container::type_may_hold_sub_assets(&metadata.asset_type_name)
+            })
     }
 
     /// Registers the [`AssetContainer`](super::container::AssetContainer) that
@@ -188,7 +208,8 @@ impl AssetService {
         type_name: &str,
         container: impl super::container::AssetContainer,
     ) {
-        self.containers
+        self.reader_mut()
+            .containers
             .insert(type_name.to_string(), Arc::new(container));
     }
 
@@ -291,43 +312,30 @@ impl AssetService {
     /// Decodes the asset `uuid` names: from its own bytes, or, for a
     /// sub-asset, extracted from its opened container, which it returns too.
     fn decode_uncached<A: Asset>(&mut self, uuid: &AssetUUID) -> Result<(A, Option<AssetUUID>)> {
-        let metadata = self
-            .index
-            .get_metadata(uuid)
-            .ok_or_else(|| anyhow!("Asset with UUID {:?} not found in VFS", uuid))?;
-        let source = metadata
-            .variants
-            .get("default")
-            .ok_or_else(|| anyhow!("Asset {:?} has no 'default' variant", uuid))?;
+        let reader = Arc::clone(&self.reader);
+        let (metadata, source) = reader.source_of(uuid)?;
 
         if let AssetSource::Sub { container, label } = source {
-            let (container, label) = (*container, label.clone());
-            let type_name = metadata.asset_type_name.clone();
             return self
-                .extract_sub::<A>(container, &label, &type_name)
-                .map(|asset| (asset, Some(container)));
+                .extract_sub::<A>(*container, label, &metadata.asset_type_name)
+                .map(|asset| (asset, Some(*container)));
         }
 
-        let bytes = self.io.load_bytes(source)?;
-        if let Some(m) = &self.manifest {
-            m.verify(uuid, &bytes)
-                .context("Asset integrity check failed")?;
-        }
-        let asset = self.decoders.decode_at::<A>(
-            &metadata.asset_type_name,
-            &bytes,
-            &metadata.source_path,
-        )?;
+        let bytes = reader.read(uuid, source)?;
+        let (asset, files) = reader.decode_file(metadata, &bytes, TypeId::of::<A>())?;
         // A container file decoded whole (a glTF as one mesh) reads the same
         // files beside it as its parts do: a change to one of them is a
         // change to it.
-        if let Some(opener) = self.containers.get(&metadata.asset_type_name) {
-            if let Ok(opened) = opener.open(&bytes, &metadata.source_path) {
-                self.external_files
-                    .insert(*uuid, opener.external_files(opened.as_ref()));
-            }
+        if let Some(files) = files {
+            self.external_files.insert(*uuid, files);
         }
-        Ok((asset, None))
+        let asset = asset.downcast::<A>().map_err(|_| {
+            anyhow!(
+                "Decoder for type '{}' returned a different asset type than requested.",
+                metadata.asset_type_name
+            )
+        })?;
+        Ok((*asset, None))
     }
 
     /// The container file `container` and what opens it, opened once and
@@ -337,38 +345,13 @@ impl AssetService {
         &mut self,
         container: AssetUUID,
     ) -> Result<(Arc<dyn AssetContainer>, Arc<dyn Any + Send + Sync>)> {
-        let container_meta = self
-            .index
-            .get_metadata(&container)
-            .ok_or_else(|| anyhow!("its container {container} is not in the VFS"))?;
-        let opener = self
-            .containers
-            .get(&container_meta.asset_type_name)
-            .cloned()
-            .ok_or_else(|| {
-                anyhow!(
-                    "no container registered for '{}' files",
-                    container_meta.asset_type_name
-                )
-            })?;
+        let reader = Arc::clone(&self.reader);
+        let opener = reader.opener_of(&container)?;
         if let Some(opened) = self.opened.get(&container) {
             return Ok((opener, opened.clone()));
         }
-
-        let source = container_meta
-            .variants
-            .get("default")
-            .ok_or_else(|| anyhow!("container {container} has no 'default' variant"))?;
-        let bytes = self.io.load_bytes(source)?;
-        if let Some(m) = &self.manifest {
-            m.verify(&container, &bytes)
-                .context("Asset integrity check failed")?;
-        }
-        let opened = opener
-            .open(&bytes, &container_meta.source_path)
-            .with_context(|| format!("opening container {container}"))?;
-        self.external_files
-            .insert(container, opener.external_files(opened.as_ref()));
+        let (opener, opened, files) = reader.open(&container)?;
+        self.external_files.insert(container, files);
         self.opened.insert(container, opened.clone());
         Ok((opener, opened))
     }
@@ -384,9 +367,7 @@ impl AssetService {
         let (opener, opened) = self
             .open_container(container)
             .with_context(|| format!("sub-asset '{label}'"))?;
-        let extracted = opener
-            .extract(opened.as_ref(), container, label, type_name)
-            .with_context(|| format!("extracting '{label}' from {container}"))?;
+        let extracted = AssetReader::extract(&opener, &opened, container, label, type_name)?;
         extracted.downcast::<A>().map(|asset| *asset).map_err(|_| {
             anyhow!(
                 "sub-asset '{label}' of {container} is a '{type_name}', not a {}",
@@ -399,25 +380,13 @@ impl AssetService {
     /// decoder. Used by scene loading where the bytes are then decoded by a
     /// `SerializationService` strategy rather than an `AssetDecoder<A>`.
     pub fn load_raw(&mut self, uuid: &AssetUUID) -> Result<Vec<u8>> {
-        let metadata = self
-            .index
-            .get_metadata(uuid)
-            .ok_or_else(|| anyhow!("Asset with UUID {:?} not found in VFS", uuid))?;
-        let source = metadata
-            .variants
-            .get("default")
-            .ok_or_else(|| anyhow!("Asset {:?} has no 'default' variant", uuid))?;
+        let (_, source) = self.reader.source_of(uuid)?;
         if let AssetSource::Sub { container, label } = source {
             return Err(anyhow!(
                 "sub-asset '{label}' of {container} has no bytes of its own"
             ));
         }
-        let bytes = self.io.load_bytes(source)?;
-        if let Some(m) = &self.manifest {
-            m.verify(uuid, &bytes)
-                .context("Asset integrity check failed")?;
-        }
-        Ok(bytes)
+        self.reader.read(uuid, source)
     }
 
     /// Drops the cached handle for `uuid` across every typed storage.
@@ -451,6 +420,7 @@ impl AssetService {
             // A file the index does not list yet (created since the last
             // reindex) is known only by its uuid, the one its path gives.
             let key = self
+                .reader
                 .index
                 .get_metadata(&file)
                 .map(|metadata| khora_core::asset::asset_key(&metadata.source_path));
@@ -490,7 +460,7 @@ impl AssetService {
     /// caught mid-write, indexed without its parts) is not gone: its file
     /// is read again when it changes.
     pub fn is_gone(&mut self, uuid: &AssetUUID) -> bool {
-        if self.index.get_metadata(uuid).is_some() {
+        if self.reader.index.get_metadata(uuid).is_some() {
             return false;
         }
         let container = self
@@ -501,7 +471,7 @@ impl AssetService {
         let Some(container) = container else {
             return true;
         };
-        if self.index.get_metadata(&container).is_none() {
+        if self.reader.index.get_metadata(&container).is_none() {
             return true;
         }
         self.open_container(container).is_ok()
@@ -568,7 +538,7 @@ impl AssetService {
     pub fn reindex(&mut self, index_bytes: &[u8]) -> Result<()> {
         let new_index =
             AssetIndex::new(index_bytes).context("Failed to decode replacement VFS index bytes")?;
-        self.index = new_index;
+        self.reader_mut().index = Arc::new(new_index);
         self.failed.clear();
         Ok(())
     }
@@ -636,7 +606,7 @@ mod tests {
         files: HashMap<std::path::PathBuf, Vec<u8>>,
     }
     impl AssetIo for MockIo {
-        fn load_bytes(&mut self, source: &AssetSource) -> Result<Vec<u8>> {
+        fn load_bytes(&self, source: &AssetSource) -> Result<Vec<u8>> {
             match source {
                 AssetSource::Path(rel) => self
                     .files
@@ -1254,7 +1224,7 @@ mod tests {
         files: Arc<Mutex<HashMap<std::path::PathBuf, Vec<u8>>>>,
     }
     impl AssetIo for SharedIo {
-        fn load_bytes(&mut self, source: &AssetSource) -> Result<Vec<u8>> {
+        fn load_bytes(&self, source: &AssetSource) -> Result<Vec<u8>> {
             match source {
                 AssetSource::Path(rel) => self
                     .files
@@ -1491,6 +1461,478 @@ mod tests {
              e.g. {:?}",
             missing.len(),
             missing.first()
+        );
+    }
+
+    // ── The shared reader ───────────────────────────────────────────────────
+
+    use crate::asset::{AssetReader, Decoded};
+
+    /// The value `decoded` holds, as an `A`; panics naming `what` otherwise.
+    fn decoded_as<A: Asset>(decoded: Decoded, what: &str) -> Box<A> {
+        decoded
+            .value
+            .unwrap_or_else(|e| panic!("{what} decodes: {e}"))
+            .downcast::<A>()
+            .unwrap_or_else(|_| panic!("{what} decodes as a {}", std::any::type_name::<A>()))
+    }
+
+    /// The note decoder, counting how many times it decoded.
+    struct CountingNoteDecoder {
+        decodes: Arc<AtomicUsize>,
+    }
+    impl AssetDecoder<TestNote> for CountingNoteDecoder {
+        fn load(
+            &self,
+            bytes: &[u8],
+        ) -> std::result::Result<TestNote, Box<dyn std::error::Error + Send + Sync>> {
+            self.decodes.fetch_add(1, Ordering::SeqCst);
+            NoteDecoder.load(bytes)
+        }
+    }
+
+    /// The test container, reading `textures/skin.png` besides its own file.
+    struct ReadingBesideContainer(CountingContainer);
+    const SKIN_KEY: &str = "textures/skin.png";
+    impl AssetContainer for ReadingBesideContainer {
+        fn open(&self, bytes: &[u8], source_path: &Path) -> Result<Arc<dyn Any + Send + Sync>> {
+            self.0.open(bytes, source_path)
+        }
+        fn extract(
+            &self,
+            opened: &(dyn Any + Send + Sync),
+            container: AssetUUID,
+            label: &str,
+            type_name: &str,
+        ) -> Result<Box<dyn Any + Send>> {
+            self.0.extract(opened, container, label, type_name)
+        }
+        fn external_files(&self, _opened: &(dyn Any + Send + Sync)) -> Vec<String> {
+            vec![SKIN_KEY.to_string()]
+        }
+    }
+
+    const LATER_PATH: &str = "notes/later.ktestnote";
+
+    fn later() -> AssetUUID {
+        AssetUUID::new_v5(LATER_PATH)
+    }
+
+    fn note_entry(path: &str) -> AssetMetadata {
+        let mut entry = file_entry(AssetUUID::new_v5(path), path);
+        entry.asset_type_name = NOTE_TYPE.to_string();
+        entry
+    }
+
+    fn index_of(entries: Vec<AssetMetadata>) -> Vec<u8> {
+        bincode::serde::encode_to_vec(&entries, bincode::config::standard()).unwrap()
+    }
+
+    fn note_type() -> TypeId {
+        TypeId::of::<TestNote>()
+    }
+
+    #[test]
+    fn a_reader_decodes_a_file_to_the_value_load_returns() {
+        let mut svc = shared_service(shared_files());
+        let decoded = svc.reader().decode(&note(), note_type());
+
+        assert_eq!(decoded.uuid, note(), "the decode names its asset");
+        assert_eq!(decoded.type_id, note_type(), "and the type asked for");
+        assert!(
+            decoded.external_files.is_empty(),
+            "a note is no container: {:?}",
+            decoded.external_files
+        );
+        let from_reader = decoded_as::<TestNote>(decoded, "the note");
+        let from_load = svc.load::<TestNote>(&note()).unwrap();
+        assert_eq!(from_reader.text, "hello");
+        assert_eq!(from_reader.text, from_load.text);
+    }
+
+    #[test]
+    fn a_reader_decode_touches_none_of_the_services_caches() {
+        let mut svc = shared_service(shared_files());
+        let decodes = Arc::new(AtomicUsize::new(0));
+        svc.register_decoder::<TestNote>(
+            NOTE_TYPE,
+            CountingNoteDecoder {
+                decodes: decodes.clone(),
+            },
+        );
+        let reader = svc.reader();
+
+        decoded_as::<TestNote>(reader.decode(&note(), note_type()), "the first decode");
+        decoded_as::<TestNote>(reader.decode(&note(), note_type()), "the second decode");
+        assert_eq!(
+            decodes.load(Ordering::SeqCst),
+            2,
+            "decoding one asset twice decodes it twice"
+        );
+        assert_eq!(svc.load_count(), 0, "a reader decode is no load");
+        assert_eq!(svc.cached_type_count(), 0, "a reader decode caches nothing");
+
+        svc.load::<TestNote>(&note()).unwrap();
+        assert_eq!(
+            decodes.load(Ordering::SeqCst),
+            3,
+            "the service's load decodes: the reader filled no cache for it"
+        );
+        svc.load::<TestNote>(&note()).unwrap();
+        assert_eq!(
+            decodes.load(Ordering::SeqCst),
+            3,
+            "the service still serves its own cache"
+        );
+        assert_eq!(svc.load_count(), 1);
+
+        decoded_as::<TestNote>(reader.decode(&note(), note_type()), "a decode after a load");
+        assert_eq!(
+            decodes.load(Ordering::SeqCst),
+            4,
+            "the service's cache does not serve the reader"
+        );
+    }
+
+    #[test]
+    fn a_reader_decode_of_an_unknown_uuid_is_an_error_value() {
+        let svc = shared_service(shared_files());
+        let missing = AssetUUID::new_v5("missing");
+        let decoded = svc.reader().decode(&missing, note_type());
+
+        assert_eq!(decoded.uuid, missing);
+        let err = decoded
+            .value
+            .expect_err("an unindexed asset does not decode");
+        assert!(!err.is_empty(), "the error says why");
+        assert!(decoded.external_files.is_empty());
+    }
+
+    #[test]
+    fn a_failed_reader_decode_is_not_remembered_as_a_failed_load() {
+        let svc = shared_service(shared_files());
+        let missing = AssetUUID::new_v5("missing");
+        assert!(svc.reader().decode(&missing, note_type()).value.is_err());
+        assert!(
+            !svc.has_failed(&missing),
+            "only the service's own load records a failure"
+        );
+    }
+
+    #[test]
+    fn a_reader_decode_whose_bytes_do_not_decode_is_an_error_value() {
+        let files = shared_files();
+        files
+            .lock()
+            .unwrap()
+            .insert(std::path::PathBuf::from(NOTE_PATH), vec![0xFF, 0xFE, 0xFD]);
+        let svc = shared_service(files);
+        let reader = svc.reader();
+
+        assert!(
+            reader.decode(&note(), note_type()).value.is_err(),
+            "bytes that are no UTF-8 note"
+        );
+        assert!(
+            reader.decode(&villain(), note_type()).value.is_err(),
+            "no decoder is registered for the container file's type"
+        );
+    }
+
+    #[test]
+    fn a_reader_decode_as_another_type_is_an_error_value() {
+        let svc = shared_service(shared_files());
+        let reader = svc.reader();
+
+        assert!(
+            reader
+                .decode(&note(), TypeId::of::<TestMesh>())
+                .value
+                .is_err(),
+            "a note is no TestMesh"
+        );
+        assert!(
+            reader
+                .decode(&hero_body(), TypeId::of::<TestMaterial>())
+                .value
+                .is_err(),
+            "a mesh part is no material"
+        );
+        let body = decoded_as::<TestMesh>(
+            reader.decode(&hero_body(), TypeId::of::<TestMesh>()),
+            "the body",
+        );
+        assert_eq!(body.label, "mesh/Body", "it still decodes as its own type");
+    }
+
+    #[test]
+    fn a_reader_decodes_a_sub_to_the_value_load_returns() {
+        let (mut svc, _) = container_service(HERO_BYTES, None);
+        let reader = svc.reader();
+
+        let body = decoded_as::<TestMesh>(
+            reader.decode(&hero_body(), TypeId::of::<TestMesh>()),
+            "the body",
+        );
+        let loaded = svc.load::<TestMesh>(&hero_body()).unwrap();
+        assert_eq!(body.label, loaded.label);
+        assert_eq!(body.container, loaded.container);
+        assert_eq!(body.source_path, loaded.source_path);
+        assert_eq!(body.text, loaded.text);
+        assert_eq!(body.container, hero());
+        assert_eq!(body.text.as_bytes(), HERO_BYTES);
+
+        let skin = decoded_as::<TestMaterial>(
+            reader.decode(&hero_skin(), TypeId::of::<TestMaterial>()),
+            "the skin",
+        );
+        assert_eq!(skin.label, "material/Skin");
+        assert_eq!(
+            skin.label,
+            svc.load::<TestMaterial>(&hero_skin()).unwrap().label
+        );
+    }
+
+    #[test]
+    fn a_reader_decode_of_a_sub_whose_container_fails_its_integrity_check_is_an_error_value() {
+        let mut manifest = PackManifest::new();
+        manifest.insert(hero(), HERO_BYTES);
+        manifest.insert(villain(), VILLAIN_BYTES);
+        let (svc, opens) = container_service(b"TAMPERED-HERO!", Some(manifest));
+
+        let err = svc
+            .reader()
+            .decode(&hero_body(), TypeId::of::<TestMesh>())
+            .value
+            .expect_err("tampered container bytes must fail the integrity check");
+        assert!(
+            err.contains("integrity") || err.contains("BLAKE3") || err.contains("size mismatch"),
+            "expected an integrity error, got: {err}"
+        );
+        assert_eq!(
+            opens.load(Ordering::SeqCst),
+            0,
+            "tampered bytes never reach the container"
+        );
+    }
+
+    #[test]
+    fn a_reader_reports_the_files_a_container_read_besides_its_own() {
+        let mut svc = AssetService::new(
+            &container_index_bytes(),
+            Box::new(MockIo {
+                files: container_files(HERO_BYTES),
+            }),
+            Arc::new(MetricsRegistry::new()),
+            None,
+        )
+        .unwrap();
+        svc.register_container(
+            CONTAINER_TYPE,
+            ReadingBesideContainer(CountingContainer {
+                opens: Arc::new(AtomicUsize::new(0)),
+            }),
+        );
+        // The container file decodes whole too, as a glTF decodes as one mesh.
+        svc.register_decoder::<TestNote>(CONTAINER_TYPE, NoteDecoder);
+        let reader = svc.reader();
+
+        let part = reader.decode(&hero_body(), TypeId::of::<TestMesh>());
+        assert_eq!(
+            part.external_files,
+            vec![(hero(), vec![SKIN_KEY.to_string()])],
+            "a part names its container and the files the container read"
+        );
+        decoded_as::<TestMesh>(part, "the body");
+
+        let whole = reader.decode(&hero(), note_type());
+        assert_eq!(
+            whole.external_files,
+            vec![(hero(), vec![SKIN_KEY.to_string()])],
+            "a container decoded whole names the files it reads beside it"
+        );
+        assert_eq!(
+            decoded_as::<TestNote>(whole, "the whole hero")
+                .text
+                .as_bytes(),
+            HERO_BYTES
+        );
+    }
+
+    #[test]
+    fn a_reader_taken_before_a_reindex_keeps_reading_the_index_it_was_taken_with() {
+        let files = shared_files();
+        files
+            .lock()
+            .unwrap()
+            .insert(std::path::PathBuf::from(LATER_PATH), b"later".to_vec());
+        let mut svc = shared_service(files);
+        let before = svc.reader();
+
+        svc.reindex(&index_of(vec![note_entry(LATER_PATH)]))
+            .unwrap();
+
+        assert_eq!(
+            decoded_as::<TestNote>(before.decode(&note(), note_type()), "the note").text,
+            "hello",
+            "the old index still lists the note"
+        );
+        assert!(
+            before.decode(&later(), note_type()).value.is_err(),
+            "the old index does not list the later note"
+        );
+    }
+
+    #[test]
+    fn the_reader_taken_after_a_reindex_reads_the_new_index() {
+        let files = shared_files();
+        files
+            .lock()
+            .unwrap()
+            .insert(std::path::PathBuf::from(LATER_PATH), b"later".to_vec());
+        let mut svc = shared_service(files);
+        // A reader still held elsewhere does not keep the service on its index.
+        let _held = svc.reader();
+
+        svc.reindex(&index_of(vec![note_entry(LATER_PATH)]))
+            .unwrap();
+        let after = svc.reader();
+
+        assert_eq!(
+            decoded_as::<TestNote>(after.decode(&later(), note_type()), "the later note").text,
+            "later"
+        );
+        assert!(
+            after.decode(&note(), note_type()).value.is_err(),
+            "the new index no longer lists the note"
+        );
+        assert_eq!(svc.load::<TestNote>(&later()).unwrap().text, "later");
+        assert!(
+            svc.load::<TestNote>(&note()).is_err(),
+            "the service's load agrees with its new reader"
+        );
+    }
+
+    /// The editor's `share_assets` swaps a project's service into the
+    /// engine's: the reader the engine's service hands out from then on reads
+    /// the swapped-in project.
+    #[test]
+    fn a_service_swapped_in_hands_out_the_reader_of_its_own_project() {
+        let mut own = shared_service(shared_files());
+        let other_files = shared_files();
+        other_files
+            .lock()
+            .unwrap()
+            .insert(std::path::PathBuf::from(NOTE_PATH), b"other".to_vec());
+        let mut target = shared_service(other_files);
+
+        std::mem::swap(&mut own, &mut target);
+        target.announce_replacing(&own);
+
+        assert_eq!(
+            decoded_as::<TestNote>(target.reader().decode(&note(), note_type()), "target").text,
+            "hello"
+        );
+        assert_eq!(
+            decoded_as::<TestNote>(own.reader().decode(&note(), note_type()), "own").text,
+            "other"
+        );
+    }
+
+    #[test]
+    fn a_reader_decodes_on_another_thread_while_the_service_serves_cached_loads() {
+        let mut svc = shared_service(shared_files());
+        let cached = svc.load::<TestNote>(&note()).unwrap();
+        let reader = svc.reader();
+
+        // Moved to a thread of its own: the reader is `Send + 'static` and
+        // needs nothing of the service the main thread keeps using.
+        let worker = std::thread::spawn(move || {
+            (0..50)
+                .map(|_| decoded_as::<TestNote>(reader.decode(&note(), note_type()), "note").text)
+                .collect::<Vec<_>>()
+        });
+        for _ in 0..50 {
+            assert_eq!(svc.load::<TestNote>(&note()).unwrap(), cached);
+        }
+        let texts = worker.join().expect("the reader's thread completes");
+
+        assert!(texts.iter().all(|text| text == "hello"), "{texts:?}");
+        assert_eq!(svc.load_count(), 1, "the reader's decodes are no loads");
+    }
+
+    #[test]
+    fn the_reader_is_shared_across_threads_and_its_results_sent_between_them() {
+        fn shared<T: Send + Sync + 'static>() {}
+        fn sent<T: Send + 'static>() {}
+        shared::<AssetReader>();
+        shared::<Arc<AssetReader>>();
+        sent::<Decoded>();
+    }
+
+    /// A decoder registered while a reader is held elsewhere still reaches the
+    /// service's own loads, and the reader taken after it.
+    #[test]
+    fn a_decoder_registered_while_a_reader_is_held_serves_the_services_loads() {
+        let mut svc = shared_service(shared_files());
+        let held = svc.reader();
+        let decodes = Arc::new(AtomicUsize::new(0));
+        svc.register_decoder::<TestNote>(
+            NOTE_TYPE,
+            CountingNoteDecoder {
+                decodes: decodes.clone(),
+            },
+        );
+
+        svc.load::<TestNote>(&note()).unwrap();
+        assert_eq!(decodes.load(Ordering::SeqCst), 1, "the load used it");
+        decoded_as::<TestNote>(svc.reader().decode(&note(), note_type()), "a new reader");
+        assert_eq!(decodes.load(Ordering::SeqCst), 2, "the new reader uses it");
+        decoded_as::<TestNote>(held.decode(&note(), note_type()), "the held reader");
+        assert_eq!(
+            decodes.load(Ordering::SeqCst),
+            2,
+            "the reader held before keeps the decoders it was taken with"
+        );
+    }
+
+    /// A container file loaded as a type its decoder does not produce fails
+    /// before its container is opened: the load records no file read beside
+    /// it, so a change to such a file does not announce the container.
+    #[test]
+    fn a_container_file_loaded_as_another_type_records_no_file_read_beside_it() {
+        let mut svc = AssetService::new(
+            &container_index_bytes(),
+            Box::new(MockIo {
+                files: container_files(HERO_BYTES),
+            }),
+            Arc::new(MetricsRegistry::new()),
+            None,
+        )
+        .unwrap();
+        let opens = Arc::new(AtomicUsize::new(0));
+        svc.register_container(
+            CONTAINER_TYPE,
+            ReadingBesideContainer(CountingContainer {
+                opens: opens.clone(),
+            }),
+        );
+        svc.register_decoder::<TestNote>(CONTAINER_TYPE, NoteDecoder);
+
+        assert!(
+            svc.load::<TestMesh>(&hero()).is_err(),
+            "the hero file decodes to a note, not a TestMesh"
+        );
+        svc.invalidate(&AssetUUID::new_v5(SKIN_KEY));
+        let changed = svc.take_changes();
+        assert!(
+            !changed.contains(&hero()),
+            "a failed load recorded the files its container reads: {changed:?}"
+        );
+        assert_eq!(
+            opens.load(Ordering::SeqCst),
+            0,
+            "a load as another type never opens the container"
         );
     }
 }
