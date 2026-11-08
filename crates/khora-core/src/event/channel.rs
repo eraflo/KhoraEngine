@@ -275,8 +275,10 @@ impl<T: Supersedes> Channel<T> {
 
     /// Puts `items`, taken by a drain, back at the front of the channel, in
     /// their order: the reader that drained them could not use them. They
-    /// are held whatever the capacity — they were held a moment ago.
-    pub fn restore(&self, items: Vec<T>) {
+    /// are held whatever the capacity — they were held a moment ago. An item
+    /// that one sent since supersedes is dropped: the newer replaces it, as
+    /// it would have in [`send`](Self::send).
+    pub fn restore(&self, mut items: Vec<T>) {
         let Ok(mut ring) = self.ring.write() else {
             log::error!(
                 "the {} channel is poisoned; {} item(s) given back are lost",
@@ -285,6 +287,9 @@ impl<T: Supersedes> Channel<T> {
             );
             return;
         };
+        if T::COALESCES {
+            items.retain(|item| !ring.items.iter().any(|held| held.supersedes(item)));
+        }
         ring.base = ring.base.saturating_sub(items.len() as u64);
         for item in items.into_iter().rev() {
             ring.items.push_front(item);

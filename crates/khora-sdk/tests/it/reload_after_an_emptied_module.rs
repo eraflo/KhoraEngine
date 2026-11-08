@@ -18,7 +18,7 @@
 //! its instances live on. When the module comes back, every instance keeps
 //! its values **by name**, as any other reload carries them.
 //!
-//! Driven by hand through the engine's reserve, where the compile family
+//! Driven by hand through the engine's reserve, where the `loading` family
 //! stages what it compiles, so the order of what reaches the engine is the
 //! test's, not a file watcher's.
 

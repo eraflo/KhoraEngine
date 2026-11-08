@@ -50,7 +50,7 @@ use khora_script::modules::behaviors::STATE_SUFFIX;
 use khora_script::vm::{DeclaredComponent, DeclaredKind};
 
 /// The components one module declares, as it last compiled — defined with
-/// the toolchain, where the compile family stages it.
+/// the toolchain, where the `loading` family stages it.
 pub use khora_script::toolchain::ScriptDeclarations;
 
 /// What the registration remembers between frames: which module declares

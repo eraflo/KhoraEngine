@@ -449,7 +449,7 @@ mod tests {
 
     /// Frames of the resolver until what it asked for is decoded off the
     /// frame and taken in at a boundary (the runtime holds the reserve the
-    /// decode family stages into).
+    /// `loading` family stages into).
     fn resolve_settled(world: &mut World, runtime: &Runtime) {
         crate::systems::asset_intake::test_support::settle(runtime, world, |world| {
             asset_resolver_system(

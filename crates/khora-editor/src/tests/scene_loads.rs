@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! The engine's side of a scene load, played by hand for the editor's
-//! tests: the scene load hub installed in a runtime, the `scene_io` family's
+//! tests: the scene load hub installed in a runtime, the `loading` family's
 //! run, and the boundary's `scene_intake` that commits what it prepared.
 
 use std::sync::Arc;
@@ -74,7 +74,7 @@ pub(crate) fn boundary(runtime: &Runtime, world: &mut GameWorld) {
     );
 }
 
-/// One run of the `scene_io` family: the requests filed, prepared through
+/// One run of the `loading` family: the requests filed, prepared through
 /// the runtime's `SceneLoading`, each staged under its lease and received
 /// by the reserve, as the next frame start receives them.
 pub(crate) fn background(runtime: &Runtime) {

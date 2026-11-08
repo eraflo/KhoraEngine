@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Who decodes assets for the decode family.
+//! Who decodes assets for the `loading` family.
 
 use std::any::TypeId;
 
@@ -21,7 +21,7 @@ use crate::lane::Lease;
 use super::{AssetUUID, DecodeRequest, Decoded};
 
 /// Decodes the assets a [`DecodeRequest`] names, off the frame, from the
-/// decode family's lane: it touches no `World` and fills no cache.
+/// `loading` family's lane: it touches no `World` and fills no cache.
 pub trait AssetDecoding: Send + Sync {
     /// Decodes `uuid` as the Rust type `type_id`. Never panics on bad data:
     /// a failure is an `Err` in [`Decoded::value`].

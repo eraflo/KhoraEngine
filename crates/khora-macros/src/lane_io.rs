@@ -202,6 +202,7 @@ fn lane_inputs(input: &DeriveInput) -> syn::Result<impl ToTokens> {
     let mut declares = Vec::new();
     let mut fetches = Vec::new();
     let mut targets = Vec::new();
+    let mut give_backs = Vec::new();
     for field in &fields {
         let ident = field.ident;
         let label = ident.unraw().to_string();
@@ -228,6 +229,9 @@ fn lane_inputs(input: &DeriveInput) -> syn::Result<impl ToTokens> {
         }
         if field.attribute == "frame" {
             targets.push(quote!(.or_else(|| (#ops.target)(&self.#ident))));
+        }
+        if field.attribute == "take" {
+            give_backs.push(quote!(#src.give_back(self.#ident);));
         }
     }
     let idents = fields.iter().map(|field| field.ident);
@@ -259,6 +263,10 @@ fn lane_inputs(input: &DeriveInput) -> syn::Result<impl ToTokens> {
             }
             fn target_key(&self) -> ::core::option::Option<::khora_core::lane::io::TargetKey> {
                 ::core::option::Option::None #(#targets)*
+            }
+            fn give_back(self, #src: &mut ::khora_core::lane::io::InputSource<#frame>) {
+                let _ = &#src;
+                #(#give_backs)*
             }
         }
     })

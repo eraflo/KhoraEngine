@@ -14,7 +14,7 @@
 
 //! The assets decoded off the frame, taken in at its boundary.
 //!
-//! The decode family stages each decoded asset in the runtime's reserve;
+//! The `loading` family stages each decoded asset in the runtime's reserve;
 //! `asset_intake` takes them in before anything of the frame reads an asset:
 //! each value into the [`AssetService`]'s cache and the engine's
 //! [`AssetStore`], or its failure recorded. The resolvers that asked for them
@@ -69,7 +69,7 @@ fn asset_intake_system(
     take_in_decoded(runtime);
 }
 
-/// The decode family's work, played by hand for the tests of the systems that
+/// The `loading` family's work, played by hand for the tests of the systems that
 /// ask for assets.
 #[cfg(test)]
 pub(crate) mod test_support {
@@ -81,7 +81,7 @@ pub(crate) mod test_support {
 
     use crate::asset::AssetService;
 
-    /// One run of the decode family: the requests the runtime's asset
+    /// One run of the `loading` family: the requests the runtime's asset
     /// service filed, taken, decoded through its `AssetDecoding`, each staged
     /// under its lease, and received by the runtime's `Reserve` — as a frame
     /// start receives them. Returns how many requests it took.
@@ -91,7 +91,7 @@ pub(crate) mod test_support {
 
     /// [`decode_filed`], with `during` run once every filed request is
     /// decoded and before the reserve receives them: what the host does
-    /// while the decode family's run is out (a file saved again, an asset
+    /// while the `loading` family's run is out (a file saved again, an asset
     /// invalidated), checked by each decode's lease when the frame start
     /// receives it.
     pub(crate) fn decode_filed_while(runtime: &Runtime, during: impl FnOnce()) -> usize {
@@ -101,7 +101,7 @@ pub(crate) mod test_support {
             .expect("the runtime holds an asset service");
         let reserve = runtime
             .look_up::<Reserve>()
-            .expect("the runtime holds the reserve the decode family stages into");
+            .expect("the runtime holds the reserve the `loading` family stages into");
         let filed = service
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -129,7 +129,7 @@ pub(crate) mod test_support {
 
     /// Frames of the systems `frame` runs, until what they asked for is
     /// decoded and taken in: each frame takes in, at its boundary, what the
-    /// decode family landed, then runs `frame`; between two frames the decode
+    /// `loading` family landed, then runs `frame`; between two frames the decode
     /// family decodes what was filed. Done on the first frame that files
     /// nothing. Panics when the systems still file a decode after
     /// [`SETTLE_FRAMES`] frames — asking again for what is pending or failed.

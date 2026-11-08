@@ -20,13 +20,11 @@
 
 pub mod agent;
 pub mod audio_agent;
-pub mod compile_agent;
-pub mod decode_agent;
+pub mod loading_agent;
 pub mod overlay_agent;
 pub mod physics_agent;
 pub mod registered_agent;
 pub mod render_agent;
-pub mod scene_io_agent;
 pub mod script_agent;
 pub mod shadow_agent;
 pub mod skybox_agent;

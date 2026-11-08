@@ -228,6 +228,37 @@ fn a_reader_does_not_see_what_a_drain_took() {
     assert!(events.read(&mut cursor).is_empty());
 }
 
+// ─── Giving back ────────────────────────────────────────────────────────────
+
+/// **A request given back yields to a queued one that supersedes it.** A
+/// reader drained three reloads and gives them back unused; meanwhile a newer
+/// save of `ai/guard.erg` was queued. The older guard reload is dropped — the
+/// newer replaced it, as `send` would have — and the two others go back at
+/// the front, in their order, ahead of the newer one.
+#[test]
+fn a_request_given_back_yields_to_a_queued_one_that_supersedes_it() {
+    let reloads = channel(8);
+    let version = |module, version| Recompiled { module, version };
+    reloads.send(version("ai/guard.erg", 1));
+    reloads.send(version("loot/chest.erg", 1));
+    reloads.send(version("door.erg", 1));
+    let drained = reloads.drain();
+    reloads.send(version("ai/guard.erg", 2));
+
+    reloads.restore(drained);
+
+    let mut cursor = Cursor::default();
+    assert_eq!(
+        reloads.read(&mut cursor),
+        vec![
+            version("loot/chest.erg", 1),
+            version("door.erg", 1),
+            version("ai/guard.erg", 2),
+        ],
+        "the older guard reload yields to the newer; the others keep their order, in front"
+    );
+}
+
 // ─── The handle ─────────────────────────────────────────────────────────────
 
 /// Two handles are one channel — that is what the `Arc` is for, and what lets a

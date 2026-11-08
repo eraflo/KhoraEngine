@@ -16,7 +16,7 @@
 //!
 //! A frame asks the [`AssetService`] for an asset with
 //! [`request`](AssetService::request): a cached one comes back at once; a
-//! missing one is filed, once, as a [`DecodeRequest`] the decode family takes
+//! missing one is filed, once, as a [`DecodeRequest`] the `loading` family takes
 //! and decodes on the background pool through the service's
 //! [`AssetDecoding`]. Each result is staged under a lease on the asset's
 //! generation, and taken in at a frame's boundary by
@@ -99,7 +99,7 @@ impl AssetService {
     /// Takes in what one decode off the frame gave: the value into this
     /// service's cache — served from now on — and its handle into `store`;
     /// or the failure, answered [`Requested::Failed`] until an asset changes.
-    /// What the decode family stages, applied at a frame's boundary.
+    /// What the `loading` family stages, applied at a frame's boundary.
     pub fn take_in(&mut self, decoded: Decoded, store: &AssetStore) {
         let Decoded {
             uuid,
@@ -147,7 +147,7 @@ impl AssetService {
     }
 
     /// Hands this service the decode requests `outgoing` filed on: the
-    /// channel the engine's decode family takes from, so a service swapped
+    /// channel the engine's `loading` family takes from, so a service swapped
     /// into the engine's place keeps reaching it.
     pub fn adopt_decode_requests(&mut self, outgoing: &mut AssetService) {
         std::mem::swap(&mut self.requests, &mut outgoing.requests);
@@ -163,7 +163,7 @@ impl AssetService {
     }
 
     /// Files this service's decode requests on `requests` from now on — the
-    /// channel of the decode family serving it. What it had filed elsewhere
+    /// channel of the `loading` family serving it. What it had filed elsewhere
     /// is asked for again, and any decode of it in flight is not installed.
     pub(super) fn use_decode_requests(
         &mut self,
@@ -229,7 +229,7 @@ fn install<A: Asset>(
     }
 }
 
-/// The decode family's [`AssetDecoding`] over the service a shared handle
+/// The `loading` family's [`AssetDecoding`] over the service a shared handle
 /// holds — whichever service is in it now: it takes that service's reader
 /// and generations under the lock, briefly, and decodes without it.
 pub(super) struct ServiceDecoding {
@@ -299,7 +299,7 @@ impl AssetDecoding for ServiceDecoding {
     }
 }
 
-/// What the decode family reaches the engine's asset service through: the
+/// What the `loading` family reaches the engine's asset service through: the
 /// runtime's request channel, and the service it serves. A service is
 /// attached whenever one is found in the runtime — at the boot, and at every
 /// frame boundary after it — so one inserted after the boot (an editor hands
@@ -383,7 +383,7 @@ fn no_service(uuid: &AssetUUID, type_id: TypeId) -> Decoded {
     }
 }
 
-/// Installs in `runtime` what the decode family reads — the request channel
+/// Installs in `runtime` what the `loading` family reads — the request channel
 /// and the [`AssetDecoding`], both through one [`DecodeHub`] — and attaches
 /// the asset service the runtime holds, if any. Replaces nothing installed.
 pub fn install_decoding(runtime: &mut Runtime) {

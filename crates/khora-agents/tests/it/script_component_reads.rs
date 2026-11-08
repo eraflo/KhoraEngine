@@ -136,7 +136,7 @@ impl Session {
     }
 
     /// Stages `program` as the new `MODULE`, with what it declares, as the
-    /// compile family does for a hot-reload.
+    /// `loading` family does for a hot-reload.
     fn load(&self, program: Program) {
         crate::staged_reloads::stage(&self.reserve, declared_in(MODULE, &program));
         crate::staged_reloads::stage(

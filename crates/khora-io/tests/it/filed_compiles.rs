@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What the hot-reload pump files, compiled as the compile family compiles
+//! What the hot-reload pump files, compiled as the `loading` family compiles
 //! it — in place, for these tests: khora-io holds the pump and the
 //! [`ProjectCompiler`], not the family's lane. Each request is compiled by a
 //! `ProjectCompiler` over the runtime's resources, and what comes back is

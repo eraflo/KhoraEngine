@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! **A game's mesh asset is decoded off the frame, and resolves a few
-//! frames after its entity appears.** The engine boots the `decode` family;
+//! frames after its entity appears.** The engine boots the `loading` family;
 //! the asset resolver asks the asset service for the mesh, the family's lane
 //! decodes it at the background, and the decode lands at a frame's boundary,
 //! where the intake installs it. The frame that asks never decodes on its
@@ -42,7 +42,8 @@ use khora_sdk::{
 };
 use khora_telemetry::MetricsRegistry;
 
-const DECODE: AgentId = AgentId::new("decode");
+/// The family that decodes assets off the frame.
+const LOADING: AgentId = AgentId::new("loading");
 
 /// The most frames a mesh may take to resolve: the background run, the
 /// frame start that hands it over. Frames are ~10 ms apart here, so this is
@@ -278,9 +279,9 @@ fn resolved_vertices(engine: &mut EngineCore<Game>, entity: EntityId) -> Option<
 
 // ─── The family ─────────────────────────────────────────────────────────────
 
-/// **The engine boots the decode family**, on from the first frame.
+/// **The engine boots the `loading` family**, on from the first frame.
 #[test]
-fn the_engine_boots_the_decode_family() {
+fn the_engine_boots_the_loading_family() {
     let project = Project::with_mesh("boots", TRIANGLE_OBJ);
     let log = Arc::new(DecodeLog::default());
     let mut engine = game_engine(&project.service(&log));
@@ -293,7 +294,7 @@ fn the_engine_boots_the_decode_family() {
         .lock()
         .expect("the registry lock")
         .all_ids();
-    assert!(families.contains(&DECODE), "booted families: {families:?}");
+    assert!(families.contains(&LOADING), "booted families: {families:?}");
 }
 
 // ─── A mesh asset ───────────────────────────────────────────────────────────
@@ -392,10 +393,10 @@ fn a_slow_decode_never_lengthens_a_frame() {
     });
 }
 
-/// **A mesh asked for while the decode family is off waits, and resolves
+/// **A mesh asked for while the `loading` family is off waits, and resolves
 /// once the family is on again**: its request is held, not dropped.
 #[test]
-fn a_mesh_asked_for_while_the_decode_family_is_off_resolves_once_it_is_on() {
+fn a_mesh_asked_for_while_the_loading_family_is_off_resolves_once_it_is_on() {
     let project = Project::with_mesh("family-off", TRIANGLE_OBJ);
     let log = Arc::new(DecodeLog::default());
     let mut engine = game_engine(&project.service(&log));
@@ -406,8 +407,8 @@ fn a_mesh_asked_for_while_the_decode_family_is_off_resolves_once_it_is_on() {
         .cloned()
         .expect("the engine's activation");
     activation
-        .deactivate(DECODE)
-        .expect("the decode family is known");
+        .deactivate(LOADING)
+        .expect("the loading family is known");
     frame(&mut engine);
     let entity = spawn_mesh(&mut engine);
 
@@ -422,8 +423,8 @@ fn a_mesh_asked_for_while_the_decode_family_is_off_resolves_once_it_is_on() {
     assert_eq!(log.calls.load(Ordering::SeqCst), 0, "no decode ran");
 
     activation
-        .activate(DECODE)
-        .expect("the decode family is known");
+        .activate(LOADING)
+        .expect("the loading family is known");
     frames_until(
         &mut engine,
         "the mesh to resolve once the family is on",
@@ -458,7 +459,7 @@ impl EngineApp for Tool {
 
 /// **A mesh asset resolves when the application hands the engine its asset
 /// service as it registers its agents**, after the engine's own entries were
-/// installed — the editor's way: the decode family decodes from that service.
+/// installed — the editor's way: the `loading` family decodes from that service.
 #[test]
 fn a_mesh_asset_resolves_when_the_service_is_handed_over_at_registration() {
     let project = Project::with_mesh("registered", TRIANGLE_OBJ);

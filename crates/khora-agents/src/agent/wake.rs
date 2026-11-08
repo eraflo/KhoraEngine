@@ -422,12 +422,11 @@ impl LaneAgent {
         }
         let frame = self.frame(context);
         if full {
-            // The lane that ran was priced by its run, unless it priced
-            // nothing.
-            let priced = ran
-                .filter(|ran| self.quotes[*ran].is_some())
-                .map(|ran| self.menu[ran].lane);
-            self.quote_every_lane(context, frame.as_deref(), priced);
+            // Every lane quoted on the inputs as they stand, the one that ran
+            // too: its run priced what it was given, which a lane that takes
+            // its requests no longer holds, and rows priced on other inputs
+            // would be compared unfairly.
+            self.quote_every_lane(context, frame.as_deref());
         } else if let Some(ran) = ran.filter(|ran| self.quotes[*ran].is_none()) {
             // A run that priced nothing (refused for want of a budget it was
             // never granted) is quoted on its inputs, so GORNA has a price

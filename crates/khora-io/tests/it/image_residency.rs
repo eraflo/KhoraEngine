@@ -232,7 +232,7 @@ fn png(rgba: [u8; 4]) -> Vec<u8> {
 
 /// A project on disk whose assets hold one UI image, opened as the editor
 /// opens one and served into a runtime with a device, an asset store, the UI
-/// atlas and the reserve the decode family stages its decodes into.
+/// atlas and the reserve the `loading` family stages its decodes into.
 struct Project {
     _dir: tempfile::TempDir,
     root: PathBuf,
@@ -304,7 +304,7 @@ impl Project {
         }
     }
 
-    /// One run of the decode family, played by hand: the decodes the frames
+    /// One run of the `loading` family, played by hand: the decodes the frames
     /// filed, decoded through the service's `AssetDecoding` under their lease
     /// and received by the reserve. Returns how many it took.
     fn decode_filed(&self) -> usize {
@@ -327,7 +327,7 @@ impl Project {
         filed.len()
     }
 
-    /// Frames, with the decode family's run between them, until a frame
+    /// Frames, with the `loading` family's run between them, until a frame
     /// files no decode: what the frames asked for is decoded and taken in.
     fn settle(&self, world: &mut World) {
         for _ in 0..8 {

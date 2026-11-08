@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Who compiles a project's scripts for the compile family.
+//! Who compiles a project's scripts for the `loading` family.
 
 use khora_core::lane::Lease;
 
 use super::{CompileRequest, Compiled};
 
 /// Compiles what a [`CompileRequest`] names, as the project lays its
-/// scripts out. Called off the frame, from the compile family's lane: it
+/// scripts out. Called off the frame, from the `loading` family's lanes: it
 /// touches no `World`, and whatever it reports to (problems, the script
 /// flow's demand) is thread-safe.
 pub trait ScriptCompiler: Send + Sync {

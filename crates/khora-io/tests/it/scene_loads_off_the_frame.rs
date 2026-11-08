@@ -14,7 +14,7 @@
 
 //! **A scene load filed by a host is prepared off the frame and lands at a
 //! frame's boundary.** `SceneLoadHub::file` answers at once with a ticket;
-//! the `scene_io` family's work is played here by hand, as the scheduler
+//! the `loading` family's work is played here by hand, as the scheduler
 //! runs it at the background: the requests filed are taken, prepared
 //! through the runtime's `SceneLoading` and staged under their lease into
 //! the engine's reserve. The `scene_intake` DataSystem then commits them at
@@ -54,7 +54,7 @@ const SETTLE_FRAMES: usize = 8;
 // ─── The harness ────────────────────────────────────────────────────────────
 
 /// A world, and a runtime wired as the engine wires the scene loads: the
-/// reserve the `scene_io` family stages into, and what
+/// reserve the `loading` family stages into, and what
 /// `install_scene_loading` installs.
 struct Engine {
     world: World,
@@ -84,7 +84,7 @@ impl Engine {
             .expect("`install_scene_loading` installs the hub as `Arc<SceneLoadHub>`")
     }
 
-    /// The channel the `scene_io` family takes its requests from.
+    /// The channel the `loading` family takes its requests from.
     fn requests(&self) -> Channel<SceneLoadRequest> {
         self.runtime
             .resources
@@ -99,7 +99,7 @@ impl Engine {
         hub.file(&mut self.world, kind, Arc::new(NoPrefabs))
     }
 
-    /// One run of the `scene_io` family: the requests filed, taken,
+    /// One run of the `loading` family: the requests filed, taken,
     /// prepared through the runtime's `SceneLoading`, each staged under its
     /// lease — not yet received. Returns the staging and how many requests
     /// it took.

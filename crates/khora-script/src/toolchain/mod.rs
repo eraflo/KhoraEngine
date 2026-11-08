@@ -21,7 +21,7 @@
 //! The compile machinery itself — reading a project's files, its importers,
 //! the engine's prelude, where problems are reported — lives with the
 //! project, behind [`ScriptCompiler`]; this module holds only the words the
-//! compile family and the project share.
+//! `loading` family and the project share.
 
 mod compile_request;
 mod compiled;

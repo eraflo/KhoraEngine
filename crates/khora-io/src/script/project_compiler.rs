@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A project's scripts, compiled for the compile family.
+//! A project's scripts, compiled for the `loading` family.
 //!
 //! What the hot-reload pump once did inside the frame, as a pure function of
 //! a [`CompileRequest`]: the modules it names and every module importing

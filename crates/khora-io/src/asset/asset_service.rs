@@ -46,7 +46,7 @@ use khora_core::asset::DecodeRequest;
 
 use crate::asset::AssetIndex;
 
-/// How many decode requests wait for the decode family before a new one is
+/// How many decode requests wait for the `loading` family before a new one is
 /// refused — and asked for again on a later frame.
 pub(super) const REQUEST_BACKLOG: usize = 4096;
 
@@ -113,7 +113,7 @@ pub struct AssetService {
     /// fail (a broken file, a missing part) can only be fixed by such a
     /// change, so it is the moment to try again.
     pub(super) failed: HashSet<AssetUUID>,
-    /// Where [`request`](Self::request) files a decode for the decode family
+    /// Where [`request`](Self::request) files a decode for the `loading` family
     /// to take off the frame.
     pub(super) requests: Channel<DecodeRequest>,
     /// The assets, by uuid and type, a decode is filed for and not taken in:
@@ -351,12 +351,12 @@ impl AssetService {
     }
 
     /// The channel this service files its decode requests on, shared: the
-    /// decode family takes them from the runtime's copy.
+    /// `loading` family takes them from the runtime's copy.
     pub fn decode_requests(&self) -> Channel<khora_core::asset::DecodeRequest> {
         self.requests.clone()
     }
 
-    /// The decode family's [`AssetDecoding`](khora_core::asset::AssetDecoding)
+    /// The `loading` family's [`AssetDecoding`](khora_core::asset::AssetDecoding)
     /// over the service `shared` holds: it decodes with that service's
     /// current reader without holding its lock across the decode, and leases
     /// each result on the asset's generation.

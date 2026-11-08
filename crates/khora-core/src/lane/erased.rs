@@ -78,8 +78,9 @@ pub trait AnyLane: Send {
     /// Whether the device can run the lane.
     fn supports(&self, caps: &DeviceCaps) -> bool;
 
-    /// One frame: fetch, prepare if the target changed, record at `level`,
-    /// cost every level, commit.
+    /// One frame: fetch, prepare if the target changed, cost every level on
+    /// what was fetched, record at `level`, give back what the record left,
+    /// commit.
     fn run(
         &mut self,
         level: usize,
@@ -221,8 +222,8 @@ impl<L: Lane> AnyLane for Erased<L> {
 }
 
 impl<L: Lane> Erased<L> {
-    /// Fetch, prepare if the target changed, record at `level`, cost every
-    /// level, commit.
+    /// Fetch, prepare if the target changed, cost every level on what was
+    /// fetched, record at `level`, give back what the record left, commit.
     fn record(
         &mut self,
         level: usize,
@@ -243,8 +244,11 @@ impl<L: Lane> Erased<L> {
             Err(refusal) => return (RunOutcome::Refused(refusal), Vec::new()),
         };
         let key = fetched.target_key();
+        // What the lane did not load goes back to its mailbox, whatever the
+        // outcome: a run that never recorded loaded nothing.
         if self.prepared_for != Some((level, key)) {
             if let Err(error) = self.lane.prepare(level, gpu, key) {
+                fetched.give_back(inputs);
                 return (RunOutcome::Failed(error), Vec::new());
             }
             self.prepared_for = Some((level, key));
@@ -252,12 +256,19 @@ impl<L: Lane> Erased<L> {
         let mut written =
             match <<L::Family as LaneFamily>::Outputs<'_> as LaneOutputs<'_>>::open(outputs) {
                 Ok(written) => written,
-                Err(error) => return (RunOutcome::Failed(error), Vec::new()),
+                Err(error) => {
+                    fetched.give_back(inputs);
+                    return (RunOutcome::Failed(error), Vec::new());
+                }
             };
-        let recorded = self.lane.record(level, &mut fetched, &mut written);
+        // Each level priced on the inputs the run was given, before the
+        // record consumes them: a lane that takes its requests prices what it
+        // took, not what it left.
         let costs = (0..levels)
             .map(|level| self.lane.cost(level, &fetched))
             .collect();
+        let recorded = self.lane.record(level, &mut fetched, &mut written);
+        fetched.give_back(inputs);
         let outcome = match recorded {
             Ok(report) => match written.commit(outputs) {
                 Ok(()) => RunOutcome::Recorded(report),

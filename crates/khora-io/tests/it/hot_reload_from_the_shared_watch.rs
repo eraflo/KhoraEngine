@@ -60,7 +60,7 @@ fn data_system(name: &str) -> &'static DataSystemRegistration {
 
 /// Runs the data system `name` over `runtime` until `done` holds, or the wait
 /// ran out. The watch reports from the OS's own thread. After the script
-/// pump, what it filed is compiled, as the compile family does.
+/// pump, what it filed is compiled, as the `loading` family does.
 fn run_until(name: &str, runtime: &Runtime, mut done: impl FnMut() -> bool) {
     let system = data_system(name);
     let mut world = World::new();

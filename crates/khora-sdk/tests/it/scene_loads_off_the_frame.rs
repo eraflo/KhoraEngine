@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! **A scene load is prepared off the frame and lands a few frames later,
-//! end to end.** The engine boots the `scene_io` family and its hub; a
+//! end to end.** The engine boots the `loading` family and its hub; a
 //! host files a load, the family's lane prepares it at the background, and
 //! it is committed at a frame's boundary. A slow read never lengthens a
 //! frame, and a game filed through the `GameWorld` lands as the synchronous

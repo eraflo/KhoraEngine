@@ -267,6 +267,24 @@ impl<'f> InputSource<'f> {
         Ok(drained)
     }
 
+    /// Puts `items`, left in a `#[take]` field after a run, back at the front
+    /// of the runtime's `Channel<T>`, in their order; an item a queued one
+    /// supersedes is dropped.
+    pub fn give_back<T: Supersedes + Send + Sync + 'static>(&mut self, items: Vec<T>) {
+        // A source that does not take drained nothing, so owes nothing back.
+        if items.is_empty() || !self.takes {
+            return;
+        }
+        match self.runtime.look_up::<crate::event::Channel<T>>() {
+            Some(channel) => channel.restore(items),
+            None => log::error!(
+                "{} {} given back to a runtime that holds no channel for them are lost",
+                items.len(),
+                std::any::type_name::<T>()
+            ),
+        }
+    }
+
     /// The frame's target, when it has a size.
     pub fn target(&mut self, field: &'static str) -> Result<Target, InputRefusal> {
         self.touch::<Target>(field, SourceKind::Frame);

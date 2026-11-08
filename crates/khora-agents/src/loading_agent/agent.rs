@@ -12,21 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The decode family's registration: `ExecutionPhase::BACKGROUND`,
-//! `AgentImportance::Optional`, the decode lane at its one level.
+//! The `loading` family's registration: `ExecutionPhase::BACKGROUND`,
+//! `AgentImportance::Optional`, the rush lane then the paced lane.
 
+use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::{AgentImportance, ExecutionPhase};
-use khora_lanes::decode_lane::{DecodeFamily, DecodeLane};
+use khora_lanes::loading_lane::{LoadingFamily, PacedLane, RushLane};
 
 use crate::registered_agent::RegisteredAgent;
 
 khora_script::inventory::submit! {
     RegisteredAgent(khora_core::register_agent! {
-        family: DecodeFamily,
+        family: LoadingFamily,
         phase: ExecutionPhase::BACKGROUND,
         importance: AgentImportance::Optional,
         after: [],
         fixed_step: None,
-        lanes: [DecodeLane],
+        // Everything filed is loaded until the DCC lends an envelope.
+        default_level: StrategyId::HighPerformance,
+        lanes: [RushLane, PacedLane],
     })
 }

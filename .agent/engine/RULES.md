@@ -116,7 +116,7 @@ Measurements and levers: `docs/research/2026-11-06_build-time-and-target-size.md
     A load committed after its world's components changed is prepared again against them; one committed into
     another world adds nothing (`NotLoaded`).
   - A tool or game that loads a scene while frames run **files** it with the `SceneLoadHub` (`khora-io/src/scene_loads.rs`)
-    and reads its outcome by `LoadTicket`. The `scene_io` family prepares it off the frame; `scene_intake` commits it at
+    and reads its outcome by `LoadTicket`. The `loading` family prepares it off the frame; `scene_intake` commits it at
     the boundary. Loads land in the order they were filed, and a cancelled one lands nothing. Never load a scene on the
     frame from a running tool. The synchronous `load_world`/`replace_world`/`load_game` are for setup, tests and
     scratch worlds.

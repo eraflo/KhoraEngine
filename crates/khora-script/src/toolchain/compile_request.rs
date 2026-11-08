@@ -22,7 +22,7 @@ use khora_core::event::Supersedes;
 /// Recompile `modules` of the assets root `root` — and every module
 /// importing one of them; a module whose file is gone is withdrawn.
 ///
-/// Filed by the hot-reload pump, taken by the compile family's lane. A newer
+/// Filed by the hot-reload pump, taken by the `loading` family's lanes. A newer
 /// request of a root replaces a waiting one only when it names every module
 /// the waiting one does (nothing is lost); the requests of one root that
 /// remain are merged by the lane, which compiles each root once per run.

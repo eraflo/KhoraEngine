@@ -198,7 +198,7 @@ and loads skip it. Either way the load's `LoadReport` says what it adapted. See
 
 The edited module recompiles — with every module that imports it — and replaces
 the old program only if it compiles. The compile runs off the frame, in the
-`compile` family, so a large project never stalls a frame: the new program lands
+`loading` family, so a large project never stalls a frame: the new program lands
 at a frame boundary a few frames later. While the scripts are off (an editor
 editing a scene), what the module declares registers at once, and the program
 waits for Play. Live instances keep their fields, matched by

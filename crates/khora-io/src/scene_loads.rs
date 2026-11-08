@@ -16,7 +16,7 @@
 //! boundary.
 //!
 //! A host files a load with [`SceneLoadHub::file`] and keeps its
-//! [`LoadTicket`]. The `scene_io` family prepares it off the frame through
+//! [`LoadTicket`]. The `loading` family prepares it off the frame through
 //! the hub, which is the runtime's [`SceneLoading`]; the `scene_intake`
 //! DataSystem commits it at a frame's boundary and files its outcome under
 //! the ticket, for [`SceneLoadHub::take_outcome`].
@@ -341,7 +341,7 @@ fn failed(message: String) -> LoadFailure {
     }
 }
 
-/// Installs in `runtime` what the `scene_io` family reads — the request
+/// Installs in `runtime` what the `loading` family reads — the request
 /// channel and the [`SceneLoading`], both through one [`SceneLoadHub`],
 /// itself held as `Arc<SceneLoadHub>` for the hosts that file loads.
 /// Replaces nothing installed.

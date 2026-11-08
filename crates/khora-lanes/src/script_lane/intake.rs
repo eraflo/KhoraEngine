@@ -79,7 +79,7 @@ pub fn take_in(
 /// The intake over the engine's scripting world, when there is one; without
 /// it, the reserve and the event channel keep what they hold. It reads the
 /// runtime only: the world and the deck it is handed stay untouched. The
-/// reloads the compile family staged wait in the reserve while the scripting
+/// reloads the `loading` family staged wait in the reserve while the scripting
 /// family is off — this system does not run then — and are installed on the
 /// first frame back.
 fn script_intake(runtime: &Runtime, ctx: SystemContext) {

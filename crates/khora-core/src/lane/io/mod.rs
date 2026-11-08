@@ -331,6 +331,12 @@ pub trait LaneInputs<'f>: Sized {
     fn target_key(&self) -> Option<TargetKey> {
         None
     }
+
+    /// Gives back to `src` what the run left in each `#[take]` field: what
+    /// the lane did not consume, it did not load. Nothing by default.
+    fn give_back(self, src: &mut InputSource<'f>) {
+        let _ = src;
+    }
 }
 
 /// A family's outputs, derived with `#[derive(LaneOutputs)]`.

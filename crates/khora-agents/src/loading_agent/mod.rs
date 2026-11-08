@@ -12,7 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The compile family's agent: chooses the compile lane's level and
-//! installs its layer at `ExecutionPhase::BACKGROUND`.
+//! The `loading` family's agent: chooses between the rush lane and the paced
+//! lane, and installs the chosen one's layer at `ExecutionPhase::BACKGROUND`.
 
 mod agent;
+
+use khora_core::agent::gorna::AgentId;
+use khora_core::lane::family::LaneFamily;
+use khora_lanes::loading_lane::LoadingFamily;
+
+/// The `loading` family's agent, by name.
+pub const LOADING: AgentId = <LoadingFamily as LaneFamily>::AGENT;

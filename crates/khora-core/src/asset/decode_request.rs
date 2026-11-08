@@ -23,7 +23,7 @@ use super::AssetUUID;
 /// Decode the asset `uuid` as the Rust type `type_id`, asked for when the
 /// asset service's change counter stood at `generation`.
 ///
-/// Filed by the asset service on a cache miss, taken by the decode family's
+/// Filed by the asset service on a cache miss, taken by the `loading` family's
 /// lane. A decode that read a file changed since (invalidated, reindexed) is
 /// never installed.
 #[derive(Debug, Clone, PartialEq, Eq)]

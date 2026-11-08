@@ -15,7 +15,7 @@
 //! **The hot-reload pump files requests and compiles nothing itself.** It
 //! reads the engine's `AssetWatch` inside the frame, and for each root whose
 //! scripts changed files a `CompileRequest` on the runtime's channel, for the
-//! compile family to take off the frame. Nothing is compiled in the frame:
+//! `loading` family to take off the frame. Nothing is compiled in the frame:
 //! no program is staged, nothing is reported of a module, nothing is
 //! announced. What does stay in the pump is telling which `.erg` files lie
 //! outside a script folder.

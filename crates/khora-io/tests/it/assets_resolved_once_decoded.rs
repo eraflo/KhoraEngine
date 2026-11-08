@@ -15,10 +15,10 @@
 //! **The resolvers ask for assets; they never decode one on the frame.** An
 //! entity whose mesh, material, font or image is not decoded yet stays
 //! unresolved — its request filed once, not once a frame — and resolves once
-//! the decode family's result was taken in at a boundary, to what a
+//! the `loading` family's result was taken in at a boundary, to what a
 //! synchronous load gave.
 //!
-//! The decode family's work is played by hand between frames (see
+//! The `loading` family's work is played by hand between frames (see
 //! [`Project::background`](super::assets_requested_off_the_frame::Project)).
 
 use std::sync::Arc;
@@ -111,7 +111,7 @@ fn ui_transform() -> UiTransform {
     }
 }
 
-/// Rounds of the decode family's run then a frame, until `done` holds — at
+/// Rounds of the `loading` family's run then a frame, until `done` holds — at
 /// most `rounds`; whether it held.
 fn settle(
     project: &Project,
@@ -170,7 +170,7 @@ fn a_mesh_asset_resolves_once_its_decode_landed_and_not_before() {
 }
 
 /// **A pending mesh is asked for once, not once a frame**: ten frames
-/// before the decode family runs file one request.
+/// before the `loading` family runs file one request.
 #[test]
 fn a_pending_mesh_is_requested_once_not_every_frame() {
     let project = Project::new(&[(MESH, TRIANGLE_OBJ)]);
@@ -194,7 +194,7 @@ fn a_pending_mesh_is_requested_once_not_every_frame() {
 /// **A material asset and the texture it names resolve once decoded off the
 /// frame**: the material handle reaches the entity, its texture reaches the
 /// store — what the GPU projection waits on — within a few rounds of the
-/// decode family, and neither on the frame that asked.
+/// `loading` family, and neither on the frame that asked.
 #[test]
 fn a_material_asset_and_its_texture_resolve_once_decoded_off_the_frame() {
     let texture = AssetUUID::new_v5("textures/albedo.png");

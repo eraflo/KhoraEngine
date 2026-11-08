@@ -40,7 +40,7 @@ impl Supersedes for ScriptDeclarations {
     }
 }
 
-/// Staged by the compile family, taken by the frame boundary's
+/// Staged by the `loading` family, taken by the frame boundary's
 /// `script_components`. A set replaced before a boundary took it holds
 /// nothing to give back.
 impl Staged for ScriptDeclarations {}

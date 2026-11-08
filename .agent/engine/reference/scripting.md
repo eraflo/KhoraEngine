@@ -62,12 +62,13 @@ switches it off while editing.
   `collision_to_script`) serve SCRIPT, so they are skipped while it is off, as the family's agent is.
   `script_hot_reload`, `script_components`, `script_problems` are `Upkeep`. Mailboxes: `ScriptEvent`
   Take/Drop (`khora-lanes/src/script_lane/intake.rs`), `Collision` Cursor("collision_to_script")/Drop,
-  `CompileRequest` Take/Hold of the `compile` family. On `resumed`, the intake clears only the scripting
+  `CompileRequest` Take/Hold of the `loading` family. On `resumed`, the intake clears only the scripting
   world's own pending mail.
-- **Compiling is a family of its own, off the frame.** The pump (`script_hot_reload`, PreExtract,
+- **Compiling is a load, off the frame.** The pump (`script_hot_reload`, PreExtract,
   `khora-io/src/script/hot_reload.rs`) only files one `CompileRequest` per root on `Channel<CompileRequest>`
-  and reports misplaced files. The `compile` family (`khora-lanes/src/compile_lane/`, registration
-  `khora-agents/src/compile_agent/agent.rs`, `ExecutionPhase::BACKGROUND`) takes the requests and calls the
+  and reports misplaced files. The `loading` family (`khora-lanes/src/loading_lane/`, registration
+  `khora-agents/src/loading_agent/agent.rs`, `ExecutionPhase::BACKGROUND`; it loads scenes and assets too)
+  takes the requests and calls the
   runtime's `Arc<dyn ScriptCompiler>` (trait and types in `khora-script/src/toolchain/`; the engine's is
   `khora-io/src/script/project_compiler.rs` `ProjectCompiler`: importers, compile, problems, the `Interest`
   announce, `MountedScripts`), staging `ScriptReload` and `ScriptDeclarations` in the `Reserve`. At the
@@ -282,7 +283,7 @@ switches it off while editing.
   `SourceLoader::engine_components` (every registration name + `formerly`, from `PreludeLoader`) is refused at
   its span; duplicate fields, `Map` fields and non-finite literals too. `Program.declared:
   Vec<DeclaredComponent{name, module, domain, fields: {name, ty: ErgonType, default}}>` (sorted). The compile
-  path (`ProjectCompiler::compile_all` at a mount, the compile family on a save) stages one
+  path (`ProjectCompiler::compile_all` at a mount, the `loading` family on a save) stages one
   `ScriptDeclarations` per declaring module in the `Reserve`; the `script_components` DataSystem
   (`TickPhase::Boundary`, `Role::Upkeep`, **whether scripting is on or off**) runs `khora_io::script::declarations::apply_declarations`: register, relayout (a type change
   the storage kind hides is reset via `relayout_resetting`), `move_component_domain`, orphan (never delete),

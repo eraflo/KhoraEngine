@@ -133,7 +133,7 @@ const SETTLE_FRAMES: usize = 8;
 /// Frames of the engine's asset and UI systems until the fonts they asked for
 /// are decoded off the frame and taken in. Each frame takes in, at its
 /// boundary, the decodes landed in the runtime's reserve (`asset_intake`),
-/// then runs `PreExtract`; between two frames the decode family's run is
+/// then runs `PreExtract`; between two frames the `loading` family's run is
 /// played by hand: what the runtime's asset service filed, decoded through
 /// its `AssetDecoding` under each request's lease, and received by the
 /// reserve. Done on the first frame that files nothing.
@@ -144,7 +144,7 @@ fn settle(world: &mut World, runtime: &Runtime) {
         .expect("the runtime holds an asset service");
     let reserve = runtime
         .look_up::<Reserve>()
-        .expect("the runtime holds the reserve the decode family stages into");
+        .expect("the runtime holds the reserve the `loading` family stages into");
     for _ in 0..SETTLE_FRAMES {
         khora_io::systems::asset_intake::take_in_decoded(runtime);
         pre_extract(world, runtime);
@@ -296,7 +296,7 @@ fn an_edited_font_file_is_registered_again_with_the_shaper() {
 }
 
 /// A loose-file project served into a runtime with Parley as its shaper and
-/// the reserve the decode family stages into.
+/// the reserve the `loading` family stages into.
 struct FontProject {
     _dir: tempfile::TempDir,
     root: std::path::PathBuf,

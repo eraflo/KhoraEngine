@@ -14,7 +14,7 @@
 
 //! **The scripting world takes in what the engine handed it before the
 //! script flow projects.** The `script_intake` data system, every frame of
-//! play: it takes the reloads the compile family staged in the runtime's
+//! play: it takes the reloads the `loading` family staged in the runtime's
 //! reserve, drains the event channel, installs each recompiled
 //! module whose reads the demand on the script flow covers — the others wait
 //! — announces what the installed programs read, and clears the scripting
@@ -158,7 +158,7 @@ impl Wired {
         );
     }
 
-    /// `source` recompiled as `MODULE` and handed over as the compile family
+    /// `source` recompiled as `MODULE` and handed over as the `loading` family
     /// hands it: what it reads announced as `module:<name>`, then the program
     /// staged.
     fn reload_announced(&self, source: &str) {

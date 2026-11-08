@@ -14,7 +14,7 @@
 
 //! Scene loads prepared off the frame.
 //!
-//! A host files a [`SceneLoadRequest`]; the `scene_io` family's lane takes
+//! A host files a [`SceneLoadRequest`]; the `loading` family's lane takes
 //! it and prepares it off the frame through the runtime's [`SceneLoading`],
 //! staging the [`PreparedLoad`] under a lease on the world's components
 //! staying as they were when it was prepared. A frame's boundary commits it.
@@ -170,7 +170,7 @@ impl Staged for PreparedLoad {
 }
 
 /// What prepares a scene load off the frame: the runtime's, read by the
-/// `scene_io` family's lane.
+/// `loading` family's lanes.
 pub trait SceneLoading: Send + Sync {
     /// Prepares `request`, and the lease the result holds to: it breaks when
     /// the world's components change before the load commits.

@@ -47,7 +47,7 @@ impl Supersedes for ScriptReload {
     }
 }
 
-/// Staged by the compile family, taken by the scripting family's intake. A
+/// Staged by the `loading` family, taken by the scripting family's intake. A
 /// reload replaced before the intake took it holds nothing to give back.
 impl Staged for ScriptReload {}
 

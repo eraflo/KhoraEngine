@@ -14,7 +14,7 @@
 
 //! The scene loads prepared off the frame, committed at its boundary.
 //!
-//! The `scene_io` family stages each prepared load in the runtime's
+//! The `loading` family stages each prepared load in the runtime's
 //! reserve; `scene_intake` commits them at the boundary, in the order they
 //! were staged, and files each outcome under its ticket in the runtime's
 //! `SceneLoadHub`. It publishes the world's load catalogue first, when the

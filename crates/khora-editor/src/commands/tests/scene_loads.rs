@@ -17,7 +17,7 @@
 //! prepared off the frame and committed at a frame's boundary; the editor
 //! finishes each once its outcome landed. The engine's side of a frame is
 //! played here by hand, around the editor's own per-frame calls: the
-//! boundary's `scene_intake`, the `scene_io` family's run, then
+//! boundary's `scene_intake`, the `loading` family's run, then
 //! `land_scene_loads` and `process_transport`.
 
 use std::collections::BTreeSet;

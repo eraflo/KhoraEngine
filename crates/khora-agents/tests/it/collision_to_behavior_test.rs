@@ -127,7 +127,7 @@ fn run_one_frame(agent: &mut LaneAgent, runtime: &Arc<Runtime>) -> Vec<WorldComm
 fn a_touched_event_reaches_the_behavior_that_declared_the_handler() {
     let events = engine_event_channel();
     // The program reaches the agent the way every program does — staged in the
-    // reserve by the compile family. There is no other road in, and a test
+    // reserve by the `loading` family. There is no other road in, and a test
     // that invented one would be testing a road production does not use.
     let reloads = khora_core::lane::Reserve::new();
     crate::staged_reloads::stage(

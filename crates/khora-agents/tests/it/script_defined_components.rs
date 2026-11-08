@@ -15,7 +15,7 @@
 //! A project's own components, end to end (Ergon spec 08).
 //!
 //! The declarations travel the way the engine sends them — staged in the
-//! reserve by the compile family, beside the program — and are registered by
+//! reserve by the `loading` family, beside the program — and are registered by
 //! the `Boundary` data system, in every mode: an editor editing a scene, with
 //! no script running, knows `Health` too. Then a
 //! behavior writes and reads the component frame after frame, through the
@@ -80,7 +80,7 @@ fn health_declarations() -> ScriptDeclarations {
     declared_in(HEALTH_MODULE, &compile(HEALTH_MODULE))
 }
 
-/// The resources the registration reads: the reserve the compile family
+/// The resources the registration reads: the reserve the `loading` family
 /// stages into, and the state the registration keeps between frames.
 fn registration_runtime(declarations: &Reserve) -> Runtime {
     let mut runtime = Runtime::default();
@@ -109,7 +109,7 @@ fn script_components_register_at_the_frame_boundary_as_upkeep() {
 
 /// **An editor editing a scene knows `Health`.** No script agent, no lane,
 /// nothing running gameplay: the boundary's data systems alone register what
-/// the compile family staged.
+/// the `loading` family staged.
 #[test]
 fn script_components_register_while_editing() {
     let declarations = Reserve::new();
@@ -153,7 +153,7 @@ fn script_components_register_while_editing() {
 // ─── Played ─────────────────────────────────────────────────────────────────
 
 /// One running session, wired as the engine wires one: the reserve the
-/// compile family stages into, the catalog, the demand on the script flow, the
+/// `loading` family stages into, the catalog, the demand on the script flow, the
 /// scripting world.
 struct Session {
     world: World,

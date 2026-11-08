@@ -24,7 +24,7 @@
 //!
 //! It decodes nothing itself: a changed asset some copy holds is asked for
 //! again ([`request`](crate::asset::AssetService::request)), and decoded off
-//! the frame by the decode family. Until it lands the last good copy keeps
+//! the frame by the `loading` family. Until it lands the last good copy keeps
 //! serving; the copies are refreshed on the frame it lands — taken in by
 //! `asset_intake` at that frame's boundary, before this runs. An asset the
 //! index alone says is gone is dropped on the frame its change is seen.
@@ -166,7 +166,7 @@ fn asset_reload_system(
 
 impl Reload<'_> {
     /// Asks the service for `uuid` again — its copy was dropped when the
-    /// change was announced, so the decode family decodes it off the frame.
+    /// change was announced, so the `loading` family decodes it off the frame.
     /// `last_good` is the copy the engine shows meanwhile.
     fn reload<A: Asset>(&self, uuid: &AssetUUID, last_good: &AssetHandle<A>) -> Reloaded<A> {
         let Ok(mut svc) = self.service.lock() else {
@@ -559,7 +559,7 @@ mod tests {
         }
 
         /// One frame of the asset systems and nothing more: the boundary's
-        /// intake of what the decode family landed, then the PreExtract
+        /// intake of what the `loading` family landed, then the PreExtract
         /// reload and resolver. Nothing is decoded during it: what it files
         /// waits for [`Self::decode`].
         fn frame(&self, world: &mut World) {
@@ -579,7 +579,7 @@ mod tests {
             }
         }
 
-        /// One run of the decode family between two frames: every decode
+        /// One run of the `loading` family between two frames: every decode
         /// filed, decoded and received under its lease. Returns how many
         /// requests it took.
         fn decode(&self) -> usize {
@@ -1721,9 +1721,9 @@ mod tests {
         );
     }
 
-    // ── Through the decode family ───────────────────────────────────────────
+    // ── Through the `loading` family ───────────────────────────────────────────
     //
-    // A changed asset is decoded again off the frame, by the decode family,
+    // A changed asset is decoded again off the frame, by the `loading` family,
     // as a first load is. The frame that sees the change decodes nothing; the
     // engine keeps showing the last good copy; the refresh — re-tagging, the
     // stale projection retired — runs on the frame the new value lands, its
@@ -1731,7 +1731,7 @@ mod tests {
 
     /// The frame that sees a change files the decode and decodes nothing
     /// itself: the service counts no new load, the entity still shows the
-    /// value it had, and the decode family has one request to take.
+    /// value it had, and the `loading` family has one request to take.
     #[test]
     fn a_change_is_not_decoded_on_the_frame_it_is_seen() {
         let kmat_path = "materials/seen.kmat";
@@ -1759,7 +1759,7 @@ mod tests {
         assert_eq!(
             project.decode(),
             1,
-            "the changed material is filed once for the decode family"
+            "the changed material is filed once for the `loading` family"
         );
     }
 
@@ -1923,7 +1923,7 @@ mod tests {
     }
 
     /// A reload whose decode fails is learned when the failure lands from
-    /// the decode family: the entity keeps the last good value and its
+    /// the `loading` family: the entity keeps the last good value and its
     /// projection, and an entity naming the asset afterwards sees that value.
     #[test]
     fn a_reload_that_fails_off_the_frame_keeps_the_last_good_value() {

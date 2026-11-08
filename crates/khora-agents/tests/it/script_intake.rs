@@ -16,7 +16,7 @@
 //! boundary, while the scripting family is on.** The `script_intake` data
 //! system runs after the declarations are registered at the frame's
 //! `Boundary`, before the script flow projects — so a recompiled module the
-//! compile family announced and staged is installed before the flow projects
+//! `loading` family announced and staged is installed before the flow projects
 //! what it reads, and its first `Get` finds the component. While the family
 //! is off it is skipped: the reloads wait in the reserve, the engine's events
 //! are dropped at each boundary; resuming clears the last session's own mail.
@@ -216,7 +216,7 @@ impl Wiring {
     }
 
     /// `HEARING` compiled as `ai/guard.erg`, staged with what it reads
-    /// (nothing) announced, as the compile family stages it.
+    /// (nothing) announced, as the `loading` family stages it.
     fn send_the_guard(&self) {
         let result = khora_script::compile_module(
             &khora_script::MemoryLoader::new().with("ai/guard.erg", HEARING),

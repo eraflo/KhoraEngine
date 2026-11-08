@@ -360,8 +360,8 @@ fn the_engines_registrations_declare_their_roles() {
 /// engine's events are taken and dropped between sessions; a contact is read
 /// by the `collision_to_script` cursor and dropped between sessions. A
 /// recompiled module has no mailbox: it waits in the reserve, which holds it
-/// across sessions. The compile family takes the pump's requests and holds
-/// them between sessions.
+/// across sessions. The `loading` family takes the pump's compile requests
+/// and holds them between sessions.
 #[test]
 fn the_scripting_familys_mailboxes_are_declared() {
     use khora_sdk::khora_core::event::{BetweenSessions, Mailbox, Reader};
@@ -389,7 +389,7 @@ fn the_scripting_familys_mailboxes_are_declared() {
     assert_eq!(
         declared("::CompileRequest"),
         (
-            khora_sdk::AgentId::new("compile"),
+            khora_sdk::AgentId::new("loading"),
             Reader::Take,
             BetweenSessions::Hold
         )

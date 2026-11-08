@@ -21,7 +21,7 @@ use crate::lane::Staged;
 
 use super::AssetUUID;
 
-/// What one decode of an asset produced: staged by the decode family, taken
+/// What one decode of an asset produced: staged by the `loading` family, taken
 /// at a frame's boundary by the asset intake.
 #[derive(Debug)]
 pub struct Decoded {
@@ -42,5 +42,5 @@ pub struct Decoded {
 
 impl Supersedes for Decoded {}
 
-/// Staged by the decode family, taken by the asset intake.
+/// Staged by the `loading` family, taken by the asset intake.
 impl Staged for Decoded {}

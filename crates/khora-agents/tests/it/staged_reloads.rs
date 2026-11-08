@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! How a recompiled program reaches the scripting world in these tests: the
-//! way every program does, staged by the compile family into the runtime's
+//! way every program does, staged by the `loading` family into the runtime's
 //! reserve, for the scripting family's intake to take.
 
 use khora_core::lane::{Reserve, Staged, Staging};

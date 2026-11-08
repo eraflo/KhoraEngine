@@ -61,7 +61,7 @@ pub(super) type Opened = (
 );
 
 /// What one [`AssetReader::decode`] produced; defined in `khora-core`, where
-/// the decode family's lane names it.
+/// the `loading` family's lanes names it.
 pub use khora_core::asset::Decoded;
 
 impl AssetReader {

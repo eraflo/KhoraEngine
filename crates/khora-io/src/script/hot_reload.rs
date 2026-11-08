@@ -73,12 +73,12 @@ use crate::script::layout::{
 };
 use crate::script::mounted::MountedScripts;
 
-/// How many requests may wait for the compile family. Requests of one root
+/// How many requests may wait for the `loading` family. Requests of one root
 /// replace a waiting one they cover, so repeated saves never fill this; a mass
 /// change (a branch switch) files one request per root a run.
 const REQUEST_BACKLOG: usize = 1024;
 
-/// The channel the pump files its requests on, for the compile family to take.
+/// The channel the pump files its requests on, for the `loading` family to take.
 pub fn request_channel() -> Channel<CompileRequest> {
     Channel::bounded(REQUEST_BACKLOG, WhenFull::DropOldest)
 }
@@ -306,7 +306,7 @@ fn script_hot_reload_system(
             by_provider.entry(provider).or_default().insert(module);
         }
     }
-    // Filed, never compiled here: the compile family compiles off the frame,
+    // Filed, never compiled here: the `loading` family compiles off the frame,
     // and what it hands on lands at a later frame's boundary.
     if let Some(requests) = requests {
         for (root, modules) in by_provider {

@@ -15,7 +15,7 @@
 //! **An asset asked for and not cached is decoded off the frame, and lands at
 //! a frame's boundary.** `AssetService::request` answers at once — the
 //! handle, `Pending` or `Failed` — and files one `DecodeRequest` per asset
-//! while it is pending. The decode family's work is played here by hand, as
+//! while it is pending. The `loading` family's work is played here by hand, as
 //! the scheduler runs it at the background: the requests filed are taken,
 //! decoded through the service's `AssetDecoding` and staged under their
 //! lease into the engine's reserve. The `asset_intake` DataSystem then takes
@@ -66,7 +66,7 @@ fn run_system(name: &str, world: &mut World, runtime: &Runtime) {
 /// A project's assets on disk, indexed and served by a real `AssetService`
 /// (the inventory decoders, and meshes through the `MeshDispatcher`), wired
 /// into a runtime as the engine wires it: the service, the `AssetStore`, the
-/// reserve the decode family stages into.
+/// reserve the `loading` family stages into.
 pub(crate) struct Project {
     dir: tempfile::TempDir,
     pub(crate) service: Arc<Mutex<AssetService>>,
@@ -134,7 +134,7 @@ impl Project {
     }
 
     /// The requests the service filed and nothing took yet, taken — what
-    /// the decode family's lane takes.
+    /// the `loading` family's lanes take.
     pub(crate) fn filed(&self) -> Vec<DecodeRequest> {
         let requests = self.svc().decode_requests();
         requests.drain()
@@ -160,7 +160,7 @@ impl Project {
         self.reserve.receive(staging);
     }
 
-    /// One whole run of the decode family: what was filed, decoded and
+    /// One whole run of the `loading` family: what was filed, decoded and
     /// received. Returns how many requests it took.
     pub(crate) fn background(&self) -> usize {
         let filed = self.filed();
@@ -941,7 +941,7 @@ fn a_request_filed_before_a_swap_and_decoded_after_it_holds_to_the_incoming_chan
         target.announce_replacing(&own);
         target.adopt_decode_requests(&mut own);
     }
-    // The decode family takes the waiting request now: it decodes from the
+    // The `loading` family takes the waiting request now: it decodes from the
     // incoming project.
     let in_flight = engine.decode(&waiting);
     project.write(FONT, b"incoming v2");

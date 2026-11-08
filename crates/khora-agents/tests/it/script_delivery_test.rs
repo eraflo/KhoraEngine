@@ -114,7 +114,7 @@ fn a_runtime_with_scripting() -> (Runtime, Arc<Mutex<ScriptRuntime>>) {
 }
 
 /// **A staged reload reaches the scripting world**, taken by the intake from
-/// the reserve the compile family stages into.
+/// the reserve the `loading` family stages into.
 #[test]
 fn a_staged_reload_reaches_the_scripting_world_through_the_intake() {
     let reloads = khora_core::lane::Reserve::new();

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! **A mounted script edited on disk is recompiled off the frame, and its
-//! new program runs.** The engine boots the `compile` family beside the
+//! new program runs.** The engine boots the `loading` family beside the
 //! scripting one; the hot-reload pump files a request for each save, the
 //! family's lane compiles it at the background, and what it staged lands at
 //! a frame's boundary: the declarations registered by `script_components`,
@@ -42,7 +42,8 @@ use khora_sdk::{
 };
 
 const SCRIPT: AgentId = khora_sdk::khora_core::script::SCRIPT;
-const COMPILE: AgentId = AgentId::new("compile");
+/// The family that compiles scripts off the frame.
+const LOADING: AgentId = AgentId::new("loading");
 
 /// The most frames a save may take to land: the watcher's latency, the
 /// compile at the background, the frame start that hands it over. Frames are
@@ -279,10 +280,10 @@ fn game_engine() -> EngineCore<Game> {
 
 // ─── The family ─────────────────────────────────────────────────────────────
 
-/// **The engine boots the compile family**, a family of its own beside the
+/// **The engine boots the `loading` family**, a family of its own beside the
 /// scripting one, and it is on while the scripts are off.
 #[test]
-fn the_engine_boots_the_compile_family_on_while_the_scripts_are_off() {
+fn the_engine_boots_the_loading_family_on_while_the_scripts_are_off() {
     let mut engine = tool_engine();
     frame(&mut engine, Ask::Nothing);
 
@@ -293,13 +294,13 @@ fn the_engine_boots_the_compile_family_on_while_the_scripts_are_off() {
         .lock()
         .expect("the registry lock")
         .all_ids();
-    assert!(families.contains(&COMPILE), "booted families: {families:?}");
+    assert!(families.contains(&LOADING), "booted families: {families:?}");
     let activation = activation(engine.runtime());
     assert!(
         !activation.is_active(SCRIPT),
         "the premise: the scripts are off"
     );
-    assert!(activation.is_active(COMPILE), "the compile family is on");
+    assert!(activation.is_active(LOADING), "the loading family is on");
 }
 
 // ─── While editing ──────────────────────────────────────────────────────────
@@ -468,7 +469,7 @@ fn a_compile_filed_before_an_unmount_does_not_bring_its_module_back() {
 /// **A project opened in place of one saved just before runs its own
 /// module, never the closed project's.** Both projects hold `counter.erg`.
 /// The first is saved, the pump files its request, and the editor switches
-/// to the second (unmount, mount) before the compile family took it: the
+/// to the second (unmount, mount) before the loading family took it: the
 /// counter that runs must be the second project's, frame after frame.
 #[test]
 fn a_compile_filed_before_a_project_switch_does_not_replace_the_new_projects_module() {

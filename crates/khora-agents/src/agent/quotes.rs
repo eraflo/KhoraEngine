@@ -54,8 +54,7 @@ pub(super) fn drifted(base: Duration, now: Duration) -> bool {
 }
 
 impl LaneAgent {
-    /// Quotes every lane but `ran`, the lane of the row that just ran — its
-    /// run priced it — on this frame's inputs, and records the full quote:
+    /// Quotes every lane on this frame's inputs, and records the full quote:
     /// when, on which target, and each row's price then.
     ///
     /// The agent reads no world state to decide when: a change in the world
@@ -65,9 +64,8 @@ impl LaneAgent {
         &mut self,
         context: &EngineContext<'_>,
         frame: Option<&FrameContext>,
-        ran: Option<usize>,
     ) {
-        for lane in (0..self.lanes.len()).filter(|lane| Some(*lane) != ran) {
+        for lane in 0..self.lanes.len() {
             self.quote_lane(lane, context, frame);
         }
         self.full_quote = Some(FullQuote {

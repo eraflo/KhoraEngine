@@ -107,7 +107,7 @@ pub fn install(runtime: &mut Runtime) {
     if resources.get::<Arc<MountedScripts>>().is_none() {
         resources.insert(Arc::new(MountedScripts::default()));
     }
-    // The compile family's compiler, reporting to what is installed above.
+    // The `loading` family's compiler, reporting to what is installed above.
     if resources.get::<Arc<dyn ScriptCompiler>>().is_none() {
         let compiler: Arc<dyn ScriptCompiler> = Arc::new(ProjectCompiler::from_runtime(runtime));
         runtime.resources.insert(compiler);
