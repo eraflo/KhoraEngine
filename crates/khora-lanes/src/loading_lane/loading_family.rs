@@ -15,7 +15,7 @@
 //! The `loading` family: what its lanes stage, and who negotiates for it.
 
 use khora_core::agent::gorna::AgentId;
-use khora_core::asset::Decoded;
+use khora_core::asset::{Decoded, IndexedAssets};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::{LaneKind, Leases};
 use khora_data::scene::loading::PreparedLoad;
@@ -38,6 +38,10 @@ impl LaneFamily for LoadingFamily {
 /// its own output by type.
 #[derive(LaneOutputs)]
 pub struct LoadingOutputs {
+    /// One per project indexed, each under the lease of its project staying
+    /// the one open.
+    #[staged]
+    pub indexed: Leases<IndexedAssets>,
     /// One per asset decoded, each under the lease of its asset's generation.
     #[staged]
     pub decoded: Leases<Decoded>,
@@ -66,6 +70,13 @@ khora_script::inventory::submit! {
 }
 khora_script::inventory::submit! {
     khora_core::event::Mailbox::of::<khora_script::toolchain::CompileRequest>(
+        <LoadingFamily as LaneFamily>::AGENT,
+        khora_core::event::Reader::Take,
+        khora_core::event::BetweenSessions::Hold,
+    )
+}
+khora_script::inventory::submit! {
+    khora_core::event::Mailbox::of::<khora_core::asset::IndexRequest>(
         <LoadingFamily as LaneFamily>::AGENT,
         khora_core::event::Reader::Take,
         khora_core::event::BetweenSessions::Hold,

@@ -16,7 +16,7 @@
 
 use std::sync::Arc;
 
-use khora_core::asset::{AssetDecoding, DecodeRequest};
+use khora_core::asset::{AssetDecoding, AssetIndexing, DecodeRequest, IndexRequest};
 use khora_core::lane::io::Budget;
 use khora_data::scene::loading::{SceneLoadRequest, SceneLoading};
 use khora_macros::LaneInputs;
@@ -27,6 +27,9 @@ use khora_script::toolchain::{CompileRequest, ScriptCompiler};
 /// several. What a run leaves in a `#[take]` field goes back to its channel.
 #[derive(LaneInputs)]
 pub struct LoadingInputs<'f> {
+    /// The project indexes filed since the last run.
+    #[take]
+    pub indexes: Vec<IndexRequest>,
     /// The scene loads filed since the last run.
     #[take]
     pub scenes: Vec<SceneLoadRequest>,
@@ -36,6 +39,9 @@ pub struct LoadingInputs<'f> {
     /// The asset decodes filed since the last run.
     #[take]
     pub assets: Vec<DecodeRequest>,
+    /// Who indexes the projects.
+    #[resource]
+    pub indexing: &'f Arc<dyn AssetIndexing>,
     /// Who prepares the scene loads.
     #[resource]
     pub loading: &'f Arc<dyn SceneLoading>,

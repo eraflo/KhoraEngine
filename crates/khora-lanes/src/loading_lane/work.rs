@@ -14,18 +14,23 @@
 
 //! What a unit of each kind of load costs and does, whichever lane loads it.
 //!
-//! A unit is one scene load, one script root — every waiting request of that
-//! root, merged into one compile — or one asset decode. The lanes differ only
+//! A unit is one project index, one scene load, one script root — every
+//! waiting request of that root, merged into one compile — or one asset
+//! decode. The lanes differ only
 //! in how many units a run takes.
 
 use std::time::Duration;
 
-use khora_core::asset::Decoded;
+use khora_core::asset::{Decoded, IndexedAssets};
 use khora_core::lane::contract::LaneReport;
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_script::toolchain::{CompileRequest, Compiled};
 
 use super::{LoadingInputs, LoadingOutputs};
+
+/// What indexing one project is priced at before any is measured: a walk of
+/// a few thousand files, the meshes among them read for their parts.
+const INDEX_COST: Duration = Duration::from_millis(50);
 
 /// What one scene load is priced at before any is measured: a scene of a few
 /// thousand entities, read and staged.
@@ -42,6 +47,8 @@ const DECODE_COST: Duration = Duration::from_millis(4);
 /// How many units of each kind a run takes, from the front of each field.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) struct Taking {
+    /// The first project indexes.
+    pub(super) indexes: usize,
     /// The first scene loads.
     pub(super) scenes: usize,
     /// The first script roots, in the order each was first filed.
@@ -52,6 +59,8 @@ pub(super) struct Taking {
 
 /// The work waiting in `inputs`, by kind and unit.
 pub(super) struct Waiting {
+    /// Each project index's cost, in filing order.
+    indexes: Vec<Duration>,
     /// Each scene load's cost, in filing order.
     scenes: Vec<Duration>,
     /// Each script root's cost, in the order each was first filed.
@@ -74,6 +83,7 @@ impl Waiting {
             })
             .collect();
         Self {
+            indexes: vec![INDEX_COST; inputs.indexes.len()],
             scenes: vec![SCENE_COST; inputs.scenes.len()],
             roots,
             assets: vec![DECODE_COST; inputs.assets.len()],
@@ -83,13 +93,15 @@ impl Waiting {
     /// Every unit.
     pub(super) fn all(&self) -> Taking {
         Taking {
+            indexes: self.indexes.len(),
             scenes: self.scenes.len(),
             roots: self.roots.len(),
             assets: self.assets.len(),
         }
     }
 
-    /// The units taken in turn — the scenes, then the script roots, then the
+    /// The units taken in turn — the project indexes, which the scenes and the
+    /// assets are read through, then the scenes, the script roots and the
     /// assets — while their cost stays within `budget`, and always the first;
     /// everything without a budget. The first unit that does not fit stops
     /// the taking, so what is left keeps its order.
@@ -97,9 +109,9 @@ impl Waiting {
         let Some(budget) = budget else {
             return self.all();
         };
-        let mut taken = [0usize; 3];
+        let mut taken = [0usize; 4];
         let mut spent = Duration::ZERO;
-        let kinds = [&self.scenes, &self.roots, &self.assets];
+        let kinds = [&self.indexes, &self.scenes, &self.roots, &self.assets];
         'taking: for (kind, costs) in kinds.into_iter().enumerate() {
             for cost in costs {
                 let first = taken.iter().all(|count| *count == 0);
@@ -111,9 +123,10 @@ impl Waiting {
             }
         }
         Taking {
-            scenes: taken[0],
-            roots: taken[1],
-            assets: taken[2],
+            indexes: taken[0],
+            scenes: taken[1],
+            roots: taken[2],
+            assets: taken[3],
         }
     }
 
@@ -135,7 +148,8 @@ impl Waiting {
 
     /// The time `taking` costs.
     fn time(&self, taking: Taking) -> Duration {
-        self.scenes[..taking.scenes].iter().sum::<Duration>()
+        self.indexes[..taking.indexes].iter().sum::<Duration>()
+            + self.scenes[..taking.scenes].iter().sum::<Duration>()
             + self.roots[..taking.roots].iter().sum::<Duration>()
             + self.assets[..taking.assets].iter().sum::<Duration>()
     }
@@ -176,6 +190,23 @@ pub(super) fn load(
     inputs: &mut LoadingInputs<'_>,
     out: &mut LoadingOutputs,
 ) -> LaneReport {
+    // The project indexes in filing order, each under its own lease: a
+    // project replaced while the run is out drops its index, and only it.
+    let indexes: Vec<_> = inputs.indexes.drain(..taking.indexes).collect();
+    for request in indexes {
+        let (indexed, lease) = catch_unit(|| inputs.indexing.index_leased(&request))
+            .unwrap_or_else(|why| {
+                let indexed = IndexedAssets {
+                    ticket: request.ticket,
+                    kind: request.kind,
+                    project_root: request.project_root.clone(),
+                    index: Err(format!("indexing the project panicked: {why}")),
+                };
+                (indexed, None)
+            });
+        out.indexed.push(vec![indexed], lease);
+    }
+
     // The scenes in filing order, each under its own lease: the boundary
     // commits them in that order.
     let scenes: Vec<_> = inputs.scenes.drain(..taking.scenes).collect();

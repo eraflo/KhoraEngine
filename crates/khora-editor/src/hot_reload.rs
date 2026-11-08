@@ -18,14 +18,20 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::AssetEntry;
 use khora_sdk::EditorState;
-use khora_sdk::{AssetChangeKind, AssetSource};
+use khora_sdk::{AssetChangeKind, AssetSource, IndexHub};
 
 use crate::project_vfs::ProjectVfs;
 
 /// Drain the project's filesystem watcher and apply the appropriate
-/// invalidation / reindex actions. The asset browser cache is rebuilt
-/// whenever a full reindex was queued.
-pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<EditorState>>) {
+/// invalidation / reindex actions. A full reindex is filed with `indexes`,
+/// the engine's index hub, and its ticket kept in the editor state, for
+/// [`land_reindex`] to read; with no hub, it is done on the frame and the
+/// asset browser cache rebuilt at once.
+pub fn pump(
+    pvfs_mutex: &Arc<Mutex<ProjectVfs>>,
+    editor_state: &Arc<Mutex<EditorState>>,
+    indexes: Option<&IndexHub>,
+) {
     let Ok(mut pvfs) = pvfs_mutex.lock() else {
         return;
     };
@@ -77,6 +83,10 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
     if !needs_reindex {
         return;
     }
+    if let Some(indexes) = indexes {
+        file_reindex(&mut pvfs, editor_state, indexes);
+        return;
+    }
     if let Err(e) = pvfs.rebuild_index() {
         log::error!("Hot reload: failed to rebuild index: {:#}", e);
         return;
@@ -88,6 +98,63 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
         state.asset_dirs = dirs;
         state.asset_epoch = state.asset_epoch.wrapping_add(1);
     }
+}
+
+/// Reads the outcome of the reindex the pump filed with `indexes`, once it
+/// landed: the project takes it in ([`ProjectVfs::index_landed`]) and the
+/// asset browser cache is rebuilt; a failure is reported. Nothing while it
+/// is in flight, or when none was filed.
+pub fn land_reindex(
+    pvfs_mutex: &Arc<Mutex<ProjectVfs>>,
+    editor_state: &Arc<Mutex<EditorState>>,
+    indexes: &IndexHub,
+) {
+    let Some(ticket) = editor_state.lock().ok().and_then(|state| state.reindexing) else {
+        return;
+    };
+    let Some(outcome) = indexes.take_outcome(ticket) else {
+        return;
+    };
+    let Ok(mut pvfs) = pvfs_mutex.lock() else {
+        return;
+    };
+    if let Ok(mut state) = editor_state.lock() {
+        state.reindexing = None;
+    }
+    match outcome {
+        Ok(()) => {
+            pvfs.index_landed();
+            let entries = collect_asset_entries(&pvfs);
+            let dirs = pvfs.list_dirs();
+            if let Ok(mut state) = editor_state.lock() {
+                state.asset_entries = entries;
+                state.asset_dirs = dirs;
+                state.asset_epoch = state.asset_epoch.wrapping_add(1);
+            }
+        }
+        Err(why) => log::error!("Hot reload: failed to rebuild index: {why}"),
+    }
+    // Files that came or went while it was built are indexed by another.
+    if pvfs.take_reindex_again() {
+        file_reindex(&mut pvfs, editor_state, indexes);
+    }
+}
+
+/// Files a reindex of the project with `indexes` and keeps its ticket; while
+/// one is in flight, another is filed once it lands, so a burst of changes is
+/// indexed once more, not once per change.
+fn file_reindex(pvfs: &mut ProjectVfs, editor_state: &Arc<Mutex<EditorState>>, indexes: &IndexHub) {
+    let Ok(mut state) = editor_state.lock() else {
+        return;
+    };
+    if state
+        .reindexing
+        .is_some_and(|ticket| indexes.is_pending(ticket))
+    {
+        pvfs.reindex_again();
+        return;
+    }
+    state.reindexing = Some(indexes.file(pvfs.root.clone(), khora_sdk::IndexKind::Reindex));
 }
 
 /// Build an `AssetEntry` cache from the current VFS contents. Used by the
@@ -281,7 +348,7 @@ mod tests {
         };
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline && !listed(&state) {
-            pump(&project.vfs, &state);
+            pump(&project.vfs, &state, None);
             std::thread::sleep(Duration::from_millis(50));
         }
 
@@ -348,7 +415,7 @@ mod tests {
         };
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline && !listed(&state) {
-            pump(&project.vfs, &state);
+            pump(&project.vfs, &state, None);
             std::thread::sleep(Duration::from_millis(50));
         }
 
@@ -362,6 +429,291 @@ mod tests {
                 .iter()
                 .map(|entry| entry.name.clone())
                 .collect::<Vec<_>>()
+        );
+    }
+
+    /// The engine's side of one frame, for a project index: the `loading`
+    /// family indexes what was filed, each result staged under its lease and
+    /// received by the reserve, as the next frame start receives it; then
+    /// the boundary's `asset_intake` and `asset_index_intake` take it in.
+    fn engine_frame(runtime: &khora_sdk::Runtime) {
+        use khora_sdk::khora_core::asset::{AssetIndexing, IndexRequest};
+        use khora_sdk::khora_core::event::Channel;
+        use khora_sdk::khora_core::lane::{OutputDeck, Reserve, Staging};
+        use khora_sdk::khora_data::ecs::{DataSystemRegistration, SystemContext, Tick, World};
+
+        let requests = runtime
+            .resources
+            .get::<Channel<IndexRequest>>()
+            .cloned()
+            .expect("the runtime holds the index requests");
+        let indexing = runtime
+            .resources
+            .get::<Arc<dyn AssetIndexing>>()
+            .cloned()
+            .expect("the runtime holds the indexer");
+        let reserve = runtime
+            .resources
+            .get::<Reserve>()
+            .cloned()
+            .expect("the runtime holds the reserve");
+        let mut staging = Staging::new();
+        for request in requests.drain() {
+            let (indexed, lease) = indexing.index_leased(&request);
+            match lease {
+                Some(lease) => staging.stage_while(vec![indexed], lease),
+                None => staging.stage(vec![indexed]),
+            }
+        }
+        reserve.receive(staging);
+
+        let mut world = World::new();
+        for name in ["asset_intake", "asset_index_intake"] {
+            let system = khora_sdk::inventory::iter::<DataSystemRegistration>
+                .into_iter()
+                .find(|system| system.name == name)
+                .unwrap_or_else(|| panic!("`{name}` is not registered"));
+            (system.run)(
+                &mut world,
+                runtime,
+                &mut OutputDeck::new(),
+                SystemContext {
+                    since: Tick(0),
+                    resumed: false,
+                    scope: None,
+                },
+            );
+        }
+    }
+
+    /// **A file created is indexed off the frame.** The project serves the
+    /// engine's asset service, and the engine holds its index hub. A file is
+    /// created: the pump files a reindex with the hub and keeps its ticket,
+    /// without reindexing on the frame — the service does not know the file,
+    /// the browser's entries and epoch are unchanged, the project's
+    /// generation has not moved. Once the engine's frames index it and land
+    /// it, the editor reads the ticket's outcome: the entries list the file,
+    /// the epoch tells the browser to rescan, and the project's generation
+    /// moved.
+    #[test]
+    fn a_file_created_is_indexed_off_the_frame() {
+        use std::sync::Mutex;
+        use std::time::{Duration, Instant};
+
+        use khora_sdk::khora_core::lane::Reserve;
+        use khora_sdk::{install_indexing, EditorState, IndexHub, Runtime};
+
+        use super::{land_reindex, pump};
+        use crate::project_vfs::no_assets;
+        use crate::tests::gltf_fixture::{GltfProject, TRIANGLE_OBJ};
+
+        const CRATE: &str = "meshes/crate.obj";
+        const SHIP: &str = "meshes/ship.obj";
+
+        let project = GltfProject::with("index-off-the-frame", &[(CRATE, TRIANGLE_OBJ)]);
+        // The engine: the asset service the project moves into, the reserve
+        // the background stages into, and the index hub.
+        let shared = Arc::new(Mutex::new(no_assets()));
+        project
+            .vfs
+            .lock()
+            .expect("the project")
+            .share_assets(&shared);
+        let mut runtime = Runtime::new();
+        runtime.resources.insert(Reserve::new());
+        runtime.services.insert(Arc::clone(&shared));
+        install_indexing(&mut runtime);
+        let hub = runtime
+            .resources
+            .get::<Arc<IndexHub>>()
+            .cloned()
+            .expect("`install_indexing` installs the hub");
+
+        let entries = collect_asset_entries(&project.vfs.lock().expect("the project"));
+        let state = Arc::new(Mutex::new(EditorState {
+            project_folder: Some(project.root.to_string_lossy().into_owned()),
+            asset_entries: entries,
+            asset_epoch: 1,
+            ..EditorState::default()
+        }));
+        let generation = project.vfs.lock().expect("the project").generation();
+        // The watcher was armed when the project opened; give it a moment.
+        std::thread::sleep(Duration::from_millis(150));
+
+        std::fs::write(project.path(SHIP), TRIANGLE_OBJ).expect("the file is created");
+        let added = project.uuid(SHIP);
+        let filed =
+            |state: &Arc<Mutex<EditorState>>| state.lock().expect("the editor state").reindexing;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline && filed(&state).is_none() {
+            pump(&project.vfs, &state, Some(&hub));
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        let ticket = filed(&state).expect("the pump filed a reindex and kept its ticket");
+        assert!(hub.is_pending(ticket), "the reindex is in flight");
+        {
+            let state_now = state.lock().expect("the editor state");
+            assert_eq!(state_now.asset_epoch, 1, "the browser is not told yet");
+            assert!(
+                !state_now
+                    .asset_entries
+                    .iter()
+                    .any(|entry| entry.uuid == added),
+                "the entries are not refreshed on the frame"
+            );
+        }
+        assert!(
+            shared
+                .lock()
+                .expect("the service")
+                .index()
+                .get_metadata(&added)
+                .is_none(),
+            "the pump did not reindex on the frame"
+        );
+        assert_eq!(
+            project.vfs.lock().expect("the project").generation(),
+            generation,
+            "nothing was reindexed yet"
+        );
+
+        // Read before the engine's frames: still in flight, nothing changes.
+        land_reindex(&project.vfs, &state, &hub);
+        assert_eq!(filed(&state), Some(ticket), "still waiting for its outcome");
+
+        for _ in 0..crate::tests::scene_loads::SETTLE_FRAMES {
+            engine_frame(&runtime);
+            land_reindex(&project.vfs, &state, &hub);
+            if filed(&state).is_none() {
+                break;
+            }
+        }
+
+        let state_now = state.lock().expect("the editor state");
+        assert!(
+            state_now.reindexing.is_none(),
+            "the ticket's outcome was read"
+        );
+        assert!(
+            state_now
+                .asset_entries
+                .iter()
+                .any(|entry| entry.uuid == added),
+            "the entries list the new file: {:?}",
+            state_now
+                .asset_entries
+                .iter()
+                .map(|entry| entry.source_path.as_str())
+                .collect::<Vec<_>>()
+        );
+        assert_ne!(state_now.asset_epoch, 1, "the browser is told to rescan");
+        drop(state_now);
+        assert!(
+            project.vfs.lock().expect("the project").generation() > generation,
+            "the project's generation moved"
+        );
+    }
+
+    /// **A reindex filed for a project closed since lands nothing in the one
+    /// opened.** The engine serves project A; a file is created in A and the
+    /// pump files a reindex of A. Before it lands, the user opens project B,
+    /// whose service moves into the engine's (`share_assets`, as
+    /// `before_agents` does on the frame a project opens). When A's reindex
+    /// lands, the engine's service must still index B's files and none of
+    /// A's, and the browser must list B's files, not A's.
+    #[test]
+    fn a_reindex_filed_for_a_project_closed_since_lands_nothing_in_the_next() {
+        use std::sync::Mutex;
+        use std::time::{Duration, Instant};
+
+        use khora_sdk::khora_core::lane::Reserve;
+        use khora_sdk::{install_indexing, EditorState, IndexHub, Runtime};
+
+        use super::{land_reindex, pump};
+        use crate::project_vfs::no_assets;
+        use crate::tests::gltf_fixture::{GltfProject, TRIANGLE_OBJ};
+
+        const CRATE: &str = "meshes/crate.obj";
+        const SHIP: &str = "meshes/ship.obj";
+        const BARREL: &str = "meshes/barrel.obj";
+
+        let a = GltfProject::with("reindex-closed-a", &[(CRATE, TRIANGLE_OBJ)]);
+        let b = GltfProject::with("reindex-closed-b", &[(BARREL, TRIANGLE_OBJ)]);
+        let shared = Arc::new(Mutex::new(no_assets()));
+        a.vfs.lock().expect("project A").share_assets(&shared);
+        let mut runtime = Runtime::new();
+        runtime.resources.insert(Reserve::new());
+        runtime.services.insert(Arc::clone(&shared));
+        install_indexing(&mut runtime);
+        let hub = runtime
+            .resources
+            .get::<Arc<IndexHub>>()
+            .cloned()
+            .expect("`install_indexing` installs the hub");
+
+        let state = Arc::new(Mutex::new(EditorState {
+            project_folder: Some(a.root.to_string_lossy().into_owned()),
+            asset_entries: collect_asset_entries(&a.vfs.lock().expect("project A")),
+            asset_epoch: 1,
+            ..EditorState::default()
+        }));
+        std::thread::sleep(Duration::from_millis(150));
+
+        // A file is created in A: the pump files a reindex of A.
+        std::fs::write(a.path(SHIP), TRIANGLE_OBJ).expect("the file is created");
+        let filed =
+            |state: &Arc<Mutex<EditorState>>| state.lock().expect("the editor state").reindexing;
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline && filed(&state).is_none() {
+            pump(&a.vfs, &state, Some(&hub));
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(
+            filed(&state).is_some(),
+            "the premise: the pump filed a reindex of A"
+        );
+
+        // The user opens B before it lands: B's service moves into the
+        // engine's, and B is the project the editor reads from now on.
+        b.vfs.lock().expect("project B").share_assets(&shared);
+        if let Ok(mut state) = state.lock() {
+            state.project_folder = Some(b.root.to_string_lossy().into_owned());
+            state.asset_entries = collect_asset_entries(&b.vfs.lock().expect("project B"));
+        }
+
+        for _ in 0..crate::tests::scene_loads::SETTLE_FRAMES {
+            engine_frame(&runtime);
+            land_reindex(&b.vfs, &state, &hub);
+            if filed(&state).is_none() {
+                break;
+            }
+        }
+
+        let (crate_a, ship_a, barrel_b) = (a.uuid(CRATE), a.uuid(SHIP), b.uuid(BARREL));
+        {
+            let service = shared.lock().expect("the service");
+            let index = service.index();
+            assert!(
+                index.get_metadata(&barrel_b).is_some(),
+                "the engine's service still indexes B's file"
+            );
+            assert!(
+                index.get_metadata(&crate_a).is_none() && index.get_metadata(&ship_a).is_none(),
+                "the engine's service, now B's, indexes none of A's files"
+            );
+        }
+        let listed: Vec<String> = state
+            .lock()
+            .expect("the editor state")
+            .asset_entries
+            .iter()
+            .map(|entry| entry.source_path.clone())
+            .collect();
+        assert!(
+            listed.iter().any(|path| path == BARREL)
+                && !listed.iter().any(|path| path == CRATE || path == SHIP),
+            "the browser lists B's files, not A's: {listed:?}"
         );
     }
 }

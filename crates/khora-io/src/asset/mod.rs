@@ -25,6 +25,8 @@ mod file;
 mod generations;
 mod id_registry;
 mod index;
+mod index_hub;
+pub use index_hub::{install_indexing, IndexHub, IndexOutcome};
 mod index_builder;
 mod io;
 mod manifest;

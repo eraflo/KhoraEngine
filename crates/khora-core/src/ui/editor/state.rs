@@ -318,14 +318,15 @@ pub struct EditorState {
     pub pending_assign_material: Option<AssetUUID>,
 
     // ── Asset explorer: file operations & scene drop ───
-    /// Every directory under `assets/` (forward-slash, relative), so the asset
-    /// browser can show empty folders the file-only VFS can't. Refreshed with
-    /// `asset_entries`.
+    /// Every directory under `assets/` (forward-slash, relative), empty ones
+    /// too, refreshed with `asset_entries`.
     pub asset_dirs: Vec<String>,
-    /// Bumped whenever `asset_entries`/`asset_dirs` change. The asset browser
-    /// rescans its flattened cache on epoch change instead of on entry-count
-    /// change (a modified-in-place file used to be missed).
+    /// Bumped whenever `asset_entries`/`asset_dirs` change: the asset browser
+    /// rescans its cache then, a file modified in place included.
     pub asset_epoch: u64,
+    /// The reindex the hot-reload pump filed, not landed yet: the entries,
+    /// dirs and epoch are refreshed once its outcome is read.
+    pub reindexing: Option<crate::asset::IndexTicket>,
     /// Create an empty folder at this forward-slash relative path under
     /// `assets/`. Consumed next frame.
     pub pending_create_folder: Option<String>,

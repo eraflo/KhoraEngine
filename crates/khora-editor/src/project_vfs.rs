@@ -80,6 +80,9 @@ pub struct ProjectVfs {
     /// The catalog a script's prefab `Spawn` is checked against, kept to the
     /// index: refilled at every reindex.
     prefab_catalog: Option<khora_sdk::khora_data::scene::PrefabCatalog>,
+    /// Whether files came or went while a reindex off the frame was in
+    /// flight: another is filed once it lands.
+    reindex_again: bool,
 }
 
 impl ProjectVfs {
@@ -147,6 +150,7 @@ impl ProjectVfs {
             registry,
             generation: std::sync::atomic::AtomicU64::new(0),
             prefab_catalog: None,
+            reindex_again: false,
         })
     }
 
@@ -213,6 +217,28 @@ impl ProjectVfs {
         }
         self.moved_on();
         Ok(())
+    }
+
+    /// Takes in a reindex done off the frame, once it landed in the engine's
+    /// asset service: the prefab catalog is refilled from the new index, and
+    /// the project's generation moves.
+    pub fn index_landed(&mut self) {
+        if let Some(catalog) = &self.prefab_catalog {
+            catalog.replace(khora_sdk::prefab_catalog(&self.assets()));
+        }
+        self.moved_on();
+    }
+
+    /// Asks for another reindex once the one in flight lands: files came or
+    /// went while it was built.
+    pub fn reindex_again(&mut self) {
+        self.reindex_again = true;
+    }
+
+    /// Whether another reindex was asked for while one was in flight; asking
+    /// clears it.
+    pub fn take_reindex_again(&mut self) -> bool {
+        std::mem::take(&mut self.reindex_again)
     }
 
     /// Reads `<root>/project.json` as untyped JSON. Project metadata isn't an

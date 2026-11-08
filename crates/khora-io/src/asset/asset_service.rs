@@ -19,7 +19,7 @@
 
 use std::any::{Any, TypeId};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -131,6 +131,10 @@ pub struct AssetService {
     /// the engine holds are. Never in the cache, so the new value replaces
     /// it when it lands.
     pub(super) meanwhile: HashMap<(AssetUUID, TypeId), Box<dyn Any + Send + Sync>>,
+    /// The project whose loose `assets/` folder it serves, when it serves
+    /// one: what a project index filed off the frame must be for to be
+    /// taken in. `None` for a pack.
+    project_root: Option<PathBuf>,
 }
 
 /// Sends `AssetChanged(uuid)` on `changes`, noting in `lost` if the full
@@ -186,7 +190,20 @@ impl AssetService {
             generations: Arc::new(Generations::default()),
             reloading: HashSet::new(),
             meanwhile: HashMap::new(),
+            project_root: None,
         })
+    }
+
+    /// The project whose loose `assets/` folder this service serves; `None`
+    /// for a pack.
+    pub fn project_root(&self) -> Option<&Path> {
+        self.project_root.as_deref()
+    }
+
+    /// Records that this service serves the loose `assets/` folder of the
+    /// project at `project_root`.
+    pub(crate) fn serve_project(&mut self, project_root: &Path) {
+        self.project_root = Some(project_root.to_path_buf());
     }
 
     /// Returns a reference to the underlying VFS for metadata enumeration
@@ -274,6 +291,7 @@ impl AssetService {
         let io = Box::new(FileLoader::new(&assets_root));
         let mut svc = Self::new(&index_bytes, io, metrics_registry, None)?;
         svc.register_default_decoders(&assets_root);
+        svc.serve_project(project_root);
         Ok(svc)
     }
 

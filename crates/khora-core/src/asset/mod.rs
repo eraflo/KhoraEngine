@@ -28,6 +28,7 @@
 //! crates.
 
 mod asset_decoding;
+mod asset_indexing;
 mod asset_kind;
 mod asset_uuid;
 mod decode_request;
@@ -35,18 +36,23 @@ mod decoded;
 /// Font asset definitions and metadata.
 pub mod font;
 mod handle;
+mod index_request;
+mod indexed_assets;
 mod materials;
 mod metadata;
 /// Ergon script modules, as the asset system holds them.
 pub mod script;
 
 pub use asset_decoding::AssetDecoding;
+pub use asset_indexing::AssetIndexing;
 pub use asset_kind::AssetKind;
 pub use asset_uuid::*;
 pub use decode_request::DecodeRequest;
 pub use decoded::Decoded;
 pub use handle::AssetHandle as Handle;
 pub use handle::*;
+pub use index_request::{IndexKind, IndexRequest, IndexTicket};
+pub use indexed_assets::IndexedAssets;
 pub use materials::*;
 pub use metadata::*;
 pub use script::ScriptModule;

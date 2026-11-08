@@ -146,11 +146,12 @@ pub use khora_telemetry::TelemetryService;
 pub use khora_infra::telemetry::memory_monitor::MemoryMonitor;
 
 // I/O
-pub use khora_core::asset::AssetSource;
+pub use khora_core::asset::{AssetSource, IndexKind, IndexTicket};
 pub use khora_core::scene::{SceneFile, SerializationGoal};
 pub use khora_data::assets::SoundData;
 pub use khora_data::scene::record::LoadReport;
 pub use khora_io::asset::decoders::audio::SymphoniaDecoder;
+pub use khora_io::asset::{install_indexing, IndexHub, IndexOutcome};
 pub use khora_io::asset::{
     AssetChangeEvent, AssetChangeKind, AssetIdRegistry, AssetIo, AssetReader, AssetService,
     AssetWatch, AssetWatcher, AssetWriter, FileLoader, FileSystemResolver, IndexBuilder,

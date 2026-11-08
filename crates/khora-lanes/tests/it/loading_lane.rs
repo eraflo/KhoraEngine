@@ -14,15 +14,17 @@
 
 //! **The `loading` family's lanes hand the requests they take to the
 //! runtime's loaders, and stage each result under the lease it holds to.**
-//! Scenes go to the `SceneLoading`, script roots to the `ScriptCompiler`,
-//! assets to the `AssetDecoding`. The rush lane loads everything filed; the
-//! paced lane only the units its budget covers — the scenes first, then the
-//! script roots, then the assets, each kind in filing order, always at least
-//! one — and what it leaves goes back to its channel.
+//! Project indexes go to the `AssetIndexing`, scenes to the `SceneLoading`,
+//! script roots to the `ScriptCompiler`, assets to the `AssetDecoding`. The
+//! rush lane loads everything filed; the paced lane only the units its budget
+//! covers — the indexes first, since the scenes and the assets read through
+//! the index, then the scenes, then the script roots, then the assets, each
+//! kind in filing order, always at least one — and what it leaves goes back
+//! to its channel.
 //!
 //! Each lane is run by hand as the scheduler runs a background lane, through
-//! its erased form: its inputs fetched from a runtime holding the three
-//! request channels and three fake loaders, recorded, its outputs committed
+//! its erased form: its inputs fetched from a runtime holding the four
+//! request channels and four fake loaders, recorded, its outputs committed
 //! into a staging a reserve then receives, and what it left in its fields
 //! given back. It reads no `World`, no bus, and locks nothing.
 
@@ -33,7 +35,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_core::asset::{AssetDecoding, AssetUUID, DecodeRequest, Decoded};
+use khora_core::asset::{
+    AssetDecoding, AssetIndexing, AssetUUID, DecodeRequest, Decoded, IndexKind, IndexRequest,
+    IndexTicket, IndexedAssets,
+};
 use khora_core::event::{Channel, Cursor, WhenFull};
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::cost::Cost;
@@ -57,6 +62,8 @@ const SCENE: Duration = Duration::from_millis(20);
 const MODULE: Duration = Duration::from_millis(2);
 /// What decoding one asset is priced at.
 const ASSET: Duration = Duration::from_millis(4);
+/// What indexing one project is priced at.
+const INDEX: Duration = Duration::from_millis(50);
 
 // ─── Fake loaders ───────────────────────────────────────────────────────────
 
@@ -169,6 +176,67 @@ impl ScriptCompiler for FakeCompiler {
     }
 }
 
+/// An indexer that answers every request with the bytes of its project's
+/// root, leased on a flag of that root the test may lower — standing for
+/// another project opened since. It remembers the tickets it was asked, in
+/// order.
+#[derive(Default)]
+struct FakeIndexing {
+    open: Mutex<HashMap<PathBuf, Arc<AtomicBool>>>,
+    asked: Mutex<Vec<IndexTicket>>,
+}
+
+impl FakeIndexing {
+    fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+
+    fn asked(&self) -> Vec<IndexTicket> {
+        self.asked
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    fn flag(&self, root: &std::path::Path) -> Arc<AtomicBool> {
+        let mut open = self
+            .open
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Arc::clone(
+            open.entry(root.to_path_buf())
+                .or_insert_with(|| Arc::new(AtomicBool::new(true))),
+        )
+    }
+
+    /// Another project replaced the one at `root` since its index was asked
+    /// for: what was indexed for it no longer counts.
+    fn replace(&self, root: &str) {
+        self.flag(std::path::Path::new(root))
+            .store(false, Ordering::SeqCst);
+    }
+}
+
+impl AssetIndexing for FakeIndexing {
+    fn index_leased(&self, request: &IndexRequest) -> (IndexedAssets, Option<Lease>) {
+        self.asked
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(request.ticket);
+        let open = self.flag(&request.project_root);
+        let indexed = IndexedAssets {
+            ticket: request.ticket,
+            kind: request.kind,
+            project_root: request.project_root.clone(),
+            index: Ok(request.project_root.to_string_lossy().as_bytes().to_vec()),
+        };
+        (
+            indexed,
+            Some(Lease::new(move || open.load(Ordering::SeqCst))),
+        )
+    }
+}
+
 /// A `SceneLoading` that prepares nothing: each request comes back as a
 /// failed load naming its ticket, leased on a flag the test may lower —
 /// standing for the world's components changing — and set to be filed again
@@ -258,6 +326,14 @@ fn script(root: &str, modules: &[&str]) -> CompileRequest {
     }
 }
 
+fn index(ticket: u64, root: &str) -> IndexRequest {
+    IndexRequest {
+        ticket: IndexTicket(ticket),
+        project_root: PathBuf::from(root),
+        kind: IndexKind::Reindex,
+    }
+}
+
 fn uuid(path: &str) -> AssetUUID {
     AssetUUID::new_v5(path)
 }
@@ -286,16 +362,29 @@ fn declarations(module: &str) -> ScriptDeclarations {
 
 // ─── The runtime ────────────────────────────────────────────────────────────
 
-/// A runtime as the engine wires the `loading` family: the three request
-/// channels and the three loaders — and handles on each, for the test.
+/// A runtime as the engine wires the `loading` family: the four request
+/// channels and the four loaders — and handles on each, for the test.
 struct Filed {
     runtime: Runtime,
+    indexes: Channel<IndexRequest>,
     scenes: Channel<SceneLoadRequest>,
     scripts: Channel<CompileRequest>,
     assets: Channel<DecodeRequest>,
     loading: Arc<FakeLoading>,
     compiler: Arc<FakeCompiler>,
     decoding: Arc<FakeDecoding>,
+    indexing: Arc<FakeIndexing>,
+}
+
+/// Installs in `runtime` an index request channel and `indexing`: the
+/// family's lanes read them whatever kind of load a test files.
+fn install_indexing(runtime: &mut Runtime, indexing: &Arc<FakeIndexing>) -> Channel<IndexRequest> {
+    let indexes = Channel::<IndexRequest>::bounded(64, WhenFull::Reject);
+    runtime.resources.insert(indexes.clone());
+    runtime
+        .resources
+        .insert(Arc::clone(indexing) as Arc<dyn AssetIndexing>);
+    indexes
 }
 
 impl Filed {
@@ -307,7 +396,9 @@ impl Filed {
         let assets = Channel::<DecodeRequest>::bounded(64, WhenFull::Reject);
         let loading = FakeLoading::new(&scenes);
         let decoding = FakeDecoding::knowing(known);
+        let indexing = FakeIndexing::new();
         let mut runtime = Runtime::new();
+        let indexes = install_indexing(&mut runtime, &indexing);
         runtime.resources.insert(scenes.clone());
         runtime.resources.insert(scripts.clone());
         runtime.resources.insert(assets.clone());
@@ -322,12 +413,14 @@ impl Filed {
             .insert(Arc::clone(&decoding) as Arc<dyn AssetDecoding>);
         Self {
             runtime,
+            indexes,
             scenes,
             scripts,
             assets,
             loading,
             compiler,
             decoding,
+            indexing,
         }
     }
 
@@ -340,6 +433,13 @@ impl Filed {
             .map(|(i, path)| (uuid(path), i as u32))
             .collect();
         Self::new(&known, FakeCompiler::echoing())
+    }
+
+    fn file_indexes(&self, requests: &[IndexRequest]) -> &Self {
+        for request in requests {
+            self.indexes.send(request.clone());
+        }
+        self
     }
 
     fn file_scenes(&self, tickets: &[u64]) -> &Self {
@@ -372,6 +472,14 @@ impl Filed {
             .collect()
     }
 
+    fn waiting_indexes(&self) -> Vec<IndexTicket> {
+        self.indexes
+            .read(&mut Cursor::default())
+            .iter()
+            .map(|request| request.ticket)
+            .collect()
+    }
+
     fn waiting_scripts(&self) -> Vec<CompileRequest> {
         self.scripts.read(&mut Cursor::default())
     }
@@ -381,7 +489,10 @@ impl Filed {
     }
 
     fn all_taken(&self) -> bool {
-        self.scenes.is_empty() && self.scripts.is_empty() && self.assets.is_empty()
+        self.indexes.is_empty()
+            && self.scenes.is_empty()
+            && self.scripts.is_empty()
+            && self.assets.is_empty()
     }
 }
 
@@ -704,6 +815,8 @@ fn a_run_with_nothing_filed_loads_nothing() {
         assert!(filed.loading.asked().is_empty(), "{name}: no scene asked");
         assert!(filed.compiler.asked().is_empty(), "{name}: no compile");
         assert!(filed.decoding.asked().is_empty(), "{name}: no decode");
+        assert!(filed.indexing.asked().is_empty(), "{name}: no index");
+        assert!(reserve.is_empty::<IndexedAssets>(), "{name}");
         assert!(reserve.is_empty::<PreparedLoad>(), "{name}");
         assert!(reserve.is_empty::<ScriptReload>(), "{name}");
         assert!(reserve.is_empty::<ScriptDeclarations>(), "{name}");
@@ -1039,6 +1152,7 @@ fn a_decoder_that_panics_loses_no_scene_load_taken_beside_it() {
     let assets = Channel::<DecodeRequest>::bounded(64, WhenFull::Reject);
     let loading = FakeLoading::new(&scenes);
     let mut runtime = Runtime::new();
+    let _indexes = install_indexing(&mut runtime, &FakeIndexing::new());
     runtime.resources.insert(scenes.clone());
     runtime.resources.insert(scripts.clone());
     runtime.resources.insert(assets.clone());
@@ -1136,6 +1250,7 @@ fn a_compiler_that_panics_on_one_root_fails_that_root_alone() {
     let loading = FakeLoading::new(&scenes);
     let decoding = FakeDecoding::knowing(&[(uuid("a.png"), 7)]);
     let mut runtime = Runtime::new();
+    let _indexes = install_indexing(&mut runtime, &FakeIndexing::new());
     runtime.resources.insert(scenes.clone());
     runtime.resources.insert(scripts.clone());
     runtime.resources.insert(assets.clone());
@@ -1190,4 +1305,159 @@ fn a_compiler_that_panics_on_one_root_fails_that_root_alone() {
         scripts.read(&mut Cursor::default()).len(),
         assets.read(&mut Cursor::default()).len()
     );
+}
+
+// ─── Indexes ────────────────────────────────────────────────────────────────
+
+/// The tickets of the project indexes `reserve` holds, in the order staged.
+fn indexed_tickets(reserve: &Reserve) -> Vec<IndexTicket> {
+    reserve
+        .take::<IndexedAssets>()
+        .iter()
+        .map(|indexed| indexed.ticket)
+        .collect()
+}
+
+/// **Rush indexes every project it takes and stages one result each, never
+/// merging two.** Two reindexes of `game` wait beside one of `editor`: the
+/// indexer is asked for each, in the order they were filed — an index does
+/// not coalesce, a reindex filed after another lands after it — each result
+/// reaches the reserve under its own ticket, with its kind and root, and the
+/// index channel is left empty.
+#[test]
+fn rush_indexes_every_project_it_takes_and_stages_one_result_each() {
+    let filed = Filed::knowing(&[]);
+    filed.file_indexes(&[index(1, "game"), index(2, "editor"), index(3, "game")]);
+
+    let reserve = landed([run(&mut rush(), &filed, None)]);
+
+    assert_eq!(
+        filed.indexing.asked(),
+        vec![IndexTicket(1), IndexTicket(2), IndexTicket(3)],
+        "each request indexed, in filing order"
+    );
+    let indexed = reserve.take::<IndexedAssets>();
+    let got: Vec<(IndexTicket, IndexKind, PathBuf)> = indexed
+        .iter()
+        .map(|indexed| (indexed.ticket, indexed.kind, indexed.project_root.clone()))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            (IndexTicket(1), IndexKind::Reindex, PathBuf::from("game")),
+            (IndexTicket(2), IndexKind::Reindex, PathBuf::from("editor")),
+            (IndexTicket(3), IndexKind::Reindex, PathBuf::from("game")),
+        ],
+        "one result per request, none merged"
+    );
+    assert!(
+        indexed.iter().all(|indexed| indexed.index.is_ok()),
+        "each staged with its bytes: {indexed:?}"
+    );
+    assert!(filed.indexes.is_empty(), "the requests were taken");
+}
+
+/// **Each index is staged under its own lease.** Two projects are indexed
+/// in one run; another project replaces one of them before the frame start
+/// receives the run: its index is abandoned there, and only its — the other
+/// lands.
+#[test]
+fn an_index_whose_project_was_replaced_while_it_waited_is_abandoned_and_only_it() {
+    let filed = Filed::knowing(&[]);
+    filed.file_indexes(&[index(1, "replaced"), index(2, "kept")]);
+
+    let staging = run(&mut rush(), &filed, None);
+    filed.indexing.replace("replaced");
+    let reserve = landed([staging]);
+
+    assert_eq!(
+        indexed_tickets(&reserve),
+        vec![IndexTicket(2)],
+        "the replaced project's index never lands"
+    );
+}
+
+/// **An index is priced at 50 ms**, before any is measured. One index and
+/// one asset wait: rush quotes 54 ms and serves it all; paced lent 1 ms
+/// would take the index alone — 50 ms, 50/54 of the work.
+#[test]
+fn an_index_unit_is_quoted_at_50_ms() {
+    let filed = Filed::knowing(&[]);
+    filed
+        .file_indexes(&[index(1, "game")])
+        .file_assets(&["a.obj"]);
+
+    let all = quote(&rush(), &filed, Some(Duration::from_millis(1)));
+    assert_eq!(millis(&all), INDEX + ASSET);
+    assert_eq!(all.share, None, "rush serves all the waiting work");
+
+    let one = quote(&paced(), &filed, Some(Duration::from_millis(1)));
+    assert_eq!(millis(&one), INDEX, "paced would take the index alone");
+    assert!(
+        one.share
+            .is_some_and(|share| (share - 50.0 / 54.0).abs() < 1e-4),
+        "the share it serves: {:?}",
+        one.share
+    );
+    assert_eq!(
+        filed.waiting_indexes(),
+        vec![IndexTicket(1)],
+        "the quote took nothing"
+    );
+}
+
+/// **Loading takes the indexes first**: the scenes and the assets read
+/// through the index, so a project's index goes before them, whatever order
+/// they were filed in. An asset, then a scene, then an index are filed;
+/// paced, lent 1 ms — less than any unit — takes one unit: the index. The
+/// scene and the asset go back.
+#[test]
+fn loading_takes_indexes_first() {
+    let filed = Filed::knowing(&["a.obj"]);
+    filed
+        .file_assets(&["a.obj"])
+        .file_scenes(&[1])
+        .file_indexes(&[index(7, "game")]);
+
+    let reserve = landed([run(&mut paced(), &filed, Some(Duration::from_millis(1)))]);
+
+    assert_eq!(
+        filed.indexing.asked(),
+        vec![IndexTicket(7)],
+        "the index is taken first"
+    );
+    assert!(filed.loading.asked().is_empty(), "no scene prepared");
+    assert!(filed.decoding.asked().is_empty(), "no asset decoded");
+    assert_eq!(indexed_tickets(&reserve), vec![IndexTicket(7)]);
+    assert!(filed.indexes.is_empty(), "the index was taken");
+    assert_eq!(
+        filed.waiting_scenes(),
+        vec![LoadTicket(1)],
+        "the scene went back"
+    );
+    assert_eq!(
+        filed.waiting_assets(),
+        vec![asset("a.obj")],
+        "the asset went back"
+    );
+}
+
+/// **Paced takes the indexes before the scenes within its budget.** Lent
+/// 75 ms, with two indexes (50 ms each) and a scene waiting: the first index
+/// is taken, then the second does not fit and stops the taking — the second
+/// index and the scene go back, in order.
+#[test]
+fn paced_stops_at_the_first_index_that_does_not_fit() {
+    let filed = Filed::knowing(&[]);
+    filed
+        .file_scenes(&[1])
+        .file_indexes(&[index(1, "game"), index(2, "editor")]);
+
+    let reserve = landed([run(&mut paced(), &filed, Some(Duration::from_millis(75)))]);
+
+    assert_eq!(filed.indexing.asked(), vec![IndexTicket(1)]);
+    assert_eq!(indexed_tickets(&reserve), vec![IndexTicket(1)]);
+    assert_eq!(filed.waiting_indexes(), vec![IndexTicket(2)]);
+    assert_eq!(filed.waiting_scenes(), vec![LoadTicket(1)]);
+    assert!(filed.loading.asked().is_empty(), "no scene prepared");
 }

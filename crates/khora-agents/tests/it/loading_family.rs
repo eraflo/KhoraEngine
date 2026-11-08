@@ -37,7 +37,9 @@ use khora_core::agent::gorna::protocol::Envelope;
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::registration::{check_registrations, AgentRegistration};
 use khora_core::agent::{Activation, Agent, AgentImportance, ExecutionPhase};
-use khora_core::asset::{AssetDecoding, AssetUUID, DecodeRequest, Decoded};
+use khora_core::asset::{
+    AssetDecoding, AssetIndexing, AssetUUID, DecodeRequest, Decoded, IndexRequest, IndexedAssets,
+};
 use khora_core::event::{BetweenSessions, Channel, Mailbox, Reader, WhenFull};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::cost::{Cost, PerDevice};
@@ -179,8 +181,41 @@ impl SceneLoading for WatchedLoading {
     }
 }
 
+/// An indexer answering every request with an empty index, remembering the
+/// thread it indexed on.
+#[derive(Default)]
+struct WatchedIndexing {
+    threads: Threads,
+}
+
+impl AssetIndexing for WatchedIndexing {
+    fn index_leased(&self, request: &IndexRequest) -> (IndexedAssets, Option<Lease>) {
+        self.threads.note();
+        (
+            IndexedAssets {
+                ticket: request.ticket,
+                kind: request.kind,
+                project_root: request.project_root.clone(),
+                index: Ok(Vec::new()),
+            },
+            None,
+        )
+    }
+}
+
+/// Installs in `runtime` an idle index request channel and an indexer: the
+/// family's lanes read them whatever kind of load a test files.
+fn install_idle_indexing(runtime: &mut Runtime) {
+    runtime
+        .resources
+        .insert(Channel::<IndexRequest>::bounded(8, WhenFull::Reject));
+    runtime
+        .resources
+        .insert(Arc::new(WatchedIndexing::default()) as Arc<dyn AssetIndexing>);
+}
+
 /// A runtime as the engine wires the `loading` family over watched loaders:
-/// the three request channels, the three loaders, the reserve — and
+/// the four request channels, the four loaders, the reserve — and
 /// `activation`, when given.
 struct Wired {
     runtime: Arc<Runtime>,
@@ -208,6 +243,7 @@ fn wired(activation: Option<Arc<Activation>>) -> Wired {
     let compiler = Arc::new(EchoCompiler::default());
     let decoding = Arc::new(EchoDecoding::default());
     let mut runtime = Runtime::new();
+    install_idle_indexing(&mut runtime);
     runtime.resources.insert(scenes.clone());
     runtime.resources.insert(scripts.clone());
     runtime.resources.insert(assets.clone());
@@ -304,7 +340,7 @@ fn frames_until_landed<T: Staged>(
 /// agent (`loading`, not the scripting family's), optional, every run on
 /// request, its lanes the rush lane then the paced lane, rush by default —
 /// until a quote exists, it loads everything filed, as the three families it
-/// replaces did. Its three kinds of request are each taken from a mailbox
+/// replaces did. Its four kinds of request are each taken from a mailbox
 /// it holds between sessions: a request filed while it is off is loaded once
 /// it is back on, never lost.
 #[test]
@@ -342,7 +378,12 @@ fn the_loading_family_registers_two_lanes_in_the_background() {
     assert!(lanes[0].ends_with("RushLane"), "rush first: {lanes:?}");
     assert!(lanes[1].ends_with("PacedLane"), "then paced: {lanes:?}");
 
-    for message in ["::DecodeRequest", "::SceneLoadRequest", "::CompileRequest"] {
+    for message in [
+        "::IndexRequest",
+        "::DecodeRequest",
+        "::SceneLoadRequest",
+        "::CompileRequest",
+    ] {
         let found: Vec<&Mailbox> = khora_script::inventory::iter::<Mailbox>
             .into_iter()
             .filter(|mailbox| (mailbox.message)().ends_with(message))
@@ -408,7 +449,7 @@ fn the_loading_lanes_read_their_requests_their_loaders_and_their_budget_and_stag
             .iter()
             .map(|output| (output.kind, output.ty))
             .collect();
-        assert_eq!(outputs.len(), 4, "{name}: {:?}", declaration.outputs());
+        assert_eq!(outputs.len(), 5, "{name}: {:?}", declaration.outputs());
         for staged in [
             TypeId::of::<Decoded>(),
             TypeId::of::<PreparedLoad>(),
@@ -422,6 +463,111 @@ fn the_loading_lanes_read_their_requests_their_loaders_and_their_budget_and_stag
             );
         }
     }
+}
+
+/// **The loading lanes read the indexer**: each lane's declaration takes the
+/// `IndexRequest`s, reads the runtime's `AssetIndexing` and stages
+/// `IndexedAssets`; the `loading` family holds a mailbox of `IndexRequest`,
+/// taken, held between sessions — an index filed while the family is off is
+/// built once it is back on.
+#[test]
+fn the_loading_lanes_read_the_indexer() {
+    for make in loading_registration().lanes {
+        let lane = make();
+        let declaration = lane.declaration();
+        let name = lane.name();
+        let inputs: Vec<(SourceKind, TypeId)> = declaration
+            .inputs()
+            .iter()
+            .map(|input| (input.kind, input.ty))
+            .collect();
+        assert!(
+            inputs.contains(&(SourceKind::Take, TypeId::of::<Channel<IndexRequest>>())),
+            "{name}: the index requests, taken: {:?}",
+            declaration.inputs()
+        );
+        assert!(
+            inputs.contains(&(SourceKind::Resource, TypeId::of::<Arc<dyn AssetIndexing>>())),
+            "{name}: the indexer, read: {:?}",
+            declaration.inputs()
+        );
+        let outputs: Vec<(SinkKind, TypeId)> = declaration
+            .outputs()
+            .iter()
+            .map(|output| (output.kind, output.ty))
+            .collect();
+        assert!(
+            outputs.contains(&(SinkKind::Staged, TypeId::of::<IndexedAssets>())),
+            "{name}: the indexes, staged: {:?}",
+            declaration.outputs()
+        );
+    }
+    let found: Vec<&Mailbox> = khora_script::inventory::iter::<Mailbox>
+        .into_iter()
+        .filter(|mailbox| (mailbox.message)().ends_with("::IndexRequest"))
+        .collect();
+    assert_eq!(found.len(), 1, "one mailbox of `IndexRequest`: {found:?}");
+    assert_eq!(
+        (found[0].family, found[0].reader, found[0].between_sessions),
+        (LOADING, Reader::Take, BetweenSessions::Hold)
+    );
+}
+
+/// **A filed index is built off the frame, and lands in the reserve at a
+/// frame start.** The family's agent under the real scheduler: an index
+/// filed before the first frame is taken, built by the runtime's indexer on
+/// another thread than the one running the frames, and its result reaches
+/// the reserve within a bounded number of frames — the index channel left
+/// empty.
+#[test]
+fn a_filed_index_is_built_off_the_frame_into_the_reserve() {
+    let scenes = Channel::<SceneLoadRequest>::bounded(8, WhenFull::Reject);
+    let indexes = Channel::<IndexRequest>::bounded(8, WhenFull::Reject);
+    let indexing = Arc::new(WatchedIndexing::default());
+    let reserve = Reserve::new();
+    let mut runtime = Runtime::new();
+    runtime.resources.insert(indexes.clone());
+    runtime
+        .resources
+        .insert(Arc::clone(&indexing) as Arc<dyn AssetIndexing>);
+    runtime.resources.insert(scenes);
+    runtime
+        .resources
+        .insert(Channel::<CompileRequest>::bounded(8, WhenFull::DropOldest));
+    runtime
+        .resources
+        .insert(Channel::<DecodeRequest>::bounded(8, WhenFull::DropOldest));
+    runtime.resources.insert(reserve.clone());
+    runtime
+        .resources
+        .insert(Arc::new(WatchedLoading::default()) as Arc<dyn SceneLoading>);
+    runtime
+        .resources
+        .insert(Arc::new(EchoCompiler::default()) as Arc<dyn ScriptCompiler>);
+    runtime
+        .resources
+        .insert(Arc::new(EchoDecoding::default()) as Arc<dyn AssetDecoding>);
+    let runtime = Arc::new(runtime);
+    let mut scheduler = scheduler_of(loading_registration());
+    let mut world = World::new();
+    indexes.send(IndexRequest {
+        ticket: khora_core::asset::IndexTicket(3),
+        project_root: PathBuf::from("game"),
+        kind: khora_core::asset::IndexKind::Open,
+    });
+
+    let indexed: Vec<IndexedAssets> =
+        frames_until_landed(&mut scheduler, &mut world, &runtime, &reserve);
+
+    assert_eq!(indexed.len(), 1, "one result: {indexed:?}");
+    assert_eq!(indexed[0].ticket, khora_core::asset::IndexTicket(3));
+    assert_eq!(indexed[0].kind, khora_core::asset::IndexKind::Open);
+    assert!(indexes.is_empty(), "the request was taken");
+    assert!(
+        indexing.threads.all_off(std::thread::current().id()),
+        "indexed off the thread running the frames: {:?}",
+        indexing.threads.all()
+    );
 }
 
 // ─── Boot ───────────────────────────────────────────────────────────────────
@@ -635,6 +781,7 @@ fn a_load_in_flight_at_shutdown_gives_its_ids_back() {
     runtime.resources.insert(reserve.clone());
     install_scene_loading(&mut runtime);
     // The family's other kinds, idle: its lanes read every loader.
+    install_idle_indexing(&mut runtime);
     runtime
         .resources
         .insert(Channel::<CompileRequest>::bounded(8, WhenFull::DropOldest));

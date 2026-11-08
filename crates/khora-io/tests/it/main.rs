@@ -44,6 +44,7 @@ mod prefab_assets;
 mod prefab_scenes;
 mod prefabs_read_off_the_frame;
 mod project_compiler;
+mod project_indexed_off_the_frame;
 mod public_paths;
 mod registration_problems;
 mod registration_problems_of_an_inherited_name;

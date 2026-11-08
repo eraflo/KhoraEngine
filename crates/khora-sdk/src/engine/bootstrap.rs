@@ -481,6 +481,8 @@ fn populate(
     // What the `loading` family reads: the asset service's request channel and
     // its decoding, or stand-ins for an engine without one.
     khora_io::asset::install_decoding(runtime);
+    // What the `loading` family reads: the hub hosts file project indexes with.
+    khora_io::asset::install_indexing(runtime);
     // What the `loading` family reads: the hub hosts file scene loads with.
     khora_io::scene_loads::install_scene_loading(runtime);
 
