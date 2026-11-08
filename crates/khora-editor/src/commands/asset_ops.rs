@@ -88,7 +88,14 @@ pub fn process_pending_asset_file_ops(
             match pvfs.create_asset(&rel, source.as_bytes()) {
                 Ok(()) => {
                     log::info!("Created script '{rel}'");
-                    written_script = Some(rel);
+                    // Revealed once the index lists it: at once when the
+                    // project was indexed on the frame.
+                    written_script = pvfs
+                        .after_index(crate::project_vfs::AfterIndex::Reveal(rel))
+                        .and_then(|now| match now {
+                            crate::project_vfs::AfterIndex::Reveal(rel) => Some(rel),
+                            _ => None,
+                        });
                 }
                 Err(e) => log::error!("Create script '{rel}' failed: {e:#}"),
             }

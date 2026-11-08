@@ -21,7 +21,7 @@
 //! you might want to open a scene from outside the current project) and fall
 //! back to direct `std::fs` only in that case.
 
-use crate::project_vfs::ProjectVfs;
+use crate::project_vfs::{AfterIndex, ProjectVfs};
 use khora_sdk::khora_core::asset::asset_key;
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity, ProblemSource};
 use khora_sdk::khora_data::scene::loading::{SceneFetch, SceneSource};
@@ -107,7 +107,7 @@ pub fn save_scene_in_project_with_goal(
         log::error!("Failed to write scene to {:?}: {:#}", rel_path, e);
         return false;
     }
-    if let Err(e) = pvfs.rebuild_index() {
+    if let Err(e) = pvfs.reindex() {
         log::warn!("Scene saved but index rebuild failed: {:#}", e);
     }
     log::info!(
@@ -235,16 +235,27 @@ impl SceneFetch for SceneOnDisk {
 pub fn scene_in_project(
     pvfs: &mut ProjectVfs,
     rel_path_fwd_slash: &str,
+    choice: u64,
 ) -> Option<(SceneSource, std::sync::Arc<dyn PrefabSource + Send + Sync>)> {
     // Registry-aware: a scene that was renamed keeps its frozen UUID.
     let uuid = pvfs.resolve_uuid(rel_path_fwd_slash);
     if pvfs.assets().reader().index().get_metadata(&uuid).is_none() {
-        if let Err(e) = pvfs.rebuild_index() {
+        if let Err(e) = pvfs.reindex() {
             log::error!(
                 "Failed to rebuild index while resolving '{}': {:#}",
                 rel_path_fwd_slash,
                 e
             );
+            return None;
+        }
+        // Indexed off the frame, the scene opens once the index holds it;
+        // indexed on the frame (no engine), it is looked up again now.
+        let open = AfterIndex::OpenScene {
+            rel: rel_path_fwd_slash.to_owned(),
+            choice,
+        };
+        if pvfs.after_index(open).is_none() {
+            log::info!("Indexing the project before opening '{rel_path_fwd_slash}'");
             return None;
         }
         if pvfs.assets().reader().index().get_metadata(&uuid).is_none() {

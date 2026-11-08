@@ -37,6 +37,7 @@ pub use asset_ops::process_pending_asset_file_ops;
 pub use asset_ops::process_pending_assign_texture;
 pub use asset_ops::process_pending_spawn_mesh_asset;
 pub use history::CommandHistory;
+pub use material::apply_after_index;
 pub use material::process_pending_assign_material;
 pub use material::process_pending_save_as_material;
 pub use prefab::process_pending_prefab_apply;
@@ -149,6 +150,8 @@ fn apply_new_scene(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>
         state.clear_entity_references();
         state.play_mode = PlayMode::Editing;
         state.scene_snapshot = None;
+        // An open waiting for the index opens nothing over the new scene.
+        state.scene_choices = state.scene_choices.wrapping_add(1);
         // The new scene has the last word over a scene still opening or
         // being restored: withdrawn now, before a boundary lands it.
         let opening: Vec<_> = state.opening.drain(..).map(|(ticket, _)| ticket).collect();

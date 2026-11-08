@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::{EditorState, GameWorld};
 
-use crate::project_vfs::ProjectVfs;
+use crate::project_vfs::{AfterIndex, ProjectVfs};
 
 /// Drains [`EditorState::pending_save_as_material`]: serializes the
 /// entity's inline material to a `.kmat` (RON), writes it under
@@ -49,37 +49,10 @@ pub fn process_pending_save_as_material(
     };
 
     // Serialize the entity's inline material to the decoder's RON shape.
-    let json = {
-        let mref = match world.get_component::<MaterialRef>(entity) {
-            Some(m) => m,
-            None => {
-                log::warn!("Save material: entity {:?} has no MaterialRef", entity);
-                return;
-            }
-        };
-        let material = match mref {
-            MaterialRef::Inline { material, .. } => material,
-            MaterialRef::Asset(_) => {
-                log::warn!(
-                    "Save material: entity {:?} already references a .kmat asset",
-                    entity
-                );
-                return;
-            }
-        };
-        match khora_sdk::khora_data::scene::material_to_json(&**material) {
-            Some(value) => value,
-            None => {
-                log::error!("Save material: failed to serialize material to JSON");
-                return;
-            }
-        }
-    };
-
-    let ron_text = match ron::ser::to_string(&json) {
+    let ron_text = match inline_material_ron(world, entity) {
         Ok(text) => text,
-        Err(e) => {
-            log::error!("Save material: failed to encode material as RON: {e}");
+        Err(why) => {
+            log::warn!("Save material: {why}");
             return;
         }
     };
@@ -87,7 +60,16 @@ pub fn process_pending_save_as_material(
     let stem = sanitize_material_name(&name);
     let rel_fwd = format!("materials/{stem}.kmat");
 
-    let uuid = {
+    // Its identity, which a restore at Stop keeps: the assignment may land
+    // after one. And the scene it was saved in: chosen how, edited or played.
+    let persistent = world.inner_world().persistent_id(entity);
+    let (choice, played) = editor_state.lock().map_or((0, false), |state| {
+        (
+            state.scene_choices,
+            state.play_mode != khora_sdk::PlayMode::Editing,
+        )
+    });
+    let assign_now = {
         let Ok(mut pvfs) = pvfs_arc.lock() else {
             log::error!("Save material: project VFS mutex poisoned");
             return;
@@ -96,22 +78,84 @@ pub fn process_pending_save_as_material(
             log::error!("Save material: failed to write '{rel_fwd}': {e:#}");
             return;
         }
-        if let Err(e) = pvfs.rebuild_index() {
+        // The identity comes from the registry: it needs no index.
+        let uuid = pvfs.resolve_uuid(&rel_fwd);
+        if let Err(e) = pvfs.reindex() {
             log::warn!("Save material: wrote '{rel_fwd}' but index rebuild failed: {e:#}");
         }
-        pvfs.resolve_uuid(&rel_fwd)
+        // The entity references the asset once the index holds it, so no
+        // decode of it is asked for before.
+        pvfs.after_index(AfterIndex::AssignMaterial {
+            entity,
+            persistent,
+            uuid,
+            saved: ron_text.clone(),
+            choice,
+            played,
+        })
     };
-
-    // Convert the entity from an inline material to a reference to the
-    // saved asset, so it is now shared and reloadable. `add_component`
-    // replaces the existing `MaterialRef` of the same type.
-    world.add_component(entity, MaterialRef::Asset(uuid));
     log::info!(
-        "Material saved to '{}' ({} bytes); entity {:?} now references it",
+        "Material saved to '{}' ({} bytes) for entity {:?}",
         rel_fwd,
         ron_text.len(),
         entity
     );
+    if let Some(assign) = assign_now {
+        apply_after_index(world, vec![assign]);
+    }
+}
+
+/// The RON text of `entity`'s inline material, in the decoder's shape:
+/// what a `.kmat` holds. Why not, when it has none or it cannot be encoded.
+fn inline_material_ron(world: &GameWorld, entity: EntityId) -> Result<String, String> {
+    let material = match world.get_component::<MaterialRef>(entity) {
+        Some(MaterialRef::Inline { material, .. }) => material,
+        Some(MaterialRef::Asset(_)) => {
+            return Err(format!(
+                "entity {entity:?} already references a .kmat asset"
+            ))
+        }
+        None => return Err(format!("entity {entity:?} has no MaterialRef")),
+    };
+    let json = khora_sdk::khora_data::scene::material_to_json(&**material)
+        .ok_or_else(|| "failed to serialize material to JSON".to_owned())?;
+    ron::ser::to_string(&json).map_err(|e| format!("failed to encode material as RON: {e}"))
+}
+
+/// Applies the actions that waited for a reindex and need the world, as
+/// [`crate::hot_reload::land_reindex`] returns them: an
+/// [`AfterIndex::AssignMaterial`] replaces its entity's inline material with
+/// a reference to the saved asset, if the entity is alive and still wears
+/// the material saved.
+pub fn apply_after_index(world: &mut GameWorld, actions: Vec<AfterIndex>) {
+    for action in actions {
+        let AfterIndex::AssignMaterial {
+            entity,
+            persistent,
+            uuid,
+            saved,
+            ..
+        } = action
+        else {
+            continue;
+        };
+        let entity = match persistent {
+            Some(id) => match world.inner_world().entity_with_id(id) {
+                Some(entity) => entity,
+                None => continue,
+            },
+            None => entity,
+        };
+        // An entity despawned since, or whose material was given another
+        // asset or edited since the save, is left as it is.
+        if inline_material_ron(world, entity).ok().as_deref() != Some(saved.as_str()) {
+            continue;
+        }
+        // `add_component` replaces the existing `MaterialRef` of the same
+        // type: the entity now references the shared, reloadable asset.
+        world.add_component(entity, MaterialRef::Asset(uuid));
+        log::info!("Entity {entity:?} now references its saved material");
+    }
 }
 
 /// Drains [`EditorState::pending_assign_material`]: sets

@@ -23,6 +23,7 @@ mod prefab_apply;
 mod prefab_apply_of_declared_fields;
 mod scene_loads;
 mod transport;
+mod writes_index_off_the_frame;
 
 use khora_sdk::prelude::math::Vec3;
 use khora_sdk::SceneFile;

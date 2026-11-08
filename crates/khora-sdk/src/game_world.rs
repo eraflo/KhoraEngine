@@ -230,6 +230,11 @@ impl GameWorld {
     /// If the entity already has a component of this type, the old value
     /// is replaced.
     pub fn add_component<C: Component>(&mut self, entity: EntityId, component: C) {
+        // A component the entity holds is written in place, its change
+        // stamped; the world refuses to add a second one.
+        if self.world.set_component(entity, component.clone()) {
+            return;
+        }
         if let Err(e) = self.world.add_component(entity, component) {
             log::warn!(
                 "GameWorld::add_component<{}>({:?}) failed: {:?}",

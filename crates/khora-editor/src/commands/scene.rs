@@ -87,7 +87,8 @@ pub fn open_scene_dispatch(
             let assets_root = pvfs.assets_root.clone();
             if let Some(rel_fwd) = scene_io::rel_inside_project(abs, &assets_root) {
                 // A scene of the project it names nothing in opens nothing.
-                match scene_io::scene_in_project(&mut pvfs, &rel_fwd) {
+                let choice = editor_state.lock().map_or(0, |state| state.scene_choices);
+                match scene_io::scene_in_project(&mut pvfs, &rel_fwd, choice) {
                     Some(found) => in_project = Some(found),
                     None => return,
                 }
@@ -104,6 +105,9 @@ pub fn open_scene_dispatch(
         state
             .opening
             .push((ticket, abs.to_string_lossy().into_owned()));
+        // An open waiting for the index, chosen before this one, opens
+        // nothing over it.
+        state.scene_choices = state.scene_choices.wrapping_add(1);
     }
 }
 

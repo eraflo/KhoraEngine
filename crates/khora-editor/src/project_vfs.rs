@@ -19,6 +19,7 @@
 //! point used by `scene_io`, the asset browser, and any other editor code
 //! that needs to read or write project content.
 
+pub use crate::after_index::{AfterIndex, Landed};
 use anyhow::{bail, Context, Result};
 use khora_sdk::khora_core::asset::{asset_key, AssetUUID};
 use khora_sdk::khora_core::physics::PhysicsSettings;
@@ -80,9 +81,17 @@ pub struct ProjectVfs {
     /// The catalog a script's prefab `Spawn` is checked against, kept to the
     /// index: refilled at every reindex.
     prefab_catalog: Option<khora_sdk::khora_data::scene::PrefabCatalog>,
-    /// Whether files came or went while a reindex off the frame was in
-    /// flight: another is filed once it lands.
-    reindex_again: bool,
+    /// The engine's index hub, which this project's reindexes are filed
+    /// with; `None` reindexes on the frame.
+    indexes: Option<Arc<khora_sdk::IndexHub>>,
+    /// The reindex in flight, and what waits for it to land.
+    awaiting: Option<(khora_sdk::IndexTicket, Vec<AfterIndex>)>,
+    /// What waits for the reindex filed once the one in flight lands — a
+    /// write made while it was built — when one was asked for.
+    next: Option<Vec<AfterIndex>>,
+    /// The materials to assign that landed while the scene was played or
+    /// restored: assigned to the edited scene once it is back.
+    held: Vec<AfterIndex>,
 }
 
 impl ProjectVfs {
@@ -150,7 +159,10 @@ impl ProjectVfs {
             registry,
             generation: std::sync::atomic::AtomicU64::new(0),
             prefab_catalog: None,
-            reindex_again: false,
+            indexes: None,
+            awaiting: None,
+            next: None,
+            held: Vec::new(),
         })
     }
 
@@ -203,9 +215,9 @@ impl ProjectVfs {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Re-walks `<root>/assets/` and atomically swaps the VFS index. Called
-    /// after a scene save (so the new file shows up) and from the
-    /// hot-reload pump on Created/Removed events.
+    /// Re-walks `<root>/assets/` and swaps the VFS index, on the frame: what
+    /// [`Self::reindex`] does without an engine, and what the setup-time
+    /// scene load does.
     pub fn rebuild_index(&mut self) -> Result<()> {
         let bytes = IndexBuilder::new(&self.assets_root)
             .with_registry(&self.registry)
@@ -229,16 +241,107 @@ impl ProjectVfs {
         self.moved_on();
     }
 
-    /// Asks for another reindex once the one in flight lands: files came or
-    /// went while it was built.
-    pub fn reindex_again(&mut self) {
-        self.reindex_again = true;
+    /// Files this project's reindexes with `hub`, the engine's index hub,
+    /// from now on: they are built off the frame and land at a frame's
+    /// boundary.
+    pub fn index_with(&mut self, hub: Arc<khora_sdk::IndexHub>) {
+        if self
+            .indexes
+            .as_ref()
+            .is_some_and(|held| Arc::ptr_eq(held, &hub))
+        {
+            return;
+        }
+        self.indexes = Some(hub);
     }
 
-    /// Whether another reindex was asked for while one was in flight; asking
-    /// clears it.
-    pub fn take_reindex_again(&mut self) -> bool {
-        std::mem::take(&mut self.reindex_again)
+    /// Keeps `actions` until the edited scene is back.
+    pub fn hold(&mut self, actions: Vec<AfterIndex>) {
+        self.held.extend(actions);
+    }
+
+    /// The actions kept until the edited scene was back.
+    pub fn release(&mut self) -> Vec<AfterIndex> {
+        std::mem::take(&mut self.held)
+    }
+
+    /// The reindex in flight, if any.
+    pub fn reindexing(&self) -> Option<khora_sdk::IndexTicket> {
+        self.awaiting.as_ref().map(|(ticket, _)| *ticket)
+    }
+
+    /// Indexes the project again after a write: with a hub and nothing in
+    /// flight, files a reindex and keeps its ticket; while one is in flight,
+    /// the write is indexed by the reindex filed once it lands; without a
+    /// hub, rebuilds on the frame.
+    pub fn reindex(&mut self) -> Result<()> {
+        let Some(indexes) = self.indexes.clone() else {
+            return self.rebuild_index();
+        };
+        if self.awaiting.is_some() {
+            // The walk in flight may have begun before this write.
+            self.next.get_or_insert_with(Vec::new);
+            return Ok(());
+        }
+        let ticket = indexes.file(self.root.clone(), khora_sdk::IndexKind::Reindex);
+        self.awaiting = Some((ticket, Vec::new()));
+        Ok(())
+    }
+
+    /// Makes `action` wait for the reindex that will see the last write.
+    /// With nothing in flight, it is returned, to run now.
+    pub fn after_index(&mut self, action: AfterIndex) -> Option<AfterIndex> {
+        // The material saved last is the one its entity wears.
+        if let Some((_, waiting)) = &mut self.awaiting {
+            waiting.retain(|waiting| !action.assigns_as(waiting));
+        }
+        if let Some(next) = &mut self.next {
+            next.retain(|waiting| !action.assigns_as(waiting));
+        }
+        self.held.retain(|waiting| !action.assigns_as(waiting));
+        if let Some(next) = &mut self.next {
+            next.push(action);
+            return None;
+        }
+        if let Some((_, waiting)) = &mut self.awaiting {
+            waiting.push(action);
+            return None;
+        }
+        Some(action)
+    }
+
+    /// Takes the outcome of the reindex in flight, once it landed: on `Ok`
+    /// the project takes it in; the next reindex is filed if one was asked
+    /// for. `None` while it is in flight, or when none is.
+    ///
+    /// The actions that waited for a reindex that failed are dropped: what
+    /// they needed is not in the index.
+    pub fn land(&mut self) -> Option<Landed> {
+        let (ticket, _) = self.awaiting.as_ref()?;
+        let outcome = self.indexes.as_ref()?.take_outcome(*ticket)?;
+        let (_, waiting) = self.awaiting.take()?;
+        let actions = match &outcome {
+            Ok(()) => {
+                self.index_landed();
+                waiting
+            }
+            Err(why) => {
+                if !waiting.is_empty() {
+                    log::warn!(
+                        "{} editor action(s) dropped: the project's reindex failed: {why}",
+                        waiting.len()
+                    );
+                }
+                Vec::new()
+            }
+        };
+        if let Some(next) = self.next.take() {
+            if let Some(indexes) = self.indexes.clone() {
+                let ticket = indexes.file(self.root.clone(), khora_sdk::IndexKind::Reindex);
+                self.awaiting = Some((ticket, next));
+            }
+        }
+        Some(Landed { outcome, actions })
     }
 
     /// Reads `<root>/project.json` as untyped JSON. Project metadata isn't an
@@ -336,7 +439,7 @@ impl ProjectVfs {
         if let Err(e) = self.registry.save() {
             log::error!("Failed to persist asset registry after rename: {e}");
         }
-        self.rebuild_index()
+        self.reindex()
     }
 
     /// Moves an asset into `dest_dir` (forward-slash folder, `""` = assets root),
@@ -364,7 +467,7 @@ impl ProjectVfs {
         if let Err(e) = self.registry.save() {
             log::error!("Failed to persist asset registry after delete: {e}");
         }
-        self.rebuild_index()
+        self.reindex()
     }
 
     /// Duplicates an asset next to itself with a unique ` copy` suffix. The copy
@@ -407,7 +510,7 @@ impl ProjectVfs {
         }
         std::fs::copy(&src_abs, self.abs_of(&new_rel))
             .with_context(|| format!("Failed to duplicate {}", src_abs.display()))?;
-        self.rebuild_index()?;
+        self.reindex()?;
         Ok(new_rel)
     }
 
@@ -440,7 +543,7 @@ impl ProjectVfs {
         std::io::Write::write_all(&mut file, bytes)
             .with_context(|| format!("Failed to write {}", abs.display()))?;
         drop(file);
-        self.rebuild_index()
+        self.reindex()
     }
 
     /// Lists every directory under `assets/` as forward-slash relative paths
@@ -902,6 +1005,155 @@ mod tests {
             Some(MeshRef::Asset(AssetUUID::sub_asset(file, "mesh0/prim0")))
         );
         Ok(())
+    }
+
+    fn reveal(rel: &str) -> AfterIndex {
+        AfterIndex::Reveal(rel.to_owned())
+    }
+
+    /// **Without a hub, a write reindexes at once.** A project opened with
+    /// no engine (a test, an editor with no engine) has no index hub:
+    /// `reindex` rebuilds the index on the frame, so the file is indexed
+    /// when it returns, and an action asked for after it runs now.
+    #[test]
+    fn without_a_hub_writes_reindex_at_once() -> Result<()> {
+        const PLAYER: &str = "scripts/Player.erg";
+        let project = TempProject::new("no-hub-reindex")?;
+        let mut pvfs = project.open()?;
+        pvfs.write_asset(Path::new(PLAYER), b"behavior Player { }")?;
+        let player = pvfs.resolve_uuid(PLAYER);
+        assert!(
+            pvfs.assets().index().get_metadata(&player).is_none(),
+            "the premise: a write alone does not index"
+        );
+        let before = pvfs.generation();
+
+        pvfs.reindex()?;
+
+        assert!(
+            pvfs.assets().index().get_metadata(&player).is_some(),
+            "the file is indexed when `reindex` returns"
+        );
+        assert!(pvfs.generation() > before, "the project's generation moved");
+        assert_eq!(
+            pvfs.after_index(reveal(PLAYER)),
+            Some(reveal(PLAYER)),
+            "nothing is in flight: the action runs now"
+        );
+        assert!(pvfs.land().is_none(), "nothing was filed, nothing lands");
+        Ok(())
+    }
+
+    /// **With a hub and nothing in flight, an action runs now.** No write
+    /// waits to be indexed: `after_index` hands the action back.
+    #[test]
+    fn with_a_hub_and_nothing_in_flight_an_action_runs_now() {
+        use crate::tests::gltf_fixture::GltfProject;
+        use crate::tests::project_index::IndexingEngine;
+
+        let engine = IndexingEngine::new();
+        let project = GltfProject::with("hub-nothing-in-flight", &[]);
+        engine.serve(&project.vfs);
+        let mut pvfs = project.vfs.lock().expect("the project");
+
+        assert_eq!(
+            pvfs.after_index(reveal("scripts/Player.erg")),
+            Some(reveal("scripts/Player.erg"))
+        );
+        assert!(pvfs.land().is_none(), "nothing was filed, nothing lands");
+        assert_eq!(engine.filed(), 0, "no reindex was filed");
+    }
+
+    /// **A write during a reindex waits for the next.** A first write files
+    /// a reindex, and its project walk is built; a second write arrives
+    /// before that reindex lands. At its landing, only the first write's
+    /// action runs, and the index does not hold the second file — its walk
+    /// began before it. A second reindex is filed then, not before: one in
+    /// flight at a time. At its landing, the second write's action runs and
+    /// the index holds the second file. Each landing moves the project's
+    /// generation.
+    #[test]
+    fn a_write_during_a_reindex_waits_for_the_next() {
+        use crate::tests::gltf_fixture::GltfProject;
+        use crate::tests::project_index::IndexingEngine;
+
+        const FIRST: &str = "scripts/First.erg";
+        const SECOND: &str = "scripts/Second.erg";
+        let engine = IndexingEngine::new();
+        let project = GltfProject::with("write-during-reindex", &[]);
+        engine.serve(&project.vfs);
+        let (first, second) = (project.uuid(FIRST), project.uuid(SECOND));
+        let mut pvfs = project.vfs.lock().expect("the project");
+
+        pvfs.create_asset(FIRST, b"behavior First { }")
+            .expect("the first file is created");
+        assert_eq!(
+            pvfs.after_index(reveal(FIRST)),
+            None,
+            "the first action waits for the reindex in flight"
+        );
+        assert_eq!(engine.waiting(), 1, "the first write filed a reindex");
+        // The first reindex walks the project now, before the second write.
+        engine.build();
+
+        pvfs.create_asset(SECOND, b"behavior Second { }")
+            .expect("the second file is created");
+        assert_eq!(
+            pvfs.after_index(reveal(SECOND)),
+            None,
+            "the second action waits for the next reindex"
+        );
+        assert_eq!(
+            engine.waiting(),
+            0,
+            "no second reindex while the first is in flight"
+        );
+        assert!(pvfs.land().is_none(), "the first is still in flight");
+
+        engine.intake();
+        let generation = pvfs.generation();
+        let landed = pvfs.land().expect("the first reindex landed");
+        assert_eq!(landed.outcome, Ok(()));
+        assert_eq!(
+            landed.actions,
+            vec![reveal(FIRST)],
+            "only the first write's action runs at the first landing"
+        );
+        assert!(
+            pvfs.generation() > generation,
+            "the landing moves the generation"
+        );
+        assert!(engine.indexes(&first), "the first file is indexed");
+        assert!(
+            !engine.indexes(&second),
+            "the second file is not: the walk began before it"
+        );
+        assert_eq!(
+            engine.waiting(),
+            1,
+            "the second reindex is filed at the first's landing"
+        );
+        assert!(pvfs.land().is_none(), "the second is in flight");
+
+        engine.frame();
+        let generation = pvfs.generation();
+        let landed = pvfs.land().expect("the second reindex landed");
+        assert_eq!(landed.outcome, Ok(()));
+        assert_eq!(
+            landed.actions,
+            vec![reveal(SECOND)],
+            "the second write's action runs at the second landing"
+        );
+        assert!(
+            pvfs.generation() > generation,
+            "the landing moves the generation"
+        );
+        assert!(engine.indexes(&second), "the second file is indexed");
+
+        assert!(pvfs.land().is_none(), "nothing more lands");
+        assert_eq!(engine.waiting(), 0, "nothing more is filed");
+        assert_eq!(engine.filed(), 2, "two reindexes in all");
+        assert_eq!(engine.most_waiting(), 1, "one reindex in flight at a time");
     }
 
     /// **The project's physics step is read from its `project.json`.** A

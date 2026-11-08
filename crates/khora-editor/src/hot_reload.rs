@@ -18,20 +18,17 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::AssetEntry;
 use khora_sdk::EditorState;
-use khora_sdk::{AssetChangeKind, AssetSource, IndexHub};
+use khora_sdk::{AssetChangeKind, AssetSource};
 
-use crate::project_vfs::ProjectVfs;
+use crate::project_vfs::{AfterIndex, ProjectVfs};
 
 /// Drain the project's filesystem watcher and apply the appropriate
-/// invalidation / reindex actions. A full reindex is filed with `indexes`,
-/// the engine's index hub, and its ticket kept in the editor state, for
-/// [`land_reindex`] to read; with no hub, it is done on the frame and the
-/// asset browser cache rebuilt at once.
-pub fn pump(
-    pvfs_mutex: &Arc<Mutex<ProjectVfs>>,
-    editor_state: &Arc<Mutex<EditorState>>,
-    indexes: Option<&IndexHub>,
-) {
+/// invalidation / reindex actions. A full reindex is filed with the
+/// engine's index hub the project holds ([`ProjectVfs::reindex`]), its
+/// ticket mirrored in the editor state, for [`land_reindex`] to read; with
+/// no hub, it is done on the frame and the asset browser cache rebuilt at
+/// once.
+pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<EditorState>>) {
     let Ok(mut pvfs) = pvfs_mutex.lock() else {
         return;
     };
@@ -83,12 +80,15 @@ pub fn pump(
     if !needs_reindex {
         return;
     }
-    if let Some(indexes) = indexes {
-        file_reindex(&mut pvfs, editor_state, indexes);
+    if let Err(e) = pvfs.reindex() {
+        log::error!("Hot reload: failed to rebuild index: {:#}", e);
         return;
     }
-    if let Err(e) = pvfs.rebuild_index() {
-        log::error!("Hot reload: failed to rebuild index: {:#}", e);
+    if let Some(ticket) = pvfs.reindexing() {
+        // Off the frame: the browser is refreshed when it lands.
+        if let Ok(mut state) = editor_state.lock() {
+            state.reindexing = Some(ticket);
+        }
         return;
     }
     let entries = collect_asset_entries(&pvfs);
@@ -100,61 +100,129 @@ pub fn pump(
     }
 }
 
-/// Reads the outcome of the reindex the pump filed with `indexes`, once it
-/// landed: the project takes it in ([`ProjectVfs::index_landed`]) and the
-/// asset browser cache is rebuilt; a failure is reported. Nothing while it
-/// is in flight, or when none was filed.
+/// Reads the outcome of the project's reindex in flight, once it landed
+/// ([`ProjectVfs::land`]): the asset browser cache is rebuilt, the actions
+/// that waited on the editor state run, and a failure is reported. Returns
+/// the actions that need the world ([`AfterIndex::AssignMaterial`]), for
+/// the caller to apply. Nothing while it is in flight, or when none was
+/// filed.
 pub fn land_reindex(
     pvfs_mutex: &Arc<Mutex<ProjectVfs>>,
     editor_state: &Arc<Mutex<EditorState>>,
-    indexes: &IndexHub,
-) {
-    let Some(ticket) = editor_state.lock().ok().and_then(|state| state.reindexing) else {
-        return;
-    };
-    let Some(outcome) = indexes.take_outcome(ticket) else {
-        return;
-    };
+) -> Vec<AfterIndex> {
     let Ok(mut pvfs) = pvfs_mutex.lock() else {
-        return;
+        return Vec::new();
     };
-    if let Ok(mut state) = editor_state.lock() {
-        state.reindexing = None;
+    let (editing, playing, choice, asked) =
+        editor_state
+            .lock()
+            .map_or((false, false, 0, true), |state| {
+                (
+                    state.play_mode == khora_sdk::PlayMode::Editing && state.restoring.is_none(),
+                    state.play_mode != khora_sdk::PlayMode::Editing,
+                    state.scene_choices,
+                    state.pending_scene_load.is_some(),
+                )
+            });
+    let landed = pvfs.land();
+    let in_flight = pvfs.reindexing();
+    let Some(landed) = landed else {
+        // What waited for the edited scene to come back is assigned now.
+        return if editing {
+            assignable(pvfs.release(), &mut pvfs, editing, playing, choice)
+        } else {
+            Vec::new()
+        };
+    };
+    if let Err(why) = &landed.outcome {
+        log::error!("Failed to rebuild the project's index: {why}");
     }
-    match outcome {
-        Ok(()) => {
-            pvfs.index_landed();
-            let entries = collect_asset_entries(&pvfs);
-            let dirs = pvfs.list_dirs();
-            if let Ok(mut state) = editor_state.lock() {
-                state.asset_entries = entries;
-                state.asset_dirs = dirs;
-                state.asset_epoch = state.asset_epoch.wrapping_add(1);
+    let entries = collect_asset_entries(&pvfs);
+    let dirs = pvfs.list_dirs();
+    let mut with_world = Vec::new();
+    let mut reveal = None;
+    let mut open = None;
+    for action in landed.actions {
+        match action {
+            AfterIndex::Reveal(rel) => reveal = Some(rel),
+            AfterIndex::OpenScene {
+                rel,
+                choice: chosen,
+            } => {
+                // Another scene chosen since, or asked for now, has the last
+                // word.
+                if chosen != choice || asked {
+                    continue;
+                }
+                let uuid = pvfs.resolve_uuid(&rel);
+                if pvfs.assets().reader().index().get_metadata(&uuid).is_some() {
+                    open = Some(pvfs.assets_root.join(&rel).to_string_lossy().into_owned());
+                } else {
+                    log::error!("The project holds no scene '{rel}'");
+                }
             }
+            action @ AfterIndex::AssignMaterial { .. } => with_world.push(action),
         }
-        Err(why) => log::error!("Hot reload: failed to rebuild index: {why}"),
     }
-    // Files that came or went while it was built are indexed by another.
-    if pvfs.take_reindex_again() {
-        file_reindex(&mut pvfs, editor_state, indexes);
+    if editing {
+        let mut released = pvfs.release();
+        released.append(&mut with_world);
+        with_world = released;
     }
+    let with_world = assignable(with_world, &mut pvfs, editing, playing, choice);
+    drop(pvfs);
+    if let Ok(mut state) = editor_state.lock() {
+        state.reindexing = in_flight;
+        state.asset_entries = entries;
+        state.asset_dirs = dirs;
+        state.asset_epoch = state.asset_epoch.wrapping_add(1);
+        if reveal.is_some() {
+            state.pending_reveal_asset = reveal;
+        }
+        if open.is_some() {
+            state.pending_scene_load = open;
+        }
+    }
+    with_world
 }
 
-/// Files a reindex of the project with `indexes` and keeps its ticket; while
-/// one is in flight, another is filed once it lands, so a burst of changes is
-/// indexed once more, not once per change.
-fn file_reindex(pvfs: &mut ProjectVfs, editor_state: &Arc<Mutex<EditorState>>, indexes: &IndexHub) {
-    let Ok(mut state) = editor_state.lock() else {
-        return;
-    };
-    if state
-        .reindexing
-        .is_some_and(|ticket| indexes.is_pending(ticket))
-    {
-        pvfs.reindex_again();
-        return;
+/// Of the material assignments `actions` that landed, those to apply now.
+///
+/// One for a scene chosen before the open one is dropped. One saved while the
+/// scene was played is for the played scene: applied while it plays, dropped
+/// once it stopped. One saved while editing is for the edited scene: applied
+/// while editing, kept in `pvfs` while the scene is played or restored, else
+/// the restore at Stop would undo it.
+fn assignable(
+    actions: Vec<AfterIndex>,
+    pvfs: &mut ProjectVfs,
+    editing: bool,
+    playing: bool,
+    choice: u64,
+) -> Vec<AfterIndex> {
+    let mut now = Vec::new();
+    let mut kept = Vec::new();
+    for action in actions {
+        let AfterIndex::AssignMaterial {
+            choice: chosen,
+            played,
+            ..
+        } = &action
+        else {
+            continue;
+        };
+        if *chosen != choice {
+            continue;
+        }
+        match (*played, editing) {
+            (true, _) if playing => now.push(action),
+            (true, _) => {}
+            (false, true) => now.push(action),
+            (false, false) => kept.push(action),
+        }
     }
-    state.reindexing = Some(indexes.file(pvfs.root.clone(), khora_sdk::IndexKind::Reindex));
+    pvfs.hold(kept);
+    now
 }
 
 /// Build an `AssetEntry` cache from the current VFS contents. Used by the
@@ -348,7 +416,7 @@ mod tests {
         };
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline && !listed(&state) {
-            pump(&project.vfs, &state, None);
+            pump(&project.vfs, &state);
             std::thread::sleep(Duration::from_millis(50));
         }
 
@@ -415,7 +483,7 @@ mod tests {
         };
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline && !listed(&state) {
-            pump(&project.vfs, &state, None);
+            pump(&project.vfs, &state);
             std::thread::sleep(Duration::from_millis(50));
         }
 
@@ -528,6 +596,13 @@ mod tests {
             .get::<Arc<IndexHub>>()
             .cloned()
             .expect("`install_indexing` installs the hub");
+        // The project files its reindexes with the engine's hub, as
+        // `before_agents` arranges.
+        project
+            .vfs
+            .lock()
+            .expect("the project")
+            .index_with(Arc::clone(&hub));
 
         let entries = collect_asset_entries(&project.vfs.lock().expect("the project"));
         let state = Arc::new(Mutex::new(EditorState {
@@ -546,7 +621,7 @@ mod tests {
             |state: &Arc<Mutex<EditorState>>| state.lock().expect("the editor state").reindexing;
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline && filed(&state).is_none() {
-            pump(&project.vfs, &state, Some(&hub));
+            pump(&project.vfs, &state);
             std::thread::sleep(Duration::from_millis(50));
         }
 
@@ -579,12 +654,12 @@ mod tests {
         );
 
         // Read before the engine's frames: still in flight, nothing changes.
-        land_reindex(&project.vfs, &state, &hub);
+        land_reindex(&project.vfs, &state);
         assert_eq!(filed(&state), Some(ticket), "still waiting for its outcome");
 
         for _ in 0..crate::tests::scene_loads::SETTLE_FRAMES {
             engine_frame(&runtime);
-            land_reindex(&project.vfs, &state, &hub);
+            land_reindex(&project.vfs, &state);
             if filed(&state).is_none() {
                 break;
             }
@@ -651,6 +726,12 @@ mod tests {
             .get::<Arc<IndexHub>>()
             .cloned()
             .expect("`install_indexing` installs the hub");
+        // A files its reindexes with the engine's hub, as `before_agents`
+        // arranges for the open project.
+        a.vfs
+            .lock()
+            .expect("project A")
+            .index_with(Arc::clone(&hub));
 
         let state = Arc::new(Mutex::new(EditorState {
             project_folder: Some(a.root.to_string_lossy().into_owned()),
@@ -666,7 +747,7 @@ mod tests {
             |state: &Arc<Mutex<EditorState>>| state.lock().expect("the editor state").reindexing;
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline && filed(&state).is_none() {
-            pump(&a.vfs, &state, Some(&hub));
+            pump(&a.vfs, &state);
             std::thread::sleep(Duration::from_millis(50));
         }
         assert!(
@@ -676,7 +757,11 @@ mod tests {
 
         // The user opens B before it lands: B's service moves into the
         // engine's, and B is the project the editor reads from now on.
-        b.vfs.lock().expect("project B").share_assets(&shared);
+        {
+            let mut b_vfs = b.vfs.lock().expect("project B");
+            b_vfs.share_assets(&shared);
+            b_vfs.index_with(Arc::clone(&hub));
+        }
         if let Ok(mut state) = state.lock() {
             state.project_folder = Some(b.root.to_string_lossy().into_owned());
             state.asset_entries = collect_asset_entries(&b.vfs.lock().expect("project B"));
@@ -684,7 +769,7 @@ mod tests {
 
         for _ in 0..crate::tests::scene_loads::SETTLE_FRAMES {
             engine_frame(&runtime);
-            land_reindex(&b.vfs, &state, &hub);
+            land_reindex(&b.vfs, &state);
             if filed(&state).is_none() {
                 break;
             }

@@ -28,6 +28,7 @@
 static GLOBAL: khora_sdk::prelude::SaaTrackingAllocator =
     khora_sdk::prelude::SaaTrackingAllocator::new(std::alloc::System);
 
+mod after_index;
 mod app;
 mod bootstrap;
 mod build_game;

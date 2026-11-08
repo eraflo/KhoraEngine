@@ -171,7 +171,7 @@ fn write_prefab_through_vfs(pvfs: &mut ProjectVfs, rel_fwd: &str, bytes: &[u8]) 
         log::error!("Failed to write prefab '{}': {:#}", rel_fwd, e);
         return;
     }
-    if let Err(e) = pvfs.rebuild_index() {
+    if let Err(e) = pvfs.reindex() {
         log::warn!("Prefab saved but index rebuild failed: {:#}", e);
     }
     log::info!("Prefab saved to '{}' ({} bytes)", rel_fwd, bytes.len());

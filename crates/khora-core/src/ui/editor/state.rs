@@ -222,17 +222,17 @@ pub struct EditorState {
     /// what is wrong with it — for the viewport to say so over the image;
     /// `None` when the game's camera renders or no game runs.
     pub broken_play_camera: Option<(EntityId, String)>,
-    /// Serialised snapshot of the scene taken when entering play mode.
-    /// Restored when the user presses Stop.
+    /// The scene's snapshot taken at Play, restored at Stop.
     pub scene_snapshot: Option<Vec<u8>>,
-    /// The restore Stop filed, while it is prepared off the frame: Play is
-    /// refused until it lands. `None` when no restore is under way.
+    /// The restore Stop filed, being prepared off the frame: Play waits for it.
     pub restoring: Option<crate::scene::LoadTicket>,
     /// The last load's problems as Stop found them, by the persistent id of
     /// the entity each names: mapped onto the restored entities.
     pub restore_problems: Vec<(Option<crate::ecs::PersistentId>, crate::problems::Problem)>,
     /// The scenes opening off the frame, in order: ticket and path.
     pub opening: Vec<(crate::scene::LoadTicket, String)>,
+    /// Moves at each scene chosen (new, opened): what waited for one before is void.
+    pub scene_choices: u64,
 
     // ── Scene file path ──────────────────────────────
     /// Path to the currently open scene file (for Save).

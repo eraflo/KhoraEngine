@@ -310,19 +310,23 @@ impl EngineApp for EditorApp {
                 commands::forget_history(&self.command_history);
             }
         }
-        if let (Some(pvfs), Some(indexes)) = (
-            self.project_vfs.as_ref(),
-            runtime.resources.get::<Arc<khora_sdk::IndexHub>>(),
-        ) {
-            hot_reload::land_reindex(pvfs, &self.editor_state, indexes);
+        if let Some(pvfs) = self.project_vfs.as_ref() {
+            let actions = hot_reload::land_reindex(pvfs, &self.editor_state);
+            commands::apply_after_index(world, actions);
         }
         commands::process_transport(world, &self.editor_state, runtime);
     }
 
     fn before_agents(&mut self, world: &mut GameWorld, runtime: &Runtime) {
         if let Some(pvfs_arc) = self.project_vfs.as_ref() {
-            let indexes = runtime.resources.get::<Arc<khora_sdk::IndexHub>>();
-            hot_reload::pump(pvfs_arc, &self.editor_state, indexes.map(|hub| &**hub));
+            // The project's reindexes are filed with the engine's hub.
+            if let (Ok(mut pvfs), Some(indexes)) = (
+                pvfs_arc.lock(),
+                runtime.resources.get::<Arc<khora_sdk::IndexHub>>(),
+            ) {
+                pvfs.index_with(Arc::clone(indexes));
+            }
+            hot_reload::pump(pvfs_arc, &self.editor_state);
         }
         // The open project's scripts: mounted as it opens, swapped as another
         // opens — what they declare registers while editing, what they
