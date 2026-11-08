@@ -19,8 +19,9 @@
 //! These replace the hand-written render agent's tests: its id, its phase,
 //! its importance, the lanes it held, the strategies it offered and what it
 //! declared. A frame drawn through the agent into the frame's target needs a
-//! `FrameContext`, which this crate cannot build (it takes a tokio handle);
-//! the lanes' own frames are khora-lanes' tests (`tests/it/render/`).
+//! `FrameContext` among the runtime's resources (built with
+//! `FrameContext::new()`); the lanes' own frames are khora-lanes' tests
+//! (`tests/it/render/`).
 
 pub mod fixtures;
 mod frames;

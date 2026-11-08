@@ -30,9 +30,8 @@ use khora_sdk::khora_data::flow::{Flow, RenderFlow, Selection, ShadowFlow};
 use khora_sdk::khora_data::render::{target_aspect, FALLBACK_ASPECT};
 
 /// A frame's runtime as the engine builds it: an `Arc<FrameContext>` among
-/// the resources, the tokio runtime it was made with kept alive beside it.
+/// the resources.
 struct Frame {
-    _tokio: tokio::runtime::Runtime,
     context: Arc<FrameContext>,
     runtime: Runtime,
 }
@@ -40,17 +39,10 @@ struct Frame {
 impl Frame {
     /// A frame whose context holds no colour target size yet.
     fn without_a_size() -> Self {
-        let tokio = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .expect("a tokio runtime");
-        let context = Arc::new(FrameContext::new(tokio.handle().clone()));
+        let context = Arc::new(FrameContext::new());
         let mut runtime = Runtime::new();
         runtime.resources.insert(Arc::clone(&context));
-        Self {
-            _tokio: tokio,
-            context,
-            runtime,
-        }
+        Self { context, runtime }
     }
 
     /// A frame rendering into a `width`×`height` colour target.

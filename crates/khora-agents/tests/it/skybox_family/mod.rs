@@ -19,8 +19,8 @@
 //! These replace the skybox agent's own tests: its id, its phase after the
 //! renderer, its importance, the one lane it held, the one strategy it
 //! offered, and what it declared. A frame drawn through the agent into the
-//! frame's target needs a `FrameContext`, which this crate cannot build (it
-//! takes a tokio handle); those frames are the SDK's tests
+//! frame's target needs a `FrameContext` among the runtime's resources
+//! (built with `FrameContext::new()`); those frames are the SDK's tests
 //! (`khora-sdk/tests/it/frame_target_reaches_lanes.rs`).
 
 pub mod fixtures;

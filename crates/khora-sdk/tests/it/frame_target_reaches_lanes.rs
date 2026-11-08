@@ -262,15 +262,14 @@ impl EngineApp for Bare {
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
 }
 
-/// An engine booted over `renderer`, its frame context among the resources,
-/// the tokio runtime that context was made with kept alive beside it.
-fn engine_over(renderer: RecordingRenderer) -> (EngineCore<Bare>, tokio::runtime::Runtime) {
+/// An engine booted over `renderer`, its frame context among the resources.
+fn engine_over(renderer: RecordingRenderer) -> EngineCore<Bare> {
     let mut runtime = Runtime::new();
-    let tokio = insert_frame_context(&mut runtime);
+    insert_frame_context(&mut runtime);
     install_renderer(&mut runtime, renderer);
     let mut engine = EngineCore::<Bare>::new();
     engine.bootstrap(Bare, runtime);
-    (engine, tokio)
+    engine
 }
 
 /// The `Target` the frame context of `runtime` holds.
@@ -298,7 +297,7 @@ fn beginning_a_frame_publishes_the_target_with_the_backend_formats() {
         TextureFormat::Rgba16Float,
         Some((TextureViewId(2), TextureFormat::Depth24Plus)),
     );
-    let (mut engine, _tokio) = engine_over(renderer);
+    let mut engine = engine_over(renderer);
     let runtime = Arc::clone(engine.runtime());
 
     assert!(
@@ -332,7 +331,7 @@ fn beginning_a_frame_publishes_the_target_with_the_backend_formats() {
 #[test]
 fn a_frame_without_depth_publishes_a_target_without_depth() {
     let (renderer, _) = RecordingRenderer::into_target(640, 480);
-    let (mut engine, _tokio) = engine_over(renderer);
+    let mut engine = engine_over(renderer);
     let runtime = Arc::clone(engine.runtime());
 
     assert!(
@@ -365,7 +364,7 @@ fn the_frame_target_reaches_a_lane_that_declares_it() {
         TextureFormat::Bgra8UnormSrgb,
         Some((TextureViewId(5), TextureFormat::Depth32Float)),
     );
-    let (mut engine, _tokio) = engine_over(renderer);
+    let mut engine = engine_over(renderer);
     let runtime = Arc::clone(engine.runtime());
     assert!(
         engine.begin_render_frame(&runtime),
@@ -401,7 +400,7 @@ fn the_frame_target_reaches_a_lane_that_declares_it() {
 #[test]
 fn the_lane_agent_lends_the_clear_colour() {
     let mut runtime = Runtime::new();
-    let _tokio = insert_frame_context(&mut runtime);
+    insert_frame_context(&mut runtime);
     let clear = LinearRgba::new(0.25, 0.5, 0.75, 1.0);
     runtime
         .resources
@@ -430,7 +429,7 @@ fn each_run_lends_the_target_of_its_frame() {
         TextureFormat::Rgba8UnormSrgb,
         Some((TextureViewId(5), TextureFormat::Depth32Float)),
     );
-    let (mut engine, _tokio) = engine_over(renderer);
+    let mut engine = engine_over(renderer);
     let runtime = Arc::clone(engine.runtime());
     let mut agent = lane_agent(&TARGET_PROBE, &DeviceCaps::default());
     assert!(
@@ -562,7 +561,7 @@ impl khora_sdk::RenderSystem for AcquiresOnce {
 #[test]
 fn a_frame_whose_target_was_not_acquired_lends_no_target() {
     let mut runtime = Runtime::new();
-    let _tokio = insert_frame_context(&mut runtime);
+    insert_frame_context(&mut runtime);
     let renderer: Arc<std::sync::Mutex<Box<dyn khora_sdk::RenderSystem>>> =
         Arc::new(std::sync::Mutex::new(Box::new(AcquiresOnce {
             acquired: false,

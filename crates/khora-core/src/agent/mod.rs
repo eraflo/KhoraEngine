@@ -36,7 +36,7 @@ use std::any::Any;
 use std::sync::{Arc, Mutex};
 
 pub use activation::{Activation, State, UnknownFamily};
-pub use completion::{AgentCompletionMap, AgentDone, CompletionOutcome};
+pub use completion::{AgentCompletionMap, CompletionOutcome};
 pub use contention::Contention;
 pub use dependency::{AgentDependency, DependencyCondition, DependencyKind};
 pub use execution_phase::ExecutionPhase;

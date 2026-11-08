@@ -464,6 +464,92 @@ fn no_workspace_crate_has_an_optional_feature() {
     );
 }
 
+/// **No floor crate declares an async runtime.** The floor crates
+/// (`khora-core`, `khora-data`, `khora-script`, `khora-control`) are built
+/// into every test binary above them (RULES §2b), and concurrency goes
+/// through the DCC, not an executor (RULES §5): none lists `tokio` in any
+/// dependency table — shipped, dev, build, or per target — under its own
+/// name or renamed with `package = "tokio"`.
+#[test]
+fn floor_crates_declare_no_async_runtime() {
+    const FLOOR: &[&str] = &["khora-core", "khora-data", "khora-script", "khora-control"];
+    const RUNTIME: &str = "tokio";
+    let root = repo_root();
+    let workspace = read_manifest(&root.join("Cargo.toml"));
+    let workspace = workspace
+        .get("workspace")
+        .and_then(Value::as_table)
+        .unwrap_or_else(|| panic!("the root manifest has no [workspace]"));
+
+    let mut found = BTreeSet::new();
+    let mut problems = Vec::new();
+    for dir in members(&root, workspace) {
+        let manifest = read_manifest(&dir.join("Cargo.toml"));
+        let name = package_name(&manifest, &dir);
+        if !FLOOR.contains(&name.as_str()) {
+            continue;
+        }
+        found.insert(name.clone());
+        for (table_name, table) in every_dependency_table(&manifest) {
+            for (dep, spec) in table {
+                let package = spec
+                    .as_table()
+                    .and_then(|spec| spec.get("package"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(dep);
+                if package == RUNTIME {
+                    problems.push(format!("{name}: [{table_name}] declares `{dep}`"));
+                }
+            }
+        }
+    }
+    assert_eq!(
+        found,
+        names(FLOOR),
+        "the reader did not find every floor crate among the members"
+    );
+    assert!(
+        problems.is_empty(),
+        "an async runtime in a floor crate:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// Every dependency table of a manifest — shipped, dev and build, top-level
+/// and per target — with the name it is written under, for a failure message.
+fn every_dependency_table(manifest: &Table) -> Vec<(String, &Table)> {
+    const ALL_TABLES: &[&str] = &[
+        "dependencies",
+        "dev-dependencies",
+        "dev_dependencies",
+        "build-dependencies",
+        "build_dependencies",
+    ];
+    let mut tables: Vec<(String, &Table)> = ALL_TABLES
+        .iter()
+        .filter_map(|key| {
+            manifest
+                .get(*key)
+                .and_then(Value::as_table)
+                .map(|table| ((*key).to_owned(), table))
+        })
+        .collect();
+    if let Some(targets) = manifest.get("target").and_then(Value::as_table) {
+        for (cfg, target) in targets {
+            let Some(target) = target.as_table() else {
+                continue;
+            };
+            tables.extend(ALL_TABLES.iter().filter_map(|key| {
+                target
+                    .get(*key)
+                    .and_then(Value::as_table)
+                    .map(|table| (format!("target.{cfg}.{key}"), table))
+            }));
+        }
+    }
+    tables
+}
+
 /// **A target that opts out of the tests holds none.** A target with
 /// `test = false` is not built as a test — each such build would link the
 /// whole engine for nothing — so a `#[test]` or `#[cfg(test)]` written in its

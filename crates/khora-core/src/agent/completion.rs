@@ -6,24 +6,18 @@
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
 
-//! Per-frame agent completion tracking — the synchronization primitive used
-//! by the scheduler to coordinate agents that declare `Hard` dependencies.
+//! Per-frame agent completion tracking — how the scheduler records which
+//! agents have finished the frame, and how.
 //!
-//! At frame start the scheduler builds an [`AgentCompletionMap`] populated
-//! with one [`StageHandle<AgentDone>`] per known agent. After each agent
-//! `execute()` (or skip), the scheduler calls [`AgentCompletionMap::mark`]
-//! with a [`CompletionOutcome`].  Dependents either inspect the outcome
-//! synchronously via [`AgentCompletionMap::outcome`] or — once the parallel
-//! scheduler is enabled — `await` it via [`AgentCompletionMap::wait`].
+//! At frame start the scheduler builds an [`AgentCompletionMap`] with one
+//! entry per known agent. After each agent `execute()` (or skip), the
+//! scheduler calls [`AgentCompletionMap::mark`] with a [`CompletionOutcome`];
+//! dependents read it with [`AgentCompletionMap::outcome`].
 
 use std::collections::HashMap;
 use std::sync::Mutex;
 
 use crate::agent::gorna::AgentId;
-use crate::renderer::api::frame::StageHandle;
-
-/// Marker type for the "an agent finished its frame work" stage.
-pub struct AgentDone;
 
 /// What happened to an agent this frame, from the scheduler's point of view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,42 +31,19 @@ pub enum CompletionOutcome {
     Failed,
 }
 
-/// One entry in the completion map: a level-triggered handle plus the
-/// outcome recorded for the frame.
-struct AgentCompletion {
-    handle: StageHandle<AgentDone>,
-    outcome: Mutex<Option<CompletionOutcome>>,
-}
-
-impl AgentCompletion {
-    fn new() -> Self {
-        Self {
-            handle: StageHandle::<AgentDone>::default(),
-            outcome: Mutex::new(None),
-        }
-    }
-
-    fn outcome(&self) -> Option<CompletionOutcome> {
-        *self.outcome.lock().unwrap_or_else(|e| e.into_inner())
-    }
-}
-
-/// Frame-scoped map of agent completion handles.
+/// Frame-scoped map of agent outcomes.
 ///
-/// Created by the scheduler at the top of each frame and inserted into
-/// the per-frame [`ServiceRegistry`](crate::ServiceRegistry) overlay.
-/// Agents must NOT retain a reference past the current frame.
+/// Created by the scheduler at the top of each frame and passed by
+/// reference to the frame's execution; nothing keeps it past the frame.
 pub struct AgentCompletionMap {
-    entries: HashMap<AgentId, AgentCompletion>,
+    /// Each known agent's outcome, `None` until it is marked.
+    entries: HashMap<AgentId, Mutex<Option<CompletionOutcome>>>,
 }
 
 impl AgentCompletionMap {
-    /// Builds a completion map with one empty handle per agent ID.
+    /// Builds a completion map with one unmarked entry per agent ID.
     pub fn new(agent_ids: &[AgentId]) -> Self {
-        let mut entries = HashMap::with_capacity(agent_ids.len());
-        for id in agent_ids {
-            entries.insert(*id, AgentCompletion::new());
-        }
+        let entries = agent_ids.iter().map(|id| (*id, Mutex::new(None))).collect();
         Self { entries }
     }
 
@@ -88,13 +59,10 @@ impl AgentCompletionMap {
     pub fn mark(&self, id: AgentId, outcome: CompletionOutcome) -> bool {
         match self.entries.get(&id) {
             Some(entry) => {
-                {
-                    let mut held = entry.outcome.lock().unwrap_or_else(|e| e.into_inner());
-                    if held.is_none() || outcome == CompletionOutcome::Failed {
-                        *held = Some(outcome);
-                    }
+                let mut held = entry.lock().unwrap_or_else(|e| e.into_inner());
+                if held.is_none() || outcome == CompletionOutcome::Failed {
+                    *held = Some(outcome);
                 }
-                entry.handle.mark_done();
                 true
             }
             None => false,
@@ -104,23 +72,16 @@ impl AgentCompletionMap {
     /// Returns the recorded outcome for `id`, or `None` if the agent has
     /// not yet been marked (or the ID is unknown).
     pub fn outcome(&self, id: AgentId) -> Option<CompletionOutcome> {
-        self.entries.get(&id)?.outcome()
+        *self
+            .entries
+            .get(&id)?
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     /// Returns `true` if a [`mark`](Self::mark) has been recorded for `id`.
     pub fn is_done(&self, id: AgentId) -> bool {
-        self.entries
-            .get(&id)
-            .is_some_and(|entry| entry.handle.is_done())
-    }
-
-    /// Awaits an agent's completion. Returns the outcome, or `None` if the
-    /// agent ID is unknown to this map (signals a configuration bug rather
-    /// than blocking forever).
-    pub async fn wait(&self, id: AgentId) -> Option<CompletionOutcome> {
-        let entry = self.entries.get(&id)?;
-        entry.handle.wait().await;
-        entry.outcome()
+        self.outcome(id).is_some()
     }
 
     /// Returns all agent IDs tracked by this map (for tests / introspection).
@@ -133,44 +94,42 @@ impl AgentCompletionMap {
 mod tests {
     use super::*;
 
-    fn rt() -> tokio::runtime::Runtime {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-    }
-
     #[test]
-    fn wait_returns_immediately_after_mark() {
-        let map = AgentCompletionMap::new(&[AgentId::new("renderer")]);
+    fn completion_outcome_is_done_once_marked() {
+        let map = AgentCompletionMap::new(&[AgentId::new("renderer"), AgentId::new("shadows")]);
+        assert!(!map.is_done(AgentId::new("renderer")));
+        assert!(!map.is_done(AgentId::new("shadows")));
+
         map.mark(AgentId::new("renderer"), CompletionOutcome::Completed);
+        assert!(map.is_done(AgentId::new("renderer")));
+        assert!(!map.is_done(AgentId::new("shadows")));
 
-        let result = rt().block_on(async { map.wait(AgentId::new("renderer")).await });
-        assert_eq!(result, Some(CompletionOutcome::Completed));
+        // A skipped agent is done too: `is_done` means an outcome was recorded.
+        map.mark(AgentId::new("shadows"), CompletionOutcome::Skipped);
+        assert!(map.is_done(AgentId::new("shadows")));
+
+        // An id the map does not track is never done, even after a refused mark.
+        assert!(!map.mark(AgentId::new("audio"), CompletionOutcome::Completed));
+        assert!(!map.is_done(AgentId::new("audio")));
     }
 
     #[test]
-    fn wait_unblocks_when_mark_arrives_later() {
-        use std::sync::Arc;
+    fn failed_replaces_an_earlier_outcome() {
+        let map = AgentCompletionMap::new(&[AgentId::new("physics")]);
+        map.mark(AgentId::new("physics"), CompletionOutcome::Completed);
+        assert!(map.mark(AgentId::new("physics"), CompletionOutcome::Failed));
+        assert_eq!(
+            map.outcome(AgentId::new("physics")),
+            Some(CompletionOutcome::Failed)
+        );
+        assert!(map.is_done(AgentId::new("physics")));
 
-        let map = Arc::new(AgentCompletionMap::new(&[AgentId::new("shadows")]));
-        let map_clone = Arc::clone(&map);
-
-        let result = rt().block_on(async move {
-            let waiter = tokio::spawn(async move { map_clone.wait(AgentId::new("shadows")).await });
-            // Yield so the waiter has a chance to register.
-            tokio::task::yield_now().await;
-            map.mark(AgentId::new("shadows"), CompletionOutcome::Skipped);
-            waiter.await.unwrap()
-        });
-        assert_eq!(result, Some(CompletionOutcome::Skipped));
-    }
-
-    #[test]
-    fn wait_on_unknown_agent_returns_none() {
-        let map = AgentCompletionMap::new(&[AgentId::new("renderer")]);
-        let result = rt().block_on(async { map.wait(AgentId::new("audio")).await });
-        assert_eq!(result, None);
+        // A later non-failure does not undo the failure.
+        map.mark(AgentId::new("physics"), CompletionOutcome::Completed);
+        assert_eq!(
+            map.outcome(AgentId::new("physics")),
+            Some(CompletionOutcome::Failed)
+        );
     }
 
     #[test]

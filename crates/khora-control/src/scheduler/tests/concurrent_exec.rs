@@ -199,7 +199,7 @@ impl Agent for Panicking {
 }
 
 /// A panic on a pool worker is the agent's failure, not the frame's: the
-/// agent's completion is still marked — anything waiting on it is released —
+/// agent's completion is still marked — a dependent reads an outcome —
 /// but never as `Completed`, and its wave-mates complete as usual.
 ///
 /// The panicking agent is dispatched last, so the wave's other job has
@@ -245,7 +245,7 @@ fn a_panicking_agent_is_reported_as_a_failed_completion() {
 
     assert!(
         completion.is_done(AgentId::new("physics")),
-        "the panicking agent's completion is marked, so nothing waits on it forever"
+        "the panicking agent's completion is marked, so its dependents read an outcome"
     );
     assert_ne!(
         completion.outcome(AgentId::new("physics")),

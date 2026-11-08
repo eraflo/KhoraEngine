@@ -1718,30 +1718,15 @@ fn module_renderer_paths_still_resolve() {
         PhantomData::<khora_core::renderer::api::frame::FrameContext>,
         PhantomData::<khora_core::renderer::api::frame::frame_context::FrameContext>,
     );
-    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::new;
     let _ = khora_core::renderer::api::frame::frame_context::FrameContext::insert::<u32>;
     let _ = khora_core::renderer::api::frame::frame_context::FrameContext::get::<u32>;
     let _ = khora_core::renderer::api::frame::frame_context::FrameContext::contains::<u32>;
-    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::insert_stage::<u32>;
-    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::spawn::<
-        std::future::Ready<()>,
-    >;
-    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::wait_for_all;
-    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::tokio_handle;
+    let _ = khora_core::renderer::api::frame::frame_context::FrameContext::remove::<u32>;
+    let _: fn() -> khora_core::renderer::api::frame::frame_context::FrameContext =
+        khora_core::renderer::api::frame::frame_context::FrameContext::new;
     is_send::<khora_core::renderer::api::frame::frame_context::FrameContext>();
     is_sync::<khora_core::renderer::api::frame::frame_context::FrameContext>();
     is_debug::<khora_core::renderer::api::frame::frame_context::FrameContext>();
-    let _ = type_name::<khora_core::renderer::api::frame::frame_context::StageHandle<u32>>();
-    let _ = type_name::<khora_core::renderer::api::frame::StageHandle<u32>>();
-    same_type(
-        PhantomData::<khora_core::renderer::api::frame::StageHandle<u32>>,
-        PhantomData::<khora_core::renderer::api::frame::frame_context::StageHandle<u32>>,
-    );
-    let _ = <khora_core::renderer::api::frame::frame_context::StageHandle<u32>>::mark_done;
-    let _ = <khora_core::renderer::api::frame::frame_context::StageHandle<u32>>::is_done;
-    let _ = <khora_core::renderer::api::frame::frame_context::StageHandle<u32>>::wait;
-    is_clone::<khora_core::renderer::api::frame::frame_context::StageHandle<u32>>();
-    is_default::<khora_core::renderer::api::frame::frame_context::StageHandle<u32>>();
     let _ = type_name::<khora_core::renderer::api::device::gpu_hook::GpuHook>();
     let _ = type_name::<khora_core::renderer::api::device::GpuHook>();
     same_type(

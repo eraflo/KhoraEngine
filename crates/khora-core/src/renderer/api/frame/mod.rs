@@ -18,7 +18,7 @@
 pub mod frame_context;
 pub mod render_context;
 
-pub use self::frame_context::{FrameContext, StageHandle};
+pub use self::frame_context::FrameContext;
 pub use self::render_context::*;
 
 /// The maximum number of frames that can be processed by the GPU at once.

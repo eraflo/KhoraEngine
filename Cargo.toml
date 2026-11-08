@@ -73,5 +73,3 @@ debug = 0
 lto = true      # Link-Time Optimization for release
 codegen-units = 1 # Maximize optimizations (compiles slower)
 
-[workspace.dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros"] }

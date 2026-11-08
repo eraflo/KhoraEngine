@@ -1462,14 +1462,7 @@ fn module_agent_paths_still_resolve() {
     let _ = khora_core::agent::completion::AgentCompletionMap::mark;
     let _ = khora_core::agent::completion::AgentCompletionMap::outcome;
     let _ = khora_core::agent::completion::AgentCompletionMap::is_done;
-    let _ = khora_core::agent::completion::AgentCompletionMap::wait;
     let _ = khora_core::agent::completion::AgentCompletionMap::known_ids;
-    let _ = type_name::<khora_core::agent::completion::AgentDone>();
-    let _ = type_name::<khora_core::agent::AgentDone>();
-    same_type(
-        PhantomData::<khora_core::agent::AgentDone>,
-        PhantomData::<khora_core::agent::completion::AgentDone>,
-    );
     let _ = type_name::<khora_core::agent::completion::CompletionOutcome>();
     let _ = type_name::<khora_core::agent::CompletionOutcome>();
     same_type(

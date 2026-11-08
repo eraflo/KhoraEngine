@@ -16,9 +16,8 @@
 //! changes its key: a new colour format, depth format or sample count may
 //! price every lane differently. While the key holds, their quotes stand.
 //!
-//! The frame's target reaches a `LaneAgent` through the `FrameContext`, which
-//! only this crate's tests can build (it takes a tokio handle), so this lives
-//! here rather than beside the other quote tests in khora-agents. The probe
+//! The frame's target reaches a `LaneAgent` through the `FrameContext` among
+//! the frame's resources, built here with `FrameContext::new()`. The probe
 //! lanes are run directly through `LaneAgent`, never submitted to the
 //! registry, so no engine of this binary boots them.
 
@@ -279,7 +278,7 @@ fn target(color: TextureFormat) -> Target {
 #[test]
 fn a_target_key_change_requotes_the_other_lanes() {
     let mut runtime = Runtime::new();
-    let _tokio = insert_frame_context(&mut runtime);
+    insert_frame_context(&mut runtime);
     let quotes = Arc::new(AtomicUsize::new(0));
     runtime.resources.insert(WaitingQuotes(Arc::clone(&quotes)));
     let runtime = Arc::new(runtime);

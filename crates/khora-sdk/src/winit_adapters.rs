@@ -432,11 +432,7 @@ impl<W: WindowProvider, A: EngineApp> WinitAppRunner<W, A> {
         // `ecs_maintenance`) never run in the production winit flow.
         self.engine.run_maintenance();
 
-        // Wait for hot-path tasks so the next frame sees a settled GPU state,
-        // then report the frame's busy time to the DCC: the frame ends here.
-        if let (Some(rt), Some(fctx)) = (&self.tokio_runtime, &self.frame_context) {
-            rt.block_on(fctx.wait_for_all());
-        }
+        // Report the frame's busy time to the DCC: the frame ends here.
         self.engine.close_frame();
     }
 }
@@ -452,16 +448,14 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
         let window_config = A::window_config();
         let window = W::create(event_loop as &dyn Any, &window_config);
 
-        // Create the tokio runtime for hot-path async tasks BEFORE
-        // bootstrap so we can register an `Arc<FrameContext>` resource
-        // into the runtime alongside the rest of the engine state.
+        // The tokio runtime the startup sequencer runs its blocking steps on.
         match tokio::runtime::Builder::new_multi_thread()
             .enable_all()
-            .thread_name("khora-hotpath")
+            .thread_name("khora-startup")
             .build()
         {
             Ok(rt) => {
-                log::info!("WinitAppRunner: Tokio runtime created for hot-path tasks");
+                log::info!("WinitAppRunner: Tokio runtime created for the startup steps");
                 self.tokio_runtime = Some(rt);
             }
             Err(e) => {
@@ -482,11 +476,9 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
 
         // Per-engine FrameContext (interior mutability: blackboard reused
         // across frames).
-        if let Some(rt) = &self.tokio_runtime {
-            let fctx = Arc::new(FrameContext::new(rt.handle().clone()));
-            runtime.resources.insert(Arc::clone(&fctx));
-            self.frame_context = Some(fctx);
-        }
+        let fctx = Arc::new(FrameContext::new());
+        runtime.resources.insert(Arc::clone(&fctx));
+        self.frame_context = Some(fctx);
 
         // Insert a long-lived clone of the raw window handle so editor hooks
         // (e.g., overlay `begin_frame`) can retrieve `Arc<winit::window::Window>`

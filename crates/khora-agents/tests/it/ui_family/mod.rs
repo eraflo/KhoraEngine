@@ -20,8 +20,9 @@
 //! the one lane it held (by name and kind), the one strategy it offered, what
 //! it declared — the atlas it locked is now read — and that it leaves the
 //! asset store to the residency. A frame drawn through the agent into the
-//! frame's target needs a `FrameContext`, which this crate cannot build (it
-//! takes a tokio handle); the lane's frames are `khora-lanes/tests/it/ui/`.
+//! frame's target needs a `FrameContext` among the runtime's resources
+//! (built with `FrameContext::new()`); the lane's frames are
+//! `khora-lanes/tests/it/ui/`.
 
 pub mod fixtures;
 mod frames;

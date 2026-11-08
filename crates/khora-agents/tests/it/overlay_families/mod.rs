@@ -20,8 +20,9 @@
 //! These replace the overlay agent's own tests: its id, its three lanes by
 //! name and kind, its phase after the renderer, the one strategy it offered
 //! and what it declared. A frame drawn through an agent into the frame's
-//! target needs a `FrameContext`, which this crate cannot build (it takes a
-//! tokio handle); the lanes' frames are `khora-lanes/tests/it/overlays/`.
+//! target needs a `FrameContext` among the runtime's resources (built with
+//! `FrameContext::new()`); the lanes' frames are
+//! `khora-lanes/tests/it/overlays/`.
 
 pub mod fixtures;
 mod frames;

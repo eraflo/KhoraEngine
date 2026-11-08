@@ -66,7 +66,7 @@ impl khora_sdk::EngineApp for OneCamera {
 fn prepare_frame_runs_once_per_frame_from_the_view() {
     let spawned = Arc::new(Mutex::new(None));
     let mut runtime = Runtime::new();
-    let _tokio = insert_frame_context(&mut runtime);
+    insert_frame_context(&mut runtime);
     let (renderer, prepared) = RecordingRenderer::into_target(1024, 768);
     install_renderer(&mut runtime, renderer);
 
@@ -139,7 +139,7 @@ fn the_tool_camera_prepares_the_frame_when_no_scene_camera_is_active() {
     const TOOL_POSITION: Vec3 = Vec3::new(-7.0, 3.0, 9.0);
     let spawned = Arc::new(Mutex::new(None));
     let mut runtime = Runtime::new();
-    let _tokio = insert_frame_context(&mut runtime);
+    insert_frame_context(&mut runtime);
     let (renderer, prepared) = RecordingRenderer::into_target(1024, 768);
     install_renderer(&mut runtime, renderer);
     let tool = EditorViewportOverride::new();

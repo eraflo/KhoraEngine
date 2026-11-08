@@ -375,14 +375,8 @@ impl GraphicsDevice for QueueLog {
 }
 
 /// A frame context among the runtime's resources, as the windowing driver
-/// inserts it, with the tokio runtime it was made with kept alive beside it.
-pub fn insert_frame_context(runtime: &mut Runtime) -> tokio::runtime::Runtime {
-    let tokio = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("a tokio runtime");
-    let context = Arc::new(
-        khora_sdk::khora_core::renderer::api::frame::FrameContext::new(tokio.handle().clone()),
-    );
+/// inserts it.
+pub fn insert_frame_context(runtime: &mut Runtime) {
+    let context = Arc::new(khora_sdk::khora_core::renderer::api::frame::FrameContext::new());
     runtime.resources.insert(context);
-    tokio
 }
