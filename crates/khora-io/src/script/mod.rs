@@ -19,6 +19,7 @@
 //! ([`mounted`]).
 
 pub mod compile;
+pub mod compile_hub;
 pub mod declarations;
 pub mod hot_reload;
 pub mod layout;

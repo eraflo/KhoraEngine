@@ -121,6 +121,31 @@ fn tick_until(
     panic!("timed out waiting for {what}");
 }
 
+/// Ticks until the mount filed as `ticket` lands, or panics after a few
+/// seconds: its outcome.
+fn tick_until_landed(
+    engine: &mut EngineCore<Tool>,
+    ticket: khora_sdk::scripts::CompileTicket,
+) -> khora_sdk::scripts::CompileOutcome {
+    let mut landed = None;
+    tick_until(engine, "the mount to land", |engine| {
+        landed = khora_sdk::scripts::outcome(engine.runtime(), ticket);
+        landed.is_some()
+    });
+    landed.expect("landed")
+}
+
+/// Mounts `root` and ticks until its compile lands: how many modules
+/// compiled.
+fn mount_landed(engine: &mut EngineCore<Tool>, root: &Path) -> usize {
+    let ticket = khora_sdk::scripts::mount(engine.runtime(), root)
+        .expect("a root with a script folder files a compile");
+    match tick_until_landed(engine, ticket) {
+        Ok(compiled) => compiled,
+        Err(why) => panic!("the mount did not land: {why}"),
+    }
+}
+
 fn tick_for(engine: &mut EngineCore<Tool>, frames: usize) {
     for _ in 0..frames {
         engine.tick();
@@ -194,10 +219,7 @@ fn a_root_mounted_again_after_an_unmount_is_declared_by_its_modules_again() {
         declared_by(engine, "Greeter").is_none()
     });
 
-    assert_eq!(
-        khora_sdk::scripts::mount(engine.runtime(), assets.path()),
-        1
-    );
+    assert_eq!(mount_landed(&mut engine, assets.path()), 1);
 
     tick_until(&mut engine, "`Greeter` to be adopted again", |engine| {
         declared_by(engine, "Greeter").as_deref() == Some("greeter.erg")
@@ -239,8 +261,13 @@ fn a_root_unmounted_and_mounted_in_one_frame_stays_declared_and_runs() {
     let entity = spawn_greeter(&mut engine);
 
     khora_sdk::scripts::unmount(engine.runtime(), assets.path());
-    khora_sdk::scripts::mount(engine.runtime(), assets.path());
-    tick_for(&mut engine, 10);
+    let ticket = khora_sdk::scripts::mount(engine.runtime(), assets.path())
+        .expect("the root files a compile");
+    assert_eq!(
+        tick_until_landed(&mut engine, ticket),
+        Ok(1),
+        "the mount filed after the unmount lands"
+    );
     assert_eq!(
         declared_by(&mut engine, "Greeter").as_deref(),
         Some("greeter.erg")
@@ -386,9 +413,11 @@ fn unmounting_one_root_keeps_another_mounted_roots_program_of_the_same_module_na
 fn unmounting_one_root_keeps_another_mounted_roots_reads_of_the_same_module_name() {
     let first = Assets::with("same-name-reads-a", &[("main.erg", GREETER)]);
     let second = Assets::with("same-name-reads-b", &[("main.erg", GUARD)]);
-    let engine = tool_engine();
-    khora_sdk::scripts::mount(engine.runtime(), first.path());
-    khora_sdk::scripts::mount(engine.runtime(), second.path());
+    let mut engine = tool_engine();
+    let one = khora_sdk::scripts::mount(engine.runtime(), first.path()).expect("a ticket");
+    let two = khora_sdk::scripts::mount(engine.runtime(), second.path()).expect("a ticket");
+    assert!(tick_until_landed(&mut engine, one).is_ok());
+    assert!(tick_until_landed(&mut engine, two).is_ok());
     assert!(
         reads(&engine).contains(&ComponentName::new("Collider")),
         "the premise: the guard's reads are announced: {:?}",

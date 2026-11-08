@@ -29,3 +29,14 @@ pub struct Compiled {
     /// What the modules declare now, one set per declaring module.
     pub declarations: Vec<ScriptDeclarations>,
 }
+
+impl Compiled {
+    /// How many modules compiled to a program: a withdrawal, or a module
+    /// that did not compile, is not counted.
+    pub fn programs(&self) -> usize {
+        self.reloads
+            .iter()
+            .filter(|reload| reload.program.is_some())
+            .count()
+    }
+}

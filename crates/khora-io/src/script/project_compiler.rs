@@ -152,10 +152,7 @@ impl ScriptCompiler for ProjectCompiler {
             let mut modules = request.modules.clone();
             modules.extend(touched);
             return (
-                self.unmounted(&CompileRequest {
-                    root: request.root.clone(),
-                    modules,
-                }),
+                self.unmounted(&CompileRequest::new(request.root.clone(), modules)),
                 None,
             );
         }
@@ -214,7 +211,7 @@ impl ProjectCompiler {
             }
         }
         for (root, modules) in elsewhere {
-            let (from_there, _) = self.compile_mounted(&CompileRequest { root, modules });
+            let (from_there, _) = self.compile_mounted(&CompileRequest::new(root, modules));
             compiled.reloads.extend(from_there.reloads);
             compiled.declarations.extend(from_there.declarations);
         }

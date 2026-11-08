@@ -52,6 +52,7 @@ mod script_problems_after_remount;
 mod script_problems_after_unmount;
 mod scripts_compiled_off_the_frame;
 mod scripts_mount_sequences;
+mod scripts_mounted_by_ticket;
 mod scripts_mounted_while_running;
 mod scripts_outside_the_script_folder;
 mod scripts_scoped_to_a_marker;

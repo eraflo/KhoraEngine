@@ -59,7 +59,9 @@ use khora_io::scene_loads::{install_scene_loading, SceneLoadHub};
 use khora_io::serialization::SerializationService;
 use khora_lanes::loading_lane::{LoadingFamily, PacedLane, RushLane};
 use khora_script::reload::ScriptReload;
-use khora_script::toolchain::{CompileRequest, Compiled, ScriptCompiler, ScriptDeclarations};
+use khora_script::toolchain::{
+    CompileDone, CompileRequest, Compiled, ScriptCompiler, ScriptDeclarations,
+};
 use khora_script::vm::Program;
 
 /// How long a test waits for the scheduler to run the background.
@@ -282,10 +284,10 @@ fn scene(ticket: u64) -> SceneLoadRequest {
 }
 
 fn script(root: &str, modules: &[&str]) -> CompileRequest {
-    CompileRequest {
-        root: PathBuf::from(root),
-        modules: modules.iter().map(|module| (*module).to_owned()).collect(),
-    }
+    CompileRequest::new(
+        PathBuf::from(root),
+        modules.iter().map(|module| (*module).to_owned()),
+    )
 }
 
 fn asset(path: &str) -> DecodeRequest {
@@ -449,12 +451,13 @@ fn the_loading_lanes_read_their_requests_their_loaders_and_their_budget_and_stag
             .iter()
             .map(|output| (output.kind, output.ty))
             .collect();
-        assert_eq!(outputs.len(), 5, "{name}: {:?}", declaration.outputs());
+        assert_eq!(outputs.len(), 6, "{name}: {:?}", declaration.outputs());
         for staged in [
             TypeId::of::<Decoded>(),
             TypeId::of::<PreparedLoad>(),
             TypeId::of::<ScriptReload>(),
             TypeId::of::<ScriptDeclarations>(),
+            TypeId::of::<CompileDone>(),
         ] {
             assert!(
                 outputs.contains(&(SinkKind::Staged, staged)),

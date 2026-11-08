@@ -54,6 +54,7 @@ pub fn is_engine_name(name: &str) -> bool {
             .any(|event| event.name == name)
 }
 
+pub use khora_io::script::compile_hub::{CompileHub, CompileOutcome, CompileTicket};
 pub use khora_io::script::layout::{is_script_file, module_of, SCRIPT_DIR};
 pub use khora_io::script::mounted::MountedScripts;
 
@@ -86,6 +87,15 @@ pub fn install(runtime: &mut Runtime) {
     {
         resources.insert(request_channel());
     }
+    // Where a mount files its compile and reads its outcome, on the channel
+    // the `loading` family takes from.
+    if resources.get::<Arc<CompileHub>>().is_none() {
+        let requests = resources
+            .get::<khora_core::event::Channel<CompileRequest>>()
+            .cloned()
+            .unwrap_or_else(request_channel);
+        resources.insert(Arc::new(CompileHub::new(requests)));
+    }
     if resources
         .get::<khora_core::event::Channel<khora_core::script::ScriptEvent>>()
         .is_none()
@@ -116,20 +126,25 @@ pub fn install(runtime: &mut Runtime) {
 
 /// Mounts the scripts under `assets_root`, at any frame: arms the root on the
 /// engine's `AssetWatch`, reports every `.erg` outside its [`SCRIPT_DIR`] to
-/// the `Problems` — never compiled — then compiles every module under
-/// `assets_root/scripts`, sends what they declare and what they compiled to,
-/// and announces what each reads to the script flow's demand.
+/// the `Problems` — never compiled — records what the root brings in, then
+/// files the compile of every module under `assets_root/scripts` with the
+/// runtime's [`CompileHub`]. The `loading` family compiles it off the frame;
+/// what it declares registers, and what it compiled to is queued, at a later
+/// frame's boundary, where its outcome is filed under the ticket returned —
+/// read it with [`outcome`]. A mount filed before the boot is compiled by the
+/// boot, before the application's `setup`.
 ///
-/// Returns how many modules compiled. Safe to call with a directory that does
-/// not exist — a project without scripts is not an error, and neither is a
-/// packed build with no source tree.
-pub fn mount(runtime: &Runtime, assets_root: &Path) -> usize {
+/// Returns `None` when there is nothing to compile — a directory that does
+/// not exist, a root with no script folder, an engine with no reserve. A
+/// project without scripts is not an error, and neither is a packed build
+/// with no source tree.
+pub fn mount(runtime: &Runtime, assets_root: &Path) -> Option<CompileTicket> {
     if !assets_root.is_dir() {
         log::info!(
             "scripts: {} does not exist — nothing to mount",
             assets_root.display()
         );
-        return 0;
+        return None;
     }
     // Watched whether or not it holds scripts yet: the first one saved under
     // it is then compiled as it lands.
@@ -153,38 +168,50 @@ pub fn mount(runtime: &Runtime, assets_root: &Path) -> usize {
     // the wrong folder is the one most in need of being told.
     // Under the name the watch knows the root by — the one its changes carry —
     // so the pump's rescans replace this list rather than start a second one.
+    let named = watched_name(runtime, assets_root);
     if let Some(problems) = runtime.resources.get::<Arc<Problems>>() {
-        khora_io::script::problems::report_misplaced(problems, &watched_name(runtime, assets_root));
+        khora_io::script::problems::report_misplaced(problems, &named);
     }
 
-    let Some(script_dir) = script_dir(assets_root) else {
-        return 0;
-    };
-    let Some(reserve) = runtime.resources.get::<Reserve>() else {
+    let script_dir = script_dir(assets_root)?;
+    if runtime.resources.get::<Reserve>().is_none() {
         log::error!(
             "scripts: the engine holds no reserve — `scripts::install` was not run, so {} cannot load",
             script_dir.display()
         );
-        return 0;
+        return None;
+    }
+    let Some(hub) = runtime.resources.get::<Arc<CompileHub>>() else {
+        log::error!(
+            "scripts: the engine holds no compile hub — `scripts::install` was not run, so {} cannot load",
+            script_dir.display()
+        );
+        return None;
     };
     // Under the root's name as the pump hears of it, so a folder later taken
-    // out of the script folder is known to have held these.
+    // out of the script folder is known to have held these — and recorded
+    // now, before the compile, which compiles only a mounted root.
+    let modules = module_names(&script_dir);
     if let Some(mounted) = runtime.resources.get::<Arc<MountedScripts>>() {
-        mounted.record(
-            &watched_name(runtime, assets_root),
-            module_names(&script_dir),
-        );
+        mounted.record(&named, modules.clone());
     }
-    // Compiled now, as the mount is asked for; staged like what the compile
-    // family hands on, so it lands at the next frame's boundary.
-    let compiled = ProjectCompiler::from_runtime(runtime).compile_all(&script_dir);
-    let loaded = compiled.reloads.len();
-    stage(reserve, compiled);
+    let ticket = hub.file(named, modules);
     log::info!(
-        "scripts: {loaded} module(s) loaded from {}",
-        script_dir.display()
+        "scripts: {} filed to be compiled (ticket {})",
+        script_dir.display(),
+        ticket.0
     );
-    loaded
+    Some(ticket)
+}
+
+/// The outcome of the mount filed as `ticket`, once it landed — how many
+/// modules compiled, or why it did not land — taken: `None` while it is in
+/// flight, and once taken.
+pub fn outcome(runtime: &Runtime, ticket: CompileTicket) -> Option<CompileOutcome> {
+    runtime
+        .resources
+        .get::<Arc<CompileHub>>()?
+        .take_outcome(ticket)
 }
 
 /// Stages `compiled` from the host in `reserve`: it lands at a frame start
@@ -238,6 +265,22 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
             khora_io::script::problems::clear_misplaced(problems, assets_root);
         }
     }
+    // A mount waiting on this root lands as withdrawn — whatever the root
+    // brought in, an empty script folder or only modules another root
+    // provides: nothing of it will land.
+    if let Some(hub) = runtime.resources.get::<Arc<CompileHub>>() {
+        hub.withdraw(&named);
+        hub.withdraw(assets_root);
+    }
+    // A compile the pump filed for this root before it closed is dropped;
+    // and what one already under way hands on is taken in ahead of what this
+    // stages below, however late it ends.
+    if let Some(requests) = runtime
+        .resources
+        .get::<khora_core::event::Channel<CompileRequest>>()
+    {
+        requests.retain(|request| request.root != named && request.root != assets_root);
+    }
     // A module is known by its path under its script root: one another root
     // still mounted brings in by the same name is that root's now, and stays.
     if let Some(mounted) = mounted {
@@ -253,15 +296,6 @@ pub fn unmount(runtime: &Runtime, assets_root: &Path) {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .unmounting(modules.iter().cloned());
-    }
-    // A compile the pump filed for this root before it closed is dropped;
-    // and what one already under way hands on is taken in ahead of what this
-    // stages below, however late it ends.
-    if let Some(requests) = runtime
-        .resources
-        .get::<khora_core::event::Channel<CompileRequest>>()
-    {
-        requests.retain(|request| request.root != named && request.root != assets_root);
     }
     // Each module declares nothing and runs nothing any more. A withdrawal
     // supersedes a reload still waiting for the module, and takes an

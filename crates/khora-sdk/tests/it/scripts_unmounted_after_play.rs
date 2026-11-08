@@ -120,6 +120,20 @@ fn tick_until(
     panic!("timed out waiting for {what}");
 }
 
+/// Mounts `root` and ticks until its compile lands, or panics after a few
+/// seconds: the programs it compiled then wait in the reserve, the scripts
+/// being off.
+fn mount_landed(engine: &mut EngineCore<Tool>, root: &Path) {
+    let ticket = khora_sdk::scripts::mount(engine.runtime(), root)
+        .expect("a root with a script folder files a compile");
+    let mut landed = None;
+    tick_until(engine, "the mount to land", |engine| {
+        landed = khora_sdk::scripts::outcome(engine.runtime(), ticket);
+        landed.is_some()
+    });
+    assert!(matches!(landed, Some(Ok(_))), "the mount landed {landed:?}");
+}
+
 fn tick_for(engine: &mut EngineCore<Tool>, frames: usize) {
     for _ in 0..frames {
         engine.tick();
@@ -208,12 +222,18 @@ fn unmounting_a_root_queues_a_withdrawal_for_each_of_its_modules() {
         "withdraws-each",
         &[("ticker.erg", TICKER), ("greeter.erg", GREETER)],
     );
-    let engine = tool_engine();
-    khora_sdk::scripts::mount(engine.runtime(), assets.path());
+    let mut engine = tool_engine();
+    mount_landed(&mut engine, assets.path());
     assert_eq!(
         withdrawals(&engine),
         Vec::<String>::new(),
         "the premise: the mount queued programs"
+    );
+    assert_eq!(
+        queued(&engine).len(),
+        2,
+        "the premise: the mount queued programs: {:?}",
+        queued(&engine)
     );
 
     khora_sdk::scripts::unmount(engine.runtime(), assets.path());
@@ -242,9 +262,9 @@ fn unmounting_one_root_keeps_a_module_another_mounted_root_provides() {
         &[("main.erg", TICKER), ("only_first.erg", GREETER)],
     );
     let second = Assets::with("keeps-shared-b", &[("main.erg", TICKER)]);
-    let engine = tool_engine();
-    khora_sdk::scripts::mount(engine.runtime(), first.path());
-    khora_sdk::scripts::mount(engine.runtime(), second.path());
+    let mut engine = tool_engine();
+    mount_landed(&mut engine, first.path());
+    mount_landed(&mut engine, second.path());
 
     khora_sdk::scripts::unmount(engine.runtime(), first.path());
 

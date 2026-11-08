@@ -435,10 +435,16 @@ fn a_module_recompiled_while_editing_runs_from_the_first_frame_of_play() {
     let old_at_stop = int(&mut engine, counter, "Counter", "older");
 
     // Edited while the scripts are off: recompiled and handed over, as a
-    // save is.
+    // save is — the mount lands a few frames later.
     assets.rewrite("counter.erg", COUNTS_NEW);
-    khora_sdk::scripts::mount(engine.runtime(), assets.path());
-    frames(&mut engine, 2);
+    let ticket = khora_sdk::scripts::mount(engine.runtime(), assets.path())
+        .expect("the root files a compile");
+    let mut landed = None;
+    frames_until(&mut engine, "the mount to land", |engine| {
+        landed = khora_sdk::scripts::outcome(engine.runtime(), ticket);
+        landed.is_some()
+    });
+    assert_eq!(landed, Some(Ok(1)), "the edited module compiled");
 
     frame(&mut engine, Ask::Play);
     assert_eq!(

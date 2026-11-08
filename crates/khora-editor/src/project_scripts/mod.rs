@@ -23,20 +23,21 @@ use std::path::{Path, PathBuf};
 
 use khora_sdk::editor_ui::EditorState;
 use khora_sdk::khora_core::script::ScriptCatalog;
+use khora_sdk::scripts::CompileTicket;
 use khora_sdk::Runtime;
 
 /// Brings the mounted scripts in line with the open project, called each
 /// frame with the project open now (`None` when none is).
 ///
 /// `mounted` is the editor's memory of what it mounted, across calls. Returns
-/// how many modules compiled when this call mounted a project, `None` when it
-/// mounted nothing — the project open is the one already mounted, or none is
-/// open.
+/// the ticket of the compile this call filed when it mounted a project, read
+/// with `khora_sdk::scripts::outcome`; `None` when it filed none — the project
+/// open is the one already mounted, none is open, or it has no scripts.
 pub(crate) fn follow_open_project(
     runtime: &Runtime,
     mounted: &mut Option<PathBuf>,
     project: Option<&Path>,
-) -> Option<usize> {
+) -> Option<CompileTicket> {
     let wanted = project.map(|project| project.join("assets"));
     if *mounted == wanted {
         return None;
@@ -45,9 +46,9 @@ pub(crate) fn follow_open_project(
         khora_sdk::scripts::unmount(runtime, &previous);
     }
     let assets = wanted?;
-    let loaded = khora_sdk::scripts::mount(runtime, &assets);
+    let ticket = khora_sdk::scripts::mount(runtime, &assets);
     *mounted = Some(assets);
-    Some(loaded)
+    ticket
 }
 
 /// Copies the names the scripts declare from `catalog` into `state` when the

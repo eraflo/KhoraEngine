@@ -148,23 +148,40 @@ fn tick_until(
     panic!("timed out waiting for {what}");
 }
 
+/// Ticks until the mount filed as `ticket` lands, or panics after a few
+/// seconds: its outcome.
+fn tick_until_landed(
+    engine: &mut EngineCore<Editing>,
+    ticket: khora_sdk::scripts::CompileTicket,
+) -> khora_sdk::scripts::CompileOutcome {
+    let mut landed = None;
+    tick_until(engine, "the mount to land", |engine| {
+        landed = khora_sdk::scripts::outcome(engine.runtime(), ticket);
+        landed.is_some()
+    });
+    landed.expect("landed")
+}
+
 // ─── The mounted project follows the open one ───────────────────────────────
 
-/// **Opening a project mounts its scripts**: `<project>/assets` is watched,
-/// and while the editor edits, what the project's scripts declare registers.
+/// **Opening a project mounts its scripts**: `<project>/assets` is watched
+/// at once, the compile is filed by ticket and lands a few frames later, and
+/// while the editor edits, what the project's scripts declare registers.
 #[test]
 fn opening_a_project_mounts_its_assets_and_registers_its_scripts() {
     let project = Project::with("open-mounts", &[("greeter.erg", GREETER)]);
     let mut engine = engine();
     let mut mounted = None;
 
-    assert_eq!(
-        follow_open_project(engine.runtime(), &mut mounted, Some(project.root())),
-        Some(1),
-        "the project's one module compiled"
-    );
+    let ticket = follow_open_project(engine.runtime(), &mut mounted, Some(project.root()))
+        .expect("opening a project with scripts files their compile");
 
     assert_eq!(watched(&engine), vec![canonical(&project.assets())]);
+    assert_eq!(
+        tick_until_landed(&mut engine, ticket),
+        Ok(1),
+        "the project's one module compiled"
+    );
     tick_until(&mut engine, "`Greeter` to register", |engine| {
         declared_by(engine, "Greeter").as_deref() == Some("greeter.erg")
     });
@@ -200,13 +217,16 @@ fn opening_another_project_unmounts_the_first_and_mounts_the_second() {
         declared_by(engine, "Greeter").is_some()
     });
 
+    let ticket = follow_open_project(engine.runtime(), &mut mounted, Some(second.root()))
+        .expect("opening the second project files its compile");
+
+    assert_eq!(watched(&engine), vec![canonical(&second.assets())]);
     assert_eq!(
-        follow_open_project(engine.runtime(), &mut mounted, Some(second.root())),
-        Some(1),
+        tick_until_landed(&mut engine, ticket),
+        Ok(1),
         "the second project's one module compiled"
     );
 
-    assert_eq!(watched(&engine), vec![canonical(&second.assets())]);
     tick_until(
         &mut engine,
         "`Lantern` to register and `Greeter` to be orphaned",

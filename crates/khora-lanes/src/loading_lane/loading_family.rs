@@ -21,7 +21,7 @@ use khora_core::lane::{LaneKind, Leases};
 use khora_data::scene::loading::PreparedLoad;
 use khora_macros::LaneOutputs;
 use khora_script::reload::ScriptReload;
-use khora_script::toolchain::ScriptDeclarations;
+use khora_script::toolchain::{CompileDone, ScriptDeclarations};
 
 /// The family whose lanes load scenes, scripts and assets off the frame.
 pub struct LoadingFamily;
@@ -56,6 +56,10 @@ pub struct LoadingOutputs {
     /// What the recompiled modules declare now, under the same leases.
     #[staged]
     pub declarations: Leases<ScriptDeclarations>,
+    /// One per root compiled, carrying the tickets of every request merged
+    /// into its compile, under the same lease as what it compiled.
+    #[staged]
+    pub compiled: Leases<CompileDone>,
 }
 
 // The family's mailboxes: what hosts, the hot-reload pump and the asset

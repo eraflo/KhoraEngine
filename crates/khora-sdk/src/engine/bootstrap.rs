@@ -511,8 +511,10 @@ fn populate(
     // they were compiled as they were mounted, so a game attaches its
     // behaviors from its first entities. The frame boundary then finds
     // nothing pending, and registers nothing twice.
-    // No frame has started and nothing runs in the background yet: what the
-    // host staged lands now, in order.
+    // No frame has started and nothing runs in the background yet: a mount
+    // filed before the boot is compiled now, and what the host staged lands
+    // now, in order.
+    khora_io::script::compile_hub::compile_filed_now(runtime);
     if let Some(reserve) = runtime.resources.get::<khora_core::lane::Reserve>() {
         reserve.land_from_host();
     }

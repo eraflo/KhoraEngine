@@ -126,6 +126,22 @@ fn tick_until(
     panic!("timed out waiting for {what}");
 }
 
+/// Mounts `root` and ticks until its compile lands, or panics after a few
+/// seconds: how many modules compiled.
+fn mount_landed(engine: &mut EngineCore<Tool>, root: &Path) -> usize {
+    let ticket = khora_sdk::scripts::mount(engine.runtime(), root)
+        .expect("a root with a script folder files a compile");
+    let mut landed = None;
+    tick_until(engine, "the mount to land", |engine| {
+        landed = khora_sdk::scripts::outcome(engine.runtime(), ticket);
+        landed.is_some()
+    });
+    match landed {
+        Some(Ok(compiled)) => compiled,
+        other => panic!("the mount landed {other:?}"),
+    }
+}
+
 /// The engine's problems.
 fn problems(engine: &EngineCore<Tool>) -> Arc<Problems> {
     engine
@@ -183,17 +199,18 @@ fn installing_scripting_puts_the_script_problems_in_place() {
 // ─── Compiling ──────────────────────────────────────────────────────────────
 
 /// **A mount reports the located errors of a module that does not
-/// compile**, and nothing about the one beside it that does.
+/// compile**, and nothing about the one beside it that does — by the time
+/// it lands.
 #[test]
 fn mounting_reports_the_located_errors_of_a_module_that_does_not_compile() {
     let assets = Assets::with(&[
         ("broken.erg", TYPE_ERROR),
         ("good.erg", "fn void Fine() { }\n"),
     ]);
-    let engine = tool_engine();
+    let mut engine = tool_engine();
 
     assert_eq!(
-        khora_sdk::scripts::mount(engine.runtime(), assets.path()),
+        mount_landed(&mut engine, assets.path()),
         1,
         "the good module compiled"
     );
@@ -214,9 +231,9 @@ fn mounting_reports_an_imported_modules_error_under_it_once() {
         ("helper.erg", PARSE_ERROR),
         ("main.erg", "import \"helper.erg\";\nfn void Main() { }\n"),
     ]);
-    let engine = tool_engine();
+    let mut engine = tool_engine();
 
-    khora_sdk::scripts::mount(engine.runtime(), assets.path());
+    mount_landed(&mut engine, assets.path());
 
     let parse_errors: Vec<Problem> = problems(&engine)
         .all()
@@ -233,10 +250,10 @@ fn mounting_reports_an_imported_modules_error_under_it_once() {
 #[test]
 fn mounting_reports_the_warnings_of_a_module_that_compiled() {
     let assets = Assets::with(&[("guard.erg", UNREACHABLE_ARM)]);
-    let engine = tool_engine();
+    let mut engine = tool_engine();
 
     assert_eq!(
-        khora_sdk::scripts::mount(engine.runtime(), assets.path()),
+        mount_landed(&mut engine, assets.path()),
         1,
         "a warning does not stop a module"
     );

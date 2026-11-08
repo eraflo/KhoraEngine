@@ -24,7 +24,7 @@ use std::time::Duration;
 use khora_core::asset::{Decoded, IndexedAssets};
 use khora_core::lane::contract::LaneReport;
 use khora_core::lane::cost::{Cost, PerDevice};
-use khora_script::toolchain::{CompileRequest, Compiled};
+use khora_script::toolchain::{CompileDone, CompileRequest, Compiled};
 
 use super::{LoadingInputs, LoadingOutputs};
 
@@ -229,7 +229,10 @@ pub(super) fn load(
             continue;
         }
         match merged.iter_mut().find(|kept| kept.root == request.root) {
-            Some(kept) => kept.modules.extend(request.modules),
+            Some(kept) => {
+                kept.modules.extend(request.modules);
+                kept.tickets.extend(request.tickets);
+            }
             None => merged.push(request),
         }
     }
@@ -239,14 +242,29 @@ pub(super) fn load(
     for request in &merged {
         // A compiler that panics fails this root alone: the loads taken
         // beside it are staged all the same.
-        let (compiled, lease) = catch_unit(|| inputs.compiler.compile_leased(request))
-            .unwrap_or_else(|why| {
-                log::error!(
-                    "compiling the scripts of {} panicked: {why}",
-                    request.root.display()
-                );
-                (Compiled::default(), None)
-            });
+        let (compiled, lease, outcome) =
+            match catch_unit(|| inputs.compiler.compile_leased(request)) {
+                Ok((compiled, lease)) => {
+                    let programs = compiled.programs();
+                    (compiled, lease, Ok(programs))
+                }
+                Err(why) => {
+                    log::error!(
+                        "compiling the scripts of {} panicked: {why}",
+                        request.root.display()
+                    );
+                    let why = format!("compiling the scripts panicked: {why}");
+                    (Compiled::default(), None, Err(why))
+                }
+            };
+        // What the hosts waiting on this root are told, under the same lease:
+        // a root unmounted meanwhile answers nothing — its unmount did.
+        let done = CompileDone {
+            root: request.root.clone(),
+            tickets: request.tickets.clone(),
+            outcome,
+        };
+        out.compiled.push(vec![done], lease.clone());
         out.reloads.push(compiled.reloads, lease.clone());
         out.declarations.push(compiled.declarations, lease);
     }

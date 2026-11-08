@@ -23,12 +23,16 @@
 //! project, behind [`ScriptCompiler`]; this module holds only the words the
 //! `loading` family and the project share.
 
+mod compile_done;
 mod compile_request;
+mod compile_ticket;
 mod compiled;
 mod script_compiler;
 mod script_declarations;
 
+pub use compile_done::CompileDone;
 pub use compile_request::CompileRequest;
+pub use compile_ticket::CompileTicket;
 pub use compiled::Compiled;
 pub use script_compiler::ScriptCompiler;
 pub use script_declarations::ScriptDeclarations;

@@ -51,10 +51,10 @@ fn write(assets: &Path, module: &str, source: &str) {
 }
 
 fn request(assets: &Path, modules: &[&str]) -> CompileRequest {
-    CompileRequest {
-        root: assets.to_path_buf(),
-        modules: modules.iter().map(|module| (*module).to_owned()).collect(),
-    }
+    CompileRequest::new(
+        assets.to_path_buf(),
+        modules.iter().map(|module| (*module).to_owned()),
+    )
 }
 
 fn set(modules: &[&str]) -> BTreeSet<String> {

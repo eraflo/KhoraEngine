@@ -20,5 +20,6 @@ pub mod asset_intake;
 pub mod asset_reload;
 pub mod asset_resolver;
 pub mod scene_intake;
+pub mod script_compile_intake;
 pub mod shader_hot_reload;
 mod ui_asset_resolver;

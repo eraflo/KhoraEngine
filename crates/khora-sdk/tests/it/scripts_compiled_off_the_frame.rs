@@ -450,10 +450,10 @@ fn a_compile_filed_before_an_unmount_does_not_bring_its_module_back() {
         .resources
         .get::<Channel<CompileRequest>>()
         .expect("the engine's request channel")
-        .send(CompileRequest {
-            root: assets.path().to_path_buf(),
-            modules: ["counter.erg".to_owned()].into_iter().collect(),
-        });
+        .send(CompileRequest::new(
+            assets.path().to_path_buf(),
+            ["counter.erg".to_owned()],
+        ));
     khora_sdk::scripts::unmount(engine.runtime(), assets.path());
 
     for taken in 1..=200 {
@@ -505,10 +505,10 @@ fn a_compile_filed_before_a_project_switch_does_not_replace_the_new_projects_mod
         .resources
         .get::<Channel<CompileRequest>>()
         .expect("the engine's request channel")
-        .send(CompileRequest {
-            root: closed.path().to_path_buf(),
-            modules: ["counter.erg".to_owned()].into_iter().collect(),
-        });
+        .send(CompileRequest::new(
+            closed.path().to_path_buf(),
+            ["counter.erg".to_owned()],
+        ));
     khora_sdk::scripts::unmount(engine.runtime(), closed.path());
     khora_sdk::scripts::mount(engine.runtime(), opened.path());
 
@@ -553,11 +553,22 @@ fn a_root_unmounted_while_its_run_compiles_another_root_stays_unmounted() {
         slow_modules.push(module);
     }
     let mut engine = game_engine();
-    khora_sdk::scripts::mount(engine.runtime(), closed.path());
-    khora_sdk::scripts::mount(engine.runtime(), slow.path());
-    frames_until(&mut engine, "the counter to be installed", |engine| {
-        installed(engine, "counter.erg").is_some()
-    });
+    let mut in_flight = vec![
+        khora_sdk::scripts::mount(engine.runtime(), closed.path()).expect("a ticket"),
+        khora_sdk::scripts::mount(engine.runtime(), slow.path()).expect("a ticket"),
+    ];
+    // Both mounts landed — the slow root's errors all reported — and the
+    // counter installed.
+    frames_until(
+        &mut engine,
+        "both mounts to land and the counter to be installed",
+        |engine| {
+            in_flight
+                .retain(|ticket| khora_sdk::scripts::outcome(engine.runtime(), *ticket).is_none());
+            in_flight.is_empty() && installed(engine, "counter.erg").is_some()
+        },
+    );
+
     let problems = Arc::clone(
         engine
             .runtime()
@@ -584,14 +595,14 @@ fn a_root_unmounted_while_its_run_compiles_another_root_stays_unmounted() {
         .get::<Channel<CompileRequest>>()
         .expect("the engine's request channel")
         .clone();
-    requests.send(CompileRequest {
-        root: closed.path().to_path_buf(),
-        modules: ["counter.erg".to_owned()].into_iter().collect(),
-    });
-    requests.send(CompileRequest {
-        root: slow.path().to_path_buf(),
-        modules: ["shared.erg".to_owned()].into_iter().collect(),
-    });
+    requests.send(CompileRequest::new(
+        closed.path().to_path_buf(),
+        ["counter.erg".to_owned()],
+    ));
+    requests.send(CompileRequest::new(
+        slow.path().to_path_buf(),
+        ["shared.erg".to_owned()],
+    ));
     frames_until(
         &mut engine,
         "the slow root's compile to be under way",

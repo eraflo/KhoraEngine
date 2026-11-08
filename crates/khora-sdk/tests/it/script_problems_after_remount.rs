@@ -107,6 +107,20 @@ fn tick_until(engine: &mut EngineCore<Tool>, mut done: impl FnMut(&mut EngineCor
     }
 }
 
+/// Ticks until the mount filed as `ticket` lands, or ten seconds ran out:
+/// its outcome, if it landed.
+fn tick_until_landed(
+    engine: &mut EngineCore<Tool>,
+    ticket: khora_sdk::scripts::CompileTicket,
+) -> Option<khora_sdk::scripts::CompileOutcome> {
+    let mut landed = None;
+    tick_until(engine, |engine| {
+        landed = khora_sdk::scripts::outcome(engine.runtime(), ticket);
+        landed.is_some()
+    });
+    landed
+}
+
 fn ticks(engine: &mut EngineCore<Tool>, frames: usize) {
     for _ in 0..frames {
         engine.tick();
@@ -125,8 +139,13 @@ fn a_reopened_project_shows_nothing_then_warns_of_a_later_deletion() {
 
     khora_sdk::scripts::unmount(engine.runtime(), assets.path());
     ticks(&mut engine, 5);
-    khora_sdk::scripts::mount(engine.runtime(), assets.path());
-    ticks(&mut engine, 5);
+    let reopened = khora_sdk::scripts::mount(engine.runtime(), assets.path())
+        .expect("the reopened project files a compile");
+    assert_eq!(
+        tick_until_landed(&mut engine, reopened),
+        Some(Ok(1)),
+        "the reopen lands"
+    );
     assert!(
         problems(&engine).all().is_empty(),
         "reopened, yet: {:?}",

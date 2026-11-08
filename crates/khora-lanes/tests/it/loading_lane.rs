@@ -53,7 +53,9 @@ use khora_data::scene::loading::{
 use khora_data::scene::NoPrefabs;
 use khora_lanes::loading_lane::{PacedLane, RushLane};
 use khora_script::reload::ScriptReload;
-use khora_script::toolchain::{CompileRequest, Compiled, ScriptCompiler, ScriptDeclarations};
+use khora_script::toolchain::{
+    CompileDone, CompileRequest, CompileTicket, Compiled, ScriptCompiler, ScriptDeclarations,
+};
 use khora_script::vm::Program;
 
 /// What a scene load is priced at before any is measured.
@@ -320,10 +322,17 @@ fn scene(ticket: u64) -> SceneLoadRequest {
 }
 
 fn script(root: &str, modules: &[&str]) -> CompileRequest {
-    CompileRequest {
-        root: PathBuf::from(root),
-        modules: modules.iter().map(|module| (*module).to_owned()).collect(),
-    }
+    CompileRequest::new(
+        PathBuf::from(root),
+        modules.iter().map(|module| (*module).to_owned()),
+    )
+}
+
+/// `script(root, modules)`, waited on by the mounts `tickets`.
+fn ticketed(root: &str, modules: &[&str], tickets: &[u64]) -> CompileRequest {
+    let mut request = script(root, modules);
+    request.tickets = tickets.iter().copied().map(CompileTicket).collect();
+    request
 }
 
 fn index(ticket: u64, root: &str) -> IndexRequest {
@@ -820,6 +829,7 @@ fn a_run_with_nothing_filed_loads_nothing() {
         assert!(reserve.is_empty::<PreparedLoad>(), "{name}");
         assert!(reserve.is_empty::<ScriptReload>(), "{name}");
         assert!(reserve.is_empty::<ScriptDeclarations>(), "{name}");
+        assert!(reserve.is_empty::<CompileDone>(), "{name}");
         assert!(reserve.is_empty::<Decoded>(), "{name}");
     }
 }
@@ -1460,4 +1470,259 @@ fn paced_stops_at_the_first_index_that_does_not_fit() {
     assert_eq!(filed.waiting_indexes(), vec![IndexTicket(2)]);
     assert_eq!(filed.waiting_scenes(), vec![LoadTicket(1)]);
     assert!(filed.loading.asked().is_empty(), "no scene prepared");
+}
+
+// ─── Compiles done, by ticket ───────────────────────────────────────────────
+
+fn tickets_of(numbers: &[u64]) -> BTreeSet<CompileTicket> {
+    numbers.iter().copied().map(CompileTicket).collect()
+}
+
+/// **A root compiled once lands every ticket merged into it.** Two mounts of
+/// `game`, each with its ticket, wait: the compiler is asked once, with both
+/// modules, and one `CompileDone` of `game` reaches the reserve carrying
+/// both tickets and the two modules compiled — so neither mount waits
+/// forever on a compile that answered the other.
+#[test]
+fn a_root_compiled_once_lands_every_ticket_merged_into_it() {
+    let filed = Filed::knowing(&[]);
+    filed.file_scripts(&[
+        ticketed("game", &["a.erg"], &[1]),
+        ticketed("game", &["b.erg"], &[2]),
+    ]);
+
+    let reserve = landed([run(&mut rush(), &filed, None)]);
+
+    let asked = filed.compiler.asked();
+    assert_eq!(asked.len(), 1, "one compile for the root: {asked:?}");
+    assert_eq!(
+        asked[0].modules,
+        ["a.erg", "b.erg"].into_iter().map(str::to_owned).collect(),
+        "both requests' modules, merged"
+    );
+    let done = reserve.take::<CompileDone>();
+    assert_eq!(
+        done,
+        vec![CompileDone {
+            root: PathBuf::from("game"),
+            tickets: tickets_of(&[1, 2]),
+            outcome: Ok(2),
+        }],
+        "one compile done, carrying both tickets"
+    );
+}
+
+/// **Paced lands every ticket of a root it takes**, as rush does: a root is
+/// one unit, its requests merged, whatever its budget — a request no one
+/// waits on among them adds no ticket.
+#[test]
+fn paced_lands_every_ticket_of_a_root_it_takes() {
+    let filed = Filed::knowing(&[]);
+    filed.file_scripts(&[
+        ticketed("game", &["a.erg"], &[1]),
+        script("game", &["b.erg"]),
+        ticketed("game", &["c.erg"], &[3]),
+    ]);
+
+    let reserve = landed([run(&mut paced(), &filed, Some(Duration::from_millis(1)))]);
+
+    let done = reserve.take::<CompileDone>();
+    assert_eq!(done.len(), 1, "{done:?}");
+    assert_eq!(done[0].tickets, tickets_of(&[1, 3]));
+    assert_eq!(done[0].outcome, Ok(3));
+}
+
+/// **Every root compiled stages one `CompileDone`**, its own tickets with
+/// it — none when no one waits on it, as for a save the pump filed.
+#[test]
+fn every_root_compiled_stages_one_compile_done_with_its_own_tickets() {
+    let filed = Filed::knowing(&[]);
+    filed.file_scripts(&[
+        ticketed("game", &["a.erg"], &[5]),
+        script("editor", &["x.erg", "y.erg"]),
+    ]);
+
+    let reserve = landed([run(&mut rush(), &filed, None)]);
+
+    let mut done: Vec<(PathBuf, BTreeSet<CompileTicket>, Result<usize, String>)> = reserve
+        .take::<CompileDone>()
+        .into_iter()
+        .map(|done| (done.root, done.tickets, done.outcome))
+        .collect();
+    done.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        done,
+        vec![
+            (PathBuf::from("editor"), BTreeSet::new(), Ok(2)),
+            (PathBuf::from("game"), tickets_of(&[5]), Ok(1)),
+        ]
+    );
+}
+
+/// **A panicking compile still lands its tickets.** The compiler panics on
+/// the root `broken`, which a mount waits on: its `CompileDone` is staged
+/// all the same, an `Err` naming the panic, carrying the mount's ticket —
+/// and the root compiled beside it lands its own, `Ok`.
+#[test]
+fn a_panicking_compile_still_lands_its_tickets() {
+    let scenes = Channel::<SceneLoadRequest>::bounded(64, WhenFull::Reject);
+    let scripts = Channel::<CompileRequest>::bounded(64, WhenFull::Reject);
+    let assets = Channel::<DecodeRequest>::bounded(64, WhenFull::Reject);
+    let loading = FakeLoading::new(&scenes);
+    let mut runtime = Runtime::new();
+    let _indexes = install_indexing(&mut runtime, &FakeIndexing::new());
+    runtime.resources.insert(scenes.clone());
+    runtime.resources.insert(scripts.clone());
+    runtime.resources.insert(assets.clone());
+    runtime
+        .resources
+        .insert(Arc::clone(&loading) as Arc<dyn SceneLoading>);
+    runtime
+        .resources
+        .insert(Arc::new(PanickingOnOneRoot) as Arc<dyn ScriptCompiler>);
+    runtime
+        .resources
+        .insert(FakeDecoding::knowing(&[]) as Arc<dyn AssetDecoding>);
+    scripts.send(ticketed("broken", &["bad.erg"], &[3]));
+    scripts.send(ticketed("game", &["good.erg"], &[4]));
+
+    let mut lane = rush();
+    let mut staging = Staging::new();
+    let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let bus = LaneBus::new();
+        let mut source = InputSource::new(FrameId(0), &bus, &runtime);
+        let mut deck = OutputDeck::new();
+        let mut sink = OutputSink::new(&mut deck).with_staging(&mut staging);
+        lane.run(0, &mut source, &mut sink, &mut GpuSetup::headless())
+            .outcome
+    }));
+    let outcome = ran.expect("the compiler's panic stays within its own root");
+    assert!(
+        matches!(outcome, RunOutcome::Recorded(_)),
+        "the run records: {outcome:?}"
+    );
+
+    let reserve = landed([staging]);
+    let done = reserve.take::<CompileDone>();
+    let broken = done
+        .iter()
+        .find(|done| done.root == std::path::Path::new("broken"))
+        .unwrap_or_else(|| panic!("the panicking root's compile is staged: {done:?}"));
+    assert_eq!(broken.tickets, tickets_of(&[3]), "carrying its ticket");
+    match &broken.outcome {
+        Ok(compiled) => panic!("a panicking compile landed Ok({compiled})"),
+        Err(message) => assert!(
+            message.contains("panicked"),
+            "the failure names the panic: {message}"
+        ),
+    }
+    let game = done
+        .iter()
+        .find(|done| done.root == std::path::Path::new("game"))
+        .unwrap_or_else(|| panic!("the root beside it is staged: {done:?}"));
+    assert_eq!(game.tickets, tickets_of(&[4]));
+    assert_eq!(game.outcome, Ok(1));
+}
+
+/// A compiler that compiles as the echoing fake does, each result leased on
+/// a flag of its root the test may lower — standing for the root unmounted
+/// while the compile was out.
+#[derive(Default)]
+struct LeasingCompiler {
+    mounted: Mutex<HashMap<PathBuf, Arc<AtomicBool>>>,
+}
+
+impl LeasingCompiler {
+    fn flag(&self, root: &std::path::Path) -> Arc<AtomicBool> {
+        let mut mounted = self
+            .mounted
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Arc::clone(
+            mounted
+                .entry(root.to_path_buf())
+                .or_insert_with(|| Arc::new(AtomicBool::new(true))),
+        )
+    }
+
+    fn unmount(&self, root: &str) {
+        self.flag(std::path::Path::new(root))
+            .store(false, Ordering::SeqCst);
+    }
+}
+
+impl ScriptCompiler for LeasingCompiler {
+    fn compile(&self, request: &CompileRequest) -> Compiled {
+        Compiled {
+            reloads: request.modules.iter().map(|m| reload(m)).collect(),
+            declarations: request.modules.iter().map(|m| declarations(m)).collect(),
+        }
+    }
+
+    fn compile_leased(&self, request: &CompileRequest) -> (Compiled, Option<Lease>) {
+        let mounted = self.flag(&request.root);
+        (
+            self.compile(request),
+            Some(Lease::new(move || mounted.load(Ordering::SeqCst))),
+        )
+    }
+}
+
+/// **A compile done is staged under its root's lease.** Two mounted roots
+/// are compiled in one run; one is unmounted before the frame start receives
+/// the run: its `CompileDone` is abandoned with its reloads — the unmount
+/// answers its tickets — and the other's lands.
+#[test]
+fn a_compile_done_whose_root_was_unmounted_while_it_waited_is_abandoned_and_only_it() {
+    let scenes = Channel::<SceneLoadRequest>::bounded(64, WhenFull::Reject);
+    let scripts = Channel::<CompileRequest>::bounded(64, WhenFull::Reject);
+    let assets = Channel::<DecodeRequest>::bounded(64, WhenFull::Reject);
+    let compiler = Arc::new(LeasingCompiler::default());
+    let mut runtime = Runtime::new();
+    let _indexes = install_indexing(&mut runtime, &FakeIndexing::new());
+    runtime.resources.insert(scenes.clone());
+    runtime.resources.insert(scripts.clone());
+    runtime.resources.insert(assets.clone());
+    runtime
+        .resources
+        .insert(FakeLoading::new(&scenes) as Arc<dyn SceneLoading>);
+    runtime
+        .resources
+        .insert(Arc::clone(&compiler) as Arc<dyn ScriptCompiler>);
+    runtime
+        .resources
+        .insert(FakeDecoding::knowing(&[]) as Arc<dyn AssetDecoding>);
+    scripts.send(ticketed("closed", &["a.erg"], &[1]));
+    scripts.send(ticketed("kept", &["b.erg"], &[2]));
+
+    let mut lane = rush();
+    let mut staging = Staging::new();
+    {
+        let bus = LaneBus::new();
+        let mut source = InputSource::new(FrameId(0), &bus, &runtime);
+        let mut deck = OutputDeck::new();
+        let mut sink = OutputSink::new(&mut deck).with_staging(&mut staging);
+        let ran = lane.run(0, &mut source, &mut sink, &mut GpuSetup::headless());
+        assert!(
+            matches!(ran.outcome, RunOutcome::Recorded(_)),
+            "the run records: {:?}",
+            ran.outcome
+        );
+    }
+    compiler.unmount("closed");
+    let reserve = landed([staging]);
+
+    let done = reserve.take::<CompileDone>();
+    assert_eq!(
+        done.iter()
+            .map(|done| done.root.clone())
+            .collect::<Vec<_>>(),
+        vec![PathBuf::from("kept")],
+        "only the root still mounted lands its compile: {done:?}"
+    );
+    assert_eq!(done[0].tickets, tickets_of(&[2]));
+    assert_eq!(
+        reloaded_modules(&reserve),
+        BTreeSet::from(["b.erg".to_owned()])
+    );
 }

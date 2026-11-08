@@ -80,7 +80,7 @@ const REQUEST_BACKLOG: usize = 1024;
 
 /// The channel the pump files its requests on, for the `loading` family to take.
 pub fn request_channel() -> Channel<CompileRequest> {
-    Channel::bounded(REQUEST_BACKLOG, WhenFull::DropOldest)
+    Channel::bounded(REQUEST_BACKLOG, WhenFull::Reject)
 }
 
 /// Whether a change at `rel_path` under `root` can change which Ergon files
@@ -310,7 +310,16 @@ fn script_hot_reload_system(
     // and what it hands on lands at a later frame's boundary.
     if let Some(requests) = requests {
         for (root, modules) in by_provider {
-            requests.send(CompileRequest { root, modules });
+            let refused = requests.dropped();
+            requests.send(CompileRequest::new(root.clone(), modules));
+            // A full backlog refuses the newest request rather than drop a
+            // waiting one — a mount's, which a host waits on.
+            if requests.dropped() > refused {
+                log::error!(
+                    "scripts of {}: {REQUEST_BACKLOG} compiles already wait; this change was refused",
+                    root.display()
+                );
+            }
         }
     }
     if let Some(problems) = runtime.resources.get::<Arc<Problems>>() {

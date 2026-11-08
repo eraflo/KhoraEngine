@@ -24,6 +24,7 @@ use std::sync::Arc;
 use khora_io::script::project_compiler::ScriptReload;
 use khora_sdk::khora_core::lane::Reserve;
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity, Problems};
+use khora_sdk::scripts::CompileTicket;
 use khora_sdk::Runtime;
 
 /// A fresh assets root holding each of `files` at its path under the root,
@@ -95,6 +96,20 @@ fn sent(runtime: &Runtime) -> Vec<String> {
     modules
 }
 
+/// How many modules the mount filed as `ticket` compiled — none when it
+/// filed nothing. Compiled at once, as the boot compiles a mount filed
+/// before it: these runtimes run no frame.
+fn compiled(runtime: &Runtime, ticket: Option<CompileTicket>) -> usize {
+    let Some(ticket) = ticket else {
+        return 0;
+    };
+    khora_io::script::compile_hub::compile_filed_now(runtime);
+    match khora_sdk::scripts::outcome(runtime, ticket) {
+        Some(Ok(compiled)) => compiled,
+        other => panic!("the mount landed {other:?}"),
+    }
+}
+
 /// The problems in no module naming `rel_path`: what a misplaced file is
 /// reported as.
 fn misplaced(runtime: &Runtime, rel_path: &str) -> Vec<Problem> {
@@ -119,11 +134,12 @@ fn mounting_reports_a_script_outside_the_script_folder_and_compiles_the_rest() {
     );
     let runtime = scripting_runtime();
 
-    let loaded = khora_sdk::scripts::mount(&runtime, assets.path());
+    let ticket = khora_sdk::scripts::mount(&runtime, assets.path());
 
     let reported = misplaced(&runtime, "props/lantern.erg");
     assert_eq!(reported.len(), 1, "{:?}", problems(&runtime).all());
     assert_eq!(reported[0].severity, ProblemSeverity::Error);
+    let loaded = compiled(&runtime, ticket);
     assert_eq!(loaded, 2, "only the scripts in place compiled");
     assert_eq!(
         sent(&runtime),
@@ -142,7 +158,7 @@ fn mounting_a_root_without_a_script_folder_reports_its_scripts() {
     );
     let runtime = scripting_runtime();
 
-    let loaded = khora_sdk::scripts::mount(&runtime, assets.path());
+    let ticket = khora_sdk::scripts::mount(&runtime, assets.path());
 
     assert_eq!(
         misplaced(&runtime, "props/lantern.erg").len(),
@@ -156,7 +172,7 @@ fn mounting_a_root_without_a_script_folder_reports_its_scripts() {
         "{:?}",
         problems(&runtime).all()
     );
-    assert_eq!(loaded, 0);
+    assert_eq!(compiled(&runtime, ticket), 0);
     assert!(sent(&runtime).is_empty());
 }
 
@@ -167,13 +183,17 @@ fn a_script_folder_in_another_case_is_reported_and_not_mounted() {
     let assets = Assets::with("case", &[("Scripts/guard.erg", GUARD)]);
     let runtime = scripting_runtime();
 
-    let loaded = khora_sdk::scripts::mount(&runtime, assets.path());
+    let ticket = khora_sdk::scripts::mount(&runtime, assets.path());
 
     let reported = misplaced(&runtime, "Scripts/guard.erg");
     assert_eq!(reported.len(), 1, "{:?}", problems(&runtime).all());
     let note = reported[0].note.clone().expect("a note on what to do");
     assert!(note.to_lowercase().contains("rename"), "{note}");
-    assert_eq!(loaded, 0, "nothing compiled from `Scripts/`");
+    assert_eq!(
+        compiled(&runtime, ticket),
+        0,
+        "nothing compiled from `Scripts/`"
+    );
     assert!(sent(&runtime).is_empty());
 }
 
@@ -236,9 +256,15 @@ fn a_script_in_place_with_a_capital_extension_is_reported_and_not_compiled() {
     let assets = Assets::with("capital-extension", &[("scripts/Lamp.ERG", LANTERN)]);
     let runtime = scripting_runtime();
 
-    let loaded = khora_sdk::scripts::mount(&runtime, assets.path());
+    let ticket = khora_sdk::scripts::mount(&runtime, assets.path());
 
-    assert_eq!(loaded, 0, "{:?}", problems(&runtime).all());
+    assert_eq!(
+        compiled(&runtime, ticket),
+        0,
+        "{:?}",
+        problems(&runtime).all()
+    );
+
     assert!(sent(&runtime).is_empty());
     let reported = misplaced(&runtime, "scripts/Lamp.ERG");
     assert_eq!(reported.len(), 1, "{:?}", problems(&runtime).all());

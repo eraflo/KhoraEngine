@@ -116,12 +116,17 @@ fn an_unmounted_project_leaves_no_problem_behind() {
     ]);
     let mut engine = EngineCore::<Tool>::new();
     engine.bootstrap(Tool, Runtime::new());
-    khora_sdk::scripts::mount(engine.runtime(), assets.path());
+    let ticket = khora_sdk::scripts::mount(engine.runtime(), assets.path())
+        .expect("the project files a compile");
     let deadline = Instant::now() + Duration::from_secs(10);
-    while !registered(&mut engine, "Health") && Instant::now() < deadline {
+    let mut landed = None;
+    while landed.is_none() && Instant::now() < deadline {
         ticks(&mut engine, 1);
+        landed = khora_sdk::scripts::outcome(engine.runtime(), ticket);
     }
+    assert_eq!(landed, Some(Ok(1)), "the premise: the mount landed");
     assert!(registered(&mut engine, "Health"), "the premise: registered");
+
     assert_eq!(
         problems(&engine).of_module("broken.erg"),
         (1, 0),

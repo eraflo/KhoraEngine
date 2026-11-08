@@ -21,13 +21,20 @@ use std::path::PathBuf;
 use khora_core::event::{Channel, Supersedes, WhenFull};
 use khora_core::lane::{Reserve, Staging};
 
-use super::{CompileRequest, ScriptDeclarations};
+use super::{CompileRequest, CompileTicket, ScriptDeclarations};
 
 fn request(root: &str, modules: &[&str]) -> CompileRequest {
-    CompileRequest {
-        root: PathBuf::from(root),
-        modules: modules.iter().map(|module| (*module).to_owned()).collect(),
-    }
+    CompileRequest::new(
+        PathBuf::from(root),
+        modules.iter().map(|module| (*module).to_owned()),
+    )
+}
+
+/// `request(root, modules)`, waited on by `tickets`.
+fn ticketed(root: &str, modules: &[&str], tickets: &[u64]) -> CompileRequest {
+    let mut request = request(root, modules);
+    request.tickets = tickets.iter().copied().map(CompileTicket).collect();
+    request
 }
 
 fn declarations(module: &str, count: usize) -> ScriptDeclarations {
@@ -86,6 +93,64 @@ fn repeated_saves_of_one_file_wait_as_one_request_on_the_channel() {
     assert_eq!(
         pending.drain(),
         vec![request("assets", &["a.erg"]), request("assets", &["b.erg"])]
+    );
+}
+
+/// **A hot-reload request never swallows a mount.** A request no one waits
+/// on — the pump's — of the same root, naming every module a mount's request
+/// names and more, does not replace it: the mount's ticket would be lost, and
+/// its host would wait forever. A request carrying every ticket of the
+/// waiting one replaces it; one carrying only some of them does not.
+#[test]
+fn a_hot_reload_request_never_swallows_a_mount() {
+    let mount = ticketed("assets", &["a.erg"], &[1]);
+
+    assert!(
+        !request("assets", &["a.erg", "b.erg"]).supersedes(&mount),
+        "a ticketless request swallowed a mount's ticket"
+    );
+    assert!(
+        ticketed("assets", &["a.erg", "b.erg"], &[1]).supersedes(&mount),
+        "a request carrying the mount's ticket covers it"
+    );
+    assert!(
+        ticketed("assets", &["a.erg"], &[1, 2]).supersedes(&mount),
+        "a request carrying more tickets covers it"
+    );
+    assert!(
+        !ticketed("assets", &["a.erg", "b.erg"], &[2]).supersedes(&mount),
+        "a request carrying another ticket swallowed the mount's"
+    );
+    assert!(
+        !ticketed("assets", &["a.erg", "b.erg"], &[2]).supersedes(&ticketed(
+            "assets",
+            &["a.erg"],
+            &[1, 2]
+        )),
+        "a request carrying only some of the waiting tickets swallowed the others"
+    );
+    assert!(
+        ticketed("assets", &["a.erg"], &[1]).supersedes(&request("assets", &["a.erg"])),
+        "a mount covers a waiting hot-reload request of its modules"
+    );
+}
+
+/// **On the channel, a pump's save after a mount leaves the mount waiting.**
+/// A mount of `a` and `b` waits; the pump files `a`, `b` and `c`: both wait,
+/// the mount's ticket with them.
+#[test]
+fn a_pump_request_after_a_mount_waits_beside_it_on_the_channel() {
+    let pending = Channel::bounded(16, WhenFull::Reject);
+    pending.send(ticketed("assets", &["a.erg", "b.erg"], &[7]));
+    pending.send(request("assets", &["a.erg", "b.erg", "c.erg"]));
+
+    let waiting = pending.drain();
+    assert_eq!(waiting.len(), 2, "{waiting:?}");
+    assert!(
+        waiting
+            .iter()
+            .any(|request| request.tickets.contains(&CompileTicket(7))),
+        "the mount's ticket still waits: {waiting:?}"
     );
 }
 

@@ -19,6 +19,8 @@ use std::path::PathBuf;
 
 use khora_core::event::Supersedes;
 
+use super::CompileTicket;
+
 /// Recompile `modules` of the assets root `root` — and every module
 /// importing one of them; a module whose file is gone is withdrawn.
 ///
@@ -33,13 +35,31 @@ pub struct CompileRequest {
     /// The modules changed, by the path they are known by
     /// (`ai/guard.erg`).
     pub modules: BTreeSet<String>,
+    /// The tickets of the hosts waiting on this compile — a mount's — empty
+    /// for a request no one waits on (the hot-reload pump's).
+    pub tickets: BTreeSet<CompileTicket>,
+}
+
+impl CompileRequest {
+    /// A request of `root` naming `modules`, which no ticket waits on.
+    pub fn new(root: impl Into<PathBuf>, modules: impl IntoIterator<Item = String>) -> Self {
+        Self {
+            root: root.into(),
+            modules: modules.into_iter().collect(),
+            tickets: BTreeSet::new(),
+        }
+    }
 }
 
 impl Supersedes for CompileRequest {
     const COALESCES: bool = true;
 
-    /// The same root, and every module `earlier` names named again.
+    /// The same root, every module `earlier` names named again, and every
+    /// ticket waiting on it carried: a request no one waits on never takes
+    /// the place of a mount's.
     fn supersedes(&self, earlier: &Self) -> bool {
-        self.root == earlier.root && self.modules.is_superset(&earlier.modules)
+        self.root == earlier.root
+            && self.modules.is_superset(&earlier.modules)
+            && self.tickets.is_superset(&earlier.tickets)
     }
 }

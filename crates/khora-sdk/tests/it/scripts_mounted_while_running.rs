@@ -131,6 +131,22 @@ fn tick_until(
     panic!("timed out waiting for {what}");
 }
 
+/// Mounts `root` and ticks until its compile lands, or panics after a few
+/// seconds: how many modules compiled.
+fn mount_landed(engine: &mut EngineCore<Tool>, root: &Path) -> usize {
+    let ticket = khora_sdk::scripts::mount(engine.runtime(), root)
+        .expect("a root with a script folder files a compile");
+    let mut landed = None;
+    tick_until(engine, "the mount to land", |engine| {
+        landed = khora_sdk::scripts::outcome(engine.runtime(), ticket);
+        landed.is_some()
+    });
+    match landed {
+        Some(Ok(compiled)) => compiled,
+        other => panic!("the mount landed {other:?}"),
+    }
+}
+
 /// Ticks `frames` frames.
 fn tick_for(engine: &mut EngineCore<Tool>, frames: usize) {
     for _ in 0..frames {
@@ -216,15 +232,16 @@ fn play(engine: &EngineCore<Tool>) {
 // ─── Mounting ───────────────────────────────────────────────────────────────
 
 /// **Scripts mounted on a running engine register while it edits.** The
-/// mount compiles the module; the next frames register `Greeter` as the
-/// behavior `greeter.erg` declares — before anything is played.
+/// mount's compile lands a few frames later, the one module compiled, and
+/// `Greeter` registers as the behavior `greeter.erg` declares — before
+/// anything is played.
 #[test]
 fn scripts_mounted_while_editing_register_what_they_declare() {
     let assets = Assets::with(&[("greeter.erg", GREETER)]);
     let mut engine = tool_engine();
 
     assert_eq!(
-        khora_sdk::scripts::mount(engine.runtime(), assets.path()),
+        mount_landed(&mut engine, assets.path()),
         1,
         "the one module compiled"
     );
@@ -270,15 +287,16 @@ fn scripts_mounted_while_editing_run_once_the_game_is_played() {
 }
 
 /// **The mount announces what each module reads**, as the pump does for a
-/// recompiled one: the flow projects the collider the frame the guard's
-/// program lands, rather than a frame late.
+/// recompiled one: by the time the mount lands, the guard's reads are
+/// announced, so the flow projects the collider the frame the guard's
+/// program is installed, rather than a frame late.
 #[test]
 fn mounting_announces_what_the_mounted_modules_read() {
     let assets = Assets::with(&[("guard.erg", GUARD)]);
-    let engine = tool_engine();
+    let mut engine = tool_engine();
     assert!(reads(&engine).is_empty(), "the premise: nothing read");
 
-    khora_sdk::scripts::mount(engine.runtime(), assets.path());
+    mount_landed(&mut engine, assets.path());
 
     assert!(
         reads(&engine).contains(&ComponentName::new("Collider")),
@@ -310,7 +328,7 @@ fn mounting_a_root_that_does_not_exist_compiles_nothing_and_watches_nothing() {
     let missing = assets.path().join("missing");
     let engine = tool_engine();
 
-    assert_eq!(khora_sdk::scripts::mount(engine.runtime(), &missing), 0);
+    assert_eq!(khora_sdk::scripts::mount(engine.runtime(), &missing), None);
     assert!(
         watch(&engine).roots().is_empty(),
         "{:?}",
@@ -351,8 +369,13 @@ fn a_save_to_a_mounted_script_registers_while_editing() {
 #[test]
 fn unmounting_disarms_the_root_and_forgets_what_it_announced() {
     let assets = Assets::with(&[("guard.erg", GUARD)]);
-    let engine = tool_engine();
-    khora_sdk::scripts::mount(engine.runtime(), assets.path());
+    let mut engine = tool_engine();
+    mount_landed(&mut engine, assets.path());
+    assert!(
+        reads(&engine).contains(&ComponentName::new("Collider")),
+        "the premise: the guard's reads are announced: {:?}",
+        reads(&engine)
+    );
 
     khora_sdk::scripts::unmount(engine.runtime(), assets.path());
 
