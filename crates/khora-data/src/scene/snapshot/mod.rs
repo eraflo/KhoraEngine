@@ -185,11 +185,11 @@ pub fn write_snapshot(world: &World) -> Result<SceneFile, SaveError> {
 /// registrations, reserving an id for each of its entities, without adding
 /// anything — committed through the shared [`Prepared::commit`].
 pub fn prepare_snapshot(world: &mut World, file: &SceneFile) -> Result<Prepared, LoadFailure> {
+    let snapshot = parse(file)?;
     // As many ids made ready as the snapshot holds entities, so restores in
     // a row reuse the slots each one freed.
-    let wanted = Snapshot::read(&file.payload).map_or(0, |snapshot| snapshot.entities.len());
-    let (catalog, hold) = super::apply::readings(world, wanted);
-    prepare_parsed(&catalog, hold, file)
+    let (catalog, hold) = super::apply::readings(world, snapshot.entities.len());
+    prepare_parsed(&catalog, hold, snapshot)
 }
 
 /// [`prepare_snapshot`], without the world: what it reads of the world is
@@ -197,28 +197,31 @@ pub fn prepare_snapshot(world: &mut World, file: &SceneFile) -> Result<Prepared,
 pub fn prepare_snapshot_with(
     world: &crate::scene::LoadCatalog,
     hold: khora_core::ecs::ReservationHold,
-    file: &SceneFile,
+    file: std::sync::Arc<SceneFile>,
 ) -> Result<Prepared, LoadFailure> {
-    let mut prepared = prepare_parsed(world, hold, file)?;
-    prepared.set_source(super::apply::Source::Snapshot(std::sync::Arc::new(
-        file.clone(),
-    )));
+    let mut prepared = prepare_parsed(world, hold, parse(&file)?)?;
+    prepared.set_source(super::apply::Source::Snapshot(file));
     Ok(prepared)
 }
 
-/// The snapshot `file` holds, read and checked against `world`.
-fn prepare_parsed(
-    world: &crate::scene::LoadCatalog,
-    hold: khora_core::ecs::ReservationHold,
-    file: &SceneFile,
-) -> Result<Prepared, LoadFailure> {
+/// The snapshot `file` holds, read once.
+fn parse(file: &SceneFile) -> Result<Snapshot<'_>, LoadFailure> {
     let refused = |message: String| failure(message, LoadReport::default());
     let encoding = encoding_of(file);
     if encoding != SNAPSHOT_ENCODING_ID {
         return Err(refused(format!("a `{encoding}` file is not a snapshot")));
     }
     check_format(file).map_err(|error| refused(error.to_string()))?;
-    let snapshot = Snapshot::read(&file.payload).map_err(refused)?;
+    Snapshot::read(&file.payload).map_err(refused)
+}
+
+/// `snapshot`, checked against `world`.
+fn prepare_parsed(
+    world: &crate::scene::LoadCatalog,
+    hold: khora_core::ecs::ReservationHold,
+    snapshot: Snapshot<'_>,
+) -> Result<Prepared, LoadFailure> {
+    let refused = |message: String| failure(message, LoadReport::default());
 
     // Each declared component read onto the world's declaration, or
     // registered from the snapshot's when the world has none.
@@ -324,8 +327,17 @@ struct SnapshotPage<'p> {
     values: Vec<Vec<&'p [u8]>>,
 }
 
+// How many payloads this thread read, for the tests that bound how often a
+// load reads its snapshot.
+#[cfg(test)]
+thread_local! {
+    static PAYLOADS_READ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl<'p> Snapshot<'p> {
     fn read(payload: &'p [u8]) -> Result<Self, String> {
+        #[cfg(test)]
+        PAYLOADS_READ.with(|read| read.set(read.get() + 1));
         let mut input = Input {
             bytes: payload,
             at: 0,

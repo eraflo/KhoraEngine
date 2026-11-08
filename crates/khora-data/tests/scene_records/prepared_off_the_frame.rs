@@ -46,7 +46,7 @@ fn prepare_on_a_worker(world: &World, record: &SceneRecord) -> Result<Prepared, 
     let hold = world.hold_reservations();
     std::thread::scope(|scope| {
         scope
-            .spawn(move || prepare_with(&catalog, hold, record))
+            .spawn(move || prepare_with(&catalog, hold, std::sync::Arc::new(record.clone())))
             .join()
             .expect("the worker panicked")
     })
@@ -454,7 +454,7 @@ fn snapshot_on_a_worker(world: &World, file: &SceneFile) -> Result<Prepared, Loa
     let hold = world.hold_reservations();
     std::thread::scope(|scope| {
         scope
-            .spawn(move || prepare_snapshot_with(&catalog, hold, file))
+            .spawn(move || prepare_snapshot_with(&catalog, hold, std::sync::Arc::new(file.clone())))
             .join()
             .expect("the worker panicked")
     })

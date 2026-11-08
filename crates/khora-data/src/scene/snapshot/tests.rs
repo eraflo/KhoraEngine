@@ -156,3 +156,49 @@ fn a_value_must_consume_its_bytes_exactly() {
         }
     }
 }
+
+/// How many snapshot payloads this thread read while `load` ran.
+fn payloads_read_by(load: impl FnOnce()) -> usize {
+    let before = super::PAYLOADS_READ.with(std::cell::Cell::get);
+    load();
+    super::PAYLOADS_READ.with(std::cell::Cell::get) - before
+}
+
+/// **A snapshot is parsed once per prepare.** Restoring a snapshot — the
+/// editor's Stop — reads its payload once, whether it is prepared with the
+/// world or off the frame against its catalogue: the count of entities it
+/// reserves for comes from that one reading, not a reading of its own.
+#[test]
+fn a_snapshot_is_parsed_once_per_prepare() {
+    let mut src = World::new();
+    for i in 0..16 {
+        let entity = src.spawn(crate::ecs::Transform::from_translation(
+            khora_core::math::Vec3::new(i as f32, 0.0, 0.0),
+        ));
+        src.mark_authored(entity).expect("authored");
+    }
+    let file = super::write_snapshot(&src).expect("the world snapshots");
+
+    let mut world = World::new();
+    let read = payloads_read_by(|| {
+        let prepared = super::prepare_snapshot(&mut world, &file).expect("the snapshot prepares");
+        prepared.abandon(&mut world);
+    });
+    assert_eq!(
+        read, 1,
+        "the synchronous prepare read the payload {read} times"
+    );
+
+    let catalog = world.load_catalog();
+    let hold = world.hold_reservations();
+    let file = std::sync::Arc::new(file);
+    let read = payloads_read_by(|| {
+        let prepared = super::prepare_snapshot_with(&catalog, hold, file)
+            .expect("the snapshot prepares off the frame");
+        prepared.abandon(&mut world);
+    });
+    assert_eq!(
+        read, 1,
+        "the prepare off the frame read the payload {read} times"
+    );
+}

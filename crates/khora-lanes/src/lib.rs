@@ -24,6 +24,7 @@ pub mod decode_lane;
 pub mod overlay_lane;
 pub mod physics_lane;
 pub mod render_lane;
+pub mod scene_io_lane;
 pub mod script_lane;
 pub mod shadow_lane;
 pub mod skybox_lane;

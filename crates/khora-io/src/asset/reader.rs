@@ -130,6 +130,19 @@ impl AssetReader {
         Ok(value)
     }
 
+    /// The raw bytes of the asset `uuid`, undecoded: what a scene load reads
+    /// before its own encodings decode it. Refused for a sub-asset, which has
+    /// no bytes of its own. Runs on any thread.
+    pub fn read_raw(&self, uuid: &AssetUUID) -> Result<Vec<u8>> {
+        let (_, source) = self.source_of(uuid)?;
+        if let AssetSource::Sub { container, label } = source {
+            return Err(anyhow!(
+                "sub-asset '{label}' of {container} has no bytes of its own"
+            ));
+        }
+        self.read(uuid, source)
+    }
+
     /// The index this reader reads assets through.
     pub fn index(&self) -> &AssetIndex {
         &self.index

@@ -77,6 +77,20 @@ fn assert_reports_the_near_plane(report: &LoadReport, id: PersistentId) {
     assert_eq!(unusable[0].entity, Some(id));
 }
 
+/// Opens the scene file at `path`, outside any project, into `world` as
+/// the editor opens it: read from disk without prefabs, filed with the
+/// engine's scene load hub, landed at a boundary. The load's outcome.
+fn open_from_disk(world: &mut GameWorld, path: &Path) -> khora_sdk::LoadOutcome {
+    let (source, prefabs) = scene_on_disk(path);
+    let runtime = crate::tests::scene_loads::runtime();
+    crate::tests::scene_loads::load(
+        &runtime,
+        world,
+        khora_sdk::khora_data::scene::loading::LoadKind::Replace(source),
+        prefabs,
+    )
+}
+
 /// The near plane of the one camera in `world`.
 fn near_of(world: &GameWorld) -> f32 {
     let camera = world
@@ -117,7 +131,7 @@ fn loading_a_scene_from_outside_the_project_returns_its_report() {
     );
 
     let mut opened = GameWorld::new();
-    let report = load_scene_from_path_with_report(&mut opened, &path).expect("the scene loads");
+    let report = open_from_disk(&mut opened, Path::new(&path)).expect("the scene loads");
 
     assert_reports_the_near_plane(&report, id);
     assert_eq!(near_of(&opened), 0.0, "the value is kept as written");
@@ -132,8 +146,11 @@ fn a_scene_that_does_not_load_returns_no_report() {
     let mut world = GameWorld::new();
     world.spawn((Transform::identity(), Name::new("Kept")));
 
-    let report = load_scene_from_path_with_report(&mut world, &missing.to_string_lossy());
+    let report = open_from_disk(&mut world, &missing);
 
-    assert_eq!(report, None);
+    assert!(
+        report.is_err(),
+        "no report for a scene that cannot be read: {report:?}"
+    );
     assert_eq!(world.iter_entities().count(), 1, "the world is untouched");
 }

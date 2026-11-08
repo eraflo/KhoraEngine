@@ -115,6 +115,11 @@ Measurements and levers: `docs/research/2026-11-06_build-time-and-target-size.md
     `World::hold_reservations()` holds the reserved ids across frames until `commit` or until the hold is dropped.
     A load committed after its world's components changed is prepared again against them; one committed into
     another world adds nothing (`NotLoaded`).
+  - A tool or game that loads a scene while frames run **files** it with the `SceneLoadHub` (`khora-io/src/scene_loads.rs`)
+    and reads its outcome by `LoadTicket`. The `scene_io` family prepares it off the frame; `scene_intake` commits it at
+    the boundary. Loads land in the order they were filed, and a cancelled one lands nothing. Never load a scene on the
+    frame from a running tool. The synchronous `load_world`/`replace_world`/`load_game` are for setup, tests and
+    scratch worlds.
   - An unknown component name fails the **whole** load. Rename a type or a field only with `#[component(formerly = "…")]` (on a field it becomes a serde alias). Remove a type only by declaring it retired: `inventory::submit!{ RetiredComponent { name: "…" } }` (`khora-data/src/scene/retired.rs`).
   - A component **declared while the engine runs** (an Ergon `component`, `ComponentKey::Declared`) has no registration, so a record holding one carries its declaration (`SceneRecord.declared`, `khora-data/src/scene/declared.rs`): name, domain, fields. Such a name is *known by the file*; a load reads its fields onto the world's declaration by name, or registers the file's at `commit` (never at `prepare`). A file declaration named like a Rust component fails the load.
   - A scene holds what was authored; a game save (`SaveRecord`) holds only how the running world differs from its base scene, merged three-way on load. Never put engine-written state in a scene.

@@ -184,6 +184,14 @@ impl World {
         &self.storage.registry
     }
 
+    /// The generation of this world's load catalogue, published as it
+    /// moves: what a load prepared off the frame watches to learn that the
+    /// components it was prepared against changed. Every call shares the
+    /// same counter.
+    pub fn catalog_generation(&self) -> Arc<std::sync::atomic::AtomicU64> {
+        self.storage.registry.published_generation()
+    }
+
     /// What preparing a load reads of this world, as it is now: shared, and
     /// readable on any thread. Its generation moves whenever a component is
     /// registered, declared, relaid out, moved to another domain or given

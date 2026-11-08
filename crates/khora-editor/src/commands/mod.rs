@@ -43,9 +43,9 @@ pub use prefab::process_pending_prefab_apply;
 pub use prefab::process_pending_prefab_spawn;
 pub use prefab::process_pending_save_as_prefab;
 pub use scene::browse_and_open_project;
-pub use scene::load_scene_dispatch;
 pub use scene::run_build_game;
 pub use scene::save_scene_dispatch;
+pub use scene::{land_scene_loads, open_scene_dispatch};
 #[cfg(test)]
 pub use transport::PLAY_FAMILIES;
 pub use transport::{process_transport, start_editing};
@@ -106,7 +106,7 @@ pub fn process_menu_actions(
         // for tools) call `save_scene_dispatch_with_goal` directly.
         "save_as" => apply_save_as(project_vfs.as_ref(), world, editor_state),
         "open" => {
-            apply_open(project_vfs.as_ref(), world, editor_state);
+            apply_open(editor_state);
             forget_history(command_history);
         }
         "spawn_empty" => {
@@ -149,6 +149,20 @@ fn apply_new_scene(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>
         state.clear_entity_references();
         state.play_mode = PlayMode::Editing;
         state.scene_snapshot = None;
+        // The new scene has the last word over a scene still opening or
+        // being restored: withdrawn now, before a boundary lands it.
+        let opening: Vec<_> = state.opening.drain(..).map(|(ticket, _)| ticket).collect();
+        let withdrawn: Vec<_> = opening.into_iter().chain(state.restoring.take()).collect();
+        match world.scene_loads() {
+            Some(loads) => withdrawn
+                .into_iter()
+                .for_each(|ticket| loads.cancel(ticket)),
+            None if !withdrawn.is_empty() => {
+                log::error!("New scene: the scene loads in flight cannot be withdrawn");
+            }
+            None => {}
+        }
+        state.restore_problems.clear();
         // A new scene has nothing a load adapted.
         state.load_problems.clear();
         state.pending_load_problems = Some(Vec::new());
@@ -184,12 +198,24 @@ fn apply_redo(
 
 fn apply_delete(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>) {
     if let Ok(mut state) = editor_state.lock() {
+        if state.restoring.is_some() {
+            // The world is still the last play's: its restore would undo
+            // the delete.
+            log::info!("Delete: refused while the scene is being restored");
+            return;
+        }
         ops::delete_selection(world, &mut state);
     }
 }
 
 fn apply_play(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>) {
     if let Ok(mut state) = editor_state.lock() {
+        if state.restoring.is_some() {
+            // The world is still the last play's until the restore lands: a
+            // snapshot of it would be the wrong scene.
+            log::info!("Play mode: refused while the scene is being restored");
+            return;
+        }
         match state.play_mode {
             PlayMode::Editing => {
                 state.scene_snapshot = Some(scene_io::snapshot_scene(world));
@@ -214,51 +240,47 @@ fn apply_pause(editor_state: &Arc<Mutex<EditorState>>) {
     }
 }
 
-fn apply_stop(world: &mut GameWorld, editor_state: &Arc<Mutex<EditorState>>) {
-    if let Ok(mut state) = editor_state.lock() {
-        if state.play_mode == PlayMode::Playing || state.play_mode == PlayMode::Paused {
-            if let Some(snapshot) = state.scene_snapshot.take() {
-                // The last load's problems name entities the restore is about
-                // to respawn: remember who they are, by persistent identity.
-                let load: Vec<_> = state
-                    .load_problems
-                    .iter()
-                    .map(|problem| {
-                        let id = problem
-                            .entity
-                            .and_then(|entity| world.inner_world().persistent_id(entity));
-                        (id, problem.clone())
-                    })
-                    .collect();
-                drop(state);
-                scene_io::restore_scene(world, &snapshot);
-                if let Ok(mut state) = editor_state.lock() {
-                    let remapped: Vec<_> = load
-                        .into_iter()
-                        .map(|(id, mut problem)| {
-                            if problem.entity.is_some() {
-                                problem.entity =
-                                    id.and_then(|id| world.inner_world().entity_with_id(id));
-                            }
-                            problem
-                        })
-                        .collect();
-                    state.load_problems = remapped.clone();
-                    state.pending_load_problems = Some(remapped);
-                    // The restore respawns everything with fresh ids, so any
-                    // selection made while playing now names entities that no
-                    // longer exist — or, once a slot is recycled, different
-                    // ones entirely.
-                    state.clear_entity_references();
-                    state.play_mode = PlayMode::Editing;
-                }
-                log::info!("Play mode: stopped - scene restored");
-            } else {
-                state.play_mode = PlayMode::Editing;
-                log::info!("Play mode: stopped - no snapshot to restore");
-            }
-        }
+/// Stops the play: Editing at once, and the scene as Play found it filed
+/// with `loads` to be restored off the frame — it lands at a later frame's
+/// boundary, where [`land_scene_loads`] finishes it. Play is refused until
+/// it does.
+fn apply_stop(
+    world: &mut GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
+    loads: &khora_sdk::SceneLoadHub,
+) {
+    let Ok(mut state) = editor_state.lock() else {
+        return;
+    };
+    if state.play_mode != PlayMode::Playing && state.play_mode != PlayMode::Paused {
+        return;
     }
+    state.play_mode = PlayMode::Editing;
+    let Some(snapshot) = state.scene_snapshot.take() else {
+        log::info!("Play mode: stopped - no snapshot to restore");
+        return;
+    };
+    // The last load's problems name entities the restore is about to
+    // respawn: remember who they are, by persistent identity.
+    state.restore_problems = state
+        .load_problems
+        .iter()
+        .map(|problem| {
+            let id = problem
+                .entity
+                .and_then(|entity| world.inner_world().persistent_id(entity));
+            (id, problem.clone())
+        })
+        .collect();
+    let ticket = loads.file(
+        world.inner_world_mut(),
+        khora_sdk::khora_data::scene::loading::LoadKind::Replace(
+            khora_sdk::khora_data::scene::loading::SceneSource::Bytes(Arc::from(snapshot)),
+        ),
+        Arc::new(khora_sdk::khora_data::scene::NoPrefabs),
+    );
+    state.restoring = Some(ticket);
+    log::info!("Play mode: stopped - restoring the scene");
 }
 
 fn apply_save(
@@ -301,19 +323,15 @@ fn apply_save_as(
     }
 }
 
-fn apply_open(
-    project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
-    world: &mut GameWorld,
-    editor_state: &Arc<Mutex<EditorState>>,
-) {
+fn apply_open(editor_state: &Arc<Mutex<EditorState>>) {
     if let Some(path) = rfd::FileDialog::new()
         .add_filter("Khora Scene", &["kscene"])
         .pick_file()
     {
-        let path_str = path.to_string_lossy().to_string();
-        load_scene_dispatch(project_vfs, world, editor_state, &path);
+        // Opened as a scene the asset browser opens: off the frame, the
+        // next update filing it.
         if let Ok(mut state) = editor_state.lock() {
-            state.current_scene_path = Some(path_str);
+            state.pending_scene_load = Some(path.to_string_lossy().into_owned());
         }
     }
 }

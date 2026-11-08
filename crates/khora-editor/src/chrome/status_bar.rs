@@ -101,6 +101,14 @@ impl EditorPanel for StatusBarPanel {
         if snap.vram_mb > 0.0 {
             let vram = format!("vram {:.1}G", snap.vram_mb / 1024.0);
             mono(ui, [x, y], &vram, size, t.text_dim);
+            x += ui.measure_text(&vram, size, FontFamilyHint::Monospace)[0] + 12.0;
+        }
+
+        // A scene load in flight: the world shown is not yet the one asked
+        // for, and Play waits for a restore.
+        if let Some(loading) = snap.loading {
+            x = vsep(ui, t, x, r);
+            mono(ui, [x, y], loading, size, t.text_muted);
         }
 
         // ── Right: what we are editing, and how fast ──
@@ -160,6 +168,8 @@ struct Snapshot {
     project: Option<String>,
     git_branch: Option<String>,
     engine_version: Option<String>,
+    /// What scene load is in flight, if any.
+    loading: Option<&'static str>,
 }
 
 impl Snapshot {
@@ -181,6 +191,13 @@ impl From<&EditorState> for Snapshot {
             project: s.project_name.clone(),
             git_branch: s.current_git_branch.clone(),
             engine_version: s.project_engine_version.clone(),
+            loading: if s.restoring.is_some() {
+                Some("restoring scene")
+            } else if !s.opening.is_empty() {
+                Some("opening scene")
+            } else {
+                None
+            },
         }
     }
 }

@@ -69,43 +69,147 @@ pub fn save_scene_dispatch_with_goal(
     scene_io::save_scene_to_path_with_goal(world, path_str, goal)
 }
 
-/// Load dispatch: same shape as `save_scene_dispatch`.
-/// Loads a scene, clearing every entity reference the editor still holds.
-///
-/// The clearing happens here rather than at each call site: loading always
-/// repopulates the world with fresh ids, so a caller that forgot would leave a
-/// selection naming entities from the previous scene — and once a slot is
-/// recycled, naming *different* ones.
-pub fn load_scene_dispatch(
+/// Opens the scene at `abs` off the frame, replacing the open one: the asset
+/// is resolved in the project's index now, its bytes are read and the load
+/// prepared in the background, and it lands at a later frame's boundary,
+/// where [`land_scene_loads`] finishes it. A scene outside the project is
+/// read from its path, without prefabs.
+pub fn open_scene_dispatch(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
+    loads: &khora_sdk::SceneLoadHub,
     abs: &std::path::Path,
 ) {
-    if let Ok(mut state) = editor_state.lock() {
-        state.clear_entity_references();
-    }
-    let mut loaded = None;
+    let mut in_project = None;
     if let Some(pvfs_arc) = project_vfs {
         if let Ok(mut pvfs) = pvfs_arc.lock() {
             let assets_root = pvfs.assets_root.clone();
             if let Some(rel_fwd) = scene_io::rel_inside_project(abs, &assets_root) {
-                loaded = Some(scene_io::load_scene_in_project_with_report(
-                    &mut pvfs, world, &rel_fwd,
-                ));
+                // A scene of the project it names nothing in opens nothing.
+                match scene_io::scene_in_project(&mut pvfs, &rel_fwd) {
+                    Some(found) => in_project = Some(found),
+                    None => return,
+                }
             }
         }
     }
-    let report = loaded.unwrap_or_else(|| {
-        scene_io::load_scene_from_path_with_report(world, &abs.to_string_lossy())
-    });
-    // What the load adapted goes to the Problems tab, not the log alone.
-    if let Some(report) = report {
-        if let Ok(mut state) = editor_state.lock() {
-            let load = scene_io::load_problems(world.inner_world(), &report);
-            state.load_problems = load.clone();
-            state.pending_load_problems = Some(load);
+    let (source, prefabs) = in_project.unwrap_or_else(|| scene_io::scene_on_disk(abs));
+    let ticket = loads.file(
+        world.inner_world_mut(),
+        khora_sdk::khora_data::scene::loading::LoadKind::Replace(source),
+        prefabs,
+    );
+    if let Ok(mut state) = editor_state.lock() {
+        state
+            .opening
+            .push((ticket, abs.to_string_lossy().into_owned()));
+    }
+}
+
+/// Finishes the scene loads the editor filed — an opened scene, Stop's
+/// restore — whose outcome landed: the editor's entity references cleared,
+/// the load's problems mapped onto the entities it brought and handed to
+/// Problems; an opened scene's path set. A load that failed changes nothing
+/// and is reported. Returns whether one replaced the world.
+pub fn land_scene_loads(
+    world: &mut GameWorld,
+    editor_state: &Arc<Mutex<EditorState>>,
+    loads: &khora_sdk::SceneLoadHub,
+) -> bool {
+    let Ok(mut state) = editor_state.lock() else {
+        return false;
+    };
+    let mut replaced = false;
+    if let Some(ticket) = state.restoring {
+        if let Some(outcome) = loads.take_outcome(ticket) {
+            state.restoring = None;
+            let remembered = std::mem::take(&mut state.restore_problems);
+            match outcome {
+                Ok(report) => {
+                    scene_io::log_report("play-mode restore", &report);
+                    // The last load's problems, onto the entities the
+                    // restore brought under the identities they named.
+                    let remapped: Vec<_> = remembered
+                        .into_iter()
+                        .map(|(id, mut problem)| {
+                            if problem.entity.is_some() {
+                                problem.entity =
+                                    id.and_then(|id| world.inner_world().entity_with_id(id));
+                            }
+                            problem
+                        })
+                        .collect();
+                    state.load_problems = remapped.clone();
+                    state.pending_load_problems = Some(remapped);
+                    // Every entity was respawned: what named one names
+                    // nothing now, or another once a slot is reused.
+                    state.clear_entity_references();
+                    replaced = true;
+                    log::info!("Play mode: stopped - scene restored");
+                }
+                Err(error) => {
+                    log::error!("Play-mode restore failed: {error}");
+                    // The world is still as play left it: its entities are
+                    // those the remembered problems name.
+                    let mut problems: Vec<_> =
+                        remembered.into_iter().map(|(_, problem)| problem).collect();
+                    problems.push(load_failed(format!(
+                        "the scene as Play found it could not be restored, the world is as play left it: {error}"
+                    )));
+                    state.load_problems = problems.clone();
+                    state.pending_load_problems = Some(problems);
+                }
+            }
         }
+    }
+    let opening = std::mem::take(&mut state.opening);
+    for (ticket, path) in opening {
+        let Some(outcome) = loads.take_outcome(ticket) else {
+            state.opening.push((ticket, path));
+            continue;
+        };
+        match outcome {
+            Ok(report) => {
+                scene_io::log_report(&path, &report);
+                state.clear_entity_references();
+                // What the load adapted goes to the Problems tab, named on
+                // the entities it brought.
+                let load = scene_io::load_problems(world.inner_world(), &report);
+                state.load_problems = load.clone();
+                state.pending_load_problems = Some(load);
+                state.current_scene_path = Some(path);
+                replaced = true;
+            }
+            Err(error) => {
+                log::error!("Failed to open scene '{path}': {error}");
+                // The open scene stays, with its problems; the failure joins
+                // them.
+                let mut problems = state.load_problems.clone();
+                problems.push(load_failed(format!(
+                    "the scene '{path}' could not be opened: {error}"
+                )));
+                state.load_problems = problems.clone();
+                state.pending_load_problems = Some(problems);
+            }
+        }
+    }
+    replaced
+}
+
+/// A load that changed nothing, as a problem of the `Load` source.
+fn load_failed(message: String) -> khora_sdk::khora_core::problems::Problem {
+    khora_sdk::khora_core::problems::Problem {
+        severity: khora_sdk::khora_core::problems::ProblemSeverity::Error,
+        module: None,
+        line: 0,
+        column: 0,
+        message,
+        note: None,
+        entity: None,
+        behavior: None,
+        component: None,
+        field: None,
     }
 }
 

@@ -49,6 +49,7 @@ mod registration_problems;
 mod registration_problems_of_an_inherited_name;
 mod registration_problems_of_every_refused_module;
 mod scene_files;
+mod scene_loads_off_the_frame;
 mod script_components;
 mod script_pump_across_roots;
 mod script_pump_files_requests;

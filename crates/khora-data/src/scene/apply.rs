@@ -240,10 +240,10 @@ pub(super) fn readings(world: &mut World, wanted: usize) -> (Arc<LoadCatalog>, R
 pub fn prepare_with(
     catalog: &LoadCatalog,
     hold: ReservationHold,
-    record: &SceneRecord,
+    record: Arc<SceneRecord>,
 ) -> Result<Prepared, LoadFailure> {
-    let mut prepared = prepare_given(catalog, hold, record, Kept::Scene, None)?;
-    prepared.source = Some(Source::Record(Arc::new(record.clone()), Kept::Scene));
+    let mut prepared = prepare_given(catalog, hold, &record, Kept::Scene, None)?;
+    prepared.source = Some(Source::Record(record, Kept::Scene));
     Ok(prepared)
 }
 

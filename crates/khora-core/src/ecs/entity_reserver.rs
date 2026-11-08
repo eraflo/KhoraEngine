@@ -77,6 +77,12 @@ impl EntityReserver {
         id
     }
 
+    /// Holds `ids`, slots the owning world gives a hold: never taken back
+    /// at a frame's end, until committed or given back.
+    pub(crate) fn hold_ids(&self, ids: &[EntityId]) {
+        self.lock().held.extend(ids.iter().copied());
+    }
+
     /// Whether `id` is held and not committed nor given back — and, if so,
     /// forgets it: the load holding it commits it.
     pub fn commit_held(&self, id: EntityId) -> bool {

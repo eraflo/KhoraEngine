@@ -62,6 +62,7 @@ mod prefab_sample;
 mod prefab_scale;
 mod prefab_structure;
 mod prepared_off_the_frame;
+mod read_into_a_catalogue;
 mod references;
 mod renames;
 mod retired_script_components;

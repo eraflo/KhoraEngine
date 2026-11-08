@@ -26,7 +26,7 @@ use std::sync::{Arc, Mutex};
 use khora_sdk::khora_core::agent::gorna::AgentId;
 use khora_sdk::khora_core::agent::Activation;
 use khora_sdk::prelude::SharedTime;
-use khora_sdk::{EditorState, GameWorld, PlayMode, Runtime};
+use khora_sdk::{EditorState, GameWorld, PlayMode, Runtime, SceneLoadHub};
 
 use crate::ops;
 
@@ -51,19 +51,18 @@ pub(crate) fn is_transport(action: &str) -> bool {
 /// Processes the transport action the editor's state holds — `"play"`,
 /// `"pause"` or `"stop"` — and leaves any other action for `update`. Play
 /// snapshots the scene, then switches the [`PLAY_FAMILIES`] on, at a time
-/// scale of 1; Stop restores the scene, then switches them off, the scale
-/// back at 1; Pause sets the scale to 0 and switches nothing. The scene
-/// cameras follow.
+/// scale of 1, refused while a restore is under way; Stop switches them
+/// off, the scale back at 1, and files the scene's restore with the
+/// runtime's scene loads; Pause sets the scale to 0 and switches nothing.
+/// The scene cameras follow.
 ///
 /// Whatever else moved the transport — a new scene, an opened one — the
-/// families and the clock follow where it stands, every frame. Returns
-/// whether Stop restored the scene: the world was replaced, and what named
-/// its entities names nothing now.
+/// families and the clock follow where it stands, every frame.
 pub fn process_transport(
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
     runtime: &Runtime,
-) -> bool {
+) {
     let action = editor_state.lock().ok().and_then(|mut state| {
         if state
             .pending_menu_action
@@ -75,20 +74,27 @@ pub fn process_transport(
             None
         }
     });
-    let mut restored = false;
     if let Some(action) = action {
         match action.as_str() {
             "play" => super::apply_play(world, editor_state),
             "pause" => super::apply_pause(editor_state),
-            _ => {
-                restored = play_mode(editor_state) != PlayMode::Editing;
-                super::apply_stop(world, editor_state);
-            }
+            _ => match runtime.resources.get::<Arc<SceneLoadHub>>() {
+                Some(loads) => super::apply_stop(world, editor_state, loads),
+                None => {
+                    // Play stops all the same: the families go off, and the
+                    // world stays as play left it.
+                    log::error!(
+                        "Stop: the engine holds no scene load hub, so the scene cannot be restored"
+                    );
+                    if let Ok(mut state) = editor_state.lock() {
+                        state.play_mode = PlayMode::Editing;
+                    }
+                }
+            },
         }
         ops::sync_scene_cameras_for_mode(world, play_mode(editor_state));
     }
     follow(runtime, play_mode(editor_state));
-    restored
 }
 
 fn play_mode(editor_state: &Arc<Mutex<EditorState>>) -> PlayMode {

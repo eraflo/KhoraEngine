@@ -86,6 +86,19 @@ impl LoadCatalog {
         self.nowhere
     }
 
+    /// The declaration a file holds for the component declared under
+    /// `name`, built from this catalogue as the world's registry builds it:
+    /// `None` when the world declares no component of that name.
+    pub fn declaration_of(&self, name: &str) -> Option<super::declared::DeclaredRecord> {
+        let declared = self.declared.get(name)?;
+        Some(super::declared::declaration(
+            name,
+            declared.domain,
+            &declared.layout,
+            declared.resumable,
+        ))
+    }
+
     /// The catalogue of `registry`, a world's, whose reference to nothing
     /// names `nowhere`.
     pub(crate) fn of(registry: &ComponentRegistry, nowhere: EntityId) -> Self {
@@ -115,5 +128,154 @@ impl LoadCatalog {
             declared,
             rust,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use khora_core::asset::{AssetKind, AssetUUID};
+    use khora_core::math::{LinearRgba, Quaternion, Vec2, Vec3, Vec4};
+    use khora_core::script::{ErgonType, ScriptValue};
+
+    use super::super::declared::declaration_of;
+    use crate::ecs::{
+        ComponentKey, ComponentProvenance, FieldKind, PackedField, PackedLayout,
+        RuntimeComponentDecl, SemanticDomain, Transform, World,
+    };
+
+    fn field(name: &str, ty: &ErgonType, default: ScriptValue) -> (PackedField, ErgonType) {
+        (
+            PackedField {
+                name: name.to_owned(),
+                kind: FieldKind::of(ty),
+                default,
+            },
+            ty.clone(),
+        )
+    }
+
+    /// A field of every kind a declared component stores, each with a default
+    /// other than its kind's zero and its Ergon type — the default of the
+    /// entity field naming an entity of the world.
+    fn every_kind(someone: khora_core::ecs::entity::EntityId) -> PackedLayout {
+        let optional = |ty: ErgonType| ErgonType::Optional(Box::new(ty));
+        let (fields, types): (Vec<PackedField>, Vec<ErgonType>) = vec![
+            field("on", &ErgonType::Bool, ScriptValue::Bool(true)),
+            field("count", &ErgonType::Int, ScriptValue::Int(7)),
+            field("speed", &ErgonType::Float, ScriptValue::Float(2.5)),
+            field("cooldown", &ErgonType::Duration, ScriptValue::Float(0.25)),
+            field("turn", &ErgonType::Angle, ScriptValue::Float(1.5)),
+            field(
+                "aim",
+                &ErgonType::Engine("Vec2"),
+                ScriptValue::Vec2(Vec2::new(1.0, -2.0)),
+            ),
+            field(
+                "at",
+                &ErgonType::Engine("Vec3"),
+                ScriptValue::Vec3(Vec3::new(1.0, 2.0, 3.0)),
+            ),
+            field(
+                "tint4",
+                &ErgonType::Engine("Vec4"),
+                ScriptValue::Vec4(Vec4::new(1.0, 2.0, 3.0, 4.0)),
+            ),
+            field(
+                "facing",
+                &ErgonType::Engine("Quat"),
+                ScriptValue::Quat(Quaternion::IDENTITY),
+            ),
+            field(
+                "tint",
+                &ErgonType::Engine("Color"),
+                ScriptValue::Color(LinearRgba::new(0.1, 0.2, 0.3, 0.4)),
+            ),
+            field("target", &ErgonType::Entity, ScriptValue::Entity(someone)),
+            field(
+                "label",
+                &ErgonType::Str,
+                ScriptValue::Str("guard".to_owned()),
+            ),
+            field(
+                "path",
+                &ErgonType::Array(Box::new(ErgonType::Int)),
+                ScriptValue::Array(vec![ScriptValue::Int(1), ScriptValue::Int(2)]),
+            ),
+            field("spare", &optional(ErgonType::Int), ScriptValue::Null),
+            field(
+                "bullet",
+                &optional(ErgonType::Asset(AssetKind::Prefab)),
+                ScriptValue::Asset(AssetUUID::new_v5("prefabs/bullet.kprefab")),
+            ),
+            field(
+                "shot",
+                &optional(ErgonType::Asset(AssetKind::Sound)),
+                ScriptValue::Null,
+            ),
+            field(
+                "memo",
+                &ErgonType::Struct {
+                    name: "Memo".to_owned(),
+                    fields: Some(vec![("seen".to_owned(), ErgonType::Int)]),
+                },
+                ScriptValue::Struct(vec![("seen".to_owned(), ScriptValue::Int(4))]),
+            ),
+            field("state", &ErgonType::Any, ScriptValue::Null),
+        ]
+        .into_iter()
+        .unzip();
+        PackedLayout::typed(fields, types).expect("a valid layout")
+    }
+
+    /// What the registry's own declaration gives for the component `key`.
+    fn from_the_registry(world: &World, key: ComponentKey) -> super::super::DeclaredRecord {
+        declaration_of(world.components().vtable(key).expect("registered"))
+            .expect("a declared component")
+    }
+
+    /// **A declaration built from the catalogue is the registry's.** For a
+    /// declared component holding a field of every kind, each with its type
+    /// and a default — an authored one, and a resumable engine-written one in
+    /// another domain — the catalogue builds, by name, exactly the
+    /// declaration the world's registry builds from the component's vtable.
+    /// A Rust component, or a name nobody declares, has none.
+    #[test]
+    fn a_declaration_built_from_the_catalogue_matches_the_registry_one() {
+        let mut world = World::new();
+        let someone = world.spawn(Transform::identity());
+        let armory = world
+            .register_runtime_component(RuntimeComponentDecl {
+                name: "Armory".to_owned(),
+                domain: SemanticDomain::Physics,
+                provenance: ComponentProvenance::Authored,
+                resumable: false,
+                layout: every_kind(someone),
+            })
+            .expect("`Armory` registers");
+        let state = world
+            .register_runtime_component(RuntimeComponentDecl {
+                name: "Guard#state".to_owned(),
+                domain: SemanticDomain::Script,
+                provenance: ComponentProvenance::Runtime,
+                resumable: true,
+                layout: every_kind(someone),
+            })
+            .expect("`Guard#state` registers");
+        let catalog = world.load_catalog();
+
+        assert_eq!(
+            catalog.declaration_of("Armory"),
+            Some(from_the_registry(&world, armory))
+        );
+        assert_eq!(
+            catalog.declaration_of("Guard#state"),
+            Some(from_the_registry(&world, state))
+        );
+        assert_eq!(
+            catalog.declaration_of("Transform"),
+            None,
+            "a Rust component"
+        );
+        assert_eq!(catalog.declaration_of("Nobody"), None, "an undeclared name");
     }
 }

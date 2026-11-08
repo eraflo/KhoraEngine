@@ -218,6 +218,8 @@ pub struct ComponentRegistry {
     /// Moves whenever what a load reads of the registry changes: a component
     /// registered or declared, relaid out, moved, or kept otherwise.
     generation: u64,
+    /// `generation`, published for a load prepared off the frame to watch.
+    published: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl ComponentRegistry {
@@ -236,6 +238,12 @@ impl ComponentRegistry {
     /// prepared against the registry reads.
     pub fn generation(&self) -> u64 {
         self.generation
+    }
+
+    /// [`generation`](Self::generation), shared and kept up to date: what a
+    /// load prepared off the frame reads to learn the registry moved since.
+    pub fn published_generation(&self) -> Arc<std::sync::atomic::AtomicU64> {
+        Arc::clone(&self.published)
     }
 
     /// The number of registered components.
@@ -348,7 +356,7 @@ impl ComponentRegistry {
     }
 
     fn insert(&mut self, vtable: ComponentVTable) {
-        self.generation += 1;
+        move_generation(&mut self.generation, &self.published);
         self.by_name.insert(vtable.name.clone(), vtable.key);
         self.access.entry(vtable.key).or_default();
         self.vtables.insert(vtable.key, vtable);
@@ -375,7 +383,7 @@ impl ComponentRegistry {
     ) {
         if let Some(vtable) = self.vtables.get_mut(&key) {
             if vtable.provenance != provenance || vtable.resumable != resumable {
-                self.generation += 1;
+                move_generation(&mut self.generation, &self.published);
             }
             vtable.provenance = provenance;
             vtable.resumable = resumable;
@@ -399,7 +407,7 @@ impl ComponentRegistry {
     /// Replaces a declared component's column operations — its new fields.
     pub(crate) fn set_columns(&mut self, key: ComponentKey, columns: Arc<dyn ColumnOps>) {
         if let Some(vtable) = self.vtables.get_mut(&key) {
-            self.generation += 1;
+            move_generation(&mut self.generation, &self.published);
             vtable.columns = columns;
         }
     }
@@ -409,7 +417,7 @@ impl ComponentRegistry {
     pub(crate) fn set_domain(&mut self, key: ComponentKey, domain: SemanticDomain) {
         if let Some(vtable) = self.vtables.get_mut(&key) {
             if vtable.domain != domain {
-                self.generation += 1;
+                move_generation(&mut self.generation, &self.published);
             }
             vtable.domain = domain;
         }
@@ -559,6 +567,12 @@ pub struct ComponentDomainRegistration {
 }
 
 inventory::collect!(ComponentDomainRegistration);
+
+/// Moves a registry's `generation`, and publishes it.
+fn move_generation(generation: &mut u64, published: &std::sync::atomic::AtomicU64) {
+    *generation += 1;
+    published.store(*generation, std::sync::atomic::Ordering::Release);
+}
 
 #[cfg(test)]
 mod provenance_tests {

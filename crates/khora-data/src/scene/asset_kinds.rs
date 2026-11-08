@@ -175,17 +175,16 @@ fn dropped_entry(
 /// components as the world does — so the prefabs it links to, expanded
 /// after, are read into the world's declarations too, and every cell lands
 /// in the declaration it was read as.
+///
+/// Reads nothing of the world but `catalog`, so it runs off the frame.
 pub fn read_into(
-    world: &crate::ecs::World,
+    catalog: &super::load_catalog::LoadCatalog,
     record: SceneRecord,
 ) -> (SceneRecord, Vec<ReportEntry>) {
     let live: Vec<DeclaredRecord> = record
         .declared
         .iter()
-        .filter_map(|declared| {
-            let key = world.components().key_named(&declared.name)?;
-            super::declared::declaration_of(world.components().vtable(key)?)
-        })
+        .filter_map(|declared| catalog.declaration_of(&declared.name))
         .collect();
     if live.is_empty() {
         return (record, Vec::new());

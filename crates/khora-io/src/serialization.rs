@@ -23,16 +23,20 @@
 use std::sync::{Arc, Mutex};
 
 use khora_core::asset::AssetUUID;
+use khora_core::ecs::ReservationHold;
 use khora_core::scene::{SceneFile, SerializationGoal, SCENE_FORMAT_VERSION};
 use khora_data::ecs::World;
 use khora_data::scene::record::{LoadReport, ReportEntry};
-use khora_data::scene::snapshot::{prepare_snapshot, write_snapshot, SNAPSHOT_ENCODING_ID};
+use khora_data::scene::save::prepare_game_with;
+use khora_data::scene::snapshot::{
+    prepare_snapshot, prepare_snapshot_with, write_snapshot, SNAPSHOT_ENCODING_ID,
+};
 use khora_data::scene::{
     about_what_loads, capture_save, capture_world, collapse, compose_reporting, encoding_of,
-    expand_reporting, prepare, prepare_game, read_into, read_save_file, read_scene_file,
-    write_save_file, write_scene_file, CompactEncoding, Identity, LoadFailure, MsgPackEncoding,
-    NoPrefabs, PrefabSource, Prepared, SaveError, SceneEncoding, SceneFileReadError, SceneRecord,
-    TextEncoding,
+    expand_reporting, prepare, prepare_game, prepare_with, read_into, read_save_file,
+    read_scene_file, write_save_file, write_scene_file, CompactEncoding, Identity, LoadCatalog,
+    LoadFailure, MsgPackEncoding, NoPrefabs, PrefabSource, Prepared, SaveError, SceneEncoding,
+    SceneFileReadError, SceneRecord, TextEncoding,
 };
 
 use crate::asset::{AssetReader, AssetService, PrefabAsset};
@@ -197,10 +201,55 @@ impl SerializationService {
                 .map_err(SerializationServiceError::LoadFailed);
         }
         let record = read_scene_file(file).map_err(SerializationServiceError::ReadFailed)?;
-        let (record, mut left_out) = read_into(world, record);
+        let (record, mut left_out) = read_into(&world.load_catalog(), record);
         let (record, expansion) = Self::expanded(record, prefabs)?;
         left_out.extend(expansion);
         prepare(world, &record)
+            .map(|prepared| (prepared, left_out))
+            .map_err(SerializationServiceError::LoadFailed)
+    }
+
+    /// [`prepare_file`](Self::prepare_file), without the world: what it reads
+    /// of the world is `catalog`, and the ids it reserves are held by `hold`
+    /// until the load is committed, abandoned or dropped. Runs on any thread.
+    pub fn prepare_file_with(
+        file: Arc<SceneFile>,
+        catalog: &LoadCatalog,
+        hold: ReservationHold,
+        prefabs: &dyn PrefabSource,
+    ) -> Result<(Prepared, Vec<ReportEntry>), SerializationServiceError> {
+        if encoding_of(&file) == SNAPSHOT_ENCODING_ID {
+            return prepare_snapshot_with(catalog, hold, file)
+                .map(|prepared| (prepared, Vec::new()))
+                .map_err(SerializationServiceError::LoadFailed);
+        }
+        let record = read_scene_file(&file).map_err(SerializationServiceError::ReadFailed)?;
+        let (record, mut left_out) = read_into(catalog, record);
+        let (record, expansion) = Self::expanded(record, prefabs)?;
+        left_out.extend(expansion);
+        prepare_with(catalog, hold, Arc::new(record))
+            .map(|prepared| (prepared, left_out))
+            .map_err(SerializationServiceError::LoadFailed)
+    }
+
+    /// What [`load_game`](Self::load_game) prepares, without the world: the
+    /// game `save_file` holds, taken against the scene `base_file` holds,
+    /// read against `catalog`, its ids held by `hold`, and what reading,
+    /// expanding and merging adapted. Runs on any thread.
+    pub fn prepare_game_with(
+        save_file: &SceneFile,
+        base_file: &SceneFile,
+        catalog: &LoadCatalog,
+        hold: ReservationHold,
+        prefabs: &dyn PrefabSource,
+    ) -> Result<(Prepared, Vec<ReportEntry>), SerializationServiceError> {
+        let save = read_save_file(save_file).map_err(SerializationServiceError::ReadFailed)?;
+        let base = read_scene_file(base_file).map_err(SerializationServiceError::ReadFailed)?;
+        let (base, expanding) = Self::expanded(base, prefabs)?;
+        let (record, merging) =
+            compose_reporting(&base, &save).map_err(SerializationServiceError::LoadFailed)?;
+        let left_out = about_what_loads(&record, expanding.into_iter().chain(merging));
+        prepare_game_with(catalog, hold, &record)
             .map(|prepared| (prepared, left_out))
             .map_err(SerializationServiceError::LoadFailed)
     }
@@ -271,7 +320,7 @@ impl SerializationService {
 
     /// Empties `world`, then commits `prepared` into it, keeping every
     /// recorded identity.
-    fn replace_with(prepared: Prepared, world: &mut World) -> LoadReport {
+    pub(crate) fn replace_with(prepared: Prepared, world: &mut World) -> LoadReport {
         let old: Vec<_> = world.iter_entities().collect();
         for entity in old {
             world.despawn(entity);

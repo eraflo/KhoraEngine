@@ -18,6 +18,13 @@ mod load_report;
 
 use super::*;
 
+/// Stop's restore of `world` from the Play snapshot `snap`: a replace filed
+/// with the engine's scene load hub, prepared off the frame and committed at
+/// a boundary.
+fn restore_scene(world: &mut GameWorld, snap: &[u8]) {
+    crate::tests::scene_loads::restore(world, snap);
+}
+
 /// Regression: snapshot/restore must round-trip the `Name` component.
 /// Symptom of a broken implementation: entities show "Entity N" in the
 /// scene tree after Stop because the fallback in `extract_scene_tree`

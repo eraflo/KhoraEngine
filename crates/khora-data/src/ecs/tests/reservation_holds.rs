@@ -344,3 +344,106 @@ fn spawns_racing_given_back_fresh_ids_all_live() {
         assert_eq!(world.entity_count(), made.len(), "round {round}");
     }
 }
+
+/// A world of twelve entities, every other one despawned: the slots freed,
+/// and the entities still alive.
+fn with_freed_slots() -> (World, Vec<EntityId>, Vec<EntityId>) {
+    let mut world = World::new();
+    let spawned: Vec<EntityId> = (0..12)
+        .map(|_| world.spawn(Transform::identity()))
+        .collect();
+    let freed: Vec<EntityId> = spawned.iter().copied().step_by(2).collect();
+    let alive: Vec<EntityId> = spawned.iter().copied().skip(1).step_by(2).collect();
+    for id in &freed {
+        assert!(world.despawn(*id), "{id:?} despawns");
+    }
+    (world, freed, alive)
+}
+
+fn indices(ids: &[EntityId]) -> HashSet<u32> {
+    ids.iter().map(|id| id.index).collect()
+}
+
+/// **A hold made from the freed slots hands them out first.** After six
+/// despawns, the hold the world makes of its freed slots reserves exactly
+/// those six slots — each under a newer generation, none alive — before it
+/// reserves any other index.
+#[test]
+fn a_hold_made_from_freed_slots_hands_them_out_first() {
+    let (mut world, freed, alive) = with_freed_slots();
+
+    let hold = world.hold_freed();
+    let first: Vec<EntityId> = (0..freed.len()).map(|_| hold.reserve()).collect();
+    let next = hold.reserve();
+
+    assert_eq!(
+        indices(&first),
+        indices(&freed),
+        "the first reservations are the freed slots: {first:?}"
+    );
+    for id in &first {
+        assert!(!world.contains(*id), "{id:?} is held, not alive");
+        assert!(!freed.contains(id), "{id:?} is the despawned id itself");
+    }
+    assert!(
+        !indices(&freed).contains(&next.index) && !indices(&alive).contains(&next.index),
+        "once the freed slots are out, another index: {next:?}"
+    );
+    drop(hold);
+}
+
+/// **Freed slots in a hold survive the frame's end.** Over several frames
+/// of spawning, reserving, despawning and ending, no frame takes the held
+/// slots back nor hands one to a spawn or a reservation; the hold still
+/// hands out every one of them afterwards.
+#[test]
+fn freed_slots_in_a_hold_survive_the_frame_end() {
+    let (mut world, freed, _alive) = with_freed_slots();
+    let hold = world.hold_freed();
+
+    let mut others = Vec::new();
+    for frame in 0..6 {
+        others.extend(busy_frame(&mut world, 16));
+        for id in &others {
+            assert!(
+                !indices(&freed).contains(&id.index),
+                "frame {frame}: {id:?} was handed a slot the hold holds"
+            );
+        }
+        for live in world.iter_entities() {
+            assert!(
+                !indices(&freed).contains(&live.index),
+                "frame {frame}: {live:?} lives in a held slot"
+            );
+        }
+    }
+
+    let held: Vec<EntityId> = (0..freed.len()).map(|_| hold.reserve()).collect();
+    assert_eq!(
+        indices(&held),
+        indices(&freed),
+        "the frames took none of the held slots"
+    );
+    drop(hold);
+}
+
+/// **A dropped hold of freed slots gives them back.** Half of the slots
+/// reserved, the hold dropped: the next spawns are handed every one of the
+/// slots back, rather than indices past the end of the store.
+#[test]
+fn a_dropped_freed_hold_gives_its_slots_back() {
+    let (mut world, freed, _alive) = with_freed_slots();
+    let hold = world.hold_freed();
+    let _reserved: Vec<EntityId> = (0..freed.len() / 2).map(|_| hold.reserve()).collect();
+
+    drop(hold);
+
+    let spawned: Vec<EntityId> = (0..freed.len())
+        .map(|_| world.spawn(Transform::identity()))
+        .collect();
+    assert_eq!(
+        indices(&spawned),
+        indices(&freed),
+        "the next spawns reuse the slots the hold gave back: {spawned:?}"
+    );
+}

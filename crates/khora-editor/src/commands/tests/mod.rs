@@ -21,12 +21,58 @@ mod play_edits_of_declared_fields;
 mod prefab;
 mod prefab_apply;
 mod prefab_apply_of_declared_fields;
+mod scene_loads;
 mod transport;
 
 use khora_sdk::prelude::math::Vec3;
 use khora_sdk::SceneFile;
 
 use super::*;
+
+/// Plays frames of the engine around the editor's `land_scene_loads` until
+/// every load the editor filed through `runtime`'s hub — Stop's restore, an
+/// opened scene — has landed. Panics when one is still in flight after a
+/// bounded number of frames.
+fn land_filed_loads(
+    runtime: &khora_sdk::Runtime,
+    world: &mut GameWorld,
+    state: &Arc<Mutex<EditorState>>,
+) {
+    use crate::tests::scene_loads::{engine_frame, hub, SETTLE_FRAMES};
+    let loads = hub(runtime);
+    for _ in 0..SETTLE_FRAMES {
+        engine_frame(runtime, world);
+        land_scene_loads(world, state, &loads);
+        let state = state.lock().expect("the editor state");
+        if state.restoring.is_none() && state.opening.is_empty() {
+            return;
+        }
+    }
+    panic!("the editor's scene loads did not land within {SETTLE_FRAMES} frames");
+}
+
+/// Stop, as the editor presses it, played until its restore has landed.
+fn stop_and_land(world: &mut GameWorld, state: &Arc<Mutex<EditorState>>) {
+    let runtime = crate::tests::scene_loads::runtime();
+    crate::tests::scene_loads::wire(&runtime, world);
+    apply_stop(world, state, &crate::tests::scene_loads::hub(&runtime));
+    land_filed_loads(&runtime, world, state);
+}
+
+/// Opens the scene file at `path`, outside any project, as the editor opens
+/// it, played until it has landed.
+fn open_and_land(world: &mut GameWorld, state: &Arc<Mutex<EditorState>>, path: &std::path::Path) {
+    let runtime = crate::tests::scene_loads::runtime();
+    crate::tests::scene_loads::wire(&runtime, world);
+    open_scene_dispatch(
+        None,
+        world,
+        state,
+        &crate::tests::scene_loads::hub(&runtime),
+        path,
+    );
+    land_filed_loads(&runtime, world, state);
+}
 
 /// What Stop must bring back of an entity: identity, name, translation,
 /// parent's identity, whether it is lit.
@@ -104,7 +150,7 @@ fn play_stop_uses_the_snapshot() {
     // Play rearranges the world; Stop brings the authored one back.
     world.despawn(lamp);
     world.spawn((Transform::identity(), Name::new("Spawned in play")));
-    apply_stop(&mut world, &state);
+    stop_and_land(&mut world, &state);
     assert_eq!(observed(&world), before, "Stop restores the scene exactly");
     assert_eq!(
         state.lock().expect("the editor state").play_mode,

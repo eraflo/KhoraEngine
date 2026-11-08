@@ -42,6 +42,20 @@ impl World {
         self.reserver.hold()
     }
 
+    /// A hold over this world's reserver that holds the slots despawns freed:
+    /// it hands those out first, then ids as [`hold_reservations`]'s does.
+    /// The slots are held — no frame's end takes them back, no spawn is
+    /// handed one — until the load commits them; dropping the hold gives
+    /// back every one it did not commit.
+    ///
+    /// [`hold_reservations`]: Self::hold_reservations
+    pub fn hold_freed(&mut self) -> khora_core::ecs::ReservationHold {
+        self.settle_reservations();
+        let freed: Vec<EntityId> =
+            std::iter::from_fn(|| self.entities.reserve_recycled()).collect();
+        self.reserver.hold_these(freed)
+    }
+
     /// Makes at least `wanted` ids ready for the reserver to hand out first,
     /// from slots despawns freed — none past the end of the store — so the
     /// reservations a load is about to make reuse the store.

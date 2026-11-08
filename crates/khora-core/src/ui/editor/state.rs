@@ -225,6 +225,14 @@ pub struct EditorState {
     /// Serialised snapshot of the scene taken when entering play mode.
     /// Restored when the user presses Stop.
     pub scene_snapshot: Option<Vec<u8>>,
+    /// The restore Stop filed, while it is prepared off the frame: Play is
+    /// refused until it lands. `None` when no restore is under way.
+    pub restoring: Option<crate::scene::LoadTicket>,
+    /// The last load's problems as Stop found them, by the persistent id of
+    /// the entity each names: mapped onto the restored entities.
+    pub restore_problems: Vec<(Option<crate::ecs::PersistentId>, crate::problems::Problem)>,
+    /// The scenes opening off the frame, in order: ticket and path.
+    pub opening: Vec<(crate::scene::LoadTicket, String)>,
 
     // ── Scene file path ──────────────────────────────
     /// Path to the currently open scene file (for Save).

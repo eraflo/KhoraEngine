@@ -77,6 +77,7 @@ impl EngineApp for EditorApp {
             play_prefabs: Arc::default(),
             prefab_catalog: khora_sdk::khora_data::scene::PrefabCatalog::new(),
             shared_assets: Arc::new(Mutex::new(crate::project_vfs::no_assets())),
+            scene_loads: None,
         }
     }
 
@@ -100,17 +101,34 @@ impl EngineApp for EditorApp {
             .ok()
             .and_then(|mut s| s.pending_scene_load.take());
         if let Some(path) = pending_load {
-            let abs = std::path::PathBuf::from(&path);
-            commands::load_scene_dispatch(
-                self.project_vfs.as_ref(),
-                world,
-                &self.editor_state,
-                &abs,
-            );
-            if let Ok(mut state) = self.editor_state.lock() {
-                state.current_scene_path = Some(path);
+            match &self.scene_loads {
+                Some(loads) => commands::open_scene_dispatch(
+                    self.project_vfs.as_ref(),
+                    world,
+                    &self.editor_state,
+                    loads,
+                    std::path::Path::new(&path),
+                ),
+                None => log::error!("cannot open '{path}': the engine holds no scene load hub"),
             }
-            commands::forget_history(&self.command_history);
+        }
+
+        // Until Stop's restore lands, the world is still the last play's: an
+        // edit made to it now would be undone by the restore. Edits wait, and
+        // those already made of it are refused.
+        let restoring = match self.editor_state.lock() {
+            Ok(mut state) if state.restoring.is_some() => {
+                let refused = state.drain_edits().len();
+                if refused > 0 {
+                    log::info!("{refused} edit(s) refused while the scene is being restored");
+                }
+                true
+            }
+            _ => false,
+        };
+        if restoring {
+            self.tick_state(world);
+            return;
         }
 
         input::process_events(
@@ -285,9 +303,14 @@ impl EngineApp for EditorApp {
         // The shell has been shown, so a click on Play this frame is pending:
         // the transport is processed now, before the engine fixes the frame,
         // so the frame is wholly edited or wholly played.
-        if commands::process_transport(world, &self.editor_state, runtime) {
-            commands::forget_history(&self.command_history);
+        // What landed at the last boundary first (an opened scene, Stop's
+        // restore), so the transport sees whether a restore is under way.
+        if let Some(loads) = &self.scene_loads {
+            if commands::land_scene_loads(world, &self.editor_state, loads) {
+                commands::forget_history(&self.command_history);
+            }
         }
+        commands::process_transport(world, &self.editor_state, runtime);
     }
 
     fn before_agents(&mut self, world: &mut GameWorld, runtime: &Runtime) {

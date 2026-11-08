@@ -50,6 +50,7 @@ mod public_paths;
 mod render_family;
 mod save_mid_attack_test;
 mod scene_edit_after_save;
+mod scene_io_family;
 mod scheduled_behaviors_in_negotiation;
 mod script_camera_writes;
 mod script_component_reads;

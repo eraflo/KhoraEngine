@@ -88,9 +88,25 @@ pub struct DeclaredFieldRecord {
 /// declared while the engine runs.
 pub(super) fn declaration_of(vtable: &ComponentVTable) -> Option<DeclaredRecord> {
     let layout = vtable.columns.packed()?;
-    Some(DeclaredRecord {
-        name: vtable.name.to_string(),
-        domain: vtable.domain,
+    Some(declaration(
+        &vtable.name,
+        vtable.domain,
+        layout,
+        vtable.resumable,
+    ))
+}
+
+/// The declaration of the component `name`, kept in `domain`, whose rows
+/// `layout` lays out.
+pub(super) fn declaration(
+    name: &str,
+    domain: SemanticDomain,
+    layout: &PackedLayout,
+    resumable: bool,
+) -> DeclaredRecord {
+    DeclaredRecord {
+        name: name.to_string(),
+        domain,
         fields: layout
             .fields()
             .iter()
@@ -103,8 +119,8 @@ pub(super) fn declaration_of(vtable: &ComponentVTable) -> Option<DeclaredRecord>
                 default: encode(&field.default, &mut Outside).unwrap_or(Record::Unit),
             })
             .collect(),
-        resumable: vtable.resumable,
-    })
+        resumable,
+    }
 }
 
 /// The declarations among `pool` that `pages` hold, sorted by name: what a

@@ -435,13 +435,7 @@ impl AssetService {
     /// decoder. Used by scene loading where the bytes are then decoded by a
     /// `SerializationService` strategy rather than an `AssetDecoder<A>`.
     pub fn load_raw(&mut self, uuid: &AssetUUID) -> Result<Vec<u8>> {
-        let (_, source) = self.reader.source_of(uuid)?;
-        if let AssetSource::Sub { container, label } = source {
-            return Err(anyhow!(
-                "sub-asset '{label}' of {container} has no bytes of its own"
-            ));
-        }
-        self.reader.read(uuid, source)
+        self.reader.read_raw(uuid)
     }
 
     /// Drops the cached handle for `uuid` across every typed storage.

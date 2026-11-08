@@ -54,6 +54,7 @@ mod resume_tiers_encodings;
 mod running_problems;
 mod saved_structs_into_edited_types;
 mod saves;
+mod scene_io_lane;
 mod scheduled_scene;
 mod scoped_scripts;
 mod script_intake;

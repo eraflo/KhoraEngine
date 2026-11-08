@@ -325,8 +325,12 @@ fn a_stale_load_that_fails_now_reports_the_failure() {
     let mut world = World::new();
     let own = world.spawn(Transform::identity());
     let catalog = world.load_catalog();
-    let stale = crate::scene::prepare_with(&catalog, world.hold_reservations(), &record)
-        .expect("prepares while `Position` is the file's");
+    let stale = crate::scene::prepare_with(
+        &catalog,
+        world.hold_reservations(),
+        Arc::new(record.clone()),
+    )
+    .expect("prepares while `Position` is the file's");
     world.register_component::<Position>(SemanticDomain::Spatial);
 
     let now = crate::scene::prepare(&mut world, &record)
@@ -342,5 +346,48 @@ fn a_stale_load_that_fails_now_reports_the_failure() {
         "the stale load failed now ({}) yet reports nothing: indistinguishable from an empty \
          scene loaded",
         now.message
+    );
+}
+
+/// **The generation watch moves with the registry.** A watch taken once,
+/// before any change, reads the catalogue's generation as each change
+/// moves it — a registration, a declaration, a relayout — and every watch
+/// the world gives is that one counter. Nothing else moves it.
+#[test]
+fn the_generation_watch_moves_with_the_registry() {
+    use std::sync::atomic::Ordering;
+
+    let mut world = World::new();
+    let watch = world.catalog_generation();
+    let read = || watch.load(Ordering::SeqCst);
+    let start = read();
+    assert_eq!(start, world.load_catalog().generation());
+
+    world.register_component::<Position>(SemanticDomain::Spatial);
+    let registered = read();
+    assert_ne!(registered, start, "a registration moves the watch");
+    assert_eq!(registered, world.load_catalog().generation());
+
+    let key = declare(&mut world, "Health", SemanticDomain::Physics, health());
+    let declared = read();
+    assert_ne!(declared, registered, "a declaration moves the watch");
+    assert_eq!(declared, world.load_catalog().generation());
+
+    let mut grown = health();
+    grown.push(field("max", FieldKind::Int, ScriptValue::Int(100)));
+    world
+        .relayout(key, layout(grown))
+        .expect("`Health` relays out");
+    let relaid = read();
+    assert_ne!(relaid, declared, "a relayout moves the watch");
+    assert_eq!(relaid, world.load_catalog().generation());
+
+    let a = world.spawn(Transform::identity());
+    assert!(world.despawn(a));
+    world.release_unspent();
+    assert_eq!(read(), relaid, "spawning and frames move nothing");
+    assert!(
+        Arc::ptr_eq(&watch, &world.catalog_generation()),
+        "every watch is the world's one counter"
     );
 }

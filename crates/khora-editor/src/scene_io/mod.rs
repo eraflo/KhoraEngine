@@ -24,6 +24,8 @@
 use crate::project_vfs::ProjectVfs;
 use khora_sdk::khora_core::asset::asset_key;
 use khora_sdk::khora_core::problems::{Problem, ProblemSeverity, ProblemSource};
+use khora_sdk::khora_data::scene::loading::{SceneFetch, SceneSource};
+use khora_sdk::khora_data::scene::{NoPrefabs, PrefabSource};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::math::{LinearRgba, Vec3};
 use khora_sdk::{GameWorld, SceneFile, SerializationGoal, SerializationService};
@@ -56,34 +58,9 @@ pub fn snapshot_scene(world: &GameWorld) -> Vec<u8> {
     }
 }
 
-/// Restores the world from a snapshot produced by [`snapshot_scene`].
-///
-/// Replaces the whole world — gameplay may have spawned or destroyed
-/// entities, so it is rebuilt from the snapshot rather than diffed against
-/// it — and does so atomically: a snapshot that cannot be read leaves the
-/// live state in place.
-pub fn restore_scene(world: &mut GameWorld, snapshot: &[u8]) {
-    if snapshot.is_empty() {
-        return;
-    }
-    let scene = match SceneFile::from_bytes(snapshot) {
-        Ok(f) => f,
-        Err(e) => {
-            log::error!("Play-mode restore: invalid snapshot: {:?}", e);
-            return;
-        }
-    };
-
-    let svc = SerializationService::new();
-    match svc.replace_world(&scene, world.inner_world_mut()) {
-        Ok(report) => log_report("play-mode restore", &report),
-        Err(e) => log::error!("Play-mode restore failed: {:?}", e),
-    }
-}
-
 /// Says what a load adapted — a field defaulted, dropped, renamed — so an
 /// older scene loading into newer code is never silent about it.
-fn log_report(what: &str, report: &khora_sdk::khora_data::scene::record::LoadReport) {
+pub(crate) fn log_report(what: &str, report: &khora_sdk::khora_data::scene::record::LoadReport) {
     for entry in &report.entries {
         log::warn!("{what}: {entry}");
     }
@@ -227,6 +204,73 @@ pub fn load_scene_in_project_with_report(
     }
 }
 
+/// The bytes of a project asset, read off the frame through the project's
+/// asset reader.
+struct ProjectScene {
+    reader: std::sync::Arc<khora_sdk::AssetReader>,
+    uuid: khora_sdk::prelude::AssetUUID,
+}
+
+impl SceneFetch for ProjectScene {
+    fn fetch(&self) -> Result<Vec<u8>, String> {
+        self.reader
+            .read_raw(&self.uuid)
+            .map_err(|error| format!("{error:#}"))
+    }
+}
+
+/// The bytes of a scene file outside the project, read off the frame.
+struct SceneOnDisk(std::path::PathBuf);
+
+impl SceneFetch for SceneOnDisk {
+    fn fetch(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|error| format!("{}: {error}", self.0.display()))
+    }
+}
+
+/// Where a scene load reads the scene at `rel_path_fwd_slash` in the project
+/// from, and the prefabs it links to: the asset resolved in the project's
+/// index now — indexed again once when it is missing — its bytes read off
+/// the frame. `None`, logged, when the project holds no such scene.
+pub fn scene_in_project(
+    pvfs: &mut ProjectVfs,
+    rel_path_fwd_slash: &str,
+) -> Option<(SceneSource, std::sync::Arc<dyn PrefabSource + Send + Sync>)> {
+    // Registry-aware: a scene that was renamed keeps its frozen UUID.
+    let uuid = pvfs.resolve_uuid(rel_path_fwd_slash);
+    if pvfs.assets().reader().index().get_metadata(&uuid).is_none() {
+        if let Err(e) = pvfs.rebuild_index() {
+            log::error!(
+                "Failed to rebuild index while resolving '{}': {:#}",
+                rel_path_fwd_slash,
+                e
+            );
+            return None;
+        }
+        if pvfs.assets().reader().index().get_metadata(&uuid).is_none() {
+            log::error!("The project holds no scene '{}'", rel_path_fwd_slash);
+            return None;
+        }
+    }
+    let reader = pvfs.assets().reader();
+    let prefabs = std::sync::Arc::new(khora_sdk::ReaderPrefabs::new(std::sync::Arc::clone(
+        &reader,
+    )));
+    Some((
+        SceneSource::Fetch(std::sync::Arc::new(ProjectScene { reader, uuid })),
+        prefabs,
+    ))
+}
+
+/// Where a scene load reads the scene file at `path`, outside the project,
+/// from — its bytes read off the frame — and the prefabs it links to: none.
+pub fn scene_on_disk(path: &Path) -> (SceneSource, std::sync::Arc<dyn PrefabSource + Send + Sync>) {
+    (
+        SceneSource::Fetch(std::sync::Arc::new(SceneOnDisk(path.to_path_buf()))),
+        std::sync::Arc::new(NoPrefabs),
+    )
+}
+
 /// Puts what a load adapted in `problems`, as the `Load` source's warnings:
 /// each entry's entity found in `world` by its persistent id, its component
 /// and its path as the problem's field. Replaces what the last load
@@ -356,48 +400,6 @@ pub fn save_scene_to_path_with_goal(
         Err(e) => {
             log::error!("Failed to serialize scene: {:?}", e);
             false
-        }
-    }
-}
-
-/// Loads a scene from an absolute path, returning what the load adapted —
-/// the [`LoadReport`](khora_sdk::khora_data::scene::record::LoadReport) it
-/// also logs — or `None` when it did not load. Used by the "Open..." dialog when
-/// the user picks a file outside `<project>/assets/`.
-pub fn load_scene_from_path_with_report(
-    world: &mut GameWorld,
-    path: &str,
-) -> Option<khora_sdk::khora_data::scene::record::LoadReport> {
-    let bytes = match std::fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            log::error!("Failed to read scene file '{}': {}", path, e);
-            return None;
-        }
-    };
-
-    let scene_file = match SceneFile::from_bytes(&bytes) {
-        Ok(file) => file,
-        Err(e) => {
-            log::error!("Invalid scene file '{}': {:?}", path, e);
-            return None;
-        }
-    };
-
-    let service = SerializationService::new();
-    match service.replace_world(&scene_file, world.inner_world_mut()) {
-        Ok(report) => {
-            log_report(path, &report);
-            log::warn!(
-                "Scene loaded from '{}' ({} bytes) — outside project, not VFS-managed.",
-                path,
-                bytes.len()
-            );
-            Some(report)
-        }
-        Err(e) => {
-            log::error!("Failed to deserialize scene '{}': {:?}", path, e);
-            None
         }
     }
 }

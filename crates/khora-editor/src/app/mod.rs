@@ -116,6 +116,9 @@ pub struct EditorApp {
     ///
     /// [`ProjectVfs::share_assets`]: crate::project_vfs::ProjectVfs::share_assets
     shared_assets: Arc<Mutex<khora_sdk::AssetService>>,
+    /// The engine's scene loads: an opened scene and Stop's restore are
+    /// filed there, prepared off the frame.
+    scene_loads: Option<Arc<khora_sdk::SceneLoadHub>>,
     /// The loading screen over the shell while the editor starts; dropped
     /// once it has faded out.
     loading: Option<crate::panels::loading::LoadingHandle>,
@@ -125,6 +128,10 @@ pub struct EditorApp {
 
 impl EditorApp {
     fn cache_services(&mut self, runtime: &Runtime) {
+        self.scene_loads = runtime
+            .resources
+            .get::<Arc<khora_sdk::SceneLoadHub>>()
+            .cloned();
         if let Some(watch) = runtime
             .resources
             .get::<Arc<khora_sdk::AssetWatch>>()

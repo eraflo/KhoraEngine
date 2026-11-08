@@ -91,7 +91,7 @@ fn a_declared_field_edited_in_play_is_live_and_stop_restores_it() {
         "the edit changes the live value"
     );
 
-    apply_stop(&mut world, &state);
+    stop_and_land(&mut world, &state);
     let lamp = world
         .iter_entities()
         .find(|entity| {
@@ -196,7 +196,7 @@ fn declared_components_added_or_removed_in_play_are_undone_by_stop() {
     assert!(world.inner_world().declared_row(lamp, lantern).is_some());
     assert!(world.inner_world().declared_row(bomb, fuse).is_none());
 
-    apply_stop(&mut world, &state);
+    stop_and_land(&mut world, &state);
 
     let (lamp, bomb) = (named(&world, "Lamp"), named(&world, "Bomb"));
     assert_eq!(

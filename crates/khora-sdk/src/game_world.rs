@@ -28,9 +28,12 @@ use khora_data::ecs::{
     Camera, Component, ComponentBundle, ComponentKey, GlobalTransform, HandleComponent, Mut, Query,
     QueryMut, ReadOnlyWorldQuery, RowError, ScriptRole, Transform, World, WorldQuery,
 };
+use khora_data::scene::loading::{LoadKind, LoadTicket, SceneSource};
 use khora_data::scene::record::LoadReport;
-use khora_data::scene::PrefabSource;
+use khora_data::scene::{NoPrefabs, PrefabSource};
+use khora_io::scene_loads::{LoadOutcome, SceneLoadHub};
 use khora_io::serialization::{SerializationService, SerializationServiceError};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 /// Why [`GameWorld::add_declared_component`] attached nothing.
@@ -78,6 +81,14 @@ pub struct GameWorld {
     world: World,
     /// Where the prefabs a scene links to are read from, for game saves.
     prefabs: Option<Arc<dyn PrefabSource + Send + Sync>>,
+    /// The engine's scene loads, where a game load is filed to be prepared
+    /// off the frame; `None` for a world no engine runs.
+    loads: Option<Arc<SceneLoadHub>>,
+    /// The outcomes of the game loads a world no engine runs loaded at once,
+    /// by ticket.
+    loaded_here: HashMap<LoadTicket, LoadOutcome>,
+    /// The ticket the next of those is filed under.
+    next_ticket: u64,
 }
 
 impl Default for GameWorld {
@@ -89,10 +100,7 @@ impl Default for GameWorld {
 impl GameWorld {
     /// Creates a new `GameWorld` with an empty world and asset registry.
     pub fn new() -> Self {
-        Self {
-            world: World::new(),
-            prefabs: None,
-        }
+        Self::from_world(World::new())
     }
 
     /// Creates a `GameWorld` from an existing ECS `World`.
@@ -101,6 +109,9 @@ impl GameWorld {
         Self {
             world,
             prefabs: None,
+            loads: None,
+            loaded_here: HashMap::new(),
+            next_ticket: 1,
         }
     }
 
@@ -109,6 +120,19 @@ impl GameWorld {
     /// The engine sets the shipped game's prefabs on its world.
     pub fn set_prefabs(&mut self, source: Arc<dyn PrefabSource + Send + Sync>) {
         self.prefabs = Some(source);
+    }
+
+    /// Files the loads of this world with `loads`, the engine's: they are
+    /// prepared off the frame and land at a later frame's boundary. The
+    /// engine sets its hub on the world it runs.
+    pub fn set_scene_loads(&mut self, loads: Arc<SceneLoadHub>) {
+        self.loads = Some(loads);
+    }
+
+    /// The engine's scene loads this world's loads are filed with: `None`
+    /// for a world no engine runs.
+    pub fn scene_loads(&self) -> Option<&Arc<SceneLoadHub>> {
+        self.loads.as_ref()
     }
 
     /// The serialization service, reading this world's prefabs.
@@ -489,6 +513,41 @@ impl GameWorld {
     ) -> Result<LoadReport, SerializationServiceError> {
         let service = self.serialization();
         service.load_game(&mut self.world, save, base)
+    }
+
+    /// Files the game `save` holds, taken against the scene `base` holds, to
+    /// be loaded off the frame: prepared in the background, and committed at
+    /// a later frame's boundary — or, if it cannot be loaded, leaving this
+    /// world exactly as it was. Its outcome is taken with
+    /// [`take_load_outcome`](Self::take_load_outcome) once it landed.
+    pub fn file_load_game(&mut self, save: &SceneFile, base: &SceneFile) -> LoadTicket {
+        let Some(loads) = self.loads.clone() else {
+            // No engine runs this world, so no frame would land the load:
+            // it is loaded at once, its outcome kept for its ticket.
+            let ticket = LoadTicket(self.next_ticket);
+            self.next_ticket += 1;
+            let outcome = self.load_game(save, base);
+            self.loaded_here.insert(ticket, outcome);
+            return ticket;
+        };
+        let prefabs: Arc<dyn PrefabSource + Send + Sync> = match &self.prefabs {
+            Some(source) => Arc::clone(source),
+            None => Arc::new(NoPrefabs),
+        };
+        let kind = LoadKind::Game {
+            save: SceneSource::Bytes(Arc::from(save.to_bytes())),
+            base: SceneSource::Bytes(Arc::from(base.to_bytes())),
+        };
+        loads.file(&mut self.world, kind, prefabs)
+    }
+
+    /// The outcome of the load filed as `ticket`, once it landed: `None`
+    /// while it is in flight, and once taken.
+    pub fn take_load_outcome(&mut self, ticket: LoadTicket) -> Option<LoadOutcome> {
+        match &self.loads {
+            Some(loads) => loads.take_outcome(ticket),
+            None => self.loaded_here.remove(&ticket),
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────

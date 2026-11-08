@@ -33,6 +33,7 @@ mod entity_refs;
 pub mod file;
 pub mod inspector_json;
 pub mod load_catalog;
+pub mod loading;
 pub mod positional;
 pub mod prefab;
 pub mod record;

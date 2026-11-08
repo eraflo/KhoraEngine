@@ -25,6 +25,26 @@ use super::record::{LoadReport, ReportEntry, ReportKind};
 use crate::ecs::World;
 
 impl Prepared {
+    /// Whether this load was prepared for `world`: its ids are held by
+    /// `world`'s reserver. A load prepared for another world adds nothing.
+    pub fn is_for(&self, world: &World) -> bool {
+        self.hold.is_over(&world.reserver())
+    }
+
+    /// Whether `world`'s components are those this load was prepared
+    /// against: a load prepared off the frame before they changed is
+    /// prepared again as it commits.
+    pub fn is_current(&self, world: &World) -> bool {
+        self.generation == world.components().generation()
+    }
+
+    /// The hold this load's ids are held by, its ids ready to reserve again:
+    /// what a load prepared again reuses, so it takes no new slots.
+    pub fn into_hold(self) -> khora_core::ecs::ReservationHold {
+        self.hold.recycle();
+        self.hold
+    }
+
     /// Adds everything, giving the entities `identity`'s identities: each
     /// page built row by row, then the hierarchy rebuilt from each entity's
     /// `Parent`.

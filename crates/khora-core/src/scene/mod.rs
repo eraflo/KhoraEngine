@@ -19,7 +19,9 @@
 //! for defining, manipulating, and persisting these scenes.
 
 mod format;
+mod load_ticket;
 mod serialization;
 
 pub use format::*;
+pub use load_ticket::LoadTicket;
 pub use serialization::*;

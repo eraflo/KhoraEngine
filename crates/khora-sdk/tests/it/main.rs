@@ -44,6 +44,7 @@ mod removed_phases;
 mod render_doubles;
 mod render_family_at_boot;
 mod runtime_config_file;
+mod scene_loads_off_the_frame;
 mod script_catalog;
 mod script_problems;
 mod script_problems_after_remount;

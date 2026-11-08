@@ -15,3 +15,4 @@
 //! Test support shared by the editor's test modules.
 
 pub(crate) mod gltf_fixture;
+pub(crate) mod scene_loads;

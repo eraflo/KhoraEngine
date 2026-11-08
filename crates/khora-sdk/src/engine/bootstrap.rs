@@ -481,11 +481,19 @@ fn populate(
     // What the decode family reads: the asset service's request channel and
     // its decoding, or stand-ins for an engine without one.
     khora_io::asset::install_decoding(runtime);
+    // What the scene_io family reads: the hub hosts file scene loads with.
+    khora_io::scene_loads::install_scene_loading(runtime);
 
     // Create the game world — reading the shipped prefabs, where the app
     // ships an asset service, so a game saved over a level holding prefab
     // instances compares against the level expanded.
     let mut game_world = GameWorld::new();
+    if let Some(loads) = runtime
+        .resources
+        .get::<Arc<khora_io::scene_loads::SceneLoadHub>>()
+    {
+        game_world.set_scene_loads(Arc::clone(loads));
+    }
     if let Some(assets) = runtime
         .services
         .get::<Arc<Mutex<khora_io::asset::AssetService>>>()

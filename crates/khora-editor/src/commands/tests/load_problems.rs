@@ -94,18 +94,18 @@ fn a_clean_load_or_a_new_scene_clears_the_load_problems() {
     let state = Arc::new(Mutex::new(EditorState::default()));
     let problems = Problems::default();
 
-    load_scene_dispatch(None, &mut world, &state, &broken);
+    open_and_land(&mut world, &state, &broken);
     mirror(&problems, &state);
     assert!(!problems.of_source(&ProblemSource::Load).is_empty());
 
-    load_scene_dispatch(None, &mut world, &state, &clean);
+    open_and_land(&mut world, &state, &clean);
     mirror(&problems, &state);
     assert!(
         problems.of_source(&ProblemSource::Load).is_empty(),
         "the clean scene replaced the list"
     );
 
-    load_scene_dispatch(None, &mut world, &state, &broken);
+    open_and_land(&mut world, &state, &broken);
     mirror(&problems, &state);
     assert!(!problems.of_source(&ProblemSource::Load).is_empty());
     apply_new_scene(&mut world, &state);
@@ -126,7 +126,7 @@ fn a_load_problem_still_selects_its_camera_after_stop() {
     let mut world = GameWorld::new();
     let state = Arc::new(Mutex::new(EditorState::default()));
     let problems = Problems::default();
-    load_scene_dispatch(None, &mut world, &state, &path);
+    open_and_land(&mut world, &state, &path);
     mirror(&problems, &state);
     let before = problems.of_source(&ProblemSource::Load);
     assert!(
@@ -138,7 +138,7 @@ fn a_load_problem_still_selects_its_camera_after_stop() {
 
     apply_play(&mut world, &state);
     mirror(&problems, &state);
-    apply_stop(&mut world, &state);
+    stop_and_land(&mut world, &state);
     mirror(&problems, &state);
 
     let after = problems.of_source(&ProblemSource::Load);

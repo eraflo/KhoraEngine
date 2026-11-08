@@ -45,6 +45,8 @@ fn engine() -> Engine {
     let mut runtime = Runtime::new();
     runtime.resources.insert(Arc::clone(&activation));
     runtime.resources.insert(Arc::clone(&time));
+    // Where Stop files the restore of the scene.
+    crate::tests::scene_loads::install(&mut runtime);
     Engine {
         runtime,
         activation,
@@ -80,7 +82,7 @@ fn play_mode(state: &Arc<Mutex<EditorState>>) -> PlayMode {
 /// An editor opened over `engine`, its world holding one authored entity.
 fn editing(engine: &Engine) -> (GameWorld, Arc<Mutex<EditorState>>) {
     start_editing(&engine.runtime);
-    let mut world = GameWorld::new();
+    let mut world = crate::tests::scene_loads::engine_world(&engine.runtime);
     let root = world.spawn((Transform::identity(), Name::new("Root")));
     world
         .inner_world_mut()
@@ -132,10 +134,14 @@ fn play_snapshots_the_scene_then_switches_the_play_families_on() {
     assert_eq!(engine.scale(), 1.0);
 }
 
-/// **Stop restores the scene, then switches the play families off**, the
-/// clock back at 1: what play spawned is gone.
+/// **Stop restores the scene and switches the play families off**, the
+/// clock back at 1. The families and the clock follow on the frame Stop is
+/// pressed; the restore is filed with the engine's scene loads and lands at
+/// a later boundary: what play spawned is gone.
 #[test]
 fn stop_restores_the_scene_then_switches_the_play_families_off() {
+    use crate::tests::scene_loads::{engine_frame, hub, SETTLE_FRAMES};
+
     let engine = engine();
     let (mut world, state) = editing(&engine);
     ask(&state, "play");
@@ -147,13 +153,23 @@ fn stop_restores_the_scene_then_switches_the_play_families_off() {
     process_transport(&mut world, &state, &engine.runtime);
 
     assert_eq!(play_mode(&state), PlayMode::Editing);
+    assert_eq!(engine.off_at_the_boundary(), play_families());
+    assert_eq!(engine.scale(), 1.0, "editing keeps the clock at 1");
+
+    let loads = hub(&engine.runtime);
+    for _ in 0..SETTLE_FRAMES {
+        engine_frame(&engine.runtime, &mut world);
+        super::super::land_scene_loads(&mut world, &state, &loads);
+        if state.lock().expect("the editor state").restoring.is_none() {
+            break;
+        }
+    }
     assert_eq!(
         world.iter_entities().count(),
         authored,
         "the scene is restored"
     );
     assert_eq!(engine.off_at_the_boundary(), play_families());
-    assert_eq!(engine.scale(), 1.0, "editing keeps the clock at 1");
 }
 
 /// **Pause stops the clock and nothing else**: the play families stay on;

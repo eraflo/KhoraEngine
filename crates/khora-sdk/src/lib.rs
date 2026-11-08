@@ -152,11 +152,12 @@ pub use khora_data::assets::SoundData;
 pub use khora_data::scene::record::LoadReport;
 pub use khora_io::asset::decoders::audio::SymphoniaDecoder;
 pub use khora_io::asset::{
-    AssetChangeEvent, AssetChangeKind, AssetIdRegistry, AssetIo, AssetService, AssetWatch,
-    AssetWatcher, AssetWriter, FileLoader, FileSystemResolver, IndexBuilder, MeshDispatcher,
-    PackBuilder, PackHeader, PackLoader, PackOutput, PackProgress, PACK_FORMAT_VERSION,
-    PACK_HEADER_SIZE, PACK_MAGIC,
+    AssetChangeEvent, AssetChangeKind, AssetIdRegistry, AssetIo, AssetReader, AssetService,
+    AssetWatch, AssetWatcher, AssetWriter, FileLoader, FileSystemResolver, IndexBuilder,
+    MeshDispatcher, PackBuilder, PackHeader, PackLoader, PackOutput, PackProgress,
+    PACK_FORMAT_VERSION, PACK_HEADER_SIZE, PACK_MAGIC,
 };
+pub use khora_io::scene_loads::{install_scene_loading, LoadOutcome, SceneLoadHub};
 pub use khora_io::serialization::{
     prefab_catalog, read_prefab, ReaderPrefabs, SerializationService, SerializationServiceError,
 };

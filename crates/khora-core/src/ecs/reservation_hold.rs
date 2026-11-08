@@ -34,13 +34,21 @@ pub struct ReservationHold {
     reserver: Arc<EntityReserver>,
     /// The ids reserved through this hold and still held by it.
     ids: Mutex<HashSet<EntityId>>,
+    /// Ids held for this hold before it reserves anything — slots the world
+    /// freed — handed out by [`reserve`](Self::reserve) first.
+    spare: Mutex<Vec<EntityId>>,
 }
 
 impl ReservationHold {
     /// An id no other reservation and no live entity holds, held until the
     /// load commits it or the hold gives it back. Never fails.
     pub fn reserve(&self) -> EntityId {
-        let id = self.reserver.reserve_held();
+        let spare = self
+            .spare
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pop();
+        let id = spare.unwrap_or_else(|| self.reserver.reserve_held());
         self.lock().insert(id);
         id
     }
@@ -52,6 +60,16 @@ impl ReservationHold {
             return false;
         }
         self.reserver.commit_held(id)
+    }
+
+    /// Makes the ids this hold reserved and did not commit ready to reserve
+    /// again, before any other: a load prepared again reuses them.
+    pub fn recycle(&self) {
+        let ids = std::mem::take(&mut *self.lock());
+        self.spare
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(ids);
     }
 
     /// Whether this hold reserves through `reserver`.
@@ -72,7 +90,13 @@ impl Drop for ReservationHold {
     /// them out again.
     fn drop(&mut self) {
         let ids = std::mem::take(&mut *self.lock());
-        self.reserver.give_back_held(ids);
+        let spare = std::mem::take(
+            &mut *self
+                .spare
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        );
+        self.reserver.give_back_held(ids.into_iter().chain(spare));
     }
 }
 
@@ -80,9 +104,19 @@ impl EntityReserver {
     /// A hold over this reserver: ids reserved through it survive the frame's
     /// end until committed, abandoned or dropped.
     pub fn hold(self: &Arc<Self>) -> ReservationHold {
+        self.hold_these(Vec::new())
+    }
+
+    /// A hold over this reserver that holds `ids` — slots the owning world
+    /// took out of its free list for it — and hands them out before any
+    /// other: held from now, so no frame's end takes them back, until
+    /// committed or given back.
+    pub fn hold_these(self: &Arc<Self>, ids: Vec<EntityId>) -> ReservationHold {
+        self.hold_ids(&ids);
         ReservationHold {
             reserver: Arc::clone(self),
             ids: Mutex::new(HashSet::new()),
+            spare: Mutex::new(ids),
         }
     }
 }
