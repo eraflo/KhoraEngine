@@ -26,19 +26,14 @@ use std::sync::{Arc, Mutex};
 use anyhow::{anyhow, Context, Result};
 use khora_core::asset::{Asset, AssetHandle, AssetSource, AssetUUID};
 use khora_core::event::{Channel, WhenFull};
-use khora_core::renderer::api::gpu_scene::Mesh;
-use khora_data::assets::{Assets, SoundData};
+use khora_data::assets::Assets;
 use khora_telemetry::MetricsRegistry;
 
 use super::change::{AssetChanged, CHANGE_BACKLOG};
 use super::container::AssetContainer;
 use super::decoder_registry::DecoderRegistry;
-use super::decoders::audio::SymphoniaDecoder;
-use super::decoders::mesh::{FileSystemResolver, GltfContainer, MeshDispatcher};
 use super::file::FileLoader;
 use super::generations::Generations;
-use super::id_registry::AssetIdRegistry;
-use super::index_builder::IndexBuilder;
 use super::io::AssetIo;
 use super::manifest::PackManifest;
 use super::reader::AssetReader;
@@ -161,8 +156,17 @@ impl AssetService {
     ) -> Result<Self> {
         let index = AssetIndex::new(index_bytes)
             .context("Failed to initialize AssetIndex from index bytes")?;
+        Ok(Self::over_index(index, io, metrics_registry, manifest))
+    }
 
-        Ok(Self {
+    /// The service reading `index`'s assets through `io`.
+    fn over_index(
+        index: AssetIndex,
+        io: Box<dyn AssetIo>,
+        metrics_registry: Arc<MetricsRegistry>,
+        manifest: Option<PackManifest>,
+    ) -> Self {
+        Self {
             // When `Some`, every byte slice read is re-hashed against the
             // manifest before reaching the decoder: built by the runtime only
             // when `RuntimeConfig::verify_integrity` is set and
@@ -191,7 +195,18 @@ impl AssetService {
             reloading: HashSet::new(),
             meanwhile: HashMap::new(),
             project_root: None,
-        })
+        }
+    }
+
+    /// A service with no asset and no project served: what a host holds
+    /// until the project it opens lands, or when it has none.
+    pub fn empty() -> Self {
+        Self::over_index(
+            AssetIndex::empty(),
+            Box::new(FileLoader::new(Path::new(""))),
+            Arc::new(MetricsRegistry::new()),
+            None,
+        )
     }
 
     /// The project whose loose `assets/` folder this service serves; `None`
@@ -259,57 +274,6 @@ impl AssetService {
         self.reader_mut()
             .containers
             .insert(type_name.to_string(), Arc::new(container));
-    }
-
-    /// Walks `inventory::iter::<DecoderRegistration>` and runs each entry's
-    /// `register` fn. Use this once after construction to pull in every
-    /// decoder declared via `inventory::submit!` — currently `texture` and
-    /// `font`. Audio and mesh decoders are intentionally explicit (see
-    /// `decoders/audio` and `decoders/mesh` for the rationale).
-    pub fn register_inventory_decoders(&mut self) {
-        for reg in inventory::iter::<super::decoder_registry::DecoderRegistration> {
-            (reg.register)(self);
-        }
-    }
-
-    /// Opens a service over a project's loose `<project_root>/assets/`
-    /// directory, with every default decoder registered (see
-    /// [`Self::register_default_decoders`]).
-    ///
-    /// Asset ids come from `registry`: a path it freezes keeps its recorded
-    /// UUID, every other path gets its `new_v5` default.
-    pub fn open_loose_files(
-        project_root: &Path,
-        registry: &AssetIdRegistry,
-        metrics_registry: Arc<MetricsRegistry>,
-    ) -> Result<Self> {
-        let assets_root = project_root.join("assets");
-        let index_bytes = IndexBuilder::new(&assets_root)
-            .with_registry(registry)
-            .build_index_bytes()
-            .with_context(|| format!("Failed to index {}", assets_root.display()))?;
-        let io = Box::new(FileLoader::new(&assets_root));
-        let mut svc = Self::new(&index_bytes, io, metrics_registry, None)?;
-        svc.register_default_decoders(&assets_root);
-        svc.serve_project(project_root);
-        Ok(svc)
-    }
-
-    /// Registers the decoders every Khora application uses: the ones
-    /// declared through `inventory` (see [`Self::register_inventory_decoders`]),
-    /// audio through Symphonia, and meshes through the [`MeshDispatcher`].
-    ///
-    /// A glTF file's external URIs (`.bin` buffers, images) are resolved
-    /// relative to the glTF file, as glTF specifies, and never outside
-    /// `assets_root`. A glTF file is also a container: its scenes,
-    /// primitives, materials and textures are sub-assets of their own (see
-    /// [`GltfContainer`](super::decoders::mesh::GltfContainer)).
-    pub fn register_default_decoders(&mut self, assets_root: &Path) {
-        self.register_inventory_decoders();
-        self.register_decoder::<SoundData>("audio", SymphoniaDecoder);
-        let gltf_resolver = Arc::new(FileSystemResolver::new(assets_root));
-        self.register_decoder::<Mesh>("mesh", MeshDispatcher::new(gltf_resolver));
-        self.register_container("mesh", GltfContainer::new(assets_root));
     }
 
     /// Loads, decodes, and returns a typed handle to an asset.
@@ -2039,6 +2003,21 @@ mod tests {
             opens.load(Ordering::SeqCst),
             0,
             "a load as another type never opens the container"
+        );
+    }
+
+    /// **An empty service serves nothing**: no asset indexed, no project
+    /// served, and any id it is asked for is refused.
+    #[test]
+    fn an_empty_service_serves_no_asset_and_no_project() {
+        let mut svc = AssetService::empty();
+
+        assert_eq!(svc.index().asset_count(), 0, "no asset is indexed");
+        assert_eq!(svc.project_root(), None, "no project is served");
+        assert!(
+            svc.load_raw(&AssetUUID::new_v5("scenes/default.kscene"))
+                .is_err(),
+            "an id no index holds is refused"
         );
     }
 }

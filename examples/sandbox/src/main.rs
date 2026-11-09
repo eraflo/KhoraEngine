@@ -132,6 +132,9 @@ fn main() -> Result<()> {
         // reason as the shaders above: the sandbox is run from the checkout.
         // Its own root on the engine's watch, beside the shader tree's: both
         // hot-reload.
+        // Mounted here, before the boot, rather than in `setup`: the boot
+        // compiles a mount filed before it, so `setup` finds `Hover` declared
+        // and attaches it to the sphere it builds.
         let script_assets = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets");
         khora_sdk::scripts::mount(runtime, &script_assets);
     })?;

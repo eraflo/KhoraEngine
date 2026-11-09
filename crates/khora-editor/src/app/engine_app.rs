@@ -78,7 +78,7 @@ impl EngineApp for EditorApp {
             prefab_view: None,
             play_prefabs: Arc::default(),
             prefab_catalog: khora_sdk::khora_data::scene::PrefabCatalog::new(),
-            shared_assets: Arc::new(Mutex::new(crate::project_vfs::no_assets())),
+            shared_assets: Arc::new(Mutex::new(khora_sdk::AssetService::empty())),
             scene_loads: None,
         }
     }

@@ -572,7 +572,6 @@ mod tests {
         use khora_sdk::{install_indexing, EditorState, IndexHub, Runtime};
 
         use super::{land_reindex, pump};
-        use crate::project_vfs::no_assets;
         use crate::tests::gltf_fixture::{GltfProject, TRIANGLE_OBJ};
 
         const CRATE: &str = "meshes/crate.obj";
@@ -581,7 +580,7 @@ mod tests {
         let project = GltfProject::with("index-off-the-frame", &[(CRATE, TRIANGLE_OBJ)]);
         // The engine: the asset service the project moves into, the reserve
         // the background stages into, and the index hub.
-        let shared = Arc::new(Mutex::new(no_assets()));
+        let shared = Arc::new(Mutex::new(khora_sdk::AssetService::empty()));
         project
             .vfs
             .lock()
@@ -706,7 +705,6 @@ mod tests {
         use khora_sdk::{install_indexing, EditorState, IndexHub, Runtime};
 
         use super::{land_reindex, pump};
-        use crate::project_vfs::no_assets;
         use crate::tests::gltf_fixture::{GltfProject, TRIANGLE_OBJ};
 
         const CRATE: &str = "meshes/crate.obj";
@@ -715,7 +713,7 @@ mod tests {
 
         let a = GltfProject::with("reindex-closed-a", &[(CRATE, TRIANGLE_OBJ)]);
         let b = GltfProject::with("reindex-closed-b", &[(BARREL, TRIANGLE_OBJ)]);
-        let shared = Arc::new(Mutex::new(no_assets()));
+        let shared = Arc::new(Mutex::new(khora_sdk::AssetService::empty()));
         a.vfs.lock().expect("project A").share_assets(&shared);
         let mut runtime = Runtime::new();
         runtime.resources.insert(Reserve::new());

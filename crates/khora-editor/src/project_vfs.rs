@@ -32,25 +32,6 @@ use std::{
     sync::{Arc, Mutex, MutexGuard},
 };
 
-/// An asset service with no asset: what the engine resolves through while
-/// no project is open.
-pub fn no_assets() -> AssetService {
-    let no_index = IndexBuilder::new(Path::new(""))
-        .build_index_bytes()
-        .unwrap_or_default();
-    match AssetService::new(
-        &no_index,
-        Box::new(FileLoader::new(Path::new(""))),
-        Arc::new(MetricsRegistry::new()),
-        None,
-    ) {
-        Ok(service) => service,
-        // An empty index always decodes; were it not to, there would be no
-        // asset to serve either way.
-        Err(e) => panic!("an empty asset index does not decode: {e:#}"),
-    }
-}
-
 /// All project I/O, in one place.
 ///
 /// `open` performs a recursive scan of `<root>/assets/`, builds an in-memory
@@ -945,7 +926,7 @@ mod tests {
             std::fs::write(meshes.join("a.obj"), obj)?;
         }
         let mesh = AssetUUID::new_v5(REL);
-        let shared = Arc::new(Mutex::new(no_assets()));
+        let shared = Arc::new(Mutex::new(AssetService::empty()));
 
         let mut first_vfs = first.open()?;
         first_vfs.share_assets(&shared);
@@ -1191,7 +1172,7 @@ mod tests {
         let textures = project.0.join("assets").join("textures");
         std::fs::create_dir_all(&textures)?;
         std::fs::write(textures.join("crate.png"), b"PNG")?;
-        let shared = Arc::new(Mutex::new(no_assets()));
+        let shared = Arc::new(Mutex::new(AssetService::empty()));
         let watch = Arc::new(AssetWatch::default());
 
         let pvfs = ProjectVfs::over_service(project.0.clone(), Arc::clone(&shared), watch.clone())?;
@@ -1240,7 +1221,7 @@ mod tests {
     fn a_project_opened_over_the_engines_service_gets_its_assets_folder() -> Result<()> {
         let project = TempProject::new("over-service-assets-folder")?;
         std::fs::remove_dir_all(project.0.join("assets"))?;
-        let shared = Arc::new(Mutex::new(no_assets()));
+        let shared = Arc::new(Mutex::new(AssetService::empty()));
 
         let pvfs =
             ProjectVfs::over_service(project.0.clone(), shared, Arc::new(AssetWatch::default()))?;

@@ -25,8 +25,14 @@ private.
   `Arc<Activation>` before `setup`; every family starts on, `activate`/`deactivate` are requests settled
   at the next frame boundary (`before_frame` is the app's last place before it). `DccService` is
   re-exported too. Scripts run only while `khora_core::script::SCRIPT` is on.
-- `run_default` loads the packed default scene with `SerializationService::with_prefabs(AssetPrefabs)`
-  and logs each `LoadReport` entry.
+- Startup is engine first: an app files its heavy work by ticket (`IndexHub`, `SceneLoadHub`,
+  `scripts::mount`) and waits on it through `Readiness` (`startup_ready` once, 60 s timeout). A mount filed in
+  the bootstrap closure is compiled by the boot, so `setup` can attach script behaviours by name.
+- `run_default` loads its game by ticket, without a film:
+  - loose `assets/` are indexed by an `IndexHub` `Open`;
+  - the default scene is filed with the `SceneLoadHub` (prefabs from `AssetPrefabs`), and each
+    `LoadReport` entry is logged when it lands;
+  - its scripts are mounted in `setup`.
 
 ## Principles
 - **The SDK is a façade** — the Scheduler, `BudgetChannel`, `EnginePlugin`, and all `khora-*` internals stay

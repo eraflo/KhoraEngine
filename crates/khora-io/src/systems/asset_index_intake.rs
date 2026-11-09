@@ -19,7 +19,8 @@
 //! read for the asset service serving now are installed in it first. An
 //! `Open` builds a new asset service and swaps it into the runtime's; a
 //! `Reindex` reindexes the runtime's. Each outcome is filed under its
-//! ticket in the runtime's `IndexHub`.
+//! ticket in the runtime's `IndexHub`, and the prefabs a script may spawn
+//! (the runtime's `PrefabCatalog`) are those the new index holds.
 
 use std::sync::{Arc, Mutex};
 
@@ -27,9 +28,11 @@ use khora_core::asset::{IndexKind, IndexedAssets};
 use khora_core::lane::{OutputDeck, Reserve};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, SystemContext, TickPhase, World};
+use khora_data::scene::PrefabCatalog;
 use khora_telemetry::MetricsRegistry;
 
 use crate::asset::{AssetService, FileLoader, IndexHub, IndexOutcome};
+use crate::serialization::prefab_catalog;
 
 /// Takes in every project index the reserve holds, into the runtime's asset
 /// service, and files each outcome in the runtime's `IndexHub`. Nothing
@@ -50,11 +53,28 @@ pub fn take_in_indexes(runtime: &Runtime) {
             continue;
         }
         let outcome = take_in(runtime, indexed);
-        if let Err(why) = &outcome {
-            log::warn!("project index {}: {why}", ticket.0);
+        match &outcome {
+            Ok(()) => follow_prefabs(runtime),
+            Err(why) => log::warn!("project index {}: {why}", ticket.0),
         }
         hub.land(ticket, outcome);
     }
+}
+
+/// Makes the runtime's prefab catalog, when it has one, the prefabs its
+/// asset service indexes now: a prefab indexed since is one a script may
+/// spawn, and one gone is not.
+fn follow_prefabs(runtime: &Runtime) {
+    let (Some(catalog), Some(service)) = (
+        runtime.resources.get::<PrefabCatalog>(),
+        runtime.services.get::<Arc<Mutex<AssetService>>>(),
+    ) else {
+        return;
+    };
+    let service = service
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    catalog.replace(prefab_catalog(&service));
 }
 
 /// Builds or reindexes the runtime's asset service from `indexed`.

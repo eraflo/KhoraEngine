@@ -26,7 +26,7 @@ use khora_sdk::khora_core::lane::{OutputDeck, Reserve, Staging};
 use khora_sdk::khora_data::ecs::{DataSystemRegistration, SystemContext, Tick, World};
 use khora_sdk::{install_indexing, AssetService, IndexHub, Runtime};
 
-use crate::project_vfs::{no_assets, ProjectVfs};
+use crate::project_vfs::ProjectVfs;
 
 /// A runtime holding what a project index needs: the reserve the
 /// background stages into, the engine's asset service and the index hub.
@@ -42,7 +42,7 @@ pub(crate) struct IndexingEngine {
 
 impl IndexingEngine {
     pub fn new() -> Self {
-        let shared = Arc::new(Mutex::new(no_assets()));
+        let shared = Arc::new(Mutex::new(khora_sdk::AssetService::empty()));
         let mut runtime = Runtime::new();
         runtime.resources.insert(Reserve::new());
         runtime.services.insert(Arc::clone(&shared));

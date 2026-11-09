@@ -47,13 +47,38 @@ through, and the timing model underneath them.
 
 ## Startup, once
 
-Before the first frame, the engine boots through the SDK entry point. It opens a
-window, runs your bootstrap closure (which typically registers the renderer),
-constructs your app, registers the default services, the DCC, and the agents,
-then calls `setup` once so you can spawn initial entities and cache service
-handles. Finally the DCC walks every registered agent and lets each cache its
-services exactly once. Nothing in `setup` is ever re-run; after it, the engine
-enters the frame loop and stays there.
+Before the first frame, the engine boots through the SDK entry point. It builds
+the window hidden, constructs your app, and runs your bootstrap closure. In that
+closure the app registers what it needs from the engine: the renderer, the
+pipeline system, physics, layout, audio. Then the engine registers its services,
+the DCC and the families, and calls `setup` once so you can spawn initial
+entities and cache service handles. The first frame is painted, then the window
+is shown. Nothing in `setup` is ever re-run; after it, the engine enters the
+frame loop and stays there.
+
+The engine runs first; the slow work comes after, as ordinary frames. An app
+does not index a project, load a scene or compile scripts inside `setup`.
+Instead it files each of them and keeps the ticket it gets back:
+
+- the project index goes to the `IndexHub`;
+- a scene goes to the `SceneLoadHub`;
+- scripts go through `scripts::mount`, which returns a ticket.
+
+The `loading` family does that work off the frame, within the budget the DCC
+lends it, and each result lands at a later frame's boundary.
+
+An app that must know when its startup is over waits on those tickets
+through the runtime's `Readiness`. It can also take a `hold` while it files
+work in steps. The engine calls `startup_ready` once, on the frame where
+everything has landed, or after 60 s, with the late tickets reported as
+problems. The editor's loading film is painted by those first frames and fades
+on `startup_ready`. `run_default` loads a game's default scene and scripts the
+same way, with no film.
+
+One exception keeps `setup` simple for a game built in code: scripts mounted
+in the bootstrap closure, before the boot, are compiled by the boot. Their
+declarations are then registered before `setup`, which can attach a behaviour
+by name. The sandbox works this way.
 
 The details of bootstrapping an app are a how-to, not a concept — see the
 [SDK quickstart how-to](../how-to/spawn-and-transform.md) for the actual steps.

@@ -61,6 +61,13 @@ impl AssetIndex {
         Ok(Self { index })
     }
 
+    /// An index of no asset.
+    pub(crate) fn empty() -> Self {
+        Self {
+            index: HashMap::new(),
+        }
+    }
+
     /// Retrieves the metadata for a given asset UUID.
     ///
     /// This is the primary query method used by the `AssetAgent`.

@@ -20,6 +20,7 @@ mod container;
 mod decoder;
 mod decoder_registry;
 pub mod decoders;
+mod defaults;
 pub(crate) mod dependencies;
 mod file;
 mod generations;
