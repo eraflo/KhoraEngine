@@ -73,14 +73,15 @@ pub fn save_scene_dispatch_with_goal(
 /// is resolved in the project's index now, its bytes are read and the load
 /// prepared in the background, and it lands at a later frame's boundary,
 /// where [`land_scene_loads`] finishes it. A scene outside the project is
-/// read from its path, without prefabs.
+/// read from its path, without prefabs. Returns the load's ticket; `None`
+/// when nothing was filed.
 pub fn open_scene_dispatch(
     project_vfs: Option<&Arc<Mutex<ProjectVfs>>>,
     world: &mut GameWorld,
     editor_state: &Arc<Mutex<EditorState>>,
     loads: &khora_sdk::SceneLoadHub,
     abs: &std::path::Path,
-) {
+) -> Option<khora_sdk::khora_core::scene::LoadTicket> {
     let mut in_project = None;
     if let Some(pvfs_arc) = project_vfs {
         if let Ok(mut pvfs) = pvfs_arc.lock() {
@@ -88,10 +89,7 @@ pub fn open_scene_dispatch(
             if let Some(rel_fwd) = scene_io::rel_inside_project(abs, &assets_root) {
                 // A scene of the project it names nothing in opens nothing.
                 let choice = editor_state.lock().map_or(0, |state| state.scene_choices);
-                match scene_io::scene_in_project(&mut pvfs, &rel_fwd, choice) {
-                    Some(found) => in_project = Some(found),
-                    None => return,
-                }
+                in_project = Some(scene_io::scene_in_project(&mut pvfs, &rel_fwd, choice)?);
             }
         }
     }
@@ -109,6 +107,7 @@ pub fn open_scene_dispatch(
         // nothing over it.
         state.scene_choices = state.scene_choices.wrapping_add(1);
     }
+    Some(ticket)
 }
 
 /// Finishes the scene loads the editor filed — an opened scene, Stop's

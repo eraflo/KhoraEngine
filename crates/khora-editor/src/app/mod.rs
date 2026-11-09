@@ -96,6 +96,11 @@ pub struct EditorApp {
     /// [`project_scripts::follow_open_project`](crate::project_scripts) has
     /// caught up with it.
     mounted_scripts: Option<std::path::PathBuf>,
+    /// The `--project` being opened behind the film, until its index lands.
+    opening: Option<project_open::OpeningProject>,
+    /// The startup's hold on the engine's `Readiness` while the project
+    /// files what it opens with in steps.
+    startup_hold: Option<khora_sdk::ReadinessHold>,
     /// What is wrong with the project's scripts, as the engine finds it.
     problems: Option<Arc<khora_sdk::khora_core::problems::Problems>>,
     /// What the project's scripts declare, as the engine lists it — the

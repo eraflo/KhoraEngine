@@ -14,6 +14,8 @@
 
 //! The editor application's own state, kept across frames.
 
+mod project_opens_behind_the_film;
+
 /// The inspector's view of the inspected entity against its instance's
 /// prefab, kept across frames: it follows what the world says the entity
 /// belongs to.

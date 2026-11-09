@@ -108,9 +108,9 @@ pub fn run() -> anyhow::Result<()> {
         if let Some(Some(project)) = PROJECT_PATH.get() {
             runtime
                 .resources
-                .insert(crate::project_vfs::project_physics(std::path::Path::new(
-                    project,
-                )));
+                .insert(crate::project_physics::project_physics(
+                    std::path::Path::new(project),
+                ));
         }
 
         // Physics — Rapier3D

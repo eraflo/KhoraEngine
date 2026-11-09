@@ -45,6 +45,7 @@ mod ops;
 mod panels;
 mod picking;
 mod play_prefabs;
+mod project_physics;
 mod project_scripts;
 mod project_vfs;
 mod scene_io;

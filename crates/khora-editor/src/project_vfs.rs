@@ -51,32 +51,6 @@ pub fn no_assets() -> AssetService {
     }
 }
 
-/// The physics settings of the project at `root`: the `physics` section of
-/// its `project.json`, or the defaults when it has none or the file cannot be
-/// read. A section that does not read (a zero or negative step) is reported
-/// and the defaults kept. A few hundred bytes, read as the editor starts:
-/// the engine boots its physics family at this step.
-pub fn project_physics(root: &Path) -> PhysicsSettings {
-    let path = root.join("project.json");
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return PhysicsSettings::default();
-    };
-    let Ok(project) = serde_json::from_str::<serde_json::Value>(&text) else {
-        log::warn!(
-            "{} does not parse: its physics settings are ignored",
-            path.display()
-        );
-        return PhysicsSettings::default();
-    };
-    match project.get("physics") {
-        None => PhysicsSettings::default(),
-        Some(section) => serde_json::from_value(section.clone()).unwrap_or_else(|error| {
-            log::warn!("project.json: the `physics` section is ignored: {error}");
-            PhysicsSettings::default()
-        }),
-    }
-}
-
 /// All project I/O, in one place.
 ///
 /// `open` performs a recursive scan of `<root>/assets/`, builds an in-memory
@@ -180,6 +154,48 @@ impl ProjectVfs {
             root,
             assets_root,
             asset_service: Arc::new(Mutex::new(asset_service)),
+            watch,
+            file_loader,
+            registry,
+            generation: std::sync::atomic::AtomicU64::new(0),
+            prefab_catalog: None,
+            indexes: None,
+            awaiting: None,
+            next: None,
+            held: Vec::new(),
+        })
+    }
+
+    /// Opens the project at `root` over `service`, the engine's shared asset
+    /// service, which an `Open` filed with the engine's index hub filled off
+    /// the frame. As [`Self::open_watched`] does, it ensures `<root>/assets/`
+    /// exists, loads the identity registry (its file made), builds the
+    /// writer and arms `watch`; it walks nothing: the index is the service's.
+    pub fn over_service(
+        root: PathBuf,
+        service: Arc<Mutex<AssetService>>,
+        watch: Arc<AssetWatch>,
+    ) -> Result<Self> {
+        let assets_root = root.join("assets");
+        std::fs::create_dir_all(&assets_root).with_context(|| {
+            format!(
+                "Failed to ensure project assets directory exists: {}",
+                assets_root.display()
+            )
+        })?;
+        // The identity registry, made on first open, as `open_watched` does.
+        let registry = AssetIdRegistry::load(&root);
+        if let Err(e) = registry.ensure_file() {
+            log::warn!("Could not create asset identity registry file: {e}");
+        }
+        let file_loader = FileLoader::new(&assets_root);
+        watch
+            .watch(&assets_root)
+            .context("Failed to watch the project's assets (filesystem hot reload)")?;
+        Ok(Self {
+            root,
+            assets_root,
+            asset_service: service,
             watch,
             file_loader,
             registry,
@@ -370,20 +386,11 @@ impl ProjectVfs {
         Some(Landed { outcome, actions })
     }
 
-    /// Reads `<root>/project.json` as untyped JSON. Project metadata isn't an
-    /// asset (lives outside `assets/`) so it deliberately bypasses the VFS.
-    pub fn read_project_json(&self) -> Result<serde_json::Value> {
-        let path = self.root.join("project.json");
-        let text = std::fs::read_to_string(&path)
-            .with_context(|| format!("Failed to read {}", path.display()))?;
-        serde_json::from_str(&text).with_context(|| format!("Failed to parse {}", path.display()))
-    }
-
     /// The project's physics settings: the `physics` section of its
     /// `project.json`, or the defaults when it has none. A section that does
     /// not read (a zero or negative step) is reported and the defaults kept.
     pub fn physics_settings(&self) -> PhysicsSettings {
-        project_physics(&self.root)
+        crate::project_physics::project_physics(&self.root)
     }
 
     /// Writes `bytes` to `<root>/assets/<rel_path>`. Creates intermediate
@@ -1171,6 +1178,79 @@ mod tests {
         assert_eq!(engine.waiting(), 0, "nothing more is filed");
         assert_eq!(engine.filed(), 2, "two reindexes in all");
         assert_eq!(engine.most_waiting(), 1, "one reindex in flight at a time");
+    }
+
+    /// **A project opened over the engine's service is not walked.** Its
+    /// `assets/` holds a file, but the engine's service is empty: the
+    /// project serves that very service, so it indexes nothing — the index
+    /// comes through the engine's `IndexHub`. The identity registry's file is
+    /// made and the project's assets are watched, as `open_watched` does.
+    #[test]
+    fn a_project_opened_over_the_engines_service_is_not_walked() -> Result<()> {
+        let project = TempProject::new("over-service-not-walked")?;
+        let textures = project.0.join("assets").join("textures");
+        std::fs::create_dir_all(&textures)?;
+        std::fs::write(textures.join("crate.png"), b"PNG")?;
+        let shared = Arc::new(Mutex::new(no_assets()));
+        let watch = Arc::new(AssetWatch::default());
+
+        let pvfs = ProjectVfs::over_service(project.0.clone(), Arc::clone(&shared), watch.clone())?;
+
+        assert!(
+            Arc::ptr_eq(&pvfs.asset_service, &shared),
+            "the project serves the engine's service, not one of its own"
+        );
+        assert_eq!(
+            pvfs.assets().index().asset_count(),
+            0,
+            "the project's files were walked on the frame"
+        );
+        assert!(
+            pvfs.assets()
+                .index()
+                .get_metadata(&AssetUUID::new_v5("textures/crate.png"))
+                .is_none(),
+            "the file is indexed before any `Open` landed"
+        );
+        assert!(
+            project
+                .0
+                .join(".khora")
+                .join("asset-registry.ron")
+                .is_file(),
+            "the identity registry's file is not made"
+        );
+        let assets = std::fs::canonicalize(project.0.join("assets"))?;
+        assert!(
+            watch
+                .roots()
+                .iter()
+                .filter_map(|root| std::fs::canonicalize(root).ok())
+                .any(|root| root == assets),
+            "the project's assets are not watched: {:?}",
+            watch.roots()
+        );
+        Ok(())
+    }
+
+    /// **A project opened over the engine's service gets its `assets/`.** A
+    /// project folder holding no `assets/` yet opens with one, empty: the
+    /// writer and the watch have a folder to work in.
+    #[test]
+    fn a_project_opened_over_the_engines_service_gets_its_assets_folder() -> Result<()> {
+        let project = TempProject::new("over-service-assets-folder")?;
+        std::fs::remove_dir_all(project.0.join("assets"))?;
+        let shared = Arc::new(Mutex::new(no_assets()));
+
+        let pvfs =
+            ProjectVfs::over_service(project.0.clone(), shared, Arc::new(AssetWatch::default()))?;
+
+        assert!(
+            project.0.join("assets").is_dir(),
+            "the project's `assets/` is not created"
+        );
+        assert_eq!(pvfs.assets_root, project.0.join("assets"));
+        Ok(())
     }
 
     /// **The project's physics step is read from its `project.json`.** A

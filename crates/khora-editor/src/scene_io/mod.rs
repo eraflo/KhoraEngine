@@ -23,17 +23,22 @@
 
 use crate::project_vfs::{AfterIndex, ProjectVfs};
 use khora_sdk::khora_core::asset::asset_key;
-use khora_sdk::khora_core::problems::{Problem, ProblemSeverity, ProblemSource};
+#[cfg(test)]
+use khora_sdk::khora_core::problems::ProblemSource;
+use khora_sdk::khora_core::problems::{Problem, ProblemSeverity};
 use khora_sdk::khora_data::scene::loading::{SceneFetch, SceneSource};
 use khora_sdk::khora_data::scene::{NoPrefabs, PrefabSource};
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::prelude::math::{LinearRgba, Vec3};
-use khora_sdk::{GameWorld, SceneFile, SerializationGoal, SerializationService};
+#[cfg(test)]
+use khora_sdk::SceneFile;
+#[cfg(test)]
+use khora_sdk::DEFAULT_SCENE_REL_PATH as DEFAULT_SCENE_REL;
+use khora_sdk::{GameWorld, SerializationGoal, SerializationService};
 use std::path::Path;
 
 // Canonical relative path of the auto-created default scene: the one the
 // runtime loads when `runtime.json` names none.
-use khora_sdk::DEFAULT_SCENE_REL_PATH as DEFAULT_SCENE_REL;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Play-mode snapshot — full-world capture via SerializationService as a
@@ -119,6 +124,8 @@ pub fn save_scene_in_project_with_goal(
     true
 }
 
+// Synchronous: for tests and scratch worlds; the editor opens a scene by ticket.
+#[cfg(test)]
 /// Loads a scene by its relative path under `<project>/assets/` via the
 /// project's `AssetService::load_raw`. Falls back to a fresh reindex + retry
 /// once if the path isn't yet known to the VFS (e.g. just-saved).
@@ -131,6 +138,8 @@ pub fn load_scene_in_project(
     load_scene_in_project_with_report(pvfs, world, rel_path_fwd_slash).is_some()
 }
 
+// Synchronous: for tests and scratch worlds; the editor opens a scene by ticket.
+#[cfg(test)]
 /// [`load_scene_in_project`], returning what the load adapted — the
 /// [`LoadReport`] it also logs — or `None` when the scene did not load.
 ///
@@ -282,6 +291,8 @@ pub fn scene_on_disk(path: &Path) -> (SceneSource, std::sync::Arc<dyn PrefabSour
     )
 }
 
+// Synchronous: for tests and scratch worlds; the editor opens a scene by ticket.
+#[cfg(test)]
 /// Puts what a load adapted in `problems`, as the `Load` source's warnings:
 /// each entry's entity found in `world` by its persistent id, its component
 /// and its path as the problem's field. Replaces what the last load
@@ -319,28 +330,13 @@ pub fn load_problems(
         .collect()
 }
 
-/// Auto-loads the project's default scene (`assets/scenes/default.kscene`),
-/// creating it from a Camera + Light template if it doesn't exist yet.
-///
-/// Returns what the load adapted, `None` when nothing was loaded (a scene
-/// created, or one that did not load).
-pub fn auto_load_or_create_default_scene(
-    pvfs: &mut ProjectVfs,
-    world: &mut GameWorld,
-) -> Option<khora_sdk::khora_data::scene::record::LoadReport> {
-    let rel = DEFAULT_SCENE_REL;
-    let abs = pvfs.assets_root.join(Path::new(rel));
-    if abs.exists() {
-        load_scene_in_project_with_report(pvfs, world, rel)
-    } else {
-        create_default_scene_in_project(pvfs, world, rel);
-        None
-    }
-}
-
 /// Spawns Main Camera + Directional Light entities, then saves the world to
 /// the relative path inside the project (default `scenes/default.kscene`).
-fn create_default_scene_in_project(pvfs: &mut ProjectVfs, world: &mut GameWorld, rel_path: &str) {
+pub(crate) fn create_default_scene_in_project(
+    pvfs: &mut ProjectVfs,
+    world: &mut GameWorld,
+    rel_path: &str,
+) {
     let camera = world.spawn((
         Transform {
             translation: Vec3::new(0.0, 5.0, 10.0),

@@ -19,136 +19,222 @@ use std::sync::{Arc, Mutex};
 use khora_sdk::editor_ui::AssetEntry;
 use khora_sdk::{GameWorld, Runtime};
 
-use super::EditorApp;
-use crate::bootstrap::PROJECT_PATH;
 use crate::project_vfs::ProjectVfs;
 use crate::{git, hot_reload, scene_io};
 
-/// What reading a project gives: its VFS (scanned, watched) and what the
-/// editor shows of it. All of it is plain data, read without the world.
-pub(crate) struct OpenedProject {
-    path: std::path::PathBuf,
-    pvfs: ProjectVfs,
-    project_name: Option<String>,
-    project_engine_version: Option<String>,
-    entries: Vec<AssetEntry>,
-    dirs: Vec<String>,
-    git_branch: Option<String>,
+/// The project the editor opens behind its film: the folder, and the `Open`
+/// filed for it with the engine's index hub, until it lands.
+pub(crate) struct OpeningProject {
+    /// The project's folder.
+    pub(crate) root: std::path::PathBuf,
+    /// The `Open` filed with the engine's index hub.
+    pub(crate) ticket: khora_sdk::IndexTicket,
+    /// The editor's scene choices when it was filed: a scene the user chose
+    /// meanwhile is not replaced by the project's default one.
+    pub(crate) choice: u64,
 }
 
-/// Reads the `--project` folder: scans its assets into a watched VFS and reads
-/// its metadata. `None` without a project, or one that cannot be opened.
-pub(crate) fn read_cli_project(asset_watch: Arc<khora_sdk::AssetWatch>) -> Option<OpenedProject> {
-    let Some(Some(project_path)) = PROJECT_PATH.get() else {
+/// Starts opening the project at `root` off the frame, as `setup` does: takes
+/// a hold on the runtime's `Readiness` into `hold`, creates `<root>/assets/`,
+/// files an `Open` with the runtime's `IndexHub` and waits on it, and fills
+/// in `editor_state` what needs no index — the folder, the name and engine
+/// version `project.json` gives, the git branch. `None`, logged, when it
+/// cannot be filed.
+pub(crate) fn start_opening_project(
+    root: std::path::PathBuf,
+    runtime: &Runtime,
+    editor_state: &Arc<Mutex<khora_sdk::EditorState>>,
+    hold: &mut Option<khora_sdk::ReadinessHold>,
+) -> Option<OpeningProject> {
+    let readiness = runtime.resources.get::<Arc<khora_sdk::Readiness>>();
+    let indexes = runtime.resources.get::<Arc<khora_sdk::IndexHub>>();
+    let Some(indexes) = indexes else {
+        log::error!("the engine holds no index hub: the project cannot be opened");
         return None;
     };
-    let path = std::path::PathBuf::from(project_path);
-    if !path.exists() {
-        log::warn!("--project path does not exist: {}", project_path);
-        return None;
+    // What the project opens with is filed in steps — the index, then its
+    // scene and its scripts once it landed: the film waits for all of them.
+    *hold = readiness.map(|readiness| readiness.hold());
+    let assets = root.join("assets");
+    if let Err(e) = std::fs::create_dir_all(&assets) {
+        log::warn!("could not create {}: {e}", assets.display());
+    }
+    let ticket = indexes.file(root.clone(), khora_sdk::IndexKind::Open);
+    if let Some(readiness) = readiness {
+        readiness.wait_for_index(ticket);
     }
 
-    // Build the project-scoped VFS. This recursively scans the assets
-    // directory, builds a stable in-memory UUID index, registers all
-    // decoders, and arms the filesystem watcher.
-    let metrics = std::sync::Arc::new(khora_sdk::MetricsRegistry::new());
-    let pvfs = match ProjectVfs::open_watched(path.clone(), metrics, asset_watch) {
-        Ok(p) => p,
-        Err(e) => {
-            log::error!(
-                "Failed to open ProjectVfs for '{}': {:#}",
-                path.display(),
-                e
-            );
-            return None;
-        }
+    // What needs no index: `project.json`'s few hundred bytes and the git
+    // branch.
+    let project_json: Option<serde_json::Value> =
+        std::fs::read_to_string(root.join("project.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok());
+    let text = |key: &str| {
+        project_json
+            .as_ref()
+            .and_then(|json| json.get(key).and_then(|v| v.as_str()).map(String::from))
     };
-
-    // Read project metadata via the VFS helper instead of a raw
-    // `std::fs::read_to_string`.
-    let project_json: Option<serde_json::Value> = pvfs.read_project_json().ok();
-    let project_name = project_json
-        .as_ref()
-        .and_then(|v| v.get("name").and_then(|n| n.as_str()).map(String::from));
-    let project_engine_version = project_json.as_ref().and_then(|v| {
-        v.get("engine_version")
-            .and_then(|n| n.as_str())
-            .map(String::from)
-    });
-
-    let entries = hot_reload::collect_asset_entries(&pvfs);
-    let dirs = pvfs.list_dirs();
-    let git_branch = git::read_git_branch(&path);
-    Some(OpenedProject {
-        path,
-        pvfs,
-        project_name,
-        project_engine_version,
-        entries,
-        dirs,
-        git_branch,
+    let mut choice = 0;
+    if let Ok(mut state) = editor_state.lock() {
+        choice = state.scene_choices;
+        state.project_folder = Some(root.to_string_lossy().to_string());
+        state.project_name = text("name");
+        state.project_engine_version = text("engine_version");
+        state.current_git_branch = git::read_git_branch(&root);
+    }
+    log::info!("Opening project '{}' off the frame", root.display());
+    Some(OpeningProject {
+        root,
+        ticket,
+        choice,
     })
 }
 
-impl EditorApp {
-    pub(super) fn open_cli_project(&mut self, world: &mut GameWorld, runtime: &Runtime) {
-        let opened = read_cli_project(std::sync::Arc::clone(&self.asset_watch));
-        let Some(opened) = opened else {
-            return;
-        };
-        let OpenedProject {
-            path,
-            mut pvfs,
-            project_name,
-            project_engine_version,
-            entries,
-            dirs,
-            git_branch,
-        } = opened;
-
-        if let Ok(mut state) = self.editor_state.lock() {
-            state.project_folder = Some(path.to_string_lossy().to_string());
-            state.project_name = project_name.clone();
-            state.project_engine_version = project_engine_version.clone();
-            state.asset_entries = entries;
-            state.asset_dirs = dirs;
-            state.asset_epoch = state.asset_epoch.wrapping_add(1);
-            state.current_git_branch = git_branch.clone();
-            log::info!(
-                "Opened project '{}' from CLI: '{}' ({} assets, git: {}, engine: {})",
-                project_name.as_deref().unwrap_or("<unknown>"),
-                path.display(),
-                state.asset_entries.len(),
-                git_branch.as_deref().unwrap_or("none"),
-                project_engine_version.as_deref().unwrap_or("<unknown>")
+/// Lands the project `opening` names once its `Open` landed, as
+/// `before_frame` does after the scene loads land. `None`, `opening` kept,
+/// while it is in flight.
+///
+/// - **`Ok`:** the project's VFS is built over `shared_assets` (which the
+///   `Open` filled), reads its changes from `asset_watch` and files its
+///   reindexes with the runtime's `IndexHub`; the browser's entries, folders
+///   and epoch are filled; the default scene is opened by ticket when the
+///   index holds it, that ticket waited on by the runtime's `Readiness`, or
+///   created (spawned, then saved, the save reindexing off the frame).
+///   Returns the VFS; `opening` is emptied. `hold` is kept: the scripts are
+///   still to be mounted.
+/// - **`Err`:** logged and reported to the runtime's `Problems` under
+///   `ProblemSource::Load`; `opening` and `hold` are emptied. `None`.
+pub(crate) fn land_opened_project(
+    opening: &mut Option<OpeningProject>,
+    world: &mut GameWorld,
+    runtime: &Runtime,
+    shared_assets: &Arc<Mutex<khora_sdk::AssetService>>,
+    asset_watch: &Arc<khora_sdk::AssetWatch>,
+    editor_state: &Arc<Mutex<khora_sdk::EditorState>>,
+    hold: &mut Option<khora_sdk::ReadinessHold>,
+) -> Option<Arc<Mutex<ProjectVfs>>> {
+    let ticket = opening.as_ref()?.ticket;
+    let indexes = runtime.resources.get::<Arc<khora_sdk::IndexHub>>()?;
+    let outcome = indexes.take_outcome(ticket)?;
+    let OpeningProject { root, choice, .. } = opening.take()?;
+    let opened = outcome.map_err(|why| why.to_string()).and_then(|()| {
+        ProjectVfs::over_service(
+            root.clone(),
+            Arc::clone(shared_assets),
+            Arc::clone(asset_watch),
+        )
+        .map_err(|e| format!("{e:#}"))
+    });
+    let mut pvfs = match opened {
+        Ok(pvfs) => pvfs,
+        Err(why) => {
+            log::error!(
+                "The project '{}' could not be opened: {why}",
+                root.display()
             );
-        }
-
-        // Auto-load (or create) the default scene through the VFS so the
-        // new file shows up in the next index.
-        // What the load adapted goes to the Problems tab, not the log alone.
-        if let Some(report) = scene_io::auto_load_or_create_default_scene(&mut pvfs, world) {
             if let Some(problems) = runtime
                 .resources
                 .get::<Arc<khora_sdk::khora_core::problems::Problems>>()
             {
-                scene_io::report_load(problems, world.inner_world(), &report);
+                problems.report(
+                    khora_sdk::khora_core::problems::ProblemSource::Load,
+                    vec![khora_sdk::khora_core::problems::Problem {
+                        severity: khora_sdk::khora_core::problems::ProblemSeverity::Error,
+                        module: None,
+                        line: 0,
+                        column: 0,
+                        message: format!(
+                            "the project '{}' could not be opened: {why}",
+                            root.display()
+                        ),
+                        note: None,
+                        entity: None,
+                        behavior: None,
+                        component: None,
+                        field: None,
+                    }],
+                );
             }
-            if let Ok(mut state) = self.editor_state.lock() {
-                state.load_problems = scene_io::load_problems(world.inner_world(), &report);
+            // The editor runs with no project: nothing of it is shown as
+            // open, and nothing more is filed — the film goes.
+            if let Ok(mut state) = editor_state.lock() {
+                state.project_folder = None;
+                state.project_name = None;
+                state.project_engine_version = None;
+                state.current_git_branch = None;
             }
+            *hold = None;
+            return None;
         }
+    };
+    pvfs.index_with(Arc::clone(indexes));
 
-        // Refresh the asset browser cache after the potential
-        // default-scene seed.
-        let entries: Vec<AssetEntry> = hot_reload::collect_asset_entries(&pvfs);
-        let dirs = pvfs.list_dirs();
-        if let Ok(mut state) = self.editor_state.lock() {
-            state.asset_entries = entries;
-            state.asset_dirs = dirs;
-            state.asset_epoch = state.asset_epoch.wrapping_add(1);
-        }
-
-        self.project_vfs = Some(Arc::new(Mutex::new(pvfs)));
+    let entries: Vec<AssetEntry> = hot_reload::collect_asset_entries(&pvfs);
+    let dirs = pvfs.list_dirs();
+    if let Ok(mut state) = editor_state.lock() {
+        log::info!(
+            "Opened project '{}' ({} assets)",
+            root.display(),
+            entries.len()
+        );
+        state.asset_entries = entries;
+        state.asset_dirs = dirs;
+        state.asset_epoch = state.asset_epoch.wrapping_add(1);
     }
+
+    // Its default scene: opened by ticket when the index holds it, the film
+    // waiting on it; created when there is none.
+    // Whether there is one is asked of the disk, not of the index: a scene
+    // written after the walk, or spelled with other capitals, is the user's
+    // and is never saved over.
+    let rel = khora_sdk::DEFAULT_SCENE_REL_PATH;
+    let abs = root.join("assets").join(rel);
+    let pvfs = Arc::new(Mutex::new(pvfs));
+    let chosen_since = editor_state
+        .lock()
+        .is_ok_and(|state| state.scene_choices != choice);
+    if chosen_since {
+        // The user chose a scene meanwhile (the film gave up waiting): it
+        // stays.
+    } else if abs.exists() {
+        if let Some(loads) = runtime.resources.get::<Arc<khora_sdk::SceneLoadHub>>() {
+            let ticket =
+                crate::commands::open_scene_dispatch(Some(&pvfs), world, editor_state, loads, &abs);
+            if let (Some(ticket), Some(readiness)) =
+                (ticket, runtime.resources.get::<Arc<khora_sdk::Readiness>>())
+            {
+                readiness.wait_for_scene(ticket);
+            }
+        }
+    } else if let Ok(mut pvfs) = pvfs.lock() {
+        scene_io::create_default_scene_in_project(&mut pvfs, world, rel);
+    }
+    Some(pvfs)
+}
+
+/// Brings the mounted scripts in line with `project`, as `before_agents`
+/// does ([`follow_open_project`]); the compile a mount files is waited on by
+/// the runtime's `Readiness`. Once a project is open — `project` is `Some` —
+/// `hold` is let go: what the project opens with is all filed. Returns the
+/// compile's ticket, as [`follow_open_project`] does.
+///
+/// [`follow_open_project`]: crate::project_scripts::follow_open_project
+pub(crate) fn mount_opened_scripts(
+    runtime: &Runtime,
+    mounted: &mut Option<std::path::PathBuf>,
+    project: Option<&std::path::Path>,
+    hold: &mut Option<khora_sdk::ReadinessHold>,
+) -> Option<khora_sdk::scripts::CompileTicket> {
+    let ticket = crate::project_scripts::follow_open_project(runtime, mounted, project);
+    if let (Some(ticket), Some(readiness)) =
+        (ticket, runtime.resources.get::<Arc<khora_sdk::Readiness>>())
+    {
+        readiness.wait_for_compile(ticket);
+    }
+    // The scripts are the last of what the project opens with.
+    if project.is_some() {
+        *hold = None;
+    }
+    ticket
 }

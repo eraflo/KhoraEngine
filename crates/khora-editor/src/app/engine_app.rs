@@ -71,6 +71,8 @@ impl EngineApp for EditorApp {
             project_vfs: None,
             asset_watch: Arc::new(khora_sdk::AssetWatch::default()),
             mounted_scripts: None,
+            opening: None,
+            startup_hold: None,
             problems: None,
             script_catalog: None,
             prefab_view: None,
@@ -90,7 +92,22 @@ impl EngineApp for EditorApp {
         // frame hooks paint it, and it goes once the startup is over.
         self.begin_startup(runtime);
         self.register_panels(runtime);
-        self.open_cli_project(world, runtime);
+        // The `--project`, opened behind the film: its index, then its scene
+        // and its scripts, filed with the engine's families by ticket.
+        if let Some(Some(project)) = crate::bootstrap::PROJECT_PATH.get() {
+            let root = std::path::PathBuf::from(project);
+            if root.exists() {
+                self.opening = super::project_open::start_opening_project(
+                    root,
+                    runtime,
+                    &self.editor_state,
+                    &mut self.startup_hold,
+                );
+            } else {
+                log::warn!("--project path does not exist: {project}");
+            }
+        }
+        let _ = world;
         // The editor ground grid (`GridConfig`) is toggled per-frame in
         // `before_agents` based on `PlayMode` — it is editor chrome and
         // must hide in Play / Paused, like the selection gizmos.
@@ -105,13 +122,15 @@ impl EngineApp for EditorApp {
             .and_then(|mut s| s.pending_scene_load.take());
         if let Some(path) = pending_load {
             match &self.scene_loads {
-                Some(loads) => commands::open_scene_dispatch(
-                    self.project_vfs.as_ref(),
-                    world,
-                    &self.editor_state,
-                    loads,
-                    std::path::Path::new(&path),
-                ),
+                Some(loads) => {
+                    commands::open_scene_dispatch(
+                        self.project_vfs.as_ref(),
+                        world,
+                        &self.editor_state,
+                        loads,
+                        std::path::Path::new(&path),
+                    );
+                }
                 None => log::error!("cannot open '{path}': the engine holds no scene load hub"),
             }
         }
@@ -305,6 +324,28 @@ impl EngineApp for EditorApp {
                 commands::forget_history(&self.command_history);
             }
         }
+        // The `--project`, once its index landed: its VFS over the engine's
+        // assets, its default scene filed.
+        // A project the user opened meanwhile — the film gave up waiting —
+        // has the last word: the command line's lands nothing over it.
+        if self.opening.is_some() && self.project_vfs.is_some() {
+            log::warn!("the --project open is dropped: another project was opened meanwhile");
+            self.opening = None;
+            self.startup_hold = None;
+        }
+        if self.opening.is_some() {
+            if let Some(pvfs) = super::project_open::land_opened_project(
+                &mut self.opening,
+                world,
+                runtime,
+                &self.shared_assets,
+                &self.asset_watch,
+                &self.editor_state,
+                &mut self.startup_hold,
+            ) {
+                self.project_vfs = Some(pvfs);
+            }
+        }
         if let Some(pvfs) = self.project_vfs.as_ref() {
             let actions = hot_reload::land_reindex(pvfs, &self.editor_state);
             commands::apply_after_index(world, actions);
@@ -330,10 +371,11 @@ impl EngineApp for EditorApp {
             .project_vfs
             .as_ref()
             .and_then(|pvfs| pvfs.lock().ok().map(|pvfs| pvfs.root.clone()));
-        crate::project_scripts::follow_open_project(
+        super::project_open::mount_opened_scripts(
             runtime,
             &mut self.mounted_scripts,
             project.as_deref(),
+            &mut self.startup_hold,
         );
         // And its prefabs: what a game in play spawns, and what its `Spawn`
         // is checked against.
