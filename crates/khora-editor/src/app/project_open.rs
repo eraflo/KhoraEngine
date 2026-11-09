@@ -24,17 +24,6 @@ use crate::bootstrap::PROJECT_PATH;
 use crate::project_vfs::ProjectVfs;
 use crate::{git, hot_reload, scene_io};
 
-/// The CLI project, read on a tokio blocking thread while the editor starts
-/// and taken by [`EditorApp::setup`].
-pub(crate) struct PreparedProject(Mutex<Option<OpenedProject>>);
-
-impl PreparedProject {
-    /// The read project, waiting for `setup`.
-    pub(crate) fn new(opened: Option<OpenedProject>) -> Self {
-        Self(Mutex::new(opened))
-    }
-}
-
 /// What reading a project gives: its VFS (scanned, watched) and what the
 /// editor shows of it. All of it is plain data, read without the world.
 pub(crate) struct OpenedProject {
@@ -45,16 +34,6 @@ pub(crate) struct OpenedProject {
     entries: Vec<AssetEntry>,
     dirs: Vec<String>,
     git_branch: Option<String>,
-    /// The project's physics settings, which the engine boots its physics
-    /// family at.
-    physics: khora_sdk::khora_core::physics::PhysicsSettings,
-}
-
-impl OpenedProject {
-    /// The project's physics settings.
-    pub(crate) fn physics(&self) -> khora_sdk::khora_core::physics::PhysicsSettings {
-        self.physics
-    }
 }
 
 /// Reads the `--project` folder: scans its assets into a watched VFS and reads
@@ -100,7 +79,6 @@ pub(crate) fn read_cli_project(asset_watch: Arc<khora_sdk::AssetWatch>) -> Optio
     let entries = hot_reload::collect_asset_entries(&pvfs);
     let dirs = pvfs.list_dirs();
     let git_branch = git::read_git_branch(&path);
-    let physics = pvfs.physics_settings();
     Some(OpenedProject {
         path,
         pvfs,
@@ -109,18 +87,12 @@ pub(crate) fn read_cli_project(asset_watch: Arc<khora_sdk::AssetWatch>) -> Optio
         entries,
         dirs,
         git_branch,
-        physics,
     })
 }
 
 impl EditorApp {
     pub(super) fn open_cli_project(&mut self, world: &mut GameWorld, runtime: &Runtime) {
-        // Read while the editor started — even when that read found nothing,
-        // it is not done again — or now when nothing read it.
-        let opened = match runtime.resources.get::<Arc<PreparedProject>>() {
-            Some(prepared) => prepared.0.lock().ok().and_then(|mut o| o.take()),
-            None => read_cli_project(std::sync::Arc::clone(&self.asset_watch)),
-        };
+        let opened = read_cli_project(std::sync::Arc::clone(&self.asset_watch));
         let Some(opened) = opened else {
             return;
         };
@@ -132,7 +104,6 @@ impl EditorApp {
             entries,
             dirs,
             git_branch,
-            physics: _,
         } = opened;
 
         if let Ok(mut state) = self.editor_state.lock() {

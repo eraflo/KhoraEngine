@@ -164,6 +164,31 @@ fn a_cover_panel_is_painted_above_a_floating_panel() {
     );
 }
 
+/// The colour the docked (central) panel paints with.
+const CENTER_COLOUR: [f32; 4] = [1.0, 1.0, 0.0, 1.0];
+
+/// The first frame a window shows must already be the cover: a loading screen
+/// that misses it lets the editor under it flash on screen.
+#[test]
+fn a_cover_panel_is_painted_on_its_first_frame() {
+    let (ctx, mut shell) = shell();
+    let (center, _) = probe("test.center", CENTER_COLOUR, None);
+    let (cover, _) = probe("test.cover", COVER_COLOUR, None);
+    shell.register_panel(PanelLocation::Center, Box::new(center));
+    shell.register_panel(PanelLocation::Cover, Box::new(cover));
+
+    // One frame, and only one: the very first one the shell shows.
+    let shapes = frame(&ctx, &mut shell, None);
+
+    let center_at = index_of_fill(&shapes, CENTER_COLOUR).expect("the docked panel painted");
+    let cover_at =
+        index_of_fill(&shapes, COVER_COLOUR).expect("the cover painted on the shell's first frame");
+    assert!(
+        cover_at > center_at,
+        "the cover is painted after — above — the docked panel ({cover_at} vs {center_at})"
+    );
+}
+
 #[test]
 fn a_cover_panel_gets_the_whole_screen_as_its_panel_rect() {
     let (ctx, mut shell) = shell();

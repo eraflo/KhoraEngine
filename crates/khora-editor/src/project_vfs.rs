@@ -51,6 +51,32 @@ pub fn no_assets() -> AssetService {
     }
 }
 
+/// The physics settings of the project at `root`: the `physics` section of
+/// its `project.json`, or the defaults when it has none or the file cannot be
+/// read. A section that does not read (a zero or negative step) is reported
+/// and the defaults kept. A few hundred bytes, read as the editor starts:
+/// the engine boots its physics family at this step.
+pub fn project_physics(root: &Path) -> PhysicsSettings {
+    let path = root.join("project.json");
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return PhysicsSettings::default();
+    };
+    let Ok(project) = serde_json::from_str::<serde_json::Value>(&text) else {
+        log::warn!(
+            "{} does not parse: its physics settings are ignored",
+            path.display()
+        );
+        return PhysicsSettings::default();
+    };
+    match project.get("physics") {
+        None => PhysicsSettings::default(),
+        Some(section) => serde_json::from_value(section.clone()).unwrap_or_else(|error| {
+            log::warn!("project.json: the `physics` section is ignored: {error}");
+            PhysicsSettings::default()
+        }),
+    }
+}
+
 /// All project I/O, in one place.
 ///
 /// `open` performs a recursive scan of `<root>/assets/`, builds an in-memory
@@ -357,16 +383,7 @@ impl ProjectVfs {
     /// `project.json`, or the defaults when it has none. A section that does
     /// not read (a zero or negative step) is reported and the defaults kept.
     pub fn physics_settings(&self) -> PhysicsSettings {
-        let Ok(project) = self.read_project_json() else {
-            return PhysicsSettings::default();
-        };
-        match project.get("physics") {
-            None => PhysicsSettings::default(),
-            Some(section) => serde_json::from_value(section.clone()).unwrap_or_else(|error| {
-                log::warn!("project.json: the `physics` section is ignored: {error}");
-                PhysicsSettings::default()
-            }),
-        }
+        project_physics(&self.root)
     }
 
     /// Writes `bytes` to `<root>/assets/<rel_path>`. Creates intermediate

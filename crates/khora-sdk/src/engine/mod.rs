@@ -33,10 +33,10 @@ mod bootstrap;
 mod families;
 mod frame;
 mod frame_clock;
-mod startup;
+pub(crate) mod readiness;
 
 pub use bootstrap::EngineBootstrap;
-pub use startup::{BootStep, FirstBoot, StagedBoot, Startup, StartupProgress, StartupStep};
+pub use readiness::{Readiness, ReadinessHold, ReadinessProgress, ReadinessState, ReadinessTicket};
 
 /// Well-known viewport handle for the primary 3D viewport.
 pub const PRIMARY_VIEWPORT: khora_core::ui::editor::viewport_texture::ViewportTextureHandle =
@@ -74,6 +74,9 @@ pub struct EngineCore<A: EngineApp> {
     /// How long the frame in progress has kept the host busy, reported to
     /// the DCC when the frame closes.
     frame_clock: frame_clock::FrameClock,
+    /// Whether the startup is over — what it waited on landed, or it gave
+    /// up — and the app was told.
+    startup_over: bool,
 }
 
 impl<A: EngineApp> EngineCore<A> {
@@ -96,6 +99,7 @@ impl<A: EngineApp> EngineCore<A> {
             passes: Vec::new(),
             lane_agents: Vec::new(),
             frame_clock: frame_clock::FrameClock::default(),
+            startup_over: false,
         }
     }
 

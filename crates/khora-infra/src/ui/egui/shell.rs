@@ -484,21 +484,31 @@ impl EditorShell for EguiEditorShell {
         // ── Cover (full screen, above everything) ─────
         // A loading or splash screen: painted last, in the tooltip order above
         // the floating overlays, over the whole screen, and it allocates that
-        // screen so nothing under it takes a click. It shows at once, without
-        // the fade-in a new area gets by default.
+        // screen so nothing under it takes a click. It shows at once, from its
+        // first frame: the area only claims its layer and the screen's
+        // clicks, while the panel paints in a `Ui` of its own on that layer —
+        // a new area's own content is hidden on its first frame, the pass in
+        // which egui measures it, and a loading screen must cover the window
+        // from the first frame shown.
         let screen = ctx.content_rect();
         for panel in &mut self.cover_panels {
-            egui::Area::new(egui::Id::new(("editor_cover", panel.id())))
+            let area_id = egui::Id::new(("editor_cover", panel.id()));
+            egui::Area::new(area_id)
                 .order(egui::Order::Tooltip)
                 .fixed_pos(screen.min)
                 .interactable(true)
                 .fade_in(false)
                 .show(&ctx, |ui| {
                     ui.allocate_rect(screen, egui::Sense::click());
-                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(screen));
-                    let mut builder = EguiUiBuilder::new(&mut child, vt);
-                    panel.ui(&mut builder);
                 });
+            let layer = egui::LayerId::new(egui::Order::Tooltip, area_id);
+            let mut ui = egui::Ui::new(
+                ctx.clone(),
+                area_id.with("paint"),
+                egui::UiBuilder::new().layer_id(layer).max_rect(screen),
+            );
+            let mut builder = EguiUiBuilder::new(&mut ui, vt);
+            panel.ui(&mut builder);
         }
     }
 }

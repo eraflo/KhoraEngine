@@ -17,8 +17,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::khora_core::ui::{EditorOverlay, OverlayScreenDescriptor};
-use khora_sdk::{winit, EditorShell, RenderSystem, Runtime};
+use khora_sdk::khora_core::ui::EditorOverlay;
+use khora_sdk::{winit, EditorShell, Runtime};
 
 use super::EditorApp;
 use crate::panels::loading::LoadingPanel;
@@ -62,45 +62,8 @@ impl EditorApp {
         self.brand_installed = true;
     }
 
-    /// One frame while the engine starts: the shell — whose cover is the
-    /// loading screen — painted by the overlay straight onto the window.
-    pub(super) fn paint_loading_frame(&mut self, runtime: &Runtime) {
-        let (Some(overlay_arc), Some(raw_window)) = (self.overlay.clone(), self.raw_window.clone())
-        else {
-            return;
-        };
-        let size = raw_window.inner_size();
-        let screen = OverlayScreenDescriptor {
-            width_px: size.width,
-            height_px: size.height,
-            scale_factor: raw_window.scale_factor() as f32,
-        };
-        if let Ok(mut overlay) = overlay_arc.lock() {
-            overlay.begin_frame((&*raw_window) as &dyn std::any::Any, screen);
-        }
-        if let Some(shell) = self.shell.as_ref() {
-            if let Ok(mut shell) = shell.lock() {
-                shell.show_frame();
-            }
-        }
-        let Some(rs_arc) = runtime
-            .backends
-            .get::<Arc<Mutex<Box<dyn RenderSystem>>>>()
-            .cloned()
-        else {
-            return;
-        };
-        let (Ok(mut rs), Ok(mut overlay)) = (rs_arc.lock(), overlay_arc.lock()) else {
-            return;
-        };
-        let overlay_ref: &mut dyn EditorOverlay = &mut **overlay;
-        if let Err(e) = rs.render_overlay(overlay_ref, screen) {
-            log::error!("editor: loading frame overlay failed: {e:?}");
-        }
-    }
-
-    /// The engine is up: the loading screen plays on to the end of its
-    /// chapter, then fades out.
+    /// What the startup waited on landed: the loading screen plays on to the
+    /// end of its chapter, then fades out.
     pub(super) fn end_startup(&mut self) {
         if let Some(loading) = self.loading.as_ref() {
             loading.ready();

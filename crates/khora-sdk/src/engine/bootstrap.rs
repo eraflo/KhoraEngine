@@ -115,17 +115,6 @@ impl<A: EngineApp> EngineBootstrap<A> {
         self.dcc.agent_count()
     }
 
-    /// The application and, while it is there, the runtime — what a tool's
-    /// loading frames are painted with while the bootstrap is under way.
-    pub fn app_and_runtime(&mut self) -> (&mut A, Option<&Runtime>) {
-        let runtime = match (&self.runtime, &self.shared) {
-            (Some(runtime), _) => Some(runtime),
-            (None, Some(shared)) => Some(&**shared),
-            (None, None) => None,
-        };
-        (&mut self.app, runtime)
-    }
-
     /// Initializes the registered agent at `index`, in the order the DCC
     /// initializes them all; `false`, and nothing initialized, past the last.
     pub fn initialize_agent(&mut self, index: usize) -> bool {
@@ -485,6 +474,17 @@ fn populate(
     khora_io::asset::install_indexing(runtime);
     // What the `loading` family reads: the hub hosts file scene loads with.
     khora_io::scene_loads::install_scene_loading(runtime);
+    // What a tool's startup waits on — the tickets it files with the hubs
+    // above — settled at every frame's boundary.
+    if runtime
+        .resources
+        .get::<Arc<super::readiness::Readiness>>()
+        .is_none()
+    {
+        runtime
+            .resources
+            .insert(Arc::new(super::readiness::Readiness::new()));
+    }
 
     // Create the game world — reading the shipped prefabs, where the app
     // ships an asset service, so a game saved over a level holding prefab

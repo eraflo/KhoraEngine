@@ -30,10 +30,7 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::window::WindowId;
 
-use crate::engine::{
-    BootStep, EngineBootstrap, EngineCore, StagedBoot, Startup, StartupProgress, StartupStep,
-    PRIMARY_VIEWPORT,
-};
+use crate::engine::{EngineCore, PRIMARY_VIEWPORT};
 use crate::traits::{EngineApp, WindowProvider};
 use crate::{InputEvent, WindowConfig};
 
@@ -55,9 +52,12 @@ impl WindowProvider for WinitWindowProvider {
             .downcast_ref::<ActiveEventLoop>()
             .expect("WindowProvider::create called with wrong native_loop type");
 
+        // Hidden until its first frame is painted: the engine boots behind
+        // it, and the operating system would show an empty window meanwhile.
         let mut builder = khora_infra::platform::winit::WinitWindowBuilder::new()
             .with_title(&config.title)
-            .with_dimensions(config.width, config.height);
+            .with_dimensions(config.width, config.height)
+            .with_visible(false);
 
         if let Some(icon) = &config.icon {
             builder = builder.with_icon_rgba(icon.rgba.clone(), icon.width, icon.height);
@@ -102,7 +102,7 @@ impl WindowProvider for WinitWindowProvider {
 
 /// One-shot bootstrap closure used to wire engine backends, services, and
 /// resources into the [`khora_core::Runtime`] at window-creation time.
-type BootstrapFn = Box<dyn FnOnce(&dyn KhoraWindow, &mut khora_core::Runtime, &dyn Any) + Send>;
+type BootstrapFn = Box<dyn FnOnce(&dyn KhoraWindow, &mut khora_core::Runtime, &dyn Any)>;
 
 /// Winit-specific application runner.
 pub struct WinitAppRunner<W: WindowProvider, A: EngineApp> {
@@ -110,267 +110,21 @@ pub struct WinitAppRunner<W: WindowProvider, A: EngineApp> {
     engine: EngineCore<A>,
     renderer: Option<Arc<Mutex<Box<dyn RenderSystem>>>>,
     bootstrap: Option<BootstrapFn>,
-    /// A staged startup not begun yet (see [`run_winit_staged`]).
-    staged: Option<StagedBoot>,
-    /// A staged startup under way: one step per frame, loading frames between.
-    booting: Option<Booting<A>>,
-    tokio_runtime: Option<tokio::runtime::Runtime>,
     /// Per-frame context, recreated each frame.
     frame_context: Option<Arc<FrameContext>>,
-}
-
-/// What a staged startup works on: the application and the runtime until the
-/// engine bootstrap takes them, then that bootstrap.
-struct BootCtx<A: EngineApp> {
-    app: Option<A>,
-    runtime: Option<khora_core::Runtime>,
-    stages: Option<EngineBootstrap<A>>,
-}
-
-impl<A: EngineApp> BootCtx<A> {
-    /// The application and, while there is one, the runtime.
-    fn app_and_runtime(&mut self) -> Option<(&mut A, Option<&khora_core::Runtime>)> {
-        if let Some(stages) = self.stages.as_mut() {
-            return Some(stages.app_and_runtime());
-        }
-        let runtime = self.runtime.as_ref();
-        self.app.as_mut().map(|app| (app, runtime))
-    }
-}
-
-/// A staged startup under way.
-struct Booting<A: EngineApp> {
-    /// The app's steps, then the engine bootstrap's `begin`, `setup` and
-    /// `register`.
-    steps: Startup<BootCtx<A>>,
-    ctx: BootCtx<A>,
-    /// The next agent to initialize, once the steps are done.
-    next_agent: usize,
-}
-
-impl<A: EngineApp> Booting<A> {
-    fn progress(&self) -> StartupProgress {
-        let agents = self.ctx.stages.as_ref().map_or(0, |s| s.agent_count());
-        let steps = self.steps_progress();
-        StartupProgress {
-            done: steps.done + self.next_agent,
-            total: steps.total + agents,
-        }
-    }
-
-    fn steps_progress(&self) -> StartupProgress {
-        self.steps.progress()
-    }
 }
 
 impl<W: WindowProvider, A: EngineApp> WinitAppRunner<W, A> {
     /// Creates a new winit app runner with the given bootstrap closure.
     pub fn new(
-        bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::Runtime, &dyn Any) + Send + 'static,
+        bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::Runtime, &dyn Any) + 'static,
     ) -> Self {
         Self {
             window: None,
             engine: EngineCore::new(),
             renderer: None,
             bootstrap: Some(Box::new(bootstrap)),
-            staged: None,
-            booting: None,
-            tokio_runtime: None,
             frame_context: None,
-        }
-    }
-
-    /// Creates a runner whose startup is staged: `boot.first` as the window
-    /// opens, then a step per frame while the application paints its loading
-    /// frames.
-    pub fn new_staged(boot: StagedBoot) -> Self {
-        Self {
-            window: None,
-            engine: EngineCore::new(),
-            renderer: None,
-            bootstrap: None,
-            staged: Some(boot),
-            booting: None,
-            tokio_runtime: None,
-            frame_context: None,
-        }
-    }
-
-    /// The renderer the runtime holds, kept for resizes and loading frames.
-    fn cache_renderer(&mut self, runtime: &khora_core::Runtime) {
-        if let Some(rs) = runtime.backends.get::<Arc<Mutex<Box<dyn RenderSystem>>>>() {
-            self.renderer = Some(rs.clone());
-        }
-    }
-
-    /// Presents one frame painted by the application's loading hook alone.
-    fn present_loading_frame(&mut self) {
-        let Some(booting) = self.booting.as_mut() else {
-            return;
-        };
-        let progress = booting.progress();
-        let Some(renderer) = self.renderer.clone() else {
-            return;
-        };
-        if let Ok(mut rs) = renderer.lock() {
-            rs.set_render_to_viewport(false);
-            if let Err(e) = rs.begin_frame() {
-                // A surface not ready (minimised, resizing) skips the frame.
-                log::debug!("loading frame skipped: {e:?}");
-                return;
-            }
-        }
-        if let Some((app, Some(runtime))) = booting.ctx.app_and_runtime() {
-            app.loading_frame(runtime, progress);
-        }
-        let presented = renderer.lock().map(|mut rs| rs.end_frame());
-        if let Ok(Err(e)) = presented {
-            log::warn!("loading frame present failed: {e:?}");
-        }
-    }
-
-    /// Moves the staged startup on by one step; once it is over, hands the
-    /// engine to the application.
-    fn advance_startup(&mut self) {
-        let Some(booting) = self.booting.as_mut() else {
-            return;
-        };
-        if !booting.steps.is_done() {
-            booting.steps.advance(&mut booting.ctx);
-            return;
-        }
-        if let Some(stages) = booting.ctx.stages.as_mut() {
-            if stages.initialize_agent(booting.next_agent) {
-                booting.next_agent += 1;
-                return;
-            }
-        }
-        // Every step done and every agent initialized.
-        let Some(booting) = self.booting.take() else {
-            return;
-        };
-        if let Some(stages) = booting.ctx.stages {
-            stages.finish(&mut self.engine);
-        }
-        let runtime = Arc::clone(self.engine.runtime());
-        self.cache_renderer(&runtime);
-        if let Some(app) = self.engine.app_mut() {
-            app.startup_ready();
-        }
-        log::info!("Khora Engine: started.");
-    }
-
-    /// The staged counterpart of the one-shot bootstrap in `resumed`: runs
-    /// `boot.first`, starts the rest and presents the first loading frame.
-    /// The window is shown from its creation: a surface needs a shown window
-    /// to offer its formats on some backends, so the renderer cannot be made
-    /// before it is.
-    fn begin_staged(
-        &mut self,
-        boot: StagedBoot,
-        window: W,
-        mut runtime: khora_core::Runtime,
-        event_loop: &ActiveEventLoop,
-    ) {
-        // The application first: it may install what the rest reports through
-        // (the editor's logger).
-        let mut app = A::new();
-        (boot.first)(
-            window.as_khora_window(),
-            &mut runtime,
-            event_loop as &dyn Any,
-        );
-        self.cache_renderer(&runtime);
-        app.startup_begin(&runtime);
-
-        let mut steps: Vec<StartupStep<BootCtx<A>>> = Vec::new();
-        for step in boot.steps {
-            match step {
-                BootStep::Main(f) => steps.push(StartupStep::Main(Box::new(move |ctx| {
-                    if let Some(runtime) = ctx.runtime.as_mut() {
-                        f(runtime);
-                    }
-                }))),
-                BootStep::Blocking(prepare) => {
-                    // Prepared now, from the runtime as it stands.
-                    let work = prepare(&runtime);
-                    steps.push(StartupStep::Blocking(Box::new(move || {
-                        let apply = work();
-                        Box::new(move |ctx: &mut BootCtx<A>| {
-                            if let Some(runtime) = ctx.runtime.as_mut() {
-                                apply(runtime);
-                            }
-                        })
-                    })));
-                }
-            }
-        }
-        steps.push(StartupStep::Main(Box::new(|ctx: &mut BootCtx<A>| {
-            if let (Some(app), Some(runtime)) = (ctx.app.take(), ctx.runtime.take()) {
-                ctx.stages = Some(EngineBootstrap::begin(app, runtime));
-            }
-        })));
-        steps.push(StartupStep::Main(Box::new(|ctx: &mut BootCtx<A>| {
-            if let Some(stages) = ctx.stages.as_mut() {
-                stages.setup();
-            }
-        })));
-        steps.push(StartupStep::Main(Box::new(|ctx: &mut BootCtx<A>| {
-            if let Some(stages) = ctx.stages.as_mut() {
-                stages.register();
-            }
-        })));
-
-        let ctx = BootCtx {
-            app: Some(app),
-            runtime: Some(runtime),
-            stages: None,
-        };
-        let Some(handle) = self.tokio_runtime.as_ref().map(|rt| rt.handle().clone()) else {
-            log::error!("WinitAppRunner: no tokio runtime; starting in one block");
-            self.finish_in_one_block(steps, ctx);
-            self.window = Some(window);
-            return;
-        };
-        self.booting = Some(Booting {
-            steps: Startup::new(steps, handle),
-            ctx,
-            next_agent: 0,
-        });
-        self.window = Some(window);
-        self.present_loading_frame();
-        if let Some(window) = self.window.as_ref() {
-            if let Ok(winit_window) = window
-                .clone_raw_window_arc()
-                .downcast::<winit::window::Window>()
-            {
-                // The taskbar reads the icon as the window appears; setting
-                // the title again makes it read it once the loop runs.
-                winit_window.set_title(&winit_window.title());
-            }
-        }
-    }
-
-    /// Runs a staged startup's steps in a row — the fallback with no tokio
-    /// runtime to run blocking work on.
-    fn finish_in_one_block(&mut self, steps: Vec<StartupStep<BootCtx<A>>>, mut ctx: BootCtx<A>) {
-        for step in steps {
-            match step {
-                StartupStep::Main(f) => f(&mut ctx),
-                StartupStep::Blocking(work) => work()(&mut ctx),
-            }
-        }
-        if let Some(mut stages) = ctx.stages.take() {
-            let mut index = 0;
-            while stages.initialize_agent(index) {
-                index += 1;
-            }
-            stages.finish(&mut self.engine);
-        }
-        let runtime = Arc::clone(self.engine.runtime());
-        self.cache_renderer(&runtime);
-        if let Some(app) = self.engine.app_mut() {
-            app.startup_ready();
         }
     }
 
@@ -448,21 +202,6 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
         let window_config = A::window_config();
         let window = W::create(event_loop as &dyn Any, &window_config);
 
-        // The tokio runtime the startup sequencer runs its blocking steps on.
-        match tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .thread_name("khora-startup")
-            .build()
-        {
-            Ok(rt) => {
-                log::info!("WinitAppRunner: Tokio runtime created for the startup steps");
-                self.tokio_runtime = Some(rt);
-            }
-            Err(e) => {
-                log::warn!("WinitAppRunner: Failed to create tokio runtime: {}", e);
-            }
-        }
-
         // Build the runtime bundle and pre-populate it with windowing-tier
         // entries before handing off to the bootstrap closure.
         let mut runtime = khora_core::Runtime::new();
@@ -488,29 +227,18 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
             runtime.resources.insert(winit_arc);
         }
 
-        if let Some(boot) = self.staged.take() {
-            self.begin_staged(boot, window, runtime, event_loop);
-            return;
-        }
-
-        // Call bootstrap closure — pass the active event loop opaquely so the
-        // app may construct windowing-aware resources (e.g., an egui overlay
-        // backed by `egui_winit::State`) without the SDK needing to know.
+        // The application's `first` closure — handed the active event loop
+        // opaquely, so it may build windowing-aware resources (an egui overlay
+        // over `egui_winit::State`) without the SDK knowing — then the engine,
+        // at once: whatever is heavy is filed with the engine's families and
+        // waited on through its `Readiness`, while frames run.
         let Some(bootstrap) = self.bootstrap.take() else {
             log::error!("WinitAppRunner: no bootstrap to run");
             return;
         };
-        bootstrap(
-            window.as_khora_window(),
-            &mut runtime,
-            event_loop as &dyn Any,
-        );
-
-        // Bootstrap the engine, transferring ownership of the runtime.
-        // bootstrap() inserts built-in entries (AssetStore, etc.), wraps in
-        // Arc, and stores the final runtime in self.engine.runtime.
-        let app = A::new();
-        self.engine.bootstrap(app, runtime);
+        start_engine(&mut self.engine, runtime, |runtime| {
+            bootstrap(window.as_khora_window(), runtime, event_loop as &dyn Any)
+        });
 
         // Cache renderer for resize handling.
         if let Some(rs) = self
@@ -522,30 +250,28 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
             self.renderer = Some(rs.clone());
         }
 
-        // The taskbar reads the window's icon when the window appears, while
-        // the bootstrap above still holds this thread, and gets nothing back:
-        // the button keeps the generic application icon. Setting the title
-        // again, now that the loop is about to run, makes it read the icon.
-        if let Ok(winit_window) = window
-            .clone_raw_window_arc()
-            .downcast::<winit::window::Window>()
-        {
-            winit_window.set_title(&winit_window.title());
-        }
-
+        let raw_window = window.clone_raw_window_arc();
         self.window = Some(window);
+
+        // The first frame is painted while the window is still hidden, then
+        // the window is shown: what appears is that frame — a tool's loading
+        // film, say — never an empty window.
+        self.run_frame();
+        if let Ok(winit_window) = raw_window.downcast::<winit::window::Window>() {
+            winit_window.set_visible(true);
+            // The taskbar reads the window's icon when the window appears and
+            // may get nothing back yet: setting the title again makes it read
+            // the icon.
+            winit_window.set_title(&winit_window.title());
+            winit_window.request_redraw();
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         // Give the app a chance to intercept raw events (e.g., forward to an
         // egui overlay). If consumed, do not forward to game input nor act on
         // the event further (close / resize / redraw still proceed below).
-        // While a staged startup is under way the application still lives in
-        // it, and its loading screen takes the events.
-        let app = match self.booting.as_mut() {
-            Some(booting) => booting.ctx.app_and_runtime().map(|(app, _)| app),
-            None => self.engine.app_mut(),
-        };
+        let app = self.engine.app_mut();
         let consumed_by_app = if let (Some(app), Some(window)) = (app, &self.window) {
             app.intercept_window_event(&event as &dyn Any, window.as_khora_window())
         } else {
@@ -566,12 +292,7 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
                 }
             }
             WindowEvent::RedrawRequested => {
-                if self.booting.is_some() {
-                    self.present_loading_frame();
-                    self.advance_startup();
-                } else {
-                    self.run_frame();
-                }
+                self.run_frame();
             }
             _ => {
                 if consumed_by_app {
@@ -596,36 +317,26 @@ impl<W: WindowProvider, A: EngineApp> ApplicationHandler for WinitAppRunner<W, A
 impl<W: WindowProvider, A: EngineApp> Drop for WinitAppRunner<W, A> {
     fn drop(&mut self) {
         self.engine.shutdown();
-        // A window closed while startup work still runs must not wait on it.
-        if let Some(rt) = self.tokio_runtime.take() {
-            rt.shutdown_timeout(std::time::Duration::from_secs(1));
-        }
     }
+}
+
+/// What `resumed` does once the window exists and the runtime is pre-filled:
+/// builds the application first, so a tool's logger catches what `first`
+/// logs, then runs `first` over the runtime, then bootstraps `engine` with
+/// both.
+pub(crate) fn start_engine<A: EngineApp>(
+    engine: &mut EngineCore<A>,
+    mut runtime: khora_core::Runtime,
+    first: impl FnOnce(&mut khora_core::Runtime),
+) {
+    let app = A::new();
+    first(&mut runtime);
+    engine.bootstrap(app, runtime);
 }
 
 // ─────────────────────────────────────────────────────────────────────
 // run_winit — entry point for winit-based applications
 // ─────────────────────────────────────────────────────────────────────
-
-/// Runs the Khora Engine with a winit event loop and a staged startup: the
-/// window opens on the application's loading frames
-/// ([`EngineApp::loading_frame`]) and the startup runs a step per frame
-/// beneath them — `boot.first`, then `boot.steps` (blocking steps on tokio),
-/// then the engine bootstrap one stage and one agent at a time — before
-/// [`EngineApp::startup_ready`].
-///
-/// # Errors
-///
-/// Returns an error if the winit event loop cannot be created or fails while
-/// running.
-pub fn run_winit_staged<W: WindowProvider, A: EngineApp>(boot: StagedBoot) -> Result<()> {
-    log::info!("Khora Engine: Starting (staged)...");
-
-    let event_loop = EventLoop::new()?;
-    let mut runner = WinitAppRunner::<W, A>::new_staged(boot);
-    event_loop.run_app(&mut runner)?;
-    Ok(())
-}
 
 /// Runs the Khora Engine with a winit event loop.
 ///
@@ -680,7 +391,7 @@ pub fn run_winit_staged<W: WindowProvider, A: EngineApp>(boot: StagedBoot) -> Re
 /// }
 /// ```
 pub fn run_winit<W: WindowProvider, A: EngineApp>(
-    bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::Runtime, &dyn Any) + Send + 'static,
+    bootstrap: impl FnOnce(&dyn KhoraWindow, &mut khora_core::Runtime, &dyn Any) + 'static,
 ) -> Result<()> {
     log::info!("Khora Engine: Starting...");
 
@@ -688,4 +399,77 @@ pub fn run_winit<W: WindowProvider, A: EngineApp>(
     let mut runner = WinitAppRunner::<W, A>::new(bootstrap);
     event_loop.run_app(&mut runner)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+
+    use super::start_engine;
+    use crate::{
+        AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
+        Runtime, WindowConfig,
+    };
+
+    thread_local! {
+        /// The steps of the start, in the order they ran on this thread.
+        static ORDER: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+    }
+
+    fn note(step: &'static str) {
+        ORDER.with(|order| order.borrow_mut().push(step));
+    }
+
+    /// What `first` leaves in the runtime, for the engine to boot with.
+    struct FilledByFirst;
+
+    /// An app that notes when it is built and when it is set up.
+    struct Ordered;
+
+    impl AgentProvider for Ordered {
+        fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
+    }
+    impl PhaseProvider for Ordered {}
+    impl EngineApp for Ordered {
+        fn window_config() -> WindowConfig {
+            WindowConfig::default()
+        }
+        fn new() -> Self {
+            note("new");
+            Ordered
+        }
+        fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {
+            note("setup");
+        }
+        fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
+    }
+
+    /// **The app is built before `first`**, so a tool's logger, installed by
+    /// its `new`, catches what `first` logs; the engine then boots with what
+    /// `first` put in the runtime, and runs the app's `setup` last.
+    #[test]
+    fn the_app_is_built_before_first() {
+        ORDER.with(|order| order.borrow_mut().clear());
+        let mut engine = EngineCore::<Ordered>::new();
+
+        start_engine(&mut engine, Runtime::new(), |runtime| {
+            note("first");
+            runtime.resources.insert(std::sync::Arc::new(FilledByFirst));
+        });
+
+        assert_eq!(
+            ORDER.with(|order| order.borrow().clone()),
+            vec!["new", "first", "setup"],
+            "the app is built, then `first` runs, then the engine boots"
+        );
+        assert!(
+            engine
+                .runtime()
+                .resources
+                .get::<std::sync::Arc<FilledByFirst>>()
+                .is_some(),
+            "the engine boots with the runtime `first` filled"
+        );
+        engine.shutdown();
+    }
 }

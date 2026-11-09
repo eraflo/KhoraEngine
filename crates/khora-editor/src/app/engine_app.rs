@@ -86,6 +86,9 @@ impl EngineApp for EditorApp {
         // only once Play is pressed.
         commands::start_editing(runtime);
         self.cache_services(runtime);
+        // The loading film, over the window from the first frame on: the
+        // frame hooks paint it, and it goes once the startup is over.
+        self.begin_startup(runtime);
         self.register_panels(runtime);
         self.open_cli_project(world, runtime);
         // The editor ground grid (`GridConfig`) is toggled per-frame in
@@ -284,14 +287,6 @@ impl EngineApp for EditorApp {
             }
         }
         consumed_by_egui
-    }
-
-    fn startup_begin(&mut self, runtime: &Runtime) {
-        self.begin_startup(runtime);
-    }
-
-    fn loading_frame(&mut self, runtime: &Runtime, _progress: khora_sdk::StartupProgress) {
-        self.paint_loading_frame(runtime);
     }
 
     fn startup_ready(&mut self) {

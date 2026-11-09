@@ -232,21 +232,11 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync + 'static {
     /// and present a UI overlay (`render_overlay`).
     fn after_agents(&mut self, _world: &mut GameWorld, _runtime: &khora_core::Runtime) {}
 
-    /// Optional: called once when a staged startup begins, as soon as the
-    /// window and the runtime exist and before the engine is assembled. Use to
-    /// put up a loading screen.
-    fn startup_begin(&mut self, _runtime: &khora_core::Runtime) {}
-
-    /// Optional: called for every frame presented while a staged startup is
-    /// under way, with how far it has come. Use to paint the loading screen.
-    fn loading_frame(
-        &mut self,
-        _runtime: &khora_core::Runtime,
-        _progress: crate::engine::StartupProgress,
-    ) {
-    }
-
-    /// Optional: called once when a staged startup is over and the engine runs
-    /// its first real frame next. Use to let the loading screen go.
+    /// Optional: called once, at the boundary of the first frame where the
+    /// startup is over — every ticket the app waited on through the runtime's
+    /// [`Readiness`](crate::Readiness) landed and no hold is kept, or the
+    /// wait timed out (the late ones reported to `Problems`). Use to let a
+    /// loading screen go: one put up in [`setup`](Self::setup) and painted by
+    /// the frame hooks.
     fn startup_ready(&mut self) {}
 }

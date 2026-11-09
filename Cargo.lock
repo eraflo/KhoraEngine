@@ -2935,7 +2935,6 @@ dependencies = [
  "naga",
  "serde",
  "serde_json",
- "tokio",
  "winit",
  "workspace-hack",
 ]
@@ -7459,7 +7458,6 @@ dependencies = [
  "stable_deref_trait",
  "syn 2.0.117",
  "tinystr",
- "tokio",
  "toml",
  "typenum",
  "url",

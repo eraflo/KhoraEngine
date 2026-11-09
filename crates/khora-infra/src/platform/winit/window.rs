@@ -58,6 +58,7 @@ pub struct WinitWindowBuilder {
     width: u32,
     height: u32,
     icon: Option<Icon>,
+    visible: bool,
 }
 
 impl WinitWindowBuilder {
@@ -68,6 +69,7 @@ impl WinitWindowBuilder {
             width: 1024,
             height: 768,
             icon: None,
+            visible: true,
         }
     }
 
@@ -93,6 +95,13 @@ impl WinitWindowBuilder {
         self
     }
 
+    /// Sets whether the window is shown as it is built. A window built hidden
+    /// is shown later, once it has something to show.
+    pub fn with_visible(mut self, visible: bool) -> Self {
+        self.visible = visible;
+        self
+    }
+
     /// Builds the `WinitWindow` using the provided `winit` event loop.
     ///
     /// # Errors
@@ -109,7 +118,7 @@ impl WinitWindowBuilder {
             .with_title(self.title)
             .with_inner_size(LogicalSize::new(self.width, self.height))
             .with_window_icon(self.icon.clone())
-            .with_visible(true);
+            .with_visible(self.visible);
         // On Windows the window icon only sets `ICON_SMALL` (the title bar);
         // the taskbar and Alt+Tab read `ICON_BIG`.
         #[cfg(target_os = "windows")]

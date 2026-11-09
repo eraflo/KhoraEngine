@@ -36,8 +36,12 @@ use khora_tool_ui::widgets::{LoadingScreen, LoadingState};
 /// editor is ready.
 pub struct LoadingPanel {
     screen: LoadingScreen,
-    /// The instant the panel's clock reads 0.
-    origin: Instant,
+    /// What the panel's clock reads at its first paint.
+    start: f32,
+    /// The instant the panel's clock reads 0: set at its first paint, so the
+    /// film starts where it was built to whatever came between — an engine
+    /// booting before the window shows it.
+    origin: Option<Instant>,
     signals: Arc<Signals>,
 }
 
@@ -71,16 +75,13 @@ impl LoadingPanel {
     pub const ID: &'static str = "khora.editor.loading";
 
     /// A loading screen starting its film at `now` on its own clock, which
-    /// reads `now` at this instant. The film has its own backdrop; the theme
-    /// is not needed to paint it.
+    /// reads `now` at the panel's first paint. The film has its own backdrop;
+    /// the theme is not needed to paint it.
     pub fn new(now: f32, _theme: UiTheme) -> Self {
-        let since = Duration::try_from_secs_f32(now.max(0.0)).unwrap_or_default();
-        let origin = Instant::now()
-            .checked_sub(since)
-            .unwrap_or_else(Instant::now);
         Self {
             screen: LoadingScreen::new(Film::Door, now, false),
-            origin,
+            start: now,
+            origin: None,
             signals: Arc::default(),
         }
     }
@@ -131,7 +132,14 @@ impl EditorPanel for LoadingPanel {
     }
 
     fn ui(&mut self, ui: &mut dyn UiBuilder) {
-        let now = self.origin.elapsed().as_secs_f32();
+        let start = self.start;
+        let origin = *self.origin.get_or_insert_with(|| {
+            let since = Duration::try_from_secs_f32(start.max(0.0)).unwrap_or_default();
+            Instant::now()
+                .checked_sub(since)
+                .unwrap_or_else(Instant::now)
+        });
+        let now = origin.elapsed().as_secs_f32();
         self.paint_at(ui, now);
     }
 }
@@ -299,6 +307,55 @@ mod tests {
             b.id(),
             LoadingPanel::ID,
             "the id does not depend on the clock"
+        );
+    }
+
+    /// Every alpha a frame paints with, summed. Near the door film's start
+    /// only its grid fading in changes it, so it grows with the film's time.
+    fn total_alpha(calls: &[PaintCall]) -> f64 {
+        calls
+            .iter()
+            .map(|call| match call {
+                PaintCall::RectFilled { color, .. }
+                | PaintCall::RectStroke { color, .. }
+                | PaintCall::Line { color, .. }
+                | PaintCall::CircleFilled { color, .. }
+                | PaintCall::CircleStroke { color, .. }
+                | PaintCall::Text { color, .. }
+                | PaintCall::Path { color, .. } => f64::from(color[3]),
+                PaintCall::PathGradient { stops, .. } | PaintCall::PathRadial { stops, .. } => {
+                    stops.iter().map(|s| f64::from(s.color[3])).sum()
+                }
+                PaintCall::Interact { .. } => 0.0,
+            })
+            .sum()
+    }
+
+    /// The editor builds the panel before the engine has booted and before the
+    /// window shows its first frame: the film must start when it is first
+    /// seen, not when it was built, or its opening is never seen.
+    #[test]
+    fn the_film_starts_at_its_first_paint() {
+        // How long the panel waits, built but not painted.
+        const UNPAINTED: Duration = Duration::from_millis(50);
+        // How far into the film the first paint may be, at most.
+        const AT_MOST: f32 = 0.010;
+        let bound = total_alpha(&door_frame(AT_MOST));
+        assert!(
+            bound < total_alpha(&door_frame(UNPAINTED.as_secs_f32())),
+            "the measure tells a film {AT_MOST} s in from one {UNPAINTED:?} in"
+        );
+
+        let mut panel = panel_at(0.0);
+        std::thread::sleep(UNPAINTED);
+        let mut ui = recorder();
+        panel.ui(&mut ui);
+
+        let first = total_alpha(&painted(ui.calls()));
+        assert!(
+            first <= bound,
+            "the first paint shows the film at most {AT_MOST} s in, not {UNPAINTED:?} in \
+             (total alpha {first}, at most {bound})"
         );
     }
 

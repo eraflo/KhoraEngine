@@ -515,6 +515,51 @@ fn floor_crates_declare_no_async_runtime() {
     );
 }
 
+/// **The SDK declares no async runtime.** The engine boots before a tool's
+/// startup work, which goes by ticket through the `loading` family, so the
+/// SDK runs nothing on an executor of its own (RULES §5): `khora-sdk` lists
+/// `tokio` in no dependency table — shipped, dev, build, or per target —
+/// under its own name or renamed with `package = "tokio"`.
+#[test]
+fn the_sdk_declares_no_async_runtime() {
+    const SDK: &str = "khora-sdk";
+    const RUNTIME: &str = "tokio";
+    let root = repo_root();
+    let workspace = read_manifest(&root.join("Cargo.toml"));
+    let workspace = workspace
+        .get("workspace")
+        .and_then(Value::as_table)
+        .unwrap_or_else(|| panic!("the root manifest has no [workspace]"));
+
+    let mut found = false;
+    let mut problems = Vec::new();
+    for dir in members(&root, workspace) {
+        let manifest = read_manifest(&dir.join("Cargo.toml"));
+        if package_name(&manifest, &dir) != SDK {
+            continue;
+        }
+        found = true;
+        for (table_name, table) in every_dependency_table(&manifest) {
+            for (dep, spec) in table {
+                let package = spec
+                    .as_table()
+                    .and_then(|spec| spec.get("package"))
+                    .and_then(Value::as_str)
+                    .unwrap_or(dep);
+                if package == RUNTIME {
+                    problems.push(format!("{SDK}: [{table_name}] declares `{dep}`"));
+                }
+            }
+        }
+    }
+    assert!(found, "the reader did not find {SDK} among the members");
+    assert!(
+        problems.is_empty(),
+        "an async runtime in the SDK:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
 /// Every dependency table of a manifest — shipped, dev and build, top-level
 /// and per target — with the name it is written under, for a failure message.
 fn every_dependency_table(manifest: &Table) -> Vec<(String, &Table)> {

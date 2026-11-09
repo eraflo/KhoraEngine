@@ -182,8 +182,6 @@ mod trait_items {
         let _ = <T as khora_sdk::EngineApp>::before_frame;
         let _ = <T as khora_sdk::EngineApp>::before_agents;
         let _ = <T as khora_sdk::EngineApp>::after_agents;
-        let _ = <T as khora_sdk::EngineApp>::startup_begin;
-        let _ = <T as khora_sdk::EngineApp>::loading_frame;
         let _ = <T as khora_sdk::EngineApp>::startup_ready;
     }
 
@@ -452,20 +450,56 @@ fn module_crate_root_paths_still_resolve() {
     let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::agent_count;
     let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::initialize_agent;
     let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::finish;
-    let _ = type_name::<khora_sdk::Startup<()>>();
-    let _ = <khora_sdk::Startup<()>>::new;
-    let _ = <khora_sdk::Startup<()>>::advance;
-    let _ = <khora_sdk::Startup<()>>::is_done;
-    let _ = type_name::<khora_sdk::StartupProgress>();
-    let _ = khora_sdk::StartupProgress { done: 0, total: 0 }.done;
-    let _ = khora_sdk::StartupProgress { done: 0, total: 0 }.total;
-    let _ = khora_sdk::StartupProgress::fraction;
-    is_clone::<khora_sdk::StartupProgress>();
-    is_debug::<khora_sdk::StartupProgress>();
-    let _ = |step: khora_sdk::StartupStep<()>| match step {
-        khora_sdk::StartupStep::Main(_) => {}
-        khora_sdk::StartupStep::Blocking(_) => {}
+    let _ = type_name::<khora_sdk::Readiness>();
+    let _: std::time::Duration = khora_sdk::Readiness::DEFAULT_TIMEOUT;
+    let _: fn(&khora_sdk::Readiness, khora_sdk::IndexTicket) = khora_sdk::Readiness::wait_for_index;
+    let _: fn(&khora_sdk::Readiness, khora_core::scene::LoadTicket) =
+        khora_sdk::Readiness::wait_for_scene;
+    let _: fn(&khora_sdk::Readiness, khora_sdk::scripts::CompileTicket) =
+        khora_sdk::Readiness::wait_for_compile;
+    let _: fn(&khora_sdk::Readiness) -> khora_sdk::ReadinessHold = khora_sdk::Readiness::hold;
+    let _: fn(&khora_sdk::Readiness, &khora_sdk::Runtime) -> khora_sdk::ReadinessProgress =
+        khora_sdk::Readiness::progress;
+    let _: fn(
+        &khora_sdk::Readiness,
+        &khora_sdk::Runtime,
+        std::time::Instant,
+    ) -> khora_sdk::ReadinessState = khora_sdk::Readiness::poll;
+    let _: fn(&khora_sdk::Readiness, std::time::Duration) = khora_sdk::Readiness::set_timeout;
+    let _ = type_name::<khora_sdk::ReadinessHold>();
+    let _ = type_name::<khora_sdk::ReadinessProgress>();
+    let _ = khora_sdk::ReadinessProgress {
+        landed: 0,
+        waited: 0,
+    }
+    .landed;
+    let _ = khora_sdk::ReadinessProgress {
+        landed: 0,
+        waited: 0,
+    }
+    .waited;
+    let _: fn(&khora_sdk::ReadinessProgress) -> f32 = khora_sdk::ReadinessProgress::fraction;
+    is_clone::<khora_sdk::ReadinessProgress>();
+    is_debug::<khora_sdk::ReadinessProgress>();
+    is_default::<khora_sdk::ReadinessProgress>();
+    let _ = |state: khora_sdk::ReadinessState| match state {
+        khora_sdk::ReadinessState::Waiting(_) => {}
+        khora_sdk::ReadinessState::Ready => {}
+        khora_sdk::ReadinessState::TimedOut { late } => {
+            let _: Vec<khora_sdk::ReadinessTicket> = late;
+        }
     };
+    is_clone::<khora_sdk::ReadinessState>();
+    is_debug::<khora_sdk::ReadinessState>();
+    let _ = |ticket: khora_sdk::ReadinessTicket| match ticket {
+        khora_sdk::ReadinessTicket::Index(_) => {}
+        khora_sdk::ReadinessTicket::Scene(_) => {}
+        khora_sdk::ReadinessTicket::Compile(_) => {}
+    };
+    is_clone::<khora_sdk::ReadinessTicket>();
+    is_debug::<khora_sdk::ReadinessTicket>();
+    // The source a startup reports its late tickets under.
+    let _ = khora_sdk::khora_core::problems::ProblemSource::Startup;
     let _ = type_name::<khora_sdk::EngineHint>();
     same_type(
         PhantomData::<khora_sdk::EngineHint>,

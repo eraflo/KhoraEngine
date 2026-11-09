@@ -168,8 +168,8 @@ impl AgentRegistry {
     /// [`initialize_all`](Self::initialize_all) walks — and only that one.
     ///
     /// Calling it once for every index in `0..len()` is the same as one
-    /// `initialize_all`, spread over as many calls: a tool starting up runs one
-    /// agent's setup per frame so its loading screen keeps moving. Returns
+    /// `initialize_all`, spread over as many calls, for a caller that spreads
+    /// the setup of its agents over its own steps. Returns
     /// `false`, and initializes nothing, when `index` is past the last agent.
     pub fn initialize_one(
         &self,

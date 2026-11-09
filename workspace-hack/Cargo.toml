@@ -107,7 +107,6 @@ getrandom-9fbad63c4bcf4a8f = { package = "getrandom", version = "0.4", default-f
 percent-encoding = { version = "2" }
 scopeguard = { version = "1" }
 smallvec = { version = "1", default-features = false, features = ["union"] }
-tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "sync", "time"] }
 winapi = { version = "0.3", default-features = false, features = ["cfg", "evntrace", "in6addr", "inaddr", "minwinbase", "ntsecapi", "sysinfoapi", "windef", "winioctl"] }
 windows = { version = "0.62", features = ["Wdk_System_SystemInformation", "Wdk_System_SystemServices", "Wdk_System_Threading", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Graphics_Direct3D12", "Win32_Graphics_Direct3D_Dxc", "Win32_Graphics_Direct3D_Fxc", "Win32_Graphics_DirectComposition", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Gdi", "Win32_Graphics_OpenGL", "Win32_Media_Audio", "Win32_Media_KernelStreaming", "Win32_Media_Multimedia", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_NetworkManagement_NetManagement", "Win32_Networking_WinSock", "Win32_Security_Authentication_Identity", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Com_StructuredStorage", "Win32_System_Diagnostics_Debug", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Ole", "Win32_System_Performance", "Win32_System_Power", "Win32_System_ProcessStatus", "Win32_System_Registry", "Win32_System_RemoteDesktop", "Win32_System_Rpc", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Variant", "Win32_System_WindowsProgramming", "Win32_System_Wmi", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_WindowsAndMessaging"] }
 windows-sys-c8eced492e86ede7 = { package = "windows-sys", version = "0.48", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_IO", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_UI_Shell"] }
@@ -119,7 +118,6 @@ getrandom-9fbad63c4bcf4a8f = { package = "getrandom", version = "0.4", default-f
 percent-encoding = { version = "2" }
 scopeguard = { version = "1" }
 smallvec = { version = "1", default-features = false, features = ["union"] }
-tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "sync", "time"] }
 winapi = { version = "0.3", default-features = false, features = ["cfg", "evntrace", "in6addr", "inaddr", "minwinbase", "ntsecapi", "sysinfoapi", "windef", "winioctl"] }
 windows = { version = "0.62", features = ["Wdk_System_SystemInformation", "Wdk_System_SystemServices", "Wdk_System_Threading", "Win32_Devices_DeviceAndDriverInstallation", "Win32_Devices_Properties", "Win32_Graphics_Direct3D12", "Win32_Graphics_Direct3D_Dxc", "Win32_Graphics_Direct3D_Fxc", "Win32_Graphics_DirectComposition", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Gdi", "Win32_Graphics_OpenGL", "Win32_Media_Audio", "Win32_Media_KernelStreaming", "Win32_Media_Multimedia", "Win32_NetworkManagement_IpHelper", "Win32_NetworkManagement_Ndis", "Win32_NetworkManagement_NetManagement", "Win32_Networking_WinSock", "Win32_Security_Authentication_Identity", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Com_StructuredStorage", "Win32_System_Diagnostics_Debug", "Win32_System_Diagnostics_ToolHelp", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_Kernel", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Ole", "Win32_System_Performance", "Win32_System_Power", "Win32_System_ProcessStatus", "Win32_System_Registry", "Win32_System_RemoteDesktop", "Win32_System_Rpc", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Variant", "Win32_System_WindowsProgramming", "Win32_System_Wmi", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_WindowsAndMessaging"] }
 windows-sys-c8eced492e86ede7 = { package = "windows-sys", version = "0.48", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_System_IO", "Win32_System_Threading", "Win32_System_WindowsProgramming", "Win32_UI_Shell"] }
@@ -135,7 +133,6 @@ percent-encoding = { version = "2" }
 rustix = { version = "1", features = ["event", "net", "pipe", "process", "shm", "system", "time"] }
 scopeguard = { version = "1" }
 smallvec = { version = "1", default-features = false, features = ["union"] }
-tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "sync", "time"] }
 
 [target.x86_64-unknown-linux-gnu.build-dependencies]
 bitflags = { version = "2", default-features = false, features = ["std"] }
@@ -147,7 +144,6 @@ percent-encoding = { version = "2" }
 rustix = { version = "1", features = ["event", "net", "pipe", "process", "shm", "system", "time"] }
 scopeguard = { version = "1" }
 smallvec = { version = "1", default-features = false, features = ["union"] }
-tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "sync", "time"] }
 
 [target.x86_64-apple-darwin.dependencies]
 bitflags = { version = "2", default-features = false, features = ["std"] }
@@ -163,7 +159,6 @@ objc2-foundation = { version = "0.3" }
 objc2-io-kit = { version = "0.3" }
 percent-encoding = { version = "2" }
 smallvec = { version = "1", default-features = false, features = ["union"] }
-tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "sync", "time"] }
 
 [target.x86_64-apple-darwin.build-dependencies]
 bitflags = { version = "2", default-features = false, features = ["std"] }
@@ -179,7 +174,6 @@ objc2-foundation = { version = "0.3" }
 objc2-io-kit = { version = "0.3" }
 percent-encoding = { version = "2" }
 smallvec = { version = "1", default-features = false, features = ["union"] }
-tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "sync", "time"] }
 
 [target.aarch64-apple-darwin.dependencies]
 bitflags = { version = "2", default-features = false, features = ["std"] }
@@ -195,7 +189,6 @@ objc2-foundation = { version = "0.3" }
 objc2-io-kit = { version = "0.3" }
 percent-encoding = { version = "2" }
 smallvec = { version = "1", default-features = false, features = ["union"] }
-tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "sync", "time"] }
 
 [target.aarch64-apple-darwin.build-dependencies]
 bitflags = { version = "2", default-features = false, features = ["std"] }
@@ -211,6 +204,5 @@ objc2-foundation = { version = "0.3" }
 objc2-io-kit = { version = "0.3" }
 percent-encoding = { version = "2" }
 smallvec = { version = "1", default-features = false, features = ["union"] }
-tokio = { version = "1", features = ["io-util", "net", "rt-multi-thread", "sync", "time"] }
 
 ### END HAKARI SECTION

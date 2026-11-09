@@ -58,6 +58,9 @@ pub enum ProblemSource {
     Data,
     /// What the last scene load reported.
     Load,
+    /// The engine's startup: the work it waited on that had not landed when
+    /// its wait timed out.
+    Startup,
 }
 
 /// One problem, located.

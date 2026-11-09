@@ -152,6 +152,13 @@ impl<A: EngineApp> EngineCore<A> {
             TickPhase::Boundary,
         );
 
+        // What the startup waits on lands at the boundary: once all of it
+        // has — or it waited too long — the app is told, once.
+        if !self.startup_over && super::readiness::settle(runtime, std::time::Instant::now()) {
+            self.startup_over = true;
+            app.startup_ready();
+        }
+
         // Substrate Pass — pre-simulation invariants (input-driven mutations,
         // scene events that must be visible to agents).
         substrate::run_data_systems(
