@@ -21,7 +21,7 @@ use std::sync::Arc;
 use khora_agents::registered_agent::lane_agents;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::{check_registrations, BootError};
-use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase};
+use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
@@ -35,6 +35,7 @@ use khora_data::ui::{GlyphAtlas, UiImageAtlas, UiScene};
 use khora_data::AssetStore;
 
 use super::fixtures::{ui_agent, ui_registration};
+use crate::contention_test::{placed, wave_conflicts};
 use crate::overlay_families::fixtures::{agent_of, overlay_registrations};
 use crate::protocol::request;
 
@@ -302,49 +303,42 @@ fn the_ui_agent_leaves_the_asset_store_to_the_residency() {
 
 /// **The UI agent contends with no render-family agent**: the renderer, the
 /// shadows, the skybox and the three overlays read shared handles and each
-/// writes a slot of its own, so one concurrent wave may hold them all.
+/// writes a slot of its own, so one concurrent wave may hold them all. A
+/// deck slot read from another's earlier phase is not counted: such a pair
+/// never shares a wave ([`wave_conflicts`]).
 #[test]
 fn the_ui_agent_contends_with_no_render_family_agent() {
-    let ui = ui_agent().contention();
+    let ui = placed(&ui_agent());
     let others = [
         (
             "renderer",
-            crate::render_family::fixtures::render_agent(
+            placed(&crate::render_family::fixtures::render_agent(
                 &crate::render_family::fixtures::EVERY_CAP,
-            )
-            .contention(),
+            )),
         ),
         (
             "shadows",
-            crate::shadows_family::fixtures::shadow_agent().contention(),
+            placed(&crate::shadows_family::fixtures::shadow_agent()),
         ),
         (
             "skybox",
-            crate::skybox_family::fixtures::skybox_agent().contention(),
+            placed(&crate::skybox_family::fixtures::skybox_agent()),
         ),
     ]
     .into_iter()
-    .chain(overlay_registrations().into_iter().map(|registration| {
-        (
-            registration.family_name,
-            agent_of(registration).contention(),
-        )
-    }));
+    .chain(
+        overlay_registrations()
+            .into_iter()
+            .map(|registration| (registration.family_name, placed(&agent_of(registration)))),
+    );
 
     for (name, other) in others {
+        let conflicts = wave_conflicts(&ui, &other);
         assert!(
-            ui.conflicts_with(&other).is_empty(),
-            "the UI and the {name} may share a wave: {:?}",
-            ui.conflicts_with(&other)
+            conflicts.is_empty(),
+            "the UI and the {name} may share a wave: {conflicts:?}"
         );
     }
-}
-
-/// The UI agent never reaches the `World`: it reads its scene from the bus,
-/// so it may run on the worker pool.
-#[test]
-fn the_ui_agent_is_world_free() {
-    assert_eq!(ui_agent().access(), AgentAccess::Isolated);
 }
 
 /// **The UI agent offers one strategy, `Balanced`**, the one its old agent

@@ -21,7 +21,7 @@ use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, AgentAccess, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Agent, ExecutionPhase, ExecutionTiming};
 use khora_core::lane::HostViews;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -53,9 +53,6 @@ impl Agent for Watching {
     }
     fn report(&self) -> Report {
         report_of(AgentId::new("grid"), StrategyId::Balanced)
-    }
-    fn access(&self) -> AgentAccess {
-        AgentAccess::Isolated
     }
     fn execute(&mut self, ctx: &mut EngineContext<'_>) {
         let toggle = ctx.bus.get::<HostToggle>().cloned();

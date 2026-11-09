@@ -254,7 +254,7 @@ fn a_spawn_through_the_scripting_agent_takes_its_id_from_the_worlds_reserver() {
     use khora_core::agent::Agent;
     use khora_core::lane::{LaneBus, OutputDeck};
     use khora_core::script::{CommandBuffer, WorldCommand};
-    use khora_core::{EngineContext, Runtime, WorldAccess};
+    use khora_core::{EngineContext, Runtime};
     use khora_data::flow::{ReservationView, ScriptInstance, ScriptProgram, ScriptView};
     use khora_script::reload::ScriptReload;
 
@@ -329,7 +329,6 @@ fn a_spawn_through_the_scripting_agent_takes_its_id_from_the_worlds_reserver() {
         let permit = agent.contention();
         {
             let mut ctx = EngineContext::for_agent(
-                WorldAccess::None,
                 Arc::clone(&runtime),
                 &bus,
                 &mut deck,

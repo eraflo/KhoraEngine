@@ -39,7 +39,7 @@ use khora_core::agent::gorna::AgentId;
 use khora_core::agent::{CheckedOut, ExecutionPhase, LayerRun, Place, Preparation, Prepared};
 use khora_core::event::{Mailbox, Reader};
 use khora_core::lane::{LaneBus, OutputDeck, Reserve, Staging};
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 
 use super::execution::run_guarded;
 use super::known::{locked, LayeredAgent};
@@ -131,14 +131,8 @@ impl Background {
                 let started = Instant::now();
                 let mut run = LayerRun::default();
                 let ran = {
-                    let mut context = EngineContext::for_agent(
-                        WorldAccess::None,
-                        runtime,
-                        &bus,
-                        &mut deck,
-                        &permit,
-                        Some(id),
-                    );
+                    let mut context =
+                        EngineContext::for_agent(runtime, &bus, &mut deck, &permit, Some(id));
                     run_guarded(id, || run = out.run(&mut context))
                 };
                 if !ran {
@@ -269,14 +263,8 @@ fn run_preparation(
     let mut deck = OutputDeck::new();
     let mut prepared = None;
     let ran = {
-        let mut context = EngineContext::for_agent(
-            WorldAccess::None,
-            Arc::clone(runtime),
-            bus,
-            &mut deck,
-            &permit,
-            Some(id),
-        );
+        let mut context =
+            EngineContext::for_agent(Arc::clone(runtime), bus, &mut deck, &permit, Some(id));
         run_guarded(id, || prepared = Some(preparation.run(&mut context)))
     };
     let prepared = match prepared {

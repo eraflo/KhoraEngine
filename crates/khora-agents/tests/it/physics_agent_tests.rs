@@ -74,12 +74,11 @@ fn step_n(agent: &mut LaneAgent, world: &mut World, runtime: &Arc<Runtime>, n: u
         substrate::run_flows(world, &mut bus, runtime);
 
         // CLAD descent — agent invokes the lane (provider.step(dt)).
-        // The agent's own declaration and no world, exactly as the scheduler
-        // stamps a world-free agent's context — a test that granted more
+        // The agent's own declaration, exactly as the scheduler stamps an
+        // agent's context: a test that permitted more than the agent declares
         // would be testing a context the engine never builds.
         let permit = agent.contention();
         let mut ctx = EngineContext::for_agent(
-            khora_core::WorldAccess::None,
             Arc::clone(runtime),
             &bus,
             &mut deck,

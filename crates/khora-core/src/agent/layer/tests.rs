@@ -29,7 +29,7 @@ use crate::lane::guard::Reason;
 use crate::lane::io::TargetKey;
 use crate::lane::{LaneBus, OutputDeck};
 use crate::renderer::api::resource::TextureFormat;
-use crate::{EngineContext, Runtime, WorldAccess};
+use crate::{EngineContext, Runtime};
 
 /// The agent every place of these tests belongs to.
 const AGENT: AgentId = AgentId::new("painter");
@@ -140,7 +140,6 @@ fn run(place: &mut Place) -> Option<Report> {
     let mut deck = OutputDeck::new();
     let permit = place.contention();
     let mut context = EngineContext::for_agent(
-        WorldAccess::None,
         Arc::new(Runtime::new()),
         &bus,
         &mut deck,
@@ -860,7 +859,6 @@ fn a_layer_checked_out_while_another_is_staged_runs_on_the_new_agents_part() {
     let permit = out.contention();
     let ran = {
         let mut context = EngineContext::for_agent(
-            WorldAccess::None,
             Arc::new(Runtime::new()),
             &bus,
             &mut deck,

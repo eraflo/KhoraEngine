@@ -288,6 +288,7 @@ impl Declaration {
         for input in &self.inputs {
             let (into, ty) = match input.kind {
                 SourceKind::Resource | SourceKind::Resident => (&mut contention.reads, input.ty),
+                SourceKind::Deck => (&mut contention.deck_reads, input.ty),
                 // Draining a channel empties it for every other reader: a
                 // take is a lock of the channel.
                 SourceKind::Locked | SourceKind::Take => (&mut contention.writes, input.ty),

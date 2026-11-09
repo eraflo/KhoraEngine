@@ -25,8 +25,8 @@ use super::{offer_of, report_of};
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{
-    Activation, Agent, AgentAccess, Contention, ExecutionPhase, ExecutionTiming, Layer, LayerRun,
-    Place, Terms, Wake,
+    Activation, Agent, Contention, ExecutionPhase, ExecutionTiming, Layer, LayerRun, Place, Terms,
+    Wake,
 };
 use khora_core::event::{BetweenSessions, Channel, Mailbox, Reader, Supersedes, WhenFull};
 use khora_core::gpu::GpuSetup;
@@ -343,9 +343,6 @@ impl Agent for Oven {
             ..ExecutionTiming::default()
         }
     }
-    fn access(&self) -> AgentAccess {
-        AgentAccess::Isolated
-    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -637,7 +634,7 @@ fn a_layer_staged_during_a_background_run_waits_for_it_to_return() {
 
 /// **Background runs do not delay a concurrent wave's pool jobs.** More
 /// families than the pool has threads each hold a background run at their
-/// gate. The two world-free painters of the frame's concurrent wave still
+/// gate. The two painters of the frame's concurrent wave still
 /// run every frame, and every frame completes in time.
 #[test]
 fn background_runs_do_not_delay_a_concurrent_waves_pool_jobs() {
@@ -652,7 +649,6 @@ fn background_runs_do_not_delay_a_concurrent_waves_pool_jobs() {
                 Brush::new(name, StrategyId::Balanced, &painted),
                 &painted,
             )
-            .with_access(AgentAccess::Isolated)
             .with_timing(one_phase(priority)),
         )
     };

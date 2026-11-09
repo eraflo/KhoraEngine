@@ -35,7 +35,7 @@ use khora_core::projection::Interest;
 use khora_core::script::{
     engine_event_channel, ComponentName, ScriptCatalog, ScriptEvent, ScriptReads, ScriptValue,
 };
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::{
     DataSystemRegistration, RigidBody, SystemContext, Tick, TickPhase, Transform, World,
 };
@@ -324,7 +324,6 @@ fn a_reload_the_compile_handed_over_is_installed_before_the_flow_and_reads_its_c
     let permit = agent.contention();
     {
         let mut ctx = EngineContext::for_agent(
-            WorldAccess::None,
             Arc::clone(&runtime),
             &bus,
             &mut deck,

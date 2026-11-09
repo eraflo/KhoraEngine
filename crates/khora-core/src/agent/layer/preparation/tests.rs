@@ -30,7 +30,7 @@ use crate::agent::layer::{Layer, LayerRun, Place, Terms, Wake, KEEP_EPOCHS};
 use crate::gpu::GpuSetup;
 use crate::lane::cost::PerDevice;
 use crate::lane::{LaneBus, OutputDeck};
-use crate::{EngineContext, Runtime, WorldAccess};
+use crate::{EngineContext, Runtime};
 
 /// The agent every place of these tests belongs to.
 const AGENT: AgentId = AgentId::new("sculptor");
@@ -146,7 +146,6 @@ fn run_preparation(preparation: Preparation) -> Prepared {
     let mut deck = OutputDeck::new();
     let permit = preparation.contention();
     let mut context = EngineContext::for_agent(
-        WorldAccess::None,
         Arc::new(Runtime::new()),
         &bus,
         &mut deck,
@@ -162,7 +161,6 @@ fn run(place: &mut Place) -> Option<Report> {
     let mut deck = OutputDeck::new();
     let permit = place.contention();
     let mut context = EngineContext::for_agent(
-        WorldAccess::None,
         Arc::new(Runtime::new()),
         &bus,
         &mut deck,

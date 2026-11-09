@@ -20,7 +20,7 @@
 //! a wave that could have run concurrently. Only the real declarations can show
 //! that, so they are asserted here.
 
-use khora_core::agent::Agent;
+use khora_core::agent::{Agent, Contention, ExecutionPhase};
 use khora_data::ui::UiImageAtlas;
 use std::any::TypeId;
 use std::sync::Arc;
@@ -31,10 +31,55 @@ use crate::overlay_families::fixtures::{
 use crate::render_family::fixtures::{render_agent, EVERY_CAP};
 use crate::ui_family::fixtures::ui_agent;
 
-/// **The gain the contract was written for.** Both are `SharedWorld`, both sit
-/// in `OUTPUT`, and the old "at most one `SharedWorld` per wave" rule kept them
-/// apart — not because they contend, but because nothing could say whether they
-/// did. Now something can, and the answer is that they do not.
+/// One agent as the scheduler groups it: the phase it runs in and what it
+/// declares.
+pub(crate) struct Placed {
+    pub(crate) phase: ExecutionPhase,
+    pub(crate) contention: Contention,
+}
+
+/// `agent`'s phase and declaration.
+pub(crate) fn placed<A: Agent>(agent: &A) -> Placed {
+    Placed {
+        phase: agent.execution_timing().default_phase,
+        contention: agent.contention(),
+    }
+}
+
+/// Where `phase` runs in the frame's default phase order.
+fn rank(phase: ExecutionPhase) -> usize {
+    ExecutionPhase::DEFAULT_ORDER
+        .iter()
+        .position(|p| *p == phase)
+        .unwrap_or_else(|| panic!("{phase:?} is a phase of the frame's order"))
+}
+
+/// What `one` and `other` would fight over in a wave, leaving out a deck slot
+/// one reads and the other writes in an **earlier** phase. Waves are formed
+/// within a phase, and the boot accepts a deck read only of a slot an earlier
+/// phase wrote, so such a pair never shares a wave: the reader sees the slot
+/// as that phase left it. Anything else — a resource locked by one and read
+/// or locked by the other, a slot both write, a slot read and written within
+/// one phase — is reported.
+pub(crate) fn wave_conflicts(one: &Placed, other: &Placed) -> Vec<TypeId> {
+    let read_after_written = |reader: &Placed, writer: &Placed, slot: &TypeId| {
+        reader.contention.deck_reads.contains(slot)
+            && writer.contention.deck.contains(slot)
+            && rank(writer.phase) < rank(reader.phase)
+    };
+    one.contention
+        .conflicts_with(&other.contention)
+        .into_iter()
+        .filter(|slot| {
+            !read_after_written(one, other, slot) && !read_after_written(other, one, slot)
+        })
+        .collect()
+}
+
+/// **The gain the contract was written for.** The render and UI agents both
+/// sit in `OUTPUT`, and what they declare is all that decides whether they
+/// share a wave: two agents run at once unless their contentions conflict.
+/// The render and UI agents' do not, so they may share a concurrent wave.
 #[test]
 fn the_render_and_ui_agents_do_not_contend() {
     let render = render_agent(&EVERY_CAP).contention();
@@ -46,26 +91,36 @@ fn the_render_and_ui_agents_do_not_contend() {
     );
 }
 
-/// Reading is free. Seven agents look at the same GPU device and the same
-/// per-agent status map every frame; if a shared *read* counted as contention,
-/// each of them would land in a wave of its own.
+/// Reading is free. No two of the seven render-family agents would fight in
+/// a wave: what they share at run time, they only read, and a shared *read*
+/// is not contention — if it were, each of them would land in a wave of its
+/// own. A deck slot one of them reads from another's earlier phase (the
+/// renderer reads the shadows' frame) keeps the two in different phases,
+/// never in one wave, so it is not counted ([`wave_conflicts`]).
 #[test]
 fn the_agents_sharing_read_only_handles_do_not_contend() {
     let all = [
-        render_agent(&EVERY_CAP).contention(),
-        crate::shadows_family::fixtures::shadow_agent().contention(),
-        crate::skybox_family::fixtures::skybox_agent().contention(),
-        agent_of(grid_registration()).contention(),
-        agent_of(wireframe_registration()).contention(),
-        agent_of(gizmo_registration()).contention(),
-        ui_agent().contention(),
+        ("renderer", placed(&render_agent(&EVERY_CAP))),
+        (
+            "shadows",
+            placed(&crate::shadows_family::fixtures::shadow_agent()),
+        ),
+        (
+            "skybox",
+            placed(&crate::skybox_family::fixtures::skybox_agent()),
+        ),
+        ("grid", placed(&agent_of(grid_registration()))),
+        ("wireframe", placed(&agent_of(wireframe_registration()))),
+        ("gizmo", placed(&agent_of(gizmo_registration()))),
+        ("ui", placed(&ui_agent())),
     ];
 
-    for (position, one) in all.iter().enumerate() {
-        for other in &all[position + 1..] {
+    for (position, (name, one)) in all.iter().enumerate() {
+        for (other_name, other) in &all[position + 1..] {
+            let conflicts = wave_conflicts(one, other);
             assert!(
-                one.conflicts_with(other).is_empty(),
-                "the render-family agents share handles by reading them"
+                conflicts.is_empty(),
+                "the {name} and the {other_name} share handles by reading them: {conflicts:?}"
             );
         }
     }

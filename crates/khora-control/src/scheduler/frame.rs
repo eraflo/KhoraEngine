@@ -32,7 +32,7 @@ use khora_core::lane::{HostViews, LaneBus, OutputDeck};
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::telemetry::TelemetryEvent;
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, TryLockError};
@@ -259,7 +259,7 @@ impl ExecutionScheduler {
         // Freeze the bus behind an `Arc` for the rest of the frame. It is
         // strictly read-only from here on (the CLAD descent only reads Views),
         // and the worker pool needs an owned `Arc<LaneBus>` to make a concurrent
-        // wave's `Isolated` jobs `'static`. Serial paths deref it to `&LaneBus`.
+        // wave's jobs `'static`. A wave of one derefs it to `&LaneBus`.
         let bus = Arc::new(bus);
 
         // 5c. The families at the background with mail start a run off the
@@ -283,7 +283,7 @@ impl ExecutionScheduler {
                 for &phase in &phases {
                     self.execute_agents_in_phase(
                         phase,
-                        world,
+                        world.entity_count() as f64,
                         &runtime,
                         &inactive,
                         &completion_map,
@@ -304,8 +304,8 @@ impl ExecutionScheduler {
             AgentSelection::All
         };
 
-        // 8. Execute each phase: plugins then agents (CLAD descent —
-        //    agents invoke their lanes themselves through `Agent::execute`).
+        // 8. Execute each phase: plugins then agents (CLAD descent — each
+        //    family's installed layer runs at its place).
         for phase in phases {
             for plugin in &mut self.plugins {
                 if plugin.wants_phase(phase) {
@@ -315,7 +315,7 @@ impl ExecutionScheduler {
 
             self.execute_agents_in_phase(
                 phase,
-                world,
+                world.entity_count() as f64,
                 &runtime,
                 &inactive,
                 &completion_map,
@@ -513,7 +513,6 @@ fn wake_layered(layered: &[LayeredAgent], runtime: &Arc<Runtime>, bus: &LaneBus)
             let permit = agent.contention();
             let mut scratch = OutputDeck::new();
             let mut context = EngineContext::for_agent(
-                WorldAccess::None,
                 Arc::clone(runtime),
                 bus,
                 &mut scratch,

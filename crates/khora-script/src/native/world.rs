@@ -20,8 +20,8 @@
 //! applies at the boundary where mutation is legal.
 //!
 //! That is not a workaround for `RULES.md` §3. It is what lets the scripting
-//! agent declare `AgentAccess::Isolated` and run beside the others on the worker
-//! pool: a lane holding a `&mut World` never could.
+//! lane run beside the others on the worker pool: a lane holding a
+//! `&mut World` never could.
 //!
 //! The engine types these take — `Vec3` and the rest — are declared in
 //! [`engine_types`](super::engine_types), constructors and all.

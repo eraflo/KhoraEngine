@@ -46,6 +46,6 @@ pub mod time;
 pub mod ui;
 pub mod util;
 
-pub use engine_context::{EngineContext, WorldAccess};
+pub use engine_context::EngineContext;
 pub use runtime::{Backends, Resources, Runtime, Services};
 pub use util::stopwatch::Stopwatch;

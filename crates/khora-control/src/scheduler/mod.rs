@@ -121,16 +121,12 @@ pub struct ExecutionScheduler {
     /// This frame's sub-steps per fixed agent, read by the fixed-update
     /// sub-loop's [`AgentSelection::FixedRound`].
     fixed_due: HashMap<AgentId, u32>,
-    /// When `true`, each phase runs through the parallel wave executor
-    /// ([`execute_agents_parallel`](Self::execute_agents_parallel)); when
-    /// `false` (default) agents run sequentially. Off by default: enabling it
-    /// is only sound once agents opt into
-    /// [`AgentAccess::Isolated`](khora_core::agent::AgentAccess::Isolated) and no
-    /// two `Isolated` agents in a phase write the same deck slot.
+    /// When `true`, agents whose contentions are disjoint share concurrent
+    /// waves; when `false` (default) every agent is a wave of its own.
     parallel_execution: bool,
     /// Persistent worker pool for concurrent waves. Spawned once here and
-    /// joined on drop; runs a wave's `Isolated` agents as `'static` jobs while
-    /// its `SharedWorld` agents run inline. See [`WorkerPool`].
+    /// joined on drop; runs every member of a concurrent wave as a `'static`
+    /// job. See [`WorkerPool`].
     pool: WorkerPool,
     /// What agents wrote into the deck without declaring it, last frame
     /// (debug builds only; see [`undeclared_deck_writes`](Self::undeclared_deck_writes)).
@@ -229,13 +225,9 @@ impl ExecutionScheduler {
         }
     }
 
-    /// Enables or disables the parallel wave executor (default off).
-    ///
-    /// Sound only when the phase's agents correctly declare their
-    /// [`AgentAccess`](khora_core::agent::AgentAccess): eligible agents must
-    /// touch no `World` and write disjoint deck slots. With the default
-    /// (all-`Exclusive`) declarations every wave is a singleton, so this is
-    /// behaviourally identical to sequential execution.
+    /// Enables or disables concurrent waves (default off): agents whose
+    /// [`Contention`](khora_core::agent::Contention)s are disjoint share one.
+    /// Off, every agent is a wave of its own and runs inline.
     pub fn set_parallel_execution(&mut self, enabled: bool) {
         self.parallel_execution = enabled;
     }
@@ -263,20 +255,27 @@ impl ExecutionScheduler {
         }
         // Mirror the executor's grouping: for each phase, the phase's agents in
         // `sort_agents` order, partitioned into waves. Every agent lands in
-        // exactly one wave (Exclusive agents are singletons), so cross-phase and
+        // exactly one wave, so cross-phase and
         // serial work is naturally costed as a sum while concurrent members
         // share a wave.
+        // A fixed-step agent runs in the fixed rounds, apart from the
+        // once-per-frame ones, so the two never share a wave.
         let mut waves: Vec<Vec<AgentId>> = Vec::new();
         for &phase in &self.phase_order {
-            let agents = self.phase_slots(phase, inactive);
-            if agents.is_empty() {
-                continue;
-            }
-            let metas = build_wave_metas(&sort_agents(agents, &self.known), &self.known);
-            for wave in partition_waves(&metas) {
-                let ids: Vec<AgentId> = wave.iter().filter_map(|&i| metas[i].id).collect();
-                if !ids.is_empty() {
-                    waves.push(ids);
+            let (fixed, once): (Vec<AgentSlot>, Vec<AgentSlot>) = self
+                .phase_slots(phase, inactive)
+                .into_iter()
+                .partition(|slot| self.fixed_slot_id(slot).is_some());
+            for agents in [fixed, once] {
+                if agents.is_empty() {
+                    continue;
+                }
+                let metas = build_wave_metas(&sort_agents(agents, &self.known), &self.known);
+                for wave in partition_waves(&metas, true) {
+                    let ids: Vec<AgentId> = wave.iter().filter_map(|&i| metas[i].id).collect();
+                    if !ids.is_empty() {
+                        waves.push(ids);
+                    }
                 }
             }
         }

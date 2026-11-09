@@ -22,7 +22,7 @@ use khora_agents::registered_agent::lane_agents;
 use khora_core::agent::gorna::protocol::Offer;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::{check_registrations, BootError};
-use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase};
+use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::erased::AnyLane;
 use khora_core::lane::family::Semantics;
@@ -41,6 +41,7 @@ use khora_data::{AssetStore, IblBaker};
 use super::fixtures::{
     headless_render_runtime, offer_request, render_agent, render_registration, EVERY_CAP,
 };
+use crate::contention_test::{placed, wave_conflicts, Placed};
 use crate::overlay_families::fixtures::{agent_of, overlay_registrations};
 use crate::shadows_family::fixtures::{shadow_agent, shadows_registration};
 use crate::skybox_family::fixtures::skybox_agent;
@@ -492,13 +493,6 @@ fn boot_refuses_the_render_family_without_the_ibl_baker() {
 
 // ─── The agent ──────────────────────────────────────────────────────────────
 
-/// The render agent never reaches the `World`: it reads Views from the bus,
-/// so it may run on the worker pool.
-#[test]
-fn the_render_agent_is_world_free() {
-    assert_eq!(render_agent(&EVERY_CAP).access(), AgentAccess::Isolated);
-}
-
 /// **The render agent reads what its lanes read, and locks nothing**: the
 /// frame context its target comes from, the device and the pipeline system it
 /// lends its lanes, the asset store and the IBL bake.
@@ -528,37 +522,38 @@ fn the_render_agent_reads_and_locks_nothing() {
     );
 }
 
-/// **The render agent contends with no other render-side agent.** The
-/// shadows, the sky, the UI and the three overlays read the same shared
-/// handles and each writes slots of its own, so one concurrent wave may hold
-/// them all; no slot is claimed twice.
+/// **The render agent contends with no other render-side agent.** The sky,
+/// the UI and the three overlays read the same shared handles and each
+/// writes slots of its own, so one concurrent wave may hold them all. The
+/// renderer reads the shadow frame the shadows write in an earlier phase:
+/// the two never share a wave, so that read is not counted
+/// ([`wave_conflicts`]). No slot is claimed twice.
 #[test]
 fn the_render_agent_contends_with_no_other_render_side_agent() {
-    let render = render_agent(&EVERY_CAP).contention();
-    let others: Vec<(&'static str, _)> = [
-        ("shadows", shadow_agent().contention()),
-        ("skybox", skybox_agent().contention()),
-        ("ui", ui_agent().contention()),
+    let render = placed(&render_agent(&EVERY_CAP));
+    let others: Vec<(&'static str, Placed)> = [
+        ("shadows", placed(&shadow_agent())),
+        ("skybox", placed(&skybox_agent())),
+        ("ui", placed(&ui_agent())),
     ]
     .into_iter()
-    .chain(overlay_registrations().into_iter().map(|registration| {
-        (
-            registration.family_name,
-            agent_of(registration).contention(),
-        )
-    }))
+    .chain(
+        overlay_registrations()
+            .into_iter()
+            .map(|registration| (registration.family_name, placed(&agent_of(registration)))),
+    )
     .collect();
 
     for (name, other) in &others {
+        let conflicts = wave_conflicts(&render, other);
         assert!(
-            render.conflicts_with(other).is_empty(),
-            "the renderer and the {name} may share a wave: {:?}",
-            render.conflicts_with(other)
+            conflicts.is_empty(),
+            "the renderer and the {name} may share a wave: {conflicts:?}"
         );
     }
     let slots: Vec<TypeId> = std::iter::once(&render)
         .chain(others.iter().map(|(_, other)| other))
-        .flat_map(|contention| contention.deck.clone())
+        .flat_map(|placed| placed.contention.deck.clone())
         .collect();
     let mut unique = slots.clone();
     unique.sort();

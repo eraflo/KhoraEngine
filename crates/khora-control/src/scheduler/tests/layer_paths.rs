@@ -12,35 +12,52 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Layers on every path the scheduler runs an agent by: alone with the whole
-//! world, inline in a concurrent wave with a shared world, on the worker pool,
-//! and once per fixed sub-step.
+//! Layers on every path the scheduler runs an agent by: alone inline, on the
+//! worker pool in a concurrent wave, and once per fixed sub-step.
 
-use super::layers::{reports, scheduling, shared, taken, Brush, Painter, Plain, SharedLog};
+use super::allocations::one_phase;
+use super::layers::{reports, scheduling, shared, taken, Atlas, Brush, Painter, Plain, SharedLog};
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{AgentAccess, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Contention, ExecutionPhase, ExecutionTiming};
 use khora_data::ecs::World;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// **Layers run on every path**: alone with the whole world, inline in a
-/// concurrent wave with a shared world, and on the worker pool — serially and
-/// in waves, two frames each. Each layer runs once a frame, its report names
+/// **Layers run on every path**: alone inline, and on the worker pool —
+/// serially and in waves, two frames each. In waves, `solo`'s layer locks the
+/// atlas `pooled-a`'s reads, so `solo` is a wave of its own and the two
+/// others share the next one. Each layer runs once a frame, its report names
 /// its row, and no agent is executed.
 #[test]
 fn layers_run_on_every_path() {
     let paths = [
-        ("solo", AgentAccess::Exclusive, StrategyId::Custom(1)),
-        ("reader", AgentAccess::SharedWorld, StrategyId::Custom(2)),
-        ("pooled-a", AgentAccess::Isolated, StrategyId::Custom(3)),
-        ("pooled-b", AgentAccess::Isolated, StrategyId::Custom(4)),
+        (
+            "solo",
+            Contention::none().locking::<Atlas>(),
+            StrategyId::Custom(1),
+            3.0,
+        ),
+        (
+            "pooled-a",
+            Contention::none().reading::<Atlas>(),
+            StrategyId::Custom(3),
+            2.0,
+        ),
+        ("pooled-b", Contention::none(), StrategyId::Custom(4), 1.0),
     ];
     for parallel in [false, true] {
         let log = SharedLog::default();
         let agents = paths
             .iter()
-            .map(|&(name, access, row)| {
-                shared(Painter::new(name, Brush::new(name, row, &log), &log).with_access(access))
+            .map(|(name, contention, row, priority)| {
+                shared(
+                    Painter::new(
+                        name,
+                        Brush::new(name, *row, &log).contending(contention.clone()),
+                        &log,
+                    )
+                    .with_timing(one_phase(*priority)),
+                )
             })
             .collect();
         let (mut scheduler, rx) = scheduling(agents);
@@ -58,7 +75,7 @@ fn layers_run_on_every_path() {
             done.executed
         );
         let published = reports(&rx);
-        for &(name, _, row) in &paths {
+        for &(name, _, row, _) in &paths {
             let runs = (done.ran.iter())
                 .filter(|&&(agent, ran)| agent == name && ran == row)
                 .count();
@@ -87,10 +104,7 @@ fn fixed_step() -> ExecutionTiming {
 /// layered agent itself never is, serially and in waves.
 #[test]
 fn a_fixed_step_family_runs_its_layer_once_per_sub_step() {
-    for (access, parallel) in [
-        (AgentAccess::Exclusive, false),
-        (AgentAccess::Isolated, true),
-    ] {
+    for parallel in [false, true] {
         let log = SharedLog::default();
         let metronome = shared(Plain::new("metronome", &log).with_timing(fixed_step()));
         let painter = shared(
@@ -99,7 +113,6 @@ fn a_fixed_step_family_runs_its_layer_once_per_sub_step() {
                 Brush::new("painter", StrategyId::Balanced, &log),
                 &log,
             )
-            .with_access(access)
             .with_timing(fixed_step()),
         );
         let (mut scheduler, _rx) = scheduling(vec![metronome, painter]);
@@ -120,13 +133,10 @@ fn a_fixed_step_family_runs_its_layer_once_per_sub_step() {
             .filter(|(name, _)| *name == "painter")
             .count();
         assert!(ticks > 1, "the frame sub-steps more than once: {ticks}");
-        assert_eq!(
-            layer_runs, ticks,
-            "{access:?}, parallel {parallel}: once per sub-step"
-        );
+        assert_eq!(layer_runs, ticks, "parallel {parallel}: once per sub-step");
         assert!(
             !done.executed.contains(&"painter"),
-            "{access:?}: the layered agent was executed"
+            "parallel {parallel}: the layered agent was executed"
         );
     }
 }

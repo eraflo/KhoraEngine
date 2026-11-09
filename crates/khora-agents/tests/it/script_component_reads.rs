@@ -34,7 +34,7 @@ use khora_core::script::{
     engine_event_channel, ComponentName, ComponentProjection, ScriptCatalog, ScriptReads,
     ScriptValue,
 };
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::{
     Collider, ComponentProvenance, FieldKind, PackedField, PackedLayout, RigidBody,
     RuntimeComponentDecl, SemanticDomain, TickPhase, Transform, World,
@@ -178,7 +178,6 @@ impl Session {
         let permit = self.agent.contention();
         {
             let mut ctx = EngineContext::for_agent(
-                WorldAccess::None,
                 Arc::clone(&self.runtime),
                 &bus,
                 &mut deck,

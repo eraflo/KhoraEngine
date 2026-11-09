@@ -30,7 +30,7 @@ use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{LaneBus, OutputDeck, Reserve};
 use khora_core::script::{engine_event_channel, ScriptCatalog, ScriptValue};
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::{DataSystemRegistration, Role, SemanticDomain, TickPhase, Transform, World};
 use khora_data::flow::{Flow, FlowContext, ScriptFlow};
 use khora_io::script::declarations::{DeclaredComponents, ScriptDeclarations};
@@ -233,7 +233,6 @@ impl Session {
         let permit = self.agent.contention();
         {
             let mut ctx = EngineContext::for_agent(
-                WorldAccess::None,
                 Arc::clone(&self.runtime),
                 &bus,
                 &mut deck,

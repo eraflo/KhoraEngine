@@ -27,12 +27,9 @@
 //! that rule forbids, so it does none of them directly: it queues a description
 //! and the engine performs it where mutation is already legal.
 //!
-//! The constraint pays for itself. A lane that holds no `&mut World` can declare
-//! [`AgentAccess::Isolated`] and run on the worker pool next to the others, which
-//! a lane holding one never could. Deferring the writes is what buys the
-//! parallelism, not a tax on it.
-//!
-//! [`AgentAccess::Isolated`]: crate::agent::AgentAccess::Isolated
+//! The constraint pays for itself. A lane that holds no `&mut World` runs on
+//! the worker pool next to the others, which a lane holding one never could.
+//! Deferring the writes is what buys the parallelism, not a tax on it.
 
 pub mod batch;
 pub mod buffer;

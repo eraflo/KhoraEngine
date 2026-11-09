@@ -52,7 +52,7 @@ use khora_core::renderer::traits::{
     CommandEncoder, ComputePass, GpuProfiler, PipelineSystem, RenderPass,
 };
 use khora_core::renderer::GraphicsDevice;
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 use khora_data::flow::{ShadowMatrices, ShadowView};
 use khora_data::render::{ExtractedLight, RenderWorld};
 use khora_data::AssetStore;
@@ -463,13 +463,6 @@ pub fn run_once(
 ) {
     let permit = agent.contention();
     let id = agent.id();
-    let mut context = EngineContext::for_agent(
-        WorldAccess::None,
-        Arc::clone(runtime),
-        bus,
-        deck,
-        &permit,
-        Some(id),
-    );
+    let mut context = EngineContext::for_agent(Arc::clone(runtime), bus, deck, &permit, Some(id));
     agent.execute(&mut context);
 }

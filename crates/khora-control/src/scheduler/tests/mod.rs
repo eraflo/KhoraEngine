@@ -19,6 +19,7 @@ mod agent_ids;
 mod allocations;
 mod background;
 mod begin_frame;
+mod budget_pressure;
 mod concurrent_exec;
 mod deck_writes;
 mod fixed_agent_sub_clocks;
@@ -35,8 +36,8 @@ mod reports;
 mod run_order;
 mod sim_steps;
 mod sub_step_outputs;
-mod wave_ticks;
 mod waves;
+mod world_clock;
 
 use khora_core::agent::gorna::protocol::{
     Confidence, Epoch, Offer, OfferRequest, OfferRow, Report,

@@ -42,7 +42,7 @@ use khora_sdk::khora_core::lane::{LaneBus, LaneError, OutputDeck};
 use khora_sdk::khora_core::math::Extent2D;
 use khora_sdk::khora_core::renderer::api::frame::FrameContext;
 use khora_sdk::khora_core::renderer::api::resource::{TextureFormat, TextureViewId};
-use khora_sdk::khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_sdk::khora_core::{EngineContext, Runtime};
 
 use crate::render_doubles::insert_frame_context;
 
@@ -240,14 +240,7 @@ fn run(agent: &mut LaneAgent, frame: u64, runtime: &Arc<Runtime>, deck: &mut Out
     bus.set_frame(FrameId(frame));
     let permit = agent.contention();
     let id = agent.id();
-    let mut context = EngineContext::for_agent(
-        WorldAccess::None,
-        Arc::clone(runtime),
-        &bus,
-        deck,
-        &permit,
-        Some(id),
-    );
+    let mut context = EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
     agent.execute(&mut context);
 }
 

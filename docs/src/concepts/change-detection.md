@@ -19,8 +19,9 @@ only one way: it may report a little more than what changed, never less.
 ## The clock
 
 The world keeps a clock that counts **ticks**. A tick is not a unit of time but
-of work: the engine gives one to each run of a `DataSystem`, each run of a `Flow`,
-and each wave of the scheduler — about 41 a frame in the sandbox scene. Whatever a
+of work: the engine gives one to each run of a `DataSystem` and each run of a
+`Flow` — 43 a frame in the sandbox scene. Agents never write the world, so their
+work takes none. Whatever a
 run writes carries that run's tick; whatever is written between runs (the game's
 own update, an edit in the editor) carries the next one.
 
@@ -149,7 +150,7 @@ resumes — as it tells the system's first run on a world.
 ## Forgetting quietly
 
 Row ticks cost eight bytes per row. A column that has been quiet for a while —
-`QUIET_ROW_TICKS`, 12 300 ticks, about five seconds of the sandbox at 60 frames a
+`QUIET_ROW_TICKS`, 12 900 ticks, about five seconds of the sandbox at 60 frames a
 second — and whose last write every observer has already seen (a system skipped
 while its family is off does not hold it back), drops them:
 `ecs_maintenance` does it every frame. The floor rises to the summary, and the

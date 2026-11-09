@@ -27,8 +27,7 @@ use crossbeam_channel::Receiver;
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{
-    Agent, AgentAccess, Contention, ExecutionPhase, ExecutionTiming, Layer, LayerRun, Place, Terms,
-    Wake,
+    Agent, Contention, ExecutionPhase, ExecutionTiming, Layer, LayerRun, Place, Terms, Wake,
 };
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::cost::PerDevice;
@@ -156,7 +155,6 @@ impl Layer for Brush {
 pub(super) struct Painter {
     name: &'static str,
     place: Arc<Mutex<Place>>,
-    access: AgentAccess,
     timing: ExecutionTiming,
     /// The layer it installs on its first frame, with its preparation time.
     first: Option<(Brush, Duration)>,
@@ -172,7 +170,6 @@ impl Painter {
         Self {
             name,
             place: Arc::new(Mutex::new(Place::new(AgentId::new(name)))),
-            access: AgentAccess::Exclusive,
             timing: one_phase(0.5),
             first: Some((first, Duration::ZERO)),
             next: None,
@@ -192,11 +189,6 @@ impl Painter {
     /// stops fitting.
     pub(super) fn then(mut self, next: Brush, switch: Duration) -> Self {
         self.next = Some((next, switch));
-        self
-    }
-
-    pub(super) fn with_access(mut self, access: AgentAccess) -> Self {
-        self.access = access;
         self
     }
 
@@ -254,9 +246,6 @@ impl Agent for Painter {
     }
     fn execution_timing(&self) -> ExecutionTiming {
         self.timing.clone()
-    }
-    fn access(&self) -> AgentAccess {
-        self.access
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -647,23 +636,17 @@ fn a_swap_keeps_the_family_place() {
 fn an_agent_being_woken_does_not_stop_the_other_layers() {
     for parallel in [false, true] {
         let log = SharedLog::default();
-        let restless = shared(
-            Painter::new(
-                "restless",
-                Brush::new("restless", StrategyId::LowPower, &log)
-                    .raising_always(Wake::InputRefused(khora_core::lane::guard::Reason::Missing)),
-                &log,
-            )
-            .with_access(AgentAccess::Isolated),
-        );
-        let calm = shared(
-            Painter::new(
-                "calm",
-                Brush::new("calm", StrategyId::HighPerformance, &log),
-                &log,
-            )
-            .with_access(AgentAccess::Isolated),
-        );
+        let restless = shared(Painter::new(
+            "restless",
+            Brush::new("restless", StrategyId::LowPower, &log)
+                .raising_always(Wake::InputRefused(khora_core::lane::guard::Reason::Missing)),
+            &log,
+        ));
+        let calm = shared(Painter::new(
+            "calm",
+            Brush::new("calm", StrategyId::HighPerformance, &log),
+            &log,
+        ));
         let (mut scheduler, _rx) = scheduling(vec![restless, calm]);
         scheduler.set_parallel_execution(parallel);
         let mut world = World::new();
@@ -694,7 +677,7 @@ fn an_agent_being_woken_does_not_stop_the_other_layers() {
 
 // ─── Waves ──────────────────────────────────────────────────────────────────
 
-/// **Waves follow the installed layers.** Two world-free agents declare
+/// **Waves follow the installed layers.** Two agents declare
 /// nothing themselves. The first one's installed layer locks the atlas the
 /// other's reads, so they are split into two waves; its run's context lets
 /// it take that lock. Its first run raises `QuoteUnfit`, and the layer it
@@ -715,7 +698,6 @@ fn waves_follow_the_installed_layers() {
                 .contending(Contention::none().reading::<Atlas>()),
             Duration::ZERO,
         )
-        .with_access(AgentAccess::Isolated)
         .with_timing(one_phase(2.0)),
     );
     let reader = shared(
@@ -725,7 +707,6 @@ fn waves_follow_the_installed_layers() {
                 .contending(Contention::none().reading::<Atlas>()),
             &log,
         )
-        .with_access(AgentAccess::Isolated)
         .with_timing(one_phase(1.0)),
     );
     let (mut scheduler, rx) = scheduling(vec![locker, reader]);
@@ -752,6 +733,98 @@ fn waves_follow_the_installed_layers() {
         wave_plans(&rx),
         vec![vec![ids(&["locker", "reader"])]],
         "the reading layer is installed: one wave"
+    );
+}
+
+/// An agent of `OUTPUT` that contends for nothing and notes the thread it
+/// ran on, with a fixed step or without.
+struct Threaded {
+    name: &'static str,
+    step: Option<Duration>,
+    ran_on: Arc<Mutex<Vec<(&'static str, std::thread::ThreadId)>>>,
+}
+
+impl Agent for Threaded {
+    fn id(&self) -> AgentId {
+        AgentId::new(self.name)
+    }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id(), request, StrategyId::Custom(0))
+    }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(self.id(), StrategyId::Custom(0))
+    }
+    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
+        self.ran_on
+            .lock()
+            .expect("the thread log lock")
+            .push((self.name, std::thread::current().id()));
+    }
+    fn execution_timing(&self) -> ExecutionTiming {
+        ExecutionTiming {
+            fixed_timestep: self.step,
+            ..one_phase(if self.step.is_some() { 2.0 } else { 1.0 })
+        }
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+/// **The wave plan is the waves the frame runs.** A fixed-step agent and a
+/// once-per-frame one share a phase and contend for nothing. The frame runs
+/// the fixed one in its sub-step rounds and the other in the phase loop: two
+/// waves of one, both on the calling thread. The plan the DCC costs the frame
+/// by must say so, not group them into one concurrent wave costed by the
+/// slower of the two.
+#[test]
+fn the_wave_plan_keeps_a_fixed_step_agent_apart_from_a_once_per_frame_one() {
+    let ran_on = Arc::new(Mutex::new(Vec::new()));
+    let stepped = shared(Threaded {
+        name: "physics",
+        step: Some(Duration::from_millis(4)),
+        ran_on: Arc::clone(&ran_on),
+    });
+    let once = shared(Threaded {
+        name: "audio",
+        step: None,
+        ran_on: Arc::clone(&ran_on),
+    });
+    let (mut scheduler, rx) = scheduling(vec![stepped, once]);
+    scheduler.set_parallel_execution(true);
+
+    scheduler.run_frame(&mut World::new(), Arc::new(Runtime::new()));
+
+    let here = std::thread::current().id();
+    let ran = ran_on.lock().expect("the thread log lock").clone();
+    assert!(
+        ran.iter().any(|(name, _)| *name == "physics")
+            && ran.iter().any(|(name, _)| *name == "audio"),
+        "both agents ran: {ran:?}"
+    );
+    assert!(
+        ran.iter().all(|(_, thread)| *thread == here),
+        "neither ran on the pool: each was a wave of one: {ran:?}"
+    );
+    let plans = wave_plans(&rx);
+    let plan = plans.last().expect("a wave plan is published");
+    assert!(
+        !plan
+            .iter()
+            .any(|wave| wave.contains(&AgentId::new("physics"))
+                && wave.contains(&AgentId::new("audio"))),
+        "the plan groups into one concurrent wave two agents the frame ran apart: {plan:?}"
     );
 }
 

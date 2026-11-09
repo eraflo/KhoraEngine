@@ -19,15 +19,12 @@ use super::known::KnownAgents;
 use super::AgentSlot;
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::gorna::AgentId;
-use khora_core::agent::AgentAccess;
 use khora_core::agent::Contention;
 
 /// Per-agent metadata the parallel executor needs to group agents into waves.
 pub(super) struct WaveMeta {
     /// The agent's id, or `None` if it could not be locked (→ singleton, skipped).
     pub(super) id: Option<AgentId>,
-    /// Whether the agent is safe to run concurrently.
-    pub(super) access: AgentAccess,
     /// Ids this agent hard-depends on (must run in an earlier wave).
     pub(super) hard_dep_targets: Vec<AgentId>,
     /// What this agent competes for (from [`Agent::contention`]), used to verify
@@ -36,7 +33,7 @@ pub(super) struct WaveMeta {
     pub(super) contention: Contention,
 }
 
-/// Reads each agent's id, access footprint, and declared contention once,
+/// Reads each agent's id and declared contention once,
 /// building the [`WaveMeta`] the wave partitioner + disjointness check need. A
 /// failed lock yields `id: None` → an always-singleton, always-skipped slot.
 /// An agent running as layers is not locked: it contends as the layer
@@ -49,16 +46,12 @@ pub(super) fn build_wave_metas(agents: &[AgentSlot], known: &KnownAgents) -> Vec
     agents
         .iter()
         .map(|(agent, _, _, deps)| {
-            let (id, access, contention) = known
+            let (id, contention) = known
                 .of(agent)
-                .and_then(|known| {
-                    let (access, contention) = known.footprint(agent)?;
-                    Some((Some(known.id), access, contention))
-                })
-                .unwrap_or((None, AgentAccess::Exclusive, Contention::none()));
+                .and_then(|known| Some((Some(known.id), known.contention(agent)?)))
+                .unwrap_or((None, Contention::none()));
             WaveMeta {
                 id,
-                access,
                 hard_dep_targets: deps
                     .iter()
                     .filter(|d| matches!(d.kind, DependencyKind::Hard))
@@ -70,34 +63,29 @@ pub(super) fn build_wave_metas(agents: &[AgentSlot], known: &KnownAgents) -> Vec
         .collect()
 }
 
-/// Groups agents (already in `sort_agents` order) into execution waves.
+/// Groups agents (already in `sort_agents` order) into execution waves; with
+/// `concurrent` off, every agent is a wave of its own.
 ///
-/// A wave is a maximal run of consecutive concurrency-eligible agents
-/// ([`AgentAccess::Isolated`] or [`AgentAccess::SharedWorld`]) in which no
-/// member hard-depends on another member and no member's
-/// [`Contention`](khora_core::agent::Contention) overlaps another's. Any
-/// [`AgentAccess::Exclusive`] agent is its own singleton wave. Because the input
-/// is already topologically ordered by hard deps, and a dependent never shares
-/// a wave with its target, running the waves in order preserves the exact
-/// Hard-dependency ordering the sequential path guarantees.
-pub(super) fn partition_waves(metas: &[WaveMeta]) -> Vec<Vec<usize>> {
+/// A wave is a maximal run of consecutive agents in which no member
+/// hard-depends on another member and no member's
+/// [`Contention`](khora_core::agent::Contention) overlaps another's. An agent
+/// that could not be read (no id) is a wave of its own. Because the input is
+/// already topologically ordered by hard deps, and a dependent never shares a
+/// wave with its target, running the waves in order preserves the exact
+/// Hard-dependency ordering.
+pub(super) fn partition_waves(metas: &[WaveMeta], concurrent: bool) -> Vec<Vec<usize>> {
     let mut waves: Vec<Vec<usize>> = Vec::new();
     for (i, meta) in metas.iter().enumerate() {
-        let joins_current = meta.access != AgentAccess::Exclusive
+        let joins_current = concurrent
+            && meta.id.is_some()
             && waves.last().is_some_and(|wave| {
-                // every current member is concurrency-eligible …
-                wave.iter().all(|&j| metas[j].access != AgentAccess::Exclusive)
+                // every current member was read …
+                wave.iter().all(|&j| metas[j].id.is_some())
                     // … no member is this agent's hard-dep target …
                     && !meta.hard_dep_targets.iter().any(|target| {
                         wave.iter().any(|&j| metas[j].id == Some(*target))
                     })
                     // … and nothing it declared collides with a member's.
-                    //
-                    // This once refused a second `SharedWorld` outright, because
-                    // such an agent "may write shared resources" and nobody
-                    // could say which. Now they say, so `RenderAgent` and
-                    // the UI family's agent may share a wave when their declarations are
-                    // disjoint — parallelism gained by removing a constraint.
                     && wave.iter().all(|&j| {
                         metas[j].contention.conflicts_with(&meta.contention).is_empty()
                     })

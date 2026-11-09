@@ -30,7 +30,7 @@ use khora_sdk::khora_core::physics::{
     CharacterControllerOptions, ColliderDesc, ColliderHandle, CollisionEvent, PhysicsProvider,
     PhysicsSettings, RaycastHit, RigidBodyDesc, RigidBodyHandle,
 };
-use khora_sdk::khora_core::{EngineContext, WorldAccess};
+use khora_sdk::khora_core::EngineContext;
 use khora_sdk::{
     AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
     Runtime, WindowConfig,
@@ -207,7 +207,7 @@ fn apply(agent: &Arc<Mutex<dyn Agent>>, strategy_id: StrategyId) {
 }
 
 /// One run of `agent` over `engine`'s runtime, as the scheduler runs one
-/// sub-step of a world-free agent.
+/// sub-step of an agent.
 fn run_once(engine: &EngineCore<Game>, agent: &Arc<Mutex<dyn Agent>>) -> OutputDeck {
     let bus = LaneBus::new();
     let mut deck = OutputDeck::new();
@@ -217,7 +217,6 @@ fn run_once(engine: &EngineCore<Game>, agent: &Arc<Mutex<dyn Agent>>) -> OutputD
     let permit = agent.contention();
     let id = agent.id();
     let mut context = EngineContext::for_agent(
-        WorldAccess::None,
         Arc::clone(engine.runtime()),
         &bus,
         &mut deck,

@@ -9,8 +9,8 @@ Deep history lives in git and `docs/plans/`.
 - **Tests**: ~2520 workspace tests, 0 failures. Treat the live `cargo test --workspace` count as truth.
 
 ## Latest work (2026-10-30) — CRPECS change detection (phases 1–7 on `dev`)
-- World clock (`Tick`, one per DataSystem run / Flow run / wave), per page column `ColumnTicks { σ, φ, τ }`
-  (row ticks only for keys an observer `observes`, freed when quiet: `QUIET_ROW_TICKS = 12_300`), page order
+- World clock (`Tick`, one per DataSystem run / Flow run), per page column `ColumnTicks { σ, φ, τ }`
+  (row ticks only for keys an observer `observes`, freed when quiet: `QUIET_ROW_TICKS = 12_900`), page order
   version ω. Writes go through the `Mut<T>` guard or by-value stamps; `Changed<T>` + `Query::since`; DataSystems
   take a 4th argument `SystemContext { since }`. `domain_epoch` kept (owner's choice) but exact: the tick of
   the domain's last write or row move, never raised by handing out access; `transform_propagation` and the

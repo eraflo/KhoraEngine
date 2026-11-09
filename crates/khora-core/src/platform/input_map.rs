@@ -97,8 +97,8 @@ pub struct InputMap {
 
 /// What the action map says, for a consumer that cannot hold the map.
 ///
-/// The scripting lane is `Isolated` — it reaches no `Runtime` — so it cannot ask
-/// an `InputMap` anything. A `Flow` projects this into the lane's view instead,
+/// The scripting lane reaches no `Runtime` resource it did not declare, and it
+/// declares no `InputMap`, so it cannot ask one anything. A `Flow` projects this into the lane's view instead,
 /// which is the same road a transform already takes and the reason `Flow`
 /// exists: the lane reads a snapshot of engine state, never the state.
 ///

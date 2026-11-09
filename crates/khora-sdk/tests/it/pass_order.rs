@@ -22,7 +22,7 @@ use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_sdk::khora_core::agent::{Agent, AgentAccess, Contention};
+use khora_sdk::khora_core::agent::{Agent, Contention};
 use khora_sdk::khora_core::renderer::api::command::CommandBufferId;
 use khora_sdk::khora_core::renderer::GraphicsDevice;
 use khora_sdk::khora_core::{EngineContext, Runtime};
@@ -79,9 +79,6 @@ impl Agent for EverySlot {
     }
     fn report(&self) -> Report {
         report_of(AgentId::new("asset"), StrategyId::Balanced)
-    }
-    fn access(&self) -> AgentAccess {
-        AgentAccess::Isolated
     }
     fn contention(&self) -> Contention {
         Contention::none().writing_deck(declared_order())
@@ -202,9 +199,6 @@ impl Agent for EverySlotWithItsResources {
     }
     fn report(&self) -> Report {
         report_of(AgentId::new("asset"), StrategyId::Balanced)
-    }
-    fn access(&self) -> AgentAccess {
-        AgentAccess::Isolated
     }
     fn contention(&self) -> Contention {
         Contention::none().writing_deck(declared_order())

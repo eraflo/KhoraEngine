@@ -40,7 +40,7 @@ use khora_core::lane::io::{FrameId, TargetKey};
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneBus, LaneError, OutputDeck};
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 
 use super::fixtures::{
@@ -185,27 +185,14 @@ fn frame_leaving_preparations(
     let why = locked(&place).take_wakes();
     if !why.is_empty() {
         let permit = agent.contention();
-        let mut context = EngineContext::for_agent(
-            WorldAccess::None,
-            Arc::clone(runtime),
-            &bus,
-            deck,
-            &permit,
-            Some(id),
-        );
+        let mut context =
+            EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
         let mut held = locked(&place);
         agent.wake(&why, &mut held, &mut context);
     }
     let mut held = locked(&place);
     let permit = held.contention();
-    let mut context = EngineContext::for_agent(
-        WorldAccess::None,
-        Arc::clone(runtime),
-        &bus,
-        deck,
-        &permit,
-        Some(id),
-    );
+    let mut context = EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
     held.run(&mut context)
 }
 
@@ -216,14 +203,7 @@ fn execute(agent: &mut LaneAgent, frame: u64, runtime: &Arc<Runtime>, deck: &mut
     bus.set_frame(FrameId(frame));
     let permit = agent.contention();
     let id = agent.id();
-    let mut context = EngineContext::for_agent(
-        WorldAccess::None,
-        Arc::clone(runtime),
-        &bus,
-        deck,
-        &permit,
-        Some(id),
-    );
+    let mut context = EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
     agent.execute(&mut context);
 }
 
@@ -589,7 +569,6 @@ fn a_switch_prepared_off_the_frame_builds_on_the_runtimes_device() {
             let permit = agent.contention();
             let mut scratch = OutputDeck::new();
             let mut context = EngineContext::for_agent(
-                WorldAccess::None,
                 Arc::clone(runtime),
                 &bus,
                 &mut scratch,
@@ -603,14 +582,8 @@ fn a_switch_prepared_off_the_frame_builds_on_the_runtimes_device() {
         let mut deck = OutputDeck::new();
         let mut held = locked(&place);
         let permit = held.contention();
-        let mut context = EngineContext::for_agent(
-            WorldAccess::None,
-            Arc::clone(runtime),
-            &bus,
-            &mut deck,
-            &permit,
-            Some(id),
-        );
+        let mut context =
+            EngineContext::for_agent(Arc::clone(runtime), &bus, &mut deck, &permit, Some(id));
         held.run(&mut context);
         drop(context);
         deck

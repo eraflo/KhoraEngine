@@ -22,9 +22,7 @@ use super::layers::{scheduling, shared, taken, Brush, SharedLog};
 use super::{offer_of, report_of};
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{
-    Agent, AgentAccess, Contention, ExecutionTiming, Layer, LayerRun, Place, Terms, Wake,
-};
+use khora_core::agent::{Agent, Contention, ExecutionTiming, Layer, LayerRun, Place, Terms, Wake};
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::cost::PerDevice;
 use khora_core::{EngineContext, Runtime};
@@ -68,17 +66,15 @@ impl Layer for Brittle {
 struct Chooser {
     name: &'static str,
     place: Arc<Mutex<Place>>,
-    access: AgentAccess,
     first: Mutex<Option<Box<dyn Layer>>>,
     panics_when_woken_again: bool,
 }
 
 impl Chooser {
-    fn new(name: &'static str, first: Box<dyn Layer>, access: AgentAccess) -> Self {
+    fn new(name: &'static str, first: Box<dyn Layer>) -> Self {
         Self {
             name,
             place: Arc::new(Mutex::new(Place::new(AgentId::new(name)))),
-            access,
             first: Mutex::new(Some(first)),
             panics_when_woken_again: false,
         }
@@ -133,9 +129,6 @@ impl Agent for Chooser {
     fn execution_timing(&self) -> ExecutionTiming {
         one_phase(1.0)
     }
-    fn access(&self) -> AgentAccess {
-        self.access
-    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -144,23 +137,35 @@ impl Agent for Chooser {
     }
 }
 
-/// **A layer that panicked runs again on the next frame**, alone with the
-/// world and on the worker pool: the panic poisons its place's lock, which
+/// The agents of a frame around `chooser`: run in parallel, a second family
+/// that contends for nothing shares its wave, so `chooser`'s layer runs on the
+/// worker pool; run serially, it is alone and runs inline.
+fn beside_a_wave_mate(chooser: Chooser, parallel: bool) -> Vec<Arc<Mutex<dyn Agent>>> {
+    let mut agents = vec![shared(chooser)];
+    if parallel {
+        let log = SharedLog::default();
+        agents.push(shared(Chooser::new(
+            "steady",
+            Box::new(Brush::new("steady", StrategyId::LowPower, &log)),
+        )));
+    }
+    agents
+}
+
+/// **A layer that panicked runs again on the next frame**, run alone inline
+/// and on the worker pool beside a wave-mate: the panic poisons its place's lock, which
 /// the scheduler clears, so the place is the family's again.
 #[test]
 fn a_layer_that_panicked_runs_again_on_the_next_frame() {
-    for (access, parallel) in [
-        (AgentAccess::Exclusive, false),
-        (AgentAccess::Isolated, true),
-    ] {
+    for parallel in [false, true] {
         let runs = Arc::new(AtomicUsize::new(0));
         let brittle = Brittle {
             panics_on: vec![1],
             runs: Arc::clone(&runs),
         };
-        let chooser = Chooser::new("brittle", Box::new(brittle), access);
+        let chooser = Chooser::new("brittle", Box::new(brittle));
         let place = chooser.place();
-        let (mut scheduler, _rx) = scheduling(vec![shared(chooser)]);
+        let (mut scheduler, _rx) = scheduling(beside_a_wave_mate(chooser, parallel));
         scheduler.set_parallel_execution(parallel);
         let mut world = World::new();
 
@@ -170,12 +175,12 @@ fn a_layer_that_panicked_runs_again_on_the_next_frame() {
         assert_eq!(
             runs.load(Ordering::SeqCst),
             2,
-            "{access:?}: the layer ran on the frame after its panic"
+            "parallel {parallel}: the layer ran on the frame after its panic"
         );
         let place = place.expect("a layered agent has a place");
         assert!(
             !place.is_poisoned(),
-            "{access:?}: the panic left the place's lock poisoned"
+            "parallel {parallel}: the panic left the place's lock poisoned"
         );
     }
 }
@@ -196,13 +201,11 @@ fn a_panic_while_an_agent_is_woken_fails_that_agent_not_the_frame() {
         Box::new(
             Brush::new("waking", StrategyId::HighPerformance, &log).raising_on(1, Wake::QuoteUnfit),
         ),
-        AgentAccess::Exclusive,
     )
     .panicking_when_woken_again();
     let calm = Chooser::new(
         "calm",
         Box::new(Brush::new("calm", StrategyId::LowPower, &log)),
-        AgentAccess::Exclusive,
     );
     let (mut scheduler, _rx) = scheduling(vec![shared(waking), shared(calm)]);
     let mut world = World::new();
@@ -286,9 +289,6 @@ impl Agent for Recovering {
     fn execution_timing(&self) -> ExecutionTiming {
         one_phase(1.0)
     }
-    fn access(&self) -> AgentAccess {
-        AgentAccess::Exclusive
-    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -338,23 +338,20 @@ fn a_wake_that_panicked_is_handed_again_on_the_next_frame() {
 
 /// **A layer that panicked on the frame is reported stalled, saying so**, as
 /// one that panicked off the frame is. Its first run records; every run
-/// after panics. Whatever access it runs with, the report kept at its place
+/// after panics. Run inline or on the worker pool, the report kept at its place
 /// — what GORNA's stall count and the control plane read — says the last run
 /// stalled and why, not what the healthy run before it said.
 #[test]
 fn a_layer_that_panicked_on_the_frame_reports_it_stalled_with_its_message() {
-    for (access, parallel) in [
-        (AgentAccess::Exclusive, false),
-        (AgentAccess::Isolated, true),
-    ] {
+    for parallel in [false, true] {
         let runs = Arc::new(AtomicUsize::new(0));
         let brittle = Brittle {
             panics_on: vec![2, 3],
             runs: Arc::clone(&runs),
         };
-        let chooser = Chooser::new("brittle", Box::new(brittle), access);
+        let chooser = Chooser::new("brittle", Box::new(brittle));
         let place = chooser.place().expect("a layered agent has a place");
-        let (mut scheduler, _rx) = scheduling(vec![shared(chooser)]);
+        let (mut scheduler, _rx) = scheduling(beside_a_wave_mate(chooser, parallel));
         scheduler.set_parallel_execution(parallel);
         let mut world = World::new();
 
@@ -362,7 +359,11 @@ fn a_layer_that_panicked_on_the_frame_reports_it_stalled_with_its_message() {
             scheduler.run_frame(&mut world, Arc::new(Runtime::new()));
         }
 
-        assert_eq!(runs.load(Ordering::SeqCst), 3, "{access:?}: the premise");
+        assert_eq!(
+            runs.load(Ordering::SeqCst),
+            3,
+            "parallel {parallel}: the premise"
+        );
         let report = place
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -372,14 +373,14 @@ fn a_layer_that_panicked_on_the_frame_reports_it_stalled_with_its_message() {
             .expect("the first run was reported");
         assert!(
             report.stalled,
-            "{access:?}: the last two runs panicked, yet the report is the healthy first run's: {report:?}"
+            "parallel {parallel}: the last two runs panicked, yet the report is the healthy first run's: {report:?}"
         );
         assert!(
             report
                 .message
                 .as_deref()
                 .is_some_and(|message| message.contains("panicked")),
-            "{access:?}: the report says nothing of the panic: {report:?}"
+            "parallel {parallel}: the report says nothing of the panic: {report:?}"
         );
     }
 }

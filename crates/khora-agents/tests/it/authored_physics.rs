@@ -109,7 +109,6 @@ impl Rig {
 
         let permit = self.agent.contention();
         let mut ctx = EngineContext::for_agent(
-            khora_core::WorldAccess::None,
             Arc::clone(&self.runtime),
             &bus,
             &mut deck,

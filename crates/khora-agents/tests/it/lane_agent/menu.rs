@@ -23,7 +23,7 @@ use std::time::Duration;
 use khora_agents::agent::lane_agent;
 use khora_core::agent::gorna::protocol::Epoch;
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, AgentAccess, AgentImportance, DependencyKind, ExecutionPhase};
+use khora_core::agent::{Agent, AgentImportance, DependencyKind, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::erased::{AnyLane, Erased};
 use khora_core::lane::family::LaneFamily;
@@ -246,16 +246,6 @@ fn the_agent_declares_the_locks_of_every_lane_it_quotes() {
         !locked(&place_of(&agent)).contention().may_lock(tally_lock),
         "the installed layer, the first lane, takes no lock"
     );
-}
-
-/// A lane agent never touches the world: it reads through its lane's inputs
-/// and writes through its family's outputs, so it may join any wave's worker
-/// pool.
-#[test]
-fn a_lane_agent_runs_isolated() {
-    let agent = lane_agent(&LADDER, &DeviceCaps::default());
-
-    assert_eq!(agent.access(), AgentAccess::Isolated);
 }
 
 /// The scheduler places the agent from its registration: its one phase, its

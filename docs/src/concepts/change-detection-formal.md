@@ -5,7 +5,7 @@
 ## Notation
 
 - **The clock.** `t ∈ ℕ`, the world's current tick, starting at 1; `0` means
-  "never". A run (a `DataSystem`, a `Flow`, a scheduler wave) begins at `t` and
+  "never". A run (a `DataSystem`, a `Flow`) begins at `t` and
   writes at `t`; ending it sets `t ← t + 1` (`World::begin_run`, `end_run`).
 - **Observers.** For each observer `o`, `s_o`, the tick of its last run on this
   world (`World::observer_last_seen`; `0` if it never ran).
@@ -98,8 +98,8 @@ was at most `s`. ∎
 
 ## Bounds
 
-- **The clock never wraps in practice.** At about 41 ticks a frame and 60 frames
-  a second, a `u64` lasts some 2.4 × 10⁸ years.
+- **The clock never wraps in practice.** At about 43 ticks a frame and 60 frames
+  a second, a `u64` lasts some 2.3 × 10⁸ years.
 - **Memory.** Each page column holds `σ`, `φ` and the slot of its row array:
   40 bytes, plus its map entry. A column keeping row ticks adds 8 bytes per row.
   In all, `40·#columns + 8·Σ |rows(c)|` over the columns that keep row ticks —

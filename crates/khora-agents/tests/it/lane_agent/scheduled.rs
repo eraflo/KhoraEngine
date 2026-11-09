@@ -348,7 +348,7 @@ fn seen(scheduler: &mut ExecutionScheduler) -> Option<Seen> {
 /// **A deck read sees the earlier phase however the reader is scheduled.**
 /// The boot check accepts the reader because `TRANSFORM` writes `Lit` before
 /// `OUTPUT` reads it. Run alone, the reader sees it; run in a concurrent wave
-/// beside another world-free agent, it must see the same thing — parallel and
+/// beside another agent, it must see the same thing — parallel and
 /// sequential frames give the game the same result.
 #[test]
 fn a_lane_in_a_concurrent_wave_reads_the_slot_an_earlier_phase_wrote() {

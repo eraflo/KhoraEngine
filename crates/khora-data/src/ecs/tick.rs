@@ -15,17 +15,18 @@
 //! The world's clock.
 
 /// A moment of a [`World`](crate::ecs::World)'s clock: one tick per run — of
-/// a `DataSystem`, of a `Flow`, of a scheduler wave. A `u64` that never wraps.
+/// a `DataSystem`, of a `Flow`. A `u64` that never wraps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Tick(pub u64);
 
 /// The silence, in ticks, after which `ecs_maintenance` frees a column's row
 /// ticks ([`World::free_quiet_row_ticks`](crate::ecs::World::free_quiet_row_ticks)):
 /// about five seconds of frames at 60 frames a second — a frame of the
-/// sandbox scene runs about 41 ticks (one per `DataSystem`, `Flow` and
-/// scheduler wave). A count of ticks, not of seconds: a column is freed once
-/// that much of the world's work went by without writing it.
-pub const QUIET_ROW_TICKS: u64 = 12_300;
+/// sandbox scene runs 43 ticks (one per `DataSystem` and `Flow` that runs;
+/// agents never write the world, so they open no run). A count of ticks, not
+/// of seconds: a column is freed once that much of the world's work went by
+/// without writing it.
+pub const QUIET_ROW_TICKS: u64 = 12_900;
 
 /// The ticks a page keeps beside one of its columns, under the column's own
 /// [`ComponentKey`](crate::ecs::ComponentKey): what was written to it, and

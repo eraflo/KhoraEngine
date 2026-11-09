@@ -31,7 +31,7 @@ use khora_core::physics::{
     collision_channel, CharacterControllerOptions, ColliderDesc, ColliderHandle, CollisionEvent,
     PhysicsProvider, PhysicsSettings, RaycastHit, RigidBodyDesc, RigidBodyHandle,
 };
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 use khora_lanes::physics_lane::PhysicsFamily;
 
 /// The provider as the engine registers it.
@@ -75,14 +75,7 @@ pub fn run_once(agent: &mut LaneAgent, runtime: &Arc<Runtime>, deck: &mut Output
     let bus = LaneBus::new();
     let permit = agent.contention();
     let id = agent.id();
-    let mut context = EngineContext::for_agent(
-        WorldAccess::None,
-        Arc::clone(runtime),
-        &bus,
-        deck,
-        &permit,
-        Some(id),
-    );
+    let mut context = EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
     agent.execute(&mut context);
 }
 

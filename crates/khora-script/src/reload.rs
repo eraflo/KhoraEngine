@@ -14,10 +14,10 @@
 
 //! A module that finished recompiling, on its way to the agent that runs it.
 //!
-//! The compiled programs live in the scripting **agent**, which is what lets it
-//! declare [`AgentAccess::Isolated`](khora_core::agent::AgentAccess::Isolated).
-//! Hot-reload happens on the other side of that line: a file changed, the pump
-//! recompiled it, and the result has to cross over. It crosses through a
+//! The compiled programs live in the scripting runtime, which the script lane
+//! locks; the `World` never reaches it. Hot-reload happens on the other side
+//! of that line: a file changed, the pump recompiled it, and the result has
+//! to cross over. It crosses through a
 //! [`Channel<ScriptReload>`](khora_core::event::Channel) the agent declares
 //! and drains.
 

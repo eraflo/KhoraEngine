@@ -16,7 +16,7 @@
 //! an agent that runs as layers.
 
 use khora_core::agent::gorna::AgentId;
-use khora_core::agent::{Agent, AgentAccess, Contention, ExecutionTiming, Place};
+use khora_core::agent::{Agent, Contention, ExecutionTiming, Place};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
 /// An agent as the scheduler knows it from the first time it met it.
@@ -30,12 +30,11 @@ pub(super) struct Known {
 }
 
 /// What an agent running as layers declared when the scheduler met it: the
-/// family's place in the frame is fixed, so its timing and access are too.
+/// family's place in the frame is fixed, so its timing is too.
 #[derive(Clone)]
 pub(super) struct Layered {
     pub(super) place: Arc<Mutex<Place>>,
     pub(super) timing: ExecutionTiming,
-    pub(super) access: AgentAccess,
 }
 
 /// An agent running as layers, with its lock, its name and its place.
@@ -66,7 +65,6 @@ impl KnownAgents {
                 layered: agent.place().map(|place| Layered {
                     place,
                     timing: agent.execution_timing(),
-                    access: agent.access(),
                 }),
             }
         };
@@ -91,19 +89,13 @@ impl Known {
         }
     }
 
-    /// The agent's access and what it competes for this frame: a layered
-    /// agent's installed layer, read from its place; another's own
-    /// declaration, read under its lock. `None` when its lock is poisoned.
-    pub(super) fn footprint(
-        &self,
-        agent: &Arc<Mutex<dyn Agent>>,
-    ) -> Option<(AgentAccess, Contention)> {
+    /// What the agent competes for this frame: a layered agent's installed
+    /// layer, read from its place; another's own declaration, read under its
+    /// lock. `None` when its lock is poisoned.
+    pub(super) fn contention(&self, agent: &Arc<Mutex<dyn Agent>>) -> Option<Contention> {
         match &self.layered {
-            Some(layered) => Some((layered.access, locked(&layered.place).contention())),
-            None => agent
-                .lock()
-                .ok()
-                .map(|agent| (agent.access(), agent.contention())),
+            Some(layered) => Some(locked(&layered.place).contention()),
+            None => agent.lock().ok().map(|agent| agent.contention()),
         }
     }
 }

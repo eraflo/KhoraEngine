@@ -27,7 +27,7 @@ use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::script::{engine_event_channel, ScriptEvent, ScriptValue, WorldCommand};
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_script::reload::ScriptReload;
 
@@ -104,7 +104,6 @@ fn run_one_frame(agent: &mut LaneAgent, runtime: &Arc<Runtime>) -> Vec<WorldComm
     let permit = agent.contention();
     {
         let mut ctx = EngineContext::for_agent(
-            WorldAccess::None,
             Arc::clone(runtime),
             &bus,
             &mut deck,

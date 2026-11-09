@@ -21,7 +21,7 @@ use std::sync::Arc;
 use khora_agents::registered_agent::lane_agents;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::{check_registrations, BootError};
-use khora_core::agent::{Agent, AgentAccess, AgentImportance, DependencyKind, ExecutionPhase};
+use khora_core::agent::{Agent, AgentImportance, DependencyKind, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
@@ -217,13 +217,6 @@ fn the_skybox_agent_reads_the_frame_context_the_device_and_the_ibl_baker() {
         vec![TypeId::of::<SkyboxPassSlot>()],
         "the skybox pass slot, and only it"
     );
-}
-
-/// The skybox agent never reaches the `World`: it reads Views from the bus,
-/// so it may run on the worker pool.
-#[test]
-fn the_skybox_agent_is_world_free() {
-    assert_eq!(skybox_agent().access(), AgentAccess::Isolated);
 }
 
 /// **The skybox agent offers one strategy, `Balanced`**, and reports it as

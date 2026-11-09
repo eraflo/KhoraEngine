@@ -76,7 +76,7 @@ asset slot. A script compares it, passes it, and hands it to what uses its kind:
 ### Change detection — ticks, `Mut<T>`, `Changed<T>`
 
 How the data layer knows what changed. The `World` counts **ticks**, one per run of
-a DataSystem, a Flow or a scheduler wave; every write carries its run's tick. Each
+a DataSystem or a Flow; every write carries its run's tick. Each
 page keeps, beside each column, a summary (its latest write), a floor, and — for a
 component an **observer** watches — one tick per row. Writes go through the
 `Mut<T>` guard, which stamps its row on its first write; readers ask for
@@ -129,8 +129,8 @@ and [Scenes and game saves](../concepts/saves.md).
 ### Contention
 
 What an agent declares that it competes with others for: the `OutputDeck` slots
-it writes, and the `Runtime` resources it **reads** or **locks**. Distinct from
-`AgentAccess`, which is about the `World` alone. Two agents share a concurrent
+it writes, and the `Runtime` resources it **reads** or **locks**. No agent reaches
+the `World`, so it is the only thing an agent declares. Two agents share a concurrent
 wave only when their contentions are disjoint. Enforced at the access point —
 `EngineContext::resource` and `::locked` refuse what was not declared. See
 [Agents and Lanes](../concepts/agents-and-lanes.md).

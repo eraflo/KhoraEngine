@@ -952,7 +952,7 @@ fn background_frame(
 ) -> Option<StrategyId> {
     use khora_core::gpu::GpuSetup;
     use khora_core::lane::OutputDeck;
-    use khora_core::{EngineContext, WorldAccess};
+    use khora_core::EngineContext;
 
     fn lock(
         place: &Mutex<khora_core::agent::Place>,
@@ -970,14 +970,8 @@ fn background_frame(
     let why = lock(&place).take_wakes();
     if !why.is_empty() {
         let permit = agent.contention();
-        let mut context = EngineContext::for_agent(
-            WorldAccess::None,
-            Arc::clone(runtime),
-            &bus,
-            &mut deck,
-            &permit,
-            Some(LOADING),
-        );
+        let mut context =
+            EngineContext::for_agent(Arc::clone(runtime), &bus, &mut deck, &permit, Some(LOADING));
         let mut held = lock(&place);
         agent.wake(&why, &mut held, &mut context);
     }
@@ -987,7 +981,6 @@ fn background_frame(
         let mut scratch = OutputDeck::new();
         let prepared = {
             let mut context = EngineContext::for_agent(
-                WorldAccess::None,
                 Arc::clone(runtime),
                 &bus,
                 &mut scratch,
@@ -1002,14 +995,8 @@ fn background_frame(
     let row = out.row();
     let permit = out.contention();
     let run = {
-        let mut context = EngineContext::for_agent(
-            WorldAccess::None,
-            Arc::clone(runtime),
-            &bus,
-            &mut deck,
-            &permit,
-            Some(LOADING),
-        );
+        let mut context =
+            EngineContext::for_agent(Arc::clone(runtime), &bus, &mut deck, &permit, Some(LOADING));
         out.run(&mut context)
     };
     let _ = out.staged();

@@ -20,12 +20,9 @@
 //! there would mean either the lane writing them or the whole store crossing the
 //! boundary twice a frame.
 //!
-//! Nor is it shared. The agent owns one of these outright, the way it owns its
-//! lane registry, so the script lane touches nothing another agent can see —
-//! which is what lets the agent declare [`AgentAccess::Isolated`] honestly
-//! rather than by assertion.
-//!
-//! [`AgentAccess::Isolated`]: khora_core::agent::AgentAccess::Isolated
+//! Nor is it shared beyond what the lane declares: the script lane locks it
+//! as one of its inputs, so it runs beside any family that does not lock it
+//! too.
 
 use std::collections::HashMap;
 use std::sync::Arc;

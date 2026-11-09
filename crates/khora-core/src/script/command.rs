@@ -20,9 +20,9 @@
 //! the write, and the engine performs it at the frame boundary where mutation is
 //! already legal.
 //!
-//! The rule turns out to be the design. A lane that touches nothing shared can
-//! declare [`AgentAccess::Isolated`] and run on the worker pool alongside the
-//! others — which a lane holding a `&mut World` never could.
+//! The rule turns out to be the design. A lane that touches nothing shared runs
+//! on the worker pool alongside the others — which a lane holding a
+//! `&mut World` never could.
 //!
 //! # Two tiers, on purpose
 //!
@@ -38,8 +38,6 @@
 //! writing to the `World`, and routing those through here would make this enum a
 //! dumping ground for every subsystem. They belong to their own decks, read by
 //! the subsystem that owns them.
-//!
-//! [`AgentAccess::Isolated`]: crate::agent::AgentAccess::Isolated
 
 use std::sync::Arc;
 

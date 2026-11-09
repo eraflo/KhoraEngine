@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 use khora_agents::registered_agent::lane_agents;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::{check_registrations, BootError};
-use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase};
+use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
@@ -193,13 +193,6 @@ fn boot_refuses_the_script_family_without_a_scripting_world() {
 }
 
 // ─── The agent ──────────────────────────────────────────────────────────────
-
-/// The script agent never reaches the `World`: a script's effects are
-/// commands, applied at the boundary, so it may run on the worker pool.
-#[test]
-fn the_script_agent_is_world_free() {
-    assert_eq!(script_agent().access(), AgentAccess::Isolated);
-}
 
 /// The script agent's contention is its lane's: both slots, and the
 /// scripting world's lock — so no other agent touching that world shares

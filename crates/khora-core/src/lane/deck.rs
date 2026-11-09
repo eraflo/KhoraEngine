@@ -156,9 +156,8 @@ impl OutputDeck {
     ///
     /// Used by the parallel executor to fold a worker's private deck shard back
     /// into the shared deck after a concurrent wave. The merged shards are
-    /// expected to write **disjoint** slot types (guaranteed by the executor's
-    /// [`AgentAccess::Isolated`](crate::agent::AgentAccess::Isolated) eligibility
-    /// rules). A colliding `TypeId` is therefore a scheduling bug: the existing
+    /// expected to write **disjoint** slot types (a wave holds only agents
+    /// whose [`Contention`](crate::agent::Contention)s are disjoint). A colliding `TypeId` is therefore a scheduling bug: the existing
     /// slot is kept and the collision logged, rather than silently dropping one
     /// side's outputs.
     pub fn merge_from(&mut self, other: OutputDeck) {

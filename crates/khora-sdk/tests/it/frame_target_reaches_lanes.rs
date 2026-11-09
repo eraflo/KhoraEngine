@@ -39,7 +39,7 @@ use khora_sdk::khora_core::lane::{Lane, LaneReport};
 use khora_sdk::khora_core::math::{Extent2D, LinearRgba};
 use khora_sdk::khora_core::renderer::api::frame::FrameContext;
 use khora_sdk::khora_core::renderer::api::resource::{TextureFormat, TextureViewId};
-use khora_sdk::khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_sdk::khora_core::{EngineContext, Runtime};
 use khora_sdk::{
     AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
     WindowConfig,
@@ -230,14 +230,8 @@ fn run_once(agent: &mut LaneAgent, runtime: &Arc<Runtime>) -> OutputDeck {
     let mut deck = OutputDeck::new();
     let permit = agent.contention();
     let id = agent.id();
-    let mut context = EngineContext::for_agent(
-        WorldAccess::None,
-        Arc::clone(runtime),
-        &bus,
-        &mut deck,
-        &permit,
-        Some(id),
-    );
+    let mut context =
+        EngineContext::for_agent(Arc::clone(runtime), &bus, &mut deck, &permit, Some(id));
     agent.execute(&mut context);
     deck
 }

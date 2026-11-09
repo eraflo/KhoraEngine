@@ -14,133 +14,144 @@
 
 use crate::scheduler::waves::{check_wave_disjoint, partition_waves, WaveMeta};
 use khora_core::agent::gorna::AgentId;
-use khora_core::agent::AgentAccess;
 use khora_core::agent::Contention;
 
-fn meta(id: AgentId, access: AgentAccess, deps: &[AgentId]) -> WaveMeta {
+fn meta(id: AgentId, deps: &[AgentId]) -> WaveMeta {
     WaveMeta {
         id: Some(id),
-        access,
         hard_dep_targets: deps.to_vec(),
         contention: Contention::none(),
     }
 }
 
 #[test]
-fn all_exclusive_are_singletons() {
+fn agents_that_declare_nothing_form_one_wave() {
     let metas = vec![
-        meta(AgentId::new("physics"), AgentAccess::Exclusive, &[]),
-        meta(AgentId::new("renderer"), AgentAccess::Exclusive, &[]),
+        meta(AgentId::new("audio"), &[]),
+        meta(AgentId::new("shadows"), &[]),
     ];
-    assert_eq!(partition_waves(&metas), vec![vec![0], vec![1]]);
-}
-
-#[test]
-fn consecutive_isolated_form_one_wave() {
-    let metas = vec![
-        meta(AgentId::new("audio"), AgentAccess::Isolated, &[]),
-        meta(AgentId::new("shadows"), AgentAccess::Isolated, &[]),
-    ];
-    assert_eq!(partition_waves(&metas), vec![vec![0, 1]]);
-}
-
-#[test]
-fn exclusive_breaks_the_wave() {
-    let metas = vec![
-        meta(AgentId::new("audio"), AgentAccess::Isolated, &[]),
-        meta(AgentId::new("physics"), AgentAccess::Exclusive, &[]),
-        meta(AgentId::new("shadows"), AgentAccess::Isolated, &[]),
-    ];
-    assert_eq!(partition_waves(&metas), vec![vec![0], vec![1], vec![2]]);
+    assert_eq!(partition_waves(&metas, true), vec![vec![0, 1]]);
 }
 
 #[test]
 fn hard_dep_on_wave_member_splits_it() {
-    // The second Isolated agent hard-depends on the first, so it must run in
+    // The second agent hard-depends on the first, so it must run in
     // a later wave — preserving the dependency ordering.
     let metas = vec![
-        meta(AgentId::new("audio"), AgentAccess::Isolated, &[]),
-        meta(
-            AgentId::new("shadows"),
-            AgentAccess::Isolated,
-            &[AgentId::new("audio")],
-        ),
+        meta(AgentId::new("audio"), &[]),
+        meta(AgentId::new("shadows"), &[AgentId::new("audio")]),
     ];
-    assert_eq!(partition_waves(&metas), vec![vec![0], vec![1]]);
+    assert_eq!(partition_waves(&metas, true), vec![vec![0], vec![1]]);
 }
 
-#[test]
-fn shared_world_joins_isolated_agents() {
-    // One SharedWorld reader runs alongside any number of Isolated agents.
-    let metas = vec![
-        meta(AgentId::new("renderer"), AgentAccess::SharedWorld, &[]),
-        meta(AgentId::new("audio"), AgentAccess::Isolated, &[]),
-        meta(AgentId::new("shadows"), AgentAccess::Isolated, &[]),
-    ];
-    assert_eq!(partition_waves(&metas), vec![vec![0, 1, 2]]);
+fn meta_writes(id: AgentId, writes: &[std::any::TypeId]) -> WaveMeta {
+    meta_declaring(id, Contention::none().writing_deck(writes.to_vec()))
 }
 
-/// **This used to assert the opposite**, and the reason it did is the reason
-/// it no longer can: two `SharedWorld` agents were split because they "may
-/// write shared resources" and nobody could say which. Now they say, so two
-/// that declare nothing in common share a wave. What separates them is
-/// contention, asserted just below.
-#[test]
-fn two_shared_world_agents_that_declare_nothing_share_a_wave() {
-    let metas = vec![
-        meta(AgentId::new("renderer"), AgentAccess::SharedWorld, &[]),
-        meta(AgentId::new("grid"), AgentAccess::SharedWorld, &[]),
-    ];
-    assert_eq!(partition_waves(&metas), vec![vec![0, 1]]);
-}
-
-#[test]
-fn exclusive_still_breaks_a_mixed_wave() {
-    let metas = vec![
-        meta(AgentId::new("audio"), AgentAccess::Isolated, &[]),
-        meta(AgentId::new("renderer"), AgentAccess::SharedWorld, &[]),
-        meta(AgentId::new("physics"), AgentAccess::Exclusive, &[]),
-        meta(AgentId::new("shadows"), AgentAccess::Isolated, &[]),
-    ];
-    assert_eq!(partition_waves(&metas), vec![vec![0, 1], vec![2], vec![3]]);
-}
-
-fn meta_writes(id: AgentId, access: AgentAccess, writes: &[std::any::TypeId]) -> WaveMeta {
-    meta_declaring(id, access, Contention::none().writing_deck(writes.to_vec()))
-}
-
-fn meta_declaring(id: AgentId, access: AgentAccess, contention: Contention) -> WaveMeta {
+fn meta_declaring(id: AgentId, contention: Contention) -> WaveMeta {
     WaveMeta {
         id: Some(id),
-        access,
         hard_dep_targets: Vec::new(),
         contention,
     }
+}
+
+/// **What splits a wave is what agents declare, and a hard dependency.**
+/// Agents whose contentions are disjoint share a wave; two that lock one
+/// resource, or write one deck slot, never do; an agent hard-depending on a
+/// member of the wave starts the next one. Nothing else breaks a wave: the
+/// agent after a split joins the wave it lands in when it contends with
+/// nobody there.
+#[test]
+fn waves_split_on_contention_alone() {
+    struct Draws;
+    struct Overlays;
+    struct Atlas;
+
+    let disjoint = vec![
+        meta_declaring(
+            AgentId::new("renderer"),
+            Contention::none().writing_deck([std::any::TypeId::of::<Draws>()]),
+        ),
+        meta_declaring(
+            AgentId::new("ui"),
+            Contention::none().writing_deck([std::any::TypeId::of::<Overlays>()]),
+        ),
+        meta_declaring(AgentId::new("audio"), Contention::none().reading::<Atlas>()),
+    ];
+    assert_eq!(
+        partition_waves(&disjoint, true),
+        vec![vec![0, 1, 2]],
+        "disjoint declarations share one wave"
+    );
+
+    let one_lock = vec![
+        meta_declaring(
+            AgentId::new("renderer"),
+            Contention::none().locking::<Atlas>(),
+        ),
+        meta_declaring(
+            AgentId::new("ui"),
+            Contention::none().writing_deck([std::any::TypeId::of::<Overlays>()]),
+        ),
+        meta_declaring(AgentId::new("text"), Contention::none().locking::<Atlas>()),
+    ];
+    assert_eq!(
+        partition_waves(&one_lock, true),
+        vec![vec![0, 1], vec![2]],
+        "a second lock of one resource starts a wave; the agent before it stays"
+    );
+
+    let one_slot = vec![
+        meta_declaring(
+            AgentId::new("renderer"),
+            Contention::none().writing_deck([std::any::TypeId::of::<Draws>()]),
+        ),
+        meta_declaring(
+            AgentId::new("grid"),
+            Contention::none().writing_deck([std::any::TypeId::of::<Draws>()]),
+        ),
+    ];
+    assert_eq!(
+        partition_waves(&one_slot, true),
+        vec![vec![0], vec![1]],
+        "two writers of one deck slot never share a wave"
+    );
+
+    let dependent = vec![
+        meta_declaring(
+            AgentId::new("renderer"),
+            Contention::none().writing_deck([std::any::TypeId::of::<Draws>()]),
+        ),
+        WaveMeta {
+            hard_dep_targets: vec![AgentId::new("renderer")],
+            ..meta_declaring(
+                AgentId::new("ui"),
+                Contention::none().writing_deck([std::any::TypeId::of::<Overlays>()]),
+            )
+        },
+        meta_declaring(AgentId::new("audio"), Contention::none()),
+    ];
+    assert_eq!(
+        partition_waves(&dependent, true),
+        vec![vec![0], vec![1, 2]],
+        "a hard dependency on a member splits the wave, however disjoint the two are"
+    );
 }
 
 #[test]
 fn disjoint_deck_writes_pass_the_check() {
     // Two agents writing distinct slot types share a wave cleanly.
     let metas = vec![
-        meta_writes(
-            AgentId::new("ui"),
-            AgentAccess::SharedWorld,
-            &[std::any::TypeId::of::<u32>()],
-        ),
-        meta_writes(
-            AgentId::new("grid"),
-            AgentAccess::Isolated,
-            &[std::any::TypeId::of::<u64>()],
-        ),
+        meta_writes(AgentId::new("ui"), &[std::any::TypeId::of::<u32>()]),
+        meta_writes(AgentId::new("grid"), &[std::any::TypeId::of::<u64>()]),
     ];
     assert_eq!(check_wave_disjoint(&[0, 1], &metas), 0);
 }
 
-/// **The gain the whole contract exists for.** The renderer and the UI agent
-/// are both `SharedWorld` and both in `OUTPUT`, and a rule that refused a
-/// second `SharedWorld` outright kept them apart — not because they contend,
-/// but because nobody could say whether they did. Declared and disjoint,
-/// they share a wave.
+/// **Two agents that declare disjoint slots share a wave.** The renderer and
+/// the UI agent both write in `OUTPUT`; declared and disjoint, they run at
+/// once.
 ///
 /// This is also the **only** assertion a too-broad declaration fails. A test
 /// that checked collisions alone is satisfied by an agent that declares
@@ -148,28 +159,26 @@ fn disjoint_deck_writes_pass_the_check() {
 /// slowness: nothing breaks, everything serialises, the engine is just
 /// slower.
 #[test]
-fn two_shared_world_agents_share_a_wave_when_disjoint() {
+fn two_agents_that_declare_disjoint_slots_share_a_wave() {
     struct Draws;
     struct Overlays;
 
     let metas = vec![
         meta_declaring(
             AgentId::new("renderer"),
-            AgentAccess::SharedWorld,
             Contention::none().writing_deck([std::any::TypeId::of::<Draws>()]),
         ),
         meta_declaring(
             AgentId::new("ui"),
-            AgentAccess::SharedWorld,
             Contention::none().writing_deck([std::any::TypeId::of::<Overlays>()]),
         ),
     ];
 
-    assert_eq!(partition_waves(&metas), vec![vec![0, 1]]);
+    assert_eq!(partition_waves(&metas, true), vec![vec![0, 1]]);
 }
 
-/// And they are kept apart when they *do* contend — the rule that was
-/// removed is replaced by one that knows what it is refusing.
+/// And they are kept apart when they *do* contend: a lock and a read of one
+/// resource never share a wave.
 #[test]
 fn agents_that_contend_are_split_into_separate_waves() {
     struct Atlas;
@@ -177,17 +186,12 @@ fn agents_that_contend_are_split_into_separate_waves() {
     let metas = vec![
         meta_declaring(
             AgentId::new("renderer"),
-            AgentAccess::SharedWorld,
             Contention::none().locking::<Atlas>(),
         ),
-        meta_declaring(
-            AgentId::new("ui"),
-            AgentAccess::Isolated,
-            Contention::none().reading::<Atlas>(),
-        ),
+        meta_declaring(AgentId::new("ui"), Contention::none().reading::<Atlas>()),
     ];
 
-    assert_eq!(partition_waves(&metas), vec![vec![0], vec![1]]);
+    assert_eq!(partition_waves(&metas, true), vec![vec![0], vec![1]]);
 }
 
 /// Two readers of one resource stay together, which is what makes declaring
@@ -197,19 +201,14 @@ fn two_readers_of_one_resource_share_a_wave() {
     struct Input;
 
     let metas = vec![
-        meta_declaring(
-            AgentId::new("ui"),
-            AgentAccess::Isolated,
-            Contention::none().reading::<Input>(),
-        ),
+        meta_declaring(AgentId::new("ui"), Contention::none().reading::<Input>()),
         meta_declaring(
             AgentId::new("script"),
-            AgentAccess::Isolated,
             Contention::none().reading::<Input>(),
         ),
     ];
 
-    assert_eq!(partition_waves(&metas), vec![vec![0, 1]]);
+    assert_eq!(partition_waves(&metas, true), vec![vec![0, 1]]);
 }
 
 /// A locked resource is reported, and both agents are named.
@@ -218,14 +217,9 @@ fn a_contended_resource_is_detected() {
     struct Queue;
 
     let metas = vec![
-        meta_declaring(
-            AgentId::new("ui"),
-            AgentAccess::Isolated,
-            Contention::none().locking::<Queue>(),
-        ),
+        meta_declaring(AgentId::new("ui"), Contention::none().locking::<Queue>()),
         meta_declaring(
             AgentId::new("script"),
-            AgentAccess::Isolated,
             Contention::none().locking::<Queue>(),
         ),
     ];
@@ -237,16 +231,45 @@ fn a_contended_resource_is_detected() {
 fn colliding_deck_writes_are_detected() {
     // Two agents in one wave both declaring the same slot type collide.
     let metas = vec![
-        meta_writes(
-            AgentId::new("ui"),
-            AgentAccess::SharedWorld,
-            &[std::any::TypeId::of::<u32>()],
-        ),
-        meta_writes(
-            AgentId::new("grid"),
-            AgentAccess::Isolated,
-            &[std::any::TypeId::of::<u32>()],
-        ),
+        meta_writes(AgentId::new("ui"), &[std::any::TypeId::of::<u32>()]),
+        meta_writes(AgentId::new("grid"), &[std::any::TypeId::of::<u32>()]),
     ];
     assert_eq!(check_wave_disjoint(&[0, 1], &metas), 1);
+}
+
+/// **With concurrency off, every agent is a wave of its own**, however
+/// disjoint their declarations: the serial path is the all-singleton
+/// partition.
+#[test]
+fn without_concurrency_every_agent_is_a_wave_of_its_own() {
+    let metas = vec![
+        meta(AgentId::new("audio"), &[]),
+        meta(AgentId::new("shadows"), &[]),
+        meta(AgentId::new("ui"), &[]),
+    ];
+    assert_eq!(
+        partition_waves(&metas, false),
+        vec![vec![0], vec![1], vec![2]]
+    );
+}
+
+/// **An agent that could not be read is always alone**: nothing is known of
+/// what it contends for, so it shares no wave, and the agent after it starts
+/// a new one.
+#[test]
+fn an_agent_that_could_not_be_read_is_always_alone() {
+    let metas = vec![
+        meta(AgentId::new("audio"), &[]),
+        WaveMeta {
+            id: None,
+            hard_dep_targets: Vec::new(),
+            contention: Contention::none(),
+        },
+        meta(AgentId::new("shadows"), &[]),
+        meta(AgentId::new("ui"), &[]),
+    ];
+    assert_eq!(
+        partition_waves(&metas, true),
+        vec![vec![0], vec![1], vec![2, 3]]
+    );
 }

@@ -264,7 +264,7 @@ fn the_scripting_agent_hands_its_lane_the_prefab_catalog() {
     use khora_core::agent::Agent;
     use khora_core::lane::{LaneBus, OutputDeck};
     use khora_core::script::{CommandBuffer, WorldCommand};
-    use khora_core::{EngineContext, WorldAccess};
+    use khora_core::EngineContext;
     use khora_data::flow::{
         PrefabCatalogView, ReservationView, ScriptArrival, ScriptInstance, ScriptProgram,
         ScriptView,
@@ -354,7 +354,6 @@ fn the_scripting_agent_hands_its_lane_the_prefab_catalog() {
             let permit = agent.contention();
             {
                 let mut ctx = EngineContext::for_agent(
-                    WorldAccess::None,
                     Arc::clone(&runtime),
                     &bus,
                     &mut deck,

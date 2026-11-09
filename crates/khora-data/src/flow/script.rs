@@ -128,8 +128,7 @@ pub struct ScriptView {
     /// What the player is holding, this frame.
     ///
     /// Projected rather than read, for the same reason a transform is: the lane
-    /// is `Isolated` and reaches no `Runtime`, so it cannot ask the `InputMap`
-    /// anything. A `Flow` is exactly the thing that turns engine state into
+    /// declares no `InputMap`, so it cannot ask one anything. A `Flow` is exactly the thing that turns engine state into
     /// something a lane may read, and until this field `InputMap` was published
     /// every frame with no consumer anywhere in the CLAD descent.
     pub input: khora_core::platform::InputSnapshot,

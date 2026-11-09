@@ -21,7 +21,7 @@ use std::sync::Arc;
 use khora_agents::registered_agent::lane_agents;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::registration::{check_registrations, BootError};
-use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase};
+use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
@@ -208,11 +208,4 @@ fn the_shadow_agent_reads_the_device_the_pipelines_and_the_asset_store() {
         "nothing is locked: {:?}",
         contention.writes
     );
-}
-
-/// The shadow agent never reaches the `World`: it reads Views from the bus,
-/// so it may run on the worker pool.
-#[test]
-fn the_shadow_agent_is_world_free() {
-    assert_eq!(shadow_agent().access(), AgentAccess::Isolated);
 }

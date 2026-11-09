@@ -26,7 +26,7 @@ use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, AgentAccess, Contention, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Agent, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::lane::OutputDeck;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -46,7 +46,6 @@ struct Undeclared(u32);
 /// Writes the slot it declares, and `Undeclared` too when `strays` is set.
 struct Writer {
     id: AgentId,
-    access: AgentAccess,
     /// The one slot it declares.
     declared: TypeId,
     /// Writes that slot.
@@ -55,10 +54,9 @@ struct Writer {
 }
 
 impl Writer {
-    fn new(id: AgentId, access: AgentAccess, strays: bool) -> Self {
+    fn new(id: AgentId, strays: bool) -> Self {
         Self {
             id,
-            access,
             declared: TypeId::of::<Declared>(),
             write_declared: |deck| deck.slot::<Declared>().0 += 1,
             strays,
@@ -106,9 +104,6 @@ impl Agent for Writer {
             ..ExecutionTiming::default()
         }
     }
-    fn access(&self) -> AgentAccess {
-        self.access
-    }
     fn contention(&self) -> Contention {
         Contention::none().writing_deck([self.declared])
     }
@@ -145,14 +140,7 @@ fn after_one_frame(writers: Vec<Writer>, parallel: bool) -> ExecutionScheduler {
 #[cfg(debug_assertions)]
 #[test]
 fn an_undeclared_deck_write_is_reported_in_debug() {
-    let scheduler = after_one_frame(
-        vec![Writer::new(
-            AgentId::new("script"),
-            AgentAccess::Exclusive,
-            true,
-        )],
-        false,
-    );
+    let scheduler = after_one_frame(vec![Writer::new(AgentId::new("script"), true)], false);
 
     assert_eq!(
         scheduler.undeclared_deck_writes(),
@@ -165,14 +153,7 @@ fn an_undeclared_deck_write_is_reported_in_debug() {
 #[cfg(debug_assertions)]
 #[test]
 fn a_declared_deck_write_is_not_reported() {
-    let scheduler = after_one_frame(
-        vec![Writer::new(
-            AgentId::new("script"),
-            AgentAccess::Exclusive,
-            false,
-        )],
-        false,
-    );
+    let scheduler = after_one_frame(vec![Writer::new(AgentId::new("script"), false)], false);
 
     assert_eq!(
         scheduler.undeclared_deck_writes(),
@@ -189,8 +170,8 @@ fn a_declared_deck_write_is_not_reported() {
 fn an_undeclared_deck_write_in_a_concurrent_wave_is_reported_in_debug() {
     let scheduler = after_one_frame(
         vec![
-            Writer::new(AgentId::new("audio"), AgentAccess::Isolated, false),
-            Writer::new(AgentId::new("shadows"), AgentAccess::Isolated, true).elsewhere(),
+            Writer::new(AgentId::new("audio"), false),
+            Writer::new(AgentId::new("shadows"), true).elsewhere(),
         ],
         true,
     );

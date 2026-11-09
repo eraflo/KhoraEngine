@@ -22,7 +22,7 @@ use std::time::Duration;
 use khora_agents::registered_agent::lane_agents;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::{check_registrations, BootError};
-use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase};
+use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
@@ -186,14 +186,6 @@ fn the_physics_agent_writes_both_slots_and_locks_the_provider() {
         "the provider is locked: {:?}",
         contention.writes
     );
-}
-
-/// The physics agent never reaches the `World`: the provider sync is a
-/// DataSystem's and the write-back another's, so it may run on the worker
-/// pool.
-#[test]
-fn the_physics_agent_is_world_free() {
-    assert_eq!(physics_agent().access(), AgentAccess::Isolated);
 }
 
 /// The agent runs at the default `physics.step`, in `TRANSFORM`, critical:

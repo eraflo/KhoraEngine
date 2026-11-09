@@ -9,8 +9,8 @@ Effects are queued as `WorldCommand`s and applied by a data system during
 runs.
 
 That constraint is not bureaucracy — it is what buys the parallelism. Because
-the script lane touches no `World`, its agent declares `AgentAccess::Isolated`
-and can share a wave with other world-free agents. The rule and the performance
+the script lane touches no `World`, it can share a wave with any family whose
+declarations do not collide with its own. The rule and the performance
 are the same fact.
 
 The commands apply in the order they were queued. Many rows of one component —

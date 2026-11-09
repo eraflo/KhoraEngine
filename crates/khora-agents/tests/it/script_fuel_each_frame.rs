@@ -26,7 +26,7 @@ use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{LaneBus, OutputDeck};
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::ScriptRuntime;
 
@@ -88,7 +88,6 @@ fn run_one_frame(agent: &mut LaneAgent, runtime: &Arc<Runtime>) {
     let mut deck = OutputDeck::new();
     let permit = agent.contention();
     let mut ctx = EngineContext::for_agent(
-        WorldAccess::None,
         Arc::clone(runtime),
         &bus,
         &mut deck,

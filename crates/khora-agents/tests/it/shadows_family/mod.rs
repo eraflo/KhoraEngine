@@ -16,9 +16,9 @@
 //! `LaneAgent` built from the registration the family submitted, checked
 //! against the runtime before the first frame.
 //!
-//! These replace the shadow agent's own tests: what it declared, that it was
-//! world-free, the lanes it held, and the strategy each budget selected —
-//! which is a level of the one shadows lane now.
+//! These replace the shadow agent's own tests: what it declared, the lanes it
+//! held, and the strategy each budget selected — which is a level of the one
+//! shadows lane now.
 
 pub mod fixtures;
 mod frames;

@@ -16,9 +16,8 @@
 //! `LaneAgent` built from the registration the family submitted, checked
 //! against the runtime before the first frame.
 //!
-//! These replace the physics agent's own tests: what it declared, that it was
-//! world-free, and the step it ran at — which is a game setting now, never a
-//! GORNA strategy.
+//! These replace the physics agent's own tests: what it declared, and the
+//! step it ran at — which is a game setting now, never a GORNA strategy.
 
 pub mod fixtures;
 mod registration;

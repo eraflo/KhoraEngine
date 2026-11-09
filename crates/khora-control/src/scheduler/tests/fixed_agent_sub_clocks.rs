@@ -28,7 +28,7 @@ use crate::scheduler::*;
 use khora_core::agent::dependency::{AgentDependency, DependencyKind};
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Activation, Agent, AgentAccess, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Activation, Agent, ExecutionPhase, ExecutionTiming};
 use khora_core::time::{SharedTime, Time, DEFAULT_FIXED_DELTA_SECONDS};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -56,7 +56,6 @@ struct Stepping {
     id: AgentId,
     step: Arc<Mutex<Option<Duration>>>,
     depends_on: Option<AgentId>,
-    access: AgentAccess,
     seen: Arc<Mutex<Seen>>,
 }
 
@@ -106,9 +105,6 @@ impl Agent for Stepping {
             ..ExecutionTiming::default()
         }
     }
-    fn access(&self) -> AgentAccess {
-        self.access
-    }
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
@@ -122,7 +118,6 @@ struct Spec {
     id: AgentId,
     step: Option<Duration>,
     depends_on: Option<AgentId>,
-    access: AgentAccess,
     priority: f32,
 }
 
@@ -132,7 +127,6 @@ impl Spec {
             id,
             step: Some(step_of(hz)),
             depends_on: None,
-            access: AgentAccess::Exclusive,
             priority: 1.0,
         }
     }
@@ -185,7 +179,6 @@ impl Rig {
                     id: spec.id,
                     step: Arc::clone(&step),
                     depends_on: spec.depends_on,
-                    access: spec.access,
                     seen: Arc::clone(&seen),
                 })),
                 spec.priority,
@@ -299,7 +292,7 @@ fn a_second_agent_under_a_taken_id_is_refused_and_the_first_keeps_the_games_time
 }
 
 /// **The parallel executor sub-steps two fixed agents as the sequential one
-/// does.** Two `Isolated` fixed agents — one wave — at 1/120 and 1/30 s, under
+/// does.** Two fixed agents that declare nothing — one wave — at 1/120 and 1/30 s, under
 /// `set_parallel_execution(true)`, fed twenty 1/20-s frames: each integrates
 /// the gameplay time to within one of its steps, and they run the same
 /// number of times as with parallel execution off.
@@ -307,14 +300,8 @@ fn a_second_agent_under_a_taken_id_is_refused_and_the_first_keeps_the_games_time
 fn the_parallel_executor_sub_steps_two_fixed_agents_as_the_sequential_one_does() {
     let specs = || {
         vec![
-            Spec {
-                access: AgentAccess::Isolated,
-                ..Spec::fixed(AgentId::new("physics"), 120.0)
-            },
-            Spec {
-                access: AgentAccess::Isolated,
-                ..Spec::fixed(AgentId::new("audio"), 30.0)
-            },
+            Spec::fixed(AgentId::new("physics"), 120.0),
+            Spec::fixed(AgentId::new("audio"), 30.0),
         ]
     };
     let mut runs = Vec::new();

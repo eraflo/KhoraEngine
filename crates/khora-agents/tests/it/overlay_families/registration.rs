@@ -21,7 +21,7 @@ use std::sync::Arc;
 use khora_agents::registered_agent::lane_agents;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::{check_registrations, AgentRegistration, BootError};
-use khora_core::agent::{Agent, AgentAccess, AgentImportance, DependencyKind, ExecutionPhase};
+use khora_core::agent::{Agent, AgentImportance, DependencyKind, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
@@ -363,20 +363,6 @@ fn the_overlay_agents_neither_contend_nor_share_a_slot() {
     slots.sort();
     slots.dedup();
     assert_eq!(slots.len(), count, "no slot is claimed twice");
-}
-
-/// The overlay agents never reach the `World`: they read Views from the bus,
-/// so they may run on the worker pool.
-#[test]
-fn the_overlay_agents_are_world_free() {
-    for registration in overlay_registrations() {
-        assert_eq!(
-            agent_of(registration).access(),
-            AgentAccess::Isolated,
-            "{}",
-            registration.family_name
-        );
-    }
 }
 
 /// **Each overlay agent offers one strategy, `Balanced`**, and reports it as

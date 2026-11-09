@@ -26,7 +26,7 @@ use crate::scheduler::*;
 use khora_core::agent::dependency::{AgentDependency, DependencyKind};
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, AgentAccess, Contention, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Agent, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::any::TypeId;
@@ -46,7 +46,6 @@ struct WaveMateOutput(u32);
 /// (1-based). Counts every run that reached its body.
 struct Flaky {
     id: AgentId,
-    access: AgentAccess,
     panics_on: Vec<usize>,
     step: Option<Duration>,
     runs: Arc<AtomicUsize>,
@@ -85,9 +84,6 @@ impl Agent for Flaky {
             ..ExecutionTiming::default()
         }
     }
-    fn access(&self) -> AgentAccess {
-        self.access
-    }
     fn contention(&self) -> Contention {
         Contention::none().writing_deck([TypeId::of::<HalfWritten>()])
     }
@@ -103,7 +99,6 @@ impl Agent for Flaky {
 /// its runs.
 struct Steady {
     id: AgentId,
-    access: AgentAccess,
     depends_on: Option<AgentId>,
     runs: Arc<AtomicUsize>,
 }
@@ -147,9 +142,6 @@ impl Agent for Steady {
             ..ExecutionTiming::default()
         }
     }
-    fn access(&self) -> AgentAccess {
-        self.access
-    }
     fn contention(&self) -> Contention {
         Contention::none().writing_deck([TypeId::of::<WaveMateOutput>()])
     }
@@ -165,10 +157,9 @@ fn playing() -> Arc<Runtime> {
     Arc::new(Runtime::new())
 }
 
-fn flaky(access: AgentAccess, panics_on: Vec<usize>, runs: &Arc<AtomicUsize>) -> Flaky {
+fn flaky(panics_on: Vec<usize>, runs: &Arc<AtomicUsize>) -> Flaky {
     Flaky {
         id: AgentId::new("physics"),
-        access,
         panics_on,
         step: None,
         runs: Arc::clone(runs),
@@ -195,14 +186,7 @@ fn scheduler_over(agents: Vec<Arc<Mutex<dyn Agent>>>, parallel: bool) -> Executi
 #[test]
 fn an_agent_that_panicked_runs_again_on_the_next_frame() {
     let runs = Arc::new(AtomicUsize::new(0));
-    let mut scheduler = scheduler_over(
-        vec![Arc::new(Mutex::new(flaky(
-            AgentAccess::Exclusive,
-            vec![1],
-            &runs,
-        )))],
-        false,
-    );
+    let mut scheduler = scheduler_over(vec![Arc::new(Mutex::new(flaky(vec![1], &runs)))], false);
     let mut world = World::new();
 
     scheduler.run_frame(&mut world, playing());
@@ -226,11 +210,10 @@ fn a_pooled_agent_that_panicked_runs_again_on_the_next_frame() {
         vec![
             Arc::new(Mutex::new(Steady {
                 id: AgentId::new("audio"),
-                access: AgentAccess::Isolated,
                 depends_on: None,
                 runs: Arc::clone(&mate_runs),
             })),
-            Arc::new(Mutex::new(flaky(AgentAccess::Isolated, vec![1], &runs))),
+            Arc::new(Mutex::new(flaky(vec![1], &runs))),
         ],
         true,
     );
@@ -257,14 +240,7 @@ fn a_pooled_agent_that_panicked_runs_again_on_the_next_frame() {
 #[test]
 fn a_panicking_agent_leaves_nothing_in_the_deck() {
     let runs = Arc::new(AtomicUsize::new(0));
-    let mut scheduler = scheduler_over(
-        vec![Arc::new(Mutex::new(flaky(
-            AgentAccess::Exclusive,
-            vec![1],
-            &runs,
-        )))],
-        false,
-    );
+    let mut scheduler = scheduler_over(vec![Arc::new(Mutex::new(flaky(vec![1], &runs)))], false);
 
     scheduler.run_frame(&mut World::new(), playing());
 
@@ -275,35 +251,36 @@ fn a_panicking_agent_leaves_nothing_in_the_deck() {
     );
 }
 
-/// Same, for a `SharedWorld` agent run inline in a concurrent wave, beside a
-/// pooled `Isolated` one: it writes the shared deck directly too.
+/// Same, for an agent run on the worker pool beside a wave-mate: it writes a
+/// shard of its own, and what it half-wrote there is dropped when the shards
+/// fold back, while its wave-mate's output folds in.
 #[test]
-fn a_panicking_inline_agent_leaves_nothing_in_the_deck() {
+fn a_panicking_pooled_agent_leaves_nothing_in_the_deck() {
     let runs = Arc::new(AtomicUsize::new(0));
     let mate_runs = Arc::new(AtomicUsize::new(0));
     let mut scheduler = scheduler_over(
         vec![
             Arc::new(Mutex::new(Steady {
                 id: AgentId::new("audio"),
-                access: AgentAccess::Isolated,
                 depends_on: None,
                 runs: Arc::clone(&mate_runs),
             })),
-            Arc::new(Mutex::new(flaky(AgentAccess::SharedWorld, vec![1], &runs))),
+            Arc::new(Mutex::new(flaky(vec![1], &runs))),
         ],
         true,
     );
 
     scheduler.run_frame(&mut World::new(), playing());
 
-    assert_eq!(runs.load(Ordering::SeqCst), 1, "the inline agent ran");
+    assert_eq!(runs.load(Ordering::SeqCst), 1, "the pooled agent ran");
+    assert_eq!(mate_runs.load(Ordering::SeqCst), 1, "its wave-mate ran");
     assert!(
         scheduler.deck_mut().contains::<WaveMateOutput>(),
         "the wave-mate's output folds in"
     );
     assert!(
         !scheduler.deck_mut().contains::<HalfWritten>(),
-        "the slot a panicking inline agent half-wrote reaches the frame's deck"
+        "the slot a panicking pooled agent half-wrote reaches the frame's deck"
     );
 }
 
@@ -315,10 +292,9 @@ fn a_hard_dependent_of_a_panicked_agent_is_skipped() {
     let dependent_runs = Arc::new(AtomicUsize::new(0));
     let mut scheduler = scheduler_over(
         vec![
-            Arc::new(Mutex::new(flaky(AgentAccess::Exclusive, vec![1], &runs))),
+            Arc::new(Mutex::new(flaky(vec![1], &runs))),
             Arc::new(Mutex::new(Steady {
                 id: AgentId::new("audio"),
-                access: AgentAccess::Exclusive,
                 depends_on: Some(AgentId::new("physics")),
                 runs: Arc::clone(&dependent_runs),
             })),
@@ -354,11 +330,10 @@ fn a_fixed_agent_failing_a_later_sub_step_has_failed_the_frame() {
         vec![
             Arc::new(Mutex::new(Flaky {
                 step: Some(step),
-                ..flaky(AgentAccess::Exclusive, vec![2], &runs)
+                ..flaky(vec![2], &runs)
             })),
             Arc::new(Mutex::new(Steady {
                 id: AgentId::new("audio"),
-                access: AgentAccess::Exclusive,
                 depends_on: Some(AgentId::new("physics")),
                 runs: Arc::clone(&dependent_runs),
             })),

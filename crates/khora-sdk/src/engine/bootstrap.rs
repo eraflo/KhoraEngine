@@ -639,11 +639,9 @@ fn build_scheduler<A: EngineApp>(
     // cost model and layout advisor consume.
     scheduler.set_telemetry_sender(dcc.event_sender());
 
-    // Run phases through the parallel wave executor: agents declaring
-    // `AgentAccess::Isolated` / `SharedWorld` (no `&mut World`, disjoint
-    // outputs) run concurrently within a phase, the rest serially. With
-    // the current agents this makes `[Ui, Overlay]` a concurrent wave;
-    // pass submission stays deterministic (fixed scene→ui→overlay fold).
+    // Run phases in concurrent waves: agents whose contentions are disjoint
+    // run at once within a phase. Pass submission stays deterministic
+    // (fixed scene→ui→overlay fold).
     scheduler.set_parallel_execution(true);
 
     // The app's own phases, in the order the lane agents were checked against.

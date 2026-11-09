@@ -21,9 +21,8 @@
 //!
 //! # How it gets here
 //!
-//! The lane is `AgentAccess::Isolated` and reaches no `Runtime`, so a native
-//! cannot ask the `InputMap` anything — which is exactly what makes the lane
-//! schedulable in parallel. `ScriptFlow` projects a snapshot into the view
+//! The lane declares no `InputMap`, so a native cannot ask it anything — which
+//! keeps the lane schedulable in parallel. `ScriptFlow` projects a snapshot into the view
 //! instead, the same road a transform takes, and the lane puts it on the host
 //! once per frame.
 //!

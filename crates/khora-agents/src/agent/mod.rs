@@ -39,7 +39,7 @@ use khora_core::agent::gorna::protocol::{
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{
-    Agent, AgentAccess, AgentDependency, Contention, DependencyKind, ExecutionTiming, Place, Wake,
+    Agent, AgentDependency, Contention, DependencyKind, ExecutionTiming, Place, Wake,
 };
 use khora_core::gpu::{DeviceCaps, GpuSetup};
 use khora_core::lane::cost::{Cost, PerDevice};
@@ -437,11 +437,6 @@ impl Agent for LaneAgent {
         }
     }
 
-    /// A lane reads the world only through the Views on the bus.
-    fn access(&self) -> AgentAccess {
-        AgentAccess::Isolated
-    }
-
     /// The chosen lane's declaration, what the other lanes read (the agent
     /// quotes them on their inputs), and the graphics device and pipeline
     /// system the agent prepares and shuts its lanes down with: what the
@@ -451,9 +446,10 @@ impl Agent for LaneAgent {
         let mut contention = running
             .and_then(|lane| self.contentions.get(lane).cloned())
             .unwrap_or_else(Contention::none);
-        // Quoting the other lanes reaches their inputs too: what they read,
-        // and the locks they take — a quote takes a free lock for as long as
-        // it prices the lane. It writes no deck slot.
+        // Quoting the other lanes reaches their inputs too: what they read —
+        // runtime entries and deck slots — and the locks they take — a quote
+        // takes a free lock for as long as it prices the lane. It writes no
+        // deck slot.
         for (lane, other) in self.contentions.iter().enumerate() {
             if Some(lane) == running {
                 continue;
@@ -466,6 +462,11 @@ impl Agent for LaneAgent {
             for lock in &other.writes {
                 if !contention.writes.contains(lock) {
                     contention.writes.push(*lock);
+                }
+            }
+            for slot in &other.deck_reads {
+                if !contention.deck_reads.contains(slot) {
+                    contention.deck_reads.push(*slot);
                 }
             }
         }

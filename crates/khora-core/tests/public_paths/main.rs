@@ -141,14 +141,6 @@ mod every_pub_mod {
 // exhaustively). Nothing is constructed.
 // ---------------------------------------------------------------------------
 
-fn agent_access_variants(x: &khora_core::agent::AgentAccess) {
-    match x {
-        khora_core::agent::AgentAccess::Exclusive => {}
-        khora_core::agent::AgentAccess::Isolated => {}
-        khora_core::agent::AgentAccess::SharedWorld => {}
-    }
-}
-
 fn completion_outcome_variants(x: &khora_core::agent::completion::CompletionOutcome) {
     match x {
         khora_core::agent::completion::CompletionOutcome::Completed => {}
@@ -290,15 +282,7 @@ fn stream_info_fields(x: &khora_core::audio::device::StreamInfo) {
 }
 
 fn engine_context_fields(x: &khora_core::engine_context::EngineContext<'static>) {
-    let _ = (&x.world, &x.bus, &x.deck);
-}
-
-fn world_access_variants(x: &khora_core::engine_context::WorldAccess<'static>) {
-    match x {
-        khora_core::engine_context::WorldAccess::None => {}
-        khora_core::engine_context::WorldAccess::Shared(..) => {}
-        khora_core::engine_context::WorldAccess::Exclusive(..) => {}
-    }
+    let _ = (&x.bus, &x.deck);
 }
 
 fn adaptation_mode_variants(x: &khora_core::agent::gorna::AdaptationMode) {
@@ -1139,7 +1123,6 @@ mod trait_items {
         let _ = <T as khora_core::agent::Agent>::on_initialize;
         let _ = <T as khora_core::agent::Agent>::execute;
         let _ = <T as khora_core::agent::Agent>::execution_timing;
-        let _ = <T as khora_core::agent::Agent>::access;
         let _ = <T as khora_core::agent::Agent>::contention;
         let _ = <T as khora_core::agent::Agent>::as_any;
         let _ = <T as khora_core::agent::Agent>::as_any_mut;
@@ -1348,14 +1331,6 @@ fn module_crate_root_paths_still_resolve() {
 #[test]
 fn module_agent_paths_still_resolve() {
     // trait `khora_core::agent::Agent`: see `agent_trait_items`
-    let _ = type_name::<khora_core::agent::AgentAccess>();
-    let _ = agent_access_variants as fn(&khora_core::agent::AgentAccess);
-    is_debug::<khora_core::agent::AgentAccess>();
-    is_clone::<khora_core::agent::AgentAccess>();
-    is_copy::<khora_core::agent::AgentAccess>();
-    is_partial_eq::<khora_core::agent::AgentAccess>();
-    is_eq::<khora_core::agent::AgentAccess>();
-    is_default::<khora_core::agent::AgentAccess>();
     let _ = type_name::<khora_core::agent::completion::AgentCompletionMap>();
     let _ = type_name::<khora_core::agent::AgentCompletionMap>();
     same_type(
@@ -1657,15 +1632,6 @@ fn module_engine_context_paths_still_resolve() {
     let _ = khora_core::engine_context::EngineContext::for_initialisation;
     let _ = khora_core::engine_context::EngineContext::resource::<u32>;
     let _ = khora_core::engine_context::EngineContext::locked::<u32>;
-    let _ = khora_core::engine_context::EngineContext::world_ref;
-    let _ = khora_core::engine_context::EngineContext::world_mut;
-    let _ = type_name::<khora_core::engine_context::WorldAccess<'static>>();
-    let _ = type_name::<khora_core::WorldAccess<'static>>();
-    same_type(
-        PhantomData::<khora_core::WorldAccess<'static>>,
-        PhantomData::<khora_core::engine_context::WorldAccess<'static>>,
-    );
-    let _ = world_access_variants as fn(&khora_core::engine_context::WorldAccess<'static>);
 }
 
 #[test]
@@ -2923,7 +2889,6 @@ mod paths_used_by_other_crates {
     use khora_core::agent::gorna::StrategyId::Balanced as _; // khora-agents
     use khora_core::agent::timing::AgentImportance as _; // khora-control
     use khora_core::agent::Agent as _; // khora-agents, khora-control
-    use khora_core::agent::AgentAccess as _; // khora-agents, khora-control
     use khora_core::agent::AgentDependency as _; // khora-agents, khora-control
     use khora_core::agent::AgentImportance as _; // khora-agents, khora-control, khora-sdk
     use khora_core::agent::Contention as _; // khora-agents, khora-control
@@ -3367,8 +3332,6 @@ mod paths_used_by_other_crates {
     use khora_core::Runtime as _; // khora-agents, khora-control, khora-data, khora-io, khora-sdk
     use khora_core::Services as _; // khora-sdk
     use khora_core::Stopwatch as _; // khora-infra, khora-lanes
-    use khora_core::WorldAccess as _; // khora-agents, khora-control
-    use khora_core::WorldAccess::Exclusive as _; // khora-agents // khora-telemetry
 }
 
 #[test]

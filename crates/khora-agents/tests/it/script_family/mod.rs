@@ -17,8 +17,8 @@
 //! against the runtime before the first frame.
 //!
 //! These replace the hand-written script agent's own tests: what it declared,
-//! that it was world-free, that it ran from the first frame its family was
-//! on, that a deferral kept the mail, and what it reported.
+//! that it ran from the first frame its family was on, that a deferral kept
+//! the mail, and what it reported.
 
 mod epochs;
 pub mod fixtures;

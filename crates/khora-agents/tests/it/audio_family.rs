@@ -16,8 +16,8 @@
 //! `LaneAgent` built from the registration the family submitted, checked
 //! against the runtime before the first frame.
 //!
-//! These replace the audio agent's own tests: what it declared, that it was
-//! world-free, and the lanes it held.
+//! These replace the audio agent's own tests: what it declared and the lanes
+//! it held.
 
 use std::any::TypeId;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -27,7 +27,7 @@ use khora_agents::agent::lane_agent;
 use khora_agents::registered_agent::{lane_agents, registered_agents};
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::registration::{check_registrations, AgentRegistration, BootError};
-use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase};
+use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::asset::AssetHandle;
 use khora_core::audio::{AudioMixBus, StreamInfo};
 use khora_core::gpu::DeviceCaps;
@@ -36,7 +36,7 @@ use khora_core::lane::guard::{SinkKind, SourceKind};
 use khora_core::lane::io::FrameId;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::math::Vec3;
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 use khora_data::assets::SoundData;
 use khora_data::ecs::{AudioSource, GlobalTransform, World};
 use khora_data::flow::{AudioFlow, AudioPlaybackWriteback, AudioView, Flow, Selection};
@@ -251,15 +251,6 @@ fn the_audio_agent_writes_its_playback_slot_and_reads_the_mix_bus() {
     );
 }
 
-/// The audio agent never reaches the `World`: it reads a View and mixes into
-/// the bus, so it may run on the worker pool.
-#[test]
-fn the_audio_agent_is_world_free() {
-    let agent = lane_agent(audio_registration(), &DeviceCaps::default());
-
-    assert_eq!(agent.access(), AgentAccess::Isolated);
-}
-
 /// **A frame through the agent**, as the scheduler runs it: the agent mixes
 /// the frame's sources into one block on the mix bus and commits one playback
 /// update per source into the deck.
@@ -276,14 +267,8 @@ fn the_audio_agent_mixes_a_frame_into_its_playback_slot() {
     let id = agent.id();
 
     {
-        let mut context = EngineContext::for_agent(
-            WorldAccess::None,
-            Arc::clone(&runtime),
-            &bus,
-            &mut deck,
-            &permit,
-            Some(id),
-        );
+        let mut context =
+            EngineContext::for_agent(Arc::clone(&runtime), &bus, &mut deck, &permit, Some(id));
         agent.execute(&mut context);
     }
 

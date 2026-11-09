@@ -19,30 +19,13 @@ use crate::agent::Contention;
 use crate::lane::io::InputSource;
 use crate::lane::{LaneBus, OutputDeck};
 use crate::runtime::Runtime;
-use std::any::Any;
 use std::sync::Arc;
-
-/// How an agent's `execute` may reach the ECS `World` this frame, granted by
-/// the scheduler according to the agent's
-/// [`Agent::access`](crate::agent::Agent::access) declaration.
-///
-/// The parallel executor uses this to hand a serial (`Exclusive`) agent a
-/// mutable world while giving concurrently-running read-only (`Shared`) agents
-/// a shared reference — `World` is `Sync`, so many `&World` readers are safe,
-/// but a mutable borrow must be exclusive.
-pub enum WorldAccess<'a> {
-    /// No world access — the agent reads only the `LaneBus` and writes its deck.
-    None,
-    /// Shared, read-only world. Multiple `Shared` agents may run concurrently.
-    Shared(&'a dyn Any),
-    /// Exclusive, mutable world. The agent runs serially.
-    Exclusive(&'a mut dyn Any),
-}
 
 /// Engine context providing access to various subsystems.
 ///
-/// Built once per frame by the Scheduler and passed to every Agent's
-/// `execute()`. Lanes read [`Flow`] outputs from `bus` and write their own
+/// Built by the scheduler for each run of an agent's work — its layer, its
+/// wake, a preparation. No agent reaches the ECS `World`: what a lane needs of
+/// it, a `Flow` published on the bus. Lanes read [`Flow`] outputs from `bus` and write their own
 /// outputs to `deck`, through their typed inputs and outputs.
 ///
 /// The `runtime` bundle exposes the three runtime containers
@@ -53,11 +36,6 @@ pub enum WorldAccess<'a> {
 ///
 /// [`Flow`]: ../../../khora_data/flow/index.html
 pub struct EngineContext<'a> {
-    /// The ECS `World` access this agent was granted — see [`WorldAccess`].
-    /// Reach it through [`world_ref`](Self::world_ref) (read) or
-    /// [`world_mut`](Self::world_mut) (mutate), never by matching directly.
-    pub world: WorldAccess<'a>,
-
     /// Runtime containers — services (business APIs), backends (trait
     /// impls), resources (shared state).
     ///
@@ -104,13 +82,13 @@ impl<'a> EngineContext<'a> {
         InputSource::new(self.bus.frame(), self.bus, &self.runtime).with_deck(self.earlier_deck())
     }
 
-    /// Builds the context for one agent's `execute`.
+    /// Builds the context for one run of an agent's work — its layer, its
+    /// wake, a preparation.
     ///
     /// Takes the agent's declaration rather than reading it back from the
     /// agent, because the scheduler has already locked and read it once to build
     /// the wave — asking twice invites the two answers to differ.
     pub fn for_agent(
-        world: WorldAccess<'a>,
         runtime: Arc<Runtime>,
         bus: &'a LaneBus,
         deck: &'a mut OutputDeck,
@@ -118,7 +96,6 @@ impl<'a> EngineContext<'a> {
         running: Option<AgentId>,
     ) -> Self {
         Self {
-            world,
             runtime,
             bus,
             deck,
@@ -155,7 +132,6 @@ impl<'a> EngineContext<'a> {
         deck: &'a mut OutputDeck,
     ) -> Self {
         Self {
-            world: WorldAccess::None,
             runtime,
             bus,
             deck,
@@ -224,27 +200,6 @@ impl<'a> EngineContext<'a> {
             std::any::type_name::<T>(),
         );
     }
-
-    /// Read-only access to the type-erased `World`, if any was granted.
-    /// Available under both `Shared` and `Exclusive` access (a mutable grant
-    /// also permits reads). `None` for an `Isolated` (world-free) agent.
-    pub fn world_ref(&self) -> Option<&dyn Any> {
-        match &self.world {
-            WorldAccess::Shared(w) => Some(*w),
-            WorldAccess::Exclusive(w) => Some(&**w),
-            WorldAccess::None => None,
-        }
-    }
-
-    /// Mutable access to the type-erased `World`, granted only under
-    /// `Exclusive` access. `None` for `Shared` or `Isolated` agents — a
-    /// read-only or world-free agent must never mutate the world.
-    pub fn world_mut(&mut self) -> Option<&mut dyn Any> {
-        match &mut self.world {
-            WorldAccess::Exclusive(w) => Some(&mut **w),
-            _ => None,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -276,8 +231,7 @@ mod tests {
     #[test]
     fn an_undeclared_resource_is_refused() {
         let (runtime, bus, mut deck, permit) = context_with(&Contention::none());
-        let ctx =
-            EngineContext::for_agent(WorldAccess::None, runtime, &bus, &mut deck, &permit, None);
+        let ctx = EngineContext::for_agent(runtime, &bus, &mut deck, &permit, None);
 
         assert!(
             ctx.resource::<Watched>().is_none(),
@@ -289,8 +243,7 @@ mod tests {
     fn a_declared_resource_is_handed_over() {
         let (runtime, bus, mut deck, permit) =
             context_with(&Contention::none().reading::<Watched>());
-        let ctx =
-            EngineContext::for_agent(WorldAccess::None, runtime, &bus, &mut deck, &permit, None);
+        let ctx = EngineContext::for_agent(runtime, &bus, &mut deck, &permit, None);
 
         assert_eq!(ctx.resource::<Watched>().map(|w| w.0), Some(7));
     }
@@ -302,8 +255,7 @@ mod tests {
     fn reading_a_resource_does_not_permit_locking_it() {
         let (runtime, bus, mut deck, permit) =
             context_with(&Contention::none().reading::<Watched>());
-        let ctx =
-            EngineContext::for_agent(WorldAccess::None, runtime, &bus, &mut deck, &permit, None);
+        let ctx = EngineContext::for_agent(runtime, &bus, &mut deck, &permit, None);
 
         assert!(ctx.resource::<Watched>().is_some());
         assert!(ctx.locked::<Watched>().is_none(), "a read is not a lock");
@@ -313,8 +265,7 @@ mod tests {
     fn locking_a_resource_permits_reading_it() {
         let (runtime, bus, mut deck, permit) =
             context_with(&Contention::none().locking::<Watched>());
-        let ctx =
-            EngineContext::for_agent(WorldAccess::None, runtime, &bus, &mut deck, &permit, None);
+        let ctx = EngineContext::for_agent(runtime, &bus, &mut deck, &permit, None);
 
         assert!(ctx.locked::<Watched>().is_some());
         assert!(ctx.resource::<Watched>().is_some());
@@ -327,8 +278,7 @@ mod tests {
     fn a_declared_but_absent_resource_is_simply_absent() {
         let (runtime, bus, mut deck, permit) =
             context_with(&Contention::none().reading::<Unwatched>());
-        let ctx =
-            EngineContext::for_agent(WorldAccess::None, runtime, &bus, &mut deck, &permit, None);
+        let ctx = EngineContext::for_agent(runtime, &bus, &mut deck, &permit, None);
 
         assert!(ctx.resource::<Unwatched>().is_none());
     }
@@ -352,8 +302,7 @@ mod tests {
     fn a_backend_obeys_the_same_contract() {
         let (runtime, bus, mut deck, permit) =
             context_with(&Contention::none().locking::<Backend>());
-        let ctx =
-            EngineContext::for_agent(WorldAccess::None, runtime, &bus, &mut deck, &permit, None);
+        let ctx = EngineContext::for_agent(runtime, &bus, &mut deck, &permit, None);
 
         assert_eq!(ctx.locked::<Backend>().map(|b| b.0), Some(3));
     }
@@ -361,8 +310,7 @@ mod tests {
     #[test]
     fn an_undeclared_backend_is_refused() {
         let (runtime, bus, mut deck, permit) = context_with(&Contention::none());
-        let ctx =
-            EngineContext::for_agent(WorldAccess::None, runtime, &bus, &mut deck, &permit, None);
+        let ctx = EngineContext::for_agent(runtime, &bus, &mut deck, &permit, None);
 
         assert!(ctx.resource::<Backend>().is_none());
     }

@@ -31,7 +31,7 @@ use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::math::Vec3;
 use khora_core::scene::SerializationGoal;
 use khora_core::script::{engine_event_channel, ScriptEvent, ScriptValue};
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::{Name, TickPhase, Transform, World};
 use khora_data::flow::{Flow, FlowContext, ScriptFlow};
 use khora_io::script::declarations::{apply_declarations, DeclaredComponents};
@@ -144,7 +144,6 @@ impl Session {
         let permit = self.agent.contention();
         {
             let mut ctx = EngineContext::for_agent(
-                WorldAccess::None,
                 Arc::clone(&self.runtime),
                 &bus,
                 &mut deck,

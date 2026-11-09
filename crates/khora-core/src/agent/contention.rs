@@ -16,19 +16,14 @@
 //!
 //! An agent used to declare one thing — the deck slots it wrote — and the
 //! scheduler checked it. It declared **nothing** about what it read or locked in
-//! the [`Runtime`](crate::Runtime), so the scheduler had no way to know, and
-//! [`AgentAccess`](super::AgentAccess) had to stand in for the answer by
-//! forbidding every resource to any agent that wanted to run concurrently.
+//! the [`Runtime`](crate::Runtime), so the scheduler had no way to know, and a
+//! coarse access kind stood in for the answer by forbidding every resource to
+//! any agent that wanted to run concurrently. Two agents that did not contend
+//! could not share a wave, because nobody could say whether they did.
 //!
-//! That is why scripting grew a route of its own: its agent is world-free, so it
-//! claimed `Isolated`, so it could not read the queue its own hot-reload pump
-//! filled — and a pair of "flows" that projected nothing appeared to carry the
-//! queue in through the one door an `Isolated` agent could use.
-//!
-//! It bites elsewhere too. `InputMap` is published every frame and **nothing in
-//! the CLAD descent reads it**. And the render and UI agents, both `SharedWorld`
-//! and both in `OUTPUT`, cannot share a wave — not because they contend, but
-//! because nobody could say whether they did.
+//! Now an agent declares what it reads and locks, and that is the only thing
+//! it declares: no agent reaches the `World`, so the world needs no
+//! declaration of its own.
 //!
 //! # Reading is free, locking is not
 //!
@@ -55,6 +50,14 @@ pub struct Contention {
     /// the merge.
     pub deck: Vec<TypeId>,
 
+    /// [`OutputDeck`](crate::lane::OutputDeck) slot types the agent reads, as
+    /// the earlier phases and waves left them.
+    ///
+    /// A co-wave agent writing such a slot takes it out of the deck the wave
+    /// reads into its shard, so the reader would see nothing: a reader and a
+    /// writer of one slot never share a wave.
+    pub deck_reads: Vec<TypeId>,
+
     /// Runtime resources and services the agent reads without locking.
     ///
     /// Any number of agents may read the same one at once — that is the whole
@@ -74,6 +77,12 @@ impl Contention {
     /// Declares the deck slots written.
     pub fn writing_deck(mut self, slots: impl IntoIterator<Item = TypeId>) -> Self {
         self.deck.extend(slots);
+        self
+    }
+
+    /// Declares the deck slots read.
+    pub fn reading_deck(mut self, slots: impl IntoIterator<Item = TypeId>) -> Self {
+        self.deck_reads.extend(slots);
         self
     }
 
@@ -108,7 +117,8 @@ impl Contention {
         let mut found: Vec<TypeId> = self
             .deck
             .iter()
-            .filter(|ty| other.deck.contains(ty))
+            .filter(|ty| other.deck.contains(ty) || other.deck_reads.contains(ty))
+            .chain(self.deck_reads.iter().filter(|ty| other.deck.contains(ty)))
             .chain(
                 self.writes
                     .iter()

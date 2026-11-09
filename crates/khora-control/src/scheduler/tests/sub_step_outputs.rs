@@ -26,7 +26,7 @@ use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, AgentAccess, Contention, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Agent, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::any::TypeId;
@@ -46,7 +46,6 @@ struct PartnerOutput(u32);
 /// [`PartnerOutput`]) on every sub-step.
 struct SubStepper {
     id: AgentId,
-    access: AgentAccess,
     gathers: bool,
     runs: u32,
 }
@@ -85,9 +84,6 @@ impl Agent for SubStepper {
             ..ExecutionTiming::default()
         }
     }
-    fn access(&self) -> AgentAccess {
-        self.access
-    }
     fn contention(&self) -> Contention {
         let slot = if self.gathers {
             TypeId::of::<Gathered>()
@@ -110,14 +106,13 @@ fn playing() -> Arc<Runtime> {
 
 /// What [`Gathered`] holds after one frame of the gathering agent beside its
 /// partner, both fixed-step in `TRANSFORM`.
-fn gathered_after_one_frame(access: AgentAccess, parallel: bool) -> Option<Gathered> {
+fn gathered_after_one_frame(parallel: bool) -> Option<Gathered> {
     let registry = Arc::new(Mutex::new(AgentRegistry::new()));
     {
         let mut registry = registry.lock().expect("the registry lock");
         registry.register(
             Arc::new(Mutex::new(SubStepper {
                 id: AgentId::new("physics"),
-                access,
                 gathers: true,
                 runs: 0,
             })),
@@ -126,7 +121,6 @@ fn gathered_after_one_frame(access: AgentAccess, parallel: bool) -> Option<Gathe
         registry.register(
             Arc::new(Mutex::new(SubStepper {
                 id: AgentId::new("script"),
-                access,
                 gathers: false,
                 runs: 0,
             })),
@@ -142,21 +136,19 @@ fn gathered_after_one_frame(access: AgentAccess, parallel: bool) -> Option<Gathe
 
 /// **Every sub-step's additions survive a concurrent wave.** Run one after the
 /// other, the gathering agent's slot holds one entry per sub-step. Sharing a
-/// wave with its partner each sub-step — pooled or inline — it must hold the
+/// wave with its partner each sub-step, on the worker pool, it must hold the
 /// same entries, not only the last sub-step's.
 #[test]
 fn a_slot_added_to_each_sub_step_keeps_every_sub_step_in_a_concurrent_wave() {
-    for access in [AgentAccess::Isolated, AgentAccess::SharedWorld] {
-        let sequential = gathered_after_one_frame(access, false);
-        assert!(
-            sequential.as_ref().is_some_and(|g| g.0.len() > 1),
-            "{access:?}: the frame sub-steps more than once: {sequential:?}"
-        );
+    let sequential = gathered_after_one_frame(false);
+    assert!(
+        sequential.as_ref().is_some_and(|g| g.0.len() > 1),
+        "the frame sub-steps more than once: {sequential:?}"
+    );
 
-        let parallel = gathered_after_one_frame(access, true);
-        assert_eq!(
-            parallel, sequential,
-            "{access:?}: a concurrent wave kept only part of the sub-steps' additions"
-        );
-    }
+    let parallel = gathered_after_one_frame(true);
+    assert_eq!(
+        parallel, sequential,
+        "a concurrent wave kept only part of the sub-steps' additions"
+    );
 }

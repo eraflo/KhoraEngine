@@ -14,18 +14,17 @@
 
 //! A small persistent thread pool owned by the [`ExecutionScheduler`].
 //!
-//! The scheduler runs a concurrent wave's [`AgentAccess::Isolated`] agents as
-//! independent jobs. Rather than re-spawn threads with `std::thread::scope`
+//! The scheduler runs every member of a concurrent wave as an independent
+//! job. Rather than re-spawn threads with `std::thread::scope`
 //! every wave, this pool spawns its workers **once** (in
 //! [`ExecutionScheduler::new`]) and reuses them for the life of the scheduler,
 //! amortising the spawn cost as waves grow.
 //!
-//! The jobs it runs are `'static`: an `Isolated` agent touches no `World` and
+//! The jobs it runs are `'static`: no agent touches the `World`, and each
 //! reaches its per-frame inputs through an `Arc<LaneBus>` + `Arc<Runtime>` and
-//! its own `Arc<Mutex<dyn Agent>>`, all of which are owned/`Send`. Nothing
-//! borrowed from the frame stack crosses onto a worker — the scheduler's lone
-//! `SharedWorld` agent (which reads `&World`) runs inline on the calling thread
-//! instead — so this needs **no `unsafe`** and no lifetime transmute.
+//! its own place, all of which are owned/`Send`. Nothing borrowed from the
+//! frame stack crosses onto a worker, so this needs **no `unsafe`** and no
+//! lifetime transmute.
 //!
 //! # RULES §5
 //! This is the third named exception to the "no `std::thread::spawn`" rule (the
@@ -33,7 +32,6 @@
 //! scheduler-owned pool, spawned once and joined on [`Drop`]. It never spawns
 //! per frame and its threads never outlive the scheduler.
 //!
-//! [`AgentAccess::Isolated`]: khora_core::agent::AgentAccess::Isolated
 //! [`ExecutionScheduler`]: crate::scheduler::ExecutionScheduler
 //! [`ExecutionScheduler::new`]: crate::scheduler::ExecutionScheduler::new
 

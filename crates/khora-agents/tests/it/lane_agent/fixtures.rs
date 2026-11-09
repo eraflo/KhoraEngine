@@ -51,7 +51,7 @@ use khora_core::lane::io::{
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneBus, LaneError, OutputDeck};
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 
 // ─── Runtime entries ────────────────────────────────────────────────────────
 
@@ -655,14 +655,8 @@ pub fn run_sub_steps(
     let why = locked(&place).take_wakes();
     if !why.is_empty() {
         let permit = agent.contention();
-        let mut context = EngineContext::for_agent(
-            WorldAccess::None,
-            Arc::clone(runtime),
-            &bus,
-            deck,
-            &permit,
-            Some(id),
-        );
+        let mut context =
+            EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
         let mut held = locked(&place);
         agent.wake(&why, &mut held, &mut context);
     }
@@ -672,14 +666,8 @@ pub fn run_sub_steps(
         .map(|_| {
             let mut held = locked(&place);
             let permit = held.contention();
-            let mut context = EngineContext::for_agent(
-                WorldAccess::None,
-                Arc::clone(runtime),
-                &bus,
-                deck,
-                &permit,
-                Some(id),
-            );
+            let mut context =
+                EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
             held.run(&mut context)
         })
         .collect()
@@ -697,14 +685,8 @@ pub fn prepare_waiting(place: &Mutex<Place>, runtime: &Arc<Runtime>, bus: &LaneB
     let permit = preparation.contention();
     let mut scratch = OutputDeck::new();
     let prepared = {
-        let mut context = EngineContext::for_agent(
-            WorldAccess::None,
-            Arc::clone(runtime),
-            bus,
-            &mut scratch,
-            &permit,
-            Some(id),
-        );
+        let mut context =
+            EngineContext::for_agent(Arc::clone(runtime), bus, &mut scratch, &permit, Some(id));
         preparation.run(&mut context)
     };
     locked(place).prepared(prepared);

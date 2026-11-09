@@ -24,9 +24,7 @@ use super::layers::{reports, scheduling, shared, taken, Brush, SharedLog};
 use super::{offer_of, report_of};
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{
-    Agent, AgentAccess, Contention, ExecutionTiming, Layer, Place, Preparation, Wake,
-};
+use khora_core::agent::{Agent, Contention, ExecutionTiming, Layer, Place, Preparation, Wake};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::sync::{Arc, Condvar, Mutex};
@@ -195,9 +193,6 @@ impl Agent for Sculptor {
     }
     fn execution_timing(&self) -> ExecutionTiming {
         one_phase(0.5)
-    }
-    fn access(&self) -> AgentAccess {
-        AgentAccess::Isolated
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

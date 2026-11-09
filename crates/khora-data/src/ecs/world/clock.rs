@@ -51,7 +51,8 @@ impl Default for WorldClock {
 impl World {
     /// Starts a run on this world's clock and returns its tick: everything
     /// the run writes carries it. The substrate starts one run per
-    /// `DataSystem`, per `Flow` and per scheduler wave.
+    /// `DataSystem` and per `Flow`; agents never write the world, so they
+    /// open none.
     pub fn begin_run(&mut self) -> Tick {
         self.clock.tick
     }

@@ -24,7 +24,7 @@ use crate::scheduler::*;
 use crossbeam_channel::Receiver;
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, AgentAccess, ExecutionTiming};
+use khora_core::agent::{Agent, Contention, ExecutionTiming};
 use khora_core::lane::cost::PerDevice;
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::{EngineContext, Runtime};
@@ -36,9 +36,10 @@ use std::time::Duration;
 struct Teller {
     report: Report,
     takes: Duration,
-    access: AgentAccess,
     /// Its priority within its one phase (higher runs first).
     priority: f32,
+    /// What it declares it competes for.
+    contention: Contention,
 }
 
 impl Teller {
@@ -64,8 +65,8 @@ impl Teller {
                 message: None,
             },
             takes: Duration::ZERO,
-            access: AgentAccess::Exclusive,
             priority: 0.5,
+            contention: Contention::none(),
         }
     }
 
@@ -74,13 +75,13 @@ impl Teller {
         self
     }
 
-    fn counting_no_workload(mut self) -> Self {
-        self.report.workload = None;
+    fn contending(mut self, contention: Contention) -> Self {
+        self.contention = contention;
         self
     }
 
-    fn with_access(mut self, access: AgentAccess) -> Self {
-        self.access = access;
+    fn counting_no_workload(mut self) -> Self {
+        self.report.workload = None;
         self
     }
 }
@@ -106,8 +107,8 @@ impl Agent for Teller {
     fn execution_timing(&self) -> ExecutionTiming {
         one_phase(self.priority)
     }
-    fn access(&self) -> AgentAccess {
-        self.access
+    fn contention(&self) -> Contention {
+        self.contention.clone()
     }
     fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
         if !self.takes.is_zero() {
@@ -205,16 +206,18 @@ fn a_report_without_a_workload_carries_the_worlds_entity_count() {
 }
 
 /// **Every agent that runs reports once a run, on every execution path**:
-/// alone with the whole world, inline in a concurrent wave with a shared
-/// world, or on the worker pool — serially and in waves, two frames each.
+/// alone inline, or on the worker pool — serially and in waves, two frames
+/// each. In waves, `solo` locks the queue `pooled-a` reads, so `solo` is a
+/// wave of its own and the two others share the next one.
 #[test]
 fn every_agent_that_runs_reports_once_a_run_on_every_path() {
+    struct Queue;
+
     for parallel in [false, true] {
         let (mut scheduler, rx) = reporting(vec![
-            Teller::new("solo"),
-            Teller::new("reader").with_access(AgentAccess::SharedWorld),
-            Teller::new("pooled-a").with_access(AgentAccess::Isolated),
-            Teller::new("pooled-b").with_access(AgentAccess::Isolated),
+            Teller::new("solo").contending(Contention::none().locking::<Queue>()),
+            Teller::new("pooled-a").contending(Contention::none().reading::<Queue>()),
+            Teller::new("pooled-b"),
         ]);
         scheduler.set_parallel_execution(parallel);
         let mut world = World::new();
@@ -224,7 +227,7 @@ fn every_agent_that_runs_reports_once_a_run_on_every_path() {
         scheduler.run_frame(&mut world, Arc::clone(&runtime));
 
         let published = reports(&rx);
-        for name in ["solo", "reader", "pooled-a", "pooled-b"] {
+        for name in ["solo", "pooled-a", "pooled-b"] {
             let count = published
                 .iter()
                 .filter(|report| report.agent == AgentId::new(name))

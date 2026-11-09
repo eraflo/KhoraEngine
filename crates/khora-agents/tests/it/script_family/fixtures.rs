@@ -41,7 +41,7 @@ use khora_core::lane::erased::{AnyLane, Erased, RunOutcome};
 use khora_core::lane::io::{Budget, FrameId, InputSource, OutputSink};
 use khora_core::lane::LaneReport;
 use khora_core::lane::{LaneBus, OutputDeck};
-use khora_core::{EngineContext, Runtime, WorldAccess};
+use khora_core::{EngineContext, Runtime};
 use khora_data::flow::{PrefabCatalogView, ReservationView, ScriptView};
 use khora_lanes::script_lane::{BudgetedScriptLane, ScriptFamily, ScriptRuntime};
 
@@ -141,14 +141,7 @@ pub fn run_script_agent(
 ) {
     let permit = agent.contention();
     let id = agent.id();
-    let mut context = EngineContext::for_agent(
-        WorldAccess::None,
-        Arc::clone(runtime),
-        bus,
-        deck,
-        &permit,
-        Some(id),
-    );
+    let mut context = EngineContext::for_agent(Arc::clone(runtime), bus, deck, &permit, Some(id));
     agent.execute(&mut context);
 }
 

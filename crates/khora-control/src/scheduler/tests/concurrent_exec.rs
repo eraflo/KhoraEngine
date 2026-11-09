@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::allocations::one_phase;
 use super::{offer_of, report_of};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
@@ -19,31 +20,21 @@ use crate::scheduler::*;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, AgentAccess, AgentImportance};
+use khora_core::agent::{Agent, ExecutionPhase, ExecutionTiming};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::{EngineContext, Runtime};
-use khora_data::ecs::World;
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, RwLock};
 
-/// Deck slot: did the `SharedWorld` agent reach the shared `&World`?
-#[derive(Default)]
-struct SharedSaw(bool);
-/// Deck slot: did the `Isolated` agent run, and was it correctly world-free?
+/// Deck slot: did the agent run?
 #[derive(Default)]
 struct IsoRan {
     ran: bool,
-    world_was_none: bool,
 }
 
-enum Role {
-    SharedWorldReader,
-    IsolatedWriter,
-}
-
+/// An agent of `OUTPUT`, first in it, that marks [`IsoRan`] when it runs.
 struct MockAgent {
     id: AgentId,
-    access: AgentAccess,
-    role: Role,
 }
 
 impl Agent for MockAgent {
@@ -65,24 +56,10 @@ impl Agent for MockAgent {
         report_of(self.id, StrategyId::Balanced)
     }
     fn execute(&mut self, ctx: &mut EngineContext<'_>) {
-        match self.role {
-            Role::SharedWorldReader => {
-                let saw = ctx
-                    .world_ref()
-                    .and_then(|w| w.downcast_ref::<World>())
-                    .is_some();
-                ctx.deck.slot::<SharedSaw>().0 = saw;
-            }
-            Role::IsolatedWriter => {
-                let world_was_none = ctx.world_ref().is_none();
-                let slot = ctx.deck.slot::<IsoRan>();
-                slot.ran = true;
-                slot.world_was_none = world_was_none;
-            }
-        }
+        ctx.deck.slot::<IsoRan>().ran = true;
     }
-    fn access(&self) -> AgentAccess {
-        self.access
+    fn execution_timing(&self) -> ExecutionTiming {
+        one_phase(1.0)
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -92,72 +69,7 @@ impl Agent for MockAgent {
     }
 }
 
-/// Drives `execute_agents_parallel` directly with a `SharedWorld` reader and
-/// an `Isolated` writer in the same wave, proving the pool path: the reader
-/// runs inline with a shared `&World`, the writer runs pooled with none, both
-/// run, and the pooled shard folds back into the shared deck.
-#[test]
-fn concurrent_wave_runs_shared_reader_and_isolated_writer() {
-    let scheduler = ExecutionScheduler::new(
-        Arc::new(Mutex::new(AgentRegistry::new())),
-        Arc::new(RwLock::new(Context::default())),
-        &[AgentId::new("renderer"), AgentId::new("audio")],
-    );
-    let mut world = World::new();
-    let runtime = Arc::new(Runtime::new());
-    let completion = Arc::new(AgentCompletionMap::new(&[
-        AgentId::new("renderer"),
-        AgentId::new("audio"),
-    ]));
-    let bus = Arc::new(LaneBus::new());
-    let mut deck = OutputDeck::new();
-
-    let agents: Vec<AgentSlot> = vec![
-        (
-            Arc::new(Mutex::new(MockAgent {
-                id: AgentId::new("renderer"),
-                access: AgentAccess::SharedWorld,
-                role: Role::SharedWorldReader,
-            })),
-            AgentImportance::Critical,
-            1.0,
-            vec![],
-        ),
-        (
-            Arc::new(Mutex::new(MockAgent {
-                id: AgentId::new("audio"),
-                access: AgentAccess::Isolated,
-                role: Role::IsolatedWriter,
-            })),
-            AgentImportance::Critical,
-            0.5,
-            vec![],
-        ),
-    ];
-
-    scheduler.execute_agents_parallel(agents, &mut world, &runtime, &completion, &bus, &mut deck);
-
-    assert!(
-        deck.take::<SharedSaw>().0,
-        "SharedWorld agent must reach the shared &World on its worker thread"
-    );
-    let iso = deck.take::<IsoRan>();
-    assert!(iso.ran, "Isolated agent must run");
-    assert!(
-        iso.world_was_none,
-        "Isolated agent must be granted no world access"
-    );
-    assert_eq!(
-        completion.outcome(AgentId::new("renderer")),
-        Some(CompletionOutcome::Completed)
-    );
-    assert_eq!(
-        completion.outcome(AgentId::new("audio")),
-        Some(CompletionOutcome::Completed)
-    );
-}
-
-/// An `Isolated` agent whose `execute` panics on its pool worker.
+/// An agent of `OUTPUT`, after [`MockAgent`], whose `execute` panics.
 struct Panicking {
     id: AgentId,
 }
@@ -183,8 +95,8 @@ impl Agent for Panicking {
     fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
         panic!("an agent that panics on its worker");
     }
-    fn access(&self) -> AgentAccess {
-        AgentAccess::Isolated
+    fn execution_timing(&self) -> ExecutionTiming {
+        one_phase(0.5)
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -202,12 +114,25 @@ impl Agent for Panicking {
 /// already been taken by a worker even when the pool has a single one.
 #[test]
 fn a_panicking_agent_is_reported_as_a_failed_completion() {
-    let scheduler = ExecutionScheduler::new(
-        Arc::new(Mutex::new(AgentRegistry::new())),
-        Arc::new(RwLock::new(Context::default())),
-        &[AgentId::new("audio"), AgentId::new("physics")],
-    );
-    let mut world = World::new();
+    let registry = Arc::new(Mutex::new(AgentRegistry::new()));
+    {
+        let mut registry = registry.lock().expect("the registry lock");
+        registry.register(
+            Arc::new(Mutex::new(MockAgent {
+                id: AgentId::new("audio"),
+            })),
+            1.0,
+        );
+        registry.register(
+            Arc::new(Mutex::new(Panicking {
+                id: AgentId::new("physics"),
+            })),
+            0.5,
+        );
+    }
+    let mut scheduler =
+        ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+    scheduler.set_parallel_execution(true);
     let runtime = Arc::new(Runtime::new());
     let completion = Arc::new(AgentCompletionMap::new(&[
         AgentId::new("audio"),
@@ -216,28 +141,16 @@ fn a_panicking_agent_is_reported_as_a_failed_completion() {
     let bus = Arc::new(LaneBus::new());
     let mut deck = OutputDeck::new();
 
-    let agents: Vec<AgentSlot> = vec![
-        (
-            Arc::new(Mutex::new(MockAgent {
-                id: AgentId::new("audio"),
-                access: AgentAccess::Isolated,
-                role: Role::IsolatedWriter,
-            })),
-            AgentImportance::Critical,
-            1.0,
-            vec![],
-        ),
-        (
-            Arc::new(Mutex::new(Panicking {
-                id: AgentId::new("physics"),
-            })),
-            AgentImportance::Critical,
-            0.5,
-            vec![],
-        ),
-    ];
-
-    scheduler.execute_agents_parallel(agents, &mut world, &runtime, &completion, &bus, &mut deck);
+    scheduler.execute_agents_in_phase(
+        ExecutionPhase::OUTPUT,
+        0.0,
+        &runtime,
+        &BTreeSet::new(),
+        &completion,
+        &bus,
+        &mut deck,
+        AgentSelection::All,
+    );
 
     assert!(
         completion.is_done(AgentId::new("physics")),
@@ -256,5 +169,136 @@ fn a_panicking_agent_is_reported_as_a_failed_completion() {
     assert!(
         deck.take::<IsoRan>().ran,
         "the wave-mate's shard still folds into the deck"
+    );
+}
+
+/// The slot written in `TRANSFORM` and again in `OUTPUT`, read in `OUTPUT`.
+#[derive(Default)]
+struct Lit(u32);
+
+/// What the reader saw of [`Lit`], if anything.
+#[derive(Default)]
+struct Seen(Option<u32>);
+
+/// An agent of `phase` at `priority` that declares writing `writes` and
+/// reading `reads` of the deck, and runs `body`.
+struct DeckUser {
+    id: AgentId,
+    phase: ExecutionPhase,
+    priority: f32,
+    writes: std::any::TypeId,
+    reads: Vec<std::any::TypeId>,
+    body: fn(&mut EngineContext<'_>),
+}
+
+impl Agent for DeckUser {
+    fn id(&self) -> AgentId {
+        self.id
+    }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id, request, StrategyId::Balanced)
+    }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(self.id, StrategyId::Balanced)
+    }
+    fn execute(&mut self, ctx: &mut EngineContext<'_>) {
+        (self.body)(ctx);
+    }
+    fn execution_timing(&self) -> ExecutionTiming {
+        ExecutionTiming {
+            allowed_phases: vec![self.phase],
+            default_phase: self.phase,
+            priority: self.priority,
+            ..ExecutionTiming::default()
+        }
+    }
+    fn contention(&self) -> khora_core::agent::Contention {
+        khora_core::agent::Contention::none()
+            .writing_deck([self.writes])
+            .reading_deck(self.reads.clone())
+    }
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+/// What the `OUTPUT` reader saw of [`Lit`] after one frame: `TRANSFORM`
+/// writes it, then in `OUTPUT` one agent adds to it and, after it, another
+/// reads it — the reader declares the slot it writes and the slot it reads,
+/// as a lane's `#[deck]` input declares its read.
+fn seen_after_one_frame(parallel: bool) -> Option<u32> {
+    let registry = Arc::new(Mutex::new(AgentRegistry::new()));
+    {
+        let mut registry = registry.lock().expect("the registry lock");
+        let agents = [
+            DeckUser {
+                id: AgentId::new("physics"),
+                phase: ExecutionPhase::TRANSFORM,
+                priority: 1.0,
+                writes: std::any::TypeId::of::<Lit>(),
+                reads: Vec::new(),
+                body: |ctx| ctx.deck.slot::<Lit>().0 = 1,
+            },
+            DeckUser {
+                id: AgentId::new("renderer"),
+                phase: ExecutionPhase::OUTPUT,
+                priority: 2.0,
+                writes: std::any::TypeId::of::<Lit>(),
+                reads: Vec::new(),
+                body: |ctx| ctx.deck.slot::<Lit>().0 += 10,
+            },
+            DeckUser {
+                id: AgentId::new("ui"),
+                phase: ExecutionPhase::OUTPUT,
+                priority: 1.0,
+                writes: std::any::TypeId::of::<Seen>(),
+                reads: vec![std::any::TypeId::of::<Lit>()],
+                body: |ctx| {
+                    let lit = ctx.earlier_deck().get::<Lit>().map(|lit| lit.0);
+                    ctx.deck.slot::<Seen>().0 = lit;
+                },
+            },
+        ];
+        for agent in agents {
+            let priority = agent.priority;
+            registry.register(Arc::new(Mutex::new(agent)), priority);
+        }
+    }
+    let mut scheduler =
+        ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+    scheduler.set_parallel_execution(parallel);
+    scheduler.run_frame(&mut khora_data::ecs::World::new(), Arc::new(Runtime::new()));
+    scheduler.deck_mut().take::<Seen>().0
+}
+
+/// **A slot read beside its writer reads the same in waves as one agent after
+/// the other.** Serially, the `OUTPUT` reader runs after the `OUTPUT` writer
+/// and sees what both phases wrote. With waves on, it must see the same: the
+/// read it declares keeps it out of its writer's wave, so the slot is never
+/// taken out of the deck it reads into that writer's shard.
+#[test]
+fn a_slot_read_beside_its_writer_reads_the_same_in_waves_as_serially() {
+    let serial = seen_after_one_frame(false);
+    assert_eq!(
+        serial,
+        Some(11),
+        "serially the reader sees both phases' writes"
+    );
+
+    assert_eq!(
+        seen_after_one_frame(true),
+        serial,
+        "in a concurrent wave the reader saw the slot differently"
     );
 }

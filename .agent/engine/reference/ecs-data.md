@@ -69,8 +69,8 @@ snapshot, atomic loads, game saves and prefab links.
   **self-typed** (each field a serde-tagged `ScriptValue`), so the table only registers a missing component; a
   cell is mapped by name and by value. Saves are compared under one declaration (`save::as_read(.., under)`).
 - **Change detection** (`ecs/tick.rs`, `world/clock.rs`, `mut_guard.rs`, `query/changed.rs`; docs
-  `docs/src/concepts/change-detection{,-formal}.md`). The world clock `t` (one tick per DataSystem run, Flow run
-  and scheduler wave; `begin_run`/`end_run`), each page column's `ColumnTicks { summary σ, floor φ, rows τ }`
+  `docs/src/concepts/change-detection{,-formal}.md`). The world clock `t` (one tick per DataSystem run and Flow
+  run; `begin_run`/`end_run`; agents never write the world, so they open no run), each page column's `ColumnTicks { summary σ, floor φ, rows τ }`
   (row ticks only for **observed** keys, only while they move), the page order version ω. Invariants: **I0**
   `s_o < t`, **I1** `last ≤ σ`, **I2** `last ≤ max(τ, φ)`, `φ ≤ σ` — every write path and every move must
   keep them (property tests `no_change_missed.rs`, `write_invariants.rs`).
