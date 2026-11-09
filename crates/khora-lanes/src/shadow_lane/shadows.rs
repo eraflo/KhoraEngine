@@ -20,11 +20,11 @@ use std::time::Duration;
 
 use khora_core::agent::gorna::StrategyId;
 use khora_core::gpu::GpuSetup;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::io::TargetKey;
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::LaneError;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_data::flow::{ShadowMatrices, ShadowView};
 use khora_data::render::RenderWorld;
@@ -175,7 +175,7 @@ impl Lane for ShadowsLane {
         gpu: &mut GpuSetup<'_>,
         _key: Option<TargetKey>,
     ) -> Result<(), LaneError> {
-        let tier = *TIERS.get(level).ok_or(LaneError::InvalidContext {
+        let tier = *TIERS.get(level).ok_or(LaneError::InvalidInput {
             expected: "a shadow level the lane offers",
             received: format!("level {level}"),
         })?;

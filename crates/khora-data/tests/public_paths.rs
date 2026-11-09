@@ -811,10 +811,6 @@ fn extracted_ui_text_fields(x: &khora_data::ui::ExtractedUiText) {
     let _ = (&x.pos, &x.color, &x.z_index, &x.font, &x.size_px, &x.glyphs);
 }
 
-fn ui_atlas_map_fields(x: &khora_data::ui::UiAtlasMap) {
-    let _ = (&x.0,);
-}
-
 fn ui_scene_fields(x: &khora_data::ui::UiScene) {
     let _ = (&x.nodes, &x.texts);
 }
@@ -2563,14 +2559,6 @@ fn module_ui_paths_still_resolve() {
     is_clone::<khora_data::ui::ExtractedUiText>();
     is_debug::<khora_data::ui::ExtractedUiText>();
     is_partial_eq::<khora_data::ui::ExtractedUiText>();
-    let _ = type_name::<khora_data::ui::UiAtlasMap>();
-    let _ = ui_atlas_map_fields as fn(&khora_data::ui::UiAtlasMap);
-    let _ = khora_data::ui::UiAtlasMap::new;
-    let _ = khora_data::ui::UiAtlasMap::get;
-    let _ = khora_data::ui::UiAtlasMap::insert;
-    is_clone::<khora_data::ui::UiAtlasMap>();
-    is_debug::<khora_data::ui::UiAtlasMap>();
-    is_default::<khora_data::ui::UiAtlasMap>();
     let _ = type_name::<khora_data::ui::UiScene>();
     let _ = ui_scene_fields as fn(&khora_data::ui::UiScene);
     let _ = khora_data::ui::UiScene::new;
@@ -2723,7 +2711,6 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ = khora_data::scene::instantiate_subtree; // khora-io
     let _ = khora_data::scene::provenance_of; // khora-editor
     let _ = khora_data::scene::serialize_subtree; // khora-sdk
-    let _ = type_name::<khora_data::ui::UiAtlasMap>(); // khora-agents, khora-lanes
     let _ = type_name::<khora_data::ui::UiImageAtlas>(); // khora-agents
     let _ = khora_data::ui::UiImageAtlas::new; // khora-sdk
     let _ = type_name::<khora_data::ui::UiScene>(); // khora-agents, khora-lanes

@@ -39,10 +39,10 @@ use std::time::Duration;
 
 use khora_core::agent::gorna::StrategyId;
 use khora_core::audio::{AudioMixBus, StreamInfo};
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::LaneError;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::math::AffineTransform;
 use khora_data::ecs::PlaybackState;
 use khora_data::flow::{AudioPlaybackUpdate, AudioSourceSnapshot, AudioView};
@@ -154,7 +154,7 @@ impl Lane for SpatialMixingLane {
         let cap = VOICE_CAPS
             .get(level)
             .copied()
-            .ok_or(LaneError::InvalidContext {
+            .ok_or(LaneError::InvalidInput {
                 expected: "a voice level the lane offers",
                 received: format!("level {level}"),
             })?;

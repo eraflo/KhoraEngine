@@ -19,7 +19,7 @@ use khora_control::substrate;
 use khora_core::agent::gorna::protocol::FrameReport;
 use khora_core::lane::cost::PerDevice;
 use khora_core::lane::io::{Target, TargetKey};
-use khora_core::lane::{ClearColor, ColorTarget, ColorTargetSize, DepthTarget};
+use khora_core::lane::{ClearColor, ColorTargetSize};
 use khora_core::renderer::traits::RenderSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::telemetry::TelemetryEvent;
@@ -194,8 +194,8 @@ impl<A: EngineApp> EngineCore<A> {
     }
 
     /// Stage 3 — acquire the swapchain via `RenderSystem::begin_frame` and
-    /// populate the per-frame [`FrameContext`] with `ColorTarget`,
-    /// `ColorTargetSize`, `DepthTarget`, and `ClearColor`.
+    /// populate the per-frame [`FrameContext`] with the frame's `Target`,
+    /// its `ColorTargetSize` and its `ClearColor`.
     ///
     /// Returns `true` when a renderer is present and `begin_frame` succeeded
     /// (driver should later call [`present_frame`](Self::present_frame)).
@@ -234,15 +234,8 @@ impl<A: EngineApp> EngineCore<A> {
                             samples: 1,
                         },
                     });
-                    fctx.insert(ColorTarget(targets.color));
                     // What every camera's projection takes its aspect from.
                     fctx.insert(ColorTargetSize(targets.size));
-                    match targets.depth {
-                        Some(d) => fctx.insert(DepthTarget(d)),
-                        None => {
-                            fctx.remove::<DepthTarget>();
-                        }
-                    }
                     fctx.insert(ClearColor(khora_core::math::LinearRgba::new(
                         0.1, 0.1, 0.15, 1.0,
                     )));
@@ -466,6 +459,4 @@ fn prepare_frame(
 /// window's size has not changed.
 fn forget_frame_targets(fctx: &khora_core::renderer::api::frame::FrameContext) {
     fctx.remove::<Target>();
-    fctx.remove::<ColorTarget>();
-    fctx.remove::<DepthTarget>();
 }

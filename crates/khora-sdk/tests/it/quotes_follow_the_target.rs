@@ -30,7 +30,6 @@ use khora_sdk::khora_core::agent::gorna::{AgentId, ResourceBudget, StrategyId};
 use khora_sdk::khora_core::agent::registration::AgentRegistration;
 use khora_sdk::khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_sdk::khora_core::gpu::DeviceCaps;
-use khora_sdk::khora_core::lane::contract::{Lane, LaneReport};
 use khora_sdk::khora_core::lane::cost::{Cost, PerDevice};
 use khora_sdk::khora_core::lane::family::{LaneFamily, Semantics};
 use khora_sdk::khora_core::lane::guard::{InputRefusal, OutputRefusal, SinkKind, SourceKind};
@@ -38,6 +37,7 @@ use khora_sdk::khora_core::lane::io::{
     Declaration, FrameId, InputSource, LaneInputs, LaneOutputs, OutputSink, Target, TargetKey,
 };
 use khora_sdk::khora_core::lane::level::{Impact, Level};
+use khora_sdk::khora_core::lane::{Lane, LaneReport};
 use khora_sdk::khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
 use khora_sdk::khora_core::math::Extent2D;
 use khora_sdk::khora_core::renderer::api::frame::FrameContext;

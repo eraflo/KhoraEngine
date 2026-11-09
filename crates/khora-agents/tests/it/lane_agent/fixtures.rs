@@ -45,7 +45,6 @@ use khora_core::agent::gorna::{
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming, Place, Wake};
 use khora_core::gpu::{DeviceCaps, GpuSetup};
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::{InputRefusal, OutputRefusal, SinkKind, SourceKind};
@@ -53,6 +52,7 @@ use khora_core::lane::io::{
     Declaration, FrameId, InputSource, LaneInputs, LaneOutputs, Locked, OutputSink,
 };
 use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
 use khora_core::{EngineContext, Runtime, WorldAccess};
 
@@ -295,7 +295,7 @@ impl Lane for LadderLane {
         out: &mut ProbeOutputs,
     ) -> Result<LaneReport, LaneError> {
         if inputs.plan.fail_levels.contains(&level) {
-            return Err(LaneError::InvalidContext {
+            return Err(LaneError::InvalidInput {
                 expected: "a level the plan lets record",
                 received: format!("level {level}, which the plan fails"),
             });

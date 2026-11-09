@@ -24,10 +24,10 @@ use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::level::Level;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneError, LaneKind, OutputDeck};
 use khora_core::Runtime;
 
@@ -94,7 +94,7 @@ impl Lane for FailingCheapLane {
         _inputs: &mut NoInputs,
         _out: &mut ProbeOutputs,
     ) -> Result<LaneReport, LaneError> {
-        Err(LaneError::InvalidContext {
+        Err(LaneError::InvalidInput {
             expected: "a cheap lane that works",
             received: "one that fails".to_owned(),
         })

@@ -18,12 +18,12 @@
 //! nothing means the level's own impact.
 
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::erased::{AnyLane, Erased};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::{FrameId, InputSource};
 use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneBus, LaneError, LaneKind};
 use khora_core::Runtime;
 use khora_macros::{LaneInputs, LaneOutputs};

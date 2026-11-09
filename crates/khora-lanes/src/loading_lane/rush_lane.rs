@@ -15,10 +15,10 @@
 //! The rush lane: everything filed, loaded in one run.
 
 use khora_core::agent::gorna::StrategyId;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::LaneError;
+use khora_core::lane::{Lane, LaneReport};
 
 use super::work::{load, Waiting};
 use super::{LoadingFamily, LoadingInputs, LoadingOutputs};

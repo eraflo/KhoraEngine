@@ -15,16 +15,11 @@
 //! Per-frame intermediate UI scene types.
 //!
 //! `UiScene` is published into the [`LaneBus`](khora_core::lane::LaneBus)
-//! each frame by [`UiFlow`](crate::flow::UiFlow). Atlas allocation is **not**
-//! part of the View — the UI agent maintains a per-texture
-//! [`UiAtlasMap`](super::UiAtlasMap) and passes it to the lane separately
-//! so the immutable bus invariant is preserved.
+//! each frame by [`UiFlow`](crate::flow::UiFlow).
 
 use khora_core::asset::AssetUUID;
 use khora_core::math::{Vec2, Vec4};
-use khora_core::renderer::api::util::AtlasRect;
 use khora_core::ui::text::ShapedGlyph;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::ui::components::{UiBorder, UiColor, UiImage};
@@ -77,31 +72,5 @@ impl UiScene {
     /// Creates a new, empty `UiScene`.
     pub fn new() -> Self {
         Self::default()
-    }
-}
-
-/// Per-frame UI atlas lookup: texture UUID → allocated `AtlasRect`.
-///
-/// Maintained by the UI agent (which owns the atlas allocator) and passed
-/// to the UI render lane through `LaneContext`. Replaces the old in-place
-/// `ExtractedUiNode.atlas_rect` mutation, which violated the immutable
-/// `LaneBus` invariant once the bus replaced `UiSceneStore`.
-#[derive(Debug, Default, Clone)]
-pub struct UiAtlasMap(pub HashMap<AssetUUID, AtlasRect>);
-
-impl UiAtlasMap {
-    /// Creates an empty atlas map.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Looks up the rect for a texture UUID, if allocated this frame.
-    pub fn get(&self, uuid: &AssetUUID) -> Option<AtlasRect> {
-        self.0.get(uuid).copied()
-    }
-
-    /// Inserts or replaces the rect for a texture UUID.
-    pub fn insert(&mut self, uuid: AssetUUID, rect: AtlasRect) {
-        self.0.insert(uuid, rect);
     }
 }

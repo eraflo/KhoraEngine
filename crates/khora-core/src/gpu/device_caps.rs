@@ -15,7 +15,7 @@
 //! What the devices the engine runs on can do.
 
 /// What the devices can do, read once at boot: a lane whose
-/// [`supports`](crate::lane::contract::Lane::supports) says no to these is
+/// [`supports`](crate::lane::Lane::supports) says no to these is
 /// removed from its family's menu.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct DeviceCaps {

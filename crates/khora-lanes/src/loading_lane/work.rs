@@ -22,8 +22,8 @@
 use std::time::Duration;
 
 use khora_core::asset::{Decoded, IndexedAssets};
-use khora_core::lane::contract::LaneReport;
 use khora_core::lane::cost::{Cost, PerDevice};
+use khora_core::lane::LaneReport;
 use khora_script::toolchain::{CompileDone, CompileRequest, Compiled};
 
 use super::{LoadingInputs, LoadingOutputs};

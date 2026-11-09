@@ -135,7 +135,7 @@ impl<W: WindowProvider, A: EngineApp> WinitAppRunner<W, A> {
         // The engine-level Runtime is immutable per-frame. The
         // `Arc<FrameContext>` registered at engine init has interior
         // mutability (its blackboard is a `Mutex<AnyMap>`), so each
-        // frame's writes (`ColorTarget`, `DepthTarget`, …) overwrite the
+        // frame's writes (`Target`, `ColorTargetSize`, …) overwrite the
         // previous frame's by replacing entries of the same type.
         let runtime_arc = Arc::clone(self.engine.runtime());
         if self.frame_context.is_none() {

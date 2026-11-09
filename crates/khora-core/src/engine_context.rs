@@ -42,8 +42,8 @@ pub enum WorldAccess<'a> {
 /// Engine context providing access to various subsystems.
 ///
 /// Built once per frame by the Scheduler and passed to every Agent's
-/// `execute()`. The Agent forwards `bus` and `deck` to its `LaneContext`
-/// so that lanes can read [`Flow`] outputs and write their own outputs.
+/// `execute()`. Lanes read [`Flow`] outputs from `bus` and write their own
+/// outputs to `deck`, through their typed inputs and outputs.
 ///
 /// The `runtime` bundle exposes the three runtime containers
 /// ([`Services`](crate::runtime::Services),

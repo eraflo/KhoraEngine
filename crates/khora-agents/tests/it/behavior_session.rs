@@ -25,8 +25,8 @@ use khora_control::substrate::run_data_systems;
 use khora_core::agent::gorna::StrategyId;
 use khora_core::ecs::entity::EntityId;
 use khora_core::event::{Channel, WhenFull};
-use khora_core::lane::contract::LaneReport;
 use khora_core::lane::cost::Cost;
+use khora_core::lane::LaneReport;
 use khora_core::lane::{OutputDeck, Reserve};
 use khora_core::projection::Interest;
 use khora_core::script::{

@@ -197,7 +197,7 @@ impl<L: Lane> AnyLane for Erased<L> {
     ) -> Result<(), NotPrepared> {
         let levels = self.lane.levels().len();
         if level >= levels {
-            return Err(NotPrepared::Failed(LaneError::InvalidContext {
+            return Err(NotPrepared::Failed(LaneError::InvalidInput {
                 expected: "a level the lane offers",
                 received: format!("level {level} of {levels}"),
             }));
@@ -233,7 +233,7 @@ impl<L: Lane> Erased<L> {
     ) -> (RunOutcome, Vec<Cost>) {
         let levels = self.lane.levels().len();
         if level >= levels {
-            let error = LaneError::InvalidContext {
+            let error = LaneError::InvalidInput {
                 expected: "a level the lane offers",
                 received: format!("level {level} of {levels}"),
             };

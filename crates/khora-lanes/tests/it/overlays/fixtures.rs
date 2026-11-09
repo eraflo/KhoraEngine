@@ -38,9 +38,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use khora_core::asset::{AssetHandle, AssetUUID};
 use khora_core::gpu::GpuSetup;
-use khora_core::lane::contract::Lane;
 use khora_core::lane::erased::{AnyLane, Erased, Run, RunOutcome};
 use khora_core::lane::io::{FrameId, InputSource, OutputSink, PassSlot, Target, TargetKey};
+use khora_core::lane::Lane;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::math::dimension::{Extent3D, Origin3D};
 use khora_core::math::{AffineTransform, Extent2D, LinearRgba, Mat4, Vec3};

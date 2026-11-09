@@ -12,43 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Domain-agnostic context key types for [`LaneContext`](super::LaneContext).
+//! Values of the frame the host publishes beside its `Target`.
 //!
-//! These newtypes are inserted into a `LaneContext` by agents and extracted
-//! by lanes. Placing them in `khora-core` avoids a cyclic dependency between
-//! `khora-lanes` and `khora-agents`.
+//! | Value               | Meaning                                         |
+//! |---------------------|-------------------------------------------------|
+//! | [`ColorTargetSize`] | Size in pixels of the colour target              |
+//! | [`ClearColor`]      | Framebuffer clear colour                         |
 //!
-//! # Render domain
-//!
-//! | Key                          | Meaning                                      |
-//! |------------------------------|----------------------------------------------|
-//! | [`ColorTarget`]              | Texture view to render colour into            |
-//! | [`ColorTargetSize`]          | Size in pixels of the colour target           |
-//! | [`DepthTarget`]              | Texture view for depth testing                |
-//! | [`ClearColor`]               | Framebuffer clear colour                      |
-//!
-//! # Physics domain
-//!
-//! | Key                  | Meaning                           |
-//! |----------------------|-----------------------------------|
-//! | [`PhysicsDeltaTime`] | Fixed timestep for the current step |
-//!
-//! # Audio domain
-//!
-//! The audio family's lane reads the [`Arc<dyn AudioMixBus>`](crate::audio::AudioMixBus)
-//! as a `#[resource]` of its typed inputs. The bus carries its own
-//! [`StreamInfo`](crate::audio::StreamInfo), so no separate context key is
-//! needed.
-
-use crate::renderer::api::resource::TextureViewId;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Render domain
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Color render target for the current frame.
-#[derive(Debug, Clone, Copy)]
-pub struct ColorTarget(pub TextureViewId);
+//! A lane reads the clear colour through a `#[frame]` field of its typed
+//! inputs; every camera takes its aspect from the target's size.
 
 /// Size, in pixels, of the colour target the current frame renders into —
 /// the swapchain, or the editor's offscreen viewport.
@@ -70,26 +42,9 @@ impl ColorTargetSize {
     }
 }
 
-/// Depth render target for the current frame.
-#[derive(Debug, Clone, Copy)]
-pub struct DepthTarget(pub TextureViewId);
-
 /// Clear color for the current frame.
 #[derive(Debug, Clone, Copy)]
 pub struct ClearColor(pub crate::math::LinearRgba);
-
-/// Cube shadow atlas texture view (point lights), bound by lit shaders as
-/// `texture_depth_cube_array`. Written by shadow lanes after `execute()`.
-#[derive(Debug, Clone, Copy)]
-pub struct ShadowAtlasCubeView(pub TextureViewId);
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Physics domain
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Fixed timestep for the current physics step.
-#[derive(Debug, Clone, Copy)]
-pub struct PhysicsDeltaTime(pub f32);
 
 #[cfg(test)]
 mod tests {

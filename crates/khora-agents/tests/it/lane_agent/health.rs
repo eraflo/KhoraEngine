@@ -26,12 +26,12 @@ use khora_core::agent::gorna::{AgentId, ResourceBudget, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::{InputRefusal, SourceKind};
 use khora_core::lane::io::{Declaration, InputSource, LaneInputs};
 use khora_core::lane::level::Level;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneError, LaneKind, OutputDeck};
 use khora_core::Runtime;
 
@@ -125,7 +125,7 @@ impl Lane for EffortLane {
             std::thread::sleep(effort.takes);
         }
         if effort.fails {
-            return Err(LaneError::InvalidContext {
+            return Err(LaneError::InvalidInput {
                 expected: "an effort that records",
                 received: "one told to fail".to_owned(),
             });

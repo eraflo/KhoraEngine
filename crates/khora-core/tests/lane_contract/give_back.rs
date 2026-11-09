@@ -20,11 +20,11 @@
 use khora_core::agent::gorna::StrategyId;
 use khora_core::event::{Channel, Cursor, WhenFull};
 use khora_core::gpu::GpuSetup;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::erased::{AnyLane, Erased, RunOutcome};
 use khora_core::lane::io::{FrameId, InputSource, LaneInputs, OutputSink};
 use khora_core::lane::level::Level;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneBus, LaneError, OutputDeck};
 use khora_core::Runtime;
 
@@ -95,7 +95,7 @@ impl Lane for Baker {
             self.channel.send(order);
         }
         if self.fails {
-            return Err(LaneError::InvalidContext {
+            return Err(LaneError::InvalidInput {
                 expected: "a bake that works",
                 received: "a baker told to fail".to_owned(),
             });
@@ -256,7 +256,7 @@ impl Lane for ColdOven {
         _gpu: &mut GpuSetup<'_>,
         _key: Option<khora_core::lane::io::TargetKey>,
     ) -> Result<(), LaneError> {
-        Err(LaneError::InvalidContext {
+        Err(LaneError::InvalidInput {
             expected: "an oven that lights",
             received: "a cold oven".to_owned(),
         })

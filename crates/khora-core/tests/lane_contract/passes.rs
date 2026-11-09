@@ -21,13 +21,13 @@ use std::any::TypeId;
 
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::gpu::GpuSetup;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::erased::{AnyLane, Erased, Run, RunOutcome};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::{OutputRefusal, Reason, SinkKind};
 use khora_core::lane::io::{FrameId, InputSource, LaneOutputs, OutputSink, Pass, PassSlot};
 use khora_core::lane::level::Level;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
 use khora_core::renderer::api::command::{CommandBufferId, RenderPassDescriptor};
 use khora_core::Runtime;

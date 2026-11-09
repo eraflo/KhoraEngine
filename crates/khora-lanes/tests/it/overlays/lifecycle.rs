@@ -17,7 +17,7 @@
 //! model ring included — is released on shutdown, never one the
 //! `PipelineSystem` or a mesh owns, never one twice.
 
-use khora_core::lane::contract::Lane;
+use khora_core::lane::Lane;
 use khora_data::render::{GizmoPassSlot, GridPassSlot, WireframePassSlot};
 use khora_lanes::overlay_lane::{GizmoLane, GridLane, WireframeLane};
 

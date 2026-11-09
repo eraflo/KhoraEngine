@@ -57,7 +57,6 @@ fn is_copy<T: Copy>() {}
 fn is_debug<T: std::fmt::Debug>() {}
 fn is_default<T: Default>() {}
 fn is_deref<T: std::ops::Deref>() {}
-fn is_deref_mut<T: std::ops::DerefMut>() {}
 fn is_deserialize_owned<T: serde::de::DeserializeOwned>() {}
 fn is_display<T: std::fmt::Display>() {}
 fn is_eq<T: Eq>() {}
@@ -107,8 +106,6 @@ mod every_pub_mod {
     use khora_core::lane::bus as _;
     use khora_core::lane::context_keys as _;
     use khora_core::lane::deck as _;
-    use khora_core::lane::lock as _;
-    use khora_core::lane::slot as _;
     use khora_core::memory as _;
     use khora_core::physics as _;
     use khora_core::platform as _;
@@ -417,10 +414,9 @@ fn when_full_variants(x: &khora_core::event::WhenFull) {
 fn lane_error_variants(x: &khora_core::lane::LaneError) {
     match x {
         khora_core::lane::LaneError::NotInitialized => {}
-        khora_core::lane::LaneError::InvalidContext { .. } => {}
+        khora_core::lane::LaneError::InvalidInput { .. } => {}
         khora_core::lane::LaneError::LockPoisoned { .. } => {}
         khora_core::lane::LaneError::MissingResource { .. } => {}
-        khora_core::lane::LaneError::MissingAsset { .. } => {}
         khora_core::lane::LaneError::ExecutionFailed(..) => {}
         khora_core::lane::LaneError::InitializationFailed(..) => {}
     }
@@ -433,8 +429,6 @@ fn lane_kind_variants(x: &khora_core::lane::LaneKind) {
         khora_core::lane::LaneKind::Physics => {}
         khora_core::lane::LaneKind::Audio => {}
         khora_core::lane::LaneKind::Asset => {}
-        khora_core::lane::LaneKind::Scene => {}
-        khora_core::lane::LaneKind::Ecs => {}
         khora_core::lane::LaneKind::Ui => {}
         khora_core::lane::LaneKind::Script => {}
     }
@@ -444,23 +438,7 @@ fn clear_color_fields(x: &khora_core::lane::context_keys::ClearColor) {
     let _ = (&x.0,);
 }
 
-fn color_target_fields(x: &khora_core::lane::context_keys::ColorTarget) {
-    let _ = (&x.0,);
-}
-
 fn color_target_size_fields(x: &khora_core::lane::context_keys::ColorTargetSize) {
-    let _ = (&x.0,);
-}
-
-fn depth_target_fields(x: &khora_core::lane::context_keys::DepthTarget) {
-    let _ = (&x.0,);
-}
-
-fn physics_delta_time_fields(x: &khora_core::lane::context_keys::PhysicsDeltaTime) {
-    let _ = (&x.0,);
-}
-
-fn shadow_atlas_cube_view_fields(x: &khora_core::lane::context_keys::ShadowAtlasCubeView) {
     let _ = (&x.0,);
 }
 
@@ -1306,17 +1284,6 @@ mod trait_items {
         let _ = <T as khora_core::event::Supersedes>::supersedes;
     }
 
-    fn lane_trait_items<T: khora_core::lane::Lane>() {
-        let _ = <T as khora_core::lane::Lane>::strategy_name;
-        let _ = <T as khora_core::lane::Lane>::lane_kind;
-        let _ = <T as khora_core::lane::Lane>::estimate_cost;
-        let _ = <T as khora_core::lane::Lane>::on_initialize;
-        let _ = <T as khora_core::lane::Lane>::execute;
-        let _ = <T as khora_core::lane::Lane>::on_shutdown;
-        let _ = <T as khora_core::lane::Lane>::as_any;
-        let _ = <T as khora_core::lane::Lane>::as_any_mut;
-    }
-
     fn physics_provider_trait_items<T: khora_core::physics::PhysicsProvider>() {
         let _ = <T as khora_core::physics::PhysicsProvider>::step;
         let _ = <T as khora_core::physics::PhysicsProvider>::set_gravity;
@@ -1959,30 +1926,9 @@ fn module_interpolation_paths_still_resolve() {
 
 #[test]
 fn module_lane_paths_still_resolve() {
-    // trait `khora_core::lane::Lane`: see `lane_trait_items`
-    let _ = type_name::<khora_core::lane::LaneContext>();
-    let _ = khora_core::lane::LaneContext::new;
-    let _ = khora_core::lane::LaneContext::insert::<u32>;
-    let _ = khora_core::lane::LaneContext::get::<u32>;
-    let _ = khora_core::lane::LaneContext::get_mut::<u32>;
-    let _ = khora_core::lane::LaneContext::contains::<u32>;
-    let _ = khora_core::lane::LaneContext::remove::<u32>;
-    let _ = khora_core::lane::LaneContext::insert_slot::<u32>;
-    let _ = khora_core::lane::LaneContext::insert_slot_as::<u8, u32>;
-    let _ = khora_core::lane::LaneContext::slot::<u32>;
-    let _ = khora_core::lane::LaneContext::slot_as::<u8, u32>;
-    let _ = khora_core::lane::LaneContext::insert_ref::<u32>;
-    let _ = khora_core::lane::LaneContext::get_ref::<u32>;
-    is_default::<khora_core::lane::LaneContext>();
-    is_debug::<khora_core::lane::LaneContext>();
     let _ = type_name::<khora_core::lane::LaneError>();
     let _ = lane_error_variants as fn(&khora_core::lane::LaneError);
     let _ = khora_core::lane::LaneError::missing;
-    let _ = khora_core::lane::LaneError::lock_poisoned;
-    let _: fn(&'static str, String) -> khora_core::lane::LaneError =
-        khora_core::lane::LaneError::missing_resource;
-    let _: fn(&'static str, &'static str) -> khora_core::lane::LaneError =
-        khora_core::lane::LaneError::missing_asset;
     is_debug::<khora_core::lane::LaneError>();
     is_display::<khora_core::lane::LaneError>();
     is_error::<khora_core::lane::LaneError>();
@@ -1995,15 +1941,6 @@ fn module_lane_paths_still_resolve() {
     is_eq::<khora_core::lane::LaneKind>();
     is_hash::<khora_core::lane::LaneKind>();
     is_display::<khora_core::lane::LaneKind>();
-    let _ = type_name::<khora_core::lane::LaneRegistry>();
-    let _ = khora_core::lane::LaneRegistry::new;
-    let _ = khora_core::lane::LaneRegistry::register;
-    let _ = khora_core::lane::LaneRegistry::get;
-    let _ = khora_core::lane::LaneRegistry::find_by_kind;
-    let _ = khora_core::lane::LaneRegistry::all;
-    let _ = khora_core::lane::LaneRegistry::len;
-    let _ = khora_core::lane::LaneRegistry::is_empty;
-    is_default::<khora_core::lane::LaneRegistry>();
     let _ = type_name::<khora_core::lane::bus::LaneBus>();
     let _ = type_name::<khora_core::lane::LaneBus>();
     same_type(
@@ -2029,16 +1966,6 @@ fn module_lane_paths_still_resolve() {
     is_debug::<khora_core::lane::context_keys::ClearColor>();
     is_clone::<khora_core::lane::context_keys::ClearColor>();
     is_copy::<khora_core::lane::context_keys::ClearColor>();
-    let _ = type_name::<khora_core::lane::context_keys::ColorTarget>();
-    let _ = type_name::<khora_core::lane::ColorTarget>();
-    same_type(
-        PhantomData::<khora_core::lane::ColorTarget>,
-        PhantomData::<khora_core::lane::context_keys::ColorTarget>,
-    );
-    let _ = color_target_fields as fn(&khora_core::lane::context_keys::ColorTarget);
-    is_debug::<khora_core::lane::context_keys::ColorTarget>();
-    is_clone::<khora_core::lane::context_keys::ColorTarget>();
-    is_copy::<khora_core::lane::context_keys::ColorTarget>();
     let _ = type_name::<khora_core::lane::context_keys::ColorTargetSize>();
     let _ = type_name::<khora_core::lane::ColorTargetSize>();
     same_type(
@@ -2050,37 +1977,6 @@ fn module_lane_paths_still_resolve() {
     is_debug::<khora_core::lane::context_keys::ColorTargetSize>();
     is_clone::<khora_core::lane::context_keys::ColorTargetSize>();
     is_copy::<khora_core::lane::context_keys::ColorTargetSize>();
-    let _ = type_name::<khora_core::lane::context_keys::DepthTarget>();
-    let _ = type_name::<khora_core::lane::DepthTarget>();
-    same_type(
-        PhantomData::<khora_core::lane::DepthTarget>,
-        PhantomData::<khora_core::lane::context_keys::DepthTarget>,
-    );
-    let _ = depth_target_fields as fn(&khora_core::lane::context_keys::DepthTarget);
-    is_debug::<khora_core::lane::context_keys::DepthTarget>();
-    is_clone::<khora_core::lane::context_keys::DepthTarget>();
-    is_copy::<khora_core::lane::context_keys::DepthTarget>();
-    let _ = type_name::<khora_core::lane::context_keys::PhysicsDeltaTime>();
-    let _ = type_name::<khora_core::lane::PhysicsDeltaTime>();
-    same_type(
-        PhantomData::<khora_core::lane::PhysicsDeltaTime>,
-        PhantomData::<khora_core::lane::context_keys::PhysicsDeltaTime>,
-    );
-    let _ = physics_delta_time_fields as fn(&khora_core::lane::context_keys::PhysicsDeltaTime);
-    is_debug::<khora_core::lane::context_keys::PhysicsDeltaTime>();
-    is_clone::<khora_core::lane::context_keys::PhysicsDeltaTime>();
-    is_copy::<khora_core::lane::context_keys::PhysicsDeltaTime>();
-    let _ = type_name::<khora_core::lane::context_keys::ShadowAtlasCubeView>();
-    let _ = type_name::<khora_core::lane::ShadowAtlasCubeView>();
-    same_type(
-        PhantomData::<khora_core::lane::ShadowAtlasCubeView>,
-        PhantomData::<khora_core::lane::context_keys::ShadowAtlasCubeView>,
-    );
-    let _ =
-        shadow_atlas_cube_view_fields as fn(&khora_core::lane::context_keys::ShadowAtlasCubeView);
-    is_debug::<khora_core::lane::context_keys::ShadowAtlasCubeView>();
-    is_clone::<khora_core::lane::context_keys::ShadowAtlasCubeView>();
-    is_copy::<khora_core::lane::context_keys::ShadowAtlasCubeView>();
     let _ = type_name::<khora_core::lane::deck::OutputDeck>();
     let _ = type_name::<khora_core::lane::OutputDeck>();
     same_type(
@@ -2097,50 +1993,48 @@ fn module_lane_paths_still_resolve() {
     let _ = khora_core::lane::deck::OutputDeck::merge_from;
     is_default::<khora_core::lane::deck::OutputDeck>();
     is_debug::<khora_core::lane::deck::OutputDeck>();
-    let _ = khora_core::lane::lock::mutex_lock::<u32>;
-    let _ = khora_core::lane::mutex_lock::<u32>;
-    same_item(
-        &khora_core::lane::mutex_lock::<u32>,
-        &khora_core::lane::lock::mutex_lock::<u32>,
-    );
-    let _ = khora_core::lane::lock::mutex_lock_render::<u32>;
-    let _ = khora_core::lane::mutex_lock_render::<u32>;
-    same_item(
-        &khora_core::lane::mutex_lock_render::<u32>,
-        &khora_core::lane::lock::mutex_lock_render::<u32>,
-    );
-    let _ = khora_core::lane::lock::read_lock::<u32>;
-    let _ = khora_core::lane::read_lock::<u32>;
-    same_item(
-        &khora_core::lane::read_lock::<u32>,
-        &khora_core::lane::lock::read_lock::<u32>,
-    );
-    let _ = khora_core::lane::lock::read_lock_render::<u32>;
-    let _ = khora_core::lane::read_lock_render::<u32>;
-    same_item(
-        &khora_core::lane::read_lock_render::<u32>,
-        &khora_core::lane::lock::read_lock_render::<u32>,
-    );
-    let _ = khora_core::lane::lock::write_lock::<u32>;
-    let _ = khora_core::lane::write_lock::<u32>;
-    same_item(
-        &khora_core::lane::write_lock::<u32>,
-        &khora_core::lane::lock::write_lock::<u32>,
-    );
-    let _ = khora_core::lane::lock::write_lock_render::<u32>;
-    let _ = khora_core::lane::write_lock_render::<u32>;
-    same_item(
-        &khora_core::lane::write_lock_render::<u32>,
-        &khora_core::lane::lock::write_lock_render::<u32>,
-    );
-    let _ = type_name::<khora_core::lane::slot::SlotGuard<'static, u32>>();
-    let _ = type_name::<khora_core::lane::SlotGuard<'static, u32>>();
+}
+
+/// `khora_core::lane::Lane` and `khora_core::lane::LaneReport` name the typed
+/// lane contract defined in `khora_core::lane::contract`: a type bounded by
+/// either trait path satisfies the other (so both name one trait, with the
+/// contract's items), and both report paths are one type.
+#[test]
+fn lane_is_the_contract_lane() {
+    #[allow(dead_code)]
+    fn contract_lane_items<T: khora_core::lane::contract::Lane>() {
+        let _ = type_name::<<T as khora_core::lane::contract::Lane>::Family>();
+        let _ = <T as khora_core::lane::contract::Lane>::levels;
+        let _ = <T as khora_core::lane::contract::Lane>::supports;
+        let _ = <T as khora_core::lane::contract::Lane>::prepare;
+        let _ = <T as khora_core::lane::contract::Lane>::cost;
+        let _ = <T as khora_core::lane::contract::Lane>::record;
+        let _ = <T as khora_core::lane::contract::Lane>::shutdown;
+    }
+
+    #[allow(dead_code)]
+    fn bounded_by_lane_path<T: khora_core::lane::Lane>() {
+        contract_lane_items::<T>();
+    }
+
+    #[allow(dead_code)]
+    fn bounded_by_contract_path<T: khora_core::lane::contract::Lane>() {
+        bounded_by_lane_path::<T>();
+    }
+
+    fn lane_report_fields(x: &khora_core::lane::LaneReport) {
+        let _ = (&x.done, &x.stalled, &x.message);
+    }
+
     same_type(
-        PhantomData::<khora_core::lane::SlotGuard<'static, u32>>,
-        PhantomData::<khora_core::lane::slot::SlotGuard<'static, u32>>,
+        PhantomData::<khora_core::lane::LaneReport>,
+        PhantomData::<khora_core::lane::contract::LaneReport>,
     );
-    is_deref::<khora_core::lane::slot::SlotGuard<'static, u32>>();
-    is_deref_mut::<khora_core::lane::slot::SlotGuard<'static, u32>>();
+    let _ = lane_report_fields as fn(&khora_core::lane::LaneReport);
+    is_debug::<khora_core::lane::LaneReport>();
+    is_clone::<khora_core::lane::LaneReport>();
+    is_default::<khora_core::lane::LaneReport>();
+    is_partial_eq::<khora_core::lane::LaneReport>();
 }
 
 #[test]
@@ -3183,28 +3077,18 @@ mod paths_used_by_other_crates {
     use khora_core::graph::topological_sort as _; // khora-control, khora-data
     use khora_core::interpolation::SharedTransformInterpolation as _; // khora-agents, khora-data, khora-sdk
     use khora_core::interpolation::TransformInterpolation as _; // khora-data
-    use khora_core::lane::lock::mutex_lock as _; // khora-lanes
-    use khora_core::lane::lock::mutex_lock_render as _; // khora-lanes
-    use khora_core::lane::lock::read_lock as _; // khora-lanes
-    use khora_core::lane::lock::read_lock_render as _; // khora-lanes
-    use khora_core::lane::lock::write_lock as _; // khora-lanes
-    use khora_core::lane::lock::write_lock_render as _; // khora-lanes
     use khora_core::lane::ClearColor as _; // khora-agents, khora-lanes, khora-sdk
-    use khora_core::lane::ColorTarget as _; // khora-agents, khora-lanes, khora-sdk
-    use khora_core::lane::ColorTargetSize as _; // khora-data, khora-sdk
-    use khora_core::lane::DepthTarget as _; // khora-agents, khora-lanes, khora-sdk
-    use khora_core::lane::Lane as _; // khora-agents, khora-lanes
-    use khora_core::lane::LaneBus as _; // khora-agents, khora-control, khora-data
-    use khora_core::lane::LaneContext as _; // khora-agents, khora-lanes
-    use khora_core::lane::LaneError as _; // khora-lanes
+    use khora_core::lane::ColorTargetSize as _; // khora-data, khora-editor (as khora_sdk::khora_core::…), khora-sdk
+    use khora_core::lane::Lane as _; // khora-lanes
+    use khora_core::lane::LaneBus as _; // khora-control, khora-data, khora-sdk
+    use khora_core::lane::LaneError as _; // khora-lanes, khora-macros
     use khora_core::lane::LaneError::InitializationFailed as _; // khora-lanes
-    use khora_core::lane::LaneKind as _; // khora-agents, khora-lanes
+    use khora_core::lane::LaneKind as _; // khora-lanes
     use khora_core::lane::LaneKind::Audio as _; // khora-lanes
     use khora_core::lane::LaneKind::Physics as _; // khora-lanes
     use khora_core::lane::LaneKind::Render as _; // khora-lanes
-    use khora_core::lane::LaneRegistry as _; // khora-agents
-    use khora_core::lane::OutputDeck as _; // khora-agents, khora-control, khora-data, khora-io, khora-lanes
-    use khora_core::lane::PhysicsDeltaTime as _; // khora-agents, khora-lanes
+    use khora_core::lane::LaneReport as _; // khora-lanes
+    use khora_core::lane::OutputDeck as _; // khora-agents, khora-control, khora-data, khora-editor (as khora_sdk::khora_core::…), khora-io, khora-sdk
     use khora_core::math as _; // khora-sdk (glob re-export)
     use khora_core::math::affine_transform::AffineTransform as _; // khora-agents, khora-data, khora-lanes
     use khora_core::math::dimension as _; // khora-infra

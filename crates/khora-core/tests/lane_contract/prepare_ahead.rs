@@ -20,13 +20,13 @@ use std::sync::{Arc, Mutex};
 
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::gpu::GpuSetup;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::erased::{AnyLane, Erased, NotPrepared, RunOutcome};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::Reason;
 use khora_core::lane::io::{FrameId, InputSource, OutputSink, Target, TargetKey};
 use khora_core::lane::level::Level;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
 use khora_core::math::Extent2D;
 use khora_core::renderer::api::resource::{TextureFormat, TextureViewId};
@@ -98,7 +98,7 @@ impl Lane for SketchLane {
     ) -> Result<(), LaneError> {
         self.log.lock().unwrap().push(Event::Prepare(level, key));
         if self.fail_prepare {
-            return Err(LaneError::InvalidContext {
+            return Err(LaneError::InvalidInput {
                 expected: "a prepare that works",
                 received: "a lane told to fail it".to_owned(),
             });
@@ -286,7 +286,7 @@ fn a_level_the_lane_does_not_offer_cannot_be_prepared_ahead() {
     assert!(
         matches!(
             prepared,
-            Err(NotPrepared::Failed(LaneError::InvalidContext { .. }))
+            Err(NotPrepared::Failed(LaneError::InvalidInput { .. }))
         ),
         "{prepared:?}"
     );

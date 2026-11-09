@@ -89,7 +89,7 @@ Measurements and levers: `docs/research/2026-11-06_build-time-and-target-size.md
 
 - Never `unwrap()` on a fallible GPU or I/O operation. Use `Result`, `?`, or `map_err`.
 - Never use `Box<dyn Any>` downcasting as a substitute for proper trait design.
-- Never store mutable global state. Use `LaneContext`/`OutputDeck` slots or ECS components.
+- Never store mutable global state. Use a lane's `#[deck]` outputs (the `OutputDeck`), a runtime resource or ECS components.
 - `Arc<dyn Trait>` for cross-crate shared references; `Arc<Mutex<T>>` for shared mutable state.
 - One primary type per file (`mat4.rs` → `Mat4`).
 

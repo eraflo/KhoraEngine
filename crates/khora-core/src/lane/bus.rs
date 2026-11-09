@@ -35,8 +35,8 @@ use super::io::FrameId;
 
 /// Read-only typed bus carrying [`Flow`] outputs to lanes for one tick.
 ///
-/// An agent reads a view with [`LaneBus::get`] and puts it into its lane's
-/// [`LaneContext`](super::LaneContext). The bus itself is constructed by
+/// A lane reads its views through the `#[bus]` fields of its typed inputs,
+/// which [`LaneBus::get`] serves. The bus itself is constructed by
 /// the scheduler at the start of each frame and dropped at the end — its
 /// lifetime is strictly tick-scoped.
 ///

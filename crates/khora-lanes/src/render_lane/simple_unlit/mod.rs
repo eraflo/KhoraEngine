@@ -18,11 +18,11 @@
 
 use khora_core::agent::gorna::StrategyId;
 use khora_core::gpu::GpuSetup;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::io::TargetKey;
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::LaneError;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::renderer::api::gpu_scene::GpuMesh;
 
 use super::render_family::{RenderFamily, RenderOutputs, UnlitInputs};

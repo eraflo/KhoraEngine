@@ -1,7 +1,7 @@
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{AgentImportance, ExecutionPhase};
-use khora_core::lane::contract::{Lane, LaneReport};
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::erased::AnyLane;
 use khora_core::lane::family::{LaneFamily, Semantics};

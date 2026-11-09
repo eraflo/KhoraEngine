@@ -56,13 +56,13 @@ pub use timing::{AgentImportance, ExecutionTiming};
 /// 1. `on_initialize(ctx)` — called **once** after registration. The agent
 ///    caches required services and initializes its lanes.
 /// 2. `execute(ctx)` — called **every frame**. The agent selects the appropriate
-///    lanes based on the current GORNA budget and dispatches their `Lane::execute()`.
+///    lanes based on the current GORNA budget and runs them.
 /// 3. `negotiate(request)` / `apply_budget(budget)` — called by the GORNA
 ///    arbitrator on the DCC background thread when the system re-evaluates strategy.
 /// 4. `report_status()` — polled by GORNA for health monitoring.
 ///
 /// An agent must contain **no business logic** beyond lane selection, budget
-/// negotiation, and lane dispatch. All real work belongs in [`Lane`] implementations.
+/// negotiation, and lane dispatch. All real work belongs in [`Lane`](crate::lane::Lane) implementations.
 ///
 /// # Examples
 ///
@@ -97,7 +97,7 @@ pub use timing::{AgentImportance, ExecutionTiming};
 ///     fn report_status(&self) -> AgentStatus { AgentStatus::default() }
 ///
 ///     fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-///         // Pick a lane for this frame and dispatch `Lane::execute`.
+///         // Pick a lane for this frame and run it.
 ///     }
 ///
 ///     fn as_any(&self) -> &dyn Any { self }
@@ -194,8 +194,7 @@ pub trait Agent: Send + Sync {
     /// Called **every frame** by the engine loop.
     ///
     /// The agent selects the appropriate lanes based on the current GORNA
-    /// strategy, builds a [`LaneContext`](crate::lane::LaneContext), and dispatches
-    /// [`Lane::execute()`](crate::lane::Lane::execute) for each lane that should run.
+    /// strategy and runs each one that should run.
     fn execute(&mut self, context: &mut EngineContext<'_>);
 
     /// Declares WHEN and HOW this agent should execute within the frame pipeline.

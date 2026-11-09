@@ -12,11 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The typed lane: one behaviour of one family.
-//!
-//! Reached by its module path, `khora_core::lane::contract::Lane`: the name
-//! `khora_core::lane::Lane` is still the former, untyped trait while the
-//! families migrate.
+//! The typed lane: one behaviour of one family. Re-exported as
+//! [`khora_core::lane::Lane`](super::Lane).
 
 use super::cost::Cost;
 use super::family::LaneFamily;

@@ -15,9 +15,8 @@
 //! Shared shadow API — the abstract contract every shadow strategy
 //! produces and every lit consumer reads.
 //!
-//! All shadow strategies (`StandardShadowsLane`, `LowResShadowsLane`,
-//! future variants) emit a [`ShadowFrame`] into the per-tick
-//! [`OutputDeck`](crate::lane::OutputDeck) at the end of `execute()`.
+//! Every shadow strategy writes a [`ShadowFrame`] into the per-tick
+//! [`OutputDeck`](crate::lane::OutputDeck) when it records.
 //! Lit lanes read that slot and treat its contents opaquely — they never
 //! inspect 2D-vs-cube atlas details.
 //!

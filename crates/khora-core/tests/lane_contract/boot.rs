@@ -191,10 +191,10 @@ fn boot_refuses_a_family_with_duplicate_strategy_ids() {
 // ─── The agent a family negotiates as, and the device ───────────────────────
 
 use khora_core::agent::gorna::AgentId;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::level::Level;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneError, LaneKind};
 use khora_macros::LaneInputs;
 

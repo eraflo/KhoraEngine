@@ -260,7 +260,7 @@ const RIVAL_LEVELS: &[khora_core::lane::level::Level] = &[crate::fixtures::level
 #[derive(Default)]
 struct RivalOrdersLane;
 
-impl khora_core::lane::contract::Lane for RivalOrdersLane {
+impl khora_core::lane::Lane for RivalOrdersLane {
     type Family = RivalFamily;
     type Inputs<'f> = crate::bakery::OnlyOrders;
 
@@ -281,8 +281,8 @@ impl khora_core::lane::contract::Lane for RivalOrdersLane {
         _level: usize,
         _inputs: &mut crate::bakery::OnlyOrders,
         _out: &mut crate::bakery::Nothing,
-    ) -> Result<khora_core::lane::contract::LaneReport, khora_core::lane::LaneError> {
-        Ok(khora_core::lane::contract::LaneReport::default())
+    ) -> Result<khora_core::lane::LaneReport, khora_core::lane::LaneError> {
+        Ok(khora_core::lane::LaneReport::default())
     }
 }
 

@@ -17,12 +17,12 @@
 use std::sync::{Arc, Mutex};
 
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::{Validate, ValueProblem};
 use khora_core::lane::io::{Budget, Locked};
 use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneError, LaneKind};
 use khora_core::problems::ProblemSeverity;
 use khora_macros::{LaneInputs, LaneOutputs};

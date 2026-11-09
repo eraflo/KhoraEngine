@@ -18,8 +18,8 @@
 //! offered for all three.
 
 use khora_core::agent::gorna::StrategyId;
-use khora_core::lane::contract::Lane;
 use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::Lane;
 use khora_data::render::{GizmoPassSlot, GridPassSlot, WireframePassSlot};
 use khora_lanes::overlay_lane::{GizmoLane, GridLane, WireframeLane};
 

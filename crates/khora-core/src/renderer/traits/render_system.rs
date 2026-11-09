@@ -25,9 +25,9 @@ use crate::telemetry::ResourceMonitor;
 
 /// Targets acquired by [`RenderSystem::begin_frame`] for the current frame.
 ///
-/// The engine inserts these into the per-frame `FrameContext` (as
-/// `ColorTarget` / `DepthTarget`) so agents can read them when recording
-/// passes into the frame graph.
+/// The engine inserts these into the per-frame `FrameContext` as the
+/// frame's `Target`, which a lane reads through a `#[frame]` field when it
+/// records its passes.
 #[derive(Debug, Clone, Copy)]
 pub struct FrameTargets {
     /// Color attachment: swapchain texture or offscreen viewport.

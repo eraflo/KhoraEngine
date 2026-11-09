@@ -75,11 +75,11 @@ pub use watchdog::{WATCHDOG_FAULT, WATCHDOG_WARN};
 
 use std::sync::Arc;
 
-use khora_core::lane::contract::LaneReport;
 use khora_core::lane::cost::Cost;
 use khora_core::lane::io::{Budget, Locked};
 use khora_core::lane::level::Level;
 use khora_core::lane::LaneError;
+use khora_core::lane::LaneReport;
 use khora_core::Stopwatch;
 use khora_data::flow::{PrefabCatalogView, ReservationView, ScriptView};
 use khora_macros::LaneInputs;
@@ -119,7 +119,7 @@ pub struct ScriptInputs<'f> {
     pub budget: Option<Budget>,
 }
 
-impl khora_core::lane::contract::Lane for BudgetedScriptLane {
+impl khora_core::lane::Lane for BudgetedScriptLane {
     type Family = ScriptFamily;
     type Inputs<'f> = ScriptInputs<'f>;
 

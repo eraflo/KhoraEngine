@@ -33,12 +33,12 @@ use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, Wake, KEEP_EPOCHS};
 use khora_core::gpu::{DeviceCaps, GpuSetup};
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::Reason;
 use khora_core::lane::io::TargetKey;
 use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneError, LaneKind, OutputDeck};
 use khora_core::Runtime;
 

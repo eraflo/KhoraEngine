@@ -14,11 +14,11 @@
 
 //! Per-frame shadow output slot for the [`OutputDeck`](crate::lane::OutputDeck).
 //!
-//! Every shadow strategy writes a [`ShadowFrame`] into the deck at the
-//! end of its `execute()`; lit consumer lanes drain or peek the same
-//! slot to look up shadow data. This is the **only** channel through
-//! which shadow data flows between agents — no `FrameContext` hoist,
-//! no `LaneContext` insertion, no shared `Resource`.
+//! Every shadow strategy writes a [`ShadowFrame`] into the deck when it
+//! records; lit consumer lanes drain or peek the same slot to look up
+//! shadow data. This is the **only** channel through which shadow data
+//! flows between families — no `FrameContext` hoist, no shared
+//! `Resource`.
 
 use super::{ShadowEntries, ShadowGpuBindings};
 

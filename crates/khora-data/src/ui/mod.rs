@@ -27,5 +27,5 @@ pub mod text_layout;
 pub use components::*;
 pub use glyph_atlas::{GlyphAtlas, GlyphSlot};
 pub use image_atlas::UiImageAtlas;
-pub use scene::{ExtractedUiNode, ExtractedUiText, UiAtlasMap, UiScene};
+pub use scene::{ExtractedUiNode, ExtractedUiText, UiScene};
 pub use text_layout::UiTextLayout;

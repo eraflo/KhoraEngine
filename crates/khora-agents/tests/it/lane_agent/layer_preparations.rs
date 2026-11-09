@@ -34,11 +34,11 @@ use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, Wake};
 use khora_core::gpu::{DeviceCaps, GpuSetup};
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::{FrameId, TargetKey};
 use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::World;
@@ -109,7 +109,7 @@ macro_rules! prepared_lane {
                     .unwrap_or_else(|poisoned| poisoned.into_inner())
                     .push(std::thread::current().id());
                 if $fails {
-                    return Err(LaneError::InvalidContext {
+                    return Err(LaneError::InvalidInput {
                         expected: "a lane that can be prepared",
                         received: format!("`{}`, which never can", $name),
                     });

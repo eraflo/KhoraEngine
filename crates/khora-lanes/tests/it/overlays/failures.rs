@@ -17,7 +17,7 @@
 //! refusal is kept or given back — never leaked, never destroyed twice — and
 //! the next frame builds what is missing and draws.
 
-use khora_core::lane::contract::Lane;
+use khora_core::lane::Lane;
 use khora_data::render::{GizmoPassSlot, GridPassSlot, WireframePassSlot};
 use khora_lanes::overlay_lane::{GizmoLane, GridLane, WireframeLane};
 

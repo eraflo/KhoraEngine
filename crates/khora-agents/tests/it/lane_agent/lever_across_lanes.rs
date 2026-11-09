@@ -28,9 +28,9 @@ use khora_core::agent::gorna::{AdaptationMode, AgentHints, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice, PerLink};
 use khora_core::lane::level::Level;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneError, OutputDeck};
 use khora_core::Runtime;
 

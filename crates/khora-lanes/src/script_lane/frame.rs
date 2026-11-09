@@ -40,8 +40,8 @@ pub(super) const FUEL_PER_BEHAVIOR: u64 = 100_000;
 
 /// Runs every behavior the view lists, until the fuel is gone.
 ///
-/// Separate from [`Lane::execute`] so it can be tested without assembling a
-/// `LaneContext` — the interesting behavior is here, and a test of it should not
+/// Separate from the lane's `record` so it can be tested without assembling
+/// its inputs — the interesting behavior is here, and a test of it should not
 /// have to build the plumbing that delivers it.
 pub fn run_behaviors(
     view: &ScriptView,

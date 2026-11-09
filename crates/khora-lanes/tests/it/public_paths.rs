@@ -44,7 +44,7 @@ fn is_default<T: Default>() {}
 fn is_deserialize_owned<T: serde::de::DeserializeOwned>() {}
 fn is_eq<T: Eq>() {}
 fn is_lane_family<T: khora_core::lane::family::LaneFamily>() {}
-fn is_typed_lane<T: khora_core::lane::contract::Lane>() {}
+fn is_typed_lane<T: khora_core::lane::Lane>() {}
 fn is_ord<T: Ord>() {}
 fn is_partial_eq<T: PartialEq>() {}
 fn is_partial_ord<T: PartialOrd>() {}

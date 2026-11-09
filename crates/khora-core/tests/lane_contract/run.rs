@@ -21,13 +21,13 @@ use std::time::Duration;
 
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::gpu::GpuSetup;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::erased::{AnyLane, Erased, Run, RunOutcome};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::{InputRefusal, Reason, SourceKind};
 use khora_core::lane::io::{FrameId, InputSource, OutputSink, Target, TargetKey};
 use khora_core::lane::level::Level;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
 use khora_core::math::Extent2D;
 use khora_core::renderer::api::resource::{TextureFormat, TextureViewId};
@@ -120,7 +120,7 @@ impl Lane for DrawLane {
     ) -> Result<LaneReport, LaneError> {
         self.log.lock().unwrap().push(Event::Record(level));
         if self.fail_record {
-            return Err(LaneError::InvalidContext {
+            return Err(LaneError::InvalidInput {
                 expected: "a record that works",
                 received: "a lane told to fail".to_owned(),
             });
@@ -255,7 +255,7 @@ fn a_level_the_lane_does_not_offer_fails_before_any_fetch() {
     assert!(
         matches!(
             run.outcome,
-            RunOutcome::Failed(LaneError::InvalidContext { .. })
+            RunOutcome::Failed(LaneError::InvalidInput { .. })
         ),
         "{:?}",
         run.outcome

@@ -25,9 +25,9 @@ use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::level::Level;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneError, OutputDeck};
 use khora_core::Runtime;
 

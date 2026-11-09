@@ -22,10 +22,10 @@ use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::BootError;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::Cost;
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::level::Level;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneError, LaneKind};
 use khora_core::Runtime;
 

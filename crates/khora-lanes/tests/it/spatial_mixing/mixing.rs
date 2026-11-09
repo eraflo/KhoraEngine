@@ -17,9 +17,9 @@
 //! and what it is refused without.
 
 use khora_core::agent::gorna::StrategyId;
-use khora_core::lane::contract::Lane;
 use khora_core::lane::erased::RunOutcome;
 use khora_core::lane::guard::{Reason, SourceKind};
+use khora_core::lane::Lane;
 use khora_core::math::Vec3;
 use khora_data::ecs::PlaybackState;
 use khora_lanes::audio_lane::SpatialMixingLane;

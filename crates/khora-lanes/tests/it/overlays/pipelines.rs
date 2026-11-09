@@ -17,7 +17,7 @@
 //! and the wireframe's test the target's depth, read-only; the gizmos' tests
 //! none, so a depth change builds them no new pipeline.
 
-use khora_core::lane::contract::Lane;
+use khora_core::lane::Lane;
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::pipeline::enums::{CompareFunction, PrimitiveTopology};
 use khora_core::renderer::api::resource::{SampleCount, TextureFormat};

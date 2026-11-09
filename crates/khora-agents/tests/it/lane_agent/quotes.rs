@@ -35,12 +35,12 @@ use khora_core::agent::gorna::{AgentId, ResourceBudget, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::{InputRefusal, SourceKind};
 use khora_core::lane::io::{Budget, Declaration, InputSource, LaneInputs, Locked};
 use khora_core::lane::level::Level;
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneError, LaneKind, OutputDeck};
 use khora_core::Runtime;
 
@@ -223,7 +223,7 @@ impl Lane for RunningLane {
         out: &mut ProbeOutputs,
     ) -> Result<LaneReport, LaneError> {
         if inputs.plan.fail_levels.contains(&level) {
-            return Err(LaneError::InvalidContext {
+            return Err(LaneError::InvalidInput {
                 expected: "a running lane the plan lets record",
                 received: "a plan failing it".to_owned(),
             });

@@ -12,12 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The kinds of lane — which agent negotiates for them.
+//! The kinds of lane: the domain a family works in.
 
-/// Classification of lane types, used for routing and filtering.
-///
-/// Agents use this to identify compatible lanes during GORNA negotiation
-/// and lane selection.
+/// The domain a lane family works in — what its `LaneFamily::KIND` says, and
+/// what its registration carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum LaneKind {
     /// Main scene rendering (forward, deferred, etc.)
@@ -28,12 +26,8 @@ pub enum LaneKind {
     Physics,
     /// Audio mixing and spatialization
     Audio,
-    /// Asset loading and processing
+    /// Loading from storage: assets, scenes, scripts, project indexes
     Asset,
-    /// Scene serialization/deserialization
-    Scene,
-    /// ECS maintenance (compaction, garbage collection)
-    Ecs,
     /// User interface layout and interaction
     Ui,
     /// Gameplay scripts
@@ -48,8 +42,6 @@ impl std::fmt::Display for LaneKind {
             LaneKind::Physics => write!(f, "Physics"),
             LaneKind::Audio => write!(f, "Audio"),
             LaneKind::Asset => write!(f, "Asset"),
-            LaneKind::Scene => write!(f, "Scene"),
-            LaneKind::Ecs => write!(f, "ECS"),
             LaneKind::Ui => write!(f, "UI"),
             LaneKind::Script => write!(f, "Script"),
         }

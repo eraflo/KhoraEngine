@@ -29,8 +29,8 @@ use khora_core::renderer::GraphicsDevice;
 
 /// Logical resource handle in the frame graph — used for declaring reads/writes.
 ///
-/// Resources here are *abstract*: the actual GPU views live in `FrameContext`
-/// (`ColorTarget`, `DepthTarget`) and the shadows family's `ShadowFrame`. The
+/// Resources here are *abstract*: the actual GPU views live in the frame's
+/// `Target` (in `FrameContext`) and the shadows family's `ShadowFrame`. The
 /// graph only orders passes; it does not allocate or alias resources yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ResourceId {

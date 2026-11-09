@@ -39,7 +39,7 @@ impl RegistryKind for ResourceKind {
 /// data with trivial accessors (HashMaps, settings, caches), is shared
 /// between several lanes / agents / data systems but has no rich business
 /// API, and is *long-lived* (per-tick state belongs in
-/// [`OutputDeck`](crate::lane::OutputDeck) or `LaneContext`).
+/// [`OutputDeck`](crate::lane::OutputDeck) or the frame's own values).
 ///
 /// Many resources will internally use `Arc<RwLock<…>>` or `Arc<Mutex<…>>`
 /// to support concurrent access. That is the resource's responsibility,

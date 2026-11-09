@@ -21,8 +21,8 @@ use std::fmt;
 pub enum LaneError {
     /// The lane has not been initialized yet.
     NotInitialized,
-    /// The execution context passed to the lane has the wrong type.
-    InvalidContext {
+    /// What the lane was given does not hold what it needs.
+    InvalidInput {
         /// What the lane expected.
         expected: &'static str,
         /// Description of what was received.
@@ -41,13 +41,6 @@ pub enum LaneError {
         /// Human-readable key the lane looked up.
         key: String,
     },
-    /// A required asset was not present in the registry / cache.
-    MissingAsset {
-        /// Asset kind (`"mesh"`, `"texture"`, …).
-        kind: &'static str,
-        /// Stringified asset id (UUID, name, …).
-        id: String,
-    },
     /// A domain-specific error occurred during execution.
     ExecutionFailed(Box<dyn std::error::Error + Send + Sync>),
     /// A domain-specific error occurred during initialization.
@@ -58,20 +51,14 @@ impl fmt::Display for LaneError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LaneError::NotInitialized => write!(f, "Lane not initialized"),
-            LaneError::InvalidContext { expected, received } => {
-                write!(
-                    f,
-                    "Invalid lane context: expected {expected}, got {received}"
-                )
+            LaneError::InvalidInput { expected, received } => {
+                write!(f, "Invalid lane input: expected {expected}, got {received}")
             }
             LaneError::LockPoisoned { context } => {
                 write!(f, "Lane lock poisoned: {context}")
             }
             LaneError::MissingResource { kind, key } => {
                 write!(f, "Missing {kind} resource: {key}")
-            }
-            LaneError::MissingAsset { kind, id } => {
-                write!(f, "Missing {kind} asset: {id}")
             }
             LaneError::ExecutionFailed(e) => write!(f, "Lane execution failed: {e}"),
             LaneError::InitializationFailed(e) => write!(f, "Lane initialization failed: {e}"),
@@ -89,32 +76,12 @@ impl std::error::Error for LaneError {
 }
 
 impl LaneError {
-    /// Convenience constructor for a missing context entry.
+    /// Convenience constructor for something the lane needs and was not
+    /// given — a backend the runtime does not hold.
     pub fn missing(type_name: &'static str) -> Self {
-        LaneError::InvalidContext {
+        LaneError::InvalidInput {
             expected: type_name,
-            received: "not found in LaneContext".into(),
-        }
-    }
-
-    /// Convenience constructor for a poisoned lock.
-    pub fn lock_poisoned(context: &'static str) -> Self {
-        LaneError::LockPoisoned { context }
-    }
-
-    /// Convenience constructor for a missing resource.
-    pub fn missing_resource(kind: &'static str, key: impl Into<String>) -> Self {
-        LaneError::MissingResource {
-            kind,
-            key: key.into(),
-        }
-    }
-
-    /// Convenience constructor for a missing asset.
-    pub fn missing_asset(kind: &'static str, id: impl std::fmt::Display) -> Self {
-        LaneError::MissingAsset {
-            kind,
-            id: id.to_string(),
+            received: "not found".into(),
         }
     }
 }

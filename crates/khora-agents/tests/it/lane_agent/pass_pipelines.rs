@@ -25,7 +25,6 @@ use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::compile_check::PassField;
-use khora_core::lane::contract::{Lane, LaneReport};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::{InputRefusal, OutputRefusal, SinkKind};
@@ -33,6 +32,7 @@ use khora_core::lane::io::{
     Declaration, FrameId, InputSource, LaneInputs, LaneOutputs, OutputSink, Pass, PassSlot,
 };
 use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::{Lane, LaneReport};
 use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
 use khora_core::renderer::api::command::CommandBufferId;
 use khora_core::renderer::traits::PipelineSystem;
