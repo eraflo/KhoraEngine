@@ -17,19 +17,15 @@
 
 use std::any::TypeId;
 use std::sync::Arc;
-use std::time::Duration;
 
 use khora_agents::registered_agent::lane_agents;
-use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::{check_registrations, AgentRegistration, BootError};
-use khora_core::agent::{
-    Agent, AgentAccess, AgentImportance, DependencyKind, ExecutionPhase, ExecutionTiming,
-};
+use khora_core::agent::{Agent, AgentAccess, AgentImportance, DependencyKind, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
 use khora_core::lane::io::Target;
-use khora_core::lane::LaneKind;
 use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
@@ -42,6 +38,7 @@ use khora_data::AssetStore;
 use super::fixtures::{
     agent_of, gizmo_registration, grid_registration, overlay_registrations, wireframe_registration,
 };
+use crate::protocol::request;
 
 // ─── The registrations ──────────────────────────────────────────────────────
 
@@ -63,7 +60,6 @@ fn each_overlay_is_its_own_family() {
     for (registration, (name, agent, lane)) in registrations.iter().zip(expected) {
         assert_eq!(registration.family_name, name);
         assert_eq!(registration.agent, agent, "{name}");
-        assert_eq!(registration.kind, LaneKind::Render, "{name}");
         assert_eq!(registration.semantics, Semantics::Presentation, "{name}");
         let lanes: Vec<&'static str> = registration
             .lanes
@@ -394,20 +390,15 @@ fn each_overlay_agent_offers_one_balanced_strategy() {
     ]) {
         let mut agent = agent_of(registration);
         let offered: Vec<StrategyId> = agent
-            .negotiate(NegotiationRequest {
-                target_latency: Duration::from_micros(16_667),
-                priority_weight: 1.0,
-                constraints: ResourceConstraints::default(),
-                agent_timing: ExecutionTiming::default(),
-            })
-            .strategies
+            .offer(&request())
+            .rows
             .iter()
-            .map(|option| option.id)
+            .map(|row| row.id)
             .collect();
 
         assert_eq!(offered, [StrategyId::Balanced], "{id:?}");
-        let status = agent.report_status();
-        assert_eq!(status.agent_id, id);
-        assert_eq!(status.current_strategy, StrategyId::Balanced, "{id:?}");
+        let report = agent.report();
+        assert_eq!(report.agent, id);
+        assert_eq!(report.row, StrategyId::Balanced, "{id:?}");
     }
 }

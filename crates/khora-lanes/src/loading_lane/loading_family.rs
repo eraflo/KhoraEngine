@@ -17,7 +17,7 @@
 use khora_core::agent::gorna::AgentId;
 use khora_core::asset::{Decoded, IndexedAssets};
 use khora_core::lane::family::{LaneFamily, Semantics};
-use khora_core::lane::{LaneKind, Leases};
+use khora_core::lane::Leases;
 use khora_data::scene::loading::PreparedLoad;
 use khora_macros::LaneOutputs;
 use khora_script::reload::ScriptReload;
@@ -27,7 +27,6 @@ use khora_script::toolchain::{CompileDone, ScriptDeclarations};
 pub struct LoadingFamily;
 
 impl LaneFamily for LoadingFamily {
-    const KIND: LaneKind = LaneKind::Asset;
     const NAME: &'static str = "loading";
     const AGENT: AgentId = AgentId::new("loading");
     const SEMANTICS: Semantics = Semantics::Exact;

@@ -37,3 +37,44 @@ mod sim_steps;
 mod sub_step_outputs;
 mod wave_ticks;
 mod waves;
+
+use khora_core::agent::gorna::protocol::{
+    Confidence, Epoch, Offer, OfferRequest, OfferRow, Report,
+};
+use khora_core::agent::gorna::{AgentId, StrategyId};
+use khora_core::lane::cost::{Cost, PerDevice};
+
+/// An offer of `row` alone, unpriced: what a fake with nothing to trade
+/// answers.
+fn offer_of(agent: AgentId, request: &OfferRequest, row: StrategyId) -> Offer {
+    Offer {
+        agent,
+        epoch: request.epoch,
+        rows: vec![OfferRow {
+            id: row,
+            cost: Cost::default(),
+            quality: 1.0,
+            confidence: Confidence::Assumed,
+        }],
+        floor: row,
+        current: row,
+        health: 1.0,
+    }
+}
+
+/// A healthy report of a run of `row` that did all its work, in no epoch.
+fn report_of(agent: AgentId, row: StrategyId) -> Report {
+    Report {
+        agent,
+        epoch: Epoch::default(),
+        row,
+        measured: PerDevice::default(),
+        done: 1.0,
+        health: 1.0,
+        over_budget: false,
+        stalled: false,
+        workload: None,
+        switch: None,
+        message: None,
+    }
+}

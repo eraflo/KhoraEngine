@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! The UI lane's one level, and the memory it says it holds. It replaces the
-//! old lane's name and kind (`"UiRender"`, `LaneKind::Render`) and the one
+//! old lane's name and kind (`"UiRender"`, the render kind) and the one
 //! flat strategy its agent offered (500 µs, 1 MiB).
 
 use khora_core::agent::gorna::StrategyId;

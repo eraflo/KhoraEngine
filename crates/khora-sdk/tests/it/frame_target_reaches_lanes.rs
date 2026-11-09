@@ -34,7 +34,7 @@ use khora_sdk::khora_core::lane::io::{
     Declaration, FrameId, InputSource, LaneInputs, LaneOutputs, OutputSink, Target, TargetKey,
 };
 use khora_sdk::khora_core::lane::level::{Impact, Level};
-use khora_sdk::khora_core::lane::{ClearColor, LaneBus, LaneError, LaneKind, OutputDeck};
+use khora_sdk::khora_core::lane::{ClearColor, LaneBus, LaneError, OutputDeck};
 use khora_sdk::khora_core::lane::{Lane, LaneReport};
 use khora_sdk::khora_core::math::{Extent2D, LinearRgba};
 use khora_sdk::khora_core::renderer::api::frame::FrameContext;
@@ -84,7 +84,6 @@ impl<'f> LaneOutputs<'f> for SeenOutputs {
 pub struct SeenFamily;
 
 impl LaneFamily for SeenFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "frame probe";
     const AGENT: AgentId = AgentId::new("asset");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -390,8 +389,8 @@ fn the_frame_target_reaches_a_lane_that_declares_it() {
             }),
             clear: None,
         }),
-        "the lane recorded with the frame's target; status: {:?}",
-        agent.report_status().message
+        "the lane recorded with the frame's target; report: {:?}",
+        agent.report()
     );
 }
 
@@ -415,8 +414,8 @@ fn the_lane_agent_lends_the_clear_colour() {
     assert_eq!(
         deck.get::<Seen>().and_then(|seen| seen.clear),
         Some(clear),
-        "the lane recorded with the frame's clear colour; status: {:?}",
-        agent.report_status().message
+        "the lane recorded with the frame's clear colour; report: {:?}",
+        agent.report()
     );
 }
 
@@ -587,7 +586,7 @@ fn a_frame_whose_target_was_not_acquired_lends_no_target() {
     assert_eq!(
         deck.get::<Seen>(),
         None,
-        "a skipped frame hands the lane no target; status: {:?}",
-        agent.report_status().message
+        "a skipped frame hands the lane no target; report: {:?}",
+        agent.report()
     );
 }

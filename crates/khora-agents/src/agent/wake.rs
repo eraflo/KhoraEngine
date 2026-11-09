@@ -113,7 +113,8 @@ impl LaneAgent {
 
     /// Marks `row` failed under the envelope lent, so the choice passes it by
     /// until the next allocation — its own lane's runs would price it again,
-    /// and it would fail again — and falls back from it.
+    /// and it would fail again — and falls back from it: within the envelope
+    /// once one is lent, to a cheaper row before the first allocation.
     pub(super) fn fail(&mut self, row: usize) {
         if self.lent.is_some() {
             if let Some(failed) = self.failed.get_mut(row) {
@@ -165,13 +166,7 @@ impl LaneAgent {
             let mut lane = (self.makers[row.lane])();
             let started = Instant::now();
             let prepared = {
-                let mut source = lend(
-                    context,
-                    self.time_limit,
-                    self.budget_lent,
-                    self.fixed_step,
-                    lane_frame,
-                );
+                let mut source = lend(context, self.budget(), self.fixed_step, lane_frame);
                 lane.prepare(row.level, &mut source, &mut gpu)
             };
             let switch = started.elapsed();
@@ -231,21 +226,14 @@ impl LaneAgent {
             .unwrap_or_else(Contention::none)
             .reading::<Arc<dyn GraphicsDevice>>()
             .reading::<Arc<dyn PipelineSystem>>();
-        let (time_limit, budget_lent, fixed_step) =
-            (self.time_limit, self.budget_lent, self.fixed_step);
+        let (budget, fixed_step) = (self.budget(), self.fixed_step);
         let family = self.registration.family_name;
         Preparation::new(row.id, contention, move |context| {
             let device = context.resource::<Arc<dyn GraphicsDevice>>().cloned();
             let pipelines = context.resource::<Arc<dyn PipelineSystem>>().cloned();
             let mut gpu = gpu_with(device.as_deref(), pipelines.as_deref());
             let prepared = {
-                let mut source = lend(
-                    context,
-                    time_limit,
-                    budget_lent,
-                    fixed_step,
-                    frame.as_deref(),
-                );
+                let mut source = lend(context, budget, fixed_step, frame.as_deref());
                 lane.prepare(row.level, &mut source, &mut gpu)
             };
             match prepared {
@@ -301,8 +289,7 @@ impl LaneAgent {
                 .as_ref()
                 .map_or(Epoch::default(), |lent| lent.epoch),
             envelope: self.lent.as_ref().map(|lent| lent.envelope),
-            time_limit: self.time_limit,
-            budget_lent: self.budget_lent,
+            budget: self.budget(),
             fixed_step: self.fixed_step,
             over_budget: self.over_budget,
             quote: full.and_then(|full| full.bases.get(self.current).copied().flatten()),

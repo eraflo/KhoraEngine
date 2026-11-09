@@ -86,9 +86,8 @@ impl LaneAgent {
         context: &EngineContext<'_>,
         frame: Option<&FrameContext>,
     ) {
-        let budget = self.time_limit;
         let quoted = {
-            let mut source = lend(context, budget, self.budget_lent, self.fixed_step, frame);
+            let mut source = lend(context, self.budget(), self.fixed_step, frame);
             self.lanes[lane]
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())

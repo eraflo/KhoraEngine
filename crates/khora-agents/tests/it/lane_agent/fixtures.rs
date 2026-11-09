@@ -29,21 +29,18 @@
 //! pass and handed back at once ([`prepare_waiting`]): the scheduler runs it
 //! off the frame and hands it back at the next frame start, so a preparation
 //! that takes no time is swapped in at that start either way. An
-//! allocation lent between two frames ([`lend`], `apply`, `apply_budget`) is
-//! answered in the next frame's event pass.
+//! allocation lent between two frames ([`lend`], `apply`) is answered in the
+//! next frame's event pass.
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use khora_agents::agent::LaneAgent;
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, OfferRequest, Report};
-use khora_core::agent::gorna::{
-    AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId,
-};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
-use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming, Place, Wake};
+use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, Place, Wake};
 use khora_core::gpu::{DeviceCaps, GpuSetup};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::family::{LaneFamily, Semantics};
@@ -53,7 +50,7 @@ use khora_core::lane::io::{
 };
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
+use khora_core::lane::{LaneBus, LaneError, OutputDeck};
 use khora_core::{EngineContext, Runtime, WorldAccess};
 
 // ─── Runtime entries ────────────────────────────────────────────────────────
@@ -191,7 +188,6 @@ impl<'f> LaneInputs<'f> for TallyLock<'f> {
 pub struct ProbeFamily;
 
 impl LaneFamily for ProbeFamily {
-    const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "probe";
     const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -202,7 +198,6 @@ impl LaneFamily for ProbeFamily {
 pub struct OtherFamily;
 
 impl LaneFamily for OtherFamily {
-    const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "other";
     const AGENT: AgentId = AgentId::new("ui");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -213,7 +208,6 @@ impl LaneFamily for OtherFamily {
 pub struct ReleasingFamily;
 
 impl LaneFamily for ReleasingFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "releasing";
     const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -622,26 +616,6 @@ impl Lane for OtherLane {
 
 // ─── Driving an agent ───────────────────────────────────────────────────────
 
-/// A budget naming `strategy`.
-pub fn budget(strategy: StrategyId) -> ResourceBudget {
-    ResourceBudget {
-        strategy_id: strategy,
-        time_limit: Duration::from_millis(4),
-        memory_limit: None,
-        extra_params: HashMap::new(),
-    }
-}
-
-/// A negotiation request with a 60 Hz target and no constraint.
-pub fn request() -> NegotiationRequest {
-    NegotiationRequest {
-        target_latency: Duration::from_micros(16_667),
-        priority_weight: 1.0,
-        constraints: ResourceConstraints::default(),
-        agent_timing: ExecutionTiming::default(),
-    }
-}
-
 /// Runs one frame of `agent` as the scheduler does, world-free, committing
 /// into `deck`; the report of its run, `None` when nothing ran.
 pub fn run(
@@ -763,10 +737,10 @@ pub fn installed_row(agent: &LaneAgent) -> Option<StrategyId> {
 /// The strategy ids `agent` offers, in the order it offers them.
 pub fn offered(agent: &mut LaneAgent) -> Vec<StrategyId> {
     agent
-        .negotiate(request())
-        .strategies
+        .offer(&offer_request(1))
+        .rows
         .iter()
-        .map(|option| option.id)
+        .map(|row| row.id)
         .collect()
 }
 

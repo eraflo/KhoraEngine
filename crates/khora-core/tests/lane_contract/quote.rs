@@ -27,7 +27,7 @@ use khora_core::lane::guard::SourceKind;
 use khora_core::lane::io::{Budget, FrameId, InputSource, Locked, OutputSink, Target, TargetKey};
 use khora_core::lane::level::Level;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
+use khora_core::lane::{LaneBus, LaneError, OutputDeck};
 use khora_core::math::Extent2D;
 use khora_core::renderer::api::resource::{TextureFormat, TextureViewId};
 use khora_core::Runtime;
@@ -52,7 +52,6 @@ pub struct QuotedOutputs {
 pub struct QuotedFamily;
 
 impl LaneFamily for QuotedFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "quoted";
     const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;

@@ -17,7 +17,6 @@
 
 use khora_core::agent::gorna::AgentId;
 use khora_core::lane::family::{LaneFamily, Semantics};
-use khora_core::lane::LaneKind;
 use khora_data::flow::AudioPlaybackWriteback;
 use khora_macros::LaneOutputs;
 
@@ -26,7 +25,6 @@ use khora_macros::LaneOutputs;
 pub struct AudioFamily;
 
 impl LaneFamily for AudioFamily {
-    const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "audio";
     const AGENT: AgentId = khora_core::audio::AUDIO;
     const SEMANTICS: Semantics = Semantics::Presentation;

@@ -26,7 +26,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_agents::agent::LaneAgent;
-use khora_core::agent::gorna::{ResourceBudget, StrategyId};
+use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{LaneBus, OutputDeck};
@@ -187,12 +187,11 @@ fn an_engine_event_taken_in_is_delivered_that_frame() {
     runtime.resources.insert(events.clone());
     let runtime = Arc::new(runtime);
     let mut agent = script_agent();
-    agent.apply_budget(ResourceBudget {
-        strategy_id: StrategyId::Balanced,
-        time_limit: std::time::Duration::from_millis(50),
-        memory_limit: None,
-        extra_params: Default::default(),
-    });
+    crate::protocol::pin_with(
+        &mut agent,
+        StrategyId::Balanced,
+        std::time::Duration::from_millis(50),
+    );
     // A first frame spawns the guard.
     run_intake(&runtime);
     run_one_frame(&mut agent, &runtime);

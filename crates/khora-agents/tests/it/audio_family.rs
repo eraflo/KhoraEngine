@@ -34,7 +34,7 @@ use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
 use khora_core::lane::io::FrameId;
-use khora_core::lane::{LaneBus, LaneKind, OutputDeck};
+use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::math::Vec3;
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::assets::SoundData;
@@ -124,7 +124,6 @@ fn the_audio_family_is_registered_once() {
 
     assert_eq!(registration.family_name, "audio");
     assert_eq!(registration.agent, AgentId::new("audio"));
-    assert_eq!(registration.kind, LaneKind::Audio);
     assert_eq!(registration.semantics, Semantics::Presentation);
     assert_eq!(registration.phase, ExecutionPhase::TRANSFORM);
     assert_eq!(registration.importance, AgentImportance::Important);

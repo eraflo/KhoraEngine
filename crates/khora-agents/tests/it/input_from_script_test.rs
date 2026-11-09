@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::script_family::fixtures::{publish_script_views, script_agent};
 use khora_agents::agent::LaneAgent;
-use khora_core::agent::gorna::{ResourceBudget, StrategyId};
+use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::event::Channel;
@@ -172,12 +172,11 @@ fn wired() -> (Arc<Runtime>, Channel<InputEvent>, LaneAgent) {
     runtime.resources.insert(reloads);
 
     let mut agent = script_agent();
-    agent.apply_budget(ResourceBudget {
-        strategy_id: StrategyId::Balanced,
-        time_limit: std::time::Duration::from_millis(1),
-        memory_limit: None,
-        extra_params: Default::default(),
-    });
+    crate::protocol::pin_with(
+        &mut agent,
+        StrategyId::Balanced,
+        std::time::Duration::from_millis(1),
+    );
 
     (Arc::new(runtime), events, agent)
 }

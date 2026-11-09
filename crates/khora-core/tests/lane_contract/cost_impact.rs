@@ -24,7 +24,7 @@ use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::{FrameId, InputSource};
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneBus, LaneError, LaneKind};
+use khora_core::lane::{LaneBus, LaneError};
 use khora_core::Runtime;
 use khora_macros::{LaneInputs, LaneOutputs};
 
@@ -53,7 +53,6 @@ pub struct ShadedOutputs {
 pub struct CappedFamily;
 
 impl LaneFamily for CappedFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "capped";
     const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;

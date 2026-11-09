@@ -13,8 +13,8 @@
 // limitations under the License.
 
 //! A lane's message: what a recorded run says in its `LaneReport` is the
-//! agent's status message until a recorded run says nothing; a refusal or a
-//! failure says what went wrong instead, as before.
+//! message of the agent's report until a recorded run says nothing; a
+//! refusal or a failure says what went wrong instead.
 
 use std::sync::Arc;
 
@@ -29,10 +29,11 @@ use khora_core::lane::guard::{InputRefusal, SourceKind};
 use khora_core::lane::io::{Declaration, InputSource, LaneInputs};
 use khora_core::lane::level::Level;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneError, LaneKind, OutputDeck};
+use khora_core::lane::{LaneError, OutputDeck};
 use khora_core::Runtime;
 
-use super::fixtures::{budget, level, run, ProbeOutputs, Recorded};
+use super::fixtures::{level, run, ProbeOutputs, Recorded};
+use crate::protocol::{pin, said};
 
 /// What the saying lane is told to do this frame.
 #[derive(Debug, Clone, Copy)]
@@ -65,7 +66,6 @@ impl<'f> LaneInputs<'f> for SayInput<'f> {
 pub struct SayingFamily;
 
 impl LaneFamily for SayingFamily {
-    const KIND: LaneKind = LaneKind::Script;
     const NAME: &'static str = "saying";
     const AGENT: AgentId = AgentId::new("script");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -130,7 +130,7 @@ static SAYING: AgentRegistration = khora_core::register_agent! {
 
 fn saying_agent() -> LaneAgent {
     let mut agent = lane_agent(&SAYING, &DeviceCaps::default());
-    agent.apply_budget(budget(StrategyId::Balanced));
+    pin(&mut agent, StrategyId::Balanced);
     agent
 }
 
@@ -142,41 +142,33 @@ fn telling(say: Say) -> Arc<Runtime> {
 }
 
 fn message(agent: &LaneAgent) -> String {
-    agent.report_status().message
+    said(agent)
 }
 
 const DEFERRED: &str = "2 critical behaviours deferred: Guard, Door";
 
-/// **What a recorded run says is the agent's status message.**
+/// **A report carries the message of the run it reports.** A run whose lane
+/// says something reports it; the next run, whose lane says nothing, reports
+/// no message — the first one's does not linger — and a run that says
+/// something again reports that.
 #[test]
-fn a_recorded_runs_message_is_the_agents_status_message() {
+fn a_report_carries_the_runs_message() {
     let mut agent = saying_agent();
     let mut deck = OutputDeck::new();
 
     run(&mut agent, 1, &telling(Say::Message(DEFERRED)), &mut deck);
-
     assert_eq!(
         deck.get::<Recorded>().map(|recorded| recorded.lane),
         Some("saying"),
         "the run recorded"
     );
-    assert_eq!(message(&agent), DEFERRED);
-}
-
-/// **A recorded run that says nothing clears the message**; the next one
-/// that says something is the message again.
-#[test]
-fn a_recorded_run_that_says_nothing_clears_the_message() {
-    let mut agent = saying_agent();
-    let mut deck = OutputDeck::new();
-    run(&mut agent, 1, &telling(Say::Message(DEFERRED)), &mut deck);
-    assert_eq!(message(&agent), DEFERRED, "the premise");
+    assert_eq!(agent.report().message, Some(DEFERRED.to_owned()));
 
     run(&mut agent, 2, &telling(Say::Nothing), &mut deck);
-    assert!(
-        message(&agent).is_empty(),
-        "said nothing, so no message: {:?}",
-        message(&agent)
+    assert_eq!(
+        agent.report().message,
+        None,
+        "the lane said nothing, so the report holds no message"
     );
 
     run(
@@ -185,7 +177,10 @@ fn a_recorded_run_that_says_nothing_clears_the_message() {
         &telling(Say::Message("1 behaviour deferred")),
         &mut deck,
     );
-    assert_eq!(message(&agent), "1 behaviour deferred");
+    assert_eq!(
+        agent.report().message,
+        Some("1 behaviour deferred".to_owned())
+    );
 }
 
 /// **A refusal says what went wrong instead**: the lane did not run, so its

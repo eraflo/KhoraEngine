@@ -286,12 +286,11 @@ fn a_spawn_through_the_scripting_agent_takes_its_id_from_the_worlds_reserver() {
     let mut world = World::new();
     let maker = world.spawn(Transform::identity());
     let mut agent = script_agent();
-    agent.apply_budget(khora_core::agent::gorna::ResourceBudget {
-        strategy_id: khora_core::agent::gorna::StrategyId::Balanced,
-        time_limit: std::time::Duration::from_millis(1),
-        memory_limit: None,
-        extra_params: Default::default(),
-    });
+    crate::protocol::pin_with(
+        &mut agent,
+        khora_core::agent::gorna::StrategyId::Balanced,
+        std::time::Duration::from_millis(1),
+    );
 
     let mut spawned = None;
     for _ in 0..3 {

@@ -28,7 +28,7 @@ use khora_core::lane::guard::{OutputRefusal, Reason, SinkKind};
 use khora_core::lane::io::{FrameId, InputSource, LaneOutputs, OutputSink, Pass, PassSlot};
 use khora_core::lane::level::Level;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
+use khora_core::lane::{LaneBus, LaneError, OutputDeck};
 use khora_core::renderer::api::command::{CommandBufferId, RenderPassDescriptor};
 use khora_core::Runtime;
 use khora_macros::{LaneInputs, LaneOutputs};
@@ -68,7 +68,6 @@ pub struct DrawOutputs<'f> {
 pub struct PassFamily;
 
 impl LaneFamily for PassFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "pass";
     const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;

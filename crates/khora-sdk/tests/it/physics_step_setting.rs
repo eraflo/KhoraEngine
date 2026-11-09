@@ -16,16 +16,13 @@
 //! `physics.step` reaches the engine as the `PhysicsSettings` runtime entry the
 //! application installs before the bootstrap; the engine boots its physics
 //! agent at that step, the scheduler cuts gameplay time by it, the lane steps
-//! the provider by it, and no budget changes it.
+//! the provider by it, and no allocation changes it.
 
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_sdk::khora_core::agent::gorna::{
-    AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId,
-};
-use khora_sdk::khora_core::agent::{Agent, ExecutionTiming};
+use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
+use khora_sdk::khora_core::agent::Agent;
 use khora_sdk::khora_core::ecs::entity::EntityId;
 use khora_sdk::khora_core::lane::{LaneBus, OutputDeck};
 use khora_sdk::khora_core::math::{Quat, Ray, Vec3};
@@ -180,25 +177,16 @@ fn declared_step(agent: &Arc<Mutex<dyn Agent>>) -> Option<Duration> {
         .fixed_timestep
 }
 
-fn unconstrained() -> NegotiationRequest {
-    NegotiationRequest {
-        target_latency: Duration::from_millis(16),
-        priority_weight: 1.0,
-        constraints: ResourceConstraints::default(),
-        agent_timing: ExecutionTiming::default(),
-    }
-}
-
 /// Every strategy GORNA could name to the agent: the ones it offers, and the
 /// three the former agent turned into steps of 1/30, 1/60 and 1/120 s.
 fn every_strategy(agent: &Arc<Mutex<dyn Agent>>) -> Vec<StrategyId> {
     let offered: Vec<StrategyId> = agent
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .negotiate(unconstrained())
-        .strategies
+        .offer(&crate::protocol::request())
+        .rows
         .iter()
-        .map(|option| option.id)
+        .map(|row| row.id)
         .collect();
     offered
         .into_iter()
@@ -212,15 +200,10 @@ fn every_strategy(agent: &Arc<Mutex<dyn Agent>>) -> Vec<StrategyId> {
 }
 
 fn apply(agent: &Arc<Mutex<dyn Agent>>, strategy_id: StrategyId) {
-    agent
+    let mut agent = agent
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .apply_budget(ResourceBudget {
-            strategy_id,
-            time_limit: Duration::from_millis(2),
-            memory_limit: None,
-            extra_params: HashMap::new(),
-        });
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    crate::protocol::pin_with(&mut *agent, strategy_id, Duration::from_millis(2));
 }
 
 /// One run of `agent` over `engine`'s runtime, as the scheduler runs one

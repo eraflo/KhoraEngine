@@ -31,7 +31,7 @@ use std::time::Duration;
 
 use khora_agents::agent::{lane_agent, LaneAgent};
 use khora_agents::registered_agent::registered_agents;
-use khora_core::agent::gorna::{ResourceBudget, StrategyId};
+use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::Agent;
 use khora_core::ecs::EntityReserver;
@@ -44,6 +44,8 @@ use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::flow::{PrefabCatalogView, ReservationView, ScriptView};
 use khora_lanes::script_lane::{BudgetedScriptLane, ScriptFamily, ScriptRuntime};
+
+use crate::protocol::pin_with;
 
 /// The scripting world as the engine registers it.
 pub type SharedScripts = Arc<Mutex<ScriptRuntime>>;
@@ -76,19 +78,15 @@ pub fn script_agent() -> LaneAgent {
     lane_agent(script_registration(), &DeviceCaps::default())
 }
 
-/// A budget naming `strategy` and lending `time_limit`, as the DCC hands one.
-pub fn granting_row(strategy: StrategyId, time_limit: Duration) -> ResourceBudget {
-    ResourceBudget {
-        strategy_id: strategy,
-        time_limit,
-        memory_limit: None,
-        extra_params: Default::default(),
-    }
+/// Pins `agent` to `strategy`, lending it `time_limit` on every device: the
+/// fuel its lane runs on.
+pub fn grant_row(agent: &mut LaneAgent, strategy: StrategyId, time_limit: Duration) {
+    pin_with(agent, strategy, time_limit);
 }
 
-/// A budget naming the whole level and lending `time_limit`.
-pub fn granting(time_limit: Duration) -> ResourceBudget {
-    granting_row(StrategyId::Balanced, time_limit)
+/// Pins `agent` to the whole level, lending it `time_limit` on every device.
+pub fn grant(agent: &mut LaneAgent, time_limit: Duration) {
+    grant_row(agent, StrategyId::Balanced, time_limit);
 }
 
 /// A runtime holding `scripts` as the engine registers the scripting world.

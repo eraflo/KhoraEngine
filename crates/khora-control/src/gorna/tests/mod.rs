@@ -13,16 +13,17 @@
 // limitations under the License.
 
 //! GORNA as a protocol: [`decide`](super::decide) shares the frame into
-//! envelopes (`decide.rs`), and the arbitrator asks for offers, decides and
-//! lends each agent its envelope (`allocate.rs`, `importance.rs`).
+//! envelopes (`decide.rs`), the arbitrator asks for offers, decides and
+//! lends each agent its envelope (`allocate.rs`, `importance.rs`), and it
+//! counts the agents whose report says they are stalled (`stalls.rs`).
 //!
-//! Two kinds of fake agent: [`Bidder`] speaks the protocol (`offer`, `apply`,
-//! `report`); [`Legacy`] only negotiates, and answers through the trait's
-//! bridge.
+//! The fake agent, [`Bidder`], speaks the protocol (`offer`, `apply`,
+//! `report`).
 
 mod allocate;
 mod decide;
 mod importance;
+mod stalls;
 
 use super::*;
 use crate::analysis::AnalysisReport;
@@ -30,10 +31,7 @@ use crate::dcc_context::Context;
 use khora_core::agent::gorna::protocol::{
     Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
 };
-use khora_core::agent::gorna::{
-    AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-    StrategyOption,
-};
+use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::{Agent, AgentImportance, ExecutionTiming};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::EngineContext;
@@ -211,8 +209,7 @@ struct Lent {
 }
 
 /// An agent that answers `offer`, `apply` and `report` itself, and records
-/// what the DCC asked and lent it. It never expects `negotiate` nor
-/// `apply_budget`: it counts them.
+/// what the DCC asked and lent it.
 struct Bidder {
     id: AgentId,
     importance: AgentImportance,
@@ -224,7 +221,6 @@ struct Bidder {
     late: bool,
     asked: Vec<OfferRequest>,
     lent: Vec<Lent>,
-    old_calls: usize,
 }
 
 impl Bidder {
@@ -240,7 +236,6 @@ impl Bidder {
             late: false,
             asked: Vec::new(),
             lent: Vec::new(),
-            old_calls: 0,
         }
     }
 
@@ -274,28 +269,6 @@ impl Bidder {
 impl Agent for Bidder {
     fn id(&self) -> AgentId {
         self.id
-    }
-
-    fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
-        self.old_calls += 1;
-        NegotiationResponse {
-            strategies: Vec::new(),
-            timing_adjustment: None,
-        }
-    }
-
-    fn apply_budget(&mut self, _budget: ResourceBudget) {
-        self.old_calls += 1;
-    }
-
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id,
-            current_strategy: self.floor,
-            health_score: self.health,
-            is_stalled: self.stalled,
-            message: String::new(),
-        }
     }
 
     fn offer(&mut self, request: &OfferRequest) -> Offer {
@@ -344,6 +317,7 @@ impl Agent for Bidder {
             stalled: self.stalled,
             workload: None,
             switch: None,
+            message: None,
         }
     }
 
@@ -351,104 +325,6 @@ impl Agent for Bidder {
         ExecutionTiming {
             importance: self.importance,
             ..Default::default()
-        }
-    }
-
-    fn execute(&mut self, _context: &mut EngineContext<'_>) {}
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-// ── A fake that only negotiates ───────────────────────────────────
-
-fn option(id: StrategyId, time: Duration, vram: u64) -> StrategyOption {
-    StrategyOption {
-        id,
-        estimated_time: time,
-        estimated_vram: vram,
-    }
-}
-
-/// An agent written before the protocol: it negotiates options and applies
-/// budgets, and answers `offer` / `apply` / `report` through the bridge.
-struct Legacy {
-    id: AgentId,
-    options: Vec<StrategyOption>,
-    applied: Option<ResourceBudget>,
-    stalled: bool,
-    health: f32,
-}
-
-impl Legacy {
-    /// `name` with three options: `LowPower` 2 ms / 1 KiB, `Balanced`
-    /// 8 ms / 10 MiB, `HighPerformance` 14 ms / 20 MiB; it reports
-    /// `Balanced` until a budget is applied.
-    fn new(name: &'static str) -> Self {
-        Self::with_options(
-            name,
-            vec![
-                option(StrategyId::LowPower, ms(2), 1024),
-                option(StrategyId::Balanced, ms(8), 10 * MIB),
-                option(StrategyId::HighPerformance, ms(14), 20 * MIB),
-            ],
-        )
-    }
-
-    fn with_options(name: &'static str, options: Vec<StrategyOption>) -> Self {
-        Self {
-            id: AgentId::new(name),
-            options,
-            applied: None,
-            stalled: false,
-            health: 1.0,
-        }
-    }
-
-    fn stalled(name: &'static str) -> Self {
-        Self {
-            stalled: true,
-            health: 0.0,
-            ..Self::new(name)
-        }
-    }
-
-    fn applied(&self) -> &ResourceBudget {
-        self.applied.as_ref().expect("a budget was applied")
-    }
-}
-
-impl Agent for Legacy {
-    fn id(&self) -> AgentId {
-        self.id
-    }
-
-    fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: self.options.clone(),
-            timing_adjustment: None,
-        }
-    }
-
-    fn apply_budget(&mut self, budget: ResourceBudget) {
-        self.applied = Some(budget);
-    }
-
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id,
-            current_strategy: self
-                .applied
-                .as_ref()
-                .map_or(StrategyId::Balanced, |budget| budget.strategy_id),
-            health_score: self.health,
-            is_stalled: self.stalled,
-            message: String::new(),
         }
     }
 

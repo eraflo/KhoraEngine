@@ -155,12 +155,11 @@ fn a_touched_event_reaches_the_behavior_that_declared_the_handler() {
     let mut agent = script_agent();
     // The DCC does this every frame; without it the agent has no fuel and
     // defers everything, which is a budget of nothing rather than a bug.
-    agent.apply_budget(khora_core::agent::gorna::ResourceBudget {
-        strategy_id: khora_core::agent::gorna::StrategyId::Balanced,
-        time_limit: std::time::Duration::from_millis(1),
-        memory_limit: None,
-        extra_params: Default::default(),
-    });
+    crate::protocol::pin_with(
+        &mut agent,
+        khora_core::agent::gorna::StrategyId::Balanced,
+        std::time::Duration::from_millis(1),
+    );
 
     // Frame one: the program is applied and the guard spawns. Nothing has
     // touched it, so it queues nothing.

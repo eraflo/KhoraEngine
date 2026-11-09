@@ -39,21 +39,21 @@ use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::{FrameId, TargetKey};
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
+use khora_core::lane::{LaneBus, LaneError, OutputDeck};
 use khora_core::{EngineContext, Runtime, WorldAccess};
 use khora_data::ecs::World;
 
 use super::fixtures::{
-    host_envelope, level, locked, offer_request, place_of, run, runtime, wakes_of, NoInputs, Plan,
-    ProbeOutputs, Recorded, LADDER,
+    host_envelope, lend, level, locked, offer_request, place_of, run, runtime, wakes_of, NoInputs,
+    Plan, ProbeOutputs, Recorded, LADDER,
 };
+use crate::protocol::said;
 
 // ─── The family ─────────────────────────────────────────────────────────────
 
 pub struct PreparedFamily;
 
 impl LaneFamily for PreparedFamily {
-    const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "prepared";
     const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -243,7 +243,7 @@ cheap_or_dear!(SWITCHING_A, CheapA, DearA);
 /// installs the dear lane. Lent 150 µs, the next event pass chooses the cheap
 /// row: it is not prepared on the frame, but left waiting at the place,
 /// while the dear layer runs. An offer made then names the dear row as
-/// current — the one running and measured — and so does the status. Once the
+/// current — the one running and measured — and so does the report. Once the
 /// preparation is run, the cheap layer runs from the next frame start,
 /// prepared once.
 #[test]
@@ -285,10 +285,7 @@ fn a_switch_leaves_a_preparation_beside_the_installed_layer() {
         StrategyId::HighPerformance,
         "the offer names the row running while the preparation waits"
     );
-    assert_eq!(
-        agent.report_status().current_strategy,
-        StrategyId::HighPerformance
-    );
+    assert_eq!(agent.report().row, StrategyId::HighPerformance);
 
     let mut deck = OutputDeck::new();
     run(&mut agent, 3, &runtime, &mut deck);
@@ -397,7 +394,7 @@ fn a_row_whose_preparation_failed_is_passed_by_until_the_next_allocation() {
         1,
         "the failed row is not prepared again within the allocation"
     );
-    assert_eq!(agent.report_status().current_strategy, StrategyId::LowPower);
+    assert_eq!(agent.report().row, StrategyId::LowPower);
     assert_eq!(locked(&place_of(&agent)).pending_row(), None);
 
     agent.apply(Epoch(3), &host_envelope(250), None, None);
@@ -446,15 +443,16 @@ fn execute_lands_a_switch_answered_at_its_start_in_the_same_frame() {
     );
 }
 
-/// **`execute` lands a switch answered at its end at the next call.** The
-/// ladder's top level fails its record: the wake is answered at the end of
-/// that very call, which falls back to the level below; its preparation is
-/// run at once and staged, so the next call runs it — no preparation is
-/// left waiting for a scheduler there is not.
+/// **`execute` lands a switch answered at its end at the next call.** Lent
+/// room for every level, the ladder runs its top level, whose record fails:
+/// the wake is answered at the end of that very call, which falls back to
+/// the level below; its preparation is run at once and staged, so the next
+/// call runs it — no preparation is left waiting for a scheduler there is
+/// not.
 #[test]
 fn execute_lands_a_switch_answered_at_its_end_at_the_next_call() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
-    agent.apply_budget(super::fixtures::budget(StrategyId::HighPerformance));
+    lend(&mut agent, host_envelope(4_000));
     let failing_top = runtime(
         1,
         Plan {
@@ -643,7 +641,7 @@ fn a_switch_prepared_off_the_frame_builds_on_the_runtimes_device() {
         locked(&place).staged_row(),
         Some(StrategyId::HighPerformance),
         "the preparation gave the high layer: {:?}",
-        agent.report_status().message
+        said(&agent)
     );
     assert_eq!(
         device.atlas_sides(),

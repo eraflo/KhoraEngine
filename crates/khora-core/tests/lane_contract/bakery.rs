@@ -25,9 +25,9 @@ use khora_core::lane::cost::Cost;
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::{Budget, Locked, Target};
 use khora_core::lane::level::Level;
+use khora_core::lane::LaneError;
 use khora_core::lane::Staged;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneError, LaneKind};
 use khora_core::residency::{DeviceClass, Residency, ResidencyError, Resident};
 use khora_macros::{LaneInputs, LaneOutputs};
 
@@ -169,7 +169,6 @@ pub struct Nothing {}
 pub struct QuietFamily;
 
 impl LaneFamily for QuietFamily {
-    const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "quiet";
     const AGENT: AgentId = AgentId::new("quiet");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -188,7 +187,6 @@ pub struct BakeOutputs {
 pub struct BakeFamily;
 
 impl LaneFamily for BakeFamily {
-    const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "bake";
     const AGENT: AgentId = BAKE;
     const SEMANTICS: Semantics = Semantics::Presentation;

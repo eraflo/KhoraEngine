@@ -20,12 +20,12 @@
 //! adds to what the previous one left. Beside another fixed agent it shares a
 //! concurrent wave each sub-step, and the frame must end with the same slot.
 
+use super::{offer_of, report_of};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
-use khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-};
+use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{Agent, AgentAccess, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -55,21 +55,19 @@ impl Agent for SubStepper {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id, request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id,
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(self.id, StrategyId::Balanced)
     }
     fn execute(&mut self, ctx: &mut EngineContext<'_>) {
         self.runs += 1;

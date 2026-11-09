@@ -17,7 +17,6 @@
 
 use khora_core::agent::gorna::AgentId;
 use khora_core::lane::family::{LaneFamily, Semantics};
-use khora_core::lane::LaneKind;
 use khora_core::physics::ContactBatch;
 use khora_data::flow::PhysicsStepResult;
 use khora_macros::LaneOutputs;
@@ -27,7 +26,6 @@ use khora_macros::LaneOutputs;
 pub struct PhysicsFamily;
 
 impl LaneFamily for PhysicsFamily {
-    const KIND: LaneKind = LaneKind::Physics;
     const NAME: &'static str = "physics";
     const AGENT: AgentId = khora_core::physics::PHYSICS;
     const SEMANTICS: Semantics = Semantics::Exact;

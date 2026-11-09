@@ -13,10 +13,9 @@
 // limitations under the License.
 
 //! A round of the arbitrator: one offer request per agent, calibration and
-//! the decision — for agents that speak the protocol and agents that only
-//! negotiate, through the bridge. A round lends nothing itself: the scheduler
-//! lends the allocation at its next frame start. What an agent makes of its
-//! envelope is checked here by lending it as the scheduler would ([`lend`]).
+//! the decision. A round lends nothing itself: the scheduler lends the
+//! allocation at its next frame start. What an agent is lent is checked here
+//! by lending it as the scheduler would ([`lend`]).
 
 use super::*;
 use khora_core::agent::gorna::protocol::Trigger;
@@ -45,14 +44,46 @@ fn lock<A>(agent: &Arc<Mutex<A>>) -> std::sync::MutexGuard<'_, A> {
     agent.lock().expect("the agent lock")
 }
 
+/// `name` offering three rows: `LowPower` 2 ms holding 1 KiB, `Balanced`
+/// 8 ms holding 10 MiB, `HighPerformance` 14 ms holding 20 MiB, of quality
+/// 0.4, 0.7 and 1.0; its floor is `LowPower`.
+fn three_rows(name: &'static str) -> Bidder {
+    Bidder::new(
+        name,
+        vec![
+            row_holding(LowPower, 2_000, 1024, 0.4),
+            row_holding(Balanced, 8_000, 10 * MIB, 0.7),
+            row_holding(HighPerformance, 14_000, 20 * MIB, 1.0),
+        ],
+        LowPower,
+    )
+}
+
+/// The cost of `bidder`'s row `id`.
+fn cost_of(bidder: &Bidder, id: StrategyId) -> Cost {
+    bidder
+        .rows
+        .iter()
+        .find(|row| row.id == id)
+        .map(|row| row.cost)
+        .unwrap_or_else(|| panic!("{id:?} is one of the rows"))
+}
+
+/// Whether `cost`'s time fits `envelope` on every device, whatever its
+/// memory.
+fn fits_in_time(cost: &Cost, envelope: &Envelope) -> bool {
+    let (t, e) = (&cost.time, &envelope.time);
+    t.cpu <= e.cpu && t.gpu <= e.gpu && t.npu <= e.npu && t.other <= e.other
+}
+
 // ── The round ─────────────────────────────────────────────────────
 
 /// **A round asks each agent once, for its epoch, and lends nothing
 /// itself.** The request carries the round's epoch, the frame's target (the
 /// analysis' latency under the budget multiplier). The
 /// round decides the agent's envelope but never calls its `apply` — the
-/// scheduler lends it at its next frame start — nor its `negotiate` or
-/// `apply_budget`. Each round opens a later epoch.
+/// scheduler lends it at its next frame start. Each round opens a later
+/// epoch.
 #[test]
 fn a_round_asks_each_agent_once_and_lends_nothing_itself() {
     let (bidder, agent) = shared(Bidder::single("ash", 2_000));
@@ -84,7 +115,6 @@ fn a_round_asks_each_agent_once_and_lends_nothing_itself() {
             "the round applied nothing: {:?}",
             bidder.lent
         );
-        assert_eq!(bidder.old_calls, 0, "spoken to through the protocol only");
     }
     assert!(first
         .envelopes
@@ -106,28 +136,6 @@ fn a_round_asks_each_agent_once_and_lends_nothing_itself() {
     assert!(bidder.lent.is_empty(), "still nothing applied");
 }
 
-/// **An agent that only negotiates is lent its envelope through the
-/// bridge**: it is applied the dearest option the envelope holds, with the
-/// envelope's host time as its limit. 2 ms planned in 20 ms leave room for
-/// its 14 ms option.
-#[test]
-fn an_agent_that_only_negotiates_is_lent_an_envelope_through_the_bridge() {
-    let (legacy, agent) = shared(Legacy::new("renderer"));
-    let agents = [agent];
-    let allocation = allocate(
-        &mut arbitrator(),
-        &playing(),
-        20.0,
-        Trigger::Initial,
-        &agents,
-    );
-    lend(&allocation, &agents);
-    let lent = lent_to(&allocation, "renderer");
-    let legacy = lock(&legacy);
-    assert_eq!(legacy.applied().time_limit, lent.time.cpu);
-    assert_eq!(legacy.applied().strategy_id, HighPerformance, "{lent:?}");
-}
-
 #[test]
 fn a_round_without_agents_lends_nothing() {
     let allocation = allocate(&mut arbitrator(), &playing(), 16.66, Trigger::Initial, &[]);
@@ -138,8 +146,8 @@ fn a_round_without_agents_lends_nothing() {
 /// no more than 16.66 ms between them, and each still runs.
 #[test]
 fn envelopes_never_exceed_the_frame() {
-    let (renderer, first) = shared(Legacy::new("renderer"));
-    let (physics, second) = shared(Legacy::new("physics"));
+    let (renderer, first) = shared(three_rows("renderer"));
+    let (physics, second) = shared(three_rows("physics"));
     let agents = [first, second];
     let allocation = allocate(
         &mut arbitrator(),
@@ -151,8 +159,8 @@ fn envelopes_never_exceed_the_frame() {
     lend(&allocation, &agents);
     let lent: Duration = allocation.envelopes.iter().map(|(_, e)| busiest(e)).sum();
     assert!(lent <= Duration::from_micros(16_660), "{allocation:?}");
-    assert!(lock(&renderer).applied.is_some());
-    assert!(lock(&physics).applied.is_some());
+    assert!(!lock(&renderer).lent.is_empty(), "the renderer was lent");
+    assert!(!lock(&physics).lent.is_empty(), "the physics was lent");
 }
 
 /// **A throttled frame lends less.** 33.33 ms under a 0.6 multiplier is
@@ -208,15 +216,15 @@ fn concurrent_agents_share_the_frame_by_their_slowest_member() {
 // ── Calibration ───────────────────────────────────────────────────
 
 /// **Measured costs calibrate the offers.** `renderer` quotes its running
-/// `Balanced` at 8 ms but measured 24 ms: every quoted row is scaled ×3, so
-/// its floor costs 6 ms. With `physics`' 2 ms floor that is 8 ms, over the
-/// 7 ms frame: the round is `Safety`, where the quotes alone (2 + 2 ms) fit.
+/// floor at 2 ms but measured 6 ms: every quoted row is scaled ×3, so its
+/// floor costs 6 ms. With `physics`' 2 ms floor that is 8 ms, over the 7 ms
+/// frame: the round is `Safety`, where the quotes alone (2 + 2 ms) fit.
 #[test]
 fn measured_costs_calibrate_the_offers() {
     let round = |measured: HashMap<AgentId, f64>| {
         let agents = [
-            shared(Legacy::new("renderer")).1,
-            shared(Legacy::new("physics")).1,
+            shared(Bidder::single("renderer", 2_000)).1,
+            shared(Bidder::single("physics", 2_000)).1,
         ];
         arbitrator().allocate(
             &playing(),
@@ -232,26 +240,26 @@ fn measured_costs_calibrate_the_offers() {
         Trigger::Refresh,
         "2 + 2 ms fit 7 ms"
     );
-    let calibrated = round([(AgentId::new("renderer"), 24.0)].into());
+    let calibrated = round([(AgentId::new("renderer"), 6.0)].into());
     assert_eq!(calibrated.trigger, Trigger::Safety, "6 + 2 ms exceed 7 ms");
 }
 
-/// **The calibration factor is clamped to ×4.** A pathological 800 ms
-/// against an 8 ms quote is ×100 unclamped (a 200 ms floor); clamped, the
+/// **The calibration factor is clamped to ×4.** A pathological 200 ms
+/// against a 2 ms quote is ×100 unclamped (a 200 ms floor); clamped, the
 /// floor is 8 ms, and 8 + 2 ms fit 12 ms. The envelope holds the calibrated
 /// floor.
 #[test]
 fn the_calibration_factor_is_clamped() {
     let agents = [
-        shared(Legacy::new("renderer")).1,
-        shared(Legacy::new("physics")).1,
+        shared(Bidder::single("renderer", 2_000)).1,
+        shared(Bidder::single("physics", 2_000)).1,
     ];
     let allocation = arbitrator().allocate(
         &playing(),
         &frame_of(12.0),
         Trigger::Refresh,
         &agents,
-        &[(AgentId::new("renderer"), 800.0)].into(),
+        &[(AgentId::new("renderer"), 200.0)].into(),
         &nothing(),
     );
     assert_eq!(allocation.trigger, Trigger::Refresh, "{allocation:?}");
@@ -259,20 +267,20 @@ fn the_calibration_factor_is_clamped() {
 }
 
 /// **A round keeps the offers as the agents answered them, for its epoch
-/// only.** `renderer` quotes `LowPower` at 2 ms and was measured at 24 ms
-/// against its 8 ms `Balanced`: the round decides on rows scaled ×3, but the
-/// offer it keeps for the journal holds the 2 ms quoted, for the round's
-/// epoch. The next round, with no agent, keeps no offer of the last one.
+/// only.** `renderer` quotes its running `LowPower` at 2 ms and was measured
+/// at 6 ms: the round decides on rows scaled ×3, but the offer it keeps for
+/// the journal holds the 2 ms quoted, for the round's epoch. The next round,
+/// with no agent, keeps no offer of the last one.
 #[test]
 fn a_round_keeps_the_offers_as_answered_for_its_epoch() {
     let mut arbitrator = arbitrator();
-    let agents = [shared(Legacy::new("renderer")).1];
+    let agents = [shared(three_rows("renderer")).1];
     let allocation = arbitrator.allocate(
         &playing(),
         &frame_of(40.0),
         Trigger::Refresh,
         &agents,
-        &[(AgentId::new("renderer"), 24.0)].into(),
+        &[(AgentId::new("renderer"), 6.0)].into(),
         &nothing(),
     );
 
@@ -295,27 +303,28 @@ fn a_round_keeps_the_offers_as_answered_for_its_epoch() {
 
 // ── Policies ──────────────────────────────────────────────────────
 
-/// **A `Manual` agent is pinned against the budget.** The bridge applies the
-/// pinned `LowPower` though the frame would hold `HighPerformance`, and the
-/// allocation names the pin.
+/// **A `Manual` agent is pinned against the budget.** The frame would hold
+/// `HighPerformance`; the allocation names the pinned `LowPower`, and the
+/// agent is lent it.
 #[test]
 fn a_manual_mode_pins_the_row_against_the_budget() {
-    let (legacy, agent) = shared(Legacy::new("renderer"));
+    let (bidder, agent) = shared(three_rows("renderer"));
     let mut arbitrator = arbitrator();
     arbitrator.set_adaptation_mode(AgentId::new("renderer"), AdaptationMode::Manual(LowPower));
     let agents = [agent];
     let allocation = allocate(&mut arbitrator, &playing(), 20.0, Trigger::Initial, &agents);
     lend(&allocation, &agents);
     assert_eq!(allocation.pins, vec![(AgentId::new("renderer"), LowPower)]);
-    assert_eq!(lock(&legacy).applied().strategy_id, LowPower);
+    assert_eq!(lock(&bidder).last_lent().pin, Some(LowPower));
 }
 
-/// **A `Bounded` agent runs within its range.** The envelope would hold
-/// `HighPerformance`; the allocation allows `LowPower..=Balanced` only, so
-/// the bridge applies `Balanced`.
+/// **A `Bounded` agent runs within its range.** The frame would hold
+/// `HighPerformance`; the allocation allows `LowPower..=Balanced` only, the
+/// agent is lent that range, and its envelope holds `Balanced`, the dearest
+/// row of it.
 #[test]
 fn a_bounded_agent_runs_within_its_range() {
-    let (legacy, agent) = shared(Legacy::new("renderer"));
+    let (bidder, agent) = shared(three_rows("renderer"));
     let mut arbitrator = arbitrator();
     arbitrator.set_adaptation_mode(
         AgentId::new("renderer"),
@@ -335,7 +344,14 @@ fn a_bounded_agent_runs_within_its_range() {
         .expect("the range is in the allocation");
     assert!(allowed.contains(&LowPower) && allowed.contains(&Balanced));
     assert!(!allowed.contains(&HighPerformance), "{allowed:?}");
-    assert_eq!(lock(&legacy).applied().strategy_id, Balanced);
+    let bidder = lock(&bidder);
+    let lent = bidder.last_lent();
+    assert_eq!(lent.allowed.as_ref(), Some(&allowed), "lent the range");
+    assert!(
+        fits(&cost_of(&bidder, Balanced), &lent.envelope),
+        "{:?}",
+        lent.envelope
+    );
 }
 
 /// **A `Stable` agent is not upgraded on recovery.** Its envelope from a
@@ -371,13 +387,15 @@ fn a_stable_agent_is_not_upgraded_on_recovery() {
     assert!(pressed.time.cpu <= ms(6));
 }
 
-/// **A `Cap` hint is a ceiling on the envelope.** At 20 ms the bridge would
-/// apply `HighPerformance` (14 ms); a 10 ms cap leaves `Balanced` (8 ms), a
-/// 5 ms cap leaves `LowPower` (2 ms), and the envelope never passes the cap.
+/// **A `Cap` hint is a ceiling on the envelope.** At 20 ms the envelope
+/// would hold `HighPerformance` (14 ms); a 10 ms cap leaves room for
+/// `Balanced` (8 ms) and no more, a 5 ms cap for `LowPower` (2 ms) and no
+/// more, and the envelope never passes the cap.
 #[test]
 fn a_cap_hint_bounds_the_envelope() {
-    for (cap_ms, expected) in [(10.0, Balanced), (5.0, LowPower)] {
-        let (legacy, agent) = shared(Legacy::new("renderer"));
+    for (cap_ms, expected, beyond) in [(10.0, Balanced, HighPerformance), (5.0, LowPower, Balanced)]
+    {
+        let (bidder, agent) = shared(three_rows("renderer"));
         let hints: HashMap<AgentId, AgentHints> = [(
             AgentId::new("renderer"),
             AgentHints {
@@ -401,10 +419,14 @@ fn a_cap_hint_bounds_the_envelope() {
             busiest(&lent) <= Duration::from_secs_f32(cap_ms / 1000.0) + us(1),
             "cap {cap_ms} ms: {lent:?}"
         );
-        assert_eq!(
-            lock(&legacy).applied().strategy_id,
-            expected,
-            "cap {cap_ms} ms"
+        let bidder = lock(&bidder);
+        assert!(
+            fits(&cost_of(&bidder, expected), &lent),
+            "cap {cap_ms} ms holds {expected:?}: {lent:?}"
+        );
+        assert!(
+            !fits_in_time(&cost_of(&bidder, beyond), &lent),
+            "cap {cap_ms} ms holds no {beyond:?}: {lent:?}"
         );
     }
 }
@@ -414,7 +436,7 @@ fn a_cap_hint_bounds_the_envelope() {
 #[test]
 fn a_cap_on_another_agent_changes_nothing() {
     let round = |hints: &HashMap<AgentId, AgentHints>| {
-        let (_, agent) = shared(Legacy::new("renderer"));
+        let (_, agent) = shared(three_rows("renderer"));
         arbitrator().allocate(
             &playing(),
             &frame_of(20.0),
@@ -435,13 +457,14 @@ fn a_cap_on_another_agent_changes_nothing() {
     assert_eq!(round(&elsewhere).envelopes, round(&nothing()).envelopes);
 }
 
-/// **The VRAM the context knows bounds the envelopes.** At 20 ms the bridge
-/// would apply `HighPerformance`, but its 20 MiB do not fit 15 MiB: it
-/// applies `Balanced` (10 MiB). Without a VRAM figure nothing limits it.
+/// **The VRAM the context knows bounds the envelopes.** At 20 ms the
+/// envelope would hold `HighPerformance`, but its 20 MiB do not fit 15 MiB:
+/// it holds `Balanced` (10 MiB) and no more. Without a VRAM figure nothing
+/// limits it.
 #[test]
 fn vram_known_to_the_context_bounds_the_envelopes() {
     let lent_with = |vram: Option<u64>| {
-        let (legacy, agent) = shared(Legacy::new("renderer"));
+        let (bidder, agent) = shared(three_rows("renderer"));
         let mut context = playing();
         context.hardware.available_vram = vram;
         let agents = [agent];
@@ -450,17 +473,25 @@ fn vram_known_to_the_context_bounds_the_envelopes() {
         if let Some(vram) = vram {
             assert!(lent_to(&allocation, "renderer").memory.gpu <= vram);
         }
-        legacy
+        bidder
     };
-    assert_eq!(
-        lock(&lent_with(Some(15 * MIB))).applied().strategy_id,
-        Balanced,
-        "the VRAM is the binding limit"
+    let bounded = lent_with(Some(15 * MIB));
+    let bounded = lock(&bounded);
+    let lent = bounded.last_lent().envelope;
+    assert!(
+        fits(&cost_of(&bounded, Balanced), &lent),
+        "the VRAM leaves room for Balanced: {lent:?}"
     );
-    assert_eq!(
-        lock(&lent_with(None)).applied().strategy_id,
-        HighPerformance,
-        "nothing limits the memory"
+    assert!(
+        !fits(&cost_of(&bounded, HighPerformance), &lent),
+        "the VRAM is the binding limit: {lent:?}"
+    );
+    let free = lent_with(None);
+    let free = lock(&free);
+    let lent = free.last_lent().envelope;
+    assert!(
+        fits(&cost_of(&free, HighPerformance), &lent),
+        "nothing limits the memory: {lent:?}"
     );
 }
 
@@ -506,10 +537,9 @@ fn a_late_offer_keeps_the_envelope() {
 // ── The emergency ─────────────────────────────────────────────────
 
 /// **The emergency gives every agent its floor**, and names no row: a death
-/// spiral makes the round `Safety`. `grid` speaks the protocol and has no
-/// `LowPower` (its floor is `Custom(1)`); `skybox` only negotiates and has no
-/// `LowPower` either (its floor is `Balanced`). Each is lent exactly its
-/// floor, and the bridge applies `skybox`'s floor.
+/// spiral makes the round `Safety`. `grid` has no `LowPower` (its floor is
+/// `Custom(1)`); `skybox` has no `LowPower` either (its floor is
+/// `Balanced`). Each is lent exactly its floor.
 #[test]
 fn the_emergency_gives_every_agent_its_floor() {
     let (grid, first) = shared(Bidder::new(
@@ -517,12 +547,13 @@ fn the_emergency_gives_every_agent_its_floor() {
         vec![row(Custom(2), 3_000, 1.0), row(Custom(1), 1_000, 0.4)],
         Custom(1),
     ));
-    let (skybox, second) = shared(Legacy::with_options(
+    let (skybox, second) = shared(Bidder::new(
         "skybox",
         vec![
-            option(Balanced, ms(3), 2 * MIB),
-            option(HighPerformance, ms(9), 4 * MIB),
+            row_holding(Balanced, 3_000, 2 * MIB, 0.7),
+            row_holding(HighPerformance, 9_000, 4 * MIB, 1.0),
         ],
+        Balanced,
     ));
     let mut spiral = frame_of(16.66);
     spiral.death_spiral_detected = true;
@@ -549,15 +580,25 @@ fn the_emergency_gives_every_agent_its_floor() {
     let skybox_lent = lent_to(&allocation, "skybox");
     assert_eq!(skybox_lent.time.cpu, ms(3), "{skybox_lent:?}");
     assert_eq!(skybox_lent.memory.gpu, 2 * MIB);
-    assert_eq!(lock(&skybox).applied().strategy_id, Balanced);
+    let skybox = lock(&skybox);
+    assert_eq!(
+        skybox.last_lent().envelope,
+        envelope_of(&skybox.floor_cost())
+    );
 }
 
 /// **Two stalled agents make the round `Safety`**: both are lent their
-/// floor, which the bridge applies.
+/// floor.
 #[test]
 fn two_stalled_agents_make_the_round_safety() {
-    let (renderer, first) = shared(Legacy::stalled("renderer"));
-    let (physics, second) = shared(Legacy::stalled("physics"));
+    let stalled = |name| {
+        let mut bidder = three_rows(name);
+        bidder.stalled = true;
+        bidder.health = 0.0;
+        bidder
+    };
+    let (renderer, first) = shared(stalled("renderer"));
+    let (physics, second) = shared(stalled("physics"));
     let agents = [first, second];
     let allocation = allocate(
         &mut arbitrator(),
@@ -568,8 +609,10 @@ fn two_stalled_agents_make_the_round_safety() {
     );
     lend(&allocation, &agents);
     assert_eq!(allocation.trigger, Trigger::Safety);
-    assert_eq!(lock(&renderer).applied().strategy_id, LowPower);
-    assert_eq!(lock(&physics).applied().strategy_id, LowPower);
+    for agent in [renderer, physics] {
+        let agent = lock(&agent);
+        assert_eq!(agent.last_lent().envelope, envelope_of(&agent.floor_cost()));
+    }
 }
 
 // ── Kept envelopes across live rounds ─────────────────────────────

@@ -27,7 +27,7 @@
 use std::sync::{Arc, Mutex};
 
 use khora_control::substrate::run_data_systems;
-use khora_core::agent::gorna::{ResourceBudget, StrategyId};
+use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::{Activation, Agent};
 use khora_core::event::{discard_mail_of_inactive, Channel};
 use khora_core::lane::{LaneBus, OutputDeck, Reserve, Staging};
@@ -315,12 +315,11 @@ fn a_reload_the_compile_handed_over_is_installed_before_the_flow_and_reads_its_c
     let mut bus = LaneBus::new();
     publish_script_views(&mut bus, view);
     let mut agent = script_agent();
-    agent.apply_budget(ResourceBudget {
-        strategy_id: StrategyId::Balanced,
-        time_limit: std::time::Duration::from_millis(50),
-        memory_limit: None,
-        extra_params: Default::default(),
-    });
+    crate::protocol::pin_with(
+        &mut agent,
+        StrategyId::Balanced,
+        std::time::Duration::from_millis(50),
+    );
     let mut deck = OutputDeck::new();
     let permit = agent.contention();
     {

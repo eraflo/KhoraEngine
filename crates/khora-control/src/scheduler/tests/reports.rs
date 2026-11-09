@@ -17,14 +17,13 @@
 //! scheduler measured it — and the run's workload.
 
 use super::allocations::one_phase;
+use super::offer_of;
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
 use crossbeam_channel::Receiver;
-use khora_core::agent::gorna::protocol::{Epoch, Report};
-use khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-};
+use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{Agent, AgentAccess, ExecutionTiming};
 use khora_core::lane::cost::PerDevice;
 use khora_core::telemetry::TelemetryEvent;
@@ -62,6 +61,7 @@ impl Teller {
                 stalled: false,
                 workload: Some(42.0),
                 switch: None,
+                message: None,
             },
             takes: Duration::ZERO,
             access: AgentAccess::Exclusive,
@@ -89,21 +89,16 @@ impl Agent for Teller {
     fn id(&self) -> AgentId {
         self.report.agent
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.report.agent, request, self.report.row)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.report.agent,
-            current_strategy: self.report.row,
-            health_score: self.report.health,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
     }
     fn report(&self) -> Report {
         self.report.clone()

@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use khora_agents::agent::LaneAgent;
-use khora_core::agent::gorna::{ResourceBudget, StrategyId};
+use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{LaneBus, OutputDeck};
@@ -126,12 +126,7 @@ fn spent(shared: &Arc<Mutex<ScriptRuntime>>) -> u64 {
 fn a_rate_measured_between_two_frames_changes_the_fuel_of_the_second() {
     let (runtime, shared) = wired();
     let mut agent = script_agent();
-    agent.apply_budget(ResourceBudget {
-        strategy_id: StrategyId::Balanced,
-        time_limit: Duration::from_millis(1),
-        memory_limit: None,
-        extra_params: Default::default(),
-    });
+    crate::protocol::pin_with(&mut agent, StrategyId::Balanced, Duration::from_millis(1));
 
     measure(&shared, 200);
     run_one_frame(&mut agent, &runtime);

@@ -7,7 +7,7 @@ use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::{InputRefusal, OutputRefusal};
 use khora_core::lane::io::{Declaration, InputSource, LaneInputs, LaneOutputs, OutputSink};
 use khora_core::lane::level::Level;
-use khora_core::lane::{LaneError, LaneKind};
+use khora_core::lane::LaneError;
 
 pub struct NoInputs;
 
@@ -33,7 +33,6 @@ impl<'f> LaneOutputs<'f> for NoOutputs {
 pub struct AudioFamily;
 
 impl LaneFamily for AudioFamily {
-    const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "audio";
     const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -43,7 +42,6 @@ impl LaneFamily for AudioFamily {
 pub struct UiFamily;
 
 impl LaneFamily for UiFamily {
-    const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "ui";
     const AGENT: AgentId = AgentId::new("ui");
     const SEMANTICS: Semantics = Semantics::Presentation;

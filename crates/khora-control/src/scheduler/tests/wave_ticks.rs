@@ -18,13 +18,13 @@
 //! is past it once the wave is over, and an agent in a later wave reads a
 //! later one. Run serially, every agent is a wave of its own.
 
+use super::{offer_of, report_of};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::dependency::{AgentDependency, DependencyKind};
-use khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-};
+use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase, ExecutionTiming};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::{Tick, World};
@@ -45,21 +45,19 @@ impl Agent for TickReader {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id, request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id,
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(self.id, StrategyId::Balanced)
     }
     fn execute(&mut self, ctx: &mut EngineContext<'_>) {
         let tick = ctx
@@ -244,21 +242,19 @@ impl Agent for FixedTickReader {
     fn id(&self) -> AgentId {
         AgentId::new("physics")
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(AgentId::new("physics"), request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: AgentId::new("physics"),
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(AgentId::new("physics"), StrategyId::Balanced)
     }
     fn execute(&mut self, ctx: &mut EngineContext<'_>) {
         let tick = ctx

@@ -310,10 +310,6 @@ fn adaptation_mode_variants(x: &khora_core::agent::gorna::AdaptationMode) {
     }
 }
 
-fn agent_frame_status_fields(x: &khora_core::agent::gorna::AgentFrameStatus) {
-    let _ = (&x.measured_time_ms,);
-}
-
 fn agent_hints_fields(x: &khora_core::agent::gorna::AgentHints) {
     let _ = (&x.cap_ms, &x.priority);
 }
@@ -321,16 +317,6 @@ fn agent_hints_fields(x: &khora_core::agent::gorna::AgentHints) {
 fn agent_id_api(x: &khora_core::agent::gorna::AgentId) {
     const _: khora_core::agent::gorna::AgentId = khora_core::agent::gorna::AgentId::new("an agent");
     let _: &'static str = x.name();
-}
-
-fn agent_status_fields(x: &khora_core::agent::gorna::AgentStatus) {
-    let _ = (
-        &x.agent_id,
-        &x.current_strategy,
-        &x.health_score,
-        &x.is_stalled,
-        &x.message,
-    );
 }
 
 fn decision_trace_fields(x: &khora_core::agent::gorna::DecisionTrace) {
@@ -357,32 +343,6 @@ fn engine_hint_variants(x: &khora_core::agent::gorna::EngineHint) {
     }
 }
 
-fn negotiation_request_fields(x: &khora_core::agent::gorna::NegotiationRequest) {
-    let _ = (
-        &x.target_latency,
-        &x.priority_weight,
-        &x.constraints,
-        &x.agent_timing,
-    );
-}
-
-fn negotiation_response_fields(x: &khora_core::agent::gorna::NegotiationResponse) {
-    let _ = (&x.strategies, &x.timing_adjustment);
-}
-
-fn resource_budget_fields(x: &khora_core::agent::gorna::ResourceBudget) {
-    let _ = (
-        &x.strategy_id,
-        &x.time_limit,
-        &x.memory_limit,
-        &x.extra_params,
-    );
-}
-
-fn resource_constraints_fields(x: &khora_core::agent::gorna::ResourceConstraints) {
-    let _ = (&x.max_vram_bytes, &x.max_memory_bytes, &x.must_run);
-}
-
 fn strategy_id_variants(x: &khora_core::agent::gorna::StrategyId) {
     match x {
         khora_core::agent::gorna::StrategyId::LowPower => {}
@@ -390,14 +350,6 @@ fn strategy_id_variants(x: &khora_core::agent::gorna::StrategyId) {
         khora_core::agent::gorna::StrategyId::HighPerformance => {}
         khora_core::agent::gorna::StrategyId::Custom(..) => {}
     }
-}
-
-fn strategy_option_fields(x: &khora_core::agent::gorna::StrategyOption) {
-    let _ = (&x.id, &x.estimated_time, &x.estimated_vram);
-}
-
-fn timing_adjustment_fields(x: &khora_core::agent::gorna::TimingAdjustment) {
-    let _ = (&x.importance_override,);
 }
 
 fn entity_id_fields(x: &khora_core::ecs::entity::EntityId) {
@@ -419,18 +371,6 @@ fn lane_error_variants(x: &khora_core::lane::LaneError) {
         khora_core::lane::LaneError::MissingResource { .. } => {}
         khora_core::lane::LaneError::ExecutionFailed(..) => {}
         khora_core::lane::LaneError::InitializationFailed(..) => {}
-    }
-}
-
-fn lane_kind_variants(x: &khora_core::lane::LaneKind) {
-    match x {
-        khora_core::lane::LaneKind::Render => {}
-        khora_core::lane::LaneKind::Shadow => {}
-        khora_core::lane::LaneKind::Physics => {}
-        khora_core::lane::LaneKind::Audio => {}
-        khora_core::lane::LaneKind::Asset => {}
-        khora_core::lane::LaneKind::Ui => {}
-        khora_core::lane::LaneKind::Script => {}
     }
 }
 
@@ -1193,9 +1133,6 @@ fn time_fields(x: &khora_core::time::Time) {
 mod trait_items {
     fn agent_trait_items<T: khora_core::agent::Agent>() {
         let _ = <T as khora_core::agent::Agent>::id;
-        let _ = <T as khora_core::agent::Agent>::negotiate;
-        let _ = <T as khora_core::agent::Agent>::apply_budget;
-        let _ = <T as khora_core::agent::Agent>::report_status;
         let _ = <T as khora_core::agent::Agent>::offer;
         let _ = <T as khora_core::agent::Agent>::apply;
         let _ = <T as khora_core::agent::Agent>::report;
@@ -1741,13 +1678,6 @@ fn module_agent_gorna_paths_still_resolve() {
     is_partial_eq::<khora_core::agent::gorna::AdaptationMode>();
     is_eq::<khora_core::agent::gorna::AdaptationMode>();
     is_default::<khora_core::agent::gorna::AdaptationMode>();
-    let _ = type_name::<khora_core::agent::gorna::AgentFrameStatus>();
-    let _ = agent_frame_status_fields as fn(&khora_core::agent::gorna::AgentFrameStatus);
-    is_debug::<khora_core::agent::gorna::AgentFrameStatus>();
-    is_clone::<khora_core::agent::gorna::AgentFrameStatus>();
-    is_copy::<khora_core::agent::gorna::AgentFrameStatus>();
-    is_default::<khora_core::agent::gorna::AgentFrameStatus>();
-    let _ = type_name::<khora_core::agent::gorna::AgentFrameStatusMap>();
     let _ = type_name::<khora_core::agent::gorna::AgentHints>();
     let _ = agent_hints_fields as fn(&khora_core::agent::gorna::AgentHints);
     let _ = khora_core::agent::gorna::AgentHints::apply;
@@ -1769,10 +1699,6 @@ fn module_agent_gorna_paths_still_resolve() {
     is_partial_ord::<khora_core::agent::gorna::AgentId>();
     is_ord::<khora_core::agent::gorna::AgentId>();
     is_display::<khora_core::agent::gorna::AgentId>();
-    let _ = type_name::<khora_core::agent::gorna::AgentStatus>();
-    let _ = agent_status_fields as fn(&khora_core::agent::gorna::AgentStatus);
-    is_debug::<khora_core::agent::gorna::AgentStatus>();
-    is_clone::<khora_core::agent::gorna::AgentStatus>();
     let _ = type_name::<khora_core::agent::gorna::DecisionTrace>();
     let _ = decision_trace_fields as fn(&khora_core::agent::gorna::DecisionTrace);
     is_debug::<khora_core::agent::gorna::DecisionTrace>();
@@ -1791,23 +1717,6 @@ fn module_agent_gorna_paths_still_resolve() {
     is_clone::<khora_core::agent::gorna::EngineHint>();
     is_copy::<khora_core::agent::gorna::EngineHint>();
     is_partial_eq::<khora_core::agent::gorna::EngineHint>();
-    let _ = type_name::<khora_core::agent::gorna::NegotiationRequest>();
-    let _ = negotiation_request_fields as fn(&khora_core::agent::gorna::NegotiationRequest);
-    is_debug::<khora_core::agent::gorna::NegotiationRequest>();
-    is_clone::<khora_core::agent::gorna::NegotiationRequest>();
-    let _ = type_name::<khora_core::agent::gorna::NegotiationResponse>();
-    let _ = negotiation_response_fields as fn(&khora_core::agent::gorna::NegotiationResponse);
-    is_debug::<khora_core::agent::gorna::NegotiationResponse>();
-    is_clone::<khora_core::agent::gorna::NegotiationResponse>();
-    let _ = type_name::<khora_core::agent::gorna::ResourceBudget>();
-    let _ = resource_budget_fields as fn(&khora_core::agent::gorna::ResourceBudget);
-    is_debug::<khora_core::agent::gorna::ResourceBudget>();
-    is_clone::<khora_core::agent::gorna::ResourceBudget>();
-    let _ = type_name::<khora_core::agent::gorna::ResourceConstraints>();
-    let _ = resource_constraints_fields as fn(&khora_core::agent::gorna::ResourceConstraints);
-    is_debug::<khora_core::agent::gorna::ResourceConstraints>();
-    is_clone::<khora_core::agent::gorna::ResourceConstraints>();
-    is_default::<khora_core::agent::gorna::ResourceConstraints>();
     let _ = type_name::<khora_core::agent::gorna::StrategyId>();
     let _ = strategy_id_variants as fn(&khora_core::agent::gorna::StrategyId);
     is_debug::<khora_core::agent::gorna::StrategyId>();
@@ -1818,15 +1727,6 @@ fn module_agent_gorna_paths_still_resolve() {
     is_hash::<khora_core::agent::gorna::StrategyId>();
     is_serialize::<khora_core::agent::gorna::StrategyId>();
     is_deserialize_owned::<khora_core::agent::gorna::StrategyId>();
-    let _ = type_name::<khora_core::agent::gorna::StrategyOption>();
-    let _ = strategy_option_fields as fn(&khora_core::agent::gorna::StrategyOption);
-    is_debug::<khora_core::agent::gorna::StrategyOption>();
-    is_clone::<khora_core::agent::gorna::StrategyOption>();
-    let _ = type_name::<khora_core::agent::gorna::TimingAdjustment>();
-    let _ = timing_adjustment_fields as fn(&khora_core::agent::gorna::TimingAdjustment);
-    is_debug::<khora_core::agent::gorna::TimingAdjustment>();
-    is_clone::<khora_core::agent::gorna::TimingAdjustment>();
-    let _ = khora_core::agent::gorna::measured_frame_time_ms;
 }
 
 #[test]
@@ -1932,15 +1832,6 @@ fn module_lane_paths_still_resolve() {
     is_debug::<khora_core::lane::LaneError>();
     is_display::<khora_core::lane::LaneError>();
     is_error::<khora_core::lane::LaneError>();
-    let _ = type_name::<khora_core::lane::LaneKind>();
-    let _ = lane_kind_variants as fn(&khora_core::lane::LaneKind);
-    is_debug::<khora_core::lane::LaneKind>();
-    is_clone::<khora_core::lane::LaneKind>();
-    is_copy::<khora_core::lane::LaneKind>();
-    is_partial_eq::<khora_core::lane::LaneKind>();
-    is_eq::<khora_core::lane::LaneKind>();
-    is_hash::<khora_core::lane::LaneKind>();
-    is_display::<khora_core::lane::LaneKind>();
     let _ = type_name::<khora_core::lane::bus::LaneBus>();
     let _ = type_name::<khora_core::lane::LaneBus>();
     same_type(
@@ -3023,22 +2914,13 @@ mod paths_used_by_other_crates {
     use khora_core::agent::completion::CompletionOutcome as _; // khora-control
     use khora_core::agent::dependency::AgentDependency as _; // khora-control
     use khora_core::agent::dependency::DependencyKind as _; // khora-control
-    use khora_core::agent::gorna::measured_frame_time_ms as _; // khora-agents
     use khora_core::agent::gorna::AdaptationMode as _; // khora-control
-    use khora_core::agent::gorna::AgentFrameStatus as _; // khora-control
-    use khora_core::agent::gorna::AgentFrameStatusMap as _; // khora-agents, khora-control, khora-sdk
     use khora_core::agent::gorna::AgentHints as _; // khora-control, khora-sdk
     use khora_core::agent::gorna::AgentId as _; // khora-agents, khora-control, khora-sdk
-    use khora_core::agent::gorna::AgentStatus as _; // khora-agents, khora-control, khora-sdk
     use khora_core::agent::gorna::DecisionTrace as _; // khora-control
     use khora_core::agent::gorna::EngineHint as _; // khora-control, khora-sdk
-    use khora_core::agent::gorna::NegotiationRequest as _; // khora-agents, khora-control
-    use khora_core::agent::gorna::NegotiationResponse as _; // khora-agents, khora-control
-    use khora_core::agent::gorna::ResourceBudget as _; // khora-agents, khora-control
-    use khora_core::agent::gorna::ResourceConstraints as _; // khora-agents, khora-control
     use khora_core::agent::gorna::StrategyId as _; // khora-agents, khora-control, khora-sdk
     use khora_core::agent::gorna::StrategyId::Balanced as _; // khora-agents
-    use khora_core::agent::gorna::StrategyOption as _; // khora-agents, khora-control
     use khora_core::agent::timing::AgentImportance as _; // khora-control
     use khora_core::agent::Agent as _; // khora-agents, khora-control
     use khora_core::agent::AgentAccess as _; // khora-agents, khora-control
@@ -3083,10 +2965,6 @@ mod paths_used_by_other_crates {
     use khora_core::lane::LaneBus as _; // khora-control, khora-data, khora-sdk
     use khora_core::lane::LaneError as _; // khora-lanes, khora-macros
     use khora_core::lane::LaneError::InitializationFailed as _; // khora-lanes
-    use khora_core::lane::LaneKind as _; // khora-lanes
-    use khora_core::lane::LaneKind::Audio as _; // khora-lanes
-    use khora_core::lane::LaneKind::Physics as _; // khora-lanes
-    use khora_core::lane::LaneKind::Render as _; // khora-lanes
     use khora_core::lane::LaneReport as _; // khora-lanes
     use khora_core::lane::OutputDeck as _; // khora-agents, khora-control, khora-data, khora-editor (as khora_sdk::khora_core::…), khora-io, khora-sdk
     use khora_core::math as _; // khora-sdk (glob re-export)

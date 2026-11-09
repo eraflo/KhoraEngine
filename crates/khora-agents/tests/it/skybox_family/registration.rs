@@ -17,19 +17,15 @@
 
 use std::any::TypeId;
 use std::sync::Arc;
-use std::time::Duration;
 
 use khora_agents::registered_agent::lane_agents;
-use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::{check_registrations, BootError};
-use khora_core::agent::{
-    Agent, AgentAccess, AgentImportance, DependencyKind, ExecutionPhase, ExecutionTiming,
-};
+use khora_core::agent::{Agent, AgentAccess, AgentImportance, DependencyKind, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
 use khora_core::lane::io::Target;
-use khora_core::lane::LaneKind;
 use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
@@ -38,6 +34,7 @@ use khora_data::render::{RenderWorld, SkyboxPassSlot};
 use khora_data::IblBaker;
 
 use super::fixtures::{skybox_agent, skybox_registration};
+use crate::protocol::request;
 
 // ─── The registration ───────────────────────────────────────────────────────
 
@@ -51,7 +48,6 @@ fn the_skybox_family_is_registered_once() {
 
     assert_eq!(registration.family_name, "skybox");
     assert_eq!(registration.agent, AgentId::new("skybox"));
-    assert_eq!(registration.kind, LaneKind::Render);
     assert_eq!(registration.semantics, Semantics::Presentation);
     assert_eq!(registration.importance, AgentImportance::Important);
     assert_eq!(registration.fixed_step, None, "the sky draws every frame");
@@ -237,19 +233,14 @@ fn the_skybox_agent_offers_one_balanced_strategy() {
     let mut agent = skybox_agent();
 
     let offered: Vec<StrategyId> = agent
-        .negotiate(NegotiationRequest {
-            target_latency: Duration::from_micros(16_667),
-            priority_weight: 1.0,
-            constraints: ResourceConstraints::default(),
-            agent_timing: ExecutionTiming::default(),
-        })
-        .strategies
+        .offer(&request())
+        .rows
         .iter()
-        .map(|option| option.id)
+        .map(|row| row.id)
         .collect();
 
     assert_eq!(offered, [StrategyId::Balanced]);
-    let status = agent.report_status();
-    assert_eq!(status.agent_id, AgentId::new("skybox"));
-    assert_eq!(status.current_strategy, StrategyId::Balanced);
+    let report = agent.report();
+    assert_eq!(report.agent, AgentId::new("skybox"));
+    assert_eq!(report.row, StrategyId::Balanced);
 }

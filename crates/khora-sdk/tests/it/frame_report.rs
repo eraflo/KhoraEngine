@@ -15,15 +15,17 @@
 //! Each frame reports to the DCC how long it kept the host busy, the waits
 //! for the display excluded, and the DCC's budget multiplier follows it.
 
+use crate::protocol::{offer_of, report_of};
+use khora_sdk::khora_core::agent::gorna::protocol::{
+    Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
+};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-use khora_sdk::khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-    StrategyOption,
-};
+use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_sdk::khora_core::agent::Agent;
+use khora_sdk::khora_core::lane::cost::{Cost, PerDevice};
 use khora_sdk::khora_core::math::Extent2D;
 use khora_sdk::khora_core::platform::window::KhoraWindow;
 use khora_sdk::khora_core::renderer::api::device::{
@@ -69,19 +71,20 @@ impl AgentProvider for Workload {
 /// The two rows a [`Graded`] agent offers: a cheap floor and a dearer row
 /// above it. With one above its floor, a lower frame target has something to
 /// take back — what the frame governor needs before it lowers the multiplier.
-fn graded_rows() -> Vec<StrategyOption> {
-    vec![
-        StrategyOption {
-            id: StrategyId::LowPower,
-            estimated_time: Duration::from_millis(1),
-            estimated_vram: 0,
+fn graded_rows() -> Vec<OfferRow> {
+    let row = |id, millis| OfferRow {
+        id,
+        cost: Cost {
+            time: PerDevice {
+                cpu: Duration::from_millis(millis),
+                ..PerDevice::default()
+            },
+            ..Cost::default()
         },
-        StrategyOption {
-            id: StrategyId::Balanced,
-            estimated_time: Duration::from_millis(4),
-            estimated_vram: 0,
-        },
-    ]
+        quality: 1.0,
+        confidence: Confidence::Quoted,
+    };
+    vec![row(StrategyId::LowPower, 1), row(StrategyId::Balanced, 4)]
 }
 
 /// An agent that does nothing but offer [`graded_rows`]: the lever the
@@ -93,21 +96,26 @@ impl Agent for Graded {
     fn id(&self) -> AgentId {
         AgentId::new("graded")
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: graded_rows(),
-            timing_adjustment: None,
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        Offer {
+            agent: AgentId::new("graded"),
+            epoch: request.epoch,
+            rows: graded_rows(),
+            floor: StrategyId::LowPower,
+            current: StrategyId::Balanced,
+            health: 1.0,
         }
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: AgentId::new("graded"),
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(AgentId::new("graded"), StrategyId::Balanced)
     }
     fn execute(&mut self, _ctx: &mut EngineContext<'_>) {}
     fn as_any(&self) -> &dyn std::any::Any {
@@ -421,21 +429,19 @@ impl Agent for SlowAgent {
     fn id(&self) -> AgentId {
         AgentId::new("slow_agent")
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(AgentId::new("slow_agent"), request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: AgentId::new("slow_agent"),
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(AgentId::new("slow_agent"), StrategyId::Balanced)
     }
     fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
         self.runs.fetch_add(1, Ordering::SeqCst);

@@ -34,8 +34,8 @@ pub const KEEP_EPOCHS: u32 = 3;
 
 /// What the agent lent its installed layer: the terms every run is made on.
 ///
-/// Two parts. The agent's — `epoch`, `envelope`, `time_limit`,
-/// `budget_lent`, `fixed_step`, `over_budget`, `quoted_at`, `target` — is
+/// Two parts. The agent's — `epoch`, `envelope`, `budget`, `fixed_step`,
+/// `over_budget`, `quoted_at`, `target` — is
 /// what the DCC lent the family and how the agent answered it, from its last
 /// full quote, whatever layer runs it: set while another layer is on its way
 /// in, it applies to the installed one at once, so its reports answer the
@@ -48,13 +48,10 @@ pub struct Terms {
     /// The envelope the DCC lent; `None` while none was, which limits
     /// nothing — the kept layers' memory included.
     pub envelope: Option<Envelope>,
-    /// The time lent to a `#[budget]` lane; zero lends none, unless
-    /// `budget_lent` says a budget of zero was lent.
-    pub time_limit: Duration,
-    /// Whether the agent was lent a budget at all: a lane taking
-    /// `Option<Budget>` reads `None` until it is, and `time_limit` once it
-    /// is — zero included.
-    pub budget_lent: bool,
+    /// The time lent to a `#[budget]` lane — the envelope's, on its busiest
+    /// device; `None` while nothing was lent, which a lane taking
+    /// `Option<Budget>` reads as `None`.
+    pub budget: Option<Duration>,
     /// The simulated time one run advances, for a fixed-step family.
     pub fixed_step: Option<Duration>,
     /// Whether the row is the floor, run because no row fitted the envelope.
@@ -102,8 +99,6 @@ pub struct LastRun {
     /// The cost of every level of the layer's lane on that run's inputs, in
     /// level order; empty when the inputs were refused.
     pub costs: Vec<Cost>,
-    /// What went wrong on that run; empty when nothing did.
-    pub message: String,
 }
 
 /// A family's place in the frame: its phase and its pass slot, where one
@@ -496,6 +491,22 @@ impl Place {
         Some(self.report(row, &terms, switch, run))
     }
 
+    /// Reports a run of the installed layer that did not finish — it
+    /// panicked: stalled, nothing done, saying `why`. `None` while nothing is
+    /// installed.
+    pub fn run_failed(&mut self, why: String) -> Option<Report> {
+        let held = self.installed.as_mut()?;
+        let row = held.layer.row();
+        let switch = held.switch.take();
+        let terms = self.terms.clone();
+        let run = LayerRun {
+            stalled: true,
+            message: why,
+            ..LayerRun::default()
+        };
+        Some(self.report(row, &terms, switch, run))
+    }
+
     /// Keeps the wake `run` raised and what it gave back, and reports it on
     /// `terms`.
     fn report(
@@ -521,16 +532,16 @@ impl Place {
             row,
             measured: run.measured,
             done,
-            health: on_time(terms.time_limit, &run.measured).min(done),
+            health: on_time(terms.budget.unwrap_or_default(), &run.measured).min(done),
             over_budget: terms.over_budget,
             stalled: run.stalled,
             workload: None,
             switch,
+            message: (!run.message.is_empty()).then_some(run.message),
         };
         self.last = LastRun {
             report: Some(report.clone()),
             costs: run.costs,
-            message: run.message,
         };
         report
     }

@@ -188,13 +188,7 @@ impl Layer for LaneLayer {
         let mut written = OutputDeck::new();
         let started = Instant::now();
         let run = {
-            let mut source = lend(
-                context,
-                terms.time_limit,
-                terms.budget_lent,
-                terms.fixed_step,
-                frame.as_deref(),
-            );
+            let mut source = lend(context, terms.budget, terms.fixed_step, frame.as_deref());
             let mut sink = OutputSink::new(&mut written)
                 .with_seed(context.deck)
                 .with_staging(&mut self.staging);

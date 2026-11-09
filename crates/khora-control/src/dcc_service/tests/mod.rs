@@ -32,16 +32,48 @@ use khora_core::agent::gorna::protocol::{
     Allocation, Confidence, Envelope, Epoch, FrameReport, Offer, OfferRequest, OfferRow, Report,
     Trigger,
 };
-use khora_core::agent::gorna::{
-    AgentId, AgentStatus, EpochRecord, NegotiationRequest, NegotiationResponse, ResourceBudget,
-    StrategyId, StrategyOption,
-};
+use khora_core::agent::gorna::{AgentId, EpochRecord, StrategyId};
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::telemetry::{MetricId, MetricValue};
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 // ── Fakes and waiting ─────────────────────────────────────────────
+
+/// An offer of `row` alone, unpriced: what a fake with nothing to trade
+/// answers.
+fn offer_of(agent: AgentId, request: &OfferRequest, row: StrategyId) -> Offer {
+    Offer {
+        agent,
+        epoch: request.epoch,
+        rows: vec![OfferRow {
+            id: row,
+            cost: Cost::default(),
+            quality: 1.0,
+            confidence: Confidence::Assumed,
+        }],
+        floor: row,
+        current: row,
+        health: 1.0,
+    }
+}
+
+/// A healthy report of a run of `row` that did all its work, in no epoch.
+fn report_of(agent: AgentId, row: StrategyId) -> Report {
+    Report {
+        agent,
+        epoch: Epoch::default(),
+        row,
+        measured: PerDevice::default(),
+        done: 1.0,
+        health: 1.0,
+        over_budget: false,
+        stalled: false,
+        workload: None,
+        switch: None,
+        message: None,
+    }
+}
 
 /// Waits up to `secs` seconds for `done`, polling every 5 ms.
 fn wait_for(secs: u64, mut done: impl FnMut() -> bool) -> bool {
@@ -189,9 +221,6 @@ struct Heard {
     lent: Vec<(Epoch, Envelope, Option<StrategyId>)>,
     /// The thread each `apply` came on, in order.
     lent_on: Vec<thread::ThreadId>,
-    /// Calls to `negotiate` or `apply_budget`, which a protocol agent never
-    /// expects.
-    old_calls: usize,
 }
 
 /// How a [`Speaker`] is doing; the test changes it while the DCC runs.
@@ -314,26 +343,6 @@ impl Agent for Speaker {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
-        self.heard.lock().expect("the heard lock").old_calls += 1;
-        NegotiationResponse {
-            strategies: Vec::new(),
-            timing_adjustment: None,
-        }
-    }
-    fn apply_budget(&mut self, _: ResourceBudget) {
-        self.heard.lock().expect("the heard lock").old_calls += 1;
-    }
-    fn report_status(&self) -> AgentStatus {
-        let health = self.health.lock().expect("the health lock");
-        AgentStatus {
-            agent_id: self.id,
-            current_strategy: StrategyId::LowPower,
-            health_score: health.health,
-            is_stalled: health.stalled,
-            message: String::new(),
-        }
-    }
     fn offer(&mut self, request: &OfferRequest) -> Offer {
         self.heard
             .lock()
@@ -387,54 +396,7 @@ impl Agent for Speaker {
             stalled: health.stalled,
             workload: None,
             switch: None,
-        }
-    }
-    fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-/// An agent written before the protocol, answering through the bridge: two
-/// options, `LowPower` 2 ms and `Balanced` 8 ms.
-struct StubAgent {
-    applied: Option<StrategyId>,
-}
-
-impl Agent for StubAgent {
-    fn id(&self) -> AgentId {
-        AgentId::new("renderer")
-    }
-    fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![
-                StrategyOption {
-                    id: StrategyId::LowPower,
-                    estimated_time: Duration::from_millis(2),
-                    estimated_vram: 1024,
-                },
-                StrategyOption {
-                    id: StrategyId::Balanced,
-                    estimated_time: Duration::from_millis(8),
-                    estimated_vram: 1024,
-                },
-            ],
-            timing_adjustment: None,
-        }
-    }
-    fn apply_budget(&mut self, budget: ResourceBudget) {
-        self.applied = Some(budget.strategy_id);
-    }
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: AgentId::new("renderer"),
-            current_strategy: self.applied.unwrap_or(StrategyId::Balanced),
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
+            message: None,
         }
     }
     fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
@@ -612,6 +574,7 @@ fn run_report(name: &'static str, epoch: Epoch, cpu_us: u64, workload: f64) -> R
         stalled: false,
         workload: Some(workload),
         switch: None,
+        message: None,
     }
 }
 
@@ -1309,21 +1272,19 @@ impl Agent for InitRecording {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id, request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id,
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(self.id, StrategyId::Balanced)
     }
     fn on_initialize(&mut self, _: &mut khora_core::EngineContext<'_>) {
         self.log.lock().expect("the log lock").push(self.name);

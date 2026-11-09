@@ -22,8 +22,8 @@ use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::{Validate, ValueProblem};
 use khora_core::lane::io::{Budget, Locked};
 use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::LaneError;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneError, LaneKind};
 use khora_core::problems::ProblemSeverity;
 use khora_macros::{LaneInputs, LaneOutputs};
 
@@ -168,7 +168,6 @@ pub struct EchoOutputs {
 pub struct SpeedFamily;
 
 impl LaneFamily for SpeedFamily {
-    const KIND: LaneKind = LaneKind::Physics;
     const NAME: &'static str = "speed";
     const AGENT: AgentId = AgentId::new("physics");
     const SEMANTICS: Semantics = Semantics::Exact;
@@ -179,7 +178,6 @@ impl LaneFamily for SpeedFamily {
 pub struct MixFamily;
 
 impl LaneFamily for MixFamily {
-    const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "mix";
     const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -190,7 +188,6 @@ impl LaneFamily for MixFamily {
 pub struct EchoFamily;
 
 impl LaneFamily for EchoFamily {
-    const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "echo";
     const AGENT: AgentId = AgentId::new("ui");
     const SEMANTICS: Semantics = Semantics::Presentation;

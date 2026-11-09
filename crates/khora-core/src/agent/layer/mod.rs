@@ -98,6 +98,7 @@ pub struct LayerRun {
     pub costs: Vec<Cost>,
     /// Why the agent must be woken before the next frame's waves, if it must.
     pub wake: Option<Wake>,
-    /// What went wrong, in words; empty when nothing did.
+    /// What the run had to say, in words — what its lane said, what went
+    /// wrong; empty when it said nothing. The run's report carries it.
     pub message: String,
 }

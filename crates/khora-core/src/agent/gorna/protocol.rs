@@ -194,6 +194,9 @@ pub struct Report {
     /// was swapped in at its family's place; `None` on every other run. What
     /// a switch of row costs.
     pub switch: Option<Duration>,
+    /// What the run had to say — its lane's message, a refused input, a
+    /// failure; `None` when it said nothing.
+    pub message: Option<String>,
 }
 
 /// What one frame cost the engine: the time it kept each device busy, waits

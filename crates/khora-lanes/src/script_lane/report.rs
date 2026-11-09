@@ -13,8 +13,8 @@
 // limitations under the License.
 //! What one run of the lane did.
 //!
-//! Its own file because it is the lane's answer to the agent, and the agent's
-//! `report_status` is built from nothing else. Everything here is read by
+//! Its own file because it is the lane's answer to the agent, and what the
+//! agent reports of the run is built from nothing else. Everything here is read by
 //! somebody outside this module; everything in the siblings is not.
 
 use khora_core::script::{BehaviorUpdate, EventQueue};

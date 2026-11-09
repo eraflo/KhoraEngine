@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! What a `LaneAgent` tells GORNA and the scheduler: its menu and its prices,
-//! the row a budget picks, its status, its timing, its access and its
+//! the row a pin picks, its report, its timing, its access and its
 //! contention.
 
 use std::any::TypeId;
@@ -21,6 +21,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use khora_agents::agent::lane_agent;
+use khora_core::agent::gorna::protocol::Epoch;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{Agent, AgentAccess, AgentImportance, DependencyKind, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
@@ -29,25 +30,26 @@ use khora_core::lane::family::LaneFamily;
 use khora_core::lane::OutputDeck;
 
 use super::fixtures::{
-    budget, ladder_cost, locked, offered, place_of, request, run, runtime, FirstLane, Load, Plan,
-    ProbeFamily, Recorded, SecondLane, Tally, FIXED_LADDER, FIXED_STEP, LADDER, STORAGE_OR_PLAIN,
-    TWO_LANES,
+    host_envelope, ladder_cost, lend, locked, offer_request, offered, place_of, recorded_level,
+    run, runtime, FirstLane, Load, Plan, ProbeFamily, Recorded, SecondLane, Tally, FIXED_LADDER,
+    FIXED_STEP, LADDER, STORAGE_OR_PLAIN, TWO_LANES,
 };
+use crate::protocol::pin;
 
-/// **GORNA prices every row from the frame that just ran.** One option per
-/// menu row, in menu order, each priced by the cost the lane quoted for that
-/// level on the last frame's inputs — not on an earlier frame's.
+/// **GORNA prices every row from the frame that just ran.** One row per menu
+/// row, in menu order, each priced by the cost the lane quoted for that level
+/// on the last frame's inputs — not on an earlier frame's.
 #[test]
-fn negotiate_offers_one_option_per_row_priced_by_the_last_frame() {
+fn an_offer_holds_one_row_per_level_priced_by_the_last_frame() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
-    agent.apply_budget(budget(StrategyId::Balanced));
+    pin(&mut agent, StrategyId::Balanced);
     let mut deck = OutputDeck::new();
     run(&mut agent, 1, &runtime(10, Plan::default()), &mut deck);
     run(&mut agent, 2, &runtime(20, Plan::default()), &mut deck);
 
-    let response = agent.negotiate(request());
+    let offer = agent.offer(&offer_request(3));
 
-    let ids: Vec<StrategyId> = response.strategies.iter().map(|o| o.id).collect();
+    let ids: Vec<StrategyId> = offer.rows.iter().map(|row| row.id).collect();
     assert_eq!(
         ids,
         vec![
@@ -55,32 +57,24 @@ fn negotiate_offers_one_option_per_row_priced_by_the_last_frame() {
             StrategyId::Balanced,
             StrategyId::HighPerformance
         ],
-        "one option per level, in the order the lane offers them"
+        "one row per level, in the order the lane offers them"
     );
-    let times: Vec<Duration> = response
-        .strategies
-        .iter()
-        .map(|o| o.estimated_time)
-        .collect();
+    let times: Vec<Duration> = offer.rows.iter().map(|row| row.cost.time.cpu).collect();
     let quoted: Vec<Duration> = (0..3)
         .map(|level| ladder_cost(20, level).time.cpu)
         .collect();
     assert_eq!(times, quoted, "priced on the second frame's load of 20");
-    let vram: Vec<u64> = response
-        .strategies
-        .iter()
-        .map(|o| o.estimated_vram)
-        .collect();
+    let vram: Vec<u64> = offer.rows.iter().map(|row| row.cost.memory.gpu).collect();
     let quoted: Vec<u64> = (0..3)
         .map(|level| ladder_cost(20, level).memory.gpu)
         .collect();
     assert_eq!(vram, quoted, "the graphics memory each level quoted");
 }
 
-/// The DCC negotiates once before the first frame: with no quote yet, the
-/// agent still offers its whole menu.
+/// The DCC asks for an offer once before the first frame: with no quote yet,
+/// the agent still offers its whole menu.
 #[test]
-fn negotiate_before_any_frame_still_offers_every_row() {
+fn an_offer_before_any_frame_still_holds_every_row() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
 
     assert_eq!(
@@ -94,8 +88,8 @@ fn negotiate_before_any_frame_still_offers_every_row() {
 }
 
 /// **A behaviour the device cannot run is not on the agent's menu.** It is
-/// not offered, and a budget naming its level does not select it: the lane
-/// that runs is the one the device supports.
+/// not offered, and a pin naming its level does not select it: the lane that
+/// runs is the one the device supports.
 #[test]
 fn an_unsupported_behaviour_leaves_the_agent_menu() {
     let mut agent = lane_agent(&STORAGE_OR_PLAIN, &DeviceCaps::default());
@@ -106,8 +100,8 @@ fn an_unsupported_behaviour_leaves_the_agent_menu() {
         "the storage lane's HighPerformance row is gone"
     );
 
-    agent.apply_budget(budget(StrategyId::LowPower));
-    agent.apply_budget(budget(StrategyId::HighPerformance));
+    pin(&mut agent, StrategyId::LowPower);
+    pin(&mut agent, StrategyId::HighPerformance);
     let mut deck = OutputDeck::new();
     run(&mut agent, 1, &runtime(1, Plan::default()), &mut deck);
     assert_eq!(
@@ -130,40 +124,53 @@ fn an_unsupported_behaviour_leaves_the_agent_menu() {
     );
 }
 
-/// `apply_budget` picks the row its strategy names: before the first frame,
-/// that frame records at that level; later, the next frame's event pass
-/// stages it and the frame after records there. The status reports it.
+/// A pin picks the row it names: before the first frame, that frame records
+/// at that level; later, the next frame's event pass stages it and the frame
+/// after records there. The report names it.
 #[test]
-fn apply_budget_picks_the_row_its_strategy_names() {
+fn a_pin_picks_the_row_it_names() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
     let runtime = runtime(1, Plan::default());
     let mut deck = OutputDeck::new();
 
-    agent.apply_budget(budget(StrategyId::Balanced));
+    pin(&mut agent, StrategyId::Balanced);
     run(&mut agent, 1, &runtime, &mut deck);
     assert_eq!(deck.get::<Recorded>().map(|r| r.level), Some(1));
-    assert_eq!(agent.report_status().current_strategy, StrategyId::Balanced);
+    assert_eq!(agent.report().row, StrategyId::Balanced);
 
-    agent.apply_budget(budget(StrategyId::LowPower));
+    pin(&mut agent, StrategyId::LowPower);
     run(&mut agent, 2, &runtime, &mut deck);
     run(&mut agent, 3, &runtime, &mut deck);
     assert_eq!(deck.get::<Recorded>().map(|r| r.level), Some(0));
-    assert_eq!(agent.report_status().current_strategy, StrategyId::LowPower);
+    assert_eq!(agent.report().row, StrategyId::LowPower);
 }
 
-/// A budget naming a strategy the menu does not hold changes nothing: the
-/// agent keeps the row it runs.
+/// A pin naming a strategy the menu does not hold changes nothing: the agent
+/// keeps the row its envelope gives it. Lent 250 µs on a load of 100, the
+/// ladder runs its middle level, 200 µs; the same envelope pinned to a row
+/// the ladder does not offer leaves it there.
 #[test]
-fn a_strategy_off_the_menu_keeps_the_current_row() {
+fn a_pin_off_the_menu_keeps_the_current_row() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
-    agent.apply_budget(budget(StrategyId::Balanced));
-
-    agent.apply_budget(budget(StrategyId::Custom(99)));
-
+    let load = runtime(100, Plan::default());
+    lend(&mut agent, host_envelope(250));
     let mut deck = OutputDeck::new();
-    run(&mut agent, 1, &runtime(1, Plan::default()), &mut deck);
-    assert_eq!(deck.get::<Recorded>().map(|r| r.level), Some(1));
-    assert_eq!(agent.report_status().current_strategy, StrategyId::Balanced);
+    run(&mut agent, 1, &load, &mut deck);
+    assert_eq!(recorded_level(&deck), Some(1), "the premise: 200 µs fits");
+
+    agent.apply(
+        Epoch(2),
+        &host_envelope(250),
+        Some(StrategyId::Custom(99)),
+        None,
+    );
+
+    for frame in [2, 3] {
+        let mut deck = OutputDeck::new();
+        run(&mut agent, frame, &load, &mut deck);
+        assert_eq!(recorded_level(&deck), Some(1), "frame {frame}");
+    }
+    assert_eq!(agent.report().row, StrategyId::Balanced);
 }
 
 /// **Locks follow the installed layer; the agent's reads cover every lane it
@@ -184,7 +191,7 @@ fn locks_follow_the_installed_layer_and_reads_cover_every_quoted_lane() {
     let mut deck = OutputDeck::new();
     let mut agent = lane_agent(&TWO_LANES, &DeviceCaps::default());
 
-    agent.apply_budget(budget(StrategyId::LowPower));
+    pin(&mut agent, StrategyId::LowPower);
     run(&mut agent, 1, &runtime, &mut deck);
     let on_first = locked(&place_of(&agent)).contention();
     for read in &first.reads {
@@ -196,7 +203,7 @@ fn locks_follow_the_installed_layer_and_reads_cover_every_quoted_lane() {
     );
     assert!(on_first.deck.contains(&recorded), "the family's slot");
 
-    agent.apply_budget(budget(StrategyId::Balanced));
+    pin(&mut agent, StrategyId::Balanced);
     run(&mut agent, 2, &runtime, &mut deck);
     run(&mut agent, 3, &runtime, &mut deck);
     let on_second = locked(&place_of(&agent)).contention();
@@ -223,7 +230,7 @@ fn the_agent_declares_the_locks_of_every_lane_it_quotes() {
     let mut deck = OutputDeck::new();
     let mut agent = lane_agent(&TWO_LANES, &DeviceCaps::default());
 
-    agent.apply_budget(budget(StrategyId::LowPower));
+    pin(&mut agent, StrategyId::LowPower);
     run(&mut agent, 1, &runtime, &mut deck);
 
     assert_eq!(
@@ -278,16 +285,17 @@ fn timing_comes_from_the_registration() {
     assert!(every_frame.dependencies.is_empty());
 }
 
-/// The agent negotiates and reports as its family's agent.
+/// The agent offers and reports as its family's agent.
 #[test]
 fn a_lane_agent_is_its_familys_agent() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
-    agent.apply_budget(budget(StrategyId::HighPerformance));
+    pin(&mut agent, StrategyId::HighPerformance);
 
     assert_eq!(agent.id(), ProbeFamily::AGENT);
-    let status = agent.report_status();
-    assert_eq!(status.agent_id, ProbeFamily::AGENT);
-    assert_eq!(status.current_strategy, StrategyId::HighPerformance);
+    assert_eq!(agent.offer(&offer_request(1)).agent, ProbeFamily::AGENT);
+    let report = agent.report();
+    assert_eq!(report.agent, ProbeFamily::AGENT);
+    assert_eq!(report.row, StrategyId::HighPerformance);
 }
 
 /// A lane reporting it could not progress makes the agent report a stall;
@@ -295,7 +303,7 @@ fn a_lane_agent_is_its_familys_agent() {
 #[test]
 fn a_stalled_lane_reports_a_stalled_agent() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
-    agent.apply_budget(budget(StrategyId::LowPower));
+    pin(&mut agent, StrategyId::LowPower);
     let mut deck = OutputDeck::new();
 
     run(
@@ -310,8 +318,8 @@ fn a_stalled_lane_reports_a_stalled_agent() {
         ),
         &mut deck,
     );
-    assert!(agent.report_status().is_stalled);
+    assert!(agent.report().stalled);
 
     run(&mut agent, 2, &runtime(1, Plan::default()), &mut deck);
-    assert!(!agent.report_status().is_stalled);
+    assert!(!agent.report().stalled);
 }

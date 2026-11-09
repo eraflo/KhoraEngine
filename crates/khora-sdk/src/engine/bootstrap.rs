@@ -440,13 +440,6 @@ fn populate(
         .resources
         .insert(Arc::new(khora_data::ui::GlyphAtlas::default()));
 
-    // AgentFrameStatus map — per-agent execution metrics measured and
-    // written by the scheduler each frame; agents read their own slot in
-    // `report_status` instead of holding per-frame counters.
-    let agent_frame_status: khora_core::agent::gorna::AgentFrameStatusMap =
-        Arc::new(std::sync::RwLock::new(std::collections::HashMap::new()));
-    runtime.resources.insert(agent_frame_status);
-
     // The scripting world — compiled programs, live behavior instances, the
     // mail behaviors owe each other. Registered here rather than owned by
     // the script family's agent for the same reason the physics provider

@@ -16,15 +16,16 @@
 //! start, before any agent runs, to every agent it names at once and under
 //! each agent's lock — never in the middle of a frame, and never by the DCC.
 
+use super::{offer_of, report_of};
 use crate::agent_registry::AgentRegistry;
 use crate::budget_channel::BudgetChannel;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::dependency::DependencyKind;
-use khora_core::agent::gorna::protocol::{Allocation, Envelope, Epoch, Trigger};
-use khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
+use khora_core::agent::gorna::protocol::{
+    Allocation, Envelope, Epoch, Offer, OfferRequest, Report, Trigger,
 };
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{Agent, AgentDependency, ExecutionPhase, ExecutionTiming};
 use khora_core::lane::cost::PerDevice;
 use khora_core::{EngineContext, Runtime};
@@ -88,21 +89,11 @@ impl Agent for Hand {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id, request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id,
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn report(&self) -> Report {
+        report_of(self.id, StrategyId::Balanced)
     }
     fn apply(
         &mut self,
@@ -457,21 +448,11 @@ impl Agent for Stepper {
     fn id(&self) -> AgentId {
         AgentId::new("stepper")
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id(), request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id(),
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn report(&self) -> Report {
+        report_of(self.id(), StrategyId::Balanced)
     }
     fn apply(
         &mut self,

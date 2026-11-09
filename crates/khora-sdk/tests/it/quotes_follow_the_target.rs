@@ -26,7 +26,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use khora_agents::agent::{lane_agent, LaneAgent};
-use khora_sdk::khora_core::agent::gorna::{AgentId, ResourceBudget, StrategyId};
+use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_sdk::khora_core::agent::registration::AgentRegistration;
 use khora_sdk::khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_sdk::khora_core::gpu::DeviceCaps;
@@ -38,7 +38,7 @@ use khora_sdk::khora_core::lane::io::{
 };
 use khora_sdk::khora_core::lane::level::{Impact, Level};
 use khora_sdk::khora_core::lane::{Lane, LaneReport};
-use khora_sdk::khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
+use khora_sdk::khora_core::lane::{LaneBus, LaneError, OutputDeck};
 use khora_sdk::khora_core::math::Extent2D;
 use khora_sdk::khora_core::renderer::api::frame::FrameContext;
 use khora_sdk::khora_core::renderer::api::resource::{TextureFormat, TextureViewId};
@@ -77,7 +77,6 @@ impl<'f> LaneOutputs<'f> for DrawnOutputs {
 pub struct TargetFamily;
 
 impl LaneFamily for TargetFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "target quotes";
     const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -290,12 +289,7 @@ fn a_target_key_change_requotes_the_other_lanes() {
     );
     let count = || quotes.load(Ordering::SeqCst);
     let mut agent = lane_agent(&DRAWING_AND_WAITING, &DeviceCaps::default());
-    agent.apply_budget(ResourceBudget {
-        strategy_id: StrategyId::Balanced,
-        time_limit: Duration::from_millis(4),
-        memory_limit: None,
-        extra_params: Default::default(),
-    });
+    crate::protocol::pin_with(&mut agent, StrategyId::Balanced, Duration::from_millis(4));
     let mut deck = OutputDeck::new();
 
     context.insert(target(TextureFormat::Rgba8UnormSrgb));
@@ -305,8 +299,8 @@ fn a_target_key_change_requotes_the_other_lanes() {
     assert_eq!(
         deck.get::<Drawn>(),
         Some(&Drawn(1)),
-        "the drawing lane ran; status: {:?}",
-        agent.report_status().message
+        "the drawing lane ran; report: {:?}",
+        agent.report()
     );
     assert_eq!(count(), 1, "one target: quoted by the first run only");
 

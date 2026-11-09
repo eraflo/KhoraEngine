@@ -25,8 +25,8 @@ use khora_core::gpu::DeviceCaps;
 use khora_core::lane::cost::Cost;
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::level::Level;
+use khora_core::lane::LaneError;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneError, LaneKind};
 use khora_core::Runtime;
 
 use super::fixtures::{level, runtime, NoInputs, Plan, ProbeOutputs, LADDER, OTHER};
@@ -35,7 +35,6 @@ use super::fixtures::{level, runtime, NoInputs, Plan, ProbeOutputs, LADDER, OTHE
 pub struct CollectedFamily;
 
 impl LaneFamily for CollectedFamily {
-    const KIND: LaneKind = LaneKind::Script;
     const NAME: &'static str = "collected";
     const AGENT: AgentId = AgentId::new("script");
     const SEMANTICS: Semantics = Semantics::Presentation;

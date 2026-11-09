@@ -33,7 +33,7 @@ use khora_core::lane::io::{
 };
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
+use khora_core::lane::{LaneBus, LaneError, OutputDeck};
 use khora_core::renderer::api::command::CommandBufferId;
 use khora_core::renderer::traits::PipelineSystem;
 
@@ -89,7 +89,6 @@ impl<'f> LaneOutputs<'f> for LentOutputs<'f> {
 pub struct LentFamily;
 
 impl LaneFamily for LentFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "lent pipelines";
     const AGENT: AgentId = AgentId::new("lent pipelines");
     const SEMANTICS: Semantics = Semantics::Presentation;

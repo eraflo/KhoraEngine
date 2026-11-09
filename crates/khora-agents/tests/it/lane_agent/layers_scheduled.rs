@@ -31,8 +31,8 @@ use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::TargetKey;
 use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::LaneError;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneError, LaneKind};
 use khora_core::Runtime;
 use khora_data::ecs::World;
 
@@ -41,7 +41,6 @@ use super::fixtures::{host_envelope, level, NoInputs, ProbeOutputs, Recorded};
 pub struct ScheduledFamily;
 
 impl LaneFamily for ScheduledFamily {
-    const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "scheduled";
     const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;

@@ -22,7 +22,6 @@ mod choice_across_lanes;
 mod default_level;
 mod envelope;
 mod execution;
-mod fallback_across_lanes;
 mod fixtures;
 mod health;
 mod impact_change;

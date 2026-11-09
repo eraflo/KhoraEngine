@@ -25,7 +25,6 @@ use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
-use khora_core::lane::LaneKind;
 use khora_core::renderer::api::shadow::ShadowFrame;
 use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
@@ -48,7 +47,6 @@ fn the_shadows_family_is_registered_once() {
 
     assert_eq!(registration.family_name, "shadows");
     assert_eq!(registration.agent, AgentId::new("shadows"));
-    assert_eq!(registration.kind, LaneKind::Shadow);
     assert_eq!(registration.semantics, Semantics::Presentation);
     assert_eq!(registration.phase, ExecutionPhase::OBSERVE);
     assert_eq!(registration.importance, AgentImportance::Important);

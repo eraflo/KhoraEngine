@@ -567,7 +567,7 @@ fn a_report_is_as_healthy_as_its_run_kept_its_time_and_got_its_work_done() {
             .boxed(),
     );
     place.set_terms(Terms {
-        time_limit: Duration::from_millis(1),
+        budget: Some(Duration::from_millis(1)),
         ..Terms::default()
     });
     let health = run(&mut place).expect("ran").health;
@@ -656,7 +656,7 @@ fn a_place_contends_as_its_installed_layer() {
 
 /// The terms an agent lends for `epoch`, quoted at `at` plus `epoch`
 /// seconds: every field of two epochs' terms differs — the envelope, the
-/// time lent (800 µs over the epoch), the budget flag, the step, the
+/// budget lent (800 µs over the epoch), the step, the
 /// over-budget flag, the quote, when it was taken and the target.
 pub(super) fn lent(epoch: u64, at: Instant) -> Terms {
     let room = 1_000 * epoch;
@@ -674,8 +674,7 @@ pub(super) fn lent(epoch: u64, at: Instant) -> Terms {
                 other: u64::MAX,
             },
         }),
-        time_limit: Duration::from_micros(800 / epoch),
-        budget_lent: epoch % 2 == 1,
+        budget: Some(Duration::from_micros(800 / epoch)),
         fixed_step: Some(Duration::from_millis(epoch)),
         over_budget: epoch.is_multiple_of(2),
         quote: Some(Cost {
@@ -694,15 +693,14 @@ pub(super) fn lent(epoch: u64, at: Instant) -> Terms {
     }
 }
 
-/// The agent's part of `agent` — epoch, envelope, time lent, budget flag,
+/// The agent's part of `agent` — epoch, envelope, budget lent,
 /// step, over-budget flag, when the rows were quoted and target — with the
 /// row's part of `row`: its quote, the row's own price.
 pub(super) fn split(agent: &Terms, row: &Terms) -> Terms {
     Terms {
         epoch: agent.epoch,
         envelope: agent.envelope,
-        time_limit: agent.time_limit,
-        budget_lent: agent.budget_lent,
+        budget: agent.budget,
         fixed_step: agent.fixed_step,
         over_budget: agent.over_budget,
         quote: row.quote,
@@ -719,7 +717,7 @@ fn seen_since(seen: &Seen) -> Vec<Terms> {
 /// **Terms set while a layer is staged lend the installed layer their
 /// agent's part at once.** The installed layer was chosen on epoch 1's terms;
 /// epoch 2's are set while a new layer is staged. Until the swap the
-/// installed layer runs on epoch 2's epoch, envelope, time lent, budget flag,
+/// installed layer runs on epoch 2's epoch, envelope, budget lent,
 /// step, over-budget flag, quote time and target, and on its own row's quote:
 /// its report counts in epoch 2, its health is judged on epoch 2's 400 µs (a
 /// run of 600 µs is two thirds healthy, where epoch 1's 800 µs held it

@@ -16,7 +16,6 @@
 
 pub mod activation;
 mod background_checks;
-mod bridge;
 pub mod completion;
 pub mod contention;
 pub mod dependency;
@@ -28,9 +27,7 @@ pub mod timing;
 
 use crate::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use crate::agent::gorna::AgentId;
-use crate::agent::gorna::{
-    AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-};
+use crate::agent::gorna::StrategyId;
 use crate::EngineContext;
 use std::any::Any;
 use std::sync::{Arc, Mutex};
@@ -51,107 +48,39 @@ pub use timing::{AgentImportance, ExecutionTiming};
 /// Each major subsystem (Rendering, Physics, etc.) implements this trait to
 /// participate in the engine's dynamic resource negotiation (GORNA).
 ///
-/// # Lifecycle
+/// # The GORNA protocol
 ///
-/// 1. `on_initialize(ctx)` — called **once** after registration. The agent
-///    caches required services and initializes its lanes.
-/// 2. `execute(ctx)` — called **every frame**. The agent selects the appropriate
-///    lanes based on the current GORNA budget and runs them.
-/// 3. `negotiate(request)` / `apply_budget(budget)` — called by the GORNA
-///    arbitrator on the DCC background thread when the system re-evaluates strategy.
-/// 4. `report_status()` — polled by GORNA for health monitoring.
+/// Every epoch the DCC asks each agent for its [`offer`](Self::offer) — every
+/// row it can run, priced — lends it an envelope through
+/// [`apply`](Self::apply), and reads what it ran back through
+/// [`report`](Self::report). The DCC decides how much; the agent decides how:
+/// it chooses the row that fits the envelope.
 ///
-/// An agent must contain **no business logic** beyond lane selection, budget
-/// negotiation, and lane dispatch. All real work belongs in [`Lane`](crate::lane::Lane) implementations.
-///
-/// # Examples
-///
-/// A skeleton agent. Real agents cache their lanes in `on_initialize` and select
-/// one per frame in `execute` based on the budget applied via `apply_budget`.
-/// (Marked `ignore` because a compiling impl needs the GORNA request/response
-/// types and an [`EngineContext`] from the running engine.)
-///
-/// ```ignore
-/// use khora_core::agent::{Agent, ExecutionTiming};
-/// use khora_core::agent::gorna::{
-///     AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget,
-/// };
-/// use khora_core::EngineContext;
-/// use std::any::Any;
-///
-/// #[derive(Default)]
-/// struct MyAgent;
-///
-/// impl Agent for MyAgent {
-///     fn id(&self) -> AgentId { AgentId::new("renderer") }
-///
-///     fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse {
-///         // Propose a strategy that fits `request`'s constraints.
-///         NegotiationResponse::default()
-///     }
-///
-///     fn apply_budget(&mut self, _budget: ResourceBudget) {
-///         // Adjust quality / LOD to stay within the allocated budget.
-///     }
-///
-///     fn report_status(&self) -> AgentStatus { AgentStatus::default() }
-///
-///     fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-///         // Pick a lane for this frame and run it.
-///     }
-///
-///     fn as_any(&self) -> &dyn Any { self }
-///     fn as_any_mut(&mut self) -> &mut dyn Any { self }
-/// }
-/// ```
+/// An agent holds no business logic beyond choosing its row, answering
+/// GORNA and installing its layers. All real work belongs in
+/// [`Lane`](crate::lane::Lane) implementations. Every built-in family's
+/// agent is the one `LaneAgent` of `khora-agents`.
 pub trait Agent: Send + Sync {
     /// Returns the unique identifier for this agent.
     fn id(&self) -> AgentId;
 
-    /// Negotiates with the DCC to determine the best execution strategy
-    /// given the current global resource constraints and priorities.
-    fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse;
-
-    /// Applies a resource budget issued by the DCC.
-    /// The agent must adjust its internal logic (e.g., LOD, quality settings)
-    /// to stay within the allocated limits.
-    fn apply_budget(&mut self, budget: ResourceBudget);
-
-    /// Reports the current status and health of the agent.
-    fn report_status(&self) -> AgentStatus;
-
     /// Offers every row the agent can run, each with its cost, quality and
     /// confidence, and names the floor it falls back to.
-    ///
-    /// The default bridges an agent that only [`negotiate`](Self::negotiate)s.
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        bridge::offer(self, request)
-    }
+    fn offer(&mut self, request: &OfferRequest) -> Offer;
 
     /// Takes the envelope the DCC lent for `epoch`, the row a policy pins, and
-    /// the rows a policy allows.
-    ///
-    /// The default bridges an agent that only applies budgets: it picks the
-    /// dearest option that fits the envelope and hands it to
-    /// [`apply_budget`](Self::apply_budget).
+    /// the rows a policy allows, and chooses the row that runs within them.
     fn apply(
         &mut self,
         epoch: Epoch,
         envelope: &Envelope,
         pin: Option<StrategyId>,
         allowed: Option<&[StrategyId]>,
-    ) {
-        // A bridged agent keeps no epoch: its report carries none.
-        let _ = epoch;
-        bridge::apply(self, envelope, pin, allowed);
-    }
+    );
 
-    /// Reports what the agent ran on its last frame.
-    ///
-    /// The default bridges an agent that only reports its status.
-    fn report(&self) -> Report {
-        bridge::report(self)
-    }
+    /// Reports what the agent ran on its last frame: the row, its time, its
+    /// health, and what its lane said of the run.
+    fn report(&self) -> Report;
 
     /// The family's place, when the agent runs as **layers**: the scheduler
     /// then runs the place's installed [`Layer`] every frame instead of

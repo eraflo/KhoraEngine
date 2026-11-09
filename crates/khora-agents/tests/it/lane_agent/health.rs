@@ -17,12 +17,11 @@
 //! that was refused or failed reports nothing done, so it leaves the last
 //! `done` as it was.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use khora_agents::agent::{lane_agent, LaneAgent};
-use khora_core::agent::gorna::{AgentId, ResourceBudget, StrategyId};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
@@ -32,10 +31,11 @@ use khora_core::lane::guard::{InputRefusal, SourceKind};
 use khora_core::lane::io::{Declaration, InputSource, LaneInputs};
 use khora_core::lane::level::Level;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneError, LaneKind, OutputDeck};
+use khora_core::lane::{LaneError, OutputDeck};
 use khora_core::Runtime;
 
 use super::fixtures::{level, run, ProbeOutputs, Recorded};
+use crate::protocol::{pin_with, said};
 
 /// What the effort lane is told to do this frame.
 #[derive(Debug, Clone, Copy)]
@@ -88,7 +88,6 @@ impl<'f> LaneInputs<'f> for EffortInput<'f> {
 pub struct EffortFamily;
 
 impl LaneFamily for EffortFamily {
-    const KIND: LaneKind = LaneKind::Script;
     const NAME: &'static str = "effort";
     const AGENT: AgentId = AgentId::new("script");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -155,12 +154,7 @@ static EFFORT: AgentRegistration = khora_core::register_agent! {
 /// The effort agent, allowed `time_limit` a frame.
 fn effort_agent(time_limit: Duration) -> LaneAgent {
     let mut agent = lane_agent(&EFFORT, &DeviceCaps::default());
-    agent.apply_budget(ResourceBudget {
-        strategy_id: StrategyId::Balanced,
-        time_limit,
-        memory_limit: None,
-        extra_params: HashMap::new(),
-    });
+    pin_with(&mut agent, StrategyId::Balanced, time_limit);
     agent
 }
 
@@ -172,7 +166,7 @@ fn with(effort: Effort) -> Arc<Runtime> {
 }
 
 fn health(agent: &LaneAgent) -> f32 {
-    agent.report_status().health_score
+    agent.report().health
 }
 
 /// **Health is the lesser of the time ratio and what was done.** Well within
@@ -228,10 +222,7 @@ fn a_refused_run_keeps_the_previous_done() {
 
     run(&mut agent, 2, &Arc::new(Runtime::new()), &mut deck);
 
-    assert!(
-        !agent.report_status().message.is_empty(),
-        "the second run was refused"
-    );
+    assert!(!said(&agent).is_empty(), "the second run was refused");
     assert_eq!(health(&agent), 0.6, "the refused run left `done` as it was");
 }
 
@@ -250,10 +241,7 @@ fn a_failed_run_keeps_the_previous_done() {
     };
     run(&mut agent, 2, &with(failing), &mut deck);
 
-    assert!(
-        !agent.report_status().message.is_empty(),
-        "the second run failed"
-    );
+    assert!(!said(&agent).is_empty(), "the second run failed");
     assert_eq!(health(&agent), 0.6, "the failed run left `done` as it was");
 }
 
@@ -306,8 +294,7 @@ fn a_report_says_when_the_lane_stalled() {
     };
 
     run(&mut agent, 1, &with(stalling), &mut deck);
-    assert!(agent.report_status().is_stalled, "the status says so");
-    assert!(agent.report().stalled, "and so does the report");
+    assert!(agent.report().stalled, "the report says so");
 
     run(&mut agent, 2, &with(Effort::done(1.0)), &mut deck);
     assert!(!agent.report().stalled, "the lane progresses again");

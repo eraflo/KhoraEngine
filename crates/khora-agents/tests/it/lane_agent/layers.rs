@@ -39,7 +39,7 @@ use khora_core::lane::guard::Reason;
 use khora_core::lane::io::TargetKey;
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneError, LaneKind, OutputDeck};
+use khora_core::lane::{LaneError, OutputDeck};
 use khora_core::Runtime;
 
 use super::fixtures::{
@@ -74,7 +74,6 @@ fn asked() -> Vec<Event> {
 pub struct SwapFamily;
 
 impl LaneFamily for SwapFamily {
-    const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "swap";
     const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;

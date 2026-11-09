@@ -22,7 +22,7 @@ use super::{
 };
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::gorna::protocol::Report;
-use khora_core::agent::gorna::{AgentFrameStatus, AgentFrameStatusMap, AgentId};
+use khora_core::agent::gorna::AgentId;
 use khora_core::agent::timing::AgentImportance;
 use khora_core::agent::{Agent, AgentAccess, AgentDependency, ExecutionPhase, Place};
 use khora_core::lane::{LaneBus, OutputDeck};
@@ -105,17 +105,6 @@ impl ExecutionScheduler {
         // (per-domain refinement is a later step).
         let workload_n = world.entity_count() as f64;
 
-        // Scheduler-owned per-agent frame metrics: agents read their own slot
-        // in `report_status` so they hold no per-frame counters themselves.
-        let frame_status = runtime.resources.get::<AgentFrameStatusMap>().cloned();
-        let record_frame_time = |id: AgentId, measured_time_ms: f32| {
-            if let Some(fs) = &frame_status {
-                fs.write()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .insert(id, AgentFrameStatus { measured_time_ms });
-            }
-        };
-
         for (agent, importance, _priority, dependencies) in agents {
             let Some(known) = self.known.of(&agent) else {
                 continue;
@@ -127,14 +116,12 @@ impl ExecutionScheduler {
             // under pressure. Critical/Important agents are non-negotiable.
             if importance.is_negotiable() && self.is_under_budget_pressure() {
                 completion_map.mark(agent_id, CompletionOutcome::Skipped);
-                record_frame_time(agent_id, 0.0);
                 continue;
             }
 
             // Skip if hard dependencies were skipped or are unmarked
             if !are_hard_dependencies_completed(&dependencies, completion_map) {
                 completion_map.mark(agent_id, CompletionOutcome::Skipped);
-                record_frame_time(agent_id, 0.0);
                 continue;
             }
 
@@ -168,9 +155,8 @@ impl ExecutionScheduler {
             let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
             settle_deck(self, agent_id, &permit, deck, ran);
             if !ran {
-                clear_poison(&agent, place);
+                report = recover(&agent, place, agent_id);
             }
-            record_frame_time(agent_id, elapsed_ms as f32);
             self.publish_report(report, elapsed_ms, workload_n);
             completion_map.mark(agent_id, outcome_of(ran));
             world.end_run();
@@ -214,14 +200,6 @@ impl ExecutionScheduler {
         let bus_ref: &LaneBus = bus;
 
         let workload_n = world.entity_count() as f64;
-        let frame_status = runtime.resources.get::<AgentFrameStatusMap>().cloned();
-        let record_frame_time = |id: AgentId, measured_time_ms: f32| {
-            if let Some(fs) = &frame_status {
-                fs.write()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .insert(id, AgentFrameStatus { measured_time_ms });
-            }
-        };
         // Read each agent's id + access footprint once (a failed lock yields no
         // id → an always-singleton, always-skipped slot, matching sequential).
         let metas = build_wave_metas(&agents, &self.known);
@@ -236,16 +214,14 @@ impl ExecutionScheduler {
             .collect();
 
         // Returns true if the agent should run (not budget-skipped, hard deps
-        // satisfied); marks + records the skip otherwise.
+        // satisfied); marks the skip otherwise.
         let gate = |id: AgentId, importance: AgentImportance, deps: &[AgentDependency]| -> bool {
             if importance.is_negotiable() && self.is_under_budget_pressure() {
                 completion_map.mark(id, CompletionOutcome::Skipped);
-                record_frame_time(id, 0.0);
                 return false;
             }
             if !are_hard_dependencies_completed(deps, completion_map) {
                 completion_map.mark(id, CompletionOutcome::Skipped);
-                record_frame_time(id, 0.0);
                 return false;
             }
             true
@@ -286,9 +262,8 @@ impl ExecutionScheduler {
                     let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
                     settle_deck(self, id, &permit, deck, ran);
                     if !ran {
-                        clear_poison(agent, places[idx].as_ref());
+                        report = recover(agent, places[idx].as_ref(), id);
                     }
-                    record_frame_time(id, elapsed_ms as f32);
                     self.publish_report(report, elapsed_ms, workload_n);
                     completion_map.mark(id, outcome_of(ran));
                     break 'wave;
@@ -384,7 +359,7 @@ impl ExecutionScheduler {
                             })
                         };
                         if !ran {
-                            clear_poison(&agent, place.as_ref());
+                            report = recover(&agent, place.as_ref(), id);
                         }
                         let ms = started.elapsed().as_secs_f64() * 1000.0;
                         let written = shard.drain_written();
@@ -438,9 +413,8 @@ impl ExecutionScheduler {
                     let ms = started.elapsed().as_secs_f64() * 1000.0;
                     settle_deck(self, id, &permit, &mut inline_deck, ran);
                     if !ran {
-                        clear_poison(&agents[idx].0, places[idx].as_ref());
+                        report = recover(&agents[idx].0, places[idx].as_ref(), id);
                     }
-                    record_frame_time(id, ms as f32);
                     self.publish_report(report, ms, workload_n);
                     completion_map.mark(id, outcome_of(ran));
                 }
@@ -460,7 +434,6 @@ impl ExecutionScheduler {
                     }
                     self.audit_deck_writes(run.id, &run.permit, run.written);
                     written.merge_from(run.shard);
-                    record_frame_time(run.id, run.ms as f32);
                     self.publish_report(run.report.take(), run.ms, workload_n);
                     completion_map.mark(run.id, outcome_of(run.ran));
                     drop(run.earlier);
@@ -537,12 +510,24 @@ fn run_once(
     }
 }
 
-/// After a run panicked: the lock it poisoned — the place's when the agent
-/// runs as layers, else the agent's — is usable again.
-fn clear_poison(agent: &Arc<Mutex<dyn Agent>>, place: Option<&Arc<Mutex<Place>>>) {
+/// After the run of `id` panicked: the lock it poisoned — the place's when
+/// the agent runs as layers, else the agent's — is usable again, and the
+/// place reports the run stalled, saying it panicked, as a background run
+/// that panicked is. The report; `None` for an agent without a place.
+fn recover(
+    agent: &Arc<Mutex<dyn Agent>>,
+    place: Option<&Arc<Mutex<Place>>>,
+    id: AgentId,
+) -> Option<Report> {
     match place {
-        Some(place) => place.clear_poison(),
-        None => agent.clear_poison(),
+        Some(place) => {
+            place.clear_poison();
+            locked(place).run_failed(format!("the run of `{id}` panicked"))
+        }
+        None => {
+            agent.clear_poison();
+            None
+        }
     }
 }
 

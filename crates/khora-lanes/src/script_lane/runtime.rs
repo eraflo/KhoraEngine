@@ -263,11 +263,10 @@ pub struct ScriptRuntime {
     /// (`RULES.md` §8). This *is* the scripting world's pending mail, and the
     /// runtime is the scripting world.
     pub(super) pending: EventQueue,
-    /// What the last run did, for the agent's `report_status`.
+    /// What the last run did, which the lane prices its next run from.
     ///
-    /// Same reason: per-frame numbers do not live as agent state — the
-    /// convention `AgentFrameStatusMap` sets for scheduler-measured timings,
-    /// applied to the counters only the lane can produce.
+    /// Same reason: per-frame numbers do not live as agent state, and these
+    /// are counters only the lane can produce.
     last_report: ScriptRunReport,
     /// How many instances the last run found with no compiled module.
     ///

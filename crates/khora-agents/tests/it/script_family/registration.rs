@@ -17,24 +17,23 @@
 
 use std::any::TypeId;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use khora_agents::registered_agent::lane_agents;
-use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::{check_registrations, BootError};
-use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
 use khora_core::lane::io::Budget;
 use khora_core::lane::level::Impact;
-use khora_core::lane::LaneKind;
 use khora_core::script::{BehaviorWriteback, CommandBuffer};
 use khora_core::Runtime;
 use khora_data::flow::{PrefabCatalogView, ReservationView, ScriptView};
 use khora_lanes::script_lane::ScriptRuntime;
 
 use super::fixtures::{runtime_with, script_agent, script_registration};
+use crate::protocol::request;
 
 // ─── The registration ───────────────────────────────────────────────────────
 
@@ -49,7 +48,6 @@ fn the_script_family_is_registered_once() {
     assert_eq!(registration.family_name, "script");
     assert_eq!(registration.agent, khora_core::script::SCRIPT);
     assert_eq!(registration.agent, AgentId::new("script"));
-    assert_eq!(registration.kind, LaneKind::Script);
     assert_eq!(registration.semantics, Semantics::Exact);
     assert_eq!(registration.phase, ExecutionPhase::TRANSFORM);
     assert_eq!(registration.importance, AgentImportance::Critical);
@@ -246,23 +244,18 @@ fn the_script_agent_starts_on_its_whole_level() {
     assert_eq!(script_agent().report().row, StrategyId::Balanced);
 }
 
-/// **Negotiation answers with nothing measured.** Before any frame, with no
+/// **An offer answers with nothing measured.** Before any frame, with no
 /// scripting world to price from, the agent offers both its levels,
 /// cheapest first, holding no graphics memory.
 #[test]
-fn the_script_agent_negotiates_before_any_frame() {
+fn the_script_agent_offers_before_any_frame() {
     let mut agent = script_agent();
-    let response = agent.negotiate(NegotiationRequest {
-        target_latency: Duration::from_millis(16),
-        priority_weight: 1.0,
-        constraints: ResourceConstraints::default(),
-        agent_timing: ExecutionTiming::default(),
-    });
+    let offer = agent.offer(&request());
 
-    let offered: Vec<(StrategyId, u64)> = response
-        .strategies
+    let offered: Vec<(StrategyId, u64)> = offer
+        .rows
         .iter()
-        .map(|option| (option.id, option.estimated_vram))
+        .map(|row| (row.id, row.cost.memory.gpu))
         .collect();
     assert_eq!(
         offered,

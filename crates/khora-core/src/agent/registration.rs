@@ -31,7 +31,6 @@ use crate::lane::family::Semantics;
 use crate::lane::guard::{SinkKind, SourceKind};
 use crate::lane::io::FixedStep;
 use crate::lane::level::Impact;
-use crate::lane::LaneKind;
 use crate::runtime::Runtime;
 
 /// One family's agent, as [`register_agent!`] builds it.
@@ -43,8 +42,6 @@ pub struct AgentRegistration {
     pub family: TypeId,
     /// The family's [`NAME`](crate::lane::family::LaneFamily::NAME).
     pub family_name: &'static str,
-    /// The family's [`KIND`](crate::lane::family::LaneFamily::KIND).
-    pub kind: LaneKind,
     /// The family's [`AGENT`](crate::lane::family::LaneFamily::AGENT).
     pub agent: AgentId,
     /// The family's [`SEMANTICS`](crate::lane::family::LaneFamily::SEMANTICS).
@@ -625,7 +622,6 @@ macro_rules! register_agent {
         $crate::agent::registration::AgentRegistration {
             family: ::core::any::TypeId::of::<$family>(),
             family_name: <$family as $crate::lane::family::LaneFamily>::NAME,
-            kind: <$family as $crate::lane::family::LaneFamily>::KIND,
             agent: <$family as $crate::lane::family::LaneFamily>::AGENT,
             semantics: <$family as $crate::lane::family::LaneFamily>::SEMANTICS,
             phase: $phase,

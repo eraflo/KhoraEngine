@@ -54,7 +54,6 @@ fn registration<F: LaneFamily>(
     AgentRegistration {
         family: TypeId::of::<F>(),
         family_name: F::NAME,
-        kind: F::KIND,
         agent: F::AGENT,
         semantics: F::SEMANTICS,
         phase,
@@ -194,8 +193,8 @@ use khora_core::agent::gorna::AgentId;
 use khora_core::lane::cost::Cost;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::level::Level;
+use khora_core::lane::LaneError;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneError, LaneKind};
 use khora_macros::LaneInputs;
 
 use crate::fixtures::{level, Counter, EchoOutputs, Echoes, MixInputs, MixOutputs, MixedFrames};
@@ -204,7 +203,6 @@ use crate::fixtures::{level, Counter, EchoOutputs, Echoes, MixInputs, MixOutputs
 pub struct AlsoAudioFamily;
 
 impl LaneFamily for AlsoAudioFamily {
-    const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "also audio";
     const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -386,7 +384,6 @@ fn boot_refuses_a_family_with_no_level_to_offer() {
 pub struct DriftingSpeedFamily;
 
 impl LaneFamily for DriftingSpeedFamily {
-    const KIND: LaneKind = LaneKind::Physics;
     const NAME: &'static str = "drifting speed";
     const AGENT: AgentId = AgentId::new("physics");
     const SEMANTICS: Semantics = Semantics::Exact;
@@ -602,7 +599,6 @@ use crate::outputs::TwiceEchoes;
 pub struct TwiceEchoFamily;
 
 impl LaneFamily for TwiceEchoFamily {
-    const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "twice echo";
     const AGENT: AgentId = AgentId::new("ui");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -671,7 +667,6 @@ macro_rules! named_family {
         pub struct $family;
 
         impl LaneFamily for $family {
-            const KIND: LaneKind = LaneKind::Audio;
             const NAME: &'static str = $family_name;
             const AGENT: AgentId = AgentId::new($agent);
             const SEMANTICS: Semantics = Semantics::Presentation;

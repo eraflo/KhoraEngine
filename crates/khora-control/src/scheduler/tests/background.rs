@@ -21,10 +21,9 @@
 
 use super::allocations::one_phase;
 use super::layers::{self, scheduling, shared, taken, Brush, Painter};
-use khora_core::agent::gorna::protocol::{Envelope, Epoch};
-use khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-};
+use super::{offer_of, report_of};
+use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{
     Activation, Agent, AgentAccess, Contention, ExecutionPhase, ExecutionTiming, Layer, LayerRun,
     Place, Terms, Wake,
@@ -305,21 +304,11 @@ impl Agent for Oven {
     fn id(&self) -> AgentId {
         AgentId::new(self.name)
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id(), request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id(),
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn report(&self) -> Report {
+        report_of(self.id(), StrategyId::Balanced)
     }
     fn apply(
         &mut self,
@@ -701,4 +690,90 @@ fn background_runs_do_not_delay_a_concurrent_waves_pool_jobs() {
         );
     }
     gate.let_through();
+}
+
+/// A background layer whose every run panics, after taking its mail.
+struct Burner {
+    takes: Channel<Batch>,
+}
+
+impl Layer for Burner {
+    fn row(&self) -> StrategyId {
+        StrategyId::Balanced
+    }
+
+    fn contention(&self) -> Contention {
+        Contention {
+            writes: vec![TypeId::of::<Channel<Batch>>()],
+            ..Contention::none()
+        }
+    }
+
+    fn memory(&self) -> PerDevice<u64> {
+        PerDevice::default()
+    }
+
+    fn run(&mut self, _terms: &Terms, _context: &mut EngineContext<'_>) -> LayerRun {
+        self.takes.drain();
+        panic!("the oven caught fire");
+    }
+
+    fn shutdown(&mut self, _gpu: &mut GpuSetup<'_>) {}
+}
+
+/// **A background run that panicked is reported stalled, saying so.** The
+/// oven's layer panics on its run off the frame: the frame goes on, and the
+/// report of that run, kept at the oven's place, says it stalled and why.
+#[test]
+fn a_background_run_that_panicked_reports_it_stalled_with_its_message() {
+    let bakes = SharedBakes::default();
+    let (runtime, channel) = runtime_with_mail();
+    let mut oven = Oven::new(
+        "oven",
+        Baker::new("oven", StrategyId::Balanced, &Gate::open(), &bakes),
+        &bakes,
+    );
+    oven.first = None;
+    let place = oven.place().expect("a layered agent has a place");
+    place.lock().expect("the place lock").stage(
+        Box::new(Burner {
+            takes: channel.clone(),
+        }),
+        Duration::ZERO,
+    );
+    let (mut scheduler, _rx) = scheduling(vec![shared(oven)]);
+    let runtime = Arc::new(runtime);
+    let mut world = World::new();
+    channel.send(Batch(1));
+
+    frames_until(
+        &mut scheduler,
+        &mut world,
+        &runtime,
+        "the panicked run to be checked back in",
+        || {
+            place
+                .lock()
+                .expect("the place lock")
+                .last_run()
+                .report
+                .is_some()
+        },
+    );
+
+    let report = place
+        .lock()
+        .expect("the place lock")
+        .last_run()
+        .report
+        .clone()
+        .expect("the run was reported");
+    assert!(report.stalled, "{report:?}");
+    assert!(
+        report
+            .message
+            .as_deref()
+            .is_some_and(|message| message.contains("panicked")),
+        "the report says the run panicked: {report:?}"
+    );
 }

@@ -36,7 +36,7 @@ use khora_data::ecs::{Transform, World};
 
 use super::behavior_session::{attach, Project, Session};
 use crate::script_family::fixtures::{
-    bus_with, granting_row, price_of, run_script_agent, runtime_with, script_agent,
+    bus_with, grant_row, price_of, run_script_agent, runtime_with, script_agent,
 };
 
 /// The frame offered for: 1/60 s.
@@ -211,7 +211,7 @@ fn with_free_frame_time_gorna_lends_the_script_family_its_whole_level() {
     let shared = Arc::new(Mutex::new(std::mem::take(&mut session.scripts)));
     let runtime = Arc::new(runtime_with(&shared));
     let mut agent = script_agent();
-    agent.apply_budget(granting_row(StrategyId::LowPower, TARGET));
+    grant_row(&mut agent, StrategyId::LowPower, TARGET);
     run_script_agent(
         &mut agent,
         &runtime,

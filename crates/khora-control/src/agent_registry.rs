@@ -258,9 +258,11 @@ impl Default for AgentRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use khora_core::agent::gorna::{
-        AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
+    use khora_core::agent::gorna::protocol::{
+        Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
     };
+    use khora_core::agent::gorna::StrategyId;
+    use khora_core::lane::cost::{Cost, PerDevice};
     use khora_core::lane::{LaneBus, OutputDeck};
     use khora_core::{EngineContext, Runtime};
 
@@ -279,20 +281,42 @@ mod tests {
         fn id(&self) -> AgentId {
             self.id
         }
-        fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-            NegotiationResponse {
-                strategies: vec![],
-                timing_adjustment: None,
+        fn offer(&mut self, request: &OfferRequest) -> Offer {
+            Offer {
+                agent: self.id,
+                epoch: request.epoch,
+                rows: vec![OfferRow {
+                    id: StrategyId::Balanced,
+                    cost: Cost::default(),
+                    quality: 1.0,
+                    confidence: Confidence::Assumed,
+                }],
+                floor: StrategyId::Balanced,
+                current: StrategyId::Balanced,
+                health: 1.0,
             }
         }
-        fn apply_budget(&mut self, _b: ResourceBudget) {}
-        fn report_status(&self) -> AgentStatus {
-            AgentStatus {
-                agent_id: self.id,
-                current_strategy: StrategyId::Balanced,
-                health_score: 1.0,
-                is_stalled: false,
-                message: String::new(),
+        fn apply(
+            &mut self,
+            _epoch: Epoch,
+            _envelope: &Envelope,
+            _pin: Option<StrategyId>,
+            _allowed: Option<&[StrategyId]>,
+        ) {
+        }
+        fn report(&self) -> Report {
+            Report {
+                agent: self.id,
+                epoch: Epoch::default(),
+                row: StrategyId::Balanced,
+                measured: PerDevice::default(),
+                done: 1.0,
+                health: 1.0,
+                over_budget: false,
+                stalled: false,
+                workload: None,
+                switch: None,
+                message: None,
             }
         }
         fn on_initialize(&mut self, _ctx: &mut EngineContext<'_>) {

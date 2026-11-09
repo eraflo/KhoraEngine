@@ -35,7 +35,6 @@ fn mix_in(phase: ExecutionPhase) -> AgentRegistration {
     AgentRegistration {
         family: TypeId::of::<MixFamily>(),
         family_name: MixFamily::NAME,
-        kind: MixFamily::KIND,
         agent: MixFamily::AGENT,
         semantics: MixFamily::SEMANTICS,
         phase,

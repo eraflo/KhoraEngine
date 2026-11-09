@@ -81,8 +81,8 @@ impl Epochs {
     /// new one at its next frame start — were answered by the epoch they
     /// opened. A replay answers nothing: the replayed epochs the frames are
     /// still lending, and the live one an agent the trace does not name runs
-    /// on, all count. A report naming no epoch (an agent bridged from the old
-    /// protocol, an agent not lent yet) always counts.
+    /// on, all count. A report naming no epoch (an agent not lent yet)
+    /// always counts.
     pub(super) fn report(&mut self, report: &Report, overruns_in_a_row: u32) {
         if report.epoch != Epoch::default() && self.answered.contains(&report.epoch) {
             return;

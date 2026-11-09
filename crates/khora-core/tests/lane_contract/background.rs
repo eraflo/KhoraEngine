@@ -80,7 +80,6 @@ fn registration<F: LaneFamily>(
     AgentRegistration {
         family: TypeId::of::<F>(),
         family_name: F::NAME,
-        kind: F::KIND,
         agent: F::AGENT,
         semantics: F::SEMANTICS,
         phase,
@@ -243,7 +242,6 @@ inventory::submit! {
 struct RivalFamily;
 
 impl LaneFamily for RivalFamily {
-    const KIND: khora_core::lane::LaneKind = khora_core::lane::LaneKind::Ui;
     const NAME: &'static str = "rival";
     const AGENT: khora_core::agent::gorna::AgentId = RIVAL;
     const SEMANTICS: khora_core::lane::family::Semantics =

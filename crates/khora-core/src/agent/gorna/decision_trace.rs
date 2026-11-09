@@ -327,6 +327,8 @@ fn read_epoch<E>(
                     stalled: report.stalled,
                     workload: report.workload,
                     switch: None,
+                    // A journal keeps what was run, not what it said.
+                    message: None,
                 })
             })
             .collect::<Result<_, E>>()?,

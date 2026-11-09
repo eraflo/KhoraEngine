@@ -15,7 +15,7 @@
 //! Control Plane workspace v3 — live DCC view.
 //!
 //! Reads the engine's [`AgentRegistry`] each frame, snapshots
-//! [`AgentStatus`] and [`ExecutionTiming`] for every agent, and renders:
+//! [`Report`] and [`ExecutionTiming`] for every agent, and renders:
 //! - a DCC summary bar (live FPS / frame budget / heap)
 //! - an Agents list (real agents, grouped into the Critical / Important /
 //!   Optional buckets reported by their `execution_timing()`)
@@ -32,9 +32,8 @@
 use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
-use khora_sdk::{
-    AgentId, AgentImportance, AgentRegistry, AgentStatus, DccContext, ExecutionPhase, StrategyId,
-};
+use khora_sdk::khora_core::agent::gorna::protocol::Report;
+use khora_sdk::{AgentId, AgentImportance, AgentRegistry, DccContext, ExecutionPhase, StrategyId};
 
 mod agents;
 mod inspector;
@@ -60,8 +59,9 @@ struct AgentSnapshot {
     importance: AgentImportance,
     default_phase: ExecutionPhase,
     priority: f32,
-    /// `report_status()` data — health / current strategy / message.
-    status: AgentStatus,
+    /// What the agent last reported: the row it ran, its health, whether it
+    /// stalled, and what its lane said.
+    report: Report,
 }
 
 impl AgentSnapshot {
@@ -86,7 +86,7 @@ impl AgentSnapshot {
     }
 
     fn strategy_label(&self) -> &'static str {
-        match self.status.current_strategy {
+        match self.report.row {
             StrategyId::LowPower => "LowPower",
             StrategyId::Balanced => "Balanced",
             StrategyId::HighPerformance => "HighPerformance",
@@ -164,7 +164,7 @@ impl ControlPlanePanel {
                 continue;
             };
             let timing = agent.execution_timing();
-            let status = agent.report_status();
+            let report = agent.report();
             let id = agent.id();
             out.push(AgentSnapshot {
                 id,
@@ -172,7 +172,7 @@ impl ControlPlanePanel {
                 importance: timing.importance,
                 default_phase: timing.default_phase,
                 priority: timing.priority,
-                status,
+                report,
             });
         }
         out
@@ -285,6 +285,12 @@ impl EditorPanel for ControlPlanePanel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use khora_sdk::khora_core::agent::gorna::protocol::{
+        Envelope, Epoch, Offer, OfferRequest, Report,
+    };
+    use khora_sdk::khora_core::agent::Agent;
+    use khora_sdk::khora_core::lane::cost::PerDevice;
+    use khora_sdk::khora_core::EngineContext;
 
     /// **An agent is listed under the crate it was registered in.** The
     /// overlay agents, registered in `khora-agents`, are listed under
@@ -304,5 +310,91 @@ mod tests {
         assert_eq!(crate_label(Some("sandbox")), "sandbox", "a crate root");
         assert_eq!(crate_label(None), "other", "no recorded origin");
         assert_eq!(crate_label(Some("")), "other", "an empty origin");
+    }
+
+    /// What the reporting agent's last run said.
+    const SAID: &str = "2 behaviours deferred: Guard, Door";
+
+    /// An agent whose report says it ran `HighPerformance`, at a health of
+    /// 0.25, stalled, saying [`SAID`].
+    struct Reporting;
+
+    impl Agent for Reporting {
+        fn id(&self) -> AgentId {
+            AgentId::new("reporting")
+        }
+
+        fn offer(&mut self, request: &OfferRequest) -> Offer {
+            Offer {
+                agent: self.id(),
+                epoch: request.epoch,
+                rows: Vec::new(),
+                floor: StrategyId::HighPerformance,
+                current: StrategyId::HighPerformance,
+                health: 0.25,
+            }
+        }
+
+        fn apply(
+            &mut self,
+            _epoch: Epoch,
+            _envelope: &Envelope,
+            _pin: Option<StrategyId>,
+            _allowed: Option<&[StrategyId]>,
+        ) {
+        }
+
+        fn report(&self) -> Report {
+            Report {
+                agent: self.id(),
+                epoch: Epoch(3),
+                row: StrategyId::HighPerformance,
+                measured: PerDevice::default(),
+                done: 0.5,
+                health: 0.25,
+                over_budget: false,
+                stalled: true,
+                workload: None,
+                switch: None,
+                message: Some(SAID.to_owned()),
+            }
+        }
+
+        fn execute(&mut self, _context: &mut EngineContext<'_>) {}
+
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
+
+    /// **The control plane shows each agent's report.** One agent is
+    /// registered; its snapshot holds what the agent's report says of its
+    /// last run — the row, the health, the stall and the message — and the
+    /// row is the strategy the panel labels it with.
+    #[test]
+    fn the_control_plane_shows_the_report() {
+        let mut registry = AgentRegistry::new();
+        registry.register(Arc::new(Mutex::new(Reporting)), 1.0);
+        let panel = ControlPlanePanel::new(
+            Arc::new(Mutex::new(EditorState::default())),
+            UiTheme::default(),
+            Some(Arc::new(Mutex::new(registry))),
+            None,
+        );
+
+        let agents = panel.snapshot_agents();
+
+        assert_eq!(agents.len(), 1, "{agents:?}");
+        let agent = &agents[0];
+        assert_eq!(agent.id, AgentId::new("reporting"));
+        assert_eq!(agent.report.row, StrategyId::HighPerformance);
+        assert_eq!(agent.report.health, 0.25);
+        assert!(agent.report.stalled, "the report says it is stalled");
+        assert_eq!(agent.report.message.as_deref(), Some(SAID));
+        assert_eq!(agent.strategy_label(), "HighPerformance");
     }
 }

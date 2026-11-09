@@ -28,10 +28,8 @@
 //! at which level.
 
 mod error;
-mod kind;
 
 pub use error::LaneError;
-pub use kind::LaneKind;
 
 pub mod bus;
 

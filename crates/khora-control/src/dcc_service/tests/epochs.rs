@@ -134,6 +134,7 @@ fn renderer_report() -> Report {
         stalled: false,
         workload: None,
         switch: None,
+        message: None,
     }
 }
 
@@ -222,9 +223,9 @@ fn an_agent_over_budget_only_when_asked_opens_no_epoch() {
     );
 }
 
-/// **A bridged agent's reports count toward overruns.** An agent bridged from
-/// the old protocol reports `Epoch(0)` whatever epoch is in force; its
-/// over-budget reports in a row are not dropped as stale, and open an
+/// **Reports of epoch zero count toward overruns.** An agent that reports
+/// before it was lent any epoch says `Epoch(0)`, whatever epoch is in force;
+/// its over-budget reports in a row are not dropped as stale, and open an
 /// `Overruns` epoch like any other agent's.
 #[test]
 fn reports_of_epoch_zero_count_toward_overruns() {
@@ -416,78 +417,6 @@ fn a_stalled_agent_in_good_health_opens_no_epoch() {
             .all(|epoch| epoch.trigger != Trigger::AgentStalled),
         "{recorded:?}"
     );
-}
-
-/// An agent written before the protocol whose health the test sets: it
-/// reports through the bridge, so its reports carry no epoch.
-struct Fading {
-    health: Arc<Mutex<Health>>,
-}
-
-impl Agent for Fading {
-    fn id(&self) -> AgentId {
-        AgentId::new("audio")
-    }
-    fn negotiate(&mut self, _: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![StrategyOption {
-                id: StrategyId::Balanced,
-                estimated_time: Duration::from_millis(1),
-                estimated_vram: 0,
-            }],
-            timing_adjustment: None,
-        }
-    }
-    fn apply_budget(&mut self, _: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        let health = self.health.lock().expect("the health lock");
-        AgentStatus {
-            agent_id: AgentId::new("audio"),
-            current_strategy: StrategyId::Balanced,
-            health_score: health.health,
-            is_stalled: health.stalled,
-            message: String::new(),
-        }
-    }
-    fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-/// **A bridged agent's report is not stale.** Its reports say `Epoch(0)`
-/// whatever epoch is in force; the scheduler publishes them after each run
-/// and the DCC reads them, so when it stalls and falls below 0.5 it opens an
-/// `AgentStalled` epoch like any other.
-#[test]
-fn a_bridged_agents_report_is_not_stale() {
-    let mut host = Host::new(DccConfig {
-        tick_rate: 100,
-        ..quick()
-    });
-    let health = Arc::new(Mutex::new(Health::default()));
-    host.dcc.register_agent(
-        Arc::new(Mutex::new(Fading {
-            health: Arc::clone(&health),
-        })),
-        1.0,
-    );
-    host.start();
-    assert!(host.frames_until(3, |dcc| opened_by(dcc, Trigger::Initial)));
-
-    {
-        let mut health = health.lock().expect("the health lock");
-        health.stalled = true;
-        health.health = 0.2;
-    }
-    let opened = host.frames_until(3, |dcc| opened_by(dcc, Trigger::AgentStalled));
-    let recorded = epochs(&host.dcc);
-    host.dcc.stop();
-
-    assert!(opened, "{recorded:?}");
 }
 
 /// **An agent busy when an epoch opens does not reopen it.** The set of

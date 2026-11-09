@@ -27,8 +27,8 @@ use khora_core::lane::erased::{AnyLane, Erased};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::SinkKind;
 use khora_core::lane::level::Level;
+use khora_core::lane::LaneError;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneError, LaneKind};
 use khora_core::Runtime;
 use khora_macros::{LaneInputs, LaneOutputs};
 
@@ -51,7 +51,6 @@ pub struct WritesDeck {
 pub struct DeckWritingFamily;
 
 impl LaneFamily for DeckWritingFamily {
-    const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "deck_writing";
     const AGENT: AgentId = AgentId::new("deck_writing");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -94,7 +93,6 @@ fn boot_refuses_a_background_lane_writing_a_slot_of_one_frame() {
     let registration = |phase| AgentRegistration {
         family: TypeId::of::<DeckWritingFamily>(),
         family_name: DeckWritingFamily::NAME,
-        kind: DeckWritingFamily::KIND,
         agent: DeckWritingFamily::AGENT,
         semantics: DeckWritingFamily::SEMANTICS,
         phase,

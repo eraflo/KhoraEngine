@@ -13,18 +13,15 @@
 // limitations under the License.
 
 //! The engine boots the scene renderer as the render family: the `LaneAgent`
-//! built from the registration `khora-agents` submits, negotiating as
+//! built from the registration `khora-agents` submits, offering as
 //! `renderer` — not a hand-written agent the SDK registers — with or without
 //! a graphics device, and with Forward+ on its menu only over a device that
 //! can run it.
 
 use std::sync::Arc;
-use std::time::Duration;
 
-use khora_sdk::khora_core::agent::gorna::{
-    AgentId, NegotiationRequest, ResourceConstraints, StrategyId,
-};
-use khora_sdk::khora_core::agent::{ExecutionPhase, ExecutionTiming};
+use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
+use khora_sdk::khora_core::agent::ExecutionPhase;
 use khora_sdk::khora_core::gpu::DeviceCaps;
 use khora_sdk::khora_core::renderer::GraphicsDevice;
 use khora_sdk::{
@@ -73,15 +70,10 @@ fn renderer_menu(engine: &EngineCore<Game>) -> Vec<StrategyId> {
         .expect("the renderer is registered in OUTPUT");
     let mut renderer = renderer.lock().expect("the renderer's lock");
     let mut menu: Vec<StrategyId> = renderer
-        .negotiate(NegotiationRequest {
-            target_latency: Duration::from_micros(16_667),
-            priority_weight: 1.0,
-            constraints: ResourceConstraints::default(),
-            agent_timing: ExecutionTiming::default(),
-        })
-        .strategies
+        .offer(&crate::protocol::request())
+        .rows
         .iter()
-        .map(|option| option.id)
+        .map(|row| row.id)
         .collect();
     menu.sort_by_key(|id| format!("{id:?}"));
     menu
@@ -95,7 +87,7 @@ fn by_name(mut ids: Vec<StrategyId>) -> Vec<StrategyId> {
 
 /// **A headless boot registers the render family as the renderer.** With no
 /// graphics device and no pipeline system in the runtime, the engine boots,
-/// and the agent negotiating as `renderer` is the family's: it comes from
+/// and the agent offering as `renderer` is the family's: it comes from
 /// the module its registration was written in, and offers the unlit and the
 /// forward lanes — no PBR row, and no Forward+ without a device to run it.
 #[test]

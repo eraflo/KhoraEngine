@@ -17,7 +17,6 @@
 use khora_core::agent::gorna::AgentId;
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::Pass;
-use khora_core::lane::LaneKind;
 use khora_data::render::GridPassSlot;
 use khora_macros::LaneOutputs;
 
@@ -26,7 +25,6 @@ use khora_macros::LaneOutputs;
 pub struct GridFamily;
 
 impl LaneFamily for GridFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "grid";
     const AGENT: AgentId = AgentId::new("grid");
     const SEMANTICS: Semantics = Semantics::Presentation;

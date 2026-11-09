@@ -29,7 +29,7 @@ use khora_core::lane::guard::{Reason, SourceKind};
 use khora_core::lane::io::{FixedStep, FrameId, InputSource, OutputSink};
 use khora_core::lane::level::Level;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
+use khora_core::lane::{LaneBus, LaneError, OutputDeck};
 use khora_core::Runtime;
 use khora_macros::{LaneInputs, LaneOutputs};
 
@@ -57,7 +57,6 @@ pub struct TickOutputs {
 pub struct TickFamily;
 
 impl LaneFamily for TickFamily {
-    const KIND: LaneKind = LaneKind::Physics;
     const NAME: &'static str = "tick";
     const AGENT: AgentId = AgentId::new("physics");
     const SEMANTICS: Semantics = Semantics::Exact;
@@ -102,7 +101,6 @@ fn tick_registration(fixed_step: Option<Duration>) -> AgentRegistration {
     AgentRegistration {
         family: TypeId::of::<TickFamily>(),
         family_name: TickFamily::NAME,
-        kind: TickFamily::KIND,
         agent: TickFamily::AGENT,
         semantics: TickFamily::SEMANTICS,
         phase: ExecutionPhase::TRANSFORM,

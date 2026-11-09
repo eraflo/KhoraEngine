@@ -45,6 +45,7 @@ mod physics_agent_tests;
 mod physics_family;
 mod physics_lane_contacts_test;
 mod prefabs_spawned_in_play;
+mod protocol;
 mod public_paths;
 mod render_family;
 mod save_mid_attack_test;

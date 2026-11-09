@@ -14,7 +14,7 @@
 
 //! Each overlay lane's one level, and the memory it says it holds. They
 //! replace the old lanes' names and kinds (`"Grid"`, `"Wireframe"`,
-//! `"Gizmo"`, all `LaneKind::Render`) and the one flat strategy their agent
+//! `"Gizmo"`, all of the render kind) and the one flat strategy their agent
 //! offered for all three.
 
 use khora_core::agent::gorna::StrategyId;

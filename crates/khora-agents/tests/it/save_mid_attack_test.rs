@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 
 use khora_agents::agent::LaneAgent;
 use khora_control::substrate::run_data_systems;
-use khora_core::agent::gorna::{ResourceBudget, StrategyId};
+use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Agent;
 use khora_core::asset::AssetUUID;
 use khora_core::ecs::entity::EntityId;
@@ -107,12 +107,11 @@ impl Session {
         let mut agent = script_agent();
         // The DCC does this every frame; without it there is no fuel and
         // every behavior is deferred.
-        agent.apply_budget(ResourceBudget {
-            strategy_id: StrategyId::Balanced,
-            time_limit: std::time::Duration::from_millis(50),
-            memory_limit: None,
-            extra_params: Default::default(),
-        });
+        crate::protocol::pin_with(
+            &mut agent,
+            StrategyId::Balanced,
+            std::time::Duration::from_millis(50),
+        );
 
         Self {
             world,

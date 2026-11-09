@@ -18,7 +18,6 @@
 use khora_core::agent::gorna::AgentId;
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::Pass;
-use khora_core::lane::LaneKind;
 use khora_data::render::SkyboxPassSlot;
 use khora_macros::LaneOutputs;
 
@@ -27,7 +26,6 @@ use khora_macros::LaneOutputs;
 pub struct SkyboxFamily;
 
 impl LaneFamily for SkyboxFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "skybox";
     const AGENT: AgentId = AgentId::new("skybox");
     const SEMANTICS: Semantics = Semantics::Presentation;

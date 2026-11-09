@@ -18,18 +18,18 @@
 
 use std::sync::Arc;
 
-use khora_core::agent::Agent;
 use khora_core::lane::io::FrameId;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_data::render::{RenderWorld, ScenePassSlot, TransparentPassSlot};
 
 use super::fixtures::{render_agent, render_runtime, EVERY_CAP};
+use crate::protocol::said;
 use crate::shadows_family::fixtures::{run_once, SubmitLog};
 
 /// **Without a frame context the scene is not drawn, and the agent names the
 /// target.** Between two frames there is no `FrameContext`, so no target to
 /// lend: the running lane's `target` input is refused, no encoder is opened,
-/// the deck holds neither scene pass, and the status says which input was
+/// the deck holds neither scene pass, and the report's message says which input was
 /// missing.
 #[test]
 fn a_frame_without_a_frame_context_commits_no_scene_and_names_the_target() {
@@ -52,9 +52,9 @@ fn a_frame_without_a_frame_context_commits_no_scene_and_names_the_target() {
         "no transparent pass without a target"
     );
     assert!(device.opened().is_empty(), "no encoder opened");
-    let message = agent.report_status().message;
+    let message = said(&agent);
     assert!(
         message.contains("target"),
-        "the status names the missing target: {message:?}"
+        "the report's message names the missing target: {message:?}"
     );
 }

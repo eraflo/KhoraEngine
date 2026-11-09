@@ -17,7 +17,6 @@
 use khora_core::agent::gorna::AgentId;
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::Pass;
-use khora_core::lane::LaneKind;
 use khora_data::render::GizmoPassSlot;
 use khora_macros::LaneOutputs;
 
@@ -26,7 +25,6 @@ use khora_macros::LaneOutputs;
 pub struct GizmoFamily;
 
 impl LaneFamily for GizmoFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "gizmo";
     const AGENT: AgentId = AgentId::new("gizmo");
     const SEMANTICS: Semantics = Semantics::Presentation;

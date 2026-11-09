@@ -24,13 +24,13 @@
 //! the sum of `Time::fixed_steps` × the tick — so the frames' wall-clock
 //! jitter never enters the comparison.
 
+use super::{offer_of, report_of};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::sim_steps::{compute_sim_steps, compute_sub_steps};
 use crate::scheduler::*;
-use khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-};
+use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{Agent, ExecutionPhase, ExecutionTiming};
 use khora_core::time::{SharedTime, Time, DEFAULT_FIXED_DELTA_SECONDS, MAX_SIM_STEPS};
 use khora_core::{EngineContext, Runtime};
@@ -69,21 +69,19 @@ impl Agent for Integrating {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id, request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id,
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(self.id, StrategyId::Balanced)
     }
     fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
         let step = self

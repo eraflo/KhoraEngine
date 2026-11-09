@@ -19,10 +19,9 @@
 
 use super::allocations::one_phase;
 use super::layers::{scheduling, shared, taken, Brush, SharedLog};
-use khora_core::agent::gorna::protocol::{Envelope, Epoch};
-use khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-};
+use super::{offer_of, report_of};
+use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{
     Agent, AgentAccess, Contention, ExecutionTiming, Layer, LayerRun, Place, Terms, Wake,
 };
@@ -95,21 +94,11 @@ impl Agent for Chooser {
     fn id(&self) -> AgentId {
         AgentId::new(self.name)
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id(), request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id(),
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn report(&self) -> Report {
+        report_of(self.id(), StrategyId::Balanced)
     }
     fn apply(
         &mut self,
@@ -254,21 +243,19 @@ impl Agent for Recovering {
     fn id(&self) -> AgentId {
         AgentId::new("recovering")
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id(), request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id(),
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(self.id(), StrategyId::Balanced)
     }
     fn place(&self) -> Option<Arc<Mutex<Place>>> {
         Some(Arc::clone(&self.place))
@@ -347,4 +334,52 @@ fn a_wake_that_panicked_is_handed_again_on_the_next_frame() {
         ran >= 1,
         "the family never ran: its first-frame wake was lost to the panic"
     );
+}
+
+/// **A layer that panicked on the frame is reported stalled, saying so**, as
+/// one that panicked off the frame is. Its first run records; every run
+/// after panics. Whatever access it runs with, the report kept at its place
+/// — what GORNA's stall count and the control plane read — says the last run
+/// stalled and why, not what the healthy run before it said.
+#[test]
+fn a_layer_that_panicked_on_the_frame_reports_it_stalled_with_its_message() {
+    for (access, parallel) in [
+        (AgentAccess::Exclusive, false),
+        (AgentAccess::Isolated, true),
+    ] {
+        let runs = Arc::new(AtomicUsize::new(0));
+        let brittle = Brittle {
+            panics_on: vec![2, 3],
+            runs: Arc::clone(&runs),
+        };
+        let chooser = Chooser::new("brittle", Box::new(brittle), access);
+        let place = chooser.place().expect("a layered agent has a place");
+        let (mut scheduler, _rx) = scheduling(vec![shared(chooser)]);
+        scheduler.set_parallel_execution(parallel);
+        let mut world = World::new();
+
+        for _ in 0..3 {
+            scheduler.run_frame(&mut world, Arc::new(Runtime::new()));
+        }
+
+        assert_eq!(runs.load(Ordering::SeqCst), 3, "{access:?}: the premise");
+        let report = place
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .last_run()
+            .report
+            .clone()
+            .expect("the first run was reported");
+        assert!(
+            report.stalled,
+            "{access:?}: the last two runs panicked, yet the report is the healthy first run's: {report:?}"
+        );
+        assert!(
+            report
+                .message
+                .as_deref()
+                .is_some_and(|message| message.contains("panicked")),
+            "{access:?}: the report says nothing of the panic: {report:?}"
+        );
+    }
 }

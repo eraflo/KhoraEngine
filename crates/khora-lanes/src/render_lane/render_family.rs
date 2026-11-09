@@ -19,7 +19,7 @@
 use khora_core::agent::gorna::AgentId;
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::{Pass, SceneTarget};
-use khora_core::lane::{ClearColor, LaneKind};
+use khora_core::lane::ClearColor;
 use khora_core::renderer::api::shadow::ShadowFrame;
 use khora_data::render::{RenderWorld, ScenePassSlot, TransparentPassSlot};
 use khora_data::{AssetStore, IblBaker};
@@ -30,7 +30,6 @@ use khora_macros::{LaneInputs, LaneOutputs};
 pub struct RenderFamily;
 
 impl LaneFamily for RenderFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "render";
     const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;

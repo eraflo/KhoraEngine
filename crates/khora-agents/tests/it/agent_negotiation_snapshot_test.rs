@@ -12,28 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! What every agent offers GORNA, pinned: the strategies, in order, with their
-//! VRAM quote, for an unconstrained request.
+//! What every agent offers GORNA, pinned: the rows, in order, with their
+//! VRAM quote, for a request before any frame.
 //!
 //! Reorganising where lanes live must not change what the arbiter is offered:
 //! each family offers one row per level of its lanes, so a lane that goes
 //! missing drops a strategy here. Timings are left out: they come from cost
 //! estimators, which are free to evolve.
 //!
-//! Nothing here needs a GPU: `negotiate` runs on the DCC thread against a stub
+//! Nothing here needs a GPU: `offer` runs on the DCC thread against a stub
 //! scene.
 
 use khora_agents::agent::lane_agent;
-use khora_core::agent::gorna::{AgentId, NegotiationRequest, ResourceConstraints, StrategyId};
-use khora_core::agent::{Agent, ExecutionTiming};
+use khora_core::agent::gorna::{AgentId, StrategyId};
+use khora_core::agent::Agent;
 use khora_core::gpu::DeviceCaps;
-use std::time::Duration;
 
 use crate::audio_family::audio_registration;
 use crate::overlay_families::fixtures::{
     agent_of, gizmo_registration, grid_registration, wireframe_registration,
 };
 use crate::physics_family::fixtures::physics_agent;
+use crate::protocol::request;
 use crate::render_family::fixtures::{render_agent, EVERY_CAP};
 use crate::script_family::fixtures::script_agent;
 use crate::shadows_family::fixtures::{shadow_agent, LEVEL_MEMORY};
@@ -42,25 +42,16 @@ use crate::ui_family::fixtures::ui_agent;
 
 const MIB: u64 = 1024 * 1024;
 
-fn unconstrained() -> NegotiationRequest {
-    NegotiationRequest {
-        target_latency: Duration::from_millis(16),
-        priority_weight: 1.0,
-        constraints: ResourceConstraints::default(),
-        agent_timing: ExecutionTiming::default(),
-    }
-}
-
-/// The agent's id and its offer as `(strategy, estimated_vram)`, in the order
+/// The agent's id and its offer as `(row, graphics memory)`, in the order
 /// the agent listed them.
 fn offer(mut agent: impl Agent) -> (AgentId, Vec<(StrategyId, u64)>) {
-    let response = agent.negotiate(unconstrained());
-    let strategies = response
-        .strategies
+    let offer = agent.offer(&request());
+    let rows = offer
+        .rows
         .iter()
-        .map(|s| (s.id, s.estimated_vram))
+        .map(|row| (row.id, row.cost.memory.gpu))
         .collect();
-    (agent.id(), strategies)
+    (agent.id(), rows)
 }
 
 /// The render family's agent on a device with storage buffers and compute,

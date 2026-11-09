@@ -31,7 +31,7 @@ use std::sync::Arc;
 
 use crate::script_family::fixtures::{publish_script_views, script_agent};
 use khora_agents::agent::LaneAgent;
-use khora_core::agent::gorna::{ResourceBudget, StrategyId};
+use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Agent;
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{LaneBus, OutputDeck};
@@ -149,12 +149,11 @@ fn budgeted() -> LaneAgent {
     // The DCC does this every frame. Without it there is no fuel, every
     // behaviour is deferred, and the test would prove nothing about the
     // behaviour while looking like it passed.
-    agent.apply_budget(ResourceBudget {
-        strategy_id: StrategyId::Balanced,
-        time_limit: std::time::Duration::from_millis(2),
-        memory_limit: None,
-        extra_params: Default::default(),
-    });
+    crate::protocol::pin_with(
+        &mut agent,
+        StrategyId::Balanced,
+        std::time::Duration::from_millis(2),
+    );
     agent
 }
 
@@ -216,9 +215,9 @@ fn an_unloaded_module_is_counted_not_ignored() {
         "nothing ran, so nothing should have been queued; got {queued:?}"
     );
 
-    let status = agent.report_status();
+    let report = agent.report();
     assert!(
-        !status.is_stalled,
+        !report.stalled,
         "an unloaded module is a wiring mistake, not a fault — reporting it as \
          stalled would push GORNA toward an emergency stop"
     );

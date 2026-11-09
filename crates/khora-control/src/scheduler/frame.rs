@@ -411,8 +411,8 @@ impl ExecutionScheduler {
     }
 
     /// Every agent of a family on that declares a positive `fixed_timestep`, with
-    /// that step in seconds — read each frame, so a step GORNA changed in
-    /// `apply_budget` takes effect on the next frame. An agent whose family is off
+    /// that step in seconds — read each frame, so a step the game's setting
+    /// changed takes effect on the next frame. An agent whose family is off
     /// keeps no clock: it owes nothing for the time it sat out.
     fn declared_fixed_steps(&self, inactive: &BTreeSet<AgentId>) -> Vec<(AgentId, f32)> {
         let agents: Vec<Arc<Mutex<dyn Agent>>> = {

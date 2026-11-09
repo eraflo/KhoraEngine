@@ -19,14 +19,13 @@
 //! its waves from the installed layers.
 
 use super::allocations::{allocation, one_phase};
+use super::{offer_of, report_of};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
 use crossbeam_channel::Receiver;
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Report};
-use khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-};
+use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{
     Agent, AgentAccess, Contention, ExecutionPhase, ExecutionTiming, Layer, LayerRun, Place, Terms,
     Wake,
@@ -211,21 +210,11 @@ impl Agent for Painter {
     fn id(&self) -> AgentId {
         AgentId::new(self.name)
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id(), request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id(),
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn report(&self) -> Report {
+        report_of(self.id(), StrategyId::Balanced)
     }
     /// Its place hears of the allocation: the agent is woken for it.
     fn apply(
@@ -303,21 +292,19 @@ impl Agent for Plain {
     fn id(&self) -> AgentId {
         AgentId::new(self.name)
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id(), request, StrategyId::Custom(0))
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id(),
-            current_strategy: StrategyId::Custom(0),
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(self.id(), StrategyId::Custom(0))
     }
     fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
         let mut log = self.log.lock().expect("the log lock");
@@ -766,45 +753,6 @@ fn waves_follow_the_installed_layers() {
         vec![vec![ids(&["locker", "reader"])]],
         "the reading layer is installed: one wave"
     );
-}
-
-// ─── Old agents ─────────────────────────────────────────────────────────────
-
-/// **An old agent still runs through `execute`, beside layers**: in the same
-/// phase, every frame, while the layered agent's layer runs in its place.
-#[test]
-fn an_old_agent_still_runs_through_execute_beside_layers() {
-    let log = SharedLog::default();
-    let old = shared(Plain::new("old", &log));
-    let painter = shared(Painter::new(
-        "painter",
-        Brush::new("painter", StrategyId::Balanced, &log),
-        &log,
-    ));
-    let (mut scheduler, rx) = scheduling(vec![old, painter]);
-    let mut world = World::new();
-
-    scheduler.run_frame(&mut world, Arc::new(Runtime::new()));
-    scheduler.run_frame(&mut world, Arc::new(Runtime::new()));
-
-    let done = taken(&log);
-    assert_eq!(done.executed, vec!["old", "old"]);
-    assert_eq!(
-        done.ran,
-        vec![
-            ("old", StrategyId::Custom(0)),
-            ("painter", StrategyId::Balanced),
-            ("old", StrategyId::Custom(0)),
-            ("painter", StrategyId::Balanced),
-        ]
-    );
-    let published = reports(&rx);
-    for name in ["old", "painter"] {
-        let count = (published.iter())
-            .filter(|report| report.agent == AgentId::new(name))
-            .count();
-        assert_eq!(count, 2, "`{name}`: {published:?}");
-    }
 }
 
 // ─── The switch ─────────────────────────────────────────────────────────────

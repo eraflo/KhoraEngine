@@ -16,12 +16,12 @@
 //! three passes composited after the UI — the grid, then the wireframe, then
 //! the gizmos — whatever order they were recorded in.
 
+use crate::protocol::{offer_of, report_of};
+use khora_sdk::khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-};
+use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_sdk::khora_core::agent::{Agent, AgentAccess, Contention};
 use khora_sdk::khora_core::lane::io::PassSlot;
 use khora_sdk::khora_core::renderer::api::command::CommandBufferId;
@@ -79,21 +79,19 @@ impl Agent for EveryPassReversed {
     fn id(&self) -> AgentId {
         AgentId::new("asset")
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(AgentId::new("asset"), request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: AgentId::new("asset"),
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(AgentId::new("asset"), StrategyId::Balanced)
     }
     fn access(&self) -> AgentAccess {
         AgentAccess::Isolated

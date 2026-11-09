@@ -61,14 +61,14 @@ static STARTS_ON_STORAGE: AgentRegistration = khora_core::register_agent! {
 };
 
 /// **A family starts on the level its registration names.** Before any
-/// budget, the agent reports that level, and its first run records there —
+/// allocation, the agent reports that level, and its first run records there —
 /// the ladder's third level, not the first row of its menu.
 #[test]
 fn the_default_level_names_the_row_the_agent_starts_on() {
     let mut agent = lane_agent(&LADDER_ON_HIGH, &DeviceCaps::default());
 
     assert_eq!(
-        agent.report_status().current_strategy,
+        agent.report().row,
         StrategyId::HighPerformance,
         "the agent starts on the named level"
     );
@@ -131,9 +131,7 @@ fn a_default_level_only_an_unsupported_lane_offers_is_refused_at_boot() {
     );
     match with_storage {
         Ok(agents) => assert_eq!(
-            agents
-                .first()
-                .map(|agent| agent.report_status().current_strategy),
+            agents.first().map(|agent| agent.report().row),
             Some(StrategyId::HighPerformance),
             "with storage buffers the family starts on its storage lane"
         ),

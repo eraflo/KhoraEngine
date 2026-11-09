@@ -20,7 +20,6 @@
 //! between.
 
 use super::io::LaneOutputs;
-use super::LaneKind;
 use crate::agent::gorna::AgentId;
 
 /// What a family's adaptation may change.
@@ -34,8 +33,6 @@ pub enum Semantics {
 
 /// The outputs every lane of one family writes, and who negotiates for them.
 pub trait LaneFamily: 'static {
-    /// The kind of lane the family holds.
-    const KIND: LaneKind;
     /// The family's name, as boot errors and telemetry name it.
     const NAME: &'static str;
     /// The agent that negotiates for the family.

@@ -18,7 +18,6 @@
 use khora_core::agent::gorna::AgentId;
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::Pass;
-use khora_core::lane::LaneKind;
 use khora_data::render::UiPassSlot;
 use khora_macros::LaneOutputs;
 
@@ -26,7 +25,6 @@ use khora_macros::LaneOutputs;
 pub struct UiFamily;
 
 impl LaneFamily for UiFamily {
-    const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "ui";
     const AGENT: AgentId = AgentId::new("ui");
     const SEMANTICS: Semantics = Semantics::Presentation;

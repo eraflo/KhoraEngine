@@ -95,10 +95,10 @@ impl ControlPlanePanel {
 
         // Status pill — same thresholds as the health bar (see `Health`), so
         // the word and the bar always agree.
-        let (status_label, status_color) = if agent.status.is_stalled {
+        let (status_label, status_color) = if agent.report.stalled {
             ("stalled", theme.error)
         } else {
-            match Health::from_ratio(agent.status.health_score) {
+            match Health::from_ratio(agent.report.health) {
                 Health::Good => ("healthy", theme.success),
                 Health::Degraded => ("degraded", theme.warning),
                 Health::Bad => ("failing", theme.error),
@@ -130,7 +130,7 @@ impl ControlPlanePanel {
             1.0,
         );
 
-        // Cards — each shows real fields from AgentStatus + ExecutionTiming.
+        // Cards — each shows real fields from the Report + ExecutionTiming.
         let mut cy = y + 108.0;
         cy = paint_card_box(
             ui,
@@ -179,7 +179,7 @@ impl ControlPlanePanel {
             cy + 6.0,
             w - 36.0,
             "Score",
-            &format!("{:.2}", agent.status.health_score),
+            &format!("{:.2}", agent.report.health),
             theme,
         );
         cy += 22.0;
@@ -189,16 +189,16 @@ impl ControlPlanePanel {
             cy + 6.0,
             w - 36.0,
             "Stalled",
-            if agent.status.is_stalled { "yes" } else { "no" },
+            if agent.report.stalled { "yes" } else { "no" },
             theme,
         );
         cy += 22.0;
-        let bar_color = Health::from_ratio(agent.status.health_score).color(theme);
+        let bar_color = Health::from_ratio(agent.report.health).color(theme);
         khora_tool_ui::widgets::meter_bar(
             ui,
             theme,
             [x + 18.0, cy + 4.0, w - 36.0, 3.0],
-            agent.status.health_score.clamp(0.0, 1.0),
+            agent.report.health.clamp(0.0, 1.0),
             bar_color,
         );
         cy += 18.0;
@@ -235,11 +235,11 @@ impl ControlPlanePanel {
         );
         cy += 30.0;
 
-        if !agent.status.message.is_empty() {
+        if let Some(message) = &agent.report.message {
             cy = paint_card_box(ui, x + 8.0, cy, w - 16.0, "Message", Icon::Info, theme);
             ui.paint_text_styled(
                 [x + 18.0, cy + 4.0],
-                &agent.status.message,
+                message,
                 11.0,
                 theme.text_dim,
                 FontFamilyHint::Proportional,

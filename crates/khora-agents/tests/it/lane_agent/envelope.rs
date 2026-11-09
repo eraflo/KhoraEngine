@@ -45,10 +45,11 @@ use khora_core::lane::{LaneError, OutputDeck};
 use khora_core::Runtime;
 
 use super::fixtures::{
-    budget, host_envelope, lend, level, locked, offer_request, place_of, recorded_level, request,
-    run, runtime, LadderLane, Load, LoadOnly, Plan, ProbeFamily, ProbeOutputs, Recorded, Tally,
-    TallyLock, ANY_MEMORY, LADDER,
+    host_envelope, lend, level, locked, offer_request, place_of, recorded_level, run, runtime,
+    LadderLane, Load, LoadOnly, Plan, ProbeFamily, ProbeOutputs, Recorded, Tally, TallyLock,
+    ANY_MEMORY, LADDER,
 };
+use crate::protocol::pin;
 
 /// The ladder, starting on its dearest level.
 static LADDER_ON_HIGH: AgentRegistration = khora_core::register_agent! {
@@ -395,12 +396,12 @@ fn lent(deck: &OutputDeck) -> Option<u32> {
 }
 
 /// **A budgeted lane is lent its envelope.** Lent 3 ms on the host, the lane
-/// records with a budget of 3 ms — not the frame's target a negotiation once
-/// named, and not the price of the row.
+/// records with a budget of 3 ms — not the frame's target an offer request
+/// once named, and not the price of the row.
 #[test]
 fn a_budgeted_lane_is_lent_its_envelope() {
     let mut agent = lane_agent(&BUDGETED, &DeviceCaps::default());
-    let _ = agent.negotiate(request());
+    let _ = agent.offer(&offer_request(1));
     lend(&mut agent, host_envelope(3_000));
     let mut deck = OutputDeck::new();
 
@@ -430,14 +431,14 @@ fn a_budgeted_lane_is_lent_the_envelopes_time_on_its_busiest_device() {
     assert_eq!(lent(&deck), Some(5_000), "the busiest device's time, in µs");
 }
 
-/// **A quote is lent the envelope, not the frame's time.** A negotiation
+/// **A quote is lent the envelope, not the frame's time.** An offer request
 /// once named a 16.7 ms frame; the agent is then lent 3 ms, allowed only the
 /// plain lane's row. Its first wake quotes the echo lane, which does not run
 /// and prices exactly what it is lent: it is offered at 3 ms.
 #[test]
 fn a_quote_is_lent_the_envelope_not_the_frame_time() {
     let mut agent = lane_agent(&PLAIN_THEN_ECHO, &DeviceCaps::default());
-    let _ = agent.negotiate(request());
+    let _ = agent.offer(&offer_request(1));
     agent.apply(
         Epoch(1),
         &host_envelope(3_000),
@@ -661,7 +662,7 @@ static READER_THEN_LOCKER: AgentRegistration = khora_core::register_agent! {
 
 /// **The lane a frame runs is the lane its place declares.** The scheduler
 /// builds its waves, and stamps the permit, from the installed layer's
-/// contention. Named by a budget, the locking lane runs, and its place
+/// contention. Pinned to it, the locking lane runs, and its place
 /// declares its lock. Lent 105 µs, the agent takes the reader, 100 µs, which
 /// has no impact: once the reader runs, the place no longer declares the
 /// lock, and declares the reader's own read.
@@ -670,13 +671,13 @@ fn the_lane_a_frame_runs_under_an_envelope_is_the_lane_its_place_declares() {
     let tally_lock = TypeId::of::<Arc<Mutex<Tally>>>();
     let load = TypeId::of::<Load>();
     let mut agent = lane_agent(&READER_THEN_LOCKER, &DeviceCaps::default());
-    agent.apply_budget(budget(LOCKER_ROW));
+    pin(&mut agent, LOCKER_ROW);
     let mut deck = OutputDeck::new();
     run(&mut agent, 1, &runtime(100, Plan::default()), &mut deck);
     assert_eq!(
         deck.get::<Recorded>().map(|recorded| recorded.lane),
         Some("locker"),
-        "the budget named the locking lane"
+        "the pin named the locking lane"
     );
     assert!(
         locked(&place_of(&agent)).contention().may_lock(tally_lock),

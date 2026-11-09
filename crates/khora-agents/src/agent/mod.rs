@@ -36,10 +36,7 @@ use std::time::Duration;
 use khora_core::agent::gorna::protocol::{
     Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
 };
-use khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-    StrategyOption,
-};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{
     Agent, AgentAccess, AgentDependency, Contention, DependencyKind, ExecutionTiming, Place, Wake,
@@ -100,11 +97,6 @@ pub struct LaneAgent {
     current: usize,
     /// Each row's last price — quoted, or its lane's last run's — by row.
     quotes: Vec<Option<Cost>>,
-    /// The time GORNA allowed the agent.
-    time_limit: Duration,
-    /// Whether GORNA allowed the agent anything yet: until it has, a lane
-    /// taking `Option<Budget>` runs on its own price.
-    budget_lent: bool,
     /// The simulated time one run advances, for a fixed-step family: its
     /// registration's, or the game's setting. No budget changes it.
     fixed_step: Option<Duration>,
@@ -113,8 +105,8 @@ pub struct LaneAgent {
     /// The row the family starts on, and runs while nothing is priced.
     default_row: usize,
     /// The envelope the DCC lent, with its epoch, the row a policy pins and
-    /// the rows a policy allows; `None` while the agent is driven by budgets
-    /// naming its row.
+    /// the rows a policy allows; `None` until the first allocation, while the
+    /// family runs its default level.
     lent: Option<Lent>,
     /// Whether the last choice found no row fitting the envelope.
     over_budget: bool,
@@ -186,8 +178,6 @@ pub fn lane_agent(registration: &'static AgentRegistration, caps: &DeviceCaps) -
         quotes: vec![None; menu.len()],
         menu,
         current,
-        time_limit: Duration::ZERO,
-        budget_lent: false,
         fixed_step: registration.fixed_step,
         levels,
         default_row: current,
@@ -200,18 +190,17 @@ pub fn lane_agent(registration: &'static AgentRegistration, caps: &DeviceCaps) -
 }
 
 /// The inputs of one run as the agent lends them: the bus, the earlier
-/// phases' deck and the runtime, with the budget, the fixed step, and the
-/// frame's target and clear colour.
+/// phases' deck and the runtime, with the budget lent, the fixed step, and
+/// the frame's target and clear colour.
 fn lend<'c>(
     context: &'c EngineContext<'_>,
-    time_limit: Duration,
-    budget_lent: bool,
+    budget: Option<Duration>,
     fixed_step: Option<Duration>,
     frame: Option<&FrameContext>,
 ) -> InputSource<'c> {
     let mut source = context.input_source();
-    if budget_lent || !time_limit.is_zero() {
-        source = source.with_budget(Budget { time: time_limit });
+    if let Some(time) = budget {
+        source = source.with_budget(Budget { time });
     }
     if let Some(step) = fixed_step {
         source = source.with_step(FixedStep(step));
@@ -225,6 +214,17 @@ fn lend<'c>(
         }
     }
     source
+}
+
+impl LaneAgent {
+    /// The time lent to a `#[budget]` lane: the envelope's on its busiest
+    /// device; `None` until the first allocation.
+    fn budget(&self) -> Option<Duration> {
+        self.lent.as_ref().map(|lent| {
+            let time = &lent.envelope.time;
+            time.cpu.max(time.gpu).max(time.npu).max(time.other)
+        })
+    }
 }
 
 /// Sets the step `agent` runs at, for a fixed-step family: what a game's
@@ -254,80 +254,6 @@ impl Agent for LaneAgent {
         self.registration.agent
     }
 
-    fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
-        {
-            let place = Arc::clone(&self.place);
-            let place = place
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            self.absorb_last_run(&place);
-        }
-        // While no row has a price (before any run, or every lane refused an
-        // input), every row is offered at its memory alone, so the family is
-        // always scheduled again. Once some rows are priced, a row without a
-        // price (an input missing, a lane that locks) is not offered: it has
-        // nothing to be picked on.
-        let unpriced = self.quotes.iter().all(Option::is_none);
-        let strategies = self
-            .menu
-            .iter()
-            .zip(&self.quotes)
-            .filter_map(|(row, quote)| match quote {
-                Some(cost) => Some(StrategyOption {
-                    id: row.id,
-                    estimated_time: time_of(cost),
-                    estimated_vram: cost.memory.gpu,
-                }),
-                None if unpriced => Some(StrategyOption {
-                    id: row.id,
-                    estimated_time: Duration::ZERO,
-                    estimated_vram: row.memory.gpu,
-                }),
-                None => None,
-            })
-            .collect();
-        NegotiationResponse {
-            strategies,
-            timing_adjustment: None,
-        }
-    }
-
-    fn apply_budget(&mut self, budget: ResourceBudget) {
-        match self.row_of(budget.strategy_id) {
-            Some(row) => {
-                // A budget naming the row overrides any envelope: the agent
-                // runs what it is told until it is lent an envelope again.
-                self.lent = None;
-                self.over_budget = false;
-                self.current = row;
-                self.time_limit = budget.time_limit;
-                self.budget_lent = true;
-                self.locked_place().raise(Wake::Allocated);
-            }
-            None => log::warn!(
-                "{}: budget names {:?}, which its menu does not offer; keeping {:?}",
-                self.registration.family_name,
-                budget.strategy_id,
-                self.row().map(|row| row.id)
-            ),
-        }
-    }
-
-    /// The row running, and the last run's health, stall and message, read
-    /// from the place: the agent is not woken on a quiet frame.
-    fn report_status(&self) -> AgentStatus {
-        let place = self.locked_place();
-        let last = place.last_run();
-        let report = last.report.as_ref();
-        AgentStatus {
-            agent_id: self.registration.agent,
-            current_strategy: self.running(&place),
-            health_score: report.map_or(1.0, |report| report.health),
-            is_stalled: report.is_some_and(|report| report.stalled),
-            message: last.message.clone(),
-        }
-    }
-
     /// Every row the agent can run, at its quote: `Measured` for the row that
     /// ran it, `Quoted` for the others, `Assumed` at its level's memory for a
     /// row not priced. A priced row another lane's row dominates is left out:
@@ -336,13 +262,18 @@ impl Agent for LaneAgent {
     /// level while none is; the current row is the one running — installed,
     /// not merely staged.
     fn offer(&mut self, request: &OfferRequest) -> Offer {
-        let (ran, running) = {
+        let (ran, running, health) = {
             let place = Arc::clone(&self.place);
             let place = place
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             self.absorb_last_run(&place);
-            (self.ran(&place), self.running(&place))
+            let health = place
+                .last_run()
+                .report
+                .as_ref()
+                .map_or(1.0, |report| report.health);
+            (self.ran(&place), self.running(&place), health)
         };
         // The rows that can stand in for another: priced, not failed, allowed.
         let allowed = self.lent.as_ref().and_then(|lent| lent.allowed.clone());
@@ -415,12 +346,12 @@ impl Agent for LaneAgent {
             rows,
             floor,
             current: running,
-            health: self.report_status().health_score,
+            health,
         }
     }
 
-    /// Keeps the envelope, the pin and the allowed rows, lends a `#[budget]`
-    /// lane the envelope's time on its busiest device, and chooses the row on
+    /// Keeps the envelope, the pin and the allowed rows — a `#[budget]` lane is
+    /// lent the envelope's time on its busiest device — and chooses the row on
     /// the quotes as they stand. Its place hears of the allocation: the agent
     /// is woken for it, and installs what it chose.
     fn apply(
@@ -430,9 +361,6 @@ impl Agent for LaneAgent {
         pin: Option<StrategyId>,
         allowed: Option<&[StrategyId]>,
     ) {
-        let time = &envelope.time;
-        self.time_limit = time.cpu.max(time.gpu).max(time.npu).max(time.other);
-        self.budget_lent = true;
         // A new allocation gives every row its chance again.
         self.failed.iter_mut().for_each(|failed| *failed = false);
         self.lent = Some(Lent {
@@ -445,8 +373,8 @@ impl Agent for LaneAgent {
         self.locked_place().lent(epoch);
     }
 
-    /// The report of the place's last run; before any, the row chosen on
-    /// the terms lent.
+    /// The report of the place's last run, with what its lane said; before
+    /// any, the row chosen on the terms lent.
     fn report(&self) -> Report {
         if let Some(report) = self.locked_place().last_run().report.clone() {
             return report;
@@ -465,6 +393,7 @@ impl Agent for LaneAgent {
             stalled: false,
             workload: None,
             switch: None,
+            message: None,
         }
     }
 

@@ -13,47 +13,26 @@
 // limitations under the License.
 
 //! The physics family's registration, its boot, and the agent built from it:
-//! what it declares, the step it runs at, and that no budget changes it.
+//! what it declares, the step it runs at, and that no allocation changes it.
 
 use std::any::TypeId;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use khora_agents::registered_agent::lane_agents;
-use khora_core::agent::gorna::{
-    AgentId, NegotiationRequest, ResourceBudget, ResourceConstraints, StrategyId,
-};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::{check_registrations, BootError};
-use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Agent, AgentAccess, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
 use khora_core::lane::level::Impact;
-use khora_core::lane::LaneKind;
 use khora_core::physics::{ContactBatch, PhysicsProvider, PhysicsSettings};
 use khora_core::Runtime;
 use khora_data::flow::PhysicsStepResult;
 
 use super::fixtures::{physics_agent, physics_registration, physics_runtime, ScriptedProvider};
-
-fn unconstrained() -> NegotiationRequest {
-    NegotiationRequest {
-        target_latency: Duration::from_millis(16),
-        priority_weight: 1.0,
-        constraints: ResourceConstraints::default(),
-        agent_timing: ExecutionTiming::default(),
-    }
-}
-
-fn budget(strategy_id: StrategyId) -> ResourceBudget {
-    ResourceBudget {
-        strategy_id,
-        time_limit: Duration::from_millis(2),
-        memory_limit: None,
-        extra_params: HashMap::new(),
-    }
-}
+use crate::protocol::{pin_with, request};
 
 // ─── The registration ───────────────────────────────────────────────────────
 
@@ -66,7 +45,6 @@ fn the_physics_family_is_registered_once() {
 
     assert_eq!(registration.family_name, "physics");
     assert_eq!(registration.agent, AgentId::new("physics"));
-    assert_eq!(registration.kind, LaneKind::Physics);
     assert_eq!(registration.semantics, Semantics::Exact);
     assert_eq!(registration.phase, ExecutionPhase::TRANSFORM);
     assert_eq!(registration.importance, AgentImportance::Critical);
@@ -230,10 +208,10 @@ fn the_physics_agent_runs_at_the_default_physics_step() {
     assert_eq!(timing.importance, AgentImportance::Critical);
 }
 
-/// **No budget changes the physics step.** The former agent turned GORNA's
-/// strategies into steps of 1/30, 1/60 and 1/120 s; the step is a game
-/// setting now. Whatever GORNA picks — a level the agent offers, or one it
-/// does not — the step stays.
+/// **No allocation changes the physics step.** The former agent turned
+/// GORNA's strategies into steps of 1/30, 1/60 and 1/120 s; the step is a
+/// game setting now. Whatever row an allocation pins — a level the agent
+/// offers, or one it does not — the step stays.
 #[test]
 fn no_gorna_level_changes_the_physics_step() {
     let mut agent = physics_agent();
@@ -241,10 +219,10 @@ fn no_gorna_level_changes_the_physics_step() {
     assert!(step.is_some(), "physics runs at a fixed step");
 
     let offered: Vec<StrategyId> = agent
-        .negotiate(unconstrained())
-        .strategies
+        .offer(&request())
+        .rows
         .iter()
-        .map(|option| option.id)
+        .map(|row| row.id)
         .collect();
     let named = offered.iter().copied().chain([
         StrategyId::LowPower,
@@ -253,7 +231,7 @@ fn no_gorna_level_changes_the_physics_step() {
         StrategyId::Custom(7),
     ]);
     for strategy in named {
-        agent.apply_budget(budget(strategy));
+        pin_with(&mut agent, strategy, Duration::from_millis(2));
         assert_eq!(
             agent.execution_timing().fixed_timestep,
             step,

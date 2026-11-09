@@ -27,7 +27,7 @@ use khora_core::lane::guard::Reason;
 use khora_core::lane::io::{FrameId, InputSource, OutputSink, Target, TargetKey};
 use khora_core::lane::level::Level;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
+use khora_core::lane::{LaneBus, LaneError, OutputDeck};
 use khora_core::math::Extent2D;
 use khora_core::renderer::api::resource::{TextureFormat, TextureViewId};
 use khora_core::Runtime;
@@ -57,7 +57,6 @@ pub struct SketchOutputs {
 pub struct SketchFamily;
 
 impl LaneFamily for SketchFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "sketch";
     const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;

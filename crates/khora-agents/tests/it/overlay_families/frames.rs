@@ -17,7 +17,6 @@
 
 use std::sync::Arc;
 
-use khora_core::agent::Agent;
 use khora_core::lane::io::FrameId;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_data::render::{
@@ -26,13 +25,14 @@ use khora_data::render::{
 };
 
 use super::fixtures::{agent_of, overlay_registrations, overlay_runtime};
+use crate::protocol::said;
 use crate::shadows_family::fixtures::{run_once, SubmitLog};
 
 /// **Without a frame context no overlay is drawn, and each agent names the
 /// target.** Between two frames there is no `FrameContext`, so no target to
 /// lend: each lane's `target` input is refused even with every overlay
 /// switched on, no encoder is opened, the deck holds no overlay pass, and
-/// each status says which input was missing.
+/// each report's message says which input was missing.
 #[test]
 fn a_frame_without_a_frame_context_commits_no_overlay_and_names_the_target() {
     let device = Arc::new(SubmitLog::new());
@@ -61,10 +61,10 @@ fn a_frame_without_a_frame_context_commits_no_overlay_and_names_the_target() {
             "{name}: no overlay pass without a target"
         );
         assert!(device.opened().is_empty(), "{name}: no encoder opened");
-        let message = agent.report_status().message;
+        let message = said(&agent);
         assert!(
             message.contains("target"),
-            "{name}: the status names the missing target: {message:?}"
+            "{name}: the report's message names the missing target: {message:?}"
         );
     }
 }

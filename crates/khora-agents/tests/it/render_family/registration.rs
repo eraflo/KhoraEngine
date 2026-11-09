@@ -29,7 +29,7 @@ use khora_core::lane::family::Semantics;
 use khora_core::lane::guard::{SinkKind, SourceKind};
 use khora_core::lane::io::{PassSlot, Target};
 use khora_core::lane::level::Impact;
-use khora_core::lane::{ClearColor, LaneKind};
+use khora_core::lane::ClearColor;
 use khora_core::renderer::api::frame::FrameContext;
 use khora_core::renderer::api::shadow::ShadowFrame;
 use khora_core::renderer::traits::PipelineSystem;
@@ -111,7 +111,6 @@ fn the_render_family_is_registered_once_with_three_lanes() {
     assert_eq!(registration.family_name, "render");
     assert_eq!(registration.agent, AgentId::new("renderer"));
     assert_eq!(registration.agent, khora_agents::render_agent::RENDERER);
-    assert_eq!(registration.kind, LaneKind::Render);
     assert_eq!(registration.semantics, Semantics::Presentation);
     assert_eq!(registration.importance, AgentImportance::Critical);
     assert_eq!(registration.fixed_step, None, "the scene draws every frame");

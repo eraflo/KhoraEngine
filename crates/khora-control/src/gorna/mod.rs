@@ -301,16 +301,16 @@ impl GornaArbitrator {
             .iter()
             .filter_map(|agent| try_lock_agent_with_timeout(agent, self.lock_timeout))
             .filter(|agent| {
-                let status = agent.report_status();
-                if status.is_stalled {
+                let report = agent.report();
+                if report.stalled {
                     log::warn!(
                         "GORNA: agent {} is stalled. Health={:.2}: {}",
-                        status.agent_id,
-                        status.health_score,
-                        status.message
+                        report.agent,
+                        report.health,
+                        report.message.as_deref().unwrap_or("")
                     );
                 }
-                status.is_stalled
+                report.stalled
             })
             .count()
     }

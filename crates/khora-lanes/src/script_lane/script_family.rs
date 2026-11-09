@@ -17,7 +17,6 @@
 
 use khora_core::agent::gorna::AgentId;
 use khora_core::lane::family::{LaneFamily, Semantics};
-use khora_core::lane::LaneKind;
 use khora_core::script::{BehaviorWriteback, CommandBuffer};
 use khora_macros::LaneOutputs;
 
@@ -26,7 +25,6 @@ use khora_macros::LaneOutputs;
 pub struct ScriptFamily;
 
 impl LaneFamily for ScriptFamily {
-    const KIND: LaneKind = LaneKind::Script;
     const NAME: &'static str = "script";
     const AGENT: AgentId = khora_core::script::SCRIPT;
     const SEMANTICS: Semantics = Semantics::Exact;

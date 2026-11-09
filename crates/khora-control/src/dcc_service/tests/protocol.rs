@@ -45,8 +45,7 @@ fn host() -> Host {
 
 /// **The first epoch lends every agent an envelope**, through the protocol:
 /// the agent is asked for an offer and, at a frame start, applied an
-/// envelope — never negotiated with nor applied a budget. The first
-/// allocation is `Initial`.
+/// envelope. The first allocation is `Initial`.
 #[test]
 fn the_first_epoch_lends_every_agent_an_envelope() {
     let mut host = host();
@@ -61,7 +60,6 @@ fn the_first_epoch_lends_every_agent_an_envelope() {
     assert!(lent, "the agent was lent an envelope");
     let heard = ear.heard();
     assert!(!heard.asked.is_empty(), "the agent was asked for an offer");
-    assert_eq!(heard.old_calls, 0, "never negotiated with nor budgeted");
     let first = first.expect("the epoch was recorded");
     assert_eq!(first.trigger, Trigger::Initial);
     assert_eq!(heard.lent[0].0, first.epoch, "lent for the epoch recorded");
@@ -101,18 +99,16 @@ fn the_dcc_thread_never_calls_apply() {
 }
 
 /// **The DCC records each epoch's allocation**: every recorded epoch lends
-/// the registered agent — one that only negotiates — an envelope, which the
-/// bridge applies once the scheduler lends it.
+/// the registered agent an envelope, which reaches the agent once the
+/// scheduler lends it.
 #[test]
 fn the_dcc_records_each_epochs_allocation() {
     let mut host = host();
-    let agent = Arc::new(Mutex::new(StubAgent { applied: None }));
-    host.dcc.register_agent(agent.clone(), 1.0);
+    let (agent, ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
+    host.dcc.register_agent(agent, 1.0);
     host.start();
 
-    let applied = host.frames_until(3, |_| {
-        agent.lock().expect("the agent lock").applied.is_some()
-    });
+    let applied = host.frames_until(3, |_| !ear.heard().lent.is_empty());
     let trace = host.dcc.stop_decision_recording();
     host.dcc.stop();
 
@@ -126,7 +122,7 @@ fn the_dcc_records_each_epochs_allocation() {
         "every recorded epoch lends the registered agent: {:?}",
         trace.epochs
     );
-    assert!(applied, "the bridge applied a budget");
+    assert!(applied, "the agent was lent its envelope");
 }
 
 #[test]
@@ -356,20 +352,18 @@ fn replay_lends_every_epoch_though_a_frame_outlasts_the_ticks() {
     );
 }
 
-/// **A `Manual` mode set on the DCC pins the agent**: an agent that only
-/// negotiates is applied its pinned `LowPower` (with ample budget it would
-/// run `Balanced`), and a protocol agent is lent its pin.
+/// **A `Manual` mode set on the DCC pins the agent**: with ample budget the
+/// agent would be lent its `Balanced` upgrade; pinned to `LowPower`, it is
+/// lent its pin.
 #[test]
 fn a_manual_mode_set_on_the_dcc_pins_the_agent() {
     let mut host = host();
-    let legacy = Arc::new(Mutex::new(StubAgent { applied: None }));
-    host.dcc.register_agent(legacy.clone(), 1.0);
-    let (agent, ear) = Speaker::with_ear("physics", Duration::from_millis(2));
-    host.dcc.register_agent(agent, 0.5);
-    host.dcc.set_adaptation_mode(
-        AgentId::new("renderer"),
-        AdaptationMode::Manual(StrategyId::LowPower),
+    let (agent, ear) = Speaker::with_upgrade(
+        "physics",
+        Duration::from_millis(2),
+        Duration::from_millis(8),
     );
+    host.dcc.register_agent(agent, 1.0);
     host.dcc.set_adaptation_mode(
         AgentId::new("physics"),
         AdaptationMode::Manual(StrategyId::LowPower),
@@ -381,21 +375,10 @@ fn a_manual_mode_set_on_the_dcc_pins_the_agent() {
             .lent
             .iter()
             .any(|(_, _, pin)| *pin == Some(StrategyId::LowPower))
-            && legacy.lock().expect("the agent lock").applied.is_some()
     });
-    let applied = legacy.lock().expect("the agent lock").applied;
     host.dcc.stop();
 
-    assert!(
-        pinned,
-        "the protocol agent is lent its pin: {:?}",
-        ear.heard().lent
-    );
-    assert_eq!(
-        applied,
-        Some(StrategyId::LowPower),
-        "the bridge applies the pin"
-    );
+    assert!(pinned, "the agent is lent its pin: {:?}", ear.heard().lent);
 }
 
 /// **The governor's recovery widens the envelope again.** The agent offers a
@@ -786,6 +769,7 @@ fn the_journal_records_each_epochs_inputs() {
         stalled: false,
         workload: Some(10.0),
         switch: None,
+        message: None,
     };
     tx.send(TelemetryEvent::AgentReport(report.clone()))
         .expect("the DCC listens");

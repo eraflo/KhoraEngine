@@ -27,7 +27,7 @@ use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::{FrameId, InputSource, OutputSink, Pass, PassSlot};
 use khora_core::lane::level::Level;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneBus, LaneError, LaneKind, OutputDeck};
+use khora_core::lane::{LaneBus, LaneError, OutputDeck};
 use khora_core::renderer::api::command::{
     BindGroupLayoutEntry, BindGroupLayoutId, CommandBufferId, RenderPassDescriptor,
 };
@@ -133,7 +133,6 @@ pub struct TwoSlotOutputs<'f> {
 pub struct TwoPassFamily;
 
 impl LaneFamily for TwoPassFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "two passes";
     const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -277,7 +276,6 @@ pub struct TwoDraws<'f> {
 pub struct TwoDrawsFamily;
 
 impl LaneFamily for TwoDrawsFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "two draws";
     const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;

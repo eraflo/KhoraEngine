@@ -21,10 +21,9 @@
 
 use super::allocations::one_phase;
 use super::layers::{reports, scheduling, shared, taken, Brush, SharedLog};
-use khora_core::agent::gorna::protocol::{Envelope, Epoch};
-use khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-};
+use super::{offer_of, report_of};
+use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{
     Agent, AgentAccess, Contention, ExecutionTiming, Layer, Place, Preparation, Wake,
 };
@@ -153,21 +152,11 @@ impl Agent for Sculptor {
     fn id(&self) -> AgentId {
         AgentId::new(SCULPTOR)
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(self.id(), request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id(),
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn report(&self) -> Report {
+        report_of(self.id(), StrategyId::Balanced)
     }
     fn apply(
         &mut self,

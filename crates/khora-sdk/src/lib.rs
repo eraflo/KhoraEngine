@@ -119,7 +119,7 @@ pub use khora_control::agent_registry::AgentRegistry;
 pub use khora_control::Context as DccContext;
 
 // Core types
-pub use khora_core::agent::gorna::{AgentHints, AgentId, AgentStatus, EngineHint, StrategyId};
+pub use khora_core::agent::gorna::{AgentHints, AgentId, EngineHint, StrategyId};
 pub use khora_core::agent::{AgentImportance, ExecutionPhase, ExecutionTiming};
 pub use khora_core::telemetry::monitoring::HostMonitors;
 pub use khora_core::telemetry::{MonitoredResourceType, TelemetryEvent};

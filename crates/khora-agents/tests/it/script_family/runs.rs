@@ -28,8 +28,9 @@ use khora_core::Runtime;
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
 use khora_lanes::script_lane::ScriptRuntime;
 
-use super::fixtures::{bus_with, granting, run_script_agent, runtime_with, script_agent};
+use super::fixtures::{bus_with, grant, run_script_agent, runtime_with, script_agent};
 use crate::behavior_session::{compile, Project};
+use crate::protocol::said;
 
 /// The guard's module, loaded.
 const GUARD: Project = &[(
@@ -131,7 +132,7 @@ fn a_script_family_never_lent_a_budget_runs_its_whole_level_from_its_first_frame
         (report.completed, report.deferred),
         (1, 0),
         "the first frame ran the guard's turn: {report:?}; {:?}",
-        agent.report_status().message
+        said(&agent)
     );
 }
 
@@ -142,7 +143,7 @@ fn a_script_family_never_lent_a_budget_runs_its_whole_level_from_its_first_frame
 fn lent_nothing_the_mail_waits_for_a_frame_that_can_deliver_it() {
     let (runtime, shared) = wired(false);
     let mut agent = script_agent();
-    agent.apply_budget(granting(Duration::ZERO));
+    grant(&mut agent, Duration::ZERO);
     leave_mail(&shared);
 
     run_one_frame(&mut agent, &runtime);
@@ -157,7 +158,7 @@ fn lent_nothing_the_mail_waits_for_a_frame_that_can_deliver_it() {
 fn a_deferred_behaviour_keeps_what_it_was_never_told() {
     let (runtime, shared) = wired(true);
     let mut agent = script_agent();
-    agent.apply_budget(granting(Duration::from_nanos(1)));
+    grant(&mut agent, Duration::from_nanos(1));
     leave_mail(&shared);
 
     run_one_frame(&mut agent, &runtime);
@@ -181,7 +182,7 @@ fn a_deferred_behaviour_keeps_what_it_was_never_told() {
 fn a_behaviour_that_gets_its_turn_is_told_once() {
     let (runtime, shared) = wired(false);
     let mut agent = script_agent();
-    agent.apply_budget(granting(Duration::from_millis(1)));
+    grant(&mut agent, Duration::from_millis(1));
     leave_mail(&shared);
 
     run_one_frame(&mut agent, &runtime);
@@ -200,7 +201,7 @@ fn a_behaviour_that_gets_its_turn_is_told_once() {
 fn the_run_report_stays_on_the_scripting_world() {
     let (runtime, shared) = wired(true);
     let mut agent = script_agent();
-    agent.apply_budget(granting(Duration::from_millis(1)));
+    grant(&mut agent, Duration::from_millis(1));
 
     run_one_frame(&mut agent, &runtime);
 
@@ -215,13 +216,13 @@ fn the_run_report_stays_on_the_scripting_world() {
 
 /// **Deferred turns are work not done, never an overrun.** Lent too little
 /// for the guard's turn, the run reports less than all of its work done and
-/// is not over budget — the budget named its row, and the row ran. Lent
+/// is not over budget — the pin named its row, and the row ran. Lent
 /// enough, it is all done.
 #[test]
 fn deferred_turns_are_work_not_done_never_an_overrun() {
     let (runtime, _shared) = wired(true);
     let mut agent = script_agent();
-    agent.apply_budget(granting(Duration::from_nanos(1)));
+    grant(&mut agent, Duration::from_nanos(1));
     run_one_frame(&mut agent, &runtime);
     let short = agent.report();
     assert!(short.done < 1.0, "lent too little, it deferred: {short:?}");
@@ -230,7 +231,7 @@ fn deferred_turns_are_work_not_done_never_an_overrun() {
         "deferring is not overrunning: {short:?}"
     );
 
-    agent.apply_budget(granting(Duration::from_millis(1)));
+    grant(&mut agent, Duration::from_millis(1));
     run_one_frame(&mut agent, &runtime);
     let whole = agent.report();
     assert_eq!(

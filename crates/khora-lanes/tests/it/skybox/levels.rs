@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! The skybox lane's one level. It replaces the old lane's name and kind
-//! (`"Skybox"`, `LaneKind::Render`) and the one flat strategy its agent
+//! (`"Skybox"`, the render kind) and the one flat strategy its agent
 //! offered.
 
 use khora_core::agent::gorna::StrategyId;

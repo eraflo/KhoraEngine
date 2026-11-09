@@ -22,7 +22,7 @@
 //! reads depends on it.
 //!
 //! The `Falling` agent below declares its step through a shared cell — so a
-//! test can switch it between frames, as GORNA's `apply_budget` does — and on
+//! test can switch it between frames, as an allocation once could — and on
 //! each run integrates a falling body with that step (semi-implicit Euler),
 //! adding the step to the simulated time it has seen.
 //!
@@ -32,12 +32,12 @@
 //! are chosen in quarter ticks so that the few microseconds a frame gains
 //! never carry the gameplay accumulator across a tick boundary.
 
+use super::{offer_of, report_of};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
-use khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget, StrategyId,
-};
+use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{Agent, ExecutionPhase, ExecutionTiming};
 use khora_core::time::{SharedTime, Time, DEFAULT_FIXED_DELTA_SECONDS, MAX_SIM_STEPS};
 use khora_core::{EngineContext, Runtime};
@@ -87,21 +87,19 @@ impl Agent for Falling {
     fn id(&self) -> AgentId {
         AgentId::new("physics")
     }
-    fn negotiate(&mut self, _r: NegotiationRequest) -> NegotiationResponse {
-        NegotiationResponse {
-            strategies: vec![],
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(AgentId::new("physics"), request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _b: ResourceBudget) {}
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: AgentId::new("physics"),
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(AgentId::new("physics"), StrategyId::Balanced)
     }
     fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
         let p = self.step().as_secs_f64();

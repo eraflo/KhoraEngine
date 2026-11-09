@@ -18,7 +18,6 @@
 use khora_core::agent::gorna::AgentId;
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::io::Pass;
-use khora_core::lane::LaneKind;
 use khora_core::renderer::api::shadow::ShadowFrame;
 use khora_data::render::ShadowPassSlot;
 use khora_macros::LaneOutputs;
@@ -28,7 +27,6 @@ use khora_macros::LaneOutputs;
 pub struct ShadowsFamily;
 
 impl LaneFamily for ShadowsFamily {
-    const KIND: LaneKind = LaneKind::Shadow;
     const NAME: &'static str = "shadows";
     const AGENT: AgentId = AgentId::new("shadows");
     const SEMANTICS: Semantics = Semantics::Presentation;

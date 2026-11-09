@@ -38,6 +38,7 @@ mod physics_step_setting;
 mod prefab_library;
 mod problems_without_scripts;
 mod project_indexed_off_the_frame;
+mod protocol;
 mod public_paths;
 mod quotes_follow_the_target;
 mod reload_after_an_emptied_module;

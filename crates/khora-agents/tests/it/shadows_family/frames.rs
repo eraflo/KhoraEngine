@@ -12,37 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Frames through the shadow agent, as the scheduler runs them: the budget
-//! picks a level of the one shadows lane, and the agent commits the frame's
+//! Frames through the shadow agent, as the scheduler runs them: a pin picks
+//! a level of the one shadows lane, and the agent commits the frame's
 //! shadows and its pass — or nothing at all.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use khora_core::agent::gorna::{ResourceBudget, StrategyId};
+use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Agent;
 use khora_core::lane::OutputDeck;
 use khora_core::renderer::api::shadow::{ShadowEntry, ShadowFrame};
 use khora_data::render::ShadowPassSlot;
 
 use super::fixtures::{bus_with_a_sun, run_once, shadow_agent, shadows_runtime, SubmitLog};
+use crate::protocol::{pin_with, said};
 
-fn budget(strategy_id: StrategyId) -> ResourceBudget {
-    ResourceBudget {
-        strategy_id,
-        time_limit: Duration::from_millis(8),
-        memory_limit: None,
-        extra_params: HashMap::new(),
-    }
-}
-
-/// **A budget picks the level of the shadows lane.** Each of the three
-/// strategies GORNA may hand the agent is reported back as its current one,
-/// and the frame it runs fills atlases at that level's resolution: 512/128,
+/// **A pin picks the level of the shadows lane.** Each of the three rows an
+/// allocation may pin is reported back as the row the agent runs, and the
+/// frame it runs fills atlases at that level's resolution: 512/128,
 /// 1024/256, 2048/512 texels.
 #[test]
-fn a_budget_picks_the_shadow_level() {
+fn a_pin_picks_the_shadow_level() {
     for (strategy, sides) in [
         (StrategyId::LowPower, [128, 512]),
         (StrategyId::Balanced, [256, 1024]),
@@ -51,11 +42,11 @@ fn a_budget_picks_the_shadow_level() {
         let device = Arc::new(SubmitLog::new());
         let runtime = Arc::new(shadows_runtime(&device));
         let mut agent = shadow_agent();
-        agent.apply_budget(budget(strategy));
+        pin_with(&mut agent, strategy, Duration::from_millis(8));
         assert_eq!(
-            agent.report_status().current_strategy,
+            agent.report().row,
             strategy,
-            "the agent runs the row GORNA picked"
+            "the agent runs the row the allocation pinned"
         );
 
         let mut deck = OutputDeck::new();
@@ -129,16 +120,13 @@ fn a_frame_whose_pass_cannot_close_commits_nothing() {
         "no shadow frame is committed: {:?}",
         deck.get::<ShadowFrame>()
     );
-    assert!(
-        !agent.report_status().message.is_empty(),
-        "the agent says why"
-    );
+    assert!(!said(&agent).is_empty(), "the agent says why");
 }
 
 /// **Without a device the shadows family records nothing, and says why.** A
 /// headless engine holds the asset store but no device and no pipeline
 /// system: each frame commits neither the pass nor the shadow frame, and the
-/// agent's status names the missing device.
+/// agent's report names the missing device.
 #[test]
 fn a_headless_frame_commits_no_shadows_and_names_the_device() {
     let mut runtime = khora_core::Runtime::new();
@@ -158,16 +146,16 @@ fn a_headless_frame_commits_no_shadows_and_names_the_device() {
             "no shadow frame without a device"
         );
     }
-    let message = agent.report_status().message;
+    let message = said(&agent);
     assert!(
         message.contains("GraphicsDevice"),
-        "the status names the device: {message:?}"
+        "the report's message names the device: {message:?}"
     );
 }
 
 /// **Without a pipeline system the shadows family builds nothing on the
 /// device.** The device is there, the pipeline system is not: the prepare
-/// fails before any atlas is made, every frame, and the status names the
+/// fails before any atlas is made, every frame, and the report's message names the
 /// pipeline system.
 #[test]
 fn a_frame_without_a_pipeline_system_builds_nothing() {
@@ -191,9 +179,9 @@ fn a_frame_without_a_pipeline_system_builds_nothing() {
         device.atlas_sides()
     );
     assert!(device.opened().is_empty(), "no encoder opened");
-    let message = agent.report_status().message;
+    let message = said(&agent);
     assert!(
         message.contains("PipelineSystem"),
-        "the status names the pipeline system: {message:?}"
+        "the report's message names the pipeline system: {message:?}"
     );
 }

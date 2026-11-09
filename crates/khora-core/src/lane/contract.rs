@@ -29,9 +29,8 @@ pub struct LaneReport {
     pub done: f32,
     /// Whether the lane could not progress.
     pub stalled: bool,
-    /// What the lane has to say of this run — the agent's status message
-    /// while it records; `None` says nothing, and clears what an earlier run
-    /// said.
+    /// What the lane has to say of this run — the agent's report carries it;
+    /// `None` says nothing, and clears what an earlier run said.
     pub message: Option<String>,
 }
 

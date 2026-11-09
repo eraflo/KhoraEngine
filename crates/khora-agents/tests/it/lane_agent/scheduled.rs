@@ -31,8 +31,8 @@ use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::{InputRefusal, OutputRefusal, SinkKind, SourceKind};
 use khora_core::lane::io::{Declaration, InputSource, LaneInputs, LaneOutputs, OutputSink};
 use khora_core::lane::level::Level;
+use khora_core::lane::LaneError;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneError, LaneKind};
 use khora_core::Runtime;
 use khora_data::ecs::World;
 
@@ -143,10 +143,9 @@ impl<'f> LaneInputs<'f> for LitRead<'f> {
 // ─── Families and lanes ─────────────────────────────────────────────────────
 
 macro_rules! family {
-    ($name:ident, $kind:expr, $agent:expr, $outputs:ty) => {
+    ($name:ident, $agent:expr, $outputs:ty) => {
         pub struct $name;
         impl LaneFamily for $name {
-            const KIND: LaneKind = $kind;
             const NAME: &'static str = stringify!($name);
             const AGENT: AgentId = $agent;
             const SEMANTICS: Semantics = Semantics::Presentation;
@@ -155,25 +154,10 @@ macro_rules! family {
     };
 }
 
-family!(
-    LightFamily,
-    LaneKind::Physics,
-    AgentId::new("physics"),
-    LitOutputs
-);
-family!(
-    EyeFamily,
-    LaneKind::Render,
-    AgentId::new("skybox"),
-    SeenOutputs
-);
-family!(IdleFamily, LaneKind::Ui, AgentId::new("grid"), IdleOutputs);
-family!(
-    StrayFamily,
-    LaneKind::Audio,
-    AgentId::new("audio"),
-    StrayOutputs
-);
+family!(LightFamily, AgentId::new("physics"), LitOutputs);
+family!(EyeFamily, AgentId::new("skybox"), SeenOutputs);
+family!(IdleFamily, AgentId::new("grid"), IdleOutputs);
+family!(StrayFamily, AgentId::new("audio"), StrayOutputs);
 
 const ONE_LEVEL: &[Level] = &[level(StrategyId::LowPower, "only")];
 
@@ -477,18 +461,8 @@ impl<'f> LaneOutputs<'f> for PartnerOutputs {
     }
 }
 
-family!(
-    TickFamily,
-    LaneKind::Physics,
-    AgentId::new("physics"),
-    TicksOutputs
-);
-family!(
-    PartnerFamily,
-    LaneKind::Script,
-    AgentId::new("script"),
-    PartnerOutputs
-);
+family!(TickFamily, AgentId::new("physics"), TicksOutputs);
+family!(PartnerFamily, AgentId::new("script"), PartnerOutputs);
 
 #[derive(Default)]
 pub struct TickLane {

@@ -37,7 +37,7 @@ use khora_core::lane::guard::{InputRefusal, OutputRefusal};
 use khora_core::lane::io::{Budget, Declaration, InputSource, LaneInputs, LaneOutputs, OutputSink};
 use khora_core::lane::level::Level;
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneError, LaneKind, Reserve, Staged};
+use khora_core::lane::{LaneError, Reserve, Staged};
 use khora_core::Runtime;
 use khora_data::ecs::World;
 
@@ -154,7 +154,6 @@ impl<'f> LaneOutputs<'f> for BakeOutputs {
 pub struct BakeryFamily;
 
 impl LaneFamily for BakeryFamily {
-    const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "bakery";
     const AGENT: AgentId = BAKERY;
     const SEMANTICS: Semantics = Semantics::Presentation;

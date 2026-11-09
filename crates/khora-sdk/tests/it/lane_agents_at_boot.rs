@@ -22,6 +22,8 @@
 //! built-in agent takes. Its third lane runs only on a device with storage buffers, so
 //! it is on the menu only when the engine boots over such a device.
 
+use crate::protocol::{offer_of, report_of};
+use khora_sdk::khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use std::sync::{Arc, Mutex};
 
 use khora_agents::registered_agent::RegisteredAgent;
@@ -35,8 +37,8 @@ use khora_sdk::khora_core::lane::io::{
     Declaration, InputSource, LaneInputs, LaneOutputs, OutputSink,
 };
 use khora_sdk::khora_core::lane::level::{Impact, Level};
+use khora_sdk::khora_core::lane::LaneError;
 use khora_sdk::khora_core::lane::{Lane, LaneReport};
-use khora_sdk::khora_core::lane::{LaneError, LaneKind};
 use khora_sdk::khora_core::renderer::GraphicsDevice;
 use khora_sdk::Activation;
 use khora_sdk::{
@@ -86,7 +88,6 @@ impl<'f> LaneInputs<'f> for NoInputs {
 pub struct ProbeFamily;
 
 impl LaneFamily for ProbeFamily {
-    const KIND: LaneKind = LaneKind::Ui;
     const NAME: &'static str = "shutdown probe";
     const AGENT: AgentId = AgentId::new("ecs");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -380,9 +381,6 @@ fn engine_shutdown_releases_every_lane() {
 
 /// The strategies the probe family's agent offers in `engine`.
 fn probe_menu(engine: &EngineCore<Game>) -> Vec<StrategyId> {
-    use khora_sdk::khora_core::agent::gorna::{NegotiationRequest, ResourceConstraints};
-    use khora_sdk::khora_core::agent::ExecutionTiming;
-
     let dcc = engine.dcc().expect("bootstrapped");
     let registry = dcc.agent_registry().lock().expect("the registry lock");
     let probe = registry
@@ -403,15 +401,10 @@ fn probe_menu(engine: &EngineCore<Game>) -> Vec<StrategyId> {
         .expect("the probe family's agent is registered");
     let mut probe = probe.lock().expect("the probe agent's lock");
     probe
-        .negotiate(NegotiationRequest {
-            target_latency: std::time::Duration::from_micros(16_667),
-            priority_weight: 1.0,
-            constraints: ResourceConstraints::default(),
-            agent_timing: ExecutionTiming::default(),
-        })
-        .strategies
+        .offer(&crate::protocol::request())
+        .rows
         .iter()
-        .map(|option| option.id)
+        .map(|row| row.id)
         .collect()
 }
 
@@ -471,24 +464,19 @@ impl khora_sdk::khora_core::agent::Agent for Squatter {
     fn id(&self) -> AgentId {
         AgentId::new("ecs")
     }
-    fn negotiate(
-        &mut self,
-        _request: khora_sdk::khora_core::agent::gorna::NegotiationRequest,
-    ) -> khora_sdk::khora_core::agent::gorna::NegotiationResponse {
-        khora_sdk::khora_core::agent::gorna::NegotiationResponse {
-            strategies: Vec::new(),
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(AgentId::new("ecs"), request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _budget: khora_sdk::khora_core::agent::gorna::ResourceBudget) {}
-    fn report_status(&self) -> khora_sdk::AgentStatus {
-        khora_sdk::AgentStatus {
-            agent_id: AgentId::new("ecs"),
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(AgentId::new("ecs"), StrategyId::Balanced)
     }
     fn execute(&mut self, _context: &mut khora_sdk::khora_core::EngineContext<'_>) {}
     fn as_any(&self) -> &dyn std::any::Any {
@@ -573,24 +561,19 @@ impl khora_sdk::khora_core::agent::Agent for GameScript {
     fn id(&self) -> AgentId {
         AgentId::new("script")
     }
-    fn negotiate(
-        &mut self,
-        _request: khora_sdk::khora_core::agent::gorna::NegotiationRequest,
-    ) -> khora_sdk::khora_core::agent::gorna::NegotiationResponse {
-        khora_sdk::khora_core::agent::gorna::NegotiationResponse {
-            strategies: Vec::new(),
-            timing_adjustment: None,
-        }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        offer_of(AgentId::new("script"), request, StrategyId::Balanced)
     }
-    fn apply_budget(&mut self, _budget: khora_sdk::khora_core::agent::gorna::ResourceBudget) {}
-    fn report_status(&self) -> khora_sdk::AgentStatus {
-        khora_sdk::AgentStatus {
-            agent_id: AgentId::new("script"),
-            current_strategy: StrategyId::Balanced,
-            health_score: 1.0,
-            is_stalled: false,
-            message: String::new(),
-        }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        report_of(AgentId::new("script"), StrategyId::Balanced)
     }
     fn execute(&mut self, _context: &mut khora_sdk::khora_core::EngineContext<'_>) {}
     fn as_any(&self) -> &dyn std::any::Any {

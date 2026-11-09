@@ -33,7 +33,7 @@ use super::fixtures::{
 /// it. Until the next frame start the middle layer is the one installed, the
 /// one that ran, the one the DCC's measurement is of: an offer made then must
 /// name it as `current` — the DCC scales every quote by the measured time
-/// over `current`'s quote — and `report_status` must say the same.
+/// over `current`'s quote — and the report must name the row that ran.
 #[test]
 fn while_a_layer_is_staged_the_offer_names_the_running_row() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
@@ -65,8 +65,8 @@ fn while_a_layer_is_staged_the_offer_names_the_running_row() {
          until the next frame start"
     );
     assert_eq!(
-        agent.report_status().current_strategy,
+        agent.report().row,
         StrategyId::Balanced,
-        "report_status names the staged row as current"
+        "the report names the row that ran"
     );
 }

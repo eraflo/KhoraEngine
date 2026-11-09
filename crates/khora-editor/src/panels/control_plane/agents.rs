@@ -159,7 +159,7 @@ impl ControlPlanePanel {
         let name = agent.name();
         paint::text(ui, [x + 38.0, y + 7.0], &name, 12.5, theme.text);
         // Stalled indicator
-        if agent.status.is_stalled {
+        if agent.report.stalled {
             paint_status_dot(ui, [x + w - 50.0, y + 14.0], theme.error);
         }
         // Importance badge
@@ -189,10 +189,10 @@ impl ControlPlanePanel {
             TextAlign::Left,
         );
 
-        // Health meter (real value: 0..1 from report_status). The thresholds
+        // Health meter (real value: 0..1 from the agent's report). The thresholds
         // live in the shared `Health` type so the bar, the dot and the
         // "healthy / degraded" label can never disagree about the same agent.
-        let health = agent.status.health_score.clamp(0.0, 1.0);
+        let health = agent.report.health.clamp(0.0, 1.0);
         let bar_color = Health::from_ratio(health).color(theme);
         khora_tool_ui::widgets::meter_bar(
             ui,

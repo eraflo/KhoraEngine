@@ -6,7 +6,7 @@ use khora_core::lane::cost::Cost;
 use khora_core::lane::erased::AnyLane;
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::level::Level;
-use khora_core::lane::{LaneError, LaneKind};
+use khora_core::lane::LaneError;
 use khora_macros::{LaneInputs, LaneOutputs};
 
 #[derive(LaneInputs)]
@@ -18,7 +18,6 @@ pub struct NoOutputs;
 pub struct AudioFamily;
 
 impl LaneFamily for AudioFamily {
-    const KIND: LaneKind = LaneKind::Audio;
     const NAME: &'static str = "audio";
     const AGENT: AgentId = AgentId::new("audio");
     const SEMANTICS: Semantics = Semantics::Presentation;

@@ -24,6 +24,12 @@
 //!
 //! The lanes that do not run count their quotes: their `cost` is called only
 //! by a quote, once per level, and each has one level.
+//!
+//! The three lanes draw results of different worth — the running lane the
+//! best, the locking lane less, the quoted lane the least — so an agent lent
+//! room for all three runs the running lane, offers every priced row (none
+//! stands in for another), and falls back from the running lane to the best
+//! row left within its envelope.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -31,7 +37,8 @@ use std::time::Duration;
 
 use khora_agents::agent::{lane_agent, LaneAgent, QUOTE_MAX_AGE};
 use khora_core::agent::gorna::protocol::Envelope;
-use khora_core::agent::gorna::{AgentId, ResourceBudget, StrategyId};
+use khora_core::agent::gorna::protocol::{Confidence, OfferRow};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
@@ -39,15 +46,16 @@ use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::family::{LaneFamily, Semantics};
 use khora_core::lane::guard::{InputRefusal, SourceKind};
 use khora_core::lane::io::{Budget, Declaration, InputSource, LaneInputs, Locked};
-use khora_core::lane::level::Level;
+use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::{Lane, LaneReport};
-use khora_core::lane::{LaneError, LaneKind, OutputDeck};
+use khora_core::lane::{LaneError, OutputDeck};
 use khora_core::Runtime;
 
 use super::fixtures::{
-    budget, level, locked, offer_request, place_of, request, run, Load, LoadAndPlan, Plan,
+    host_envelope, lend, level, locked, offer_request, place_of, run, Load, LoadAndPlan, Plan,
     ProbeOutputs, Recorded, Tally, TallyLock, ANY_MEMORY, LADDER,
 };
+use crate::protocol::{pin, pin_with, said};
 
 // ─── Runtime entries ────────────────────────────────────────────────────────
 
@@ -164,7 +172,6 @@ impl<'f> LaneInputs<'f> for CountedLock<'f> {
 pub struct QuotedFamily;
 
 impl LaneFamily for QuotedFamily {
-    const KIND: LaneKind = LaneKind::Render;
     const NAME: &'static str = "quoted";
     const AGENT: AgentId = AgentId::new("renderer");
     const SEMANTICS: Semantics = Semantics::Presentation;
@@ -172,8 +179,14 @@ impl LaneFamily for QuotedFamily {
 }
 
 const RUNNING_LEVELS: &[Level] = &[level(StrategyId::HighPerformance, "running")];
-const LOCKING_LEVELS: &[Level] = &[level(StrategyId::Balanced, "locking")];
-const QUOTED_LEVELS: &[Level] = &[level(StrategyId::LowPower, "quoted")];
+const LOCKING_LEVELS: &[Level] = &[Level {
+    impact: Impact::Minor,
+    ..level(StrategyId::Balanced, "locking")
+}];
+const QUOTED_LEVELS: &[Level] = &[Level {
+    impact: Impact::Major,
+    ..level(StrategyId::LowPower, "quoted")
+}];
 
 /// A host-only cost of `micros`.
 fn host(micros: u64) -> Cost {
@@ -334,21 +347,32 @@ static WITH_A_LOCKING_LANE: AgentRegistration = khora_core::register_agent! {
     lanes: [RunningLane, LockingLane, QuotedLane],
 };
 
-/// An agent of `registration` on its first row, the running lane.
+/// An agent of `registration` lent room for every row: it runs the running
+/// lane, whose result is the best.
 fn running_agent(registration: &'static AgentRegistration) -> LaneAgent {
     let mut agent = lane_agent(registration, &DeviceCaps::default());
-    agent.apply_budget(budget(StrategyId::HighPerformance));
+    lend(&mut agent, host_envelope(4_000));
     agent
 }
 
-/// The time `agent` offers for `strategy`.
+/// Every row `agent` offers, in the order it offers them.
+fn offered_rows(agent: &mut LaneAgent) -> Vec<OfferRow> {
+    agent.offer(&offer_request(1)).rows
+}
+
+/// The time on its busiest device of a row's cost.
+fn time_of(row: &OfferRow) -> Duration {
+    let time = &row.cost.time;
+    time.cpu.max(time.gpu).max(time.npu).max(time.other)
+}
+
+/// The price `agent` offers `strategy` at; `None` when the row is offered
+/// without one (`Assumed`) or not at all.
 fn offered_time(agent: &mut LaneAgent, strategy: StrategyId) -> Option<Duration> {
-    agent
-        .negotiate(request())
-        .strategies
+    offered_rows(agent)
         .iter()
-        .find(|option| option.id == strategy)
-        .map(|option| option.estimated_time)
+        .find(|row| row.id == strategy && row.confidence != Confidence::Assumed)
+        .map(time_of)
 }
 
 // ─── The tests ──────────────────────────────────────────────────────────────
@@ -477,14 +501,16 @@ fn a_full_quote_older_than_the_max_age_requotes_the_other_lanes() {
     assert_eq!(counts.quoted(), 2, "an old quote is made again");
 }
 
-/// **A lane whose lock is free is quoted, and is the cheaper row a failure
-/// falls back to.** The locking lane quotes 80 µs, between the running lane's
-/// 100 and the quoted one's 50: its tally free, the first run's full quote
-/// prices it, and when the running lane fails the agent, woken by the
-/// failure, falls back to it — the next cheaper row — which records from the
-/// frame after.
+/// **A lane whose lock is free is quoted, and a failure falls back to it as
+/// the best row left.** The locking lane quotes 80 µs, between the running
+/// lane's 100 and the quoted one's 50, and its result is worth less than the
+/// running lane's and more than the quoted one's. Its tally free, the first
+/// run's full quote prices it; when the running lane fails, the agent, woken
+/// by the failure, chooses again among the rows left that fit its envelope
+/// and takes the locking lane, the one of best quality, which records from
+/// the frame after.
 #[test]
-fn a_locking_lane_whose_lock_is_free_is_quoted_and_picked_as_cheaper() {
+fn a_locking_lane_whose_lock_is_free_is_quoted_and_chosen_as_the_best_row_left() {
     let counts = Counts::default();
     let mut agent = running_agent(&WITH_A_LOCKING_LANE);
     let mut deck = OutputDeck::new();
@@ -506,7 +532,7 @@ fn a_locking_lane_whose_lock_is_free_is_quoted_and_picked_as_cheaper() {
     assert_eq!(
         locked(&place_of(&agent)).staged_row(),
         Some(StrategyId::Balanced),
-        "the failure falls back to the next cheaper row, the locking lane"
+        "the failure falls back to the best row left, the locking lane"
     );
     run(&mut agent, 4, &plain(100, &counts), &mut deck);
     assert_eq!(
@@ -516,13 +542,15 @@ fn a_locking_lane_whose_lock_is_free_is_quoted_and_picked_as_cheaper() {
     );
 }
 
-/// **A lane whose lock is held elsewhere stays unquoted, and is not the
-/// cheaper row.** Another holder keeps the tally through the first three
-/// frames: the full quote cannot price the locking lane (its `cost` is never
-/// called), so when the running lane fails the agent falls back across lanes
-/// to the quoted one, which records from the frame after.
+/// **A lane whose lock is held elsewhere stays unquoted, and a failure does
+/// not fall back to it.** Another holder keeps the tally through the first
+/// three frames: the full quote cannot price the locking lane (its `cost` is
+/// never called), so it has no price to fit the envelope on. When the running
+/// lane fails, the best row left that is priced is the quoted lane's: the
+/// agent falls back across lanes to it, though the locking lane's result
+/// would be worth more, and it records from the frame after.
 #[test]
-fn a_locking_lane_whose_lock_is_held_stays_unquoted_and_is_not_picked_as_cheaper() {
+fn a_locking_lane_whose_lock_is_held_stays_unquoted_and_is_passed_by_on_a_failure() {
     let counts = Counts::default();
     let mut agent = running_agent(&WITH_A_LOCKING_LANE);
     let mut deck = OutputDeck::new();
@@ -553,7 +581,7 @@ fn a_locking_lane_whose_lock_is_held_stays_unquoted_and_is_not_picked_as_cheaper
         "the quoted lane runs from the frame start after the wake"
     );
     assert_eq!(
-        agent.report_status().current_strategy,
+        agent.report().row,
         StrategyId::LowPower,
         "once installed, the quoted lane is the row the agent runs"
     );
@@ -574,7 +602,7 @@ fn a_row_gorna_moved_to_drifts_from_its_own_quote_at_the_last_full_quote() {
     let mut deck = OutputDeck::new();
 
     run(&mut agent, 1, &plain(100, &counts), &mut deck);
-    agent.apply_budget(budget(StrategyId::LowPower));
+    pin(&mut agent, StrategyId::LowPower);
     run(&mut agent, 2, &plain(100, &counts), &mut deck);
     run(&mut agent, 3, &plain(200, &counts), &mut deck);
     assert_eq!(
@@ -626,10 +654,7 @@ fn a_running_lane_refused_its_input_is_not_offered_at_its_old_quote() {
     run(&mut agent, 2, &without_a_plan(100, &counts), &mut deck);
     run(&mut agent, 3, &without_a_plan(100, &counts), &mut deck);
 
-    assert!(
-        !agent.report_status().message.is_empty(),
-        "the second run was refused"
-    );
+    assert!(!said(&agent).is_empty(), "the second run was refused");
     assert_eq!(
         offered_time(&mut agent, StrategyId::HighPerformance),
         None,
@@ -642,32 +667,34 @@ fn a_running_lane_refused_its_input_is_not_offered_at_its_old_quote() {
     );
 }
 
-/// **Once every row was quoted, a row without a quote is not offered.** Before
-/// any run the locking lane's row is offered like every other; after the first
-/// run's full quote it has no price — its tally was held elsewhere, so it could
-/// not be quoted — and GORNA is offered only the two rows that have one.
+/// **Once every row was quoted, a row without a quote is offered without a
+/// price.** Before any run the locking lane's row is offered like every
+/// other; after the first run's full quote it has no price — its tally was
+/// held elsewhere, so it could not be quoted — and GORNA is offered a price
+/// for the two rows that have one only: the locking lane's row is `Assumed`.
 #[test]
-fn after_a_full_quote_a_row_without_a_quote_is_not_offered() {
+fn after_a_full_quote_a_row_without_a_quote_is_offered_without_a_price() {
     let counts = Counts::default();
     let mut agent = running_agent(&WITH_A_LOCKING_LANE);
     let mut deck = OutputDeck::new();
     assert!(
-        offered_time(&mut agent, StrategyId::Balanced).is_some(),
+        offered_rows(&mut agent)
+            .iter()
+            .any(|row| row.id == StrategyId::Balanced),
         "before any run every row is offered"
     );
 
     run_holding_the_tally(&mut agent, 1, &plain(100, &counts), &mut deck);
 
-    let offered: Vec<StrategyId> = agent
-        .negotiate(request())
-        .strategies
+    let priced: Vec<StrategyId> = offered_rows(&mut agent)
         .iter()
-        .map(|option| option.id)
+        .filter(|row| row.confidence != Confidence::Assumed)
+        .map(|row| row.id)
         .collect();
     assert_eq!(
-        offered,
+        priced,
         vec![StrategyId::HighPerformance, StrategyId::LowPower],
-        "the locking lane's row has no quote, so it is not offered"
+        "the locking lane's row has no quote, so it is offered without a price"
     );
 }
 
@@ -688,7 +715,7 @@ fn a_row_unquoted_at_the_full_quote_requotes_on_its_first_run_only() {
     run_holding_the_tally(&mut agent, 1, &plain(100, &counts), &mut deck);
     assert_eq!(counts.quoted(), 1, "the first frame's full quote");
 
-    agent.apply_budget(budget(StrategyId::Balanced));
+    pin(&mut agent, StrategyId::Balanced);
     run(&mut agent, 2, &plain(100, &counts), &mut deck);
     run(&mut agent, 3, &plain(100, &counts), &mut deck);
     assert_eq!(
@@ -719,7 +746,7 @@ fn a_row_unquoted_at_the_full_quote_requotes_on_its_first_run_only() {
 #[test]
 fn a_one_lane_family_refused_after_it_was_priced_is_still_offered() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
-    agent.apply_budget(budget(StrategyId::Balanced));
+    pin(&mut agent, StrategyId::Balanced);
     let mut deck = OutputDeck::new();
     let mut priced = Runtime::new();
     priced.resources.insert(Load(10));
@@ -732,15 +759,10 @@ fn a_one_lane_family_refused_after_it_was_priced_is_still_offered() {
     run(&mut agent, 2, &without_a_plan, &mut deck);
     run(&mut agent, 3, &without_a_plan, &mut deck);
 
-    assert!(
-        !agent.report_status().message.is_empty(),
-        "the second run was refused"
-    );
-    let options: Vec<(StrategyId, Duration)> = agent
-        .negotiate(request())
-        .strategies
+    assert!(!said(&agent).is_empty(), "the second run was refused");
+    let options: Vec<(StrategyId, Duration)> = offered_rows(&mut agent)
         .iter()
-        .map(|option| (option.id, option.estimated_time))
+        .map(|row| (row.id, time_of(row)))
         .collect();
     assert_eq!(
         options,
@@ -763,7 +785,7 @@ fn a_one_lane_family_refused_after_it_was_priced_is_still_offered() {
 fn a_lock_not_obtained_in_time_keeps_the_running_lanes_price() {
     let counts = Counts::default();
     let mut agent = running_agent(&WITH_A_LOCKING_LANE);
-    agent.apply_budget(budget(StrategyId::Balanced));
+    pin(&mut agent, StrategyId::Balanced);
     let mut deck = OutputDeck::new();
     run(&mut agent, 1, &plain(100, &counts), &mut deck);
     assert_eq!(
@@ -785,9 +807,9 @@ fn a_lock_not_obtained_in_time_keeps_the_running_lanes_price() {
     }
 
     assert!(
-        agent.report_status().message.contains("LockTimedOut"),
+        said(&agent).contains("LockTimedOut"),
         "the second run's lock timed out: {:?}",
-        agent.report_status().message
+        said(&agent)
     );
     assert_eq!(
         offered_time(&mut agent, StrategyId::Balanced),
@@ -865,14 +887,6 @@ static BUDGETED: AgentRegistration = khora_core::register_agent! {
     lanes: [BudgetedLane],
 };
 
-/// A budget naming `strategy` and allowing `time_limit`.
-fn granting(strategy: StrategyId, time_limit: Duration) -> ResourceBudget {
-    ResourceBudget {
-        time_limit,
-        ..budget(strategy)
-    }
-}
-
 /// **A refusal for want of a budget keeps the price.** The budgeted lane ran
 /// within 4 ms and quoted 100 µs; GORNA then grants it no time. The run is
 /// refused, but the price stands: it is GORNA's to grant again, and it is
@@ -881,17 +895,17 @@ fn granting(strategy: StrategyId, time_limit: Duration) -> ResourceBudget {
 fn a_refusal_for_want_of_a_budget_keeps_the_price() {
     let counts = Counts::default();
     let mut agent = lane_agent(&BUDGETED, &DeviceCaps::default());
-    agent.apply_budget(budget(StrategyId::Balanced));
+    pin(&mut agent, StrategyId::Balanced);
     let mut deck = OutputDeck::new();
     run(&mut agent, 1, &plain(100, &counts), &mut deck);
 
-    agent.apply_budget(granting(StrategyId::Balanced, Duration::ZERO));
+    pin_with(&mut agent, StrategyId::Balanced, Duration::ZERO);
     run(&mut agent, 2, &plain(100, &counts), &mut deck);
 
     assert!(
-        agent.report_status().message.contains("NoBudget"),
+        said(&agent).contains("NoBudget"),
         "the second run was refused for want of a budget: {:?}",
-        agent.report_status().message
+        said(&agent)
     );
     assert_eq!(
         offered_time(&mut agent, StrategyId::Balanced),
@@ -936,8 +950,8 @@ fn a_lane_that_needs_a_budget_runs_when_driven_as_gorna_drives_it() {
     assert_eq!(
         deck.get::<Recorded>().map(|recorded| recorded.lane),
         Some("budgeted"),
-        "after five rounds the lane has recorded; status: {:?}",
-        agent.report_status().message
+        "after five rounds the lane has recorded; its report says: {:?}",
+        said(&agent)
     );
 }
 
@@ -976,7 +990,7 @@ fn run_while_the_tally_is_held_for(
 
 /// **A lane that takes no budget waits for its lock as long when its agent
 /// is lent no time as when it was never lent any.** The locking lane reads
-/// no `#[budget]`; lent a budget of zero, it is still a lane given no time to
+/// no `#[budget]`; lent an envelope of no time, it is still a lane given no time to
 /// spend, so a lock held elsewhere for a fraction of [`LOCK_WAIT`] is waited
 /// for and the lane records — as it does before any budget is lent.
 ///
@@ -987,10 +1001,7 @@ fn a_lane_lent_no_time_waits_for_its_lock_as_one_never_lent() {
     let held = khora_core::lane::io::LOCK_WAIT / 4;
 
     let mut agent = lane_agent(&WITH_A_LOCKING_LANE, &DeviceCaps::default());
-    agent.apply_budget(ResourceBudget {
-        time_limit: Duration::ZERO,
-        ..budget(StrategyId::Balanced)
-    });
+    pin_with(&mut agent, StrategyId::Balanced, Duration::ZERO);
     let mut deck = OutputDeck::new();
     run(&mut agent, 1, &plain(100, &counts), &mut deck);
     assert_eq!(
@@ -1006,6 +1017,46 @@ fn a_lane_lent_no_time_waits_for_its_lock_as_one_never_lent() {
         deck.get::<Recorded>().map(|recorded| recorded.lane),
         Some("locking"),
         "the lane waited {held:?} for its lock, as a lane never lent waits up to LOCK_WAIT: {:?}",
-        agent.report_status().message
+        said(&agent)
     );
+}
+
+/// **Before the first allocation, a failure falls back to the dearest row
+/// quoted cheaper, across lanes.** Nothing is lent: the family runs its first
+/// row, the running lane, at 100 µs. The first run's full quote prices the
+/// locking lane at 80 µs and the quoted lane at 50 µs. The running lane then
+/// fails; the agent, woken, falls back to the dearest row quoted below 100 µs
+/// — the locking lane, in another lane than the one that failed — which
+/// records from the frame after.
+#[test]
+fn before_any_allocation_a_failure_falls_back_to_the_dearest_row_quoted_cheaper() {
+    let counts = Counts::default();
+    let mut agent = lane_agent(&WITH_A_LOCKING_LANE, &DeviceCaps::default());
+    let mut deck = OutputDeck::new();
+    let failing = Plan {
+        fail_levels: vec![0],
+        ..Plan::default()
+    };
+
+    run(&mut agent, 1, &plain(100, &counts), &mut deck);
+    assert_eq!(
+        deck.get::<Recorded>().map(|recorded| recorded.lane),
+        Some("running"),
+        "the premise: an unlent agent runs its first row"
+    );
+    run(
+        &mut agent,
+        2,
+        &frame(100, failing.clone(), &counts),
+        &mut deck,
+    );
+    run(&mut agent, 3, &frame(100, failing, &counts), &mut deck);
+    run(&mut agent, 4, &plain(100, &counts), &mut deck);
+
+    assert_eq!(
+        deck.get::<Recorded>().map(|recorded| recorded.lane),
+        Some("locking"),
+        "the dearest row quoted cheaper than the failed one runs"
+    );
+    assert_eq!(agent.report().row, StrategyId::Balanced);
 }

@@ -307,12 +307,11 @@ fn the_scripting_agent_hands_its_lane_the_prefab_catalog() {
         let mut world = World::new();
         let gun = world.spawn(Transform::identity());
         let mut agent = script_agent();
-        agent.apply_budget(khora_core::agent::gorna::ResourceBudget {
-            strategy_id: khora_core::agent::gorna::StrategyId::Balanced,
-            time_limit: std::time::Duration::from_millis(1),
-            memory_limit: None,
-            extra_params: Default::default(),
-        });
+        crate::protocol::pin_with(
+            &mut agent,
+            khora_core::agent::gorna::StrategyId::Balanced,
+            std::time::Duration::from_millis(1),
+        );
         let row = vec![("bullet".to_owned(), ScriptValue::Asset(bullet))];
         let listed = Arc::new(listed);
 

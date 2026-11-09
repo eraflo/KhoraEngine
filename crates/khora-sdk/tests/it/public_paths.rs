@@ -318,11 +318,6 @@ fn module_crate_root_paths_still_resolve() {
         PhantomData::<khora_sdk::AgentRegistry>,
         PhantomData::<khora_control::AgentRegistry>,
     );
-    let _ = type_name::<khora_sdk::AgentStatus>();
-    same_type(
-        PhantomData::<khora_sdk::AgentStatus>,
-        PhantomData::<khora_core::agent::gorna::AgentStatus>,
-    );
     let _ = type_name::<khora_sdk::AssetChangeEvent>();
     same_type(
         PhantomData::<khora_sdk::AssetChangeEvent>,
@@ -2017,7 +2012,6 @@ mod paths_used_by_other_crates {
     use khora_sdk::AgentImportance as _; // khora-editor
     use khora_sdk::AgentProvider as _; // khora-editor, sandbox
     use khora_sdk::AgentRegistry as _; // khora-editor
-    use khora_sdk::AgentStatus as _; // khora-editor
     use khora_sdk::AssetChangeEvent as _; // khora-editor
     use khora_sdk::AssetChangeKind as _; // khora-editor
     use khora_sdk::AssetIdRegistry as _; // khora-editor
