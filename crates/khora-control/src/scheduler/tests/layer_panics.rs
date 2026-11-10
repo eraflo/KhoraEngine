@@ -108,8 +108,8 @@ impl Agent for Chooser {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .lent(epoch);
     }
-    fn place(&self) -> Option<Arc<Mutex<Place>>> {
-        Some(Arc::clone(&self.place))
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
     fn wake(&mut self, _why: &[Wake], place: &mut Place, _context: &mut EngineContext<'_>) {
         let first = self
@@ -123,17 +123,8 @@ impl Agent for Chooser {
             panic!("`{}` panics while it is woken", self.name);
         }
     }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        panic!("a layered agent is never executed");
-    }
     fn execution_timing(&self) -> ExecutionTiming {
         one_phase(1.0)
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -177,7 +168,6 @@ fn a_layer_that_panicked_runs_again_on_the_next_frame() {
             2,
             "parallel {parallel}: the layer ran on the frame after its panic"
         );
-        let place = place.expect("a layered agent has a place");
         assert!(
             !place.is_poisoned(),
             "parallel {parallel}: the panic left the place's lock poisoned"
@@ -187,8 +177,8 @@ fn a_layer_that_panicked_runs_again_on_the_next_frame() {
 
 /// **A panic while an agent is woken fails that agent, not the frame.**
 /// Waking an agent runs its lanes' `cost` (quoting) and `prepare` (a new
-/// layer beside the installed one) — lane code, as `execute` was before an
-/// agent ran as layers, and the scheduler caught a panic there. Here the
+/// layer beside the installed one) — lane code, as a layer's run is, and the
+/// scheduler catches a panic there. Here the
 /// agent's first layer raises a wake on its first run; the second frame's
 /// event pass wakes it, and it panics. The frame must go on: the other
 /// family's layer runs on it, and so does the panicking family's installed
@@ -260,8 +250,8 @@ impl Agent for Recovering {
     fn report(&self) -> Report {
         report_of(self.id(), StrategyId::Balanced)
     }
-    fn place(&self) -> Option<Arc<Mutex<Place>>> {
-        Some(Arc::clone(&self.place))
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
     fn wake(&mut self, why: &[Wake], place: &mut Place, _context: &mut EngineContext<'_>) {
         self.woken
@@ -283,17 +273,8 @@ impl Agent for Recovering {
             }
         }
     }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        panic!("a layered agent is never executed");
-    }
     fn execution_timing(&self) -> ExecutionTiming {
         one_phase(1.0)
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -350,7 +331,7 @@ fn a_layer_that_panicked_on_the_frame_reports_it_stalled_with_its_message() {
             runs: Arc::clone(&runs),
         };
         let chooser = Chooser::new("brittle", Box::new(brittle));
-        let place = chooser.place().expect("a layered agent has a place");
+        let place = chooser.place();
         let (mut scheduler, _rx) = scheduling(beside_a_wave_mate(chooser, parallel));
         scheduler.set_parallel_execution(parallel);
         let mut world = World::new();

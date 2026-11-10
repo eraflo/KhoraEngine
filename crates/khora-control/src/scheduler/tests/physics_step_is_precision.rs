@@ -21,10 +21,10 @@
 //! physics time stays within one step of gameplay time, and nothing a game
 //! reads depends on it.
 //!
-//! The `Falling` agent below declares its step through a shared cell — so a
-//! test can switch it between frames, as an allocation once could — and on
-//! each run integrates a falling body with that step (semi-implicit Euler),
-//! adding the step to the simulated time it has seen.
+//! The `Falling` family below runs at the step its place holds — so a test
+//! can switch it between frames, as a game's setting does — and on each run
+//! integrates a falling body with that step (semi-implicit Euler), adding the
+//! step to the simulated time it has seen.
 //!
 //! The frames are given a wall-clock length by placing the previous frame's
 //! instant that far in the past; a few microseconds are added so the measured
@@ -32,13 +32,13 @@
 //! are chosen in quarter ticks so that the few microseconds a frame gains
 //! never carry the gameplay accumulator across a tick boundary.
 
-use super::{offer_of, report_of};
+use super::{hosted_at, set_step, Family};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
-use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::Terms;
+use khora_core::agent::{ExecutionPhase, ExecutionTiming, Place};
 use khora_core::time::{SharedTime, Time, DEFAULT_FIXED_DELTA_SECONDS, MAX_SIM_STEPS};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -70,58 +70,34 @@ struct Body {
     runs: usize,
 }
 
-/// Declares the step in `step` as its fixed timestep and, on each run,
-/// integrates `body` by that step.
+/// Starts at `step` as its fixed timestep and, on each run, integrates
+/// `body` by the step its place lent.
 struct Falling {
-    step: Arc<Mutex<Duration>>,
+    step: Duration,
     body: Arc<Mutex<Body>>,
 }
 
-impl Falling {
-    fn step(&self) -> Duration {
-        *self.step.lock().expect("the step lock")
-    }
-}
-
-impl Agent for Falling {
+impl Family for Falling {
     fn id(&self) -> AgentId {
         AgentId::new("physics")
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(AgentId::new("physics"), request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(AgentId::new("physics"), StrategyId::Balanced)
-    }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        let p = self.step().as_secs_f64();
+    fn run(&mut self, terms: &Terms, _ctx: &mut EngineContext<'_>) {
+        let p = terms.fixed_step.unwrap_or(self.step).as_secs_f64();
         let mut body = self.body.lock().expect("the body lock");
         body.velocity += G * p;
         body.fallen += body.velocity * p;
         body.simulated += p;
         body.runs += 1;
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn step(&self) -> Option<Duration> {
+        Some(self.step)
+    }
+    fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![ExecutionPhase::TRANSFORM],
             default_phase: ExecutionPhase::TRANSFORM,
-            fixed_timestep: Some(self.step()),
             ..ExecutionTiming::default()
         }
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -129,7 +105,8 @@ impl Agent for Falling {
 /// runtime and its clock at `scale`.
 struct Rig {
     scheduler: ExecutionScheduler,
-    step: Arc<Mutex<Duration>>,
+    /// The physics family's place, which holds its step.
+    place: Arc<Mutex<Place>>,
     body: Arc<Mutex<Body>>,
     world: World,
     runtime: Arc<Runtime>,
@@ -138,16 +115,16 @@ struct Rig {
 
 impl Rig {
     fn new(step: Duration, scale: f32) -> Self {
-        let step = Arc::new(Mutex::new(step));
         let body = Arc::new(Mutex::new(Body::default()));
         let registry = Arc::new(Mutex::new(AgentRegistry::new()));
-        registry.lock().expect("the registry lock").register(
-            Arc::new(Mutex::new(Falling {
-                step: Arc::clone(&step),
-                body: Arc::clone(&body),
-            })),
-            1.0,
-        );
+        let (agent, place) = hosted_at(Falling {
+            step,
+            body: Arc::clone(&body),
+        });
+        registry
+            .lock()
+            .expect("the registry lock")
+            .register(agent, 1.0);
         let scheduler = ExecutionScheduler::new(
             registry,
             Arc::new(RwLock::new(Context::default())),
@@ -160,7 +137,7 @@ impl Rig {
         runtime.resources.insert(Arc::clone(&time));
         Self {
             scheduler,
-            step,
+            place,
             body,
             world: World::new(),
             runtime: Arc::new(runtime),
@@ -182,8 +159,9 @@ impl Rig {
         *self.time.read().expect("the clock lock")
     }
 
+    /// Sets the step at the family's place, where the scheduler reads it.
     fn switch_to(&self, step: Duration) {
-        *self.step.lock().expect("the step lock") = step;
+        set_step(&self.place, Some(step));
     }
 
     fn body(&self) -> Body {

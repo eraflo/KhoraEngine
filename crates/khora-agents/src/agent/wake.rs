@@ -159,14 +159,15 @@ impl LaneAgent {
                 })
                 .and(frame);
             if place.installed_row().is_some() {
-                place.request_preparation(self.preparation(row, lane_frame.cloned()));
+                let step = place.fixed_step();
+                place.request_preparation(self.preparation(row, lane_frame.cloned(), step));
                 return;
             }
             let lane_frame = lane_frame.map(|frame| &**frame);
             let mut lane = (self.makers[row.lane])();
             let started = Instant::now();
             let prepared = {
-                let mut source = lend(context, self.budget(), self.fixed_step, lane_frame);
+                let mut source = lend(context, self.budget(), place.fixed_step(), lane_frame);
                 lane.prepare(row.level, &mut source, &mut gpu)
             };
             let switch = started.elapsed();
@@ -217,7 +218,12 @@ impl LaneAgent {
     /// inputs lent as for a run, on `frame` when the lane reads it — under
     /// the lane's own declaration and the graphics it prepares with. A lane
     /// that fails to prepare is shut down, and the job says why.
-    fn preparation(&self, row: Row, frame: Option<Arc<FrameContext>>) -> Preparation {
+    fn preparation(
+        &self,
+        row: Row,
+        frame: Option<Arc<FrameContext>>,
+        fixed_step: Option<std::time::Duration>,
+    ) -> Preparation {
         let mut lane = (self.makers[row.lane])();
         let contention = self
             .contentions
@@ -226,7 +232,7 @@ impl LaneAgent {
             .unwrap_or_else(Contention::none)
             .reading::<Arc<dyn GraphicsDevice>>()
             .reading::<Arc<dyn PipelineSystem>>();
-        let (budget, fixed_step) = (self.budget(), self.fixed_step);
+        let budget = self.budget();
         let family = self.registration.family_name;
         Preparation::new(row.id, contention, move |context| {
             let device = context.resource::<Arc<dyn GraphicsDevice>>().cloned();
@@ -280,8 +286,8 @@ impl LaneAgent {
         place.stage(Box::new(layer), std::time::Duration::ZERO);
     }
 
-    /// The terms the chosen row runs on.
-    pub(super) fn terms(&self) -> Terms {
+    /// The terms the chosen row runs on, at the `fixed_step` its place holds.
+    pub(super) fn terms(&self, fixed_step: Option<std::time::Duration>) -> Terms {
         let full = self.full_quote.as_ref();
         Terms {
             epoch: self
@@ -290,7 +296,7 @@ impl LaneAgent {
                 .map_or(Epoch::default(), |lent| lent.epoch),
             envelope: self.lent.as_ref().map(|lent| lent.envelope),
             budget: self.budget(),
-            fixed_step: self.fixed_step,
+            fixed_step,
             over_budget: self.over_budget,
             quote: full.and_then(|full| full.bases.get(self.current).copied().flatten()),
             quoted_at: full.map(|full| full.at),
@@ -413,19 +419,19 @@ impl LaneAgent {
             // too: its run priced what it was given, which a lane that takes
             // its requests no longer holds, and rows priced on other inputs
             // would be compared unfairly.
-            self.quote_every_lane(context, frame.as_deref());
+            self.quote_every_lane(context, frame.as_deref(), place.fixed_step());
         } else if let Some(ran) = ran.filter(|ran| self.quotes[*ran].is_none()) {
             // A run that priced nothing (refused for want of a budget it was
             // never granted) is quoted on its inputs, so GORNA has a price
             // to grant.
             let lane = self.menu[ran].lane;
-            self.quote_lane(lane, context, frame.as_deref());
+            self.quote_lane(lane, context, frame.as_deref(), place.fixed_step());
         }
         self.choose_row();
         match stranded.filter(|&row| row == self.current) {
             Some(row) => self.stage_unprepared(row, place),
             None => self.install(place, context, frame.as_ref()),
         }
-        place.set_terms(self.terms());
+        place.set_terms(self.terms(place.fixed_step()));
     }
 }

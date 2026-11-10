@@ -26,16 +26,12 @@ use khora_sdk::khora_core::lane::{Reserve, Staging};
 use khora_sdk::khora_core::script::ScriptValue;
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
-    Runtime, WindowConfig,
+    EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 
 /// A tool built on the engine, editing until played.
 struct Tool;
 
-impl AgentProvider for Tool {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Tool {}
 impl EngineApp for Tool {
     fn window_config() -> WindowConfig {

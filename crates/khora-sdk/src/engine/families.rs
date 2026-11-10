@@ -28,9 +28,9 @@ use khora_core::Runtime;
 ///
 /// The app switches them (an editor switches its scripts, physics and audio
 /// off while it edits), and each request takes effect at the next frame
-/// boundary, so a whole frame sees one state. Known from setup on: the
-/// engine's lane families; an application's own agents
-/// are admitted once they are registered ([`admit_families`]).
+/// boundary, so a whole frame sees one state. Known from setup on: every
+/// family linked into the binary ([`admit_families`] checks them against the
+/// registry).
 pub(super) fn engine_activation() -> Arc<Activation> {
     let families = registered_agents()
         .into_iter()
@@ -38,8 +38,8 @@ pub(super) fn engine_activation() -> Arc<Activation> {
     Arc::new(Activation::new(families))
 }
 
-/// Makes every agent of `dcc` a family the runtime's activation can switch —
-/// an application's own agents too — then refuses a `DataSystem` or a `Flow`
+/// Makes every agent of `dcc` a family the runtime's activation can switch,
+/// then refuses a `DataSystem` or a `Flow`
 /// serving a family no agent is: it would never be switched.
 pub(super) fn admit_families(dcc: &DccService, runtime: &Runtime) {
     let families: BTreeSet<AgentId> = dcc

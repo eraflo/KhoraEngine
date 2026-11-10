@@ -16,12 +16,11 @@
 //! three passes composited after the UI — the grid, then the wireframe, then
 //! the gizmos — whatever order they were recorded in.
 
-use crate::protocol::{offer_of, report_of};
-use khora_sdk::khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
+use crate::protocol::{register_after_boot, Hand, Work};
 use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
+use khora_sdk::khora_core::agent::gorna::AgentId;
 use khora_sdk::khora_core::agent::{Agent, Contention};
 use khora_sdk::khora_core::lane::io::PassSlot;
 use khora_sdk::khora_core::renderer::api::command::CommandBufferId;
@@ -50,6 +49,15 @@ fn declared_order() -> [TypeId; 8] {
     ]
 }
 
+/// The timing of an agent of `OUTPUT`.
+fn output() -> ExecutionTiming {
+    ExecutionTiming {
+        allowed_phases: vec![ExecutionPhase::OUTPUT],
+        default_phase: ExecutionPhase::OUTPUT,
+        ..ExecutionTiming::default()
+    }
+}
+
 /// **The overlays composite grid, then wireframe, then gizmos.** The
 /// registered `after` edges order the eight slots from the shadows to the
 /// UI, then the three overlays in the order the old overlay agent drew them
@@ -69,88 +77,55 @@ fn the_overlays_composite_grid_then_wireframe_then_gizmos() {
     );
 }
 
-/// Records the eight passes gizmos first and shadows last — the reverse of
+/// An agent of `OUTPUT` whose layer records the eight passes gizmos first
+/// and shadows last — the reverse of
 /// the order they must reach the device in — each with the descriptor its
 /// slot opens with, or, for the slots no family closes yet, the one their
 /// agent declares.
-struct EveryPassReversed;
-
-impl Agent for EveryPassReversed {
-    fn id(&self) -> AgentId {
-        AgentId::new("asset")
-    }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(AgentId::new("asset"), request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(AgentId::new("asset"), StrategyId::Balanced)
-    }
-    fn contention(&self) -> Contention {
-        Contention::none().writing_deck(declared_order())
-    }
-    fn execute(&mut self, ctx: &mut EngineContext<'_>) {
-        let contribution = |descriptor: PassDescriptor, buffer: u64| {
-            Some(PassContribution {
-                descriptor,
-                command_buffer: CommandBufferId(buffer),
-            })
-        };
-        ctx.deck.slot::<GizmoPassSlot>().0 = contribution(GizmoPassSlot::descriptor(), 8);
-        ctx.deck.slot::<WireframePassSlot>().0 = contribution(WireframePassSlot::descriptor(), 7);
-        ctx.deck.slot::<GridPassSlot>().0 = contribution(GridPassSlot::descriptor(), 6);
-        ctx.deck.slot::<UiPassSlot>().0 = contribution(
-            PassDescriptor::new("UiPass")
-                .reads(ResourceId::Color)
-                .writes(ResourceId::Color),
-            5,
-        );
-        ctx.deck.slot::<TransparentPassSlot>().0 = contribution(
-            PassDescriptor::new("TransparentPass")
-                .writes(ResourceId::Color)
-                .reads(ResourceId::Depth),
-            4,
-        );
-        ctx.deck.slot::<SkyboxPassSlot>().0 = contribution(SkyboxPassSlot::descriptor(), 3);
-        ctx.deck.slot::<ScenePassSlot>().0 = contribution(
-            PassDescriptor::new("ScenePass")
-                .writes(ResourceId::Color)
-                .writes(ResourceId::Depth)
-                .reads(ResourceId::ShadowAtlas),
-            2,
-        );
-        ctx.deck.slot::<ShadowPassSlot>().0 = contribution(ShadowPassSlot::descriptor(), 1);
-    }
-    fn execution_timing(&self) -> ExecutionTiming {
-        ExecutionTiming {
-            allowed_phases: vec![ExecutionPhase::OUTPUT],
-            default_phase: ExecutionPhase::OUTPUT,
-            ..ExecutionTiming::default()
-        }
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
+fn every_pass_reversed() -> Arc<Mutex<dyn Agent>> {
+    let layer = Work::new(
+        Contention::none().writing_deck(declared_order()),
+        |ctx: &mut EngineContext<'_>| {
+            let contribution = |descriptor: PassDescriptor, buffer: u64| {
+                Some(PassContribution {
+                    descriptor,
+                    command_buffer: CommandBufferId(buffer),
+                })
+            };
+            ctx.deck.slot::<GizmoPassSlot>().0 = contribution(GizmoPassSlot::descriptor(), 8);
+            ctx.deck.slot::<WireframePassSlot>().0 =
+                contribution(WireframePassSlot::descriptor(), 7);
+            ctx.deck.slot::<GridPassSlot>().0 = contribution(GridPassSlot::descriptor(), 6);
+            ctx.deck.slot::<UiPassSlot>().0 = contribution(
+                PassDescriptor::new("UiPass")
+                    .reads(ResourceId::Color)
+                    .writes(ResourceId::Color),
+                5,
+            );
+            ctx.deck.slot::<TransparentPassSlot>().0 = contribution(
+                PassDescriptor::new("TransparentPass")
+                    .writes(ResourceId::Color)
+                    .reads(ResourceId::Depth),
+                4,
+            );
+            ctx.deck.slot::<SkyboxPassSlot>().0 = contribution(SkyboxPassSlot::descriptor(), 3);
+            ctx.deck.slot::<ScenePassSlot>().0 = contribution(
+                PassDescriptor::new("ScenePass")
+                    .writes(ResourceId::Color)
+                    .writes(ResourceId::Depth)
+                    .reads(ResourceId::ShadowAtlas),
+                2,
+            );
+            ctx.deck.slot::<ShadowPassSlot>().0 = contribution(ShadowPassSlot::descriptor(), 1);
+        },
+    );
+    Hand::new(AgentId::new("asset"), output(), layer).shared()
 }
 
-/// An application whose only agent records every pass, reversed.
+/// An application whose only agent, registered once it booted, records
+/// every pass, reversed.
 struct Reversed;
 
-impl khora_sdk::AgentProvider for Reversed {
-    fn register_agents(&self, dcc: &khora_sdk::DccService, _runtime: &mut Runtime) {
-        dcc.register_agent(Arc::new(Mutex::new(EveryPassReversed)), 1.0);
-    }
-}
 impl khora_sdk::PhaseProvider for Reversed {}
 impl khora_sdk::EngineApp for Reversed {
     fn window_config() -> khora_sdk::WindowConfig {
@@ -180,6 +155,7 @@ fn overlay_passes_submit_after_the_ui_in_compositing_order() {
 
     let mut engine = khora_sdk::EngineCore::<Reversed>::new();
     engine.bootstrap(Reversed, runtime);
+    register_after_boot(&engine, every_pass_reversed(), 1.0);
     let frame_runtime = Arc::clone(engine.runtime());
     engine.tick_with_runtime(frame_runtime);
 
@@ -198,9 +174,6 @@ fn overlay_passes_submit_after_the_ui_in_compositing_order() {
 /// A game registering no agent of its own.
 struct Game;
 
-impl khora_sdk::AgentProvider for Game {
-    fn register_agents(&self, _dcc: &khora_sdk::DccService, _runtime: &mut Runtime) {}
-}
 impl khora_sdk::PhaseProvider for Game {}
 impl khora_sdk::EngineApp for Game {
     fn window_config() -> khora_sdk::WindowConfig {

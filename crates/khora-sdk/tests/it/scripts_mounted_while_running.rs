@@ -30,17 +30,13 @@ use khora_sdk::khora_core::script::{ComponentName, ScriptReads, ScriptValue};
 use khora_sdk::khora_data::ecs::ScriptRole;
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::{
-    AgentProvider, AssetWatch, DccService, EngineApp, EngineCore, GameWorld, InputEvent,
-    PhaseProvider, Runtime, WindowConfig,
+    AssetWatch, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 
 /// A tool built on the engine: out of the game, its setup does nothing — its
 /// scripts are mounted once it runs.
 struct Tool;
 
-impl AgentProvider for Tool {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Tool {}
 impl EngineApp for Tool {
     fn window_config() -> WindowConfig {

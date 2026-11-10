@@ -15,7 +15,6 @@
 //! Grouping a phase's agents into concurrent waves, and checking that the
 //! agents sharing a wave do not contend.
 
-use super::known::KnownAgents;
 use super::AgentSlot;
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::gorna::AgentId;
@@ -23,8 +22,8 @@ use khora_core::agent::Contention;
 
 /// Per-agent metadata the parallel executor needs to group agents into waves.
 pub(super) struct WaveMeta {
-    /// The agent's id, or `None` if it could not be locked (→ singleton, skipped).
-    pub(super) id: Option<AgentId>,
+    /// The agent's id.
+    pub(super) id: AgentId,
     /// Ids this agent hard-depends on (must run in an earlier wave).
     pub(super) hard_dep_targets: Vec<AgentId>,
     /// What this agent competes for (from [`Agent::contention`]), used to verify
@@ -33,32 +32,23 @@ pub(super) struct WaveMeta {
     pub(super) contention: Contention,
 }
 
-/// Reads each agent's id and declared contention once,
-/// building the [`WaveMeta`] the wave partitioner + disjointness check need. A
-/// failed lock yields `id: None` → an always-singleton, always-skipped slot.
-/// An agent running as layers is not locked: it contends as the layer
-/// installed at its place.
+/// Reads each agent's id and the contention of its installed layer once,
+/// building the [`WaveMeta`] the wave partitioner + disjointness check need.
 ///
 /// Once, and reused: the context is stamped with the same `Contention` the wave
 /// was built from, so what the scheduler checked and what the agent is held to
 /// cannot be two different answers.
-pub(super) fn build_wave_metas(agents: &[AgentSlot], known: &KnownAgents) -> Vec<WaveMeta> {
+pub(super) fn build_wave_metas(agents: &[AgentSlot]) -> Vec<WaveMeta> {
     agents
         .iter()
-        .map(|(agent, _, _, deps)| {
-            let (id, contention) = known
-                .of(agent)
-                .and_then(|known| Some((Some(known.id), known.contention(agent)?)))
-                .unwrap_or((None, Contention::none()));
-            WaveMeta {
-                id,
-                hard_dep_targets: deps
-                    .iter()
-                    .filter(|d| matches!(d.kind, DependencyKind::Hard))
-                    .map(|d| d.target)
-                    .collect(),
-                contention,
-            }
+        .map(|(_, _, _, deps, known)| WaveMeta {
+            id: known.id,
+            hard_dep_targets: deps
+                .iter()
+                .filter(|d| matches!(d.kind, DependencyKind::Hard))
+                .map(|d| d.target)
+                .collect(),
+            contention: known.contention(),
         })
         .collect()
 }
@@ -68,8 +58,7 @@ pub(super) fn build_wave_metas(agents: &[AgentSlot], known: &KnownAgents) -> Vec
 ///
 /// A wave is a maximal run of consecutive agents in which no member
 /// hard-depends on another member and no member's
-/// [`Contention`](khora_core::agent::Contention) overlaps another's. An agent
-/// that could not be read (no id) is a wave of its own. Because the input is
+/// [`Contention`](khora_core::agent::Contention) overlaps another's. Because the input is
 /// already topologically ordered by hard deps, and a dependent never shares a
 /// wave with its target, running the waves in order preserves the exact
 /// Hard-dependency ordering.
@@ -77,14 +66,11 @@ pub(super) fn partition_waves(metas: &[WaveMeta], concurrent: bool) -> Vec<Vec<u
     let mut waves: Vec<Vec<usize>> = Vec::new();
     for (i, meta) in metas.iter().enumerate() {
         let joins_current = concurrent
-            && meta.id.is_some()
             && waves.last().is_some_and(|wave| {
-                // every current member was read …
-                wave.iter().all(|&j| metas[j].id.is_some())
-                    // … no member is this agent's hard-dep target …
-                    && !meta.hard_dep_targets.iter().any(|target| {
-                        wave.iter().any(|&j| metas[j].id == Some(*target))
-                    })
+                // no member is this agent's hard-dep target …
+                !meta.hard_dep_targets.iter().any(|target| {
+                    wave.iter().any(|&j| metas[j].id == *target)
+                })
                     // … and nothing it declared collides with a member's.
                     && wave.iter().all(|&j| {
                         metas[j].contention.conflicts_with(&meta.contention).is_empty()
@@ -116,11 +102,9 @@ pub(super) fn partition_waves(metas: &[WaveMeta], concurrent: bool) -> Vec<Vec<u
 pub(super) fn check_wave_disjoint(wave: &[usize], metas: &[WaveMeta]) -> usize {
     let mut collisions = 0;
     for (position, &idx) in wave.iter().enumerate() {
-        let Some(id) = metas[idx].id else { continue };
+        let id = metas[idx].id;
         for &other in &wave[position + 1..] {
-            let Some(prev) = metas[other].id else {
-                continue;
-            };
+            let prev = metas[other].id;
             for slot in metas[idx]
                 .contention
                 .conflicts_with(&metas[other].contention)

@@ -64,9 +64,10 @@ impl LaneAgent {
         &mut self,
         context: &EngineContext<'_>,
         frame: Option<&FrameContext>,
+        step: Option<Duration>,
     ) {
         for lane in 0..self.lanes.len() {
-            self.quote_lane(lane, context, frame);
+            self.quote_lane(lane, context, frame, step);
         }
         self.full_quote = Some(FullQuote {
             at: Instant::now(),
@@ -78,16 +79,17 @@ impl LaneAgent {
     }
 
     /// Quotes every level of `lane` on this frame's inputs, lent the time the
-    /// agent was granted: a budgeted lane prices its own budget. Its rows are
-    /// left unquoted when it cannot be.
+    /// agent was granted and the `step` its place runs at: a budgeted lane
+    /// prices its own budget. Its rows are left unquoted when it cannot be.
     pub(super) fn quote_lane(
         &mut self,
         lane: usize,
         context: &EngineContext<'_>,
         frame: Option<&FrameContext>,
+        step: Option<Duration>,
     ) {
         let quoted = {
-            let mut source = lend(context, self.budget(), self.fixed_step, frame);
+            let mut source = lend(context, self.budget(), step, frame);
             self.lanes[lane]
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())

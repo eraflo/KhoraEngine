@@ -81,8 +81,7 @@ impl Activation {
     }
 
     /// Makes `families` known too, each on: a family registered after the
-    /// activation was made — an application's own agent — can be switched
-    /// from then on. A family already known keeps its state.
+    /// activation was made can be switched from then on. A family already known keeps its state.
     pub fn admit(&self, families: impl IntoIterator<Item = AgentId>) {
         self.write().known.extend(families);
     }

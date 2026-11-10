@@ -335,7 +335,7 @@ fn a_spawn_through_the_scripting_agent_takes_its_id_from_the_worlds_reserver() {
                 &permit,
                 Some(agent.id()),
             );
-            agent.execute(&mut ctx);
+            khora_agents::agent::run_frame(&mut agent, &mut ctx);
         }
         spawned =
             deck.take::<CommandBuffer>()

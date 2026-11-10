@@ -13,7 +13,7 @@
 // limitations under the License.
 
 //! **Each fixed agent's sub-clock holds against the rest of the scheduler.**
-//! Every agent declaring a `fixed_timestep` cuts the time the gameplay ticks
+//! Every agent whose place holds a fixed step cuts the time the gameplay ticks
 //! advanced at its own step: whatever it shares the frame with — a hard
 //! dependency on another fixed agent with a different step, another agent
 //! registered under the same id, the parallel wave executor — its simulated
@@ -21,14 +21,14 @@
 //! agent that stops and resumes declaring a step runs exactly once a frame
 //! across the switch.
 
-use super::{offer_of, report_of};
+use super::{hosted_at, set_step, Family};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::dependency::{AgentDependency, DependencyKind};
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
-use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Activation, Agent, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::Terms;
+use khora_core::agent::{Activation, ExecutionPhase, ExecutionTiming, Place};
 use khora_core::time::{SharedTime, Time, DEFAULT_FIXED_DELTA_SECONDS};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -49,49 +49,33 @@ struct Seen {
     runs: usize,
 }
 
-/// Declares the step in `step` (none when `None`), hard-depends on
-/// `depends_on`, and adds its step to the simulated time it has seen on each
-/// run.
+/// Starts at the step in `step` (none when `None`), hard-depends on
+/// `depends_on`, and adds its place's step to the simulated time it has seen
+/// on each run.
 struct Stepping {
     id: AgentId,
-    step: Arc<Mutex<Option<Duration>>>,
+    step: Option<Duration>,
     depends_on: Option<AgentId>,
     seen: Arc<Mutex<Seen>>,
 }
 
-impl Agent for Stepping {
+impl Family for Stepping {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        let step = self
-            .step
-            .lock()
-            .expect("the step lock")
-            .map_or(0.0, |d| d.as_secs_f64());
+    fn run(&mut self, terms: &Terms, _ctx: &mut EngineContext<'_>) {
+        let step = terms.fixed_step.map_or(0.0, |d| d.as_secs_f64());
         let mut seen = self.seen.lock().expect("the seen lock");
         seen.simulated += step;
         seen.runs += 1;
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn step(&self) -> Option<Duration> {
+        self.step
+    }
+    fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![ExecutionPhase::TRANSFORM],
             default_phase: ExecutionPhase::TRANSFORM,
-            fixed_timestep: *self.step.lock().expect("the step lock"),
             dependencies: self
                 .depends_on
                 .map(|target| {
@@ -104,12 +88,6 @@ impl Agent for Stepping {
                 .unwrap_or_default(),
             ..ExecutionTiming::default()
         }
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -132,9 +110,9 @@ impl Spec {
     }
 }
 
-/// One registered agent's handles.
+/// One registered agent's handles: its place, and what it has seen.
 struct Handle {
-    step: Arc<Mutex<Option<Duration>>>,
+    place: Arc<Mutex<Place>>,
     seen: Arc<Mutex<Seen>>,
 }
 
@@ -142,8 +120,9 @@ impl Handle {
     fn seen(&self) -> Seen {
         *self.seen.lock().expect("the seen lock")
     }
+    /// Sets the step at the agent's place, where the scheduler reads it.
     fn declare(&self, step: Option<Duration>) {
-        *self.step.lock().expect("the step lock") = step;
+        set_step(&self.place, step);
     }
 }
 
@@ -172,18 +151,18 @@ impl Rig {
         let registry = Arc::new(Mutex::new(AgentRegistry::new()));
         let mut handles = Vec::new();
         for spec in &specs {
-            let step = Arc::new(Mutex::new(spec.step));
             let seen = Arc::new(Mutex::new(Seen::default()));
-            registry.lock().expect("the registry lock").register(
-                Arc::new(Mutex::new(Stepping {
-                    id: spec.id,
-                    step: Arc::clone(&step),
-                    depends_on: spec.depends_on,
-                    seen: Arc::clone(&seen),
-                })),
-                spec.priority,
-            );
-            handles.push(Handle { step, seen });
+            let (agent, place) = hosted_at(Stepping {
+                id: spec.id,
+                step: spec.step,
+                depends_on: spec.depends_on,
+                seen: Arc::clone(&seen),
+            });
+            registry
+                .lock()
+                .expect("the registry lock")
+                .register(agent, spec.priority);
+            handles.push(Handle { place, seen });
         }
         let ids: Vec<AgentId> = specs.iter().map(|s| s.id).collect();
         let scheduler =
@@ -326,8 +305,8 @@ fn the_parallel_executor_sub_steps_two_fixed_agents_as_the_sequential_one_does()
 fn an_agent_switching_between_fixed_and_unfixed_runs_once_a_frame() {
     let mut rig = Rig::new(vec![Spec::fixed(AgentId::new("physics"), 60.0)]);
     let agent = &rig.agents[0];
-    let (step, seen) = (Arc::clone(&agent.step), Arc::clone(&agent.seen));
-    let handle = Handle { step, seen };
+    let (place, seen) = (Arc::clone(&agent.place), Arc::clone(&agent.seen));
+    let handle = Handle { place, seen };
     for frame in 0..40usize {
         let fixed = frame % 2 == 0;
         handle.declare(fixed.then(|| step_of(60.0)));

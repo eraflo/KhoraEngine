@@ -29,7 +29,7 @@ use khora_core::graph::topological_sort;
 use khora_core::lane::OutputDeck;
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::Runtime;
-use known::KnownAgents;
+use known::{Known, KnownAgents};
 use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
@@ -56,11 +56,14 @@ const COMPONENT_ACCESS_SAMPLE_PERIOD: u64 = 60;
 /// number of catch-up steps — the classic "spiral of death".
 const MAX_FRAME_DELTA_SECONDS: f32 = 0.25;
 
+/// An agent of a phase: its lock, its importance, its priority, its
+/// dependencies, and what the scheduler knows of it.
 type AgentSlot = (
     Arc<Mutex<dyn khora_core::agent::Agent>>,
     AgentImportance,
     f32,
     Vec<AgentDependency>,
+    Known,
 );
 
 /// Which subset of a phase's agents [`ExecutionScheduler::execute_agents_in_phase`]
@@ -70,7 +73,7 @@ type AgentSlot = (
 enum AgentSelection {
     /// Every agent in the phase (legacy path — no fixed agent present).
     All,
-    /// The agents declaring a `fixed_timestep` still owed a sub-step at this
+    /// The agents whose place runs at a fixed step still owed a sub-step at this
     /// round of the fixed-update sub-loop: round `r` runs every fixed agent
     /// whose frame owes it more than `r` sub-steps.
     FixedRound(u32),
@@ -131,8 +134,8 @@ pub struct ExecutionScheduler {
     /// What agents wrote into the deck without declaring it, last frame
     /// (debug builds only; see [`undeclared_deck_writes`](Self::undeclared_deck_writes)).
     undeclared_deck_writes: Mutex<Vec<(AgentId, std::any::TypeId)>>,
-    /// Every agent met, with its name and, for one running as layers, its
-    /// place and declarations: a quiet frame locks no such agent.
+    /// Every agent met, with its name, its place and its timing: a quiet
+    /// frame locks no agent.
     known: KnownAgents,
     /// The runs of the families at the background, off the frame.
     background: background::Background,
@@ -270,9 +273,9 @@ impl ExecutionScheduler {
                 if agents.is_empty() {
                     continue;
                 }
-                let metas = build_wave_metas(&sort_agents(agents, &self.known), &self.known);
+                let metas = build_wave_metas(&sort_agents(agents));
                 for wave in partition_waves(&metas, true) {
-                    let ids: Vec<AgentId> = wave.iter().filter_map(|&i| metas[i].id).collect();
+                    let ids: Vec<AgentId> = wave.iter().map(|&i| metas[i].id).collect();
                     if !ids.is_empty() {
                         waves.push(ids);
                     }
@@ -332,8 +335,8 @@ impl ExecutionScheduler {
     }
 
     /// The agents of the families on in `phase`, each with its importance, priority
-    /// and dependencies. An agent running as layers is not locked: its
-    /// timing is the one it declared when the scheduler met it.
+    /// and dependencies. No agent is locked: its timing is the one it
+    /// declared when the scheduler met it.
     fn phase_slots(&self, phase: ExecutionPhase, inactive: &BTreeSet<AgentId>) -> Vec<AgentSlot> {
         let agents: Vec<Arc<Mutex<dyn khora_core::agent::Agent>>> = {
             let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
@@ -342,26 +345,23 @@ impl ExecutionScheduler {
         agents
             .into_iter()
             .filter_map(|agent| {
-                let timing = self.known.of(&agent)?.timing(&agent)?;
+                let known = self.known.of(&agent)?;
+                let timing = known.timing.clone();
                 timing.allowed_phases.contains(&phase).then_some((
                     agent,
                     timing.importance,
                     timing.priority,
                     timing.dependencies,
+                    known,
                 ))
             })
             .collect()
     }
 
-    /// The id of the agent in `slot` when it declares a positive
-    /// `fixed_timestep`, `None` otherwise.
+    /// The id of the agent in `slot` when its place runs at a fixed step,
+    /// `None` otherwise.
     fn fixed_slot_id(&self, slot: &AgentSlot) -> Option<AgentId> {
-        let known = self.known.of(&slot.0)?;
-        known
-            .timing(&slot.0)?
-            .fixed_timestep
-            .filter(|d| *d > Duration::ZERO)
-            .map(|_| known.id)
+        slot.4.fixed_step().map(|_| slot.4.id)
     }
 }
 
@@ -371,7 +371,7 @@ impl ExecutionScheduler {
 /// On a cycle the topo sort fails; we log and fall back to the
 /// importance/priority ordering — execution still happens, just not in DAG
 /// order. Validating cycles at registration time is a future improvement.
-fn sort_agents(mut agents: Vec<AgentSlot>, known: &KnownAgents) -> Vec<AgentSlot> {
+fn sort_agents(mut agents: Vec<AgentSlot>) -> Vec<AgentSlot> {
     // Importance + priority tiebreaker.
     agents.sort_by(|a, b| {
         let imp_ord = a.1.cmp(&b.1);
@@ -386,7 +386,7 @@ fn sort_agents(mut agents: Vec<AgentSlot>, known: &KnownAgents) -> Vec<AgentSlot
     let id_to_index: std::collections::HashMap<AgentId, usize> = agents
         .iter()
         .enumerate()
-        .filter_map(|(idx, slot)| known.of(&slot.0).map(|known| (known.id, idx)))
+        .map(|(idx, slot)| (slot.4.id, idx))
         .collect();
 
     // In the importance + priority order: the topological sort keeps its
@@ -399,9 +399,7 @@ fn sort_agents(mut agents: Vec<AgentSlot>, known: &KnownAgents) -> Vec<AgentSlot
     // — the dep target must run first.
     let mut edges: Vec<(AgentId, AgentId)> = Vec::new();
     for slot in &agents {
-        let Some(agent_id) = known.of(&slot.0).map(|known| known.id) else {
-            continue;
-        };
+        let agent_id = slot.4.id;
         for dep in &slot.3 {
             if matches!(dep.kind, DependencyKind::Hard) && id_to_index.contains_key(&dep.target) {
                 edges.push((dep.target, agent_id));

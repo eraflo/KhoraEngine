@@ -16,9 +16,9 @@
 //! prepared in place, as nothing is installed to keep running; a later row
 //! is left at its place as a preparation, which the scheduler runs on its
 //! background pool while the installed layer runs on. A preparation that
-//! fails wakes the agent, which passes the row by and chooses again. The
-//! legacy `execute` path runs a waiting preparation at once, so a caller
-//! without a scheduler sees the switch when it did before.
+//! fails wakes the agent, which passes the row by and chooses again.
+//! `run_frame` runs a waiting preparation at once, so a caller without a
+//! scheduler sees the switch in the frame that answered it.
 //!
 //! Each test builds its own lanes, so the prepares each one counts are its
 //! own.
@@ -196,15 +196,15 @@ fn frame_leaving_preparations(
     held.run(&mut context)
 }
 
-/// One frame of `agent` through the legacy path, `execute`, as a caller
-/// without a scheduler drives it.
-fn execute(agent: &mut LaneAgent, frame: u64, runtime: &Arc<Runtime>, deck: &mut OutputDeck) {
+/// One frame of `agent` through `run_frame`, as a caller without a
+/// scheduler drives it.
+fn driven(agent: &mut LaneAgent, frame: u64, runtime: &Arc<Runtime>, deck: &mut OutputDeck) {
     let mut bus = LaneBus::new();
     bus.set_frame(FrameId(frame));
     let permit = agent.contention();
     let id = agent.id();
     let mut context = EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
-    agent.execute(&mut context);
+    khora_agents::agent::run_frame(agent, &mut context);
 }
 
 /// The lane `deck` holds a record of.
@@ -393,22 +393,22 @@ prepared_lane!(CheapC, "cheap", CHEAP_LEVELS, 100, CHEAP_C_PREPARES, false);
 prepared_lane!(DearC, "dear", DEAR_LEVELS, 200, DEAR_C_PREPARES, false);
 cheap_or_dear!(SWITCHING_C, CheapC, DearC);
 
-/// **`execute` lands a switch answered at its start in that same frame**, as
+/// **`run_frame` lands a switch answered at its start in that same frame**, as
 /// it did when the agent prepared inline: an allocation lent between two
 /// calls is answered at the next call's start, whose waiting preparation is
 /// run at once, on the caller's thread, and swapped in before the run.
 #[test]
-fn execute_lands_a_switch_answered_at_its_start_in_the_same_frame() {
+fn run_frame_lands_a_switch_answered_at_its_start_in_the_same_frame() {
     let mut agent = lane_agent(&SWITCHING_C, &DeviceCaps::default());
     let runtime = Arc::new(Runtime::new());
     agent.apply(Epoch(1), &host_envelope(250), None, None);
     let mut deck = OutputDeck::new();
-    execute(&mut agent, 1, &runtime, &mut deck);
+    driven(&mut agent, 1, &runtime, &mut deck);
     assert_eq!(recorded_lane(&deck), Some("dear"));
 
     agent.apply(Epoch(2), &host_envelope(150), None, None);
     let mut deck = OutputDeck::new();
-    execute(&mut agent, 2, &runtime, &mut deck);
+    driven(&mut agent, 2, &runtime, &mut deck);
 
     assert_eq!(recorded_lane(&deck), Some("cheap"), "swapped in that frame");
     assert_eq!(
@@ -423,14 +423,14 @@ fn execute_lands_a_switch_answered_at_its_start_in_the_same_frame() {
     );
 }
 
-/// **`execute` lands a switch answered at its end at the next call.** Lent
+/// **`run_frame` lands a switch answered at its end at the next call.** Lent
 /// room for every level, the ladder runs its top level, whose record fails:
 /// the wake is answered at the end of that very call, which falls back to
 /// the level below; its preparation is run at once and staged, so the next
 /// call runs it — no preparation is left waiting for a scheduler there is
 /// not.
 #[test]
-fn execute_lands_a_switch_answered_at_its_end_at_the_next_call() {
+fn run_frame_lands_a_switch_answered_at_its_end_at_the_next_call() {
     let mut agent = lane_agent(&LADDER, &DeviceCaps::default());
     lend(&mut agent, host_envelope(4_000));
     let failing_top = runtime(
@@ -441,7 +441,7 @@ fn execute_lands_a_switch_answered_at_its_end_at_the_next_call() {
         },
     );
     let mut deck = OutputDeck::new();
-    execute(&mut agent, 1, &failing_top, &mut deck);
+    driven(&mut agent, 1, &failing_top, &mut deck);
 
     {
         let place = place_of(&agent);
@@ -450,7 +450,7 @@ fn execute_lands_a_switch_answered_at_its_end_at_the_next_call() {
         assert_eq!(place.staged_row(), Some(StrategyId::Balanced));
     }
     let mut deck = OutputDeck::new();
-    execute(&mut agent, 2, &failing_top, &mut deck);
+    driven(&mut agent, 2, &failing_top, &mut deck);
     assert_eq!(deck.get::<Recorded>().map(|r| r.level), Some(1));
 }
 
@@ -484,11 +484,7 @@ fn allocation(epoch: u64, micros: u64) -> Allocation {
 fn under_the_scheduler_the_first_layer_is_prepared_in_place_and_a_switch_off_the_frame() {
     let agent: Arc<Mutex<dyn Agent>> =
         Arc::new(Mutex::new(lane_agent(&SWITCHING_D, &DeviceCaps::default())));
-    let place = agent
-        .lock()
-        .expect("the agent lock")
-        .place()
-        .expect("a LaneAgent has a place");
+    let place = agent.lock().expect("the agent lock").place();
     let registry = Arc::new(Mutex::new(AgentRegistry::new()));
     registry
         .lock()

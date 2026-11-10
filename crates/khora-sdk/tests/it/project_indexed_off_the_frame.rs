@@ -29,8 +29,8 @@ use khora_io::asset::{AssetIdRegistry, AssetService, Requested};
 use khora_sdk::khora_core::asset::{AssetUUID, IndexKind};
 use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, EngineCore, GameWorld, IndexHub, IndexOutcome,
-    InputEvent, PhaseProvider, Runtime, WindowConfig,
+    EngineApp, EngineCore, GameWorld, IndexHub, IndexOutcome, InputEvent, PhaseProvider, Runtime,
+    WindowConfig,
 };
 use khora_telemetry::MetricsRegistry;
 
@@ -48,9 +48,6 @@ const MESH: &str = "meshes/hero.obj";
 /// A game: every family on from the first frame.
 struct Game;
 
-impl AgentProvider for Game {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Game {}
 impl EngineApp for Game {
     fn window_config() -> WindowConfig {

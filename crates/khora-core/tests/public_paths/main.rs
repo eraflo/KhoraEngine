@@ -186,7 +186,6 @@ fn execution_timing_fields(x: &khora_core::agent::timing::ExecutionTiming) {
         &x.default_phase,
         &x.priority,
         &x.importance,
-        &x.fixed_timestep,
         &x.dependencies,
     );
 }
@@ -1120,12 +1119,10 @@ mod trait_items {
         let _ = <T as khora_core::agent::Agent>::offer;
         let _ = <T as khora_core::agent::Agent>::apply;
         let _ = <T as khora_core::agent::Agent>::report;
-        let _ = <T as khora_core::agent::Agent>::on_initialize;
-        let _ = <T as khora_core::agent::Agent>::execute;
+        let _ = <T as khora_core::agent::Agent>::place;
+        let _ = <T as khora_core::agent::Agent>::wake;
         let _ = <T as khora_core::agent::Agent>::execution_timing;
         let _ = <T as khora_core::agent::Agent>::contention;
-        let _ = <T as khora_core::agent::Agent>::as_any;
-        let _ = <T as khora_core::agent::Agent>::as_any_mut;
     }
 
     fn as_any_trait_items<T: khora_core::asset::AsAny>() {
@@ -1629,7 +1626,6 @@ fn module_engine_context_paths_still_resolve() {
     );
     let _ = engine_context_fields as fn(&khora_core::engine_context::EngineContext<'static>);
     let _ = khora_core::engine_context::EngineContext::for_agent;
-    let _ = khora_core::engine_context::EngineContext::for_initialisation;
     let _ = khora_core::engine_context::EngineContext::resource::<u32>;
     let _ = khora_core::engine_context::EngineContext::locked::<u32>;
 }
@@ -3336,7 +3332,6 @@ mod paths_used_by_other_crates {
 
 #[test]
 fn associated_items_used_by_other_crates_still_resolve() {
-    let _ = khora_core::EngineContext::for_initialisation; // khora-sdk
     let _ = khora_core::Runtime::new; // khora-sdk
     let _ = khora_core::agent::Contention::none; // khora-agents
     let _ = khora_core::agent::ExecutionPhase::OUTPUT; // khora-sdk

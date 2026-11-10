@@ -17,7 +17,7 @@
 //! registration, run as the scheduler runs it.
 //!
 //! Per CLAUDE.md:
-//!   - `step()` is private — tests drive the agent via `execute()`.
+//!   - `step()` is private — tests drive the agent via `run_frame()`.
 //!   - Raycast queries call `PhysicsProvider::cast_ray` directly on the
 //!     locked backend.
 
@@ -85,7 +85,7 @@ fn step_n(agent: &mut LaneAgent, world: &mut World, runtime: &Arc<Runtime>, n: u
             &permit,
             Some(agent.id()),
         );
-        agent.execute(&mut ctx);
+        khora_agents::agent::run_frame(agent, &mut ctx);
 
         // Maintenance — physics_world_writeback pulls provider state back into
         // Transform / KCC, then collision_dispatch moves the lane's contacts

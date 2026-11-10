@@ -464,5 +464,5 @@ pub fn run_once(
     let permit = agent.contention();
     let id = agent.id();
     let mut context = EngineContext::for_agent(Arc::clone(runtime), bus, deck, &permit, Some(id));
-    agent.execute(&mut context);
+    khora_agents::agent::run_frame(agent, &mut context);
 }

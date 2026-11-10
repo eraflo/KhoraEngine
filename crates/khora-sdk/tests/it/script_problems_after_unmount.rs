@@ -23,15 +23,11 @@ use std::time::{Duration, Instant};
 
 use khora_sdk::khora_core::problems::Problems;
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
-    Runtime, WindowConfig,
+    EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 
 struct Tool;
 
-impl AgentProvider for Tool {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Tool {}
 impl EngineApp for Tool {
     fn window_config() -> WindowConfig {

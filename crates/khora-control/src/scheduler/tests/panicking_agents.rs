@@ -12,20 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A panic in `execute` is that agent's failure for that frame — never more.
+//! A panic in an agent's run is that agent's failure for that frame — never
+//! more.
 //!
 //! The scheduler catches it, so the frame goes on. What it promises next:
 //! whatever the agent half-wrote is dropped, an agent depending on it does not
 //! run on its outputs, and on the next frame the agent runs again — a panic
 //! once is not a silent death for the rest of the session.
 
-use super::{offer_of, report_of};
+use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::dependency::{AgentDependency, DependencyKind};
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
-use khora_core::agent::gorna::{AgentId, StrategyId};
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::Terms;
 use khora_core::agent::{Agent, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -51,47 +52,29 @@ struct Flaky {
     runs: Arc<AtomicUsize>,
 }
 
-impl Agent for Flaky {
+impl Family for Flaky {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn execute(&mut self, ctx: &mut EngineContext<'_>) {
+    fn run(&mut self, _terms: &Terms, ctx: &mut EngineContext<'_>) {
         let run = self.runs.fetch_add(1, Ordering::SeqCst) + 1;
         ctx.deck.slot::<HalfWritten>().0 += 1;
         if self.panics_on.contains(&run) {
             panic!("an agent that panics on its run {run}");
         }
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn step(&self) -> Option<Duration> {
+        self.step
+    }
+    fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![ExecutionPhase::TRANSFORM],
             default_phase: ExecutionPhase::TRANSFORM,
-            fixed_timestep: self.step,
             ..ExecutionTiming::default()
         }
     }
     fn contention(&self) -> Contention {
         Contention::none().writing_deck([TypeId::of::<HalfWritten>()])
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -103,29 +86,15 @@ struct Steady {
     runs: Arc<AtomicUsize>,
 }
 
-impl Agent for Steady {
+impl Family for Steady {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn execute(&mut self, ctx: &mut EngineContext<'_>) {
+    fn run(&mut self, _terms: &Terms, ctx: &mut EngineContext<'_>) {
         self.runs.fetch_add(1, Ordering::SeqCst);
         ctx.deck.slot::<WaveMateOutput>().0 += 1;
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![ExecutionPhase::TRANSFORM],
             default_phase: ExecutionPhase::TRANSFORM,
@@ -144,12 +113,6 @@ impl Agent for Steady {
     }
     fn contention(&self) -> Contention {
         Contention::none().writing_deck([TypeId::of::<WaveMateOutput>()])
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -186,7 +149,7 @@ fn scheduler_over(agents: Vec<Arc<Mutex<dyn Agent>>>, parallel: bool) -> Executi
 #[test]
 fn an_agent_that_panicked_runs_again_on_the_next_frame() {
     let runs = Arc::new(AtomicUsize::new(0));
-    let mut scheduler = scheduler_over(vec![Arc::new(Mutex::new(flaky(vec![1], &runs)))], false);
+    let mut scheduler = scheduler_over(vec![hosted(flaky(vec![1], &runs))], false);
     let mut world = World::new();
 
     scheduler.run_frame(&mut world, playing());
@@ -208,12 +171,12 @@ fn a_pooled_agent_that_panicked_runs_again_on_the_next_frame() {
     let mate_runs = Arc::new(AtomicUsize::new(0));
     let mut scheduler = scheduler_over(
         vec![
-            Arc::new(Mutex::new(Steady {
+            hosted(Steady {
                 id: AgentId::new("audio"),
                 depends_on: None,
                 runs: Arc::clone(&mate_runs),
-            })),
-            Arc::new(Mutex::new(flaky(vec![1], &runs))),
+            }),
+            hosted(flaky(vec![1], &runs)),
         ],
         true,
     );
@@ -240,7 +203,7 @@ fn a_pooled_agent_that_panicked_runs_again_on_the_next_frame() {
 #[test]
 fn a_panicking_agent_leaves_nothing_in_the_deck() {
     let runs = Arc::new(AtomicUsize::new(0));
-    let mut scheduler = scheduler_over(vec![Arc::new(Mutex::new(flaky(vec![1], &runs)))], false);
+    let mut scheduler = scheduler_over(vec![hosted(flaky(vec![1], &runs))], false);
 
     scheduler.run_frame(&mut World::new(), playing());
 
@@ -260,12 +223,12 @@ fn a_panicking_pooled_agent_leaves_nothing_in_the_deck() {
     let mate_runs = Arc::new(AtomicUsize::new(0));
     let mut scheduler = scheduler_over(
         vec![
-            Arc::new(Mutex::new(Steady {
+            hosted(Steady {
                 id: AgentId::new("audio"),
                 depends_on: None,
                 runs: Arc::clone(&mate_runs),
-            })),
-            Arc::new(Mutex::new(flaky(vec![1], &runs))),
+            }),
+            hosted(flaky(vec![1], &runs)),
         ],
         true,
     );
@@ -292,12 +255,12 @@ fn a_hard_dependent_of_a_panicked_agent_is_skipped() {
     let dependent_runs = Arc::new(AtomicUsize::new(0));
     let mut scheduler = scheduler_over(
         vec![
-            Arc::new(Mutex::new(flaky(vec![1], &runs))),
-            Arc::new(Mutex::new(Steady {
+            hosted(flaky(vec![1], &runs)),
+            hosted(Steady {
                 id: AgentId::new("audio"),
                 depends_on: Some(AgentId::new("physics")),
                 runs: Arc::clone(&dependent_runs),
-            })),
+            }),
         ],
         false,
     );
@@ -328,15 +291,15 @@ fn a_fixed_agent_failing_a_later_sub_step_has_failed_the_frame() {
         Duration::from_secs_f64(f64::from(khora_core::time::DEFAULT_FIXED_DELTA_SECONDS) / 8.0);
     let mut scheduler = scheduler_over(
         vec![
-            Arc::new(Mutex::new(Flaky {
+            hosted(Flaky {
                 step: Some(step),
                 ..flaky(vec![2], &runs)
-            })),
-            Arc::new(Mutex::new(Steady {
+            }),
+            hosted(Steady {
                 id: AgentId::new("audio"),
                 depends_on: Some(AgentId::new("physics")),
                 runs: Arc::clone(&dependent_runs),
-            })),
+            }),
         ],
         false,
     );

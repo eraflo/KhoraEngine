@@ -13,34 +13,29 @@
 // limitations under the License.
 
 //! The engine bootstrap taken apart into stages — `begin`, `setup`,
-//! `register`, one `initialize_agent` per agent, `finish` — leaves the engine
-//! as the one-shot `EngineCore::bootstrap` does, and each stage does its own
-//! part of the work.
+//! `register`, `finish` — leaves the engine as the one-shot
+//! `EngineCore::bootstrap` does, and each stage does its own part of the
+//! work.
 
-use crate::protocol::{offer_of, report_of};
-use khora_sdk::khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_sdk::khora_core::agent::Agent;
-use khora_sdk::khora_core::EngineContext;
+use khora_sdk::khora_core::agent::gorna::AgentId;
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, EngineBootstrap, EngineCore, GameWorld, InputEvent,
-    PhaseProvider, Runtime, WindowConfig,
+    EngineApp, EngineBootstrap, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime,
+    WindowConfig,
 };
 
-/// What a [`Staged`] app counts: its `setup` calls, and its agent's
-/// initializations.
+/// What a [`Staged`] app counts: its `setup` calls, and its `provide` calls.
 #[derive(Clone, Default)]
 struct Counters {
     setups: Arc<AtomicUsize>,
-    agent_inits: Arc<AtomicUsize>,
+    provides: Arc<AtomicUsize>,
 }
 
-/// An app that counts its setups and registers one agent counting its own
-/// initializations.
+/// An app that counts its setups and the times it is asked to provide, and
+/// switches the audio family off in its setup.
 struct Staged {
     counters: Counters,
 }
@@ -48,51 +43,6 @@ struct Staged {
 /// The family the app switches off in its setup.
 const AUDIO: AgentId = khora_sdk::khora_core::audio::AUDIO;
 
-/// The app's agent: counts its `on_initialize` calls.
-struct CountingInit {
-    inits: Arc<AtomicUsize>,
-}
-
-impl Agent for CountingInit {
-    fn id(&self) -> AgentId {
-        AgentId::new("asset")
-    }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(AgentId::new("asset"), request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(AgentId::new("asset"), StrategyId::Balanced)
-    }
-    fn on_initialize(&mut self, _ctx: &mut EngineContext<'_>) {
-        self.inits.fetch_add(1, Ordering::SeqCst);
-    }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {}
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-impl AgentProvider for Staged {
-    fn register_agents(&self, dcc: &DccService, _runtime: &mut Runtime) {
-        dcc.register_agent(
-            Arc::new(Mutex::new(CountingInit {
-                inits: Arc::clone(&self.counters.agent_inits),
-            })),
-            0.5,
-        );
-    }
-}
 impl PhaseProvider for Staged {}
 impl EngineApp for Staged {
     fn window_config() -> WindowConfig {
@@ -112,6 +62,9 @@ impl EngineApp for Staged {
             .deactivate(AUDIO)
             .expect("the audio family is known at setup");
     }
+    fn provide(&self, _runtime: &mut Runtime) {
+        self.counters.provides.fetch_add(1, Ordering::SeqCst);
+    }
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
 }
 
@@ -127,12 +80,6 @@ fn bootstrap_in_stages(app: Staged) -> EngineCore<Staged> {
     let mut boot = EngineBootstrap::begin(app, Runtime::new());
     boot.setup();
     boot.register();
-    for index in 0..boot.agent_count() {
-        assert!(
-            boot.initialize_agent(index),
-            "index {index} names a registered agent"
-        );
-    }
     let mut core = EngineCore::<Staged>::new();
     boot.finish(&mut core);
     core
@@ -190,11 +137,11 @@ fn bootstrapping_in_stages_leaves_the_engine_as_one_bootstrap_does() {
         1,
         "setup ran exactly once"
     );
-    assert_eq!(one_shot.agent_inits.load(Ordering::SeqCst), 1);
+    assert_eq!(one_shot.provides.load(Ordering::SeqCst), 1);
     assert_eq!(
-        in_stages.agent_inits.load(Ordering::SeqCst),
+        in_stages.provides.load(Ordering::SeqCst),
         1,
-        "the app's agent was initialized exactly once"
+        "the app provided exactly once"
     );
 }
 
@@ -221,26 +168,17 @@ fn each_stage_does_its_own_part_of_the_bootstrap() {
         1,
         "setup runs the app's setup"
     );
+    assert_eq!(
+        counters.provides.load(Ordering::SeqCst),
+        0,
+        "setup does not ask the app to provide"
+    );
 
     boot.register();
-    assert!(
-        boot.agent_count() >= 2,
-        "the app's agent and the built-in agents are registered, got {}",
-        boot.agent_count()
-    );
     assert_eq!(
-        counters.agent_inits.load(Ordering::SeqCst),
-        0,
-        "registering initializes no agent"
-    );
-
-    for index in 0..boot.agent_count() {
-        assert!(boot.initialize_agent(index));
-    }
-    assert_eq!(
-        counters.agent_inits.load(Ordering::SeqCst),
+        counters.provides.load(Ordering::SeqCst),
         1,
-        "the app's agent is initialized by its initialize_agent call"
+        "register asks the app to provide, once"
     );
 
     let mut core = EngineCore::<Staged>::new();
@@ -251,39 +189,8 @@ fn each_stage_does_its_own_part_of_the_bootstrap() {
         "finish does not run setup again"
     );
     assert_eq!(
-        counters.agent_inits.load(Ordering::SeqCst),
+        counters.provides.load(Ordering::SeqCst),
         1,
-        "finish initializes no agent again"
-    );
-}
-
-#[test]
-fn the_staged_bootstrap_registers_as_many_agents_as_bootstrap() {
-    let (one_shot_app, _) = staged();
-    let mut reference = EngineCore::<Staged>::new();
-    reference.bootstrap(one_shot_app, Runtime::new());
-
-    let (app, _) = staged();
-    let mut boot = EngineBootstrap::begin(app, Runtime::new());
-    boot.setup();
-    boot.register();
-    assert_eq!(
-        boot.agent_count(),
-        reference.dcc().expect("the reference DCC").agent_count()
-    );
-}
-
-#[test]
-fn initialize_agent_past_the_last_agent_returns_false_and_initializes_nothing() {
-    let (app, counters) = staged();
-    let mut boot = EngineBootstrap::begin(app, Runtime::new());
-    boot.setup();
-    boot.register();
-
-    assert!(!boot.initialize_agent(boot.agent_count()));
-    assert_eq!(
-        counters.agent_inits.load(Ordering::SeqCst),
-        0,
-        "no agent was initialized"
+        "finish does not ask the app to provide again"
     );
 }

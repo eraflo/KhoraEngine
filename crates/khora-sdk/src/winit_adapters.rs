@@ -363,8 +363,7 @@ pub(crate) fn start_engine<A: EngineApp>(
 /// ```rust,no_run
 /// use khora_sdk::prelude::*;
 /// use khora_sdk::{
-///     run_winit, AgentProvider, DccService, EngineApp, GameWorld, PhaseProvider,
-///     Runtime, WindowConfig,
+///     run_winit, EngineApp, GameWorld, PhaseProvider, Runtime, WindowConfig,
 /// };
 /// use khora_sdk::winit_adapters::WinitWindowProvider;
 ///
@@ -375,9 +374,6 @@ pub(crate) fn start_engine<A: EngineApp>(
 ///     fn new() -> Self { MyGame }
 ///     fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {}
 ///     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
-/// }
-/// impl AgentProvider for MyGame {
-///     fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
 /// }
 /// impl PhaseProvider for MyGame {}
 ///
@@ -407,8 +403,7 @@ mod tests {
 
     use super::start_engine;
     use crate::{
-        AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
-        Runtime, WindowConfig,
+        EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
     };
 
     thread_local! {
@@ -426,9 +421,6 @@ mod tests {
     /// An app that notes when it is built and when it is set up.
     struct Ordered;
 
-    impl AgentProvider for Ordered {
-        fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-    }
     impl PhaseProvider for Ordered {}
     impl EngineApp for Ordered {
         fn window_config() -> WindowConfig {

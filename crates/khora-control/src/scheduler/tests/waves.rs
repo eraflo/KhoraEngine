@@ -18,7 +18,7 @@ use khora_core::agent::Contention;
 
 fn meta(id: AgentId, deps: &[AgentId]) -> WaveMeta {
     WaveMeta {
-        id: Some(id),
+        id,
         hard_dep_targets: deps.to_vec(),
         contention: Contention::none(),
     }
@@ -50,7 +50,7 @@ fn meta_writes(id: AgentId, writes: &[std::any::TypeId]) -> WaveMeta {
 
 fn meta_declaring(id: AgentId, contention: Contention) -> WaveMeta {
     WaveMeta {
-        id: Some(id),
+        id,
         hard_dep_targets: Vec::new(),
         contention,
     }
@@ -250,26 +250,5 @@ fn without_concurrency_every_agent_is_a_wave_of_its_own() {
     assert_eq!(
         partition_waves(&metas, false),
         vec![vec![0], vec![1], vec![2]]
-    );
-}
-
-/// **An agent that could not be read is always alone**: nothing is known of
-/// what it contends for, so it shares no wave, and the agent after it starts
-/// a new one.
-#[test]
-fn an_agent_that_could_not_be_read_is_always_alone() {
-    let metas = vec![
-        meta(AgentId::new("audio"), &[]),
-        WaveMeta {
-            id: None,
-            hard_dep_targets: Vec::new(),
-            contention: Contention::none(),
-        },
-        meta(AgentId::new("shadows"), &[]),
-        meta(AgentId::new("ui"), &[]),
-    ];
-    assert_eq!(
-        partition_waves(&metas, true),
-        vec![vec![0], vec![1], vec![2, 3]]
     );
 }

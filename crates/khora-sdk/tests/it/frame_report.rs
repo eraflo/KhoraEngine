@@ -15,7 +15,7 @@
 //! Each frame reports to the DCC how long it kept the host busy, the waits
 //! for the display excluded, and the DCC's budget multiplier follows it.
 
-use crate::protocol::{offer_of, report_of};
+use crate::protocol::{register_after_boot, report_of, Hand, Work};
 use khora_sdk::khora_core::agent::gorna::protocol::{
     Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
 };
@@ -24,7 +24,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_sdk::khora_core::agent::Agent;
+use khora_sdk::khora_core::agent::{Agent, Contention, Place};
 use khora_sdk::khora_core::lane::cost::{Cost, PerDevice};
 use khora_sdk::khora_core::math::Extent2D;
 use khora_sdk::khora_core::platform::window::KhoraWindow;
@@ -39,8 +39,8 @@ use khora_sdk::khora_core::renderer::GraphicsDevice;
 use khora_sdk::khora_core::telemetry::ResourceMonitor;
 use khora_sdk::khora_core::EngineContext;
 use khora_sdk::{
-    AgentProvider, DccContext, DccService, EngineApp, EngineCore, GameWorld, InputEvent,
-    PhaseProvider, Runtime, WindowConfig,
+    DccContext, EngineApp, EngineCore, ExecutionTiming, GameWorld, InputEvent, PhaseProvider,
+    Runtime, WindowConfig,
 };
 
 /// How long a slow `update` works, well over the 16.66 ms frame target.
@@ -62,10 +62,13 @@ impl Workload {
     }
 }
 
-impl AgentProvider for Workload {
-    fn register_agents(&self, dcc: &DccService, _runtime: &mut Runtime) {
-        dcc.register_agent(Arc::new(Mutex::new(Graded)), 0.5);
-    }
+/// `app`, booted over `runtime`, with a [`Graded`] agent registered beside
+/// the engine's own.
+fn booted(app: Workload, runtime: Runtime) -> EngineCore<Workload> {
+    let mut engine = EngineCore::<Workload>::new();
+    engine.bootstrap(app, runtime);
+    register_after_boot(&engine, Graded::shared(), 0.5);
+    engine
 }
 
 /// The two rows a [`Graded`] agent offers: a cheap floor and a dearer row
@@ -88,9 +91,18 @@ fn graded_rows() -> Vec<OfferRow> {
 }
 
 /// An agent that does nothing but offer [`graded_rows`]: the lever the
-/// governor lowers the multiplier through.
-#[derive(Default)]
-struct Graded;
+/// governor lowers the multiplier through. Its place runs nothing.
+struct Graded {
+    place: Arc<Mutex<Place>>,
+}
+
+impl Graded {
+    fn shared() -> Arc<Mutex<dyn Agent>> {
+        Arc::new(Mutex::new(Graded {
+            place: Arc::new(Mutex::new(Place::new(AgentId::new("graded")))),
+        }))
+    }
+}
 
 impl Agent for Graded {
     fn id(&self) -> AgentId {
@@ -117,12 +129,8 @@ impl Agent for Graded {
     fn report(&self) -> Report {
         report_of(AgentId::new("graded"), StrategyId::Balanced)
     }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {}
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
 }
 impl PhaseProvider for Workload {}
@@ -241,8 +249,7 @@ fn tick_until_below<A: EngineApp>(
 /// frames the DCC pulls the budget multiplier below 1.0.
 #[test]
 fn a_slow_frame_pulls_the_multiplier_down() {
-    let mut engine = EngineCore::<Workload>::new();
-    engine.bootstrap(Workload::slow(), Runtime::new());
+    let mut engine = booted(Workload::slow(), Runtime::new());
     assert_eq!(multiplier(&engine), 1.0, "the DCC starts at full budget");
 
     let dropped = tick_until_below(&mut engine, 1.0, 10);
@@ -270,8 +277,7 @@ fn the_display_wait_is_not_counted_in_the_frame() {
         })));
     runtime.backends.insert(renderer);
     let slow = Arc::new(AtomicBool::new(false));
-    let mut engine = EngineCore::<Workload>::new();
-    engine.bootstrap(
+    let mut engine = booted(
         Workload {
             slow: Arc::clone(&slow),
         },
@@ -382,8 +388,7 @@ fn the_present_wait_is_not_counted_in_the_frame() {
         })));
     runtime.backends.insert(renderer);
     let slow = Arc::new(AtomicBool::new(false));
-    let mut engine = EngineCore::<Workload>::new();
-    engine.bootstrap(
+    let mut engine = booted(
         Workload {
             slow: Arc::clone(&slow),
         },
@@ -419,60 +424,28 @@ fn the_present_wait_is_not_counted_in_the_frame() {
 /// How long the slow agent works each time it runs.
 const SLOW_AGENT: Duration = Duration::from_millis(30);
 
-/// An agent that works [`SLOW_AGENT`] each time the scheduler runs it, and
-/// counts its runs.
-struct SlowAgent {
-    runs: Arc<AtomicUsize>,
-}
-
-impl Agent for SlowAgent {
-    fn id(&self) -> AgentId {
-        AgentId::new("slow_agent")
-    }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(AgentId::new("slow_agent"), request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(AgentId::new("slow_agent"), StrategyId::Balanced)
-    }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        self.runs.fetch_add(1, Ordering::SeqCst);
+/// An agent whose layer works [`SLOW_AGENT`] each time the scheduler runs
+/// it, and counts its runs.
+fn slow_agent(runs: &Arc<AtomicUsize>) -> Arc<Mutex<dyn Agent>> {
+    let runs = Arc::clone(runs);
+    let layer = Work::new(Contention::none(), move |_: &mut EngineContext<'_>| {
+        runs.fetch_add(1, Ordering::SeqCst);
         std::thread::sleep(SLOW_AGENT);
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
+    });
+    Hand::new(
+        AgentId::new("slow_agent"),
+        ExecutionTiming::default(),
+        layer,
+    )
+    .shared()
 }
 
-/// A fast application whose one agent works [`SLOW_AGENT`] in the scheduler.
+/// A fast application whose one agent, registered once it booted, works
+/// [`SLOW_AGENT`] in the scheduler.
 struct SlowScheduled {
     runs: Arc<AtomicUsize>,
 }
 
-impl AgentProvider for SlowScheduled {
-    fn register_agents(&self, dcc: &DccService, _runtime: &mut Runtime) {
-        dcc.register_agent(
-            Arc::new(Mutex::new(SlowAgent {
-                runs: Arc::clone(&self.runs),
-            })),
-            0.5,
-        );
-        // Its work is the frame's, but no row of its own is a lever: the
-        // governor lowers the multiplier through this one's.
-        dcc.register_agent(Arc::new(Mutex::new(Graded)), 0.5);
-    }
-}
 impl PhaseProvider for SlowScheduled {}
 impl EngineApp for SlowScheduled {
     fn window_config() -> WindowConfig {
@@ -497,6 +470,10 @@ fn a_slow_agent_pulls_the_multiplier_down() {
     let runs = Arc::clone(&app.runs);
     let mut engine = EngineCore::<SlowScheduled>::new();
     engine.bootstrap(app, Runtime::new());
+    register_after_boot(&engine, slow_agent(&runs), 0.5);
+    // Its work is the frame's, but no row of its own is a lever: the
+    // governor lowers the multiplier through this one's.
+    register_after_boot(&engine, Graded::shared(), 0.5);
 
     let dropped = tick_until_below(&mut engine, 1.0, 10);
     engine.shutdown();

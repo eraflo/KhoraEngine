@@ -138,7 +138,7 @@ fn run_one_frame(
             &permit,
             Some(agent.id()),
         );
-        agent.execute(&mut ctx);
+        khora_agents::agent::run_frame(agent, &mut ctx);
     }
     deck.take::<CommandBuffer>().as_slice().to_vec()
 }

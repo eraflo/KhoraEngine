@@ -962,11 +962,6 @@ impl Watched {
     }
 }
 
-impl AgentProvider for Watched {
-    fn register_agents(&self, dcc: &DccService, runtime: &mut Runtime) {
-        self.app.register_agents(dcc, runtime);
-    }
-}
 impl PhaseProvider for Watched {}
 impl EngineApp for Watched {
     fn window_config() -> WindowConfig {
@@ -978,6 +973,9 @@ impl EngineApp for Watched {
     fn setup(&mut self, world: &mut GameWorld, runtime: &Runtime) {
         self.app.setup(world, runtime);
         self.hubs = Some(Hubs::of(runtime));
+    }
+    fn provide(&self, runtime: &mut Runtime) {
+        self.app.provide(runtime);
     }
     fn update(&mut self, world: &mut GameWorld, inputs: &[InputEvent]) {
         self.app.update(world, inputs);

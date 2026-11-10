@@ -467,7 +467,7 @@ register_pass!(GizmoPassSlot, after = [WireframePassSlot]);
 
 /// Per-frame collection of recorded passes.
 ///
-/// Agents append passes during `execute()`. `submit_frame_graph` drains the
+/// Lanes append passes when they record. `submit_frame_graph` drains the
 /// graph in topological order and submits the buffers to the device.
 #[derive(Default)]
 pub struct FrameGraph {

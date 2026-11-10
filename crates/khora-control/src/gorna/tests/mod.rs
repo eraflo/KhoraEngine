@@ -32,9 +32,8 @@ use khora_core::agent::gorna::protocol::{
     Confidence, Envelope, Epoch, Offer, OfferRequest, OfferRow, Report,
 };
 use khora_core::agent::gorna::StrategyId;
-use khora_core::agent::{Agent, AgentImportance, ExecutionTiming};
+use khora_core::agent::{Agent, AgentImportance, ExecutionTiming, Place};
 use khora_core::lane::cost::{Cost, PerDevice};
-use khora_core::EngineContext;
 use std::time::Instant;
 
 /// A mebibyte.
@@ -221,6 +220,7 @@ struct Bidder {
     late: bool,
     asked: Vec<OfferRequest>,
     lent: Vec<Lent>,
+    place: Arc<Mutex<Place>>,
 }
 
 impl Bidder {
@@ -236,6 +236,7 @@ impl Bidder {
             late: false,
             asked: Vec::new(),
             lent: Vec::new(),
+            place: Arc::new(Mutex::new(Place::new(AgentId::new(name)))),
         }
     }
 
@@ -328,13 +329,8 @@ impl Agent for Bidder {
         }
     }
 
-    fn execute(&mut self, _context: &mut EngineContext<'_>) {}
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+    /// A bare place: GORNA never runs one.
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
 }

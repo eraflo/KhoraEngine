@@ -241,7 +241,7 @@ fn run(agent: &mut LaneAgent, frame: u64, runtime: &Arc<Runtime>, deck: &mut Out
     let permit = agent.contention();
     let id = agent.id();
     let mut context = EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
-    agent.execute(&mut context);
+    khora_agents::agent::run_frame(agent, &mut context);
 }
 
 /// A 640×480 target in `color`, with a 32-bit float depth.

@@ -29,7 +29,6 @@ use crate::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report
 use crate::agent::gorna::AgentId;
 use crate::agent::gorna::StrategyId;
 use crate::EngineContext;
-use std::any::Any;
 use std::sync::{Arc, Mutex};
 
 pub use activation::{Activation, State, UnknownFamily};
@@ -82,20 +81,15 @@ pub trait Agent: Send + Sync {
     /// health, and what its lane said of the run.
     fn report(&self) -> Report;
 
-    /// The family's place, when the agent runs as **layers**: the scheduler
-    /// then runs the place's installed [`Layer`] every frame instead of
-    /// [`execute`](Self::execute), and wakes the agent through
-    /// [`wake`](Self::wake) only when the place holds a [`Wake`].
+    /// The family's place: where its installed [`Layer`] runs every frame,
+    /// the scheduler running it without the agent, and where the events that
+    /// wake the agent ([`wake`](Self::wake)) gather.
     ///
     /// The scheduler asks once, when it first meets the agent, and keeps the
     /// place: on a quiet frame it neither calls nor locks the agent.
-    ///
-    /// Defaults to `None`: the agent runs through `execute` every frame.
-    fn place(&self) -> Option<Arc<Mutex<Place>>> {
-        None
-    }
+    fn place(&self) -> Arc<Mutex<Place>>;
 
-    /// Wakes a layered agent for the events its place gathered, `why`, in
+    /// Wakes the agent for the events its place gathered, `why`, in
     /// the scheduler's event pass: after the frame start, once the bus is
     /// built, before the waves. `place` is the agent's own place, already
     /// locked — the agent must not lock it again.
@@ -107,24 +101,10 @@ pub trait Agent: Send + Sync {
     /// nothing. When only its envelope changed it updates the place's
     /// [`Terms`]. A staged layer is swapped in at the next frame start.
     ///
-    /// Defaults to doing nothing, which is right for an agent without a
-    /// place.
+    /// Defaults to doing nothing.
     fn wake(&mut self, why: &[Wake], place: &mut Place, context: &mut EngineContext<'_>) {
         let _ = (why, place, context);
     }
-
-    /// Called **once** after the agent is registered with the DCC.
-    ///
-    /// The agent should cache services from `context.services`, initialize
-    /// its lane registry, and prepare any persistent state.
-    /// Default implementation is a no-op.
-    fn on_initialize(&mut self, _context: &mut EngineContext<'_>) {}
-
-    /// Called **every frame** by the engine loop.
-    ///
-    /// The agent selects the appropriate lanes based on the current GORNA
-    /// strategy and runs each one that should run.
-    fn execute(&mut self, context: &mut EngineContext<'_>);
 
     /// Declares WHEN and HOW this agent should execute within the frame pipeline.
     ///
@@ -140,9 +120,11 @@ pub trait Agent: Send + Sync {
     /// Declares what this agent competes with the others for: the deck slots it
     /// writes, and the runtime resources it reads or locks.
     ///
-    /// It is the only thing an agent declares to the scheduler: no agent
-    /// reaches the `World`, so no agent is kept apart from another for it.
-    /// The scheduler reads it at wave-formation time. Two agents in one
+    /// It is what the agent reaches when it is woken — its wake runs under
+    /// it. No agent reaches the `World`, so it is the only thing an agent
+    /// declares. The scheduler forms its waves from the contention of each
+    /// family's installed layer, which this answers for the layer running;
+    /// two in one
     /// concurrent wave must not write the same deck slot (their private shards
     /// would collide at the merge), must not lock the same resource (they would
     /// serialise on it), and must not have one locking what another reads.
@@ -158,10 +140,4 @@ pub trait Agent: Send + Sync {
     fn contention(&self) -> Contention {
         Contention::none()
     }
-
-    /// Allows downcasting to concrete agent types.
-    fn as_any(&self) -> &dyn Any;
-
-    /// Allows mutable downcasting to concrete agent types.
-    fn as_any_mut(&mut self) -> &mut dyn Any;
 }

@@ -20,23 +20,23 @@
 
 use super::allocations::{allocation, envelope, lent_to, scheduler_over, Hand, SharedLog};
 use super::layers::{scheduling, shared, taken, Brush, Painter, SharedLog as LayerLog};
-use super::{offer_of, report_of};
+use super::{offer_of, place_with, report_of, Doing};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Activation, Agent, ExecutionPhase, ExecutionTiming, Wake};
-use khora_core::{EngineContext, Runtime};
+use khora_core::agent::{Activation, Agent, ExecutionPhase, ExecutionTiming, Place, Wake};
+use khora_core::Runtime;
 use khora_data::ecs::World;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 const SCRIPT: AgentId = AgentId::new("script");
 
-/// Counts the frames it ran in.
+/// Its place's layer counts the frames it ran in.
 struct Counting {
-    runs: Arc<AtomicUsize>,
+    place: Arc<Mutex<Place>>,
 }
 
 impl Agent for Counting {
@@ -57,8 +57,8 @@ impl Agent for Counting {
     fn report(&self) -> Report {
         report_of(SCRIPT, StrategyId::Balanced)
     }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        self.runs.fetch_add(1, Ordering::SeqCst);
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
     fn execution_timing(&self) -> ExecutionTiming {
         ExecutionTiming {
@@ -66,12 +66,6 @@ impl Agent for Counting {
             default_phase: ExecutionPhase::TRANSFORM,
             ..ExecutionTiming::default()
         }
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -81,7 +75,16 @@ fn one_script() -> (ExecutionScheduler, Arc<AtomicUsize>) {
     let registry = Arc::new(Mutex::new(AgentRegistry::new()));
     registry.lock().expect("the registry lock").register(
         Arc::new(Mutex::new(Counting {
-            runs: Arc::clone(&runs),
+            place: place_with(
+                SCRIPT,
+                Doing::new(StrategyId::Balanced, {
+                    let runs = Arc::clone(&runs);
+                    move |_, _| {
+                        runs.fetch_add(1, Ordering::SeqCst);
+                    }
+                }),
+                None,
+            ),
         })),
         1.0,
     );

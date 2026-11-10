@@ -37,8 +37,7 @@ use khora_sdk::khora_core::lane::Reserve;
 use khora_sdk::khora_core::script::ScriptValue;
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::{
-    Activation, AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent,
-    PhaseProvider, Runtime, WindowConfig,
+    Activation, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 
 const SCRIPT: AgentId = khora_sdk::khora_core::script::SCRIPT;
@@ -55,9 +54,6 @@ const MAX_FRAMES: usize = 1_000;
 /// it plays.
 struct Tool;
 
-impl AgentProvider for Tool {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Tool {}
 impl EngineApp for Tool {
     fn window_config() -> WindowConfig {
@@ -77,9 +73,6 @@ impl EngineApp for Tool {
 /// A game: its scripts run from the first frame.
 struct Game;
 
-impl AgentProvider for Game {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Game {}
 impl EngineApp for Game {
     fn window_config() -> WindowConfig {

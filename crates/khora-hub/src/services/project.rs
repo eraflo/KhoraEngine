@@ -358,10 +358,10 @@ fn native_main_rs() -> &'static str {
 // assets, register every default decoder, load the scene named in
 // `runtime.json`, and tick).
 //
-// To register custom components / agents / lanes, replace the body with
-// your own `EngineApp + AgentProvider + PhaseProvider` implementation and
-// call `khora_sdk::run_winit::<...>(...)` directly. See the SDK docs for
-// the full API.
+// To add components, or families of lanes (`register_agent!`), replace the
+// body with your own `EngineApp + PhaseProvider` implementation and call
+// `khora_sdk::run_winit::<...>(...)` directly. See the SDK docs for the
+// full API.
 
 use anyhow::Result;
 use khora_sdk::prelude::*;

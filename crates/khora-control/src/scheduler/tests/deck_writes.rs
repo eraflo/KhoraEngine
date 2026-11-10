@@ -16,17 +16,17 @@
 //!
 //! A slot written but not declared breaks nothing on a serial frame. In a
 //! concurrent wave two agents writing it into private shards lose one of the
-//! two at the merge, silently. So after each agent's `execute` the scheduler
+//! two at the merge, silently. So after each agent's run the scheduler
 //! compares the slots it wrote with its `contention().deck` and reports every
 //! slot it did not declare.
 
-use super::{offer_of, report_of};
+use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
-use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, Contention, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::Terms;
+use khora_core::agent::{Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::lane::OutputDeck;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -73,31 +73,17 @@ impl Writer {
     }
 }
 
-impl Agent for Writer {
+impl Family for Writer {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn execute(&mut self, ctx: &mut EngineContext<'_>) {
+    fn run(&mut self, _terms: &Terms, ctx: &mut EngineContext<'_>) {
         (self.write_declared)(ctx.deck);
         if self.strays {
             ctx.deck.slot::<Undeclared>().0 += 1;
         }
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![ExecutionPhase::TRANSFORM],
             default_phase: ExecutionPhase::TRANSFORM,
@@ -106,12 +92,6 @@ impl Agent for Writer {
     }
     fn contention(&self) -> Contention {
         Contention::none().writing_deck([self.declared])
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -128,7 +108,7 @@ fn after_one_frame(writers: Vec<Writer>, parallel: bool) -> ExecutionScheduler {
         registry
             .lock()
             .expect("the registry lock")
-            .register(Arc::new(Mutex::new(writer)), 1.0);
+            .register(hosted(writer), 1.0);
     }
     let mut scheduler =
         ExecutionScheduler::new(registry, Arc::new(RwLock::new(Context::default())), &ids);

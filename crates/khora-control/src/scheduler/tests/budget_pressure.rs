@@ -15,13 +15,13 @@
 //! What a frame over its budget skips: the optional agents, and nothing of
 //! what the earlier phases left in the deck.
 
-use super::{offer_of, report_of};
+use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
-use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::Terms;
+use khora_core::agent::{AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::any::TypeId;
@@ -48,25 +48,11 @@ struct Spender {
     runs: Arc<AtomicUsize>,
 }
 
-impl Agent for Spender {
+impl Family for Spender {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn execute(&mut self, ctx: &mut EngineContext<'_>) {
+    fn run(&mut self, _terms: &Terms, ctx: &mut EngineContext<'_>) {
         self.runs.fetch_add(1, Ordering::SeqCst);
         if self.sleeps {
             std::thread::sleep(Duration::from_millis(25));
@@ -77,7 +63,7 @@ impl Agent for Spender {
             ctx.deck.slot::<Other>().0 += 1;
         }
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![self.phase],
             default_phase: self.phase,
@@ -87,12 +73,6 @@ impl Agent for Spender {
     }
     fn contention(&self) -> Contention {
         Contention::none().writing_deck([self.writes])
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -137,7 +117,7 @@ fn a_wave_skipped_for_budget_pressure_keeps_the_earlier_phases_slots() {
                 },
             ];
             for agent in agents {
-                registry.register(Arc::new(Mutex::new(agent)), 1.0);
+                registry.register(hosted(agent), 1.0);
             }
         }
         let mut scheduler =

@@ -16,7 +16,7 @@
 //! start, before any agent runs, to every agent it names at once and under
 //! each agent's lock — never in the middle of a frame, and never by the DCC.
 
-use super::{offer_of, report_of};
+use super::{offer_of, place_with, report_of, set_step, Doing};
 use crate::agent_registry::AgentRegistry;
 use crate::budget_channel::BudgetChannel;
 use crate::dcc_context::Context;
@@ -26,7 +26,7 @@ use khora_core::agent::gorna::protocol::{
     Allocation, Envelope, Epoch, Offer, OfferRequest, Report, Trigger,
 };
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, AgentDependency, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::{Agent, AgentDependency, ExecutionPhase, ExecutionTiming, Place, Terms};
 use khora_core::lane::cost::PerDevice;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -38,21 +38,29 @@ use std::time::Duration;
 pub(super) struct Log {
     /// Each `apply`: the agent, and the epoch and envelope it was lent.
     pub(super) lent: Vec<(AgentId, Epoch, Envelope)>,
-    /// Each `execute`: the agent, and the epoch it held while it ran.
+    /// Each run of its layer: the agent, and the epoch it held while it ran.
     pub(super) ran: Vec<(AgentId, Option<Epoch>)>,
 }
 
 pub(super) type SharedLog = Arc<Mutex<Log>>;
 
-/// An agent that writes what it is lent and what it runs on into a log.
-pub(super) struct Hand {
-    id: AgentId,
-    log: SharedLog,
+/// What a [`Hand`] shares with its layer.
+#[derive(Default)]
+struct Held {
     /// The epoch of the last envelope it was lent.
-    held: Option<Epoch>,
+    epoch: Option<Epoch>,
     /// Published on the channel during its next run — the DCC publishing in
     /// the middle of a frame.
     publishes: Option<(BudgetChannel, Allocation)>,
+}
+
+/// An agent that writes what it is lent and what its layer runs on into a
+/// log.
+pub(super) struct Hand {
+    id: AgentId,
+    log: SharedLog,
+    held: Arc<Mutex<Held>>,
+    place: Arc<Mutex<Place>>,
     /// Its priority within its one phase (higher runs first).
     priority: f32,
     /// The agent it runs after, as a hard dependency: the scheduler does not
@@ -62,11 +70,23 @@ pub(super) struct Hand {
 
 impl Hand {
     pub(super) fn new(name: &'static str, log: &SharedLog) -> Self {
+        let id = AgentId::new(name);
+        let held = Arc::new(Mutex::new(Held::default()));
+        let run = {
+            let (log, held) = (Arc::clone(log), Arc::clone(&held));
+            move |_: &Terms, _: &mut EngineContext<'_>| {
+                let mut held = held.lock().expect("the held lock");
+                log.lock().expect("the log lock").ran.push((id, held.epoch));
+                if let Some((channel, allocation)) = held.publishes.take() {
+                    channel.publish(allocation);
+                }
+            }
+        };
         Self {
-            id: AgentId::new(name),
+            id,
             log: Arc::clone(log),
-            held: None,
-            publishes: None,
+            held,
+            place: place_with(id, Doing::new(StrategyId::Balanced, run), None),
             priority: 0.5,
             after: None,
         }
@@ -79,8 +99,8 @@ impl Hand {
     }
 
     /// The same agent, publishing `allocation` on `channel` while it next runs.
-    fn publishing(mut self, channel: &BudgetChannel, allocation: Allocation) -> Self {
-        self.publishes = Some((channel.clone(), allocation));
+    fn publishing(self, channel: &BudgetChannel, allocation: Allocation) -> Self {
+        self.held.lock().expect("the held lock").publishes = Some((channel.clone(), allocation));
         self
     }
 }
@@ -102,22 +122,15 @@ impl Agent for Hand {
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
-        self.held = Some(epoch);
+        self.held.lock().expect("the held lock").epoch = Some(epoch);
         self.log
             .lock()
             .expect("the log lock")
             .lent
             .push((self.id, epoch, *envelope));
     }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        self.log
-            .lock()
-            .expect("the log lock")
-            .ran
-            .push((self.id, self.held));
-        if let Some((channel, allocation)) = self.publishes.take() {
-            channel.publish(allocation);
-        }
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
     fn execution_timing(&self) -> ExecutionTiming {
         ExecutionTiming {
@@ -132,12 +145,6 @@ impl Agent for Hand {
                 .collect(),
             ..one_phase(self.priority)
         }
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -437,11 +444,11 @@ fn the_same_allocation_published_twice_is_lent_twice() {
     );
 }
 
-/// An agent sub-stepping at a fixed step its envelope sets: a frame's tick
-/// at first, a quarter of it once it is lent an envelope.
+/// An agent sub-stepping at a fixed step its envelope sets, written into its
+/// place: a frame's tick at first, a quarter of it once it is lent an
+/// envelope. Its layer counts its runs.
 struct Stepper {
-    step: Duration,
-    runs: Arc<Mutex<u32>>,
+    place: Arc<Mutex<Place>>,
 }
 
 impl Agent for Stepper {
@@ -461,22 +468,14 @@ impl Agent for Stepper {
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
-        self.step = Duration::from_secs_f32(khora_core::time::DEFAULT_FIXED_DELTA_SECONDS / 4.0);
+        let quarter = Duration::from_secs_f32(khora_core::time::DEFAULT_FIXED_DELTA_SECONDS / 4.0);
+        set_step(&self.place, Some(quarter));
     }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        *self.runs.lock().expect("the runs lock") += 1;
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
     fn execution_timing(&self) -> ExecutionTiming {
-        ExecutionTiming {
-            fixed_timestep: Some(self.step),
-            ..one_phase(0.5)
-        }
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+        one_phase(0.5)
     }
 }
 
@@ -490,8 +489,16 @@ fn a_fixed_step_an_allocation_sets_cuts_the_frame_it_is_lent_in() {
     let registry = Arc::new(Mutex::new(AgentRegistry::new()));
     registry.lock().expect("the registry lock").register(
         Arc::new(Mutex::new(Stepper {
-            step: Duration::from_secs_f32(khora_core::time::DEFAULT_FIXED_DELTA_SECONDS),
-            runs: Arc::clone(&runs),
+            place: place_with(
+                AgentId::new("stepper"),
+                Doing::new(StrategyId::Balanced, {
+                    let runs = Arc::clone(&runs);
+                    move |_, _| *runs.lock().expect("the runs lock") += 1
+                }),
+                Some(Duration::from_secs_f32(
+                    khora_core::time::DEFAULT_FIXED_DELTA_SECONDS,
+                )),
+            ),
         })),
         1.0,
     );

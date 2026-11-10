@@ -28,8 +28,8 @@ use khora_sdk::khora_core::ecs::entity::EntityId;
 use khora_sdk::khora_core::script::ScriptValue;
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::{
-    Activation, AgentId, AgentProvider, DccService, DeclaredComponentError, EngineApp, EngineCore,
-    GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
+    Activation, AgentId, DeclaredComponentError, EngineApp, EngineCore, GameWorld, InputEvent,
+    PhaseProvider, Runtime, WindowConfig,
 };
 
 const SCRIPT: AgentId = khora_sdk::khora_core::script::SCRIPT;
@@ -39,9 +39,6 @@ const AUDIO: AgentId = khora_sdk::khora_core::audio::AUDIO;
 /// A game: every hook left to the engine's defaults.
 struct Game;
 
-impl AgentProvider for Game {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Game {}
 impl EngineApp for Game {
     fn window_config() -> WindowConfig {
@@ -75,9 +72,6 @@ struct Tool {
     attached: Option<Result<EntityId, DeclaredComponentError>>,
 }
 
-impl AgentProvider for Tool {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Tool {}
 impl EngineApp for Tool {
     fn window_config() -> WindowConfig {

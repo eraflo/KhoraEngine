@@ -36,8 +36,7 @@ use khora_sdk::khora_core::event::Channel;
 use khora_sdk::khora_core::script::{ScriptEvent, ScriptValue};
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::{
-    Activation, AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent,
-    PhaseProvider, Runtime, WindowConfig,
+    Activation, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 
 const SCRIPT: AgentId = khora_sdk::khora_core::script::SCRIPT;
@@ -45,9 +44,6 @@ const SCRIPT: AgentId = khora_sdk::khora_core::script::SCRIPT;
 /// A tool built on the engine: its scripts are off until it plays.
 struct Tool;
 
-impl AgentProvider for Tool {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Tool {}
 impl EngineApp for Tool {
     fn window_config() -> WindowConfig {

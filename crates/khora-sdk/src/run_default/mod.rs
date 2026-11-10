@@ -37,10 +37,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crate::runtime_config::RuntimeConfig;
 use crate::winit_adapters::WinitWindowProvider;
 use crate::{
-    run_winit, AgentProvider, AssetService, AudioDevice, AudioMixBus, AudioStream, CpalAudioDevice,
-    DccService, DefaultMixBus, EngineApp, GameWorld, InputEvent, LayoutSystem, MetricsRegistry,
-    PackLoader, PhaseProvider, PhysicsProvider, PipelineSystem, RapierPhysicsWorld, RenderSystem,
-    Runtime, StreamInfo, TaffyLayoutSystem, WgpuPipelineSystem, WgpuRenderSystem, WindowConfig,
+    run_winit, AssetService, AudioDevice, AudioMixBus, AudioStream, CpalAudioDevice, DefaultMixBus,
+    EngineApp, GameWorld, InputEvent, LayoutSystem, MetricsRegistry, PackLoader, PhaseProvider,
+    PhysicsProvider, PipelineSystem, RapierPhysicsWorld, RenderSystem, Runtime, StreamInfo,
+    TaffyLayoutSystem, WgpuPipelineSystem, WgpuRenderSystem, WindowConfig,
 };
 use khora_io::asset::PackManifest;
 
@@ -235,9 +235,6 @@ impl EngineApp for DefaultRuntimeApp {
     }
 }
 
-impl AgentProvider for DefaultRuntimeApp {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for DefaultRuntimeApp {
     fn custom_phases(&self) -> Vec<crate::ExecutionPhase> {
         Vec::new()

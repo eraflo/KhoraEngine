@@ -330,7 +330,7 @@ fn a_reload_the_compile_handed_over_is_installed_before_the_flow_and_reads_its_c
             &permit,
             Some(agent.id()),
         );
-        agent.execute(&mut ctx);
+        khora_agents::agent::run_frame(&mut agent, &mut ctx);
     }
 
     let scripts = wiring.scripts.lock().expect("the scripting world");

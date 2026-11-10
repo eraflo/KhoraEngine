@@ -22,8 +22,7 @@ use std::sync::{Arc, Mutex};
 use khora_sdk::khora_core::lane::OutputDeck;
 use khora_sdk::khora_data::ecs::{DataSystemRegistration, Role, SystemContext, TickPhase, World};
 use khora_sdk::{
-    Activation, AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent,
-    PhaseProvider, Runtime, WindowConfig,
+    Activation, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 
 const AUDIO: khora_sdk::AgentId = khora_sdk::khora_core::audio::AUDIO;
@@ -31,9 +30,6 @@ const AUDIO: khora_sdk::AgentId = khora_sdk::khora_core::audio::AUDIO;
 /// A game: every hook left to the engine's defaults.
 struct Game;
 
-impl AgentProvider for Game {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Game {}
 impl EngineApp for Game {
     fn window_config() -> WindowConfig {

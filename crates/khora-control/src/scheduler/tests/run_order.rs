@@ -15,13 +15,13 @@
 //! The order a phase's agents run in: by importance, then by priority —
 //! higher first — wherever no dependency says otherwise.
 
-use super::{offer_of, report_of};
+use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
-use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::Terms;
+use khora_core::agent::{ExecutionPhase, ExecutionTiming};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::sync::{Arc, Mutex, RwLock};
@@ -33,25 +33,11 @@ struct Ranked {
     ran: Arc<Mutex<Vec<AgentId>>>,
 }
 
-impl Agent for Ranked {
+impl Family for Ranked {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![ExecutionPhase::OUTPUT],
             default_phase: ExecutionPhase::OUTPUT,
@@ -59,14 +45,8 @@ impl Agent for Ranked {
             ..ExecutionTiming::default()
         }
     }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
+    fn run(&mut self, _terms: &Terms, _ctx: &mut EngineContext<'_>) {
         self.ran.lock().expect("the run log lock").push(self.id);
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -90,11 +70,11 @@ fn agents_of_one_phase_run_in_priority_order() {
             let mut registry = registry.lock().expect("the registry lock");
             for (name, priority) in [("middle", 2.0), ("low", 1.0), ("high", 3.0)] {
                 registry.register(
-                    Arc::new(Mutex::new(Ranked {
+                    hosted(Ranked {
                         id: AgentId::new(name),
                         priority,
                         ran: Arc::clone(&ran),
-                    })),
+                    }),
                     priority,
                 );
             }

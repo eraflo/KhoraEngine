@@ -64,10 +64,7 @@ pub struct EngineContext<'a> {
     /// **Private.** [`resource`](Self::resource) and [`locked`](Self::locked)
     /// are the only readers: an agent that could see its own permit could work
     /// around it, and a check an agent can bypass is not a check.
-    ///
-    /// `None` means the code is running **outside any wave** — initialisation —
-    /// where nothing else runs to contend with, so there is nothing to declare.
-    permit: Option<&'a Contention>,
+    permit: &'a Contention,
 
     /// Who is running, so a refusal names them.
     running: Option<AgentId>,
@@ -100,7 +97,7 @@ impl<'a> EngineContext<'a> {
             bus,
             deck,
             earlier: None,
-            permit: Some(permit),
+            permit,
             running,
         }
     }
@@ -119,28 +116,6 @@ impl<'a> EngineContext<'a> {
         self.earlier.unwrap_or(self.deck)
     }
 
-    /// The context for `on_initialize`, before any wave exists.
-    ///
-    /// Nothing is refused here, and that is not a loophole closed halfway:
-    /// contention is a property of *running beside someone else*, and at
-    /// initialisation nobody else is running. Declaring a permit would have
-    /// asked each agent to name what its setup competes with, when the answer
-    /// is always nothing.
-    pub fn for_initialisation(
-        runtime: Arc<Runtime>,
-        bus: &'a LaneBus,
-        deck: &'a mut OutputDeck,
-    ) -> Self {
-        Self {
-            runtime,
-            bus,
-            deck,
-            earlier: None,
-            permit: None,
-            running: None,
-        }
-    }
-
     /// A runtime resource or service the agent declared.
     ///
     /// `None` when the agent did not declare it — with an error naming the
@@ -151,13 +126,11 @@ impl<'a> EngineContext<'a> {
     /// entries, once per access and never in a hot loop, against a class of bug
     /// whose symptom is a hot-reload that silently never fires.
     pub fn resource<T: Send + Sync + 'static>(&self) -> Option<&T> {
-        match self.permit {
-            Some(permit) if !permit.may_reach(std::any::TypeId::of::<T>()) => {
-                self.refuse::<T>("read", "reading");
-                None
-            }
-            _ => self.look_up::<T>(),
+        if !self.permit.may_reach(std::any::TypeId::of::<T>()) {
+            self.refuse::<T>("read", "reading");
+            return None;
         }
+        self.look_up::<T>()
     }
 
     /// A resource the agent declared it would **lock**.
@@ -166,13 +139,11 @@ impl<'a> EngineContext<'a> {
     /// declaring a read is not declaring a lock, because the scheduler groups
     /// waves differently for the two.
     pub fn locked<T: Send + Sync + 'static>(&self) -> Option<&T> {
-        match self.permit {
-            Some(permit) if !permit.may_lock(std::any::TypeId::of::<T>()) => {
-                self.refuse::<T>("lock", "locking");
-                None
-            }
-            _ => self.look_up::<T>(),
+        if !self.permit.may_lock(std::any::TypeId::of::<T>()) {
+            self.refuse::<T>("lock", "locking");
+            return None;
         }
+        self.look_up::<T>()
     }
 
     /// The three runtime containers, searched in one pass.
@@ -281,18 +252,6 @@ mod tests {
         let ctx = EngineContext::for_agent(runtime, &bus, &mut deck, &permit, None);
 
         assert!(ctx.resource::<Unwatched>().is_none());
-    }
-
-    /// Initialisation runs outside any wave, so there is nobody to contend
-    /// with and nothing is refused — an agent setting up its GPU pipelines does
-    /// not have to declare that its setup competes with a frame that has not
-    /// begun.
-    #[test]
-    fn initialisation_reaches_without_declaring() {
-        let (runtime, bus, mut deck, _) = context_with(&Contention::none());
-        let ctx = EngineContext::for_initialisation(runtime, &bus, &mut deck);
-
-        assert_eq!(ctx.resource::<Watched>().map(|w| w.0), Some(7));
     }
 
     /// Backends are searched like resources and services, because two of them

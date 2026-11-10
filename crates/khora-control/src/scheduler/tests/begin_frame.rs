@@ -105,11 +105,7 @@ fn begin_frame_swaps_a_staged_layer_in() {
         Brush::new("painter", StrategyId::LowPower, &log),
         &log,
     ));
-    let place = painter
-        .lock()
-        .expect("the agent lock")
-        .place()
-        .expect("a layered agent has a place");
+    let place = painter.lock().expect("the agent lock").place();
     let (mut scheduler, _rx) = scheduling(vec![Arc::clone(&painter)]);
     let runtime = Arc::new(Runtime::new());
     let mut world = World::new();

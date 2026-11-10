@@ -10,7 +10,7 @@
 //! agents have finished the frame, and how.
 //!
 //! At frame start the scheduler builds an [`AgentCompletionMap`] with one
-//! entry per known agent. After each agent `execute()` (or skip), the
+//! entry per known agent. After each agent's run (or skip), the
 //! scheduler calls [`AgentCompletionMap::mark`] with a [`CompletionOutcome`];
 //! dependents read it with [`AgentCompletionMap::outcome`].
 
@@ -22,11 +22,11 @@ use crate::agent::gorna::AgentId;
 /// What happened to an agent this frame, from the scheduler's point of view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompletionOutcome {
-    /// `execute()` ran to completion.
+    /// The agent's run went to completion.
     Completed,
     /// The agent was skipped (budget pressure, missing dep, etc.).
     Skipped,
-    /// `execute()` panicked. The scheduler caught it: the frame goes on, and
+    /// The agent's run panicked. The scheduler caught it: the frame goes on, and
     /// whatever the agent wrote is dropped.
     Failed,
 }

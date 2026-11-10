@@ -25,13 +25,13 @@
 //! frame's instant that far in the past; a few microseconds are added so the
 //! measured delta is never a hair below the step it is meant to cover.
 
-use super::{offer_of, report_of};
+use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
-use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::Terms;
+use khora_core::agent::{ExecutionPhase, ExecutionTiming};
 use khora_core::time::{SharedTime, Time, DEFAULT_FIXED_DELTA_SECONDS, MAX_SIM_STEPS};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -39,47 +39,30 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
-/// Counts how many times it was run; declares `fixed` as its fixed step.
+/// Counts how many times it was run; its place starts at `fixed` as its
+/// fixed step.
 struct Counting {
     id: AgentId,
     fixed: Option<Duration>,
     runs: Arc<AtomicUsize>,
 }
 
-impl Agent for Counting {
+impl Family for Counting {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
+    fn run(&mut self, _terms: &Terms, _ctx: &mut EngineContext<'_>) {
         self.runs.fetch_add(1, Ordering::SeqCst);
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn step(&self) -> Option<Duration> {
+        self.fixed
+    }
+    fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![ExecutionPhase::TRANSFORM],
             default_phase: ExecutionPhase::TRANSFORM,
-            fixed_timestep: self.fixed,
             ..ExecutionTiming::default()
         }
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -93,11 +76,11 @@ fn scheduler_of(
     for &(id, fixed) in agents {
         let runs = Arc::new(AtomicUsize::new(0));
         registry.lock().expect("the registry lock").register(
-            Arc::new(Mutex::new(Counting {
+            hosted(Counting {
                 id,
                 fixed,
                 runs: Arc::clone(&runs),
-            })),
+            }),
             1.0,
         );
         counters.push(runs);

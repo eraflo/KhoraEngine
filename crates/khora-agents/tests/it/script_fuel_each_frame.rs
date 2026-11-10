@@ -94,7 +94,7 @@ fn run_one_frame(agent: &mut LaneAgent, runtime: &Arc<Runtime>) {
         &permit,
         Some(agent.id()),
     );
-    agent.execute(&mut ctx);
+    khora_agents::agent::run_frame(agent, &mut ctx);
 }
 
 /// Has the lane measure `rate` instructions per millisecond and no

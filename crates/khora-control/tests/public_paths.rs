@@ -373,7 +373,6 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::plugin::EnginePlugin::name;
 
     // --- module `agent_registry`
-    let _ = type_name::<khora_control::agent_registry::PhaseAgentEntry>();
     let _ = type_name::<khora_control::agent_registry::AgentRegistry>();
     is_default::<khora_control::agent_registry::AgentRegistry>();
     let _ = khora_control::agent_registry::AgentRegistry::new;
@@ -382,11 +381,7 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::agent_registry::AgentRegistry::is_empty;
     let _ = khora_control::agent_registry::AgentRegistry::iter;
     let _ = khora_control::agent_registry::AgentRegistry::all_ids;
-    let _ = khora_control::agent_registry::AgentRegistry::initialize_all;
-    let _ = khora_control::agent_registry::AgentRegistry::execute_all;
     let _ = khora_control::agent_registry::AgentRegistry::get_by_id;
-    let _ = khora_control::agent_registry::AgentRegistry::collect_for_phase;
-    let _ = khora_control::agent_registry::AgentRegistry::execute_agent;
 
     // --- module `scheduler`
     let _ = type_name::<khora_control::scheduler::ExecutionScheduler>();
@@ -434,8 +429,6 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::dcc_service::DccService::event_sender;
     let _ = khora_control::dcc_service::DccService::get_context;
     let _ = khora_control::dcc_service::DccService::context_handle;
-    let _ = khora_control::dcc_service::DccService::initialize_agents;
-    let _ = khora_control::dcc_service::DccService::execute_agents;
     let _ = khora_control::dcc_service::DccService::agent_count;
     let _ = khora_control::dcc_service::DccService::get_agent;
 

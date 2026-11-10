@@ -147,7 +147,7 @@ impl Session {
                 &permit,
                 Some(self.agent.id()),
             );
-            self.agent.execute(&mut ctx);
+            khora_agents::agent::run_frame(&mut self.agent, &mut ctx);
         }
         run_data_systems(
             &mut self.world,

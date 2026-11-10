@@ -23,6 +23,7 @@ mod default_level;
 mod envelope;
 mod execution;
 mod fixtures;
+mod frames_without_a_scheduler;
 mod health;
 mod impact_change;
 mod lane_message;

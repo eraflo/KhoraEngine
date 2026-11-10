@@ -38,9 +38,9 @@ use khora_sdk::prelude::ecs::{Name, Transform};
 use khora_sdk::prelude::math::Vec3;
 use khora_sdk::scripts::{CompileHub, CompileTicket};
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, EngineCore, GameWorld, IndexHub, InputEvent,
-    PhaseProvider, Readiness, ReadinessProgress, ReadinessState, ReadinessTicket, Runtime,
-    SceneLoadHub, SerializationGoal, SerializationService, WindowConfig,
+    EngineApp, EngineCore, GameWorld, IndexHub, InputEvent, PhaseProvider, Readiness,
+    ReadinessProgress, ReadinessState, ReadinessTicket, Runtime, SceneLoadHub, SerializationGoal,
+    SerializationService, WindowConfig,
 };
 
 /// The most frames a filed piece of work may take to land: the background
@@ -55,9 +55,6 @@ const LANTERN: &str = "component Lantern { int lit = 0; }";
 /// A game that waits on nothing of its own.
 struct Game;
 
-impl AgentProvider for Game {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Game {}
 impl EngineApp for Game {
     fn window_config() -> WindowConfig {
@@ -88,9 +85,6 @@ impl Tool {
     }
 }
 
-impl AgentProvider for Tool {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Tool {}
 impl EngineApp for Tool {
     fn window_config() -> WindowConfig {

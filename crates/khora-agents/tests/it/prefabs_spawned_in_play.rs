@@ -360,7 +360,7 @@ fn the_scripting_agent_hands_its_lane_the_prefab_catalog() {
                     &permit,
                     Some(agent.id()),
                 );
-                agent.execute(&mut ctx);
+                khora_agents::agent::run_frame(&mut agent, &mut ctx);
             }
             let spawned = deck.take::<CommandBuffer>().as_slice().iter().any(|command| {
                 matches!(command, WorldCommand::SpawnPrefab { prefab, .. } if *prefab == bullet)

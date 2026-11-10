@@ -34,16 +34,12 @@ use khora_sdk::khora_core::script::{ComponentName, ScriptReads};
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::scripts::{CompileOutcome, CompileTicket};
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
-    Runtime, WindowConfig,
+    EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 
 /// A tool built on the engine, editing: its scripts are off.
 struct Tool;
 
-impl AgentProvider for Tool {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Tool {}
 impl EngineApp for Tool {
     fn window_config() -> WindowConfig {
@@ -338,9 +334,6 @@ struct Lit {
     attached: Option<bool>,
 }
 
-impl AgentProvider for Lit {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Lit {}
 impl EngineApp for Lit {
     fn window_config() -> WindowConfig {

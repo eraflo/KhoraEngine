@@ -22,13 +22,12 @@
 //! built-in agent takes. Its third lane runs only on a device with storage buffers, so
 //! it is on the menu only when the engine boots over such a device.
 
-use crate::protocol::{offer_of, report_of};
-use khora_sdk::khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-use khora_agents::registered_agent::RegisteredAgent;
+use khora_agents::registered_agent::{registered_agents, RegisteredAgent};
 use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_sdk::khora_core::agent::{AgentImportance, ExecutionPhase};
+use khora_sdk::khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_sdk::khora_core::gpu::{DeviceCaps, GpuSetup};
 use khora_sdk::khora_core::lane::cost::{Cost, PerDevice};
 use khora_sdk::khora_core::lane::family::{LaneFamily, Semantics};
@@ -42,8 +41,7 @@ use khora_sdk::khora_core::lane::{Lane, LaneReport};
 use khora_sdk::khora_core::renderer::GraphicsDevice;
 use khora_sdk::Activation;
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
-    Runtime, WindowConfig,
+    EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 
 use crate::render_doubles::QueueLog;
@@ -241,9 +239,6 @@ khora_sdk::inventory::submit! {
 /// A game registering no agent of its own.
 struct Game;
 
-impl AgentProvider for Game {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Game {}
 impl EngineApp for Game {
     fn window_config() -> WindowConfig {
@@ -312,14 +307,39 @@ fn the_script_family_boots_as_a_lane_agent_from_its_registration() {
     );
     let dcc = engine.dcc().expect("bootstrapped");
     let registry = dcc.agent_registry().lock().expect("the registry lock");
+    let origin = registry.origin(khora_sdk::khora_core::script::SCRIPT);
+    assert!(
+        origin.is_some_and(|module| module.starts_with("khora_agents::")),
+        "the script agent was registered from its registration in khora-agents; origin {origin:?}"
+    );
+
+    // The agent registered as `script` is the `LaneAgent` that registration
+    // builds: the same menu, offered before any run prices a row, and the
+    // same place in the frame.
+    let registration = registered_agents()
+        .into_iter()
+        .find(|registration| registration.agent == khora_sdk::khora_core::script::SCRIPT)
+        .expect("the script family is registered");
+    let mut built = khora_agents::agent::lane_agent(registration, &DeviceCaps::default());
     let agent = registry
         .get_by_id(khora_sdk::khora_core::script::SCRIPT)
         .expect("the script agent is registered");
-    let layered = agent.lock().is_ok_and(|agent| agent.place().is_some());
-    assert!(
-        layered,
-        "the script agent is the family's `LaneAgent`, running as layers; origin {:?}",
-        registry.origin(khora_sdk::khora_core::script::SCRIPT)
+    let mut agent = agent.lock().expect("the script agent's lock");
+    let request = crate::protocol::request();
+    let menu =
+        |offer: khora_sdk::khora_core::agent::gorna::protocol::Offer| -> HashSet<StrategyId> {
+            offer.rows.iter().map(|row| row.id).collect()
+        };
+    let (registered, expected) = (agent.execution_timing(), built.execution_timing());
+    assert_eq!(
+        (registered.allowed_phases, registered.importance),
+        (expected.allowed_phases, expected.importance),
+        "the registered `script` agent sits where its registration places it"
+    );
+    assert_eq!(
+        menu(agent.offer(&request)),
+        menu(built.offer(&request)),
+        "the registered `script` agent offers the menu its registration builds"
     );
 }
 
@@ -455,75 +475,6 @@ fn boot_reads_the_device_caps_from_the_installed_device() {
     );
 }
 
-// ─── A family whose agent id is taken ───────────────────────────────────────
-
-/// A game agent registered under the probe family's id.
-struct Squatter;
-
-impl khora_sdk::khora_core::agent::Agent for Squatter {
-    fn id(&self) -> AgentId {
-        AgentId::new("ecs")
-    }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(AgentId::new("ecs"), request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(AgentId::new("ecs"), StrategyId::Balanced)
-    }
-    fn execute(&mut self, _context: &mut khora_sdk::khora_core::EngineContext<'_>) {}
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-/// A game registering its own agent under the probe family's id.
-struct SquattingGame;
-
-impl AgentProvider for SquattingGame {
-    fn register_agents(&self, dcc: &DccService, _runtime: &mut Runtime) {
-        dcc.register_agent(Arc::new(Mutex::new(Squatter)), 1.0);
-    }
-}
-impl PhaseProvider for SquattingGame {}
-impl EngineApp for SquattingGame {
-    fn window_config() -> WindowConfig {
-        WindowConfig::default()
-    }
-    fn new() -> Self {
-        SquattingGame
-    }
-    fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {}
-    fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
-}
-
-/// **A checked family never boots without its agent.** The registry keeps one
-/// agent per id, so a family whose id another agent already holds would
-/// never run. Boot refuses that, as it refuses two families under one id,
-/// rather than starting with the family silently left out.
-#[test]
-fn a_family_whose_agent_id_is_taken_refuses_to_boot() {
-    let booted = std::panic::catch_unwind(|| {
-        let mut engine = EngineCore::<SquattingGame>::new();
-        engine.bootstrap(SquattingGame, Runtime::new());
-    });
-
-    assert!(
-        booted.is_err(),
-        "the engine booted with the probe family's agent refused by the registry"
-    );
-}
-
 // ─── Where each agent comes from ────────────────────────────────────────────
 
 /// **Boot records where each agent comes from.** A family's agent comes from
@@ -551,86 +502,109 @@ fn boot_records_each_agents_origin() {
     }
 }
 
-// ─── A game agent under an engine agent's name ──────────────────────────────
+// ─── A family whose agent id is taken ───────────────────────────────────────
 
-/// A game agent that names itself `script`, the name of the engine's own
-/// script runner.
-struct GameScript;
+/// An agent standing under the probe family's id, its place running nothing.
+struct Squatter {
+    place: Arc<Mutex<khora_sdk::khora_core::agent::Place>>,
+}
 
-impl khora_sdk::khora_core::agent::Agent for GameScript {
+impl khora_sdk::khora_core::agent::Agent for Squatter {
     fn id(&self) -> AgentId {
-        AgentId::new("script")
+        AgentId::new("ecs")
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(AgentId::new("script"), request, StrategyId::Balanced)
+    fn offer(
+        &mut self,
+        request: &khora_sdk::khora_core::agent::gorna::protocol::OfferRequest,
+    ) -> khora_sdk::khora_core::agent::gorna::protocol::Offer {
+        crate::protocol::offer_of(AgentId::new("ecs"), request, StrategyId::Balanced)
     }
     fn apply(
         &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
+        _epoch: khora_sdk::khora_core::agent::gorna::protocol::Epoch,
+        _envelope: &khora_sdk::khora_core::agent::gorna::protocol::Envelope,
         _pin: Option<StrategyId>,
         _allowed: Option<&[StrategyId]>,
     ) {
     }
-    fn report(&self) -> Report {
-        report_of(AgentId::new("script"), StrategyId::Balanced)
+    fn report(&self) -> khora_sdk::khora_core::agent::gorna::protocol::Report {
+        crate::protocol::report_of(AgentId::new("ecs"), StrategyId::Balanced)
     }
-    fn execute(&mut self, _context: &mut khora_sdk::khora_core::EngineContext<'_>) {}
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+    fn place(&self) -> Arc<Mutex<khora_sdk::khora_core::agent::Place>> {
+        Arc::clone(&self.place)
     }
 }
 
-/// A game registering its own agent under the name `script`.
-struct GameNamingItsAgentScript;
+/// The squatter the app registered, kept in the runtime so a test finds it.
+struct Squatting(Arc<Mutex<dyn khora_sdk::khora_core::agent::Agent>>);
 
-impl AgentProvider for GameNamingItsAgentScript {
-    fn register_agents(&self, dcc: &DccService, _runtime: &mut Runtime) {
-        dcc.register_agent(Arc::new(Mutex::new(GameScript)), 1.0);
-    }
-}
-impl PhaseProvider for GameNamingItsAgentScript {}
-impl EngineApp for GameNamingItsAgentScript {
+/// A game whose `provide` registers an agent under the probe family's id,
+/// through the agent registry the engine publishes in the runtime.
+struct SquattingGame;
+
+impl PhaseProvider for SquattingGame {}
+impl EngineApp for SquattingGame {
     fn window_config() -> WindowConfig {
         WindowConfig::default()
     }
     fn new() -> Self {
-        GameNamingItsAgentScript
+        SquattingGame
     }
     fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {}
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
+    fn provide(&self, runtime: &mut Runtime) {
+        let squatter: Arc<Mutex<dyn khora_sdk::khora_core::agent::Agent>> =
+            Arc::new(Mutex::new(Squatter {
+                place: Arc::new(Mutex::new(khora_sdk::khora_core::agent::Place::new(
+                    AgentId::new("ecs"),
+                ))),
+            }));
+        if let Some(registry) = runtime
+            .resources
+            .get::<Arc<Mutex<khora_sdk::AgentRegistry>>>()
+        {
+            registry
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .register(Arc::clone(&squatter), 1.0);
+        }
+        runtime.resources.insert(Squatting(squatter));
+    }
 }
 
-/// **The engine's own agents never boot without themselves.** A name is now
-/// free text, so a game naming its agent `script` (or `renderer`) takes the
-/// name before the engine registers its own: the registry keeps the first,
-/// and the engine's script runner would be silently left out — no script
-/// would ever run. Boot refuses that, as it refuses a family whose name is
-/// taken.
+/// **A checked family never boots without its agent.** The registry keeps
+/// one agent per id, and an app still reaches it — the engine publishes it in
+/// the runtime its `provide` fills. A family whose id another agent took
+/// first would never run, its origin stamped on the other agent: boot refuses
+/// that rather than starting with the family silently left out.
 #[test]
-fn a_game_agent_under_an_engine_agents_name_refuses_to_boot() {
+fn a_family_whose_agent_id_an_app_took_refuses_to_boot() {
     let booted = std::panic::catch_unwind(|| {
-        let mut engine = EngineCore::<GameNamingItsAgentScript>::new();
-        engine.bootstrap(GameNamingItsAgentScript, Runtime::new());
+        let mut engine = EngineCore::<SquattingGame>::new();
+        engine.bootstrap(SquattingGame, Runtime::new());
+        let squatter = Arc::clone(
+            &engine
+                .runtime()
+                .resources
+                .get::<Squatting>()
+                .expect("the app's provide ran")
+                .0,
+        );
         let dcc = engine.dcc().expect("bootstrapped");
         let registry = dcc.agent_registry().lock().expect("the registry lock");
         let holder = registry
-            .get_by_id(AgentId::new("script"))
-            .expect("an agent named `script` is registered");
-        let is_the_games = holder
-            .lock()
-            .is_ok_and(|agent| agent.as_any().is::<GameScript>());
-        (is_the_games, registry.origin(AgentId::new("script")))
+            .get_by_id(AgentId::new("ecs"))
+            .expect("an agent named `ecs` is registered");
+        (
+            Arc::ptr_eq(&holder, &squatter),
+            registry.origin(AgentId::new("ecs")),
+        )
     });
 
     assert!(
-        booted.is_err(),
-        "the engine booted with its script runner refused by the registry; \
-         `script` is the game's agent ({:?}) yet its origin reads {:?}",
-        booted.as_ref().map(|(is_the_games, _)| *is_the_games),
-        booted.as_ref().map(|(_, origin)| *origin),
+        !matches!(booted, Ok((true, _))),
+        "the engine booted with the probe family's agent refused by the registry: \
+         `ecs` is the app's agent, yet its origin reads {:?}",
+        booted.as_ref().ok().and_then(|(_, origin)| *origin),
     );
 }

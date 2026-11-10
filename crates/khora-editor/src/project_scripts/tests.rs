@@ -21,8 +21,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use khora_sdk::{
-    AgentProvider, AssetChangeEvent, AssetWatch, DccService, EngineApp, EngineCore, GameWorld,
-    InputEvent, MetricsRegistry, PhaseProvider, Runtime, WindowConfig,
+    AssetChangeEvent, AssetWatch, EngineApp, EngineCore, GameWorld, InputEvent, MetricsRegistry,
+    PhaseProvider, Runtime, WindowConfig,
 };
 
 use khora_sdk::editor_ui::EditorState;
@@ -36,9 +36,6 @@ use crate::project_vfs::ProjectVfs;
 /// runs on, without the editor.
 struct Editing;
 
-impl AgentProvider for Editing {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Editing {}
 impl EngineApp for Editing {
     fn window_config() -> WindowConfig {

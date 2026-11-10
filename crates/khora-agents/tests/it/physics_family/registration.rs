@@ -31,7 +31,9 @@ use khora_core::physics::{ContactBatch, PhysicsProvider, PhysicsSettings};
 use khora_core::Runtime;
 use khora_data::flow::PhysicsStepResult;
 
-use super::fixtures::{physics_agent, physics_registration, physics_runtime, ScriptedProvider};
+use super::fixtures::{
+    physics_agent, physics_registration, physics_runtime, place_step, ScriptedProvider,
+};
 use crate::protocol::{pin_with, request};
 
 // ─── The registration ───────────────────────────────────────────────────────
@@ -192,9 +194,10 @@ fn the_physics_agent_writes_both_slots_and_locks_the_provider() {
 /// the scheduler cuts the gameplay time into steps of that size.
 #[test]
 fn the_physics_agent_runs_at_the_default_physics_step() {
-    let timing = physics_agent().execution_timing();
+    let agent = physics_agent();
+    let timing = agent.execution_timing();
 
-    assert_eq!(timing.fixed_timestep, Some(PhysicsSettings::default().step));
+    assert_eq!(place_step(&agent), Some(PhysicsSettings::default().step));
     assert_eq!(timing.allowed_phases, vec![ExecutionPhase::TRANSFORM]);
     assert_eq!(timing.default_phase, ExecutionPhase::TRANSFORM);
     assert_eq!(timing.importance, AgentImportance::Critical);
@@ -207,7 +210,7 @@ fn the_physics_agent_runs_at_the_default_physics_step() {
 #[test]
 fn no_gorna_level_changes_the_physics_step() {
     let mut agent = physics_agent();
-    let step = agent.execution_timing().fixed_timestep;
+    let step = place_step(&agent);
     assert!(step.is_some(), "physics runs at a fixed step");
 
     let offered: Vec<StrategyId> = agent
@@ -224,10 +227,6 @@ fn no_gorna_level_changes_the_physics_step() {
     ]);
     for strategy in named {
         pin_with(&mut agent, strategy, Duration::from_millis(2));
-        assert_eq!(
-            agent.execution_timing().fixed_timestep,
-            step,
-            "{strategy:?} left the step alone"
-        );
+        assert_eq!(place_step(&agent), step, "{strategy:?} left the step alone");
     }
 }

@@ -649,6 +649,505 @@ fn a_target_that_opts_out_of_the_tests_holds_none() {
     );
 }
 
+/// **Only `LaneAgent` implements `Agent`** (`.agent/engine/RULES.md` §8): a
+/// new subsystem is a family, whose agent is the one `LaneAgent`. Every `.rs`
+/// file under `crates/` and `examples/` is read, its test code left out: a
+/// file under a `tests/` directory, a file named `tests.rs`, a file marked
+/// `#![cfg(test)]` or declared by its parent with `#[cfg(test)] mod …;` (and
+/// the folder of such a module), and every item carrying `#[cfg(test)]`
+/// (an inline `#[cfg(test)] mod … { … }` above all). Comments and string
+/// literals are not code. Exactly one `impl … Agent for …` is left, and it is
+/// `LaneAgent`'s.
+#[test]
+fn only_lane_agent_implements_agent() {
+    let root = repo_root();
+    let sources: Vec<(PathBuf, String)> = ["crates", "examples"]
+        .iter()
+        .flat_map(|dir| rust_files(&root.join(dir)))
+        .map(|path| {
+            let text = fs::read_to_string(&path)
+                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+            (path, blank_comments_and_literals(&text))
+        })
+        .collect();
+    assert!(
+        sources.len() > 100,
+        "the reader found only {} Rust files under crates/ and examples/",
+        sources.len()
+    );
+    let test_roots: Vec<PathBuf> = sources
+        .iter()
+        .flat_map(|(path, code)| test_module_roots(path, code))
+        .collect();
+
+    let mut impls = Vec::new();
+    for (path, code) in &sources {
+        let in_test_root = test_roots
+            .iter()
+            .any(|test| path == test || path.starts_with(test));
+        if is_test_file(path) || in_test_root || has_inner_cfg_test(code) {
+            continue;
+        }
+        for self_type in agent_impls(&non_test_code(code)) {
+            let file = path.strip_prefix(&root).unwrap_or(path);
+            impls.push(format!("{} for {self_type}", file.display()));
+        }
+    }
+
+    assert_eq!(
+        impls.len(),
+        1,
+        "exactly one `impl Agent for` outside test code, LaneAgent's; found:\n  {}",
+        impls.join("\n  ")
+    );
+    assert!(
+        impls[0].ends_with(" for LaneAgent"),
+        "the one `impl Agent for` outside test code is not LaneAgent's: {}",
+        impls[0]
+    );
+}
+
+/// The reader of [`only_lane_agent_implements_agent`] sees every spelling of
+/// an `impl … Agent for …` in code, and none in test code, a comment or a
+/// string literal.
+#[test]
+fn the_agent_impl_reader_sees_every_spelling_outside_test_code() {
+    let source = r###"
+// impl Agent for InAComment {}
+/// impl Agent for InADocComment {}
+/* impl Agent for InABlockComment {} */
+const TEXT: &str = "impl Agent for InAString {}";
+const RAW: &str = r##"impl Agent for InARawString {}"##;
+impl Agent for Plain {
+    fn id(&self) -> char { '{' }
+}
+impl khora_core::agent::Agent for Qualified {}
+impl<T: Fn() -> u32> Agent for Generic<T> where T: Send {}
+impl AgentProvider for NotAnAgent {}
+impl LaneAgent {}
+fn returns() -> impl Agent { todo!() }
+#[cfg(test)]
+impl Agent for TestOnlyImpl {}
+#[cfg(test)]
+#[allow(dead_code)]
+mod tests {
+    fn brace() -> char { '}' }
+    impl Agent for InATestModule {}
+}
+#[cfg(all(test, feature = "x"))] mod more { impl Agent for InAnotherTestModule {} }
+impl Agent for AfterTheTests {}
+"###;
+    let found = agent_impls(&non_test_code(&blank_comments_and_literals(source)));
+    assert_eq!(
+        found,
+        vec!["Plain", "Qualified", "Generic<T>", "AfterTheTests"],
+        "the impls the reader saw"
+    );
+
+    let parent = Path::new("crates/a/src/lib.rs");
+    let roots = test_module_roots(
+        parent,
+        &blank_comments_and_literals("#[cfg(test)]\nmod checks;\nmod shipped;\n"),
+    );
+    assert_eq!(
+        roots,
+        vec![
+            PathBuf::from("crates/a/src/checks.rs"),
+            PathBuf::from("crates/a/src/checks"),
+        ],
+        "a module declared under `#[cfg(test)]` is test code, its folder included"
+    );
+}
+
+/// The reader of [`only_lane_agent_implements_agent`] sees an `impl` of
+/// `Agent` whatever name the trait is imported under, and one written by a
+/// `macro_rules!` that takes the trait as a parameter.
+#[test]
+fn the_agent_impl_reader_sees_the_trait_under_another_name() {
+    let source = r###"
+use khora_core::agent::Agent as Strategist;
+impl Strategist for Renamed {}
+macro_rules! strategist { ($tr:path, $t:ident) => { impl $tr for $t {} }; }
+strategist!(khora_core::agent::Agent, ByMacro);
+"###;
+    let found = agent_impls(&non_test_code(&blank_comments_and_literals(source)));
+    assert!(
+        found.iter().any(|ty| ty == "Renamed"),
+        "the impl of `Agent` imported as `Strategist`; the reader saw {found:?}"
+    );
+    assert!(
+        found.iter().any(|ty| ty == "$t" || ty == "ByMacro"),
+        "the impl a macro writes from its `$tr`; the reader saw {found:?}"
+    );
+}
+
+/// Whether `path` holds only test code by its place: a `tests.rs`, or a file
+/// under a `tests/` directory.
+fn is_test_file(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == "tests.rs")
+        || path
+            .parent()
+            .is_some_and(|dir| dir.components().any(|part| part.as_os_str() == "tests"))
+}
+
+/// Whether `code` carries the inner attribute `#![cfg(test)]` (or
+/// `#![cfg(all(test, …))]`): the whole file is test code.
+fn has_inner_cfg_test(code: &str) -> bool {
+    code.lines().any(|line| {
+        let compact: String = line.chars().filter(|ch| !ch.is_whitespace()).collect();
+        compact == "#![cfg(test)]" || compact.starts_with("#![cfg(all(test,")
+    })
+}
+
+/// `#[cfg(test)]` or `#[cfg(all(test, …))]`, never `not(test)`.
+fn is_cfg_test(attribute: &str) -> bool {
+    let compact: String = attribute.chars().filter(|ch| !ch.is_whitespace()).collect();
+    compact == "#[cfg(test)]" || compact.starts_with("#[cfg(all(test,")
+}
+
+/// Whether `ch` can be part of an identifier.
+fn is_ident(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
+}
+
+/// `text` with every comment and every string, raw string and character
+/// literal replaced by spaces, line breaks kept: what is left is code only.
+fn blank_comments_and_literals(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let n = chars.len();
+    let at = |i: usize| chars.get(i).copied().unwrap_or('\0');
+    let mut out: Vec<char> = Vec::with_capacity(n);
+    let blank = |out: &mut Vec<char>, from: usize, to: usize| {
+        for &ch in &chars[from..to.min(n)] {
+            out.push(if ch == '\n' { '\n' } else { ' ' });
+        }
+    };
+    let mut i = 0;
+    while i < n {
+        let ch = chars[i];
+        let previous = if i > 0 { chars[i - 1] } else { '\0' };
+        // A line comment, to the end of its line.
+        if ch == '/' && at(i + 1) == '/' {
+            let mut end = i;
+            while end < n && chars[end] != '\n' {
+                end += 1;
+            }
+            blank(&mut out, i, end);
+            i = end;
+            continue;
+        }
+        // A block comment, nested ones included.
+        if ch == '/' && at(i + 1) == '*' {
+            let (mut end, mut depth) = (i + 2, 1);
+            while end < n && depth > 0 {
+                if chars[end] == '/' && at(end + 1) == '*' {
+                    depth += 1;
+                    end += 2;
+                } else if chars[end] == '*' && at(end + 1) == '/' {
+                    depth -= 1;
+                    end += 2;
+                } else {
+                    end += 1;
+                }
+            }
+            blank(&mut out, i, end);
+            i = end;
+            continue;
+        }
+        // A raw string: `r"…"`, `r#"…"#`, `br"…"`.
+        let starts_raw = ch == 'r'
+            && (!is_ident(previous) || (previous == 'b' && (i < 2 || !is_ident(chars[i - 2]))))
+            && {
+                let mut hashes = i + 1;
+                while at(hashes) == '#' {
+                    hashes += 1;
+                }
+                at(hashes) == '"'
+            };
+        if starts_raw {
+            let mut open = i + 1;
+            while at(open) == '#' {
+                open += 1;
+            }
+            let hashes = open - (i + 1);
+            let mut end = open + 1;
+            while end < n {
+                if chars[end] == '"' && (1..=hashes).all(|k| at(end + k) == '#') {
+                    end += 1 + hashes;
+                    break;
+                }
+                end += 1;
+            }
+            blank(&mut out, i, end);
+            i = end;
+            continue;
+        }
+        // A string, its escapes included.
+        if ch == '"' {
+            let mut end = i + 1;
+            while end < n && chars[end] != '"' {
+                end += if chars[end] == '\\' { 2 } else { 1 };
+            }
+            blank(&mut out, i, end + 1);
+            i = end + 1;
+            continue;
+        }
+        // A character literal; a lifetime is code.
+        if ch == '\'' {
+            if at(i + 1) == '\\' {
+                let mut end = i + 3;
+                while end < n && chars[end] != '\'' {
+                    end += 1;
+                }
+                blank(&mut out, i, end + 1);
+                i = end + 1;
+                continue;
+            }
+            if at(i + 2) == '\'' {
+                blank(&mut out, i, i + 3);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(ch);
+        i += 1;
+    }
+    out.into_iter().collect()
+}
+
+/// `code` (comments and literals blanked) without the items carrying
+/// `#[cfg(test)]`: each such item is blanked through its balanced braces, or
+/// through its `;` when it has none.
+fn non_test_code(code: &str) -> String {
+    let chars: Vec<char> = code.chars().collect();
+    let n = chars.len();
+    let mut out: Vec<char> = Vec::with_capacity(n);
+    let mut pending = false;
+    let mut i = 0;
+    while i < n {
+        let ch = chars[i];
+        if ch.is_whitespace() {
+            out.push(ch);
+            i += 1;
+            continue;
+        }
+        // An outer attribute, through its matching `]`.
+        if ch == '#' && chars.get(i + 1) == Some(&'[') {
+            let (mut end, mut depth) = (i + 1, 0);
+            while end < n {
+                match chars[end] {
+                    '[' => depth += 1,
+                    ']' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                end += 1;
+            }
+            let attribute: String = chars[i..(end + 1).min(n)].iter().collect();
+            pending |= is_cfg_test(&attribute);
+            out.extend(attribute.chars());
+            i = end + 1;
+            continue;
+        }
+        if pending {
+            let (mut depth, mut opened) = (0i64, false);
+            while i < n {
+                let item = chars[i];
+                out.push(if item == '\n' { '\n' } else { ' ' });
+                i += 1;
+                match item {
+                    '{' => {
+                        depth += 1;
+                        opened = true;
+                    }
+                    '}' => {
+                        depth -= 1;
+                        if opened && depth == 0 {
+                            break;
+                        }
+                    }
+                    ';' if !opened && depth == 0 => break,
+                    _ => {}
+                }
+            }
+            pending = false;
+            continue;
+        }
+        out.push(ch);
+        i += 1;
+    }
+    out.into_iter().collect()
+}
+
+/// The modules `path` declares under `#[cfg(test)]` as files (`#[cfg(test)]
+/// mod name;`): for each, its file `name.rs` and its folder `name/`, beside
+/// `path` when it is a `lib.rs`, `main.rs` or `mod.rs`, in the folder named
+/// after it otherwise.
+fn test_module_roots(path: &Path, code: &str) -> Vec<PathBuf> {
+    let Some(parent) = path.parent() else {
+        return Vec::new();
+    };
+    let owns_its_folder = path
+        .file_name()
+        .is_some_and(|name| name == "lib.rs" || name == "main.rs" || name == "mod.rs");
+    let folder = if owns_its_folder {
+        parent.to_path_buf()
+    } else {
+        parent.join(path.file_stem().unwrap_or_default())
+    };
+    let mut roots = Vec::new();
+    let mut pending = false;
+    for line in code.lines() {
+        let mut rest = line.trim();
+        while rest.starts_with("#[") {
+            let Some(close) = rest.find(']') else {
+                break;
+            };
+            pending |= is_cfg_test(&rest[..=close]);
+            rest = rest[close + 1..].trim_start();
+        }
+        if rest.is_empty() {
+            continue;
+        }
+        if pending {
+            let item = rest
+                .strip_prefix("pub(crate) ")
+                .or_else(|| rest.strip_prefix("pub(super) "))
+                .or_else(|| rest.strip_prefix("pub "))
+                .unwrap_or(rest);
+            if let Some(declared) = item.strip_prefix("mod ") {
+                let name: String = declared
+                    .trim_start()
+                    .chars()
+                    .take_while(|ch| is_ident(*ch))
+                    .collect();
+                let after = declared.trim_start()[name.len()..].trim_start();
+                if !name.is_empty() && after.starts_with(';') {
+                    roots.push(folder.join(format!("{name}.rs")));
+                    roots.push(folder.join(&name));
+                }
+            }
+        }
+        pending = false;
+    }
+    roots
+}
+
+/// The self type of every `impl … Agent for …` in `code` (comments and
+/// literals blanked), its whitespace collapsed: the trait's last path
+/// segment, its generic arguments aside, is `Agent` or a name `code` imports
+/// it under (`Agent as X`). A trait that is a `macro_rules!` parameter
+/// (`impl $tr for …`) counts too: the macro could be handed `Agent`.
+fn agent_impls(code: &str) -> Vec<String> {
+    let names = agent_names(code);
+    let chars: Vec<char> = code.chars().collect();
+    let n = chars.len();
+    let at = |i: usize| chars.get(i).copied().unwrap_or('\0');
+    let mut found = Vec::new();
+    let mut i = 0;
+    while i + 4 <= n {
+        let is_impl = chars[i..i + 4] == ['i', 'm', 'p', 'l']
+            && (i == 0 || !is_ident(chars[i - 1]))
+            && !is_ident(at(i + 4));
+        if !is_impl {
+            i += 1;
+            continue;
+        }
+        let mut j = i + 4;
+        while j < n && chars[j].is_whitespace() {
+            j += 1;
+        }
+        // The impl's own generics, `->` inside a bound aside.
+        if at(j) == '<' {
+            let mut depth = 0;
+            while j < n {
+                match chars[j] {
+                    '<' => depth += 1,
+                    '>' if j > 0 && chars[j - 1] != '-' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            j += 1;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                j += 1;
+            }
+        }
+        // The header, up to the body or the end of the item.
+        let mut end = j;
+        while end < n && chars[end] != '{' && chars[end] != ';' {
+            end += 1;
+        }
+        let header: Vec<char> = chars[j..end].to_vec();
+        if let Some(self_type) = agent_impl_self_type(&header, &names) {
+            found.push(self_type);
+        }
+        i = end.max(i + 4);
+    }
+    found
+}
+
+/// `Agent`, and every name `code` imports it under: each `Agent as X`, `X`
+/// not `_`.
+fn agent_names(code: &str) -> Vec<String> {
+    let mut names = vec!["Agent".to_owned()];
+    let words: Vec<&str> = code
+        .split(|ch: char| !is_ident(ch))
+        .filter(|word| !word.is_empty())
+        .collect();
+    for window in words.windows(3) {
+        if window[0] == "Agent" && window[1] == "as" && window[2] != "_" {
+            names.push(window[2].to_owned());
+        }
+    }
+    names
+}
+
+/// The self type of the impl header `header` (what follows `impl` and its
+/// generics), when the trait it implements is one of `names`, or a macro
+/// parameter.
+fn agent_impl_self_type(header: &[char], names: &[String]) -> Option<String> {
+    let word_at = |i: usize, word: &str| {
+        let len = word.chars().count();
+        i + len <= header.len()
+            && header[i..i + len].iter().copied().eq(word.chars())
+            && (i == 0 || !is_ident(header[i - 1]))
+            && header.get(i + len).is_none_or(|ch| !is_ident(*ch))
+    };
+    let mut depth = 0i32;
+    let mut split = None;
+    let mut where_at = header.len();
+    for i in 0..header.len() {
+        match header[i] {
+            '<' | '(' => depth += 1,
+            '>' if i > 0 && header[i - 1] == '-' => {}
+            '>' | ')' => depth -= 1,
+            _ if depth == 0 && split.is_none() && word_at(i, "for") => split = Some(i),
+            _ if depth == 0 && split.is_some() && word_at(i, "where") => {
+                where_at = i;
+                break;
+            }
+            _ => {}
+        }
+    }
+    let split = split?;
+    let trait_path: String = header[..split].iter().collect();
+    let trait_path = trait_path.trim().trim_start_matches('!');
+    let trait_path = trait_path.split('<').next().unwrap_or("").trim();
+    let last = trait_path.rsplit("::").next().unwrap_or("").trim();
+    if !trait_path.starts_with('$') && !names.iter().any(|name| name == last) {
+        return None;
+    }
+    let self_type: String = header[split + 3..where_at].iter().collect();
+    Some(self_type.split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
 /// Every `.rs` file under `dir`, its subdirectories included.
 fn rust_files(dir: &Path) -> Vec<PathBuf> {
     let mut files = Vec::new();

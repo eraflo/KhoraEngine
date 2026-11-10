@@ -17,14 +17,15 @@
 
 use std::sync::Arc;
 
-use khora_core::agent::Agent;
 use khora_core::lane::OutputDeck;
 use khora_data::flow::PhysicsStepResult;
 
-use super::fixtures::{physics_agent, physics_runtime, recorded, run_once, ScriptedProvider};
+use super::fixtures::{
+    physics_agent, physics_runtime, place_step, recorded, run_once, ScriptedProvider,
+};
 
 /// **A run is one step of the agent's own size.** The scheduler gives the
-/// agent one run per whole step of its declared `fixed_timestep`; a lane
+/// agent one run per whole step its place holds; a lane
 /// stepping the provider by anything else would run physics faster or slower
 /// than gameplay. The step the deck reports is the step the provider took.
 #[test]
@@ -32,9 +33,7 @@ fn the_physics_agent_steps_the_provider_by_its_fixed_step() {
     let (provider, steps) = ScriptedProvider::new(Vec::new(), 0);
     let runtime = Arc::new(physics_runtime(&provider.shared()));
     let mut agent = physics_agent();
-    let step = agent
-        .execution_timing()
-        .fixed_timestep
+    let step = place_step(&agent)
         .expect("physics runs at a fixed step")
         .as_secs_f32();
     let mut deck = OutputDeck::new();
@@ -55,9 +54,7 @@ fn each_sub_step_of_a_frame_is_one_physics_step() {
     let (provider, steps) = ScriptedProvider::new(Vec::new(), 0);
     let runtime = Arc::new(physics_runtime(&provider.shared()));
     let mut agent = physics_agent();
-    let step = agent
-        .execution_timing()
-        .fixed_timestep
+    let step = place_step(&agent)
         .expect("physics runs at a fixed step")
         .as_secs_f32();
     let mut deck = OutputDeck::new();
@@ -70,5 +67,41 @@ fn each_sub_step_of_a_frame_is_one_physics_step() {
     assert!(
         deck.contains::<PhysicsStepResult>(),
         "the frame's step result is on the deck"
+    );
+}
+
+/// **A step written at the place is the step the family runs at.** The place
+/// is where the scheduler reads the family's step each frame; a step written
+/// there (`Place::set_fixed_step`) between two frames is the one the next
+/// frame's runs take — the agent's next wake, which hands the place its
+/// terms again, does not put back the step the agent was built with.
+#[test]
+fn a_step_written_at_the_place_holds_across_the_agents_next_wake() {
+    let (provider, steps) = ScriptedProvider::new(Vec::new(), 0);
+    let runtime = Arc::new(physics_runtime(&provider.shared()));
+    let mut agent = physics_agent();
+    let a_30th = std::time::Duration::from_nanos(33_333_333);
+    {
+        use khora_core::agent::Agent;
+        agent
+            .place()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .set_fixed_step(Some(a_30th));
+    }
+    let mut deck = OutputDeck::new();
+
+    // The first frame wakes the agent (its first-frame wake), then runs.
+    run_once(&mut agent, &runtime, &mut deck);
+
+    assert_eq!(
+        place_step(&agent),
+        Some(a_30th),
+        "the place still holds the step written there"
+    );
+    assert_eq!(
+        recorded(&steps),
+        vec![a_30th.as_secs_f32()],
+        "the run stepped the provider by the place's step"
     );
 }

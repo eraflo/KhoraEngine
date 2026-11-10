@@ -269,7 +269,7 @@ fn the_audio_agent_mixes_a_frame_into_its_playback_slot() {
     {
         let mut context =
             EngineContext::for_agent(Arc::clone(&runtime), &bus, &mut deck, &permit, Some(id));
-        agent.execute(&mut context);
+        khora_agents::agent::run_frame(&mut agent, &mut context);
     }
 
     let playback = deck

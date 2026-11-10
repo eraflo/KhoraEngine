@@ -33,47 +33,13 @@ use khora_core::agent::gorna::protocol::{
     Trigger,
 };
 use khora_core::agent::gorna::{AgentId, EpochRecord, StrategyId};
+use khora_core::agent::Place;
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::telemetry::{MetricId, MetricValue};
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 // ── Fakes and waiting ─────────────────────────────────────────────
-
-/// An offer of `row` alone, unpriced: what a fake with nothing to trade
-/// answers.
-fn offer_of(agent: AgentId, request: &OfferRequest, row: StrategyId) -> Offer {
-    Offer {
-        agent,
-        epoch: request.epoch,
-        rows: vec![OfferRow {
-            id: row,
-            cost: Cost::default(),
-            quality: 1.0,
-            confidence: Confidence::Assumed,
-        }],
-        floor: row,
-        current: row,
-        health: 1.0,
-    }
-}
-
-/// A healthy report of a run of `row` that did all its work, in no epoch.
-fn report_of(agent: AgentId, row: StrategyId) -> Report {
-    Report {
-        agent,
-        epoch: Epoch::default(),
-        row,
-        measured: PerDevice::default(),
-        done: 1.0,
-        health: 1.0,
-        over_budget: false,
-        stalled: false,
-        workload: None,
-        switch: None,
-        message: None,
-    }
-}
 
 /// Waits up to `secs` seconds for `done`, polling every 5 ms.
 fn wait_for(secs: u64, mut done: impl FnMut() -> bool) -> bool {
@@ -251,6 +217,8 @@ struct Speaker {
     upgrade: Option<Duration>,
     heard: Arc<Mutex<Heard>>,
     health: Arc<Mutex<Health>>,
+    /// A bare place: the DCC never runs one.
+    place: Arc<Mutex<Place>>,
 }
 
 /// The test's side of a [`Speaker`].
@@ -299,6 +267,7 @@ impl Speaker {
             upgrade,
             heard: Arc::clone(&heard),
             health: Arc::clone(&health),
+            place: Arc::new(Mutex::new(Place::new(AgentId::new(name)))),
         }));
         (agent, Ear { heard, health })
     }
@@ -399,12 +368,8 @@ impl Agent for Speaker {
             message: None,
         }
     }
-    fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
 }
 
@@ -1258,128 +1223,6 @@ fn test_critical_thermal_clamps_multiplier() {
         multiplier <= 0.4 + 1e-3,
         "Critical thermal must clamp the multiplier to the safety ceiling, got {multiplier}"
     );
-}
-
-/// An agent that writes its name into a shared log when it is initialized.
-/// Each has its own id: the DCC holds one agent per id.
-struct InitRecording {
-    name: &'static str,
-    id: AgentId,
-    log: std::sync::Arc<std::sync::Mutex<Vec<&'static str>>>,
-}
-
-impl Agent for InitRecording {
-    fn id(&self) -> AgentId {
-        self.id
-    }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn on_initialize(&mut self, _: &mut khora_core::EngineContext<'_>) {
-        self.log.lock().expect("the log lock").push(self.name);
-    }
-    fn execute(&mut self, _: &mut khora_core::EngineContext<'_>) {}
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
-}
-
-/// A DCC holding three recording agents registered out of priority order,
-/// and the log they write to.
-fn dcc_with_three_recording_agents() -> (
-    DccService,
-    std::sync::Arc<std::sync::Mutex<Vec<&'static str>>>,
-) {
-    let (dcc, _rx) = DccService::new(DccConfig::default());
-    let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    for (name, priority, id) in [
-        ("low", 1.0, AgentId::new("script")),
-        ("high", 3.0, AgentId::new("audio")),
-        ("middle", 2.0, AgentId::new("ui")),
-    ] {
-        dcc.register_agent(
-            std::sync::Arc::new(std::sync::Mutex::new(InitRecording {
-                name,
-                id,
-                log: std::sync::Arc::clone(&log),
-            })),
-            priority,
-        );
-    }
-    (dcc, log)
-}
-
-#[test]
-fn initialize_agent_over_every_index_initializes_each_agent_once_in_priority_order() {
-    let (dcc, log) = dcc_with_three_recording_agents();
-    let runtime = std::sync::Arc::new(khora_core::Runtime::new());
-    let bus = khora_core::lane::LaneBus::new();
-
-    for index in 0..dcc.agent_count() {
-        let mut deck = khora_core::lane::OutputDeck::new();
-        let mut ctx = khora_core::EngineContext::for_initialisation(
-            std::sync::Arc::clone(&runtime),
-            &bus,
-            &mut deck,
-        );
-        assert!(
-            dcc.initialize_agent(index, &mut ctx),
-            "index {index} names a registered agent"
-        );
-    }
-
-    assert_eq!(
-        *log.lock().expect("the log lock"),
-        vec!["high", "middle", "low"],
-        "every agent initialized once, highest priority first — as initialize_agents does"
-    );
-}
-
-#[test]
-fn initialize_agent_past_the_last_agent_returns_false_and_initializes_nothing() {
-    let (dcc, log) = dcc_with_three_recording_agents();
-    let bus = khora_core::lane::LaneBus::new();
-    let mut deck = khora_core::lane::OutputDeck::new();
-    let mut ctx = khora_core::EngineContext::for_initialisation(
-        std::sync::Arc::new(khora_core::Runtime::new()),
-        &bus,
-        &mut deck,
-    );
-
-    assert!(!dcc.initialize_agent(dcc.agent_count(), &mut ctx));
-    assert!(
-        log.lock().expect("the log lock").is_empty(),
-        "no agent was initialized"
-    );
-}
-
-#[test]
-fn initialize_agent_leaves_the_later_agents_uninitialized() {
-    let (dcc, log) = dcc_with_three_recording_agents();
-    let bus = khora_core::lane::LaneBus::new();
-    let mut deck = khora_core::lane::OutputDeck::new();
-    let mut ctx = khora_core::EngineContext::for_initialisation(
-        std::sync::Arc::new(khora_core::Runtime::new()),
-        &bus,
-        &mut deck,
-    );
-
-    assert!(dcc.initialize_agent(0, &mut ctx));
-    assert_eq!(*log.lock().expect("the log lock"), vec!["high"]);
 }
 
 /// **A hint that is not a usable number is refused**: a weight or a cap that

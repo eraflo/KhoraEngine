@@ -14,7 +14,7 @@
 
 //! Editor application root.
 //!
-//! Implements `EngineApp`, `AgentProvider`, `PhaseProvider`. Per-frame
+//! Implements `EngineApp` and `PhaseProvider`. Per-frame
 //! work is delegated to the focused modules (`input`, `commands`,
 //! `hot_reload`) so this file stays a composition layer rather than a
 //! 1000-line god struct.
@@ -26,9 +26,8 @@ use khora_sdk::khora_core::renderer::api::resource::ViewInfo;
 use khora_sdk::khora_core::ui::EditorOverlay;
 use khora_sdk::prelude::ecs::*;
 use khora_sdk::winit;
-use khora_sdk::DccService;
-use khora_sdk::{AgentProvider, GameWorld, Runtime};
 use khora_sdk::{EditorShell, EditorState, LogEntry};
+use khora_sdk::{GameWorld, Runtime};
 
 use crate::camera::EditorCamera;
 use crate::commands::CommandHistory;
@@ -447,27 +446,6 @@ fn revert_prefab_instance(
             }
         }
         Err(e) => log::error!("Failed to read the prefab to revert to: {e}"),
-    }
-}
-
-impl AgentProvider for EditorApp {
-    fn register_agents(&self, _dcc: &DccService, runtime: &mut Runtime) {
-        runtime.resources.insert(self.editor_state.clone());
-        runtime.resources.insert(self.camera.clone());
-        // Editor viewport override — RenderFlow reads it as fallback
-        // when no scene Camera is active (Editing mode).
-        runtime.resources.insert(self.viewport_override.clone());
-        // What a script's prefab `Spawn` reads: the open project's prefabs,
-        // and the catalog its turn is checked against.
-        runtime
-            .resources
-            .insert(khora_sdk::khora_data::scene::PrefabLibrary(
-                self.play_prefabs.clone(),
-            ));
-        runtime.resources.insert(self.prefab_catalog.clone());
-        // What the engine's asset resolver loads the scene's meshes,
-        // materials and textures through: the open project's assets.
-        runtime.services.insert(Arc::clone(&self.shared_assets));
     }
 }
 

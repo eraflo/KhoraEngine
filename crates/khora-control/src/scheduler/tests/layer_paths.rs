@@ -27,7 +27,7 @@ use std::time::Duration;
 /// serially and in waves, two frames each. In waves, `solo`'s layer locks the
 /// atlas `pooled-a`'s reads, so `solo` is a wave of its own and the two
 /// others share the next one. Each layer runs once a frame, its report names
-/// its row, and no agent is executed.
+/// its row.
 #[test]
 fn layers_run_on_every_path() {
     let paths = [
@@ -69,11 +69,6 @@ fn layers_run_on_every_path() {
         }
 
         let done = taken(&log);
-        assert!(
-            done.executed.is_empty(),
-            "parallel {parallel}: {:?}",
-            done.executed
-        );
         let published = reports(&rx);
         for &(name, _, row, _) in &paths {
             let runs = (done.ran.iter())
@@ -88,32 +83,39 @@ fn layers_run_on_every_path() {
     }
 }
 
-/// A timing that runs in `TRANSFORM` at a fixed step of 4 ms.
-fn fixed_step() -> ExecutionTiming {
+/// A timing that runs in `TRANSFORM`.
+fn transform() -> ExecutionTiming {
     ExecutionTiming {
         allowed_phases: vec![ExecutionPhase::TRANSFORM],
         default_phase: ExecutionPhase::TRANSFORM,
-        fixed_timestep: Some(Duration::from_millis(4)),
         ..ExecutionTiming::default()
     }
 }
 
-/// **A fixed-step family runs its layer once per sub-step.** Beside an old
-/// agent at the same step, the layered agent's layer runs exactly as many
-/// times in the frame as the old agent is executed — more than once — and the
-/// layered agent itself never is, serially and in waves.
+/// The fixed step both agents' places hold.
+const STEP: Duration = Duration::from_millis(4);
+
+/// **A fixed-step family runs its layer once per sub-step.** Beside an agent
+/// installed from the start at the same step, the agent installing its layer
+/// on its first wake runs it exactly as many times in the frame as the other
+/// — more than once — serially and in waves.
 #[test]
 fn a_fixed_step_family_runs_its_layer_once_per_sub_step() {
     for parallel in [false, true] {
         let log = SharedLog::default();
-        let metronome = shared(Plain::new("metronome", &log).with_timing(fixed_step()));
+        let metronome = shared(
+            Plain::new("metronome", &log)
+                .with_timing(transform())
+                .stepping(STEP),
+        );
         let painter = shared(
             Painter::new(
                 "painter",
                 Brush::new("painter", StrategyId::Balanced, &log),
                 &log,
             )
-            .with_timing(fixed_step()),
+            .with_timing(transform())
+            .stepping(STEP),
         );
         let (mut scheduler, _rx) = scheduling(vec![metronome, painter]);
         scheduler.set_parallel_execution(parallel);
@@ -123,9 +125,9 @@ fn a_fixed_step_family_runs_its_layer_once_per_sub_step() {
 
         let done = taken(&log);
         let ticks = done
-            .executed
+            .ran
             .iter()
-            .filter(|name| **name == "metronome")
+            .filter(|(name, _)| *name == "metronome")
             .count();
         let layer_runs = done
             .ran
@@ -134,9 +136,5 @@ fn a_fixed_step_family_runs_its_layer_once_per_sub_step() {
             .count();
         assert!(ticks > 1, "the frame sub-steps more than once: {ticks}");
         assert_eq!(layer_runs, ticks, "parallel {parallel}: once per sub-step");
-        assert!(
-            !done.executed.contains(&"painter"),
-            "parallel {parallel}: the layered agent was executed"
-        );
     }
 }

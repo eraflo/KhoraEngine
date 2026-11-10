@@ -27,8 +27,7 @@
 //! use khora_sdk::prelude::*;
 //! use khora_sdk::prelude::math::Vec3;
 //! use khora_sdk::{
-//!     run_winit, AgentProvider, DccService, EngineApp, GameWorld, PhaseProvider,
-//!     Runtime, Vessel, WindowConfig,
+//!     run_winit, EngineApp, GameWorld, PhaseProvider, Runtime, Vessel, WindowConfig,
 //! };
 //! use khora_sdk::winit_adapters::WinitWindowProvider;
 //!
@@ -55,11 +54,8 @@
 //!     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
 //! }
 //!
-//! // `AgentProvider` / `PhaseProvider` are required super-traits; the default
-//! // (no custom agents, no custom phases) is enough for most games.
-//! impl AgentProvider for MyGame {
-//!     fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-//! }
+//! // `PhaseProvider` is a required super-trait; its default (no custom
+//! // phases) is enough for most games.
 //! impl PhaseProvider for MyGame {}
 //!
 //! fn main() -> anyhow::Result<()> {
@@ -86,7 +82,7 @@ pub use engine::{Readiness, ReadinessHold, ReadinessProgress, ReadinessState, Re
 pub use game_world::{DeclaredComponentError, GameWorld};
 pub use run_default::run_default;
 pub use runtime_config::{RuntimeConfig, DEFAULT_SCENE_REL_PATH, RUNTIME_CONFIG_FILE};
-pub use traits::{AgentProvider, EngineApp, PhaseProvider, WindowProvider};
+pub use traits::{EngineApp, PhaseProvider, WindowProvider};
 pub use vessel::{spawn_cube_at, spawn_plane, spawn_sphere, Vessel};
 pub use winit_adapters::{run_winit, WinitAppRunner};
 

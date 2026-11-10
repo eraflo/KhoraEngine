@@ -18,10 +18,7 @@ use super::assets::{register_checker_texture, register_environment_map, ENV_ASSE
 use super::player::PlayerController;
 use khora_sdk::khora_core::platform::InputMap;
 use khora_sdk::prelude::math::{Quaternion, Vec3};
-use khora_sdk::{
-    AgentProvider, DccService, EngineApp, GameWorld, InputEvent, PhaseProvider, Runtime,
-    WindowConfig,
-};
+use khora_sdk::{EngineApp, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig};
 use std::sync::{Arc, Mutex};
 
 /// A simple game demonstrating the Khora SDK.
@@ -56,6 +53,15 @@ impl EngineApp for SandboxGame {
             input_map: None,
             time: None,
         }
+    }
+
+    /// The scene's environment, inserted before the first tick, and therefore
+    /// before the one-time IBL bake reads it.
+    fn provide(&self, runtime: &mut Runtime) {
+        let env_uuid = khora_sdk::khora_core::asset::AssetUUID::new_v5(ENV_ASSET_NAME);
+        runtime
+            .resources
+            .insert(khora_sdk::EnvironmentMap::from_asset(env_uuid));
     }
 
     fn setup(&mut self, world: &mut GameWorld, runtime: &Runtime) {
@@ -119,7 +125,7 @@ impl EngineApp for SandboxGame {
         let checker_uuid = register_checker_texture(runtime);
 
         // Procedural HDR environment, projected onto the IBL environment cube
-        // by the bake. `register_agents` points `EnvironmentMap` at this id.
+        // by the bake. `provide` points `EnvironmentMap` at this id.
         register_environment_map(runtime);
 
         let positions = [
@@ -281,19 +287,6 @@ impl EngineApp for SandboxGame {
                 mouse
             );
         }
-    }
-}
-
-impl AgentProvider for SandboxGame {
-    fn register_agents(&self, _dcc: &DccService, runtime: &mut Runtime) {
-        // No custom agents. This is, however, the engine's sanctioned runtime
-        // *mutation* point (`setup` only gets `&Runtime`), so the scene's
-        // environment selection is inserted here — before the first tick, and
-        // therefore before the one-time IBL bake reads it.
-        let env_uuid = khora_sdk::khora_core::asset::AssetUUID::new_v5(ENV_ASSET_NAME);
-        runtime
-            .resources
-            .insert(khora_sdk::EnvironmentMap::from_asset(env_uuid));
     }
 }
 

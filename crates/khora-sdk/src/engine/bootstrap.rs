@@ -36,14 +36,11 @@ type EventReceiver = crossbeam_channel::Receiver<TelemetryEvent>;
 use crate::traits::EngineApp;
 use crate::GameWorld;
 
-/// [`EngineCore::bootstrap`] taken apart into the stages a tool can spread
-/// over several frames while a loading screen plays.
+/// [`EngineCore::bootstrap`] taken apart into its stages.
 ///
 /// Called in order — [`begin`](Self::begin), [`setup`](Self::setup),
-/// [`register`](Self::register), [`initialize_agent`](Self::initialize_agent)
-/// for every index below [`agent_count`](Self::agent_count), then
-/// [`finish`](Self::finish) — it leaves the engine as one `bootstrap` call
-/// does.
+/// [`register`](Self::register), then [`finish`](Self::finish) — it leaves the
+/// engine as one `bootstrap` call does.
 pub struct EngineBootstrap<A: EngineApp> {
     app: A,
     /// The runtime while it is still filled; `None` once shared.
@@ -91,47 +88,23 @@ impl<A: EngineApp> EngineBootstrap<A> {
     pub fn setup(&mut self) {
         if let Some(runtime) = self.runtime.as_ref() {
             // The runtime is now fully populated, so the app can read any
-            // engine resource here. Mutation goes through `register_agents`.
+            // engine resource here. Mutation goes through `provide`.
             self.app.setup(&mut self.game_world, runtime);
         }
     }
 
-    /// Registers the application's agents, then the engine's built-in ones.
+    /// Lets the application install what it needs in the runtime, then
+    /// registers the agent of every family linked into the binary.
     pub fn register(&mut self) {
         let Some(mut runtime) = self.runtime.take() else {
             return;
         };
-        self.app.register_agents(&self.dcc, &mut runtime);
+        self.app.provide(&mut runtime);
         let shared = Arc::new(runtime);
         self.lane_agents = register_lane_agents(&self.dcc, &shared, &self.phase_order);
         refuse_stranded_agents(&self.dcc, &self.phase_order);
         super::families::admit_families(&self.dcc, &shared);
         self.shared = Some(shared);
-    }
-
-    /// The number of registered agents — the indices
-    /// [`initialize_agent`](Self::initialize_agent) accepts.
-    pub fn agent_count(&self) -> usize {
-        self.dcc.agent_count()
-    }
-
-    /// Initializes the registered agent at `index`, in the order the DCC
-    /// initializes them all; `false`, and nothing initialized, past the last.
-    pub fn initialize_agent(&mut self, index: usize) -> bool {
-        // Agents initialize with the full runtime so `on_initialize` finds the
-        // graphics device, the render system, the asset store… through the
-        // typed runtime containers.
-        let Some(runtime) = self.shared.as_ref() else {
-            return false;
-        };
-        let init_bus = khora_core::lane::LaneBus::new();
-        let mut init_deck = khora_core::lane::OutputDeck::new();
-        let mut init_ctx = khora_core::EngineContext::for_initialisation(
-            Arc::clone(runtime),
-            &init_bus,
-            &mut init_deck,
-        );
-        self.dcc.initialize_agent(index, &mut init_ctx)
     }
 
     /// Starts the DCC, builds the scheduler and hands everything to `core`.
@@ -177,8 +150,8 @@ impl<A: EngineApp> EngineBootstrap<A> {
 }
 
 impl<A: EngineApp> EngineCore<A> {
-    /// Bootstraps the engine: creates DCC, telemetry, scheduler,
-    /// registers agents, calls `app.setup()`, and initializes agents.
+    /// Bootstraps the engine: creates DCC, telemetry, scheduler, calls
+    /// `app.setup()` and `app.provide()`, and registers the families' agents.
     ///
     /// This method takes ownership of the `runtime` populated
     /// by the windowing driver's bootstrap closure.  It wraps the runtime
@@ -187,10 +160,6 @@ impl<A: EngineApp> EngineCore<A> {
         let mut stages = EngineBootstrap::begin_with(app, runtime, self.input_events.clone());
         stages.setup();
         stages.register();
-        let mut index = 0;
-        while stages.initialize_agent(index) {
-            index += 1;
-        }
         stages.finish(self);
     }
 }
@@ -536,7 +505,9 @@ fn phase_order(custom: &[ExecutionPhase], removed: &[ExecutionPhase]) -> Vec<Exe
 }
 
 /// Refuses the boot when a registered agent runs in no phase of `order`: it
-/// would be registered and budgeted, yet never execute.
+/// would be registered and budgeted, yet never run. The families are checked
+/// at registration; this catches an agent an application put in the runtime's
+/// registry itself.
 fn refuse_stranded_agents(dcc: &DccService, order: &[ExecutionPhase]) {
     let registry = dcc
         .agent_registry()
@@ -593,6 +564,9 @@ fn register_lane_agents(
             set_fixed_step(agent, physics.step);
         }
     }
+    // An application can reach the registry through the runtime before the
+    // families are registered: a family's name it took would leave the
+    // family never running.
     let taken = dcc
         .agent_registry()
         .lock()

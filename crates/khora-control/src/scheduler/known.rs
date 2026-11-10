@@ -13,32 +13,28 @@
 // limitations under the License.
 
 //! What the scheduler keeps of each agent it met, so a frame need not lock
-//! an agent that runs as layers.
+//! the agent: its place runs its layer.
 
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::{Agent, Contention, ExecutionTiming, Place};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::time::Duration;
 
-/// An agent as the scheduler knows it from the first time it met it.
+/// An agent as the scheduler knows it from the first time it met it: the
+/// family's place in the frame is fixed, so its timing is too. Its fixed
+/// step lives at its place, read each frame.
 #[derive(Clone)]
 pub(super) struct Known {
     /// Its name, which never changes.
     pub(super) id: AgentId,
-    /// Its place and declarations, when it runs as layers; `None` for an
-    /// agent run through `execute`, whose declarations are read each frame.
-    pub(super) layered: Option<Layered>,
-}
-
-/// What an agent running as layers declared when the scheduler met it: the
-/// family's place in the frame is fixed, so its timing is too.
-#[derive(Clone)]
-pub(super) struct Layered {
+    /// Its family's place.
     pub(super) place: Arc<Mutex<Place>>,
+    /// The timing it declared.
     pub(super) timing: ExecutionTiming,
 }
 
-/// An agent running as layers, with its lock, its name and its place.
-pub(super) type LayeredAgent = (Arc<Mutex<dyn Agent>>, AgentId, Layered);
+/// An agent, with its lock and what the scheduler knows of it.
+pub(super) type MetAgent = (Arc<Mutex<dyn Agent>>, Known);
 
 /// Each agent met, by a weak reference to its lock.
 type Met = Vec<(Weak<Mutex<dyn Agent>>, Known)>;
@@ -62,10 +58,8 @@ impl KnownAgents {
             let agent = agent.lock().ok()?;
             Known {
                 id: agent.id(),
-                layered: agent.place().map(|place| Layered {
-                    place,
-                    timing: agent.execution_timing(),
-                }),
+                place: agent.place(),
+                timing: agent.execution_timing(),
             }
         };
         let mut met = self.met();
@@ -80,23 +74,18 @@ impl KnownAgents {
 }
 
 impl Known {
-    /// The agent's timing: the one it declared when met, for a layered
-    /// agent; read now, under its lock, for another.
-    pub(super) fn timing(&self, agent: &Arc<Mutex<dyn Agent>>) -> Option<ExecutionTiming> {
-        match &self.layered {
-            Some(layered) => Some(layered.timing.clone()),
-            None => agent.lock().ok().map(|agent| agent.execution_timing()),
-        }
+    /// The step the agent's family runs at, read now from its place; `None`
+    /// for a family that runs every frame.
+    pub(super) fn fixed_step(&self) -> Option<Duration> {
+        locked(&self.place)
+            .fixed_step()
+            .filter(|step| !step.is_zero())
     }
 
-    /// What the agent competes for this frame: a layered agent's installed
-    /// layer, read from its place; another's own declaration, read under its
-    /// lock. `None` when its lock is poisoned.
-    pub(super) fn contention(&self, agent: &Arc<Mutex<dyn Agent>>) -> Option<Contention> {
-        match &self.layered {
-            Some(layered) => Some(locked(&layered.place).contention()),
-            None => agent.lock().ok().map(|agent| agent.contention()),
-        }
+    /// What the agent competes for this frame: its installed layer's
+    /// declaration, read from its place.
+    pub(super) fn contention(&self) -> Contention {
+        locked(&self.place).contention()
     }
 }
 

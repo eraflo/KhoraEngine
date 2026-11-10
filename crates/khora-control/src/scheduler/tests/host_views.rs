@@ -15,13 +15,13 @@
 //! The Views a host sets in the runtime's `HostViews` are on every frame's
 //! bus by the time the agents run, as a Flow's would be.
 
-use super::{offer_of, report_of};
+use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
-use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::Terms;
+use khora_core::agent::{ExecutionPhase, ExecutionTiming};
 use khora_core::lane::HostViews;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -36,40 +36,20 @@ struct Watching {
     seen: Arc<Mutex<Vec<Option<HostToggle>>>>,
 }
 
-impl Agent for Watching {
+impl Family for Watching {
     fn id(&self) -> AgentId {
         AgentId::new("grid")
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(AgentId::new("grid"), request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(AgentId::new("grid"), StrategyId::Balanced)
-    }
-    fn execute(&mut self, ctx: &mut EngineContext<'_>) {
+    fn run(&mut self, _terms: &Terms, ctx: &mut EngineContext<'_>) {
         let toggle = ctx.bus.get::<HostToggle>().cloned();
         self.seen.lock().expect("the record").push(toggle);
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![ExecutionPhase::OUTPUT],
             default_phase: ExecutionPhase::OUTPUT,
             ..ExecutionTiming::default()
         }
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -81,9 +61,9 @@ fn a_view_the_host_set_reaches_the_agents_bus() {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let registry = Arc::new(Mutex::new(AgentRegistry::new()));
     registry.lock().expect("the registry lock").register(
-        Arc::new(Mutex::new(Watching {
+        hosted(Watching {
             seen: Arc::clone(&seen),
-        })),
+        }),
         1.0,
     );
     let mut scheduler = ExecutionScheduler::new(

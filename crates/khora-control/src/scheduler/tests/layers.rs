@@ -19,7 +19,7 @@
 //! its waves from the installed layers.
 
 use super::allocations::{allocation, one_phase};
-use super::{offer_of, report_of};
+use super::{offer_of, place_with, report_of, set_step, Doing};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
@@ -46,13 +46,10 @@ pub(super) struct Atlas;
 /// What a test's agents and layers did, in order.
 #[derive(Debug, Default)]
 pub(super) struct Log {
-    /// Every run, in run order: a layer's (its agent, its row) and an old
-    /// agent's `execute` (its name, `Custom(0)`).
+    /// Every layer run, in run order: its agent, and its row.
     pub(super) ran: Vec<(&'static str, StrategyId)>,
     /// Every wake: the agent, and why.
     pub(super) woken: Vec<(&'static str, Vec<Wake>)>,
-    /// Every `execute`: the agent.
-    pub(super) executed: Vec<&'static str>,
     /// Every run of a layer declaring a lock on [`Atlas`]: its agent, and
     /// whether its context let it take that lock.
     pub(super) locked: Vec<(&'static str, bool)>,
@@ -150,8 +147,7 @@ impl Layer for Brush {
 // ─── A layered agent ────────────────────────────────────────────────────────
 
 /// A layered agent: it installs its first layer on its first wake, stages its
-/// next one when a wake says its quote no longer fits, and logs every wake
-/// and every `execute` — which the scheduler should never call.
+/// next one when a wake says its quote no longer fits, and logs every wake.
 pub(super) struct Painter {
     name: &'static str,
     place: Arc<Mutex<Place>>,
@@ -196,6 +192,12 @@ impl Painter {
         self.timing = timing;
         self
     }
+
+    /// The same agent, its place at `step`, where the scheduler reads it.
+    pub(super) fn stepping(self, step: Duration) -> Self {
+        set_step(&self.place, Some(step));
+        self
+    }
 }
 
 impl Agent for Painter {
@@ -218,8 +220,8 @@ impl Agent for Painter {
     ) {
         self.place.lock().expect("the place lock").lent(epoch);
     }
-    fn place(&self) -> Option<Arc<Mutex<Place>>> {
-        Some(Arc::clone(&self.place))
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
     fn wake(&mut self, why: &[Wake], place: &mut Place, _context: &mut EngineContext<'_>) {
         self.log
@@ -237,42 +239,40 @@ impl Agent for Painter {
             }
         }
     }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        self.log
-            .lock()
-            .expect("the log lock")
-            .executed
-            .push(self.name);
-    }
     fn execution_timing(&self) -> ExecutionTiming {
         self.timing.clone()
     }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
 }
 
-/// An old agent, without a place: it runs through `execute` every frame.
+/// An agent that is never woken: its place holds its layer, of row
+/// `Custom(0)`, from the start.
 pub(super) struct Plain {
     name: &'static str,
+    place: Arc<Mutex<Place>>,
     timing: ExecutionTiming,
-    log: SharedLog,
 }
 
 impl Plain {
     pub(super) fn new(name: &'static str, log: &SharedLog) -> Self {
         Self {
             name,
+            place: place_with(
+                AgentId::new(name),
+                Brush::new(name, StrategyId::Custom(0), log),
+                None,
+            ),
             timing: one_phase(0.5),
-            log: Arc::clone(log),
         }
     }
 
     pub(super) fn with_timing(mut self, timing: ExecutionTiming) -> Self {
         self.timing = timing;
+        self
+    }
+
+    /// The same agent, its place at `step`, where the scheduler reads it.
+    pub(super) fn stepping(self, step: Duration) -> Self {
+        set_step(&self.place, Some(step));
         self
     }
 }
@@ -295,19 +295,11 @@ impl Agent for Plain {
     fn report(&self) -> Report {
         report_of(self.id(), StrategyId::Custom(0))
     }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        let mut log = self.log.lock().expect("the log lock");
-        log.ran.push((self.name, StrategyId::Custom(0)));
-        log.executed.push(self.name);
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
     fn execution_timing(&self) -> ExecutionTiming {
         self.timing.clone()
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -441,14 +433,13 @@ fn the_scheduler_applies_the_installed_layer_without_the_agent() {
         "the installed layer ran on the quiet frame"
     );
     assert!(quiet.woken.is_empty(), "nothing woke it: {:?}", quiet.woken);
-    assert!(quiet.executed.is_empty(), "execute was called");
 }
 
-/// **No frame runs a layered agent through `execute`**, the first one
-/// included: its layer runs in its place every frame, and the report the
-/// scheduler publishes is the place's — naming the layer's row.
+/// **The place reports**: the layer runs in its place every frame, the
+/// first one included, and the report the scheduler publishes is the
+/// place's — naming the layer's row.
 #[test]
-fn a_layered_agent_is_never_executed_and_its_place_reports() {
+fn every_frame_runs_the_layer_and_its_place_reports() {
     let log = SharedLog::default();
     let painter = shared(Painter::new(
         "painter",
@@ -463,7 +454,6 @@ fn a_layered_agent_is_never_executed_and_its_place_reports() {
     }
 
     let done = taken(&log);
-    assert!(done.executed.is_empty(), "{:?}", done.executed);
     assert_eq!(done.ran, vec![("painter", StrategyId::Custom(3)); 3]);
     let rows: Vec<StrategyId> = reports(&rx).iter().map(|report| report.row).collect();
     assert_eq!(rows, vec![StrategyId::Custom(3); 3], "one report a run");
@@ -741,7 +731,27 @@ fn waves_follow_the_installed_layers() {
 struct Threaded {
     name: &'static str,
     step: Option<Duration>,
-    ran_on: Arc<Mutex<Vec<(&'static str, std::thread::ThreadId)>>>,
+    place: Arc<Mutex<Place>>,
+}
+
+/// Every run of a [`Threaded`]'s layer: its agent, and the thread it ran on.
+type RanOn = Arc<Mutex<Vec<(&'static str, std::thread::ThreadId)>>>;
+
+impl Threaded {
+    fn new(name: &'static str, step: Option<Duration>, ran_on: &RanOn) -> Self {
+        let ran_on = Arc::clone(ran_on);
+        let layer = Doing::new(StrategyId::Custom(0), move |_, _| {
+            ran_on
+                .lock()
+                .expect("the thread log lock")
+                .push((name, std::thread::current().id()));
+        });
+        Self {
+            name,
+            step,
+            place: place_with(AgentId::new(name), layer, step),
+        }
+    }
 }
 
 impl Agent for Threaded {
@@ -762,23 +772,11 @@ impl Agent for Threaded {
     fn report(&self) -> Report {
         report_of(self.id(), StrategyId::Custom(0))
     }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        self.ran_on
-            .lock()
-            .expect("the thread log lock")
-            .push((self.name, std::thread::current().id()));
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
     fn execution_timing(&self) -> ExecutionTiming {
-        ExecutionTiming {
-            fixed_timestep: self.step,
-            ..one_phase(if self.step.is_some() { 2.0 } else { 1.0 })
-        }
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+        one_phase(if self.step.is_some() { 2.0 } else { 1.0 })
     }
 }
 
@@ -790,17 +788,13 @@ impl Agent for Threaded {
 /// slower of the two.
 #[test]
 fn the_wave_plan_keeps_a_fixed_step_agent_apart_from_a_once_per_frame_one() {
-    let ran_on = Arc::new(Mutex::new(Vec::new()));
-    let stepped = shared(Threaded {
-        name: "physics",
-        step: Some(Duration::from_millis(4)),
-        ran_on: Arc::clone(&ran_on),
-    });
-    let once = shared(Threaded {
-        name: "audio",
-        step: None,
-        ran_on: Arc::clone(&ran_on),
-    });
+    let ran_on = RanOn::default();
+    let stepped = shared(Threaded::new(
+        "physics",
+        Some(Duration::from_millis(4)),
+        &ran_on,
+    ));
+    let once = shared(Threaded::new("audio", None, &ran_on));
     let (mut scheduler, rx) = scheduling(vec![stepped, once]);
     scheduler.set_parallel_execution(true);
 

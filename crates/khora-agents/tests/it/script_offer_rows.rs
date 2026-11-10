@@ -282,7 +282,6 @@ fn with_free_frame_time_gorna_lends_the_script_family_its_whole_level() {
     );
     let installed = agent
         .place()
-        .expect("the family's agent runs as layers")
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .installed_row();

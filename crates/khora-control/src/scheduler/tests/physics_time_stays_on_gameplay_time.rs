@@ -24,14 +24,14 @@
 //! the sum of `Time::fixed_steps` × the tick — so the frames' wall-clock
 //! jitter never enters the comparison.
 
-use super::{offer_of, report_of};
+use super::{hosted_at, set_step, Family};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::sim_steps::{compute_sim_steps, compute_sub_steps};
 use crate::scheduler::*;
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
-use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::Terms;
+use khora_core::agent::{ExecutionPhase, ExecutionTiming, Place};
 use khora_core::time::{SharedTime, Time, DEFAULT_FIXED_DELTA_SECONDS, MAX_SIM_STEPS};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
@@ -57,61 +57,39 @@ struct Seen {
     runs: usize,
 }
 
-/// Declares the step in `step` as its fixed timestep (none when `None`) and
-/// adds that step to the simulated time it has seen on each run.
+/// Starts at the step in `step` as its fixed timestep (none when `None`)
+/// and adds its place's step to the simulated time it has seen on each run.
 struct Integrating {
     id: AgentId,
-    step: Arc<Mutex<Option<Duration>>>,
+    step: Option<Duration>,
     seen: Arc<Mutex<Seen>>,
 }
 
-impl Agent for Integrating {
+impl Family for Integrating {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        let step = self
-            .step
-            .lock()
-            .expect("the step lock")
-            .map_or(0.0, |d| d.as_secs_f64());
+    fn run(&mut self, terms: &Terms, _ctx: &mut EngineContext<'_>) {
+        let step = terms.fixed_step.map_or(0.0, |d| d.as_secs_f64());
         let mut seen = self.seen.lock().expect("the seen lock");
         seen.simulated += step;
         seen.runs += 1;
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn step(&self) -> Option<Duration> {
+        self.step
+    }
+    fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![ExecutionPhase::TRANSFORM],
             default_phase: ExecutionPhase::TRANSFORM,
-            fixed_timestep: *self.step.lock().expect("the step lock"),
             ..ExecutionTiming::default()
         }
     }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
 }
 
-/// One registered agent's handles.
+/// One registered agent's handles: its place, and what it has seen.
 struct Handle {
-    step: Arc<Mutex<Option<Duration>>>,
+    place: Arc<Mutex<Place>>,
     seen: Arc<Mutex<Seen>>,
 }
 
@@ -119,8 +97,9 @@ impl Handle {
     fn seen(&self) -> Seen {
         *self.seen.lock().expect("the seen lock")
     }
+    /// Sets the step at the agent's place, where the scheduler reads it.
     fn switch_to(&self, step: Duration) {
-        *self.step.lock().expect("the step lock") = Some(step);
+        set_step(&self.place, Some(step));
     }
 }
 
@@ -140,17 +119,17 @@ impl Rig {
         let registry = Arc::new(Mutex::new(AgentRegistry::new()));
         let mut handles = Vec::new();
         for &(id, step) in agents {
-            let step = Arc::new(Mutex::new(step));
             let seen = Arc::new(Mutex::new(Seen::default()));
-            registry.lock().expect("the registry lock").register(
-                Arc::new(Mutex::new(Integrating {
-                    id,
-                    step: Arc::clone(&step),
-                    seen: Arc::clone(&seen),
-                })),
-                1.0,
-            );
-            handles.push(Handle { step, seen });
+            let (agent, place) = hosted_at(Integrating {
+                id,
+                step,
+                seen: Arc::clone(&seen),
+            });
+            registry
+                .lock()
+                .expect("the registry lock")
+                .register(agent, 1.0);
+            handles.push(Handle { place, seen });
         }
         let ids: Vec<AgentId> = agents.iter().map(|(id, _)| *id).collect();
         let scheduler =

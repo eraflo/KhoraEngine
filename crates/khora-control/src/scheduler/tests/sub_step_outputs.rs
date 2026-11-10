@@ -20,13 +20,13 @@
 //! adds to what the previous one left. Beside another fixed agent it shares a
 //! concurrent wave each sub-step, and the frame must end with the same slot.
 
-use super::{offer_of, report_of};
+use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
-use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, Contention, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::Terms;
+use khora_core::agent::{Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::any::TypeId;
@@ -50,25 +50,11 @@ struct SubStepper {
     runs: u32,
 }
 
-impl Agent for SubStepper {
+impl Family for SubStepper {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn execute(&mut self, ctx: &mut EngineContext<'_>) {
+    fn run(&mut self, _terms: &Terms, ctx: &mut EngineContext<'_>) {
         self.runs += 1;
         if self.gathers {
             ctx.deck.slot::<Gathered>().0.push(self.runs);
@@ -76,11 +62,13 @@ impl Agent for SubStepper {
             ctx.deck.slot::<PartnerOutput>().0 += 1;
         }
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn step(&self) -> Option<Duration> {
+        Some(Duration::from_millis(4))
+    }
+    fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![ExecutionPhase::TRANSFORM],
             default_phase: ExecutionPhase::TRANSFORM,
-            fixed_timestep: Some(Duration::from_millis(4)),
             ..ExecutionTiming::default()
         }
     }
@@ -91,12 +79,6 @@ impl Agent for SubStepper {
             TypeId::of::<PartnerOutput>()
         };
         Contention::none().writing_deck([slot])
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -111,19 +93,19 @@ fn gathered_after_one_frame(parallel: bool) -> Option<Gathered> {
     {
         let mut registry = registry.lock().expect("the registry lock");
         registry.register(
-            Arc::new(Mutex::new(SubStepper {
+            hosted(SubStepper {
                 id: AgentId::new("physics"),
                 gathers: true,
                 runs: 0,
-            })),
+            }),
             2.0,
         );
         registry.register(
-            Arc::new(Mutex::new(SubStepper {
+            hosted(SubStepper {
                 id: AgentId::new("script"),
                 gathers: false,
                 runs: 0,
-            })),
+            }),
             1.0,
         );
     }

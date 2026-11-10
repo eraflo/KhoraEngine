@@ -16,7 +16,7 @@
 //! and publishing the frame's `Time`.
 
 use super::execution::run_guarded;
-use super::known::{locked, LayeredAgent};
+use super::known::{locked, MetAgent};
 use super::sim_steps::{compute_sim_steps, compute_sub_steps, MAX_SIM_STEPS};
 use super::{
     simulation_scale, AgentSelection, ExecutionScheduler, COMPONENT_ACCESS_SAMPLE_PERIOD,
@@ -71,11 +71,11 @@ impl ExecutionScheduler {
             reserve.land_from_host();
         }
         // The allocation in force is lent before anything locks an agent: the
-        // whole frame runs on one epoch. Then every family running as layers
-        // has the layer staged at its place swapped in, at the same place.
+        // whole frame runs on one epoch. Then every family has the layer
+        // staged at its place swapped in, at the same place.
         self.lend_allocation(&inactive);
-        let layered = self.layered_agents(&inactive);
-        swap_layers(&layered, runtime);
+        let met = self.met_agents(&inactive);
+        swap_layers(&met, runtime);
         self.begun = true;
     }
 
@@ -97,9 +97,9 @@ impl ExecutionScheduler {
     ///    `ticks = floor(accumulator / tick)`, capped at [`MAX_SIM_STEPS`]; the
     ///    remainder carries over and yields the render `interpolation_alpha`.
     ///    This is the only clock game code sees, and nothing below changes it.
-    /// 3. **The fixed agents' sub-clocks.** Each agent declaring a
-    ///    `fixed_timestep` — in practice the physics agent, a precision its
-    ///    GORNA strategy picks — has its own clock: the time the ticks
+    /// 3. **The fixed agents' sub-clocks.** Each agent whose place runs at
+    ///    a fixed step — in practice the physics family, at the game's
+    ///    `physics.step` — has its own clock: the time the ticks
     ///    advanced, `ticks × tick`, goes into it, and the agent runs once per
     ///    whole step of its own that fits — a fixed-update sub-loop — the
     ///    remainder carried (also across a change of step). Two agents with
@@ -107,8 +107,8 @@ impl ExecutionScheduler {
     ///    that took no tick runs no sub-step, so a paused world stays still
     ///    even when a step changes under it. Then the regular phase loop runs
     ///    **once**, excluding the agents already stepped, so OUTPUT-phase render
-    ///    fires a single time. If no agent declares a step, every agent runs
-    ///    once a frame, as before.
+    ///    fires a single time. If no place holds a step, every agent runs
+    ///    once a frame.
     /// 4. Publish the fresh `Time` (delta, tick, ticks, alpha) into the runtime
     ///    resource before the render phase reads it.
     ///
@@ -154,9 +154,8 @@ impl ExecutionScheduler {
             .map(|activation| activation.inactive())
             .unwrap_or_default();
 
-        // 1a-bis. The families running as layers, the frame start having
-        //     lent and swapped.
-        let layered = self.layered_agents(&inactive);
+        // 1a-bis. The families, the frame start having lent and swapped.
+        let met = self.met_agents(&inactive);
 
         // 1b. Real frame delta + fixed-timestep accumulator bookkeeping.
         let now = self.frame_start;
@@ -190,7 +189,8 @@ impl ExecutionScheduler {
 
         // The fixed agents' sub-clocks: exactly the time the ticks advanced,
         // each cut at its agent's own step. A frame with no tick leaves them
-        // untouched; an agent no longer declaring a step loses its clock.
+        // untouched; an agent whose place no longer holds a step loses its
+        // clock.
         self.fixed_clocks
             .retain(|id, _| fixed_steps.iter().any(|(fixed, _)| fixed == id));
         self.fixed_due.clear();
@@ -254,7 +254,7 @@ impl ExecutionScheduler {
         // 5b. The event pass: every agent whose place gathered a wake is woken
         //     for it, once the bus is built and before any layer runs. A quiet
         //     agent is neither called nor locked.
-        wake_layered(&layered, &runtime, &bus);
+        wake_agents(&met, &runtime, &bus);
 
         // Freeze the bus behind an `Arc` for the rest of the frame. It is
         // strictly read-only from here on (the CLAD descent only reads Views),
@@ -264,13 +264,13 @@ impl ExecutionScheduler {
 
         // 5c. The families at the background with mail start a run off the
         //     frame, on this frame's bus; nothing waits for it.
-        self.background.start(&layered, &runtime, &bus);
+        self.background.start(&met, &runtime, &bus);
         // 5d. The layers the event pass asked to prepare start too, beside
         //     the installed ones, which keep running until they land.
-        self.background.prepare(&layered, &runtime, &bus);
+        self.background.prepare(&met, &runtime, &bus);
 
-        // 6. Fixed-update sub-loop. When an agent declares a fixed step, the
-        //    fixed-timestep agents advance their discrete sub-steps before the
+        // 6. Fixed-update sub-loop. When a place holds a fixed step, the
+        //    fixed-step agents advance their discrete sub-steps before the
         //    once-per-frame phase loop, round by round — each round runs every
         //    fixed agent still owed one. Each sub-step is a full agent
         //    invocation, so the physics provider integrates N times while the
@@ -410,9 +410,9 @@ impl ExecutionScheduler {
         }
     }
 
-    /// Every agent of a family on that declares a positive `fixed_timestep`, with
-    /// that step in seconds — read each frame, so a step the game's setting
-    /// changed takes effect on the next frame. An agent whose family is off
+    /// Every agent of a family on whose place runs at a fixed step, with that
+    /// step in seconds — read from the place each frame, so a step the game's
+    /// setting changed takes effect on the next frame. An agent whose family is off
     /// keeps no clock: it owes nothing for the time it sat out.
     fn declared_fixed_steps(&self, inactive: &BTreeSet<AgentId>) -> Vec<(AgentId, f32)> {
         let agents: Vec<Arc<Mutex<dyn Agent>>> = {
@@ -423,15 +423,15 @@ impl ExecutionScheduler {
             .iter()
             .filter_map(|agent| {
                 let known = self.known.of(agent)?;
-                let step = known.timing(agent)?.fixed_timestep?.as_secs_f32();
+                let step = known.fixed_step()?.as_secs_f32();
                 (step > 0.0).then_some((known.id, step))
             })
             .collect()
     }
 
-    /// Every agent of a family on that runs as layers, with its lock and what the
-    /// scheduler knows of it.
-    fn layered_agents(&self, inactive: &BTreeSet<AgentId>) -> Vec<LayeredAgent> {
+    /// Every agent of a family on, with its lock and what the scheduler knows
+    /// of it.
+    fn met_agents(&self, inactive: &BTreeSet<AgentId>) -> Vec<MetAgent> {
         let agents: Vec<Arc<Mutex<dyn Agent>>> = {
             let registry = self.registry.lock().unwrap_or_else(|e| e.into_inner());
             registry.iter_active(inactive).cloned().collect()
@@ -440,8 +440,7 @@ impl ExecutionScheduler {
             .into_iter()
             .filter_map(|agent| {
                 let known = self.known.of(&agent)?;
-                let layered = known.layered?;
-                Some((agent, known.id, layered))
+                Some((agent, known))
             })
             .collect()
     }
@@ -485,12 +484,12 @@ fn gpu_of(runtime: &Runtime) -> GpuSetup<'_> {
 /// The frame start of each family's place: its staged layer is swapped in,
 /// and the kept layers it can no longer keep are released. A layer that
 /// panics while released fails its own family's frame start, not the frame.
-fn swap_layers(layered: &[LayeredAgent], runtime: &Runtime) {
+fn swap_layers(met: &[MetAgent], runtime: &Runtime) {
     let mut gpu = gpu_of(runtime);
-    for (_, id, layered) in layered {
-        let swapped = run_guarded(*id, || locked(&layered.place).start_frame(&mut gpu));
+    for (_, known) in met {
+        let swapped = run_guarded(known.id, || locked(&known.place).start_frame(&mut gpu));
         if !swapped {
-            layered.place.clear_poison();
+            known.place.clear_poison();
         }
     }
 }
@@ -499,9 +498,10 @@ fn swap_layers(layered: &[LayeredAgent], runtime: &Runtime) {
 /// its place's — the one order both are ever taken in — with the permit of
 /// its own contention: what it quotes and prepares with. It touches no
 /// world, and writes nothing a later agent reads.
-fn wake_layered(layered: &[LayeredAgent], runtime: &Arc<Runtime>, bus: &LaneBus) {
-    for (agent, id, layered) in layered {
-        let why = locked(&layered.place).take_wakes();
+fn wake_agents(met: &[MetAgent], runtime: &Arc<Runtime>, bus: &LaneBus) {
+    for (agent, known) in met {
+        let id = &known.id;
+        let why = locked(&known.place).take_wakes();
         if why.is_empty() {
             continue;
         }
@@ -519,16 +519,16 @@ fn wake_layered(layered: &[LayeredAgent], runtime: &Arc<Runtime>, bus: &LaneBus)
                 &permit,
                 Some(*id),
             );
-            let mut place = locked(&layered.place);
+            let mut place = locked(&known.place);
             agent.wake(&why, &mut place, &mut context);
         });
         if !woken {
             agent.clear_poison();
-            layered.place.clear_poison();
+            known.place.clear_poison();
             // Handed back, so the next event pass wakes the agent for them
             // again: a panic once is not a silent death, nor a lost
             // allocation.
-            let mut place = locked(&layered.place);
+            let mut place = locked(&known.place);
             for wake in why {
                 place.raise(wake);
             }

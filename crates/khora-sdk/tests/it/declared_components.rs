@@ -25,8 +25,8 @@ use khora_sdk::khora_data::ecs::RowError;
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::prelude::math::Vec3;
 use khora_sdk::{
-    AgentProvider, DccService, DeclaredComponentError, EngineApp, EngineCore, GameWorld,
-    InputEvent, PhaseProvider, Runtime, WindowConfig,
+    DeclaredComponentError, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime,
+    WindowConfig,
 };
 
 use khora_io::script::declarations::{apply_declarations, DeclaredComponents};
@@ -296,9 +296,6 @@ struct Attaching {
     attached: Option<(EntityId, Vec<Result<(), DeclaredComponentError>>)>,
 }
 
-impl AgentProvider for Attaching {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Attaching {}
 impl EngineApp for Attaching {
     fn window_config() -> WindowConfig {

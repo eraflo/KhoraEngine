@@ -16,9 +16,9 @@
 //!
 //! The engine is a generic framework — the application (e.g. editor, game launcher)
 //! provides concrete implementations of these traits to inject platform-specific
-//! behavior, agents, custom phases, and application logic.
+//! behavior, what it installs in the runtime, custom phases, and application
+//! logic.
 
-use khora_control::DccService;
 use khora_core::agent::ExecutionPhase;
 use khora_core::platform::KhoraWindow;
 
@@ -68,26 +68,6 @@ pub trait WindowProvider: 'static {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// AgentProvider — inject agents into the DCC
-// ─────────────────────────────────────────────────────────────────────
-
-/// Allows the application to register custom agents with the DCC.
-///
-/// This is where an application's own agents are registered.
-/// The engine calls this method once during initialization, after the DCC is created.
-pub trait AgentProvider {
-    /// Register agents with the DCC service.
-    ///
-    /// Use `dcc.register_agent(agent, priority)`. Each runs while its family
-    /// is on: the runtime's [`Activation`](khora_core::agent::Activation)
-    /// switches it, from `setup` on.
-    ///
-    /// The `runtime` bundle provides access to engine services / backends /
-    /// resources that agents may need.
-    fn register_agents(&self, dcc: &DccService, runtime: &mut khora_core::Runtime);
-}
-
-// ─────────────────────────────────────────────────────────────────────
 // PhaseProvider — inject custom execution phases
 // ─────────────────────────────────────────────────────────────────────
 
@@ -119,10 +99,10 @@ pub trait PhaseProvider {
 
 /// The single generic bound for the engine's application type.
 ///
-/// An application must implement `AgentProvider` and `PhaseProvider`.
-/// `AgentProvider::register_agents` is where the app registers its custom agents
-/// with the DCC — game logic belongs in custom agents using `ExecutionTiming`
-/// and `ExecutionPhase`, not in a free-form `update()` method.
+/// An application must implement `PhaseProvider`. It installs in the runtime
+/// what it needs from the engine in [`provide`](EngineApp::provide); a new
+/// subsystem of its own is a family, registered with `register_agent!` like
+/// the engine's, never a hand-written agent.
 ///
 /// The engine also requires these inherent methods on the app type:
 /// - `window_config() -> WindowConfig`
@@ -139,10 +119,7 @@ pub trait PhaseProvider {
 ///
 /// ```rust,no_run
 /// use khora_sdk::prelude::*;
-/// use khora_sdk::{
-///     AgentProvider, DccService, EngineApp, GameWorld, PhaseProvider, Runtime,
-///     WindowConfig,
-/// };
+/// use khora_sdk::{EngineApp, GameWorld, PhaseProvider, Runtime, WindowConfig};
 ///
 /// struct MyGame {
 ///     frame: u64,
@@ -167,12 +144,9 @@ pub trait PhaseProvider {
 ///     }
 /// }
 ///
-/// impl AgentProvider for MyGame {
-///     fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-/// }
 /// impl PhaseProvider for MyGame {}
 /// ```
-pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync + 'static {
+pub trait EngineApp: PhaseProvider + Send + Sync + 'static {
     /// Returns the window configuration for the application.
     fn window_config() -> WindowConfig
     where
@@ -185,6 +159,15 @@ pub trait EngineApp: AgentProvider + PhaseProvider + Send + Sync + 'static {
 
     /// Called once during engine initialization to set up the game world.
     fn setup(&mut self, world: &mut GameWorld, runtime: &khora_core::Runtime);
+
+    /// Optional: called once at boot, after [`setup`](Self::setup) and before
+    /// the engine's families are built, to install in the runtime what the
+    /// application needs there (its own resources, a shared service). What it
+    /// inserts is in the runtime every family boots with. It never registers
+    /// an agent.
+    ///
+    /// Default: install nothing.
+    fn provide(&self, _runtime: &mut khora_core::Runtime) {}
 
     /// Called every frame to update game logic.
     fn update(&mut self, world: &mut GameWorld, inputs: &[InputEvent]);

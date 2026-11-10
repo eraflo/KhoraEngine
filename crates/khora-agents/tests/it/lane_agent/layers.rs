@@ -43,8 +43,8 @@ use khora_core::lane::{LaneError, OutputDeck};
 use khora_core::Runtime;
 
 use super::fixtures::{
-    host_envelope, installed_row, level, locked, place_of, run, runtime, wakes_of, Load, NoInputs,
-    Plan, ProbeOutputs, Recorded, ANY_MEMORY, LADDER,
+    host_envelope, installed_row, level, locked, place_of, place_step, run, runtime, wakes_of,
+    Load, NoInputs, Plan, ProbeOutputs, Recorded, ANY_MEMORY, LADDER,
 };
 
 // ─── What the lanes were asked ──────────────────────────────────────────────
@@ -298,6 +298,7 @@ fn a_swap_keeps_the_family_phase_and_outputs() {
     let recorded = std::any::TypeId::of::<Recorded>();
     let mut agent = dear_installed(u64::MAX);
     let before = agent.execution_timing();
+    let step_before = place_step(&agent);
     assert!(locked(&place_of(&agent))
         .contention()
         .deck
@@ -310,7 +311,7 @@ fn a_swap_keeps_the_family_phase_and_outputs() {
     let after = agent.execution_timing();
     assert_eq!(after.default_phase, before.default_phase);
     assert_eq!(after.allowed_phases, before.allowed_phases);
-    assert_eq!(after.fixed_timestep, before.fixed_timestep);
+    assert_eq!(place_step(&agent), step_before);
     assert!(
         locked(&place_of(&agent))
             .contention()

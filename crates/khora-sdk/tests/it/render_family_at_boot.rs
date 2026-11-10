@@ -25,8 +25,7 @@ use khora_sdk::khora_core::agent::ExecutionPhase;
 use khora_sdk::khora_core::gpu::DeviceCaps;
 use khora_sdk::khora_core::renderer::GraphicsDevice;
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
-    Runtime, WindowConfig,
+    EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 
 use crate::render_doubles::QueueLog;
@@ -34,9 +33,6 @@ use crate::render_doubles::QueueLog;
 /// A game registering no agent of its own.
 struct Game;
 
-impl AgentProvider for Game {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Game {}
 impl EngineApp for Game {
     fn window_config() -> WindowConfig {

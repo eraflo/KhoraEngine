@@ -25,9 +25,6 @@ use khora_sdk::khora_data::render::{GizmoView, GridView, WireframeView};
 /// An application that sets no overlay.
 struct Bare;
 
-impl khora_sdk::AgentProvider for Bare {
-    fn register_agents(&self, _dcc: &khora_sdk::DccService, _runtime: &mut Runtime) {}
-}
 impl khora_sdk::PhaseProvider for Bare {}
 impl khora_sdk::EngineApp for Bare {
     fn window_config() -> khora_sdk::WindowConfig {

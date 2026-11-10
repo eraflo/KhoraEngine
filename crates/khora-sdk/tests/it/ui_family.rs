@@ -21,7 +21,6 @@
 use std::any::TypeId;
 use std::sync::Arc;
 
-use khora_agents::agent::LaneAgent;
 use khora_sdk::khora_core::agent::gorna::AgentId;
 use khora_sdk::khora_core::asset::AssetUUID;
 use khora_sdk::khora_core::lane::io::PassSlot;
@@ -40,9 +39,6 @@ use khora_sdk::ExecutionPhase;
 /// A game registering no agent of its own.
 struct Game;
 
-impl khora_sdk::AgentProvider for Game {
-    fn register_agents(&self, _dcc: &khora_sdk::DccService, _runtime: &mut Runtime) {}
-}
 impl khora_sdk::PhaseProvider for Game {}
 impl khora_sdk::EngineApp for Game {
     fn window_config() -> khora_sdk::WindowConfig {
@@ -81,13 +77,17 @@ fn the_engine_boots_the_ui_family_as_one_lane_agent() {
                 .lock()
                 .ok()
                 .filter(|agent| agent.id() == AgentId::new("ui"))
-                .map(|agent| agent.as_any().is::<LaneAgent>())
+                .map(|_| {
+                    registry
+                        .origin(AgentId::new("ui"))
+                        .is_some_and(|module| module.starts_with("khora_agents::"))
+                })
         })
         .collect();
     assert_eq!(
         ui,
         [true],
-        "one UI agent in OUTPUT, the lane agent of the UI family"
+        "one UI agent in OUTPUT, the lane agent of the UI family, registered from khora-agents"
     );
 }
 

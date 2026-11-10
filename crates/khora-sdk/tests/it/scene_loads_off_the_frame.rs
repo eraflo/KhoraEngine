@@ -33,9 +33,8 @@ use khora_sdk::prelude::ecs::{Name, Transform};
 use khora_sdk::prelude::math::Vec3;
 use khora_sdk::prelude::AssetUUID;
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, LoadOutcome,
-    PhaseProvider, Runtime, SceneFile, SceneLoadHub, SerializationGoal, SerializationService,
-    WindowConfig,
+    EngineApp, EngineCore, GameWorld, InputEvent, LoadOutcome, PhaseProvider, Runtime, SceneFile,
+    SceneLoadHub, SerializationGoal, SerializationService, WindowConfig,
 };
 
 /// The most frames a load may take to land: the background run, the frame
@@ -54,9 +53,6 @@ const LONG_FRAME: Duration = Duration::from_millis(1_500);
 /// A game: every family on from the first frame.
 struct Game;
 
-impl AgentProvider for Game {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Game {}
 impl EngineApp for Game {
     fn window_config() -> WindowConfig {

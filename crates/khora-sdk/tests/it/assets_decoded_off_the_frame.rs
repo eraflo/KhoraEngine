@@ -37,8 +37,7 @@ use khora_sdk::khora_core::asset::AssetUUID;
 use khora_sdk::khora_core::ecs::entity::EntityId;
 use khora_sdk::khora_core::renderer::api::gpu_scene::Mesh;
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
-    Runtime, WindowConfig,
+    EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 use khora_telemetry::MetricsRegistry;
 
@@ -72,9 +71,6 @@ const MESH: &str = "meshes/shape.obj";
 /// A game: every family on from the first frame.
 struct Game;
 
-impl AgentProvider for Game {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Game {}
 impl EngineApp for Game {
     fn window_config() -> WindowConfig {
@@ -432,19 +428,12 @@ fn a_mesh_asked_for_while_the_loading_family_is_off_resolves_once_it_is_on() {
     );
 }
 
-/// A tool: it hands the engine its asset service as it registers its agents,
-/// as the editor does (`EditorApp::register_agents`).
+/// A tool: it hands the engine its asset service in `provide`, as the
+/// editor does (`EditorApp::provide`).
 struct Tool {
     assets: Option<Arc<Mutex<AssetService>>>,
 }
 
-impl AgentProvider for Tool {
-    fn register_agents(&self, _dcc: &DccService, runtime: &mut Runtime) {
-        if let Some(assets) = &self.assets {
-            runtime.services.insert(Arc::clone(assets));
-        }
-    }
-}
 impl PhaseProvider for Tool {}
 impl EngineApp for Tool {
     fn window_config() -> WindowConfig {
@@ -453,12 +442,17 @@ impl EngineApp for Tool {
     fn new() -> Self {
         Tool { assets: None }
     }
+    fn provide(&self, runtime: &mut Runtime) {
+        if let Some(assets) = &self.assets {
+            runtime.services.insert(Arc::clone(assets));
+        }
+    }
     fn setup(&mut self, _world: &mut GameWorld, _runtime: &Runtime) {}
     fn update(&mut self, _world: &mut GameWorld, _inputs: &[InputEvent]) {}
 }
 
 /// **A mesh asset resolves when the application hands the engine its asset
-/// service as it registers its agents**, after the engine's own entries were
+/// service in `provide`**, after the engine's own entries were
 /// installed — the editor's way: the `loading` family decodes from that service.
 #[test]
 fn a_mesh_asset_resolves_when_the_service_is_handed_over_at_registration() {

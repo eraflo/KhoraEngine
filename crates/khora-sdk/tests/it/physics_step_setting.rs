@@ -24,6 +24,7 @@ use std::time::Duration;
 use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_sdk::khora_core::agent::Agent;
 use khora_sdk::khora_core::ecs::entity::EntityId;
+use khora_sdk::khora_core::gpu::GpuSetup;
 use khora_sdk::khora_core::lane::{LaneBus, OutputDeck};
 use khora_sdk::khora_core::math::{Quat, Ray, Vec3};
 use khora_sdk::khora_core::physics::{
@@ -32,8 +33,7 @@ use khora_sdk::khora_core::physics::{
 };
 use khora_sdk::khora_core::EngineContext;
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
-    Runtime, WindowConfig,
+    EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime, WindowConfig,
 };
 
 /// 1/128 s: exact in binary, and none of the steps the former agent picked.
@@ -116,9 +116,6 @@ impl PhysicsProvider for RecordingProvider {
 /// A game registering no agent of its own.
 struct Game;
 
-impl AgentProvider for Game {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Game {}
 impl EngineApp for Game {
     fn window_config() -> WindowConfig {
@@ -168,13 +165,17 @@ fn physics_agent_of(engine: &EngineCore<Game>) -> Arc<Mutex<dyn Agent>> {
     found.expect("the engine registered a physics agent")
 }
 
-/// The step the agent declares to the scheduler.
+/// The step the agent's place holds: what the scheduler sub-steps it by.
 fn declared_step(agent: &Arc<Mutex<dyn Agent>>) -> Option<Duration> {
-    agent
+    let place = agent
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .execution_timing()
-        .fixed_timestep
+        .place();
+    let step = place
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .fixed_step();
+    step
 }
 
 /// Every strategy GORNA could name to the agent: the ones it offers, and the
@@ -206,8 +207,10 @@ fn apply(agent: &Arc<Mutex<dyn Agent>>, strategy_id: StrategyId) {
     crate::protocol::pin_with(&mut *agent, strategy_id, Duration::from_millis(2));
 }
 
-/// One run of `agent` over `engine`'s runtime, as the scheduler runs one
-/// sub-step of an agent.
+/// One frame of `agent`'s place over `engine`'s runtime, as the scheduler
+/// runs one sub-step of a family: the agent woken for what its place holds
+/// (its first frame), the preparation it asked for run at once, the frame
+/// start, and one run of the installed layer.
 fn run_once(engine: &EngineCore<Game>, agent: &Arc<Mutex<dyn Agent>>) -> OutputDeck {
     let bus = LaneBus::new();
     let mut deck = OutputDeck::new();
@@ -216,6 +219,10 @@ fn run_once(engine: &EngineCore<Game>, agent: &Arc<Mutex<dyn Agent>>) -> OutputD
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let permit = agent.contention();
     let id = agent.id();
+    let place = agent.place();
+    let mut place = place
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut context = EngineContext::for_agent(
         Arc::clone(engine.runtime()),
         &bus,
@@ -223,7 +230,19 @@ fn run_once(engine: &EngineCore<Game>, agent: &Arc<Mutex<dyn Agent>>) -> OutputD
         &permit,
         Some(id),
     );
-    agent.execute(&mut context);
+    for _ in 0..4 {
+        let why = place.take_wakes();
+        if why.is_empty() {
+            break;
+        }
+        agent.wake(&why, &mut place, &mut context);
+        if let Some(preparation) = place.take_preparation() {
+            let prepared = preparation.run(&mut context);
+            place.prepared(prepared);
+        }
+    }
+    place.start_frame(&mut GpuSetup::headless());
+    let _ = place.run(&mut context);
     drop(context);
     deck
 }

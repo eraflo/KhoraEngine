@@ -100,7 +100,7 @@ fn run_one_frame(agent: &mut LaneAgent, runtime: &Arc<Runtime>) {
         &permit,
         Some(agent.id()),
     );
-    agent.execute(&mut ctx);
+    khora_agents::agent::run_frame(agent, &mut ctx);
 }
 
 /// A `Runtime` holding the scripting world, as `EngineBuilder` registers it,
@@ -269,7 +269,7 @@ fn an_engine_event_waits_in_the_channel_while_no_script_runs() {
         &permit,
         Some(agent.id()),
     );
-    agent.execute(&mut ctx);
+    khora_agents::agent::run_frame(&mut agent, &mut ctx);
 
     assert_eq!(
         events.len(),

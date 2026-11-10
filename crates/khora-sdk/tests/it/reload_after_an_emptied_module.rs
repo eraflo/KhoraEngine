@@ -30,8 +30,8 @@ use khora_sdk::khora_core::script::ScriptValue;
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::prelude::math::Vec3;
 use khora_sdk::{
-    AgentProvider, DccService, DeclaredComponentError, EngineApp, EngineCore, GameWorld,
-    InputEvent, PhaseProvider, Runtime, WindowConfig,
+    DeclaredComponentError, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime,
+    WindowConfig,
 };
 
 use khora_io::script::declarations::ScriptDeclarations;
@@ -60,9 +60,6 @@ struct AttachingMover {
     attached: Option<(EntityId, Result<(), DeclaredComponentError>)>,
 }
 
-impl AgentProvider for AttachingMover {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for AttachingMover {}
 impl EngineApp for AttachingMover {
     fn window_config() -> WindowConfig {

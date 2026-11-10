@@ -276,6 +276,12 @@ impl Place {
         }
     }
 
+    /// The step every layer of the place runs at, for a fixed-step family:
+    /// what the scheduler sub-steps the family by, read each frame.
+    pub fn fixed_step(&self) -> Option<Duration> {
+        self.terms.fixed_step
+    }
+
     /// Sets the step every layer of the place runs at — the installed one
     /// and one on its way in — leaving the rest of their terms as they are.
     pub fn set_fixed_step(&mut self, step: Option<Duration>) {

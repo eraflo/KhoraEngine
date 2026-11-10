@@ -110,7 +110,7 @@ fn run_one_frame(agent: &mut LaneAgent, runtime: &Arc<Runtime>) -> Vec<WorldComm
             &permit,
             Some(agent.id()),
         );
-        agent.execute(&mut ctx);
+        khora_agents::agent::run_frame(agent, &mut ctx);
     }
     deck.take::<khora_core::script::CommandBuffer>()
         .as_slice()

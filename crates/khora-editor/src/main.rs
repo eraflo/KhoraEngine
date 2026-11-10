@@ -15,7 +15,7 @@
 //! Khora Engine Editor application entry point.
 //!
 //! Thin trampoline. The substance lives in:
-//!   - `app/`          — `EditorApp` + `EngineApp`/`AgentProvider`/`PhaseProvider`
+//!   - `app/`          — `EditorApp` + `EngineApp`/`PhaseProvider`
 //!   - `bootstrap.rs`  — winit + overlay/shell setup, CLI parsing
 //!   - `commands/`     — menu actions, save/load/build dispatchers
 //!   - `input.rs`      — per-frame input event routing

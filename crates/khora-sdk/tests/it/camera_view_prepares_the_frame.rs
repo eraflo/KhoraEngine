@@ -38,9 +38,6 @@ struct OneCamera {
     spawned: Arc<Mutex<Option<EntityId>>>,
 }
 
-impl khora_sdk::AgentProvider for OneCamera {
-    fn register_agents(&self, _dcc: &khora_sdk::DccService, _runtime: &mut Runtime) {}
-}
 impl khora_sdk::PhaseProvider for OneCamera {}
 impl khora_sdk::EngineApp for OneCamera {
     fn window_config() -> khora_sdk::WindowConfig {

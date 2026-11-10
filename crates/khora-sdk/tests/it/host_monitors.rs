@@ -21,16 +21,13 @@ use std::sync::Arc;
 
 use khora_sdk::khora_core::telemetry::monitoring::{ResourceMonitor, ResourceUsageReport};
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, EngineCore, GameWorld, HostMonitors, InputEvent,
-    MonitorRegistry, MonitoredResourceType, PhaseProvider, Runtime, WindowConfig,
+    EngineApp, EngineCore, GameWorld, HostMonitors, InputEvent, MonitorRegistry,
+    MonitoredResourceType, PhaseProvider, Runtime, WindowConfig,
 };
 
 /// An application that does nothing: the bootstrap alone is under test.
 struct Idle;
 
-impl AgentProvider for Idle {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Idle {}
 impl EngineApp for Idle {
     fn window_config() -> WindowConfig {

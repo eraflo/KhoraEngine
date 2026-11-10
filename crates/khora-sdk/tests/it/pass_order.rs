@@ -16,12 +16,11 @@
 //! declare — shadows, the opaque scene, the sky, the blended scene, the UI,
 //! the overlays — whatever order the agents recorded them in.
 
-use crate::protocol::{offer_of, report_of};
-use khora_sdk::khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
+use crate::protocol::{register_after_boot, Hand, Work};
 use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 
-use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
+use khora_sdk::khora_core::agent::gorna::AgentId;
 use khora_sdk::khora_core::agent::{Agent, Contention};
 use khora_sdk::khora_core::renderer::api::command::CommandBufferId;
 use khora_sdk::khora_core::renderer::GraphicsDevice;
@@ -49,6 +48,15 @@ fn declared_order() -> [TypeId; 8] {
     ]
 }
 
+/// The timing of an agent of `OUTPUT`.
+fn output() -> ExecutionTiming {
+    ExecutionTiming {
+        allowed_phases: vec![ExecutionPhase::OUTPUT],
+        default_phase: ExecutionPhase::OUTPUT,
+        ..ExecutionTiming::default()
+    }
+}
+
 /// A contribution of a pass that declares no resource, so the frame graph
 /// keeps the order it is handed.
 fn pass(name: &'static str, buffer: u64) -> Option<PassContribution> {
@@ -58,64 +66,30 @@ fn pass(name: &'static str, buffer: u64) -> Option<PassContribution> {
     })
 }
 
-/// Records one pass into each of the eight slots, gizmos first and shadows
-/// last: the reverse of the order they must reach the device in.
-struct EverySlot;
-
-impl Agent for EverySlot {
-    fn id(&self) -> AgentId {
-        AgentId::new("asset")
-    }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(AgentId::new("asset"), request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(AgentId::new("asset"), StrategyId::Balanced)
-    }
-    fn contention(&self) -> Contention {
-        Contention::none().writing_deck(declared_order())
-    }
-    fn execute(&mut self, ctx: &mut EngineContext<'_>) {
-        ctx.deck.slot::<GizmoPassSlot>().0 = pass("GizmoPass", 8);
-        ctx.deck.slot::<WireframePassSlot>().0 = pass("WireframePass", 7);
-        ctx.deck.slot::<GridPassSlot>().0 = pass("GridPass", 6);
-        ctx.deck.slot::<UiPassSlot>().0 = pass("UiPass", 5);
-        ctx.deck.slot::<TransparentPassSlot>().0 = pass("TransparentPass", 4);
-        ctx.deck.slot::<SkyboxPassSlot>().0 = pass("SkyboxPass", 3);
-        ctx.deck.slot::<ScenePassSlot>().0 = pass("ScenePass", 2);
-        ctx.deck.slot::<ShadowPassSlot>().0 = pass("ShadowPass", 1);
-    }
-    fn execution_timing(&self) -> ExecutionTiming {
-        ExecutionTiming {
-            allowed_phases: vec![ExecutionPhase::OUTPUT],
-            default_phase: ExecutionPhase::OUTPUT,
-            ..ExecutionTiming::default()
-        }
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
+/// An agent of `OUTPUT` whose layer records one pass into each of the eight
+/// slots, gizmos first and shadows last: the reverse of the order they must
+/// reach the device in.
+fn every_slot() -> Arc<Mutex<dyn Agent>> {
+    let layer = Work::new(
+        Contention::none().writing_deck(declared_order()),
+        |ctx: &mut EngineContext<'_>| {
+            ctx.deck.slot::<GizmoPassSlot>().0 = pass("GizmoPass", 8);
+            ctx.deck.slot::<WireframePassSlot>().0 = pass("WireframePass", 7);
+            ctx.deck.slot::<GridPassSlot>().0 = pass("GridPass", 6);
+            ctx.deck.slot::<UiPassSlot>().0 = pass("UiPass", 5);
+            ctx.deck.slot::<TransparentPassSlot>().0 = pass("TransparentPass", 4);
+            ctx.deck.slot::<SkyboxPassSlot>().0 = pass("SkyboxPass", 3);
+            ctx.deck.slot::<ScenePassSlot>().0 = pass("ScenePass", 2);
+            ctx.deck.slot::<ShadowPassSlot>().0 = pass("ShadowPass", 1);
+        },
+    );
+    Hand::new(AgentId::new("asset"), output(), layer).shared()
 }
 
-/// An application whose only agent records a pass into every slot.
+/// An application whose only agent, registered once it booted, records a
+/// pass into every slot.
 struct Recorder;
 
-impl khora_sdk::AgentProvider for Recorder {
-    fn register_agents(&self, dcc: &khora_sdk::DccService, _runtime: &mut Runtime) {
-        dcc.register_agent(Arc::new(Mutex::new(EverySlot)), 1.0);
-    }
-}
 impl khora_sdk::PhaseProvider for Recorder {}
 impl khora_sdk::EngineApp for Recorder {
     fn window_config() -> khora_sdk::WindowConfig {
@@ -144,6 +118,7 @@ fn passes_submit_in_declared_order() {
 
     let mut engine = khora_sdk::EngineCore::<Recorder>::new();
     engine.bootstrap(Recorder, runtime);
+    register_after_boot(&engine, every_slot(), 1.0);
     let frame_runtime = Arc::clone(engine.runtime());
     engine.tick_with_runtime(frame_runtime);
 
@@ -176,110 +151,75 @@ fn the_registered_pass_order_runs_from_shadows_to_overlays() {
     );
 }
 
-/// Records the eight passes gizmos first, each with the resources the shipped
-/// agent declares for it (the shadows family, `RenderAgent` with a shadow
+/// An agent of `OUTPUT` whose layer records the eight passes gizmos first,
+/// each with the resources the shipped agent declares for it (the shadows family, `RenderAgent` with a shadow
 /// atlas, the skybox family, the UI family, the grid, wireframe and gizmo
 /// families).
-struct EverySlotWithItsResources;
-
-impl Agent for EverySlotWithItsResources {
-    fn id(&self) -> AgentId {
-        AgentId::new("asset")
-    }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(AgentId::new("asset"), request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(AgentId::new("asset"), StrategyId::Balanced)
-    }
-    fn contention(&self) -> Contention {
-        Contention::none().writing_deck(declared_order())
-    }
-    fn execute(&mut self, ctx: &mut EngineContext<'_>) {
-        use khora_sdk::khora_data::render::ResourceId;
-        let contribution = |descriptor: PassDescriptor, buffer: u64| {
-            Some(PassContribution {
-                descriptor,
-                command_buffer: CommandBufferId(buffer),
-            })
-        };
-        ctx.deck.slot::<GizmoPassSlot>().0 = contribution(
-            PassDescriptor::new("GizmoPass").writes(ResourceId::Color),
-            8,
-        );
-        ctx.deck.slot::<WireframePassSlot>().0 = contribution(
-            PassDescriptor::new("WireframePass")
-                .writes(ResourceId::Color)
-                .reads(ResourceId::Depth),
-            7,
-        );
-        ctx.deck.slot::<GridPassSlot>().0 = contribution(
-            PassDescriptor::new("GridPass")
-                .writes(ResourceId::Color)
-                .reads(ResourceId::Depth),
-            6,
-        );
-        ctx.deck.slot::<UiPassSlot>().0 = contribution(
-            PassDescriptor::new("UiPass")
-                .reads(ResourceId::Color)
-                .writes(ResourceId::Color),
-            5,
-        );
-        ctx.deck.slot::<TransparentPassSlot>().0 = contribution(
-            PassDescriptor::new("TransparentPass")
-                .writes(ResourceId::Color)
-                .reads(ResourceId::Depth),
-            4,
-        );
-        ctx.deck.slot::<SkyboxPassSlot>().0 = contribution(
-            PassDescriptor::new("SkyboxPass")
-                .writes(ResourceId::Color)
-                .reads(ResourceId::Depth),
-            3,
-        );
-        ctx.deck.slot::<ScenePassSlot>().0 = contribution(
-            PassDescriptor::new("ScenePass")
-                .writes(ResourceId::Color)
-                .writes(ResourceId::Depth)
-                .reads(ResourceId::ShadowAtlas),
-            2,
-        );
-        ctx.deck.slot::<ShadowPassSlot>().0 = contribution(
-            PassDescriptor::new("ShadowPass").writes(ResourceId::ShadowAtlas),
-            1,
-        );
-    }
-    fn execution_timing(&self) -> ExecutionTiming {
-        ExecutionTiming {
-            allowed_phases: vec![ExecutionPhase::OUTPUT],
-            default_phase: ExecutionPhase::OUTPUT,
-            ..ExecutionTiming::default()
-        }
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
+fn every_slot_with_its_resources() -> Arc<Mutex<dyn Agent>> {
+    let layer = Work::new(
+        Contention::none().writing_deck(declared_order()),
+        |ctx: &mut EngineContext<'_>| {
+            use khora_sdk::khora_data::render::ResourceId;
+            let contribution = |descriptor: PassDescriptor, buffer: u64| {
+                Some(PassContribution {
+                    descriptor,
+                    command_buffer: CommandBufferId(buffer),
+                })
+            };
+            ctx.deck.slot::<GizmoPassSlot>().0 = contribution(
+                PassDescriptor::new("GizmoPass").writes(ResourceId::Color),
+                8,
+            );
+            ctx.deck.slot::<WireframePassSlot>().0 = contribution(
+                PassDescriptor::new("WireframePass")
+                    .writes(ResourceId::Color)
+                    .reads(ResourceId::Depth),
+                7,
+            );
+            ctx.deck.slot::<GridPassSlot>().0 = contribution(
+                PassDescriptor::new("GridPass")
+                    .writes(ResourceId::Color)
+                    .reads(ResourceId::Depth),
+                6,
+            );
+            ctx.deck.slot::<UiPassSlot>().0 = contribution(
+                PassDescriptor::new("UiPass")
+                    .reads(ResourceId::Color)
+                    .writes(ResourceId::Color),
+                5,
+            );
+            ctx.deck.slot::<TransparentPassSlot>().0 = contribution(
+                PassDescriptor::new("TransparentPass")
+                    .writes(ResourceId::Color)
+                    .reads(ResourceId::Depth),
+                4,
+            );
+            ctx.deck.slot::<SkyboxPassSlot>().0 = contribution(
+                PassDescriptor::new("SkyboxPass")
+                    .writes(ResourceId::Color)
+                    .reads(ResourceId::Depth),
+                3,
+            );
+            ctx.deck.slot::<ScenePassSlot>().0 = contribution(
+                PassDescriptor::new("ScenePass")
+                    .writes(ResourceId::Color)
+                    .writes(ResourceId::Depth)
+                    .reads(ResourceId::ShadowAtlas),
+                2,
+            );
+            ctx.deck.slot::<ShadowPassSlot>().0 = contribution(
+                PassDescriptor::new("ShadowPass").writes(ResourceId::ShadowAtlas),
+                1,
+            );
+        },
+    );
+    Hand::new(AgentId::new("asset"), output(), layer).shared()
 }
 
-/// An application whose only agent records every pass with its resources.
+/// An application whose only agent, registered once it booted, records every
+/// pass with its resources.
 struct ResourceRecorder;
 
-impl khora_sdk::AgentProvider for ResourceRecorder {
-    fn register_agents(&self, dcc: &khora_sdk::DccService, _runtime: &mut Runtime) {
-        dcc.register_agent(Arc::new(Mutex::new(EverySlotWithItsResources)), 1.0);
-    }
-}
 impl khora_sdk::PhaseProvider for ResourceRecorder {}
 impl khora_sdk::EngineApp for ResourceRecorder {
     fn window_config() -> khora_sdk::WindowConfig {
@@ -310,6 +250,7 @@ fn passes_with_their_resources_submit_in_declared_order() {
 
     let mut engine = khora_sdk::EngineCore::<ResourceRecorder>::new();
     engine.bootstrap(ResourceRecorder, runtime);
+    register_after_boot(&engine, every_slot_with_its_resources(), 1.0);
     let frame_runtime = Arc::clone(engine.runtime());
     engine.tick_with_runtime(frame_runtime);
 

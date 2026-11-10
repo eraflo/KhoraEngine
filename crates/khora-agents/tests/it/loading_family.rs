@@ -962,7 +962,7 @@ fn background_frame(
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
-    let place = agent.place().expect("a LaneAgent runs as layers");
+    let place = agent.place();
     let mut bus = LaneBus::new();
     bus.set_frame(FrameId(frame));
     let mut deck = OutputDeck::new();

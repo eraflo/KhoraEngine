@@ -133,8 +133,6 @@ struct Bakes {
     in_flight: usize,
     /// The most runs ever under way at once.
     most_at_once: usize,
-    /// Every `execute` called, which the scheduler never should.
-    executed: Vec<&'static str>,
 }
 
 type SharedBakes = Arc<Mutex<Bakes>>;
@@ -286,16 +284,14 @@ struct Oven {
     name: &'static str,
     place: Arc<Mutex<Place>>,
     first: Option<Baker>,
-    bakes: SharedBakes,
 }
 
 impl Oven {
-    fn new(name: &'static str, first: Baker, bakes: &SharedBakes) -> Self {
+    fn new(name: &'static str, first: Baker) -> Self {
         Self {
             name,
             place: Arc::new(Mutex::new(Place::new(AgentId::new(name)))),
             first: Some(first),
-            bakes: Arc::clone(bakes),
         }
     }
 }
@@ -319,8 +315,8 @@ impl Agent for Oven {
     ) {
         self.place.lock().expect("the place lock").lent(epoch);
     }
-    fn place(&self) -> Option<Arc<Mutex<Place>>> {
-        Some(Arc::clone(&self.place))
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
     fn wake(&mut self, _why: &[Wake], place: &mut Place, _context: &mut EngineContext<'_>) {
         if place.installed_row().is_none() {
@@ -329,25 +325,12 @@ impl Agent for Oven {
             }
         }
     }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        self.bakes
-            .lock()
-            .expect("the bakes lock")
-            .executed
-            .push(self.name);
-    }
     fn execution_timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![ExecutionPhase::BACKGROUND],
             default_phase: ExecutionPhase::BACKGROUND,
             ..ExecutionTiming::default()
         }
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -363,9 +346,8 @@ fn runtime_with_activation() -> (Runtime, Channel<Batch>, Arc<Activation>) {
 
 /// **A background run longer than a frame does not delay the frames.** The
 /// oven has a batch waiting: a run starts, and is held at its gate. Frame
-/// after frame completes meanwhile, without the oven's `execute` ever being
-/// called, and its place can be locked between frames — the run holds it
-/// for no frame. Let through, the run finishes.
+/// after frame completes meanwhile, and its place can be locked between
+/// frames — the run holds it for no frame. Let through, the run finishes.
 #[test]
 fn a_background_run_longer_than_a_frame_does_not_delay_the_frames() {
     let bakes = SharedBakes::default();
@@ -374,9 +356,8 @@ fn a_background_run_longer_than_a_frame_does_not_delay_the_frames() {
     let oven = Oven::new(
         "oven",
         Baker::new("oven", StrategyId::Balanced, &gate, &bakes).taking(&channel),
-        &bakes,
     );
-    let place = oven.place().expect("a layered agent has a place");
+    let place = oven.place();
     let (mut scheduler, _rx) = scheduling(vec![shared(oven)]);
     let runtime = Arc::new(runtime);
     let mut world = World::new();
@@ -400,7 +381,6 @@ fn a_background_run_longer_than_a_frame_does_not_delay_the_frames() {
     wait_until("the oven's run to finish", || finished(&bakes) == 1);
     frames(&mut scheduler, &mut world, &runtime, 2);
     let bakes = bakes.lock().expect("the bakes lock");
-    assert!(bakes.executed.is_empty(), "the oven is never executed");
     assert_eq!(bakes.started.len(), 1, "one batch, one run");
 }
 
@@ -415,7 +395,6 @@ fn a_family_runs_at_most_once_at_a_time_in_the_background() {
     let oven = Oven::new(
         "oven",
         Baker::new("oven", StrategyId::Balanced, &gate, &bakes).taking(&channel),
-        &bakes,
     );
     let (mut scheduler, _rx) = scheduling(vec![shared(oven)]);
     let runtime = Arc::new(runtime);
@@ -460,7 +439,6 @@ fn a_background_run_starts_only_when_its_family_has_mail() {
     let oven = Oven::new(
         "oven",
         Baker::new("oven", StrategyId::Balanced, &Gate::open(), &bakes).taking(&channel),
-        &bakes,
     );
     let (mut scheduler, _rx) = scheduling(vec![shared(oven)]);
     let runtime = Arc::new(runtime);
@@ -492,7 +470,6 @@ fn a_family_off_starts_no_background_run() {
     let oven = Oven::new(
         "oven",
         Baker::new("oven", StrategyId::Balanced, &Gate::open(), &bakes).taking(&channel),
-        &bakes,
     );
     let (mut scheduler, _rx) = scheduling(vec![shared(oven)]);
     let runtime = Arc::new(runtime);
@@ -531,7 +508,6 @@ fn a_run_under_way_when_its_family_switches_off_finishes() {
     let oven = Oven::new(
         "oven",
         Baker::new("oven", StrategyId::Balanced, &gate, &bakes).taking(&channel),
-        &bakes,
     );
     let (mut scheduler, _rx) = scheduling(vec![shared(oven)]);
     let runtime = Arc::new(runtime);
@@ -584,9 +560,8 @@ fn a_layer_staged_during_a_background_run_waits_for_it_to_return() {
     let oven = Oven::new(
         "oven",
         Baker::new("oven", StrategyId::LowPower, &first_gate, &bakes).taking(&channel),
-        &bakes,
     );
-    let place = oven.place().expect("a layered agent has a place");
+    let place = oven.place();
     let (mut scheduler, _rx) = scheduling(vec![shared(oven)]);
     let runtime = Arc::new(runtime);
     let mut world = World::new();
@@ -660,7 +635,6 @@ fn background_runs_do_not_delay_a_concurrent_waves_pool_jobs() {
         agents.push(shared(Oven::new(
             name,
             Baker::new(name, StrategyId::Balanced, &gate, &bakes),
-            &bakes,
         )));
     }
     let (mut scheduler, _rx) = scheduling(agents);
@@ -727,10 +701,9 @@ fn a_background_run_that_panicked_reports_it_stalled_with_its_message() {
     let mut oven = Oven::new(
         "oven",
         Baker::new("oven", StrategyId::Balanced, &Gate::open(), &bakes),
-        &bakes,
     );
     oven.first = None;
-    let place = oven.place().expect("a layered agent has a place");
+    let place = oven.place();
     place.lock().expect("the place lock").stage(
         Box::new(Burner {
             takes: channel.clone(),

@@ -222,9 +222,15 @@ fn the_script_agent_writes_both_slots_and_locks_the_scripting_world() {
 /// the frame is about.
 #[test]
 fn the_script_agent_runs_every_frame_in_transform_as_critical() {
-    let timing = script_agent().execution_timing();
+    let agent = script_agent();
+    let timing = agent.execution_timing();
 
-    assert_eq!(timing.fixed_timestep, None);
+    let step = agent
+        .place()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .fixed_step();
+    assert_eq!(step, None, "its place holds no fixed step");
     assert_eq!(timing.allowed_phases, vec![ExecutionPhase::TRANSFORM]);
     assert_eq!(timing.default_phase, ExecutionPhase::TRANSFORM);
     assert_eq!(timing.importance, AgentImportance::Critical);

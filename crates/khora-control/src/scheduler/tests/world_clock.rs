@@ -17,14 +17,14 @@
 //! opens none. The world's tick moves for the Flows of a frame, never for the
 //! agents it runs.
 
-use super::{offer_of, report_of};
+use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::dependency::{AgentDependency, DependencyKind};
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
-use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::Terms;
+use khora_core::agent::{AgentImportance, Contention, ExecutionPhase, ExecutionTiming};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::any::TypeId;
@@ -45,28 +45,14 @@ struct Quiet {
     runs: Arc<AtomicUsize>,
 }
 
-impl Agent for Quiet {
+impl Family for Quiet {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
+    fn run(&mut self, _terms: &Terms, _ctx: &mut EngineContext<'_>) {
         self.runs.fetch_add(1, Ordering::SeqCst);
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![ExecutionPhase::TRANSFORM],
             default_phase: ExecutionPhase::TRANSFORM,
@@ -85,12 +71,6 @@ impl Agent for Quiet {
     }
     fn contention(&self) -> Contention {
         Contention::none().writing_deck(self.writes.clone())
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -114,12 +94,12 @@ fn three_quiet_agents(parallel: bool) -> (ExecutionScheduler, Arc<AtomicUsize>) 
             ),
         ] {
             registry.register(
-                Arc::new(Mutex::new(Quiet {
+                hosted(Quiet {
                     id: AgentId::new(name),
                     writes,
                     after,
                     runs: Arc::clone(&runs),
-                })),
+                }),
                 priority,
             );
         }

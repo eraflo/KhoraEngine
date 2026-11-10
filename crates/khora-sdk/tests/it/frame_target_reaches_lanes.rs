@@ -40,10 +40,7 @@ use khora_sdk::khora_core::math::{Extent2D, LinearRgba};
 use khora_sdk::khora_core::renderer::api::frame::FrameContext;
 use khora_sdk::khora_core::renderer::api::resource::{TextureFormat, TextureViewId};
 use khora_sdk::khora_core::{EngineContext, Runtime};
-use khora_sdk::{
-    AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider,
-    WindowConfig,
-};
+use khora_sdk::{EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, WindowConfig};
 
 use crate::render_doubles::{insert_frame_context, install_renderer, RecordingRenderer};
 
@@ -232,7 +229,7 @@ fn run_once(agent: &mut LaneAgent, runtime: &Arc<Runtime>) -> OutputDeck {
     let id = agent.id();
     let mut context =
         EngineContext::for_agent(Arc::clone(runtime), &bus, &mut deck, &permit, Some(id));
-    agent.execute(&mut context);
+    khora_agents::agent::run_frame(agent, &mut context);
     deck
 }
 
@@ -240,9 +237,6 @@ fn run_once(agent: &mut LaneAgent, runtime: &Arc<Runtime>) -> OutputDeck {
 
 struct Bare;
 
-impl AgentProvider for Bare {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Bare {}
 impl EngineApp for Bare {
     fn window_config() -> WindowConfig {

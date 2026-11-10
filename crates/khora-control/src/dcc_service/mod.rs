@@ -269,7 +269,9 @@ impl DccService {
         connected(&self.budget_channel)
     }
 
-    /// Registers an agent with a priority value.
+    /// Registers an agent with a priority value: what the boot does for each
+    /// family's agent. A game adds a subsystem as a family
+    /// (`register_agent!`), never as a hand-written agent.
     ///
     /// Higher priority values mean the agent is updated first in each frame.
     /// It runs while its family is on
@@ -304,44 +306,6 @@ impl DccService {
     /// each frame without going through `get_context()`'s clone.
     pub fn context_handle(&self) -> Arc<std::sync::RwLock<Context>> {
         Arc::clone(&self.context)
-    }
-
-    /// Initializes all registered agents once after registration.
-    ///
-    /// Should be called once after all agents are registered, giving them
-    /// access to engine services for caching and lane setup.
-    pub fn initialize_agents(&self, context: &mut khora_core::EngineContext<'_>) {
-        if let Ok(registry) = self.registry.lock() {
-            registry.initialize_all(context);
-        }
-    }
-
-    /// Initializes the registered agent at `index` in priority order, and only
-    /// that one — [`initialize_agents`](Self::initialize_agents) spread over
-    /// as many calls as there are agents ([`agent_count`](Self::agent_count)),
-    /// so a tool can run one agent's setup per frame while it starts.
-    ///
-    /// Returns `false`, and initializes nothing, when `index` is past the last
-    /// agent.
-    pub fn initialize_agent(
-        &self,
-        index: usize,
-        context: &mut khora_core::EngineContext<'_>,
-    ) -> bool {
-        match self.registry.lock() {
-            Ok(registry) => registry.initialize_one(index, context),
-            Err(_) => false,
-        }
-    }
-
-    /// Executes all registered agents in priority order.
-    ///
-    /// Called each frame. Each agent selects the appropriate lanes and
-    /// dispatches their execution.
-    pub fn execute_agents(&self, context: &mut khora_core::EngineContext<'_>) {
-        if let Ok(registry) = self.registry.lock() {
-            registry.execute_all(context);
-        }
     }
 
     /// Returns the number of registered agents.

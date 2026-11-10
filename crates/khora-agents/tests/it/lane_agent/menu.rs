@@ -30,9 +30,9 @@ use khora_core::lane::family::LaneFamily;
 use khora_core::lane::OutputDeck;
 
 use super::fixtures::{
-    host_envelope, ladder_cost, lend, locked, offer_request, offered, place_of, recorded_level,
-    run, runtime, FirstLane, Load, Plan, ProbeFamily, Recorded, SecondLane, Tally, FIXED_LADDER,
-    FIXED_STEP, LADDER, STORAGE_OR_PLAIN, TWO_LANES,
+    host_envelope, ladder_cost, lend, locked, offer_request, offered, place_of, place_step,
+    recorded_level, run, runtime, FirstLane, Load, Plan, ProbeFamily, Recorded, SecondLane, Tally,
+    FIXED_LADDER, FIXED_STEP, LADDER, STORAGE_OR_PLAIN, TWO_LANES,
 };
 use crate::protocol::pin;
 
@@ -249,7 +249,8 @@ fn the_agent_declares_the_locks_of_every_lane_it_quotes() {
 }
 
 /// The scheduler places the agent from its registration: its one phase, its
-/// importance, its fixed step, and the agents it runs after.
+/// importance and the agents it runs after, from its timing; its fixed step,
+/// from its place, where the agent writes the registration's.
 #[test]
 fn timing_comes_from_the_registration() {
     let agent = lane_agent(&FIXED_LADDER, &DeviceCaps::default());
@@ -259,7 +260,7 @@ fn timing_comes_from_the_registration() {
     assert_eq!(timing.allowed_phases, vec![ExecutionPhase::TRANSFORM]);
     assert_eq!(timing.default_phase, ExecutionPhase::TRANSFORM);
     assert_eq!(timing.importance, AgentImportance::Critical);
-    assert_eq!(timing.fixed_timestep, Some(FIXED_STEP));
+    assert_eq!(place_step(&agent), Some(FIXED_STEP));
     let after: Vec<AgentId> = timing.dependencies.iter().map(|d| d.target).collect();
     assert_eq!(after, vec![AgentId::new("physics")]);
     assert!(
@@ -270,9 +271,9 @@ fn timing_comes_from_the_registration() {
         "`after` is an unconditional ordering"
     );
 
-    let every_frame = lane_agent(&LADDER, &DeviceCaps::default()).execution_timing();
-    assert_eq!(every_frame.fixed_timestep, None);
-    assert!(every_frame.dependencies.is_empty());
+    let every_frame = lane_agent(&LADDER, &DeviceCaps::default());
+    assert_eq!(place_step(&every_frame), None);
+    assert!(every_frame.execution_timing().dependencies.is_empty());
 }
 
 /// The agent offers and reports as its family's agent.

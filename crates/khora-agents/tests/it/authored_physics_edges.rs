@@ -82,7 +82,7 @@ impl Rig {
             &permit,
             Some(self.agent.id()),
         );
-        self.agent.execute(&mut ctx);
+        khora_agents::agent::run_frame(&mut self.agent, &mut ctx);
 
         substrate::run_data_systems(
             &mut self.world,

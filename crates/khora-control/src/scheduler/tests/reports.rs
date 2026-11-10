@@ -17,14 +17,15 @@
 //! scheduler measured it — and the run's workload.
 
 use super::allocations::one_phase;
-use super::offer_of;
+use super::host;
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
 use crossbeam_channel::Receiver;
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
+use khora_core::agent::gorna::protocol::{Epoch, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, Contention, ExecutionTiming};
+use khora_core::agent::{Contention, Layer, LayerRun, Terms};
+use khora_core::gpu::GpuSetup;
 use khora_core::lane::cost::PerDevice;
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::{EngineContext, Runtime};
@@ -32,9 +33,12 @@ use khora_data::ecs::World;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-/// An agent that reports what the test told it to, and takes `takes` to run.
+/// A family whose layer runs `Custom(7)`, says it measured 3 ms on the
+/// graphics device and nothing on the host (it does not time its host work),
+/// and did 0.6 of its work — and takes `takes` to run. Its place lends it
+/// epoch 9, over budget.
 struct Teller {
-    report: Report,
+    name: &'static str,
     takes: Duration,
     /// Its priority within its one phase (higher runs first).
     priority: f32,
@@ -43,27 +47,9 @@ struct Teller {
 }
 
 impl Teller {
-    /// `name`, reporting `Custom(7)` on epoch 9, 3 ms on the graphics device
-    /// and nothing on the host (it does not time its host work), over budget,
-    /// at a health of 0.6 and a workload of 42 — and running at once.
     fn new(name: &'static str) -> Self {
         Self {
-            report: Report {
-                agent: AgentId::new(name),
-                epoch: Epoch(9),
-                row: StrategyId::Custom(7),
-                measured: PerDevice {
-                    gpu: Duration::from_millis(3),
-                    ..PerDevice::default()
-                },
-                done: 1.0,
-                health: 0.6,
-                over_budget: true,
-                stalled: false,
-                workload: Some(42.0),
-                switch: None,
-                message: None,
-            },
+            name,
             takes: Duration::ZERO,
             priority: 0.5,
             contention: Contention::none(),
@@ -79,48 +65,32 @@ impl Teller {
         self.contention = contention;
         self
     }
-
-    fn counting_no_workload(mut self) -> Self {
-        self.report.workload = None;
-        self
-    }
 }
 
-impl Agent for Teller {
-    fn id(&self) -> AgentId {
-        self.report.agent
-    }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.report.agent, request, self.report.row)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        self.report.clone()
-    }
-    fn execution_timing(&self) -> ExecutionTiming {
-        one_phase(self.priority)
+impl Layer for Teller {
+    fn row(&self) -> StrategyId {
+        StrategyId::Custom(7)
     }
     fn contention(&self) -> Contention {
         self.contention.clone()
     }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
+    fn memory(&self) -> PerDevice<u64> {
+        PerDevice::default()
+    }
+    fn run(&mut self, _terms: &Terms, _context: &mut EngineContext<'_>) -> LayerRun {
         if !self.takes.is_zero() {
             std::thread::sleep(self.takes);
         }
+        LayerRun {
+            measured: PerDevice {
+                gpu: Duration::from_millis(3),
+                ..PerDevice::default()
+            },
+            done: 0.6,
+            ..LayerRun::default()
+        }
     }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
-    }
+    fn shutdown(&mut self, _gpu: &mut GpuSetup<'_>) {}
 }
 
 /// A scheduler over `agents` (the first registered runs first), publishing
@@ -130,9 +100,20 @@ fn reporting(agents: Vec<Teller>) -> (ExecutionScheduler, Receiver<TelemetryEven
     {
         let mut registry = registry.lock().expect("the registry lock");
         let count = agents.len();
-        for (index, mut agent) in agents.into_iter().enumerate() {
-            agent.priority = (count - index) as f32;
-            registry.register(Arc::new(Mutex::new(agent)), (count - index) as f32);
+        for (index, mut teller) in agents.into_iter().enumerate() {
+            teller.priority = (count - index) as f32;
+            let (agent, place) = host(
+                AgentId::new(teller.name),
+                one_phase(teller.priority),
+                None,
+                teller,
+            );
+            place.lock().expect("the place lock").set_terms(Terms {
+                epoch: Epoch(9),
+                over_budget: true,
+                ..Terms::default()
+            });
+            registry.register(agent, (count - index) as f32);
         }
     }
     let mut scheduler =
@@ -152,12 +133,12 @@ fn reports(rx: &Receiver<TelemetryEvent>) -> Vec<Report> {
         .collect()
 }
 
-/// **Reports reach the DCC with the row and the measured time.** The agent
-/// runs for 2 ms and reports `Custom(7)`, 3 ms on the graphics device and
-/// nothing on the host: one report is published for its run, naming the row,
-/// keeping the agent's graphics time, epoch, health, over-budget flag and
-/// workload, and giving the host time the scheduler measured — at least the
-/// 2 ms the run took.
+/// **Reports reach the DCC with the row and the measured time.** The layer
+/// runs for 2 ms and says 3 ms on the graphics device and nothing on the
+/// host: one report is published for its run, naming its row `Custom(7)`,
+/// keeping its graphics time, the epoch and over-budget flag its place lent,
+/// the health its share of work done gives, and giving the host time the
+/// scheduler measured — at least the 2 ms the run took.
 #[test]
 fn reports_reach_the_dcc_with_row_and_measured_time() {
     let (mut scheduler, rx) =
@@ -183,15 +164,14 @@ fn reports_reach_the_dcc_with_row_and_measured_time() {
     assert_eq!(report.epoch, Epoch(9));
     assert_eq!(report.health, 0.6);
     assert!(report.over_budget);
-    assert_eq!(report.workload, Some(42.0), "the agent's own workload");
 }
 
 /// **A report without a workload carries the world's entity count**, the
-/// coarse workload the scheduler measured for every agent before agents could
-/// count their own.
+/// coarse workload the scheduler measures for every family: a layer's run
+/// counts none of its own.
 #[test]
 fn a_report_without_a_workload_carries_the_worlds_entity_count() {
-    let (mut scheduler, rx) = reporting(vec![Teller::new("teller").counting_no_workload()]);
+    let (mut scheduler, rx) = reporting(vec![Teller::new("teller")]);
     let mut world = World::new();
     for _ in 0..3 {
         world.spawn(());

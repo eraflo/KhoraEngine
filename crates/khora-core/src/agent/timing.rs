@@ -14,8 +14,6 @@
 
 //! Execution timing declarations for agents.
 
-use std::time::Duration;
-
 use super::dependency::AgentDependency;
 use super::execution_phase::ExecutionPhase;
 
@@ -37,8 +35,6 @@ pub struct ExecutionTiming {
     pub priority: f32,
     /// Importance for budget management.
     pub importance: AgentImportance,
-    /// Fixed timestep. If None, executes every frame.
-    pub fixed_timestep: Option<Duration>,
     /// Dependencies on other agents.
     pub dependencies: Vec<AgentDependency>,
 }
@@ -50,7 +46,6 @@ impl Default for ExecutionTiming {
             default_phase: ExecutionPhase::OUTPUT,
             priority: 0.5,
             importance: AgentImportance::Important,
-            fixed_timestep: None,
             dependencies: Vec::new(),
         }
     }

@@ -97,9 +97,6 @@ pub struct LaneAgent {
     current: usize,
     /// Each row's last price — quoted, or its lane's last run's — by row.
     quotes: Vec<Option<Cost>>,
-    /// The simulated time one run advances, for a fixed-step family: its
-    /// registration's, or the game's setting. No budget changes it.
-    fixed_step: Option<Duration>,
     /// Every row's level, by row: what [`choose`] reads the impact from.
     levels: Vec<Level>,
     /// The row the family starts on, and runs while nothing is priced.
@@ -178,15 +175,22 @@ pub fn lane_agent(registration: &'static AgentRegistration, caps: &DeviceCaps) -
         quotes: vec![None; menu.len()],
         menu,
         current,
-        fixed_step: registration.fixed_step,
         levels,
         default_row: current,
         lent: None,
         over_budget: false,
         failed: vec![false; rows],
         full_quote: None,
-        place: Arc::new(Mutex::new(Place::new(registration.agent))),
+        place: Arc::new(Mutex::new(place_of(registration))),
     }
+}
+
+/// The family's place, holding from the start the step its registration
+/// runs at: the scheduler reads it there each frame.
+fn place_of(registration: &AgentRegistration) -> Place {
+    let mut place = Place::new(registration.agent);
+    place.set_fixed_step(registration.fixed_step);
+    place
 }
 
 /// The inputs of one run as the agent lends them: the bus, the earlier
@@ -229,13 +233,21 @@ impl LaneAgent {
 
 /// Sets the step `agent` runs at, for a fixed-step family: what a game's
 /// setting decides (the physics step) where the registration only gives the
-/// default. A family that runs every frame is left as it is.
+/// default. Its place holds it, the one source the scheduler and the agent
+/// read. A family that runs every frame is left as it is.
 pub fn set_fixed_step(agent: &mut LaneAgent, step: Duration) {
-    if agent.fixed_step.is_some() && !step.is_zero() {
-        agent.fixed_step = Some(step);
-        let step = agent.fixed_step;
-        agent.locked_place().set_fixed_step(step);
+    let mut place = agent.locked_place();
+    if place.fixed_step().is_some() && !step.is_zero() {
+        place.set_fixed_step(Some(step));
     }
+}
+
+/// Drives one frame of `agent`'s place for a caller with no scheduler (a
+/// test, a tool): the wakes waiting answered, the frame start, the installed
+/// layer's run, and the wakes that run raised answered at once, so the next
+/// call runs what they chose. The report of the run, `None` when nothing ran.
+pub fn run_frame(agent: &mut LaneAgent, context: &mut EngineContext<'_>) -> Option<Report> {
+    agent.whole_frame(context)
 }
 
 /// Releases what every lane of `agent` built on the device, the lanes that
@@ -397,8 +409,8 @@ impl Agent for LaneAgent {
         }
     }
 
-    fn place(&self) -> Option<Arc<Mutex<Place>>> {
-        Some(Arc::clone(&self.place))
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
 
     /// Takes in what the last run found, answers each wake — falls back from
@@ -409,21 +421,12 @@ impl Agent for LaneAgent {
         self.answer(why, place, context);
     }
 
-    /// A whole frame for a caller that drives the agent itself — the
-    /// scheduler runs the place instead: the wakes waiting answered, the
-    /// frame start, the installed layer's run, and the wakes it raised
-    /// answered at once.
-    fn execute(&mut self, context: &mut EngineContext<'_>) {
-        let _ = self.whole_frame(context);
-    }
-
     fn execution_timing(&self) -> ExecutionTiming {
         let registration = self.registration;
         ExecutionTiming {
             allowed_phases: vec![registration.phase],
             default_phase: registration.phase,
             importance: registration.importance,
-            fixed_timestep: self.fixed_step,
             dependencies: registration
                 .after
                 .iter()
@@ -474,13 +477,5 @@ impl Agent for LaneAgent {
             .reading::<Arc<dyn GraphicsDevice>>()
             .reading::<Arc<dyn PipelineSystem>>();
         contention
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }

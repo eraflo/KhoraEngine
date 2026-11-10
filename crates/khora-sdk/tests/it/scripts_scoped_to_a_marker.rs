@@ -24,8 +24,8 @@ use khora_sdk::khora_core::ecs::entity::EntityId;
 use khora_sdk::khora_core::script::ScriptValue;
 use khora_sdk::prelude::ecs::Transform;
 use khora_sdk::{
-    Activation, AgentId, AgentProvider, DccService, EngineApp, EngineCore, GameWorld, InputEvent,
-    PhaseProvider, Runtime, WindowConfig,
+    Activation, AgentId, EngineApp, EngineCore, GameWorld, InputEvent, PhaseProvider, Runtime,
+    WindowConfig,
 };
 
 const SCRIPT: AgentId = khora_sdk::khora_core::script::SCRIPT;
@@ -57,9 +57,6 @@ struct Tool {
     greeters: Option<(EntityId, EntityId)>,
 }
 
-impl AgentProvider for Tool {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
 impl PhaseProvider for Tool {}
 impl EngineApp for Tool {
     fn window_config() -> WindowConfig {

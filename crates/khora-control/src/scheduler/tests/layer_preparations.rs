@@ -165,8 +165,8 @@ impl Agent for Sculptor {
     ) {
         self.place.lock().expect("the place lock").lent(epoch);
     }
-    fn place(&self) -> Option<Arc<Mutex<Place>>> {
-        Some(Arc::clone(&self.place))
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
     fn wake(&mut self, why: &[Wake], place: &mut Place, _context: &mut EngineContext<'_>) {
         self.log
@@ -184,21 +184,8 @@ impl Agent for Sculptor {
             place.request_preparation((self.next)(n));
         }
     }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
-        self.log
-            .lock()
-            .expect("the log lock")
-            .executed
-            .push(SCULPTOR);
-    }
     fn execution_timing(&self) -> ExecutionTiming {
         one_phase(0.5)
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -288,7 +275,7 @@ fn a_slow_preparation_runs_off_the_frame_while_the_installed_layer_runs() {
         1,
         &log,
     );
-    let place = sculptor.place().expect("a layered agent has a place");
+    let place = sculptor.place();
     let (mut scheduler, _rx) = scheduling(vec![shared(sculptor)]);
     let runtime = Arc::new(Runtime::new());
     let mut world = World::new();
@@ -413,7 +400,7 @@ fn a_family_has_at_most_one_preparation_under_way() {
         8,
         &log,
     );
-    let place = sculptor.place().expect("a layered agent has a place");
+    let place = sculptor.place();
     let (mut scheduler, _rx) = scheduling(vec![shared(sculptor)]);
     let runtime = Arc::new(Runtime::new());
     let mut world = World::new();
@@ -484,7 +471,7 @@ fn a_failed_preparation_wakes_the_agent(failing: Preparation) {
         1,
         &log,
     );
-    let place = sculptor.place().expect("a layered agent has a place");
+    let place = sculptor.place();
     let (mut scheduler, _rx) = scheduling(vec![shared(sculptor)]);
     let runtime = Arc::new(Runtime::new());
     let mut world = World::new();
@@ -618,7 +605,7 @@ fn a_layer_prepared_before_the_engine_shuts_down_is_shut_down() {
         1,
         &log,
     );
-    let place = sculptor.place().expect("a layered agent has a place");
+    let place = sculptor.place();
     let (mut scheduler, _rx) = scheduling(vec![shared(sculptor)]);
     let runtime = Arc::new(Runtime::new());
     let mut world = World::new();

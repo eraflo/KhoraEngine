@@ -112,10 +112,6 @@ fn declared_component_error_variants(x: &khora_sdk::DeclaredComponentError) {
 
 #[allow(dead_code)]
 mod trait_items {
-    fn agent_provider_trait_items<T: khora_sdk::AgentProvider>() {
-        let _ = <T as khora_sdk::AgentProvider>::register_agents;
-    }
-
     fn khora_sdk_asset_io_same<T: ?Sized + khora_sdk::AssetIo>() {
         khora_sdk_asset_io_same_rev::<T>();
     }
@@ -176,6 +172,7 @@ mod trait_items {
         let _ = <T as khora_sdk::EngineApp>::window_config;
         let _ = <T as khora_sdk::EngineApp>::new;
         let _ = <T as khora_sdk::EngineApp>::setup;
+        let _ = <T as khora_sdk::EngineApp>::provide;
         let _ = <T as khora_sdk::EngineApp>::update;
         let _ = <T as khora_sdk::EngineApp>::on_shutdown;
         let _ = <T as khora_sdk::EngineApp>::intercept_window_event;
@@ -312,7 +309,6 @@ fn module_crate_root_paths_still_resolve() {
         PhantomData::<khora_sdk::AgentImportance>,
         PhantomData::<khora_core::agent::AgentImportance>,
     );
-    // trait `khora_sdk::AgentProvider`: see `agent_provider_trait_items`
     let _ = type_name::<khora_sdk::AgentRegistry>();
     same_type(
         PhantomData::<khora_sdk::AgentRegistry>,
@@ -442,8 +438,6 @@ fn module_crate_root_paths_still_resolve() {
     let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::begin;
     let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::setup;
     let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::register;
-    let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::agent_count;
-    let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::initialize_agent;
     let _ = <khora_sdk::EngineBootstrap<ProbeApp>>::finish;
     let _ = type_name::<khora_sdk::Readiness>();
     let _: std::time::Duration = khora_sdk::Readiness::DEFAULT_TIMEOUT;
@@ -1328,10 +1322,6 @@ fn module_prelude_paths_still_resolve() {
 
 struct ProbeApp;
 
-impl khora_sdk::AgentProvider for ProbeApp {
-    fn register_agents(&self, _dcc: &khora_sdk::DccService, _runtime: &mut khora_sdk::Runtime) {}
-}
-
 impl khora_sdk::PhaseProvider for ProbeApp {}
 
 impl khora_sdk::EngineApp for ProbeApp {
@@ -2010,7 +2000,6 @@ mod paths_used_by_other_crates {
     use khora_sdk::winit_adapters::WinitWindowProvider as _; // khora-editor, sandbox
     use khora_sdk::AgentId as _; // khora-editor
     use khora_sdk::AgentImportance as _; // khora-editor
-    use khora_sdk::AgentProvider as _; // khora-editor, sandbox
     use khora_sdk::AgentRegistry as _; // khora-editor
     use khora_sdk::AssetChangeEvent as _; // khora-editor
     use khora_sdk::AssetChangeKind as _; // khora-editor
@@ -2026,7 +2015,6 @@ mod paths_used_by_other_crates {
     use khora_sdk::ComponentRegistration as _; // khora-editor
     use khora_sdk::CpalAudioDevice as _; // khora-editor, sandbox
     use khora_sdk::DccContext as _; // khora-editor
-    use khora_sdk::DccService as _; // khora-editor, sandbox
     use khora_sdk::DefaultMixBus as _; // khora-editor, sandbox
     use khora_sdk::EditorMode as _; // khora-editor
     use khora_sdk::EditorShell as _; // khora-editor

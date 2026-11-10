@@ -288,9 +288,8 @@ mod tests {
     use khora_sdk::khora_core::agent::gorna::protocol::{
         Envelope, Epoch, Offer, OfferRequest, Report,
     };
-    use khora_sdk::khora_core::agent::Agent;
+    use khora_sdk::khora_core::agent::{Agent, Place};
     use khora_sdk::khora_core::lane::cost::PerDevice;
-    use khora_sdk::khora_core::EngineContext;
 
     /// **An agent is listed under the crate it was registered in.** The
     /// overlay agents, registered in `khora-agents`, are listed under
@@ -316,8 +315,11 @@ mod tests {
     const SAID: &str = "2 behaviours deferred: Guard, Door";
 
     /// An agent whose report says it ran `HighPerformance`, at a health of
-    /// 0.25, stalled, saying [`SAID`].
-    struct Reporting;
+    /// 0.25, stalled, saying [`SAID`]. Its place runs nothing: the panel
+    /// reads the agent only.
+    struct Reporting {
+        place: Arc<Mutex<Place>>,
+    }
 
     impl Agent for Reporting {
         fn id(&self) -> AgentId {
@@ -360,14 +362,8 @@ mod tests {
             }
         }
 
-        fn execute(&mut self, _context: &mut EngineContext<'_>) {}
-
-        fn as_any(&self) -> &dyn std::any::Any {
-            self
-        }
-
-        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-            self
+        fn place(&self) -> Arc<Mutex<Place>> {
+            Arc::clone(&self.place)
         }
     }
 
@@ -378,7 +374,12 @@ mod tests {
     #[test]
     fn the_control_plane_shows_the_report() {
         let mut registry = AgentRegistry::new();
-        registry.register(Arc::new(Mutex::new(Reporting)), 1.0);
+        registry.register(
+            Arc::new(Mutex::new(Reporting {
+                place: Arc::new(Mutex::new(Place::new(AgentId::new("reporting")))),
+            })),
+            1.0,
+        );
         let panel = ControlPlanePanel::new(
             Arc::new(Mutex::new(EditorState::default())),
             UiTheme::default(),

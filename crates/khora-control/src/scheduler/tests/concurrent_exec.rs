@@ -13,14 +13,14 @@
 // limitations under the License.
 
 use super::allocations::one_phase;
-use super::{offer_of, report_of};
+use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
 use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
-use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
-use khora_core::agent::gorna::{AgentId, StrategyId};
-use khora_core::agent::{Agent, ExecutionPhase, ExecutionTiming};
+use khora_core::agent::gorna::AgentId;
+use khora_core::agent::Terms;
+use khora_core::agent::{ExecutionPhase, ExecutionTiming};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::{EngineContext, Runtime};
 use std::collections::BTreeSet;
@@ -37,72 +37,32 @@ struct MockAgent {
     id: AgentId,
 }
 
-impl Agent for MockAgent {
+impl Family for MockAgent {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn execute(&mut self, ctx: &mut EngineContext<'_>) {
+    fn run(&mut self, _terms: &Terms, ctx: &mut EngineContext<'_>) {
         ctx.deck.slot::<IsoRan>().ran = true;
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn timing(&self) -> ExecutionTiming {
         one_phase(1.0)
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
-/// An agent of `OUTPUT`, after [`MockAgent`], whose `execute` panics.
+/// An agent of `OUTPUT`, after [`MockAgent`], whose run panics.
 struct Panicking {
     id: AgentId,
 }
 
-impl Agent for Panicking {
+impl Family for Panicking {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn execute(&mut self, _ctx: &mut EngineContext<'_>) {
+    fn run(&mut self, _terms: &Terms, _ctx: &mut EngineContext<'_>) {
         panic!("an agent that panics on its worker");
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn timing(&self) -> ExecutionTiming {
         one_phase(0.5)
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -118,15 +78,15 @@ fn a_panicking_agent_is_reported_as_a_failed_completion() {
     {
         let mut registry = registry.lock().expect("the registry lock");
         registry.register(
-            Arc::new(Mutex::new(MockAgent {
+            hosted(MockAgent {
                 id: AgentId::new("audio"),
-            })),
+            }),
             1.0,
         );
         registry.register(
-            Arc::new(Mutex::new(Panicking {
+            hosted(Panicking {
                 id: AgentId::new("physics"),
-            })),
+            }),
             0.5,
         );
     }
@@ -191,28 +151,14 @@ struct DeckUser {
     body: fn(&mut EngineContext<'_>),
 }
 
-impl Agent for DeckUser {
+impl Family for DeckUser {
     fn id(&self) -> AgentId {
         self.id
     }
-    fn offer(&mut self, request: &OfferRequest) -> Offer {
-        offer_of(self.id, request, StrategyId::Balanced)
-    }
-    fn apply(
-        &mut self,
-        _epoch: Epoch,
-        _envelope: &Envelope,
-        _pin: Option<StrategyId>,
-        _allowed: Option<&[StrategyId]>,
-    ) {
-    }
-    fn report(&self) -> Report {
-        report_of(self.id, StrategyId::Balanced)
-    }
-    fn execute(&mut self, ctx: &mut EngineContext<'_>) {
+    fn run(&mut self, _terms: &Terms, ctx: &mut EngineContext<'_>) {
         (self.body)(ctx);
     }
-    fn execution_timing(&self) -> ExecutionTiming {
+    fn timing(&self) -> ExecutionTiming {
         ExecutionTiming {
             allowed_phases: vec![self.phase],
             default_phase: self.phase,
@@ -224,12 +170,6 @@ impl Agent for DeckUser {
         khora_core::agent::Contention::none()
             .writing_deck([self.writes])
             .reading_deck(self.reads.clone())
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
     }
 }
 
@@ -272,7 +212,7 @@ fn seen_after_one_frame(parallel: bool) -> Option<u32> {
         ];
         for agent in agents {
             let priority = agent.priority;
-            registry.register(Arc::new(Mutex::new(agent)), priority);
+            registry.register(hosted(agent), priority);
         }
     }
     let mut scheduler =

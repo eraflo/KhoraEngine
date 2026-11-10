@@ -52,6 +52,17 @@ pub fn physics_registration() -> &'static AgentRegistration {
     }
 }
 
+/// The step `agent`'s place holds: what the scheduler sub-steps the family
+/// by.
+pub fn place_step(agent: &LaneAgent) -> Option<std::time::Duration> {
+    let place = agent.place();
+    let step = place
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .fixed_step();
+    step
+}
+
 /// The physics family's agent, as the engine builds it from its registration.
 pub fn physics_agent() -> LaneAgent {
     lane_agent(physics_registration(), &DeviceCaps::default())
@@ -76,7 +87,7 @@ pub fn run_once(agent: &mut LaneAgent, runtime: &Arc<Runtime>, deck: &mut Output
     let permit = agent.contention();
     let id = agent.id();
     let mut context = EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
-    agent.execute(&mut context);
+    khora_agents::agent::run_frame(agent, &mut context);
 }
 
 /// An entity by index, generation 0.

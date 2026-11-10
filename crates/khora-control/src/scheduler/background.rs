@@ -42,7 +42,7 @@ use khora_core::lane::{LaneBus, OutputDeck, Reserve, Staging};
 use khora_core::{EngineContext, Runtime};
 
 use super::execution::run_guarded;
-use super::known::{locked, LayeredAgent};
+use super::known::{locked, MetAgent};
 use crate::worker_pool::WorkerPool;
 
 /// A run off the frame that ended, on its way back to its place.
@@ -90,23 +90,18 @@ impl Background {
         }
     }
 
-    /// Starts a run of every family at the background in `layered` — those
-    /// of the families on — that has mail in a `Take` mailbox of its own and
+    /// Starts a run of every family at the background in `met` — those of the
+    /// families on — that has mail in a `Take` mailbox of its own and
     /// no run under way, on the frame's `bus`.
-    pub(super) fn start(
-        &mut self,
-        layered: &[LayeredAgent],
-        runtime: &Arc<Runtime>,
-        bus: &Arc<LaneBus>,
-    ) {
-        for (_, id, layered) in layered {
-            if layered.timing.default_phase != ExecutionPhase::BACKGROUND
-                || self.running.contains(id)
+    pub(super) fn start(&mut self, met: &[MetAgent], runtime: &Arc<Runtime>, bus: &Arc<LaneBus>) {
+        for (_, known) in met {
+            let id = &known.id;
+            if known.timing.default_phase != ExecutionPhase::BACKGROUND || self.running.contains(id)
             {
                 continue;
             }
             let out = {
-                let mut place = locked(&layered.place);
+                let mut place = locked(&known.place);
                 // Mail on a channel the installed layer takes: a take is
                 // declared as a write of its channel.
                 if !has_mail(*id, runtime, &place.contention().writes) {
@@ -120,7 +115,7 @@ impl Background {
             self.running.insert(*id);
             let (id, place, runtime, bus) = (
                 *id,
-                Arc::clone(&layered.place),
+                Arc::clone(&known.place),
                 Arc::clone(runtime),
                 Arc::clone(bus),
             );
@@ -153,25 +148,21 @@ impl Background {
     }
 
     /// Starts the preparation waiting at the place of every family in
-    /// `layered` with none under way, on the frame's `bus`: each runs under
+    /// `met` with none under way, on the frame's `bus`: each runs under
     /// its own contention, and nothing waits for it.
-    pub(super) fn prepare(
-        &mut self,
-        layered: &[LayeredAgent],
-        runtime: &Arc<Runtime>,
-        bus: &Arc<LaneBus>,
-    ) {
-        for (_, id, layered) in layered {
+    pub(super) fn prepare(&mut self, met: &[MetAgent], runtime: &Arc<Runtime>, bus: &Arc<LaneBus>) {
+        for (_, known) in met {
+            let id = &known.id;
             if self.preparing.contains(id) {
                 continue;
             }
-            let Some(preparation) = locked(&layered.place).take_preparation() else {
+            let Some(preparation) = locked(&known.place).take_preparation() else {
                 continue;
             };
             self.preparing.insert(*id);
             let (id, place, runtime, bus) = (
                 *id,
-                Arc::clone(&layered.place),
+                Arc::clone(&known.place),
                 Arc::clone(runtime),
                 Arc::clone(bus),
             );

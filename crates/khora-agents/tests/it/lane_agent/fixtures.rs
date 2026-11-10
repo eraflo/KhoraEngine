@@ -694,9 +694,13 @@ pub fn prepare_waiting(place: &Mutex<Place>, runtime: &Arc<Runtime>, bus: &LaneB
 
 /// `agent`'s place: a `LaneAgent` runs as layers.
 pub fn place_of(agent: &LaneAgent) -> Arc<Mutex<Place>> {
-    agent
-        .place()
-        .expect("a LaneAgent runs as layers: it has a place")
+    agent.place()
+}
+
+/// The step `agent`'s place holds: what the scheduler sub-steps its family
+/// by; `None` for a family that runs every frame.
+pub fn place_step(agent: &LaneAgent) -> Option<Duration> {
+    locked(&place_of(agent)).fixed_step()
 }
 
 /// `place`, locked.

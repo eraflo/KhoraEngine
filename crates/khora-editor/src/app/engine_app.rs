@@ -83,6 +83,27 @@ impl EngineApp for EditorApp {
         }
     }
 
+    /// What the engine reads of the editor: its state, its camera, the
+    /// viewport override, the open project's prefabs and assets.
+    fn provide(&self, runtime: &mut Runtime) {
+        runtime.resources.insert(self.editor_state.clone());
+        runtime.resources.insert(self.camera.clone());
+        // Editor viewport override — RenderFlow reads it as fallback
+        // when no scene Camera is active (Editing mode).
+        runtime.resources.insert(self.viewport_override.clone());
+        // What a script's prefab `Spawn` reads: the open project's prefabs,
+        // and the catalog its turn is checked against.
+        runtime
+            .resources
+            .insert(khora_sdk::khora_data::scene::PrefabLibrary(
+                self.play_prefabs.clone(),
+            ));
+        runtime.resources.insert(self.prefab_catalog.clone());
+        // What the engine's asset resolver loads the scene's meshes,
+        // materials and textures through: the open project's assets.
+        runtime.services.insert(Arc::clone(&self.shared_assets));
+    }
+
     fn setup(&mut self, world: &mut GameWorld, runtime: &Runtime) {
         // Editing, not playing: the scene's scripts, physics and sounds run
         // only once Play is pressed.

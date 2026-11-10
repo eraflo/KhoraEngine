@@ -23,6 +23,7 @@ use khora_core::agent::gorna::protocol::Trigger;
 /// of it: the report is the agent's only word on how its last run went.
 struct StalledInItsReport {
     id: AgentId,
+    place: Arc<Mutex<Place>>,
 }
 
 impl Agent for StalledInItsReport {
@@ -66,14 +67,9 @@ impl Agent for StalledInItsReport {
         }
     }
 
-    fn execute(&mut self, _context: &mut EngineContext<'_>) {}
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+    /// A bare place: GORNA never runs one.
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
     }
 }
 
@@ -88,6 +84,7 @@ fn a_stalled_agent_is_logged_from_its_report() {
         .map(|name| {
             shared(StalledInItsReport {
                 id: AgentId::new(name),
+                place: Arc::new(Mutex::new(Place::new(AgentId::new(name)))),
             })
             .1
         })
