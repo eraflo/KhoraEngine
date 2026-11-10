@@ -96,6 +96,7 @@ fn record(allocation: Allocation) -> EpochRecord {
         at: Duration::ZERO,
         frames: khora_core::agent::gorna::FrameSummary::default(),
         in_force: Vec::new(),
+        planning: khora_core::agent::gorna::Planning::default(),
     }
 }
 

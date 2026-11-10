@@ -23,7 +23,7 @@ use super::protocol::{
     Allocation, Binding, DecidedBy, Envelope, Epoch, Offer, OfferRow, Rejected, Report, Trigger,
     Why,
 };
-use super::{AdaptationMode, AgentHints, AgentId, StrategyId};
+use super::{AdaptationMode, AgentHints, AgentId, Planning, StrategyId};
 use crate::agent::AgentImportance;
 use crate::lane::cost::PerDevice;
 
@@ -84,6 +84,9 @@ pub struct EpochRecord {
     /// The envelopes in force when the round opened, by agent: what a
     /// `Stable` agent keeps, and what a late or busy one runs on still.
     pub in_force: Vec<(AgentId, Envelope)>,
+    /// What the round planned for beyond its frame: the switch charges, the
+    /// margin and each agent's growth.
+    pub planning: Planning,
 }
 
 /// How a run of frames went: their critical paths, summed up.
@@ -200,6 +203,20 @@ struct WrittenEpoch {
     frames: FrameSummary,
     #[serde(default)]
     in_force: Vec<(Named, Envelope)>,
+    /// A journal from before the rounds planned beyond their frame reads a
+    /// planning for nothing.
+    #[serde(default)]
+    planning: WrittenPlanning,
+}
+
+/// A round's planning as written, its agents named by place.
+#[derive(Default, Serialize, Deserialize)]
+struct WrittenPlanning {
+    horizon: Duration,
+    transient: Duration,
+    margin: Duration,
+    growth: Vec<(Named, f64)>,
+    switch: Vec<(Named, StrategyId, Duration)>,
 }
 
 /// A decision's explanation as written, its agents named by place.
@@ -368,6 +385,17 @@ fn written_epoch(record: &EpochRecord, table: &mut Table) -> WrittenEpoch {
         in_force: (record.in_force.iter())
             .map(|(agent, envelope)| (table.of(*agent), *envelope))
             .collect(),
+        planning: WrittenPlanning {
+            horizon: record.planning.horizon,
+            transient: record.planning.transient,
+            margin: record.planning.margin,
+            growth: (record.planning.growth.iter())
+                .map(|(agent, growth)| (table.of(*agent), *growth))
+                .collect(),
+            switch: (record.planning.switch.iter())
+                .map(|(agent, row, time)| (table.of(*agent), *row, *time))
+                .collect(),
+        },
     }
 }
 
@@ -471,5 +499,16 @@ fn read_epoch<E>(
         in_force: (written.in_force.into_iter())
             .map(|(agent, envelope)| Ok((named(agent)?, envelope)))
             .collect::<Result<_, E>>()?,
+        planning: Planning {
+            horizon: written.planning.horizon,
+            transient: written.planning.transient,
+            margin: written.planning.margin,
+            growth: (written.planning.growth.into_iter())
+                .map(|(agent, growth)| Ok((named(agent)?, growth)))
+                .collect::<Result<_, E>>()?,
+            switch: (written.planning.switch.into_iter())
+                .map(|(agent, row, time)| Ok((named(agent)?, row, time)))
+                .collect::<Result<_, E>>()?,
+        },
     })
 }

@@ -28,7 +28,7 @@ use khora_control::gorna::{decide, Bid, Round};
 use khora_core::agent::gorna::protocol::{
     Confidence, Epoch, Offer, OfferRequest, OfferRow, Trigger,
 };
-use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, StrategyId};
+use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, Planning, StrategyId};
 use khora_core::agent::{Agent, AgentImportance};
 use khora_core::lane::cost::{Cost, PerDevice, PerLink};
 use khora_core::lane::OutputDeck;
@@ -257,6 +257,7 @@ fn with_free_frame_time_gorna_lends_the_script_family_its_whole_level() {
         waves: &[],
         background: &[],
         bids: &bids,
+        planning: Planning::default(),
     });
     let envelope = allocation
         .envelopes

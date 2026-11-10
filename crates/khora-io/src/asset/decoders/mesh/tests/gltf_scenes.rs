@@ -1318,11 +1318,27 @@ fn a_mirroring_matrix_imports_with_a_negative_scale() {
     );
 }
 
-/// A node whose numbers overflow a float — `1e39` reads as infinity — has
-/// no place: the scene is refused naming the node, as a shear is, rather
-/// than bringing in an infinite transform whose children propagate NaN.
+/// Opens `bytes` as the file at `path` and extracts its scene sub-asset
+/// `label`: the error of whichever step refuses it, the open or the
+/// extraction.
+fn import_scene(bytes: &[u8], path: &str, label: &str) -> anyhow::Result<SceneRecord> {
+    let dir = tempfile::tempdir().expect("a temp dir");
+    let container = GltfContainer::new(dir.path());
+    let opened = container.open(bytes, Path::new(path))?;
+    let extracted = container.extract(opened.as_ref(), file_uuid(path), label, "prefab")?;
+    Ok(extracted
+        .downcast::<PrefabAsset>()
+        .expect("a scene sub-asset is a PrefabAsset")
+        .0)
+}
+
+/// A node whose numbers overflow a float — `1e39`, past `f32::MAX` — has no
+/// place: the glTF is refused as it is read, nothing of it imported, and the
+/// error says where in the file the number is — out of range, at a line and
+/// a column — rather than bringing in an infinite transform whose children
+/// propagate NaN.
 #[test]
-fn a_node_transform_that_overflows_a_float_is_refused() {
+fn a_node_transform_that_overflows_a_float_refuses_the_gltf_where_the_number_is() {
     for (case, field, value) in [
         ("translation", "translation", json!([1e39, 0.0, 0.0])),
         ("scale", "scale", json!([1.0, 1e39, 1.0])),
@@ -1335,14 +1351,21 @@ fn a_node_transform_that_overflows_a_float_is_refused() {
         assert_eq!(far, 1);
         let s = b.scene(&[far]);
         b.default_scene(s);
-        match try_scene(&b.build_glb(), FILE, "scene") {
+        match import_scene(&b.build_glb(), FILE, "scene") {
             Ok(record) => {
                 let t = transform_of(&opened(&record), key("Far[0]"));
                 panic!("{case}: imported as {t:?}");
             }
             Err(e) => {
                 let err = format!("{e:#}");
-                assert!(err.contains('1'), "{case}: the error names node 1: {err}");
+                assert!(
+                    err.contains("out of range"),
+                    "{case}: the number is out of range: {err}"
+                );
+                assert!(
+                    err.contains("line") && err.contains("column"),
+                    "{case}: the error says where the number is: {err}"
+                );
             }
         }
     }

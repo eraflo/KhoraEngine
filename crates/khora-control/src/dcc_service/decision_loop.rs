@@ -72,6 +72,7 @@ impl DccService {
         let memory_budget_bytes = self.config.memory_budget_bytes;
         let vram_budget_bytes = self.config.vram_budget_bytes;
         let governor_cfg = self.config.frame_governor;
+        let planning_cfg = self.config.planning;
 
         let min_epoch_ticks = self.config.min_epoch_ticks;
         let overruns_in_a_row = self.config.overruns_in_a_row;
@@ -79,6 +80,9 @@ impl DccService {
             let mut store = MetricStore::new();
             let heuristic_engine = HeuristicEngine;
             let mut arbitrator = GornaArbitrator::new(agent_lock_timeout);
+            *arbitrator.planner_mut() = crate::gorna::planning::Planner::new(planning_cfg);
+            // When the DCC started: the planner reads workload trends in it.
+            let started = Instant::now();
             // When the next epoch opens, and what waits to open it.
             let mut epochs = Epochs::default();
             // Per-agent empirical cost models (`c·f(n)`), fed from the reports
@@ -252,6 +256,9 @@ impl DccService {
                                 time_ms as f32,
                             );
                             epochs.report(&run, overruns_in_a_row);
+                            arbitrator
+                                .planner_mut()
+                                .observe_report(&run, started.elapsed());
                             reports.insert(id, run);
                         }
                         TelemetryEvent::FrameReport(frame) => {
@@ -276,6 +283,7 @@ impl DccService {
                                 let ms = critical.as_secs_f32() * 1_000.0;
                                 store.push(MetricId::new("frame", "critical_ms"), ms);
                                 frames.push(critical);
+                                arbitrator.planner_mut().observe_frame(critical);
                                 if journal.is_some() {
                                     epoch_frames.push(critical);
                                 }
@@ -499,6 +507,13 @@ impl DccService {
                         })
                         .collect();
                     arbitrator.set_wave_plan(&latest_wave_plan);
+                    // Each cost model's class reads its agent's workload
+                    // trend into a growth over the horizon.
+                    for (id, model) in &cost_models {
+                        if let Some((class, _)) = model.best_fit() {
+                            arbitrator.planner_mut().observe_class(*id, class);
+                        }
+                    }
                     // The target the frames since the last epoch ran under,
                     // and the envelopes the round opens with.
                     let ran_under = arbitrator.target();
@@ -558,6 +573,7 @@ impl DccService {
                                 at: since.elapsed(),
                                 frames: summary(&ran, ran_under),
                                 in_force,
+                                planning: arbitrator.planning().clone(),
                             });
                         }
                     }

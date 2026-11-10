@@ -18,16 +18,21 @@
 
 use std::time::{Duration, Instant};
 
-use khora_core::agent::gorna::protocol::{Allocation, Confidence, Epoch, Offer, OfferRow, Trigger};
+use khora_core::agent::gorna::protocol::{
+    Allocation, Confidence, Epoch, Offer, OfferRow, Report, Trigger,
+};
 use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, StrategyId};
 use khora_core::agent::AgentImportance;
 use khora_core::lane::cost::{Cost, PerDevice, PerLink};
 
 use super::Arbiters;
+use crate::cost_model::ComplexityClass;
 use crate::dcc_service::FRAME_TIME_MIN_SAMPLES;
 use crate::gorna::arbiter::Arbiter;
+use crate::gorna::planning::{Planner, PlanningConfig};
 use crate::gorna::{Bid, Round};
 use crate::governor::{FrameGovernor, GovernorConfig};
+
 /// An agent of the simulation.
 #[derive(Debug, Clone)]
 pub struct SimAgent {
@@ -37,6 +42,8 @@ pub struct SimAgent {
     pub rows: Vec<(StrategyId, u64, f32)>,
     /// True cost ÷ quote, per row (empty = 1.0 each).
     pub bias: Vec<f64>,
+    /// The µs a switch to each row takes to prepare (empty = 2 000 each).
+    pub prepare: Vec<u64>,
 }
 
 impl SimAgent {
@@ -46,6 +53,7 @@ impl SimAgent {
             name,
             rows,
             bias: Vec::new(),
+            prepare: Vec::new(),
         }
     }
 }
@@ -99,6 +107,11 @@ pub struct SimMetrics {
 pub struct Simulation {
     governor: FrameGovernor,
     arbiter: Arbiter,
+    /// What the planned arbiter learns between rounds; `None` for a set
+    /// that decides the frame alone.
+    planner: Option<Planner>,
+    /// The epoch of the allocation last lent: the rows run under it.
+    lent: Epoch,
     agents: Vec<SimAgent>,
     /// The frame's time outside every agent.
     host: Duration,
@@ -146,6 +159,15 @@ impl Simulation {
         let mut sim = Self {
             governor: FrameGovernor::new(cfg),
             arbiter: arbiters.arbiter(),
+            // Each agent's true cost grows with its load, linearly.
+            planner: (arbiters == Arbiters::Planned).then(|| {
+                let mut planner = Planner::new(PlanningConfig::default());
+                for agent in &agents {
+                    planner.observe_class(AgentId::new(agent.name), ComplexityClass::Linear);
+                }
+                planner
+            }),
+            lent: Epoch(0),
             loads: vec![1.0; agents.len()],
             agents,
             host,
@@ -178,6 +200,7 @@ impl Simulation {
         let first = sim.allocate(Trigger::Initial, sim.governor.multiplier());
         sim.chosen = sim.agents.iter().map(|agent| agent.runs(&first)).collect();
         sim.running = sim.chosen.clone();
+        sim.lent = first.epoch;
         sim.decided = first;
         sim
     }
@@ -287,7 +310,13 @@ impl Simulation {
     fn allocate(&mut self, trigger: Trigger, multiplier: f32) -> Allocation {
         self.epoch += 1;
         let epoch = Epoch(self.epoch);
-        let bids: Vec<Bid> = self.agents.iter().map(|agent| agent.bid(epoch)).collect();
+        let bids: Vec<Bid> = (self.agents.iter().enumerate())
+            .map(|(index, agent)| agent.bid(epoch, self.running.get(index).copied().unwrap_or(0)))
+            .collect();
+        let offers: Vec<Offer> = bids.iter().map(|bid| bid.offer.clone()).collect();
+        let planning = (self.planner.as_ref())
+            .map(|planner| planner.planning(&offers, epoch))
+            .unwrap_or_default();
         let round = Round {
             epoch,
             trigger,
@@ -297,6 +326,7 @@ impl Simulation {
             waves: &[],
             background: &[],
             bids: &bids,
+            planning,
         };
         let started = Instant::now();
         let decision = self.arbiter.decide(&round);
@@ -308,19 +338,23 @@ impl Simulation {
     /// One frame: the rows chosen at the previous lend run, the allocation
     /// published since is lent, and the governor observes the frame.
     fn frame(&mut self) -> Duration {
+        let mut switched = vec![false; self.agents.len()];
         for (agent, (&running, &chosen)) in self.running.iter().zip(&self.chosen).enumerate() {
             if running != chosen {
                 self.switches.push((self.clock, agent));
+                switched[agent] = true;
             }
         }
         self.running = self.chosen.clone();
         if let Some(allocation) = self.published.take() {
+            self.lent = allocation.epoch;
             self.chosen = (self.agents.iter())
                 .map(|agent| agent.runs(&allocation))
                 .collect();
         }
         let mut agents_time = Duration::ZERO;
-        for index in 0..self.agents.len() {
+        let mut reports = Vec::with_capacity(self.agents.len());
+        for (index, switched) in switched.into_iter().enumerate() {
             let row = self.running[index];
             let agent = &self.agents[index];
             let quote = agent.quote(row);
@@ -334,6 +368,25 @@ impl Simulation {
             }
             self.quality += WEIGHT * f64::from(agent.rows[row].2);
             agents_time += truth;
+            // What the agent reports of its run: the row, its time, its load
+            // as its workload, and the preparation on the first run of a row
+            // it switched to.
+            reports.push(Report {
+                agent: AgentId::new(agent.name),
+                epoch: self.lent,
+                row: agent.rows[row].0,
+                measured: PerDevice {
+                    cpu: truth,
+                    ..PerDevice::default()
+                },
+                done: 1.0,
+                health: 1.0,
+                over_budget: false,
+                stalled: false,
+                workload: Some(self.loads[index]),
+                switch: switched.then(|| agent.prepare(row)),
+                message: None,
+            });
         }
         // A frame takes some time, however light it is: a tick of frames
         // that took none would never end.
@@ -341,6 +394,12 @@ impl Simulation {
             .unwrap_or(self.host + agents_time)
             .max(MIN_FRAME);
         self.governor.observe(time, setpoint());
+        if let Some(planner) = self.planner.as_mut() {
+            for report in &reports {
+                planner.observe_report(report, self.clock);
+            }
+            planner.observe_frame(time);
+        }
         self.frames.push(SimFrame {
             at: self.clock,
             time,
@@ -376,7 +435,7 @@ impl Simulation {
 impl SimAgent {
     /// This agent's bid for `epoch`: its rows at their quotes, `Important`,
     /// learning.
-    fn bid(&self, epoch: Epoch) -> Bid {
+    fn bid(&self, epoch: Epoch, running: usize) -> Bid {
         Bid {
             offer: Offer {
                 agent: AgentId::new(self.name),
@@ -396,7 +455,7 @@ impl SimAgent {
                     })
                     .collect(),
                 floor: self.rows[0].0,
-                current: self.rows[0].0,
+                current: self.rows[running.min(self.rows.len() - 1)].0,
                 health: 1.0,
             },
             importance: AgentImportance::Important,
@@ -419,6 +478,11 @@ impl SimAgent {
             .unwrap_or(0)
     }
 
+    /// How long a switch to row `row` takes to prepare.
+    fn prepare(&self, row: usize) -> Duration {
+        Duration::from_micros(self.prepare.get(row).copied().unwrap_or(DEFAULT_PREPARE))
+    }
+
     /// What row `row` quotes.
     fn quote(&self, row: usize) -> Duration {
         Duration::from_micros(self.rows[row].1)
@@ -429,6 +493,9 @@ impl SimAgent {
         self.bias.get(row).copied().unwrap_or(1.0)
     }
 }
+
+/// How long a switch of row takes to prepare, when the agent does not say.
+const DEFAULT_PREPARE: u64 = 2_000;
 
 /// The shortest frame.
 const MIN_FRAME: Duration = Duration::from_micros(1);

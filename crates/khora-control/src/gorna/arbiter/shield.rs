@@ -18,6 +18,7 @@ use khora_core::agent::gorna::protocol::Binding;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 
 use super::super::decide::{breach, fits_envelope, Bid, Plan, Round};
+use super::problem::Problem;
 use super::{planned, Proposal};
 
 /// Why the shield refused a proposal.
@@ -49,6 +50,12 @@ impl Shield {
         plans: &[Plan],
         proposal: &Proposal,
     ) -> Result<(), Refusal> {
+        // The round as it is planned: each row at the cost the horizon
+        // expects, against the target less the margin.
+        let problem = Problem::of(round, bids, plans);
+        let refs = problem.refs();
+        let round = &problem.round(round);
+        let bids = refs.as_slice();
         for (agent, (bid, base)) in bids.iter().zip(plans).enumerate() {
             let row = proposal.rows.get(agent).copied().flatten();
             if row.is_none() || row == base.row {

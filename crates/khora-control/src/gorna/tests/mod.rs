@@ -16,8 +16,9 @@
 //! envelopes (`decide.rs`), the arbiter runs its proposers behind the shield
 //! and says why it decided (`arbiter.rs`), the arbitrator asks for offers,
 //! decides and lends each agent its envelope (`allocate.rs`,
-//! `importance.rs`), and it counts the agents whose report says they are
-//! stalled (`stalls.rs`).
+//! `importance.rs`), a round planned beyond its frame — switch charges,
+//! margin, growth — and the planner that learns them (`planning.rs`), and it
+//! counts the agents whose report says they are stalled (`stalls.rs`).
 //!
 //! The fake agent, [`Bidder`], speaks the protocol (`offer`, `apply`,
 //! `report`).
@@ -27,6 +28,7 @@ mod arbiter;
 mod decide;
 mod exact;
 mod importance;
+mod planning;
 mod stalls;
 
 use super::*;

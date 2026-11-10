@@ -413,6 +413,199 @@ fn exact_finds_the_optimum_of_small_rounds() {
     }
 }
 
+// ── The optimum of the planned value ──────────────────────────────
+
+/// A generated round planned beyond its frame.
+struct PlannedCase {
+    case: Case,
+    planning: Planning,
+}
+
+impl PlannedCase {
+    fn round(&self) -> Round<'_> {
+        Round {
+            planning: self.planning.clone(),
+            ..self.case.round()
+        }
+    }
+}
+
+/// A round of [`generate`]'s, planned: each agent free to choose its row
+/// (no pin, no kept envelope) runs one of its rows, and a switch to each of
+/// its other rows costs, more often than not, a preparation of up to 30 ms;
+/// half the rounds keep a margin of up to 3 ms free of the target; some
+/// agents are expected to grow by 0.5 to 2. Plans hold 5 s, with a 250 ms
+/// transient.
+fn generate_planned(rng: &mut Rng, max_agents: usize, max_rows: usize) -> PlannedCase {
+    let mut case = generate(rng, max_agents, max_rows);
+    let mut planning = Planning {
+        horizon: Duration::from_secs(5),
+        transient: ms(250),
+        ..Planning::default()
+    };
+    for bid in &mut case.bids {
+        let agent = bid.offer.agent;
+        let chooses =
+            !bid.late && !matches!(bid.mode, AdaptationMode::Manual(_) | AdaptationMode::Stable);
+        if chooses {
+            let count = bid.offer.rows.len();
+            bid.offer.current = bid.offer.rows[rng.index(count)].id;
+            for offered in &bid.offer.rows {
+                if offered.id != bid.offer.current && rng.chance(60) {
+                    planning
+                        .switch
+                        .push((agent, offered.id, us(rng.below(30_000))));
+                }
+            }
+        }
+        if rng.chance(30) {
+            planning
+                .growth
+                .push((agent, (50 + rng.below(151)) as f64 / 100.0));
+        }
+    }
+    if rng.chance(50) {
+        planning.margin = us(rng.below(3_000));
+    }
+    PlannedCase { case, planning }
+}
+
+/// The value `proposal` plans for `round`: each agent's weight times the
+/// quality of the row it plans, less, for a row other than the one its
+/// offer runs whose switch the planning prices, its weight times the
+/// switch's preparation and transient over the horizon.
+fn planned_value(round: &Round<'_>, bids: &[&Bid], base: &[Plan], proposal: &Proposal) -> f64 {
+    let planning = &round.planning;
+    bids.iter()
+        .zip(planned(base, proposal))
+        .filter_map(|(bid, plan)| {
+            plan.row.map(|row| {
+                let offered = &bid.offer.rows[row];
+                let quality = weight(bid) * f64::from(offered.quality);
+                let priced = (planning.switch.iter())
+                    .find(|(agent, id, _)| *agent == bid.offer.agent && *id == offered.id)
+                    .map(|(_, _, prepare)| *prepare);
+                let charge = match priced {
+                    Some(prepare)
+                        if offered.id != bid.offer.current && !planning.horizon.is_zero() =>
+                    {
+                        weight(bid) * (prepare + planning.transient).as_secs_f64()
+                            / planning.horizon.as_secs_f64()
+                    }
+                    _ => 0.0,
+                };
+                quality - charge
+            })
+        })
+        .sum()
+}
+
+/// The plan of most planned value the shield accepts, and its value: every
+/// row of every agent, and its base row, enumerated. The first found is kept
+/// on a tie.
+fn planned_optimum(round: &Round<'_>, bids: &[&Bid], base: &[Plan]) -> (Proposal, f64) {
+    let choices: Vec<Vec<Option<usize>>> = bids
+        .iter()
+        .map(|bid| {
+            std::iter::once(None)
+                .chain((0..bid.offer.rows.len()).map(Some))
+                .collect()
+        })
+        .collect();
+    let mut index = vec![0_usize; bids.len()];
+    let mut best: Option<(Proposal, f64)> = None;
+    loop {
+        let proposal = Proposal {
+            rows: index
+                .iter()
+                .zip(&choices)
+                .map(|(chosen, choices)| choices[*chosen])
+                .collect(),
+            price: None,
+            rejected: Vec::new(),
+        };
+        if Shield::check(round, bids, base, &proposal).is_ok() {
+            let value = planned_value(round, bids, base, &proposal);
+            if best.as_ref().is_none_or(|(_, kept)| value > *kept + EPS) {
+                best = Some((proposal, value));
+            }
+        }
+        let mut agent = 0;
+        loop {
+            if agent == index.len() {
+                return best.expect("admission's own plan is accepted");
+            }
+            index[agent] += 1;
+            if index[agent] < choices[agent].len() {
+                break;
+            }
+            index[agent] = 0;
+            agent += 1;
+        }
+    }
+}
+
+/// **The exact search finds the optimum of the planned value.** Over 400
+/// rounds of at most 4 agents × 4 rows, drawn as [`generate`] draws them and
+/// planned — switch charges, margins and growth — the exact plan with an
+/// ample budget is accepted by the shield and plans the value of the
+/// brute-force optimum: weighed quality less the switch charges, within the
+/// planned target and at the planned costs. The generator is first checked
+/// to draw rounds whose planned optimum is not their unplanned one.
+#[test]
+fn exact_finds_the_optimum_of_the_planned_value() {
+    let mut rng = Rng(0x5eed_91a7_0ed0_0005);
+    let cases: Vec<PlannedCase> = (0..400).map(|_| generate_planned(&mut rng, 4, 4)).collect();
+
+    let (mut admitted_rounds, mut planning_moves) = (0, 0);
+    for case in &cases {
+        let round = case.round();
+        let Admission::Admitted { bids, plans } = admit(&round) else {
+            continue;
+        };
+        admitted_rounds += 1;
+        let (planned_best, _) = planned_optimum(&round, &bids, &plans);
+        let unplanned_round = case.case.round();
+        let (unplanned_bids, unplanned_plans) = admitted(&unplanned_round);
+        let (unplanned_best, _) = optimum(&unplanned_round, &unplanned_bids, &unplanned_plans);
+        if rows_of(&bids, &plans, &planned_best)
+            != rows_of(&unplanned_bids, &unplanned_plans, &unplanned_best)
+        {
+            planning_moves += 1;
+        }
+    }
+    assert!(
+        admitted_rounds >= 150,
+        "the generator draws rounds whose floors fit: {admitted_rounds} of 400"
+    );
+    assert!(
+        planning_moves > 0,
+        "the generator draws rounds whose planned optimum differs"
+    );
+
+    for (number, case) in cases.iter().enumerate() {
+        let round = case.round();
+        let Admission::Admitted { bids, plans } = admit(&round) else {
+            continue;
+        };
+        let (best, best_value) = planned_optimum(&round, &bids, &plans);
+        let found = Exact { node_budget: AMPLE }.propose(&round, &bids, &plans);
+        assert_eq!(
+            Shield::check(&round, &bids, &plans, &found),
+            Ok(()),
+            "round {number}: the exact plan {found:?} is refused"
+        );
+        let found_value = planned_value(&round, &bids, &plans, &found);
+        assert!(
+            (found_value - best_value).abs() <= EPS,
+            "round {number}: the exact plan is worth {found_value}, the optimum {best_value} \
+             ({:?} against {:?})",
+            rows_of(&bids, &plans, &found),
+            rows_of(&bids, &plans, &best)
+        );
+    }
+}
+
 /// A round drawn wider than [`generate`]'s: rows timed on every device, held
 /// in both memories and moving bytes over both links, which may be timed;
 /// floors anywhere; negative, zero and large priorities; `Stable` and late

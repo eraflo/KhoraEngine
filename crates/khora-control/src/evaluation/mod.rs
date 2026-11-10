@@ -33,20 +33,24 @@ pub use simulation::{SimAgent, SimDecision, SimFrame, SimMetrics, Simulation};
 pub enum Arbiters {
     /// The Q-RAM pass alone.
     Greedy,
-    /// The Q-RAM pass, then the exact search started from its plan: the
-    /// engine's default.
+    /// The Q-RAM pass, then the exact search started from its plan, deciding
+    /// without planning beyond the frame.
     GreedyExact,
+    /// The Q-RAM pass then the exact search, on the planned problem: the
+    /// switch charges, the margin and the growth. The engine's default.
+    Planned,
 }
 
 impl Arbiters {
     /// Every proposer set compared.
-    pub const ALL: [Arbiters; 2] = [Arbiters::Greedy, Arbiters::GreedyExact];
+    pub const ALL: [Arbiters; 3] = [Arbiters::Greedy, Arbiters::GreedyExact, Arbiters::Planned];
 
     /// The set's name, as a table prints it.
     pub fn name(self) -> &'static str {
         match self {
             Arbiters::Greedy => "greedy",
             Arbiters::GreedyExact => "greedy+exact",
+            Arbiters::Planned => "planned",
         }
     }
 
@@ -54,7 +58,7 @@ impl Arbiters {
     pub(crate) fn arbiter(self) -> Arbiter {
         match self {
             Arbiters::Greedy => Arbiter::with(vec![Box::new(Greedy)]),
-            Arbiters::GreedyExact => Arbiter::default(),
+            Arbiters::GreedyExact | Arbiters::Planned => Arbiter::default(),
         }
     }
 }

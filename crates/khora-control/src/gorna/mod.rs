@@ -28,7 +28,7 @@ use crate::dcc_context::Context;
 use khora_core::agent::gorna::protocol::{
     Allocation, Envelope, Epoch, Offer, OfferRequest, Trigger, Why,
 };
-use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, StrategyId};
+use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, Planning, StrategyId};
 use khora_core::agent::{Agent, AgentImportance};
 use khora_core::lane::cost::{PerDevice, PerLink};
 use std::collections::HashMap;
@@ -37,9 +37,12 @@ use std::time::{Duration, Instant};
 
 pub(crate) mod arbiter;
 mod decide;
+pub mod planning;
 
 use arbiter::Arbiter;
+pub(crate) use decide::hold_to_quotes;
 pub use decide::{decide, Bid, Round};
+use planning::{Planner, PlanningConfig};
 
 const MAX_STALLED_AGENTS: usize = 2;
 
@@ -92,6 +95,10 @@ pub struct GornaArbitrator {
     why: Why,
     /// The proposers behind the shield.
     arbiter: Arbiter,
+    /// What the DCC learns between rounds for its planning.
+    planner: Planner,
+    /// What the last round planned for beyond its frame.
+    planning: Planning,
     /// The last round's offers, as the agents answered them.
     offers: Vec<Offer>,
     /// The last round's target time for the frame.
@@ -119,6 +126,8 @@ impl GornaArbitrator {
             in_force: None,
             why: Why::default(),
             arbiter: Arbiter::default(),
+            planner: Planner::new(PlanningConfig::default()),
+            planning: Planning::default(),
             offers: Vec::new(),
             target: Duration::ZERO,
             importance: Vec::new(),
@@ -181,6 +190,17 @@ impl GornaArbitrator {
     /// where it knew no limit.
     pub fn memory(&self) -> PerDevice<Option<u64>> {
         self.memory
+    }
+
+    /// What the DCC learns between rounds for its planning: the switches
+    /// measured, the frames' spread, each agent's workload trend and class.
+    pub fn planner_mut(&mut self) -> &mut Planner {
+        &mut self.planner
+    }
+
+    /// What the last round planned for beyond its frame.
+    pub fn planning(&self) -> &Planning {
+        &self.planning
     }
 
     /// One round of the protocol: asks every agent in `agents` for an offer
@@ -291,7 +311,10 @@ impl GornaArbitrator {
                 .or(context.hardware.total_vram),
             ..PerDevice::default()
         };
-        let decision = self.arbiter.decide(&Round {
+        // What the round plans for beyond its frame, from the offers as the
+        // agents answered them: which row each one runs.
+        let planning = self.planner.planning(&self.offers, epoch);
+        let mut decision = self.arbiter.decide(&Round {
             epoch,
             trigger,
             target,
@@ -300,7 +323,18 @@ impl GornaArbitrator {
             waves: &self.wave_plan,
             background: &background,
             bids: &bids,
+            planning: planning.clone(),
         });
+        // Each agent chooses its row by its own quotes: the envelopes are held
+        // to the plan at those too.
+        decide::hold_to_quotes(
+            &mut decision.allocation,
+            &self.offers,
+            &bids,
+            &decision.rows,
+            &decision.kept,
+        );
+        self.planning = planning;
         self.background = background;
         self.importance = bids
             .iter()

@@ -19,6 +19,7 @@ use khora_core::agent::gorna::protocol::{Binding, DecidedBy, Rejected};
 use khora_core::lane::cost::{Cost, Device};
 
 use super::super::decide::{breach, busiest, fits_envelope, micros, weight, Bid, Plan, Round};
+use super::problem::{charge, Problem};
 use super::{Proposal, Proposer};
 
 /// Upgrades by weighed quality gained per microsecond, climbing each agent's
@@ -30,12 +31,17 @@ impl Proposer for Greedy {
         DecidedBy::Greedy
     }
 
-    /// While an upgrade fits, take the one that gains the most weighed
-    /// quality per microsecond, climbing each agent's convex hull of priced
-    /// rows. An upgrade that does not fit is rejected, with the constraint
-    /// it broke; a smaller one of the same agent may still fit. The price is
-    /// the gain per µs of the last upgrade taken.
+    /// While an upgrade fits, take the one that gains the most value per
+    /// microsecond — weighed quality, less what the switch to it charges —
+    /// climbing each agent's convex hull of priced rows. An upgrade that
+    /// does not fit is rejected, with the constraint it broke; a smaller one
+    /// of the same agent may still fit. The price is the gain per µs of the
+    /// last upgrade taken. The round is planned as its [`Problem`].
     fn propose(&self, round: &Round<'_>, bids: &[&Bid], base: &[Plan]) -> Proposal {
+        let problem = Problem::of(round, bids, base);
+        let refs = problem.refs();
+        let round = &problem.round(round);
+        let bids = refs.as_slice();
         let mut plans = base.to_vec();
         let mut price = None;
         let mut rejected = Vec::new();
@@ -45,7 +51,7 @@ impl Proposer for Greedy {
                 if plan.fixed.is_some() {
                     continue;
                 }
-                if let Some(step) = next_step(agent, bid, plan) {
+                if let Some(step) = next_step(round, agent, bid, plan) {
                     if best
                         .as_ref()
                         .is_none_or(|best| step.goes_before(best, bids))
@@ -131,14 +137,20 @@ impl Step {
 }
 
 /// The next step up `bid`'s convex hull from the row `plan` holds: among the
-/// rows not ruled out, of greater quality and no lesser cost, the steepest
-/// gain per microsecond (the larger gain, then the lower row, on a tie).
-fn next_step(agent: usize, bid: &Bid, plan: &Plan) -> Option<Step> {
+/// rows not ruled out, of greater quality and no lesser cost, whose value
+/// gained — weighed quality, less the change in switch charge — is above
+/// zero, the steepest gain per microsecond (the larger gain, then the lower
+/// row, on a tie).
+fn next_step(round: &Round<'_>, agent: usize, bid: &Bid, plan: &Plan) -> Option<Step> {
     let rows = &bid.offer.rows;
     let weight = weight(bid);
-    let (cost_now, quality_now) = match plan.row {
-        Some(row) => (micros(busiest(&rows[row].cost.time)), rows[row].quality),
-        None => (micros(busiest(&plan.floor.time)), 0.0),
+    let (cost_now, quality_now, charged_now) = match plan.row {
+        Some(row) => (
+            micros(busiest(&rows[row].cost.time)),
+            rows[row].quality,
+            charge(round, bid, row),
+        ),
+        None => (micros(busiest(&plan.floor.time)), 0.0, 0.0),
     };
     rows.iter()
         .enumerate()
@@ -148,7 +160,8 @@ fn next_step(agent: usize, bid: &Bid, plan: &Plan) -> Option<Step> {
                 && micros(busiest(&candidate.cost.time)) >= cost_now
         })
         .map(|(row, candidate)| {
-            let gain = weight * f64::from(candidate.quality - quality_now);
+            let gain = weight * f64::from(candidate.quality - quality_now)
+                - (charge(round, bid, row) - charged_now);
             let extra = micros(busiest(&candidate.cost.time)) - cost_now;
             let slope = if extra == 0 {
                 f64::INFINITY
@@ -162,6 +175,7 @@ fn next_step(agent: usize, bid: &Bid, plan: &Plan) -> Option<Step> {
                 gain,
             }
         })
+        .filter(|step| step.gain > 0.0)
         .reduce(|kept, next| {
             let next_first = next
                 .slope

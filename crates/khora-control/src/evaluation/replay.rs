@@ -18,12 +18,12 @@
 use std::time::{Duration, Instant};
 
 use khora_core::agent::gorna::protocol::{Allocation, DecidedBy, Envelope, Offer, Trigger, Why};
-use khora_core::agent::gorna::{AgentId, DecisionTrace, EpochRecord, StrategyId};
+use khora_core::agent::gorna::{AgentId, DecisionTrace, EpochRecord, Planning, StrategyId};
 use khora_core::agent::AgentImportance;
 use khora_core::lane::cost::PerLink;
 
 use super::Arbiters;
-use crate::gorna::{calibrate, Bid, Round};
+use crate::gorna::{calibrate, hold_to_quotes, Bid, Round};
 
 /// `trace` decided again through `arbiters`: each epoch's round rebuilt from
 /// what it read — the offers calibrated as recorded, each agent's
@@ -65,9 +65,24 @@ pub fn replay(trace: &DecisionTrace, arbiters: Arbiters) -> Replay {
             waves: &record.waves,
             background: &record.background,
             bids: &bids,
+            // The planned arbiter plans as the round did; the others decide
+            // the frame alone.
+            planning: if arbiters == Arbiters::Planned {
+                record.planning.clone()
+            } else {
+                Planning::default()
+            },
         };
         let started = Instant::now();
-        let decision = arbiter.decide(&round);
+        let mut decision = arbiter.decide(&round);
+        // As the DCC lent it: held to the plan at the costs the agents quoted.
+        hold_to_quotes(
+            &mut decision.allocation,
+            &record.offers,
+            &bids,
+            &decision.rows,
+            &decision.kept,
+        );
         let time = started.elapsed();
         if decision.allocation == record.allocation {
             same_as_recorded += 1;

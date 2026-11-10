@@ -22,7 +22,8 @@ use super::protocol::{
     Rejected, Report, Trigger, Why,
 };
 use super::{
-    AdaptationMode, AgentHints, AgentId, DecisionTrace, EpochRecord, FrameSummary, StrategyId,
+    AdaptationMode, AgentHints, AgentId, DecisionTrace, EpochRecord, FrameSummary, Planning,
+    StrategyId,
 };
 use crate::agent::AgentImportance;
 use crate::lane::cost::{Cost, Device, PerDevice};
@@ -187,6 +188,7 @@ fn epoch_record(epoch: u64) -> EpochRecord {
         at: Duration::ZERO,
         frames: FrameSummary::default(),
         in_force: Vec::new(),
+        planning: Planning::default(),
     }
 }
 
@@ -646,6 +648,167 @@ fn an_older_journal_reads_without_the_rounds_inputs() {
         assert_eq!(read.at, Duration::ZERO);
         assert_eq!(read.frames, FrameSummary::default());
         assert!(read.in_force.is_empty(), "{:?}", read.in_force);
+        assert_eq!(read.allocation, written.allocation);
+        assert_eq!(read.offers, written.offers);
+        assert_eq!(read.reports, written.reports);
+        assert_eq!(read.why, written.why);
+    }
+}
+
+// ── What a round planned for ──────────────────────────────────────
+
+/// A planning naming both agents: a 5 s horizon, a 250 ms transient, a
+/// 1.5 ms margin, `ALPHA` growing by 1.25 and `BETA` by 0.8, a switch of
+/// `ALPHA` to `Balanced` costing 3 ms and of `BETA` to `Custom(3)` 750 µs.
+fn a_planning() -> Planning {
+    Planning {
+        horizon: Duration::from_secs(5),
+        transient: Duration::from_millis(250),
+        margin: Duration::from_micros(1_500),
+        growth: vec![(ALPHA, 1.25), (BETA, 0.8)],
+        switch: vec![
+            (ALPHA, StrategyId::Balanced, Duration::from_millis(3)),
+            (BETA, StrategyId::Custom(3), Duration::from_micros(750)),
+        ],
+    }
+}
+
+/// **The default planning plans for nothing beyond the frame.** No horizon,
+/// transient nor margin; an agent it does not name grows by 1, and a row it
+/// does not name switches free.
+#[test]
+fn the_default_planning_plans_for_nothing_beyond_the_frame() {
+    let planning = Planning::default();
+
+    assert_eq!(planning.horizon, Duration::ZERO);
+    assert_eq!(planning.transient, Duration::ZERO);
+    assert_eq!(planning.margin, Duration::ZERO);
+    assert_eq!(
+        planning.growth_of(ALPHA),
+        1.0,
+        "an agent not named grows by 1"
+    );
+    assert_eq!(
+        planning.switch_of(ALPHA, StrategyId::Balanced),
+        None,
+        "a row not named switches free"
+    );
+}
+
+/// **A planning reads each agent's growth and each row's switch.** `ALPHA`
+/// grows by 1.25, `BETA` by 0.8, an agent it does not name by 1; the switch
+/// of `ALPHA` to `Balanced` costs 3 ms, of `BETA` to `Custom(3)` 750 µs, and
+/// a row it names for one agent says nothing of another's.
+#[test]
+fn a_planning_reads_each_agents_growth_and_each_rows_switch() {
+    let planning = a_planning();
+    let other = AgentId::new("journal-gamma");
+
+    assert_eq!(planning.growth_of(ALPHA), 1.25);
+    assert_eq!(planning.growth_of(BETA), 0.8);
+    assert_eq!(planning.growth_of(other), 1.0);
+    assert_eq!(
+        planning.switch_of(ALPHA, StrategyId::Balanced),
+        Some(Duration::from_millis(3))
+    );
+    assert_eq!(
+        planning.switch_of(BETA, StrategyId::Custom(3)),
+        Some(Duration::from_micros(750))
+    );
+    assert_eq!(
+        planning.switch_of(ALPHA, StrategyId::Custom(3)),
+        None,
+        "BETA's row says nothing of ALPHA's"
+    );
+    assert_eq!(planning.switch_of(BETA, StrategyId::Balanced), None);
+    assert_eq!(planning.switch_of(other, StrategyId::Balanced), None);
+}
+
+/// **The journal keeps each round's planning**: its horizon, transient and
+/// margin, each agent's growth and each row's switch read back as written,
+/// on the epoch that planned them, and the other epoch reads back planning
+/// nothing. Two hundred epochs naming both agents in their planning too
+/// still write each name a single time.
+#[test]
+fn the_journal_keeps_each_rounds_planning() {
+    let mut trace = journal(2);
+    trace.epochs[0].planning = a_planning();
+
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let read: DecisionTrace = serde_json::from_str(&written).expect("a journal reads back");
+
+    assert_eq!(
+        read.epochs[0].planning,
+        a_planning(),
+        "written as {written}"
+    );
+    assert_eq!(
+        read.epochs[1].planning,
+        Planning::default(),
+        "written as {written}"
+    );
+    assert_eq!(read, trace, "every epoch reads back as written");
+
+    let mut long = journal(200);
+    for epoch in &mut long.epochs {
+        epoch.planning = a_planning();
+    }
+    let long = serde_json::to_string(&long).expect("a journal serialises");
+    assert_eq!(long.matches(ALPHA.name()).count(), 1, "{ALPHA} once");
+    assert_eq!(long.matches(BETA.name()).count(), 1, "{BETA} once");
+}
+
+/// **The journal keeps each growth to the bit.** Replay decides a round again
+/// from the growth it reads back, so a growth computed by the planner — any
+/// `f64`, not a short decimal — reads back exactly as it was planned.
+#[test]
+fn the_journal_keeps_each_growth_to_the_bit() {
+    let mut trace = journal(1);
+    trace.epochs[0].planning.growth = (1..=2_000_u32)
+        .map(|k| {
+            let growth = (170.0 + f64::from(k) / 3.0) / (120.0 + f64::from(k).sqrt());
+            (AgentId::new("journal-alpha"), growth)
+        })
+        .collect();
+
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let read: DecisionTrace = serde_json::from_str(&written).expect("a journal reads back");
+
+    for ((_, read), (_, planned)) in
+        (read.epochs[0].planning.growth.iter()).zip(&trace.epochs[0].planning.growth)
+    {
+        assert_eq!(
+            read.to_bits(),
+            planned.to_bits(),
+            "planned {planned:?}, read back {read:?}"
+        );
+    }
+}
+
+/// **A journal written before the planning was kept reads no planning.** Its
+/// epochs carry no `planning`: they read back planning nothing beyond the
+/// frame, and everything else as written.
+#[test]
+fn an_older_journal_reads_no_planning() {
+    let mut trace = journal(2);
+    for epoch in &mut trace.epochs {
+        epoch.planning = a_planning();
+    }
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let mut older: serde_json::Value = serde_json::from_str(&written).expect("a journal is JSON");
+    for epoch in older["epochs"].as_array_mut().expect("the epochs") {
+        epoch
+            .as_object_mut()
+            .expect("an epoch")
+            .remove("planning")
+            .expect("the planning is written");
+    }
+
+    let read = serde_json::from_value::<DecisionTrace>(older).expect("an older journal reads");
+
+    assert_eq!(read.epochs.len(), 2);
+    for (read, written) in read.epochs.iter().zip(&trace.epochs) {
+        assert_eq!(read.planning, Planning::default());
         assert_eq!(read.allocation, written.allocation);
         assert_eq!(read.offers, written.offers);
         assert_eq!(read.reports, written.reports);

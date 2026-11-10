@@ -238,3 +238,38 @@ fn a_simulation_whose_frames_take_no_time_still_ends() {
         "a tick of frames lasting nothing never ends: the clock never moves"
     );
 }
+
+/// **Planning switches less without overrunning more.** Every scenario, run
+/// from one seed by the engine's planned set and by the Q-RAM pass then the
+/// exact search unplanned: planning beyond the frame — a switch charged, a
+/// margin kept from the frames' spread, the workload's trend — changes rows
+/// no more often a minute, and runs no more frames over the setpoint. Over
+/// all the scenarios, it changes rows less often.
+#[test]
+fn planning_switches_less_without_overrunning_more() {
+    const SEED: u64 = 7;
+    let (mut planned_changes, mut unplanned_changes) = (0.0, 0.0);
+    for scenario in Scenario::all() {
+        let unplanned = scenario.run(Arbiters::GreedyExact, SEED);
+        let planned = scenario.run(Arbiters::Planned, SEED);
+        let of = format!(
+            "{}: planned {planned:?}, unplanned {unplanned:?}",
+            scenario.name
+        );
+
+        assert!(
+            planned.row_changes_per_minute <= unplanned.row_changes_per_minute,
+            "no more row changes a minute: {of}"
+        );
+        assert!(
+            planned.frames_over <= unplanned.frames_over,
+            "no more frames over the setpoint: {of}"
+        );
+        planned_changes += planned.row_changes_per_minute;
+        unplanned_changes += unplanned.row_changes_per_minute;
+    }
+    assert!(
+        planned_changes < unplanned_changes,
+        "fewer row changes over the scenarios: {planned_changes} against {unplanned_changes}"
+    );
+}

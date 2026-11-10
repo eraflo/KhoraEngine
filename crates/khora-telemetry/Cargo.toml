@@ -19,7 +19,7 @@ sysinfo = "0.39.1"
 
 # Serialization for telemetry data
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = { workspace = true }
 
 # Error handling
 anyhow = "1.0"

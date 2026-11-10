@@ -50,6 +50,16 @@ rust-version = "1.95"
 license = "Apache-2.0"
 
 
+# A dependency several crates use is declared once, here, with every feature
+# it needs: one feature set per dependency, so no crate builds it, and every
+# crate above it, a second time (RULES §2b).
+[workspace.dependencies]
+# `float_roundtrip`: a float written and read back is the same float, to the
+# bit — a decision journal decided again from its file decides as recorded.
+# `preserve_order` and `unbounded_depth`: scene records keep their fields'
+# order and nest as deep as their data.
+serde_json = { version = "1.0", features = ["float_roundtrip", "preserve_order", "unbounded_depth"] }
+
 [profile.dev]
 # Workspace crates are rebuilt on every change: compile them without
 # optimisation. Dependencies are built once and cached, so they get optimised

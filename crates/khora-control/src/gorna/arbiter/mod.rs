@@ -18,10 +18,15 @@
 use khora_core::agent::gorna::protocol::{Allocation, DecidedBy, Rejected, Why};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 
-use super::decide::{admit, allocation, floors, slack_ms, weight, Admission, Bid, Plan, Round};
+use super::decide::{
+    admit, allocation, floors, hold_to_plan, lever, slack_ms, weight, Admission, Bid, Plan, Round,
+};
+use problem::{value, Problem};
+use std::time::Duration;
 
 mod exact;
 mod greedy;
+mod problem;
 mod shield;
 
 pub(crate) use exact::Exact;
@@ -65,17 +70,24 @@ pub(crate) struct Decision {
     pub(crate) rows: Vec<(AgentId, StrategyId)>,
     /// The weighed quality the planned rows lend.
     pub(crate) quality: f64,
+    /// What the arbiter weighs plans by: the weighed quality the planned rows
+    /// lend, less the charge of each switch of row they make.
+    pub(crate) value: f64,
     /// What the planned rows leave of the target, in milliseconds, on the
     /// device whose critical path is the longest.
     pub(crate) slack_ms: f64,
     /// The proposers whose plan the shield refused.
     pub(crate) refused: Vec<DecidedBy>,
+    /// The agents that keep the envelope they hold: late, or `Stable`.
+    pub(crate) kept: Vec<AgentId>,
 }
 
 impl Decision {
-    /// The decision lending `allocation` for `why`, its planned rows `plans`.
+    /// The decision lending `allocation` for `why`, its planned rows `plans`
+    /// valued as `round` plans them, its slack read against `target`.
     fn of(
         round: &Round<'_>,
+        target: Duration,
         bids: &[&Bid],
         plans: &[Plan],
         allocation: Allocation,
@@ -94,7 +106,21 @@ impl Decision {
                 })
                 .collect(),
             quality: worth(bids, plans),
-            slack_ms: slack_ms(round, bids, plans),
+            value: value(round, bids, plans),
+            slack_ms: slack_ms(
+                &Round {
+                    target,
+                    ..round.clone()
+                },
+                bids,
+                plans,
+            ),
+            kept: bids
+                .iter()
+                .zip(plans)
+                .filter(|(_, plan)| plan.fixed.is_some())
+                .map(|(bid, _)| bid.offer.agent)
+                .collect(),
             refused,
         }
     }
@@ -134,11 +160,24 @@ impl Arbiter {
                     rejected: Vec::new(),
                 };
                 let (bids, plans) = floors(round);
-                return Decision::of(round, &bids, &plans, allocation, why, Vec::new());
+                return Decision::of(
+                    round,
+                    round.target,
+                    &bids,
+                    &plans,
+                    allocation,
+                    why,
+                    Vec::new(),
+                );
             }
             Admission::Admitted { bids, plans } => (bids, plans),
         };
 
+        // The problem every proposer plans and the shield checks: plans are
+        // weighed, and lent, as it plans them.
+        let problem = Problem::of(round, &bids, &base);
+        let refs = problem.refs();
+        let planned_round = problem.round(round);
         let mut best: Option<(f64, DecidedBy, Proposal)> = None;
         let mut refused = Vec::new();
         for proposer in &self.proposers {
@@ -152,7 +191,7 @@ impl Arbiter {
                 refused.push(proposer.name());
                 continue;
             }
-            let value = worth(&bids, &planned(&base, &proposal));
+            let value = value(&planned_round, &refs, &planned(&base, &proposal));
             if best.as_ref().is_none_or(|(kept, ..)| value > *kept) {
                 best = Some((value, proposer.name(), proposal));
             }
@@ -165,7 +204,11 @@ impl Arbiter {
             }
             None => (DecidedBy::Floors, base, None, Vec::new()),
         };
-        let allocation = allocation(round, &bids, &plans, price);
+        let mut allocation = allocation(&planned_round, &refs, &plans, price);
+        // Each agent runs the best row its envelope fits: the envelope is
+        // held to the row planned, at the costs the agent quoted.
+        hold_to_plan(&mut allocation.envelopes, &bids, &plans);
+        allocation.lever = allocation.lever && lever(&bids, &allocation.envelopes);
         let why = Why {
             by,
             trigger: allocation.trigger,
@@ -174,7 +217,15 @@ impl Arbiter {
             binding: rejected.last().map(|rejected| rejected.over),
             rejected,
         };
-        Decision::of(round, &bids, &plans, allocation, why, refused)
+        Decision::of(
+            &planned_round,
+            round.target,
+            &refs,
+            &plans,
+            allocation,
+            why,
+            refused,
+        )
     }
 }
 

@@ -18,8 +18,9 @@
 use khora_core::agent::gorna::protocol::{DecidedBy, Rejected};
 use khora_core::lane::cost::{Cost, Device};
 
-use super::super::decide::{breach, busiest, fits_envelope, weight, Bid, Plan, Round};
+use super::super::decide::{breach, busiest, fits_envelope, Bid, Plan, Round};
 use super::greedy::{over_ceiling, Greedy};
+use super::problem::{value, value_of, Problem};
 use super::{planned, Proposal, Proposer};
 
 /// The nodes an [`Exact`] search visits at most, unless told otherwise: at 10
@@ -62,10 +63,14 @@ impl Exact {
         base: &[Plan],
     ) -> (Proposal, u32) {
         let seed = Greedy.propose(round, bids, base);
+        let problem = Problem::of(round, bids, base);
+        let refs = problem.refs();
+        let round = &problem.round(round);
+        let bids = refs.as_slice();
         let candidates: Vec<Vec<Candidate>> = bids
             .iter()
             .zip(base)
-            .map(|(bid, plan)| candidates(bid, plan))
+            .map(|(bid, plan)| candidates(round, bid, plan))
             .collect();
         // What each agent can still add at best, and what the agents from
         // each one on can, together.
@@ -96,7 +101,7 @@ impl Exact {
             plans: base.to_vec(),
             rows: base.iter().map(|plan| plan.row).collect(),
             best_rows: seed.rows.clone(),
-            best: worth(bids, &planned(base, &seed)),
+            best: value(round, bids, &planned(base, &seed)),
         };
         search.visit(0, 0.0);
         let nodes = search.nodes;
@@ -136,18 +141,17 @@ struct Candidate {
     /// The row, as an index into the offer's rows; `None` for an agent that
     /// offers no row to plan.
     row: Option<usize>,
-    /// The agent's weight times the row's quality.
+    /// The row's value: the agent's weight times its quality, less what
+    /// switching to it charges.
     worth: f64,
 }
 
 /// `bid`'s candidates: its base row, and every row its policies allow within
 /// its `Stable` ceiling — its base row alone when it holds a kept envelope —
 /// best first, the base row first among equals.
-fn candidates(bid: &Bid, plan: &Plan) -> Vec<Candidate> {
+fn candidates(round: &Round<'_>, bid: &Bid, plan: &Plan) -> Vec<Candidate> {
     let rows = &bid.offer.rows;
-    let weight = weight(bid);
-    let worth_of =
-        |row: Option<usize>| row.map_or(0.0, |row| weight * f64::from(rows[row].quality));
+    let worth_of = |row: Option<usize>| value_of(round, bid, row);
     let mut candidates = vec![Candidate {
         row: plan.row,
         worth: worth_of(plan.row),
@@ -188,17 +192,6 @@ fn no_more(a: &Cost, b: &Cost) -> bool {
         device.get(&a.time) <= device.get(&b.time) && device.get(&a.memory) <= device.get(&b.memory)
     }) && a.transfer.cpu_to_gpu <= b.transfer.cpu_to_gpu
         && a.transfer.gpu_to_cpu <= b.transfer.gpu_to_cpu
-}
-
-/// The weighed quality `plans` lend.
-fn worth(bids: &[&Bid], plans: &[Plan]) -> f64 {
-    bids.iter()
-        .zip(plans)
-        .filter_map(|(bid, plan)| {
-            plan.row
-                .map(|row| weight(bid) * f64::from(bid.offer.rows[row].quality))
-        })
-        .sum()
 }
 
 /// A search in progress.

@@ -196,6 +196,7 @@ mod tests {
                 mean: Duration::from_millis(14),
             },
             in_force: Vec::new(),
+            planning: khora_core::agent::gorna::Planning::default(),
         };
         DecisionTrace {
             epochs: vec![epoch(1), epoch(2)],
@@ -294,7 +295,7 @@ mod tests {
         engine.shutdown();
 
         assert!(!trace.epochs.is_empty(), "the DCC opened an epoch");
-        let replayed = replay(&trace, Arbiters::GreedyExact);
+        let replayed = replay(&trace, Arbiters::Planned);
         for (again, recorded) in replayed.epochs.iter().zip(&trace.epochs) {
             assert_eq!(
                 again.allocation, recorded.allocation,

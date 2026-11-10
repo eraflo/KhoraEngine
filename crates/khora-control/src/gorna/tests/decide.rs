@@ -50,6 +50,7 @@ pub(super) fn round<'a>(trigger: Trigger, target_us: u64, bids: &'a [Bid]) -> Ro
         waves: &[],
         background: &[],
         bids,
+        planning: Planning::default(),
     }
 }
 

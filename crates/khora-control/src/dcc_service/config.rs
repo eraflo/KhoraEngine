@@ -14,6 +14,7 @@
 
 //! Configuration of the DCC service.
 
+use crate::gorna::planning::PlanningConfig;
 use crate::governor::GovernorConfig;
 
 /// Configuration for the DCC Service.
@@ -48,6 +49,10 @@ pub struct DccConfig {
     /// How many over-budget reports in a row from one agent raise
     /// `Trigger::Overruns`.
     pub overruns_in_a_row: u32,
+    /// The planner's settings: the horizon a plan is meant to hold, the
+    /// transient and the default preparation a switch costs, the risk of a
+    /// frame over its target, and how many frames and reports it reads.
+    pub planning: PlanningConfig,
 }
 
 impl Default for DccConfig {
@@ -61,6 +66,7 @@ impl Default for DccConfig {
             frame_governor: GovernorConfig::default(),
             min_epoch_ticks: 3,
             overruns_in_a_row: 3,
+            planning: PlanningConfig::default(),
         }
     }
 }

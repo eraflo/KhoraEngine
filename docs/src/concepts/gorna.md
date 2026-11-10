@@ -322,7 +322,30 @@ on a tie). Each decision records why: the proposer, the trigger, the constraint 
 stopped the plan growing, and the upgrades refused. The envelope sent is
 *b*<sub>a</sub> = *c*<sub>a, x∗(a)</sub> + *σ*<sub>a</sub>, where *σ*<sub>a</sub> is
 *a*'s part of 80 % of the slack *T* − *C*(*x*<sup>∗</sup>), in proportion to
-*c*<sub>a, x∗(a)</sub>, device by device.
+*c*<sub>a, x∗(a)</sub>, device by device. An agent runs the best row its envelope
+fits, so an envelope that would fit a row of more quality than the one planned is cut
+just under it, at the costs the agent quoted: the row the DCC planned is the row the
+agent runs.
+
+**Planning beyond the frame.** A plan is meant to hold for a horizon *H* (5 s), so the
+round weighs more than its own frame:
+
+- **Switching rows is charged.** Moving agent *a* off the row it runs costs
+  *w*<sub>a</sub> (*s* + *S*<sub>0</sub>) / *H* of weighed quality, where *s* is the
+  preparation the DCC measured for that row (none when its layer is still kept) and
+  *S*<sub>0</sub> (250 ms) the swap's transient. The arbiter maximises
+  Σ *w q* − Σ charges: an upgrade must gain more than it costs to switch to.
+- **A risk margin** keeps the plans under *T* − *z*<sub>ε</sub> σ, where σ is the
+  robust spread of the recent frames (1.4826 × their median absolute deviation, so a
+  hitch does not widen it) and *z*<sub>ε</sub> the normal quantile of the risk ε (5 %).
+  It never takes the target below what the floors need, and never makes a round
+  `Safety`.
+- **Growth.** A round can plan each row above an agent's floor at its quote × the
+  growth its workload trend predicts over *H*. The DCC does not follow trends by default:
+  a trend read over a few reports follows a burst as readily as a real rise.
+
+The greedy, the exact search and the shield all plan this same problem, and each round's
+planning is kept in the decision journal, so a journal is decided again as it was.
 
 **The agent's choice** at frame *t*, from its fresh prices *ĉ*<sup>t</sup>:
 

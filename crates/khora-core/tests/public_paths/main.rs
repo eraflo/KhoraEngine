@@ -325,7 +325,19 @@ fn epoch_record_fields(x: &khora_core::agent::gorna::EpochRecord) {
         &x.at,
         &x.frames,
         &x.in_force,
+        &x.planning,
     );
+}
+
+fn planning_fields(x: &khora_core::agent::gorna::Planning) {
+    let _ = (&x.horizon, &x.transient, &x.margin, &x.growth, &x.switch);
+}
+
+fn planning_api(x: &khora_core::agent::gorna::Planning) {
+    let agent = khora_core::agent::gorna::AgentId::new("an agent");
+    let _: f64 = x.growth_of(agent);
+    let _: Option<std::time::Duration> =
+        x.switch_of(agent, khora_core::agent::gorna::StrategyId::LowPower);
 }
 
 fn frame_summary_fields(x: &khora_core::agent::gorna::FrameSummary) {
@@ -1730,6 +1742,13 @@ fn module_agent_gorna_paths_still_resolve() {
     is_partial_eq::<khora_core::agent::gorna::FrameSummary>();
     is_serialize::<khora_core::agent::gorna::FrameSummary>();
     is_deserialize_owned::<khora_core::agent::gorna::FrameSummary>();
+    let _ = type_name::<khora_core::agent::gorna::Planning>();
+    let _ = planning_fields as fn(&khora_core::agent::gorna::Planning);
+    let _ = planning_api as fn(&khora_core::agent::gorna::Planning);
+    is_debug::<khora_core::agent::gorna::Planning>();
+    is_clone::<khora_core::agent::gorna::Planning>();
+    is_default::<khora_core::agent::gorna::Planning>();
+    is_partial_eq::<khora_core::agent::gorna::Planning>();
     let _ = type_name::<khora_core::agent::gorna::EngineHint>();
     let _ = engine_hint_variants as fn(&khora_core::agent::gorna::EngineHint);
     let _ = khora_core::agent::gorna::EngineHint::agent;

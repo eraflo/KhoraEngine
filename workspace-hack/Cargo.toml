@@ -42,7 +42,7 @@ regex-automata = { version = "0.4", default-features = false, features = ["dfa-o
 regex-syntax = { version = "0.8" }
 serde = { version = "1", features = ["alloc", "derive"] }
 serde_core = { version = "1", default-features = false, features = ["alloc", "result", "std"] }
-serde_json = { version = "1", features = ["preserve_order", "raw_value", "unbounded_depth"] }
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order", "raw_value", "unbounded_depth"] }
 smallvec = { version = "1", default-features = false, features = ["const_new"] }
 stable_deref_trait = { version = "1", default-features = false, features = ["alloc"] }
 tinystr = { version = "0.8", default-features = false, features = ["alloc", "zerovec"] }
@@ -86,7 +86,7 @@ regex-automata = { version = "0.4", default-features = false, features = ["dfa-o
 regex-syntax = { version = "0.8" }
 serde = { version = "1", features = ["alloc", "derive"] }
 serde_core = { version = "1", default-features = false, features = ["alloc", "result", "std"] }
-serde_json = { version = "1", features = ["preserve_order", "raw_value", "unbounded_depth"] }
+serde_json = { version = "1", features = ["float_roundtrip", "preserve_order", "raw_value", "unbounded_depth"] }
 smallvec = { version = "1", default-features = false, features = ["const_new"] }
 stable_deref_trait = { version = "1", default-features = false, features = ["alloc"] }
 syn = { version = "2", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }

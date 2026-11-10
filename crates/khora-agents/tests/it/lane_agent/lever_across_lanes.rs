@@ -24,7 +24,7 @@ use std::time::Duration;
 use khora_agents::agent::{lane_agent, LaneAgent};
 use khora_control::gorna::{decide, Bid, Round};
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Trigger};
-use khora_core::agent::gorna::{AdaptationMode, AgentHints, StrategyId};
+use khora_core::agent::gorna::{AdaptationMode, AgentHints, Planning, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
 use khora_core::gpu::DeviceCaps;
@@ -182,6 +182,7 @@ fn a_dearer_lane_of_equal_impact_is_no_lever() {
         waves: &[],
         background: &[],
         bids: &bids,
+        planning: Planning::default(),
     });
     let lent = allocation
         .envelopes

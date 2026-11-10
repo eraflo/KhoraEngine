@@ -24,7 +24,7 @@ use std::time::Duration;
 use khora_core::agent::gorna::protocol::{
     Allocation, Binding, Confidence, Envelope, Epoch, Offer, OfferRow, Trigger,
 };
-use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, StrategyId};
+use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, Planning, StrategyId};
 use khora_core::agent::AgentImportance;
 use khora_core::lane::cost::{Cost, Device, PerDevice, PerLink};
 
@@ -75,6 +75,10 @@ pub struct Round<'a> {
     pub background: &'a [AgentId],
     /// Every agent asked, with its offer.
     pub bids: &'a [Bid],
+    /// What the round plans for beyond its frame: the charge of a switch of
+    /// row, the margin kept free of the target, and each agent's expected
+    /// cost growth.
+    pub planning: Planning,
 }
 
 /// The allocation for `round`, as the default [`Arbiter`] decides it.
@@ -253,6 +257,116 @@ pub(crate) fn allocation(
     }
 }
 
+/// Holds each envelope of `envelopes` to the row planned for its agent: an
+/// agent runs the best row its envelope fits, so an envelope that fits a row
+/// of more quality than the one planned is cut just under that row. An agent
+/// holding a kept envelope keeps it.
+pub(crate) fn hold_to_plan(envelopes: &mut [(AgentId, Envelope)], bids: &[&Bid], plans: &[Plan]) {
+    for (bid, plan) in bids.iter().zip(plans) {
+        let Some(planned) = plan.row else {
+            continue;
+        };
+        if plan.fixed.is_some() {
+            continue;
+        }
+        if let Some((_, envelope)) = envelopes
+            .iter_mut()
+            .find(|(agent, _)| *agent == bid.offer.agent)
+        {
+            let rows = &bid.offer.rows;
+            hold(envelope, rows, &rows[planned], &rows[planned].cost);
+        }
+    }
+}
+
+/// Holds `allocation` to the rows `planned` again, at the costs the agents
+/// quoted in `quoted` — an agent chooses its row by its own quotes, not by
+/// the costs the DCC calibrated them to (`bids`) — then says again whether a
+/// lower target can take something back. The agents of `kept` keep their
+/// envelope.
+pub(crate) fn hold_to_quotes(
+    allocation: &mut Allocation,
+    quoted: &[Offer],
+    bids: &[Bid],
+    planned: &[(AgentId, StrategyId)],
+    kept: &[AgentId],
+) {
+    for (agent, row) in planned {
+        if kept.contains(agent) {
+            continue;
+        }
+        let (Some(offer), Some(bid)) = (
+            quoted.iter().find(|offer| offer.agent == *agent),
+            bids.iter().find(|bid| bid.offer.agent == *agent),
+        ) else {
+            continue;
+        };
+        let (Some(quoted_row), Some(calibrated)) = (
+            offer.rows.iter().find(|candidate| candidate.id == *row),
+            bid.offer.rows.iter().find(|candidate| candidate.id == *row),
+        ) else {
+            continue;
+        };
+        // The planned row must still fit, as the agent quotes it and as the
+        // DCC measures it.
+        let mut least = quoted_row.cost;
+        for device in Device::ALL {
+            let time = device.get_mut(&mut least.time);
+            *time = (*time).max(device.get(&calibrated.cost.time));
+            let memory = device.get_mut(&mut least.memory);
+            *memory = (*memory).max(device.get(&calibrated.cost.memory));
+        }
+        if let Some((_, envelope)) = (allocation.envelopes.iter_mut()).find(|(id, _)| id == agent) {
+            hold(envelope, &offer.rows, quoted_row, &least);
+        }
+    }
+    let refs: Vec<&Bid> = bids.iter().collect();
+    allocation.lever = allocation.lever && lever(&refs, &allocation.envelopes);
+}
+
+/// Whether a lower target can take something back from any agent of `bids`
+/// under `envelopes`.
+pub(crate) fn lever(bids: &[&Bid], envelopes: &[(AgentId, Envelope)]) -> bool {
+    bids.iter().any(|bid| {
+        (envelopes.iter())
+            .find(|(agent, _)| *agent == bid.offer.agent)
+            .is_some_and(|(_, envelope)| above_floor(bid, &Plan::of(bid), envelope))
+    })
+}
+
+/// Cuts `envelope` so no row of `rows` of more quality than `planned` fits
+/// it, never below `least`: each such row that fits is cut just under, on
+/// the device where it costs the most above `least` by at least a
+/// microsecond, else in memory. A row that costs no more than `least`
+/// anywhere cannot be held off.
+fn hold(envelope: &mut Envelope, rows: &[OfferRow], planned: &OfferRow, least: &Cost) {
+    let step = Duration::from_micros(1);
+    for better in rows.iter().filter(|row| row.quality > planned.quality) {
+        if !fits_envelope(&better.cost, envelope) {
+            continue;
+        }
+        let by_time = Device::ALL
+            .into_iter()
+            .filter(|device| device.get(&better.cost.time) >= device.get(&least.time) + step)
+            .max_by_key(|device| device.get(&better.cost.time) - device.get(&least.time));
+        if let Some(device) = by_time {
+            let under = device.get(&better.cost.time) - step;
+            let time = device.get_mut(&mut envelope.time);
+            *time = (*time).min(under);
+            continue;
+        }
+        let by_memory = Device::ALL
+            .into_iter()
+            .filter(|device| device.get(&better.cost.memory) > device.get(&least.memory))
+            .max_by_key(|device| device.get(&better.cost.memory) - device.get(&least.memory));
+        if let Some(device) = by_memory {
+            let under = device.get(&better.cost.memory) - 1;
+            let memory = device.get_mut(&mut envelope.memory);
+            *memory = (*memory).min(under);
+        }
+    }
+}
+
 /// Whether a lower frame target can take something back from `bid`: a row
 /// above its floor fits the envelope it is lent, so a smaller one makes it
 /// run a cheaper row. That covers a planned upgrade, a `Stable` envelope it
@@ -400,7 +514,7 @@ pub(crate) fn weight(bid: &Bid) -> f64 {
 
 /// The frame's time on each device, in µs: each wave costs its slowest
 /// member, an agent in no wave its own, and every agent its transfers.
-fn critical_paths(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> PerDevice<u64> {
+pub(crate) fn critical_paths(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> PerDevice<u64> {
     let mut alone = PerDevice::<u64>::default();
     let mut waves = vec![PerDevice::<u64>::default(); round.waves.len()];
     for (bid, plan) in bids.iter().zip(plans) {

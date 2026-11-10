@@ -26,7 +26,7 @@ use khora_core::agent::gorna::protocol::{
     Report, Trigger, Why,
 };
 use khora_core::agent::gorna::{
-    AdaptationMode, AgentId, DecisionTrace, EngineHint, EpochRecord, FrameSummary,
+    AdaptationMode, AgentId, DecisionTrace, EngineHint, EpochRecord, FrameSummary, Planning,
 };
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming, Place};
 use khora_core::lane::cost::{Cost, PerDevice};
@@ -114,6 +114,7 @@ fn epoch(
         at,
         frames: FrameSummary::default(),
         in_force: Vec::new(),
+        planning: Planning::default(),
     }
 }
 
@@ -652,7 +653,7 @@ fn a_journal_replayed_through_its_arbiter_decides_what_it_recorded() {
             .collect::<Vec<_>>()
     );
 
-    let replayed = replay(&trace, Arbiters::GreedyExact);
+    let replayed = replay(&trace, Arbiters::Planned);
 
     assert_eq!(replayed.epochs.len(), trace.epochs.len());
     for (again, recorded) in replayed.epochs.iter().zip(&trace.epochs) {
@@ -725,7 +726,7 @@ fn a_journal_begun_while_the_dcc_runs_decides_its_first_epoch_again() {
     dcc.stop();
     assert!(!trace.epochs.is_empty(), "the journal recorded epochs");
 
-    let replayed = replay(&trace, Arbiters::GreedyExact);
+    let replayed = replay(&trace, Arbiters::Planned);
 
     for (again, recorded) in replayed.epochs.iter().zip(&trace.epochs) {
         assert_eq!(
@@ -836,7 +837,7 @@ fn a_journal_with_an_agent_busy_through_its_rounds_decides_what_it_recorded() {
             .collect::<Vec<_>>()
     );
 
-    let replayed = replay(&trace, Arbiters::GreedyExact);
+    let replayed = replay(&trace, Arbiters::Planned);
 
     for (again, recorded) in replayed.epochs.iter().zip(&trace.epochs) {
         assert_eq!(
@@ -916,6 +917,7 @@ fn a_journals_safety_rounds_decide_again_as_recorded() {
             waves: &[],
             background: &[],
             bids: &bids,
+            planning: Planning::default(),
         });
         record.allocation = decision.allocation;
         record.why = decision.why;
@@ -984,13 +986,206 @@ fn a_journal_with_a_replay_between_its_epochs_decides_what_it_recorded() {
         "a round opened with the replayed allocation in force"
     );
 
-    let replayed = replay(&trace, Arbiters::GreedyExact);
+    let replayed = replay(&trace, Arbiters::Planned);
 
     for (again, recorded) in replayed.epochs.iter().zip(&trace.epochs) {
         assert_eq!(
             again.allocation, recorded.allocation,
             "epoch {:?} decided again",
             recorded.allocation.epoch
+        );
+    }
+}
+
+// ── A journal the DCC planned ────────────────────────────────────
+
+/// `oak`'s report of a run of `row`, under epoch 0, at `workload`, its host
+/// time 2 µs per unit of work, carrying `switch`.
+fn oak_ran(row: StrategyId, workload: f64, switch: Option<Duration>) -> TelemetryEvent {
+    TelemetryEvent::AgentReport(Report {
+        agent: AgentId::new("oak"),
+        epoch: Epoch(0),
+        row,
+        measured: PerDevice {
+            cpu: Duration::from_secs_f64(workload * 2e-6),
+            ..PerDevice::default()
+        },
+        done: 1.0,
+        health: 1.0,
+        over_budget: false,
+        stalled: false,
+        workload: Some(workload),
+        switch,
+        message: None,
+    })
+}
+
+/// A journal the running DCC recorded while planning beyond the frame:
+/// - `oak` (Critical) offers 2 ms, 5 ms or 9 ms; it measured once, under
+///   epoch 0, a switch to `Balanced` of 3 ms, and its workload then rises
+///   slowly, one report in four events;
+/// - `pine` (Optional) offers 1 ms or 3 ms and reports nothing.
+///
+/// The frames jitter around 40 ms for a few epochs, so the margin has a
+/// spread to read, then around 5 ms until at least seven epochs are
+/// recorded.
+fn planned_journal() -> DecisionTrace {
+    let (mut dcc, rx) = DccService::new(DccConfig {
+        tick_rate: 100,
+        ..Default::default()
+    });
+    dcc.register_agent(
+        Fixed::agent(
+            "oak",
+            vec![
+                row(LowPower, 2_000, 0.4),
+                row(Balanced, 5_000, 0.7),
+                row(HighPerformance, 9_000, 1.0),
+            ],
+            Critical,
+            ExecutionPhase::OUTPUT,
+        ),
+        1.0,
+    );
+    dcc.register_agent(
+        Fixed::agent(
+            "pine",
+            vec![row(LowPower, 1_000, 0.4), row(HighPerformance, 3_000, 1.0)],
+            Optional,
+            ExecutionPhase::OUTPUT,
+        ),
+        1.0,
+    );
+    let tx = dcc.event_sender();
+    tx.send(oak_ran(Balanced, 1_000.0, Some(us(3_000))))
+        .expect("the DCC listens");
+    dcc.start_decision_recording();
+    dcc.start(rx);
+
+    let sent = std::cell::Cell::new(0_u64);
+    let jittered = |around: u64| {
+        let k = sent.get();
+        sent.set(k + 1);
+        if k % 4 == 3 {
+            oak_ran(LowPower, 1_000.0 + k as f64 / 10.0, None)
+        } else {
+            frame(around - 2 + 2 * (k % 3))
+        }
+    };
+    let recorded = |dcc: &DccService| dcc.recorded_decisions().epochs.len();
+    feed_until(&tx, 10, || jittered(40), || recorded(&dcc) >= 3);
+    feed_until(&tx, 15, || jittered(5), || recorded(&dcc) >= 7);
+    let trace = dcc.stop_decision_recording();
+    dcc.stop();
+    trace
+}
+
+/// **A journal replayed through the planned arbiter decides what it
+/// recorded.** The running DCC plans its rounds beyond the frame — a switch
+/// measured, a margin from the frames' spread, a rising workload — and
+/// records each round's planning. Decided again from the journal alone by
+/// the planned set, every epoch gives back the allocation recorded, and why.
+#[test]
+fn a_journal_replayed_through_the_planned_arbiter_decides_what_it_recorded() {
+    let trace = planned_journal();
+    assert!(
+        trace.epochs.len() >= 5,
+        "the DCC recorded a few epochs: {:?}",
+        (trace.epochs.iter())
+            .map(|e| &e.allocation)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        trace
+            .epochs
+            .iter()
+            .any(|epoch| !epoch.planning.switch.is_empty()),
+        "some round charged a switch: {:?}",
+        (trace.epochs.iter())
+            .map(|e| &e.planning)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        (trace.epochs.iter()).any(|epoch| epoch.planning.margin > Duration::ZERO),
+        "some round kept a margin: {:?}",
+        (trace.epochs.iter())
+            .map(|e| &e.planning)
+            .collect::<Vec<_>>()
+    );
+
+    let replayed = replay(&trace, Arbiters::Planned);
+
+    assert_eq!(replayed.epochs.len(), trace.epochs.len());
+    for (again, recorded) in replayed.epochs.iter().zip(&trace.epochs) {
+        assert_eq!(
+            again.allocation, recorded.allocation,
+            "epoch {:?} decided again",
+            recorded.allocation.epoch
+        );
+        assert_eq!(
+            again.why, recorded.why,
+            "epoch {:?} explained again",
+            recorded.allocation.epoch
+        );
+    }
+    assert_eq!(replayed.metrics.same_as_recorded, trace.epochs.len());
+}
+
+/// **A recorded epoch plans the switch the DCC measured.** `oak` ran
+/// `Balanced` under epoch 0 and measured its switch to it at 3 ms:
+/// - while its layer is kept — epochs 1 to `KEEP_EPOCHS` — every round
+///   names a switch back to it at zero: it prepares nothing, and pays only
+///   the transient;
+/// - from then on, every round names it at 3 ms;
+/// - no round charges `oak`'s running floor;
+/// - `pine`, which measured nothing, is charged the 5 ms prior for its
+///   upgrade.
+#[test]
+fn a_recorded_epoch_plans_the_switch_the_dcc_measured() {
+    let trace = planned_journal();
+    let (oak, pine) = (AgentId::new("oak"), AgentId::new("pine"));
+    let keep = u64::from(khora_core::agent::KEEP_EPOCHS);
+    let priced = |epoch: &EpochRecord, agent: AgentId, row: StrategyId| {
+        (epoch.planning.switch.iter())
+            .find(|(named, id, _)| *named == agent && *id == row)
+            .map(|(_, _, prepare)| *prepare)
+    };
+    assert!(
+        (trace.epochs.iter()).any(|epoch| epoch.allocation.epoch.0 > keep),
+        "the DCC recorded epochs past {keep}: {:?}",
+        (trace.epochs.iter())
+            .map(|e| e.allocation.epoch)
+            .collect::<Vec<_>>()
+    );
+
+    for epoch in &trace.epochs {
+        let number = epoch.allocation.epoch.0;
+        let balanced = priced(epoch, oak, Balanced);
+        if number <= keep {
+            assert_eq!(
+                balanced,
+                Some(Duration::ZERO),
+                "epoch {number}: oak's Balanced is kept, in {:?}",
+                epoch.planning
+            );
+        } else {
+            assert_eq!(
+                balanced,
+                Some(us(3_000)),
+                "epoch {number}: oak's Balanced as measured, in {:?}",
+                epoch.planning
+            );
+        }
+        assert_eq!(
+            priced(epoch, oak, LowPower),
+            None,
+            "epoch {number}: oak runs its floor"
+        );
+        assert_eq!(
+            priced(epoch, pine, HighPerformance),
+            Some(Duration::from_millis(5)),
+            "epoch {number}: pine measured nothing, in {:?}",
+            epoch.planning
         );
     }
 }
