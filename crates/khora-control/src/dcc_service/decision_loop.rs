@@ -73,6 +73,7 @@ impl DccService {
         let vram_budget_bytes = self.config.vram_budget_bytes;
         let governor_cfg = self.config.frame_governor;
         let planning_cfg = self.config.planning;
+        let cost_book_cfg = self.config.cost_book;
 
         let min_epoch_ticks = self.config.min_epoch_ticks;
         let overruns_in_a_row = self.config.overruns_in_a_row;
@@ -81,6 +82,7 @@ impl DccService {
             let heuristic_engine = HeuristicEngine;
             let mut arbitrator = GornaArbitrator::new(agent_lock_timeout);
             *arbitrator.planner_mut() = crate::gorna::planning::Planner::new(planning_cfg);
+            *arbitrator.cost_book_mut() = crate::gorna::cost_book::CostBook::new(cost_book_cfg);
             // When the DCC started: the planner reads workload trends in it.
             let started = Instant::now();
             // When the next epoch opens, and what waits to open it.
@@ -259,6 +261,9 @@ impl DccService {
                             arbitrator
                                 .planner_mut()
                                 .observe_report(&run, started.elapsed());
+                            // Each run teaches the book its row's measured
+                            // time against the time it quoted.
+                            arbitrator.cost_book_mut().observe_report(&run);
                             reports.insert(id, run);
                         }
                         TelemetryEvent::FrameReport(frame) => {
@@ -493,19 +498,6 @@ impl DccService {
                     }
                     let tick_hints: HashMap<AgentId, AgentHints> =
                         hints.read().map(|h| h.clone()).unwrap_or_default();
-                    // Per-agent measured costs anchor the agents' quotes in
-                    // reality: each model read at its own agent's workload,
-                    // else its latest observation.
-                    let measured_costs: HashMap<AgentId, f64> = cost_models
-                        .iter()
-                        .filter_map(|(id, model)| {
-                            workloads
-                                .get(id)
-                                .and_then(|n| model.predict_ms(*n))
-                                .or_else(|| model.latest_ms())
-                                .map(|ms| (*id, ms))
-                        })
-                        .collect();
                     arbitrator.set_wave_plan(&latest_wave_plan);
                     // Each cost model's class reads its agent's workload
                     // trend into a growth over the horizon.
@@ -520,14 +512,8 @@ impl DccService {
                     let in_force = (arbitrator.in_force())
                         .map(|allocation| allocation.envelopes.clone())
                         .unwrap_or_default();
-                    let allocation = arbitrator.allocate(
-                        &ctx_copy,
-                        &report,
-                        trigger,
-                        &agents,
-                        &measured_costs,
-                        &tick_hints,
-                    );
+                    let allocation =
+                        arbitrator.allocate(&ctx_copy, &report, trigger, &agents, &tick_hints);
                     epochs.opened(&agents);
                     epochs.set_in_force(allocation.epoch);
                     last_issued_multiplier = Some(multiplier);
@@ -567,7 +553,7 @@ impl DccService {
                                 reasons: report.alerts.clone(),
                                 why: arbitrator.why().clone(),
                                 importance: arbitrator.importance().to_vec(),
-                                calibration: by_agent(&measured_costs),
+                                corrections: arbitrator.corrections().to_vec(),
                                 memory: arbitrator.memory(),
                                 background: arbitrator.background().to_vec(),
                                 at: since.elapsed(),

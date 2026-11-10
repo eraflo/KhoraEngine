@@ -14,6 +14,7 @@
 
 //! Configuration of the DCC service.
 
+use crate::gorna::cost_book::CostBookConfig;
 use crate::gorna::planning::PlanningConfig;
 use crate::governor::GovernorConfig;
 
@@ -53,6 +54,9 @@ pub struct DccConfig {
     /// transient and the default preparation a switch costs, the risk of a
     /// frame over its target, and how many frames and reports it reads.
     pub planning: PlanningConfig,
+    /// The cost book's settings: how fast it forgets older runs, and the
+    /// spread a row starts from before any run.
+    pub cost_book: CostBookConfig,
 }
 
 impl Default for DccConfig {
@@ -67,6 +71,7 @@ impl Default for DccConfig {
             min_epoch_ticks: 3,
             overruns_in_a_row: 3,
             planning: PlanningConfig::default(),
+            cost_book: CostBookConfig::default(),
         }
     }
 }

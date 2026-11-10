@@ -33,14 +33,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 impl ExecutionScheduler {
-    /// Runs `phase`'s agents among the families on, `selection` of them, with
-    /// `workload_n` — the world's entity count — as the workload of a report
-    /// that counts none.
+    /// Runs `phase`'s agents among the families on, `selection` of them.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn execute_agents_in_phase(
         &mut self,
         phase: ExecutionPhase,
-        workload_n: f64,
         runtime: &Arc<Runtime>,
         inactive: &BTreeSet<AgentId>,
         completion_map: &Arc<AgentCompletionMap>,
@@ -75,7 +72,7 @@ impl ExecutionScheduler {
         }
 
         let sorted = sort_agents(agents);
-        self.execute_agents(sorted, workload_n, runtime, completion_map, bus, deck);
+        self.execute_agents(sorted, runtime, completion_map, bus, deck);
     }
 
     /// Runs the phase's agents wave by wave, in priority order (the
@@ -99,7 +96,6 @@ impl ExecutionScheduler {
     fn execute_agents(
         &self,
         agents: Vec<AgentSlot>,
-        workload_n: f64,
         runtime: &Arc<Runtime>,
         completion_map: &Arc<AgentCompletionMap>,
         bus: &Arc<LaneBus>,
@@ -157,7 +153,7 @@ impl ExecutionScheduler {
                 if !ran {
                     report = recover(place, id);
                 }
-                self.publish_report(report, elapsed_ms, workload_n);
+                self.publish_report(report, elapsed_ms);
                 completion_map.mark(id, outcome_of(ran));
                 continue;
             }
@@ -266,7 +262,7 @@ impl ExecutionScheduler {
                 }
                 self.audit_deck_writes(run.id, &run.permit, run.written);
                 written.merge_from(run.shard);
-                self.publish_report(run.report.take(), run.ms, workload_n);
+                self.publish_report(run.report.take(), run.ms);
                 completion_map.mark(run.id, outcome_of(run.ran));
                 drop(run.earlier);
             }
@@ -284,16 +280,17 @@ impl ExecutionScheduler {
     }
 
     /// Publishes to the DCC an agent's `report` of the run that just took
-    /// `ms` on the host: the host time at least what the scheduler measured,
-    /// and the world's entity count `workload_n` where the agent counted no
-    /// workload of its own. Best-effort, like all telemetry.
-    pub(super) fn publish_report(&self, report: Option<Report>, ms: f64, workload_n: f64) {
+    /// `ms` on the host: the host time at least what the scheduler measured.
+    /// Its workload is left as the run reported it — the host time the run
+    /// quoted, or none: the DCC's cost book learns each row against it, and
+    /// any other count read as one would teach it nonsense. Best-effort, like
+    /// all telemetry.
+    pub(super) fn publish_report(&self, report: Option<Report>, ms: f64) {
         let (Some(tx), Some(mut report)) = (&self.telemetry, report) else {
             return;
         };
         let host = Duration::from_secs_f64(ms.max(0.0) / 1_000.0);
         report.measured.cpu = report.measured.cpu.max(host);
-        report.workload.get_or_insert(workload_n);
         let _ = tx.try_send(TelemetryEvent::AgentReport(report));
     }
 

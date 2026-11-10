@@ -23,7 +23,7 @@ use super::protocol::{
     Allocation, Binding, DecidedBy, Envelope, Epoch, Offer, OfferRow, Rejected, Report, Trigger,
     Why,
 };
-use super::{AdaptationMode, AgentHints, AgentId, Planning, StrategyId};
+use super::{AdaptationMode, AgentHints, AgentId, Correction, Planning, StrategyId};
 use crate::agent::AgentImportance;
 use crate::lane::cost::PerDevice;
 
@@ -69,9 +69,9 @@ pub struct EpochRecord {
     pub why: Why,
     /// Each agent's importance, in the agents' order.
     pub importance: Vec<(AgentId, AgentImportance)>,
-    /// The measured time, in milliseconds, each agent's quotes were
-    /// calibrated by.
-    pub calibration: Vec<(AgentId, f64)>,
+    /// The correction of each row the round was offered, by agent and row:
+    /// what its quoted host time was planned at.
+    pub corrections: Vec<(AgentId, StrategyId, Correction)>,
     /// The bytes the agents could hold on each device, as the round read
     /// them; `None` where it was not known.
     pub memory: PerDevice<Option<u64>>,
@@ -187,12 +187,10 @@ struct WrittenEpoch {
     #[serde(default)]
     why: Option<WrittenWhy>,
     /// A journal from before the round's inputs were written reads none of
-    /// them: no importance, calibration, memory limit or background agent,
-    /// opened at zero, no frame.
+    /// them: no importance, memory limit or background agent, opened at
+    /// zero, no frame.
     #[serde(default)]
     importance: Vec<(Named, AgentImportance)>,
-    #[serde(default)]
-    calibration: Vec<(Named, f64)>,
     #[serde(default)]
     memory: PerDevice<Option<u64>>,
     #[serde(default)]
@@ -207,6 +205,10 @@ struct WrittenEpoch {
     /// planning for nothing.
     #[serde(default)]
     planning: WrittenPlanning,
+    /// A journal from before each row's correction was learnt reads none: its
+    /// rows plan at their quotes.
+    #[serde(default)]
+    corrections: Vec<(Named, StrategyId, Correction)>,
 }
 
 /// A round's planning as written, its agents named by place.
@@ -217,6 +219,9 @@ struct WrittenPlanning {
     margin: Duration,
     growth: Vec<(Named, f64)>,
     switch: Vec<(Named, StrategyId, Duration)>,
+    /// A journal from before corrections were planned with caution reads none.
+    #[serde(default)]
+    caution: f64,
 }
 
 /// A decision's explanation as written, its agents named by place.
@@ -373,9 +378,6 @@ fn written_epoch(record: &EpochRecord, table: &mut Table) -> WrittenEpoch {
         importance: (record.importance.iter())
             .map(|(agent, importance)| (table.of(*agent), *importance))
             .collect(),
-        calibration: (record.calibration.iter())
-            .map(|(agent, ms)| (table.of(*agent), *ms))
-            .collect(),
         memory: record.memory,
         background: (record.background.iter())
             .map(|agent| table.of(*agent))
@@ -395,7 +397,11 @@ fn written_epoch(record: &EpochRecord, table: &mut Table) -> WrittenEpoch {
             switch: (record.planning.switch.iter())
                 .map(|(agent, row, time)| (table.of(*agent), *row, *time))
                 .collect(),
+            caution: record.planning.caution,
         },
+        corrections: (record.corrections.iter())
+            .map(|(agent, row, correction)| (table.of(*agent), *row, *correction))
+            .collect(),
     }
 }
 
@@ -489,8 +495,8 @@ fn read_epoch<E>(
         importance: (written.importance.into_iter())
             .map(|(agent, importance)| Ok((named(agent)?, importance)))
             .collect::<Result<_, E>>()?,
-        calibration: (written.calibration.into_iter())
-            .map(|(agent, ms)| Ok((named(agent)?, ms)))
+        corrections: (written.corrections.into_iter())
+            .map(|(agent, row, correction)| Ok((named(agent)?, row, correction)))
             .collect::<Result<_, E>>()?,
         memory: written.memory,
         background: list(written.background)?,
@@ -509,6 +515,7 @@ fn read_epoch<E>(
             switch: (written.planning.switch.into_iter())
                 .map(|(agent, row, time)| Ok((named(agent)?, row, time)))
                 .collect::<Result<_, E>>()?,
+            caution: written.planning.caution,
         },
     })
 }

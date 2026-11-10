@@ -53,7 +53,7 @@ mod tests {
     use khora_core::agent::gorna::protocol::{
         Allocation, Confidence, DecidedBy, Envelope, Epoch, Offer, OfferRow, Report, Trigger, Why,
     };
-    use khora_core::agent::gorna::{AgentId, EpochRecord, FrameSummary, StrategyId};
+    use khora_core::agent::gorna::{AgentId, Correction, EpochRecord, FrameSummary, StrategyId};
     use khora_core::agent::AgentImportance;
     use khora_core::lane::cost::{Cost, PerDevice};
 
@@ -182,7 +182,14 @@ mod tests {
                 (oak, AgentImportance::Critical),
                 (pine, AgentImportance::Optional),
             ],
-            calibration: vec![(oak, 2.5)],
+            corrections: vec![(
+                oak,
+                StrategyId::LowPower,
+                Correction {
+                    factor: 1.25,
+                    spread: 0.125,
+                },
+            )],
             memory: PerDevice {
                 gpu: Some(256 * 1024 * 1024),
                 ..PerDevice::default()

@@ -39,14 +39,7 @@ fn upgraded(allocation: &Allocation, name: &'static str) -> bool {
 
 /// One round of 10.5 ms: both 2 ms floors fit, and one upgrade to 8 ms.
 fn share(agents: &[Arc<Mutex<dyn Agent>>], hints: &HashMap<AgentId, AgentHints>) -> Allocation {
-    arbitrator().allocate(
-        &playing(),
-        &frame_of(10.5),
-        Trigger::Refresh,
-        agents,
-        &nothing(),
-        hints,
-    )
+    arbitrator().allocate(&playing(), &frame_of(10.5), Trigger::Refresh, agents, hints)
 }
 
 /// **Priority comes from importance, not from a table of names.** With room

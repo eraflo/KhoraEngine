@@ -40,4 +40,5 @@ mod quote_impact;
 mod quote_share;
 mod quotes;
 mod registration;
+mod reported_workload;
 mod scheduled;

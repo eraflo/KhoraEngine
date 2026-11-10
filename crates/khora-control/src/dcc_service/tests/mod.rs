@@ -90,7 +90,7 @@ fn record(allocation: Allocation) -> EpochRecord {
         reasons: Vec::new(),
         why: khora_core::agent::gorna::protocol::Why::default(),
         importance: Vec::new(),
-        calibration: Vec::new(),
+        corrections: Vec::new(),
         memory: PerDevice::default(),
         background: Vec::new(),
         at: Duration::ZERO,
@@ -552,10 +552,11 @@ fn run_report(name: &'static str, epoch: Epoch, cpu_us: u64, workload: f64) -> R
     }
 }
 
-/// **Reports feed the cost models at their workload.** The renderer's runs
-/// cost 0.3 ms per unit of work; its last run did 80 units. Its model
-/// forecasts 24 ms at that workload, over the 16.66 ms frame: an epoch opens
-/// for the forecast breach, and says why.
+/// **Reports feed the cost models at their workload.** A run's workload is
+/// the host time its row quoted, in µs: the renderer's runs quoted 2, 4, 8
+/// then 16 ms and each took half as long again. Its model forecasts 24 ms at
+/// its last workload, over the 16.66 ms frame: an epoch opens for the
+/// forecast breach, and says why.
 #[test]
 fn reports_feed_the_cost_models_at_their_workload() {
     let (mut dcc, rx) = recording(DccConfig {
@@ -565,11 +566,11 @@ fn reports_feed_the_cost_models_at_their_workload() {
     let (agent, _ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
     dcc.register_agent(agent, 1.0);
     let tx = dcc.event_sender();
-    for n in [10.0, 20.0, 40.0, 80.0] {
+    for n in [2_000.0, 4_000.0, 8_000.0, 16_000.0] {
         tx.send(TelemetryEvent::AgentReport(run_report(
             "renderer",
             Epoch(0),
-            (300.0 * n) as u64,
+            (1.5 * n) as u64,
             n,
         )))
         .expect("the DCC listens");

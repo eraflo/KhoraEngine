@@ -22,8 +22,8 @@ use super::protocol::{
     Rejected, Report, Trigger, Why,
 };
 use super::{
-    AdaptationMode, AgentHints, AgentId, DecisionTrace, EpochRecord, FrameSummary, Planning,
-    StrategyId,
+    AdaptationMode, AgentHints, AgentId, Correction, DecisionTrace, EpochRecord, FrameSummary,
+    Planning, StrategyId,
 };
 use crate::agent::AgentImportance;
 use crate::lane::cost::{Cost, Device, PerDevice};
@@ -182,7 +182,7 @@ fn epoch_record(epoch: u64) -> EpochRecord {
         reasons: vec!["the frame ran over its target".to_owned()],
         why: Why::default(),
         importance: Vec::new(),
-        calibration: Vec::new(),
+        corrections: Vec::new(),
         memory: PerDevice::default(),
         background: Vec::new(),
         at: Duration::ZERO,
@@ -475,8 +475,7 @@ fn an_older_journal_reads_each_epochs_own_trigger() {
 }
 
 /// `record` holding what its round read besides the offers and the
-/// reports: both agents' importance, `ALPHA`'s calibration, a graphics
-/// memory limit, `BETA` at the background, when the epoch opened, how the
+/// reports: both agents' importance, a graphics memory limit, `BETA` at the background, when the epoch opened, how the
 /// frames ran since the one before, and the envelopes both agents held when
 /// the round opened.
 fn with_the_rounds_inputs(mut record: EpochRecord) -> EpochRecord {
@@ -485,7 +484,6 @@ fn with_the_rounds_inputs(mut record: EpochRecord) -> EpochRecord {
         (ALPHA, AgentImportance::Critical),
         (BETA, AgentImportance::Optional),
     ];
-    record.calibration = vec![(ALPHA, 2.5 + epoch as f64 / 8.0)];
     record.memory = PerDevice {
         gpu: Some(512 * 1024 * 1024),
         ..PerDevice::default()
@@ -531,8 +529,7 @@ fn journal_with_the_rounds_inputs(epochs: u64) -> DecisionTrace {
 }
 
 /// **The journal keeps what each round read, and how the frames ran.** Each
-/// agent's importance, the measured time its quotes were calibrated by, the
-/// memory limits, the agents at the background, when the epoch opened, the
+/// agent's importance, the memory limits, the agents at the background, when the epoch opened, the
 /// frames since the one before and the envelopes in force when the round
 /// opened read back as written: with them, an epoch can be decided again as
 /// it was, even one recorded after the DCC had been running. Two hundred epochs naming both
@@ -551,11 +548,6 @@ fn the_journal_keeps_the_rounds_inputs_and_the_frames() {
             (ALPHA, AgentImportance::Critical),
             (BETA, AgentImportance::Optional)
         ],
-        "written as {written}"
-    );
-    assert_eq!(
-        first.calibration,
-        vec![(ALPHA, 2.625)],
         "written as {written}"
     );
     assert_eq!(
@@ -612,7 +604,7 @@ fn the_journal_keeps_the_rounds_inputs_and_the_frames() {
 }
 
 /// **A journal written before the rounds' inputs were kept reads without
-/// them.** Its epochs carry no importance, calibration, memory limits,
+/// them.** Its epochs carry no importance, memory limits,
 /// background, time, frames nor envelopes in force: they read back empty,
 /// unknown and zero, and everything else as written.
 #[test]
@@ -624,7 +616,6 @@ fn an_older_journal_reads_without_the_rounds_inputs() {
         let epoch = epoch.as_object_mut().expect("an epoch");
         for field in [
             "importance",
-            "calibration",
             "memory",
             "background",
             "at",
@@ -642,7 +633,6 @@ fn an_older_journal_reads_without_the_rounds_inputs() {
     assert_eq!(read.epochs.len(), 2);
     for (read, written) in read.epochs.iter().zip(&trace.epochs) {
         assert!(read.importance.is_empty(), "{:?}", read.importance);
-        assert!(read.calibration.is_empty(), "{:?}", read.calibration);
         assert_eq!(read.memory, PerDevice::default(), "no limit known");
         assert!(read.background.is_empty(), "{:?}", read.background);
         assert_eq!(read.at, Duration::ZERO);
@@ -659,7 +649,9 @@ fn an_older_journal_reads_without_the_rounds_inputs() {
 
 /// A planning naming both agents: a 5 s horizon, a 250 ms transient, a
 /// 1.5 ms margin, `ALPHA` growing by 1.25 and `BETA` by 0.8, a switch of
-/// `ALPHA` to `Balanced` costing 3 ms and of `BETA` to `Custom(3)` 750 µs.
+/// `ALPHA` to `Balanced` costing 3 ms and of `BETA` to `Custom(3)` 750 µs,
+/// and each row planned the 5 % risk's z — about 1.645 — spreads above its
+/// correction.
 fn a_planning() -> Planning {
     Planning {
         horizon: Duration::from_secs(5),
@@ -670,12 +662,13 @@ fn a_planning() -> Planning {
             (ALPHA, StrategyId::Balanced, Duration::from_millis(3)),
             (BETA, StrategyId::Custom(3), Duration::from_micros(750)),
         ],
+        caution: 1.644_853_626_951_472_2,
     }
 }
 
 /// **The default planning plans for nothing beyond the frame.** No horizon,
-/// transient nor margin; an agent it does not name grows by 1, and a row it
-/// does not name switches free.
+/// transient, margin nor caution; an agent it does not name grows by 1, and
+/// a row it does not name switches free.
 #[test]
 fn the_default_planning_plans_for_nothing_beyond_the_frame() {
     let planning = Planning::default();
@@ -683,6 +676,7 @@ fn the_default_planning_plans_for_nothing_beyond_the_frame() {
     assert_eq!(planning.horizon, Duration::ZERO);
     assert_eq!(planning.transient, Duration::ZERO);
     assert_eq!(planning.margin, Duration::ZERO);
+    assert_eq!(planning.caution, 0.0, "each row planned at its factor");
     assert_eq!(
         planning.growth_of(ALPHA),
         1.0,
@@ -724,8 +718,9 @@ fn a_planning_reads_each_agents_growth_and_each_rows_switch() {
     assert_eq!(planning.switch_of(other, StrategyId::Balanced), None);
 }
 
-/// **The journal keeps each round's planning**: its horizon, transient and
-/// margin, each agent's growth and each row's switch read back as written,
+/// **The journal keeps each round's planning**: its horizon, transient,
+/// margin and caution, each agent's growth and each row's switch read back
+/// as written,
 /// on the epoch that planned them, and the other epoch reads back planning
 /// nothing. Two hundred epochs naming both agents in their planning too
 /// still write each name a single time.
@@ -813,6 +808,142 @@ fn an_older_journal_reads_no_planning() {
         assert_eq!(read.offers, written.offers);
         assert_eq!(read.reports, written.reports);
         assert_eq!(read.why, written.why);
+    }
+}
+
+// ── What each row's host time was corrected by ────────────────────
+
+/// **A correction is planned `caution` spreads above its factor.** A row
+/// learned at 2 with a spread of 0.5 is planned at 2 + 1.645 × 0.5 under
+/// the 5 % risk's caution, and at its factor under none; the default
+/// correction — factor 1, no spread — plans every row at its quote,
+/// whatever the caution.
+#[test]
+fn a_correction_is_planned_caution_spreads_above_its_factor() {
+    let learned = Correction {
+        factor: 2.0,
+        spread: 0.5,
+    };
+
+    assert!(
+        (learned.planned(1.645) - 2.8225).abs() < 1e-12,
+        "2 + 1.645 × 0.5: {}",
+        learned.planned(1.645)
+    );
+    assert_eq!(learned.planned(0.0), 2.0, "no caution, the factor");
+    assert_eq!(
+        Correction::default(),
+        Correction {
+            factor: 1.0,
+            spread: 0.0
+        }
+    );
+    assert_eq!(Correction::default().planned(1.645), 1.0);
+    assert_eq!(Correction::default().planned(3.0), 1.0);
+}
+
+/// The corrections a round of `ALPHA` and `BETA` read: `ALPHA`'s `Balanced`
+/// learned a little above 4/3 (a factor that is no short decimal), its
+/// `Custom(3)` never run, `BETA`'s `Balanced` at 2 with a wide spread.
+fn some_corrections() -> Vec<(AgentId, StrategyId, Correction)> {
+    vec![
+        (
+            ALPHA,
+            StrategyId::Balanced,
+            Correction {
+                factor: 4.0 / 3.0 + 1e-9,
+                spread: 0.1_f64.sqrt(),
+            },
+        ),
+        (
+            ALPHA,
+            StrategyId::Custom(3),
+            Correction {
+                factor: 1.0,
+                spread: 0.5,
+            },
+        ),
+        (
+            BETA,
+            StrategyId::Balanced,
+            Correction {
+                factor: 2.0,
+                spread: 0.75,
+            },
+        ),
+    ]
+}
+
+/// **The journal keeps each row's correction.** The epoch whose round read
+/// them reads back every (agent, row, factor, spread) as written, each
+/// factor and spread to the bit — a replay decides again on them — and the
+/// other epoch reads back none. Two hundred epochs naming both agents in
+/// their corrections still write each name a single time.
+#[test]
+fn the_journal_keeps_each_rows_correction() {
+    let mut trace = journal(2);
+    trace.epochs[0].corrections = some_corrections();
+
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let read: DecisionTrace = serde_json::from_str(&written).expect("a journal reads back");
+
+    assert_eq!(
+        read.epochs[0].corrections,
+        some_corrections(),
+        "written as {written}"
+    );
+    for ((_, _, read), (_, _, recorded)) in
+        (read.epochs[0].corrections.iter()).zip(&some_corrections())
+    {
+        assert_eq!(read.factor.to_bits(), recorded.factor.to_bits());
+        assert_eq!(read.spread.to_bits(), recorded.spread.to_bits());
+    }
+    assert!(
+        read.epochs[1].corrections.is_empty(),
+        "{:?}",
+        read.epochs[1].corrections
+    );
+    assert_eq!(read, trace, "every epoch reads back as written");
+
+    let mut long = journal(200);
+    for epoch in &mut long.epochs {
+        epoch.corrections = some_corrections();
+    }
+    let long = serde_json::to_string(&long).expect("a journal serialises");
+    assert_eq!(long.matches(ALPHA.name()).count(), 1, "{ALPHA} once");
+    assert_eq!(long.matches(BETA.name()).count(), 1, "{BETA} once");
+}
+
+/// **A journal written with a per-agent calibration still reads.** Before
+/// each row was corrected, an epoch held one measured time per agent under
+/// `calibration`, and no `corrections`. Such a journal reads back with no
+/// correction, and everything else as written.
+#[test]
+fn an_older_journal_reads_its_calibration() {
+    let mut trace = journal(2);
+    for epoch in &mut trace.epochs {
+        epoch.corrections = some_corrections();
+    }
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let mut older: serde_json::Value = serde_json::from_str(&written).expect("a journal is JSON");
+    for epoch in older["epochs"].as_array_mut().expect("the epochs") {
+        let epoch = epoch.as_object_mut().expect("an epoch");
+        epoch
+            .remove("corrections")
+            .unwrap_or_else(|| panic!("the corrections are written: {written}"));
+        epoch.insert("calibration".to_owned(), serde_json::json!([[0, 2.5]]));
+    }
+
+    let read = serde_json::from_value::<DecisionTrace>(older).expect("an older journal reads");
+
+    assert_eq!(read.epochs.len(), 2);
+    for (read, written) in read.epochs.iter().zip(&trace.epochs) {
+        assert!(read.corrections.is_empty(), "{:?}", read.corrections);
+        assert_eq!(read.allocation, written.allocation);
+        assert_eq!(read.offers, written.offers);
+        assert_eq!(read.reports, written.reports);
+        assert_eq!(read.why, written.why);
+        assert_eq!(read.planning, written.planning);
     }
 }
 

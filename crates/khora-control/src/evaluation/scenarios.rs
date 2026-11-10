@@ -38,23 +38,31 @@ pub struct Scenario {
     load: fn(f64, usize) -> f64,
 }
 
-/// The agents every scenario runs, in this order: a renderer whose best row
-/// costs a fifth more than it quotes, shadows, physics, scripts and audio.
-/// Every agent on its best row and the host part overrun a 60 Hz frame;
-/// every agent on its floor leaves half of it free.
+/// The agents every scenario runs, in this order: a renderer, shadows,
+/// physics, scripts and audio. Like a lane whose `cost()` formula was
+/// calibrated on another machine, an agent's quotes are off by the same
+/// factor on each of its rows: the renderer and the scripts take a fifth
+/// and three tenths more than they quote, physics a fifth less; shadows and
+/// audio quote right. Every agent on its best row and the host part overrun
+/// a 60 Hz frame; every agent on its floor leaves half of it free.
 fn agents() -> Vec<SimAgent> {
     let rows = |rows: &[(StrategyId, u64, f32)]| rows.to_vec();
-    let mut render = SimAgent::new(
-        "render",
-        rows(&[
-            (LowPower, 2_000, 0.3),
-            (Balanced, 4_000, 0.7),
-            (HighPerformance, 7_000, 1.0),
-        ]),
-    );
-    render.bias = vec![1.0, 1.0, 1.2];
+    let biased = |mut agent: SimAgent, bias: f64| {
+        agent.bias = vec![bias; agent.rows.len()];
+        agent
+    };
     vec![
-        render,
+        biased(
+            SimAgent::new(
+                "render",
+                rows(&[
+                    (LowPower, 2_000, 0.3),
+                    (Balanced, 4_000, 0.7),
+                    (HighPerformance, 7_000, 1.0),
+                ]),
+            ),
+            1.2,
+        ),
         SimAgent::new(
             "shadow",
             rows(&[
@@ -63,17 +71,23 @@ fn agents() -> Vec<SimAgent> {
                 (HighPerformance, 3_000, 1.0),
             ]),
         ),
-        SimAgent::new(
-            "physics",
-            rows(&[
-                (LowPower, 1_000, 0.4),
-                (Balanced, 2_000, 0.8),
-                (HighPerformance, 3_000, 1.0),
-            ]),
+        biased(
+            SimAgent::new(
+                "physics",
+                rows(&[
+                    (LowPower, 1_000, 0.4),
+                    (Balanced, 2_000, 0.8),
+                    (HighPerformance, 3_000, 1.0),
+                ]),
+            ),
+            0.8,
         ),
-        SimAgent::new(
-            "script",
-            rows(&[(LowPower, 800, 0.5), (HighPerformance, 2_000, 1.0)]),
+        biased(
+            SimAgent::new(
+                "script",
+                rows(&[(LowPower, 800, 0.5), (HighPerformance, 2_000, 1.0)]),
+            ),
+            1.3,
         ),
         SimAgent::new(
             "audio",

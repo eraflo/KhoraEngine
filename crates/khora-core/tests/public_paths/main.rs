@@ -319,7 +319,7 @@ fn epoch_record_fields(x: &khora_core::agent::gorna::EpochRecord) {
         &x.reasons,
         &x.why,
         &x.importance,
-        &x.calibration,
+        &x.corrections,
         &x.memory,
         &x.background,
         &x.at,
@@ -330,7 +330,14 @@ fn epoch_record_fields(x: &khora_core::agent::gorna::EpochRecord) {
 }
 
 fn planning_fields(x: &khora_core::agent::gorna::Planning) {
-    let _ = (&x.horizon, &x.transient, &x.margin, &x.growth, &x.switch);
+    let _ = (
+        &x.horizon,
+        &x.transient,
+        &x.margin,
+        &x.growth,
+        &x.switch,
+        &x.caution,
+    );
 }
 
 fn planning_api(x: &khora_core::agent::gorna::Planning) {
@@ -338,6 +345,11 @@ fn planning_api(x: &khora_core::agent::gorna::Planning) {
     let _: f64 = x.growth_of(agent);
     let _: Option<std::time::Duration> =
         x.switch_of(agent, khora_core::agent::gorna::StrategyId::LowPower);
+}
+
+fn correction_fields(x: &khora_core::agent::gorna::Correction) {
+    let _ = (&x.factor, &x.spread);
+    let _: f64 = x.planned(0.0);
 }
 
 fn frame_summary_fields(x: &khora_core::agent::gorna::FrameSummary) {
@@ -1742,6 +1754,15 @@ fn module_agent_gorna_paths_still_resolve() {
     is_partial_eq::<khora_core::agent::gorna::FrameSummary>();
     is_serialize::<khora_core::agent::gorna::FrameSummary>();
     is_deserialize_owned::<khora_core::agent::gorna::FrameSummary>();
+    let _ = type_name::<khora_core::agent::gorna::Correction>();
+    let _ = correction_fields as fn(&khora_core::agent::gorna::Correction);
+    is_debug::<khora_core::agent::gorna::Correction>();
+    is_clone::<khora_core::agent::gorna::Correction>();
+    is_copy::<khora_core::agent::gorna::Correction>();
+    is_default::<khora_core::agent::gorna::Correction>();
+    is_partial_eq::<khora_core::agent::gorna::Correction>();
+    is_serialize::<khora_core::agent::gorna::Correction>();
+    is_deserialize_owned::<khora_core::agent::gorna::Correction>();
     let _ = type_name::<khora_core::agent::gorna::Planning>();
     let _ = planning_fields as fn(&khora_core::agent::gorna::Planning);
     let _ = planning_api as fn(&khora_core::agent::gorna::Planning);

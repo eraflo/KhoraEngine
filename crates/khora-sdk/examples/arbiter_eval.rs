@@ -51,7 +51,7 @@ fn scenarios(out: &mut impl Write) -> io::Result<()> {
     writeln!(out, "Scenarios (seed {SEED})")?;
     writeln!(
         out,
-        "{:<16} {:<14} {:>8} {:>9} {:>8} {:>10} {:>9} {:>10} {:>10} {:>8} {:>9}",
+        "{:<16} {:<18} {:>8} {:>9} {:>8} {:>10} {:>9} {:>10} {:>10} {:>8} {:>9}",
         "scenario",
         "arbiter",
         "frames",
@@ -74,7 +74,7 @@ fn scenarios(out: &mut impl Write) -> io::Result<()> {
             };
             writeln!(
                 out,
-                "{:<16} {:<14} {:>8} {:>8.2}% {:>8} {:>10.3} {:>9.2} {:>10.3} {:>10} {:>8} {:>9}",
+                "{:<16} {:<18} {:>8} {:>8.2}% {:>8} {:>10.3} {:>9.2} {:>10.3} {:>10} {:>8} {:>9}",
                 scenario.name,
                 arbiters.name(),
                 m.frames,
@@ -97,7 +97,7 @@ fn journal(out: &mut impl Write, name: &str, trace: &DecisionTrace) -> io::Resul
     writeln!(out, "Journal {name}: {} epochs", trace.epochs.len())?;
     writeln!(
         out,
-        "{:<14} {:>10} {:>10} {:>9} {:>10} {:>10} {:>8} {:>9}",
+        "{:<18} {:>10} {:>10} {:>9} {:>10} {:>10} {:>8} {:>9}",
         "arbiter", "quality", "slack", "rows/min", "as rec.", "decide", "max", "refused"
     )?;
     let mut frames = None;
@@ -105,7 +105,7 @@ fn journal(out: &mut impl Write, name: &str, trace: &DecisionTrace) -> io::Resul
         let m = replay(trace, arbiters).metrics;
         writeln!(
             out,
-            "{:<14} {:>10.3} {:>8.2}ms {:>9} {:>10} {:>10} {:>8} {:>9}",
+            "{:<18} {:>10.3} {:>8.2}ms {:>9} {:>10} {:>10} {:>8} {:>9}",
             arbiters.name(),
             m.quality_mean,
             m.slack_mean_ms,

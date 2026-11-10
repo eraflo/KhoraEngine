@@ -279,11 +279,11 @@ pub(crate) fn hold_to_plan(envelopes: &mut [(AgentId, Envelope)], bids: &[&Bid],
     }
 }
 
-/// Holds `allocation` to the rows `planned` again, at the costs the agents
-/// quoted in `quoted` — an agent chooses its row by its own quotes, not by
-/// the costs the DCC calibrated them to (`bids`) — then says again whether a
-/// lower target can take something back. The agents of `kept` keep their
-/// envelope.
+/// Holds `allocation`, lent in the agents' quoted units, to the rows
+/// `planned` at the costs the agents quoted in `quoted` — an agent chooses
+/// its row by its own quotes — then says again whether a lower target can
+/// take something back, `bids` giving each agent's policies. The agents of
+/// `kept` keep their envelope.
 pub(crate) fn hold_to_quotes(
     allocation: &mut Allocation,
     quoted: &[Offer],
@@ -295,32 +295,29 @@ pub(crate) fn hold_to_quotes(
         if kept.contains(agent) {
             continue;
         }
-        let (Some(offer), Some(bid)) = (
-            quoted.iter().find(|offer| offer.agent == *agent),
-            bids.iter().find(|bid| bid.offer.agent == *agent),
-        ) else {
+        let Some(offer) = quoted.iter().find(|offer| offer.agent == *agent) else {
             continue;
         };
-        let (Some(quoted_row), Some(calibrated)) = (
-            offer.rows.iter().find(|candidate| candidate.id == *row),
-            bid.offer.rows.iter().find(|candidate| candidate.id == *row),
-        ) else {
+        let Some(quoted_row) = offer.rows.iter().find(|candidate| candidate.id == *row) else {
             continue;
         };
-        // The planned row must still fit, as the agent quotes it and as the
-        // DCC measures it.
-        let mut least = quoted_row.cost;
-        for device in Device::ALL {
-            let time = device.get_mut(&mut least.time);
-            *time = (*time).max(device.get(&calibrated.cost.time));
-            let memory = device.get_mut(&mut least.memory);
-            *memory = (*memory).max(device.get(&calibrated.cost.memory));
-        }
         if let Some((_, envelope)) = (allocation.envelopes.iter_mut()).find(|(id, _)| id == agent) {
-            hold(envelope, &offer.rows, quoted_row, &least);
+            // The planned row still fits, as the agent quotes it.
+            hold(envelope, &offer.rows, quoted_row, &quoted_row.cost);
         }
     }
-    let refs: Vec<&Bid> = bids.iter().collect();
+    // Whether a lower target can take something back, as the agents see
+    // their envelopes: by their quotes.
+    let as_quoted: Vec<Bid> = (bids.iter())
+        .map(|bid| {
+            let mut bid = bid.clone();
+            if let Some(offer) = quoted.iter().find(|offer| offer.agent == bid.offer.agent) {
+                bid.offer = offer.clone();
+            }
+            bid
+        })
+        .collect();
+    let refs: Vec<&Bid> = as_quoted.iter().collect();
     allocation.lever = allocation.lever && lever(&refs, &allocation.envelopes);
 }
 

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! A round of the arbitrator: one offer request per agent, calibration and
-//! the decision. A round lends nothing itself: the scheduler lends the
+//! A round of the arbitrator: one offer request per agent, the correction of
+//! each row's quoted host time and the decision. A round lends nothing itself: the scheduler lends the
 //! allocation at its next frame start. What an agent is lent is checked here
 //! by lending it as the scheduler would ([`lend`]).
 
@@ -30,14 +30,7 @@ fn allocate(
     trigger: Trigger,
     agents: &[Arc<Mutex<dyn Agent>>],
 ) -> Allocation {
-    arbitrator.allocate(
-        context,
-        &frame_of(latency_ms),
-        trigger,
-        agents,
-        &nothing(),
-        &nothing(),
-    )
+    arbitrator.allocate(context, &frame_of(latency_ms), trigger, agents, &nothing())
 }
 
 fn lock<A>(agent: &Arc<Mutex<A>>) -> std::sync::MutexGuard<'_, A> {
@@ -213,74 +206,51 @@ fn concurrent_agents_share_the_frame_by_their_slowest_member() {
     assert_eq!(waved.trigger, Trigger::Refresh, "max(6, 6) ms fit 10 ms");
 }
 
-// ── Calibration ───────────────────────────────────────────────────
+// ── The cost book ─────────────────────────────────────────────────
 
-/// **Measured costs calibrate the offers.** `renderer` quotes its running
-/// floor at 2 ms but measured 6 ms: every quoted row is scaled ×3, so its
-/// floor costs 6 ms. With `physics`' 2 ms floor that is 8 ms, over the 7 ms
+/// **The cost book corrects the offers.** `renderer` quotes its floor at
+/// 2 ms, and its runs of it took three times that: its floor is planned at
+/// 6 ms at least. With `physics`' 2 ms floor that is 8 ms, over the 7 ms
 /// frame: the round is `Safety`, where the quotes alone (2 + 2 ms) fit.
 #[test]
-fn measured_costs_calibrate_the_offers() {
-    let round = |measured: HashMap<AgentId, f64>| {
+fn the_cost_book_corrects_the_offers() {
+    let round = |taught: Option<f64>| {
         let agents = [
             shared(Bidder::single("renderer", 2_000)).1,
             shared(Bidder::single("physics", 2_000)).1,
         ];
-        arbitrator().allocate(
+        let mut arbitrator = arbitrator();
+        if let Some(factor) = taught {
+            teach(&mut arbitrator, "renderer", LowPower, 2_000, factor);
+        }
+        arbitrator.allocate(
             &playing(),
             &frame_of(7.0),
             Trigger::Refresh,
             &agents,
-            &measured,
             &nothing(),
         )
     };
-    assert_eq!(
-        round(nothing()).trigger,
-        Trigger::Refresh,
-        "2 + 2 ms fit 7 ms"
-    );
-    let calibrated = round([(AgentId::new("renderer"), 6.0)].into());
-    assert_eq!(calibrated.trigger, Trigger::Safety, "6 + 2 ms exceed 7 ms");
-}
-
-/// **The calibration factor is clamped to ×4.** A pathological 200 ms
-/// against a 2 ms quote is ×100 unclamped (a 200 ms floor); clamped, the
-/// floor is 8 ms, and 8 + 2 ms fit 12 ms. The envelope holds the calibrated
-/// floor.
-#[test]
-fn the_calibration_factor_is_clamped() {
-    let agents = [
-        shared(Bidder::single("renderer", 2_000)).1,
-        shared(Bidder::single("physics", 2_000)).1,
-    ];
-    let allocation = arbitrator().allocate(
-        &playing(),
-        &frame_of(12.0),
-        Trigger::Refresh,
-        &agents,
-        &[(AgentId::new("renderer"), 200.0)].into(),
-        &nothing(),
-    );
-    assert_eq!(allocation.trigger, Trigger::Refresh, "{allocation:?}");
-    assert!(lent_to(&allocation, "renderer").time.cpu >= ms(8));
+    assert_eq!(round(None).trigger, Trigger::Refresh, "2 + 2 ms fit 7 ms");
+    let corrected = round(Some(3.0));
+    assert_eq!(corrected.trigger, Trigger::Safety, "6 + 2 ms exceed 7 ms");
 }
 
 /// **A round keeps the offers as the agents answered them, for its epoch
-/// only.** `renderer` quotes its running `LowPower` at 2 ms and was measured
-/// at 6 ms: the round decides on rows scaled ×3, but the offer it keeps for
-/// the journal holds the 2 ms quoted, for the round's epoch. The next round,
+/// only.** `renderer` quotes its running `LowPower` at 2 ms and its runs of
+/// it took 6 ms: the round decides on that row corrected ×3, but the offer it
+/// keeps for the journal holds the 2 ms quoted, for the round's epoch. The next round,
 /// with no agent, keeps no offer of the last one.
 #[test]
 fn a_round_keeps_the_offers_as_answered_for_its_epoch() {
     let mut arbitrator = arbitrator();
+    teach(&mut arbitrator, "renderer", LowPower, 2_000, 3.0);
     let agents = [shared(three_rows("renderer")).1];
     let allocation = arbitrator.allocate(
         &playing(),
         &frame_of(40.0),
         Trigger::Refresh,
         &agents,
-        &[(AgentId::new("renderer"), 6.0)].into(),
         &nothing(),
     );
 
@@ -291,7 +261,7 @@ fn a_round_keeps_the_offers_as_answered_for_its_epoch() {
     let floor = (offers[0].rows.iter())
         .find(|row| row.id == LowPower)
         .expect("the floor is offered");
-    assert_eq!(floor.cost.time.cpu, ms(2), "as quoted, not calibrated");
+    assert_eq!(floor.cost.time.cpu, ms(2), "as quoted, not corrected");
 
     allocate(&mut arbitrator, &playing(), 40.0, Trigger::Refresh, &[]);
     assert!(
@@ -410,7 +380,6 @@ fn a_cap_hint_bounds_the_envelope() {
             &frame_of(20.0),
             Trigger::Refresh,
             &agents,
-            &nothing(),
             &hints,
         );
         lend(&allocation, &agents);
@@ -431,6 +400,43 @@ fn a_cap_hint_bounds_the_envelope() {
     }
 }
 
+/// **A `Cap` hint bounds the envelope of a pinned row too.** The developer
+/// pins `renderer` to `HighPerformance` (14 ms) and caps it at 5 ms: the row
+/// pinned runs whatever is lent, but the envelope lent never passes the cap
+/// above the floor's 2 ms — it is not raised to the pinned row's quote.
+#[test]
+fn a_cap_hint_bounds_the_envelope_of_a_pinned_row() {
+    let (_, agent) = shared(three_rows("renderer"));
+    let hints: HashMap<AgentId, AgentHints> = [(
+        AgentId::new("renderer"),
+        AgentHints {
+            cap_ms: Some(5.0),
+            priority: None,
+        },
+    )]
+    .into();
+    let mut arbitrator = arbitrator();
+    arbitrator.set_adaptation_mode(
+        AgentId::new("renderer"),
+        AdaptationMode::Manual(HighPerformance),
+    );
+
+    let allocation = arbitrator.allocate(
+        &playing(),
+        &frame_of(20.0),
+        Trigger::Refresh,
+        &[agent],
+        &hints,
+    );
+
+    assert_eq!(
+        allocation.pins,
+        vec![(AgentId::new("renderer"), HighPerformance)]
+    );
+    let lent = lent_to(&allocation, "renderer");
+    assert!(busiest(&lent) <= ms(5) + us(1), "the 5 ms cap: {lent:?}");
+}
+
 /// **A hint reaches only its agent.** A 1 ms cap on `audio` leaves
 /// `renderer`'s envelope as it is without any hint.
 #[test]
@@ -442,7 +448,6 @@ fn a_cap_on_another_agent_changes_nothing() {
             &frame_of(20.0),
             Trigger::Refresh,
             &[agent],
-            &nothing(),
             hints,
         )
     };
@@ -559,14 +564,8 @@ fn the_emergency_gives_every_agent_its_floor() {
     spiral.death_spiral_detected = true;
 
     let agents = [first, second];
-    let allocation = arbitrator().allocate(
-        &playing(),
-        &spiral,
-        Trigger::Pressure,
-        &agents,
-        &nothing(),
-        &nothing(),
-    );
+    let allocation =
+        arbitrator().allocate(&playing(), &spiral, Trigger::Pressure, &agents, &nothing());
     lend(&allocation, &agents);
 
     assert_eq!(allocation.trigger, Trigger::Safety);
@@ -736,6 +735,50 @@ fn while_busy<A: Send + 'static, R>(agent: &Arc<Mutex<A>>, round: impl FnOnce() 
     result
 }
 
+/// **The envelope a busy agent keeps is planned at the time it runs.** Every
+/// run of `ash`'s one row took twice its 6 ms quote, so the first round of a
+/// 16 ms frame plans it at 12 ms and lends it about 6.7 ms in its quoted
+/// units; `elm`'s floor (2 ms) and upgrade (6 ms) run as quoted, and the
+/// upgrade does not fit beside `ash`. Busy through the second round, `ash`
+/// keeps that envelope and runs on it — about 13 ms of the frame — so `elm`
+/// is not lent its upgrade: planned at its quoted 6.7 ms, `ash` would leave
+/// room for it, and the frame would run about 20 ms.
+#[test]
+fn the_envelope_a_busy_agent_keeps_is_planned_at_the_time_it_runs() {
+    let (ash, first) = shared(Bidder::single("ash", 6_000));
+    let elm_rows = vec![row(LowPower, 2_000, 0.4), row(HighPerformance, 6_000, 1.0)];
+    let (_elm, second) = shared(Bidder::new("elm", elm_rows.clone(), LowPower));
+    let agents = [first, second];
+    let mut arbitrator = GornaArbitrator::new(Duration::from_millis(5));
+    teach(&mut arbitrator, "ash", LowPower, 6_000, 2.0);
+    teach(&mut arbitrator, "elm", LowPower, 2_000, 1.0);
+    teach(&mut arbitrator, "elm", HighPerformance, 6_000, 1.0);
+
+    let before = allocate(&mut arbitrator, &playing(), 16.0, Trigger::Initial, &agents);
+    assert!(
+        !fits(&elm_rows[1].cost, &lent_to(&before, "elm")),
+        "with ash at 12 ms, elm's upgrade does not fit 16 ms: {before:?}"
+    );
+    let held = lent_to(&before, "ash");
+
+    let during = while_busy(&ash, || {
+        allocate(
+            &mut arbitrator,
+            &playing(),
+            16.0,
+            Trigger::FrameGovernor,
+            &agents,
+        )
+    });
+
+    assert_eq!(lent_to(&during, "ash"), held, "{during:?}");
+    assert!(
+        !fits(&elm_rows[1].cost, &lent_to(&during, "elm")),
+        "ash still runs about {:?} of the frame: elm's upgrade does not fit beside it: {during:?}",
+        held.time.cpu * 2
+    );
+}
+
 /// **An agent busy through a round keeps its memory too.** The VRAM is
 /// known (512 MiB) and `ash` holds 10 MiB of it; busy through the second
 /// round, it keeps the whole envelope it held, graphics memory included, and
@@ -773,6 +816,50 @@ fn an_agent_busy_through_a_round_keeps_its_memory() {
     assert!(
         lent_to(&during, "birch").memory.gpu + held.memory.gpu <= 512 * MIB,
         "{during:?}"
+    );
+}
+
+/// **A late agent's envelope lent while the memory was not known is held to
+/// the memory known now.** `zinc`'s first envelope was lent while the
+/// graphics memory was not known: it holds `u64::MAX` there. In the second
+/// round the context knows 100 MiB and `zinc` answers late: it keeps its
+/// time, but its graphics memory is the share computed now, within the
+/// 100 MiB, and with `ash`'s within them too.
+#[test]
+fn a_late_agent_lent_while_the_memory_was_not_known_is_held_to_the_memory_known_now() {
+    let (_ash, first) = shared(Bidder::new(
+        "ash",
+        vec![row_holding(LowPower, 2_000, 10 * MIB, 0.4)],
+        LowPower,
+    ));
+    let (zinc, second) = shared(Bidder::new(
+        "zinc",
+        vec![row_holding(LowPower, 2_000, 10 * MIB, 0.4)],
+        LowPower,
+    ));
+    let agents = [first, second];
+    let mut arbitrator = arbitrator();
+
+    let before = allocate(&mut arbitrator, &playing(), 10.0, Trigger::Initial, &agents);
+    let held = lent_to(&before, "zinc");
+    assert_eq!(held.memory.gpu, u64::MAX, "not known: {before:?}");
+    lock(&zinc).late = true;
+    let mut known = playing();
+    known.hardware.available_vram = Some(100 * MIB);
+    let after = allocate(
+        &mut arbitrator,
+        &known,
+        10.0,
+        Trigger::FrameGovernor,
+        &agents,
+    );
+
+    assert_eq!(after.late, vec![AgentId::new("zinc")]);
+    let lent = lent_to(&after, "zinc");
+    assert_eq!(lent.time, held.time, "its time kept: {after:?}");
+    assert!(
+        (lent.memory.gpu).saturating_add(lent_to(&after, "ash").memory.gpu) <= 100 * MIB,
+        "the memory known now: {after:?}"
     );
 }
 

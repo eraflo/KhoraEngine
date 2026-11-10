@@ -37,13 +37,21 @@ pub enum Arbiters {
     /// without planning beyond the frame.
     GreedyExact,
     /// The Q-RAM pass then the exact search, on the planned problem: the
-    /// switch charges, the margin and the growth. The engine's default.
+    /// switch charges, the margin and the growth, each row's host time
+    /// corrected by the cost book. The engine's default.
     Planned,
+    /// The planned set on the agents' raw quotes: no cost book.
+    PlannedOnQuotes,
 }
 
 impl Arbiters {
     /// Every proposer set compared.
-    pub const ALL: [Arbiters; 3] = [Arbiters::Greedy, Arbiters::GreedyExact, Arbiters::Planned];
+    pub const ALL: [Arbiters; 4] = [
+        Arbiters::Greedy,
+        Arbiters::GreedyExact,
+        Arbiters::Planned,
+        Arbiters::PlannedOnQuotes,
+    ];
 
     /// The set's name, as a table prints it.
     pub fn name(self) -> &'static str {
@@ -51,6 +59,7 @@ impl Arbiters {
             Arbiters::Greedy => "greedy",
             Arbiters::GreedyExact => "greedy+exact",
             Arbiters::Planned => "planned",
+            Arbiters::PlannedOnQuotes => "planned on quotes",
         }
     }
 
@@ -59,6 +68,7 @@ impl Arbiters {
         match self {
             Arbiters::Greedy => Arbiter::with(vec![Box::new(Greedy)]),
             Arbiters::GreedyExact | Arbiters::Planned => Arbiter::default(),
+            Arbiters::PlannedOnQuotes => Arbiter::default(),
         }
     }
 }

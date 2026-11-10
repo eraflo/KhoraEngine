@@ -254,10 +254,11 @@ pub struct Report {
     /// Whether the agent could not progress: a lane that stalled, a script
     /// that faulted.
     pub stalled: bool,
-    /// How much work the run did, in the agent's own unit (draws, bodies,
-    /// instructions): the `n` its cost model is read at. `None` when the agent
-    /// does not count it; the scheduler then fills in the world's entity
-    /// count before publishing the report.
+    /// How much work the run did, as its lane priced it: the host time, in
+    /// µs, its own level quoted on the run's inputs. The DCC's cost book
+    /// learns each row's measured time against it, and its cost model is
+    /// read at it. `None` when the run priced nothing: nothing is learnt
+    /// from it.
     pub workload: Option<f64>,
     /// How long preparing the layer that ran took, on the first run after it
     /// was swapped in at its family's place; `None` on every other run. What

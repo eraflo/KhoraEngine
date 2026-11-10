@@ -96,7 +96,6 @@ fn a_stalled_agent_is_logged_from_its_report() {
         Trigger::Refresh,
         &agents,
         &nothing(),
-        &nothing(),
     );
 
     assert_eq!(

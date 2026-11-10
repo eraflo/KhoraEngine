@@ -269,7 +269,7 @@ fn an_envelope_held_to_its_floor_leaves_no_lever() {
 /// **An envelope held to the plan still fits the planned row.** `oak` runs
 /// its floor (1 ms on the host, 1 ms on the graphics processor, 0.5); its
 /// upgrade (0.54) costs 2 ms on the graphics processor and half a
-/// microsecond more on the host — a calibrated quote is not whole
+/// microsecond more on the host — a corrected quote is not whole
 /// microseconds. Held off it by the charge, the envelope must be cut where
 /// the upgrade costs clearly more, never below the floor it plans: an
 /// envelope its planned row does not fit runs the agent over budget.
@@ -306,36 +306,35 @@ fn an_envelope_held_to_the_plan_still_fits_the_planned_row() {
 /// agent runs the best row whose own quote fits its envelope. `oak`
 /// (Important) quotes 1 ms at 0.5 (running) and 2 ms at 0.54; the planner's
 /// charge (0.75 × 255 ms / 5 s ≈ 0.038) is above the gain (0.75 × 0.04 =
-/// 0.03), so the plan keeps the 1 ms row. Measured at 1.5 ms, its rows are
-/// calibrated ×1.5: the envelope lent must still not fit the 2 ms the agent
-/// quotes for its upgrade, or it switches anyway.
+/// 0.03), so the plan keeps the 1 ms row. Its runs of that row took 1.5 ms,
+/// so the cost book corrects its rows ×1.5: the envelope lent must still not
+/// fit the 2 ms the agent quotes for its upgrade, or it switches anyway.
 #[test]
 fn an_envelope_is_held_to_the_plan_at_the_costs_the_agent_quoted() {
     let upgrade = row(HighPerformance, 2_000, 0.54);
-    for measured in [None, Some(1.5)] {
+    for taught in [None, Some(1.5)] {
         let (_, agent) = shared(Bidder::new(
             "oak",
             vec![row(LowPower, 1_000, 0.5), upgrade],
             LowPower,
         ));
-        let measured: HashMap<AgentId, f64> = measured
-            .map(|ms| (AgentId::new("oak"), ms))
-            .into_iter()
-            .collect();
+        let mut arbitrator = arbitrator();
+        if let Some(factor) = taught {
+            teach(&mut arbitrator, "oak", LowPower, 1_000, factor);
+        }
 
-        let allocation = arbitrator().allocate(
+        let allocation = arbitrator.allocate(
             &playing(),
             &frame_of(10.0),
             Trigger::Refresh,
             &[agent],
-            &measured,
             &nothing(),
         );
 
         let lent = lent_to(&allocation, "oak");
         assert!(
             !fits(&upgrade.cost, &lent),
-            "measured {measured:?}: the envelope lent ({:?}) fits the 2 ms the \
+            "corrected by {taught:?}: the envelope lent ({:?}) fits the 2 ms the \
              agent quotes for its upgrade, so it runs it",
             lent.time.cpu
         );

@@ -14,12 +14,14 @@
 
 //! Types and traits for the Goal-Oriented Resource Negotiation & Allocation (GORNA) protocol.
 
+mod correction;
 mod decision_trace;
 mod planning;
 pub mod protocol;
 #[cfg(test)]
 mod tests;
 
+pub use correction::Correction;
 pub use decision_trace::{DecisionTrace, EpochRecord, FrameSummary};
 pub use planning::Planning;
 

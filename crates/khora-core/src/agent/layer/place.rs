@@ -210,9 +210,10 @@ impl Place {
         let CheckedOut { mut held, terms } = out;
         self.out = None;
         let row = held.layer.row();
+        let level = held.layer.level();
         let switch = held.switch.take();
         self.installed = Some(held);
-        self.report(row, &terms, switch, run)
+        self.report(row, level, &terms, switch, run)
     }
 
     /// Whether the installed layer is checked out for a run off the frame.
@@ -492,9 +493,10 @@ impl Place {
         let held = self.installed.as_mut()?;
         let run = held.layer.run(&self.terms, context);
         let row = held.layer.row();
+        let level = held.layer.level();
         let switch = held.switch.take();
         let terms = self.terms.clone();
-        Some(self.report(row, &terms, switch, run))
+        Some(self.report(row, level, &terms, switch, run))
     }
 
     /// Reports a run of the installed layer that did not finish — it
@@ -510,7 +512,7 @@ impl Place {
             message: why,
             ..LayerRun::default()
         };
-        Some(self.report(row, &terms, switch, run))
+        Some(self.report(row, None, &terms, switch, run))
     }
 
     /// Keeps the wake `run` raised and what it gave back, and reports it on
@@ -518,6 +520,7 @@ impl Place {
     fn report(
         &mut self,
         row: StrategyId,
+        level: Option<usize>,
         terms: &Terms,
         switch: Option<Duration>,
         run: LayerRun,
@@ -541,7 +544,12 @@ impl Place {
             health: on_time(terms.budget.unwrap_or_default(), &run.measured).min(done),
             over_budget: terms.over_budget,
             stalled: run.stalled,
-            workload: None,
+            // The work the run did, as its lane priced it: the host time its
+            // own level quoted on its inputs, in µs.
+            workload: level
+                .and_then(|level| run.costs.get(level))
+                .map(|cost| cost.time.cpu.as_secs_f64() * 1_000_000.0)
+                .filter(|us| *us > 0.0),
             switch,
             message: (!run.message.is_empty()).then_some(run.message),
         };

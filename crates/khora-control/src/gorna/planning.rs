@@ -280,6 +280,9 @@ impl Planner {
             margin: margin(&frames, self.config.risk),
             growth: Vec::new(),
             switch: Vec::new(),
+            // A row is planned this many spreads above its correction: the
+            // same risk the margin keeps.
+            caution: z_of(self.config.risk),
         };
         for offer in offers {
             let agent = offer.agent;

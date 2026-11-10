@@ -23,7 +23,8 @@ use khora_core::agent::AgentImportance;
 use khora_core::lane::cost::PerLink;
 
 use super::Arbiters;
-use crate::gorna::{calibrate, hold_to_quotes, Bid, Round};
+use crate::gorna::cost_book::{correct_bid, lend_in_quotes};
+use crate::gorna::{Bid, Round};
 
 /// `trace` decided again through `arbiters`: each epoch's round rebuilt from
 /// what it read — the offers calibrated as recorded, each agent's
@@ -55,7 +56,21 @@ pub fn replay(trace: &DecisionTrace, arbiters: Arbiters) -> Replay {
         } else {
             Some(record.in_force.as_slice())
         };
-        let bids = bids(record, held);
+        let mut bids = bids(record, held);
+        let as_held: Vec<(AgentId, Envelope)> = (bids.iter())
+            .filter_map(|bid| bid.kept.map(|kept| (bid.offer.agent, kept)))
+            .collect();
+        // The rows as the round costed them: at the corrections it recorded,
+        // the planned set with the caution it planned with; on their quotes
+        // for the planned set that reads no book.
+        let (corrections, caution) = match arbiters {
+            Arbiters::PlannedOnQuotes => (&[][..], 0.0),
+            Arbiters::Planned => (record.corrections.as_slice(), record.planning.caution),
+            Arbiters::Greedy | Arbiters::GreedyExact => (record.corrections.as_slice(), 0.0),
+        };
+        for bid in &mut bids {
+            correct_bid(bid, corrections, caution);
+        }
         let round = Round {
             epoch: record.allocation.epoch,
             trigger: opened_by(record),
@@ -67,21 +82,24 @@ pub fn replay(trace: &DecisionTrace, arbiters: Arbiters) -> Replay {
             bids: &bids,
             // The planned arbiter plans as the round did; the others decide
             // the frame alone.
-            planning: if arbiters == Arbiters::Planned {
-                record.planning.clone()
-            } else {
-                Planning::default()
+            planning: match arbiters {
+                Arbiters::Planned | Arbiters::PlannedOnQuotes => record.planning.clone(),
+                Arbiters::Greedy | Arbiters::GreedyExact => Planning::default(),
             },
         };
         let started = Instant::now();
         let mut decision = arbiter.decide(&round);
-        // As the DCC lent it: held to the plan at the costs the agents quoted.
-        hold_to_quotes(
+        // As the DCC lent it: in the agents' quoted units, held to the plan
+        // at their quotes.
+        lend_in_quotes(
             &mut decision.allocation,
             &record.offers,
             &bids,
             &decision.rows,
             &decision.kept,
+            &as_held,
+            corrections,
+            caution,
         );
         let time = started.elapsed();
         if decision.allocation == record.allocation {
@@ -149,10 +167,8 @@ fn bids(record: &EpochRecord, held: Option<&[(AgentId, Envelope)]>) -> Vec<Bid> 
     let mut bids: Vec<Bid> = (record.offers.iter())
         .map(|offer| {
             let agent = offer.agent;
-            let mut offer = offer.clone();
-            calibrate(&mut offer, calibration(record, agent));
             Bid {
-                offer,
+                offer: offer.clone(),
                 importance: importance(agent),
                 mode: mode(agent),
                 hints: hints(agent),
@@ -172,7 +188,11 @@ fn bids(record: &EpochRecord, held: Option<&[(AgentId, Envelope)]>) -> Vec<Bid> 
                     epoch: record.allocation.epoch,
                     rows: Vec::new(),
                     floor: StrategyId::LowPower,
-                    current: StrategyId::LowPower,
+                    // The row it last ran: what the round corrected the
+                    // envelope it keeps by.
+                    current: (record.corrections.iter())
+                        .find(|(named, _, _)| *named == agent)
+                        .map_or(StrategyId::LowPower, |(_, row, _)| *row),
                     health: 1.0,
                 },
                 importance: importance(agent),
@@ -184,13 +204,6 @@ fn bids(record: &EpochRecord, held: Option<&[(AgentId, Envelope)]>) -> Vec<Bid> 
         }
     }
     bids
-}
-
-/// The measured time `agent`'s quotes were calibrated by at `record`.
-fn calibration(record: &EpochRecord, agent: AgentId) -> Option<f64> {
-    (record.calibration.iter())
-        .find(|(id, _)| *id == agent)
-        .map(|(_, ms)| *ms)
 }
 
 /// What `epochs`, decided again from `trace`, measure.
@@ -248,11 +261,12 @@ fn row_changes_per_minute(trace: &DecisionTrace, epochs: &[ReplayedEpoch]) -> Op
     Some(changes as f64 / (span.as_secs_f64() / 60.0))
 }
 
-/// How far the quotes were from what ran: for each report an epoch read of
-/// a run under the previous epoch, the quote of the row it ran in that
-/// epoch's offer, calibrated as that epoch was, against the host time
-/// measured. A report read again, of an older run, is not counted twice.
-/// `None` without such a pair.
+/// How far the corrected quotes were from what ran: for each report an
+/// epoch read of a run under the previous epoch, the host time the run
+/// quoted (its workload, in µs) times the previous epoch's correction of its
+/// row (1 when it recorded none), against the host time measured. A report
+/// read again, of an older run, is not counted twice; a run that quoted
+/// nothing is not counted. `None` without such a pair.
 fn prediction_error(trace: &DecisionTrace) -> Option<f64> {
     let mut errors = Vec::new();
     for pair in trace.epochs.windows(2) {
@@ -262,19 +276,17 @@ fn prediction_error(trace: &DecisionTrace) -> Option<f64> {
                 continue;
             }
             let measured = report.measured.cpu.as_secs_f64();
+            let Some(quote_us) = report.workload.filter(|us| us.is_finite() && *us > 0.0) else {
+                continue;
+            };
             if measured <= 0.0 {
                 continue;
             }
-            let Some(offer) = (quoted.offers.iter()).find(|offer| offer.agent == report.agent)
-            else {
-                continue;
-            };
-            let mut offer = offer.clone();
-            calibrate(&mut offer, calibration(quoted, report.agent));
-            if let Some(row) = offer.rows.iter().find(|row| row.id == report.row) {
-                let quote = row.cost.time.cpu.as_secs_f64();
-                errors.push((quote - measured).abs() / measured);
-            }
+            let factor = (quoted.corrections.iter())
+                .find(|(agent, row, _)| *agent == report.agent && *row == report.row)
+                .map_or(1.0, |(_, _, correction)| correction.factor);
+            let predicted = factor * quote_us / 1_000_000.0;
+            errors.push((predicted - measured).abs() / measured);
         }
     }
     (!errors.is_empty()).then(|| errors.iter().sum::<f64>() / errors.len() as f64)

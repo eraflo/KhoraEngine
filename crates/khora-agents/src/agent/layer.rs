@@ -161,6 +161,10 @@ impl Layer for LaneLayer {
         self.row
     }
 
+    fn level(&self) -> Option<usize> {
+        Some(self.level)
+    }
+
     fn staged(&mut self) -> Staging {
         std::mem::take(&mut self.staging)
     }

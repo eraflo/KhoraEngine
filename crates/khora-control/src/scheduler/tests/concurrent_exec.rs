@@ -103,7 +103,6 @@ fn a_panicking_agent_is_reported_as_a_failed_completion() {
 
     scheduler.execute_agents_in_phase(
         ExecutionPhase::OUTPUT,
-        0.0,
         &runtime,
         &BTreeSet::new(),
         &completion,

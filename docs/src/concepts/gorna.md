@@ -208,14 +208,20 @@ this is what drives *recovery*: once frames have room, the multiplier climbs, th
 budgets are re-issued, and agents upgrade again instead of staying pinned at a degraded
 strategy.
 
-**Empirical cost calibration** closes the other gap. Quotes drift from reality per
-machine and per scene. The DCC fits each agent's reports — `(workload, time)` — to an
-empirical cost model (a constant factor times a complexity class `f(n)`, the shape a
-query optimiser uses), and the round rescales every row of an offer so that the row
-the agent runs costs what was measured. The rescale is clamped (to `[0.25, 4.0]`) so
-one hitch cannot swing it by orders of magnitude, and the ordering of a menu is kept:
-only its scale moves. An agent with no measurement yet keeps its quotes. This is the
-"model proposes, measurement disposes" loop.
+**The cost book** closes the other gap. Quotes drift from reality per machine and per
+scene: a lane's `cost()` formula was written, or tuned, somewhere else. Each run reports
+the host time its own level quoted on the run's inputs (its `workload`, in µs) beside
+the host time it took. For each agent and each of its rows, the DCC's cost book learns
+the correction from one to the other — measured ≈ *k* × quoted — by recursive least
+squares, each older run forgotten a little (λ = 0.95), with the spread *σ* of the runs
+around it. A round plans each row's host time at its quote × *k* (GPU and other devices
+stay as quoted); a row above the floor at *k* + *z*<sub>ε</sub> *σ*, so a row whose
+runs vary is planned with caution. A row never run takes the mean correction of its
+agent's learned rows; an agent of which nothing is learned plans at its quotes. The
+round decides in measured time, then lends each envelope in the agent's own quoted
+units — its host time over the planned row's correction — so the agent, choosing by its
+own quotes, runs the row the DCC planned. This is the "model proposes, measurement
+disposes" loop, row by row.
 
 ## The heuristics
 

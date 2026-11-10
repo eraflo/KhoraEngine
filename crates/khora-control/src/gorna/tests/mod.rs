@@ -17,14 +17,17 @@
 //! and says why it decided (`arbiter.rs`), the arbitrator asks for offers,
 //! decides and lends each agent its envelope (`allocate.rs`,
 //! `importance.rs`), a round planned beyond its frame — switch charges,
-//! margin, growth — and the planner that learns them (`planning.rs`), and it
-//! counts the agents whose report says they are stalled (`stalls.rs`).
+//! margin, growth — and the planner that learns them (`planning.rs`), the
+//! cost book that corrects each row's quoted host time and what a round makes
+//! of it (`cost_book.rs`), and it counts the agents whose report says they are
+//! stalled (`stalls.rs`).
 //!
 //! The fake agent, [`Bidder`], speaks the protocol (`offer`, `apply`,
 //! `report`).
 
 mod allocate;
 mod arbiter;
+mod cost_book;
 mod decide;
 mod exact;
 mod importance;
@@ -171,9 +174,49 @@ fn arbitrator() -> GornaArbitrator {
     GornaArbitrator::new(Duration::from_millis(100))
 }
 
-/// No measurement and no hint.
+/// No hint.
 fn nothing<T>() -> HashMap<AgentId, T> {
     HashMap::new()
+}
+
+/// How many runs [`teach`] reports.
+const TAUGHT_RUNS: usize = 60;
+
+/// A report of `name`'s run of `row`: its workload the host time the row
+/// quoted, `quoted_us` µs; its host time measured `factor` times that.
+fn run_quoting(name: &'static str, row: StrategyId, quoted_us: u64, factor: f64) -> Report {
+    Report {
+        agent: AgentId::new(name),
+        epoch: Epoch(0),
+        row,
+        measured: PerDevice {
+            cpu: Duration::from_secs_f64(quoted_us as f64 * factor / 1e6),
+            ..PerDevice::default()
+        },
+        done: 1.0,
+        health: 1.0,
+        over_budget: false,
+        stalled: false,
+        workload: Some(quoted_us as f64),
+        switch: None,
+        message: None,
+    }
+}
+
+/// Teaches `arbitrator`'s cost book, through [`TAUGHT_RUNS`] reports as the
+/// DCC feeds them, that `name`'s `row`, quoting `quoted_us` µs on the host,
+/// runs `factor` times its quote.
+fn teach(
+    arbitrator: &mut GornaArbitrator,
+    name: &'static str,
+    row: StrategyId,
+    quoted_us: u64,
+    factor: f64,
+) {
+    let report = run_quoting(name, row, quoted_us, factor);
+    for _ in 0..TAUGHT_RUNS {
+        arbitrator.cost_book_mut().observe_report(&report);
+    }
 }
 
 /// Lends each of `agents` what `allocation` names for it — its envelope, pin

@@ -36,6 +36,9 @@ pub struct Planning {
     /// The rows a switch to costs a preparation, and its time; a row not
     /// named switches free.
     pub switch: Vec<(AgentId, StrategyId, Duration)>,
+    /// How many spreads a row's correction is planned above its factor (z);
+    /// 0 plans each row at its factor.
+    pub caution: f64,
 }
 
 impl Planning {

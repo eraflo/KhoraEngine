@@ -166,23 +166,26 @@ fn reports_reach_the_dcc_with_row_and_measured_time() {
     assert!(report.over_budget);
 }
 
-/// **A report without a workload carries the world's entity count**, the
-/// coarse workload the scheduler measures for every family: a layer's run
-/// counts none of its own.
+/// **A report without a workload publishes none.** A run's workload is the
+/// host time its row quoted, which only the run can say: a layer whose run
+/// priced nothing is published with no workload, however many entities the
+/// world holds — never the world's entity count in its place.
 #[test]
-fn a_report_without_a_workload_carries_the_worlds_entity_count() {
+fn a_report_without_a_workload_publishes_none() {
     let (mut scheduler, rx) = reporting(vec![Teller::new("teller")]);
     let mut world = World::new();
     for _ in 0..3 {
         world.spawn(());
     }
-    let entities = world.entity_count() as f64;
 
     scheduler.run_frame(&mut world, Arc::new(Runtime::new()));
 
     let published = reports(&rx);
     assert_eq!(published.len(), 1, "{published:?}");
-    assert_eq!(published[0].workload, Some(entities));
+    assert_eq!(
+        published[0].workload, None,
+        "a run that priced nothing: {published:?}"
+    );
 }
 
 /// **Every agent that runs reports once a run, on every execution path**:
@@ -215,4 +218,46 @@ fn every_agent_that_runs_reports_once_a_run_on_every_path() {
             assert_eq!(count, 2, "`{name}`, parallel {parallel}: {published:?}");
         }
     }
+}
+
+/// **A run that priced nothing teaches the cost book nothing.** The layer
+/// prices no level of its own, so its runs quote no host time, in a world
+/// of three entities that must not stand in for one.
+/// The DCC's cost book reads a report's workload as the host time its row
+/// quoted, in µs: fed ten such reports of 2 ms runs, it must leave the row
+/// as never run — not learn it at about 2 ms ÷ 3 µs, a factor near 700 that
+/// every row of the agent never run would then be planned at.
+#[test]
+fn a_run_that_priced_nothing_teaches_the_cost_book_nothing() {
+    use crate::gorna::cost_book::{CostBook, CostBookConfig};
+    use khora_core::agent::gorna::Correction;
+
+    let (mut scheduler, rx) =
+        reporting(vec![Teller::new("teller").taking(Duration::from_millis(2))]);
+    let mut world = World::new();
+    for _ in 0..3 {
+        world.spawn(());
+    }
+    let runtime = Arc::new(Runtime::new());
+    let mut book = CostBook::new(CostBookConfig::default());
+
+    let mut published = Vec::new();
+    for _ in 0..10 {
+        scheduler.run_frame(&mut world, Arc::clone(&runtime));
+        for report in reports(&rx) {
+            book.observe_report(&report);
+            published.push(report);
+        }
+    }
+
+    assert_eq!(published.len(), 10, "{published:?}");
+    assert_eq!(
+        book.correction(AgentId::new("teller"), StrategyId::Custom(7)),
+        Correction::default(),
+        "runs that quoted nothing, published with workloads {:?}",
+        published
+            .iter()
+            .map(|report| report.workload)
+            .collect::<Vec<_>>()
+    );
 }

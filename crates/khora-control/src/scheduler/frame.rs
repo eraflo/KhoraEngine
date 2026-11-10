@@ -61,7 +61,7 @@ impl ExecutionScheduler {
         // The runs that ended since come back first: a layer staged while its
         // family's run was out swaps in now that it is home.
         for (report, ms) in self.background.finish(runtime) {
-            self.publish_report(Some(report), ms, 0.0);
+            self.publish_report(Some(report), ms);
         }
         // And the layers prepared off the frame, in time for this frame
         // start's swap; a failed one wakes its agent at the event pass.
@@ -283,7 +283,6 @@ impl ExecutionScheduler {
                 for &phase in &phases {
                     self.execute_agents_in_phase(
                         phase,
-                        world.entity_count() as f64,
                         &runtime,
                         &inactive,
                         &completion_map,
@@ -315,7 +314,6 @@ impl ExecutionScheduler {
 
             self.execute_agents_in_phase(
                 phase,
-                world.entity_count() as f64,
                 &runtime,
                 &inactive,
                 &completion_map,

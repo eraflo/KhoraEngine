@@ -807,7 +807,7 @@ fn the_journal_records_each_epochs_inputs() {
         health: 1.0,
         over_budget: false,
         stalled: false,
-        workload: Some(10.0),
+        workload: Some(2_000.0),
         switch: None,
         message: None,
     };
@@ -956,13 +956,15 @@ fn host_frame(ms: u64) -> TelemetryEvent {
 }
 
 /// **A recorded epoch keeps what its round read.** Before the first epoch,
-/// the renderer (Critical) reported a 3 ms run, which calibrates its
-/// quotes; the streamer (Optional) runs at the background; 512 MiB of
-/// video memory are left; five frames ran — three of 25 ms, over the
-/// target, and two of 5 ms. The first epoch's record holds each agent's
-/// importance, the renderer's calibration, the memory limit, the streamer
-/// at the background, when it opened since recording started, and the five
-/// frames summed up.
+/// the renderer (Critical) reported thirty runs of its 1 ms floor, each
+/// taking 3 ms, which its cost book learns; the streamer (Optional) runs at
+/// the background and reported nothing; 512 MiB of video memory are left;
+/// five frames ran — three of 25 ms, over the target, and two of 5 ms. The
+/// first epoch's record holds each agent's importance, the correction of
+/// every row offered — the renderer's floor near ×3, the streamer's never
+/// run at its quote (factor 1, no spread) —, the memory limit, the streamer at the
+/// background, when it opened since recording started, and the five frames
+/// summed up.
 #[test]
 fn a_recorded_epoch_keeps_what_its_round_read() {
     use khora_core::agent::AgentImportance::{Critical, Optional};
@@ -986,23 +988,26 @@ fn a_recorded_epoch_keeps_what_its_round_read() {
         1.0,
     );
     let tx = dcc.event_sender();
-    tx.send(TelemetryEvent::AgentReport(Report {
-        agent: renderer,
-        epoch: Epoch(0),
-        row: StrategyId::LowPower,
-        measured: PerDevice {
-            cpu: Duration::from_millis(3),
-            ..PerDevice::default()
-        },
-        done: 1.0,
-        health: 1.0,
-        over_budget: false,
-        stalled: false,
-        workload: Some(10.0),
-        switch: None,
-        message: None,
-    }))
-    .expect("the DCC listens");
+    for _ in 0..30 {
+        tx.send(TelemetryEvent::AgentReport(Report {
+            agent: renderer,
+            epoch: Epoch(0),
+            row: StrategyId::LowPower,
+            measured: PerDevice {
+                cpu: Duration::from_millis(3),
+                ..PerDevice::default()
+            },
+            done: 1.0,
+            health: 1.0,
+            over_budget: false,
+            stalled: false,
+            // The host time its floor quoted, in µs.
+            workload: Some(1_000.0),
+            switch: None,
+            message: None,
+        }))
+        .expect("the DCC listens");
+    }
     for ms in [25, 25, 25, 5, 5] {
         tx.send(host_frame(ms)).expect("the DCC listens");
     }
@@ -1021,16 +1026,31 @@ fn a_recorded_epoch_keeps_what_its_round_read() {
         "each agent's importance, in the agents' order"
     );
     assert_eq!(
-        first.calibration.len(),
-        1,
-        "the renderer's quotes alone were calibrated: {:?}",
-        first.calibration
+        first.corrections.len(),
+        2,
+        "one correction per row offered: {:?}",
+        first.corrections
     );
-    let (calibrated, by_ms) = first.calibration[0];
-    assert_eq!(calibrated, renderer);
+    let correction_of = |agent: AgentId| {
+        (first.corrections.iter())
+            .find(|(named, row, _)| *named == agent && *row == StrategyId::LowPower)
+            .map(|(_, _, correction)| *correction)
+            .unwrap_or_else(|| panic!("{agent}'s floor in {:?}", first.corrections))
+    };
+    let learned = correction_of(renderer);
     assert!(
-        (by_ms - 3.0).abs() < 1e-9,
-        "by the 3 ms it was measured: {by_ms}"
+        (learned.factor - 3.0).abs() < 0.05,
+        "the renderer's floor quoted 1 ms and took 3 ms: {learned:?}"
+    );
+    let prior = DccConfig::default().cost_book.prior_spread;
+    assert!(
+        learned.spread < prior,
+        "thirty runs alike narrow the spread: {learned:?}"
+    );
+    assert_eq!(
+        correction_of(streamer),
+        khora_core::agent::gorna::Correction::default(),
+        "the streamer's floor was never run: planned at its quote"
     );
     assert_eq!(
         first.memory.gpu,

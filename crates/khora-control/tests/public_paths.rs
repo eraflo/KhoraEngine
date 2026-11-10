@@ -112,7 +112,12 @@ fn dcc_config_fields(c: &khora_control::dcc_service::DccConfig) {
         &c.frame_governor,
         &c.min_epoch_ticks,
         &c.overruns_in_a_row,
+        &c.cost_book,
     );
+}
+
+fn cost_book_config_fields(c: &khora_control::gorna::cost_book::CostBookConfig) {
+    let _ = (&c.forgetting, &c.prior_spread, &c.stale_half_life);
 }
 
 fn round_fields(r: &khora_control::gorna::Round<'_>) {
@@ -316,6 +321,24 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::gorna::GornaArbitrator::target;
     let _ = khora_control::gorna::GornaArbitrator::allocate;
     let _ = khora_control::gorna::GornaArbitrator::reissue;
+    let _ = khora_control::gorna::GornaArbitrator::cost_book_mut;
+    let _ = khora_control::gorna::GornaArbitrator::corrections;
+
+    // --- module `gorna::cost_book`
+    let _ = type_name::<khora_control::gorna::cost_book::CostBook>();
+    let _ = khora_control::gorna::cost_book::CostBook::new;
+    let _ = khora_control::gorna::cost_book::CostBook::config;
+    let _ = khora_control::gorna::cost_book::CostBook::observe;
+    let _ = khora_control::gorna::cost_book::CostBook::observe_report;
+    let _ = khora_control::gorna::cost_book::CostBook::correction;
+    let _ = khora_control::gorna::cost_book::CostBook::corrections;
+    let _ = type_name::<khora_control::gorna::cost_book::CostBookConfig>();
+    let _ = cost_book_config_fields as fn(&khora_control::gorna::cost_book::CostBookConfig);
+    is_clone::<khora_control::gorna::cost_book::CostBookConfig>();
+    is_copy::<khora_control::gorna::cost_book::CostBookConfig>();
+    is_debug::<khora_control::gorna::cost_book::CostBookConfig>();
+    is_default::<khora_control::gorna::cost_book::CostBookConfig>();
+    is_partial_eq::<khora_control::gorna::cost_book::CostBookConfig>();
     let _ = khora_control::gorna::decide;
     let _ = type_name::<khora_control::gorna::Round<'static>>();
     let _ = type_name::<khora_control::gorna::Bid>();

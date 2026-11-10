@@ -52,6 +52,13 @@ pub trait Layer: Send {
     /// The row the layer runs.
     fn row(&self) -> StrategyId;
 
+    /// The level of its lane the layer runs: the place in a run's
+    /// [`costs`](LayerRun::costs) of what the run itself quoted. `None` for a
+    /// layer whose runs price no level of their own.
+    fn level(&self) -> Option<usize> {
+        None
+    }
+
     /// What the layer's lane competes for: its declaration. The scheduler
     /// builds its waves from it and stamps it on the run's context.
     fn contention(&self) -> Contention;

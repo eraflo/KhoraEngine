@@ -26,7 +26,8 @@ use khora_core::agent::gorna::protocol::{
     Report, Trigger, Why,
 };
 use khora_core::agent::gorna::{
-    AdaptationMode, AgentId, DecisionTrace, EngineHint, EpochRecord, FrameSummary, Planning,
+    AdaptationMode, AgentId, Correction, DecisionTrace, EngineHint, EpochRecord, FrameSummary,
+    Planning,
 };
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase, ExecutionTiming, Place};
 use khora_core::lane::cost::{Cost, PerDevice};
@@ -76,7 +77,7 @@ fn offer(name: &'static str, epoch: u64, rows: Vec<OfferRow>, current: StrategyI
 
 /// A journal entry for epoch `epoch`, opened at `at`, sharing `target_us`
 /// among `offers` weighed by `importance`: no policy, hint, wave, memory
-/// limit, background agent nor calibration. Its allocation is a stand-in:
+/// limit, background agent nor correction. Its allocation is a stand-in:
 /// these tests read what the epoch is decided again into, not what it was.
 fn epoch(
     epoch: u64,
@@ -108,7 +109,7 @@ fn epoch(
             ..Why::default()
         },
         importance,
-        calibration: Vec::new(),
+        corrections: Vec::new(),
         memory: PerDevice::default(),
         background: Vec::new(),
         at,
@@ -324,9 +325,9 @@ fn replay_counts_row_changes_per_minute_from_the_epochs_times() {
 
 // ── What the journal says of itself ──────────────────────────────
 
-/// A report that `ash` ran `row` under epoch `epoch`, for `cpu_us` on the
-/// host.
-fn ran(epoch: u64, row: StrategyId, cpu_us: u64) -> Report {
+/// A report that `ash` ran `row` under epoch `epoch`, quoting `quoted_us` on
+/// the host (its workload) and taking `cpu_us` there.
+fn ran(epoch: u64, row: StrategyId, quoted_us: u64, cpu_us: u64) -> Report {
     Report {
         agent: AgentId::new("ash"),
         epoch: Epoch(epoch),
@@ -339,19 +340,35 @@ fn ran(epoch: u64, row: StrategyId, cpu_us: u64) -> Report {
         health: 1.0,
         over_budget: false,
         stalled: false,
-        workload: None,
+        workload: Some(quoted_us as f64),
         switch: None,
         message: None,
     }
 }
 
+/// `ash`'s rows both corrected by `factor`, with a spread of 0.1.
+fn ash_corrected(factor: f64) -> Vec<(AgentId, StrategyId, Correction)> {
+    let correction = Correction {
+        factor,
+        spread: 0.1,
+    };
+    vec![
+        (AgentId::new("ash"), LowPower, correction),
+        (AgentId::new("ash"), HighPerformance, correction),
+    ]
+}
+
 /// Three epochs of `ash`, which offers 1 ms or 4 ms:
-/// - epoch 1 quotes them as offered; epoch 2's report says `ash` ran 4 ms
-///   for 5 ms — off by a fifth;
-/// - epoch 2 runs the 4 ms row and is calibrated by 6 ms measured, so its
-///   quotes read 1.5 ms and 6 ms; epoch 3's report says `ash` ran the 1 ms
-///   row for 1 ms — off by a half;
+/// - epoch 1 corrects nothing; epoch 2's report says `ash` ran its 4 ms row
+///   under it while its load had grown, quoting 4.4 ms for a run of 5.5 ms
+///   — off by a fifth;
+/// - epoch 2 corrects both rows ×1.5; epoch 3's report says `ash` ran the
+///   1 ms row under it, quoting 0.9 ms — 1.35 ms corrected — for a run of
+///   1 ms: off by 0.35;
 /// - epoch 3 has no epoch after it.
+///
+/// What a run quoted is its own workload, not the offer the epoch read: the
+/// offers quote 4 ms and 1 ms.
 ///
 /// Their frames: 10 with 2 over, the worst 30 ms; 20 with none over, the
 /// worst 12 ms; 5 all over, the worst 40 ms.
@@ -378,8 +395,8 @@ fn quoted_journal() -> DecisionTrace {
         vec![offer("ash", 2, rows(), HighPerformance)],
         vec![(ash, Important)],
     );
-    second.calibration = vec![(ash, 6.0)];
-    second.reports = vec![ran(1, HighPerformance, 5_000)];
+    second.corrections = ash_corrected(1.5);
+    second.reports = vec![ran(1, HighPerformance, 4_400, 5_500)];
     second.frames = FrameSummary {
         count: 20,
         over_target: 0,
@@ -393,7 +410,7 @@ fn quoted_journal() -> DecisionTrace {
         vec![offer("ash", 3, rows(), LowPower)],
         vec![(ash, Important)],
     );
-    third.reports = vec![ran(2, LowPower, 1_000)];
+    third.reports = vec![ran(2, LowPower, 900, 1_000)];
     third.frames = FrameSummary {
         count: 5,
         over_target: 5,
@@ -406,10 +423,11 @@ fn quoted_journal() -> DecisionTrace {
 }
 
 /// **Replay reads the prediction error and the overruns from the journal.**
-/// The quotes were off by a fifth, then — once calibrated — by a half: a
-/// mean error of 0.35. The frames number 35, 7 of them over their target,
-/// the worst 40 ms. Neither depends on the proposer set; a journal with no
-/// report has no error to read.
+/// Each run is paired with the epoch it ran under: what it quoted, corrected
+/// as that epoch corrected its row, against its host time. Off by a fifth,
+/// then — corrected — by 0.35: a mean error of 0.275. The frames number 35,
+/// 7 of them over their target, the worst 40 ms. Neither depends on the
+/// proposer set; a journal with no report has no error to read.
 #[test]
 fn replay_reads_the_prediction_error_and_overruns_from_the_journal() {
     let trace = quoted_journal();
@@ -420,8 +438,8 @@ fn replay_reads_the_prediction_error_and_overruns_from_the_journal() {
             .prediction_error
             .unwrap_or_else(|| panic!("{arbiters:?}: two quotes meet their run"));
         assert!(
-            (error - 0.35).abs() < 1e-9,
-            "{arbiters:?}: (0.2 + 0.5) / 2: {error}"
+            (error - 0.275).abs() < 1e-9,
+            "{arbiters:?}: (0.2 + 0.35) / 2: {error}"
         );
         assert_eq!(metrics.frames, 35, "{arbiters:?}");
         assert_eq!(metrics.frames_over, 7, "{arbiters:?}");
@@ -553,7 +571,8 @@ fn feed_until(
 /// A journal the running DCC recorded, with every input a round reads:
 /// - `oak` (Critical) offers three rows, the best holding 300 MiB of video
 ///   memory where 256 MiB are left, and is capped at 8 ms; a report of a
-///   3 ms run calibrates its 2 ms floor;
+///   3 ms run of its 2 ms floor teaches the cost book that floor's
+///   correction;
 /// - `pine` (Optional) is `Stable`: it keeps the envelope it was lent;
 /// - `elm` (Important) runs at the background.
 ///
@@ -617,7 +636,8 @@ fn recorded_journal() -> DecisionTrace {
         health: 1.0,
         over_budget: false,
         stalled: false,
-        workload: Some(10.0),
+        // The host time its floor quoted, in µs.
+        workload: Some(2_000.0),
         switch: None,
         message: None,
     }))
@@ -635,7 +655,7 @@ fn recorded_journal() -> DecisionTrace {
 }
 
 /// **A journal replayed through its arbiter decides what it recorded.** The
-/// running DCC records epochs whose rounds read importance, a calibration,
+/// running DCC records epochs whose rounds read importance, a correction,
 /// a memory limit, an agent at the background, a `Stable` policy, a cap
 /// and a target the governor moved. Decided again from the journal alone
 /// by the engine's own proposer set, every epoch gives back the allocation
@@ -741,9 +761,9 @@ fn a_journal_begun_while_the_dcc_runs_decides_its_first_epoch_again() {
 /// **The prediction error pairs a run with the quote of the epoch it ran
 /// in.** A journal keeps each agent's latest report when a round opens, so
 /// an agent that ran once, under epoch 1, is reported at epoch 2 and again
-/// at epoch 3. Its run met epoch 1's quote exactly; epoch 2, calibrated by
-/// 3 ms, quoted the same row three times dearer, but `ash` never ran under
-/// it. The error is the one run against the one quote it ran under: none.
+/// at epoch 3. Its run met its quote exactly under epoch 1, which corrected
+/// nothing; epoch 2 corrected the same row ×3, but `ash` never ran under it.
+/// The error is the one run against the correction it ran under: none.
 #[test]
 fn the_prediction_error_pairs_a_run_with_the_quote_of_the_epoch_it_ran_in() {
     let rows = || vec![row(LowPower, 1_000, 0.4), row(HighPerformance, 4_000, 1.0)];
@@ -762,8 +782,8 @@ fn the_prediction_error_pairs_a_run_with_the_quote_of_the_epoch_it_ran_in() {
         vec![offer("ash", 2, rows(), LowPower)],
         vec![(ash, Important)],
     );
-    second.calibration = vec![(ash, 3.0)];
-    second.reports = vec![ran(1, LowPower, 1_000)];
+    second.corrections = ash_corrected(3.0);
+    second.reports = vec![ran(1, LowPower, 1_000, 1_000)];
     let mut third = epoch(
         3,
         Duration::from_secs(3),
@@ -772,7 +792,7 @@ fn the_prediction_error_pairs_a_run_with_the_quote_of_the_epoch_it_ran_in() {
         vec![(ash, Important)],
     );
     // No run since: the latest report is still the one of epoch 1.
-    third.reports = vec![ran(1, LowPower, 1_000)];
+    third.reports = vec![ran(1, LowPower, 1_000, 1_000)];
     let trace = DecisionTrace {
         epochs: vec![first, second, third],
     };
@@ -786,6 +806,83 @@ fn the_prediction_error_pairs_a_run_with_the_quote_of_the_epoch_it_ran_in() {
         error.abs() < 1e-9,
         "the run under epoch 1 met epoch 1's quote; it is counted once: {error}"
     );
+}
+
+/// One epoch of `ash`, which offers 1 ms at 0.4 or 3 ms at 1.0 for a 5 ms
+/// target, its rows corrected by `factor` with `spread`, its round planning
+/// `caution` spreads above each correction and nothing else.
+fn corrected_journal(factor: f64, spread: f64, caution: f64) -> DecisionTrace {
+    let ash = AgentId::new("ash");
+    let mut record = epoch(
+        1,
+        Duration::from_secs(1),
+        5_000,
+        vec![offer(
+            "ash",
+            1,
+            vec![row(LowPower, 1_000, 0.4), row(HighPerformance, 3_000, 1.0)],
+            LowPower,
+        )],
+        vec![(ash, Important)],
+    );
+    let correction = Correction { factor, spread };
+    record.corrections = vec![
+        (ash, LowPower, correction),
+        (ash, HighPerformance, correction),
+    ];
+    record.planning = Planning {
+        caution,
+        ..Planning::default()
+    };
+    DecisionTrace {
+        epochs: vec![record],
+    }
+}
+
+/// `ash`'s planned row when `trace` is decided again through `arbiters`.
+fn ash_planned(trace: &DecisionTrace, arbiters: Arbiters) -> StrategyId {
+    let replayed = replay(trace, arbiters);
+    rows_of(&replayed.epochs[0])[0].1
+}
+
+/// **A replay decides on the corrections its journal recorded.**
+/// - `ash`'s rows ran twice what they quote: its 3 ms upgrade is 6 ms, over
+///   the 5 ms target, for every set that reads the corrections — the Q-RAM
+///   pass, the exact search after it, the planned set — and fits for the
+///   planned set on raw quotes.
+/// - Corrected ×1.5 with a spread of 0.5, under a round that planned one
+///   spread of caution: the planned set plans the upgrade at 3 × 2 = 6 ms and
+///   keeps the floor; the Q-RAM pass and the exact search, planning no
+///   caution, plan it at 4.5 ms and take it.
+#[test]
+fn a_replay_decides_on_the_corrections_its_journal_recorded() {
+    let doubled = corrected_journal(2.0, 0.0, 0.0);
+    for arbiters in [Arbiters::Greedy, Arbiters::GreedyExact, Arbiters::Planned] {
+        assert_eq!(
+            ash_planned(&doubled, arbiters),
+            LowPower,
+            "{arbiters:?}: the upgrade corrected is 6 ms, over 5 ms"
+        );
+    }
+    assert_eq!(
+        ash_planned(&doubled, Arbiters::PlannedOnQuotes),
+        HighPerformance,
+        "on raw quotes, the 3 ms upgrade fits 5 ms"
+    );
+
+    let uncertain = corrected_journal(1.5, 0.5, 1.0);
+    assert_eq!(
+        ash_planned(&uncertain, Arbiters::Planned),
+        LowPower,
+        "planned with its caution, the upgrade is 3 × (1.5 + 0.5) = 6 ms"
+    );
+    for arbiters in [Arbiters::Greedy, Arbiters::GreedyExact] {
+        assert_eq!(
+            ash_planned(&uncertain, arbiters),
+            HighPerformance,
+            "{arbiters:?}: no caution, the upgrade is 3 × 1.5 = 4.5 ms"
+        );
+    }
 }
 
 /// **A journal with an agent busy through its rounds decides what it
@@ -999,22 +1096,28 @@ fn a_journal_with_a_replay_between_its_epochs_decides_what_it_recorded() {
 
 // ── A journal the DCC planned ────────────────────────────────────
 
-/// `oak`'s report of a run of `row`, under epoch 0, at `workload`, its host
-/// time 2 µs per unit of work, carrying `switch`.
-fn oak_ran(row: StrategyId, workload: f64, switch: Option<Duration>) -> TelemetryEvent {
+/// `oak`'s report of a run of `row`, under epoch 0, quoting `quoted_us` on
+/// the host — its workload — and taking `factor` times that, carrying
+/// `switch`.
+fn oak_ran(
+    row: StrategyId,
+    quoted_us: f64,
+    factor: f64,
+    switch: Option<Duration>,
+) -> TelemetryEvent {
     TelemetryEvent::AgentReport(Report {
         agent: AgentId::new("oak"),
         epoch: Epoch(0),
         row,
         measured: PerDevice {
-            cpu: Duration::from_secs_f64(workload * 2e-6),
+            cpu: Duration::from_secs_f64(quoted_us * factor * 1e-6),
             ..PerDevice::default()
         },
         done: 1.0,
         health: 1.0,
         over_budget: false,
         stalled: false,
-        workload: Some(workload),
+        workload: Some(quoted_us),
         switch,
         message: None,
     })
@@ -1022,8 +1125,11 @@ fn oak_ran(row: StrategyId, workload: f64, switch: Option<Duration>) -> Telemetr
 
 /// A journal the running DCC recorded while planning beyond the frame:
 /// - `oak` (Critical) offers 2 ms, 5 ms or 9 ms; it measured once, under
-///   epoch 0, a switch to `Balanced` of 3 ms, and its workload then rises
-///   slowly, one report in four events;
+///   epoch 0, a switch to `Balanced` of 3 ms — that first run teaches the
+///   cost book nothing — and ran `Balanced` once more for what it quoted;
+///   then it runs its floor, one report in four events, each run taking
+///   twice the host time it quoted, its quote rising slowly — each row its
+///   own correction;
 /// - `pine` (Optional) offers 1 ms or 3 ms and reports nothing.
 ///
 /// The frames jitter around 40 ms for a few epochs, so the margin has a
@@ -1057,7 +1163,9 @@ fn planned_journal() -> DecisionTrace {
         1.0,
     );
     let tx = dcc.event_sender();
-    tx.send(oak_ran(Balanced, 1_000.0, Some(us(3_000))))
+    tx.send(oak_ran(Balanced, 5_000.0, 1.0, Some(us(3_000))))
+        .expect("the DCC listens");
+    tx.send(oak_ran(Balanced, 5_000.0, 1.0, None))
         .expect("the DCC listens");
     dcc.start_decision_recording();
     dcc.start(rx);
@@ -1067,7 +1175,7 @@ fn planned_journal() -> DecisionTrace {
         let k = sent.get();
         sent.set(k + 1);
         if k % 4 == 3 {
-            oak_ran(LowPower, 1_000.0 + k as f64 / 10.0, None)
+            oak_ran(LowPower, 2_000.0 + k as f64 / 10.0, 2.0, None)
         } else {
             frame(around - 2 + 2 * (k % 3))
         }
@@ -1082,12 +1190,35 @@ fn planned_journal() -> DecisionTrace {
 
 /// **A journal replayed through the planned arbiter decides what it
 /// recorded.** The running DCC plans its rounds beyond the frame — a switch
-/// measured, a margin from the frames' spread, a rising workload — and
-/// records each round's planning. Decided again from the journal alone by
-/// the planned set, every epoch gives back the allocation recorded, and why.
+/// measured, a margin from the frames' spread, a rising workload — on the
+/// rows its cost book corrected: `oak`'s floor runs twice what it quotes,
+/// its `Balanced` what it quotes. It records each round's planning and each
+/// row's correction. Decided again from the journal alone by the planned
+/// set, every epoch gives back the allocation recorded, and why.
 #[test]
 fn a_journal_replayed_through_the_planned_arbiter_decides_what_it_recorded() {
     let trace = planned_journal();
+    let corrected = |epoch: &EpochRecord, row: StrategyId| {
+        (epoch.corrections.iter())
+            .find(|(agent, named, _)| *agent == AgentId::new("oak") && *named == row)
+            .map(|(_, _, correction)| correction.factor)
+    };
+    // `Balanced`, unrun while the floor runs, relaxes toward the floor's
+    // correction as the session goes on: it is read on the first epoch.
+    let (first, last) = (
+        trace.epochs.first().expect("the DCC recorded epochs"),
+        trace.epochs.last().expect("the DCC recorded epochs"),
+    );
+    assert!(
+        corrected(last, LowPower).is_some_and(|factor| (factor - 2.0).abs() < 0.1),
+        "oak's floor ran twice its quote: {:?}",
+        last.corrections
+    );
+    assert!(
+        corrected(first, Balanced).is_some_and(|factor| (factor - 1.0).abs() < 0.1),
+        "oak's Balanced ran what it quoted: {:?}",
+        first.corrections
+    );
     assert!(
         trace.epochs.len() >= 5,
         "the DCC recorded a few epochs: {:?}",

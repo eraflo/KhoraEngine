@@ -15,8 +15,9 @@
 //! GORNA, the DCC's side of the protocol.
 //!
 //! One round per epoch: the arbitrator asks every agent for an
-//! [`Offer`] (one `OfferRequest` each, with a deadline), calibrates the quoted
-//! costs by what the DCC measured, and [`decide`]s an envelope for each agent.
+//! [`Offer`] (one `OfferRequest` each, with a deadline), corrects each row's
+//! quoted host time by what its [`CostBook`](cost_book::CostBook) learned, and
+//! [`decide`]s an envelope for each agent.
 //! The DCC publishes the allocation; the scheduler lends it at its next frame
 //! start, through [`Agent::apply`] — the DCC's thread never does. The DCC
 //! decides *how much*; each agent chooses *how*, within its envelope. A death
@@ -28,7 +29,9 @@ use crate::dcc_context::Context;
 use khora_core::agent::gorna::protocol::{
     Allocation, Envelope, Epoch, Offer, OfferRequest, Trigger, Why,
 };
-use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, Planning, StrategyId};
+use khora_core::agent::gorna::{
+    AdaptationMode, AgentHints, AgentId, Correction, Planning, StrategyId,
+};
 use khora_core::agent::{Agent, AgentImportance};
 use khora_core::lane::cost::{PerDevice, PerLink};
 use std::collections::HashMap;
@@ -36,21 +39,16 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
 pub(crate) mod arbiter;
+pub mod cost_book;
 mod decide;
 pub mod planning;
 
 use arbiter::Arbiter;
-pub(crate) use decide::hold_to_quotes;
+use cost_book::CostBook;
 pub use decide::{decide, Bid, Round};
 use planning::{Planner, PlanningConfig};
 
 const MAX_STALLED_AGENTS: usize = 2;
-
-/// Clamp range for the empirical calibration factor applied to agent-quoted
-/// costs. Bounds the correction so one pathological measurement (a hitch, a
-/// cold cache) can't swing a whole round by orders of magnitude.
-const CALIBRATION_FACTOR_MIN: f64 = 0.25;
-const CALIBRATION_FACTOR_MAX: f64 = 4.0;
 
 fn try_lock_agent_with_timeout<T: ?Sized>(
     mutex: &Mutex<T>,
@@ -99,6 +97,13 @@ pub struct GornaArbitrator {
     planner: Planner,
     /// What the last round planned for beyond its frame.
     planning: Planning,
+    /// What the DCC learnt of each row's measured time against its quote.
+    book: CostBook,
+    /// The last round's correction of each offered row.
+    corrections: Vec<(AgentId, StrategyId, Correction)>,
+    /// The row each agent last said it runs: what a busy agent's kept
+    /// envelope is corrected by.
+    runs: Vec<(AgentId, StrategyId)>,
     /// The last round's offers, as the agents answered them.
     offers: Vec<Offer>,
     /// The last round's target time for the frame.
@@ -128,6 +133,9 @@ impl GornaArbitrator {
             arbiter: Arbiter::default(),
             planner: Planner::new(PlanningConfig::default()),
             planning: Planning::default(),
+            book: CostBook::new(cost_book::CostBookConfig::default()),
+            corrections: Vec::new(),
+            runs: Vec::new(),
             offers: Vec::new(),
             target: Duration::ZERO,
             importance: Vec::new(),
@@ -164,7 +172,7 @@ impl GornaArbitrator {
     }
 
     /// The last round's offers, as the agents answered them — before the
-    /// DCC calibrated them by what it measured.
+    /// DCC corrected them by what its cost book learned.
     pub fn offers(&self) -> &[Offer] {
         &self.offers
     }
@@ -203,8 +211,21 @@ impl GornaArbitrator {
         &self.planning
     }
 
+    /// What the DCC learns of each (agent, row): the correction from its
+    /// quoted host time to its measured one.
+    pub fn cost_book_mut(&mut self) -> &mut CostBook {
+        &mut self.book
+    }
+
+    /// The correction of each row the last round was offered, by agent and
+    /// row.
+    pub fn corrections(&self) -> &[(AgentId, StrategyId, Correction)] {
+        &self.corrections
+    }
+
     /// One round of the protocol: asks every agent in `agents` for an offer
-    /// (one `OfferRequest` for the round's epoch and the frame's target), calibrates the quoted rows by `measured_costs`, and
+    /// (one `OfferRequest` for the round's epoch and the frame's target),
+    /// corrects each row's quoted host time by the cost book, and
     /// [`decide`]s each agent's envelope, pin and allowed rows. Returns the
     /// allocation, which stays in force until the next round; the round
     /// lends nothing itself — the scheduler lends the allocation at its next
@@ -219,7 +240,6 @@ impl GornaArbitrator {
         report: &AnalysisReport,
         trigger: Trigger,
         agents: &[Arc<Mutex<dyn Agent>>],
-        measured_costs: &HashMap<AgentId, f64>,
         hints: &HashMap<AgentId, AgentHints>,
     ) -> Allocation {
         self.epoch = Epoch(self.epoch.0 + 1);
@@ -254,13 +274,16 @@ impl GornaArbitrator {
                         "GORNA: agent {id} was busy through the round; it keeps its envelope"
                     );
                     if let Some(kept) = self.kept(id) {
+                        let current = (self.runs.iter())
+                            .find(|(agent, _)| *agent == id)
+                            .map_or(StrategyId::LowPower, |(_, row)| *row);
                         bids.push(Bid {
                             offer: Offer {
                                 agent: id,
                                 epoch,
                                 rows: Vec::new(),
                                 floor: StrategyId::LowPower,
-                                current: StrategyId::LowPower,
+                                current,
                                 health: 1.0,
                             },
                             importance: AgentImportance::Optional,
@@ -283,7 +306,7 @@ impl GornaArbitrator {
                 pressure: 0.0,
                 reply_by: Instant::now() + self.lock_timeout,
             };
-            let mut offer = agent.offer(&request);
+            let offer = agent.offer(&request);
             let late = Instant::now() > request.reply_by;
             let timing = agent.execution_timing();
             let importance = timing.importance;
@@ -293,7 +316,6 @@ impl GornaArbitrator {
                 background.push(id);
             }
             self.offers.push(offer.clone());
-            calibrate(&mut offer, measured_costs.get(&id).copied());
             bids.push(Bid {
                 kept: self.kept(id),
                 late,
@@ -314,6 +336,32 @@ impl GornaArbitrator {
         // What the round plans for beyond its frame, from the offers as the
         // agents answered them: which row each one runs.
         let planning = self.planner.planning(&self.offers, epoch);
+        // Each row is planned at the time it is measured to take, not the
+        // time it quotes: the round decides in measured time.
+        let mut corrections = self.book.corrections(&self.offers);
+        // A busy agent offered nothing: its kept envelope is corrected by the
+        // row it last said it runs.
+        for bid in bids.iter().filter(|bid| bid.offer.rows.is_empty()) {
+            let (agent, row) = (bid.offer.agent, bid.offer.current);
+            corrections.push((agent, row, self.book.correction(agent, row)));
+        }
+        for offer in &self.offers {
+            match self
+                .runs
+                .iter_mut()
+                .find(|(agent, _)| *agent == offer.agent)
+            {
+                Some((_, row)) => *row = offer.current,
+                None => self.runs.push((offer.agent, offer.current)),
+            }
+        }
+        // The envelopes kept, as the agents hold them, in their quoted units.
+        let held: Vec<(AgentId, Envelope)> = (bids.iter())
+            .filter_map(|bid| bid.kept.map(|kept| (bid.offer.agent, kept)))
+            .collect();
+        for bid in &mut bids {
+            cost_book::correct_bid(bid, &corrections, planning.caution);
+        }
         let mut decision = self.arbiter.decide(&Round {
             epoch,
             trigger,
@@ -325,15 +373,19 @@ impl GornaArbitrator {
             bids: &bids,
             planning: planning.clone(),
         });
-        // Each agent chooses its row by its own quotes: the envelopes are held
-        // to the plan at those too.
-        decide::hold_to_quotes(
+        // Each agent chooses its row by its own quotes: the envelopes are lent
+        // in those units, and held to the plan at them.
+        cost_book::lend_in_quotes(
             &mut decision.allocation,
             &self.offers,
             &bids,
             &decision.rows,
             &decision.kept,
+            &held,
+            &corrections,
+            planning.caution,
         );
+        self.corrections = corrections;
         self.planning = planning;
         self.background = background;
         self.importance = bids
@@ -385,37 +437,6 @@ impl GornaArbitrator {
                 report.stalled
             })
             .count()
-    }
-}
-
-/// Anchors `offer`'s quoted costs in what the DCC measured: every priced
-/// row's time is scaled so the row running now costs `measured_ms`. Relative
-/// order between rows is kept; the factor is clamped.
-pub(crate) fn calibrate(offer: &mut Offer, measured_ms: Option<f64>) {
-    let Some(measured_ms) = measured_ms else {
-        return;
-    };
-    let busiest = |row: &khora_core::agent::gorna::protocol::OfferRow| {
-        let time = &row.cost.time;
-        time.cpu.max(time.gpu).max(time.npu).max(time.other)
-    };
-    let Some(quoted_ms) = offer
-        .rows
-        .iter()
-        .find(|row| row.id == offer.current)
-        .map(|row| busiest(row).as_secs_f64() * 1_000.0)
-        .filter(|ms| *ms > f64::EPSILON)
-    else {
-        return;
-    };
-    let factor = (measured_ms / quoted_ms).clamp(CALIBRATION_FACTOR_MIN, CALIBRATION_FACTOR_MAX);
-    let scale = |time: Duration| Duration::from_secs_f64(time.as_secs_f64() * factor);
-    for row in &mut offer.rows {
-        let time = &mut row.cost.time;
-        time.cpu = scale(time.cpu);
-        time.gpu = scale(time.gpu);
-        time.npu = scale(time.npu);
-        time.other = scale(time.other);
     }
 }
 
