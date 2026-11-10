@@ -13,14 +13,17 @@
 // limitations under the License.
 
 //! GORNA as a protocol: [`decide`](super::decide) shares the frame into
-//! envelopes (`decide.rs`), the arbitrator asks for offers, decides and
-//! lends each agent its envelope (`allocate.rs`, `importance.rs`), and it
-//! counts the agents whose report says they are stalled (`stalls.rs`).
+//! envelopes (`decide.rs`), the arbiter runs its proposers behind the shield
+//! and says why it decided (`arbiter.rs`), the arbitrator asks for offers,
+//! decides and lends each agent its envelope (`allocate.rs`,
+//! `importance.rs`), and it counts the agents whose report says they are
+//! stalled (`stalls.rs`).
 //!
 //! The fake agent, [`Bidder`], speaks the protocol (`offer`, `apply`,
 //! `report`).
 
 mod allocate;
+mod arbiter;
 mod decide;
 mod importance;
 mod stalls;

@@ -32,6 +32,44 @@ pub struct PerDevice<T> {
     pub other: T,
 }
 
+/// One kind of device: a name for one field of a [`PerDevice`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Device {
+    /// The host processor.
+    Cpu,
+    /// The graphics processor.
+    Gpu,
+    /// The neural processor.
+    Npu,
+    /// Any other device a backend brings.
+    Other,
+}
+
+impl Device {
+    /// Every device, in the order of [`PerDevice`]'s fields.
+    pub const ALL: [Device; 4] = [Device::Cpu, Device::Gpu, Device::Npu, Device::Other];
+
+    /// This device's value in `values`.
+    pub fn get<T: Copy>(self, values: &PerDevice<T>) -> T {
+        match self {
+            Device::Cpu => values.cpu,
+            Device::Gpu => values.gpu,
+            Device::Npu => values.npu,
+            Device::Other => values.other,
+        }
+    }
+
+    /// This device's value in `values`, to change it.
+    pub fn get_mut<T>(self, values: &mut PerDevice<T>) -> &mut T {
+        match self {
+            Device::Cpu => &mut values.cpu,
+            Device::Gpu => &mut values.gpu,
+            Device::Npu => &mut values.npu,
+            Device::Other => &mut values.other,
+        }
+    }
+}
+
 /// One value per link between devices.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PerLink<T> {

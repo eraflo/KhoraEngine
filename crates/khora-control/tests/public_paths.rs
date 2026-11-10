@@ -309,6 +309,11 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::gorna::GornaArbitrator::set_wave_plan;
     let _ = khora_control::gorna::GornaArbitrator::set_adaptation_mode;
     let _ = khora_control::gorna::GornaArbitrator::adaptation_mode;
+    let _ = khora_control::gorna::GornaArbitrator::in_force;
+    let _ = khora_control::gorna::GornaArbitrator::why;
+    let _ = khora_control::gorna::GornaArbitrator::offers;
+    let _ = khora_control::gorna::GornaArbitrator::background;
+    let _ = khora_control::gorna::GornaArbitrator::target;
     let _ = khora_control::gorna::GornaArbitrator::allocate;
     let _ = khora_control::gorna::GornaArbitrator::reissue;
     let _ = khora_control::gorna::decide;

@@ -26,7 +26,7 @@
 use crate::analysis::AnalysisReport;
 use crate::dcc_context::Context;
 use khora_core::agent::gorna::protocol::{
-    Allocation, Envelope, Epoch, Offer, OfferRequest, Trigger,
+    Allocation, Envelope, Epoch, Offer, OfferRequest, Trigger, Why,
 };
 use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, StrategyId};
 use khora_core::agent::{Agent, AgentImportance};
@@ -35,8 +35,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
+mod arbiter;
 mod decide;
 
+use arbiter::Arbiter;
 pub use decide::{decide, Bid, Round};
 
 const MAX_STALLED_AGENTS: usize = 2;
@@ -86,6 +88,10 @@ pub struct GornaArbitrator {
     epoch: Epoch,
     /// The allocation in force, until the next round.
     in_force: Option<Allocation>,
+    /// What decided the last round, and why.
+    why: Why,
+    /// The proposers behind the shield.
+    arbiter: Arbiter,
     /// The last round's offers, as the agents answered them.
     offers: Vec<Offer>,
     /// The last round's target time for the frame.
@@ -107,6 +113,8 @@ impl GornaArbitrator {
             background: Vec::new(),
             epoch: Epoch::default(),
             in_force: None,
+            why: Why::default(),
+            arbiter: Arbiter::default(),
             offers: Vec::new(),
             target: Duration::ZERO,
             known: Vec::new(),
@@ -132,6 +140,12 @@ impl GornaArbitrator {
     /// The allocation in force, if a round ran.
     pub fn in_force(&self) -> Option<&Allocation> {
         self.in_force.as_ref()
+    }
+
+    /// What decided the last round, and why: the proposer, the trigger, the
+    /// constraint that stopped the plan growing, the upgrades refused.
+    pub fn why(&self) -> &Why {
+        &self.why
     }
 
     /// The last round's offers, as the agents answered them — before the
@@ -260,7 +274,7 @@ impl GornaArbitrator {
                 .or(context.hardware.total_vram),
             ..PerDevice::default()
         };
-        let allocation = decide(&Round {
+        let decision = self.arbiter.decide(&Round {
             epoch,
             trigger,
             target,
@@ -271,8 +285,9 @@ impl GornaArbitrator {
             bids: &bids,
         });
         self.background = background;
-        self.in_force = Some(allocation.clone());
-        allocation
+        self.why = decision.why;
+        self.in_force = Some(decision.allocation.clone());
+        decision.allocation
     }
 
     /// Puts a recorded `allocation` in force without asking for offers or

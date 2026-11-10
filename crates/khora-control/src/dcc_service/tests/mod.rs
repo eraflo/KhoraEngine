@@ -88,6 +88,7 @@ fn record(allocation: Allocation) -> EpochRecord {
         policies: Vec::new(),
         hints: Vec::new(),
         reasons: Vec::new(),
+        why: khora_core::agent::gorna::protocol::Why::default(),
     }
 }
 

@@ -19,7 +19,10 @@ use std::time::Duration;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use super::protocol::{Allocation, Envelope, Epoch, Offer, OfferRow, Report, Trigger};
+use super::protocol::{
+    Allocation, Binding, DecidedBy, Envelope, Epoch, Offer, OfferRow, Rejected, Report, Trigger,
+    Why,
+};
 use super::{AdaptationMode, AgentHints, AgentId, StrategyId};
 use crate::lane::cost::PerDevice;
 
@@ -60,6 +63,9 @@ pub struct EpochRecord {
     pub hints: Vec<(AgentId, AgentHints)>,
     /// Why the round opened, in words: the analysis' alerts.
     pub reasons: Vec<String>,
+    /// Why the round decided as it did: what decided it, the constraint that
+    /// bound it, the upgrades it refused.
+    pub why: Why,
 }
 
 impl Serialize for DecisionTrace {
@@ -142,6 +148,19 @@ struct WrittenEpoch {
     policies: Vec<(Named, AdaptationMode)>,
     hints: Vec<(Named, AgentHints)>,
     reasons: Vec<String>,
+    /// A journal from before the decisions were explained reads the default:
+    /// decided by the floors, nothing rejected.
+    #[serde(default)]
+    why: Option<WrittenWhy>,
+}
+
+/// A decision's explanation as written, its agents named by place.
+#[derive(Serialize, Deserialize)]
+struct WrittenWhy {
+    by: DecidedBy,
+    trigger: Trigger,
+    binding: Option<Binding>,
+    rejected: Vec<(Named, StrategyId, Binding)>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -214,6 +233,9 @@ struct WrittenReport {
     over_budget: bool,
     stalled: bool,
     workload: Option<f64>,
+    /// A journal from before the switch cost was written reads none.
+    #[serde(default)]
+    switch: Option<Duration>,
 }
 
 /// `record`, its agents named by their place in `table`.
@@ -262,6 +284,7 @@ fn written_epoch(record: &EpochRecord, table: &mut Table) -> WrittenEpoch {
                 over_budget: report.over_budget,
                 stalled: report.stalled,
                 workload: report.workload,
+                switch: report.switch,
             })
             .collect(),
         waves: (record.waves.iter())
@@ -274,6 +297,14 @@ fn written_epoch(record: &EpochRecord, table: &mut Table) -> WrittenEpoch {
             .map(|(agent, hints)| (table.of(*agent), *hints))
             .collect(),
         reasons: record.reasons.clone(),
+        why: Some(WrittenWhy {
+            by: record.why.by,
+            trigger: record.why.trigger,
+            binding: record.why.binding,
+            rejected: (record.why.rejected.iter())
+                .map(|rejected| (table.of(rejected.agent), rejected.row, rejected.over))
+                .collect(),
+        }),
     }
 }
 
@@ -326,7 +357,7 @@ fn read_epoch<E>(
                     over_budget: report.over_budget,
                     stalled: report.stalled,
                     workload: report.workload,
-                    switch: None,
+                    switch: report.switch,
                     // A journal keeps what was run, not what it said.
                     message: None,
                 })
@@ -342,5 +373,27 @@ fn read_epoch<E>(
             .map(|(agent, hints)| Ok((named(agent)?, hints)))
             .collect::<Result<_, E>>()?,
         reasons: written.reasons,
+        why: match written.why {
+            // Written before decisions were explained: what is known is the
+            // trigger the allocation itself records.
+            None => Why {
+                trigger: allocation.trigger,
+                ..Why::default()
+            },
+            Some(why) => Why {
+                by: why.by,
+                trigger: why.trigger,
+                binding: why.binding,
+                rejected: (why.rejected.into_iter())
+                    .map(|(agent, row, over)| {
+                        Ok(Rejected {
+                            agent: named(agent)?,
+                            row,
+                            over,
+                        })
+                    })
+                    .collect::<Result<_, E>>()?,
+            },
+        },
     })
 }

@@ -15,16 +15,20 @@
 //! How the DCC shares the frame: from every agent's offer, one envelope each.
 //!
 //! [`decide`] is a pure function of its [`Round`]: the same round always gives
-//! the same [`Allocation`].
+//! the same [`Allocation`]. The [`Arbiter`] decides it; this module holds
+//! what every proposer shares — the round, admission, the checks and the
+//! share.
 
 use std::time::Duration;
 
 use khora_core::agent::gorna::protocol::{
-    Allocation, Confidence, Envelope, Epoch, Offer, OfferRow, Trigger,
+    Allocation, Binding, Confidence, Envelope, Epoch, Offer, OfferRow, Trigger,
 };
 use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, StrategyId};
 use khora_core::agent::AgentImportance;
-use khora_core::lane::cost::{Cost, PerDevice, PerLink};
+use khora_core::lane::cost::{Cost, Device, PerDevice, PerLink};
+
+use super::arbiter::Arbiter;
 
 /// One agent's part of a round: its offer, and what the DCC holds for it.
 #[derive(Debug, Clone)]
@@ -73,7 +77,7 @@ pub struct Round<'a> {
     pub bids: &'a [Bid],
 }
 
-/// The allocation for `round`.
+/// The allocation for `round`, as the default [`Arbiter`] decides it.
 ///
 /// 1. **Admission.** Every agent's floor must fit the target on the critical
 ///    path (on every device, the waves' slowest members plus the transfers);
@@ -88,18 +92,35 @@ pub struct Round<'a> {
 ///
 /// Times are counted in whole microseconds.
 pub fn decide(round: &Round<'_>) -> Allocation {
-    // One order for everything that follows, whatever order the bids came in.
+    Arbiter::default().decide(round).allocation
+}
+
+/// What admission gives the proposers: the bids in one order, and what it
+/// planned for each — or the floors, when they do not fit.
+pub(crate) enum Admission<'r> {
+    /// The floors do not fit, or the round opened as `Safety`: every agent is
+    /// lent its floor, and the breach the floors made, if they made one.
+    Safety(Allocation, Option<Binding>),
+    /// Every floor fits.
+    Admitted {
+        /// The bids, ordered by agent.
+        bids: Vec<&'r Bid>,
+        /// What admission planned for each, in the same order.
+        plans: Vec<Plan>,
+    },
+}
+
+/// Admits `round`: one order for everything that follows, every agent's
+/// floor checked on the critical path, and a `Stable` agent's envelope kept
+/// while it still fits the frame with every other agent at its floor.
+pub(crate) fn admit<'r>(round: &'r Round<'_>) -> Admission<'r> {
     let mut bids: Vec<&Bid> = round.bids.iter().collect();
     bids.sort_by_key(|bid| bid.offer.agent);
-    let late: Vec<AgentId> = bids
-        .iter()
-        .filter(|bid| bid.late)
-        .map(|bid| bid.offer.agent)
-        .collect();
 
     let mut plans: Vec<Plan> = bids.iter().map(|bid| Plan::of(bid)).collect();
-    if round.trigger == Trigger::Safety || !fits_frame(round, &bids, &plans) {
-        return Allocation {
+    let breached = breach(round, &bids, &plans);
+    if round.trigger == Trigger::Safety || breached.is_some() {
+        let allocation = Allocation {
             epoch: round.epoch,
             trigger: Trigger::Safety,
             envelopes: bids
@@ -122,11 +143,14 @@ pub fn decide(round: &Round<'_>) -> Allocation {
                 .collect(),
             pins: Vec::new(),
             allowed: Vec::new(),
-            late,
+            late: late(&bids),
             price: None,
             // Every agent is lent its floor whatever the target.
             lever: false,
         };
+        // A round opened as `Safety` names no breach of its own.
+        let binding = breached.filter(|_| round.trigger != Trigger::Safety);
+        return Admission::Safety(allocation, binding);
     }
 
     // A `Stable` agent keeps the envelope it holds while it still fits the
@@ -144,18 +168,36 @@ pub fn decide(round: &Round<'_>) -> Allocation {
                 continue;
             }
             plans[index].fixed = Some(kept);
-            if !fits_frame(round, &bids, &plans) {
+            if breach(round, &bids, &plans).is_some() {
                 plans[index].fixed = None;
                 plans[index].ceiling = Some(kept);
             }
         }
     }
+    Admission::Admitted { bids, plans }
+}
 
-    let price = upgrade(round, &bids, &mut plans);
-    let envelopes = share(round, &bids, &plans);
+/// The agents named late in `bids`.
+fn late(bids: &[&Bid]) -> Vec<AgentId> {
+    bids.iter()
+        .filter(|bid| bid.late)
+        .map(|bid| bid.offer.agent)
+        .collect()
+}
+
+/// The allocation that lends `plans`: the envelopes shared from them, the
+/// pins and allowed rows the policies name, the agents late, the price of
+/// the last upgrade, and whether a lower target can take something back.
+pub(crate) fn allocation(
+    round: &Round<'_>,
+    bids: &[&Bid],
+    plans: &[Plan],
+    price: Option<f32>,
+) -> Allocation {
+    let envelopes = share(round, bids, plans);
     let lever = bids
         .iter()
-        .zip(&plans)
+        .zip(plans)
         .zip(&envelopes)
         .any(|((bid, plan), (_, envelope))| above_floor(bid, plan, envelope));
     Allocation {
@@ -186,7 +228,7 @@ pub fn decide(round: &Round<'_>) -> Allocation {
                 _ => None,
             })
             .collect(),
-        late,
+        late: late(bids),
         price,
         lever,
     }
@@ -212,20 +254,21 @@ fn above_floor(bid: &Bid, plan: &Plan, envelope: &Envelope) -> bool {
 
 /// What the round plans for one agent.
 #[derive(Debug, Clone)]
-struct Plan {
+pub(crate) struct Plan {
     /// The floor's cost: every envelope holds at least it.
-    floor: Cost,
+    pub(crate) floor: Cost,
     /// The row planned, as an index into the offer's rows; `None` when the
     /// agent offers no floor row.
-    row: Option<usize>,
+    pub(crate) row: Option<usize>,
     /// An envelope the agent keeps whatever the share: a late agent's, or a
     /// `Stable` agent's that still fits.
-    fixed: Option<Envelope>,
+    pub(crate) fixed: Option<Envelope>,
     /// An envelope a `Stable` agent's may not grow past.
-    ceiling: Option<Envelope>,
-    /// The rows ruled out of the upgrades: unpriced, outside a `Bounded`
-    /// range, over the cap, any row of a pinned agent, or found not to fit.
-    out: Vec<bool>,
+    pub(crate) ceiling: Option<Envelope>,
+    /// The rows ruled out: unpriced, outside a `Bounded` range, over the cap,
+    /// or any row of a pinned agent; a proposer also rules out the rows it
+    /// finds not to fit.
+    pub(crate) out: Vec<bool>,
 }
 
 impl Plan {
@@ -303,136 +346,37 @@ impl Plan {
     }
 }
 
-/// The Q-RAM pass: while an upgrade fits, take the one that gains the most
-/// weighed quality per microsecond, climbing each agent's convex hull of
-/// priced rows. Returns the gain per µs of the last upgrade taken.
-fn upgrade(round: &Round<'_>, bids: &[&Bid], plans: &mut [Plan]) -> Option<f32> {
-    let mut price = None;
-    loop {
-        let mut best: Option<Step> = None;
-        for (agent, (bid, plan)) in bids.iter().zip(plans.iter()).enumerate() {
-            if plan.fixed.is_some() {
-                continue;
-            }
-            if let Some(step) = next_step(agent, bid, plan) {
-                if best
-                    .as_ref()
-                    .is_none_or(|best| step.goes_before(best, bids))
-                {
-                    best = Some(step);
-                }
-            }
-        }
-        let Some(step) = best else {
-            return price;
-        };
-        let before = plans[step.agent].row;
-        plans[step.agent].row = Some(step.row);
-        let cost = &bids[step.agent].offer.rows[step.row].cost;
-        let under_ceiling = plans[step.agent]
-            .ceiling
-            .is_none_or(|ceiling| fits_envelope(cost, &ceiling));
-        if under_ceiling && fits_frame(round, bids, plans) {
-            price = Some(step.slope as f32);
-        } else {
-            // This step does not fit; a smaller one of the same agent may.
-            plans[step.agent].row = before;
-            plans[step.agent].out[step.row] = true;
-        }
+/// What the plans break, if anything: the first device whose critical path
+/// is over the target, else the first whose memory held is over what is
+/// known of it. `None` when they fit the frame.
+pub(crate) fn breach(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> Option<Binding> {
+    let target = micros(round.target);
+    let paths = critical_paths(round, bids, plans);
+    if let Some(device) = Device::ALL
+        .into_iter()
+        .find(|device| device.get(&paths) > target)
+    {
+        return Some(Binding::Time(device));
     }
+    let held = held(bids, plans);
+    Device::ALL
+        .into_iter()
+        .find(|device| {
+            device
+                .get(&round.memory)
+                .is_some_and(|limit| device.get(&held) > limit)
+        })
+        .map(Binding::Memory)
 }
 
-/// One candidate upgrade: an agent, the row it moves to, and what it gains.
-struct Step {
-    agent: usize,
-    row: usize,
-    /// Weighed quality gained per microsecond.
-    slope: f64,
-    /// Weighed quality gained.
-    gain: f64,
-}
-
-impl Step {
-    /// Whether `self` is taken before `other`: the steeper gain, then the
-    /// larger gain, then the agent named first, then the lower row.
-    fn goes_before(&self, other: &Step, bids: &[&Bid]) -> bool {
-        self.slope
-            .total_cmp(&other.slope)
-            .then(self.gain.total_cmp(&other.gain))
-            .then(
-                bids[other.agent]
-                    .offer
-                    .agent
-                    .cmp(&bids[self.agent].offer.agent),
-            )
-            .then(other.row.cmp(&self.row))
-            .is_gt()
-    }
-}
-
-/// The next step up `bid`'s convex hull from the row `plan` holds: among the
-/// rows not ruled out, of greater quality and no lesser cost, the steepest
-/// gain per microsecond (the larger gain, then the lower row, on a tie).
-fn next_step(agent: usize, bid: &Bid, plan: &Plan) -> Option<Step> {
-    let rows = &bid.offer.rows;
-    let weight = f64::from(bid.hints.priority.unwrap_or(match bid.importance {
+/// How much `bid` weighs: its `Prioritize` hint, else its importance —
+/// Critical 1.0, Important 0.75, Optional 0.5.
+pub(crate) fn weight(bid: &Bid) -> f64 {
+    f64::from(bid.hints.priority.unwrap_or(match bid.importance {
         AgentImportance::Critical => 1.0,
         AgentImportance::Important => 0.75,
         AgentImportance::Optional => 0.5,
-    }));
-    let (cost_now, quality_now) = match plan.row {
-        Some(row) => (micros(busiest(&rows[row].cost.time)), rows[row].quality),
-        None => (micros(busiest(&plan.floor.time)), 0.0),
-    };
-    rows.iter()
-        .enumerate()
-        .filter(|(row, candidate)| {
-            !plan.out[*row]
-                && candidate.quality > quality_now
-                && micros(busiest(&candidate.cost.time)) >= cost_now
-        })
-        .map(|(row, candidate)| {
-            let gain = weight * f64::from(candidate.quality - quality_now);
-            let extra = micros(busiest(&candidate.cost.time)) - cost_now;
-            let slope = if extra == 0 {
-                f64::INFINITY
-            } else {
-                gain / extra as f64
-            };
-            Step {
-                agent,
-                row,
-                slope,
-                gain,
-            }
-        })
-        .reduce(|kept, next| {
-            let next_first = next
-                .slope
-                .total_cmp(&kept.slope)
-                .then(next.gain.total_cmp(&kept.gain))
-                .then(kept.row.cmp(&next.row))
-                .is_gt();
-            if next_first {
-                next
-            } else {
-                kept
-            }
-        })
-}
-
-/// Whether the plans fit the frame: the critical path within the target on
-/// every device, and the memory held within what is known of every device.
-fn fits_frame(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> bool {
-    let target = micros(round.target);
-    let paths = critical_paths(round, bids, plans);
-    let held = held(bids, plans);
-    Device::ALL.iter().all(|device| {
-        device.get(&paths) <= target
-            && device
-                .get(&round.memory)
-                .is_none_or(|limit| device.get(&held) <= limit)
-    })
+    }))
 }
 
 /// The frame's time on each device, in µs: each wave costs its slowest
@@ -558,7 +502,7 @@ fn eighty_percent_share(slack: u64, asked: u64, total: u64) -> u64 {
 }
 
 /// Whether `cost` fits `envelope`, its time and memory on every device.
-fn fits_envelope(cost: &Cost, envelope: &Envelope) -> bool {
+pub(crate) fn fits_envelope(cost: &Cost, envelope: &Envelope) -> bool {
     Device::ALL.iter().all(|device| {
         device.get(&cost.time) <= device.get(&envelope.time)
             && device.get(&cost.memory) <= device.get(&envelope.memory)
@@ -581,7 +525,7 @@ fn rank(id: StrategyId) -> (u8, u32) {
 }
 
 /// The time on the busiest device.
-fn busiest(time: &PerDevice<Duration>) -> Duration {
+pub(crate) fn busiest(time: &PerDevice<Duration>) -> Duration {
     time.cpu.max(time.gpu).max(time.npu).max(time.other)
 }
 
@@ -598,7 +542,7 @@ fn transfer_micros(transfer: &PerLink<u64>, rate: &PerLink<u64>) -> u64 {
     over(transfer.cpu_to_gpu, rate.cpu_to_gpu) + over(transfer.gpu_to_cpu, rate.gpu_to_cpu)
 }
 
-fn micros(time: Duration) -> u64 {
+pub(crate) fn micros(time: Duration) -> u64 {
     u64::try_from(time.as_micros()).unwrap_or(u64::MAX)
 }
 
@@ -613,36 +557,5 @@ fn each<T: Copy, U: Default>(values: &PerDevice<T>, f: impl Fn(T) -> U) -> PerDe
         gpu: f(values.gpu),
         npu: f(values.npu),
         other: f(values.other),
-    }
-}
-
-/// One device of a [`PerDevice`].
-#[derive(Debug, Clone, Copy)]
-enum Device {
-    Cpu,
-    Gpu,
-    Npu,
-    Other,
-}
-
-impl Device {
-    const ALL: [Device; 4] = [Device::Cpu, Device::Gpu, Device::Npu, Device::Other];
-
-    fn get<T: Copy>(self, values: &PerDevice<T>) -> T {
-        match self {
-            Device::Cpu => values.cpu,
-            Device::Gpu => values.gpu,
-            Device::Npu => values.npu,
-            Device::Other => values.other,
-        }
-    }
-
-    fn get_mut<T>(self, values: &mut PerDevice<T>) -> &mut T {
-        match self {
-            Device::Cpu => &mut values.cpu,
-            Device::Gpu => &mut values.gpu,
-            Device::Npu => &mut values.npu,
-            Device::Other => &mut values.other,
-        }
     }
 }

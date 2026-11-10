@@ -24,7 +24,7 @@ use AgentImportance::{Critical, Important, Optional};
 use StrategyId::{Balanced, Custom, HighPerformance, LowPower};
 
 /// `offer` as weighed by `importance`, under no policy, holding nothing.
-fn bid(offer: Offer, importance: AgentImportance) -> Bid {
+pub(super) fn bid(offer: Offer, importance: AgentImportance) -> Bid {
     Bid {
         offer,
         importance,
@@ -37,7 +37,7 @@ fn bid(offer: Offer, importance: AgentImportance) -> Bid {
 
 /// A round opened by `trigger`, of `target_us` on the critical path, with no
 /// memory figure, untimed links and every agent running alone.
-fn round<'a>(trigger: Trigger, target_us: u64, bids: &'a [Bid]) -> Round<'a> {
+pub(super) fn round<'a>(trigger: Trigger, target_us: u64, bids: &'a [Bid]) -> Round<'a> {
     Round {
         epoch: Epoch(7),
         trigger,

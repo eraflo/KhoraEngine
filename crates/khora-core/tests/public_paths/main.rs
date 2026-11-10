@@ -105,6 +105,7 @@ mod every_pub_mod {
     use khora_core::lane as _;
     use khora_core::lane::bus as _;
     use khora_core::lane::context_keys as _;
+    use khora_core::lane::cost as _;
     use khora_core::lane::deck as _;
     use khora_core::memory as _;
     use khora_core::physics as _;
@@ -316,7 +317,33 @@ fn epoch_record_fields(x: &khora_core::agent::gorna::EpochRecord) {
         &x.policies,
         &x.hints,
         &x.reasons,
+        &x.why,
     );
+}
+
+fn why_fields(x: &khora_core::agent::gorna::protocol::Why) {
+    let _ = (&x.by, &x.trigger, &x.binding, &x.rejected);
+}
+
+fn decided_by_variants(x: &khora_core::agent::gorna::protocol::DecidedBy) {
+    match x {
+        khora_core::agent::gorna::protocol::DecidedBy::Floors => {}
+        khora_core::agent::gorna::protocol::DecidedBy::Greedy => {}
+        khora_core::agent::gorna::protocol::DecidedBy::Exact => {}
+        khora_core::agent::gorna::protocol::DecidedBy::Planner => {}
+    }
+}
+
+fn binding_variants(x: &khora_core::agent::gorna::protocol::Binding) {
+    match x {
+        khora_core::agent::gorna::protocol::Binding::Time(..) => {}
+        khora_core::agent::gorna::protocol::Binding::Memory(..) => {}
+        khora_core::agent::gorna::protocol::Binding::Ceiling(..) => {}
+    }
+}
+
+fn rejected_fields(x: &khora_core::agent::gorna::protocol::Rejected) {
+    let _ = (&x.agent, &x.row, &x.over);
 }
 
 fn engine_hint_variants(x: &khora_core::agent::gorna::EngineHint) {
@@ -363,6 +390,15 @@ fn clear_color_fields(x: &khora_core::lane::context_keys::ClearColor) {
 
 fn color_target_size_fields(x: &khora_core::lane::context_keys::ColorTargetSize) {
     let _ = (&x.0,);
+}
+
+fn device_variants(x: &khora_core::lane::cost::Device) {
+    match x {
+        khora_core::lane::cost::Device::Cpu => {}
+        khora_core::lane::cost::Device::Gpu => {}
+        khora_core::lane::cost::Device::Npu => {}
+        khora_core::lane::cost::Device::Other => {}
+    }
 }
 
 fn extended_memory_stats_fields(x: &khora_core::memory::ExtendedMemoryStats) {
@@ -1689,6 +1725,45 @@ fn module_agent_gorna_paths_still_resolve() {
     is_hash::<khora_core::agent::gorna::StrategyId>();
     is_serialize::<khora_core::agent::gorna::StrategyId>();
     is_deserialize_owned::<khora_core::agent::gorna::StrategyId>();
+    let _ = type_name::<khora_core::agent::gorna::protocol::Why>();
+    let _ = why_fields as fn(&khora_core::agent::gorna::protocol::Why);
+    is_debug::<khora_core::agent::gorna::protocol::Why>();
+    is_clone::<khora_core::agent::gorna::protocol::Why>();
+    is_default::<khora_core::agent::gorna::protocol::Why>();
+    is_partial_eq::<khora_core::agent::gorna::protocol::Why>();
+    is_serialize::<khora_core::agent::gorna::protocol::Why>();
+    is_deserialize_owned::<khora_core::agent::gorna::protocol::Why>();
+    let _ = type_name::<khora_core::agent::gorna::protocol::DecidedBy>();
+    let _ = decided_by_variants as fn(&khora_core::agent::gorna::protocol::DecidedBy);
+    is_debug::<khora_core::agent::gorna::protocol::DecidedBy>();
+    is_clone::<khora_core::agent::gorna::protocol::DecidedBy>();
+    is_copy::<khora_core::agent::gorna::protocol::DecidedBy>();
+    is_default::<khora_core::agent::gorna::protocol::DecidedBy>();
+    is_partial_eq::<khora_core::agent::gorna::protocol::DecidedBy>();
+    is_eq::<khora_core::agent::gorna::protocol::DecidedBy>();
+    is_hash::<khora_core::agent::gorna::protocol::DecidedBy>();
+    is_serialize::<khora_core::agent::gorna::protocol::DecidedBy>();
+    is_deserialize_owned::<khora_core::agent::gorna::protocol::DecidedBy>();
+    let _ = type_name::<khora_core::agent::gorna::protocol::Binding>();
+    let _ = binding_variants as fn(&khora_core::agent::gorna::protocol::Binding);
+    is_debug::<khora_core::agent::gorna::protocol::Binding>();
+    is_clone::<khora_core::agent::gorna::protocol::Binding>();
+    is_copy::<khora_core::agent::gorna::protocol::Binding>();
+    is_partial_eq::<khora_core::agent::gorna::protocol::Binding>();
+    is_eq::<khora_core::agent::gorna::protocol::Binding>();
+    is_hash::<khora_core::agent::gorna::protocol::Binding>();
+    is_serialize::<khora_core::agent::gorna::protocol::Binding>();
+    is_deserialize_owned::<khora_core::agent::gorna::protocol::Binding>();
+    let _ = type_name::<khora_core::agent::gorna::protocol::Rejected>();
+    let _ = rejected_fields as fn(&khora_core::agent::gorna::protocol::Rejected);
+    is_debug::<khora_core::agent::gorna::protocol::Rejected>();
+    is_clone::<khora_core::agent::gorna::protocol::Rejected>();
+    is_copy::<khora_core::agent::gorna::protocol::Rejected>();
+    is_partial_eq::<khora_core::agent::gorna::protocol::Rejected>();
+    is_eq::<khora_core::agent::gorna::protocol::Rejected>();
+    is_hash::<khora_core::agent::gorna::protocol::Rejected>();
+    is_serialize::<khora_core::agent::gorna::protocol::Rejected>();
+    is_deserialize_owned::<khora_core::agent::gorna::protocol::Rejected>();
 }
 
 #[test]
@@ -1846,6 +1921,19 @@ fn module_lane_paths_still_resolve() {
     let _ = khora_core::lane::deck::OutputDeck::merge_from;
     is_default::<khora_core::lane::deck::OutputDeck>();
     is_debug::<khora_core::lane::deck::OutputDeck>();
+    let _ = type_name::<khora_core::lane::cost::Device>();
+    let _ = device_variants as fn(&khora_core::lane::cost::Device);
+    let _: [khora_core::lane::cost::Device; 4] = khora_core::lane::cost::Device::ALL;
+    let _ = khora_core::lane::cost::Device::get::<u32>;
+    let _ = khora_core::lane::cost::Device::get_mut::<u32>;
+    is_debug::<khora_core::lane::cost::Device>();
+    is_clone::<khora_core::lane::cost::Device>();
+    is_copy::<khora_core::lane::cost::Device>();
+    is_partial_eq::<khora_core::lane::cost::Device>();
+    is_eq::<khora_core::lane::cost::Device>();
+    is_hash::<khora_core::lane::cost::Device>();
+    is_serialize::<khora_core::lane::cost::Device>();
+    is_deserialize_owned::<khora_core::lane::cost::Device>();
 }
 
 /// `khora_core::lane::Lane` and `khora_core::lane::LaneReport` name the typed
@@ -2876,6 +2964,10 @@ mod paths_used_by_other_crates {
     use khora_core::agent::completion::CompletionOutcome as _; // khora-control
     use khora_core::agent::dependency::AgentDependency as _; // khora-control
     use khora_core::agent::dependency::DependencyKind as _; // khora-control
+    use khora_core::agent::gorna::protocol::Binding as _; // khora-control
+    use khora_core::agent::gorna::protocol::DecidedBy as _; // khora-control
+    use khora_core::agent::gorna::protocol::Rejected as _; // khora-control
+    use khora_core::agent::gorna::protocol::Why as _; // khora-control
     use khora_core::agent::gorna::AdaptationMode as _; // khora-control
     use khora_core::agent::gorna::AgentHints as _; // khora-control, khora-sdk
     use khora_core::agent::gorna::AgentId as _; // khora-agents, khora-control, khora-sdk
@@ -2920,6 +3012,7 @@ mod paths_used_by_other_crates {
     use khora_core::graph::topological_sort as _; // khora-control, khora-data
     use khora_core::interpolation::SharedTransformInterpolation as _; // khora-agents, khora-data, khora-sdk
     use khora_core::interpolation::TransformInterpolation as _; // khora-data
+    use khora_core::lane::cost::Device as _; // khora-control
     use khora_core::lane::ClearColor as _; // khora-agents, khora-lanes, khora-sdk
     use khora_core::lane::ColorTargetSize as _; // khora-data, khora-editor (as khora_sdk::khora_core::…), khora-sdk
     use khora_core::lane::Lane as _; // khora-lanes

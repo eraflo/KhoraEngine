@@ -737,6 +737,46 @@ fn only_the_families_on_are_asked() {
     assert!(!script_ear.heard().asked.is_empty());
 }
 
+/// **The DCC journals why it decided.** A renderer offering a 2 ms floor
+/// and an 8 ms upgrade fits the first frame: the Q-RAM pass decides the
+/// first epoch, and its record says so, with the trigger the round was
+/// decided under.
+#[test]
+fn the_dcc_journals_why_it_decided() {
+    let (mut dcc, rx) = recording(DccConfig::default());
+    let (agent, _ear) = Speaker::with_upgrade(
+        "renderer",
+        Duration::from_millis(2),
+        Duration::from_millis(8),
+    );
+    dcc.register_agent(agent, 1.0);
+    dcc.start(rx);
+
+    let recorded = wait_for(3, || !records(&dcc).is_empty());
+    let first = records(&dcc).first().cloned();
+    dcc.stop();
+
+    assert!(recorded, "the first epoch was journaled");
+    let first = first.expect("the first record");
+    assert_ne!(
+        first.allocation.trigger,
+        Trigger::Safety,
+        "the floor fits the frame: {:?}",
+        first.allocation
+    );
+    assert_eq!(
+        first.why.by,
+        khora_core::agent::gorna::protocol::DecidedBy::Greedy,
+        "{:?}",
+        first.why
+    );
+    assert_eq!(
+        first.why.trigger, first.allocation.trigger,
+        "{:?}",
+        first.why
+    );
+}
+
 /// **The journal records each epoch's inputs.** Before the first epoch the
 /// developer set the renderer `Stable` and capped it at 12 ms, the scheduler
 /// published its waves, and the renderer reported a run. The first epoch's

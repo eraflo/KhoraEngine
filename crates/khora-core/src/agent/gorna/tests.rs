@@ -18,10 +18,11 @@
 use std::time::Duration;
 
 use super::protocol::{
-    Allocation, Confidence, Envelope, Epoch, FrameReport, Offer, OfferRow, Report, Trigger,
+    Allocation, Binding, Confidence, DecidedBy, Envelope, Epoch, FrameReport, Offer, OfferRow,
+    Rejected, Report, Trigger, Why,
 };
 use super::{AdaptationMode, AgentHints, AgentId, DecisionTrace, EpochRecord, StrategyId};
-use crate::lane::cost::{Cost, PerDevice};
+use crate::lane::cost::{Cost, Device, PerDevice};
 
 // ─── An agent id is its name ────────────────────────────────────────────────
 
@@ -175,6 +176,7 @@ fn epoch_record(epoch: u64) -> EpochRecord {
             },
         )],
         reasons: vec!["the frame ran over its target".to_owned()],
+        why: Why::default(),
     }
 }
 
@@ -340,6 +342,124 @@ fn a_journal_whose_price_is_not_a_number_still_reads_back() {
         "{:?}",
         read.epochs[1].allocation.price
     );
+}
+
+/// A round decided by the Q-RAM pass, bound by the graphics processor's
+/// time, that refused one upgrade of each agent: `ALPHA`'s for the graphics
+/// processor's time, `BETA`'s for its memory.
+fn a_greedy_why() -> Why {
+    Why {
+        by: DecidedBy::Greedy,
+        trigger: Trigger::Overruns,
+        binding: Some(Binding::Time(Device::Gpu)),
+        rejected: vec![
+            Rejected {
+                agent: ALPHA,
+                row: StrategyId::HighPerformance,
+                over: Binding::Time(Device::Gpu),
+            },
+            Rejected {
+                agent: BETA,
+                row: StrategyId::Custom(9),
+                over: Binding::Memory(Device::Gpu),
+            },
+        ],
+    }
+}
+
+/// **A journal keeps why each epoch was decided, and what a switch of row
+/// cost**, and one written before it kept them reads back decided by the
+/// floors, nothing binding, nothing rejected, no switch measured. A replay
+/// or an evaluation reads the reasons and the switch costs back from the
+/// journal: an epoch that recorded them must not read back without them.
+#[test]
+fn the_journal_keeps_the_why_and_the_switch() {
+    let mut trace = journal(2);
+    trace.epochs[0].why = a_greedy_why();
+    trace.epochs[0].reports[0].switch = Some(Duration::from_micros(750));
+
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let read: DecisionTrace = serde_json::from_str(&written).expect("a journal reads back");
+    assert_eq!(read.epochs[0].why, a_greedy_why(), "written as {written}");
+    assert_eq!(
+        read.epochs[0].reports[0].switch,
+        Some(Duration::from_micros(750)),
+        "written as {written}"
+    );
+    assert_eq!(read, trace, "every epoch reads back as written");
+
+    let mut older: serde_json::Value = serde_json::from_str(&written).expect("a journal is JSON");
+    for epoch in older["epochs"].as_array_mut().expect("the epochs") {
+        epoch
+            .as_object_mut()
+            .expect("an epoch")
+            .remove("why")
+            .expect("the why is written");
+        for report in epoch["reports"].as_array_mut().expect("the reports") {
+            report
+                .as_object_mut()
+                .expect("a report")
+                .remove("switch")
+                .expect("the switch is written");
+        }
+    }
+    let read = serde_json::from_value::<DecisionTrace>(older).expect("an older journal reads");
+    for epoch in &read.epochs {
+        assert_eq!(epoch.why.by, DecidedBy::Floors, "{:?}", epoch.why);
+        assert_eq!(epoch.why.binding, None, "{:?}", epoch.why);
+        assert!(epoch.why.rejected.is_empty(), "{:?}", epoch.why);
+        assert!(
+            epoch.reports.iter().all(|report| report.switch.is_none()),
+            "no switch measured: {:?}",
+            epoch.reports
+        );
+    }
+}
+
+/// **A journal names a refused upgrade's agent through its table.** Two
+/// hundred epochs, each refusing an upgrade of both agents, read back as
+/// written and still hold each name a single time: the reasons cost no name
+/// per epoch, written or read.
+#[test]
+fn a_journal_names_a_refused_upgrades_agent_once() {
+    let mut trace = journal(200);
+    for epoch in &mut trace.epochs {
+        epoch.why = a_greedy_why();
+    }
+
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let read: DecisionTrace = serde_json::from_str(&written).expect("a journal reads back");
+
+    assert_eq!(read, trace, "the reasons read back as written");
+    assert_eq!(written.matches(ALPHA.name()).count(), 1, "{ALPHA} once");
+    assert_eq!(written.matches(BETA.name()).count(), 1, "{BETA} once");
+}
+
+/// **A journal written before the reasons reads each epoch's own trigger.**
+/// Its epochs were opened by `Initial`, then by `Overruns`: an epoch read
+/// back without a written `why` says it was opened by what its allocation
+/// says, not by `Initial`.
+#[test]
+fn an_older_journal_reads_each_epochs_own_trigger() {
+    let written = serde_json::to_string(&journal(3)).expect("a journal serialises");
+    let mut older: serde_json::Value = serde_json::from_str(&written).expect("a journal is JSON");
+    for epoch in older["epochs"].as_array_mut().expect("the epochs") {
+        epoch
+            .as_object_mut()
+            .expect("an epoch")
+            .remove("why")
+            .expect("the why is written");
+    }
+
+    let read = serde_json::from_value::<DecisionTrace>(older).expect("an older journal reads");
+
+    for epoch in &read.epochs {
+        assert_eq!(
+            epoch.why.trigger, epoch.allocation.trigger,
+            "epoch {:?}: {:?}",
+            epoch.allocation.epoch, epoch.why
+        );
+    }
 }
 
 // ── The frame report ──────────────────────────────────────────────

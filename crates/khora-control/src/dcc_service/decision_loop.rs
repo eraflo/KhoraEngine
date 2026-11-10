@@ -513,6 +513,7 @@ impl DccService {
                                 policies: by_agent(&policies),
                                 hints: by_agent(&tick_hints),
                                 reasons: report.alerts.clone(),
+                                why: arbitrator.why().clone(),
                             });
                         }
                     }
