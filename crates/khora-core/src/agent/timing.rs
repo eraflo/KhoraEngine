@@ -58,7 +58,9 @@ impl Default for ExecutionTiming {
 /// them to save frame time. Work that must be deterministic — physics in a
 /// simulation, or editor chrome once it owns a non-negotiable pass — lives here.
 /// Only `Optional` work is negotiable (the budget escape valve).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum AgentImportance {
     /// Must execute — non-negotiable, never skipped. Skipping causes errors or corruption.
     Critical,

@@ -24,6 +24,7 @@ use khora_data::ecs::layout::LayoutRecommendation;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::thread;
+use std::time::Instant;
 
 use crate::agent_registry::AgentRegistry;
 use khora_core::agent::gorna::{AdaptationMode, AgentHints, AgentId, DecisionTrace, EngineHint};
@@ -42,7 +43,7 @@ const COST_MODEL_CAPACITY: usize = 64;
 
 /// Minimum frame-time samples before the governor decides. Below this it holds
 /// its multiplier rather than reacting to thin data.
-const FRAME_TIME_MIN_SAMPLES: usize = 10;
+pub(crate) const FRAME_TIME_MIN_SAMPLES: usize = 10;
 
 /// How far the published budget multiplier must have moved since the last
 /// issuance for the DCC to re-arbitrate: any real move. The governor only
@@ -75,8 +76,9 @@ pub struct DccService {
     /// DCC from access telemetry via the Data-layer advisor. Glass-box only:
     /// the DCC *advises*, it never repacks — Data owns its layout (CLAD).
     layout_recommendations: Arc<std::sync::RwLock<HashMap<String, LayoutRecommendation>>>,
-    /// Whether the DCC is recording GORNA decisions for deterministic replay.
-    decision_recording: Arc<std::sync::RwLock<bool>>,
+    /// When the DCC started recording GORNA decisions; `None` while it
+    /// records none.
+    decision_recording: Arc<std::sync::RwLock<Option<Instant>>>,
     /// The accumulating recorded decision trace (one allocation per epoch).
     recorded_trace: Arc<std::sync::RwLock<DecisionTrace>>,
     /// When `Some((trace, cursor))`, the DCC lends the trace's allocations,
@@ -101,7 +103,7 @@ impl DccService {
             adaptation_modes: Arc::new(std::sync::RwLock::new(HashMap::new())),
             hints: Arc::new(std::sync::RwLock::new(HashMap::new())),
             layout_recommendations: Arc::new(std::sync::RwLock::new(HashMap::new())),
-            decision_recording: Arc::new(std::sync::RwLock::new(false)),
+            decision_recording: Arc::new(std::sync::RwLock::new(None)),
             recorded_trace: Arc::new(std::sync::RwLock::new(DecisionTrace::default())),
             replay: Arc::new(std::sync::RwLock::new(None)),
             hardware_monitor: Arc::new(std::sync::RwLock::new(None)),
@@ -182,7 +184,7 @@ impl DccService {
     /// network lockstep, bug repro). Thread-safe; takes effect next tick.
     pub fn start_decision_recording(&self) {
         if let Ok(mut rec) = self.decision_recording.write() {
-            *rec = true;
+            *rec = Some(Instant::now());
         }
         if let Ok(mut trace) = self.recorded_trace.write() {
             *trace = DecisionTrace::default();
@@ -192,7 +194,7 @@ impl DccService {
     /// Stops recording and returns the captured [`DecisionTrace`].
     pub fn stop_decision_recording(&self) -> DecisionTrace {
         if let Ok(mut rec) = self.decision_recording.write() {
-            *rec = false;
+            *rec = None;
         }
         self.recorded_decisions()
     }

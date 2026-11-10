@@ -24,6 +24,7 @@ use super::protocol::{
     Why,
 };
 use super::{AdaptationMode, AgentHints, AgentId, StrategyId};
+use crate::agent::AgentImportance;
 use crate::lane::cost::PerDevice;
 
 /// An ordered, replayable recording of GORNA's decisions: for each epoch,
@@ -66,6 +67,36 @@ pub struct EpochRecord {
     /// Why the round decided as it did: what decided it, the constraint that
     /// bound it, the upgrades it refused.
     pub why: Why,
+    /// Each agent's importance, in the agents' order.
+    pub importance: Vec<(AgentId, AgentImportance)>,
+    /// The measured time, in milliseconds, each agent's quotes were
+    /// calibrated by.
+    pub calibration: Vec<(AgentId, f64)>,
+    /// The bytes the agents could hold on each device, as the round read
+    /// them; `None` where it was not known.
+    pub memory: PerDevice<Option<u64>>,
+    /// The agents that ran off the frame, at the background.
+    pub background: Vec<AgentId>,
+    /// When the epoch opened, since recording started.
+    pub at: Duration,
+    /// How the frames ran since the previous epoch.
+    pub frames: FrameSummary,
+    /// The envelopes in force when the round opened, by agent: what a
+    /// `Stable` agent keeps, and what a late or busy one runs on still.
+    pub in_force: Vec<(AgentId, Envelope)>,
+}
+
+/// How a run of frames went: their critical paths, summed up.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct FrameSummary {
+    /// How many frames ran.
+    pub count: u32,
+    /// How many of them lasted longer than their target.
+    pub over_target: u32,
+    /// The longest of them.
+    pub worst: Duration,
+    /// Their mean.
+    pub mean: Duration,
 }
 
 impl Serialize for DecisionTrace {
@@ -152,6 +183,23 @@ struct WrittenEpoch {
     /// decided by the floors, nothing rejected.
     #[serde(default)]
     why: Option<WrittenWhy>,
+    /// A journal from before the round's inputs were written reads none of
+    /// them: no importance, calibration, memory limit or background agent,
+    /// opened at zero, no frame.
+    #[serde(default)]
+    importance: Vec<(Named, AgentImportance)>,
+    #[serde(default)]
+    calibration: Vec<(Named, f64)>,
+    #[serde(default)]
+    memory: PerDevice<Option<u64>>,
+    #[serde(default)]
+    background: Vec<Named>,
+    #[serde(default)]
+    at: Duration,
+    #[serde(default)]
+    frames: FrameSummary,
+    #[serde(default)]
+    in_force: Vec<(Named, Envelope)>,
 }
 
 /// A decision's explanation as written, its agents named by place.
@@ -305,6 +353,21 @@ fn written_epoch(record: &EpochRecord, table: &mut Table) -> WrittenEpoch {
                 .map(|rejected| (table.of(rejected.agent), rejected.row, rejected.over))
                 .collect(),
         }),
+        importance: (record.importance.iter())
+            .map(|(agent, importance)| (table.of(*agent), *importance))
+            .collect(),
+        calibration: (record.calibration.iter())
+            .map(|(agent, ms)| (table.of(*agent), *ms))
+            .collect(),
+        memory: record.memory,
+        background: (record.background.iter())
+            .map(|agent| table.of(*agent))
+            .collect(),
+        at: record.at,
+        frames: record.frames,
+        in_force: (record.in_force.iter())
+            .map(|(agent, envelope)| (table.of(*agent), *envelope))
+            .collect(),
     }
 }
 
@@ -395,5 +458,18 @@ fn read_epoch<E>(
                     .collect::<Result<_, E>>()?,
             },
         },
+        importance: (written.importance.into_iter())
+            .map(|(agent, importance)| Ok((named(agent)?, importance)))
+            .collect::<Result<_, E>>()?,
+        calibration: (written.calibration.into_iter())
+            .map(|(agent, ms)| Ok((named(agent)?, ms)))
+            .collect::<Result<_, E>>()?,
+        memory: written.memory,
+        background: list(written.background)?,
+        at: written.at,
+        frames: written.frames,
+        in_force: (written.in_force.into_iter())
+            .map(|(agent, envelope)| Ok((named(agent)?, envelope)))
+            .collect::<Result<_, E>>()?,
     })
 }

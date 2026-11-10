@@ -35,7 +35,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-mod arbiter;
+pub(crate) mod arbiter;
 mod decide;
 
 use arbiter::Arbiter;
@@ -96,6 +96,10 @@ pub struct GornaArbitrator {
     offers: Vec<Offer>,
     /// The last round's target time for the frame.
     target: Duration,
+    /// Each agent's importance, as the last round read it, by agent.
+    importance: Vec<(AgentId, AgentImportance)>,
+    /// The bytes the last round let the agents hold on each device.
+    memory: PerDevice<Option<u64>>,
     /// Each agent seen, by a weak reference to its lock: the name of one busy
     /// through a round is known without locking it (the weak reference also
     /// keeps a removed agent's lock address from being reused while held).
@@ -117,6 +121,8 @@ impl GornaArbitrator {
             arbiter: Arbiter::default(),
             offers: Vec::new(),
             target: Duration::ZERO,
+            importance: Vec::new(),
+            memory: PerDevice::default(),
             known: Vec::new(),
         }
     }
@@ -164,6 +170,17 @@ impl GornaArbitrator {
     /// The target time for the frame the last round shared.
     pub fn target(&self) -> Duration {
         self.target
+    }
+
+    /// Each agent's importance, as the last round read it, by agent.
+    pub fn importance(&self) -> &[(AgentId, AgentImportance)] {
+        &self.importance
+    }
+
+    /// The bytes the last round let the agents hold on each device; `None`
+    /// where it knew no limit.
+    pub fn memory(&self) -> PerDevice<Option<u64>> {
+        self.memory
     }
 
     /// One round of the protocol: asks every agent in `agents` for an offer
@@ -285,6 +302,12 @@ impl GornaArbitrator {
             bids: &bids,
         });
         self.background = background;
+        self.importance = bids
+            .iter()
+            .map(|bid| (bid.offer.agent, bid.importance))
+            .collect();
+        self.importance.sort_by_key(|(agent, _)| *agent);
+        self.memory = memory;
         self.why = decision.why;
         self.in_force = Some(decision.allocation.clone());
         decision.allocation
@@ -334,7 +357,7 @@ impl GornaArbitrator {
 /// Anchors `offer`'s quoted costs in what the DCC measured: every priced
 /// row's time is scaled so the row running now costs `measured_ms`. Relative
 /// order between rows is kept; the factor is clamped.
-fn calibrate(offer: &mut Offer, measured_ms: Option<f64>) {
+pub(crate) fn calibrate(offer: &mut Offer, measured_ms: Option<f64>) {
     let Some(measured_ms) = measured_ms else {
         return;
     };

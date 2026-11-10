@@ -127,6 +127,14 @@ impl<A: EngineApp> EngineBootstrap<A> {
             (None, Some(runtime)) => Arc::new(runtime),
             (None, None) => Arc::new(Runtime::new()),
         };
+        // A journal named at boot records every decision, from the first.
+        core.journal = super::decision_journal::record_path(std::env::var_os(
+            super::decision_journal::RECORD_VAR,
+        ));
+        if let Some(path) = &core.journal {
+            log::info!("Decision journal: recording to {}", path.display());
+            dcc.start_decision_recording();
+        }
         // Start the DCC background thread AFTER agents are initialized so
         // GORNA does not run health-checks before agents are ready.
         dcc.start(dcc_rx);

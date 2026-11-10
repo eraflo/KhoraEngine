@@ -15,11 +15,11 @@
 //! The DCC service: its thread, what it ingests, its forecast, its frame
 //! governor, and the order it initializes agents in. The protocol it speaks
 //! to the agents is in `protocol.rs`; when it opens an epoch, in `epochs.rs`;
-//! how the governor drives the multiplier in `frame_governor.rs`, the
-//! loop it closes through GORNA, simulated, in `closed_loop.rs`, and the
-//! hardware monitor its thread reads in `hardware_monitor.rs`.
+//! how the governor drives the multiplier in `frame_governor.rs`, and the
+//! hardware monitor its thread reads in `hardware_monitor.rs`. The loop the
+//! governor closes through GORNA, simulated, is pinned by the evaluation's
+//! own tests.
 
-mod closed_loop;
 mod epochs;
 mod frame_governor;
 mod hardware_monitor;
@@ -89,6 +89,13 @@ fn record(allocation: Allocation) -> EpochRecord {
         hints: Vec::new(),
         reasons: Vec::new(),
         why: khora_core::agent::gorna::protocol::Why::default(),
+        importance: Vec::new(),
+        calibration: Vec::new(),
+        memory: PerDevice::default(),
+        background: Vec::new(),
+        at: Duration::ZERO,
+        frames: khora_core::agent::gorna::FrameSummary::default(),
+        in_force: Vec::new(),
     }
 }
 

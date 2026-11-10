@@ -115,10 +115,7 @@ pub(crate) enum Admission<'r> {
 /// floor checked on the critical path, and a `Stable` agent's envelope kept
 /// while it still fits the frame with every other agent at its floor.
 pub(crate) fn admit<'r>(round: &'r Round<'_>) -> Admission<'r> {
-    let mut bids: Vec<&Bid> = round.bids.iter().collect();
-    bids.sort_by_key(|bid| bid.offer.agent);
-
-    let mut plans: Vec<Plan> = bids.iter().map(|bid| Plan::of(bid)).collect();
+    let (bids, mut plans) = floors(round);
     let breached = breach(round, &bids, &plans);
     if round.trigger == Trigger::Safety || breached.is_some() {
         let allocation = Allocation {
@@ -176,6 +173,27 @@ pub(crate) fn admit<'r>(round: &'r Round<'_>) -> Admission<'r> {
         }
     }
     Admission::Admitted { bids, plans }
+}
+
+/// `round`'s bids in agent order, and each one's plan at its floor, as its
+/// policies make it.
+pub(crate) fn floors<'r>(round: &'r Round<'_>) -> (Vec<&'r Bid>, Vec<Plan>) {
+    let mut bids: Vec<&Bid> = round.bids.iter().collect();
+    bids.sort_by_key(|bid| bid.offer.agent);
+    let plans = bids.iter().map(|bid| Plan::of(bid)).collect();
+    (bids, plans)
+}
+
+/// What the plans leave of the target, in milliseconds, on the device whose
+/// critical path is the longest: negative when they are over it.
+pub(crate) fn slack_ms(round: &Round<'_>, bids: &[&Bid], plans: &[Plan]) -> f64 {
+    let paths = critical_paths(round, bids, plans);
+    let longest = Device::ALL
+        .into_iter()
+        .map(|device| device.get(&paths))
+        .max()
+        .unwrap_or_default();
+    (micros(round.target) as f64 - longest as f64) / 1_000.0
 }
 
 /// The agents named late in `bids`.

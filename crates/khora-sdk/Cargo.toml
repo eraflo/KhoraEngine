@@ -6,6 +6,13 @@ rust-version.workspace = true
 license.workspace = true
 description = "The stable, public-facing API and engine frameworks for game developers"
 
+[[example]]
+name = "arbiter_eval"
+# Compares GORNA's proposer sets and holds no test of its own: built as a
+# test it would link the whole engine for nothing. `xtask`'s manifest checks
+# keep a test from hiding here.
+test = false
+
 [dependencies]
 khora-core = { path = "../khora-core" }
 khora-data = { path = "../khora-data" }

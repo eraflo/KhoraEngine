@@ -30,6 +30,7 @@ use crate::traits::EngineApp;
 use crate::{GameWorld, InputEvent};
 
 mod bootstrap;
+mod decision_journal;
 mod families;
 mod frame;
 mod frame_clock;
@@ -77,6 +78,9 @@ pub struct EngineCore<A: EngineApp> {
     /// Whether the startup is over — what it waited on landed, or it gave
     /// up — and the app was told.
     startup_over: bool,
+    /// Where the DCC's decisions are written at shutdown, when the
+    /// `KHORA_RECORD_DECISIONS` variable named a file at boot.
+    journal: Option<std::path::PathBuf>,
 }
 
 impl<A: EngineApp> EngineCore<A> {
@@ -100,6 +104,7 @@ impl<A: EngineApp> EngineCore<A> {
             lane_agents: Vec::new(),
             frame_clock: frame_clock::FrameClock::default(),
             startup_over: false,
+            journal: None,
         }
     }
 
@@ -208,6 +213,20 @@ impl<A: EngineApp> EngineCore<A> {
         self.lane_agents.clear();
         if let Some(app) = self.app.as_mut() {
             app.on_shutdown();
+        }
+        if let (Some(path), Some(dcc)) = (self.journal.take(), self.dcc.as_ref()) {
+            let trace = dcc.stop_decision_recording();
+            match decision_journal::write(&path, &trace) {
+                Ok(()) => log::info!(
+                    "Decision journal: {} epochs written to {}",
+                    trace.epochs.len(),
+                    path.display()
+                ),
+                Err(error) => log::error!(
+                    "Decision journal: could not write {}: {error}",
+                    path.display()
+                ),
+            }
         }
         log::info!("Engine shutdown complete.");
     }

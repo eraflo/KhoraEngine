@@ -857,6 +857,205 @@ fn the_journal_records_each_epochs_inputs() {
     );
 }
 
+/// An agent of one 1 ms floor row, of a set importance, run at a set phase:
+/// what a round reads of it beside its offer.
+struct Ranked {
+    id: AgentId,
+    importance: khora_core::agent::AgentImportance,
+    phase: khora_core::agent::ExecutionPhase,
+    place: Arc<Mutex<Place>>,
+}
+
+impl Ranked {
+    fn agent(
+        name: &'static str,
+        importance: khora_core::agent::AgentImportance,
+        phase: khora_core::agent::ExecutionPhase,
+    ) -> Arc<Mutex<dyn Agent>> {
+        Arc::new(Mutex::new(Ranked {
+            id: AgentId::new(name),
+            importance,
+            phase,
+            place: Arc::new(Mutex::new(Place::new(AgentId::new(name)))),
+        }))
+    }
+
+    fn floor(&self) -> OfferRow {
+        OfferRow {
+            id: StrategyId::LowPower,
+            cost: Cost {
+                time: PerDevice {
+                    cpu: Duration::from_millis(1),
+                    ..PerDevice::default()
+                },
+                ..Cost::default()
+            },
+            quality: 0.5,
+            confidence: Confidence::Quoted,
+        }
+    }
+}
+
+impl Agent for Ranked {
+    fn id(&self) -> AgentId {
+        self.id
+    }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        Offer {
+            agent: self.id,
+            epoch: request.epoch,
+            rows: vec![self.floor()],
+            floor: StrategyId::LowPower,
+            current: StrategyId::LowPower,
+            health: 1.0,
+        }
+    }
+    fn apply(
+        &mut self,
+        _epoch: Epoch,
+        _envelope: &Envelope,
+        _pin: Option<StrategyId>,
+        _allowed: Option<&[StrategyId]>,
+    ) {
+    }
+    fn report(&self) -> Report {
+        Report {
+            agent: self.id,
+            epoch: Epoch::default(),
+            row: StrategyId::LowPower,
+            measured: self.floor().cost.time,
+            done: 1.0,
+            health: 1.0,
+            over_budget: false,
+            stalled: false,
+            workload: None,
+            switch: None,
+            message: None,
+        }
+    }
+    fn place(&self) -> Arc<Mutex<Place>> {
+        Arc::clone(&self.place)
+    }
+    fn execution_timing(&self) -> khora_core::agent::ExecutionTiming {
+        khora_core::agent::ExecutionTiming {
+            importance: self.importance,
+            default_phase: self.phase,
+            ..Default::default()
+        }
+    }
+}
+
+/// A frame whose host was busy `ms` milliseconds, nothing else measured.
+fn host_frame(ms: u64) -> TelemetryEvent {
+    TelemetryEvent::FrameReport(FrameReport {
+        busy: PerDevice {
+            cpu: Some(Duration::from_millis(ms)),
+            ..PerDevice::default()
+        },
+    })
+}
+
+/// **A recorded epoch keeps what its round read.** Before the first epoch,
+/// the renderer (Critical) reported a 3 ms run, which calibrates its
+/// quotes; the streamer (Optional) runs at the background; 512 MiB of
+/// video memory are left; five frames ran — three of 25 ms, over the
+/// target, and two of 5 ms. The first epoch's record holds each agent's
+/// importance, the renderer's calibration, the memory limit, the streamer
+/// at the background, when it opened since recording started, and the five
+/// frames summed up.
+#[test]
+fn a_recorded_epoch_keeps_what_its_round_read() {
+    use khora_core::agent::AgentImportance::{Critical, Optional};
+    use khora_core::agent::ExecutionPhase;
+
+    let renderer = AgentId::new("renderer");
+    let streamer = AgentId::new("streamer");
+    let before_recording = std::time::Instant::now();
+    let (mut dcc, rx) = recording(DccConfig::default());
+    dcc.context_handle()
+        .write()
+        .expect("the context lock")
+        .hardware
+        .available_vram = Some(512 * MIB);
+    dcc.register_agent(
+        Ranked::agent("renderer", Critical, ExecutionPhase::OUTPUT),
+        1.0,
+    );
+    dcc.register_agent(
+        Ranked::agent("streamer", Optional, ExecutionPhase::BACKGROUND),
+        1.0,
+    );
+    let tx = dcc.event_sender();
+    tx.send(TelemetryEvent::AgentReport(Report {
+        agent: renderer,
+        epoch: Epoch(0),
+        row: StrategyId::LowPower,
+        measured: PerDevice {
+            cpu: Duration::from_millis(3),
+            ..PerDevice::default()
+        },
+        done: 1.0,
+        health: 1.0,
+        over_budget: false,
+        stalled: false,
+        workload: Some(10.0),
+        switch: None,
+        message: None,
+    }))
+    .expect("the DCC listens");
+    for ms in [25, 25, 25, 5, 5] {
+        tx.send(host_frame(ms)).expect("the DCC listens");
+    }
+    dcc.start(rx);
+
+    let recorded = wait_for(3, || !records(&dcc).is_empty());
+    let first = records(&dcc).first().cloned();
+    let since_recording = before_recording.elapsed();
+    dcc.stop();
+
+    assert!(recorded, "the first epoch was journaled");
+    let first = first.expect("the first record");
+    assert_eq!(
+        first.importance,
+        vec![(renderer, Critical), (streamer, Optional)],
+        "each agent's importance, in the agents' order"
+    );
+    assert_eq!(
+        first.calibration.len(),
+        1,
+        "the renderer's quotes alone were calibrated: {:?}",
+        first.calibration
+    );
+    let (calibrated, by_ms) = first.calibration[0];
+    assert_eq!(calibrated, renderer);
+    assert!(
+        (by_ms - 3.0).abs() < 1e-9,
+        "by the 3 ms it was measured: {by_ms}"
+    );
+    assert_eq!(
+        first.memory.gpu,
+        Some(512 * MIB),
+        "the video memory left: {:?}",
+        first.memory
+    );
+    assert_eq!(first.background, vec![streamer]);
+    assert!(
+        first.at > Duration::ZERO && first.at <= since_recording,
+        "opened after recording started, before the test read it: {:?} of {since_recording:?}",
+        first.at
+    );
+    assert_eq!(
+        first.frames,
+        khora_core::agent::gorna::FrameSummary {
+            count: 5,
+            over_target: 3,
+            worst: Duration::from_millis(25),
+            mean: Duration::from_millis(17),
+        },
+        "the five frames before the first epoch"
+    );
+}
+
 /// **A channel connected after the DCC started still carries its
 /// allocations.** The engine starts the decision thread, then builds its
 /// scheduler and connects its channel: the agent is lent its envelope at a
@@ -921,4 +1120,148 @@ fn an_allocation_decided_before_the_scheduler_connected_is_lent() {
 
     assert!(lent, "the allocation in force was lent");
     assert_eq!(opened, 1, "no other epoch was needed");
+}
+
+/// **A journal sums up only the frames run since it began.** Frames run
+/// while an earlier journal recorded and no epoch opened — no agent took
+/// part — are not the new journal's: once it begins and an agent joins,
+/// its first epoch ran no frame.
+#[test]
+fn a_journal_sums_up_only_the_frames_run_since_it_began() {
+    use khora_core::agent::AgentImportance::Critical;
+    use khora_core::agent::ExecutionPhase;
+
+    let (mut dcc, rx) = recording(DccConfig::default());
+    let tx = dcc.event_sender();
+    dcc.start(rx);
+    for _ in 0..20 {
+        tx.send(host_frame(50)).expect("the DCC listens");
+    }
+    // Ten ticks for the DCC to take them in; with no agent, no epoch opens.
+    thread::sleep(Duration::from_millis(100));
+    assert!(records(&dcc).is_empty(), "no agent, no epoch");
+
+    // A new journal begins; then an agent joins, which opens an epoch.
+    dcc.start_decision_recording();
+    dcc.register_agent(
+        Ranked::agent("renderer", Critical, ExecutionPhase::OUTPUT),
+        1.0,
+    );
+    let recorded = wait_for(3, || !records(&dcc).is_empty());
+    let first = records(&dcc).first().cloned();
+    dcc.stop();
+
+    assert!(recorded, "the first epoch was journaled");
+    let first = first.expect("the first record");
+    assert_eq!(
+        first.frames.count, 0,
+        "no frame ran since the journal began: {:?}",
+        first.frames
+    );
+}
+
+/// An agent of one 1 ms floor row whose offer, once armed, says it was
+/// asked and waits to be let go: what happens on the DCC's thread between
+/// the round opening and its record can be pinned.
+struct Gated {
+    inner: Ranked,
+    armed: Arc<std::sync::atomic::AtomicBool>,
+    asked: std::sync::mpsc::Sender<()>,
+    go: Mutex<std::sync::mpsc::Receiver<()>>,
+}
+
+impl Agent for Gated {
+    fn id(&self) -> AgentId {
+        self.inner.id()
+    }
+    fn offer(&mut self, request: &OfferRequest) -> Offer {
+        if self.armed.swap(false, Ordering::SeqCst) {
+            let _ = self.asked.send(());
+            if let Ok(go) = self.go.lock() {
+                let _ = go.recv_timeout(Duration::from_secs(3));
+            }
+        }
+        self.inner.offer(request)
+    }
+    fn apply(
+        &mut self,
+        epoch: Epoch,
+        envelope: &Envelope,
+        pin: Option<StrategyId>,
+        allowed: Option<&[StrategyId]>,
+    ) {
+        self.inner.apply(epoch, envelope, pin, allowed);
+    }
+    fn report(&self) -> Report {
+        self.inner.report()
+    }
+    fn place(&self) -> Arc<Mutex<Place>> {
+        self.inner.place()
+    }
+    fn execution_timing(&self) -> khora_core::agent::ExecutionTiming {
+        self.inner.execution_timing()
+    }
+}
+
+/// **A journal begun while a round is open sums up none of the frames run
+/// before it.** Frames run under an earlier journal; a round opens on them,
+/// and while it asks for offers a new journal begins. The round is the new
+/// journal's first epoch: no frame ran since that journal began.
+#[test]
+fn a_journal_begun_while_a_round_is_open_sums_up_no_earlier_frame() {
+    use khora_core::agent::AgentImportance::Critical;
+    use khora_core::agent::ExecutionPhase;
+
+    let armed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let (asked_tx, asked) = std::sync::mpsc::channel();
+    let (go, go_rx) = std::sync::mpsc::channel();
+    let (mut dcc, rx) = recording(DccConfig::default());
+    dcc.register_agent(
+        Arc::new(Mutex::new(Gated {
+            inner: Ranked {
+                id: AgentId::new("renderer"),
+                importance: Critical,
+                phase: ExecutionPhase::OUTPUT,
+                place: Arc::new(Mutex::new(Place::new(AgentId::new("renderer")))),
+            },
+            armed: Arc::clone(&armed),
+            asked: asked_tx,
+            go: Mutex::new(go_rx),
+        })),
+        1.0,
+    );
+    let tx = dcc.event_sender();
+    dcc.start(rx);
+    assert!(
+        wait_for(3, || !records(&dcc).is_empty()),
+        "the first epoch opened"
+    );
+
+    // Overrunning frames under the first journal: the governor opens a
+    // round on them, and the new journal begins while it is open.
+    armed.store(true, Ordering::SeqCst);
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let mut opened = false;
+    while std::time::Instant::now() < deadline {
+        tx.send(host_frame(50)).expect("the DCC listens");
+        if asked.recv_timeout(Duration::from_millis(5)).is_ok() {
+            opened = true;
+            break;
+        }
+    }
+    assert!(opened, "a round opened on the overrunning frames");
+    dcc.start_decision_recording();
+    go.send(()).expect("the agent waits");
+
+    let recorded = wait_for(3, || !records(&dcc).is_empty());
+    let first = records(&dcc).first().cloned();
+    dcc.stop();
+
+    assert!(recorded, "the round was journaled");
+    let first = first.expect("the first record");
+    assert_eq!(
+        first.frames.count, 0,
+        "every frame ran before the journal began: {:?}",
+        first.frames
+    );
 }

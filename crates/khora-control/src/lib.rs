@@ -44,6 +44,7 @@ pub mod budget_channel;
 pub mod cost_model;
 pub mod dcc_context;
 pub mod dcc_service;
+pub mod evaluation;
 pub mod gorna;
 pub mod governor;
 pub mod metrics;

@@ -37,7 +37,7 @@ use std::time::{Duration, Instant};
 use crate::analysis::HeuristicEngine;
 use crate::gorna::GornaArbitrator;
 use khora_core::agent::gorna::protocol::{Report, Trigger};
-use khora_core::agent::gorna::{AgentHints, AgentId, EpochRecord};
+use khora_core::agent::gorna::{AgentHints, AgentId, EpochRecord, FrameSummary};
 use std::collections::HashMap;
 
 /// The share of the platform's video-memory budget kept in reserve, as
@@ -114,6 +114,12 @@ impl DccService {
             // When the hardware monitor was last read: its sensors are slow to
             // read, and heat and charge move slowly.
             let mut hardware_read: Option<Instant> = None;
+            // The critical paths of the frames run since the last epoch,
+            // while decisions are recorded: the journal sums them up.
+            let mut epoch_frames: Vec<Duration> = Vec::new();
+            // When the journal those frames belong to began: a journal begun
+            // since starts from no frame.
+            let mut frames_of: Option<Instant> = None;
 
             log::info!("DCC Service thread started.");
 
@@ -150,6 +156,11 @@ impl DccService {
                 //    this tick, in order, are what the governor observes once
                 //    the tick's setpoint is known.
                 let mut frames: Vec<Duration> = Vec::new();
+                let journal = recording_since(&decision_recording);
+                if journal != frames_of {
+                    epoch_frames.clear();
+                    frames_of = journal;
+                }
                 while let Ok(event) = event_rx.try_recv() {
                     match event {
                         TelemetryEvent::MetricUpdate { id, value } => {
@@ -265,6 +276,9 @@ impl DccService {
                                 let ms = critical.as_secs_f32() * 1_000.0;
                                 store.push(MetricId::new("frame", "critical_ms"), ms);
                                 frames.push(critical);
+                                if journal.is_some() {
+                                    epoch_frames.push(critical);
+                                }
                             }
                         }
                         TelemetryEvent::WavePlan { waves } => {
@@ -447,6 +461,7 @@ impl DccService {
                         None => false,
                     });
                     epochs.replayed(&agents);
+                    epoch_frames.clear();
                     epochs.set_in_force(allocation.epoch);
                     // Once the trace runs out, a live epoch opens for the
                     // engine as it is now, whatever the trace lent last.
@@ -484,6 +499,12 @@ impl DccService {
                         })
                         .collect();
                     arbitrator.set_wave_plan(&latest_wave_plan);
+                    // The target the frames since the last epoch ran under,
+                    // and the envelopes the round opens with.
+                    let ran_under = arbitrator.target();
+                    let in_force = (arbitrator.in_force())
+                        .map(|allocation| allocation.envelopes.clone())
+                        .unwrap_or_default();
                     let allocation = arbitrator.allocate(
                         &ctx_copy,
                         &report,
@@ -499,7 +520,23 @@ impl DccService {
                         change_unlent = false;
                         governor.lent();
                     }
-                    if decision_recording.read().map(|b| *b).unwrap_or(false) {
+                    let ran = std::mem::take(&mut epoch_frames);
+                    if let Some(since) = recording_since(&decision_recording) {
+                        // A journal begun while the round was open holds
+                        // none of the frames buffered for the one before.
+                        let ran = if frames_of == Some(since) {
+                            ran
+                        } else {
+                            Vec::new()
+                        };
+                        frames_of = Some(since);
+                        // Before the first round, the frames ran under no
+                        // target yet: the first one stands for it.
+                        let ran_under = if ran_under.is_zero() {
+                            arbitrator.target()
+                        } else {
+                            ran_under
+                        };
                         if let Ok(mut trace) = recorded_trace.write() {
                             trace.epochs.push(EpochRecord {
                                 allocation: allocation.clone(),
@@ -514,6 +551,13 @@ impl DccService {
                                 hints: by_agent(&tick_hints),
                                 reasons: report.alerts.clone(),
                                 why: arbitrator.why().clone(),
+                                importance: arbitrator.importance().to_vec(),
+                                calibration: by_agent(&measured_costs),
+                                memory: arbitrator.memory(),
+                                background: arbitrator.background().to_vec(),
+                                at: since.elapsed(),
+                                frames: summary(&ran, ran_under),
+                                in_force,
                             });
                         }
                     }
@@ -540,6 +584,26 @@ impl DccService {
         if let Some(handle) = self.handle.take() {
             let _ = handle.join();
         }
+    }
+}
+
+/// When the decisions started being recorded, if they are.
+fn recording_since(recording: &std::sync::RwLock<Option<Instant>>) -> Option<Instant> {
+    recording.read().ok().and_then(|since| *since)
+}
+
+/// `frames` summed up, those over `target` counted.
+fn summary(frames: &[Duration], target: Duration) -> FrameSummary {
+    let count = frames.len() as u32;
+    FrameSummary {
+        count,
+        over_target: frames.iter().filter(|frame| **frame > target).count() as u32,
+        worst: frames.iter().copied().max().unwrap_or_default(),
+        mean: if count == 0 {
+            Duration::ZERO
+        } else {
+            frames.iter().sum::<Duration>() / count
+        },
     }
 }
 

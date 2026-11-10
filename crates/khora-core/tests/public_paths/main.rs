@@ -318,7 +318,18 @@ fn epoch_record_fields(x: &khora_core::agent::gorna::EpochRecord) {
         &x.hints,
         &x.reasons,
         &x.why,
+        &x.importance,
+        &x.calibration,
+        &x.memory,
+        &x.background,
+        &x.at,
+        &x.frames,
+        &x.in_force,
     );
+}
+
+fn frame_summary_fields(x: &khora_core::agent::gorna::FrameSummary) {
+    let _ = (&x.count, &x.over_target, &x.worst, &x.mean);
 }
 
 fn why_fields(x: &khora_core::agent::gorna::protocol::Why) {
@@ -1476,6 +1487,8 @@ fn module_agent_paths_still_resolve() {
     is_eq::<khora_core::agent::timing::AgentImportance>();
     is_partial_ord::<khora_core::agent::timing::AgentImportance>();
     is_ord::<khora_core::agent::timing::AgentImportance>();
+    is_serialize::<khora_core::agent::timing::AgentImportance>();
+    is_deserialize_owned::<khora_core::agent::timing::AgentImportance>();
     let _ = type_name::<khora_core::agent::timing::ExecutionTiming>();
     let _ = type_name::<khora_core::agent::ExecutionTiming>();
     same_type(
@@ -1708,6 +1721,15 @@ fn module_agent_gorna_paths_still_resolve() {
     let _ = epoch_record_fields as fn(&khora_core::agent::gorna::EpochRecord);
     is_debug::<khora_core::agent::gorna::EpochRecord>();
     is_clone::<khora_core::agent::gorna::EpochRecord>();
+    let _ = type_name::<khora_core::agent::gorna::FrameSummary>();
+    let _ = frame_summary_fields as fn(&khora_core::agent::gorna::FrameSummary);
+    is_debug::<khora_core::agent::gorna::FrameSummary>();
+    is_clone::<khora_core::agent::gorna::FrameSummary>();
+    is_copy::<khora_core::agent::gorna::FrameSummary>();
+    is_default::<khora_core::agent::gorna::FrameSummary>();
+    is_partial_eq::<khora_core::agent::gorna::FrameSummary>();
+    is_serialize::<khora_core::agent::gorna::FrameSummary>();
+    is_deserialize_owned::<khora_core::agent::gorna::FrameSummary>();
     let _ = type_name::<khora_core::agent::gorna::EngineHint>();
     let _ = engine_hint_variants as fn(&khora_core::agent::gorna::EngineHint);
     let _ = khora_core::agent::gorna::EngineHint::agent;

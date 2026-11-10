@@ -21,7 +21,10 @@ use super::protocol::{
     Allocation, Binding, Confidence, DecidedBy, Envelope, Epoch, FrameReport, Offer, OfferRow,
     Rejected, Report, Trigger, Why,
 };
-use super::{AdaptationMode, AgentHints, AgentId, DecisionTrace, EpochRecord, StrategyId};
+use super::{
+    AdaptationMode, AgentHints, AgentId, DecisionTrace, EpochRecord, FrameSummary, StrategyId,
+};
+use crate::agent::AgentImportance;
 use crate::lane::cost::{Cost, Device, PerDevice};
 
 // ─── An agent id is its name ────────────────────────────────────────────────
@@ -177,6 +180,13 @@ fn epoch_record(epoch: u64) -> EpochRecord {
         )],
         reasons: vec!["the frame ran over its target".to_owned()],
         why: Why::default(),
+        importance: Vec::new(),
+        calibration: Vec::new(),
+        memory: PerDevice::default(),
+        background: Vec::new(),
+        at: Duration::ZERO,
+        frames: FrameSummary::default(),
+        in_force: Vec::new(),
     }
 }
 
@@ -459,6 +469,187 @@ fn an_older_journal_reads_each_epochs_own_trigger() {
             "epoch {:?}: {:?}",
             epoch.allocation.epoch, epoch.why
         );
+    }
+}
+
+/// `record` holding what its round read besides the offers and the
+/// reports: both agents' importance, `ALPHA`'s calibration, a graphics
+/// memory limit, `BETA` at the background, when the epoch opened, how the
+/// frames ran since the one before, and the envelopes both agents held when
+/// the round opened.
+fn with_the_rounds_inputs(mut record: EpochRecord) -> EpochRecord {
+    let epoch = record.allocation.epoch.0;
+    record.importance = vec![
+        (ALPHA, AgentImportance::Critical),
+        (BETA, AgentImportance::Optional),
+    ];
+    record.calibration = vec![(ALPHA, 2.5 + epoch as f64 / 8.0)];
+    record.memory = PerDevice {
+        gpu: Some(512 * 1024 * 1024),
+        ..PerDevice::default()
+    };
+    record.background = vec![BETA];
+    record.at = Duration::from_millis(1_250 * epoch);
+    record.frames = FrameSummary {
+        count: 30 + epoch as u32,
+        over_target: 2,
+        worst: Duration::from_micros(41_500),
+        mean: Duration::from_micros(15_250),
+    };
+    record.in_force = vec![
+        (
+            ALPHA,
+            Envelope {
+                time: host_time(3_000 + epoch),
+                ..Envelope::default()
+            },
+        ),
+        (
+            BETA,
+            Envelope {
+                time: host_time(1_500),
+                memory: PerDevice {
+                    gpu: 2048,
+                    ..PerDevice::default()
+                },
+            },
+        ),
+    ];
+    record
+}
+
+/// A journal of `epochs` epochs, each naming both agents and holding what
+/// its round read.
+fn journal_with_the_rounds_inputs(epochs: u64) -> DecisionTrace {
+    DecisionTrace {
+        epochs: (1..=epochs)
+            .map(|epoch| with_the_rounds_inputs(epoch_record(epoch)))
+            .collect(),
+    }
+}
+
+/// **The journal keeps what each round read, and how the frames ran.** Each
+/// agent's importance, the measured time its quotes were calibrated by, the
+/// memory limits, the agents at the background, when the epoch opened, the
+/// frames since the one before and the envelopes in force when the round
+/// opened read back as written: with them, an epoch can be decided again as
+/// it was, even one recorded after the DCC had been running. Two hundred epochs naming both
+/// agents in these lists too still write each name a single time.
+#[test]
+fn the_journal_keeps_the_rounds_inputs_and_the_frames() {
+    let trace = journal_with_the_rounds_inputs(3);
+
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let read: DecisionTrace = serde_json::from_str(&written).expect("a journal reads back");
+
+    let first = &read.epochs[0];
+    assert_eq!(
+        first.importance,
+        vec![
+            (ALPHA, AgentImportance::Critical),
+            (BETA, AgentImportance::Optional)
+        ],
+        "written as {written}"
+    );
+    assert_eq!(
+        first.calibration,
+        vec![(ALPHA, 2.625)],
+        "written as {written}"
+    );
+    assert_eq!(
+        first.memory.gpu,
+        Some(512 * 1024 * 1024),
+        "written as {written}"
+    );
+    assert_eq!(first.memory.cpu, None, "written as {written}");
+    assert_eq!(first.background, vec![BETA], "written as {written}");
+    assert_eq!(
+        first.at,
+        Duration::from_millis(1_250),
+        "written as {written}"
+    );
+    assert_eq!(
+        first.frames,
+        FrameSummary {
+            count: 31,
+            over_target: 2,
+            worst: Duration::from_micros(41_500),
+            mean: Duration::from_micros(15_250),
+        },
+        "written as {written}"
+    );
+    assert_eq!(
+        first.in_force,
+        vec![
+            (
+                ALPHA,
+                Envelope {
+                    time: host_time(3_001),
+                    ..Envelope::default()
+                },
+            ),
+            (
+                BETA,
+                Envelope {
+                    time: host_time(1_500),
+                    memory: PerDevice {
+                        gpu: 2048,
+                        ..PerDevice::default()
+                    },
+                },
+            ),
+        ],
+        "written as {written}"
+    );
+    assert_eq!(read, trace, "every epoch reads back as written");
+
+    let long =
+        serde_json::to_string(&journal_with_the_rounds_inputs(200)).expect("a journal serialises");
+    assert_eq!(long.matches(ALPHA.name()).count(), 1, "{ALPHA} once");
+    assert_eq!(long.matches(BETA.name()).count(), 1, "{BETA} once");
+}
+
+/// **A journal written before the rounds' inputs were kept reads without
+/// them.** Its epochs carry no importance, calibration, memory limits,
+/// background, time, frames nor envelopes in force: they read back empty,
+/// unknown and zero, and everything else as written.
+#[test]
+fn an_older_journal_reads_without_the_rounds_inputs() {
+    let trace = journal_with_the_rounds_inputs(2);
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let mut older: serde_json::Value = serde_json::from_str(&written).expect("a journal is JSON");
+    for epoch in older["epochs"].as_array_mut().expect("the epochs") {
+        let epoch = epoch.as_object_mut().expect("an epoch");
+        for field in [
+            "importance",
+            "calibration",
+            "memory",
+            "background",
+            "at",
+            "frames",
+            "in_force",
+        ] {
+            epoch
+                .remove(field)
+                .unwrap_or_else(|| panic!("the {field} is written: {written}"));
+        }
+    }
+
+    let read = serde_json::from_value::<DecisionTrace>(older).expect("an older journal reads");
+
+    assert_eq!(read.epochs.len(), 2);
+    for (read, written) in read.epochs.iter().zip(&trace.epochs) {
+        assert!(read.importance.is_empty(), "{:?}", read.importance);
+        assert!(read.calibration.is_empty(), "{:?}", read.calibration);
+        assert_eq!(read.memory, PerDevice::default(), "no limit known");
+        assert!(read.background.is_empty(), "{:?}", read.background);
+        assert_eq!(read.at, Duration::ZERO);
+        assert_eq!(read.frames, FrameSummary::default());
+        assert!(read.in_force.is_empty(), "{:?}", read.in_force);
+        assert_eq!(read.allocation, written.allocation);
+        assert_eq!(read.offers, written.offers);
+        assert_eq!(read.reports, written.reports);
+        assert_eq!(read.why, written.why);
     }
 }
 

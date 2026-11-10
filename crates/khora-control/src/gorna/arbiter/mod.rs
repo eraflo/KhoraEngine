@@ -16,8 +16,9 @@
 //! [`Shield`], and the best one accepted kept as the [`Decision`].
 
 use khora_core::agent::gorna::protocol::{Allocation, DecidedBy, Rejected, Why};
+use khora_core::agent::gorna::{AgentId, StrategyId};
 
-use super::decide::{admit, allocation, weight, Admission, Bid, Plan, Round};
+use super::decide::{admit, allocation, floors, slack_ms, weight, Admission, Bid, Plan, Round};
 
 mod exact;
 mod greedy;
@@ -60,6 +61,43 @@ pub(crate) struct Decision {
     pub(crate) allocation: Allocation,
     /// What decided them, and why.
     pub(crate) why: Why,
+    /// The row planned for each agent that offered one, in agent order.
+    pub(crate) rows: Vec<(AgentId, StrategyId)>,
+    /// The weighed quality the planned rows lend.
+    pub(crate) quality: f64,
+    /// What the planned rows leave of the target, in milliseconds, on the
+    /// device whose critical path is the longest.
+    pub(crate) slack_ms: f64,
+    /// The proposers whose plan the shield refused.
+    pub(crate) refused: Vec<DecidedBy>,
+}
+
+impl Decision {
+    /// The decision lending `allocation` for `why`, its planned rows `plans`.
+    fn of(
+        round: &Round<'_>,
+        bids: &[&Bid],
+        plans: &[Plan],
+        allocation: Allocation,
+        why: Why,
+        refused: Vec<DecidedBy>,
+    ) -> Self {
+        Self {
+            allocation,
+            why,
+            rows: bids
+                .iter()
+                .zip(plans)
+                .filter_map(|(bid, plan)| {
+                    plan.row
+                        .map(|row| (bid.offer.agent, bid.offer.rows[row].id))
+                })
+                .collect(),
+            quality: worth(bids, plans),
+            slack_ms: slack_ms(round, bids, plans),
+            refused,
+        }
+    }
 }
 
 /// Runs its proposers in turn behind the [`Shield`], and keeps the best plan
@@ -95,12 +133,14 @@ impl Arbiter {
                     binding,
                     rejected: Vec::new(),
                 };
-                return Decision { allocation, why };
+                let (bids, plans) = floors(round);
+                return Decision::of(round, &bids, &plans, allocation, why, Vec::new());
             }
             Admission::Admitted { bids, plans } => (bids, plans),
         };
 
         let mut best: Option<(f64, DecidedBy, Proposal)> = None;
+        let mut refused = Vec::new();
         for proposer in &self.proposers {
             let proposal = proposer.propose(round, &bids, &base);
             if let Err(refusal) = Shield::check(round, &bids, &base, &proposal) {
@@ -109,6 +149,7 @@ impl Arbiter {
                     proposer.name(),
                     round.epoch
                 );
+                refused.push(proposer.name());
                 continue;
             }
             let value = worth(&bids, &planned(&base, &proposal));
@@ -133,7 +174,7 @@ impl Arbiter {
             binding: rejected.last().map(|rejected| rejected.over),
             rejected,
         };
-        Decision { allocation, why }
+        Decision::of(round, &bids, &plans, allocation, why, refused)
     }
 }
 

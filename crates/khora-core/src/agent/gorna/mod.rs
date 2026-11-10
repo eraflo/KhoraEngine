@@ -19,7 +19,7 @@ pub mod protocol;
 #[cfg(test)]
 mod tests;
 
-pub use decision_trace::{DecisionTrace, EpochRecord};
+pub use decision_trace::{DecisionTrace, EpochRecord, FrameSummary};
 
 use serde::{Deserialize, Serialize};
 
