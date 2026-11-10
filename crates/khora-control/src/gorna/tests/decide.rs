@@ -15,8 +15,11 @@
 //! How `decide` shares the frame: admission of the floors, Q-RAM upgrades,
 //! the 80 / 20 slack, the policies as envelope shapes, and determinism.
 //! Every figure is in whole microseconds, so the expected envelopes are exact.
+//! The order the Q-RAM pass takes its upgrades in is pinned on an arbiter
+//! running that pass alone: the default arbiter may keep a better plan.
 
 use super::*;
+use crate::gorna::arbiter::{Arbiter, Greedy};
 use khora_core::agent::gorna::protocol::Trigger;
 use khora_core::lane::cost::PerLink;
 
@@ -48,6 +51,13 @@ pub(super) fn round<'a>(trigger: Trigger, target_us: u64, bids: &'a [Bid]) -> Ro
         background: &[],
         bids,
     }
+}
+
+/// The allocation the Q-RAM pass alone decides for `round`.
+fn greedy(round: &Round<'_>) -> Allocation {
+    Arbiter::with(vec![Box::new(Greedy)])
+        .decide(round)
+        .allocation
 }
 
 /// `cpu_us` on the host and no time elsewhere.
@@ -286,7 +296,7 @@ fn upgrades_go_to_the_best_gain_per_microsecond() {
             Optional,
         ),
     ];
-    let allocation = decide(&round(Trigger::Refresh, 5_000, &bids));
+    let allocation = greedy(&round(Trigger::Refresh, 5_000, &bids));
     assert_eq!(allocation.trigger, Trigger::Refresh);
     // 1 000 + 1 500 µs planned, 2 500 µs slack, 2 000 shared in proportion.
     assert_eq!(lent_to(&allocation, "oak").time, on_cpu(1_800));
@@ -317,7 +327,7 @@ fn upgrades_go_to_the_best_gain_per_microsecond() {
 
     // Weighed, oak gains 0.0003 per µs and pine 0.0002: oak is upgraded.
     let weighed = pair(Critical, Optional);
-    let allocation = decide(&round(Trigger::Refresh, 4_500, &weighed));
+    let allocation = greedy(&round(Trigger::Refresh, 4_500, &weighed));
     let (oak, pine) = (lent_to(&allocation, "oak"), lent_to(&allocation, "pine"));
     assert!(
         fits(&weighed[0].offer.rows[1].cost, &oak),
@@ -330,7 +340,7 @@ fn upgrades_go_to_the_best_gain_per_microsecond() {
 
     // Swapped, pine gains 0.0004 per µs and oak 0.00015: pine is upgraded.
     let swapped = pair(Optional, Critical);
-    let allocation = decide(&round(Trigger::Refresh, 4_500, &swapped));
+    let allocation = greedy(&round(Trigger::Refresh, 4_500, &swapped));
     let (oak, pine) = (lent_to(&allocation, "oak"), lent_to(&allocation, "pine"));
     assert!(
         !fits(&swapped[0].offer.rows[1].cost, &oak),
@@ -371,7 +381,7 @@ fn upgrades_climb_each_agents_convex_hull() {
             Critical,
         ),
     ];
-    let allocation = decide(&round(Trigger::Refresh, 5_200, &bids));
+    let allocation = greedy(&round(Trigger::Refresh, 5_200, &bids));
     // 4 000 + 1 000 µs planned, 200 µs slack, 160 shared in proportion.
     assert_eq!(lent_to(&allocation, "oak").time, on_cpu(4_128));
     assert_eq!(lent_to(&allocation, "pine").time, on_cpu(1_032));
@@ -710,7 +720,7 @@ fn a_tie_goes_to_the_agent_named_first() {
         )
     };
     for bids in [[twin("alpha"), twin("beta")], [twin("beta"), twin("alpha")]] {
-        let allocation = decide(&round(Trigger::Refresh, 5_000, &bids));
+        let allocation = greedy(&round(Trigger::Refresh, 5_000, &bids));
         let top = cpu_cost(3_000);
         assert!(fits(&top, &lent_to(&allocation, "alpha")), "{allocation:?}");
         assert!(!fits(&top, &lent_to(&allocation, "beta")), "{allocation:?}");

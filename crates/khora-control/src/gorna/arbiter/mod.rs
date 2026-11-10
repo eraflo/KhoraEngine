@@ -19,9 +19,11 @@ use khora_core::agent::gorna::protocol::{Allocation, DecidedBy, Rejected, Why};
 
 use super::decide::{admit, allocation, weight, Admission, Bid, Plan, Round};
 
+mod exact;
 mod greedy;
 mod shield;
 
+pub(crate) use exact::Exact;
 pub(crate) use greedy::Greedy;
 #[cfg(test)]
 pub(crate) use shield::Refusal;
@@ -67,9 +69,10 @@ pub(crate) struct Arbiter {
 }
 
 impl Default for Arbiter {
-    /// The Q-RAM pass alone.
+    /// The Q-RAM pass, then the exact search started from its plan: the
+    /// exact plan is lent when it weighs more, the greedy's on a tie.
     fn default() -> Self {
-        Self::with(vec![Box::new(Greedy)])
+        Self::with(vec![Box::new(Greedy), Box::new(Exact::default())])
     }
 }
 

@@ -91,7 +91,7 @@ impl Proposer for Greedy {
 
 /// What a `Stable` ceiling refuses of `cost`: the ceiling on the first
 /// device whose time or memory it is over.
-fn over_ceiling(cost: &Cost, ceiling: &Envelope) -> Binding {
+pub(super) fn over_ceiling(cost: &Cost, ceiling: &Envelope) -> Binding {
     let device = Device::ALL
         .into_iter()
         .find(|device| {

@@ -100,9 +100,9 @@ fn on_gpu(id: StrategyId, gpu_us: u64, quality: f32) -> OfferRow {
 // ── What decided, and why ─────────────────────────────────────────
 
 /// **A decision names its proposer and its trigger.** An ordinary round,
-/// opened for the periodic refresh, whose floors fit: the Q-RAM pass decides
-/// it, the decision says so and keeps the round's trigger, and it lends what
-/// `decide` lends.
+/// opened for the periodic refresh, whose floors fit, decided by the Q-RAM
+/// pass alone: the decision says so and keeps the round's trigger. The
+/// default arbiter lends what `decide` lends.
 #[test]
 fn a_decision_names_its_proposer_and_trigger() {
     let bids = [
@@ -125,13 +125,13 @@ fn a_decision_names_its_proposer_and_trigger() {
     ];
     let round = round(Trigger::Refresh, 5_000, &bids);
 
-    let decision = Arbiter::default().decide(&round);
+    let decision = Arbiter::with(vec![Box::new(Greedy)]).decide(&round);
 
     assert_eq!(decision.why.by, DecidedBy::Greedy, "{:?}", decision.why);
     assert_eq!(decision.why.trigger, Trigger::Refresh, "{:?}", decision.why);
     assert_eq!(decision.allocation.trigger, Trigger::Refresh);
     assert_eq!(
-        decision.allocation,
+        Arbiter::default().decide(&round).allocation,
         decide(&round),
         "the default arbiter lends what `decide` lends"
     );

@@ -25,6 +25,7 @@
 mod allocate;
 mod arbiter;
 mod decide;
+mod exact;
 mod importance;
 mod stalls;
 

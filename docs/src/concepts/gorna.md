@@ -312,9 +312,14 @@ fixed for the epoch; the target is *T*, the memory available *M*.
 **The DCC's problem** is to maximise Σ<sub>a</sub> *w*<sub>a</sub> *q*<sub>a, x(a)</sub>
 subject to *C*(*x*) ≤ *T* and Σ<sub>a</sub> *μ*<sub>a, x(a)</sub> ≤ *M*, with every
 *x*(*a*) at least as good as *f*<sub>a</sub>. It is a multiple-choice knapsack on the
-critical path, NP-hard in general. The Q-RAM greedy — floors first, then upgrades in
-decreasing Δ(*w q*) / Δ*c* over each menu's convex hull — solves it near-optimally;
-an exact solver stays the fallback for small menus. The envelope sent is
+critical path, NP-hard in general. The DCC's **arbiter** runs two proposers behind a
+**shield** that checks every plan against these constraints and the policies. The Q-RAM
+greedy — floors first, then upgrades in decreasing Δ(*w q*) / Δ*c* over each menu's
+convex hull — gives a near-optimal plan at once. An exact branch-and-bound starts from it,
+cuts what cannot beat the best plan found or cannot fit, and stops at a node budget: it
+can only improve on the greedy, and the plan of most weighed quality is lent (the greedy's
+on a tie). Each decision records why: the proposer, the trigger, the constraint that
+stopped the plan growing, and the upgrades refused. The envelope sent is
 *b*<sub>a</sub> = *c*<sub>a, x∗(a)</sub> + *σ*<sub>a</sub>, where *σ*<sub>a</sub> is
 *a*'s part of 80 % of the slack *T* − *C*(*x*<sup>∗</sup>), in proportion to
 *c*<sub>a, x∗(a)</sub>, device by device.

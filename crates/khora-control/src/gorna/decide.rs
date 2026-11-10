@@ -83,9 +83,10 @@ pub struct Round<'a> {
 ///    path (on every device, the waves' slowest members plus the transfers);
 ///    otherwise the allocation is `Trigger::Safety`, every envelope its
 ///    agent's floor.
-/// 2. **Upgrades.** Over each agent's convex hull of priced rows, upgrades
-///    are taken in order of `Δ(weight × quality) / Δcost` (cost in µs) while
-///    they fit, ties broken by gain, then agent id, then row.
+/// 2. **The plan.** The Q-RAM greedy takes upgrades over each agent's convex
+///    hull in order of `Δ(weight × quality) / Δcost` (cost in µs) while they
+///    fit; the exact search starts from its plan and lends a plan of more
+///    weighed quality when it finds one within its node budget.
 /// 3. **Envelopes.** Each agent gets the cost of the row planned for it, plus
 ///    80 % of the slack shared in proportion to that cost; 20 % stays in
 ///    reserve.
