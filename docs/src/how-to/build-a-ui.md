@@ -7,7 +7,7 @@ Taffy-backed, ECS-driven UI components.
 > ([Spawn entities and move them](./spawn-and-transform.md)). UI runs through the
 > `LayoutSystem` backend your app wired in the bootstrap (Taffy, as the sandbox does).
 >
-> The `UiAgent` draws the UI over whatever image the frame renders into: the game window,
+> The `ui` family draws the UI over whatever image the frame renders into: the game window,
 > or the editor's viewport. UI positions and sizes are pixels of that image, origin
 > top-left.
 
@@ -117,10 +117,11 @@ for (mut text,) in world.query_mut::<(&mut UiText,)>() {
 
 ## What the UI agent and lane do
 
-The `UiAgent` owns one lane — `UiRenderLane`. Layout is not a lane: the laid-out `UiScene` is produced by `UiFlow` during the Substrate Pass. (A layout lane reads the UI components, runs Taffy, and
-produces a laid-out `UiScene`; a render lane rasterizes that scene over the 3D frame.
-Swapping the layout backend is a matter of implementing `LayoutSystem` — see
-[UI](../concepts/ui.md).
+The `ui` family has one lane — `UiLane` — and its agent is the engine's one `LaneAgent`,
+named `ui`. The lane rasterizes the `UiScene` over the 3D frame. Layout is not a lane: the
+`UiScene` is produced by `UiFlow` during the Substrate Pass, from the positions authored in
+`UiTransform` (nothing calls `LayoutSystem::compute_layouts` yet). Swapping the layout
+backend is a matter of implementing `LayoutSystem` — see [UI](../concepts/ui.md).
 
 ## Expected result
 

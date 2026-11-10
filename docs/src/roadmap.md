@@ -54,7 +54,7 @@ is what a `Lane` is for. Kept below for the reasoning.
 **Goal:** Implement the magic of Khora — the DCC, ISAs, and GORNA — proving the SAA concept.
 
 ### Intelligent Subsystem Agents v1
-- #176 Evolve `AssetAgent` into a full ISA (depends on #174)
+- #176 Evolve `AssetAgent` into a full ISA (depends on #174) — superseded: asset decoding is a service, and off-frame loading is the `loading` family
 - #83 Refactor a second subsystem as ISA v0.1
 
 ## 04 — Phase 4 — Tooling, usability, scripting
@@ -71,7 +71,7 @@ is what a `Lane` is for. Kept below for the reasoning.
 - #58 Implement basic Play / Stop mode
 - #77 Visualize the full context model in the editor debug panel
 - #102 Implement the in-engine UI system
-- #164 Implement `UiRenderLane`
+- #164 Implement `UiRenderLane` (the lane is `UiLane` today)
 - #165 Implement a Decision Tracer for DCC / GORNA in the editor
 - #166 Implement a timeline scrubber for the context visualization panel
 
@@ -224,7 +224,7 @@ the engine can step, and Rapier is what runs. It is also almost entirely
 untested, which is the near-term risk on this pillar.
 
 - #308 Implement Custom Khora-Solver v1 (rigid body + XPBD core)
-- #309 Transition `PhysicsAgent` and lanes to the native solver
+- #309 Transition `PhysicsAgent` and lanes to the native solver (since 2026-11, the `physics` family)
 - #310 Performance match and exceed against the previous third-party backend
 
 ---
@@ -293,9 +293,9 @@ untested, which is the near-term risk on this pillar.
 - #75 Design Initial ISA Interface Contract v0.1
 - #76 Refactor one subsystem to partially implement ISA v0.1 (`RenderAgent` Base)
 - #78 Implement Multiple Strategies for one key ISA (`RenderAgent`: Unlit, LitForward, ForwardPlus, Auto)
-- #79 Refine ISA Interface Contract (Agent trait: negotiate, apply_budget, report_status)
+- #79 Refine ISA Interface Contract (Agent trait: negotiate, apply_budget, report_status — superseded in 2026-11 by `offer` / `apply` / `report`)
 - #80 Implement DCC Heuristics Engine v1 (9 heuristics in khora-control)
-- #81 Implement DCC Command System to trigger ISA Strategy Switches (`GornaArbitrator` → `apply_budget` flow)
+- #81 Implement DCC Command System to trigger ISA Strategy Switches (`GornaArbitrator` → `apply_budget` flow; `apply` since 2026-11)
 - #82 Demonstrate Automatic Renderer Strategy Switching (Auto mode + GORNA negotiation, 16 tests)
 - #224 Implement `RenderLane` Resource Ownership (pipelines, buffers, bind groups; proper `on_shutdown`)
 - #225 Implement Light Uniform Buffer System (`UniformRingBuffer` in khora-core, persistent GPU ring buffers for camera / lighting uniforms)

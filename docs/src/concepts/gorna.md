@@ -64,7 +64,7 @@ bid again.
 | `OfferRequest` | DCC → agent | the epoch, the frame's target time, the pressure, a deadline | when an epoch opens |
 | `Offer` | agent → DCC | every row: its cost per device, its quality, its confidence (`Measured`, `Quoted`, `Assumed`); the floor; the row running; its health | in reply, from prices the agent already holds — no lane runs on the DCC's thread |
 | `Allocation` | DCC → every agent | the epoch, why it opened, one **envelope** per agent (time per device, memory), a developer's pinned or allowed rows | published at once, lent at the next frame start |
-| `Report` | agent → DCC | the row that ran, its time on each device, the share of its work done, its health, whether it was over budget or stalled, what a switch of row cost | after every run |
+| `Report` | agent → DCC | the row that ran, its time on each device, the share of its work done, its health, whether it was over budget or stalled, the work it counted, what a switch of row cost, what its lane said | after every run |
 
 An epoch opens on a trigger: the first round, pressure from a heuristic (heat,
 battery, memory), the cost model forecasting a breach, the frame-time controller

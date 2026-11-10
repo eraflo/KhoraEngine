@@ -13,12 +13,15 @@ ECS↔physics synchronization.
   `conversions.rs`) — the one the engine runs; and `crates/khora-infra/src/physics/khora/` — an
   in-house broad phase, narrow phase and impulse solver that **does not implement `PhysicsProvider`
   yet** and is wired to nothing. Deliberate future work, not abandoned code.
-- Lanes: `crates/khora-lanes/src/physics_lane/` (Standard, CCD).
+- Lanes: `crates/khora-lanes/src/physics_lane/` (`StandardPhysicsLane`, one level; `PhysicsFamily` is `Exact`).
+  Registration: `crates/khora-agents/src/physics_agent/agent.rs` (TRANSFORM, `fixed_step`).
 - Components / flow: `crates/khora-data/src/ecs/components/physics/`, `crates/khora-data/src/flow/physics.rs`.
 
 ## Hard rules
 - Route physics through `PhysicsProvider` + the physics lane. **Never** call Rapier directly from agents.
-- The `PhysicsAgent` stays a strategist (Standard / Simplified) — no per-frame state.
+- The `physics` family's agent is the one `LaneAgent` — no per-frame state, no new agent type. The physics
+  step is the game's `physics.step` (`PhysicsSettings`), held at the family's place (`Place::fixed_step`);
+  it is never a GORNA lever, since the simulation's result depends on it.
 - Distance-based detach/reattach of `RigidBody` is **semantic** (changes the simulation) → it is an opt-in,
   developer-authored `DataSystem`, never automatic AGDF.
 - Convert math at the boundary via `conversions.rs`; engine-side math is `khora_core::math`.

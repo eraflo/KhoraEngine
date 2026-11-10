@@ -70,12 +70,18 @@ ever disagree, those files win; this page is a digest, not a duplicate.
 
 ## Agents
 
-- An **agent implements only `Agent` and `Default`** — nothing else. No
-  `start`/`stop`, no builders, no accessors; construction is via
-  `Default::default()`. (Private free functions in the module file are fine.)
-- An agent owns exactly **one `LaneKind`**, and its only jobs are: select a lane
-  for the budget, negotiate that budget via GORNA, and dispatch
-  `Lane::execute()`. No per-frame state, no buffering outputs, no owning a flow.
+- **Never write a new agent type.** A new subsystem is a **family**: its lanes
+  (each implementing `khora_core::lane::Lane`), a `LaneFamily`, and one
+  `register_agent!` registration (phase, importance, lanes, default level). Its
+  agent is always the one `LaneAgent` of `khora-agents`, built from that
+  registration.
+- An agent **implements only `Agent`** — no `start`/`stop`, no builders, no
+  accessors. (Private free functions in the module file are fine.)
+- An agent runs exactly **one family**, and its only jobs are: offer the family's
+  rows to GORNA, choose the row that fits the envelope it is lent, report what ran,
+  and install its layers at the family's place. It has no `execute`: the scheduler
+  runs the installed layer every frame and wakes the agent only for an event. No
+  per-frame state, no buffering outputs, no owning a flow, no reaching the World.
 - Only use an agent for a subsystem that actually needs GORNA negotiation. For
   everything else use a direct service (`AssetService`, `SerializationService`, …).
 

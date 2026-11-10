@@ -80,10 +80,10 @@ cargo test --workspace
 ```
 
 With recording on, drive a few ticks, replay the captured trace, and assert the issued
-strategies match the original run. To confirm a mode took effect, read the agent's
-reported `current_strategy` and check it respects the bound you set.
+strategies match the original run. To confirm a mode took effect, read the `row`
+of the agent's `Report` and check it respects the bound you set.
 
 ## Related
 
 - [GORNA](../concepts/gorna.md) — the negotiation protocol and strategy fitting.
-- [Add an agent](./add-an-agent.md) — the agent whose adaptation you are controlling.
+- [Add a subsystem (a family)](./add-an-agent.md) — the agent whose adaptation you are controlling.

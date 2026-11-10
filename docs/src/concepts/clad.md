@@ -73,10 +73,12 @@ Control ──► Agent ──► Lane ──► Data
   is the strategic brain. It observes telemetry, arbitrates the agent budget
   auction, runs the Scheduler, and invokes the Substrate (data invariants +
   projection Flows). It sets a budget; it does not dictate strategy.
-- **Agents** are tactical managers. Each owns exactly one
-  [**`LaneKind`**](../reference/glossary.md). Given its budget, an agent picks a
-  Lane and invokes it. It does no per-frame state-keeping of its own — it is a
-  strategist, not a worker.
+- **Agents** are tactical managers. Each runs exactly one **family** of lanes,
+  and every family's agent is the same `LaneAgent`, built from the family's
+  `register_agent!` registration. Given its envelope, an agent picks a row — a
+  Lane at one level — and installs it as a [**layer**](../reference/glossary.md#layer-and-place)
+  that the Scheduler runs every frame; the agent is woken only for an event. It
+  does no per-frame state-keeping of its own — it is a strategist, not a worker.
 - **Lanes** are the fast, deterministic workers — the actual algorithms an agent
   can choose between. A Lane reads typed Views from the bus and writes its
   results into the output deck.
@@ -95,7 +97,7 @@ Each SAA pillar lands in a specific crate:
 | SAA concept (the why) | CLAD crate (the how) | Role |
 |---|---|---|
 | **Dynamic Context Core** & **GORNA** | `khora-control` | Strategic brain — observes telemetry (incl. Data access patterns), arbitrates the agent budget auction, runs the Scheduler, invokes the Substrate. It never drives Data's layout — Data self-optimizes |
-| **Intelligent Subsystem Agents** | `khora-agents` | Tactical managers — eight today: Render, Shadow, Overlay, Skybox, Physics, Ui, Audio, Script. Not one per `LaneKind`: four of them dispatch `LaneKind::Render` lanes, and `Asset`, `Scene` and `Ecs` have no agent because they have no strategy to negotiate |
+| **Intelligent Subsystem Agents** | `khora-agents` | Tactical managers — one `LaneAgent` per family, eleven families today: renderer, shadows, grid, wireframe, gizmo, skybox, physics, ui, audio, script, loading. Asset decoding, scene I/O and ECS maintenance have no agent because they have no strategy to negotiate |
 | **Multiple agent strategies** | `khora-lanes` | Fast, deterministic workers — the algorithms an agent chooses from |
 | **Adaptive Game Data Flows** | `khora-data` | Foundation — archetype storage + adaptive memory layout, self-optimized *inside* the Data layer; representation only, never game semantics |
 | **Semantic interfaces and contracts** | `khora-core` | Universal language — traits, core types, math, GORNA types |

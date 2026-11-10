@@ -27,7 +27,7 @@ Looking for the exact signature? See the [API reference](../reference/api.md).
 |---|---|
 | Define and register an ECS component | [Add a component](./add-a-component.md) |
 | Add a hot-path strategy to an agent | [Add a lane](./add-a-lane.md) |
-| Add a new strategist subsystem | [Add an agent](./add-an-agent.md) |
+| Add a new strategist subsystem | [Add a subsystem (a family)](./add-an-agent.md) |
 | Add a `.wgsl` shader and a pipeline | [Add a shader](./add-a-shader.md) |
 | Decode a new asset format | [Add an asset decoder](./add-an-asset-decoder.md) |
 | Project the World into a View for lanes | [Add a flow](./add-a-flow.md) |

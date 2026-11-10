@@ -20,7 +20,7 @@ lanes that draw.
 The default implementation is a Taffy-backed layout system in `khora-infra`
 (`ui/taffy/`), giving flex and grid layout. Khora maps its own UI components onto
 Taffy's style model, runs the layout, and reads back per-node geometry. Taffy types
-never leak into components — the mapping happens inside the layout lane — so the
+never leak into components — the mapping happens inside the Taffy backend — so the
 backend stays swappable behind the trait, the same boundary discipline the rest of
 the engine follows.
 
@@ -43,7 +43,8 @@ the renderer uses. The concrete builder API lives in
 ## How it plugs into a frame
 
 UI follows the same CLAD descent as every other domain (`Control → Agent → Lane →
-Data`), through **one** lane owned by the `UiAgent`:
+Data`), through **one** lane, `UiLane`, the only lane of the `ui` family (run, like
+every family, by the engine's one `LaneAgent`):
 
 ```
 ECS (layout nodes, styles, images, hierarchy)
@@ -52,7 +53,7 @@ UI render lane — rasterizes the scene, compositing over what the renderer drew
 ```
 
 The data layer's UI **[Flow](../reference/glossary.md)** projects the UI domain
-into a scene View on the LaneBus, and `UiRenderLane` draws it in the frame's
+into a scene View on the LaneBus, and `UiLane` draws it in the frame's
 `OUTPUT` phase, loading the existing colour target so it composites over the scene
 the renderer already produced.
 
@@ -69,10 +70,10 @@ on that device.
 
 ## Editor UI versus game UI
 
-The `UiAgent` is one of the built-in agents `EngineCore` registers, so it runs for every SDK application, not only the editor. Its negotiation surface is minimal — one
-strategy, no real GORNA pressure yet — because editor UI complexity hasn't demanded
+The `ui` family is one of the families the engine registers, so it runs for every SDK application, not only the editor. Its negotiation surface is minimal — one
+level, no real GORNA pressure yet — because editor UI complexity hasn't demanded
 density tiers (full / simplified / hidden chrome) that the design leaves room for.
-In-game (play-mode) UI is on the roadmap; the agent already runs whether the game is edited
+In-game (play-mode) UI is on the roadmap; the family already runs whether the game is edited
 or played, and an app can switch it off through the `Activation`; what is left is
 deciding the input model. The retained-mode,
 ECS-driven shape is the same either way.

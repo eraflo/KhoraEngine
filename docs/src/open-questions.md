@@ -29,7 +29,7 @@ What this engine does not yet answer, and where the next iteration should go.
 
 1. **Adaptation modes.** `Learning`, `Manual` (pinned), `Stable` (no opportunistic upgrade), and `Bounded { min, max }` are **implemented** (`AdaptationMode`, settable per agent via `DccService::set_adaptation_mode`). **Replay is now implemented**: `DecisionTrace` journals each GORNA epoch's allocation and inputs (offers, reports, waves, policies, hints, target, reasons; each agent name written once) (`DccService::start/stop_decision_recording`) and `DccService::replay_decisions` publishes the allocations again, for the scheduler to lend at its frame starts, (bit-for-bit — QA / lockstep / bug repro), bypassing live fit and per-agent mode. Still open: `Calibration` (deliberately explore strategy arms to seed the cost model, then freeze) and `Hinted` (a game→engine semantic-hint channel, e.g. "cutscene"/"combat").
 2. **Constraints API.** "In this volume, physics > graphics" is a stated capability without a concrete API. `PriorityVolume` is in the roadmap.
-3. **Cross-agent coordination.** Today agents declare hard dependencies on each other (RenderAgent → ShadowAgent). When the dependency graph grows, do we need a richer scheduling model than per-frame topological sort?
+3. **Cross-agent coordination.** Today families are ordered by phase and by the agents a registration names in `after` (the renderer runs after the shadows because the shadows family sits in an earlier phase). When the dependency graph grows, do we need a richer scheduling model than per-frame topological sort?
 4. **Variable cold-path frequency.** ~20 Hz is a default. On low-power targets we may want 5–10 Hz. The trigger model for changing this at runtime is open.
 5. **ML-augmented heuristics.** A future heuristic could be a small ML model trained on telemetry. The deployment story (model storage, update cadence) is undecided.
 6. **Predictive cost model.** A `CostModel` fits measured `(n, time)` samples to a complexity class (`c·f(n)`) so the DCC can forecast a budget breach ("at this growth rate, the frame budget breaks at ~N entities") instead of only reacting. The loop is now closed: the scheduler publishes each run's report via `TelemetryEvent::AgentReport` (row, time per device, workload), the forecast tightens the target *before* a breach, and the measured costs calibrate agents' quoted estimates inside `GornaArbitrator::allocate` (every offered row rescaled so the running row equals the measurement, factor clamped to `[0.25, 4.0]`), each agent's model read at the workload that agent reports. Still open: no agent counts its own workload yet, so the scheduler fills in the world's entity count — per-domain workload refinement is pending.
@@ -53,13 +53,13 @@ What this engine does not yet answer, and where the next iteration should go.
 
 ## 03 — Agents and lanes
 
-1. ~~**`asset_lane` and `ecs_lane` should not be lanes.**~~ **Resolved.** Asset decoders are services under `khora-io::asset::decoders`; ECS compaction is maintenance in `khora-data::ecs::systems`. `khora-lanes` now holds exactly the four families that have strategies to negotiate: render, physics, audio, script.
+1. ~~**`asset_lane` and `ecs_lane` should not be lanes.**~~ **Resolved.** Asset decoders are services under `khora-io::asset::decoders`; ECS compaction is maintenance in `khora-data::ecs::systems`. `khora-lanes` holds only families, each with strategies to negotiate: eleven today (render, shadows, skybox, grid, wireframe, gizmo, ui, physics, audio, script, loading).
 2. **Plugin agents.** Agents are added at compile time via registration. Hot-loaded plugin agents need a stable ABI we have not yet committed to.
-3. **Multi-`LaneKind` agents.** Forbidden by current rule. If a future subsystem genuinely needs to coordinate two lane kinds (compute + render in the same pipeline), the rule may need a carve-out.
+3. **Multi-family agents.** Forbidden by current rule: one agent negotiates for one family, and boot refuses two families naming the same agent (`BootError::TwoFamiliesForOneAgent`). If a future subsystem genuinely needs to coordinate two families (compute + render in the same pipeline), the rule may need a carve-out.
 4. **Async agent work.** Some lanes (asset streaming) want async I/O. The contract for an agent that yields control mid-frame is open.
-5. **Lane-level parallelism.** Today lanes run sequentially within an agent's `execute`. For some agents (asset decoders) parallel lane execution is obvious; the contract is undefined.
+5. **Lane-level parallelism.** Today a family runs one layer — one lane at one level — at its place. Families run concurrently, in waves, when their contentions are disjoint, but one family's run is never split across workers; the contract for that is undefined.
 6. **Shader hot-reload.** Files-on-disk make this trivial in principle. The wgpu pipeline cache invalidation policy is not yet decided.
-7. **Asynchronous lanes.** Asset streaming wants `async fn execute`. The current sync-only contract is a known constraint.
+7. **Asynchronous lanes.** `Lane::record` is synchronous. A family placed at `ExecutionPhase::BACKGROUND` (the loading family) runs off the frame, possibly over several frames, its outputs staged until a frame boundary; an `async` record is still not part of the contract.
 
 ## 04 — Rendering
 
@@ -71,7 +71,7 @@ What this engine does not yet answer, and where the next iteration should go.
 
 ## 05 — Physics
 
-1. **Per-region simulation rate.** "Use Standard near the player, Simplified everywhere else" is a gameplay-relevance policy — *not* AGDF (which is layout only). It must be opt-in and developer-authored; the engine provides the detach/reattach mechanism but never applies it by default. The opt-in API is not built.
+1. **Per-region simulation rate.** "Full simulation near the player, a coarser one everywhere else" is a gameplay-relevance policy — *not* AGDF (which is layout only). It must be opt-in and developer-authored; the engine provides the detach/reattach mechanism but never applies it by default. The opt-in API is not built.
 2. **Physics state in serialization.** `SerializationGoal::FastestLoad` does not preserve velocities or contacts. Whether to add a "snapshot with physics" goal is open.
 3. **Native solver migration.** Roadmap Phase 6. The trait surface is stable enough; the implementation is a multi-quarter effort. `khora-infra::physics::khora` holds a broad phase, a narrow phase and a solver, none of them wired into a `PhysicsProvider` and almost none of them tested.
 4. **Choosing a backend at all.** Two physics backends now sit side by side, and nothing can pick between them: three call sites construct `RapierPhysicsWorld` directly. `GraphicsBackendSelector` is not the precedent it sounds like — it selects a GPU adapter *within* wgpu, not between renderers. A real selection point is unbuilt, and the editor's "switch the backend" feature depends on it.
@@ -91,7 +91,7 @@ What this engine does not yet answer, and where the next iteration should go.
 
 ## 08 — UI
 
-1. **In-game UI.** `UiAgent` is a family that starts on and stays on in the editor, editing or playing; it draws whatever UI components the world holds, through `UiFlow`. A game that wants it off switches it off through the `Activation` resource. What a play-mode HUD still lacks is an input model: how focus and pointer events are routed between the game and its UI.
+1. **In-game UI.** The `ui` family starts on and stays on in the editor, editing or playing; it draws whatever UI components the world holds, through `UiFlow`. A game that wants it off switches it off through the `Activation` resource. What a play-mode HUD still lacks is an input model: how focus and pointer events are routed between the game and its UI.
 2. **Animations on UI.** No tween / spring system today. Probably belongs as a separate lane that mutates UI components over time.
 3. **Accessibility.** Screen reader hooks, contrast modes. Not designed yet.
 

@@ -22,7 +22,7 @@ Choices we made, and what we said no to. The global ledger.
 ### We said yes to
 - **A self-optimizing core.** GORNA, DCC, and per-tick negotiation are non-negotiable. Without them, Khora is just another engine.
 - **Cold path / hot path separation.** The frame loop is never blocked by analysis. Budgets flow one way through a channel.
-- **One negotiation surface per agent.** Eight today: Render, Shadow, Overlay, Skybox, Physics, Ui, Audio, Script. An agent owns one `LaneKind`, but a `LaneKind` may have several agents — four dispatch render lanes — and a subsystem with no competing strategies (asset decoding, ECS compaction) is a service, not an agent.
+- **One negotiation surface per agent.** One agent per **family** — eleven today: renderer, shadows, grid, wireframe, gizmo, skybox, physics, ui, audio, script, loading — and every family's agent is the one `LaneAgent`. A subsystem with no competing strategies (asset decoding, ECS compaction) is a service, not an agent. *(Superseded 2026-11: this first read "one agent per `LaneKind`", with eight hand-written agents; `LaneKind` and the hand-written agents are gone, a family is the unit.)*
 - **Trait-defined contracts.** Every seam in the engine is a Rust trait. No string-keyed APIs in the hot path.
 - **Splitting `khora-io` from `khora-data`.** Asset loading and serialization are I/O concerns; ECS storage is not.
 - **Backends are swappable.** Every `khora-infra` backend implements a `khora-core` trait. wgpu, Rapier3D, CPAL, Taffy are *current defaults*, not architectural commitments.
@@ -35,11 +35,11 @@ Choices we made, and what we said no to. The global ledger.
 ### We said no to
 - **Static budgets baked at compile time.** A `MAX_LIGHTS` constant has no place in an engine that adapts.
 - **Synchronous DCC calls from agents.** Agents must never wait on the DCC.
-- **Adding more agents than `LaneKind` variants.** If a subsystem has no strategies to negotiate, it is a service.
+- **An agent for a subsystem with no strategies.** If a subsystem has no strategies to negotiate, it is a service. *(First worded against `LaneKind` variants, removed 2026-11.)*
 - **Mega-crates.** Every crate has a single, scannable responsibility.
 - **Sibling dependencies between agents and control.** Agents talk *down* to lanes and *across* to a unidirectional channel — never *up* to control.
 - **Dynamic plugin discovery via reflection.** Plugins register through `inventory::submit!` and explicit Rust APIs.
-- **A separate "physics tick" loop.** PhysicsAgent owns its accumulator and runs in `Transform` like everything else.
+- **A separate "physics tick" loop.** The physics family runs in `Transform` like everything else; its fixed step lives at its place (`Place::fixed_step`) and the scheduler sub-steps it. *(It first read "PhysicsAgent owns its accumulator"; superseded 2026-11 when the hand-written agents became families.)*
 
 ## 02 — Subsystems
 
@@ -52,11 +52,13 @@ Choices we made, and what we said no to. The global ledger.
 - **No:** `std::simd` (nightly — Khora is stable Rust); raw `glam` in batched kernels (`glam` is 128-bit per-vector — kept for scalar math only); making *all* of CRPECS runtime layout-polymorphic now (only ~15 % on lean components for a hot-path rewrite — the field-SoA/SIMD win is on *compute-heavy* loops and stays opt-in); a runtime physical repack driven by the bandit (deferred until the advisor proves a component needs it, then gated by OREO's α-counter + a V8-style speculate-guard-deopt).
 
 ### Agents
-- **Yes:** agents implement only `Agent` + `Default` (no extra methods); one agent per `LaneKind`; Hard / Soft / Parallel dependency model; last-wins on `BudgetChannel`.
-- **No:** agent-managed concurrency (DCC handles cold-path concurrency); agents reading from each other directly (cross-agent data flows through `FrameContext` slots).
+- **Yes:** agents implement only `Agent` (no extra methods); one agent per family, always the `LaneAgent` built from its `register_agent!` registration; Hard / Soft / Parallel dependency model; last-wins on `BudgetChannel`.
+- **No:** agent-managed concurrency (DCC handles cold-path concurrency); agents reading from each other directly (cross-agent data flows through `OutputDeck` slots); a new agent type; an agent reaching the `World`.
+- *Superseded 2026-11:* "`Agent` + `Default`, one agent per `LaneKind`" (hand-written agents with `execute`, `on_initialize` and `as_any`) gave way to families run by the one `LaneAgent`; the `Agent` trait is now `offer` / `apply` / `report`, its `place` and its `wake`.
 
 ### Lanes
-- **Yes:** lifecycle of `on_initialize` / `execute` / `on_shutdown` — only `execute` is per-frame; type-erased `LaneContext`; `estimate_cost` returning `f32`.
+- **Yes:** the typed `khora_core::lane::Lane` — `prepare` / `cost` / `record` / `shutdown`, levels as rows, `cost` and `record` every frame; typed inputs (`#[derive(LaneInputs)]`) read from the bus and typed outputs (`#[derive(LaneOutputs)]`) written to the deck; a cost per device.
+- *Superseded 2026-11:* the first lane contract — `on_initialize` / `execute` / `on_shutdown`, a type-erased `LaneContext`, `estimate_cost` returning `f32`.
 - **No:** lanes referencing each other directly; lane-owned threads; inlined shader source as Rust strings.
 
 ### GORNA
@@ -101,7 +103,7 @@ Choices we made, and what we said no to. The global ledger.
 ## 03 — SDK and editor
 
 ### SDK
-- **Yes:** a small public surface (`EngineCore`, `GameWorld`, `EngineApp` / `AgentProvider` / `PhaseProvider` traits, `run_winit`, `Vessel` + spawn helpers, `WindowConfig`); curated prelude; safe ECS facade; explicit bootstrap closure for renderer registration.
+- **Yes:** a small public surface (`EngineCore`, `GameWorld`, `EngineApp` / `PhaseProvider` traits, `run_winit`, `Vessel` + spawn helpers, `WindowConfig`); curated prelude; safe ECS facade; explicit bootstrap closure for renderer registration; the app installs its own runtime entries in `EngineApp::provide`. *(The `AgentProvider` trait, through which an app registered agents, was removed 2026-11: the engine's families register themselves.)*
 - **No:** hidden global setup; exposing internals (Scheduler internals, GORNA arbitration) through the SDK; a single `prelude::*` that imports everything.
 
 ### Editor

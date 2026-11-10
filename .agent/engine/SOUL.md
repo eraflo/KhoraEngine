@@ -58,7 +58,7 @@ points to the on-demand [`reference/`](./reference/) doc for that crate's domain
 | Crate | One-line role | reference/ |
 |---|---|---|
 | `khora-core` | Traits, math, GORNA types, contracts. Depends on nothing. | math |
-| `khora-macros` | `#[derive(Component)]` proc macro (path crate, not a member). | ecs-data |
+| `khora-macros` | Proc macros: `#[derive(Component)]`, the lane derives (`LaneInputs`/`LaneOutputs`), `#[ergon_fn]` (path crate, not a member). | ecs-data |
 | `khora-data` | CRPECS ECS, component storage, SoA/AGDF layout, Flows, scene persistence (records, snapshot, prefabs, game saves). | ecs-data |
 | `khora-control` | DCC, GORNA arbitration, cost model, frame governor, Substrate Pass. | control-gorna |
 | `khora-script` | **Ergon** — the gameplay language: lexer, parser, bytecode, VM, hot-reload. Suspends at named safepoints (statement start, loop head, function entry, after a call returns) so the DCC can bound a frame; overdraft past the budget is bounded by `Program::max_overdraft`. Runs only while the scripting family (`khora_core::script::SCRIPT`) is on; the editor switches it off while editing. Depends on core + macros only, so it is testable without booting an engine. | scripting |

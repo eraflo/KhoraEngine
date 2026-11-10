@@ -1,239 +1,316 @@
 # Extending the engine
 
 So far you have written *game* logic. This lesson crosses into *engine* work: you
-will add your own subsystem — a custom **agent** that runs every frame and a
-**lane** that does its work — register it, and watch the scheduler run it. By the
-end the engine's frame loop will dispatch your code and you will see it log each
-frame.
+will add your own subsystem — a **family** with one **lane** that does its work —
+register it, and watch the scheduler run it. By the end the engine's frame loop
+will run your code and you will see it log as the frames go by.
 
-The example is deliberately tiny: a "heartbeat" subsystem that logs a message at
-a steady cadence. The mechanics are exactly the ones a real subsystem (AI,
-scripting, networking) uses.
+The example is deliberately tiny: a "heartbeat" subsystem that counts frames and
+logs a line at a steady cadence. The mechanics are exactly the ones a real
+subsystem (AI, audio, networking) uses.
 
 Start from a working Khora app — the project from
 [Your first game](./your-first-game.md) is fine.
 
 ## What you are building
 
-Two pieces, in the order the engine uses them:
+Three pieces, all in one file:
 
-- A **lane** — the executor. It implements the [`Lane`] trait and contains the
-  actual work. Lanes are swappable strategies; an agent picks one per frame.
-- An **agent** — the strategist. It implements the [`Agent`] trait, owns one
-  `LaneKind`, negotiates a budget through GORNA, and dispatches its lane.
+- A **lane** — the executor. It implements the `Lane` trait and contains the
+  actual work. A lane offers one or more **levels** — the same work at several
+  costs — and records at the one it is given.
+- A **family** — what its lanes share: the outputs they write and the name of the
+  agent that negotiates for them. Several lanes of one family are alternatives
+  that can stand in for each other.
+- A **registration** — one `register_agent!`: the family's phase in the frame,
+  its importance and its lanes.
 
-> Why two pieces? The agent *decides*, the lane *does*. This split is what lets the
-> engine swap quality strategies under load. See
+You do not write an agent. The engine builds the family's agent, the one
+`LaneAgent`, from the registration: it negotiates a budget through GORNA, chooses
+the level that fits, and installs it as a layer that the scheduler runs every
+frame.
+
+> Why a family and a lane? The agent *decides*, the lane *does*. This split is
+> what lets the engine swap quality strategies under load. See
 > [Agents and Lanes](../concepts/agents-and-lanes.md).
 
-## Step 1 — Define the lane
+## Step 1 — Add the dependencies
 
-Create `src/heartbeat.rs`. The lane implements `Lane`: a name, a `LaneKind`, and
-an `execute` that does the work. Note `execute` takes `&self` and returns
-`Result<(), LaneError>`.
+The lane derives and the registration live in engine crates the SDK does not
+re-export, and the derives name `khora_core` directly. Add them to `Cargo.toml`,
+next to `khora-sdk`:
+
+```toml
+[dependencies]
+khora-sdk = { path = "crates/khora-sdk" }
+khora-core = { path = "crates/khora-core" }
+khora-macros = { path = "crates/khora-macros" }
+khora-agents = { path = "crates/khora-agents" }
+log = "0.4"
+anyhow = "1"
+env_logger = "0.11"
+```
+
+## Step 2 — Define the family
+
+Create `src/heartbeat.rs`. Start with what the subsystem reads and writes, and
+the family that ties them together:
 
 ```rust
-use khora_sdk::khora_core::lane::{Lane, LaneContext, LaneError, LaneKind};
+use std::time::Duration;
 
+use khora_agents::registered_agent::RegisteredAgent;
+use khora_core::agent::gorna::{AgentId, StrategyId};
+use khora_core::agent::registration::AgentRegistration;
+use khora_core::agent::{AgentImportance, ExecutionPhase};
+use khora_core::lane::cost::{Cost, PerDevice};
+use khora_core::lane::family::{LaneFamily, Semantics};
+use khora_core::lane::level::{Impact, Level};
+use khora_core::lane::{Lane, LaneError, LaneReport};
+use khora_macros::{LaneInputs, LaneOutputs};
+
+/// How often the heartbeat speaks: one line every `every` frames.
+pub struct HeartbeatSettings {
+    pub every: u64,
+}
+
+/// The beats counted so far, handed on in the deck.
+#[derive(Debug, Clone, Default)]
+pub struct Beats(pub u64);
+
+/// The heartbeat family: its name, the agent that negotiates for it, and
+/// the outputs every one of its lanes writes.
+pub struct HeartbeatFamily;
+
+impl LaneFamily for HeartbeatFamily {
+    const NAME: &'static str = "heartbeat";
+    const AGENT: AgentId = AgentId::new("heartbeat");
+    const SEMANTICS: Semantics = Semantics::Presentation;
+    type Outputs<'f> = HeartbeatOutputs;
+}
+
+/// What every heartbeat lane writes.
+#[derive(LaneOutputs)]
+pub struct HeartbeatOutputs {
+    /// The beats counted so far.
+    #[deck]
+    pub beats: Beats,
+}
+```
+
+The family's `AGENT` is the name its agent goes by; boot refuses a name another
+family already uses. `Semantics::Presentation` says a cheaper level may give a
+lesser result — a log line is presentation, never simulation. The `#[deck]`
+output is a typed slot of the `OutputDeck` that later phases can read.
+
+## Step 3 — Define the lane
+
+In the same file, add the lane's inputs, its one level, and the lane itself:
+
+```rust
+/// What the heartbeat lane reads each frame.
+#[derive(LaneInputs)]
+pub struct HeartbeatInputs<'f> {
+    /// The settings the game installed in the runtime.
+    #[resource]
+    pub settings: &'f HeartbeatSettings,
+}
+
+/// The lane's one level.
+const LEVELS: [Level; 1] = [Level {
+    id: StrategyId::Balanced,
+    name: "heartbeat",
+    impact: Impact::None,
+    memory: PerDevice {
+        cpu: 0,
+        gpu: 0,
+        npu: 0,
+        other: 0,
+    },
+}];
+
+/// The heartbeat lane: counts the frames and logs every `every`-th.
 #[derive(Default)]
-pub struct HeartbeatLane;
+pub struct HeartbeatLane {
+    frames: u64,
+}
 
 impl Lane for HeartbeatLane {
-    fn strategy_name(&self) -> &'static str {
-        "Heartbeat"
+    type Family = HeartbeatFamily;
+    type Inputs<'f> = HeartbeatInputs<'f>;
+
+    fn levels(&self) -> &[Level] {
+        &LEVELS
     }
 
-    fn lane_kind(&self) -> LaneKind {
-        LaneKind::Ecs
+    fn cost(&self, _level: usize, _inputs: &HeartbeatInputs<'_>) -> Cost {
+        Cost {
+            time: PerDevice {
+                cpu: Duration::from_micros(1),
+                ..PerDevice::default()
+            },
+            ..Cost::default()
+        }
     }
 
-    fn execute(&self, _ctx: &mut LaneContext) -> Result<(), LaneError> {
-        log::info!("heartbeat: tick");
-        Ok(())
-    }
-
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+    fn record(
+        &mut self,
+        _level: usize,
+        inputs: &mut HeartbeatInputs<'_>,
+        out: &mut HeartbeatOutputs,
+    ) -> Result<LaneReport, LaneError> {
+        self.frames += 1;
+        if self.frames % inputs.settings.every.max(1) == 0 {
+            log::info!("heartbeat: tick {}", self.frames);
+        }
+        out.beats = Beats(self.frames);
+        Ok(LaneReport {
+            done: 1.0,
+            stalled: false,
+            message: None,
+        })
     }
 }
 ```
 
-A real lane reads its inputs from the **`LaneContext`** (`ctx.get::<T>()`) — for
-hot-path work, that data comes from **Views the agent reads off the `LaneBus`**,
-never by querying the world directly. Our heartbeat needs no input, so it just
-logs.
+Each field of the inputs names where it comes from. `#[resource]` reads a runtime
+entry without locking it; a real lane also reads **Views** a `Flow` published on
+the `LaneBus` (`#[bus]`), never the world directly. The lane only sees what its
+inputs name, and writes only its family's outputs.
+
+`cost` prices a level on the frame's inputs; GORNA compares these prices with the
+budget. `record` does the frame's work at the level it is given.
 
 > Why read Views, not the world? It keeps lanes decoupled and lets the data layer
 > adapt its layout underneath. See [conventions](../contributing/conventions.md).
 
-## Step 2 — Define the agent
+## Step 4 — Register the family
 
-In the same file, add the agent. It implements [`Agent`] **and** `Default` — and
-nothing else. No `start`, no builders, no accessors: an agent's only jobs are
-lane selection, GORNA negotiation, and lane dispatch.
+At the end of `heartbeat.rs`, build the registration and submit it. The engine
+collects every submitted registration at boot, the game's with its own:
 
 ```rust
-use std::any::Any;
-use std::time::Duration;
-
-use khora_sdk::khora_core::agent::{
-    Agent, AgentImportance, ExecutionPhase, ExecutionTiming,
+/// The heartbeat family's registration.
+pub const HEARTBEAT: AgentRegistration = khora_core::register_agent! {
+    family: HeartbeatFamily,
+    // TRANSFORM is the per-frame logic phase.
+    phase: ExecutionPhase::TRANSFORM,
+    // Optional: the first work skipped under budget pressure.
+    importance: AgentImportance::Optional,
+    after: [],
+    fixed_step: None,
+    lanes: [HeartbeatLane],
 };
-use khora_sdk::khora_core::agent::gorna::{
-    AgentId, AgentStatus, NegotiationRequest, NegotiationResponse, ResourceBudget,
-    StrategyId, StrategyOption,
-};
-use khora_sdk::khora_core::EngineContext;
-use khora_sdk::khora_core::lane::{Lane, LaneContext};
 
-pub struct HeartbeatAgent {
-    /// The lane chosen for this frame, set by `apply_budget`.
-    lane: Option<Box<dyn Lane>>,
-    /// The strategy GORNA last issued us.
-    current_strategy: StrategyId,
-}
-
-// `StrategyId` has no `Default`, so `#[derive(Default)]` will not compile here —
-// name the starting strategy yourself. Every built-in agent does the same.
-impl Default for HeartbeatAgent {
-    fn default() -> Self {
-        Self {
-            lane: None,
-            current_strategy: StrategyId::Balanced,
-        }
-    }
-}
-
-impl Agent for HeartbeatAgent {
-    fn id(&self) -> AgentId {
-        // The agent names itself; boot refuses a name another agent holds.
-        AgentId::new("heartbeat")
-    }
-
-    fn negotiate(&mut self, _request: NegotiationRequest) -> NegotiationResponse {
-        // We offer a single, cheap strategy. A richer subsystem would offer
-        // several (e.g. Balanced vs LowPower) with different cost estimates.
-        NegotiationResponse {
-            strategies: vec![StrategyOption {
-                id: StrategyId::Balanced,
-                estimated_time: Duration::from_micros(10),
-                estimated_vram: 0,
-            }],
-            timing_adjustment: None,
-        }
-    }
-
-    fn apply_budget(&mut self, budget: ResourceBudget) {
-        // Pick the lane that matches the issued strategy. With one strategy,
-        // there is one lane.
-        self.current_strategy = budget.strategy_id;
-        self.lane = Some(Box::new(HeartbeatLane::default()));
-    }
-
-    fn execute(&mut self, _context: &mut EngineContext<'_>) {
-        if let Some(lane) = self.lane.as_ref() {
-            let mut ctx = LaneContext::new();
-            if let Err(e) = lane.execute(&mut ctx) {
-                log::error!("heartbeat lane failed: {e}");
-            }
-        }
-    }
-
-    fn report_status(&self) -> AgentStatus {
-        AgentStatus {
-            agent_id: self.id(),
-            health_score: 1.0,
-            current_strategy: self.current_strategy,
-            is_stalled: false,
-            message: "heartbeat ok".to_owned(),
-        }
-    }
-
-    fn execution_timing(&self) -> ExecutionTiming {
-        ExecutionTiming {
-            // TRANSFORM is the per-frame logic/simulation phase.
-            allowed_phases: vec![ExecutionPhase::TRANSFORM],
-            default_phase: ExecutionPhase::TRANSFORM,
-            priority: 0.5,
-            importance: AgentImportance::Optional,
-            fixed_timestep: None,
-            dependencies: Vec::new(),
-        }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
+khora_sdk::inventory::submit! {
+    RegisteredAgent(HEARTBEAT)
 }
 ```
 
-Two things to internalise:
+Every lane listed must name `HeartbeatFamily` as its `Family`, or this does not
+compile. `fixed_step: Some(step)` would run the family at a fixed step instead of
+every frame.
 
-- The agent owns **exactly one** `LaneKind` and only ever selects a lane,
-  negotiates, and dispatches. Any other method on an agent struct is a rule
-  violation. See [conventions](../contributing/conventions.md).
-- The lane it dispatches is chosen in `apply_budget` from the strategy GORNA
-  issued — that is how a subsystem scales itself under load. See
-  [GORNA](../concepts/gorna.md).
+## Step 5 — Provide the settings
 
-## Step 3 — Register the agent
-
-Custom agents are registered through the **`AgentProvider`** trait your app already
-implements. The DCC calls `register_agents` once at boot. An agent is registered
-as an `Arc<Mutex<dyn Agent>>` with a priority.
-
-In `main.rs`, add `mod heartbeat;` at the top, then fill in the (currently empty)
-`register_agents`:
+The lane reads `HeartbeatSettings` from the runtime, and boot refuses the family
+if the runtime does not hold it. Your app installs it in `EngineApp::provide`,
+which runs before the families are built. In `main.rs`, add `mod heartbeat;` at
+the top, then `provide` to your `impl EngineApp`:
 
 ```rust
 mod heartbeat;
 
-use heartbeat::HeartbeatAgent;
-// (Arc and Mutex are already imported from std::sync in your main.rs.)
+impl EngineApp for MyGame {
+    // … window_config, new, setup and update as before …
 
-impl AgentProvider for MyGame {
-    fn register_agents(&self, dcc: &DccService, _runtime: &mut Runtime) {
-        dcc.register_agent(Arc::new(Mutex::new(HeartbeatAgent::default())), 0.5);
+    fn provide(&self, runtime: &mut Runtime) {
+        runtime
+            .resources
+            .insert(heartbeat::HeartbeatSettings { every: 60 });
     }
 }
 ```
 
 No special bootstrap is needed — the same `run_winit::<WinitWindowProvider,
-MyGame>(...)` call from the first lesson picks up the registration.
+MyGame>(...)` call from the first lesson boots the family with the engine's.
 
-> The agent starts on. To switch it off and on while the game runs, call
+> The family starts on. To switch it off and on while the game runs, call
 > `deactivate(id)` and `activate(id)` on the `Arc<Activation>` resource
-> (`khora_sdk::Activation`); the switch lands at the next frame boundary.
+> (`khora_sdk::Activation`) with `AgentId::new("heartbeat")`; the switch lands at
+> the next frame boundary.
 
-## Step 4 — Run it
+## Step 6 — Test it
+
+You can run the family for one frame without a window or a scheduler: build its
+agent with `lane_agent` and drive it with `run_frame`. Add to `heartbeat.rs`:
+
+```rust
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use khora_agents::agent::{lane_agent, run_frame};
+    use khora_core::agent::Agent;
+    use khora_core::gpu::DeviceCaps;
+    use khora_core::lane::io::FrameId;
+    use khora_core::lane::{LaneBus, OutputDeck};
+    use khora_core::{EngineContext, Runtime};
+
+    use super::{Beats, HeartbeatSettings, HEARTBEAT};
+
+    #[test]
+    fn one_frame_counts_one_beat() {
+        let mut runtime = Runtime::new();
+        runtime.resources.insert(HeartbeatSettings { every: 60 });
+        let runtime = Arc::new(runtime);
+        let mut agent = lane_agent(&HEARTBEAT, &DeviceCaps::default());
+
+        let mut bus = LaneBus::new();
+        bus.set_frame(FrameId(1));
+        let mut deck = OutputDeck::new();
+        let permit = agent.contention();
+        let id = agent.id();
+        {
+            let mut context =
+                EngineContext::for_agent(Arc::clone(&runtime), &bus, &mut deck, &permit, Some(id));
+            run_frame(&mut agent, &mut context);
+        }
+
+        assert_eq!(deck.get::<Beats>().map(|beats| beats.0), Some(1));
+    }
+}
+```
+
+The first `run_frame` installs the family's level and runs it, so the lane's
+output is in the deck after one call.
 
 ```bash
-cargo run -p my-first-game
+cargo test -p my-first-game
+```
+
+## Step 7 — Run it
+
+```bash
+RUST_LOG=info cargo run -p my-first-game
 ```
 
 **You should now see** the lit scene from the first lesson, and — once the engine
-enters the simulation loop — a steady stream of `heartbeat: tick` lines in the
-terminal, one per simulation frame. Your subsystem is now part of the frame.
+enters the frame loop — a `heartbeat: tick 60`, `heartbeat: tick 120`, … line in
+the terminal every 60 frames. Your subsystem is now part of the frame.
 
 If you see no ticks, confirm `mod heartbeat;` is declared in `main.rs` and that
-`register_agents` is the one being compiled (Rust will warn about an unused agent
-otherwise).
+`RUST_LOG` lets `info` through. If the engine refuses to boot, read the error: it
+names the family and what is missing, such as a resource `provide` did not
+install.
 
 ## Next steps
 
 You have added a real subsystem to the engine's frame loop. To go further:
 
-- [How-to recipes](../how-to/index.md) — add a lane to an *existing* agent, add an
-  agent, add an ECS component, add a shader.
+- [How-to recipes](../how-to/index.md) — add a lane to an *existing* family, add a
+  family, add an ECS component, add a shader.
 - [Agents and Lanes](../concepts/agents-and-lanes.md) — the full contract: why
   agents stay strategists and lanes stay executors.
-- [GORNA](../concepts/gorna.md) — how budgets are negotiated, so your `negotiate`
-  and `apply_budget` offer meaningful strategies.
+- [GORNA](../concepts/gorna.md) — how budgets are negotiated, so your levels and
+  their `cost` give the agent a meaningful choice.

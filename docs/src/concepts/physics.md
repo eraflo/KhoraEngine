@@ -106,11 +106,11 @@ would teleport a body back to its authored pose forever.
 ## Fixed timestep is the determinism guarantee
 
 Physics steps at a **fixed** timestep, a whole number of times per frame, decoupled
-from the variable render rate. The physics agent does **not** own an accumulator —
-it advertises its step duration and the scheduler drives the cadence: each frame it
-hands the agent exactly the simulated time the game's ticks advanced, computes how
-many whole steps of the agent's size fit, and invokes the agent that many times
-(the remainder waits for the next frame). The accumulator arithmetic and the
+from the variable render rate. The physics family does **not** own an accumulator:
+its step lives at its place (`Place::fixed_step`), and the scheduler drives the
+cadence. Each frame it hands the family exactly the simulated time the game's ticks
+advanced, computes how many whole steps fit, and runs the family's installed layer
+that many times (the remainder waits for the next frame). The accumulator arithmetic and the
 spiral-of-death clamp are part of the engine's single frame loop, explained in
 [The frame](./the-frame.md).
 
@@ -119,14 +119,12 @@ same number of steps regardless of frame cadence, which is what makes replays,
 multiplayer, and reproducible bug reports possible. Variable steps cause subtle
 simulation drift across machines, so they were considered and rejected.
 
-The step rate is itself a **GORNA** negotiation surface. Under a healthy budget the
-agent advertises a finer step; under pressure it advertises a coarser one, so the
-scheduler runs fewer sub-steps per frame rather than dropping the frame entirely.
-The transition is graceful — bodies keep their state, only the cadence changes,
-never the simulated time: a second of play is a second of physics under every
-strategy. The
-agent stays a pure strategist: it chooses a step rate given a budget and dispatches
-its lane, nothing more.
+The step is a **game setting**, never a GORNA lever: the game's `physics.step`
+(`PhysicsSettings`), written at the place once at boot. A coarser step would change
+what the simulation does — tunnelling, stacking, the feel of a jump — and adaptation
+changes how the engine works, never what the game does. The physics family offers
+one level; its agent stays a pure strategist that answers GORNA and installs its
+layer, nothing more.
 
 ## The backends
 
@@ -158,5 +156,5 @@ entirely untested, which is the honest near-term risk on it.
 
 - [The frame](./the-frame.md) — the fixed-timestep sub-loop physics is stepped by.
 - [Data and the ECS](./ecs.md) — how physics components are stored and queried.
-- [SAA](./saa.md) — why the step rate is a budget GORNA negotiates.
+- [SAA](./saa.md) — what GORNA adapts, and why the physics step is not part of it.
 - [Glossary](../reference/glossary.md) — PhysicsProvider, fixed timestep, agent, lane.

@@ -15,7 +15,7 @@ Stable facts about the project. Update only when these change.
 - **CLAD**: Control → Agent → Lane → Data (per-frame descent), plus a Substrate Pass.
 - **GORNA**: per-frame Goal-Oriented Resource Negotiation & Allocation between agents.
 - **CRPECS**: archetype-based Column-Row Partitioned ECS with SoA storage + AGDF layout adaptation.
-- **Rendering**: wgpu 29.0, WGSL shaders, PBR + shadow mapping (LitForward / Forward+ / StandardPbr).
+- **Rendering**: wgpu 29.0, WGSL shaders, PBR + shadow mapping (Unlit / LitForward / Forward+).
 
 ## Workspace — 16 members
 14 `khora-*` workspace members under `crates/`: `khora-core`, `khora-data`, `khora-control`,

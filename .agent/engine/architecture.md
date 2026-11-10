@@ -52,7 +52,7 @@ access patterns and self-bounded by a cost/benefit test; the DCC only **observes
 
 ```
 Pass A — Substrate (Scheduler):   DataSystem invariants → Flows publish Views into LaneBus
-Pass B — CLAD descent (Agents):   choose lane by budget → fill a LaneContext (type map) → Lane.execute(&mut ctx)
+Pass B — CLAD descent (Agents):   wake agents for events (choose a row, prepare a layer) → run each family's installed layer at its place, in waves (typed LaneInputs from bus/deck/runtime → Lane::record → typed LaneOutputs)
 Pass C — I/O boundary (Engine):   drain OutputDeck for submit/present
 ```
 
@@ -95,16 +95,16 @@ Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`,
 
 | Crate | Layer | Responsibility |
 |---|---|---|
-| `khora-core` | Foundation | Traits (`Lane`, `Agent`, `RenderSystem`, `PhysicsProvider`, `AudioDevice`, `LayoutSystem`, `Asset`, VFS), math (`Vec2/3/4`, `Mat3/4`, `Quaternion`, `Aabb`, `LinearRgba`, `simd`), GORNA types, error hierarchy, `ServiceRegistry`, `EngineContext`, the memory counters. |
-| `khora-macros` | Foundation | `#[derive(Component)]` proc macro. Path crate (not a workspace member). |
+| `khora-core` | Foundation | Traits (`Lane`, `Agent`, `RenderSystem`, `PhysicsProvider`, `AudioDevice`, `LayoutSystem`, `Asset`, VFS), math (`Vec2/3/4`, `Mat3/4`, `Quaternion`, `Aabb`, `LinearRgba`, `simd`), GORNA types, error hierarchy, `Runtime` (services / backends / resources), `EngineContext`, `register_agent!`, `Place`/`Layer`, the memory counters. |
+| `khora-macros` | Foundation | Proc macros: `#[derive(Component)]`, the lane derives `#[derive(LaneInputs)]` / `#[derive(LaneOutputs)]`, `#[ergon_fn]`. Path crate (not a workspace member). |
 | `khora-data` | Data | CRPECS ECS (`World`, storage, query, `SemanticDomain`, `ComponentProvenance`), SoA/AGDF layout (`LayoutAdvisor`, `Ucb1`), `Assets<T>`, UI components, Flows, `EcsMaintenance`, and **persistence** (`scene/`: `SceneRecord`, encodings text/compact/msgpack, schema-bound snapshot, prefab links, game `SaveRecord`, atomic `apply`, `LoadReport`). |
 | `khora-control` | Control | `DccService` (agent lifecycle), `GornaArbitrator` (budget fitting + replay), cost model, frame governor, Substrate dispatcher, situational `Context` (thermal/battery/phase). |
 | `khora-telemetry` | Infra | `TelemetryService`, `MetricsRegistry`, `MonitorRegistry`, telemetry event storage. |
-| `khora-lanes` | Lanes | Render (Unlit, LitForward, Forward+, StandardPbr, Shadow, Overlay: Grid/Wireframe/Gizmo, Skybox, UI), Physics (Standard, CCD), Audio (SpatialMixing, SourceUpdate), UI (StandardUi, TaffyLayout), Script (Budgeted). |
+| `khora-lanes` | Lanes | The typed lanes and their `LaneFamily`s: render (`SimpleUnlitLane`, `LitForwardLane`, `ForwardPlusLane`), `ShadowsLane`, overlays (`GridLane`, `WireframeLane`, `GizmoLane`), `SkyboxLane`, `UiLane`, `StandardPhysicsLane`, `SpatialMixingLane`, `BudgetedScriptLane`, loading (`RushLane`, `PacedLane`). |
 | `khora-infra` | Infra | Default backends: `WgpuRenderSystem`/`WgpuDevice`, `WinitWindow` + input, Rapier3D physics, CPAL audio, Taffy layout, GPU/Memory/Vram monitors, `SaaTrackingAllocator`, `DefaultMixBus`. Each implements a `khora-core` trait and is swappable. |
 | `khora-io` | Data | `AssetService`, `SerializationService` (scene save/load, game `save_game`/`load_game`, `AssetPrefabs`), VFS, `AssetIo`, `PackLoader`/`FileLoader`, decoders (glTF, OBJ, Symphonia audio, texture, font). |
-| `khora-agents` | Agents | One `LaneAgent` per family registration (render, shadows, overlays, skybox, physics, ui, audio, script) + `PhysicsQueryService`. |
-| `khora-sdk` | Public API | `EngineCore` + `run_winit` entry, `GameWorld` (safe ECS façade), `EngineApp`/`AgentProvider`/`PhaseProvider` traits, `WindowConfig`, `Vessel` + `spawn_plane`/`spawn_cube_at`/`spawn_sphere`, `prelude`. **The only crate game devs import.** |
+| `khora-agents` | Agents | The one `LaneAgent` (`agent/mod.rs`; `lane_agent` builds it, `run_frame` drives it without a scheduler in tests) and every family's `inventory::submit! { RegisteredAgent(register_agent! { … }) }` (renderer, shadows, grid, wireframe, gizmo, skybox, physics, ui, audio, script, loading). |
+| `khora-sdk` | Public API | `EngineCore` + `run_winit` entry, `GameWorld` (safe ECS façade), `EngineApp` (with `provide`)/`PhaseProvider` traits, `WindowConfig`, `Vessel` + `spawn_plane`/`spawn_cube_at`/`spawn_sphere`, `prelude`. **The only crate game devs import.** |
 | `khora-editor` | Application | Editor app on the SDK — panels, gizmos, dock, hot-reload, command palette. |
 | `khora-runtime` | Application | Generic player binary stamped with packed assets; boots via `khora_sdk::run_default`. |
 | `sandbox` | Example | Example game using only the SDK (`examples/sandbox`). |
@@ -116,7 +116,8 @@ Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`,
 | Trait | Defined in | Implemented by |
 |---|---|---|
 | `Lane` | khora-core (`lane/`) | All lane types in khora-lanes |
-| `Agent` | khora-core (`agent/`) | All agent types in khora-agents |
+| `Agent` | khora-core (`agent/`) | `LaneAgent` in khora-agents — the only implementor outside tests (xtask `only_lane_agent_implements_agent`) |
+| `LaneFamily` | khora-core (`lane/family.rs`) | One per family, in khora-lanes (`RenderFamily`, `ShadowsFamily`, …) |
 | `RenderSystem` | khora-core | `WgpuRenderSystem` in khora-infra |
 | `PhysicsProvider` | khora-core | `RapierPhysicsWorld` in khora-infra |
 | `AudioDevice` | khora-core | `CpalAudioDevice` in khora-infra |
@@ -139,8 +140,8 @@ Rust component: its script declares `Guard` (authored) and its state companion `
 
 | Area | Path |
 |---|---|
-| Lane trait / bus / deck | `crates/khora-core/src/lane/` (`mod.rs`, `bus.rs`, `deck.rs`) |
-| Agent trait / `AgentId` | `crates/khora-core/src/agent/`, GORNA types `crates/khora-core/src/agent/gorna/mod.rs` |
+| Lane trait / family / bus / deck | `crates/khora-core/src/lane/` (`contract.rs`, `family.rs`, `bus.rs`, `deck.rs`, `io/`) |
+| Agent trait / `AgentId` / registration / place | `crates/khora-core/src/agent/` (`mod.rs`, `registration.rs`, `contention.rs`, `layer/`), GORNA types `crates/khora-core/src/agent/gorna/` (`protocol.rs`) |
 | Math / SIMD | `crates/khora-core/src/math/` (`simd.rs`) |
 | ECS (CRPECS) / layout learner | `crates/khora-data/src/ecs/` (`world/`, `storage.rs`, `soa.rs`, `layout/`) |
 | Components / registrations | `crates/khora-data/src/ecs/components/` |
@@ -152,7 +153,7 @@ Rust component: its script declares `Guard` (authored) and its state companion `
 | Shadow / overlay / skybox / ui / physics / audio / script lanes | `crates/khora-lanes/src/{shadow_lane,overlay_lane,skybox_lane,ui_lane,physics_lane,audio_lane,script_lane}/` — one folder per agent |
 | wgpu backend | `crates/khora-infra/src/graphics/wgpu/` (`system/`, `device/`) |
 | Rapier / CPAL / Taffy | `crates/khora-infra/src/{physics/rapier,audio/cpal,ui/taffy}/` |
-| Agents | `crates/khora-agents/src/{render,shadow,overlay,skybox,physics,ui,audio,script}_agent/` |
+| `LaneAgent` / family registrations | `crates/khora-agents/src/agent/`, `crates/khora-agents/src/{render,shadow,overlay,skybox,physics,ui,audio,script,loading}_agent/agent.rs` |
 | SDK entry / GameWorld / Vessel | `crates/khora-sdk/src/lib.rs`, `game_world.rs`, `vessel.rs` |
 | Sandbox app | `examples/sandbox/src/` (`game.rs`, `player.rs`, `assets.rs`) |
 
@@ -164,11 +165,12 @@ run_winit::<W, MyApp>(bootstrap)    ← entry point
   └─ window opened
   └─ bootstrap(window, runtime, _)  ← user registers backends into runtime.backends/resources
   └─ MyApp::new()                   ← simple constructor, no context
-  └─ engine init                    ← default services, DCC + agents registered,
-                                       Arc<Activation> published (every family on); app agents
-                                       admitted after register_agents; Role::Serves checked
+  └─ engine init                    ← default services, DCC, Arc<Activation> published
   └─ GameWorld::set_prefabs(…)      ← when an AssetService is present (AssetPrefabs)
   └─ MyApp::setup(world, runtime)   ← cache services, spawn entities
+  └─ MyApp::provide(runtime)        ← the app installs its own runtime entries
+  └─ families built                 ← registered_agents() checked together, one LaneAgent each
+                                       (every family on); Role::Serves checked
 Per frame:
   app.before_frame(…)               ← the editor switches families here (transport)
   activation.settle()               ← frame boundary: one state for the whole frame; Drop
@@ -180,8 +182,8 @@ Per frame:
 
 **Activation (no engine mode).** The engine has no mode; families are switched on and off.
 `khora_core::agent::Activation` (`khora-core/src/agent/activation.rs`) is published as `Arc<Activation>`
-at bootstrap (`khora-sdk/src/engine/bootstrap.rs`), knowing every registered family (lane families, the
-script agent, the app's agents). Every family starts on; `activate`/`deactivate` are requests, an unknown
+at bootstrap (`khora-sdk/src/engine/bootstrap.rs`), knowing every registered family (every
+`register_agent!` registration, scripting included). Every family starts on; `activate`/`deactivate` are requests, an unknown
 family is refused (`UnknownFamily`). `run_app_update` (`khora-sdk/src/engine/frame.rs`) opens with
 `settle()`, after `before_frame` and before the first DataSystem phase, so every phase, Flow, the
 scheduler and the DCC see one state; a later request counts from the next frame. On a change the SDK
@@ -208,33 +210,42 @@ ids: `khora_core::{script::SCRIPT, physics::PHYSICS, audio::AUDIO}`. The editor'
 (`khora-editor/src/commands/transport.rs`, `process_transport` in `before_frame`) switches SCRIPT, PHYSICS
 and AUDIO off while editing (scale 1) and on at Play; Pause only sets the scale to 0.
 
-App implements `EngineApp + AgentProvider + PhaseProvider` (composite SDK trait). Detail in
+App implements `EngineApp` (which requires `PhaseProvider`) and installs its runtime entries in
+`EngineApp::provide`; it registers no agent. Detail in
 [`../../docs/src/concepts/the-frame.md`](../../docs/src/concepts/the-frame.md).
 
-## 8 — Agents (one per CLAD domain)
+## 8 — Agents (one per family)
 
 ```rust
 pub trait Agent: Send + Sync {
     fn id(&self) -> AgentId;
-    fn negotiate(&mut self, request: NegotiationRequest) -> NegotiationResponse;
-    fn apply_budget(&mut self, budget: ResourceBudget);
-    fn report_status(&self) -> AgentStatus;
-    fn on_initialize(&mut self, ctx: &mut EngineContext<'_>) {}  // once after registration
-    fn execute(&mut self, ctx: &mut EngineContext<'_>);          // every frame
-    fn as_any(&self) -> &dyn Any;  fn as_any_mut(&mut self) -> &mut dyn Any;
+    fn offer(&mut self, request: &OfferRequest) -> Offer;              // every row, priced
+    fn apply(&mut self, epoch: Epoch, envelope: &Envelope,
+             pin: Option<StrategyId>, allowed: Option<&[StrategyId]>); // choose the row that fits
+    fn report(&self) -> Report;                                        // row, measured, health, stalled, message
+    fn place(&self) -> Arc<Mutex<Place>>;                              // where its layer runs (required)
+    fn wake(&mut self, why: &[Wake], place: &mut Place, ctx: &mut EngineContext<'_>) {}
+    fn execution_timing(&self) -> ExecutionTiming { .. }
+    fn contention(&self) -> Contention { .. }  // deck, deck_reads, reads, writes
 }
 ```
 
-| Agent | `LaneKind` | Strategies |
+No `execute`: the scheduler runs each family's installed layer at its place every frame (a wave of
+one inline, a larger wave on the worker pool) and wakes the agent only for an event. A fixed-step
+family's step lives at its place (`Place::fixed_step`; physics: the game's `physics.step`). The only
+implementor is `LaneAgent`; a new subsystem is a family (`Lane`s + `LaneFamily` + `register_agent!`).
+
+| Family (`AgentId`) | Phase | Lanes / levels |
 |---|---|---|
-| `RenderAgent` | Render | Unlit / LitForward / Forward+ / StandardPbr |
-| `ShadowAgent` | Shadow | Standard (2048² + 512² cube, ≈88 MiB) / Medium (1024² + 256², ≈22 MiB) / LowRes (512² + 128², ≈5.5 MiB) — HighPerformance/Balanced/LowPower |
-| `OverlayAgent` | Render | parallel post-render lanes: Grid → Wireframe → Gizmo |
-| `SkyboxAgent` | Render | environment background (`Skybox` lane) |
-| `PhysicsAgent` | Physics | Standard / Simplified |
-| `UiAgent` | Ui | Layout + Render |
-| `AudioAgent` | Audio | source count / quality |
-| script family (`LaneAgent`) | Script | `BudgetedScriptLane`, typed; LowPower "critical" / Balanced "whole" (default) — family `SCRIPT`, off while the editor edits |
+| `renderer` | OUTPUT | `SimpleUnlitLane` "unlit" (LowPower) / `LitForwardLane` "lit forward" (Balanced) / `ForwardPlusLane` "forward+" (HighPerformance) |
+| `shadows` | OBSERVE | `ShadowsLane`: "low-res shadows" (LowPower) / "medium shadows" (Balanced) / "standard shadows" (HighPerformance) |
+| `grid`, `wireframe`, `gizmo` | OUTPUT | one overlay lane each (`GridLane`, `WireframeLane`, `GizmoLane`) |
+| `skybox` | OUTPUT | `SkyboxLane` |
+| `physics` | TRANSFORM | `StandardPhysicsLane`, one level; fixed step |
+| `ui` | OUTPUT | `UiLane` |
+| `audio` | TRANSFORM | `SpatialMixingLane`: 8 / 32 / 128 voices |
+| `script` | TRANSFORM | `BudgetedScriptLane`: LowPower "critical" / Balanced "whole" — off while the editor edits |
+| `loading` | BACKGROUND | `RushLane` (HighPerformance, default) / `PacedLane` (Balanced) |
 
 WGSL composition: the `.wgsl` files live in `khora-infra/src/graphics/shader/shaders/`
 (`pipelines/` entry points, `lib/` reusable modules) and are embedded with `include_str!`.

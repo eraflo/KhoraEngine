@@ -141,8 +141,9 @@ present in the world. See [Rendering](../concepts/rendering.md).
 
 The simulation runs on a **fixed timestep** decoupled from the display rate. The scheduler
 (`crates/khora-control/src/scheduler/sim_steps.rs`, `compute_sim_steps`) accumulates real frame time and runs
-whole game ticks of 1/60 s; the `PhysicsAgent` (`crates/khora-agents/src/physics_agent/agent.rs`) picks
-its own sub-step size — precision, not time — via its GORNA strategy. See [GORNA](../concepts/gorna.md) and
+whole game ticks of 1/60 s; the physics family (registered in
+`crates/khora-agents/src/physics_agent/agent.rs`) cuts them into sub-steps of the game's `physics.step`
+— precision, not time, and never a GORNA lever. See [The frame](../concepts/the-frame.md) and
 [Profile performance](./profile-performance.md).
 
 ### A body does not move under gravity or forces
@@ -162,10 +163,10 @@ editor: press Play), and that the game is not paused.
 ### Fast bodies pass through thin colliders (tunneling)
 
 **Cause.** A body moving far enough in one fixed step to skip over a thin collider is classic
-discrete-step tunneling, made worse by a coarse fixed step (the LowPower strategy steps at 30 Hz;
-Balanced 60 Hz; HighPerformance 120 Hz — see `apply_budget` in the physics agent).
+discrete-step tunneling, made worse by a coarse fixed step (the game's `physics.step` setting,
+1/60 s by default — `PhysicsSettings` in `khora_core::physics`; GORNA never changes it).
 
-**Fix.** Use thicker colliders for fast objects, or favour a finer fixed step. Continuous collision
+**Fix.** Use thicker colliders for fast objects, or set a finer `physics.step`. Continuous collision
 detection is a provider-level concern — see [Physics](../concepts/physics.md).
 
 ### Simulation slows to slow-motion under a heavy hitch (but never freezes)
@@ -196,8 +197,8 @@ fixed step for stiff constraints. See [Physics](../concepts/physics.md).
 ## Audio
 
 Audio runs through the `AudioDevice` trait (CPAL backend) and the spatial mixing lane
-(`crates/khora-lanes/src/audio_lane/`). As with physics, the `AudioAgent` only runs while the audio
-family (`khora_core::audio::AUDIO`) is on; the editor switches it off while editing.
+(`crates/khora-lanes/src/audio_lane/`). As with physics, the audio family
+(`khora_core::audio::AUDIO`) only runs while it is on; the editor switches it off while editing.
 
 ### No spatialization — sound plays but is not panned by position
 
@@ -320,7 +321,7 @@ multiplier and push agents to cheaper strategies:
 - **Death spiral** — three or more independent pressure sources active at once trip an emergency stop.
 
 **Fix.** This is adaptive behaviour, not a bug. To diagnose, watch the editor's **GORNA Stream**
-panel — it prints the reason for each switch (e.g. "RenderAgent: LitForward → Forward+ — GPU
+panel — it prints the reason for each switch (e.g. "renderer: LitForward → Forward+ — GPU
 pressure"). See [Pin a strategy](#pin-a-strategy-so-adaptation-stops-surprising-you) below.
 
 ### Quality keeps oscillating, or upgrades right after a downgrade

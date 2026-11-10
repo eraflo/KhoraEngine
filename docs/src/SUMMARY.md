@@ -21,7 +21,7 @@
 - [Map input](./how-to/map-input.md)
 - [Add a component](./how-to/add-a-component.md)
 - [Add a lane](./how-to/add-a-lane.md)
-- [Add an agent](./how-to/add-an-agent.md)
+- [Add a subsystem (a family)](./how-to/add-an-agent.md)
 - [Add a shader](./how-to/add-a-shader.md)
 - [Add an asset decoder](./how-to/add-an-asset-decoder.md)
 - [Add a flow](./how-to/add-a-flow.md)

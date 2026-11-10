@@ -13,12 +13,12 @@ Code style and project conventions. Pairs with [`RULES.md`](./RULES.md).
 |---|---|---|
 | Crates | `khora-{name}` (kebab-case) | `khora-core`, `khora-lanes` |
 | Modules | `snake_case` | `render_lane`, `service_registry` |
-| Types & traits | `PascalCase` | `LaneContext`, `WgpuDevice` |
+| Types & traits | `PascalCase` | `LaneBus`, `WgpuDevice` |
 | Functions & methods | `snake_case` | `begin_frame`, `with_capacity` |
 | Constants | `SCREAMING_SNAKE_CASE` | `MAX_LIGHTS`, `DEFAULT_BUDGET` |
 | GPU resources | `…Id` suffix | `TextureId`, `BufferId`, `PipelineId` |
-| Lanes | `…Lane` suffix | `LitForwardLane`, `ShadowPassLane` |
-| Agents | `…Agent` suffix | `RenderAgent`, `UiAgent` |
+| Lanes | `…Lane` suffix | `LitForwardLane`, `ShadowsLane` |
+| Lane families | `…Family` suffix | `RenderFamily`, `ShadowsFamily` (no agent type: every family's agent is `LaneAgent`) |
 | Services | `…Service` suffix | `AssetService`, `TelemetryService` |
 | Flows | `…Flow` suffix | `RenderFlow`, `PhysicsFlow`, `ShadowFlow` |
 | Flow Views | `…View` / `…World` suffix | `RenderWorld`, `PhysicsView`, `AudioView` |
@@ -46,8 +46,8 @@ Code style and project conventions. Pairs with [`RULES.md`](./RULES.md).
 ### 3.1 — Adding a new domain
 
 1. **`Flow`** in `khora-data/src/flow/<domain>.rs` — implement `Flow` (read-only `select → project`), define a typed `View`, register with `register_flow!`. A Flow never mutates the World; per-frame maintenance goes in a `DataSystem`.
-2. **`Agent`** in `khora-agents/src/<domain>_agent/` — strict strategist, no per-frame state. In `execute` it reads the `View` from `EngineContext::bus`, puts what its lane needs into a fresh `LaneContext` (a type map: `insert`, `insert_ref`, `insert_slot` — the deck is lent with `insert_slot`), and calls `Lane::execute`.
-3. **`Lane`s** in `khora-lanes/src/<domain>_lane/` — take their inputs from the `LaneContext` the agent filled (`get`, `get_ref`, `slot`), write outputs into the lent deck. Never call `world.query*`.
+2. **`Lane`s and their `LaneFamily`** in `khora-lanes/src/<domain>_lane/` — each lane implements `khora_core::lane::Lane` (`levels`, `prepare`, `cost`, `record`, `shutdown`); it reads typed inputs (`#[derive(LaneInputs)]`: `#[bus]` the `View`, `#[deck]`, `#[resource]`, `#[locked]`, …) and writes the family's typed outputs (`#[derive(LaneOutputs)]`: `#[pass]`, `#[deck]`, `#[staged]`). Never call `world.query*`.
+3. **One registration** in `khora-agents/src/<domain>_agent/agent.rs` — `inventory::submit! { RegisteredAgent(register_agent! { family, phase, importance, after, fixed_step, [default_level,] lanes }) }`. No agent type: the family's agent is the one `LaneAgent`, built from the registration; the scheduler runs its installed layer every frame and wakes it only for an event. Test the family without the scheduler through `khora_agents::agent::run_frame`.
 4. The engine drains the relevant typed slot of the `OutputDeck` at the I/O boundary for side-effects (GPU submit, audio flush…).
 
 ## 4 — Components

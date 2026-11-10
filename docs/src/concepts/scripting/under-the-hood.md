@@ -24,19 +24,21 @@ author edited since.
 sequenceDiagram
     participant DCC
     participant Agent as LaneAgent (script family)
+    participant Place as the family's place
     participant Lane as BudgetedScriptLane
     participant VM
 
-    DCC->>Agent: you have 0.4 ms
-    Note over Agent: converts to fuel at a measured rate
-    Agent->>Lane: execute(view, fuel, runtime, deck)
+    DCC->>Agent: you have 0.4 ms (apply)
+    Note over Agent: chooses the row, sets the place's terms
+    Place->>Lane: record(level, inputs with #[budget], outputs)
+    Note over Lane: converts the budget to fuel at a measured rate
     loop while fuel remains
         Lane->>VM: run one behavior's turn
         VM-->>Lane: done — or stopped at a safepoint, N spent
     end
     Note over Lane: out of fuel — the rest are deferred,<br/>a cut body resumes next frame
-    Lane-->>Agent: 12 ran, 3 deferred, 0 faulted
-    Agent-->>DCC: health 0.8
+    Lane-->>Place: 12 ran, 3 deferred, 0 faulted
+    Agent-->>DCC: report: health 0.8
 ```
 
 ## Who owns what

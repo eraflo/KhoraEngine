@@ -8,7 +8,31 @@ Deep history lives in git and `docs/plans/`.
 - **Build**: clean (all crates compile, 0 errors); clippy 0 errors.
 - **Tests**: ~2520 workspace tests, 0 failures. Treat the live `cargo test --workspace` count as truth.
 
-## Latest work (2026-10-30) — CRPECS change detection (phases 1–7 on `dev`)
+## Latest work (2026-11-10) — Agents/lanes contract 3k: one kind of agent, one protocol
+Commits `f5b3658c` (3k1), `a89f1086` (3k2), `77955a5a` + `80df266f` (3k3) on `dev`; plan
+`docs/plans/agents-lanes-contract.md` §3k.
+- **A subsystem is a family**: lanes implementing `khora_core::lane::Lane` (`lane/contract.rs`), a
+  `LaneFamily` (`lane/family.rs`: `NAME`, `AGENT`, `SEMANTICS`, `Outputs`; no `KIND`), and one
+  `inventory::submit! { RegisteredAgent(register_agent! { … }) }` in `khora-agents/src/<domain>_agent/agent.rs`.
+  Its agent is always `LaneAgent` (`khora-agents/src/agent/mod.rs`); xtask `only_lane_agent_implements_agent`
+  enforces it. Eleven families: renderer, shadows, grid, wireframe, gizmo, skybox, physics, ui, audio,
+  script, loading.
+- **`Agent` trait** = `id`, `offer`, `apply`, `report`, `place` (required), `wake`, `execution_timing`,
+  `contention`. Gone: `execute`, `on_initialize`, `as_any`, `negotiate`, `apply_budget`, `report_status`,
+  `access`; `AgentStatus`, `AgentAccess`, `WorldAccess`, `ResourceBudget`, `NegotiationRequest`/`Response`,
+  `StrategyOption`, `AgentFrameStatus`, `LaneKind`; the old lane API (`LaneContext`, `LaneRegistry`, `slot.rs`
+  with `SlotGuard`/`insert_slot`); `EngineContext::{for_initialisation, world_ref, world_mut}`;
+  `DccService::execute_agents`, `AgentRegistry::execute_all`/`execute_agent`. `Report` gained `message`.
+- **No agent reaches the World**: waves split on `Contention` alone (`deck`, `deck_reads`, `reads`,
+  `writes`); a wave of one inline, a larger one on the worker pool.
+- **Fixed step at the place** (`Place::fixed_step`); `ExecutionTiming.fixed_timestep` gone. The physics step
+  is the game's `physics.step` (`PhysicsSettings`), never a GORNA lever.
+- **SDK**: `AgentProvider`/`register_agents` gone; an app is `EngineApp` + `PhaseProvider` and installs its
+  runtime entries in `EngineApp::provide`. Tests drive a family without the scheduler through
+  `khora_agents::agent::run_frame`.
+- Docs (3k4): docs/src pages and `.agent` files updated to the above.
+
+## Earlier work (2026-10-30) — CRPECS change detection (phases 1–7 on `dev`)
 - World clock (`Tick`, one per DataSystem run / Flow run), per page column `ColumnTicks { σ, φ, τ }`
   (row ticks only for keys an observer `observes`, freed when quiet: `QUIET_ROW_TICKS = 12_900`), page order
   version ω. Writes go through the `Mut<T>` guard or by-value stamps; `Changed<T>` + `Query::since`; DataSystems
@@ -271,6 +295,8 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la cl�
   retiré (`false`) : le scheduler ne peut pas distinguer « crash interne » d'un skip volontaire → GORNA
   garde les triggers pression + health-degraded, perd le détecteur crash (qui reposait sur l'auto-report).
   `AgentStatus` inchangé ; editor + GORNA non modifiés. draws/tris de l'editor = `GpuReport`/MonitorRegistry.
+  *(Superseded 2026-11, 3k: `AgentFrameStatus`, `AgentStatus`, `report_status` and `execute` are gone; a run's
+  measured time is in its `Report`, which the place keeps as `LastRun`.)*
 - Vérif : `cargo test --workspace` 866 passed / 0 failed ; `cargo clippy --workspace` clean ; run editor
   12 s sans panic ni erreur de validation Vulkan.
 
@@ -319,17 +345,20 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la cl�
 ## Earlier work (2026-05-19) — WGSL migration finalization
 - **Shadow agent**: `ShadowStrategy::from_strategy_id` made `pub`; tests cover StrategyId→ShadowStrategy
   mapping (`LowPower→LowRes`, `HighPerformance/Balanced→Standard` — since superseded by the Medium tier,
-  see Latest work) and `apply_budget`.
+  see Latest work) and `apply_budget`. *(Superseded: the shadow agent is now the `shadows` family's
+  `LaneAgent`, its tiers the three levels of `ShadowsLane`; `apply_budget` is gone, 3k.)*
 - **Forward+ shadows**: `ForwardPlusLane` reads `ShadowFrame` from the deck; group 3 = shadow bindings,
   group 4 = F+ tile/light data + `shadow_view_projs`. Directional/spot 2D PCF + point-light cube shadows
   → full parity with `LitForwardLane`.
 - **OverlayAgent**: new agent owning post-main-render `LaneKind::Render` lanes, runs in `OUTPUT` after
-  `Renderer` (Hard dep). Lanes run in parallel, order `Grid → Wireframe → Gizmo`.
+  `Renderer` (Hard dep). Lanes run in parallel, order `Grid → Wireframe → Gizmo`. *(Superseded: three
+  families now — `grid`, `wireframe`, `gizmo` — and `LaneKind` is gone, 3k.)*
 - **GizmoLane / GridLane**: editor/debug overlays read host Views from the bus (`GizmoView`,
   `GridView`, set by the editor in `Arc<HostViews>`), `LoadOp::Load`. The backend (`khora-infra`) no longer owns
   any render pipeline — the editor is a pure data producer.
 - **StandardPbrLane**: alternative `RenderAgent` strategy (Cook-Torrance GGX), shares the
-  `khora::std/lighting/shadow` lib modules and the group-3 contract.
+  `khora::std/lighting/shadow` lib modules and the group-3 contract. *(Superseded: no such lane today — the
+  render family's lanes are `SimpleUnlitLane`, `LitForwardLane`, `ForwardPlusLane`.)*
 - **Legacy WGSL cleanup**: 14 duplicate root `.wgsl` files deleted; canonical sources under
   `khora-infra/src/graphics/shader/shaders/{pipelines,lib}/`, composed by the `PipelineSystem`
   backend via `naga_oil #import`. A lane names a pipeline; it never handles source.
@@ -343,7 +372,7 @@ ressource runtime (`EditorViewportOverride`) et replie son empreinte dans la cl�
 - **Substrate / Flow / AGDF refactor**: `LaneBus`/`OutputDeck`/`TickPhase`/`DataSystemRegistration`;
   `transform_propagation` moved to a `DataSystem`; `Flow` trait + `register_flow!`; `RenderFlow`/
   `ShadowFlow`/`PhysicsFlow`/`AudioFlow`; asset decoders moved to `khora-io`; `Flow::adapt` removed.
-- **SAA lifecycle refactor**: `Agent` trait cleanup (`on_initialize`/`execute`), new `ExecutionPhase`
+- **SAA lifecycle refactor**: `Agent` trait cleanup (`on_initialize`/`execute` — both gone since 3k, 2026-11), new `ExecutionPhase`
   (Init/Observe/Transform/Mutate/Output/Finalize) + an engine mode (since replaced by the `Activation`), `ExecutionScheduler` + `BudgetChannel`
   + `EnginePlugin`, `khora-io` crate split out.
 - **Editor**: component serialization via `#[derive(Component)]`, Add/Remove Component UI, prefab

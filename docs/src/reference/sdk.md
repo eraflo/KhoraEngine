@@ -12,13 +12,13 @@ never reference those directly.
 
 ## The application traits
 
-A Khora application implements three traits. The composite bound the engine
-requires is `EngineApp + AgentProvider + PhaseProvider`.
+A Khora application implements two traits: `EngineApp`, which requires
+`PhaseProvider`. A third, `WindowProvider`, abstracts the window backend and comes
+with a default.
 
 | Trait | Role | rustdoc |
 |---|---|---|
-| [`EngineApp`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.EngineApp.html) | Application lifecycle — `window_config`, `new`, `setup`, `update`, `on_shutdown`, plus optional editor-overlay hooks. | link |
-| [`AgentProvider`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.AgentProvider.html) | Register custom agents with the DCC. | link |
+| [`EngineApp`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.EngineApp.html) | Application lifecycle — `window_config`, `new`, `setup`, `provide`, `update`, `on_shutdown`, plus optional editor-overlay hooks. | link |
 | [`PhaseProvider`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.PhaseProvider.html) | Insert or remove custom `ExecutionPhase`s. | link |
 | [`WindowProvider`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.WindowProvider.html) | Abstracts the platform window backend (default: winit). | link |
 
@@ -31,6 +31,7 @@ The methods the engine calls on your app type:
 | `window_config() -> WindowConfig` | Once, before window creation. |
 | `new() -> Self` | Once, after window creation — no engine context yet. |
 | `setup(&mut self, world: &mut GameWorld, runtime: &Runtime)` | Once, after engine init — spawn entities, cache handles. |
+| `provide(&self, runtime: &mut Runtime)` | Once at boot, after `setup` and before the engine's families are built — install the app's own resources or services (default: nothing). |
 | `update(&mut self, world: &mut GameWorld, inputs: &[InputEvent])` | Every frame — game logic. |
 | `on_shutdown(&mut self)` | Once, on exit (default no-op). |
 
@@ -43,17 +44,17 @@ before the engine fixes the frame: a family switched on or off there (see
 `setup` and the optional hooks receive `&Runtime` — the engine's injection bundle
 (see [Runtime](#runtime--the-injection-bundle) below).
 
-### `AgentProvider` — register custom agents
+### `provide` — install what the app needs
 
 ```rust
-fn register_agents(&self, dcc: &DccService, runtime: &mut Runtime);
+fn provide(&self, runtime: &mut Runtime) {}
 ```
 
-Called once during boot. Empty for a vanilla game; this is where a custom AI,
-scripting, or networking agent calls `dcc.register_agent(...)`. The agents
-registered here are admitted to the [`Activation`](#activation--which-families-run)
-after the hook returns, and start on. See
-[Add an agent](../how-to/add-an-agent.md).
+Called once at boot, after `setup` and before the engine's families are built.
+What it inserts into the runtime is there when every family boots. It never
+registers an agent: a new subsystem is a **family** — its lanes, a `LaneFamily`,
+and one `register_agent!` registration — and every family's agent is the engine's
+one `LaneAgent`. See [Add a subsystem (a family)](../how-to/add-an-agent.md).
 
 ### `PhaseProvider` — custom execution phases
 
@@ -106,8 +107,7 @@ panics if absent). Per-frame state (current viewport, frame deltas, lane outputs
 does **not** live here — it flows through the `LaneBus` and `OutputDeck`.
 
 Not everything with a service-style API is in `runtime.services`. The
-`DccService` is handed to `AgentProvider::register_agents` directly, and the
-`TelemetryService` is owned by `EngineCore`. The `SerializationService` is not
+`DccService` and the `TelemetryService` are owned by `EngineCore`. The `SerializationService` is not
 registered at all: it holds nothing but where prefabs are read from, so it is
 constructed where it is needed (see [Saving and loading](#saving-and-loading)).
 
@@ -266,11 +266,11 @@ alone. The major groups:
 | Group | Re-exported types (selection) |
 |---|---|
 | Engine + ECS | `EngineCore`, `GameWorld`, `Vessel`, `spawn_*` |
-| App traits | `EngineApp`, `AgentProvider`, `PhaseProvider`, `WindowProvider` |
+| App traits | `EngineApp`, `PhaseProvider`, `WindowProvider` |
 | Bootstrap | `run_winit`, `run_default`, `WinitAppRunner`, `WinitWindowProvider` |
 | Window | `WindowConfig`, `WindowIcon`, `PRIMARY_VIEWPORT` |
-| Runtime / control | `Runtime`, `Services`, `Backends`, `Resources`, `DccService`, `DccConfig`, `Activation`, `EngineContext`, `AgentRegistry` |
-| Core types | `ExecutionPhase`, `ExecutionTiming`, `AgentId`, `AgentStatus`, `StrategyId`, `AgentImportance` |
+| Runtime / control | `Runtime`, `Services`, `Backends`, `Resources`, `DccService`, `DccConfig`, `Activation`, `AgentRegistry` |
+| Core types | `ExecutionPhase`, `ExecutionTiming`, `AgentId`, `StrategyId`, `AgentImportance` |
 | Telemetry | `TelemetryService`, `TelemetryEvent`, `MonitoredResourceType`, `MetricsRegistry`, `MonitorRegistry` |
 | Monitors | `MemoryMonitor` |
 | Backends + traits | `WgpuRenderSystem`, `RenderSystem`, `PipelineSystem`, `RapierPhysicsWorld`, `PhysicsProvider`, `CpalAudioDevice`, `AudioDevice`, `TaffyLayoutSystem`, `LayoutSystem` |
@@ -294,7 +294,8 @@ The exact list is in
 | Save or load a scene | `SerializationService::new()` + `save_world` / `replace_world` |
 | Choose which families run | `activate` / `deactivate` on the `Arc<Activation>` resource |
 | Switch backends | Edit your `run_winit` bootstrap closure (`runtime.backends.insert(...)`) |
-| Add a custom agent | Implement `Agent`, register in `AgentProvider::register_agents` |
+| Add a subsystem | A family: its lanes, a `LaneFamily` and one `register_agent!` registration — never a new agent type ([Add a subsystem (a family)](../how-to/add-an-agent.md)) |
+| Install the app's own resources | `EngineApp::provide` |
 | Add a custom phase | Return it from `PhaseProvider::custom_phases` |
 
 ---

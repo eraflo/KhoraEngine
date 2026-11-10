@@ -20,7 +20,7 @@ dependency of `khora-data` and `khora-script`, not a workspace member.
 | `khora-control` | The DCC, GORNA arbitration, cost model, scheduler, the Substrate Pass. |
 | `khora-script` | **Ergon** — the gameplay language: lexer, parser, bytecode, VM, persistent field arena, hot-reload. Depends on `khora-core` and `khora-macros` only, so the compiler and VM are testable without booting an engine. |
 | `khora-lanes` | Hot-path Lanes — render, physics, audio, UI, script. |
-| `khora-agents` | Strategist Agents — one per `LaneKind` — plus `PhysicsQueryService`. |
+| `khora-agents` | The one strategist agent, `LaneAgent`, and every family's `register_agent!` registration (one agent per family). |
 | `khora-infra` | Concrete backends, one subfolder each: wgpu, Rapier3D, an in-house physics backend, CPAL, Taffy, winit, native telemetry. Owns the `.wgsl` files and their composition. |
 | `khora-io` | Asset service, VFS, serialization service, pack/file loaders, hot-reload watchers. |
 | `khora-telemetry` | Metrics, monitors, telemetry events. |

@@ -128,8 +128,9 @@ Who is deferred is fair, and what the author declared bends it:
   frames it sat out. Adapting the budget changes *when* a behavior runs, never
   how much game time it sees.
 
-This is why `report_status` reports the share of behaviors that got their turn
-rather than a simple success flag: an agent claiming perfect health while half
+This is why the script lane reports the share of behaviors that got their turn
+(`LaneReport::done`), which bounds the health in its agent's `report`, rather than
+a simple success flag: an agent claiming perfect health while half
 its behaviors were deferred would tell the DCC nothing was wrong at exactly the
 moment something was.
 

@@ -55,7 +55,7 @@ not a menu of ready alternatives. See [Architecture](./concepts/clad.md) and
 GORNA is observable by design — "the engine has a mind; show it." At runtime you
 watch decisions in the editor's **Control Plane** mode, whose **GORNA Stream**
 panel is a live feed of negotiations (timestamp, subsystem, suggestion,
-accept/reject — e.g. "RenderAgent: LitForward → Forward+, reason: GPU pressure").
+accept/reject — e.g. "renderer: LitForward → Forward+, reason: GPU pressure").
 The underlying signals come from the `TelemetryService`. See
 [GORNA](./concepts/gorna.md), [Telemetry](./concepts/telemetry.md), and [Editor](./reference/editor.md).
 Recording and replay ship: `DccService::start_decision_recording` captures
@@ -68,12 +68,13 @@ the tooling around it is roadmap work.
 
 ### What is the difference between an Agent and a Lane?
 
-An **agent** is a strategist: it owns one `LaneKind`, negotiates a budget through
-GORNA, and *selects* which strategy to run. A **lane** is the worker: one
-deterministic algorithm (render a forward pass, step physics once) that runs when
-its agent dispatches it. The agent owns *selection*; the lane owns *execution*.
-`RenderAgent` chooses between four: `SimpleUnlit`, `LitForward`, `StandardPbr`
-and `ForwardPlus`. See [Agents and lanes](./concepts/agents-and-lanes.md).
+An **agent** is a strategist: it runs one **family** of lanes, is lent an
+envelope through GORNA, and *selects* which row — a lane at one level — runs. A
+**lane** is the worker: one deterministic algorithm (render a forward pass, step
+physics once), installed by its agent as a layer that the scheduler runs every
+frame. The agent owns *selection*; the lane owns *execution*. The render family
+chooses between three lanes: `SimpleUnlitLane`, `LitForwardLane` and
+`ForwardPlusLane`. Every family's agent is the same `LaneAgent`. See [Agents and lanes](./concepts/agents-and-lanes.md).
 
 ### What is the difference between GORNA and AGDF?
 
@@ -125,9 +126,10 @@ edition 2021. The manifest's `rust-version` is the source of truth.
 All three are pure-Rust extension points, and the engine wiring is data-driven (no
 manual registration in engine code). Add a **component** with
 `#[derive(Component)]` plus `#[component(domain = …)]`, which self-registers it.
-Add a **lane** (a new strategy) or an **agent** (a new negotiating subsystem) by
-implementing the `Lane` / `Agent` traits. The end-to-end worked example — defining
-the lanes, writing the agent, registering it through `AgentProvider` — is in
+Add a **lane** (a new strategy) by implementing `khora_core::lane::Lane` in its
+family; add a new negotiating subsystem as a **family** — its lanes, a
+`LaneFamily` and one `register_agent!` registration — never as a new agent type
+(its agent is always the engine's `LaneAgent`). The end-to-end worked example is in
 [Extending Khora](./tutorials/extending-the-engine.md); the contracts themselves are in
 [Agents and lanes](./concepts/agents-and-lanes.md).
 

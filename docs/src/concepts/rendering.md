@@ -20,8 +20,9 @@ abstraction. The rendering surface is the **`RenderSystem`** trait in `khora-cor
 (`renderer/traits/render_system.rs`) — the only thing the rest of the engine knows
 about. Concrete GPU work lives in a backend under `khora-infra`; the default is
 wgpu. Above that trait, a **[strategy](../reference/glossary.md)** is a self-contained
-lane: each renders the same scene at a different cost/quality point, and the
-**`RenderAgent`** picks one per frame based on the budget GORNA approved.
+lane: each renders the same scene at a different cost/quality point. They form the
+**render family**, and its agent — the engine's one `LaneAgent`, named `renderer` —
+chooses the one that fits the envelope GORNA lent it.
 
 Two principles fall out of this shape and they are worth holding onto:
 
@@ -29,7 +30,7 @@ Two principles fall out of this shape and they are worth holding onto:
   `BindGroupId`, `SamplerId` — never a raw wgpu handle in a public API. That seam
   is exactly what lets the backend be swapped without touching a single lane.
 - **Shaders are files, never strings.** Every shader is a `.wgsl` file on disk,
-  composed through the shader registry. Inlining shader source as a Rust constant
+  composed by the `PipelineSystem` backend. Inlining shader source as a Rust constant
   is forbidden, because files are editable, reviewable, and hot-reloadable.
 
 ## The frame lifecycle
@@ -46,16 +47,18 @@ EngineCore::tick
   │
   ├─ run_scheduler
   │   ├─ Substrate Pass             # Flows project Views into the LaneBus
+  │   ├─ event pass                 # agents woken for an event choose a row, prepare a layer
   │   ├─ OBSERVE phase
-  │   │   └─ ShadowAgent.execute    # encodes the shadow atlas
-  │   ├─ TRANSFORM phase            # physics, audio, scripting
+  │   │   └─ shadows layer          # encodes the shadow atlas
+  │   ├─ TRANSFORM phase            # physics, audio, script layers
   │   ├─ OUTPUT phase
-  │   │   ├─ RenderAgent.execute    # opaque draws, then the blended ones
-  │   │   ├─ SkyboxAgent.execute    # the background
-  │   │   ├─ OverlayAgent.execute   # grid, wireframe, gizmos
-  │   │   └─ UiAgent.execute        # the UI overlay
+  │   │   ├─ renderer layer         # opaque draws, then the blended ones
+  │   │   ├─ skybox layer           # the background (after renderer)
+  │   │   ├─ grid / wireframe / gizmo layers   # overlays (after renderer)
+  │   │   └─ ui layer               # the UI overlay
   │   └─ FINALIZE phase             # telemetry, cleanup
-  │   (agents record GPU passes into the frame graph)
+  │   (each family's installed layer — a lane at one level — records GPU passes
+  │    into the frame graph; the scheduler runs it without calling the agent)
   │
   ├─ end_render_frame               # submit the frame graph, then present
   │
@@ -78,28 +81,32 @@ shadow Views the lanes consume from the LaneBus.
 
 ## Strategies and shadows
 
-The `RenderAgent` selects one main-pass strategy per frame:
+The render family offers three main-pass lanes, and its agent runs the one that fits
+its envelope:
 
-| Strategy | Shape |
+| Lane (level) | Shape |
 |---|---|
-| Unlit | No lighting — the baseline cost floor. |
-| Lit forward | PBR with per-light passes and shadow sampling. |
-| Forward+ | Tile-based light culling for many lights. |
-| Standard PBR | The physically-based material model the lit paths shade through. |
+| `SimpleUnlitLane` ("unlit", LowPower) | No lighting — the baseline cost floor. |
+| `LitForwardLane` ("lit forward", Balanced) | PBR with per-light passes and shadow sampling. |
+| `ForwardPlusLane` ("forward+", HighPerformance) | Tile-based light culling for many lights. |
 
-The pipelines for every strategy are compiled at boot, so switching between them
-is a bind-group flip rather than a stall. This is what makes per-frame negotiation
-cheap enough to do every frame: GORNA can ask for a cheaper strategy under pressure
-and the agent honours it without rebuilding anything.
+A switch never stalls the frame. The agent prepares the new lane's layer — its
+pipelines, its buffers — beside the installed one, which keeps drawing, and the new
+layer is swapped in at the next frame start. The old one is kept ready for three
+epochs, so going back to it prepares nothing, and the first report after a swap
+says how long the preparation took. This is what makes adaptation cheap enough to
+follow the frame: GORNA lends a smaller envelope under pressure and the agent moves
+to a cheaper row without a hitch.
 
-**Shadows are a separate agent** — the canonical example of why the
-agent/lane split exists. The `ShadowAgent` runs in `OBSERVE`, *before* the
-`RenderAgent`, and publishes a depth shadow atlas plus a per-light shadow frame for
-the lit consumer lanes to sample. Decoupling shadow encoding from the main pass lets
+**Shadows are a separate family** (`shadows`) — the canonical example of why the
+agent/lane split exists. Its `ShadowsLane` runs in `OBSERVE`, *before* the render
+family, and writes a depth shadow atlas plus a per-light shadow frame
+(`ShadowFrame`, into the deck) for the lit lanes to sample. Decoupling shadow encoding from the main pass lets
 the two negotiate independently: shadow quality is its own GORNA surface with three
 honest tiers (high / medium / low resolution), each quoting its real VRAM cost, and
 the lowest tier is always offered as the floor so the agent never returns an empty
-strategy set. All three tiers produce the same shadow-frame contract, so the
+strategy set. The tiers are the three levels of `ShadowsLane` ("low-res
+shadows", "medium shadows" and "standard shadows"), and all produce the same shadow-frame contract, so the
 consumer lanes are agnostic about which one ran. The subtle part is shimmer
 prevention: orthographic shadow bounds are snapped to texel boundaries so shadow
 edges don't crawl as the camera moves. Leave that logic alone unless you can prove
@@ -178,8 +185,9 @@ crashing mid-frame, and that transient conditions recover on their own.
 ## For game developers, the model is declarative
 
 You do not call render functions. You describe a scene — spawn a camera, spawn
-lights, give mesh entities a mesh handle and a material — and the `RenderAgent`
-extracts that scene every frame, picks the strategy GORNA approved, and draws it.
+lights, give mesh entities a mesh handle and a material — and the render Flow
+projects that scene every frame, the render family's agent picks the lane that fits
+its GORNA envelope, and that lane draws it.
 The engine's per-frame choices are visible live in the editor's GORNA panel.
 
 ## Next steps

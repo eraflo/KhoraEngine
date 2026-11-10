@@ -129,7 +129,7 @@ and [Scenes and game saves](../concepts/saves.md).
 ### Contention
 
 What an agent declares that it competes with others for: the `OutputDeck` slots
-it writes, and the `Runtime` resources it **reads** or **locks**. No agent reaches
+it writes and reads, and the `Runtime` resources it **reads** or **locks**. No agent reaches
 the `World`, so it is the only thing an agent declares. Two agents share a concurrent
 wave only when their contentions are disjoint. Enforced at the access point —
 `EngineContext::resource` and `::locked` refuse what was not declared. See
@@ -262,9 +262,10 @@ is shown in amber, never changed until edited. See the
 Khora decouples simulation from rendering. The game's clock advances in whole
 `fixed_delta_seconds` ticks (1/60 s) driven by an accumulator in the Scheduler,
 so simulation is frame-rate independent; rendering happens once per
-(variable-rate) frame. The fixed-timestep agents (physics) cut that simulated
-time into sub-steps of their own size — a precision GORNA picks, which never
-changes how much time passes. To stay smooth
+(variable-rate) frame. The fixed-step families (physics) cut that simulated
+time into sub-steps of their own size, held at the family's place
+(`Place::fixed_step`; for physics the game's `physics.step` setting, never a
+GORNA lever) — a precision, which never changes how much time passes. To stay smooth
 between sim steps, the render path blends each simulated body's previous and
 current transform by the **interpolation alpha** — the fraction of a fixed step
 carried past the last whole step, in `[0, 1)`. The alpha is render-only and never
@@ -483,13 +484,6 @@ them in. The project a compile was for may have closed while the compile ran:
 its result is then abandoned. See
 [ExecutionPhase / TickPhase](#executionphase--tickphase).
 
-### ResourceBudget
-
-The budget of the protocol before envelopes: a chosen `StrategyId` and a time
-limit, applied through `Agent::apply_budget`. It is kept for callers that name a row
-directly; GORNA itself lends [envelopes](#envelope). See
-[GORNA](../concepts/gorna.md).
-
 ### Resume tier
 
 How a suspended Ergon body comes back after the code it was running in changed —
@@ -590,10 +584,11 @@ locals in scope there, by name and type. See [Resume tier](#resume-tier).
 
 ### Strategy / StrategyId
 
-A *strategy* is one algorithm an agent can run for its `LaneKind`, embodied by a
-lane (e.g. `RenderAgent`'s Unlit / LitForward / Forward+). The agent exposes each
-as a `StrategyOption` with a cost estimate during negotiation; the chosen one
-returns in the `ResourceBudget` as a `StrategyId`. See [GORNA](../concepts/gorna.md)
+A *strategy* is one way of doing a family's work, embodied by a lane at one level
+(e.g. the render family's Unlit / LitForward / Forward+). The agent offers each as a
+priced row (`OfferRow`, named by its `StrategyId`) in its `Offer`, chooses the row
+that fits the envelope it is lent through `apply`, and names the row it ran in its
+`Report`. See [GORNA](../concepts/gorna.md)
 and [Agents and Lanes](../concepts/agents-and-lanes.md).
 
 ### Substrate Pass

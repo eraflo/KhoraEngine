@@ -25,7 +25,7 @@ the input to every adaptive decision. See [Telemetry](../concepts/telemetry.md).
   (`crates/khora-infra/src/graphics/wgpu/profiler.rs`) that measures the **main pass** and the
   **frame total** on the GPU, smoothed with an EMA. It uses a two-pass timestamp scheme with a
   frame-lag read model (timestamps written in frame N are read at frame N+2).
-- **Per-agent cost.** The scheduler times every `agent.execute()` and publishes the agent's report,
+- **Per-agent cost.** The scheduler times every run of a family's installed layer and publishes the agent's report,
   `TelemetryEvent::AgentReport` after each run: the row, the time per device and the workload `n`. This is
   what feeds the cost model ([§2](#understand-gornas-decisions)–[§3](#the-fixed-timestep-cost-model)).
 - **Draw calls / triangles / render stats.** Agents and lanes push named counters and gauges through
@@ -71,15 +71,15 @@ and agents upgrade. A hard safety ceiling caps the multiplier immediately on `Cr
 thermal/battery or near-budget memory pressure.
 
 **Why an agent up/downgraded.** Read the **GORNA Stream** panel — each switch prints its reason
-("RenderAgent: LitForward → Forward+ — GPU pressure"). Re-arbitration fires whenever the governor's
+("renderer: LitForward → Forward+ — GPU pressure"). Re-arbitration fires whenever the governor's
 multiplier has moved since budgets were last issued, so a strategy change always traces back to a
 measured target/multiplier move. To walk a single decision step by
 step, use [Debug a frame](./debug-a-frame.md).
 
-**Calibration anchors quotes to reality.** Agents quote *static* cost estimates in `negotiate()`, but
-reality drifts per machine and per scene. The DCC fits each agent's measured `(n, time)` samples into
+**Calibration anchors quotes to reality.** Agents quote the cost of every row in their `offer()`, but
+a quote is an estimate and reality drifts per machine and per scene. The DCC fits each agent's measured `(n, time)` samples into
 a `CostModel` (`c·f(n)` over `{1, n, n·log n, n²}`) and, during arbitration, rescales each agent's
-strategy options so the option matching its *current* strategy equals the measurement (factor clamped
+offered rows so the row matching its *current* strategy equals the measurement (factor clamped
 to `[0.25, 4.0]`, ordering preserved). The budget fitting therefore reasons about **measured
 milliseconds**, not worst-case quotes — a cold-start agent with no sample keeps its quote until it is
 measured. See [AGDF — anticipatory budgeting](../concepts/agdf.md).
@@ -101,25 +101,27 @@ capped at `MAX_SIM_STEPS` (5 ticks, 83 ms). The leftover carries over and yields
 overload clamps to 5 ticks and drops the excess (slow-motion, never a freeze — the spiral-of-death
 guard).
 
-**The physics step is precision, not time.** The time the ticks advanced is handed to the agents
-declaring a `fixed_timestep` — in practice physics, whose step GORNA picks — and they run once per
-whole step of their own size (`compute_sub_steps`), the remainder carried to the next frame:
+**The physics step is precision, not time.** The time the ticks advanced is handed to the families
+whose place holds a fixed step (`Place::fixed_step`) — in practice physics — and their layer runs once
+per whole step of its own size (`compute_sub_steps`), the remainder carried to the next frame. The
+physics step is the game's `physics.step` setting (`PhysicsSettings`, 1/60 s by default), never a GORNA
+lever, since the simulation's result depends on it:
 
-| Strategy | Physics step | Sub-steps per 60-FPS frame |
-|---|---|---|
-| LowPower (`Simplified`) | 30 Hz (`1.0 / 30.0`) | 1 every other frame |
-| Balanced (`Standard`) | 60 Hz (`1.0 / 60.0`) | 1 |
-| HighPerformance (`Standard`) | 120 Hz (`1.0 / 120.0`) | 2 |
+| `physics.step` | Sub-steps per 60-FPS frame |
+|---|---|
+| 1/30 s | 1 every other frame |
+| 1/60 s (default) | 1 |
+| 1/120 s | 2 |
 
-(From `PhysicsAgent::apply_budget`.) The strategy changes the *cost* of a second of simulation, never
-how many seconds pass: the cap counts game ticks, so a precise strategy does not make a slow machine
-slower, and a script's `FixedUpdate` keeps its 1/60-s cadence. With no fixed-timestep agent, the agents
-run once per frame and the ticks are still counted.
+The step changes the *cost* of a second of simulation, never how many seconds pass: the cap counts
+game ticks, so a finer step does not make a slow machine slower, and a script's `FixedUpdate` keeps
+its 1/60-s cadence. With no fixed-step family, every family runs once per frame and the ticks are
+still counted.
 
 **Visual smoothness is decoupled from sim rate.** Because the renderer interpolates using
 `interpolation_alpha`, a 30 Hz physics step still renders smoothly at the display rate. A finer fixed
 step buys simulation accuracy (stiffer constraints, less tunneling), not visual smoothness — pick it
-for correctness, and let the cheaper step be a valid GORNA downgrade under pressure. See
+for correctness; GORNA never changes it under pressure. See
 [Troubleshoot — Physics](./troubleshoot.md#physics).
 
 ---

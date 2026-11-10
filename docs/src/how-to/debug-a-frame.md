@@ -44,7 +44,7 @@ target into a strategy per agent**. Reading a decision means tracing it back thr
 
 ### Step A — read the reason off the GORNA Stream
 
-Each switch in the stream prints its reason, e.g. `RenderAgent: LitForward → Forward+ — GPU
+Each switch in the stream prints its reason, e.g. `renderer: LitForward → Forward+ — GPU
 pressure`. That suffix is the heuristic that fired. The `HeuristicEngine`
 (`crates/khora-control/src/analysis/mod.rs`, `analyze`) evaluates these pressure sources every cold-path
 tick, starting from a 60 FPS baseline target (16.66 ms):

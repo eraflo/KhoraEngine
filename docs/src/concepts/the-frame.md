@@ -33,8 +33,8 @@ sequenceDiagram
     SDK->>Sch: run_frame()
     Sch->>Sch: budget_channel.sync()
     Sch->>Sch: run Flows → publish Views into LaneBus
-    Sch->>Sch: per phase: plugins, topo sort, execute agents
-    Note over Sch: Agents record GPU passes into FrameGraph; lanes fill the OutputDeck
+    Sch->>Sch: wake agents with pending events, then per phase: plugins, topo sort, run each family's layer
+    Note over Sch: Lanes record GPU passes into FrameGraph and fill the OutputDeck
     SDK->>FG: drain + submit (topological pass order)
     SDK->>RS: end_frame(presents) → swapchain present
     SDK->>SDK: run_maintenance (drain OutputDeck, EcsMaintenance compaction)
@@ -93,7 +93,7 @@ between them:
 1. drain_inputs        ← Pop queued InputEvents, tick telemetry
 2. run_app_update      ← Substrate invariants (Pre/Post-Sim, Pre-Extract) around app.update
 3. begin_render_frame  ← RenderSystem::begin_frame, swapchain acquire
-4. run_scheduler       ← Substrate Pass (Flows publish Views) + phase-by-phase agent execution
+4. run_scheduler       ← Substrate Pass (Flows publish Views) + phase-by-phase layer runs
 5. end_render_frame    ← submit FrameGraph + RenderSystem::end_frame
 6. run_maintenance     ← Maintenance DataSystems drain the OutputDeck; EcsMaintenance compacts
 ```
@@ -113,10 +113,14 @@ First the **Substrate Pass** runs every registered projection
 the [**`LaneBus`**](../reference/glossary.md) for lanes to consume. Then the
 Scheduler runs every active execution phase in order — `INIT`, `OBSERVE`,
 `TRANSFORM`, `MUTATE`, `OUTPUT`, `FINALIZE` — syncing budgets from the DCC,
-running plugin hooks, topologically sorting the phase's agents by their hard
-dependencies, and executing them. This is the `Control → Agent → Lane → Data`
-descent made concrete: the Scheduler is Control, it dispatches agents, agents
-invoke lanes, lanes read the Views the Substrate just published.
+running plugin hooks, topologically sorting the phase's families by their hard
+dependencies, and running each family's installed **layer** — one of its lanes at
+one level — at its place, in waves formed from what the layers contend for. An
+agent is not called on a quiet frame: it is woken, before the waves, only for an
+event (a new envelope, a price that stopped fitting, a failed lane), and then
+chooses a row and prepares a new layer. This is the `Control → Agent → Lane → Data`
+descent made concrete: the Scheduler is Control, the agents choose the layers it
+runs, lanes read the Views the Substrate just published.
 
 **Stage 6 — `run_maintenance`** is where the data layer does its own
 housekeeping. The maintenance systems drain the
@@ -177,12 +181,13 @@ The model, per frame:
    83 ms of simulated time). The remainder carries over to the next frame.
 4. **Derive alpha.** The leftover fraction — `remainder / fixed_delta`, always in
    `[0, 1)` — becomes the render `interpolation_alpha`.
-5. **Sub-step the fixed agents.** An agent declaring a `fixed_timestep` — the
-   physics agent, whose step GORNA picks — gets exactly the simulated time the
-   ticks advanced, `ticks × fixed_delta`, in a second accumulator, and runs once per
-   whole step of its own size that fits (a fixed-update sub-loop, each iteration a
-   full agent invocation). Then the regular phase loop runs **once**, excluding
-   those agents so they are not stepped twice. So physics integrates *N* discrete
+5. **Sub-step the fixed families.** A family whose place holds a fixed step
+   (`Place::fixed_step`) — physics, at the game's `physics.step` — gets exactly the
+   simulated time the ticks advanced, `ticks × fixed_delta`, in a second
+   accumulator, and its layer runs once per whole step of its own size that fits
+   (a fixed-update sub-loop, each iteration a full run of the layer). Then the
+   regular phase loop runs **once**, excluding those families so they are not
+   stepped twice. So physics integrates *N* discrete
    sub-steps while the render fires exactly once.
 
 See *[Precision is not time](#precision-is-not-time)* below for why the two
@@ -206,8 +211,8 @@ integrator here assumes time moves one way.
 The scale says whether time passes; it does not say *which families run*.
 That is the **activation**, the `Arc<Activation>` resource the SDK publishes
 before the app's `setup` (`khora_core::agent::Activation`). It knows every
-registered family — the lane families, the script agent, the app's own agents
-— and every family starts on. `activate(family)` and `deactivate(family)` are
+registered family — every `register_agent!` registration, scripting
+included — and every family starts on. `activate(family)` and `deactivate(family)` are
 requests; a family it does not know is refused (`UnknownFamily`) and logged.
 
 The requests land at the **frame boundary**: the SDK calls `settle()` once per
@@ -238,7 +243,7 @@ passes would be a dozen places to disagree about what "paused" means.
 sequenceDiagram
     participant Loop as Frame
     participant Acc as sim_accumulator
-    participant Sim as Fixed agents (physics)
+    participant Sim as Fixed families (physics)
     participant Render as Render (once/frame)
 
     Loop->>Acc: += min(real_dt, 0.25 s) × scale
@@ -280,20 +285,21 @@ ticks, so it is the same 83 ms whatever step physics runs at.
 
 ### Precision is not time
 
-GORNA picks the physics step — 1/30 s under `LowPower`, 1/60 s `Balanced`,
-1/120 s `HighPerformance` — and that is a choice of **precision**: how finely a
-second is cut, never how many seconds pass. The simulated time is decided once,
-by the ticks; the physics sub-clock only divides it. Whatever the strategy, and
-however often GORNA changes it mid-game, a body falls the same distance in a
-second of real time and stays within one physics step of the game's clock (the
-leftover carries over, even across a change of step).
+The physics step is a game setting — `physics.step` in the game's settings
+(`khora_core::physics::PhysicsSettings`, 1/60 s by default) — and never a GORNA
+lever: the simulation's result depends on it, so no budget may change it. It is a
+choice of **precision**: how finely a second is cut, never how many seconds pass.
+The simulated time is decided once, by the ticks; the physics sub-clock only
+divides it. Whatever the step, a body falls the same distance in a second of real
+time and stays within one physics step of the game's clock (the leftover carries
+over to the next frame).
 
 The two clocks are kept apart on purpose. If the physics step *were* the clock,
-a script's `FixedUpdate` would run 30, 60 or 120 times a second depending on a
-budget decision, and the catch-up cap — counted in steps — would be 166 ms of
-time under one strategy and 42 ms under another, so a slow machine would slow
-the game down only when GORNA chose the precise strategy. Both are the WHAT
-changing with the HOW. Bevy (`Time<Fixed>` + physics substeps), Unity
+a script's `FixedUpdate` would run 30, 60 or 120 times a second depending on the
+physics precision, and the catch-up cap — counted in steps — would be 166 ms of
+time at one step and 42 ms at another, so a slow machine would slow the game
+down only under the precise step. Both would tie the game's time to how finely
+physics cuts it. Bevy (`Time<Fixed>` + physics substeps), Unity
 (`fixedDeltaTime` as a project setting, a catch-up guard in seconds) and Godot
 (`physics_ticks_per_second`) draw the same line: the game owns the tick,
 precision subdivides it.
@@ -307,7 +313,7 @@ counter.
 
 `fixed_steps` is what a script's `FixedUpdate` is called for: the game ticks the
 frame took, at `fixed_delta_seconds` each — never the physics sub-steps, so a
-script's cadence does not follow the physics strategy. A game with no physics
+script's cadence does not follow the physics step. A game with no physics
 has the same fixed clock, and a paused one takes no tick. Scripts run once per frame, after
 the fixed sub-loop, on one view of the world: their `FixedUpdate` is a fixed
 clock, not interleaved with physics, and what it writes reaches physics next

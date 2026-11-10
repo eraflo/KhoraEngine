@@ -6,8 +6,10 @@ Durable decisions and their rationale. Append when a new structural decision lan
    agents encode to that same target; `end_frame()` presents. Prevents Vulkan semaphore errors and
    enables correct `LoadOp::Load` compositing.
 
-2. **Lane is the universal pipeline** — every hot-path execution (render, physics, audio, asset, ECS)
-   goes through `Lane::execute()`. Agents orchestrate lanes but never do pipeline work themselves.
+2. **Lane is the universal pipeline** — every hot-path execution (render, physics, audio, script, UI)
+   goes through a `khora_core::lane::Lane`, which records at one of its levels (`Lane::record`). Agents
+   choose lanes but never do pipeline work themselves. *(Superseded wording: it first named
+   `Lane::execute()`, and asset/ECS lanes, which became services; the old lane API went in 3k, 2026-11.)*
 
 3. **Typed data-flow via LaneBus / OutputDeck** — lanes read typed Views from the `LaneBus` and write
    typed outputs into the `OutputDeck`. No global mutable state; `Flow::adapt` was removed (Flows are
@@ -20,9 +22,10 @@ Durable decisions and their rationale. Append when a new structural decision lan
 5. **Abstract GPU resource IDs** — all wgpu resources behind typed IDs (`TextureId`, `BufferId`, …).
    Raw handles never leak into public APIs.
 
-6. **Agent vs Service** — only subsystems that negotiate a GORNA budget are Agents (Render, Shadow,
-   Overlay, Physics, Ui, Audio). Non-negotiating work uses direct services (`AssetService`,
-   `SerializationService`, `EcsMaintenance`).
+6. **Agent vs Service** — only subsystems that negotiate a GORNA budget are agents, each a **family**
+   run by the one `LaneAgent` (renderer, shadows, grid, wireframe, gizmo, skybox, physics, ui, audio,
+   script, loading). Non-negotiating work uses direct services (`AssetService`, `SerializationService`,
+   `EcsMaintenance`).
 
 7. **SDK is a façade** — the Scheduler, `BudgetChannel`, and `EnginePlugin` are internal; game code
    only sees the `khora-sdk` public surface.
@@ -56,6 +59,7 @@ Durable decisions and their rationale. Append when a new structural decision lan
     `TypedRegistry` (runtime resources/services/backends) are each a `HashMap<TypeId, …>`. They differ in
     ownership (`Arc` vs `Box`) and thread bounds, and `LaneContext` is on the per-frame hot path; a shared
     generic would save ~20 lines each and touch every lane. Revisit only if a sixth appears.
+    *(2026-11: `LaneContext` is gone (3k1) — lanes take typed inputs and outputs — so four maps remain.)*
 
 ## Persistence redesign (2026-10)
 
@@ -108,3 +112,15 @@ Durable decisions and their rationale. Append when a new structural decision lan
     legacy `Script`/`ScriptState` components were converted once by a one-time xtask upgrade, then retired
     (`RetiredComponent`) — the same shape as decision 20. An arriving instance takes its fields from its row;
     the game save's merge, not the lane, carries a scene edit to a field the game left alone.
+
+## Agents/lanes contract (2026-11)
+
+22. **One kind of agent, one protocol** (3k, commits `f5b3658c`…`80df266f`) — a subsystem is a family:
+    typed `Lane`s, a `LaneFamily`, one `register_agent!` registration; its agent is always `LaneAgent`, the
+    only `Agent` implementor outside tests (xtask `only_lane_agent_implements_agent`). The `Agent` trait is
+    `offer` → `apply` → `report` (GORNA), `place` (required), `wake`, `execution_timing`, `contention`; no
+    `execute` — the scheduler runs each family's installed layer and wakes the agent only for an event. No
+    agent reaches the `World`, so waves split on `Contention` alone. The app installs runtime entries in
+    `EngineApp::provide` and registers no agent (`AgentProvider` removed). Rationale: one code path for every
+    subsystem, nothing a hand-written agent could do that a family cannot, and contention the only thing to
+    declare. A fixed-step family's step lives at its place (`Place::fixed_step`).

@@ -44,10 +44,9 @@ env_logger = "0.11"
 
 ## Step 2 — Write the skeleton
 
-Open `src/main.rs`. Every Khora game is a struct that implements three traits:
-**`EngineApp`** (lifecycle), **`AgentProvider`** (custom subsystems — none yet),
-and **`PhaseProvider`** (custom frame phases — none yet). Start with the empty
-shell:
+Open `src/main.rs`. Every Khora game is a struct that implements two traits:
+**`EngineApp`** (lifecycle) and **`PhaseProvider`** (custom frame phases — none
+yet). Start with the empty shell:
 
 ```rust
 use anyhow::Result;
@@ -56,8 +55,8 @@ use khora_sdk::prelude::*;
 use khora_sdk::run_winit;
 use khora_sdk::winit_adapters::WinitWindowProvider;
 use khora_sdk::{
-    AgentProvider, DccService, EngineApp, GameWorld, PhaseProvider, PipelineSystem,
-    RenderSystem, Runtime, WgpuPipelineSystem, WgpuRenderSystem, WindowConfig,
+    EngineApp, GameWorld, PhaseProvider, PipelineSystem, RenderSystem, Runtime,
+    WgpuPipelineSystem, WgpuRenderSystem, WindowConfig,
 };
 use std::sync::{Arc, Mutex};
 
@@ -87,10 +86,6 @@ impl EngineApp for MyGame {
     }
 }
 
-impl AgentProvider for MyGame {
-    fn register_agents(&self, _dcc: &DccService, _runtime: &mut Runtime) {}
-}
-
 impl PhaseProvider for MyGame {}
 ```
 
@@ -98,8 +93,9 @@ The `#[global_allocator]` line installs **`SaaTrackingAllocator`**, which feeds
 the engine's memory heuristics. It is optional but recommended — see
 [Telemetry](../concepts/saa.md).
 
-> Why three traits? `setup`/`update` is for *game* logic; engine subsystems live
-> in agents. See [Agents and Lanes](../concepts/agents-and-lanes.md).
+> Why no subsystem here? `setup`/`update` is for *game* logic; engine subsystems
+> are families of lanes, each run by an agent. See
+> [Agents and Lanes](../concepts/agents-and-lanes.md).
 
 ## Step 3 — Spawn the scene
 
@@ -185,14 +181,14 @@ fn main() -> Result<()> {
     run_winit::<WinitWindowProvider, MyGame>(|window, runtime, _event_loop| {
         let mut rs = WgpuRenderSystem::new();
         rs.init(window).expect("renderer init failed");
-        // The render agent reads the graphics device directly, so register it
-        // before boxing the system.
+        // The render lanes build on the graphics device directly, so register
+        // it before boxing the system.
         runtime.backends.insert(rs.graphics_device());
         let rs: Box<dyn RenderSystem> = Box::new(rs);
         runtime.backends.insert(Arc::new(Mutex::new(rs)));
 
         // Required: every render lane resolves its pipeline through this. Without
-        // it each one bails in `on_initialize` and the window stays empty.
+        // it each one fails in `prepare` and the window stays empty.
         match WgpuPipelineSystem::new() {
             Ok(sys) => {
                 let sys: Arc<dyn PipelineSystem> = Arc::new(sys);

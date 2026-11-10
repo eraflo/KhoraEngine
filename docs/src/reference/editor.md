@@ -398,7 +398,8 @@ To preview your scene in play mode, press the Play button. Your `EngineApp::upda
 ## For engine contributors
 
 The editor is an application built on the SDK — it implements `EngineApp` and
-contributes its agents through `AgentProvider`.
+`PhaseProvider`, installs what it needs in the runtime through
+`EngineApp::provide`, and registers no agent of its own.
 
 | Where | Contents |
 |---|---|

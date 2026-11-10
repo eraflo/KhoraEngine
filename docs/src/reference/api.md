@@ -19,7 +19,6 @@ is implementation detail. See the [SDK surface](./sdk.md) page for a curated map
 | Engine type | [`EngineCore`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/struct.EngineCore.html) |
 | ECS facade | [`GameWorld`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/struct.GameWorld.html) |
 | App lifecycle trait | [`EngineApp`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.EngineApp.html) |
-| Agent registration trait | [`AgentProvider`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.AgentProvider.html) |
 | Custom phase trait | [`PhaseProvider`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/trait.PhaseProvider.html) |
 | Spawn builder | [`Vessel`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/struct.Vessel.html) |
 | Bootstrap entry | [`run_winit`](https://eraflo.github.io/KhoraEngine/api/khora_sdk/fn.run_winit.html) |
@@ -37,7 +36,7 @@ their surface is re-exported through `khora-sdk` where game code needs it. See t
 | `khora_data` | [CRPECS ECS, component storage, Flows, scene strategies](https://eraflo.github.io/KhoraEngine/api/khora_data/index.html) |
 | `khora_io` | [VFS, asset service, serialization service, pack builder](https://eraflo.github.io/KhoraEngine/api/khora_io/index.html) |
 | `khora_lanes` | [Render, physics, audio, UI and script lanes](https://eraflo.github.io/KhoraEngine/api/khora_lanes/index.html) |
-| `khora_agents` | [The strategist agents + `PhysicsQueryService`](https://eraflo.github.io/KhoraEngine/api/khora_agents/index.html) |
+| `khora_agents` | [`LaneAgent` and the families' registrations](https://eraflo.github.io/KhoraEngine/api/khora_agents/index.html) |
 | `khora_control` | [DCC, scheduler, GORNA arbitration, plugin](https://eraflo.github.io/KhoraEngine/api/khora_control/index.html) |
 | `khora_infra` | [Default backends — wgpu, Rapier, CPAL, Taffy, winit](https://eraflo.github.io/KhoraEngine/api/khora_infra/index.html) |
 | `khora_telemetry` | [Telemetry service, metrics, monitors](https://eraflo.github.io/KhoraEngine/api/khora_telemetry/index.html) |

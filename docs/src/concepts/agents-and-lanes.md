@@ -6,7 +6,7 @@ different kinds of object with different rules, and keeping them straight is the
 key to reading the per-frame descent. This is an explanation of *why* the split
 exists and how data flows across it — for the steps to add either one, see
 [How-to: add a lane](../how-to/add-a-lane.md) and
-[How-to: add an agent](../how-to/add-an-agent.md); for the trait method tables,
+[How-to: add a subsystem (a family)](../how-to/add-an-agent.md); for the trait method tables,
 the rustdoc on `khora_core::agent` and `khora_core::lane`.
 
 ---
@@ -56,8 +56,8 @@ arbitrary:
   lanes, the row it chose, its envelope — and *shared handles* it reads through.
   Anything that is a subsystem's own state belongs in `Runtime::services` or
   `Runtime::backends`, where the physics provider and the scripting runtime both
-  live; anything measured per frame belongs in a shared slot the way
-  `AgentFrameStatusMap` does. State on an agent is the first symptom of lane
+  live; anything measured per frame belongs in the run's report, which the
+  family's place keeps (`LastRun`). State on an agent is the first symptom of lane
   logic leaking upward — the old hand-written script agent carried an entire language runtime
   before this rule was applied to it, and what that cost was not correctness but
   reach: nothing else could see the live behaviors.
@@ -77,20 +77,14 @@ abstraction for subsystems that genuinely have competing performance strategies.
 
 ## What an agent declares
 
-An agent answers two questions, and they are different questions.
-
-`Agent::access()` is about the **`World` alone**:
-
-| Variant | Meaning |
-|---|---|
-| `Exclusive` | takes `&mut World` — always a wave of its own |
-| `SharedWorld` | reads `&World` |
-| `Isolated` | does not touch the `World` at all, so it is eligible for the worker pool |
-
-`Agent::contention()` is about **everything else**: the `OutputDeck` slots it
-writes, and the `Runtime` resources, services and backends it reads or locks.
-Two agents share a concurrent wave only when their contentions are disjoint;
-reads do not conflict with reads.
+An agent declares one thing: `Agent::contention()`. No agent reaches the
+`World` — its lanes read Views from the bus and write the deck — so there is no
+world access to declare. A `Contention` names the `OutputDeck` slots the agent
+writes (`deck`) and reads (`deck_reads`), and the `Runtime` resources, services
+and backends it reads (`reads`) or locks (`writes`). Two agents share a
+concurrent wave only when their contentions are disjoint; reads do not conflict
+with reads. A wave of one runs inline on the scheduler's thread; every member of
+a larger wave runs on the worker pool.
 
 The declaration is not on the honour system. An agent reaches shared state
 through `EngineContext::resource` (reading) or `::locked` (taking a lock), and
@@ -102,11 +96,12 @@ that could have run concurrently, and no test reddens. That is the failure mode
 to watch for here: over-declaration fails in the direction of slowness, which
 nothing catches automatically.
 
-The rule this replaced was cruder — *at most one `SharedWorld` agent per wave* —
-because such an agent "may write shared resources" and nothing could say which.
-Now they say, so two of them may share a wave when their declarations do not
-overlap. The parallelism was gained by removing a constraint, not by adding a
-mechanism.
+The rules this replaced were cruder. An agent once also declared how it reached
+the `World` (exclusive, shared or not at all), and at most one agent reading the
+`World` could join a wave, because such an agent "may write shared resources" and
+nothing could say which. Now agents never reach the `World` and say what they
+touch, so two of them may share a wave when their declarations do not overlap.
+The parallelism was gained by removing a constraint, not by adding a mechanism.
 
 ## Lanes are layers
 
@@ -170,7 +165,8 @@ was handed are given back, so the next frame wakes the agent again.
 A lane never reaches into the ECS `World` directly. This is the other half of the
 discipline, and it is what makes lanes orthogonal — substitutable without touching
 their neighbours. Lanes read and write through two tick-scoped, typed channels,
-reached via the `LaneContext` the agent hands them:
+reached through the lane's typed inputs (`#[derive(LaneInputs)]`) and its family's
+typed outputs (`#[derive(LaneOutputs)]`):
 
 - **The `LaneBus` — the read side.** The domain **Flow** layer is the *only*
   legitimate producer of the Views a lane consumes. During the Substrate Pass each
@@ -205,9 +201,10 @@ crosses the boundary as a typed value in the bus or the deck rather than as a
 direct dependency between lanes.
 
 That decoupling is the payoff of the whole arrangement. The `LitForwardLane` does
-not depend on a `ShadowPassLane` *instance* — it depends on the shadow View being
-present in the bus. The shadow lane can be rewritten, and as long as it still
-publishes the same View type, the forward lane never notices.
+not depend on a `ShadowsLane` *instance* — it depends on the `ShadowFrame` the
+shadows family wrote into the deck in an earlier phase. The shadow lane can be
+rewritten, and as long as it still writes the same type, the forward lane never
+notices.
 
 ## The life of a lane
 
@@ -245,8 +242,8 @@ Pulling the two roles apart buys three things the engine depends on:
 ## Next steps
 
 - [How-to: add a lane](../how-to/add-a-lane.md) — write a hot-path strategy.
-- [How-to: add an agent](../how-to/add-an-agent.md) — register a new family.
+- [How-to: add a subsystem (a family)](../how-to/add-an-agent.md) — register a new family.
 - [GORNA](./gorna.md) — how envelopes reach agents and rows are chosen.
 - [Data and the ECS](./ecs.md) — the World the Flow layer projects Views from.
-- [Glossary](../reference/glossary.md) — Agent, Lane, LaneKind, LaneBus,
+- [Glossary](../reference/glossary.md) — Agent, Lane, Layer and place, LaneBus,
   OutputDeck, Flow, View.

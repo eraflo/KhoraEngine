@@ -10,14 +10,16 @@ Spatial 3D audio mixing, the RT-thread mix bus boundary, device/stream lifecycle
 ## Key files
 - Traits: `crates/khora-core/src/audio/` (`AudioDevice`, `AudioMixBus`, `AudioStream`, `StreamInfo`).
 - Backend: `crates/khora-infra/src/audio/cpal/` (`CpalAudioDevice`); the mixer contract is `crates/khora-core/src/audio/mix_bus.rs` (`AudioMixBus`), its default implementation `crates/khora-infra/src/audio/default_mix_bus.rs` (`DefaultMixBus`).
-- Lanes: `crates/khora-lanes/src/audio_lane/` (SpatialMixing, SourceUpdate).
+- Lanes: `crates/khora-lanes/src/audio_lane/` (`SpatialMixingLane`: 8 / 32 / 128 voices; `AudioFamily`).
+  Registration: `crates/khora-agents/src/audio_agent/agent.rs` (TRANSFORM).
 - Decoding: `crates/khora-io/src/asset/decoders/audio/` (`SymphoniaDecoder`); data `SoundData`.
 
 ## Hard rules
 - Route audio through `AudioDevice` + the spatial mixing lane. **Never** call CPAL directly from agents.
 - The **mix bus is the sole synchronization boundary** between audio lanes (main thread) and the hardware
   callback (RT thread). Do not block, allocate, or panic on the RT path.
-- The `AudioAgent` stays a strategist (source count / quality) — no per-frame state.
+- The `audio` family's agent is the one `LaneAgent`, choosing the voice level that fits its envelope — no
+  per-frame state, no new agent type.
 - No `unwrap()` on device open / stream errors — log and degrade gracefully (see `sandbox` `main.rs` audio setup).
 
 Audio goes through the `AudioMixBus` (the RT-thread boundary). Use codegraph to map the device / stream /
