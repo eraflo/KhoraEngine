@@ -152,6 +152,23 @@ pub trait EngineApp: PhaseProvider + Send + Sync + 'static {
     where
         Self: Sized;
 
+    /// The game this application is, which the engine files what it learns
+    /// of a running game under. Read once at boot and put in the runtime's
+    /// resources as an `Arc<GameIdentity>`.
+    ///
+    /// Default: named by its window's title
+    /// ([`window_config`](Self::window_config)), at the engine's version
+    /// ([`ENGINE_VERSION`](crate::ENGINE_VERSION)).
+    fn game_identity() -> khora_core::app::GameIdentity
+    where
+        Self: Sized,
+    {
+        khora_core::app::GameIdentity {
+            name: Self::window_config().title,
+            version: crate::ENGINE_VERSION.to_owned(),
+        }
+    }
+
     /// Creates a new instance of the application.
     fn new() -> Self
     where

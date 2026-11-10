@@ -69,6 +69,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
 
     fn begin_with(app: A, mut runtime: Runtime, input_events: Channel<InputEvent>) -> Self {
         let (dcc, dcc_rx, telemetry, game_world) = populate(&mut runtime, &input_events);
+        identify(&mut runtime, A::game_identity());
         let phase_order = phase_order(&app.custom_phases(), &app.removed_phases());
         Self {
             app,
@@ -170,6 +171,29 @@ impl<A: EngineApp> EngineCore<A> {
         stages.register();
         stages.finish(self);
     }
+}
+
+/// Puts in `runtime`'s resources the machine the engine runs on — its
+/// graphics device's adapter, when one is in the backends, its CPU and OS —
+/// and the game it runs, `game`: what the engine files what it learns of a
+/// running game under.
+fn identify(runtime: &mut Runtime, game: khora_core::app::GameIdentity) {
+    let gpu = (runtime
+        .backends
+        .get::<Arc<dyn khora_core::renderer::GraphicsDevice>>())
+    .and_then(|device| device.adapter_identity());
+    let machine = khora_infra::platform::machine::read_machine(gpu);
+    log::info!(
+        "Machine {} ({}, {} cores, {}); game {} {}",
+        machine.key(),
+        machine.cpu,
+        machine.cores,
+        machine.os,
+        game.name,
+        game.version
+    );
+    runtime.resources.insert(Arc::new(machine));
+    runtime.resources.insert(Arc::new(game));
 }
 
 /// Creates the DCC, telemetry and the game world, and fills `runtime` with

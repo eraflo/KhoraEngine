@@ -17,9 +17,15 @@ use std::path::{Path, PathBuf};
 #[derive(Serialize)]
 struct ProjectDescriptor<'a> {
     name: &'a str,
+    /// The game's version, which a built game and what the engine learns of
+    /// it are filed under.
+    version: &'a str,
     engine_version: &'a str,
     created_at: u64,
 }
+
+/// The version a new project's game starts at.
+const FIRST_GAME_VERSION: &str = "0.1.0";
 
 /// Git initialization mode for new projects.
 #[derive(Debug, Clone, Default)]
@@ -106,6 +112,7 @@ pub fn create_project(
 
     let descriptor = ProjectDescriptor {
         name,
+        version: FIRST_GAME_VERSION,
         engine_version,
         created_at: now,
     };
@@ -448,6 +455,29 @@ mod tests {
     }
 
     use super::*;
+
+    /// **A new project names its version.** The `project.json` the hub
+    /// writes holds the game's `version`, `0.1.0` for a project just created,
+    /// beside its name and the engine version it targets.
+    #[test]
+    fn a_new_project_names_its_version() -> Result<()> {
+        let parent = std::env::temp_dir().join(format!(
+            "khora-hub-new-project-version-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&parent);
+        std::fs::create_dir_all(&parent)?;
+
+        let written = create_project("Lantern", &parent, "0.3.0", &GitInit::None)
+            .and_then(|root| Ok(std::fs::read_to_string(root.join("project.json"))?));
+        let _ = std::fs::remove_dir_all(&parent);
+
+        let project: serde_json::Value = serde_json::from_str(&written?)?;
+        assert_eq!(project["version"], "0.1.0", "{project}");
+        assert_eq!(project["name"], "Lantern", "{project}");
+        assert_eq!(project["engine_version"], "0.3.0", "{project}");
+        Ok(())
+    }
 
     #[test]
     fn sanitize_strips_bad_chars() {

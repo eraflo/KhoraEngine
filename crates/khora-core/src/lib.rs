@@ -20,6 +20,7 @@
 #![warn(missing_docs)]
 
 pub mod agent;
+pub mod app;
 pub mod asset;
 pub mod audio;
 pub mod engine_context;

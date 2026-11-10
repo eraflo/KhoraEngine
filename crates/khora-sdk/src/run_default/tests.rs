@@ -1060,3 +1060,70 @@ fn the_runtime_is_ready_once_its_scene_and_scripts_landed() {
         "the startup was let go more than once"
     );
 }
+
+/// **The runtime names its game from its config.** A `runtime.json` written
+/// before games had a version reads `0.1.0`; one that names it keeps it. The
+/// game a config runs is its `project_name` at its `game_version` — and a
+/// runtime started without `runtime.json` is the default config's game, not
+/// its window title at the engine's version.
+#[test]
+fn the_runtime_names_its_game_from_its_config() {
+    let older: RuntimeConfig = serde_json::from_str(
+        r#"{ "project_name": "Khora Demo", "default_scene": "scenes/default.kscene" }"#,
+    )
+    .expect("a runtime.json written before games had a version reads");
+    assert_eq!(older.game_version, "0.1.0", "a file without a game version");
+
+    let built: RuntimeConfig =
+        serde_json::from_str(WRITTEN_BY_THE_EDITOR).expect("the editor's runtime.json reads");
+    assert_eq!(built.game_version, "0.1.0", "the version Build Game writes");
+
+    let versioned: RuntimeConfig =
+        serde_json::from_str(r#"{ "project_name": "Khora Demo", "game_version": "2.3.4" }"#)
+            .expect("a runtime.json naming its version reads");
+    assert_eq!(
+        versioned.game_version, "2.3.4",
+        "the version written is kept"
+    );
+    assert_eq!(
+        versioned.game_identity(),
+        crate::GameIdentity {
+            name: "Khora Demo".to_owned(),
+            version: "2.3.4".to_owned(),
+        }
+    );
+
+    assert_eq!(
+        RuntimeConfig::defaults().game_version,
+        "0.1.0",
+        "a runtime without runtime.json"
+    );
+    assert_eq!(
+        <DefaultRuntimeApp as EngineApp>::game_identity(),
+        crate::GameIdentity {
+            name: RuntimeConfig::defaults().project_name,
+            version: "0.1.0".to_owned(),
+        },
+        "the runtime app's game is its config's"
+    );
+}
+
+/// **A blank game version in the runtime config is the default one.** A
+/// `runtime.json` whose `game_version` is empty or blank names no version,
+/// as a project's `project.json` with a blank `version` names none: the
+/// game runs at `0.1.0`, the version the editor gives that same project,
+/// never at an empty one.
+#[test]
+fn a_blank_game_version_in_the_runtime_config_is_the_default_one() {
+    for blank in ["", "   "] {
+        let cfg: RuntimeConfig = serde_json::from_str(&format!(
+            r#"{{ "project_name": "Khora Demo", "game_version": "{blank}" }}"#
+        ))
+        .expect("a runtime.json with a blank game version reads");
+        assert_eq!(
+            cfg.game_identity().version,
+            crate::DEFAULT_GAME_VERSION,
+            "the game version {blank:?}"
+        );
+    }
+}

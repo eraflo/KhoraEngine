@@ -29,6 +29,7 @@ mod engine_names;
 mod frame_boundary;
 mod frame_report;
 mod frame_target_reaches_lanes;
+mod game_and_machine_identity;
 mod game_saves;
 mod host_monitors;
 mod lane_agents_at_boot;

@@ -3,5 +3,6 @@
   "default_scene": "scenes/default.kscene",
   "window_title": "Khora Demo",
   "preset": "release",
-  "verify_integrity": true
+  "verify_integrity": true,
+  "game_version": "0.1.0"
 }

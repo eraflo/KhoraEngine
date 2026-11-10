@@ -189,6 +189,13 @@ fn install_game_assets(runtime: &mut Runtime, exe_dir: &Path, verify_integrity: 
 }
 
 impl EngineApp for DefaultRuntimeApp {
+    /// The game `runtime.json` names: its project, at its version.
+    fn game_identity() -> khora_core::app::GameIdentity {
+        RUNTIME_CONFIG
+            .get_or_init(RuntimeConfig::defaults)
+            .game_identity()
+    }
+
     fn window_config() -> WindowConfig {
         let cfg = RUNTIME_CONFIG.get_or_init(RuntimeConfig::defaults);
         WindowConfig {

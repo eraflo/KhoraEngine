@@ -695,3 +695,90 @@ fn a_default_scene_on_disk_is_never_overwritten_by_a_new_one() {
         "the user's default scene was overwritten by a new one"
     );
 }
+
+/// **An opened project shows its game's version.** What needs no index is
+/// filled as the project starts opening, its version with it: the `version`
+/// of its `project.json`, or `0.1.0` for a project written before projects
+/// had one.
+#[test]
+fn an_opened_project_shows_its_games_version() {
+    let older = Project::with("version-older", &[]);
+    let versioned = Project::with("version-given", &[]);
+    std::fs::write(
+        versioned.root().join("project.json"),
+        r#"{ "name": "version-given", "version": "2.3.4", "engine_version": "0.9.1" }"#,
+    )
+    .expect("the project's `project.json`");
+
+    for (project, version) in [(&older, "0.1.0"), (&versioned, "2.3.4")] {
+        let mut opening = Opening::new();
+        opening.start(project.root());
+        assert_eq!(
+            opening.state().project_version.as_deref(),
+            Some(version),
+            "{}",
+            project.root().display()
+        );
+    }
+}
+
+/// **An opened project shows the version its game is built at.** What the
+/// editor shows as the project's version is what "Build Game" writes and
+/// what the editor names its game by (`project_identity`): a `version`
+/// written with stray blanks around it is the same version once trimmed,
+/// not a different one on screen.
+#[test]
+fn an_opened_project_shows_the_version_its_game_is_built_at() {
+    let project = Project::with("version-blanks", &[]);
+    std::fs::write(
+        project.root().join("project.json"),
+        r#"{ "name": "version-blanks", "version": " 2.3.4 ", "engine_version": "0.9.1" }"#,
+    )
+    .expect("the project's `project.json`");
+
+    let built = crate::project_identity::project_identity(project.root())
+        .expect("the project names its game")
+        .version;
+    let mut opening = Opening::new();
+    opening.start(project.root());
+
+    assert_eq!(built, "2.3.4", "the premise: the game is built at 2.3.4");
+    assert_eq!(
+        opening.state().project_version.as_deref(),
+        Some(built.as_str()),
+        "the editor shows another version than the one its game is built at"
+    );
+}
+
+/// **A project that does not open shows no version.** The editor's `Open`
+/// fails; the editor runs with no project, so the version the project's
+/// `project.json` gave as it started opening is no longer shown.
+#[test]
+fn a_project_that_does_not_open_shows_no_version() {
+    let project = Project::with("no-version-shown", &[("textures/crate.png", b"PNG")]);
+    std::fs::write(
+        project.root().join("project.json"),
+        r#"{ "name": "no-version-shown", "version": "2.3.4", "engine_version": "0.9.1" }"#,
+    )
+    .expect("the project's `project.json`");
+    let elsewhere = Project::with("no-version-supersedes", &[]);
+    let mut opening = Opening::new();
+    opening.start(project.root());
+    assert_eq!(
+        opening.state().project_version.as_deref(),
+        Some("2.3.4"),
+        "the premise: the version is shown as the project starts opening"
+    );
+    opening
+        .engine
+        .hub
+        .file(elsewhere.root().to_path_buf(), IndexKind::Open);
+    opening.engine.frame();
+
+    assert!(opening.land().is_none(), "the premise: the open fails");
+    assert_eq!(
+        opening.state().project_version,
+        None,
+        "the editor runs with no project, yet shows its version"
+    );
+}

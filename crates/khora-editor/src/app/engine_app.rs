@@ -34,6 +34,21 @@ use crate::log_capture::EditorLogCapture;
 use crate::{commands, gizmo, hot_reload, input, ops};
 
 impl EngineApp for EditorApp {
+    /// The game the project opened at launch is, from its `project.json`;
+    /// the editor's own name and version when none was opened.
+    fn game_identity() -> khora_sdk::GameIdentity {
+        crate::bootstrap::PROJECT_PATH
+            .get()
+            .and_then(|project| project.as_deref())
+            .and_then(|project| {
+                crate::project_identity::project_identity(std::path::Path::new(project))
+            })
+            .unwrap_or_else(|| khora_sdk::GameIdentity {
+                name: Self::window_config().title,
+                version: khora_sdk::ENGINE_VERSION.to_owned(),
+            })
+    }
+
     fn window_config() -> WindowConfig {
         WindowConfig {
             title: "Khora Engine Editor".to_owned(),

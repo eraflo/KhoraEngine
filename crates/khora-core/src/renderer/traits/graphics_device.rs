@@ -241,6 +241,14 @@ pub trait GraphicsDevice: Send + Sync + Debug + 'static {
     /// Gets information about the active graphics adapter (GPU).
     fn get_adapter_info(&self) -> GraphicsAdapterInfo;
 
+    /// Who made the adapter, which device it is and which driver runs it —
+    /// what names the machine's GPU in its
+    /// [`MachineIdentity`](crate::platform::MachineIdentity). A device that
+    /// cannot say returns `None`.
+    fn adapter_identity(&self) -> Option<crate::renderer::api::device::AdapterIdentity> {
+        None
+    }
+
     /// Checks if a specific, optional rendering feature is supported by the backend.
     fn supports_feature(&self, feature_name: &str) -> bool;
 

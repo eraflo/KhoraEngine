@@ -23,6 +23,7 @@ pub mod gizmo;
 pub mod gradient;
 pub mod icons;
 mod inline_edit_event;
+mod inspected;
 pub mod interaction;
 pub mod overlay;
 pub mod panel;

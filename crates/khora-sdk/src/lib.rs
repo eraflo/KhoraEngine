@@ -81,8 +81,17 @@ pub use engine::{EngineBootstrap, EngineCore};
 pub use engine::{Readiness, ReadinessHold, ReadinessProgress, ReadinessState, ReadinessTicket};
 pub use game_world::{DeclaredComponentError, GameWorld};
 pub use run_default::run_default;
-pub use runtime_config::{RuntimeConfig, DEFAULT_SCENE_REL_PATH, RUNTIME_CONFIG_FILE};
+pub use runtime_config::{
+    RuntimeConfig, DEFAULT_GAME_VERSION, DEFAULT_SCENE_REL_PATH, RUNTIME_CONFIG_FILE,
+};
 pub use traits::{EngineApp, PhaseProvider, WindowProvider};
+
+/// The engine's version, as the SDK was built: what an application that does
+/// not name its game's version is versioned by.
+pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+// The game an application is (`EngineApp::game_identity`).
+pub use khora_core::app::GameIdentity;
 pub use vessel::{spawn_cube_at, spawn_plane, spawn_sphere, Vessel};
 pub use winit_adapters::{run_winit, WinitAppRunner};
 

@@ -438,10 +438,60 @@ impl IntoWgpu<wgpu::LoadOp<u32>> for LoadOp<u32> {
     }
 }
 
+// --- Adapter ---
+
+/// What identifies the adapter `info` describes: its name, vendor id,
+/// device id, driver and driver info, carried as wgpu reports them.
+pub(crate) fn adapter_identity_of(
+    info: &wgpu::AdapterInfo,
+) -> khora_core::renderer::api::device::AdapterIdentity {
+    khora_core::renderer::api::device::AdapterIdentity {
+        name: info.name.clone(),
+        vendor: info.vendor,
+        device: info.device,
+        driver: info.driver.clone(),
+        driver_info: info.driver_info.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use khora_core::math::{Extent2D, Extent3D, Origin3D};
+    use khora_core::renderer::api::device::AdapterIdentity;
+
+    /// **The adapter identity keeps vendor, device and driver.** What wgpu
+    /// says of an adapter — its name, vendor id, device id, driver and driver
+    /// info — is carried whole into the engine's `AdapterIdentity`, none of
+    /// it dropped; what does not name the adapter (its backend, its bus, its
+    /// subgroup sizes) is left out.
+    #[test]
+    fn the_adapter_identity_keeps_vendor_device_and_driver() {
+        let info = wgpu::AdapterInfo {
+            name: "Example GPU 9000".to_owned(),
+            vendor: 0x10de,
+            device: 0x2786,
+            device_type: wgpu::DeviceType::DiscreteGpu,
+            device_pci_bus_id: "0000:01:00.0".to_owned(),
+            driver: "Example Driver".to_owned(),
+            driver_info: "566.36".to_owned(),
+            backend: wgpu::Backend::Vulkan,
+            subgroup_min_size: 32,
+            subgroup_max_size: 32,
+            transient_saves_memory: false,
+        };
+
+        assert_eq!(
+            adapter_identity_of(&info),
+            AdapterIdentity {
+                name: "Example GPU 9000".to_owned(),
+                vendor: 0x10de,
+                device: 0x2786,
+                driver: "Example Driver".to_owned(),
+                driver_info: "566.36".to_owned(),
+            }
+        );
+    }
 
     #[test]
     fn test_extent2d_to_physical_size() {

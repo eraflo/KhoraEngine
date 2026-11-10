@@ -14,6 +14,28 @@
 
 //! Adapter and device information.
 
+use serde::{Deserialize, Serialize};
+
+/// What identifies the GPU adapter beyond its name: who made it, which
+/// device, which driver.
+///
+/// Two machines whose adapters differ by any of these fields can cost a
+/// frame differently — a driver update alone can — so each field takes part
+/// in a machine's key ([`MachineIdentity::key`](crate::platform::MachineIdentity::key)).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct AdapterIdentity {
+    /// The name of the adapter (e.g., "NVIDIA GeForce RTX 4090").
+    pub name: String,
+    /// The backend-specific vendor id (generally the PCI vendor id).
+    pub vendor: u32,
+    /// The backend-specific device id (generally the PCI device id).
+    pub device: u32,
+    /// The driver's name.
+    pub driver: String,
+    /// What the driver says of itself, typically its version.
+    pub driver_info: String,
+}
+
 /// Provides standardized, backend-agnostic information about a graphics adapter.
 #[derive(Debug, Clone, Default)]
 pub struct GraphicsAdapterInfo {

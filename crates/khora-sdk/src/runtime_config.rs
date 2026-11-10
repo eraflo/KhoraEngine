@@ -55,6 +55,17 @@ pub struct RuntimeConfig {
     /// project sets them; a file without them runs at the defaults.
     #[serde(default, skip_serializing_if = "PhysicsSettings::is_default")]
     pub physics: PhysicsSettings,
+    /// The game's version, written by "Build Game" from the project's
+    /// `project.json`; `0.1.0` for a file written before games had one.
+    #[serde(default = "default_game_version")]
+    pub game_version: String,
+}
+
+/// The version of a game that names none.
+pub const DEFAULT_GAME_VERSION: &str = "0.1.0";
+
+fn default_game_version() -> String {
+    DEFAULT_GAME_VERSION.to_owned()
 }
 
 fn default_project_name() -> String {
@@ -112,6 +123,22 @@ impl RuntimeConfig {
             preset: None,
             verify_integrity: false,
             physics: PhysicsSettings::default(),
+            game_version: default_game_version(),
+        }
+    }
+
+    /// The game this config runs: named by its `project_name`, at its
+    /// `game_version`.
+    pub fn game_identity(&self) -> khora_core::app::GameIdentity {
+        let version = self.game_version.trim();
+        khora_core::app::GameIdentity {
+            name: self.project_name.clone(),
+            // A blank version names none: the default one.
+            version: if version.is_empty() {
+                DEFAULT_GAME_VERSION.to_owned()
+            } else {
+                version.to_owned()
+            },
         }
     }
 

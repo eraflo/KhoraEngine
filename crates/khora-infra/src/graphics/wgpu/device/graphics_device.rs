@@ -930,6 +930,14 @@ impl GraphicsDevice for WgpuDevice {
             })
     }
 
+    /// Who made the adapter the device runs on, which device and driver, as
+    /// wgpu reports them; `None` until the render system gave the adapter.
+    fn adapter_identity(&self) -> Option<khora_core::renderer::api::device::AdapterIdentity> {
+        (self.internal.adapter_handle.get()).map(|adapter| {
+            crate::graphics::wgpu::conversions::adapter_identity_of(&adapter.get_info())
+        })
+    }
+
     /// Read from the device's limits: storage buffers are there when a
     /// shader stage may bind at least one, compute shaders when a dispatch may
     /// run at least one workgroup of one invocation (a downlevel device, such

@@ -70,10 +70,12 @@ pub(crate) fn start_opening_project(
         std::fs::read_to_string(root.join("project.json"))
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok());
+    // Read as the game's identity reads them — trimmed, blank as none — so
+    // the editor shows the game by the name and version it is built with.
     let text = |key: &str| {
         project_json
             .as_ref()
-            .and_then(|json| json.get(key).and_then(|v| v.as_str()).map(String::from))
+            .and_then(|json| crate::project_identity::field(json, key))
     };
     let mut choice = 0;
     if let Ok(mut state) = editor_state.lock() {
@@ -81,6 +83,8 @@ pub(crate) fn start_opening_project(
         state.project_folder = Some(root.to_string_lossy().to_string());
         state.project_name = text("name");
         state.project_engine_version = text("engine_version");
+        state.project_version =
+            Some(text("version").unwrap_or_else(|| khora_sdk::DEFAULT_GAME_VERSION.to_owned()));
         state.current_git_branch = git::read_git_branch(&root);
     }
     log::info!("Opening project '{}' off the frame", root.display());
@@ -162,6 +166,7 @@ pub(crate) fn land_opened_project(
                 state.project_folder = None;
                 state.project_name = None;
                 state.project_engine_version = None;
+                state.project_version = None;
                 state.current_git_branch = None;
             }
             *hold = None;

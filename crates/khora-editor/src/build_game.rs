@@ -258,7 +258,13 @@ pub fn build_for_target(
         }
     };
 
-    write_runtime_config_with(&output_dir, project_name, preset, pvfs.physics_settings())?;
+    // The built game is the project's, at the version its `project.json`
+    // gives.
+    let game = khora_sdk::GameIdentity {
+        name: project_name.to_owned(),
+        version: crate::project_identity::project_version(&pvfs.root),
+    };
+    write_runtime_config_of(&output_dir, &game, preset, pvfs.physics_settings())?;
 
     log::info!(
         "Build Game: staged {} ({} assets, {} bytes packed) via {}",
@@ -438,22 +444,50 @@ fn write_runtime_config(output_dir: &Path, project_name: &str, preset: BuildPres
     write_runtime_config_with(output_dir, project_name, preset, PhysicsSettings::default())
 }
 
-/// `runtime.json`: what the runtime reads at start-up, the project's physics
-/// settings included.
+/// The `runtime.json` "Build Game" writes for `game` built with `preset`:
+/// named and titled by the game's name, at the game's version, with the
+/// project's physics settings.
+fn runtime_config(
+    game: &khora_sdk::GameIdentity,
+    preset: BuildPreset,
+    physics: PhysicsSettings,
+) -> RuntimeConfig {
+    RuntimeConfig {
+        project_name: game.name.clone(),
+        default_scene: DEFAULT_SCENE_REL_PATH.to_owned(),
+        window_title: Some(game.name.clone()),
+        preset: Some(preset.label().to_owned()),
+        verify_integrity: preset.verify_integrity(),
+        physics,
+        game_version: game.version.clone(),
+    }
+}
+
+/// `runtime.json` for a project named `project_name` that gives no version
+/// of its own, the project's physics settings included.
+#[cfg(test)]
 fn write_runtime_config_with(
     output_dir: &Path,
     project_name: &str,
     preset: BuildPreset,
     physics: PhysicsSettings,
 ) -> Result<()> {
-    let cfg = RuntimeConfig {
-        project_name: project_name.to_owned(),
-        default_scene: DEFAULT_SCENE_REL_PATH.to_owned(),
-        window_title: Some(project_name.to_owned()),
-        preset: Some(preset.label().to_owned()),
-        verify_integrity: preset.verify_integrity(),
-        physics,
+    let game = khora_sdk::GameIdentity {
+        name: project_name.to_owned(),
+        version: khora_sdk::DEFAULT_GAME_VERSION.to_owned(),
     };
+    write_runtime_config_of(output_dir, &game, preset, physics)
+}
+
+/// `runtime.json`: what the runtime reads at start-up — the game it runs,
+/// at its version, the project's physics settings included.
+fn write_runtime_config_of(
+    output_dir: &Path,
+    game: &khora_sdk::GameIdentity,
+    preset: BuildPreset,
+    physics: PhysicsSettings,
+) -> Result<()> {
+    let cfg = runtime_config(game, preset, physics);
     let cfg_text = serde_json::to_string_pretty(&cfg).context("serialize runtime.json")?;
     std::fs::write(output_dir.join(RUNTIME_CONFIG_FILE), cfg_text)
         .context("Failed to write runtime.json")
@@ -725,6 +759,43 @@ mod tests {
         assert_eq!(
             read.physics, a_128th,
             "the runtime reads the project's step"
+        );
+        Ok(())
+    }
+
+    /// **Build Game writes the project's version.** The `runtime.json` a
+    /// game is built with carries the project's version as its
+    /// `game_version`, which the runtime reads back as the game's identity;
+    /// the rest is what Build Game always wrote — the name as project name
+    /// and window title, the preset, its integrity check, the physics step.
+    #[test]
+    fn build_game_writes_the_projects_version() -> Result<()> {
+        let game = khora_sdk::GameIdentity {
+            name: "Khora Demo".to_owned(),
+            version: "2.3.4".to_owned(),
+        };
+        let a_128th = PhysicsSettings {
+            step: std::time::Duration::from_nanos(7_812_500),
+        };
+
+        let cfg = runtime_config(&game, BuildPreset::Release, a_128th);
+
+        assert_eq!(cfg.game_version, "2.3.4", "the project's version");
+        assert_eq!(cfg.project_name, "Khora Demo");
+        assert_eq!(cfg.window_title.as_deref(), Some("Khora Demo"));
+        assert_eq!(cfg.default_scene, DEFAULT_SCENE_REL_PATH);
+        assert_eq!(cfg.preset.as_deref(), Some(BuildPreset::Release.label()));
+        assert_eq!(
+            cfg.verify_integrity,
+            BuildPreset::Release.verify_integrity()
+        );
+        assert_eq!(cfg.physics, a_128th);
+
+        let read: RuntimeConfig = serde_json::from_str(&serde_json::to_string_pretty(&cfg)?)?;
+        assert_eq!(
+            read.game_identity(),
+            game,
+            "the runtime reads the game back from what Build Game writes"
         );
         Ok(())
     }
