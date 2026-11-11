@@ -29,6 +29,12 @@ use crate::asset::{AssetDecoder, DecoderRegistration};
 pub struct FontDecoder;
 
 impl AssetDecoder<Font> for FontDecoder {
+    fn sniff(&self, head: &[u8]) -> bool {
+        [&b"\x00\x01\x00\x00"[..], b"OTTO", b"true", b"ttcf"]
+            .iter()
+            .any(|magic| head.starts_with(magic))
+    }
+
     fn load(
         &self,
         bytes: &[u8],

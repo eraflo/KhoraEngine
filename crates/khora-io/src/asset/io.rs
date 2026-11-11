@@ -29,6 +29,14 @@ pub trait AssetIo: Send + Sync {
     /// each read returning exactly its own source's bytes. A backend holds no
     /// cursor or other per-read state shared between calls.
     fn load_bytes(&self, source: &AssetSource) -> Result<Vec<u8>>;
+
+    /// The file `source` is read from, when it is a file of its own: what a
+    /// refusal of its bytes names it by. `None` for a pack entry, a
+    /// sub-asset, or a backend with no files.
+    fn locate(&self, source: &AssetSource) -> Option<std::path::PathBuf> {
+        let _ = source;
+        None
+    }
 }
 
 /// Sibling trait to [`AssetIo`] for editor-time *writing* of assets back to

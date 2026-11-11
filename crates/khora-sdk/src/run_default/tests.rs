@@ -488,7 +488,7 @@ fn a_loose_files_runtime_starts_on_an_empty_service() {
         game.asset(file, b"not a real asset");
     }
 
-    let svc = build_asset_service(game.path(), Arc::new(MetricsRegistry::new()), false)
+    let svc = build_asset_service(game.path(), Arc::new(MetricsRegistry::new()), false, None)
         .expect("a loose-files runtime starts");
 
     assert_eq!(
@@ -565,7 +565,7 @@ fn a_loose_files_runtime_resolves_the_uuids_the_registry_froze() -> Result<()> {
 #[test]
 fn the_nothing_to_load_error_has_no_run_of_spaces() -> Result<()> {
     let dir = scratch_dir("nothing-to-load")?;
-    let err = build_asset_service(&dir, Arc::new(MetricsRegistry::new()), false)
+    let err = build_asset_service(&dir, Arc::new(MetricsRegistry::new()), false, None)
         .err()
         .map(|e| format!("{e:#}"));
     let _ = std::fs::remove_dir_all(&dir);
@@ -599,7 +599,7 @@ fn a_packed_runtime_registers_every_decoder_and_honours_the_manifest() -> Result
         .build()?;
 
     let outcome = (|| -> Result<_> {
-        let mut svc = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), true)?;
+        let mut svc = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), true, None)?;
         let decodable = decodable_types(&mut svc)?;
 
         // A manifest that no longer matches the pack: every asset is
@@ -608,12 +608,13 @@ fn a_packed_runtime_registers_every_decoder_and_honours_the_manifest() -> Result
         let mut forged = PackManifest::new();
         forged.insert(probe, b"other bytes");
         std::fs::write(exe_dir.join("manifest.bin"), forged.encode()?)?;
-        let verified = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), true)?
+        let verified = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), true, None)?
             .load_raw(&probe)
             .is_ok();
-        let unverified = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), false)?
-            .load_raw(&probe)
-            .is_ok();
+        let unverified =
+            build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), false, None)?
+                .load_raw(&probe)
+                .is_ok();
         Ok((decodable, verified, unverified))
     })();
     let _ = std::fs::remove_dir_all(&dir);

@@ -20,36 +20,48 @@ use anyhow::{bail, Context, Result};
 use khora_core::asset::AssetSource;
 use std::path::{Path, PathBuf};
 
+use std::sync::Arc;
+
 use super::{AssetIo, AssetWriter};
+use crate::trust::{FileGuard, Refusals, Trust};
 
 /// File-based asset loader for editor/development mode.
 ///
 /// Reads assets directly from individual files on disk. The `root` path is
 /// typically `<project>/assets/`.
 pub struct FileLoader {
-    root: PathBuf,
+    guard: FileGuard,
 }
 
 impl FileLoader {
-    /// Creates a new `FileLoader` with the given root directory.
+    /// A loader reading the files under `root` as a trusted project's, its
+    /// refusals kept in memory: what a test or a tool with no refusals of
+    /// its own reads through. A run reads through [`Self::guarded`].
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self::guarded(FileGuard::new(
+            root,
+            Trust::Project,
+            Arc::new(Refusals::new(None, None)),
+        ))
+    }
+
+    /// A loader reading every file through `guard`, under the guard's root.
+    pub fn guarded(guard: FileGuard) -> Self {
+        Self { guard }
     }
 
     /// Returns the root directory the loader reads/writes from.
     pub fn root(&self) -> &Path {
-        &self.root
+        self.guard.root()
     }
 }
 
 impl AssetIo for FileLoader {
     fn load_bytes(&self, source: &AssetSource) -> Result<Vec<u8>> {
         match source {
-            AssetSource::Path(rel) => {
-                let full_path = self.root.join(rel);
-                std::fs::read(&full_path)
-                    .with_context(|| format!("Failed to read asset: {:?}", full_path))
-            }
+            AssetSource::Path(rel) => self.guard.read(rel).with_context(|| {
+                format!("Failed to read asset: {:?}", self.guard.root().join(rel))
+            }),
             AssetSource::Packed { .. } => {
                 bail!("FileLoader does not support Packed sources")
             }
@@ -58,11 +70,18 @@ impl AssetIo for FileLoader {
             }
         }
     }
+
+    fn locate(&self, source: &AssetSource) -> Option<PathBuf> {
+        match source {
+            AssetSource::Path(rel) => Some(self.guard.root().join(rel)),
+            _ => None,
+        }
+    }
 }
 
 impl AssetWriter for FileLoader {
     fn write_bytes(&self, rel_path: &Path, bytes: &[u8]) -> Result<()> {
-        let full_path = self.root.join(rel_path);
+        let full_path = self.guard.root().join(rel_path);
         if let Some(parent) = full_path.parent() {
             std::fs::create_dir_all(parent).with_context(|| {
                 format!("Failed to create parent directory for {:?}", full_path)

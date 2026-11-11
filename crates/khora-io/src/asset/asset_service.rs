@@ -177,6 +177,7 @@ impl AssetService {
                 decoders: DecoderRegistry::new(metrics_registry),
                 containers: HashMap::new(),
                 manifest: manifest.map(Arc::new),
+                refusals: None,
             }),
             storages: HashMap::new(),
             load_count: 0,
@@ -241,6 +242,29 @@ impl AssetService {
     /// handed out still holds it, which keeps what it was taken with.
     fn reader_mut(&mut self) -> &mut AssetReader {
         Arc::make_mut(&mut self.reader)
+    }
+
+    /// Where this service reports the files it refuses to decode: bytes that
+    /// are not what their type says.
+    ///
+    /// The refusals the service reported to before hand what they hold, and
+    /// what is reported to them after, over to `refusals`: a reader made
+    /// before — a glTF's resolver — reports to the run's.
+    pub fn set_refusals(&mut self, refusals: Arc<crate::trust::Refusals>) {
+        if let Some(former) = self.reader_mut().refusals.replace(Arc::clone(&refusals)) {
+            if !Arc::ptr_eq(&former, &refusals) {
+                former.hand_over_to(refusals);
+            }
+        }
+    }
+
+    /// The refusals this service reports to: the ones set, or refusals kept
+    /// in memory when none were.
+    pub fn refusals(&mut self) -> Arc<crate::trust::Refusals> {
+        let refusals = &mut self.reader_mut().refusals;
+        Arc::clone(
+            refusals.get_or_insert_with(|| Arc::new(crate::trust::Refusals::new(None, None))),
+        )
     }
 
     /// Registers a decoder for a specific asset type.
@@ -1326,6 +1350,10 @@ mod tests {
 
     struct NoteDecoder;
     impl AssetDecoder<TestNote> for NoteDecoder {
+        /// A test note is any bytes: the test reads them as they are.
+        fn sniff(&self, _head: &[u8]) -> bool {
+            true
+        }
         fn load(
             &self,
             bytes: &[u8],
@@ -1552,6 +1580,9 @@ mod tests {
         decodes: Arc<AtomicUsize>,
     }
     impl AssetDecoder<TestNote> for CountingNoteDecoder {
+        fn sniff(&self, head: &[u8]) -> bool {
+            NoteDecoder.sniff(head)
+        }
         fn load(
             &self,
             bytes: &[u8],

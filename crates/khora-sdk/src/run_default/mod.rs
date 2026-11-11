@@ -68,6 +68,7 @@ fn build_asset_service(
     exe_dir: &Path,
     metrics: Arc<MetricsRegistry>,
     verify_integrity: bool,
+    refusals: Option<Arc<khora_io::trust::Refusals>>,
 ) -> Result<AssetService> {
     let pack = exe_dir.join("data.pack");
     let idx = exe_dir.join("index.bin");
@@ -86,6 +87,9 @@ fn build_asset_service(
             None
         };
         let mut svc = AssetService::new(&bytes, Box::new(loader), metrics, manifest)?;
+        if let Some(refusals) = refusals {
+            svc.set_refusals(refusals);
+        }
         svc.register_default_decoders(exe_dir);
         (svc, "PackLoader")
     } else if assets.is_dir() {
@@ -182,7 +186,11 @@ impl DefaultRuntimeApp {
 /// none, with the error logged, when there is neither.
 fn install_game_assets(runtime: &mut Runtime, exe_dir: &Path, verify_integrity: bool) {
     let metrics = Arc::new(MetricsRegistry::new());
-    match build_asset_service(exe_dir, metrics, verify_integrity) {
+    let refusals = runtime
+        .resources
+        .get::<Arc<khora_io::trust::Refusals>>()
+        .cloned();
+    match build_asset_service(exe_dir, metrics, verify_integrity, refusals) {
         Ok(svc) => runtime.services.insert(Arc::new(Mutex::new(svc))),
         Err(e) => log::error!("khora-sdk run_default: AssetService init failed: {:#}", e),
     }
@@ -190,7 +198,7 @@ fn install_game_assets(runtime: &mut Runtime, exe_dir: &Path, verify_integrity: 
 
 impl EngineApp for DefaultRuntimeApp {
     /// A game keeps what the engine learns of the machine it runs on.
-    fn keeps_machine_profiles() -> bool {
+    fn keeps_user_files() -> bool {
         true
     }
 
@@ -338,9 +346,9 @@ pub fn run_default() -> Result<()> {
         // The game's assets: a pack's index now, loose files indexed once the
         // engine runs. Its scene and its scripts are filed in `setup`, and
         // loaded off the frame.
-        install_game_assets(runtime, &exe_dir, verify_integrity);
-        // A packed game runs on a player's machine: its profile is filed in
-        // the player's data folder, and it may ship one beside it.
+        // A packed game runs on a player's machine: its profile and its
+        // quarantine are filed in the player's data folder, and it may ship
+        // a profile beside it.
         if opening::is_packed(&exe_dir) {
             runtime
                 .resources
@@ -349,6 +357,14 @@ pub fn run_default() -> Result<()> {
                 .resources
                 .insert(crate::engine::profiles::ShippedProfileDir(exe_dir.clone()));
         }
+        // The run's refusals before the asset service: its readers report
+        // to them from the first.
+        crate::engine::refusals::install(
+            runtime,
+            &DefaultRuntimeApp::game_identity(),
+            DefaultRuntimeApp::keeps_user_files(),
+        );
+        install_game_assets(runtime, &exe_dir, verify_integrity);
     })?;
     Ok(())
 }

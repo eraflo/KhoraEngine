@@ -15,7 +15,10 @@
 //! External-resource resolution for complex asset formats like GLTF.
 
 use std::error::Error;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+use std::sync::Arc;
+
+use crate::trust::{FileGuard, Refusals, Trust};
 
 /// Resolves external resources (buffers, images) referenced by a URI within
 /// an asset file.
@@ -27,31 +30,48 @@ pub trait GltfResourceResolver: Send + Sync {
     fn resolve_image(&self, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>>;
 }
 
-/// Resolves resources from the local filesystem relative to a base path.
+/// Resolves resources from the local filesystem relative to a base path,
+/// through a [`FileGuard`]: a URI leaving the base — by `..`, as an absolute
+/// path, or through a link — is refused, as is a file over its cap.
 pub struct FileSystemResolver {
-    base_path: PathBuf,
+    guard: FileGuard,
 }
 
 impl FileSystemResolver {
-    /// Creates a new `FileSystemResolver` with a specified base path.
+    /// A resolver reading under `base_path` as a trusted project's files,
+    /// its refusals kept in memory. A run resolves through
+    /// [`Self::guarded`].
     pub fn new(base_path: impl AsRef<Path>) -> Self {
-        Self {
-            base_path: base_path.as_ref().to_path_buf(),
-        }
+        Self::guarded(FileGuard::new(
+            base_path.as_ref(),
+            Trust::Project,
+            Arc::new(Refusals::new(None, None)),
+        ))
+    }
+
+    /// A resolver reading every file through `guard`.
+    pub fn guarded(guard: FileGuard) -> Self {
+        Self { guard }
+    }
+
+    fn read(&self, what: &str, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+        self.guard.read(uri).map_err(|error| {
+            format!(
+                "Failed to read external {what} '{uri}' under {}: {error}",
+                self.guard.root().display()
+            )
+            .into()
+        })
     }
 }
 
 impl GltfResourceResolver for FileSystemResolver {
     fn resolve_buffer(&self, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-        let path = self.base_path.join(uri);
-        std::fs::read(&path)
-            .map_err(|e| format!("Failed to read external buffer from '{:?}': {}", path, e).into())
+        self.read("buffer", uri)
     }
 
     fn resolve_image(&self, uri: &str) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
-        let path = self.base_path.join(uri);
-        std::fs::read(&path)
-            .map_err(|e| format!("Failed to read external image from '{:?}': {}", path, e).into())
+        self.read("image", uri)
     }
 }
 

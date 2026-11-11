@@ -37,7 +37,8 @@ use khora_core::asset::asset_key;
 use khora_core::event::{Channel, Supersedes, WhenFull};
 use notify::{recommended_watcher, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use super::index_builder::should_skip_file;
 
@@ -54,6 +55,70 @@ pub enum AssetChangeKind {
     Modified,
     /// An asset file was deleted.
     Removed,
+    /// Too many changes came at once and some were dropped: everything
+    /// under the root is to be read again. Its `rel_path` is empty.
+    Rescan,
+}
+
+/// How many change events a watched root lets through: a token bucket of
+/// `per_second` events a second. Past it, events are dropped, and once the
+/// burst has been quiet a second one rescan is due.
+#[derive(Debug)]
+pub struct EventBudget {
+    per_second: f64,
+    /// The events that may pass now.
+    tokens: f64,
+    /// When the tokens were last counted.
+    counted: Option<Instant>,
+    /// When an event was last dropped, until the rescan it calls for is taken.
+    dropped: Option<Instant>,
+}
+
+/// How long a burst that dropped events must be quiet before its rescan.
+const QUIET: Duration = Duration::from_secs(1);
+
+/// How many change events a watched root lets through a second.
+const EVENTS_PER_SECOND: u32 = 512;
+
+impl EventBudget {
+    /// A budget of `per_second` events a second, full at first.
+    pub fn new(per_second: u32) -> Self {
+        let per_second = f64::from(per_second.max(1));
+        Self {
+            per_second,
+            tokens: per_second,
+            counted: None,
+            dropped: None,
+        }
+    }
+
+    /// Whether an event at `now` is let through.
+    pub fn admit(&mut self, now: Instant) -> bool {
+        if let Some(counted) = self.counted {
+            let refilled = now.saturating_duration_since(counted).as_secs_f64() * self.per_second;
+            self.tokens = (self.tokens + refilled).min(self.per_second);
+        }
+        self.counted = Some(now);
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            true
+        } else {
+            self.dropped = Some(now);
+            false
+        }
+    }
+
+    /// Whether a rescan is due at `now`: true once, after a burst that
+    /// dropped events has been quiet a second.
+    pub fn take_rescan(&mut self, now: Instant) -> bool {
+        match self.dropped {
+            Some(dropped) if now.saturating_duration_since(dropped) >= QUIET => {
+                self.dropped = None;
+                true
+            }
+            _ => false,
+        }
+    }
 }
 
 /// One filesystem change against an asset under the watched root.
@@ -92,6 +157,11 @@ pub struct AssetWatcher {
     /// forever if the backlog's lock was ever poisoned — `poll_for` returned
     /// before draining it. One bounded channel has no in-front.
     changes: Channel<AssetChangeEvent>,
+    /// The root as events name it.
+    root: Arc<Path>,
+    /// How many events the root lets through; the rescan a dropping burst
+    /// calls for is delivered by the next poll after it.
+    budget: Arc<Mutex<EventBudget>>,
 }
 
 /// A file as one write left it: when it was last modified, and its length.
@@ -144,6 +214,9 @@ impl AssetWatcher {
             .ok()
             .filter(|resolved| resolved != &assets_root);
         let sink = changes.clone();
+        let budget = Arc::new(Mutex::new(EventBudget::new(EVENTS_PER_SECOND)));
+        let budget_for_handler = Arc::clone(&budget);
+        let root = Arc::clone(&root_for_handler);
         // One save fires several `Modified` for the same path. Remembering only
         // the previous one, and the file as it was then, collapses that burst
         // — they arrive consecutively, the file unchanged between them —
@@ -177,7 +250,13 @@ impl AssetWatcher {
                     continue;
                 }
                 last = Some((change.clone(), stamp));
-                sink.send(change);
+                let admitted = match budget_for_handler.lock() {
+                    Ok(mut budget) => budget.admit(Instant::now()),
+                    Err(poisoned) => poisoned.into_inner().admit(Instant::now()),
+                };
+                if admitted {
+                    sink.send(change);
+                }
             }
         })
         .context("Failed to create filesystem watcher")?;
@@ -190,6 +269,8 @@ impl AssetWatcher {
             _watcher: watcher,
             assets_root,
             changes,
+            root,
+            budget,
         })
     }
 
@@ -210,6 +291,21 @@ impl AssetWatcher {
     /// A name seen for the first time starts at the oldest retained change, so
     /// a system registered a frame late still hears what happened.
     pub fn poll_for(&self, subscriber: &'static str) -> Vec<AssetChangeEvent> {
+        let rescan = match self.budget.lock() {
+            Ok(mut budget) => budget.take_rescan(Instant::now()),
+            Err(poisoned) => poisoned.into_inner().take_rescan(Instant::now()),
+        };
+        if rescan {
+            log::warn!(
+                "Too many changes at once under {}: everything under it is read again",
+                self.assets_root.display()
+            );
+            self.changes.send(AssetChangeEvent {
+                kind: AssetChangeKind::Rescan,
+                root: Arc::clone(&self.root),
+                rel_path: String::new(),
+            });
+        }
         self.changes.read_for(subscriber)
     }
 
@@ -444,5 +540,84 @@ mod repeat_tests {
         let first = event(AssetChangeKind::Modified, "scripts/guard.erg");
 
         assert!(!is_immediate_repeat(None, &first));
+    }
+}
+
+#[cfg(test)]
+mod budget_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    /// Lets events through at `now` until one is dropped; how many were.
+    fn exhaust(budget: &mut EventBudget, now: Instant) -> usize {
+        let mut admitted = 0;
+        while budget.admit(now) {
+            admitted += 1;
+            assert!(admitted <= 4096, "a budget lets a finite number through");
+        }
+        admitted
+    }
+
+    /// **A flood of watcher events collapses into a rescan**: 512 events in
+    /// a second are let through, the 513th is dropped; no rescan is due while
+    /// the burst lasts nor before it has been quiet a second, then exactly
+    /// one; and the budget lets events through again.
+    #[test]
+    fn a_flood_of_watcher_events_collapses_into_a_rescan() {
+        let start = Instant::now();
+        let mut budget = EventBudget::new(512);
+
+        for event in 0..512 {
+            assert!(budget.admit(start), "event {event} of the first 512");
+        }
+        assert!(!budget.admit(start), "the 513th in the same second");
+
+        assert!(!budget.take_rescan(start), "no rescan while dropping");
+        assert!(
+            !budget.take_rescan(start + Duration::from_millis(999)),
+            "none before the burst has been quiet a second"
+        );
+        assert!(
+            budget.take_rescan(start + Duration::from_millis(1001)),
+            "one rescan once it has"
+        );
+        assert!(
+            !budget.take_rescan(start + Duration::from_millis(1002)),
+            "and only one"
+        );
+        assert!(!budget.take_rescan(start + Duration::from_secs(5)));
+        assert!(
+            budget.admit(start + Duration::from_secs(5)),
+            "a quiet budget lets events through again"
+        );
+    }
+
+    /// Events that never exceed the budget ask for no rescan.
+    #[test]
+    fn events_within_the_budget_ask_for_no_rescan() {
+        let start = Instant::now();
+        let mut budget = EventBudget::new(512);
+        for millis in 0..100 {
+            assert!(budget.admit(start + Duration::from_millis(millis)));
+        }
+
+        assert!(!budget.take_rescan(start + Duration::from_secs(2)));
+    }
+
+    /// An event dropped during the quiet second starts the second again: the
+    /// rescan waits a second after the last drop.
+    #[test]
+    fn a_drop_during_the_quiet_second_delays_the_rescan() {
+        let start = Instant::now();
+        let mut budget = EventBudget::new(512);
+        assert_eq!(exhaust(&mut budget, start), 512);
+        let later = start + Duration::from_millis(500);
+        exhaust(&mut budget, later);
+
+        assert!(
+            !budget.take_rescan(start + Duration::from_millis(1001)),
+            "a drop half a second in"
+        );
+        assert!(budget.take_rescan(later + Duration::from_millis(1001)));
     }
 }

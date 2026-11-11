@@ -61,6 +61,10 @@ pub enum ProblemSource {
     /// The engine's startup: the work it waited on that had not landed when
     /// its wait timed out.
     Startup,
+    /// The files the engine refused to read, or quarantined: a path leaving
+    /// its root, a file over its size cap, bytes that are not what their
+    /// extension says.
+    Security,
 }
 
 /// One problem, located.

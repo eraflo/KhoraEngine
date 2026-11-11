@@ -40,6 +40,10 @@ impl Asset for TestTexture {}
 
 struct TestTextureLoader;
 impl AssetDecoder<TestTexture> for TestTextureLoader {
+    /// A test texture is any four bytes: no magic to check.
+    fn sniff(&self, _head: &[u8]) -> bool {
+        true
+    }
     fn load(&self, bytes: &[u8]) -> Result<TestTexture, Box<dyn Error + Send + Sync>> {
         let id = u32::from_le_bytes(bytes.try_into().unwrap());
         Ok(TestTexture { id })

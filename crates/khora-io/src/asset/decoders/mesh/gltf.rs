@@ -48,6 +48,10 @@ impl GltfDecoder {
 }
 
 impl AssetDecoder<Mesh> for GltfDecoder {
+    fn sniff(&self, head: &[u8]) -> bool {
+        super::MeshDispatcher::is_glb(head) || super::MeshDispatcher::looks_like_gltf_json(head)
+    }
+
     /// Decodes a glTF whose external files are named from the assets root.
     fn load(&self, bytes: &[u8]) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
         self.load_at(bytes, Path::new(""))

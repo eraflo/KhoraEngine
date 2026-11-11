@@ -57,6 +57,8 @@ pub struct DecoderRegistration {
 inventory::collect!(DecoderRegistration);
 
 trait AnyDecoder: Send + Sync {
+    fn sniff(&self, head: &[u8]) -> bool;
+
     fn decode_any(
         &self,
         bytes: &[u8],
@@ -68,6 +70,10 @@ trait AnyDecoder: Send + Sync {
 struct DecoderWrapper<A: Asset, L: AssetDecoder<A>>(L, std::marker::PhantomData<A>);
 
 impl<A: Asset, L: AssetDecoder<A> + Send + Sync> AnyDecoder for DecoderWrapper<A, L> {
+    fn sniff(&self, head: &[u8]) -> bool {
+        self.0.sniff(head)
+    }
+
     fn decode_any(
         &self,
         bytes: &[u8],
@@ -157,6 +163,14 @@ impl DecoderRegistry {
             )
         })?;
         Ok(*asset_boxed)
+    }
+
+    /// Whether the decoder registered for `type_name` reads a file starting
+    /// with `head`; `None` when none is registered.
+    pub fn sniff(&self, type_name: &str, head: &[u8]) -> Option<bool> {
+        self.decoders
+            .get(type_name)
+            .map(|decoder| decoder.sniff(head))
     }
 }
 

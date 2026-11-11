@@ -70,6 +70,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
     fn begin_with(app: A, mut runtime: Runtime, input_events: Channel<InputEvent>) -> Self {
         let (dcc, dcc_rx, telemetry, game_world) = populate(&mut runtime, &input_events);
         identify(&mut runtime, A::game_identity());
+        super::refusals::install(&mut runtime, &A::game_identity(), A::keeps_user_files());
         let phase_order = phase_order(&app.custom_phases(), &app.removed_phases());
         Self {
             app,
@@ -137,8 +138,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
             dcc.start_decision_recording();
         }
         // What the DCC learnt of this machine on an earlier run seeds it.
-        core.profiles =
-            super::profiles::Profiles::begin(&runtime_arc, &dcc, A::keeps_machine_profiles());
+        core.profiles = super::profiles::Profiles::begin(&runtime_arc, &dcc, A::keeps_user_files());
         // Start the DCC background thread AFTER agents are initialized so
         // GORNA does not run health-checks before agents are ready.
         dcc.start(dcc_rx);

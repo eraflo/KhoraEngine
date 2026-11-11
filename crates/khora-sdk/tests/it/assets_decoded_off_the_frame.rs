@@ -133,6 +133,10 @@ struct WatchedMeshes {
 }
 
 impl AssetDecoder<Mesh> for WatchedMeshes {
+    fn sniff(&self, head: &[u8]) -> bool {
+        self.inner.sniff(head)
+    }
+
     fn load(&self, bytes: &[u8]) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
         self.load_at(bytes, Path::new(""))
     }

@@ -20,32 +20,54 @@
 //! and it lives here because reading is what this crate does.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use khora_script::modules::SourceLoader;
+
+use crate::trust::{FileGuard, Refusals, Trust};
 
 /// Loads module source from a directory on disk.
 ///
 /// The script root, not the assets root: an `import` is written relative to
 /// where scripts live, so that is what a path is joined to.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DiskLoader {
-    root: PathBuf,
+    guard: Arc<FileGuard>,
+}
+
+impl std::fmt::Debug for DiskLoader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DiskLoader")
+            .field("root", &self.guard.root())
+            .finish()
+    }
 }
 
 impl DiskLoader {
-    /// A loader rooted at `root`.
+    /// A loader rooted at `root`, reading as a trusted project's files, its
+    /// refusals kept in memory. A run loads through [`Self::guarded`].
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        Self { root: root.into() }
+        Self::guarded(FileGuard::new(
+            root,
+            Trust::Project,
+            Arc::new(Refusals::new(None, None)),
+        ))
+    }
+
+    /// A loader reading every module through `guard`, under its root.
+    pub fn guarded(guard: FileGuard) -> Self {
+        Self {
+            guard: Arc::new(guard),
+        }
     }
 }
 
 impl SourceLoader for DiskLoader {
     fn load(&self, path: &str) -> Option<String> {
-        // The path arrives normalised — the resolver has already refused
-        // anything absolute or containing `..`, so joining it cannot leave the
-        // root. That check belongs there rather than here: it is a property of
-        // the language, and a second loader would have to repeat it.
-        std::fs::read_to_string(self.root.join(path)).ok()
+        // The language's resolver refuses an absolute path or `..` already;
+        // the guard refuses them again, and what the language cannot see — a
+        // link leaving the root, a file over its cap.
+        self.guard.read_to_string(path).ok()
     }
 }
 

@@ -37,8 +37,9 @@ pub(super) struct SandboxGame {
 }
 
 impl EngineApp for SandboxGame {
-    /// The sandbox keeps what the engine learns of this machine.
-    fn keeps_machine_profiles() -> bool {
+    /// The sandbox keeps what the engine learns of this machine, and the
+    /// files it refused.
+    fn keeps_user_files() -> bool {
         true
     }
 

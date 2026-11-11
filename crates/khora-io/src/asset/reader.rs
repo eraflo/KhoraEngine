@@ -16,6 +16,7 @@
 
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
@@ -26,6 +27,10 @@ use super::decoder_registry::DecoderRegistry;
 use super::io::AssetIo;
 use super::manifest::PackManifest;
 use super::AssetIndex;
+use crate::trust::{Layer, QuarantineKey, Refusals, SecurityReason, SecurityRefusal, Trust};
+
+/// How many of a file's first bytes its decoder is shown to recognise it.
+const SNIFFED: usize = 512;
 
 /// What decoding an asset reads: the index snapshot, the decoders, the
 /// containers, the pack manifest and the IO. Shared as an
@@ -46,6 +51,8 @@ pub struct AssetReader {
     /// When `Some`, every byte slice read is hashed against it before it is
     /// decoded.
     pub(super) manifest: Option<Arc<PackManifest>>,
+    /// Where a file whose bytes are not what its type says is refused.
+    pub(super) refusals: Option<Arc<Refusals>>,
 }
 
 /// A file decoded from its own bytes, and — when its type is also a
@@ -183,6 +190,7 @@ impl AssetReader {
         bytes: &[u8],
         type_id: TypeId,
     ) -> Result<DecodedFile> {
+        self.check_type(metadata, bytes)?;
         let value =
             self.decoders
                 .decode_any_at(&metadata.asset_type_name, bytes, &metadata.source_path)?;
@@ -202,6 +210,34 @@ impl AssetReader {
                     .map(|opened| opener.external_files(opened.as_ref()))
             });
         Ok((value, files))
+    }
+
+    /// Refuses `bytes` when the decoder of the file's type does not know
+    /// what they start with: a file whose extension lies about what it
+    /// holds is never handed to a decoder. The refusal quarantines the file
+    /// by its content.
+    fn check_type(&self, metadata: &AssetMetadata, bytes: &[u8]) -> Result<()> {
+        let head = &bytes[..bytes.len().min(SNIFFED)];
+        if self.decoders.sniff(&metadata.asset_type_name, head) != Some(false) {
+            return Ok(());
+        }
+        let path = (metadata.variants.get("default"))
+            .and_then(|source| self.io.locate(source))
+            .unwrap_or_else(|| PathBuf::from(&metadata.source_path));
+        let refusal = SecurityRefusal {
+            path,
+            trust: Trust::Project,
+            layer: Layer::Decoder,
+            reason: SecurityReason::WrongType {
+                expected: metadata.asset_type_name.clone(),
+            },
+        };
+        let error = anyhow!("{refusal}");
+        if let Some(refusals) = &self.refusals {
+            let key = QuarantineKey::Content(*blake3::hash(bytes).as_bytes());
+            refusals.refuse(refusal, Some(key));
+        }
+        Err(error)
     }
 
     /// What opens the container file `container`.
@@ -228,6 +264,7 @@ impl AssetReader {
             .source_of(container)
             .map_err(|_| anyhow!("container {container} has no 'default' variant"))?;
         let bytes = self.read(container, source)?;
+        self.check_type(metadata, &bytes)?;
         let opened = opener
             .open(&bytes, &metadata.source_path)
             .with_context(|| format!("opening container {container}"))?;

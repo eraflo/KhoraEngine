@@ -442,7 +442,7 @@ struct Kept;
 impl PhaseProvider for Kept {}
 
 impl EngineApp for Kept {
-    fn keeps_machine_profiles() -> bool {
+    fn keeps_user_files() -> bool {
         true
     }
     fn window_config() -> WindowConfig {

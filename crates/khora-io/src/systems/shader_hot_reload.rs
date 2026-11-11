@@ -33,7 +33,7 @@ use khora_core::renderer::traits::{GraphicsDevice, PipelineSystem};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 
-use crate::asset::AssetWatch;
+use crate::asset::{AssetChangeEvent, AssetChangeKind, AssetWatch};
 
 /// Root segment every composable shader module path carries.
 const LOGICAL_ROOT: &str = "khora";
@@ -62,6 +62,47 @@ pub fn logical_name_for_shader_path(rel_path: &str) -> Option<String> {
     Some(format!("{LOGICAL_ROOT}::{namespaced}"))
 }
 
+/// The source of the overlay `rel_path` names under the watched `root`,
+/// read through a [`FileGuard`](crate::trust::FileGuard) that reports its
+/// refusals to `refusals`; `None` when it is refused or cannot be read.
+pub fn overlay_source(
+    root: &std::path::Path,
+    rel_path: &str,
+    refusals: &Arc<crate::trust::Refusals>,
+) -> Option<String> {
+    let guard =
+        crate::trust::FileGuard::new(root, crate::trust::Trust::Project, Arc::clone(refusals));
+    match guard.read_to_string(rel_path) {
+        Ok(source) => Some(source),
+        Err(error) => {
+            log::warn!(
+                "shader hot-reload: {} is not read: {error}",
+                root.join(rel_path).display()
+            );
+            None
+        }
+    }
+}
+
+/// The files `event` says changed, as their root and their path under it: a
+/// rescan names every file under its root.
+fn changed_files(event: &AssetChangeEvent) -> Vec<(std::path::PathBuf, String)> {
+    let root = event.root().to_path_buf();
+    if event.kind != AssetChangeKind::Rescan {
+        return vec![(root, event.rel_path.clone())];
+    }
+    walkdir::WalkDir::new(&root)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+        .filter_map(|entry| {
+            let rel = entry.path().strip_prefix(&root).ok()?;
+            Some((root.clone(), khora_core::asset::asset_key(rel)))
+        })
+        .collect()
+}
+
 fn shader_hot_reload_system(
     _world: &mut World,
     runtime: &Runtime,
@@ -82,23 +123,19 @@ fn shader_hot_reload_system(
         return;
     };
 
+    let refusals = runtime
+        .resources
+        .get::<Arc<crate::trust::Refusals>>()
+        .cloned()
+        .unwrap_or_else(|| Arc::new(crate::trust::Refusals::new(None, None)));
     let mut changed = false;
-    for event in events {
-        let Some(logical) = logical_name_for_shader_path(&event.rel_path) else {
+    for (root, rel_path) in events.iter().flat_map(changed_files) {
+        let Some(logical) = logical_name_for_shader_path(&rel_path) else {
             continue; // Not a shader file.
         };
-        let abs = event.root.join(&event.rel_path);
-        match std::fs::read_to_string(&abs) {
-            Ok(source) => {
-                pipeline_system.set_overlay_source(&logical, source);
-                changed = true;
-            }
-            Err(e) => {
-                log::warn!(
-                    "shader hot-reload: failed to read {} for `{logical}`: {e}",
-                    abs.display()
-                );
-            }
+        if let Some(source) = overlay_source(&root, &rel_path, &refusals) {
+            pipeline_system.set_overlay_source(&logical, source);
+            changed = true;
         }
     }
 

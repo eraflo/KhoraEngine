@@ -24,3 +24,5 @@ pub mod scene_loads;
 pub mod script;
 pub mod serialization;
 pub mod systems;
+pub mod trust;
+pub mod user_dirs;

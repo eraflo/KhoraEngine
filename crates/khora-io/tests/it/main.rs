@@ -60,3 +60,4 @@ mod shipped_scripts;
 mod snapshots;
 mod system_components;
 mod unit_typed_declarations;
+mod user_dirs;

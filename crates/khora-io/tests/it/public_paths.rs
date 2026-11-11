@@ -155,6 +155,7 @@ fn asset_change_kind_variants(x: &khora_io::asset::AssetChangeKind) {
         khora_io::asset::AssetChangeKind::Created => {}
         khora_io::asset::AssetChangeKind::Modified => {}
         khora_io::asset::AssetChangeKind::Removed => {}
+        khora_io::asset::AssetChangeKind::Rescan => {}
     }
 }
 

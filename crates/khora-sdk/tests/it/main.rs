@@ -44,6 +44,7 @@ mod project_indexed_off_the_frame;
 mod protocol;
 mod public_paths;
 mod quotes_follow_the_target;
+mod refusals_in_the_runtime;
 mod reload_after_an_emptied_module;
 mod removed_phases;
 mod render_doubles;

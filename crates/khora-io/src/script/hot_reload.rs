@@ -203,7 +203,7 @@ pub(crate) fn importers_of(
 
 /// The modules under `script_root`, by the path they are known by.
 pub fn module_names(script_root: &Path) -> Vec<String> {
-    modules_under(script_root).into_keys().collect()
+    modules_under(script_root, None).into_keys().collect()
 }
 
 /// Every `.erg` module under `root`, each with what it imports.
@@ -217,7 +217,17 @@ pub fn module_names(script_root: &Path) -> Vec<String> {
 /// A file that cannot be read contributes its name with no imports rather than
 /// vanishing: it still needs compiling, and the compiler is where an unreadable
 /// file gets its diagnostic.
-pub(crate) fn modules_under(root: &Path) -> BTreeMap<String, Vec<String>> {
+pub(crate) fn modules_under(
+    root: &Path,
+    refusals: Option<&Arc<crate::trust::Refusals>>,
+) -> BTreeMap<String, Vec<String>> {
+    // Read through a guard reporting to `refusals` (to none kept but in
+    // memory without): a module over its cap is read as importing nothing,
+    // and the compile refuses it.
+    let refusals = refusals
+        .cloned()
+        .unwrap_or_else(|| Arc::new(crate::trust::Refusals::new(None, None)));
+    let guard = crate::trust::FileGuard::new(root, crate::trust::Trust::Project, refusals);
     walkdir::WalkDir::new(root)
         .follow_links(false)
         .into_iter()
@@ -231,7 +241,8 @@ pub(crate) fn modules_under(root: &Path) -> BTreeMap<String, Vec<String>> {
             if !is_module_file(&module) {
                 return None;
             }
-            let imports = std::fs::read_to_string(entry.path())
+            let imports = guard
+                .read_to_string(relative)
                 .map(|source| {
                     // As the resolver reads them: `./helper.erg` is `helper.erg`.
                     imports_of(&source)
@@ -271,6 +282,25 @@ fn script_hot_reload_system(
     let mut by_root: BTreeMap<std::path::PathBuf, BTreeSet<String>> = BTreeMap::new();
     let mut rescan: BTreeSet<std::path::PathBuf> = BTreeSet::new();
     for event in &events {
+        // Too many changes came at once and some were dropped: every script
+        // of the root compiles again, and its list of them is read again.
+        if event.kind == AssetChangeKind::Rescan {
+            // What is on disk compiles again; what was mounted and is gone —
+            // its removal maybe among the changes dropped — is withdrawn.
+            let gone: Vec<String> = mounted
+                .map(|mounted| mounted.modules_of(&event.root))
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|module| !is_on_disk(&event.root, module))
+                .collect();
+            by_root.entry(event.root.to_path_buf()).or_default().extend(
+                modules_of_folder(&event.root, SCRIPT_DIR)
+                    .into_iter()
+                    .chain(gone),
+            );
+            rescan.insert(event.root.to_path_buf());
+            continue;
+        }
         // A folder that arrives brings its scripts; one merely modified —
         // which is what a save inside it also reports — brings nothing new.
         let arrived = event.kind == AssetChangeKind::Created;

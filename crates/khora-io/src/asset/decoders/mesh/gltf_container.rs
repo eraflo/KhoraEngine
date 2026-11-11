@@ -96,10 +96,18 @@ pub struct GltfContainer {
 }
 
 impl GltfContainer {
-    /// A container reading external files under `assets_root`.
+    /// A container reading external files under `assets_root`, its refusals
+    /// kept in memory. A run opens through [`Self::guarded`].
     pub fn new(assets_root: impl Into<PathBuf>) -> Self {
         Self {
             resolver: Arc::new(FileSystemResolver::new(assets_root.into())),
+        }
+    }
+
+    /// A container reading external files through `guard`.
+    pub fn guarded(guard: crate::trust::FileGuard) -> Self {
+        Self {
+            resolver: Arc::new(FileSystemResolver::guarded(guard)),
         }
     }
 }

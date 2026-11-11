@@ -41,6 +41,12 @@ use crate::asset::{AssetDecoder, DecoderRegistration};
 pub struct TextureDecoder;
 
 impl AssetDecoder<CpuTexture> for TextureDecoder {
+    fn sniff(&self, head: &[u8]) -> bool {
+        // The formats `image` recognises by their first bytes: what
+        // `load_from_memory` decodes.
+        image::guess_format(head).is_ok()
+    }
+
     fn load(
         &self,
         bytes: &[u8],

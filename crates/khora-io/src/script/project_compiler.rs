@@ -40,6 +40,7 @@ use crate::script::hot_reload::{importers_of, is_on_disk, modules_under};
 use crate::script::layout::{script_dir, SCRIPT_DIR};
 use crate::script::mirror::PreludeLoader;
 use crate::script::mounted::MountedScripts;
+use crate::trust::{FileGuard, Refusals, Trust};
 
 // What a compile is asked and hands on, named here so the engine's wiring
 // reaches them through the compiler it installs, without a dependency on
@@ -56,6 +57,7 @@ pub struct ProjectCompiler {
     problems: Option<Arc<Problems>>,
     reads: Option<Arc<Interest<ScriptReads>>>,
     mounted: Option<Arc<MountedScripts>>,
+    refusals: Option<Arc<Refusals>>,
 }
 
 impl ProjectCompiler {
@@ -70,7 +72,22 @@ impl ProjectCompiler {
                 .get::<Arc<Interest<ScriptReads>>>()
                 .cloned(),
             mounted: runtime.resources.get::<Arc<MountedScripts>>().cloned(),
+            refusals: runtime.resources.get::<Arc<Refusals>>().cloned(),
         }
+    }
+
+    /// A loader of the modules under `script_root`, through a guard
+    /// reporting to the runtime's refusals.
+    fn loader(&self, script_root: &Path) -> PreludeLoader<DiskLoader> {
+        let refusals = self
+            .refusals
+            .clone()
+            .unwrap_or_else(|| Arc::new(Refusals::new(None, None)));
+        PreludeLoader::new(DiskLoader::guarded(FileGuard::new(
+            script_root,
+            Trust::Project,
+            refusals,
+        )))
     }
 
     /// Compiles every module under `script_root` — a project's script
@@ -79,10 +96,10 @@ impl ProjectCompiler {
     /// each reads announced, what each compile found reported. A module that
     /// does not compile is reported and left out.
     pub fn compile_all(&self, script_root: &Path) -> Compiled {
-        let loader = PreludeLoader::new(DiskLoader::new(script_root));
+        let loader = self.loader(script_root);
         let mut compiled = Compiled::default();
         let mut declared = BTreeSet::new();
-        for module in modules_under(script_root).into_keys() {
+        for module in modules_under(script_root, self.refusals.as_ref()).into_keys() {
             let outcome = compile_module(&loader, &module);
             self.report(&module, &outcome);
             match outcome.program {
@@ -228,11 +245,11 @@ impl ProjectCompiler {
         // The folder spelled exactly: a `Scripts/` holds no modules, so every
         // one changed under it is gone.
         let on_disk = script_dir(root)
-            .map(|dir| modules_under(&dir))
+            .map(|dir| modules_under(&dir, self.refusals.as_ref()))
             .unwrap_or_default();
         let affected = importers_of(&on_disk, changed);
         let touched = affected.clone();
-        let loader = PreludeLoader::new(DiskLoader::new(&script_root));
+        let loader = self.loader(&script_root);
         let mut compiled = Compiled::default();
         let mut declared = BTreeSet::new();
 

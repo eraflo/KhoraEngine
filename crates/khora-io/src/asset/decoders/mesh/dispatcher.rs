@@ -62,13 +62,13 @@ impl MeshDispatcher {
     }
 
     /// Returns true when `bytes` looks like binary glTF (`glTF` magic).
-    fn is_glb(bytes: &[u8]) -> bool {
+    pub(super) fn is_glb(bytes: &[u8]) -> bool {
         bytes.len() >= 4 && &bytes[..4] == b"glTF"
     }
 
     /// Returns true when `bytes` parses as JSON starting with a `{` after
     /// optional whitespace — the standard gltf 2.0 JSON form.
-    fn looks_like_gltf_json(bytes: &[u8]) -> bool {
+    pub(super) fn looks_like_gltf_json(bytes: &[u8]) -> bool {
         for &b in bytes.iter().take(64) {
             match b {
                 b' ' | b'\t' | b'\r' | b'\n' => continue,
@@ -96,6 +96,12 @@ impl Default for MeshDispatcher {
 }
 
 impl AssetDecoder<Mesh> for MeshDispatcher {
+    fn sniff(&self, head: &[u8]) -> bool {
+        Self::is_glb(head)
+            || Self::looks_like_gltf_json(head)
+            || crate::trust::looks_like_text(head)
+    }
+
     fn load(&self, bytes: &[u8]) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
         self.load_at(bytes, Path::new(""))
     }

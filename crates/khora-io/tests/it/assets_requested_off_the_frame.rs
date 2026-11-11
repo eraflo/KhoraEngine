@@ -209,8 +209,9 @@ pub(crate) fn write_file(root: &Path, rel: &str, bytes: &[u8]) {
     std::fs::write(path, bytes).expect("the file is written");
 }
 
-/// The bytes of a font file; the font decoder keeps them as they are.
-const FONT_BYTES: &[u8] = b"font file bytes";
+/// The bytes of a font file — a TrueType file starts with `00 01 00 00`, and
+/// the font decoder reads only what does; it keeps them as they are.
+const FONT_BYTES: &[u8] = b"   font file bytes";
 const FONT: &str = "fonts/body.ttf";
 
 fn font() -> AssetUUID {
@@ -489,13 +490,13 @@ fn a_request_for_an_unknown_asset_stages_a_failure() {
 /// for a later generation, and decodes from the bytes on disk now.
 #[test]
 fn an_asset_invalidated_while_its_decode_is_in_flight_is_never_installed_stale() {
-    let project = Project::new(&[(FONT, b"old font")]);
+    let project = Project::new(&[(FONT, b"   old font")]);
     let mut world = World::new();
     project.svc().request::<Font>(&font());
     let first = project.filed();
     let in_flight = project.decode(&first);
 
-    project.write(FONT, b"new font");
+    project.write(FONT, b"   new font");
     project.svc().invalidate(&font());
     project.land(in_flight);
 
@@ -520,7 +521,7 @@ fn an_asset_invalidated_while_its_decode_is_in_flight_is_never_installed_stale()
     project.intake(&mut world);
     assert_eq!(
         font_data(project.svc().request::<Font>(&font())),
-        Some(b"new font".to_vec())
+        Some(b"   new font".to_vec())
     );
 }
 
@@ -528,12 +529,12 @@ fn an_asset_invalidated_while_its_decode_is_in_flight_is_never_installed_stale()
 /// index named may not be what the new one names.
 #[test]
 fn a_reindex_while_a_decode_is_in_flight_abandons_it() {
-    let project = Project::new(&[(FONT, b"old font")]);
+    let project = Project::new(&[(FONT, b"   old font")]);
     let mut world = World::new();
     project.svc().request::<Font>(&font());
     let in_flight = project.decode(&project.filed());
 
-    project.write(FONT, b"new font");
+    project.write(FONT, b"   new font");
     let index = project.index_bytes();
     project
         .svc()
@@ -551,7 +552,7 @@ fn a_reindex_while_a_decode_is_in_flight_abandons_it() {
     project.intake(&mut world);
     assert_eq!(
         font_data(project.svc().request::<Font>(&font())),
-        Some(b"new font".to_vec())
+        Some(b"   new font".to_vec())
     );
 }
 
@@ -559,7 +560,7 @@ fn a_reindex_while_a_decode_is_in_flight_abandons_it() {
 /// lease holds to its own asset's generation, not to every change.
 #[test]
 fn invalidating_another_asset_leaves_a_decode_in_flight_standing() {
-    let project = Project::new(&[(FONT, FONT_BYTES), ("fonts/title.ttf", b"title")]);
+    let project = Project::new(&[(FONT, FONT_BYTES), ("fonts/title.ttf", b"   title")]);
     let mut world = World::new();
     project.svc().request::<Font>(&font());
     let in_flight = project.decode(&project.filed());
@@ -582,7 +583,7 @@ fn invalidating_another_asset_leaves_a_decode_in_flight_standing() {
 fn the_decoding_reads_the_index_the_service_holds_now() {
     let project = Project::new(&[(FONT, FONT_BYTES)]);
     let decoding = AssetService::decoding(&project.service);
-    project.write("fonts/added.ttf", b"added");
+    project.write("fonts/added.ttf", b"   added");
     let index = project.index_bytes();
     project
         .svc()
@@ -597,7 +598,7 @@ fn the_decoding_reads_the_index_the_service_holds_now() {
         .downcast::<Font>()
         .expect("a font")
         .data;
-    assert_eq!(data, b"added");
+    assert_eq!(data, b"   added");
 }
 
 /// **The decoding follows the service its mutex holds**: the editor swaps a
@@ -606,7 +607,7 @@ fn the_decoding_reads_the_index_the_service_holds_now() {
 #[test]
 fn the_decoding_reads_the_service_swapped_into_its_mutex() {
     let first = Project::new(&[(FONT, FONT_BYTES)]);
-    let second = Project::new(&[("fonts/second.ttf", b"second")]);
+    let second = Project::new(&[("fonts/second.ttf", b"   second")]);
     let decoding = AssetService::decoding(&first.service);
 
     std::mem::swap(&mut *first.svc(), &mut *second.svc());
@@ -624,7 +625,7 @@ fn the_decoding_reads_the_service_swapped_into_its_mutex() {
 /// lands; asking again files nothing more.
 #[test]
 fn a_change_to_another_asset_while_a_decode_is_pending_files_nothing_more() {
-    let project = Project::new(&[(FONT, FONT_BYTES), ("fonts/title.ttf", b"title")]);
+    let project = Project::new(&[(FONT, FONT_BYTES), ("fonts/title.ttf", b"   title")]);
     assert_eq!(answer(&project.svc().request::<Font>(&font())), "Pending");
 
     project
@@ -843,8 +844,8 @@ fn a_part_of_a_frozen_id_gltf_changed_while_its_decode_is_in_flight_is_never_ins
 /// service, swapped in meanwhile, holds it and serves it.
 #[test]
 fn a_failure_decoded_by_a_service_swapped_out_never_lands_in_the_one_swapped_in() {
-    let engine = Project::new(&[("fonts/other.ttf", b"other")]);
-    let project = Project::new(&[(FONT, b"incoming project")]);
+    let engine = Project::new(&[("fonts/other.ttf", b"   other")]);
+    let project = Project::new(&[(FONT, b"   incoming project")]);
     let mut world = World::new();
     assert_eq!(answer(&engine.svc().request::<Font>(&font())), "Pending");
     let in_flight = engine.decode(&engine.filed());
@@ -876,8 +877,11 @@ fn a_failure_decoded_by_a_service_swapped_out_never_lands_in_the_one_swapped_in(
 /// own project's bytes, never the other's.
 #[test]
 fn a_decode_of_a_known_type_made_by_a_service_swapped_out_never_lands_in_the_one_swapped_in() {
-    let engine = Project::new(&[(FONT, b"outgoing project")]);
-    let project = Project::new(&[(FONT, b"incoming project"), ("fonts/title.ttf", b"title")]);
+    let engine = Project::new(&[(FONT, b"   outgoing project")]);
+    let project = Project::new(&[
+        (FONT, b"   incoming project"),
+        ("fonts/title.ttf", b"   title"),
+    ]);
     let mut world = World::new();
     project
         .svc()
@@ -904,7 +908,7 @@ fn a_decode_of_a_known_type_made_by_a_service_swapped_out_never_lands_in_the_one
 
     assert_eq!(
         font_data(engine.svc().request::<Font>(&font())),
-        Some(b"incoming project".to_vec()),
+        Some(b"   incoming project".to_vec()),
         "the service swapped in serves its own project's font"
     );
 }
@@ -917,8 +921,14 @@ fn a_decode_of_a_known_type_made_by_a_service_swapped_out_never_lands_in_the_one
 /// bytes before the change, so it is never served.
 #[test]
 fn a_request_filed_before_a_swap_and_decoded_after_it_holds_to_the_incoming_changes() {
-    let engine = Project::new(&[(FONT, b"outgoing project"), ("fonts/other.ttf", b"o")]);
-    let project = Project::new(&[(FONT, b"incoming v1"), ("fonts/title.ttf", b"title")]);
+    let engine = Project::new(&[
+        (FONT, b"   outgoing project"),
+        ("fonts/other.ttf", b"   o"),
+    ]);
+    let project = Project::new(&[
+        (FONT, b"   incoming v1"),
+        ("fonts/title.ttf", b"   title"),
+    ]);
     let mut world = World::new();
     // The outgoing service has seen a few changes; the incoming one, none.
     for _ in 0..4 {
@@ -944,7 +954,7 @@ fn a_request_filed_before_a_swap_and_decoded_after_it_holds_to_the_incoming_chan
     // The `loading` family takes the waiting request now: it decodes from the
     // incoming project.
     let in_flight = engine.decode(&waiting);
-    project.write(FONT, b"incoming v2");
+    project.write(FONT, b"   incoming v2");
     engine.svc().invalidate(&font());
     engine.land(in_flight);
     engine.intake(&mut world);
@@ -957,7 +967,7 @@ fn a_request_filed_before_a_swap_and_decoded_after_it_holds_to_the_incoming_chan
 
     assert_eq!(
         font_data(engine.svc().request::<Font>(&font())),
-        Some(b"incoming v2".to_vec()),
+        Some(b"   incoming v2".to_vec()),
         "the font decoded before it changed is never served"
     );
 }

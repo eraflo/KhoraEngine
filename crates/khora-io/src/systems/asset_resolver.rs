@@ -1625,7 +1625,9 @@ mod tests {
         }
 
         /// The bytes of a font file; the font decoder keeps them as they are.
-        const FONT_BYTES: &[u8] = b"font file bytes";
+        // A TrueType file starts with these bytes: the font decoder reads only
+        // what does.
+        const FONT_BYTES: &[u8] = b"   font file bytes";
 
         #[test]
         fn a_text_naming_a_font_asset_gets_its_handle_and_the_font_lands_in_the_store() {

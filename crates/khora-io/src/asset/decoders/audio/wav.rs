@@ -32,6 +32,10 @@ impl WavDecoder {
 }
 
 impl AssetDecoder<SoundData> for WavDecoder {
+    fn sniff(&self, head: &[u8]) -> bool {
+        crate::trust::magic::is_wav(head)
+    }
+
     fn load(&self, bytes: &[u8]) -> Result<SoundData, Box<dyn Error + Send + Sync>> {
         let cursor = Cursor::new(bytes);
         let mut reader = hound::WavReader::new(cursor)?;

@@ -249,7 +249,7 @@ fn a_material_asset_and_its_texture_resolve_once_decoded_off_the_frame() {
 fn a_text_font_resolves_once_its_decode_landed() {
     let path = "fonts/body.ttf";
     let font = AssetUUID::new_v5(path);
-    let project = Project::new(&[(path, b"font file bytes")]);
+    let project = Project::new(&[(path, b"   font file bytes")]);
     let mut world = World::new();
     let entity = world.spawn((
         ui_transform(),
@@ -275,7 +275,7 @@ fn a_text_font_resolves_once_its_decode_landed() {
         .get::<HandleComponent<Font>>(entity)
         .expect("the font");
     assert_eq!(held.uuid, font);
-    assert_eq!(held.handle.data, b"font file bytes");
+    assert_eq!(held.handle.data, b"   font file bytes");
     assert!(project.stored::<Font>(&font));
 }
 
@@ -313,7 +313,7 @@ fn a_ui_image_lands_in_the_store_once_decoded() {
 fn a_text_font_whose_decode_failed_is_not_requested_every_frame() {
     let path = "fonts/gone.ttf";
     let font = AssetUUID::new_v5(path);
-    let project = Project::new(&[(path, b"font bytes")]);
+    let project = Project::new(&[(path, b"   font bytes")]);
     project.remove(path);
     let mut world = World::new();
     let entity = world.spawn((

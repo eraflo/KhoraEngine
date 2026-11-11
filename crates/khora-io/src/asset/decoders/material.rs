@@ -48,6 +48,10 @@ use crate::asset::{AssetDecoder, DecoderRegistration};
 pub struct MaterialDecoder;
 
 impl AssetDecoder<Box<dyn Material>> for MaterialDecoder {
+    fn sniff(&self, head: &[u8]) -> bool {
+        crate::trust::looks_like_text(head)
+    }
+
     fn load(
         &self,
         bytes: &[u8],

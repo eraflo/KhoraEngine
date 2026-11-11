@@ -36,6 +36,13 @@ impl SymphoniaDecoder {
 }
 
 impl AssetDecoder<SoundData> for SymphoniaDecoder {
+    fn sniff(&self, head: &[u8]) -> bool {
+        crate::trust::magic::is_wav(head)
+            || head.starts_with(b"OggS")
+            || head.starts_with(b"fLaC")
+            || crate::trust::magic::is_mp3(head)
+    }
+
     fn load(&self, bytes: &[u8]) -> Result<SoundData, Box<dyn Error + Send + Sync>> {
         let mss = MediaSourceStream::new(Box::new(Cursor::new(bytes.to_vec())), Default::default());
 

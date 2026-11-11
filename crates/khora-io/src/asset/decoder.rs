@@ -32,4 +32,9 @@ pub trait AssetDecoder<A: Asset> {
         let _ = source_path;
         self.load(bytes)
     }
+
+    /// Whether `head`, the start of a file, is the start of a file this
+    /// decoder reads: its magic bytes, or text (UTF-8, no NUL) for a text
+    /// format. A file whose head this refuses is never decoded.
+    fn sniff(&self, head: &[u8]) -> bool;
 }

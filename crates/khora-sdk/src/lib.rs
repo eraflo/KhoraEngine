@@ -165,6 +165,9 @@ pub use khora_io::scene_loads::{install_scene_loading, LoadOutcome, SceneLoadHub
 pub use khora_io::serialization::{
     prefab_catalog, read_prefab, ReaderPrefabs, SerializationService, SerializationServiceError,
 };
+/// The user's folders the engine keeps its files in: `~/.khora`, a game's
+/// data folder.
+pub use khora_io::user_dirs;
 pub use khora_telemetry::MetricsRegistry;
 
 // Mesh type (used by editor ops)

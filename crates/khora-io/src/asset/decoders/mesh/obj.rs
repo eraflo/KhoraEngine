@@ -29,6 +29,10 @@ use crate::asset::AssetDecoder;
 pub struct ObjDecoder;
 
 impl AssetDecoder<Mesh> for ObjDecoder {
+    fn sniff(&self, head: &[u8]) -> bool {
+        crate::trust::looks_like_text(head)
+    }
+
     fn load(&self, bytes: &[u8]) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
         let obj_text = std::str::from_utf8(bytes).context("OBJ file is not valid UTF-8")?;
 

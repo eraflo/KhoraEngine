@@ -162,6 +162,63 @@ fn the_script_pump_compiles_against_the_root_the_change_came_from() {
     );
 }
 
+/// **A script deleted during a flood is withdrawn by the rescan that
+/// follows.** Thousands of files land under the watched root at once, so the
+/// root's budget drops events, and a script is deleted while it does: its
+/// `Removed` is among those dropped. The rescan that comes once the flood is
+/// quiet re-reads every script — the one on disk is compiled again, and the
+/// one gone is withdrawn, rather than left running code whose file is gone.
+///
+/// The root is mounted first, as `scripts::mount` mounts it: its modules
+/// recorded in the runtime's `MountedScripts` under the name the watch knows
+/// the root by, so the runtime knows `game/gone.erg` is running.
+#[test]
+fn a_script_deleted_during_a_flood_is_withdrawn_by_the_rescan() {
+    use khora_io::script::hot_reload::module_names;
+    use khora_io::script::mounted::MountedScripts;
+
+    let assets = tempfile::TempDir::new().expect("a temp dir");
+    assets_with_guard(assets.path());
+    let gone = assets.path().join("scripts/game/gone.erg");
+    std::fs::write(&gone, "behavior Gone { int ticks = 0; }").expect("writes");
+    let flood = assets.path().join("flood");
+    std::fs::create_dir_all(&flood).expect("makes the flood folder");
+    let (mut runtime, watch) = watching(&[assets.path()]);
+
+    let named = watch
+        .named(assets.path())
+        .unwrap_or_else(|| assets.path().to_path_buf());
+    let modules = module_names(&assets.path().join("scripts"));
+    assert!(
+        modules.iter().any(|module| module == "game/gone.erg"),
+        "the mount records the script to be deleted: {modules:?}"
+    );
+    let mounted = Arc::new(MountedScripts::default());
+    mounted.record(&named, modules);
+    runtime.resources.insert(mounted);
+
+    for file in 0..3000 {
+        std::fs::write(flood.join(format!("f{file}.txt")), b"x").expect("writes");
+    }
+    std::fs::remove_file(&gone).expect("deletes the script");
+
+    let mut seen: Vec<String> = Vec::new();
+    run_until("script_hot_reload", &runtime, || {
+        seen = sent(&runtime);
+        seen.iter().any(|module| module == "game/guard.erg")
+            && seen.iter().any(|module| module == "game/gone.erg")
+    });
+
+    assert!(
+        seen.iter().any(|module| module == "game/guard.erg"),
+        "the rescan reached the script pump: every script on disk compiled again: {seen:?}"
+    );
+    assert!(
+        seen.iter().any(|module| module == "game/gone.erg"),
+        "the script deleted during the flood is withdrawn: {seen:?}"
+    );
+}
+
 // ─── The shader pump ────────────────────────────────────────────────────────
 
 /// A pipeline system that records the overlays it is handed and builds
@@ -381,6 +438,55 @@ fn the_shader_pump_overlays_a_shader_saved_under_a_watched_root() {
             .overlays()
             .contains(&("khora::std::camera".to_owned(), "// after".to_owned())),
         "the saved shader was overlaid under its logical name: {:?}",
+        pipelines.overlays()
+    );
+}
+
+/// **A shader saved during a flood is overlaid by the rescan that follows.**
+/// Thousands of files land under the shader tree at once, so its budget drops
+/// events, and a shader is saved while it does: its change is among those
+/// dropped. The rescan that comes once the flood is quiet reads every shader
+/// under the root again: the saved one is overlaid with its new source, and
+/// one untouched is overlaid too — which only a rescan does.
+#[test]
+fn a_shader_saved_during_a_flood_is_overlaid_by_the_rescan() {
+    let shaders = tempfile::TempDir::new().expect("a temp dir");
+    let camera = shaders.path().join("lib/std/camera.wgsl");
+    std::fs::create_dir_all(camera.parent().expect("a parent")).expect("makes the shader tree");
+    std::fs::write(&camera, "// before").expect("writes");
+    std::fs::write(shaders.path().join("lib/std/light.wgsl"), "// light").expect("writes");
+    let flood = shaders.path().join("flood");
+    std::fs::create_dir_all(&flood).expect("makes the flood folder");
+    let (mut runtime, _watch) = watching(&[shaders.path()]);
+
+    let pipelines = Arc::new(RecordingPipelines::default());
+    let as_system: Arc<dyn PipelineSystem> = pipelines.clone();
+    runtime.resources.insert(as_system);
+    let device: Arc<dyn GraphicsDevice> = Arc::new(UnusedDevice);
+    runtime.backends.insert(device);
+
+    for file in 0..3000 {
+        std::fs::write(flood.join(format!("f{file}.txt")), b"x").expect("writes");
+    }
+    std::fs::write(&camera, "// after").expect("edits");
+    let untouched = ("khora::std::light".to_owned(), "// light".to_owned());
+    run_until("shader_hot_reload", &runtime, || {
+        let overlays = pipelines.overlays();
+        overlays.contains(&("khora::std::camera".to_owned(), "// after".to_owned()))
+            && overlays.contains(&untouched)
+    });
+
+    assert!(
+        pipelines.overlays().contains(&untouched),
+        "the rescan reached the shader pump: an untouched shader is read again: {:?}",
+        pipelines.overlays()
+    );
+
+    assert!(
+        pipelines
+            .overlays()
+            .contains(&("khora::std::camera".to_owned(), "// after".to_owned())),
+        "the shader saved during the flood is overlaid: {:?}",
         pipelines.overlays()
     );
 }

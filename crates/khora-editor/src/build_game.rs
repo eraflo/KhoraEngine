@@ -645,8 +645,7 @@ fn workspace_root_from_target_dir(target_dir: &Path) -> Option<PathBuf> {
 /// Returns `~/.khora/engines/` if accessible. The hub manages this
 /// directory; the editor reads from it.
 fn engine_cache_dir() -> Option<PathBuf> {
-    let home = dirs_home()?;
-    let p = home.join(".khora").join("engines");
+    let p = khora_sdk::user_dirs::khora_dir(&|key| std::env::var_os(key))?.join("engines");
     if p.is_dir() {
         Some(p)
     } else {
@@ -670,17 +669,6 @@ fn find_file_recursive(dir: &Path, filename: &str) -> Option<PathBuf> {
         } else if p.file_name().and_then(|n| n.to_str()) == Some(filename) {
             return Some(p);
         }
-    }
-    None
-}
-
-fn dirs_home() -> Option<PathBuf> {
-    // Avoid a hard dep on `dirs`; fall back to OS-standard env vars.
-    if let Some(h) = std::env::var_os("HOME") {
-        return Some(PathBuf::from(h));
-    }
-    if let Some(p) = std::env::var_os("USERPROFILE") {
-        return Some(PathBuf::from(p));
     }
     None
 }

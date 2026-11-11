@@ -36,6 +36,10 @@ impl Asset for PrefabAsset {}
 pub struct PrefabDecoder;
 
 impl AssetDecoder<PrefabAsset> for PrefabDecoder {
+    fn sniff(&self, head: &[u8]) -> bool {
+        head.starts_with(&khora_core::scene::HEADER_MAGIC_BYTES)
+    }
+
     fn load(
         &self,
         bytes: &[u8],

@@ -46,6 +46,16 @@ pub fn pump(pvfs_mutex: &Arc<Mutex<ProjectVfs>>, editor_state: &Arc<Mutex<Editor
             AssetChangeKind::Modified => {
                 modified.insert(e.rel_path);
             }
+            AssetChangeKind::Rescan => {
+                // Too many changes came at once and some were dropped:
+                // every file is read again, and the tree indexed again.
+                log::warn!("Hot reload: too many changes at once — every asset is reloaded");
+                let files: Vec<String> = (pvfs.assets().index().iter_all())
+                    .map(|metadata| khora_sdk::khora_core::asset::asset_key(&metadata.source_path))
+                    .collect();
+                modified.extend(files);
+                needs_reindex = true;
+            }
             AssetChangeKind::Created | AssetChangeKind::Removed => {
                 // A file replaced in place (removed, then created) must not
                 // keep serving what was decoded from its former bytes.

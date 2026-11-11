@@ -29,6 +29,7 @@ use super::file::FileLoader;
 use super::id_registry::AssetIdRegistry;
 use super::index_builder::IndexBuilder;
 use super::AssetService;
+use crate::trust::{FileGuard, Trust};
 
 impl AssetService {
     /// Walks `inventory::iter::<DecoderRegistration>` and runs each entry's
@@ -74,11 +75,18 @@ impl AssetService {
     /// `assets_root`. A glTF file is also a container: its scenes,
     /// primitives, materials and textures are sub-assets of their own (see
     /// [`GltfContainer`](super::decoders::mesh::GltfContainer)).
+    ///
+    /// A glTF's files are read through a guard reporting to this service's
+    /// refusals ([`Self::set_refusals`], set before), at a trusted project's
+    /// trust.
     pub fn register_default_decoders(&mut self, assets_root: &Path) {
         self.register_inventory_decoders();
         self.register_decoder::<SoundData>("audio", SymphoniaDecoder);
-        let gltf_resolver = Arc::new(FileSystemResolver::new(assets_root));
+        let refusals = self.refusals();
+        let guard = || FileGuard::new(assets_root, Trust::Project, Arc::clone(&refusals));
+        let gltf_resolver = Arc::new(FileSystemResolver::guarded(guard()));
+        let container = GltfContainer::guarded(guard());
         self.register_decoder::<Mesh>("mesh", MeshDispatcher::new(gltf_resolver));
-        self.register_container("mesh", GltfContainer::new(assets_root));
+        self.register_container("mesh", container);
     }
 }

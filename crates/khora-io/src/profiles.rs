@@ -26,6 +26,9 @@ use khora_core::agent::gorna::CostProfile;
 use khora_core::app::GameIdentity;
 use khora_core::platform::MachineIdentity;
 
+use crate::user_dirs::var;
+pub use crate::user_dirs::{data_dir, home_dir};
+
 /// Where a profile is filed: a player's machine, or a developer's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProfilePlace {
@@ -86,37 +89,6 @@ pub fn path_safe(name: &str) -> String {
 
 /// The longest a [`path_safe`] name is.
 const MAX_NAME: usize = 64;
-
-/// `env`'s value for `key`, when it names something.
-fn var(env: &dyn Fn(&str) -> Option<OsString>, key: &str) -> Option<PathBuf> {
-    env(key)
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
-}
-
-/// The user's home folder — `USERPROFILE` on Windows, `HOME` elsewhere — read
-/// through `env`.
-pub fn home_dir(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
-    if cfg!(windows) {
-        var(env, "USERPROFILE")
-    } else {
-        var(env, "HOME")
-    }
-}
-
-/// The per-user data folder, read through `env`: `%APPDATA%` on Windows;
-/// `$HOME/Library/Application Support` on macOS; `$XDG_DATA_HOME`, else
-/// `$HOME/.local/share`, elsewhere.
-pub fn data_dir(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
-    if cfg!(windows) {
-        var(env, "APPDATA")
-    } else if cfg!(target_os = "macos") {
-        home_dir(env).map(|home| home.join("Library").join("Application Support"))
-    } else {
-        var(env, "XDG_DATA_HOME")
-            .or_else(|| home_dir(env).map(|home| home.join(".local").join("share")))
-    }
-}
 
 /// The file a profile of `machine` running `game` is filed in, `env` read for
 /// its folders:

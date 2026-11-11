@@ -35,7 +35,7 @@ use crate::{commands, gizmo, hot_reload, input, ops};
 
 impl EngineApp for EditorApp {
     /// The editor keeps what the engine learns of this machine.
-    fn keeps_machine_profiles() -> bool {
+    fn keeps_user_files() -> bool {
         true
     }
 
