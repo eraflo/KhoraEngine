@@ -189,6 +189,7 @@ fn epoch_record(epoch: u64) -> EpochRecord {
         frames: FrameSummary::default(),
         in_force: Vec::new(),
         planning: Planning::default(),
+        planned: Vec::new(),
     }
 }
 
@@ -945,6 +946,161 @@ fn an_older_journal_reads_its_calibration() {
         assert_eq!(read.why, written.why);
         assert_eq!(read.planning, written.planning);
     }
+}
+
+// ── The rows each round planned ───────────────────────────────────
+
+/// The rows a round of `ALPHA` and `BETA` planned: `ALPHA` its `Balanced`,
+/// `BETA` its `Custom(3)`.
+fn some_rows_planned() -> Vec<(AgentId, StrategyId)> {
+    vec![(ALPHA, StrategyId::Balanced), (BETA, StrategyId::Custom(3))]
+}
+
+/// **The journal keeps the rows each round planned.** The epoch that planned
+/// a row for each agent reads them back as written, and the other epoch reads
+/// back none. Two hundred epochs naming both agents in their planned rows
+/// still write each name a single time: the rows name their agents through
+/// the journal's table.
+#[test]
+fn the_journal_keeps_the_rows_planned() {
+    let mut trace = journal(2);
+    trace.epochs[0].planned = some_rows_planned();
+
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let read: DecisionTrace = serde_json::from_str(&written).expect("a journal reads back");
+
+    assert_eq!(
+        read.epochs[0].planned,
+        some_rows_planned(),
+        "written as {written}"
+    );
+    assert!(
+        read.epochs[1].planned.is_empty(),
+        "{:?}",
+        read.epochs[1].planned
+    );
+    assert_eq!(read, trace, "every epoch reads back as written");
+
+    let mut long = journal(200);
+    for epoch in &mut long.epochs {
+        epoch.planned = some_rows_planned();
+    }
+    let long = serde_json::to_string(&long).expect("a journal serialises");
+    assert_eq!(long.matches(ALPHA.name()).count(), 1, "{ALPHA} once");
+    assert_eq!(long.matches(BETA.name()).count(), 1, "{BETA} once");
+}
+
+/// **A journal written before the rows planned were kept reads none.** Its
+/// epochs carry no `planned`: they read back planning no row, and everything
+/// else as written.
+#[test]
+fn an_older_journal_reads_none() {
+    let mut trace = journal(2);
+    for epoch in &mut trace.epochs {
+        epoch.planned = some_rows_planned();
+    }
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    let mut older: serde_json::Value = serde_json::from_str(&written).expect("a journal is JSON");
+    for epoch in older["epochs"].as_array_mut().expect("the epochs") {
+        epoch
+            .as_object_mut()
+            .expect("an epoch")
+            .remove("planned")
+            .unwrap_or_else(|| panic!("the rows planned are written: {written}"));
+    }
+
+    let read = serde_json::from_value::<DecisionTrace>(older).expect("an older journal reads");
+
+    assert_eq!(read.epochs.len(), 2);
+    for (read, written) in read.epochs.iter().zip(&trace.epochs) {
+        assert!(read.planned.is_empty(), "{:?}", read.planned);
+        assert_eq!(read.allocation, written.allocation);
+        assert_eq!(read.offers, written.offers);
+        assert_eq!(read.reports, written.reports);
+        assert_eq!(read.why, written.why);
+        assert_eq!(read.planning, written.planning);
+        assert_eq!(read.corrections, written.corrections);
+    }
+}
+
+/// **A row planned for an agent named nowhere else reads back.** An epoch
+/// plans a row for an agent its allocation, offers and reports never name
+/// (an agent that offered a row and was then lent nothing): the journal's
+/// table names it, and the epoch reads it back as written.
+#[test]
+fn a_row_planned_for_an_agent_named_nowhere_else_reads_back() {
+    const OMEGA: AgentId = AgentId::new("omega-planned-only");
+    let mut trace = journal(2);
+    trace.epochs[1].planned = vec![(OMEGA, StrategyId::HighPerformance)];
+
+    let written = serde_json::to_string(&trace).expect("a journal serialises");
+    assert_eq!(written.matches(OMEGA.name()).count(), 1, "{written}");
+    let read: DecisionTrace = serde_json::from_str(&written).expect("a journal reads back");
+
+    assert_eq!(
+        read.epochs[1].planned,
+        vec![(OMEGA, StrategyId::HighPerformance)]
+    );
+    assert_eq!(read, trace, "every epoch reads back as written");
+}
+
+// ── The last decision, as a tool reads it ─────────────────────────
+
+/// A decision of epoch `epoch`, opened by `trigger`, lending `ALPHA`
+/// `micros` on the host and planning its `Balanced`.
+fn a_decision(epoch: u64, trigger: Trigger, micros: u64) -> super::DecisionView {
+    super::DecisionView {
+        epoch: Epoch(epoch),
+        trigger,
+        target: Duration::from_micros(16_667),
+        why: a_greedy_why(),
+        envelopes: vec![(
+            ALPHA,
+            Envelope {
+                time: host_time(micros),
+                ..Envelope::default()
+            },
+        )],
+        planned: vec![(ALPHA, StrategyId::Balanced)],
+        corrections: some_corrections(),
+        planning: a_planning(),
+        replayed: false,
+    }
+}
+
+/// **A decision watch shows the last decision published.** Before any is
+/// published it shows none; published twice, it shows the second, whole;
+/// every clone of the handle — the DCC's, a tool's — shows the same one, and
+/// one published through a clone is seen through the first.
+#[test]
+fn a_decision_watch_shows_the_last_published() {
+    let watch = super::DecisionWatch::default();
+    let tool = watch.clone();
+    assert_eq!(watch.latest(), None, "no decision published yet");
+    assert_eq!(tool.latest(), None, "no decision published yet");
+
+    watch.publish(a_decision(1, Trigger::Initial, 4_000));
+    watch.publish(a_decision(2, Trigger::Overruns, 3_000));
+
+    assert_eq!(
+        watch.latest(),
+        Some(a_decision(2, Trigger::Overruns, 3_000)),
+        "the second decision, the last published"
+    );
+    assert_eq!(
+        tool.latest(),
+        Some(a_decision(2, Trigger::Overruns, 3_000)),
+        "a clone shows the same decision"
+    );
+
+    let mut replayed = a_decision(3, Trigger::Refresh, 2_500);
+    replayed.replayed = true;
+    tool.publish(replayed.clone());
+    assert_eq!(
+        watch.latest(),
+        Some(replayed),
+        "published through a clone, seen through the first"
+    );
 }
 
 // ── The frame report ──────────────────────────────────────────────

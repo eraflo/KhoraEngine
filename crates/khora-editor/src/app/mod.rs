@@ -70,6 +70,8 @@ pub struct EditorApp {
     /// Plane summary bar — exposes mode, budget multiplier, hardware
     /// load.
     dcc_context: Option<Arc<std::sync::RwLock<khora_sdk::DccContext>>>,
+    /// The DCC's last decision, for the Control Plane inspector.
+    decision_watch: Option<khora_sdk::khora_core::agent::gorna::DecisionWatch>,
     /// View info computed in `before_agents` and re-used by
     /// `after_agents` for gizmo rendering.
     last_view_info: Option<ViewInfo>,
@@ -173,6 +175,10 @@ impl EditorApp {
         self.dcc_context = runtime
             .resources
             .get::<Arc<std::sync::RwLock<khora_sdk::DccContext>>>()
+            .cloned();
+        self.decision_watch = runtime
+            .resources
+            .get::<khora_sdk::khora_core::agent::gorna::DecisionWatch>()
             .cloned();
         self.raw_window = runtime
             .resources

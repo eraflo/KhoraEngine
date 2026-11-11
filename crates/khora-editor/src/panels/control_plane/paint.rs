@@ -90,3 +90,44 @@ impl AgentSnapshot {
         }
     }
 }
+
+/// Paints `text` from `pos`, word-wrapped to `width`: one run per line,
+/// split at spaces, each line under the previous one. Returns the height
+/// under the last line. The editor's text calls paint a single line, so a
+/// sentence longer than its column is laid out here.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn wrapped(
+    ui: &mut dyn UiBuilder,
+    pos: [f32; 2],
+    text: &str,
+    size: f32,
+    color: [f32; 4],
+    family: FontFamilyHint,
+    width: f32,
+) -> f32 {
+    let line_h = (size * 1.45).round();
+    let mut y = pos[1];
+    let mut line = String::new();
+    let paint_line = |ui: &mut dyn UiBuilder, line: &str, y: f32| {
+        ui.paint_text_styled([pos[0], y], line, size, color, family, TextAlign::Left);
+    };
+    for word in text.split(' ').filter(|word| !word.is_empty()) {
+        let candidate = if line.is_empty() {
+            word.to_owned()
+        } else {
+            format!("{line} {word}")
+        };
+        if !line.is_empty() && ui.measure_text(&candidate, size, family)[0] > width {
+            paint_line(ui, &line, y);
+            y += line_h;
+            line = word.to_owned();
+        } else {
+            line = candidate;
+        }
+    }
+    if !line.is_empty() {
+        paint_line(ui, &line, y);
+        y += line_h;
+    }
+    y
+}

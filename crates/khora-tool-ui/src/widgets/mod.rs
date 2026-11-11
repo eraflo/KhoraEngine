@@ -66,6 +66,7 @@ pub mod film;
 pub mod indicators;
 pub mod loading;
 pub mod mark;
+pub mod measure;
 pub mod modal;
 pub mod nav;
 pub mod paint;

@@ -19,8 +19,9 @@
 //! `importance.rs`), a round planned beyond its frame — switch charges,
 //! margin, growth — and the planner that learns them (`planning.rs`), the
 //! cost book that corrects each row's quoted host time and what a round makes
-//! of it (`cost_book.rs`), and it counts the agents whose report says they are
-//! stalled (`stalls.rs`).
+//! of it (`cost_book.rs`), what the arbitrator keeps to explain its last
+//! decision, live or reissued from a journal (`decision.rs`), and it counts
+//! the agents whose report says they are stalled (`stalls.rs`).
 //!
 //! The fake agent, [`Bidder`], speaks the protocol (`offer`, `apply`,
 //! `report`).
@@ -29,6 +30,7 @@ mod allocate;
 mod arbiter;
 mod cost_book;
 mod decide;
+mod decision;
 mod exact;
 mod importance;
 mod planning;

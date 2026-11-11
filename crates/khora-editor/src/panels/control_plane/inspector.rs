@@ -16,19 +16,24 @@
 
 use khora_sdk::editor_ui::*;
 
+use khora_sdk::khora_core::agent::gorna::DecisionView;
+
+use super::decision::{paint_decision_cards, Card};
 use super::paint::{kv, paint_card_box};
 use super::{AgentSnapshot, ControlPlanePanel};
 use crate::widgets::panel_header::{paint_panel_header, paint_status_dot, panel_tab};
+use khora_tool_ui::widgets::measure::Measuring;
 use khora_tool_ui::widgets::paint;
 use khora_tool_ui::widgets::with_alpha;
 use khora_tool_ui::widgets::Health;
 
 impl ControlPlanePanel {
     pub(super) fn paint_inspector_panel(
-        &self,
+        &mut self,
         ui: &mut dyn UiBuilder,
         rect: [f32; 4],
         agent: Option<&AgentSnapshot>,
+        decision: Option<&DecisionView>,
         theme: &UiTheme,
     ) {
         let [x, y, w, h] = rect;
@@ -130,121 +135,171 @@ impl ControlPlanePanel {
             1.0,
         );
 
-        // Cards — each shows real fields from the Report + ExecutionTiming.
-        let mut cy = y + 108.0;
-        cy = paint_card_box(
-            ui,
-            x + 8.0,
-            cy,
-            w - 16.0,
-            "Execution Timing",
-            Icon::Settings,
-            theme,
-        );
-        kv(
-            ui,
-            x + 18.0,
-            cy + 6.0,
-            w - 36.0,
-            "Default phase",
-            &format!("{}", agent.default_phase),
-            theme,
-        );
-        cy += 22.0;
-        kv(
-            ui,
-            x + 18.0,
-            cy + 6.0,
-            w - 36.0,
-            "Importance",
-            agent.importance_letter_label(),
-            theme,
-        );
-        cy += 22.0;
-        kv(
-            ui,
-            x + 18.0,
-            cy + 6.0,
-            w - 36.0,
-            "Priority",
-            &format!("{:.2}", agent.priority),
-            theme,
-        );
-        cy += 28.0;
-
-        cy = paint_card_box(ui, x + 8.0, cy, w - 16.0, "Health", Icon::Zap, theme);
-        kv(
-            ui,
-            x + 18.0,
-            cy + 6.0,
-            w - 36.0,
-            "Score",
-            &format!("{:.2}", agent.report.health),
-            theme,
-        );
-        cy += 22.0;
-        kv(
-            ui,
-            x + 18.0,
-            cy + 6.0,
-            w - 36.0,
-            "Stalled",
-            if agent.report.stalled { "yes" } else { "no" },
-            theme,
-        );
-        cy += 22.0;
-        let bar_color = Health::from_ratio(agent.report.health).color(theme);
-        khora_tool_ui::widgets::meter_bar(
+        // Cards — each shows real fields from the Report + ExecutionTiming,
+        // then the DCC's last decision. Below the header they scroll: the
+        // decision cards are taller than a short panel. They are laid out
+        // first without painting, so the wheel is clamped to the height they
+        // take on this very frame — never an offset they no longer reach.
+        let view = [x, y + 104.0, w, (h - 108.0).max(0.0)];
+        let content_h = {
+            let mut measuring = Measuring::new(&*ui);
+            paint_cards(&mut measuring, x, 0.0, w, agent, decision, theme) + 12.0
+        };
+        self.inspector_scroll.update(ui, view, content_h);
+        ui.push_clip_rect(view);
+        let top = view[1] + 4.0 - self.inspector_scroll.offset();
+        paint_cards(ui, x, top, w, agent, decision, theme);
+        ui.pop_clip_rect();
+        khora_tool_ui::widgets::scrollbar(
             ui,
             theme,
-            [x + 18.0, cy + 4.0, w - 36.0, 3.0],
-            agent.report.health.clamp(0.0, 1.0),
-            bar_color,
+            view,
+            content_h,
+            &mut self.inspector_scroll,
+            "cp-inspector-scroll",
         );
-        cy += 18.0;
-
-        cy = paint_card_box(
-            ui,
-            x + 8.0,
-            cy,
-            w - 16.0,
-            "Active Strategy",
-            Icon::Branch,
-            theme,
-        );
-        ui.paint_rect_filled(
-            [x + 18.0, cy],
-            [w - 36.0, 22.0],
-            with_alpha(theme.success, 0.10),
-            theme.radius_sm,
-        );
-        ui.paint_rect_stroke(
-            [x + 18.0, cy],
-            [w - 36.0, 22.0],
-            with_alpha(theme.success, 0.25),
-            theme.radius_sm,
-            1.0,
-        );
-        paint_status_dot(ui, [x + 24.0, cy + 11.0], theme.success);
-        paint::text(
-            ui,
-            [x + 36.0, cy + 5.0],
-            agent.strategy_label(),
-            11.5,
-            theme.text,
-        );
-        cy += 30.0;
-
-        if let Some(message) = &agent.report.message {
-            cy = paint_card_box(ui, x + 8.0, cy, w - 16.0, "Message", Icon::Info, theme);
-            ui.paint_text_styled(
-                [x + 18.0, cy + 4.0],
-                message,
-                11.0,
-                theme.text_dim,
-                FontFamilyHint::Proportional,
-                TextAlign::Left,
-            );
-        }
     }
+}
+
+/// Paints the inspector's cards for `agent` from `top`, in a column at `x`,
+/// `w` wide. Returns the height under the last card.
+fn paint_cards(
+    ui: &mut dyn UiBuilder,
+    x: f32,
+    top: f32,
+    w: f32,
+    agent: &AgentSnapshot,
+    decision: Option<&DecisionView>,
+    theme: &UiTheme,
+) -> f32 {
+    let mut cy = top;
+    cy = paint_card_box(
+        ui,
+        x + 8.0,
+        cy,
+        w - 16.0,
+        "Execution Timing",
+        Icon::Settings,
+        theme,
+    );
+    kv(
+        ui,
+        x + 18.0,
+        cy + 6.0,
+        w - 36.0,
+        "Default phase",
+        &format!("{}", agent.default_phase),
+        theme,
+    );
+    cy += 22.0;
+    kv(
+        ui,
+        x + 18.0,
+        cy + 6.0,
+        w - 36.0,
+        "Importance",
+        agent.importance_letter_label(),
+        theme,
+    );
+    cy += 22.0;
+    kv(
+        ui,
+        x + 18.0,
+        cy + 6.0,
+        w - 36.0,
+        "Priority",
+        &format!("{:.2}", agent.priority),
+        theme,
+    );
+    cy += 28.0;
+
+    cy = paint_card_box(
+        ui,
+        x + 8.0,
+        cy,
+        w - 16.0,
+        "Active Strategy",
+        Icon::Branch,
+        theme,
+    );
+    ui.paint_rect_filled(
+        [x + 18.0, cy],
+        [w - 36.0, 22.0],
+        with_alpha(theme.success, 0.10),
+        theme.radius_sm,
+    );
+    ui.paint_rect_stroke(
+        [x + 18.0, cy],
+        [w - 36.0, 22.0],
+        with_alpha(theme.success, 0.25),
+        theme.radius_sm,
+        1.0,
+    );
+    paint_status_dot(ui, [x + 24.0, cy + 11.0], theme.success);
+    paint::text(
+        ui,
+        [x + 36.0, cy + 5.0],
+        agent.strategy_label(),
+        11.5,
+        theme.text,
+    );
+    cy += 30.0;
+
+    cy = paint_decision_cards(
+        ui,
+        Card {
+            x: x + 8.0,
+            w: w - 16.0,
+        },
+        cy,
+        agent,
+        decision,
+        theme,
+    );
+
+    cy = paint_card_box(ui, x + 8.0, cy, w - 16.0, "Health", Icon::Zap, theme);
+    kv(
+        ui,
+        x + 18.0,
+        cy + 6.0,
+        w - 36.0,
+        "Score",
+        &format!("{:.2}", agent.report.health),
+        theme,
+    );
+    cy += 22.0;
+    kv(
+        ui,
+        x + 18.0,
+        cy + 6.0,
+        w - 36.0,
+        "Stalled",
+        if agent.report.stalled { "yes" } else { "no" },
+        theme,
+    );
+    cy += 22.0;
+    let bar_color = Health::from_ratio(agent.report.health).color(theme);
+    khora_tool_ui::widgets::meter_bar(
+        ui,
+        theme,
+        [x + 18.0, cy + 4.0, w - 36.0, 3.0],
+        agent.report.health.clamp(0.0, 1.0),
+        bar_color,
+    );
+    cy += 18.0;
+
+    if let Some(message) = &agent.report.message {
+        cy = paint_card_box(ui, x + 8.0, cy, w - 16.0, "Message", Icon::Info, theme);
+        ui.paint_text_styled(
+            [x + 18.0, cy + 4.0],
+            message,
+            11.0,
+            theme.text_dim,
+            FontFamilyHint::Proportional,
+            TextAlign::Left,
+        );
+        cy += 22.0;
+    }
+
+    cy - top
 }

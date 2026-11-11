@@ -87,6 +87,9 @@ pub struct DccService {
     /// What the cost book has learnt, published by the DCC's thread each
     /// tick.
     learnt_costs: Arc<std::sync::RwLock<Vec<khora_core::agent::gorna::ProfileRow>>>,
+    /// The last decision, published by the DCC's thread after each live
+    /// round and each replayed epoch.
+    decision_watch: khora_core::agent::gorna::DecisionWatch,
     /// When `Some((trace, cursor))`, the DCC lends the trace's allocations,
     /// one a tick, instead of asking for offers.
     replay: Arc<std::sync::RwLock<Option<(DecisionTrace, usize)>>>,
@@ -113,6 +116,7 @@ impl DccService {
             recorded_trace: Arc::new(std::sync::RwLock::new(DecisionTrace::default())),
             seeded_costs: Arc::new(std::sync::RwLock::new(Vec::new())),
             learnt_costs: Arc::new(std::sync::RwLock::new(Vec::new())),
+            decision_watch: khora_core::agent::gorna::DecisionWatch::default(),
             replay: Arc::new(std::sync::RwLock::new(None)),
             hardware_monitor: Arc::new(std::sync::RwLock::new(None)),
         };
@@ -283,6 +287,13 @@ impl DccService {
             .read()
             .map(|learnt| learnt.clone())
             .unwrap_or_default()
+    }
+
+    /// The handle on the DCC's last decision: its thread publishes one after
+    /// each live round and each replayed epoch, and a tool reads it from any
+    /// thread.
+    pub fn decision_watch(&self) -> khora_core::agent::gorna::DecisionWatch {
+        self.decision_watch.clone()
     }
 
     /// The monitor the DCC reads the hardware from, if it was given one.

@@ -323,6 +323,7 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::gorna::GornaArbitrator::reissue;
     let _ = khora_control::gorna::GornaArbitrator::cost_book_mut;
     let _ = khora_control::gorna::GornaArbitrator::corrections;
+    let _ = khora_control::gorna::GornaArbitrator::planned;
 
     // --- module `gorna::cost_book`
     let _ = type_name::<khora_control::gorna::cost_book::CostBook>();
@@ -444,6 +445,7 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::dcc_service::DccService::start_decision_recording;
     let _ = khora_control::dcc_service::DccService::stop_decision_recording;
     let _ = khora_control::dcc_service::DccService::recorded_decisions;
+    let _ = khora_control::dcc_service::DccService::decision_watch;
     let _ = khora_control::dcc_service::DccService::replay_decisions;
     let _ = khora_control::dcc_service::DccService::stop_replay;
     let _ = khora_control::dcc_service::DccService::is_replaying;

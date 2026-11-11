@@ -204,6 +204,7 @@ mod tests {
             },
             in_force: Vec::new(),
             planning: khora_core::agent::gorna::Planning::default(),
+            planned: Vec::new(),
         };
         DecisionTrace {
             epochs: vec![epoch(1), epoch(2)],

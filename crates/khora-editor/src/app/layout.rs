@@ -167,6 +167,7 @@ impl EditorApp {
                 brand_theme.clone(),
                 self.agent_registry.clone(),
                 self.dcc_context.clone(),
+                self.decision_watch.clone(),
             )));
             workbench.set_layout(EditorMode::Scene, Self::scene_layout());
             workbench.set_layout(EditorMode::ControlPlane, Self::control_plane_layout());

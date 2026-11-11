@@ -83,6 +83,7 @@ impl EngineApp for EditorApp {
             monitors: None,
             agent_registry: None,
             dcc_context: None,
+            decision_watch: None,
             last_view_info: None,
             input: InputState::default(),
             wireframe_enabled: false,

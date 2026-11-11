@@ -17,10 +17,12 @@
 //! to the agents is in `protocol.rs`; when it opens an epoch, in `epochs.rs`;
 //! how the governor drives the multiplier in `frame_governor.rs`, and the
 //! hardware monitor its thread reads in `hardware_monitor.rs`; what it learns
-//! of the machine, seeded and published, in `learnt_costs.rs`. The loop the
+//! of the machine, seeded and published, in `learnt_costs.rs`; what it tells
+//! a tool of its last decision, in `decision_watch.rs`. The loop the
 //! governor closes through GORNA, simulated, is pinned by the evaluation's
 //! own tests.
 
+mod decision_watch;
 mod epochs;
 mod frame_governor;
 mod hardware_monitor;
@@ -99,6 +101,7 @@ fn record(allocation: Allocation) -> EpochRecord {
         frames: khora_core::agent::gorna::FrameSummary::default(),
         in_force: Vec::new(),
         planning: khora_core::agent::gorna::Planning::default(),
+        planned: Vec::new(),
     }
 }
 

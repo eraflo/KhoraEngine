@@ -116,6 +116,7 @@ fn epoch(
         frames: FrameSummary::default(),
         in_force: Vec::new(),
         planning: Planning::default(),
+        planned: Vec::new(),
     }
 }
 

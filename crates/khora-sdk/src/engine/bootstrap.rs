@@ -246,6 +246,8 @@ fn populate(
     // Live DCC context: shared `Arc<RwLock<Context>>` updated by the
     // DCC cold thread, read by observers each frame.
     runtime.resources.insert(dcc.context_handle());
+    // The DCC's last decision: what it lent each agent, and why.
+    runtime.resources.insert(dcc.decision_watch());
 
     // ── Overlay channels (gizmo + grid) ──────────────────────────────────
     // Shared resources the host application (editor, debug tooling)

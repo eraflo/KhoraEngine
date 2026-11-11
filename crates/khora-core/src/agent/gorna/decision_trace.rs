@@ -87,6 +87,8 @@ pub struct EpochRecord {
     /// What the round planned for beyond its frame: the switch charges, the
     /// margin and each agent's growth.
     pub planning: Planning,
+    /// The row the round planned for each agent.
+    pub planned: Vec<(AgentId, StrategyId)>,
 }
 
 /// How a run of frames went: their critical paths, summed up.
@@ -209,6 +211,9 @@ struct WrittenEpoch {
     /// rows plan at their quotes.
     #[serde(default)]
     corrections: Vec<(Named, StrategyId, Correction)>,
+    /// A journal from before each round's rows were written reads none.
+    #[serde(default)]
+    planned: Vec<(Named, StrategyId)>,
 }
 
 /// A round's planning as written, its agents named by place.
@@ -402,6 +407,9 @@ fn written_epoch(record: &EpochRecord, table: &mut Table) -> WrittenEpoch {
         corrections: (record.corrections.iter())
             .map(|(agent, row, correction)| (table.of(*agent), *row, *correction))
             .collect(),
+        planned: (record.planned.iter())
+            .map(|(agent, row)| (table.of(*agent), *row))
+            .collect(),
     }
 }
 
@@ -517,5 +525,8 @@ fn read_epoch<E>(
                 .collect::<Result<_, E>>()?,
             caution: written.planning.caution,
         },
+        planned: (written.planned.into_iter())
+            .map(|(agent, row)| Ok((named(agent)?, row)))
+            .collect::<Result<_, E>>()?,
     })
 }

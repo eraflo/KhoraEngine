@@ -16,6 +16,7 @@
 
 mod correction;
 mod decision_trace;
+mod decision_view;
 mod planning;
 mod profile;
 pub mod protocol;
@@ -24,6 +25,7 @@ mod tests;
 
 pub use correction::Correction;
 pub use decision_trace::{DecisionTrace, EpochRecord, FrameSummary};
+pub use decision_view::{DecisionView, DecisionWatch};
 pub use planning::Planning;
 pub use profile::{CostProfile, ProfileRow};
 

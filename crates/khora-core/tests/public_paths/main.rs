@@ -326,7 +326,27 @@ fn epoch_record_fields(x: &khora_core::agent::gorna::EpochRecord) {
         &x.frames,
         &x.in_force,
         &x.planning,
+        &x.planned,
     );
+}
+
+fn decision_view_fields(x: &khora_core::agent::gorna::DecisionView) {
+    let _ = (
+        &x.epoch,
+        &x.trigger,
+        &x.target,
+        &x.why,
+        &x.envelopes,
+        &x.planned,
+        &x.corrections,
+        &x.planning,
+        &x.replayed,
+    );
+}
+
+fn decision_watch_api(x: &khora_core::agent::gorna::DecisionWatch) {
+    let _: Option<khora_core::agent::gorna::DecisionView> = x.latest();
+    x.publish(khora_core::agent::gorna::DecisionView::default());
 }
 
 fn planning_fields(x: &khora_core::agent::gorna::Planning) {
@@ -1765,6 +1785,17 @@ fn module_agent_gorna_paths_still_resolve() {
     let _ = epoch_record_fields as fn(&khora_core::agent::gorna::EpochRecord);
     is_debug::<khora_core::agent::gorna::EpochRecord>();
     is_clone::<khora_core::agent::gorna::EpochRecord>();
+    let _ = type_name::<khora_core::agent::gorna::DecisionView>();
+    let _ = decision_view_fields as fn(&khora_core::agent::gorna::DecisionView);
+    is_debug::<khora_core::agent::gorna::DecisionView>();
+    is_clone::<khora_core::agent::gorna::DecisionView>();
+    is_default::<khora_core::agent::gorna::DecisionView>();
+    is_partial_eq::<khora_core::agent::gorna::DecisionView>();
+    let _ = type_name::<khora_core::agent::gorna::DecisionWatch>();
+    let _ = decision_watch_api as fn(&khora_core::agent::gorna::DecisionWatch);
+    is_debug::<khora_core::agent::gorna::DecisionWatch>();
+    is_clone::<khora_core::agent::gorna::DecisionWatch>();
+    is_default::<khora_core::agent::gorna::DecisionWatch>();
     let _ = type_name::<khora_core::agent::gorna::FrameSummary>();
     let _ = frame_summary_fields as fn(&khora_core::agent::gorna::FrameSummary);
     is_debug::<khora_core::agent::gorna::FrameSummary>();

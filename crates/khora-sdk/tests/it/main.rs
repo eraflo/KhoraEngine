@@ -23,6 +23,7 @@ mod app_provides_to_the_runtime;
 mod assets_decoded_off_the_frame;
 mod camera_aspect_follows_target;
 mod camera_view_prepares_the_frame;
+mod decision_watch_in_the_runtime;
 mod declared_components;
 mod editor_shader_sources;
 mod engine_names;

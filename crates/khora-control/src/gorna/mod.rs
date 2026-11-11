@@ -30,7 +30,8 @@ use khora_core::agent::gorna::protocol::{
     Allocation, Envelope, Epoch, Offer, OfferRequest, Trigger, Why,
 };
 use khora_core::agent::gorna::{
-    AdaptationMode, AgentHints, AgentId, Correction, Planning, StrategyId,
+    AdaptationMode, AgentHints, AgentId, Correction, DecisionView, EpochRecord, Planning,
+    StrategyId,
 };
 use khora_core::agent::{Agent, AgentImportance};
 use khora_core::lane::cost::{PerDevice, PerLink};
@@ -49,6 +50,28 @@ pub use decide::{decide, Bid, Round};
 use planning::{Planner, PlanningConfig};
 
 const MAX_STALLED_AGENTS: usize = 2;
+
+/// The row `decision` planned for each agent it lends an envelope for: a
+/// `Safety` round lends every agent that offered its floor; any other round
+/// plans the rows its proposer chose. An agent that keeps the envelope it
+/// holds — late, or `Stable` — has no row planned: it runs on that envelope
+/// the row it chooses.
+fn planned_rows(decision: &arbiter::Decision, bids: &[Bid]) -> Vec<(AgentId, StrategyId)> {
+    let floor_of = |agent: AgentId| {
+        (bids.iter())
+            .find(|bid| bid.offer.agent == agent && !bid.offer.rows.is_empty())
+            .map(|bid| bid.offer.floor)
+    };
+    if decision.allocation.trigger == Trigger::Safety {
+        return (decision.rows.iter())
+            .filter_map(|(agent, _)| floor_of(*agent).map(|floor| (*agent, floor)))
+            .collect();
+    }
+    (decision.rows.iter())
+        .filter(|(agent, _)| !decision.kept.contains(agent))
+        .copied()
+        .collect()
+}
 
 fn try_lock_agent_with_timeout<T: ?Sized>(
     mutex: &Mutex<T>,
@@ -101,6 +124,8 @@ pub struct GornaArbitrator {
     book: CostBook,
     /// The last round's correction of each offered row.
     corrections: Vec<(AgentId, StrategyId, Correction)>,
+    /// The row the last round planned for each agent.
+    planned: Vec<(AgentId, StrategyId)>,
     /// The row each agent last said it runs: what a busy agent's kept
     /// envelope is corrected by.
     runs: Vec<(AgentId, StrategyId)>,
@@ -135,6 +160,7 @@ impl GornaArbitrator {
             planning: Planning::default(),
             book: CostBook::new(cost_book::CostBookConfig::default()),
             corrections: Vec::new(),
+            planned: Vec::new(),
             runs: Vec::new(),
             offers: Vec::new(),
             target: Duration::ZERO,
@@ -226,6 +252,28 @@ impl GornaArbitrator {
     /// row.
     pub fn corrections(&self) -> &[(AgentId, StrategyId, Correction)] {
         &self.corrections
+    }
+
+    /// The row the last round planned for each agent.
+    pub fn planned(&self) -> &[(AgentId, StrategyId)] {
+        &self.planned
+    }
+
+    /// The decision in force, as a tool reads it — `replayed` when it was
+    /// put in force from a journal. `None` before any round.
+    pub fn view(&self, replayed: bool) -> Option<DecisionView> {
+        let allocation = self.in_force.as_ref()?;
+        Some(DecisionView {
+            epoch: allocation.epoch,
+            trigger: allocation.trigger,
+            target: self.target,
+            why: self.why.clone(),
+            envelopes: allocation.envelopes.clone(),
+            planned: self.planned.clone(),
+            corrections: self.corrections.clone(),
+            planning: self.planning.clone(),
+            replayed,
+        })
     }
 
     /// One round of the protocol: asks every agent in `agents` for an offer
@@ -390,6 +438,7 @@ impl GornaArbitrator {
             &corrections,
             planning.caution,
         );
+        self.planned = planned_rows(&decision, &bids);
         self.corrections = corrections;
         self.planning = planning;
         self.background = background;
@@ -404,13 +453,19 @@ impl GornaArbitrator {
         decision.allocation
     }
 
-    /// Puts a recorded `allocation` in force without asking for offers or
-    /// deciding: a replay. The DCC publishes it for the scheduler to lend,
-    /// and the next live round keeps from it the envelopes of the agents
-    /// that answer late.
-    pub fn reissue(&mut self, allocation: &Allocation) {
-        self.epoch = self.epoch.max(allocation.epoch);
-        self.in_force = Some(allocation.clone());
+    /// Puts a recorded epoch in force without asking for offers or deciding:
+    /// a replay. Its allocation is in force, with the reasons it was decided
+    /// for — its `why`, planning, corrections, planned rows and target. The
+    /// DCC publishes the allocation for the scheduler to lend, and the next
+    /// live round keeps from it the envelopes of the agents that answer late.
+    pub fn reissue(&mut self, record: &EpochRecord) {
+        self.epoch = self.epoch.max(record.allocation.epoch);
+        self.in_force = Some(record.allocation.clone());
+        self.why = record.why.clone();
+        self.planning = record.planning.clone();
+        self.corrections = record.corrections.clone();
+        self.planned = record.planned.clone();
+        self.target = record.target;
     }
 
     /// The envelope `agent` holds from the allocation in force.

@@ -67,6 +67,7 @@ impl DccService {
         let recorded_trace = Arc::clone(&self.recorded_trace);
         let seeded_costs = Arc::clone(&self.seeded_costs);
         let learnt_costs = Arc::clone(&self.learnt_costs);
+        let decision_watch = self.decision_watch.clone();
         let replay = Arc::clone(&self.replay);
         let hardware_monitor = Arc::clone(&self.hardware_monitor);
         let tick_duration = Duration::from_secs_f32(1.0 / self.config.tick_rate as f32);
@@ -475,12 +476,16 @@ impl DccService {
 
                 // A replay publishes the recorded allocations, one a tick, in
                 // order, until the trace is exhausted.
-                let replayed = replay.read().ok().and_then(|r| {
-                    r.as_ref()
-                        .and_then(|(t, c)| t.epochs.get(*c).map(|e| e.allocation.clone()))
-                });
-                if let Some(allocation) = replayed {
-                    arbitrator.reissue(&allocation);
+                let replayed = replay
+                    .read()
+                    .ok()
+                    .and_then(|r| r.as_ref().and_then(|(t, c)| t.epochs.get(*c).cloned()));
+                if let Some(record) = replayed {
+                    arbitrator.reissue(&record);
+                    if let Some(view) = arbitrator.view(true) {
+                        decision_watch.publish(view);
+                    }
+                    let allocation = record.allocation;
                     if let Some(channel) = connected(&budget_channel) {
                         channel.publish_in_turn(allocation.clone());
                     }
@@ -532,6 +537,9 @@ impl DccService {
                         .unwrap_or_default();
                     let allocation =
                         arbitrator.allocate(&ctx_copy, &report, trigger, &agents, &tick_hints);
+                    if let Some(view) = arbitrator.view(false) {
+                        decision_watch.publish(view);
+                    }
                     epochs.opened(&agents);
                     epochs.set_in_force(allocation.epoch);
                     last_issued_multiplier = Some(multiplier);
@@ -578,6 +586,7 @@ impl DccService {
                                 frames: summary(&ran, ran_under),
                                 in_force,
                                 planning: arbitrator.planning().clone(),
+                                planned: arbitrator.planned().to_vec(),
                             });
                         }
                     }
