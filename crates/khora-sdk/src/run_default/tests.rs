@@ -629,6 +629,90 @@ fn a_packed_runtime_registers_every_decoder_and_honours_the_manifest() -> Result
     Ok(())
 }
 
+/// The triangle a packed glTF's buffer holds, and the one of the decoy
+/// buffer left beside the runtime binary.
+const PACKED_TRIANGLE: [[f32; 3]; 3] = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+const DECOY_TRIANGLE: [[f32; 3]; 3] = [[7.0, 7.0, 7.0], [8.0, 7.0, 7.0], [7.0, 8.0, 7.0]];
+
+/// A buffer holding `corners` as three `f32` VEC3.
+fn triangle_buffer(corners: &[[f32; 3]; 3]) -> Vec<u8> {
+    corners
+        .iter()
+        .flatten()
+        .flat_map(|c| c.to_le_bytes())
+        .collect()
+}
+
+/// **A packed game reads a glTF's buffers inside its pack**: the runtime
+/// beside a pack holding `models/tri.gltf` and its `models/tri.bin` decodes
+/// the pack's triangle, though a `models/tri.bin` holding another triangle
+/// sits beside the binary — nothing loose beside the binary is read.
+#[test]
+fn a_packed_gltf_reads_its_buffers_inside_the_pack() {
+    let game = GameDir::new("packed-gltf");
+    let gltf = serde_json::to_vec(&serde_json::json!({
+        "asset": { "version": "2.0" },
+        "buffers": [ { "uri": "tri.bin", "byteLength": 36 } ],
+        "bufferViews": [ { "buffer": 0, "byteOffset": 0, "byteLength": 36 } ],
+        "accessors": [ {
+            "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3",
+            "min": [0.0, 0.0, 0.0], "max": [8.0, 8.0, 7.0],
+        } ],
+        "meshes": [ { "primitives": [ { "attributes": { "POSITION": 0 } } ] } ],
+        "nodes": [ { "mesh": 0 } ],
+        "scenes": [ { "nodes": [0] } ],
+        "scene": 0,
+    }))
+    .expect("the glTF serialises");
+    let exe_dir = game.packed(&[
+        ("models/tri.gltf", &gltf),
+        ("models/tri.bin", &triangle_buffer(&PACKED_TRIANGLE)),
+    ]);
+    std::fs::create_dir_all(exe_dir.join("models")).expect("the decoy's folder");
+    std::fs::write(
+        exe_dir.join("models").join("tri.bin"),
+        triangle_buffer(&DECOY_TRIANGLE),
+    )
+    .expect("the decoy is written");
+
+    let mut svc = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), false, None)
+        .expect("the packed game's asset service");
+    let mesh = svc
+        .load::<Mesh>(&AssetUUID::new_v5("models/tri.gltf"))
+        .unwrap_or_else(|e| panic!("the packed glTF decodes: {e:#}"));
+    let expected: Vec<Vec3> = PACKED_TRIANGLE
+        .iter()
+        .map(|&[x, y, z]| Vec3::new(x, y, z))
+        .collect();
+    assert_eq!(
+        mesh.positions, expected,
+        "the buffer read is the pack's, not the one beside the binary"
+    );
+}
+
+/// **An `index.bin` over its limit is refused before it is read**: the
+/// runtime beside a pack whose `index.bin` is past 256 MiB does not start
+/// on it — the error names the index — rather than reading it whole.
+#[test]
+fn an_index_over_its_limit_is_refused_before_it_is_read() {
+    let game = GameDir::new("index-over-its-limit");
+    let exe_dir = game.packed(&[("shaders/fine.wgsl", b"// fine\n")]);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(exe_dir.join("index.bin"))
+        .and_then(|file| file.set_len((256 << 20) + 1))
+        .expect("index.bin is lengthened past its limit");
+
+    let refused = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), false, None)
+        .err()
+        .map(|e| format!("{e:#}"))
+        .expect("an index past 256 MiB is refused");
+    assert!(
+        refused.contains("index.bin"),
+        "the error names the index: {refused}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Starting by ticket
 // ---------------------------------------------------------------------------

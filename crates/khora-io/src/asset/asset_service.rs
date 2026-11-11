@@ -178,6 +178,7 @@ impl AssetService {
                 containers: HashMap::new(),
                 manifest: manifest.map(Arc::new),
                 refusals: None,
+                trust: crate::trust::Trust::Project,
             }),
             storages: HashMap::new(),
             load_count: 0,
@@ -265,6 +266,12 @@ impl AssetService {
         Arc::clone(
             refusals.get_or_insert_with(|| Arc::new(crate::trust::Refusals::new(None, None))),
         )
+    }
+
+    /// How much this service trusts the files it decodes: the limits each
+    /// decode has. `Project` until set.
+    pub fn set_trust(&mut self, trust: crate::trust::Trust) {
+        self.reader_mut().trust = trust;
     }
 
     /// Registers a decoder for a specific asset type.
@@ -428,7 +435,8 @@ impl AssetService {
         let (opener, opened) = self
             .open_container(container)
             .with_context(|| format!("sub-asset '{label}'"))?;
-        let extracted = AssetReader::extract(&opener, &opened, container, label, type_name)?;
+        let extracted =
+            Arc::clone(&self.reader).extract(&opener, &opened, container, label, type_name)?;
         extracted.downcast::<A>().map(|asset| *asset).map_err(|_| {
             anyhow!(
                 "sub-asset '{label}' of {container} is a '{type_name}', not a {}",

@@ -24,7 +24,9 @@ use khora_data::assets::SoundData;
 use khora_telemetry::MetricsRegistry;
 
 use super::decoders::audio::SymphoniaDecoder;
-use super::decoders::mesh::{FileSystemResolver, GltfContainer, MeshDispatcher};
+use super::decoders::mesh::{
+    FileSystemResolver, GltfContainer, GltfResourceResolver, MeshDispatcher, PackedResolver,
+};
 use super::file::FileLoader;
 use super::id_registry::AssetIdRegistry;
 use super::index_builder::IndexBuilder;
@@ -88,5 +90,25 @@ impl AssetService {
         let container = GltfContainer::guarded(guard());
         self.register_decoder::<Mesh>("mesh", MeshDispatcher::new(gltf_resolver));
         self.register_container("mesh", container);
+    }
+
+    /// Registers the decoders every Khora application uses, for a service
+    /// reading a pack: as [`Self::register_default_decoders`], except that a
+    /// glTF's buffers and images resolve inside the pack, by their asset
+    /// key, never beside it.
+    pub fn register_packed_decoders(&mut self) {
+        self.register_inventory_decoders();
+        self.register_decoder::<SoundData>("audio", SymphoniaDecoder);
+        let refusals = self.refusals();
+        let reader = self.reader();
+        let resolver: Arc<dyn GltfResourceResolver> = Arc::new(PackedResolver::new(
+            &reader.index,
+            Arc::clone(&reader.io),
+            reader.manifest.clone(),
+            refusals,
+            reader.trust,
+        ));
+        self.register_decoder::<Mesh>("mesh", MeshDispatcher::new(Arc::clone(&resolver)));
+        self.register_container("mesh", GltfContainer::resolving_with(resolver));
     }
 }

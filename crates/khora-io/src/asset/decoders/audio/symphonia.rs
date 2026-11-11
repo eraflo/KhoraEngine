@@ -23,6 +23,11 @@ use symphonia::core::{
 };
 
 use crate::asset::AssetDecoder;
+use crate::trust::{FileKind, LimitExceeded, Limits, Trust};
+use std::path::Path;
+
+/// The bytes one decoded sample fills.
+const SAMPLE_BYTES: u64 = std::mem::size_of::<f32>() as u64;
 
 /// Decodes multiple audio formats via `symphonia`.
 #[derive(Default)]
@@ -43,7 +48,24 @@ impl AssetDecoder<SoundData> for SymphoniaDecoder {
             || crate::trust::magic::is_mp3(head)
     }
 
+    fn limits(&self, trust: Trust) -> Limits {
+        Limits::of(FileKind::Audio, trust)
+    }
+
     fn load(&self, bytes: &[u8]) -> Result<SoundData, Box<dyn Error + Send + Sync>> {
+        self.load_limited(
+            bytes,
+            Path::new(""),
+            &Limits::of(FileKind::Audio, Trust::Project),
+        )
+    }
+
+    fn load_limited(
+        &self,
+        bytes: &[u8],
+        _source_path: &Path,
+        limits: &Limits,
+    ) -> Result<SoundData, Box<dyn Error + Send + Sync>> {
         let mss = MediaSourceStream::new(Box::new(Cursor::new(bytes.to_vec())), Default::default());
 
         let hint = Hint::new();
@@ -89,6 +111,14 @@ impl AssetDecoder<SoundData> for SymphoniaDecoder {
                                 *decoded.spec(),
                             );
                             sample_buf.copy_interleaved_ref(decoded);
+                            let after = (all_samples.len() + sample_buf.samples().len()) as u64;
+                            let decoded_bytes = after.saturating_mul(SAMPLE_BYTES);
+                            if decoded_bytes > limits.max_decoded_bytes {
+                                return Err(Box::new(LimitExceeded {
+                                    what: format!("{after} samples, {decoded_bytes} bytes decoded"),
+                                    limit: limits.max_decoded_bytes,
+                                }));
+                            }
                             all_samples.extend_from_slice(sample_buf.samples());
                         }
                         Err(e) => {
@@ -119,5 +149,75 @@ impl AssetDecoder<SoundData> for SymphoniaDecoder {
             channels: channels.count() as u16,
             sample_rate,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::trust::{LimitExceeded, Limits};
+    use std::path::Path;
+
+    /// The `LimitExceeded` an error is, or holds among its sources.
+    fn exceeded<'a>(error: &'a (dyn Error + 'static)) -> Option<&'a LimitExceeded> {
+        let mut next = Some(error);
+        while let Some(error) = next {
+            if let Some(limit) = error.downcast_ref::<LimitExceeded>() {
+                return Some(limit);
+            }
+            next = error.source();
+        }
+        None
+    }
+
+    /// A 16-bit mono WAV of `samples` samples, written in memory.
+    fn wav_of(samples: usize) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 8000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer =
+            hound::WavWriter::new(Cursor::new(&mut bytes), spec).expect("a WAV writer");
+        for i in 0..samples {
+            writer
+                .write_sample((i % 100) as i16 * 100)
+                .expect("a sample is written");
+        }
+        writer.finalize().expect("the WAV is finished");
+        bytes
+    }
+
+    /// Limits that stop nothing but a decode past `max_decoded_bytes`.
+    fn decoded_at_most(max_decoded_bytes: u64) -> Limits {
+        Limits {
+            max_bytes: u64::MAX,
+            max_decoded_bytes,
+            max_elements: u64::MAX,
+            max_dimension: u32::MAX,
+        }
+    }
+
+    /// **A sound decoding past its decoded limit is refused by Symphonia**:
+    /// 8 000 samples decode to more than 1 000 bytes, so the decode stops
+    /// with a `LimitExceeded` naming that limit; within ample limits the
+    /// same file decodes whole.
+    #[test]
+    fn a_sound_decoding_past_its_decoded_limit_is_refused() {
+        let file = wav_of(8000);
+
+        let refused = SymphoniaDecoder
+            .load_limited(&file, Path::new(""), &decoded_at_most(1000))
+            .expect_err("8 000 samples are more than 1 000 decoded bytes");
+        let limit =
+            exceeded(&*refused).unwrap_or_else(|| panic!("a LimitExceeded, not: {refused}"));
+        assert_eq!(limit.limit, 1000);
+
+        let sound = SymphoniaDecoder
+            .load_limited(&file, Path::new(""), &decoded_at_most(1 << 20))
+            .unwrap_or_else(|e| panic!("the sound decodes within ample limits: {e}"));
+        assert_eq!(sound.samples.len(), 8000);
     }
 }

@@ -32,6 +32,10 @@ impl AssetDecoder<CpuShaderSource> for ShaderDecoder {
         crate::trust::looks_like_text(head)
     }
 
+    fn limits(&self, trust: crate::trust::Trust) -> crate::trust::Limits {
+        crate::trust::Limits::of(crate::trust::FileKind::Text, trust)
+    }
+
     fn load(
         &self,
         bytes: &[u8],

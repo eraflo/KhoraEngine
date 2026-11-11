@@ -29,6 +29,7 @@ use std::sync::Arc;
 use khora_core::renderer::api::gpu_scene::Mesh;
 
 use crate::asset::AssetDecoder;
+use crate::trust::{FileKind, Limits, Trust};
 
 use super::{GltfDecoder, GltfResourceResolver, NoOpResourceResolver, ObjDecoder};
 
@@ -102,8 +103,25 @@ impl AssetDecoder<Mesh> for MeshDispatcher {
             || crate::trust::looks_like_text(head)
     }
 
+    fn limits(&self, trust: Trust) -> Limits {
+        Limits::of(FileKind::Gltf, trust)
+    }
+
     fn load(&self, bytes: &[u8]) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
         self.load_at(bytes, Path::new(""))
+    }
+
+    fn load_limited(
+        &self,
+        bytes: &[u8],
+        source_path: &Path,
+        limits: &Limits,
+    ) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
+        if Self::is_gltf(bytes) {
+            self.gltf.load_limited(bytes, source_path, limits)
+        } else {
+            self.obj.load(bytes)
+        }
     }
 
     /// A glTF reads its external files relative to `source_path`'s folder;

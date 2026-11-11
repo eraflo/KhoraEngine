@@ -37,6 +37,9 @@ pub struct AssetIndex {
     index: HashMap<AssetUUID, AssetMetadata>,
 }
 
+/// The most bytes an index may hold, and its decode may allocate.
+pub const MAX_INDEX_BYTES: usize = 256 << 20;
+
 impl AssetIndex {
     /// Creates a new `AssetIndex` by loading and parsing an index file from its raw bytes.
     ///
@@ -47,7 +50,9 @@ impl AssetIndex {
     /// Returns a `DecodeError` if the byte slice is not a valid, bincode-encoded
     /// list of `AssetMetadata`.
     pub fn new(index_bytes: &[u8]) -> Result<Self, bincode::error::DecodeError> {
-        let config = bincode::config::standard();
+        // Bounded: a length in the file never makes the decode allocate past
+        // what an index may hold.
+        let config = bincode::config::standard().with_limit::<{ MAX_INDEX_BYTES }>();
         // First, decode the bytes into a flat list of metadata.
         let (metadata_vec, _): (Vec<AssetMetadata>, _) =
             bincode::serde::decode_from_slice(index_bytes, config)?;
@@ -86,5 +91,63 @@ impl AssetIndex {
     /// Returns the total number of indexed assets.
     pub fn asset_count(&self) -> usize {
         self.index.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use khora_core::asset::AssetSource;
+    use std::path::PathBuf;
+
+    /// One index entry, its source path `source_path`.
+    fn entry(source_path: &str) -> AssetMetadata {
+        AssetMetadata {
+            uuid: AssetUUID::new_v5("a.wgsl"),
+            source_path: PathBuf::from(source_path),
+            asset_type_name: "shader".to_owned(),
+            dependencies: Vec::new(),
+            variants: HashMap::from([(
+                "default".to_owned(),
+                AssetSource::Path(PathBuf::from("a.wgsl")),
+            )]),
+            tags: Vec::new(),
+        }
+    }
+
+    fn encoded(entries: &[AssetMetadata]) -> Vec<u8> {
+        bincode::serde::encode_to_vec(entries, bincode::config::standard())
+            .expect("the index encodes")
+    }
+
+    /// **An index over its limit is refused**: an `index.bin` whose first
+    /// entry declares a source path of 300 MiB — in a file of a few dozen
+    /// bytes — is refused as over the index's byte limit
+    /// (`DecodeError::LimitExceeded`), rather than 300 MiB being allocated
+    /// for it before the file is found to end. A well-formed index still
+    /// reads.
+    #[test]
+    fn an_index_over_its_limit_is_refused() {
+        let empty_path = encoded(&[entry("")]);
+        let one_byte_path = encoded(&[entry("x")]);
+        // Where the two encodings part is the source path's length.
+        let at = (empty_path.iter().zip(&one_byte_path))
+            .position(|(a, b)| a != b)
+            .expect("the source paths' lengths differ");
+        assert_eq!(empty_path[at], 0, "an empty path is a zero length");
+
+        let mut forged = empty_path[..at].to_vec();
+        // bincode's varint: 0xFC, then a u32, little-endian.
+        forged.push(0xFC);
+        forged.extend_from_slice(&(300u32 << 20).to_le_bytes());
+
+        match AssetIndex::new(&forged) {
+            Err(bincode::error::DecodeError::LimitExceeded) => {}
+            Err(other) => panic!("refused for its size, not: {other:?}"),
+            Ok(index) => panic!("{} assets read from a forged index", index.asset_count()),
+        }
+
+        let index = AssetIndex::new(&encoded(&[entry("a.wgsl")])).expect("a real index reads");
+        assert_eq!(index.asset_count(), 1);
     }
 }

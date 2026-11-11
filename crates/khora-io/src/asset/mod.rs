@@ -50,7 +50,7 @@ pub use decoders::*;
 pub use dependencies::*;
 pub use file::*;
 pub use id_registry::*;
-pub use index::AssetIndex;
+pub use index::{AssetIndex, MAX_INDEX_BYTES};
 pub use index_builder::*;
 pub use io::*;
 pub use manifest::*;

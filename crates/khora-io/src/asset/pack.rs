@@ -28,6 +28,7 @@ use std::{
 };
 
 use super::AssetIo;
+use crate::trust::LimitExceeded;
 
 /// 8-byte magic prefix that identifies a Khora pack archive on disk.
 ///
@@ -190,6 +191,9 @@ impl PackLoader {
     }
 }
 
+/// The most bytes one pack entry may hold, compressed or not.
+const MAX_ENTRY_BYTES: u64 = 4 << 30;
+
 /// The most LZ4 can expand one compressed byte to.
 const LZ4_MAX_RATIO: u64 = 255;
 /// Room for the end of an LZ4 block, which carries a few literals.
@@ -266,6 +270,19 @@ impl AssetIo for PackLoader {
                 uncompressed_size,
                 compression,
             } => {
+                // Whatever the reader checked: no entry is ever allocated
+                // past this.
+                for (what, bytes) in [
+                    ("pack entry", *size),
+                    ("its decompressed bytes", *uncompressed_size),
+                ] {
+                    if bytes > MAX_ENTRY_BYTES {
+                        return Err(anyhow::Error::new(LimitExceeded {
+                            what: format!("{what}, {bytes} bytes"),
+                            limit: MAX_ENTRY_BYTES,
+                        }));
+                    }
+                }
                 // Asset offsets in `index.bin` are relative to the start
                 // of the asset region (i.e. after the header). We add the
                 // header size here so the index never has to know about
@@ -604,6 +621,52 @@ mod tests {
         match result {
             Ok(read) => assert!(read.is_err(), "an impossible size is refused: {read:?}"),
             Err(_) => panic!("an LZ4 entry claiming u64::MAX bytes panics the read"),
+        }
+    }
+
+    /// **A pack entry over 4 GiB uncompressed is refused before anything is
+    /// allocated**, whatever the reader checked before: a raw entry of 4 GiB
+    /// and one byte, and a compressed one claiming as much, are refused with
+    /// a `LimitExceeded` naming the 4 GiB — not read, not decompressed.
+    #[test]
+    fn a_pack_entry_over_four_gib_is_refused_before_allocating() {
+        use crate::trust::LimitExceeded;
+        const FOUR_GIB: u64 = 4 << 30;
+
+        let dir = tempdir().unwrap();
+        let compressed = lz4_flex::block::compress(b"PAYLOAD");
+        let mut bytes = valid_header_bytes(1).to_vec();
+        bytes.extend_from_slice(&compressed);
+        let loader = PackLoader::new(write_pack(dir.path(), &bytes)).unwrap();
+
+        for (what, source) in [
+            (
+                "raw",
+                AssetSource::Packed {
+                    offset: 0,
+                    size: FOUR_GIB + 1,
+                    uncompressed_size: FOUR_GIB + 1,
+                    compression: CompressionKind::None,
+                },
+            ),
+            (
+                "compressed",
+                AssetSource::Packed {
+                    offset: 0,
+                    size: compressed.len() as u64,
+                    uncompressed_size: FOUR_GIB + 1,
+                    compression: CompressionKind::Lz4,
+                },
+            ),
+        ] {
+            let error = loader
+                .load_bytes(&source)
+                .expect_err("an entry over 4 GiB is refused");
+            let limit = error
+                .chain()
+                .find_map(|cause| cause.downcast_ref::<LimitExceeded>())
+                .unwrap_or_else(|| panic!("{what}: a LimitExceeded, not: {error:#}"));
+            assert_eq!(limit.limit, FOUR_GIB, "{what}");
         }
     }
 

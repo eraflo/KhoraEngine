@@ -35,6 +35,8 @@ use khora_core::renderer::api::resource::{
 use khora_core::renderer::api::util::f32_to_f16_bits;
 
 use crate::asset::{AssetDecoder, DecoderRegistration};
+use crate::trust::{FileKind, LimitExceeded, Limits, Trust};
+use image::ImageDecoder;
 
 /// Decodes common image formats (PNG, JPEG, HDR, EXR, …) into a `CpuTexture`.
 #[derive(Clone, Default)]
@@ -47,18 +49,47 @@ impl AssetDecoder<CpuTexture> for TextureDecoder {
         image::guess_format(head).is_ok()
     }
 
+    fn limits(&self, trust: Trust) -> Limits {
+        Limits::of(FileKind::Texture, trust)
+    }
+
     fn load(
         &self,
         bytes: &[u8],
     ) -> Result<CpuTexture, Box<dyn std::error::Error + Send + Sync + 'static>> {
-        let img = image::load_from_memory(bytes).context("Failed to decode image from memory")?;
+        self.load_limited(
+            bytes,
+            std::path::Path::new(""),
+            &Limits::of(FileKind::Texture, Trust::Project),
+        )
+    }
 
+    fn load_limited(
+        &self,
+        bytes: &[u8],
+        _source_path: &std::path::Path,
+        limits: &Limits,
+    ) -> Result<CpuTexture, Box<dyn std::error::Error + Send + Sync + 'static>> {
+        check_header(bytes, limits)?;
+        let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+            .with_guessed_format()
+            .context("Failed to read the image's format")?;
+        let mut image_limits = image::Limits::default();
+        image_limits.max_image_width = Some(limits.max_dimension);
+        image_limits.max_image_height = Some(limits.max_dimension);
+        image_limits.max_alloc = Some(limits.max_decoded_bytes);
+        reader.limits(image_limits);
+        let img = reader
+            .decode()
+            .context("Failed to decode image from memory")?;
+
+        let (width, height) = (img.width(), img.height());
         // Float sources carry HDR range that 8-bit cannot hold. They upload as
         // `Rgba16Float` rather than `Rgba32Float`: half is filterable on every
         // backend, whereas 32-bit float filtering is an optional wgpu feature
         // the environment bake cannot assume.
         let (pixels, format) = if matches!(img.color(), ColorType::Rgb32F | ColorType::Rgba32F) {
-            let float_img = img.to_rgba32f();
+            let float_img = img.into_rgba32f();
             let halves: Vec<u8> = float_img
                 .as_raw()
                 .iter()
@@ -67,9 +98,8 @@ impl AssetDecoder<CpuTexture> for TextureDecoder {
             (halves, TextureFormat::Rgba16Float)
         } else {
             // 8-bit layout, color space decided by the consuming slot.
-            (img.to_rgba8().into_raw(), TextureFormat::Rgba8Unorm)
+            (img.into_rgba8().into_raw(), TextureFormat::Rgba8Unorm)
         };
-        let (width, height) = (img.width(), img.height());
 
         Ok(CpuTexture {
             pixels,
@@ -85,6 +115,43 @@ impl AssetDecoder<CpuTexture> for TextureDecoder {
             usage: TextureUsage::COPY_DST | TextureUsage::TEXTURE_BINDING,
         })
     }
+}
+
+/// Refuses an image whose header announces more than `limits` allow — a
+/// side past the dimension cap, or pixels filling more than the decoded
+/// limit — before a pixel is decoded.
+fn check_header(bytes: &[u8], limits: &Limits) -> Result<(), LimitExceeded> {
+    let Ok(decoder) = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|_| ())
+        .and_then(|reader| reader.into_decoder().map_err(|_| ()))
+    else {
+        // An unreadable header is the decode's error to report.
+        return Ok(());
+    };
+    let (width, height) = decoder.dimensions();
+    for (side, length) in [("image width", width), ("image height", height)] {
+        if length > limits.max_dimension {
+            return Err(LimitExceeded {
+                what: format!("{side} of {length} pixels"),
+                limit: u64::from(limits.max_dimension),
+            });
+        }
+    }
+    // What the decode fills: the texture it becomes, 8 bytes a pixel for a
+    // float image, 4 otherwise. The decoded image is turned into it without
+    // a copy when it already has its layout; `image`'s own limit bounds the
+    // decode itself.
+    let float = matches!(decoder.color_type(), ColorType::Rgb32F | ColorType::Rgba32F);
+    let pixels = u64::from(width) * u64::from(height);
+    let decoded = pixels.saturating_mul(if float { 8 } else { 4 });
+    if decoded > limits.max_decoded_bytes {
+        return Err(LimitExceeded {
+            what: format!("{width} × {height} image, {decoded} bytes decoded"),
+            limit: limits.max_decoded_bytes,
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -126,6 +193,182 @@ mod tests {
         // The red channel must still exceed 1.0 — the whole point of HDR.
         let red = u16::from_le_bytes([tex.pixels[0], tex.pixels[1]]);
         assert_eq!(red, f32_to_f16_bits(4.0));
+    }
+
+    // ── Limits ──────────────────────────────────────────────────────────
+
+    use crate::trust::{FileKind, LimitExceeded, Limits, Trust};
+    use std::path::Path;
+
+    /// The `LimitExceeded` an error is, or holds among its sources.
+    fn exceeded<'a>(error: &'a (dyn std::error::Error + 'static)) -> Option<&'a LimitExceeded> {
+        let mut next = Some(error);
+        while let Some(error) = next {
+            if let Some(limit) = error.downcast_ref::<LimitExceeded>() {
+                return Some(limit);
+            }
+            next = error.source();
+        }
+        None
+    }
+
+    /// The CRC-32 a PNG chunk ends with (ISO 3309, reflected).
+    fn crc32(bytes: &[u8]) -> u32 {
+        let mut crc = !0u32;
+        for &byte in bytes {
+            crc ^= u32::from(byte);
+            for _ in 0..8 {
+                crc = if crc & 1 != 0 {
+                    (crc >> 1) ^ 0xEDB8_8320
+                } else {
+                    crc >> 1
+                };
+            }
+        }
+        !crc
+    }
+
+    /// Appends the PNG chunk `kind` holding `data`.
+    fn chunk(png: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
+        png.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        let mut checked = kind.to_vec();
+        checked.extend_from_slice(data);
+        png.extend_from_slice(&checked);
+        png.extend_from_slice(&crc32(&checked).to_be_bytes());
+    }
+
+    /// A PNG of a few dozen bytes whose header announces `width` × `height`
+    /// 8-bit RGBA pixels, and which holds none.
+    fn png_announcing(width: u32, height: u32) -> Vec<u8> {
+        let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+        let mut header = Vec::new();
+        header.extend_from_slice(&width.to_be_bytes());
+        header.extend_from_slice(&height.to_be_bytes());
+        // 8 bits per channel, RGBA, deflate, no filter method, no interlace.
+        header.extend_from_slice(&[8, 6, 0, 0, 0]);
+        chunk(&mut png, b"IHDR", &header);
+        // An empty zlib stream: the image data starts, and holds no pixel.
+        chunk(
+            &mut png,
+            b"IDAT",
+            &[0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01],
+        );
+        chunk(&mut png, b"IEND", &[]);
+        png
+    }
+
+    /// A real PNG of `width` × `height` pixels.
+    fn png(width: u32, height: u32) -> Vec<u8> {
+        let mut png = Vec::new();
+        image::DynamicImage::ImageRgba8(image::RgbaImage::new(width, height))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .expect("encode png");
+        png
+    }
+
+    /// **An image announcing huge dimensions is refused before decoding**:
+    /// a PNG whose header says 100000 × 100000 — 40 GB of pixels — is
+    /// refused as a `LimitExceeded` by its header alone, at a trusted
+    /// project's limits and at the strict ones; so is one only too wide, or
+    /// only too tall, against the dimension cap.
+    #[test]
+    fn an_image_announcing_huge_dimensions_is_refused_by_its_header() {
+        for trust in [Trust::Project, Trust::Restricted] {
+            let limits = Limits::of(FileKind::Texture, trust);
+            let refused = TextureDecoder
+                .load_limited(&png_announcing(100_000, 100_000), Path::new(""), &limits)
+                .expect_err("an image of 40 GB of pixels is refused");
+            assert!(
+                exceeded(&*refused).is_some(),
+                "{trust:?}: refused as a LimitExceeded, not: {refused}"
+            );
+        }
+
+        let limits = Limits::of(FileKind::Texture, Trust::Project);
+        for (width, height) in [(100_000, 1), (1, 100_000)] {
+            let refused = TextureDecoder
+                .load_limited(&png_announcing(width, height), Path::new(""), &limits)
+                .expect_err("an image past the dimension cap is refused");
+            let limit = exceeded(&*refused)
+                .unwrap_or_else(|| panic!("{width}×{height}: a LimitExceeded, not: {refused}"));
+            assert_eq!(limit.limit, 16384, "{width}×{height}: the dimension cap");
+        }
+    }
+
+    /// **An image whose pixels pass the decoded limit is refused**: within
+    /// the dimension cap, 100 × 100 RGBA pixels are 40 000 bytes, past a
+    /// 1 000-byte `max_decoded_bytes`; under ample limits it decodes.
+    #[test]
+    fn an_image_whose_pixels_pass_the_decoded_limit_is_refused() {
+        let file = png(100, 100);
+        let tight = Limits {
+            max_bytes: u64::MAX,
+            max_decoded_bytes: 1000,
+            max_elements: u64::MAX,
+            max_dimension: 16384,
+        };
+        let refused = TextureDecoder
+            .load_limited(&file, Path::new(""), &tight)
+            .expect_err("40 000 bytes of pixels past a 1 000-byte limit");
+        let limit =
+            exceeded(&*refused).unwrap_or_else(|| panic!("a LimitExceeded, not: {refused}"));
+        assert_eq!(limit.limit, 1000);
+
+        let ample = Limits {
+            max_decoded_bytes: 1 << 20,
+            ..tight
+        };
+        let texture = TextureDecoder
+            .load_limited(&file, Path::new(""), &ample)
+            .unwrap_or_else(|e| panic!("the image decodes within ample limits: {e}"));
+        assert_eq!((texture.size.width, texture.size.height), (100, 100));
+    }
+
+    /// **A square image at the dimension cap is within the decoded limit**:
+    /// an 8-bit RGBA image as wide and as tall as the cap allows — 16384² at a
+    /// project's limits, 8192² at the strict ones — fills `width × height × 4`
+    /// bytes, exactly its trust's decoded limit (1 GiB, 256 MiB), so its
+    /// header is not refused.
+    #[test]
+    fn a_square_image_at_the_dimension_cap_passes_its_header_check() {
+        for (trust, side) in [(Trust::Project, 16384), (Trust::Restricted, 8192)] {
+            let limits = Limits::of(FileKind::Texture, trust);
+            assert_eq!(
+                u64::from(side) * u64::from(side) * 4,
+                limits.max_decoded_bytes,
+                "{trust:?}: the cap's square fills the decoded limit exactly"
+            );
+            if let Err(refused) = check_header(&png_announcing(side, side), &limits) {
+                panic!("{trust:?}: a {side} × {side} RGBA image is refused: {refused}");
+            }
+        }
+    }
+
+    /// **An image wider than the strict dimension decodes only under the
+    /// larger limits**: 16384 × 1 pixels is a trusted project's widest, and
+    /// twice an untrusted one's.
+    #[test]
+    fn an_image_wider_than_the_strict_dimension_decodes_only_under_the_larger_limits() {
+        let file = png(16384, 1);
+        let texture = TextureDecoder
+            .load_limited(
+                &file,
+                Path::new(""),
+                &Limits::of(FileKind::Texture, Trust::Project),
+            )
+            .unwrap_or_else(|e| panic!("16384 px decode at a project's limits: {e}"));
+        assert_eq!(texture.size.width, 16384);
+
+        let refused = TextureDecoder
+            .load_limited(
+                &file,
+                Path::new(""),
+                &Limits::of(FileKind::Texture, Trust::Restricted),
+            )
+            .expect_err("16384 px are past the strict 8192");
+        let limit =
+            exceeded(&*refused).unwrap_or_else(|| panic!("a LimitExceeded, not: {refused}"));
+        assert_eq!(limit.limit, 8192);
     }
 }
 

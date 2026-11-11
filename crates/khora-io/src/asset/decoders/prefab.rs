@@ -40,6 +40,10 @@ impl AssetDecoder<PrefabAsset> for PrefabDecoder {
         head.starts_with(&khora_core::scene::HEADER_MAGIC_BYTES)
     }
 
+    fn limits(&self, trust: crate::trust::Trust) -> crate::trust::Limits {
+        crate::trust::Limits::of(crate::trust::FileKind::Text, trust)
+    }
+
     fn load(
         &self,
         bytes: &[u8],

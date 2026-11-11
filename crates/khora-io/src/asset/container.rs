@@ -84,6 +84,19 @@ pub trait AssetContainer: Send + Sync + 'static {
     /// value is cached per container uuid and shared by all its sub-assets.
     fn open(&self, bytes: &[u8], source_path: &Path) -> anyhow::Result<Arc<dyn Any + Send + Sync>>;
 
+    /// Opens the container within `limits`; an error holding a
+    /// [`LimitExceeded`](crate::trust::LimitExceeded) when one stops it. By
+    /// default, [`Self::open`], ignoring them.
+    fn open_limited(
+        &self,
+        bytes: &[u8],
+        source_path: &Path,
+        limits: &crate::trust::Limits,
+    ) -> anyhow::Result<Arc<dyn Any + Send + Sync>> {
+        let _ = limits;
+        self.open(bytes, source_path)
+    }
+
     /// Extracts the sub-asset `label` of index type `type_name` from an
     /// opened container, boxed as the concrete asset type for `type_name`.
     fn extract(
@@ -93,6 +106,22 @@ pub trait AssetContainer: Send + Sync + 'static {
         label: &str,
         type_name: &str,
     ) -> anyhow::Result<Box<dyn Any + Send>>;
+
+    /// Extracts the sub-asset `label` within `limits` — those of its own type
+    /// at the reader's trust; an error holding a
+    /// [`LimitExceeded`](crate::trust::LimitExceeded) when one stops it. By
+    /// default, [`Self::extract`], ignoring them.
+    fn extract_limited(
+        &self,
+        opened: &(dyn Any + Send + Sync),
+        container: AssetUUID,
+        label: &str,
+        type_name: &str,
+        limits: &crate::trust::Limits,
+    ) -> anyhow::Result<Box<dyn Any + Send>> {
+        let _ = limits;
+        self.extract(opened, container, label, type_name)
+    }
 
     /// The files an opened container reads besides its own, as asset keys
     /// (paths relative to the assets root, forward slashes): a glTF's

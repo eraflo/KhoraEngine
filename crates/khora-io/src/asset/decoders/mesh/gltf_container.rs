@@ -38,6 +38,7 @@ use khora_core::asset::{AlphaMode, AssetUUID, Material, StandardMaterial};
 use khora_core::math::{LinearRgba, Mat4};
 
 use super::gltf::{merge, parse_gltf, read_primitive};
+use super::gltf_checks::ElementCaps;
 use super::gltf_resources::{image_bytes, load_buffers, resolve_relative_uri};
 use super::gltf_scene::scene_record;
 use super::{FileSystemResolver, GltfResourceResolver, MeshDispatcher};
@@ -45,6 +46,7 @@ use crate::asset::{
     AssetContainer, AssetDecoder, PrefabAsset, SubAssetEntry, SubAssetListerRegistration,
     TextureDecoder,
 };
+use crate::trust::{FileKind, LimitExceeded, Limits, Trust};
 
 /// The glTF extensions whose data the sub-assets carry. Any other extension a
 /// file uses is reported once when the file is opened.
@@ -104,6 +106,12 @@ impl GltfContainer {
         }
     }
 
+    /// A container reading external files through `resolver`: a packed
+    /// game's, inside its pack.
+    pub fn resolving_with(resolver: Arc<dyn GltfResourceResolver>) -> Self {
+        Self { resolver }
+    }
+
     /// A container reading external files through `guard`.
     pub fn guarded(guard: crate::trust::FileGuard) -> Self {
         Self {
@@ -122,10 +130,25 @@ struct OpenedGltf {
     /// The file's name without its extension: the name of a scene that has
     /// none.
     file_stem: String,
+    /// How many elements its parts may make the importer produce.
+    caps: ElementCaps,
 }
 
 impl AssetContainer for GltfContainer {
     fn open(&self, bytes: &[u8], source_path: &Path) -> anyhow::Result<Arc<dyn Any + Send + Sync>> {
+        self.open_limited(
+            bytes,
+            source_path,
+            &Limits::of(FileKind::Gltf, Trust::Project),
+        )
+    }
+
+    fn open_limited(
+        &self,
+        bytes: &[u8],
+        source_path: &Path,
+        limits: &Limits,
+    ) -> anyhow::Result<Arc<dyn Any + Send + Sync>> {
         if !MeshDispatcher::is_gltf(bytes) {
             bail!(
                 "'{}' is not a glTF file, so it has no sub-assets",
@@ -151,6 +174,7 @@ impl AssetContainer for GltfContainer {
             buffers,
             base_dir,
             file_stem,
+            caps: ElementCaps::of(limits),
         }))
     }
 
@@ -160,6 +184,24 @@ impl AssetContainer for GltfContainer {
         container: AssetUUID,
         label: &str,
         type_name: &str,
+    ) -> anyhow::Result<Box<dyn Any + Send>> {
+        let limits = match Label::parse(label) {
+            Some(Label::Texture(_)) => Limits::of(FileKind::Texture, Trust::Project),
+            _ => Limits::of(FileKind::Gltf, Trust::Project),
+        };
+        self.extract_limited(opened, container, label, type_name, &limits)
+    }
+
+    /// Extracts the part `label` within `limits`, its own type's: a texture
+    /// decodes within a texture's limits; a primitive within the element
+    /// caps the glTF was opened with.
+    fn extract_limited(
+        &self,
+        opened: &(dyn Any + Send + Sync),
+        container: AssetUUID,
+        label: &str,
+        type_name: &str,
+        limits: &Limits,
     ) -> anyhow::Result<Box<dyn Any + Send>> {
         let opened = opened.downcast_ref::<OpenedGltf>().ok_or_else(|| {
             anyhow!("glTF sub-asset '{label}': the opened container is not a glTF")
@@ -180,8 +222,9 @@ impl AssetContainer for GltfContainer {
                     .nth(mesh)
                     .and_then(|mesh| mesh.primitives().nth(primitive))
                     .ok_or_else(|| anyhow!("the glTF has no primitive '{label}'"))?;
-                let read = read_primitive(&primitive, &Mat4::IDENTITY, &opened.buffers)
-                    .map_err(|e| anyhow!("reading primitive '{label}': {e}"))?;
+                let read =
+                    read_primitive(&opened.caps, &primitive, &Mat4::IDENTITY, &opened.buffers)
+                        .map_err(|e| kept(e).context(format!("reading primitive '{label}'")))?;
                 let mesh =
                     merge(vec![read]).map_err(|e| anyhow!("building mesh '{label}': {e}"))?;
                 Ok(Box::new(mesh))
@@ -215,8 +258,8 @@ impl AssetContainer for GltfContainer {
                 )
                 .map_err(|e| anyhow!("reading the image of '{label}': {e}"))?;
                 let texture = TextureDecoder
-                    .load(&bytes)
-                    .map_err(|e| anyhow!("decoding the image of '{label}': {e}"))?;
+                    .load_limited(&bytes, Path::new(label), limits)
+                    .map_err(|e| kept(e).context(format!("decoding the image of '{label}'")))?;
                 Ok(Box::new(texture))
             }
             Label::Scene(scene) => {
@@ -472,6 +515,15 @@ fn warn_unmapped_features(document: &gltf::Document, source_path: &Path) {
             "glTF '{file}': texture samplers are not imported; every texture repeats with \
              linear filtering"
         );
+    }
+}
+
+/// An importer's error as a container's: a limit that stopped it stays a
+/// [`LimitExceeded`], what the reader refuses the file by.
+fn kept(error: Box<dyn std::error::Error + Send + Sync>) -> anyhow::Error {
+    match error.downcast::<LimitExceeded>() {
+        Ok(limit) => anyhow::Error::new(*limit),
+        Err(error) => anyhow!("{error}"),
     }
 }
 

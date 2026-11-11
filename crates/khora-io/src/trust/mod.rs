@@ -20,9 +20,11 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 mod guard;
+mod limits;
 mod quarantine;
 
 pub use guard::{FileGuard, ReadError};
+pub use limits::{LimitExceeded, Limits};
 pub use quarantine::{QuarantineKey, Refusals};
 
 #[cfg(test)]
@@ -155,6 +157,18 @@ pub enum SecurityReason {
     },
     /// Its content was refused before, and has not changed since.
     Quarantined,
+    /// Decoding it went past one of its limits.
+    OverLimit {
+        /// What went past its limit.
+        what: String,
+        /// The limit it went past.
+        limit: u64,
+    },
+    /// Its decoder panicked on it.
+    DecoderPanic {
+        /// What the panic said.
+        message: String,
+    },
 }
 
 /// A file the engine refused to read.
@@ -189,6 +203,12 @@ impl std::fmt::Display for SecurityReason {
             SecurityReason::Quarantined => {
                 write!(f, "was refused before and has not changed since")
             }
+            SecurityReason::OverLimit { what, limit } => {
+                write!(f, "decodes past a limit: {what} passes {limit}")
+            }
+            SecurityReason::DecoderPanic { message } => {
+                write!(f, "made its decoder fail: {message}")
+            }
         }
     }
 }
@@ -208,6 +228,14 @@ impl SecurityReason {
             }
             SecurityReason::Quarantined => {
                 "Change the file, or release it from quarantine, to have it read again."
+            }
+            SecurityReason::OverLimit { .. } => {
+                "Make the file smaller: fewer pixels, vertices or samples. A file from an \
+                 untrusted project or downloaded from the internet has smaller limits."
+            }
+            SecurityReason::DecoderPanic { .. } => {
+                "The file is damaged or made to break its decoder. Replace it, and it is \
+                 read again."
             }
         }
     }

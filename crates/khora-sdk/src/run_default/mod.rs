@@ -75,6 +75,17 @@ fn build_asset_service(
     let assets = exe_dir.join("assets");
 
     let (svc, mode_label) = if is_packed(exe_dir) {
+        // An index is read whole: one past its limit is refused before.
+        let idx_len = std::fs::metadata(&idx)
+            .with_context(|| format!("Failed to read {}", idx.display()))?
+            .len();
+        if idx_len > khora_io::asset::MAX_INDEX_BYTES as u64 {
+            return Err(anyhow!(
+                "{} is {idx_len} bytes, over the {} an index may hold",
+                idx.display(),
+                khora_io::asset::MAX_INDEX_BYTES
+            ));
+        }
         let bytes =
             std::fs::read(&idx).with_context(|| format!("Failed to read {}", idx.display()))?;
         let pack_file = std::fs::File::open(&pack)
@@ -90,7 +101,8 @@ fn build_asset_service(
         if let Some(refusals) = refusals {
             svc.set_refusals(refusals);
         }
-        svc.register_default_decoders(exe_dir);
+        // A glTF's buffers and images are read inside the pack.
+        svc.register_packed_decoders();
         (svc, "PackLoader")
     } else if assets.is_dir() {
         // The manifest is a release-mode artifact emitted alongside

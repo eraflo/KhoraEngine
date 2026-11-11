@@ -14,6 +14,7 @@
 
 //! Asset decoder trait — raw bytes to typed asset.
 
+use crate::trust::{Limits, Trust};
 use khora_core::asset::Asset;
 use std::error::Error;
 use std::path::Path;
@@ -37,4 +38,24 @@ pub trait AssetDecoder<A: Asset> {
     /// decoder reads: its magic bytes, or text (UTF-8, no NUL) for a text
     /// format. A file whose head this refuses is never decoded.
     fn sniff(&self, head: &[u8]) -> bool;
+
+    /// The limits a file this decoder reads has at `trust`. The strictest
+    /// limits by default; each built-in decoder gives its kind's.
+    fn limits(&self, trust: Trust) -> Limits {
+        let _ = trust;
+        Limits::strictest()
+    }
+
+    /// Decodes the asset stored at `source_path` within `limits`, returning
+    /// a [`LimitExceeded`](crate::trust::LimitExceeded) when one stops it.
+    /// By default, [`Self::load_at`], ignoring them.
+    fn load_limited(
+        &self,
+        bytes: &[u8],
+        source_path: &Path,
+        limits: &Limits,
+    ) -> Result<A, Box<dyn Error + Send + Sync>> {
+        let _ = limits;
+        self.load_at(bytes, source_path)
+    }
 }

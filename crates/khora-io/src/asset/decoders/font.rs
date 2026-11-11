@@ -35,6 +35,10 @@ impl AssetDecoder<Font> for FontDecoder {
             .any(|magic| head.starts_with(magic))
     }
 
+    fn limits(&self, trust: crate::trust::Trust) -> crate::trust::Limits {
+        crate::trust::Limits::of(crate::trust::FileKind::Font, trust)
+    }
+
     fn load(
         &self,
         bytes: &[u8],

@@ -20,14 +20,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
-use khora_core::asset::{AssetMetadata, AssetSource, AssetUUID};
+use khora_core::asset::{AssetMetadata, AssetSource, AssetUUID, CompressionKind};
 
 use super::container::AssetContainer;
 use super::decoder_registry::DecoderRegistry;
 use super::io::AssetIo;
 use super::manifest::PackManifest;
 use super::AssetIndex;
-use crate::trust::{Layer, QuarantineKey, Refusals, SecurityReason, SecurityRefusal, Trust};
+use crate::trust::{
+    FileKind, Layer, LimitExceeded, Limits, QuarantineKey, Refusals, SecurityReason,
+    SecurityRefusal, Trust,
+};
 
 /// How many of a file's first bytes its decoder is shown to recognise it.
 const SNIFFED: usize = 512;
@@ -53,6 +56,8 @@ pub struct AssetReader {
     pub(super) manifest: Option<Arc<PackManifest>>,
     /// Where a file whose bytes are not what its type says is refused.
     pub(super) refusals: Option<Arc<Refusals>>,
+    /// How much the files read are trusted: the limits each decode has.
+    pub(super) trust: Trust,
 }
 
 /// A file decoded from its own bytes, and — when its type is also a
@@ -121,7 +126,7 @@ impl AssetReader {
                 .open(container)
                 .with_context(|| format!("sub-asset '{label}'"))?;
             external_files.push((*container, files));
-            return Self::extract(
+            return self.extract(
                 &opener,
                 &opened,
                 *container,
@@ -171,6 +176,19 @@ impl AssetReader {
     /// The bytes of `uuid` at `source`, checked against the manifest when
     /// there is one.
     pub(super) fn read(&self, uuid: &AssetUUID, source: &AssetSource) -> Result<Vec<u8>> {
+        if let AssetSource::Packed {
+            size,
+            uncompressed_size,
+            compression,
+            ..
+        } = source
+        {
+            let declared = match compression {
+                CompressionKind::None => *size,
+                _ => *uncompressed_size,
+            };
+            self.check_packed(uuid, declared)?;
+        }
         let bytes = self.io.load_bytes(source)?;
         if let Some(manifest) = &self.manifest {
             manifest
@@ -191,9 +209,16 @@ impl AssetReader {
         type_id: TypeId,
     ) -> Result<DecodedFile> {
         self.check_type(metadata, bytes)?;
-        let value =
-            self.decoders
-                .decode_any_at(&metadata.asset_type_name, bytes, &metadata.source_path)?;
+        let limits = self.limits_of(metadata);
+        self.check_size(metadata, bytes, &limits)?;
+        let value = self.guarded(metadata, Content::Bytes(bytes), || {
+            self.decoders.decode_any_limited(
+                &metadata.asset_type_name,
+                bytes,
+                &metadata.source_path,
+                &limits,
+            )
+        })?;
         if (*value).type_id() != type_id {
             return Err(anyhow!(
                 "Decoder for type '{}' returned a different asset type than requested.",
@@ -204,10 +229,11 @@ impl AssetReader {
             .containers
             .get(&metadata.asset_type_name)
             .and_then(|opener| {
-                opener
-                    .open(bytes, &metadata.source_path)
-                    .ok()
-                    .map(|opened| opener.external_files(opened.as_ref()))
+                self.guarded(metadata, Content::Bytes(bytes), || {
+                    opener.open_limited(bytes, &metadata.source_path, &limits)
+                })
+                .ok()
+                .map(|opened| opener.external_files(opened.as_ref()))
             });
         Ok((value, files))
     }
@@ -221,23 +247,10 @@ impl AssetReader {
         if self.decoders.sniff(&metadata.asset_type_name, head) != Some(false) {
             return Ok(());
         }
-        let path = (metadata.variants.get("default"))
-            .and_then(|source| self.io.locate(source))
-            .unwrap_or_else(|| PathBuf::from(&metadata.source_path));
-        let refusal = SecurityRefusal {
-            path,
-            trust: Trust::Project,
-            layer: Layer::Decoder,
-            reason: SecurityReason::WrongType {
-                expected: metadata.asset_type_name.clone(),
-            },
+        let reason = SecurityReason::WrongType {
+            expected: metadata.asset_type_name.clone(),
         };
-        let error = anyhow!("{refusal}");
-        if let Some(refusals) = &self.refusals {
-            let key = QuarantineKey::Content(*blake3::hash(bytes).as_bytes());
-            refusals.refuse(refusal, Some(key));
-        }
-        Err(error)
+        Err(self.refuse(metadata, Content::Bytes(bytes), Layer::Decoder, reason))
     }
 
     /// What opens the container file `container`.
@@ -265,8 +278,12 @@ impl AssetReader {
             .map_err(|_| anyhow!("container {container} has no 'default' variant"))?;
         let bytes = self.read(container, source)?;
         self.check_type(metadata, &bytes)?;
-        let opened = opener
-            .open(&bytes, &metadata.source_path)
+        let limits = self.limits_of(metadata);
+        self.check_size(metadata, &bytes, &limits)?;
+        let opened = self
+            .guarded(metadata, Content::Bytes(&bytes), || {
+                opener.open_limited(&bytes, &metadata.source_path, &limits)
+            })
             .with_context(|| format!("opening container {container}"))?;
         let files = opener.external_files(opened.as_ref());
         Ok((opener, opened, files))
@@ -275,14 +292,167 @@ impl AssetReader {
     /// Extracts the sub-asset `label` (index type `type_name`) from an
     /// opened container.
     pub(super) fn extract(
+        &self,
         opener: &Arc<dyn AssetContainer>,
         opened: &Arc<dyn Any + Send + Sync>,
         container: AssetUUID,
         label: &str,
         type_name: &str,
     ) -> Result<Box<dyn Any + Send>> {
-        opener
-            .extract(opened.as_ref(), container, label, type_name)
-            .with_context(|| format!("extracting '{label}' from {container}"))
+        // The part's own type gives its limits: a glTF's texture is a
+        // texture's, read at this reader's trust.
+        let limits = self
+            .decoders
+            .limits(type_name, self.trust)
+            .unwrap_or_else(|| {
+                Limits::of(FileKind::of_path(std::path::Path::new(label)), self.trust)
+            });
+        let extract =
+            || opener.extract_limited(opened.as_ref(), container, label, type_name, &limits);
+        match self.index.get_metadata(&container) {
+            Some(metadata) => self.guarded(metadata, Content::Reread, extract),
+            None => extract(),
+        }
+        .with_context(|| format!("extracting '{label}' from {container}"))
     }
+
+    /// The limits of a file of `metadata`'s type at this reader's trust:
+    /// its decoder's, the strictest when it has none.
+    fn limits_of(&self, metadata: &AssetMetadata) -> Limits {
+        self.decoders
+            .limits(&metadata.asset_type_name, self.trust)
+            .unwrap_or_else(|| Limits::of(FileKind::of_path(&metadata.source_path), self.trust))
+    }
+
+    /// Refuses a pack entry declaring more bytes than it may hold — more
+    /// than the manifest recorded for it, or than its type's limit — before
+    /// anything is read or allocated.
+    fn check_packed(&self, uuid: &AssetUUID, declared: u64) -> Result<()> {
+        let Some(metadata) = self.index.get_metadata(uuid) else {
+            return Ok(());
+        };
+        let cap = match self
+            .manifest
+            .as_ref()
+            .and_then(|manifest| manifest.get(uuid))
+        {
+            Some(entry) => entry.size,
+            None => self.limits_of(metadata).max_bytes,
+        };
+        if declared <= cap {
+            return Ok(());
+        }
+        let reason = SecurityReason::TooLarge {
+            size: declared,
+            cap,
+        };
+        // Nothing is read for it: the declared size is what is refused.
+        Err(self.refuse(metadata, Content::Unread, Layer::Pack, reason))
+    }
+
+    /// Refuses `bytes` over their type's byte limit, before they are decoded.
+    fn check_size(&self, metadata: &AssetMetadata, bytes: &[u8], limits: &Limits) -> Result<()> {
+        let size = bytes.len() as u64;
+        if size <= limits.max_bytes {
+            return Ok(());
+        }
+        let reason = SecurityReason::TooLarge {
+            size,
+            cap: limits.max_bytes,
+        };
+        Err(self.refuse(metadata, Content::Bytes(bytes), Layer::Decoder, reason))
+    }
+
+    /// Runs a decoder's work on the file of `metadata`: a limit that stopped
+    /// it, or a panic, is refused and quarantined by the file's `content`;
+    /// the panic never reaches the caller.
+    fn guarded<T>(
+        &self,
+        metadata: &AssetMetadata,
+        content: Content<'_>,
+        work: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)) {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(error)) => {
+                let limit = error
+                    .chain()
+                    .find_map(|cause| cause.downcast_ref::<LimitExceeded>())
+                    .cloned();
+                match limit {
+                    Some(limit) => {
+                        let reason = SecurityReason::OverLimit {
+                            what: limit.what,
+                            limit: limit.limit,
+                        };
+                        let refusal = self.refuse(metadata, content, Layer::Decoder, reason);
+                        Err(error.context(refusal))
+                    }
+                    None => Err(error),
+                }
+            }
+            Err(payload) => {
+                let message = panic_message(payload.as_ref());
+                let reason = SecurityReason::DecoderPanic { message };
+                Err(self.refuse(metadata, content, Layer::Decoder, reason))
+            }
+        }
+    }
+
+    /// Reports the refusal of the file of `metadata`, quarantining it by its
+    /// `content` when it is known, and returns it as an error.
+    fn refuse(
+        &self,
+        metadata: &AssetMetadata,
+        content: Content<'_>,
+        layer: Layer,
+        reason: SecurityReason,
+    ) -> anyhow::Error {
+        let path = (metadata.variants.get("default"))
+            .and_then(|source| self.io.locate(source))
+            .unwrap_or_else(|| PathBuf::from(&metadata.source_path));
+        let refusal = SecurityRefusal {
+            path,
+            trust: self.trust,
+            layer,
+            reason,
+        };
+        let error = anyhow!("{refusal}");
+        if let Some(refusals) = &self.refusals {
+            let reread;
+            let bytes = match content {
+                Content::Bytes(bytes) => Some(bytes),
+                Content::Reread => {
+                    reread = (metadata.variants.get("default"))
+                        .and_then(|source| self.io.load_bytes(source).ok());
+                    reread.as_deref()
+                }
+                Content::Unread => None,
+            };
+            let key = bytes.map(|bytes| QuarantineKey::Content(*blake3::hash(bytes).as_bytes()));
+            refusals.refuse(refusal, key);
+        }
+        error
+    }
+}
+
+/// What a panic said: its message, when it carried one.
+fn panic_message(payload: &(dyn Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|message| (*message).to_owned())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "the decoder panicked".to_owned())
+}
+
+/// What a refused file is quarantined by.
+#[derive(Clone, Copy)]
+enum Content<'a> {
+    /// The bytes read for it.
+    Bytes(&'a [u8]),
+    /// Its bytes, read again: a container's part refused after the container
+    /// was opened from bytes no longer held.
+    Reread,
+    /// Nothing: a pack entry refused for the size it declares, never read.
+    Unread,
 }

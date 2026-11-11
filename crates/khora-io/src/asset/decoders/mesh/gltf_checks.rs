@@ -28,25 +28,44 @@ use std::error::Error;
 use gltf::accessor::{DataType, Dimensions};
 use gltf::mesh::Semantic;
 
+use crate::trust::{LimitExceeded, Limits};
+
 type BoxError = Box<dyn Error + Send + Sync>;
 
-/// The most elements an accessor without a buffer view may describe. Such an
-/// accessor is all zeros (plus sparse substitutions), so its count is not
-/// bounded by any data in the file; without a cap a single number in the
-/// JSON could ask for gigabytes. Real files use it for small zero-filled
-/// attributes, far below this.
-const MAX_UNBACKED_ELEMENTS: usize = 1 << 20;
+/// How many elements a glTF may make the importer produce, from the
+/// [`Limits`] it is decoded within.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct ElementCaps {
+    /// The most vertices one decoded mesh may hold — `max_elements`, 1 << 24
+    /// (768 MiB of 48-byte vertices) for a trusted project's file. A file
+    /// that places one mesh under many nodes is decoded once per placement
+    /// when its scene is flattened, so a few bytes of JSON could otherwise
+    /// multiply a mesh past any memory.
+    pub(super) vertices: usize,
+    /// The most elements an accessor without a buffer view may describe — a
+    /// sixteenth of the vertices. Such an accessor is all zeros (plus sparse
+    /// substitutions), so its count is not bounded by any data in the file;
+    /// without a cap a single number in the JSON could ask for gigabytes.
+    /// Real files use it for small zero-filled attributes, far below this.
+    pub(super) unbacked: usize,
+}
 
-/// The most vertices one decoded mesh may hold (768 MiB of 48-byte
-/// vertices). A file that places one mesh under many nodes is decoded once
-/// per placement when its scene is flattened, so a few bytes of JSON could
-/// otherwise multiply a mesh past any memory.
-pub(super) const MAX_DECODED_VERTICES: usize = 1 << 24;
+impl ElementCaps {
+    /// The caps `limits` give.
+    pub(super) fn of(limits: &Limits) -> Self {
+        let vertices = usize::try_from(limits.max_elements).unwrap_or(usize::MAX);
+        Self {
+            vertices,
+            unbacked: vertices / 16,
+        }
+    }
+}
 
 /// Checks every accessor `primitive` gives the importer: `POSITION`,
 /// `NORMAL`, `TEXCOORD_0`, `COLOR_0` and the indices. `buffers` are the
 /// file's loaded buffers, in document order.
 pub(super) fn check_primitive(
+    caps: &ElementCaps,
     primitive: &gltf::Primitive<'_>,
     buffers: &[Vec<u8>],
 ) -> Result<(), BoxError> {
@@ -82,7 +101,7 @@ pub(super) fn check_primitive(
             )
             .into());
         }
-        check_accessor(&accessor, buffers)?;
+        check_accessor(caps, &accessor, buffers)?;
     }
     if let Some(indices) = primitive.indices() {
         let fits = indices.dimensions() == Dimensions::Scalar
@@ -99,13 +118,17 @@ pub(super) fn check_primitive(
             )
             .into());
         }
-        check_accessor(&indices, buffers)?;
+        check_accessor(caps, &indices, buffers)?;
     }
     Ok(())
 }
 
 /// Checks that every byte `accessor` reads lies inside its buffers.
-fn check_accessor(accessor: &gltf::Accessor<'_>, buffers: &[Vec<u8>]) -> Result<(), BoxError> {
+fn check_accessor(
+    caps: &ElementCaps,
+    accessor: &gltf::Accessor<'_>,
+    buffers: &[Vec<u8>],
+) -> Result<(), BoxError> {
     let index = accessor.index();
     let count = accessor.count();
     if count == 0 {
@@ -140,12 +163,11 @@ fn check_accessor(accessor: &gltf::Accessor<'_>, buffers: &[Vec<u8>]) -> Result<
             }
             check_view(&view, buffers)?;
         }
-        None if count > MAX_UNBACKED_ELEMENTS => {
-            return Err(format!(
-                "glTF accessor {index} has no buffer view but claims {count} elements \
-                 (at most {MAX_UNBACKED_ELEMENTS})"
-            )
-            .into());
+        None if count > caps.unbacked => {
+            return Err(Box::new(LimitExceeded {
+                what: format!("glTF accessor {index} without a buffer view, of {count} elements"),
+                limit: caps.unbacked as u64,
+            }));
         }
         None => {}
     }

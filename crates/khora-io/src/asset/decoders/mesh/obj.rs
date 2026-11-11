@@ -33,6 +33,10 @@ impl AssetDecoder<Mesh> for ObjDecoder {
         crate::trust::looks_like_text(head)
     }
 
+    fn limits(&self, trust: crate::trust::Trust) -> crate::trust::Limits {
+        crate::trust::Limits::of(crate::trust::FileKind::Gltf, trust)
+    }
+
     fn load(&self, bytes: &[u8]) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
         let obj_text = std::str::from_utf8(bytes).context("OBJ file is not valid UTF-8")?;
 

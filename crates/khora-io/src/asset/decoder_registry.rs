@@ -15,6 +15,7 @@
 //! Decoder registry — type-erased dispatch for asset decoding.
 
 use super::{AssetDecoder, AssetService};
+use crate::trust::{LimitExceeded, Limits, Trust};
 use anyhow::{anyhow, Result};
 use khora_core::asset::Asset;
 use khora_telemetry::metrics::{CounterHandle, HistogramHandle};
@@ -59,6 +60,16 @@ inventory::collect!(DecoderRegistration);
 trait AnyDecoder: Send + Sync {
     fn sniff(&self, head: &[u8]) -> bool;
 
+    fn limits(&self, trust: Trust) -> Limits;
+
+    fn decode_any_limited(
+        &self,
+        bytes: &[u8],
+        source_path: &Path,
+        limits: &Limits,
+        metrics: &DecoderMetrics,
+    ) -> Result<Box<dyn Any + Send>>;
+
     fn decode_any(
         &self,
         bytes: &[u8],
@@ -74,6 +85,26 @@ impl<A: Asset, L: AssetDecoder<A> + Send + Sync> AnyDecoder for DecoderWrapper<A
         self.0.sniff(head)
     }
 
+    fn limits(&self, trust: Trust) -> Limits {
+        self.0.limits(trust)
+    }
+
+    fn decode_any_limited(
+        &self,
+        bytes: &[u8],
+        source_path: &Path,
+        limits: &Limits,
+        metrics: &DecoderMetrics,
+    ) -> Result<Box<dyn Any + Send>> {
+        let _timer = ScopedMetricTimer::new(&metrics.decode_time_ms);
+        let asset: A = self
+            .0
+            .load_limited(bytes, source_path, limits)
+            .map_err(error_of)?;
+        metrics.assets_decoded_total.increment()?;
+        Ok(Box::new(asset))
+    }
+
     fn decode_any(
         &self,
         bytes: &[u8],
@@ -81,10 +112,7 @@ impl<A: Asset, L: AssetDecoder<A> + Send + Sync> AnyDecoder for DecoderWrapper<A
         metrics: &DecoderMetrics,
     ) -> Result<Box<dyn Any + Send>> {
         let _timer = ScopedMetricTimer::new(&metrics.decode_time_ms);
-        let asset: A = self
-            .0
-            .load_at(bytes, source_path)
-            .map_err(|e| anyhow!(e.to_string()))?;
+        let asset: A = self.0.load_at(bytes, source_path).map_err(error_of)?;
         metrics.assets_decoded_total.increment()?;
         Ok(Box::new(asset))
     }
@@ -171,6 +199,46 @@ impl DecoderRegistry {
         self.decoders
             .get(type_name)
             .map(|decoder| decoder.sniff(head))
+    }
+
+    /// The limits of a file of `type_name` read at `trust`, as its decoder
+    /// gives them; `None` when no decoder is registered for it.
+    pub fn limits(
+        &self,
+        type_name: &str,
+        trust: crate::trust::Trust,
+    ) -> Option<crate::trust::Limits> {
+        self.decoders
+            .get(type_name)
+            .map(|decoder| decoder.limits(trust))
+    }
+
+    /// Decodes the bytes of the file at `source_path` with the decoder
+    /// registered for `type_name`, within `limits`, as whatever type it
+    /// produces. A limit that stopped it is kept in the error, as a
+    /// [`LimitExceeded`].
+    pub(crate) fn decode_any_limited(
+        &self,
+        type_name: &str,
+        bytes: &[u8],
+        source_path: &Path,
+        limits: &Limits,
+    ) -> Result<Box<dyn Any + Send>> {
+        let decoder = self
+            .decoders
+            .get(type_name)
+            .ok_or_else(|| anyhow!("No decoder registered for asset type '{}'", type_name))?;
+        decoder.decode_any_limited(bytes, source_path, limits, &self.metrics)
+    }
+}
+
+/// A decoder's error as the service carries it: a limit that stopped the
+/// decoder stays a [`LimitExceeded`], what the reader refuses it by; any
+/// other error by its message.
+fn error_of(error: Box<dyn std::error::Error + Send + Sync>) -> anyhow::Error {
+    match error.downcast::<LimitExceeded>() {
+        Ok(limit) => anyhow::Error::new(*limit),
+        Err(error) => anyhow!(error.to_string()),
     }
 }
 

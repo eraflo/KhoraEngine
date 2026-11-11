@@ -19,6 +19,11 @@ use khora_data::assets::SoundData;
 use std::{error::Error, io::Cursor};
 
 use crate::asset::AssetDecoder;
+use crate::trust::{FileKind, LimitExceeded, Limits, Trust};
+use std::path::Path;
+
+/// The bytes one decoded sample fills.
+const SAMPLE_BYTES: u64 = std::mem::size_of::<f32>() as u64;
 
 /// Decodes audio from the WAV format using `hound`.
 #[derive(Default)]
@@ -36,11 +41,37 @@ impl AssetDecoder<SoundData> for WavDecoder {
         crate::trust::magic::is_wav(head)
     }
 
+    fn limits(&self, trust: Trust) -> Limits {
+        Limits::of(FileKind::Audio, trust)
+    }
+
     fn load(&self, bytes: &[u8]) -> Result<SoundData, Box<dyn Error + Send + Sync>> {
+        self.load_limited(
+            bytes,
+            Path::new(""),
+            &Limits::of(FileKind::Audio, Trust::Project),
+        )
+    }
+
+    fn load_limited(
+        &self,
+        bytes: &[u8],
+        _source_path: &Path,
+        limits: &Limits,
+    ) -> Result<SoundData, Box<dyn Error + Send + Sync>> {
         let cursor = Cursor::new(bytes);
         let mut reader = hound::WavReader::new(cursor)?;
 
         let spec = reader.spec();
+        // The samples the header announces, decoded to `f32`: refused before
+        // one is read when they pass the limit.
+        let decoded = u64::from(reader.len()).saturating_mul(SAMPLE_BYTES);
+        if decoded > limits.max_decoded_bytes {
+            return Err(Box::new(LimitExceeded {
+                what: format!("{} samples, {decoded} bytes decoded", reader.len()),
+                limit: limits.max_decoded_bytes,
+            }));
+        }
 
         let samples: Result<Vec<f32>, _> = match spec.sample_format {
             hound::SampleFormat::Float => reader.samples::<f32>().collect(),
@@ -90,5 +121,71 @@ mod tests {
         let loader = WavDecoder::new();
         let invalid_bytes = &[0, 1, 2, 3, 4];
         assert!(loader.load(invalid_bytes).is_err());
+    }
+
+    use crate::trust::{LimitExceeded, Limits};
+    use std::path::Path;
+
+    /// The `LimitExceeded` an error is, or holds among its sources.
+    fn exceeded<'a>(error: &'a (dyn Error + 'static)) -> Option<&'a LimitExceeded> {
+        let mut next = Some(error);
+        while let Some(error) = next {
+            if let Some(limit) = error.downcast_ref::<LimitExceeded>() {
+                return Some(limit);
+            }
+            next = error.source();
+        }
+        None
+    }
+
+    /// A 16-bit mono WAV of `samples` samples, written in memory.
+    fn wav_of(samples: usize) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 8000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer =
+            hound::WavWriter::new(Cursor::new(&mut bytes), spec).expect("a WAV writer");
+        for i in 0..samples {
+            writer
+                .write_sample((i % 100) as i16 * 100)
+                .expect("a sample is written");
+        }
+        writer.finalize().expect("the WAV is finished");
+        bytes
+    }
+
+    /// Limits that stop nothing but a decode past `max_decoded_bytes`.
+    fn decoded_at_most(max_decoded_bytes: u64) -> Limits {
+        Limits {
+            max_bytes: u64::MAX,
+            max_decoded_bytes,
+            max_elements: u64::MAX,
+            max_dimension: u32::MAX,
+        }
+    }
+
+    /// **A WAV decoding past its decoded limit is refused**: 1 000 samples
+    /// decode to more than 1 000 bytes, so the decode stops with a
+    /// `LimitExceeded` naming that limit; within ample limits the same file
+    /// decodes whole.
+    #[test]
+    fn a_wav_decoding_past_its_decoded_limit_is_refused() {
+        let file = wav_of(1000);
+
+        let refused = WavDecoder
+            .load_limited(&file, Path::new(""), &decoded_at_most(1000))
+            .expect_err("1 000 samples are more than 1 000 decoded bytes");
+        let limit =
+            exceeded(&*refused).unwrap_or_else(|| panic!("a LimitExceeded, not: {refused}"));
+        assert_eq!(limit.limit, 1000);
+
+        let sound = WavDecoder
+            .load_limited(&file, Path::new(""), &decoded_at_most(1 << 20))
+            .unwrap_or_else(|e| panic!("the WAV decodes within ample limits: {e}"));
+        assert_eq!(sound.samples.len(), 1000);
     }
 }

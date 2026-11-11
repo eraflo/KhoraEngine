@@ -18,9 +18,10 @@
 //! node's primitives, placed by the node hierarchy, merged into one vertex
 //! and index list.
 
-use super::gltf_checks::{check_primitive, MAX_DECODED_VERTICES};
+use super::gltf_checks::{check_primitive, ElementCaps};
 use super::gltf_resources::load_buffers;
 use super::GltfResourceResolver;
+use crate::trust::{FileKind, LimitExceeded, Limits, Trust};
 use anyhow::Result;
 use gltf::{
     mesh::{Mode, Semantic},
@@ -52,6 +53,10 @@ impl AssetDecoder<Mesh> for GltfDecoder {
         super::MeshDispatcher::is_glb(head) || super::MeshDispatcher::looks_like_gltf_json(head)
     }
 
+    fn limits(&self, trust: Trust) -> Limits {
+        Limits::of(FileKind::Gltf, trust)
+    }
+
     /// Decodes a glTF whose external files are named from the assets root.
     fn load(&self, bytes: &[u8]) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
         self.load_at(bytes, Path::new(""))
@@ -64,6 +69,23 @@ impl AssetDecoder<Mesh> for GltfDecoder {
         bytes: &[u8],
         source_path: &Path,
     ) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
+        self.load_limited(
+            bytes,
+            source_path,
+            &Limits::of(FileKind::Gltf, Trust::Project),
+        )
+    }
+
+    /// Decodes the glTF at `source_path` within `limits`: its vertices, and
+    /// the elements of an accessor without a buffer view, are capped by
+    /// them.
+    fn load_limited(
+        &self,
+        bytes: &[u8],
+        source_path: &Path,
+        limits: &Limits,
+    ) -> Result<Mesh, Box<dyn Error + Send + Sync>> {
+        let caps = ElementCaps::of(limits);
         let gltf = parse_gltf(bytes).map_err(|e| format!("Failed to parse GLTF file: {}", e))?;
 
         let base_dir = source_path.parent().unwrap_or(Path::new(""));
@@ -81,13 +103,13 @@ impl AssetDecoder<Mesh> for GltfDecoder {
                 vertices = vertices.saturating_add(
                     count(primitive.get(&Semantic::Positions)).max(count(primitive.indices())),
                 );
-                if vertices > MAX_DECODED_VERTICES {
-                    return Err(format!(
-                        "glTF scene flattens to more than {MAX_DECODED_VERTICES} vertices"
-                    )
-                    .into());
+                if vertices > caps.vertices {
+                    return Err(Box::new(LimitExceeded {
+                        what: format!("glTF scene flattening to {vertices} vertices"),
+                        limit: caps.vertices as u64,
+                    }));
                 }
-                primitives.push(read_primitive(&primitive, world, &buffer_data)?);
+                primitives.push(read_primitive(&caps, &primitive, world, &buffer_data)?);
             }
         }
 
@@ -252,11 +274,20 @@ pub(super) struct Primitive {
 }
 
 pub(super) fn read_primitive(
+    caps: &ElementCaps,
     primitive: &gltf::Primitive<'_>,
     world: &Mat4,
     buffer_data: &[Vec<u8>],
 ) -> Result<Primitive, Box<dyn Error + Send + Sync>> {
-    check_primitive(primitive, buffer_data)?;
+    let count = |accessor: Option<gltf::Accessor<'_>>| accessor.map_or(0, |a| a.count());
+    let vertices = count(primitive.get(&Semantic::Positions)).max(count(primitive.indices()));
+    if vertices > caps.vertices {
+        return Err(Box::new(LimitExceeded {
+            what: format!("glTF primitive of {vertices} vertices"),
+            limit: caps.vertices as u64,
+        }));
+    }
+    check_primitive(caps, primitive, buffer_data)?;
     let reader =
         primitive.reader(|buffer: Buffer<'_>| buffer_data.get(buffer.index()).map(Vec::as_slice));
     // Every accessor was checked to lie inside its buffer, so an attribute
