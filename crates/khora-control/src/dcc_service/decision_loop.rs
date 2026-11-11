@@ -65,6 +65,8 @@ impl DccService {
         let layout_recommendations = Arc::clone(&self.layout_recommendations);
         let decision_recording = Arc::clone(&self.decision_recording);
         let recorded_trace = Arc::clone(&self.recorded_trace);
+        let seeded_costs = Arc::clone(&self.seeded_costs);
+        let learnt_costs = Arc::clone(&self.learnt_costs);
         let replay = Arc::clone(&self.replay);
         let hardware_monitor = Arc::clone(&self.hardware_monitor);
         let tick_duration = Duration::from_secs_f32(1.0 / self.config.tick_rate as f32);
@@ -83,6 +85,22 @@ impl DccService {
             let mut arbitrator = GornaArbitrator::new(agent_lock_timeout);
             *arbitrator.planner_mut() = crate::gorna::planning::Planner::new(planning_cfg);
             *arbitrator.cost_book_mut() = crate::gorna::cost_book::CostBook::new(cost_book_cfg);
+            // What a profile learnt on an earlier run seeds the book, for the
+            // agents registered now.
+            let seeded = seeded_costs
+                .write()
+                .map(|mut seeded| std::mem::take(&mut *seeded))
+                .unwrap_or_default();
+            if !seeded.is_empty() {
+                let agents = registry
+                    .lock()
+                    .map(|registry| registry.all_ids())
+                    .unwrap_or_default();
+                arbitrator.cost_book_mut().seed(&seeded, &agents);
+            }
+            if let Ok(mut learnt) = learnt_costs.write() {
+                *learnt = arbitrator.cost_book().export();
+            }
             // When the DCC started: the planner reads workload trends in it.
             let started = Instant::now();
             // When the next epoch opens, and what waits to open it.
@@ -566,6 +584,11 @@ impl DccService {
                     if let Some(channel) = connected(&budget_channel) {
                         channel.publish(allocation);
                     }
+                }
+
+                // What the book has learnt, for the host to keep across runs.
+                if let Ok(mut learnt) = learnt_costs.write() {
+                    *learnt = arbitrator.cost_book().export();
                 }
 
                 // 4. Sleep until next tick

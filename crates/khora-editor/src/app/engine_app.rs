@@ -34,6 +34,11 @@ use crate::log_capture::EditorLogCapture;
 use crate::{commands, gizmo, hot_reload, input, ops};
 
 impl EngineApp for EditorApp {
+    /// The editor keeps what the engine learns of this machine.
+    fn keeps_machine_profiles() -> bool {
+        true
+    }
+
     /// The game the project opened at launch is, from its `project.json`;
     /// the editor's own name and version when none was opened.
     fn game_identity() -> khora_sdk::GameIdentity {

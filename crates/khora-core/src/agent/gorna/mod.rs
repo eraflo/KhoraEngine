@@ -17,6 +17,7 @@
 mod correction;
 mod decision_trace;
 mod planning;
+mod profile;
 pub mod protocol;
 #[cfg(test)]
 mod tests;
@@ -24,6 +25,7 @@ mod tests;
 pub use correction::Correction;
 pub use decision_trace::{DecisionTrace, EpochRecord, FrameSummary};
 pub use planning::Planning;
+pub use profile::{CostProfile, ProfileRow};
 
 use serde::{Deserialize, Serialize};
 

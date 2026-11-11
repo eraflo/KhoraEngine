@@ -211,6 +211,11 @@ impl GornaArbitrator {
         &self.planning
     }
 
+    /// What the DCC learnt of each (agent, row), to read.
+    pub fn cost_book(&self) -> &CostBook {
+        &self.book
+    }
+
     /// What the DCC learns of each (agent, row): the correction from its
     /// quoted host time to its measured one.
     pub fn cost_book_mut(&mut self) -> &mut CostBook {

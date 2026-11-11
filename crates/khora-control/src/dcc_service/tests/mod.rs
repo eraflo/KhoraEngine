@@ -16,13 +16,15 @@
 //! governor, and the order it initializes agents in. The protocol it speaks
 //! to the agents is in `protocol.rs`; when it opens an epoch, in `epochs.rs`;
 //! how the governor drives the multiplier in `frame_governor.rs`, and the
-//! hardware monitor its thread reads in `hardware_monitor.rs`. The loop the
+//! hardware monitor its thread reads in `hardware_monitor.rs`; what it learns
+//! of the machine, seeded and published, in `learnt_costs.rs`. The loop the
 //! governor closes through GORNA, simulated, is pinned by the evaluation's
 //! own tests.
 
 mod epochs;
 mod frame_governor;
 mod hardware_monitor;
+mod learnt_costs;
 mod protocol;
 
 use super::forecast::forecast_frame_ms;

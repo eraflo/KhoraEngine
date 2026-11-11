@@ -185,7 +185,20 @@ impl GameDir {
 impl Drop for GameDir {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
+        // The profiles the engines of this test filed, beside the game.
+        let _ = std::fs::remove_dir_all(profiles_scratch());
     }
+}
+
+/// The folder the engines these tests boot file their machine profiles in,
+/// one per test process (each test runs in its own): never the profiles of
+/// whoever runs the tests, under their home folder. Removed with the test's
+/// game folders.
+fn profiles_scratch() -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "khora-sdk-run-default-profiles-{}",
+        std::process::id()
+    ))
 }
 
 /// The config of a runtime started without `runtime.json`, opening `scene`.
@@ -197,8 +210,10 @@ fn opening(scene: &str) -> RuntimeConfig {
 }
 
 /// The engine the runtime binary in `exe_dir` boots: its assets installed as
-/// `first` installs them, then the runtime app set up.
+/// `first` installs them, then the runtime app set up. Its machine profile
+/// is filed in [`profiles_scratch`], named by `KHORA_PROFILES`.
 fn engine_with<A: EngineApp>(exe_dir: &Path, app: A) -> EngineCore<A> {
+    std::env::set_var(khora_io::profiles::PROFILES_VAR, profiles_scratch());
     let mut runtime = Runtime::new();
     install_game_assets(&mut runtime, exe_dir, false);
     let mut engine = EngineCore::<A>::new();
@@ -1126,4 +1141,77 @@ fn a_blank_game_version_in_the_runtime_config_is_the_default_one() {
             "the game version {blank:?}"
         );
     }
+}
+
+/// **The runtime these tests boot reads no profile from the user's home.**
+/// The default runtime app keeps a machine profile, at a developer's path
+/// under the home folder unless `KHORA_PROFILES` names another. Every test
+/// here boots it through [`runtime_engine`]: it must not read, nor file, the
+/// profile of whoever runs the tests. A profile of this machine running the
+/// runtime's game, every family's rows learnt at 7, sits in a home folder of
+/// the test's own (`USERPROFILE`, `HOME`), and `KHORA_PROFILES` is not set
+/// before the boot: the boot helper files the profiles elsewhere. The runtime
+/// booted as the other tests boot it plans its first round at its quotes, not
+/// at 7.
+#[test]
+fn the_runtime_these_tests_boot_reads_no_profile_from_the_home_folder() {
+    use crate::khora_core::agent::gorna::{CostProfile, ProfileRow, StrategyId};
+    use khora_io::profiles::{profile_path, save, ProfilePlace, PROFILES_VAR};
+    let home = GameDir::new("profile-home");
+    std::env::remove_var(PROFILES_VAR);
+    std::env::set_var("USERPROFILE", home.path());
+    std::env::set_var("HOME", home.path());
+    std::env::set_var("KHORA_RECORD_DECISIONS", home.path().join("journal.json"));
+    let machine = khora_infra::platform::machine::read_machine(None);
+    let game_identity = <DefaultRuntimeApp as EngineApp>::game_identity();
+    let path = profile_path(ProfilePlace::Developer, &machine, &game_identity, &|key| {
+        std::env::var_os(key)
+    })
+    .expect("a developer's path under the home folder");
+    assert!(path.starts_with(home.path()), "{path:?}");
+    let rows = (khora_agents::registered_agent::registered_agents().iter())
+        .flat_map(|registration| {
+            [
+                StrategyId::LowPower,
+                StrategyId::Balanced,
+                StrategyId::HighPerformance,
+            ]
+            .map(|row| ProfileRow {
+                agent: registration.agent.name().to_owned(),
+                row,
+                factor: 7.0,
+                spread: 0.2,
+                runs: 50,
+            })
+        })
+        .collect();
+    save(
+        &path,
+        &CostProfile {
+            engine_version: crate::ENGINE_VERSION.to_owned(),
+            machine,
+            game: game_identity,
+            rows,
+        },
+    )
+    .expect("a profile in the home folder");
+
+    let game = GameDir::new("profile-game");
+    let engine = runtime_engine(game.path(), opening("scenes/missing.kscene"));
+    let dcc = engine.dcc().expect("the engine booted its DCC");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut first = None;
+    while first.is_none() && Instant::now() < deadline {
+        first = dcc.recorded_decisions().epochs.first().cloned();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let first = first.expect("the DCC opened its first epoch");
+
+    let seeded = !first.corrections.is_empty()
+        && (first.corrections.iter()).all(|(_, _, c)| (c.factor - 7.0).abs() < 1e-6);
+    assert!(
+        !seeded,
+        "the profile in the home folder seeded the runtime: {:?}",
+        first.corrections
+    );
 }

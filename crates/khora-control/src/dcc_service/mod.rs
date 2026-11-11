@@ -81,6 +81,12 @@ pub struct DccService {
     decision_recording: Arc<std::sync::RwLock<Option<Instant>>>,
     /// The accumulating recorded decision trace (one allocation per epoch).
     recorded_trace: Arc<std::sync::RwLock<DecisionTrace>>,
+    /// The rows a profile seeds the cost book with, taken by the DCC's
+    /// thread when it starts.
+    seeded_costs: Arc<std::sync::RwLock<Vec<khora_core::agent::gorna::ProfileRow>>>,
+    /// What the cost book has learnt, published by the DCC's thread each
+    /// tick.
+    learnt_costs: Arc<std::sync::RwLock<Vec<khora_core::agent::gorna::ProfileRow>>>,
     /// When `Some((trace, cursor))`, the DCC lends the trace's allocations,
     /// one a tick, instead of asking for offers.
     replay: Arc<std::sync::RwLock<Option<(DecisionTrace, usize)>>>,
@@ -105,6 +111,8 @@ impl DccService {
             layout_recommendations: Arc::new(std::sync::RwLock::new(HashMap::new())),
             decision_recording: Arc::new(std::sync::RwLock::new(None)),
             recorded_trace: Arc::new(std::sync::RwLock::new(DecisionTrace::default())),
+            seeded_costs: Arc::new(std::sync::RwLock::new(Vec::new())),
+            learnt_costs: Arc::new(std::sync::RwLock::new(Vec::new())),
             replay: Arc::new(std::sync::RwLock::new(None)),
             hardware_monitor: Arc::new(std::sync::RwLock::new(None)),
         };
@@ -256,6 +264,25 @@ impl DccService {
             .hardware_monitor
             .write()
             .unwrap_or_else(|e| e.into_inner()) = Some(monitor);
+    }
+
+    /// Hands the DCC what a profile learnt of this machine, before
+    /// [`start`](Self::start): its thread seeds its cost book with `rows` as
+    /// it starts, mapping each row's agent name onto the agents registered
+    /// then. A row naming no registered agent is ignored.
+    pub fn seed_cost_book(&self, rows: Vec<khora_core::agent::gorna::ProfileRow>) {
+        if let Ok(mut seeded) = self.seeded_costs.write() {
+            *seeded = rows;
+        }
+    }
+
+    /// What the DCC's cost book has learnt, as its thread last published it
+    /// (at least once an epoch): every row, by its agent's name.
+    pub fn learnt_costs(&self) -> Vec<khora_core::agent::gorna::ProfileRow> {
+        self.learnt_costs
+            .read()
+            .map(|learnt| learnt.clone())
+            .unwrap_or_default()
     }
 
     /// The monitor the DCC reads the hardware from, if it was given one.

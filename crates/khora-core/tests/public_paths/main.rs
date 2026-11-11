@@ -352,6 +352,26 @@ fn correction_fields(x: &khora_core::agent::gorna::Correction) {
     let _: f64 = x.planned(0.0);
 }
 
+fn profile_row_fields(x: &khora_core::agent::gorna::ProfileRow) {
+    let _: (
+        &String,
+        &khora_core::agent::gorna::StrategyId,
+        &f64,
+        &f64,
+        &u32,
+    ) = (&x.agent, &x.row, &x.factor, &x.spread, &x.runs);
+}
+
+fn cost_profile_fields(x: &khora_core::agent::gorna::CostProfile) {
+    let _: (
+        &String,
+        &khora_core::platform::MachineIdentity,
+        &khora_core::app::GameIdentity,
+        &Vec<khora_core::agent::gorna::ProfileRow>,
+    ) = (&x.engine_version, &x.machine, &x.game, &x.rows);
+    let _: Vec<khora_core::agent::gorna::ProfileRow> = x.sane_rows();
+}
+
 fn frame_summary_fields(x: &khora_core::agent::gorna::FrameSummary) {
     let _ = (&x.count, &x.over_target, &x.worst, &x.mean);
 }
@@ -1763,6 +1783,22 @@ fn module_agent_gorna_paths_still_resolve() {
     is_partial_eq::<khora_core::agent::gorna::Correction>();
     is_serialize::<khora_core::agent::gorna::Correction>();
     is_deserialize_owned::<khora_core::agent::gorna::Correction>();
+    let _ = type_name::<khora_core::agent::gorna::ProfileRow>();
+    let _ = profile_row_fields as fn(&khora_core::agent::gorna::ProfileRow);
+    is_debug::<khora_core::agent::gorna::ProfileRow>();
+    is_clone::<khora_core::agent::gorna::ProfileRow>();
+    is_partial_eq::<khora_core::agent::gorna::ProfileRow>();
+    is_serialize::<khora_core::agent::gorna::ProfileRow>();
+    is_deserialize_owned::<khora_core::agent::gorna::ProfileRow>();
+    let _ = type_name::<khora_core::agent::gorna::CostProfile>();
+    let _ = cost_profile_fields as fn(&khora_core::agent::gorna::CostProfile);
+    let _ = khora_core::agent::gorna::CostProfile::sane_rows;
+    is_debug::<khora_core::agent::gorna::CostProfile>();
+    is_clone::<khora_core::agent::gorna::CostProfile>();
+    is_default::<khora_core::agent::gorna::CostProfile>();
+    is_partial_eq::<khora_core::agent::gorna::CostProfile>();
+    is_serialize::<khora_core::agent::gorna::CostProfile>();
+    is_deserialize_owned::<khora_core::agent::gorna::CostProfile>();
     let _ = type_name::<khora_core::agent::gorna::Planning>();
     let _ = planning_fields as fn(&khora_core::agent::gorna::Planning);
     let _ = planning_api as fn(&khora_core::agent::gorna::Planning);

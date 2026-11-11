@@ -942,3 +942,266 @@ fn a_stable_agent_keeps_its_envelope_as_it_holds_it_under_a_correction() {
 
     assert_eq!(kept, held, "the envelope it held, kept");
 }
+
+// ── What the book exports, and what a profile seeds ───────────────
+
+/// The row a book's `export` names for `agent`'s `row`, if it names one.
+fn exported(
+    rows: &[khora_core::agent::gorna::ProfileRow],
+    agent: &str,
+    row: StrategyId,
+) -> Option<khora_core::agent::gorna::ProfileRow> {
+    (rows.iter())
+        .find(|exported| exported.agent == agent && exported.row == row)
+        .cloned()
+}
+
+/// **The book exports what it learnt.** `ash`'s `Balanced` learnt at 300
+/// over ten runs, then its floor at 20 over 120: `elm`'s floor at 3 over 30.
+/// The export names every learnt row once, by its agent's name:
+/// - each row's own factor and spread, as it learnt them: `Balanced`, unrun
+///   while the floor ran, reads about 160 as a round plans it (relaxed toward
+///   the floor), but is exported at its own 300;
+/// - each row's runs, all of them: 10, 120, 30;
+/// - a row never run is not exported, and a book that learnt nothing exports
+///   nothing;
+/// - the arbitrator's book exports the same.
+#[test]
+fn the_book_exports_what_it_learnt() {
+    assert!(book().export().is_empty(), "a book that learnt nothing");
+    let mut arbitrator = arbitrator();
+    let book = arbitrator.cost_book_mut();
+    let mut state = SEED;
+    run(book, ASH, Balanced, 300.0, 0.0, 10, &mut state);
+    run(book, ASH, LowPower, 20.0, 0.0, 120, &mut state);
+    run(book, ELM, LowPower, 3.0, 0.0, 30, &mut state);
+    assert!(
+        (book.correction(ASH, Balanced).factor - 160.0).abs() < 1.0,
+        "planned relaxed toward the floor: {:?}",
+        book.correction(ASH, Balanced)
+    );
+
+    let rows = arbitrator.cost_book().export();
+
+    assert_eq!(rows.len(), 3, "every learnt row, once: {rows:?}");
+    let balanced = exported(&rows, "ash", Balanced).expect("`ash`'s `Balanced`");
+    assert!(
+        (balanced.factor - 300.0).abs() < 1e-3,
+        "its own factor, not relaxed: {balanced:?}"
+    );
+    assert_eq!(balanced.runs, 10, "{balanced:?}");
+    let floor = exported(&rows, "ash", LowPower).expect("`ash`'s floor");
+    let planned = arbitrator.cost_book().correction(ASH, LowPower);
+    assert!((floor.factor - 20.0).abs() < 1e-3, "{floor:?}");
+    assert!(
+        (floor.spread - planned.spread).abs() < 1e-12,
+        "its spread as it learnt it: {floor:?}, {planned:?}"
+    );
+    assert_eq!(floor.runs, 120, "{floor:?}");
+    let elm = exported(&rows, "elm", LowPower).expect("`elm`'s floor");
+    assert!((elm.factor - 3.0).abs() < 1e-3, "{elm:?}");
+    assert_eq!(elm.runs, 30, "{elm:?}");
+    assert_eq!(
+        exported(&rows, "ash", HighPerformance),
+        None,
+        "a row never run is not exported"
+    );
+}
+
+/// One run of `agent`'s `row` into `book`, quoting 1 ms on the host and
+/// taking `factor` times that.
+fn steady_run(book: &mut CostBook, agent: AgentId, row: StrategyId, factor: f64) {
+    book.observe(agent, row, ms(1), Duration::from_secs_f64(factor / 1_000.0));
+}
+
+/// Whether `spread`, a row's right after it was seeded, is the `seeded`
+/// spread: at least it, and at most it with the default prior's spread
+/// weighed down by twenty runs seen.
+fn within_the_prior(spread: f64, seeded: f64) -> bool {
+    let prior = CostBookConfig::default().prior_spread;
+    let most = (seeded * seeded + prior * prior / 21.0).sqrt();
+    spread >= seeded - 1e-9 && spread <= most + 1e-9
+}
+
+/// **A profile seeds the book as a prior that measures overtake.** A profile
+/// learnt `ash`'s `Balanced` at 3, spread 0.3, over fifty runs; this machine
+/// runs it at its quote.
+/// - Seeded, before any run, `Balanced` is planned at 3 and its spread is
+///   the profile's 0.3 (the prior's own spread, weighed down by the twenty
+///   runs the profile counts as seen, may add to it); `elm`, which the
+///   profile does not name, is planned at its quotes.
+/// - A row naming an agent not registered (`oak`) is ignored: nothing is
+///   learnt of it, and the book exports no row of it.
+/// - The profile weighs as at most twenty runs: one run at the quote leaves
+///   the row above 2.8; a row learnt over three runs, seeded the same way,
+///   falls under 2.6 from that one run; one learnt over fifty weighs as one
+///   learnt over twenty.
+/// - Eighty runs at the quote — about a second of frames — bring it within
+///   0.1 of 1: this machine's measures have taken over.
+/// - A book seeded from another's export plans at its factors, at its
+///   spreads.
+#[test]
+fn a_profile_seeds_the_book_as_a_prior_that_measures_overtake() {
+    use khora_core::agent::gorna::ProfileRow;
+    let learnt = |agent: &str, runs: u32| ProfileRow {
+        agent: agent.to_owned(),
+        row: Balanced,
+        factor: 3.0,
+        spread: 0.3,
+        runs,
+    };
+    let seeded = |runs: u32| {
+        let mut book = book();
+        book.seed(&[learnt("ash", runs), learnt("oak", runs)], &[ASH, ELM]);
+        book
+    };
+
+    let mut book = seeded(50);
+
+    let before = book.correction(ASH, Balanced);
+    assert!((before.factor - 3.0).abs() < 1e-12, "seeded: {before:?}");
+    assert!(
+        within_the_prior(before.spread, 0.3),
+        "seeded at its spread: {before:?}"
+    );
+    assert_eq!(
+        book.correction(ELM, Balanced),
+        Correction::default(),
+        "an agent the profile does not name plans at its quotes"
+    );
+    let rows = book.export();
+    assert!(
+        rows.iter().all(|row| row.agent == "ash"),
+        "no row of an agent not registered: {rows:?}"
+    );
+    assert!(exported(&rows, "ash", Balanced).is_some(), "{rows:?}");
+
+    steady_run(&mut book, ASH, Balanced, 1.0);
+    let once = book.correction(ASH, Balanced);
+    assert!(
+        once.factor > 2.8,
+        "one run does not undo twenty runs' prior: {once:?}"
+    );
+    let mut few = seeded(3);
+    steady_run(&mut few, ASH, Balanced, 1.0);
+    assert!(
+        few.correction(ASH, Balanced).factor < 2.6,
+        "a prior of three runs gives way sooner: {:?}",
+        few.correction(ASH, Balanced)
+    );
+    let mut capped = seeded(20);
+    steady_run(&mut capped, ASH, Balanced, 1.0);
+    assert!(
+        (capped.correction(ASH, Balanced).factor - once.factor).abs() < 1e-12,
+        "fifty runs weigh as twenty: {:?}, {once:?}",
+        capped.correction(ASH, Balanced)
+    );
+
+    for _ in 1..80 {
+        steady_run(&mut book, ASH, Balanced, 1.0);
+    }
+    let overtaken = book.correction(ASH, Balanced);
+    assert!(
+        (overtaken.factor - 1.0).abs() < 0.1,
+        "eighty runs at the quote: {overtaken:?}"
+    );
+
+    let mut state = SEED;
+    let mut taught = self::book();
+    run(&mut taught, ASH, LowPower, 2.0, 0.05, 60, &mut state);
+    run(&mut taught, ELM, Balanced, 0.5, 0.05, 60, &mut state);
+    let mut copy = self::book();
+    copy.seed(&taught.export(), &[ASH, ELM]);
+    for (agent, row) in [(ASH, LowPower), (ELM, Balanced)] {
+        let (from, to) = (taught.correction(agent, row), copy.correction(agent, row));
+        assert!(
+            (from.factor - to.factor).abs() < 1e-12 && within_the_prior(to.spread, from.spread),
+            "{agent}'s {row:?}: {from:?} seeded as {to:?}"
+        );
+    }
+}
+
+/// **A row never run keeps its spread from one profile to the next.** `ash`'s
+/// `Balanced` learnt at 2 over sixty runs, within ±5 %, is exported. A run
+/// that never runs that row seeds its book from the profile and exports it
+/// again; fifty such runs in a row — fifty boots in which the agent kept to
+/// another row — still export it at the spread first learnt, within 0.01:
+/// a profile carried from run to run adds no uncertainty of its own to a row
+/// nothing measured.
+#[test]
+fn a_row_never_run_keeps_its_spread_from_one_profile_to_the_next() {
+    let mut state = SEED;
+    let mut taught = book();
+    run(&mut taught, ASH, Balanced, 2.0, 0.05, 60, &mut state);
+    let mut rows = taught.export();
+    let first = exported(&rows, "ash", Balanced).expect("`ash`'s `Balanced`");
+
+    for _ in 0..50 {
+        let mut next = book();
+        next.seed(&rows, &[ASH]);
+        rows = next.export();
+    }
+
+    let last = exported(&rows, "ash", Balanced).expect("`ash`'s `Balanced`");
+    assert!(
+        (last.factor - first.factor).abs() < 1e-12,
+        "{first:?} then {last:?}"
+    );
+    assert!(
+        (last.spread - first.spread).abs() < 0.01,
+        "fifty runs that never ran it: {first:?} exported as {last:?}"
+    );
+}
+
+/// **A seeded spread, however large, plans a bounded time.** A profile is a
+/// file anyone can edit; its rows, made sane, hold a finite spread of at
+/// least 0 but no bound above. Seeded with them, a round plans a row above
+/// the floor:
+/// - `elm`'s `HighPerformance`, learnt at 2 with a spread of 10²⁰⁰, is
+///   planned at no less than twice its 2 ms quote — never at its quote, as
+///   if nothing were known of it;
+/// - `ash`'s `HighPerformance`, learnt at 2 with a spread of 10²⁵, is
+///   planned at a host time a `Duration` holds, without panicking the
+///   DCC's thread.
+#[test]
+fn a_seeded_spread_however_large_plans_a_bounded_time() {
+    use khora_core::agent::gorna::{CostProfile, ProfileRow};
+    let edited = |agent: &str, spread: f64| ProfileRow {
+        agent: agent.to_owned(),
+        row: HighPerformance,
+        factor: 2.0,
+        spread,
+        runs: 20,
+    };
+    let profile = CostProfile {
+        rows: vec![edited("elm", 1e200), edited("ash", 1e25)],
+        ..CostProfile::default()
+    };
+    let mut book = book();
+    book.seed(&profile.sane_rows(), &[ASH, ELM]);
+    let caution = z_of(PlanningConfig::default().risk);
+    let rows = || vec![row(LowPower, 1_000, 0.4), row(HighPerformance, 2_000, 1.0)];
+    let planned_top = |offer: &Offer| {
+        (offer.rows.iter())
+            .find(|row| row.id == HighPerformance)
+            .map(|row| row.cost.time.cpu)
+            .expect("the top row")
+    };
+
+    let mut elm = offer("elm", rows(), LowPower);
+    let corrections = book.corrections(std::slice::from_ref(&elm));
+    crate::gorna::cost_book::correct(&mut elm, &corrections, caution);
+    assert!(
+        planned_top(&elm) >= us(4_000),
+        "a spread of 1e200 planned at {:?}: {corrections:?}",
+        planned_top(&elm)
+    );
+
+    let mut ash = offer("ash", rows(), LowPower);
+    let corrections = book.corrections(std::slice::from_ref(&ash));
+    let planned = std::panic::catch_unwind(move || {
+        crate::gorna::cost_book::correct(&mut ash, &corrections, caution);
+        planned_top(&ash)
+    });
+    assert!(planned.is_ok(), "a spread of 1e25 panics the round");
+}

@@ -1007,3 +1007,139 @@ fn an_unmeasured_device_never_wins_over_a_measured_one() {
         Some(Duration::from_millis(4))
     );
 }
+
+// ─── What the DCC learnt, filed as a profile ────────────────────────────────
+
+/// A profile of what the DCC learnt running "Lantern Keep" 1.4.0 on a
+/// machine with a named GPU: two rows of `renderer`, one of `physics`.
+fn profile() -> super::CostProfile {
+    use super::ProfileRow;
+    super::CostProfile {
+        engine_version: "0.9.1".to_owned(),
+        machine: crate::platform::MachineIdentity {
+            gpu: Some(crate::renderer::api::device::AdapterIdentity {
+                name: "Adapter 9000".to_owned(),
+                vendor: 0x10de,
+                device: 0x2684,
+                driver: "driver".to_owned(),
+                driver_info: "551.23".to_owned(),
+            }),
+            cpu: "Cpu Model X".to_owned(),
+            cores: 8,
+            os: "Some OS 11".to_owned(),
+        },
+        game: crate::app::GameIdentity {
+            name: "Lantern Keep".to_owned(),
+            version: "1.4.0".to_owned(),
+        },
+        rows: vec![
+            ProfileRow {
+                agent: "renderer".to_owned(),
+                row: StrategyId::LowPower,
+                factor: 1.25,
+                spread: 0.125,
+                runs: 240,
+            },
+            ProfileRow {
+                agent: "renderer".to_owned(),
+                row: StrategyId::Custom(7),
+                factor: 3.5,
+                spread: 0.0,
+                runs: 3,
+            },
+            ProfileRow {
+                agent: "physics".to_owned(),
+                row: StrategyId::HighPerformance,
+                factor: 0.75,
+                spread: 0.5,
+                runs: u32::MAX,
+            },
+        ],
+    }
+}
+
+/// **A profile round-trips and names its agents by name.** Written and read
+/// back, a profile is the one written, field for field. Each row names its
+/// agent by the agent's name, a plain string, and its row as the protocol
+/// names it: a profile names no agent the engine has to know to read it.
+#[test]
+fn a_profile_round_trips_and_names_agents_by_name() {
+    let written = profile();
+
+    let text = serde_json::to_string(&written).expect("a profile serialises");
+    let read: super::CostProfile = serde_json::from_str(&text).expect("a profile reads back");
+
+    assert_eq!(read, written, "read back, the profile written");
+    let value: serde_json::Value = serde_json::from_str(&text).expect("a profile is JSON");
+    assert_eq!(value["rows"][0]["agent"], "renderer", "{value}");
+    assert_eq!(value["rows"][2]["agent"], "physics", "{value}");
+    assert_eq!(value["rows"][0]["row"], "LowPower", "{value}");
+    assert_eq!(value["engine_version"], "0.9.1", "{value}");
+    assert_eq!(value["game"]["name"], "Lantern Keep", "{value}");
+    assert_eq!(value["game"]["version"], "1.4.0", "{value}");
+    assert_eq!(
+        super::CostProfile::default().rows,
+        Vec::new(),
+        "a profile that learnt nothing"
+    );
+}
+
+/// **A profile's rows are made sane.** A profile is a file anyone can edit:
+/// before it seeds a book, every factor is held to [10⁻³, 10³] and every
+/// spread to a finite value of at least 0.
+/// - a factor of 0, below 10⁻³ or negative reads 10⁻³; one above 10³ reads
+///   10³; one in range is kept as it is;
+/// - a factor that is not a number, or infinite, drops its row;
+/// - a spread that is not a number, infinite or negative reads 0;
+/// - the agent, the row and the runs are kept, the rows in their order.
+#[test]
+fn a_profiles_rows_are_made_sane() {
+    use super::ProfileRow;
+    let row = |agent: &str, factor: f64, spread: f64| ProfileRow {
+        agent: agent.to_owned(),
+        row: StrategyId::Balanced,
+        factor,
+        spread,
+        runs: 12,
+    };
+    let insane = super::CostProfile {
+        rows: vec![
+            row("kept", 2.0, 0.3),
+            row("zero", 0.0, 0.1),
+            row("tiny", 1.0e-9, 0.1),
+            row("negative", -5.0, 0.1),
+            row("huge", 1.0e9, 0.1),
+            row("nan", f64::NAN, 0.1),
+            row("infinite", f64::INFINITY, 0.1),
+            row("minus infinite", f64::NEG_INFINITY, 0.1),
+            row("nan spread", 1.5, f64::NAN),
+            row("infinite spread", 1.5, f64::INFINITY),
+            row("negative spread", 1.5, -1.0),
+            row("edges", 1.0e3, 0.0),
+        ],
+        ..profile()
+    };
+
+    let sane = insane.sane_rows();
+
+    assert_eq!(
+        sane,
+        vec![
+            row("kept", 2.0, 0.3),
+            row("zero", 1.0e-3, 0.1),
+            row("tiny", 1.0e-3, 0.1),
+            row("negative", 1.0e-3, 0.1),
+            row("huge", 1.0e3, 0.1),
+            row("nan spread", 1.5, 0.0),
+            row("infinite spread", 1.5, 0.0),
+            row("negative spread", 1.5, 0.0),
+            row("edges", 1.0e3, 0.0),
+        ]
+    );
+    assert_eq!(
+        profile().sane_rows(),
+        profile().rows,
+        "rows already sane are kept as they are, runs and all"
+    );
+    assert_eq!(super::CostProfile::default().sane_rows(), Vec::new());
+}

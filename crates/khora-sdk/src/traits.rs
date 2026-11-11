@@ -169,6 +169,20 @@ pub trait EngineApp: PhaseProvider + Send + Sync + 'static {
         }
     }
 
+    /// Whether the engine keeps what it learns of this machine running this
+    /// game from one run to the next: a profile, read at boot and written as
+    /// it learns, in the user's folders. A game, the editor and a sandbox
+    /// keep one; a tool or a test that asks for none touches no folder of
+    /// the user's (`KHORA_PROFILES`, set, keeps one whatever the app says).
+    ///
+    /// Default: none kept.
+    fn keeps_machine_profiles() -> bool
+    where
+        Self: Sized,
+    {
+        false
+    }
+
     /// Creates a new instance of the application.
     fn new() -> Self
     where

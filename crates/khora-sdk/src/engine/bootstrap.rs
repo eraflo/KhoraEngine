@@ -136,6 +136,9 @@ impl<A: EngineApp> EngineBootstrap<A> {
             log::info!("Decision journal: recording to {}", path.display());
             dcc.start_decision_recording();
         }
+        // What the DCC learnt of this machine on an earlier run seeds it.
+        core.profiles =
+            super::profiles::Profiles::begin(&runtime_arc, &dcc, A::keeps_machine_profiles());
         // Start the DCC background thread AFTER agents are initialized so
         // GORNA does not run health-checks before agents are ready.
         dcc.start(dcc_rx);

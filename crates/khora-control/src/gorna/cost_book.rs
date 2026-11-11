@@ -18,7 +18,7 @@
 use std::time::Duration;
 
 use khora_core::agent::gorna::protocol::{Allocation, Envelope, Offer, Report, Trigger};
-use khora_core::agent::gorna::{AgentId, Correction, StrategyId};
+use khora_core::agent::gorna::{AgentId, Correction, ProfileRow, StrategyId};
 
 use super::decide::{hold_to_quotes, Bid};
 
@@ -75,7 +75,20 @@ struct Learnt {
     seen: f64,
     /// Its agent's clock at its last run.
     last_run: u64,
+    /// The runs a seeded row's factor weighs as, until its first run here:
+    /// that run sets how much the fit already knows (its information, from
+    /// the run's own quote), then it is 0.
+    prior_weight: f64,
 }
+
+/// The most prior runs a seeded row weighs as: a second of this machine's
+/// runs then takes over from what another run learnt.
+const MAX_SEEDED_RUNS: u32 = 20;
+
+/// The largest correction, or spread, a row is planned with: past it a
+/// measure says nothing a frame could use, and a time so scaled would
+/// overflow.
+const MAX_FACTOR: f64 = 1e3;
 
 /// What a row's fit starts from: an information so small the first run sets
 /// the factor.
@@ -125,6 +138,7 @@ impl CostBook {
                         residuals: 0.0,
                         seen: 0.0,
                         last_run: 0,
+                        prior_weight: 0.0,
                     },
                 ));
                 self.rows.len() - 1
@@ -142,6 +156,12 @@ impl CostBook {
         };
         let learnt = &mut self.rows[index].2;
         learnt.last_run = clock;
+        // A seeded row's first run here: the fit knows as much as the runs
+        // it was learnt from, weighed at this quote.
+        if learnt.prior_weight > 0.0 {
+            learnt.p = 1.0 / (learnt.prior_weight * x * x);
+            learnt.prior_weight = 0.0;
+        }
         let gain = learnt.p * x / (lambda + x * x * learnt.p);
         learnt.factor += gain * (y - learnt.factor * x);
         learnt.p = (learnt.p * (1.0 - gain * x) / lambda).max(0.0);
@@ -244,6 +264,73 @@ impl CostBook {
         }
     }
 
+    /// Every row the book learnt, by its agent's name: its own factor and
+    /// spread, as it learnt them (not relaxed toward its agent's other
+    /// rows), and how many runs it learnt them from (at most `u32::MAX`).
+    pub fn export(&self) -> Vec<ProfileRow> {
+        (self.rows.iter())
+            .map(|(agent, row, learnt)| {
+                let own = self.learnt(learnt);
+                ProfileRow {
+                    agent: agent.name().to_owned(),
+                    row: *row,
+                    factor: own.factor,
+                    spread: own.spread,
+                    runs: learnt.seen.min(f64::from(u32::MAX)) as u32,
+                }
+            })
+            .collect()
+    }
+
+    /// Seeds the book with `rows`, a profile's: each row whose agent is named
+    /// like one of `agents` becomes a learnt row at its factor and spread,
+    /// weighing as many prior runs as it was learnt from, at most 20, so the
+    /// runs measured on this machine take over within a second. A row naming
+    /// no agent of `agents` is ignored.
+    ///
+    /// A seeded row counts as run when it is seeded: it relaxes toward its
+    /// agent's other rows as the agent runs others, as a learnt row does.
+    pub fn seed(&mut self, rows: &[ProfileRow], agents: &[AgentId]) {
+        for seeded in rows {
+            let Some(agent) = agents.iter().find(|agent| agent.name() == seeded.agent) else {
+                continue;
+            };
+            if !seeded.factor.is_finite() || seeded.factor <= 0.0 {
+                continue;
+            }
+            let weight = f64::from(seeded.runs.min(MAX_SEEDED_RUNS));
+            let spread = if seeded.spread.is_finite() {
+                seeded.spread.clamp(0.0, MAX_FACTOR)
+            } else {
+                0.0
+            };
+            // The spread exported holds the prior's share for the runs seen:
+            // it is taken back out, so a row seeded and exported again, run
+            // or not, keeps the spread it had.
+            let seen = f64::from(seeded.runs);
+            let prior = self.config.prior_spread;
+            let variance = (spread * spread - prior * prior / (1.0 + seen)).max(0.0);
+            let clock = (self.clocks.iter())
+                .find(|(named, _)| named == agent)
+                .map_or(0, |(_, clock)| *clock);
+            let learnt = Learnt {
+                factor: seeded.factor.clamp(1.0 / MAX_FACTOR, MAX_FACTOR),
+                p: PRIOR_P,
+                runs: weight,
+                residuals: variance * weight,
+                // Every run it was learnt from, so the prior's share is the
+                // one it was exported with; it anchors the fit as `weight`.
+                seen,
+                last_run: clock,
+                prior_weight: weight,
+            };
+            match (self.rows.iter_mut()).find(|(a, r, _)| a == agent && *r == seeded.row) {
+                Some((_, _, existing)) => *existing = learnt,
+                None => self.rows.push((*agent, seeded.row, learnt)),
+            }
+        }
+    }
+
     /// The correction of every row of `offers`.
     pub fn corrections(&self, offers: &[Offer]) -> Vec<(AgentId, StrategyId, Correction)> {
         offers
@@ -289,7 +376,8 @@ fn planned_factor(
         .find(|(named, id, _)| *named == agent && *id == row)
         .map_or(1.0, |(_, _, correction)| correction.planned(caution));
     if factor.is_finite() && factor > 0.0 {
-        factor
+        // A spread however large plans a bounded time.
+        factor.min(MAX_FACTOR * (1.0 + caution))
     } else {
         1.0
     }

@@ -62,6 +62,9 @@ impl<A: EngineApp> EngineCore<A> {
         self.end_render_frame(presents);
         self.run_maintenance();
         self.close_frame();
+        if let (Some(profiles), Some(dcc)) = (self.profiles.as_mut(), self.dcc.as_ref()) {
+            profiles.tick(dcc);
+        }
     }
 
     /// Stage 6 — runs the end-of-tick `Maintenance`-phase `DataSystem`s

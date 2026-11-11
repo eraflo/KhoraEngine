@@ -37,6 +37,11 @@ pub(super) struct SandboxGame {
 }
 
 impl EngineApp for SandboxGame {
+    /// The sandbox keeps what the engine learns of this machine.
+    fn keeps_machine_profiles() -> bool {
+        true
+    }
+
     fn window_config() -> WindowConfig {
         WindowConfig {
             title: "Khora Sandbox".to_owned(),

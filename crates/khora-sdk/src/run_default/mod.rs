@@ -189,6 +189,11 @@ fn install_game_assets(runtime: &mut Runtime, exe_dir: &Path, verify_integrity: 
 }
 
 impl EngineApp for DefaultRuntimeApp {
+    /// A game keeps what the engine learns of the machine it runs on.
+    fn keeps_machine_profiles() -> bool {
+        true
+    }
+
     /// The game `runtime.json` names: its project, at its version.
     fn game_identity() -> khora_core::app::GameIdentity {
         RUNTIME_CONFIG
@@ -334,6 +339,16 @@ pub fn run_default() -> Result<()> {
         // engine runs. Its scene and its scripts are filed in `setup`, and
         // loaded off the frame.
         install_game_assets(runtime, &exe_dir, verify_integrity);
+        // A packed game runs on a player's machine: its profile is filed in
+        // the player's data folder, and it may ship one beside it.
+        if opening::is_packed(&exe_dir) {
+            runtime
+                .resources
+                .insert(khora_io::profiles::ProfilePlace::Player);
+            runtime
+                .resources
+                .insert(crate::engine::profiles::ShippedProfileDir(exe_dir.clone()));
+        }
     })?;
     Ok(())
 }

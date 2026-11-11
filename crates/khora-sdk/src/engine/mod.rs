@@ -34,6 +34,7 @@ mod decision_journal;
 mod families;
 mod frame;
 mod frame_clock;
+pub(crate) mod profiles;
 pub(crate) mod readiness;
 
 pub use bootstrap::EngineBootstrap;
@@ -81,6 +82,9 @@ pub struct EngineCore<A: EngineApp> {
     /// Where the DCC's decisions are written at shutdown, when the
     /// `KHORA_RECORD_DECISIONS` variable named a file at boot.
     journal: Option<std::path::PathBuf>,
+    /// This machine's profile running this game, when the application keeps
+    /// one: read before the DCC starts, written as it learns.
+    profiles: Option<profiles::Profiles>,
 }
 
 impl<A: EngineApp> EngineCore<A> {
@@ -105,6 +109,7 @@ impl<A: EngineApp> EngineCore<A> {
             frame_clock: frame_clock::FrameClock::default(),
             startup_over: false,
             journal: None,
+            profiles: None,
         }
     }
 
@@ -213,6 +218,13 @@ impl<A: EngineApp> EngineCore<A> {
         self.lane_agents.clear();
         if let Some(app) = self.app.as_mut() {
             app.on_shutdown();
+        }
+        // The DCC stops, then what it learnt of this machine is kept.
+        if let Some(dcc) = self.dcc.as_mut() {
+            dcc.stop();
+        }
+        if let (Some(profiles), Some(dcc)) = (self.profiles.take(), self.dcc.as_ref()) {
+            profiles.end(dcc);
         }
         if let (Some(path), Some(dcc)) = (self.journal.take(), self.dcc.as_ref()) {
             let trace = dcc.stop_decision_recording();
