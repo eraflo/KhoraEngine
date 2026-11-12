@@ -36,9 +36,9 @@ use khora_core::renderer::api::shadow::ShadowGpuBindings;
 use khora_core::renderer::error::{RenderError, ResourceError};
 use khora_core::renderer::GraphicsDevice;
 
-use crate::shadow_lane::algo::atlas_2d::Atlas2D;
-use crate::shadow_lane::algo::atlas_cube::AtlasCube;
-use crate::shadow_lane::algo::state::shadow_sampler_descriptor;
+use crate::shadows::algo::atlas_2d::Atlas2D;
+use crate::shadows::algo::atlas_cube::AtlasCube;
+use crate::shadows::algo::state::shadow_sampler_descriptor;
 
 /// The format of the neutral environment cubes.
 const CUBE_FORMAT: TextureFormat = TextureFormat::Rgba16Float;

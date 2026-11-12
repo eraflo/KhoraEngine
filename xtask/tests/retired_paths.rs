@@ -653,6 +653,10 @@ const RETIRED_FAMILY_HOMES: &[&str] = &[
     "khora_agents::skybox_agent",
     "khora-lanes/src/skybox_lane",
     "khora-agents/src/skybox_agent",
+    "khora_lanes::shadow_lane",
+    "khora_agents::shadow_agent",
+    "khora-lanes/src/shadow_lane",
+    "khora-agents/src/shadow_agent",
 ];
 
 /// The files `nothing_names_the_old_home_of_a_moved_family` reads: those

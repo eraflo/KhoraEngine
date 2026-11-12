@@ -32,7 +32,7 @@ use khora_data::AssetStore;
 use khora_macros::LaneInputs;
 
 use super::algo::{ShadowGpu, Tier};
-use super::shadows_family::{ShadowsFamily, ShadowsOutputs};
+use super::family::{ShadowsFamily, ShadowsOutputs};
 
 /// The levels' resolutions, cheapest first: a quarter, a half and the full
 /// resolution of the atlases, for the same casters.

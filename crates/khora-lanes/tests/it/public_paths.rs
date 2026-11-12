@@ -67,7 +67,7 @@ mod every_pub_mod {
     use khora_lanes::script_lane::persistence as _;
     use khora_lanes::script_lane::report as _;
     use khora_lanes::script_lane::runtime as _;
-    use khora_lanes::shadow_lane as _;
+    use khora_lanes::shadows as _;
     use khora_lanes::skybox as _;
     use khora_lanes::ui_lane as _;
 }
@@ -295,13 +295,13 @@ fn module_render_lane_util_paths_still_resolve() {
 
 #[test]
 fn module_shadow_lane_paths_still_resolve() {
-    let _ = type_name::<khora_lanes::shadow_lane::ShadowsLane>();
-    let _ = type_name::<khora_lanes::shadow_lane::ShadowsFamily>();
-    let _ = type_name::<khora_lanes::shadow_lane::ShadowsInputs<'static>>();
-    let _ = type_name::<khora_lanes::shadow_lane::ShadowsOutputs<'static>>();
-    is_default::<khora_lanes::shadow_lane::ShadowsLane>();
-    is_typed_lane::<khora_lanes::shadow_lane::ShadowsLane>();
-    is_lane_family::<khora_lanes::shadow_lane::ShadowsFamily>();
+    let _ = type_name::<khora_lanes::shadows::ShadowsLane>();
+    let _ = type_name::<khora_lanes::shadows::ShadowsFamily>();
+    let _ = type_name::<khora_lanes::shadows::ShadowsInputs<'static>>();
+    let _ = type_name::<khora_lanes::shadows::ShadowsOutputs<'static>>();
+    is_default::<khora_lanes::shadows::ShadowsLane>();
+    is_typed_lane::<khora_lanes::shadows::ShadowsLane>();
+    is_lane_family::<khora_lanes::shadows::ShadowsFamily>();
 }
 
 #[test]
@@ -495,8 +495,8 @@ mod paths_used_by_other_crates {
     use khora_lanes::script_lane::ScriptFamily as _; // khora-agents
     use khora_lanes::script_lane::ScriptRunReport as _; // khora-agents
     use khora_lanes::script_lane::ScriptRuntime as _; // khora-agents, khora-sdk
-    use khora_lanes::shadow_lane::ShadowsFamily as _; // khora-agents
-    use khora_lanes::shadow_lane::ShadowsLane as _; // khora-agents
+    use khora_lanes::shadows::ShadowsFamily as _; // khora-agents
+    use khora_lanes::shadows::ShadowsLane as _; // khora-agents
     use khora_lanes::skybox::SkyboxLane as _; // khora-agents
     use khora_lanes::ui_lane::UiFamily as _; // khora-agents
     use khora_lanes::ui_lane::UiLane as _; // khora-agents

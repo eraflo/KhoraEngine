@@ -15,10 +15,10 @@
 //! The shadows family's registration: the one `LaneAgent` the engine boots
 //! for it, its phase and its lane.
 
+use super::{ShadowsFamily, ShadowsLane};
 use khora_core::agent::{AgentImportance, ExecutionPhase};
-use khora_lanes::shadow_lane::{ShadowsFamily, ShadowsLane};
 
-use crate::registered_agent::RegisteredAgent;
+use khora_core::agent::RegisteredAgent;
 
 khora_script::inventory::submit! {
     RegisteredAgent(khora_core::register_agent! {

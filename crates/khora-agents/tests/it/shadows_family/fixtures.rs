@@ -56,7 +56,7 @@ use khora_core::{EngineContext, Runtime};
 use khora_data::flow::{ShadowMatrices, ShadowView};
 use khora_data::render::{ExtractedLight, RenderWorld};
 use khora_data::AssetStore;
-use khora_lanes::shadow_lane::ShadowsFamily;
+use khora_lanes::shadows::ShadowsFamily;
 
 const MIB: u64 = 1024 * 1024;
 

@@ -67,7 +67,7 @@ use khora_data::render::{
     ExtractedLight, ExtractedMesh, PassDescriptor, RenderWorld, ResourceId, ShadowPassSlot,
 };
 use khora_data::AssetStore;
-use khora_lanes::shadow_lane::ShadowsLane;
+use khora_lanes::shadows::ShadowsLane;
 
 // ─── Levels ─────────────────────────────────────────────────────────────────
 

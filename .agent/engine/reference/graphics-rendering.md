@@ -10,8 +10,8 @@ HDR/tone mapping, post-processing, GPU occupancy and synchronization (no Vulkan 
 
 ## Key files
 - Render lanes: `crates/khora-lanes/src/render_lane/` (`SimpleUnlitLane`, `LitForwardLane`, `ForwardPlusLane`;
-  `RenderFamily`, agent `renderer`); shadows `shadow_lane/` (`ShadowsLane`, family `shadows`); overlays
-  `overlay_lane/` (`GridLane`, `WireframeLane`, `GizmoLane`, one family each); `skybox_lane/`, `ui_lane/`.
+  `RenderFamily`, agent `renderer`); shadows `shadows/` (`ShadowsLane`, family `shadows`); overlays
+  `overlay_lane/` (`GridLane`, `WireframeLane`, `GizmoLane`, one family each); `skybox/`, `ui_lane/`.
   Registrations in `crates/khora-agents/src/<domain>_agent/agent.rs`; every family's agent is the one `LaneAgent`.
 - Shaders: `crates/khora-infra/src/graphics/shader/shaders/` — `pipelines/` (entry points), `lib/` (`std`/`lighting`/`shadow`), `standalone/` (`text`/`egui`, raw strings). `graphics/wgpu/pipeline_system/mod.rs` (the `PipelineSystem` backend) composes them via `naga_oil #import`.
 - Backend: `crates/khora-infra/src/graphics/wgpu/` (`WgpuRenderSystem`, `WgpuDevice`).

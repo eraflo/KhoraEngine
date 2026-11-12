@@ -12,12 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The shadows family's agent: its registration, and nothing else.
+//! The shadows family's lane.
 //!
-//! The engine boots one [`LaneAgent`](crate::agent::LaneAgent) from it,
-//! offering the [`ShadowsLane`](khora_lanes::shadow_lane::ShadowsLane)'s three
-//! resolutions to GORNA. Each frame the agent hands the lane the bus's
-//! `RenderWorld` and `ShadowView`, opens the shadow pass on the device, and
-//! commits the closed pass and the frame's `ShadowFrame`.
+//! [`ShadowsLane`] renders every shadowed light's depth into a 2D atlas
+//! (directional and spot lights) and a cube atlas (point lights). Its three
+//! levels are three resolutions of the same atlases, from [`TIERS`]; the lit
+//! lanes never need to know which one ran. The atlases, the passes and the
+//! device resources live in [`algo`].
 
-mod agent;
+pub(crate) mod algo;
+mod family;
+mod lane;
+mod registration;
+
+pub use family::*;
+pub use lane::{ShadowsInputs, ShadowsLane, TIERS};
