@@ -153,7 +153,7 @@ Rust component: its script declares `Guard` (authored) and its state companion `
 | Shadow / overlay / skybox / ui / physics / audio / script lanes | `crates/khora-lanes/src/{audio,shadow_lane,overlay_lane,skybox_lane,ui_lane,physics_lane,script_lane}/` — one folder per family |
 | wgpu backend | `crates/khora-infra/src/graphics/wgpu/` (`system/`, `device/`) |
 | Rapier / CPAL / Taffy | `crates/khora-infra/src/{physics/rapier,audio/cpal,ui/taffy}/` |
-| `LaneAgent` / family registrations | `crates/khora-agents/src/agent/`; a moved family registers in `crates/khora-lanes/src/<family>/registration.rs` (`audio`), the others in `crates/khora-agents/src/{render,shadow,overlay,skybox,physics,ui,script,loading}_agent/agent.rs` |
+| `LaneAgent` / family registrations | `crates/khora-agents/src/agent/`; a moved family registers in `crates/khora-lanes/src/<family>/registration.rs` (`audio`, `loading`), the others in `crates/khora-agents/src/{render,shadow,overlay,skybox,physics,ui,script}_agent/agent.rs` |
 | SDK entry / GameWorld / Vessel | `crates/khora-sdk/src/lib.rs`, `game_world.rs`, `vessel.rs` |
 | Sandbox app | `examples/sandbox/src/` (`game.rs`, `player.rs`, `assets.rs`) |
 

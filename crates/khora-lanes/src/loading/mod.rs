@@ -25,13 +25,14 @@
 //! [`CompileRequest`]: khora_script::toolchain::CompileRequest
 //! [`DecodeRequest`]: khora_core::asset::DecodeRequest
 
-mod loading_family;
-mod loading_inputs;
-mod paced_lane;
-mod rush_lane;
+mod family;
+mod inputs;
+mod paced;
+mod registration;
+mod rush;
 mod work;
 
-pub use loading_family::*;
-pub use loading_inputs::*;
-pub use paced_lane::*;
-pub use rush_lane::*;
+pub use family::*;
+pub use inputs::*;
+pub use paced::*;
+pub use rush::*;

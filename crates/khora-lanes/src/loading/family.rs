@@ -92,3 +92,6 @@ khora_script::inventory::submit! {
         khora_core::event::BetweenSessions::Hold,
     )
 }
+
+/// The `loading` family's agent, by name.
+pub const LOADING: AgentId = <LoadingFamily as LaneFamily>::AGENT;

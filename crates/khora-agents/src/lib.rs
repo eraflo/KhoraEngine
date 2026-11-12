@@ -19,7 +19,6 @@
 #![warn(missing_docs)]
 
 pub mod agent;
-pub mod loading_agent;
 pub mod overlay_agent;
 pub mod physics_agent;
 pub mod registered_agent;

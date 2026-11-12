@@ -30,7 +30,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use khora_agents::agent::{choose, lane_agent, Choice};
-use khora_agents::loading_agent::LOADING;
 use khora_agents::registered_agent::{lane_agents, registered_agents};
 use khora_control::{AgentRegistry, ExecutionScheduler};
 use khora_core::agent::gorna::protocol::Envelope;
@@ -57,7 +56,8 @@ use khora_data::scene::loading::{
 use khora_data::scene::NoPrefabs;
 use khora_io::scene_loads::{install_scene_loading, SceneLoadHub};
 use khora_io::serialization::SerializationService;
-use khora_lanes::loading_lane::{LoadingFamily, PacedLane, RushLane};
+use khora_lanes::loading::LOADING;
+use khora_lanes::loading::{LoadingFamily, PacedLane, RushLane};
 use khora_script::reload::ScriptReload;
 use khora_script::toolchain::{
     CompileDone, CompileRequest, Compiled, ScriptCompiler, ScriptDeclarations,
@@ -367,8 +367,8 @@ fn the_loading_family_registers_two_lanes_in_the_background() {
         "rush until a quote exists"
     );
     assert!(
-        registration.module.contains("loading_agent"),
-        "registered in `khora-agents`' `loading_agent/`: {}",
+        registration.module == "khora_lanes::loading::registration",
+        "registered in its family folder, `khora-lanes/src/loading/`: {}",
         registration.module
     );
     let lanes: Vec<&'static str> = registration

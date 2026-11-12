@@ -19,7 +19,7 @@
 #![warn(missing_docs)]
 
 pub mod audio;
-pub mod loading_lane;
+pub mod loading;
 pub mod overlay_lane;
 pub mod physics_lane;
 pub mod render_lane;

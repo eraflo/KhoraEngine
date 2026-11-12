@@ -66,8 +66,8 @@ switches it off while editing.
   world's own pending mail.
 - **Compiling is a load, off the frame.** The pump (`script_hot_reload`, PreExtract,
   `khora-io/src/script/hot_reload.rs`) only files one `CompileRequest` per root on `Channel<CompileRequest>`
-  and reports misplaced files. The `loading` family (`khora-lanes/src/loading_lane/`, registration
-  `khora-agents/src/loading_agent/agent.rs`, `ExecutionPhase::BACKGROUND`; it loads scenes and assets too)
+  and reports misplaced files. The `loading` family (`khora-lanes/src/loading/`, registration
+  `khora-lanes/src/loading/registration.rs`, `ExecutionPhase::BACKGROUND`; it loads scenes and assets too)
   takes the requests and calls the
   runtime's `Arc<dyn ScriptCompiler>` (trait and types in `khora-script/src/toolchain/`; the engine's is
   `khora-io/src/script/project_compiler.rs` `ProjectCompiler`: importers, compile, problems, the `Interest`

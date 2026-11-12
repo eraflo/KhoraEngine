@@ -51,7 +51,7 @@ use khora_data::scene::loading::{
     LoadKind, LoadTicket, PreparedLoad, Refile, SceneLoadRequest, SceneLoading, SceneSource,
 };
 use khora_data::scene::NoPrefabs;
-use khora_lanes::loading_lane::{PacedLane, RushLane};
+use khora_lanes::loading::{PacedLane, RushLane};
 use khora_script::reload::ScriptReload;
 use khora_script::toolchain::{
     CompileDone, CompileRequest, CompileTicket, Compiled, ScriptCompiler, ScriptDeclarations,

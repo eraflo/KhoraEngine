@@ -15,11 +15,11 @@
 //! The `loading` family's registration: `ExecutionPhase::BACKGROUND`,
 //! `AgentImportance::Optional`, the rush lane then the paced lane.
 
+use super::{LoadingFamily, PacedLane, RushLane};
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::{AgentImportance, ExecutionPhase};
-use khora_lanes::loading_lane::{LoadingFamily, PacedLane, RushLane};
 
-use crate::registered_agent::RegisteredAgent;
+use khora_core::agent::RegisteredAgent;
 
 khora_script::inventory::submit! {
     RegisteredAgent(khora_core::register_agent! {
