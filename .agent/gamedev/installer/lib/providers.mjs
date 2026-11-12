@@ -204,7 +204,7 @@ export function generateCopilot(ctx, generated) {
   const globs = {
     'graphics-rendering': 'crates/khora-lanes/src/render_lane/**,crates/khora-infra/src/graphics/**',
     'physics': 'crates/khora-infra/src/physics/**,crates/khora-lanes/src/physics_lane/**',
-    'audio': 'crates/khora-infra/src/audio/**,crates/khora-lanes/src/audio_lane/**',
+    'audio': 'crates/khora-infra/src/audio/**,crates/khora-lanes/src/audio/**',
     'ecs-data': 'crates/khora-data/**',
     'control-gorna': 'crates/khora-control/**',
     'editor-ui-ux': 'crates/khora-editor/**',

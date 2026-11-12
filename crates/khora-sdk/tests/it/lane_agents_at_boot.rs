@@ -495,9 +495,11 @@ fn boot_records_each_agents_origin() {
     );
     for engine_agent in ["renderer", "script", "audio", "physics", "ui"] {
         let origin = registry.origin(AgentId::new(engine_agent));
+        // transitional: only `khora_lanes::` once every family has moved.
         assert!(
-            origin.is_some_and(|module| module.starts_with("khora_agents::")),
-            "`{engine_agent}` comes from khora-agents: {origin:?}"
+            origin.is_some_and(|module| module.starts_with("khora_lanes::")
+                || module.starts_with("khora_agents::")),
+            "`{engine_agent}` comes from the engine's crates: {origin:?}"
         );
     }
 }

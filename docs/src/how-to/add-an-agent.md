@@ -38,7 +38,7 @@ that negotiates for them. It implements `LaneFamily`
 - `Outputs` — the outputs every lane of the family writes, a struct deriving
   `LaneOutputs`.
 
-The audio family, from `crates/khora-lanes/src/audio_lane/audio_family.rs`:
+The audio family, from `crates/khora-lanes/src/audio/family.rs`:
 
 ```rust
 use khora_core::agent::gorna::AgentId;

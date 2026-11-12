@@ -2386,6 +2386,383 @@ fn lane_folder_check_names_what_breaks_the_split() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Families
+// ---------------------------------------------------------------------------
+
+/// Where the families live: one folder each, directly under this one.
+const LANES_SRC: &str = "crates/khora-lanes/src";
+
+/// Each family folder under `crates/khora-lanes/src/`, and the domain its
+/// `<domain>_lane/` (khora-lanes) and `<domain>_agent/` (khora-agents)
+/// folders were named by before the family moved into its own folder.
+const FAMILY_FOLDERS: &[(&str, &str)] = &[
+    ("audio", "audio"),
+    ("loading", "loading"),
+    ("overlay", "overlay"),
+    ("physics", "physics"),
+    ("render", "render"),
+    ("script", "script"),
+    ("shadows", "shadow"),
+    ("skybox", "skybox"),
+    ("ui", "ui"),
+];
+
+/// The family folder that groups several families, one sub-folder each.
+const OVERLAY: &str = "overlay";
+
+/// The families `overlay/` holds, one sub-folder each, and nothing else.
+const OVERLAY_FAMILIES: &[&str] = &["gizmo", "grid", "wireframe"];
+
+/// Folders directly under `crates/khora-lanes/src/` that hold no family
+/// (shared helpers, say). A folder there is a family unless it is named here.
+const NOT_FAMILY_FOLDERS: &[&str] = &[];
+
+/// The files every family folder holds: its module, its family and outputs
+/// (`family.rs`), and its one `register_agent!` (`registration.rs`).
+const FAMILY_FOLDER_FILES: &[&str] = &["mod.rs", "family.rs", "registration.rs"];
+
+/// The module where `register_agent!` is defined; its body calls itself.
+const REGISTER_AGENT_DEFINITION: &str = "crates/khora-core/src/agent/registration.rs";
+
+/// A family is read in one folder. Every folder directly under
+/// `crates/khora-lanes/src/` is a family folder (`FAMILY_FOLDERS`) holding
+/// `mod.rs`, `family.rs`, `registration.rs` (with exactly one
+/// `register_agent!` call outside comments and tests) and at least one lane,
+/// unless it is named in `NOT_FAMILY_FOLDERS`. `overlay/` groups three
+/// families: it holds `mod.rs` and the family folders `grid/`, `wireframe/`
+/// and `gizmo/`, nothing else. Strict: not in the ratchet.
+#[test]
+fn every_family_folder_holds_its_family_and_registration() {
+    let root = repo_root();
+    let problems = family_folder_problems(&root.join(LANES_SRC));
+    assert!(
+        problems.is_empty(),
+        "family folders under {LANES_SRC}/ that do not hold their family and registration:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// A family registers where it is read. Outside test code, a
+/// `register_agent!` call (comments do not count) appears only in a
+/// `registration.rs` under `crates/khora-lanes/src/`, or in the macro's own
+/// definition in khora-core. Test files and inline test modules may build
+/// registrations of their own. Strict: not in the ratchet.
+#[test]
+fn registrations_live_in_their_family_folder() {
+    let root = repo_root();
+    let mut problems = Vec::new();
+    for src in rust_src_roots(&root) {
+        if !src.starts_with(root.join("crates")) {
+            continue;
+        }
+        for path in walk_files(&src) {
+            if !has_extension(&path, "rs")
+                || file_name(&path) == "tests.rs"
+                || under_tests_dir(&src, &path)
+            {
+                continue;
+            }
+            let path_rel = rel(&root, &path);
+            if registration_site_is_allowed(&path_rel) {
+                continue;
+            }
+            for line in register_agent_calls(&read_text(&path)) {
+                problems.push(format!("{path_rel}:{line}"));
+            }
+        }
+    }
+    problems.sort();
+    assert!(
+        problems.is_empty(),
+        "`register_agent!` outside a family folder's `registration.rs` \
+         ({LANES_SRC}/<family>/registration.rs):\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// A family moves whole. For each family folder under
+/// `crates/khora-lanes/src/`, the folders it moved out of —
+/// `crates/khora-lanes/src/<domain>_lane/` and
+/// `crates/khora-agents/src/<domain>_agent/`, `<domain>` read from
+/// `FAMILY_FOLDERS` — no longer exist.
+#[test]
+fn a_moved_family_leaves_no_old_folder() {
+    let root = repo_root();
+    let mut problems = Vec::new();
+    for (family, domain) in FAMILY_FOLDERS {
+        if !root.join(LANES_SRC).join(family).is_dir() {
+            continue;
+        }
+        for old in [
+            format!("{LANES_SRC}/{domain}_lane"),
+            format!("crates/khora-agents/src/{domain}_agent"),
+        ] {
+            if root.join(&old).exists() {
+                problems.push(format!(
+                    "{old}/: still exists, although {LANES_SRC}/{family}/ holds the family"
+                ));
+            }
+        }
+    }
+    problems.sort();
+    assert!(
+        problems.is_empty(),
+        "families moved into their folder but left their old one behind:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// What keeps the folders directly under `lanes_src` from being family
+/// folders, sorted. Each line names the entry relative to `lanes_src`.
+fn family_folder_problems(lanes_src: &Path) -> Vec<String> {
+    let mut problems = Vec::new();
+    for dir in child_dirs(lanes_src) {
+        let name = file_name(&dir);
+        // transitional: removed when 7c ends
+        if name.ends_with("_lane") {
+            continue; // a family not moved into its folder yet
+        }
+        if NOT_FAMILY_FOLDERS.contains(&name.as_str()) {
+            continue;
+        }
+        if name == OVERLAY {
+            if !dir.join("mod.rs").is_file() {
+                problems.push(format!("{name}/mod.rs: missing"));
+            }
+            let found: BTreeSet<String> = child_dirs(&dir).iter().map(|d| file_name(d)).collect();
+            for family in OVERLAY_FAMILIES {
+                if !found.contains(*family) {
+                    problems.push(format!("{name}/{family}/: missing"));
+                }
+            }
+            for sub in &found {
+                if OVERLAY_FAMILIES.contains(&sub.as_str()) {
+                    family_problems(&dir.join(sub), &format!("{name}/{sub}"), &mut problems);
+                } else {
+                    problems.push(format!(
+                        "{name}/{sub}/: `{name}/` holds only the family folders {}",
+                        OVERLAY_FAMILIES.join(", ")
+                    ));
+                }
+            }
+        } else if FAMILY_FOLDERS.iter().any(|(family, _)| *family == name) {
+            family_problems(&dir, &name, &mut problems);
+        } else {
+            problems.push(format!(
+                "{name}/: not a family (FAMILY_FOLDERS) and not named in NOT_FAMILY_FOLDERS"
+            ));
+        }
+    }
+    problems.sort();
+    problems
+}
+
+/// What `dir`, a family folder shown as `label`, lacks.
+fn family_problems(dir: &Path, label: &str, problems: &mut Vec<String>) {
+    for file in FAMILY_FOLDER_FILES {
+        if !dir.join(file).is_file() {
+            problems.push(format!("{label}/{file}: missing"));
+        }
+    }
+    let registration = dir.join("registration.rs");
+    if registration.is_file() {
+        let calls = register_agent_calls(&read_text(&registration)).len();
+        if calls != 1 {
+            problems.push(format!(
+                "{label}/registration.rs: {calls} `register_agent!` calls; a family registers one"
+            ));
+        }
+    }
+    let lanes = folder_entries(dir)
+        .iter()
+        .filter_map(|entry| entry_module(entry))
+        .filter(|module| !matches!(*module, "mod" | "family" | "registration" | "tests"))
+        .count();
+    if lanes == 0 {
+        problems.push(format!("{label}/: holds no lane"));
+    }
+}
+
+/// Whether a production `register_agent!` call may stand in the file at
+/// `path` (repository-relative, `/`-separated).
+fn registration_site_is_allowed(path: &str) -> bool {
+    let in_family_folder = path
+        .strip_prefix(LANES_SRC)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .and_then(|rest| rest.strip_suffix("/registration.rs"))
+        .is_some_and(|folder| !folder.is_empty());
+    // transitional: removed when 7c ends
+    let in_unmoved_agent = path
+        .strip_prefix("crates/khora-agents/src/")
+        .and_then(|rest| rest.strip_suffix("/agent.rs"))
+        .is_some_and(|folder| folder.ends_with("_agent") && !folder.contains('/'));
+    in_family_folder || in_unmoved_agent || path == REGISTER_AGENT_DEFINITION
+}
+
+/// The 1-based lines of `text` that call `register_agent!` — the name then,
+/// past any whitespace, `{`, `(` or `[` — comments excluded and the inline
+/// test module (from its `#[cfg(test)]` on) too. A mention in prose, a
+/// string or a comment is not a call.
+fn register_agent_calls(text: &str) -> Vec<usize> {
+    const MACRO: &str = "register_agent!";
+    strip_rust_comments(text)
+        .lines()
+        .take(non_test_lines(text))
+        .enumerate()
+        .filter(|(_, line)| {
+            line.match_indices(MACRO).any(|(at, _)| {
+                line[at + MACRO.len()..]
+                    .trim_start()
+                    .starts_with(['{', '(', '['])
+            })
+        })
+        .map(|(index, _)| index + 1)
+        .collect()
+}
+
+/// The family folder check accepts a complete family, the grouped overlay and
+/// a folder not moved yet, and names what a family folder lacks, a folder
+/// that is no family, an overlay family missing, and a registration that
+/// registers nothing or two families.
+#[test]
+fn family_folder_check_names_what_a_family_folder_lacks() {
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-family-folder-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    const ONE: &str = "inventory::submit! { RegisteredAgent(khora_core::register_agent! { }) }\n";
+    const TWO: &str = "khora_core::register_agent! { }\nkhora_core::register_agent! { }\n";
+    const MENTION: &str = "// `register_agent!` is called below.\n";
+    let write_tree = |base: &Path, files: &[(&str, &str)]| -> std::io::Result<()> {
+        for (file, text) in files {
+            let path = base.join(file);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, text)?;
+        }
+        Ok(())
+    };
+    let family = |prefix: &str| -> Vec<(String, &'static str)> {
+        vec![
+            (format!("{prefix}/mod.rs"), ""),
+            (format!("{prefix}/family.rs"), ""),
+            (format!("{prefix}/registration.rs"), ONE),
+            (format!("{prefix}/lane.rs"), ""),
+        ]
+    };
+    let mut good: Vec<(String, &str)> = family("audio");
+    good.extend(family("render"));
+    good.push(("render/forward_plus/mod.rs".to_owned(), ""));
+    good.push(("overlay/mod.rs".to_owned(), ""));
+    for sub in OVERLAY_FAMILIES {
+        good.extend(family(&format!("overlay/{sub}")));
+    }
+    good.push(("ui_lane/mod.rs".to_owned(), ""));
+    let good: Vec<(&str, &str)> = good.iter().map(|(p, t)| (p.as_str(), *t)).collect();
+
+    let bad: Vec<(&str, &str)> = vec![
+        // No family.rs, and a registration that only mentions the macro.
+        ("audio/mod.rs", ""),
+        ("audio/registration.rs", MENTION),
+        ("audio/spatial_mixing.rs", ""),
+        // No lane.
+        ("physics/mod.rs", ""),
+        ("physics/family.rs", ""),
+        ("physics/registration.rs", ONE),
+        // Two families in one registration.
+        ("skybox/mod.rs", ""),
+        ("skybox/family.rs", ""),
+        ("skybox/registration.rs", TWO),
+        ("skybox/lane.rs", ""),
+        // A folder that is no family and is not listed.
+        ("util/mod.rs", ""),
+        // Overlay with one family of three, and a stray folder.
+        ("overlay/mod.rs", ""),
+        ("overlay/grid/mod.rs", ""),
+        ("overlay/grid/family.rs", ""),
+        ("overlay/grid/registration.rs", ONE),
+        ("overlay/grid/lane.rs", ""),
+        ("overlay/shared/mod.rs", ""),
+    ];
+
+    let setup = || -> std::io::Result<()> {
+        write_tree(&dir.join("good"), &good)?;
+        write_tree(&dir.join("bad"), &bad)?;
+        Ok(())
+    };
+    let setup = setup();
+    let good_problems = family_folder_problems(&dir.join("good"));
+    let bad_problems = family_folder_problems(&dir.join("bad"));
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert!(good_problems.is_empty(), "{good_problems:#?}");
+    for expected in [
+        "audio/family.rs: missing",
+        "audio/registration.rs: 0 `register_agent!` calls",
+        "physics/: holds no lane",
+        "skybox/registration.rs: 2 `register_agent!` calls",
+        "util/: not a family",
+        "overlay/gizmo/: missing",
+        "overlay/wireframe/: missing",
+        "overlay/shared/:",
+    ] {
+        assert!(
+            bad_problems.iter().any(|p| p.starts_with(expected)),
+            "expected a problem starting `{expected}`:\n{bad_problems:#?}"
+        );
+    }
+    assert_eq!(bad_problems.len(), 8, "{bad_problems:#?}");
+}
+
+/// The registration rule allows a family folder's `registration.rs` (nested
+/// families too), the macro's definition, and an agent folder not moved yet;
+/// it refuses any other file. It counts calls, not mentions in comments, and
+/// not calls in the inline test module.
+#[test]
+fn registration_rule_reads_calls_in_family_folders_only() {
+    for allowed in [
+        "crates/khora-lanes/src/audio/registration.rs",
+        "crates/khora-lanes/src/overlay/grid/registration.rs",
+        "crates/khora-core/src/agent/registration.rs",
+        "crates/khora-agents/src/ui_agent/agent.rs",
+    ] {
+        assert!(registration_site_is_allowed(allowed), "{allowed}");
+    }
+    for refused in [
+        "crates/khora-lanes/src/registration.rs",
+        "crates/khora-lanes/src/audio/mod.rs",
+        "crates/khora-lanes/src/audio/family.rs",
+        "crates/khora-agents/src/registered_agent.rs",
+        "crates/khora-agents/src/agent/agent.rs",
+        "crates/khora-agents/src/ui_agent/mod.rs",
+        "crates/khora-agents/src/families/audio/registration.rs",
+        "crates/khora-sdk/src/lib.rs",
+    ] {
+        assert!(!registration_site_is_allowed(refused), "{refused}");
+    }
+
+    let text = "\
+//! Registers with `register_agent!`.
+/// ```
+/// register_agent! { }
+/// ```
+static A: R = khora_core::register_agent! {
+};
+/* register_agent! { } */
+const HELP: &str = \"families of lanes (`register_agent!`), see the docs\";
+#[cfg(test)]
+mod tests {
+    static B: R = khora_core::register_agent! { };
+}
+";
+    assert_eq!(register_agent_calls(text), vec![5]);
+}
+
 /// `text` with every `//` and `/* */` comment blanked out (doc comments
 /// included), keeping string and character literals and every newline, so
 /// line numbers survive.

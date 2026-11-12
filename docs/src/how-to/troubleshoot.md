@@ -197,13 +197,13 @@ fixed step for stiff constraints. See [Physics](../concepts/physics.md).
 ## Audio
 
 Audio runs through the `AudioDevice` trait (CPAL backend) and the spatial mixing lane
-(`crates/khora-lanes/src/audio_lane/`). As with physics, the audio family
+(`crates/khora-lanes/src/audio/`). As with physics, the audio family
 (`khora_core::audio::AUDIO`) only runs while it is on; the editor switches it off while editing.
 
 ### No spatialization — sound plays but is not panned by position
 
 **Cause.** The mixing lane only pans when a **listener transform** is present; with no listener the
-channels stay balanced (see `audio_lane/spatial_mixing.rs`).
+channels stay balanced (see `khora-lanes/src/audio/spatial_mixing.rs`).
 
 **Fix.** Ensure the scene has a listener (an `AudioListener` on an entity with a transform), typically
 on the active camera or the player.

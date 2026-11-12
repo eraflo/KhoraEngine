@@ -18,7 +18,7 @@
 
 #![warn(missing_docs)]
 
-pub mod audio_lane;
+pub mod audio;
 pub mod loading_lane;
 pub mod overlay_lane;
 pub mod physics_lane;

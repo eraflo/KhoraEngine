@@ -40,7 +40,7 @@ use khora_core::{EngineContext, Runtime};
 use khora_data::assets::SoundData;
 use khora_data::ecs::{AudioSource, GlobalTransform, World};
 use khora_data::flow::{AudioFlow, AudioPlaybackWriteback, AudioView, Flow, Selection};
-use khora_lanes::audio_lane::AudioFamily;
+use khora_lanes::audio::AudioFamily;
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
 

@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Contains lanes for audio processing.
+//! The audio family: its lane, spatial mixing, and its registration.
 
-mod audio_family;
+mod family;
+mod registration;
 mod spatial_mixing;
 
-pub use audio_family::*;
+pub use family::*;
 pub use spatial_mixing::*;

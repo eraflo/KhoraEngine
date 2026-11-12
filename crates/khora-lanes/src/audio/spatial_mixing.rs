@@ -48,7 +48,7 @@ use khora_data::ecs::PlaybackState;
 use khora_data::flow::{AudioPlaybackUpdate, AudioSourceSnapshot, AudioView};
 use khora_macros::LaneInputs;
 
-use super::audio_family::{AudioFamily, AudioOutputs};
+use super::family::{AudioFamily, AudioOutputs};
 
 /// Number of frames the lane mixes per record. Sized to comfortably cover one
 /// display frame at 60 Hz / 48 kHz (~800 frames) with headroom.

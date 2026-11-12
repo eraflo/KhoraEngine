@@ -56,7 +56,7 @@ fn is_serialize<T: serde::Serialize>() {}
 
 #[allow(unused_imports)]
 mod every_pub_mod {
-    use khora_lanes::audio_lane as _;
+    use khora_lanes::audio as _;
     use khora_lanes::overlay_lane as _;
     use khora_lanes::physics_lane as _;
     use khora_lanes::render_lane as _;
@@ -165,12 +165,12 @@ fn reload_report_fields(x: &khora_lanes::script_lane::runtime::ReloadReport) {
 }
 
 #[test]
-fn module_audio_lane_paths_still_resolve() {
-    let _ = type_name::<khora_lanes::audio_lane::SpatialMixingLane>();
-    let _ = type_name::<khora_lanes::audio_lane::AudioFamily>();
-    is_default::<khora_lanes::audio_lane::SpatialMixingLane>();
-    is_typed_lane::<khora_lanes::audio_lane::SpatialMixingLane>();
-    is_lane_family::<khora_lanes::audio_lane::AudioFamily>();
+fn module_audio_paths_still_resolve() {
+    let _ = type_name::<khora_lanes::audio::SpatialMixingLane>();
+    let _ = type_name::<khora_lanes::audio::AudioFamily>();
+    is_default::<khora_lanes::audio::SpatialMixingLane>();
+    is_typed_lane::<khora_lanes::audio::SpatialMixingLane>();
+    is_lane_family::<khora_lanes::audio::AudioFamily>();
 }
 
 #[test]
@@ -478,7 +478,7 @@ fn exported_macros_still_expand() {
 
 #[allow(unused_imports)]
 mod paths_used_by_other_crates {
-    use khora_lanes::audio_lane::SpatialMixingLane as _; // khora-agents
+    use khora_lanes::audio::SpatialMixingLane as _; // khora-agents
     use khora_lanes::overlay_lane::GizmoFamily as _; // khora-agents
     use khora_lanes::overlay_lane::GizmoLane as _; // khora-agents
     use khora_lanes::overlay_lane::GridFamily as _; // khora-agents

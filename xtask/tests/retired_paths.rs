@@ -632,6 +632,67 @@ fn nothing_names_a_shim_the_contract_replaced() {
     );
 }
 
+/// The homes a family left when it moved into its own folder,
+/// `crates/khora-lanes/src/<family>/`: its `<domain>_lane` module in
+/// khora-lanes and its `<domain>_agent` module in khora-agents, as module
+/// paths and as source paths. A family adds its four spellings when it moves.
+const RETIRED_FAMILY_HOMES: &[&str] = &[
+    "khora_lanes::audio_lane",
+    "khora_agents::audio_agent",
+    "khora-lanes/src/audio_lane",
+    "khora-agents/src/audio_agent",
+];
+
+/// The files `nothing_names_the_old_home_of_a_moved_family` reads: those
+/// `scanned_files` covers, the repository READMEs, and the installer scripts
+/// under `.agent/` (they map each reference doc to the source folders it
+/// covers).
+fn family_home_scanned_files(root: &Path) -> Vec<PathBuf> {
+    let mut files = scanned_files(root);
+    for file in ["README.md", "docs/README.md", ".agent/README.md"] {
+        let path = root.join(file);
+        if path.is_file() {
+            files.push(path);
+        }
+    }
+    let mut scripts = Vec::new();
+    walk(&root.join(".agent"), &mut scripts);
+    scripts.retain(|path| {
+        path.extension().and_then(|e| e.to_str()) == Some("mjs")
+            && !rel(root, path).contains("/node_modules/")
+    });
+    files.extend(scripts);
+    files.sort();
+    files.dedup();
+    files
+}
+
+/// A family that moved into its own folder is named there only: nothing in
+/// code, docs or the installer still names its `<domain>_lane` or
+/// `<domain>_agent` module, by module path or by source path.
+#[test]
+fn nothing_names_the_old_home_of_a_moved_family() {
+    let root = repo_root();
+    let mut hits = Vec::new();
+    for file in family_home_scanned_files(&root) {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        for (number, line) in text.lines().enumerate() {
+            for retired in RETIRED_FAMILY_HOMES {
+                if line.contains(retired) {
+                    hits.push(format!("{}:{}: `{retired}`", rel(&root, &file), number + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "the old homes of moved families are still named:\n  {}",
+        hits.join("\n  ")
+    );
+}
+
 /// Dead items whose names are too common to forbid everywhere: the file or
 /// directory they lived in, the text that declared them, and what they were.
 /// The `allow(dead_code)` that hid them goes with them.

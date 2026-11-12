@@ -36,7 +36,7 @@ use khora_core::Runtime;
 use khora_data::assets::SoundData;
 use khora_data::ecs::{AudioListener, AudioSource, GlobalTransform, PlaybackState, World};
 use khora_data::flow::{AudioFlow, AudioPlaybackWriteback, AudioView, Flow, Selection};
-use khora_lanes::audio_lane::SpatialMixingLane;
+use khora_lanes::audio::SpatialMixingLane;
 
 // ─── Levels ─────────────────────────────────────────────────────────────────
 

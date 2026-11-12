@@ -22,7 +22,7 @@ should NOT be agents** — only those that negotiate a GORNA budget. Non-negotia
    (`AgentId::new("<name>")`, or a core constant such as `khora_core::audio::AUDIO`), `SEMANTICS`
    (`Presentation`, or `Exact` when every level must give the same result), and `type Outputs<'f>`, a struct
    deriving `LaneOutputs` (`#[pass]`, `#[deck]`, `#[staged]`). Boot refuses two families naming one agent.
-   Priority comes from the declared `AgentImportance`, never from the name. Model: `audio_lane/audio_family.rs`.
+   Priority comes from the declared `AgentImportance`, never from the name. Model: `audio/family.rs`.
 2. **Write its lanes** — see [`add-a-lane`](../add-a-lane/SKILL.md). Each names `type Family = <YourFamily>`;
    a lane of another family does not compile into the registration.
 3. **Register it** in `crates/khora-agents/src/<domain>_agent/agent.rs`:
