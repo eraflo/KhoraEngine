@@ -46,11 +46,6 @@ pub struct RuntimeConfig {
     /// Optional for older runtime.json files. Used for diagnostics.
     #[serde(default)]
     pub preset: Option<String>,
-    /// When `true`, the runtime hashes each loaded asset against
-    /// `manifest.bin` and aborts on mismatch. Defaults to `false` so
-    /// older packs (without a manifest) keep booting.
-    #[serde(default)]
-    pub verify_integrity: bool,
     /// The game's physics settings (`physics.step`). Written only when the
     /// project sets them; a file without them runs at the defaults.
     #[serde(default, skip_serializing_if = "PhysicsSettings::is_default")]
@@ -121,7 +116,6 @@ impl RuntimeConfig {
             default_scene: default_scene_rel_path(),
             window_title: None,
             preset: None,
-            verify_integrity: false,
             physics: PhysicsSettings::default(),
             game_version: default_game_version(),
         }

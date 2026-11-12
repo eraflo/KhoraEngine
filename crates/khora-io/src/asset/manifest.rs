@@ -8,11 +8,10 @@
 
 //! Pack-integrity sidecar (`manifest.bin`).
 //!
-//! When the writer enables manifest emission, every entry in `data.pack`
-//! gets a BLAKE3 hash of its **uncompressed** bytes recorded alongside
-//! its UUID. The runtime reads `manifest.bin` at boot (when
-//! `RuntimeConfig::verify_integrity` is set) and re-hashes each asset on
-//! load. Mismatches raise `IntegrityError` so corruption / tampering is
+//! A signed build records, for every entry in `data.pack`, a BLAKE3 hash of
+//! its **uncompressed** bytes alongside its UUID, and signs the whole over
+//! `index.bin` (`signing::SignedManifest`). A packed runtime verifies the
+//! signature at boot and re-hashes each asset on load. Mismatches raise `IntegrityError` so corruption / tampering is
 //! detected before the bytes hit a decoder.
 //!
 //! On-disk layout: bincode-encoded `Vec<ManifestEntry>` — same approach

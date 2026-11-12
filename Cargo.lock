@@ -2854,6 +2854,7 @@ dependencies = [
  "log",
  "lz4_flex",
  "notify",
+ "ring",
  "ron",
  "serde",
  "serde_json",

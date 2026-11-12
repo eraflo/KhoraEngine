@@ -61,6 +61,7 @@ mod script_pump_across_roots;
 mod script_pump_files_requests;
 mod shader_overlays_follow_the_project;
 mod shipped_scripts;
+mod signed_packs;
 mod snapshots;
 mod system_components;
 mod unit_typed_declarations;

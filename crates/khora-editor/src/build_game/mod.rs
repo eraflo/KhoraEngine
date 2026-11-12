@@ -60,27 +60,28 @@ use crate::project_vfs::ProjectVfs;
 use anyhow::{anyhow, Context, Result};
 use khora_sdk::khora_core::asset::CompressionKind;
 use khora_sdk::khora_core::physics::PhysicsSettings;
-use khora_sdk::{PackBuilder, RuntimeConfig, DEFAULT_SCENE_REL_PATH, RUNTIME_CONFIG_FILE};
+use khora_sdk::{
+    PackBuilder, PackSigner, RuntimeConfig, DEFAULT_SCENE_REL_PATH, RUNTIME_CONFIG_FILE,
+};
 use std::path::{Path, PathBuf};
 
-/// Build profile selecting compression / manifest / runtime-validation
-/// trade-offs in one place. Callers pick the preset; the build pipeline
-/// reads the resolved settings off it.
+mod cargo_build;
+use cargo_build::stage_with_cargo_build;
+
+/// Build profile selecting the pack's compression. Every preset signs its
+/// pack and every runtime verifies it: a pack is sealed whatever the
+/// preset.
 ///
 /// `Debug` / `Shipping` are reserved for the upcoming "Build…" dialog
 /// (Phase 6) — `Release` is the default until that lands.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuildPreset {
-    /// Fast iteration. No compression, no manifest, runtime validation
-    /// stays on so corruption is loud.
+    /// Fast iteration: no compression.
     Debug,
-    /// Production-bound. LZ4 per-entry compression, manifest emitted,
-    /// runtime validation on (catches broken downloads before crashes).
+    /// Production-bound: LZ4 per-entry compression.
     Release,
-    /// Performance-critical shipping. Same on-disk format as Release but
-    /// the runtime *skips* integrity verification at load time — used
-    /// when QA has already validated the pack and you want maximum FPS.
+    /// Shipping: the same pack as Release.
     Shipping,
 }
 
@@ -98,23 +99,6 @@ impl BuildPreset {
         match self {
             Self::Debug => CompressionKind::None,
             Self::Release | Self::Shipping => CompressionKind::Lz4,
-        }
-    }
-
-    /// Whether to emit a `manifest.bin` BLAKE3 sidecar.
-    pub fn emit_manifest(self) -> bool {
-        match self {
-            Self::Debug => false,
-            Self::Release | Self::Shipping => true,
-        }
-    }
-
-    /// Whether the staged runtime should hash assets on load and bail
-    /// on mismatch.
-    pub fn verify_integrity(self) -> bool {
-        match self {
-            Self::Debug | Self::Release => true,
-            Self::Shipping => false,
         }
     }
 }
@@ -198,10 +182,20 @@ pub struct BuildOutcome {
 }
 
 /// Stages a build for the host OS using the **Release** preset by
-/// default. Convenience wrapper for the menu's "Build Game…" entry.
+/// default, signed with the user's key. Convenience wrapper for the menu's
+/// "Build Game…" entry.
 pub fn build_for_host(pvfs: &ProjectVfs, project_name: &str) -> Result<BuildOutcome> {
     let target = BuildTarget::host();
-    build_for_target(pvfs, project_name, target, BuildPreset::Release)
+    let signer = user_signer()?;
+    build_for_target(pvfs, project_name, target, BuildPreset::Release, &signer)
+}
+
+/// The key the user's builds are signed with, kept in
+/// `user_dirs::signing_dir` (made on the first build, never in a project).
+fn user_signer() -> Result<PackSigner> {
+    let dir = khora_sdk::user_dirs::signing_dir(&|key| std::env::var_os(key))
+        .ok_or_else(|| anyhow!("Build Game: no home folder to keep the signing key in"))?;
+    PackSigner::load_or_create(&dir).context("Build Game: the signing key")
 }
 
 /// Stages a build for any target with an explicit preset. v1 only
@@ -213,6 +207,7 @@ pub fn build_for_target(
     project_name: &str,
     target: BuildTarget,
     preset: BuildPreset,
+    signer: &PackSigner,
 ) -> Result<BuildOutcome> {
     if project_name.trim().is_empty() {
         anyhow::bail!("Build Game: project_name is empty");
@@ -241,20 +236,31 @@ pub fn build_for_target(
         output_dir.display()
     );
 
-    // Pack assets directly into the output dir — index.bin + data.pack
-    // (and optionally manifest.bin) sit alongside the staged binary
-    // regardless of strategy. Compression / manifest are driven by the
-    // build preset.
-    let pack_out = PackBuilder::new(&pvfs.assets_root, &output_dir)
-        .with_compression(preset.compression())
-        .with_manifest(preset.emit_manifest())
-        .build()
-        .context("PackBuilder failed")?;
-
-    let bin_dst = match strategy {
-        BuildStrategy::RuntimeStamp => stage_with_runtime_stamp(&output_dir, project_name, target)?,
+    let outcome = match strategy {
+        BuildStrategy::RuntimeStamp => {
+            let runtime_src = locate_runtime_binary(target)
+                .with_context(|| format!("Could not locate khora-runtime for {:?}", target))?;
+            build_with_runtime(
+                &pvfs.assets_root,
+                &output_dir,
+                project_name,
+                target,
+                preset,
+                signer,
+                &runtime_src,
+            )?
+        }
         BuildStrategy::CargoBuild => {
-            stage_with_cargo_build(&pvfs.root, &output_dir, project_name, target)?
+            let pack_out = pack_and_sign(&pvfs.assets_root, &output_dir, preset, signer)?;
+            let bin_dst = stage_with_cargo_build(&pvfs.root, &output_dir, project_name, target)?;
+            stamp_binary(&bin_dst, signer)?;
+            BuildOutcome {
+                strategy,
+                output_dir: output_dir.clone(),
+                binary_path: bin_dst,
+                asset_count: pack_out.asset_count,
+                pack_bytes: pack_out.pack_bytes(),
+            }
         }
     };
 
@@ -267,35 +273,74 @@ pub fn build_for_target(
     write_runtime_config_of(&output_dir, &game, preset, pvfs.physics_settings())?;
 
     log::info!(
-        "Build Game: staged {} ({} assets, {} bytes packed) via {}",
-        bin_dst.display(),
-        pack_out.asset_count,
-        pack_out.pack_bytes(),
+        "Build Game: staged {} ({} assets, {} bytes packed, signed) via {}",
+        outcome.binary_path.display(),
+        outcome.asset_count,
+        outcome.pack_bytes,
         strategy.label()
     );
+    Ok(outcome)
+}
 
+/// Packs `assets_root` into `output_dir` — `index.bin`, `data.pack` and the
+/// `manifest.bin` `signer` signs over them — with `preset`'s compression.
+fn pack_and_sign(
+    assets_root: &Path,
+    output_dir: &Path,
+    preset: BuildPreset,
+    signer: &PackSigner,
+) -> Result<khora_sdk::PackOutput> {
+    PackBuilder::new(assets_root, output_dir)
+        .with_compression(preset.compression())
+        .with_signer(signer)
+        .build()
+        .context("PackBuilder failed")
+}
+
+/// Stamps `signer`'s public key into the staged binary at `bin`: the key
+/// its runtime verifies the pack with.
+fn stamp_binary(bin: &Path, signer: &PackSigner) -> Result<()> {
+    khora_sdk::stamp_pack_key(bin, &signer.public_key())
+        .with_context(|| format!("Build Game: cannot stamp {}", bin.display()))
+}
+
+/// The runtime-stamp build over the runtime binary at `runtime_src`: the
+/// project's `assets_root` packed into `output_dir` with `preset`'s
+/// compression and signed by `signer`, and `runtime_src` staged there,
+/// named after the project and stamped with `signer`'s public key.
+fn build_with_runtime(
+    assets_root: &Path,
+    output_dir: &Path,
+    project_name: &str,
+    target: BuildTarget,
+    preset: BuildPreset,
+    signer: &PackSigner,
+    runtime_src: &Path,
+) -> Result<BuildOutcome> {
+    let pack_out = pack_and_sign(assets_root, output_dir, preset, signer)?;
+    let bin_dst = stage_runtime(runtime_src, output_dir, project_name, target)?;
+    stamp_binary(&bin_dst, signer)?;
     Ok(BuildOutcome {
-        strategy,
-        output_dir,
+        strategy: BuildStrategy::RuntimeStamp,
+        output_dir: output_dir.to_path_buf(),
         binary_path: bin_dst,
         asset_count: pack_out.asset_count,
         pack_bytes: pack_out.pack_bytes(),
     })
 }
 
-/// Stamps the pre-built `khora-runtime` into `output_dir`, renamed to the
-/// project name. Returns the absolute path of the staged binary.
-fn stage_with_runtime_stamp(
+/// Copies the pre-built runtime at `runtime_src` into `output_dir`, renamed
+/// to the project name. Returns the absolute path of the staged binary.
+fn stage_runtime(
+    runtime_src: &Path,
     output_dir: &Path,
     project_name: &str,
     target: BuildTarget,
 ) -> Result<PathBuf> {
-    let runtime_src = locate_runtime_binary(target)
-        .with_context(|| format!("Could not locate khora-runtime for {:?}", target))?;
     let safe_name = sanitize_binary_name(project_name);
     let bin_filename = format!("{}{}", safe_name, target.exe_suffix());
     let bin_dst = output_dir.join(&bin_filename);
-    std::fs::copy(&runtime_src, &bin_dst).with_context(|| {
+    std::fs::copy(runtime_src, &bin_dst).with_context(|| {
         format!(
             "Failed to copy runtime {} → {}",
             runtime_src.display(),
@@ -304,138 +349,6 @@ fn stage_with_runtime_stamp(
     })?;
     set_executable_bit(&bin_dst);
     Ok(bin_dst)
-}
-
-/// Invokes `cargo build --release` against `<project>/Cargo.toml`,
-/// streams stdout+stderr into the editor log, and copies the resulting
-/// binary into `output_dir` renamed to the project name.
-///
-/// Refuses non-host targets with a clear error — Rust cross-compilation
-/// is host-only in v1.
-fn stage_with_cargo_build(
-    project_root: &Path,
-    output_dir: &Path,
-    project_name: &str,
-    target: BuildTarget,
-) -> Result<PathBuf> {
-    if target != BuildTarget::host() {
-        anyhow::bail!(
-            "Build Game (cargo strategy): target {:?} is not the host \
-             ({:?}). Native-Rust projects can only be built for the host \
-             OS in v1 — run the editor on the desired target.",
-            target,
-            BuildTarget::host()
-        );
-    }
-
-    let manifest = project_root.join("Cargo.toml");
-    if !manifest.is_file() {
-        anyhow::bail!(
-            "Build Game (cargo strategy): no Cargo.toml at {}",
-            manifest.display()
-        );
-    }
-
-    log::info!(
-        "Build Game: invoking `cargo build --release --manifest-path {}`",
-        manifest.display()
-    );
-
-    let output = std::process::Command::new("cargo")
-        .arg("build")
-        .arg("--release")
-        .arg("--manifest-path")
-        .arg(&manifest)
-        .output()
-        .with_context(|| {
-            format!(
-                "Failed to launch cargo (is it installed and on PATH?). \
-                 Manifest: {}",
-                manifest.display()
-            )
-        })?;
-
-    // Stream cargo's stdout/stderr through the editor's logger so the
-    // user sees compile errors in the console panel.
-    if !output.stdout.is_empty() {
-        log::info!("cargo stdout:\n{}", String::from_utf8_lossy(&output.stdout));
-    }
-    if !output.stderr.is_empty() {
-        // Cargo writes "Compiling foo v0.1.0…" to stderr by design — log
-        // at info, not warn.
-        log::info!("cargo stderr:\n{}", String::from_utf8_lossy(&output.stderr));
-    }
-    if !output.status.success() {
-        anyhow::bail!(
-            "cargo build failed with exit code {:?}",
-            output.status.code()
-        );
-    }
-
-    // Discover the produced binary in target/release/. The Cargo package
-    // name is whatever the user set in their generated Cargo.toml — read
-    // it back out of the manifest. We fall back to scanning the directory
-    // when the [package].name TOML extraction stumbles on hand-edits.
-    let target_release = project_root.join("target").join("release");
-    let pkg_bin = find_compiled_binary(&target_release, target).with_context(|| {
-        format!(
-            "Could not find a compiled executable in {} (cargo build \
-                 succeeded but the binary is missing — is `[[bin]]` set?)",
-            target_release.display()
-        )
-    })?;
-
-    let safe_name = sanitize_binary_name(project_name);
-    let bin_filename = format!("{}{}", safe_name, target.exe_suffix());
-    let bin_dst = output_dir.join(&bin_filename);
-    std::fs::copy(&pkg_bin, &bin_dst).with_context(|| {
-        format!(
-            "Failed to copy compiled binary {} → {}",
-            pkg_bin.display(),
-            bin_dst.display()
-        )
-    })?;
-    set_executable_bit(&bin_dst);
-    Ok(bin_dst)
-}
-
-/// Walks `target/release/` for the first regular file with the host's
-/// executable suffix, ignoring cargo metadata files (`.d`, `.rlib`, etc).
-fn find_compiled_binary(target_release: &Path, target: BuildTarget) -> Result<PathBuf> {
-    let suffix = target.exe_suffix();
-    let entries = std::fs::read_dir(target_release).with_context(|| {
-        format!(
-            "Failed to read target/release directory {}",
-            target_release.display()
-        )
-    })?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default();
-        // Skip cargo metadata files.
-        if name.ends_with(".d") || name.ends_with(".rlib") || name.ends_with(".pdb") {
-            continue;
-        }
-        // On Windows, only files ending in .exe are the binary. On Unix,
-        // the binary has no extension.
-        if !suffix.is_empty() {
-            if path.extension().and_then(|s| s.to_str()) == Some(suffix.trim_start_matches('.')) {
-                return Ok(path);
-            }
-        } else if path.extension().is_none() {
-            return Ok(path);
-        }
-    }
-    Err(anyhow!(
-        "no compiled executable found in {}",
-        target_release.display()
-    ))
 }
 
 /// `runtime.json` for a project with the default physics settings.
@@ -457,7 +370,6 @@ fn runtime_config(
         default_scene: DEFAULT_SCENE_REL_PATH.to_owned(),
         window_title: Some(game.name.clone()),
         preset: Some(preset.label().to_owned()),
-        verify_integrity: preset.verify_integrity(),
         physics,
         game_version: game.version.clone(),
     }
@@ -707,7 +619,8 @@ mod tests {
     /// The `runtime.json` the runtime reads, for a project named "Khora Demo"
     /// built with the Release preset. The SDK's reader test parses the same
     /// file, so what is written here is what the runtime gets back.
-    const READ_BY_THE_RUNTIME: &str = include_str!("../../khora-sdk/tests/fixtures/runtime.json");
+    const READ_BY_THE_RUNTIME: &str =
+        include_str!("../../../khora-sdk/tests/fixtures/runtime.json");
 
     /// Every field the runtime reads is written, with the value the runtime
     /// expects — the window title included.
@@ -755,7 +668,7 @@ mod tests {
     /// game is built with carries the project's version as its
     /// `game_version`, which the runtime reads back as the game's identity;
     /// the rest is what Build Game always wrote — the name as project name
-    /// and window title, the preset, its integrity check, the physics step.
+    /// and window title, the preset, the physics step.
     #[test]
     fn build_game_writes_the_projects_version() -> Result<()> {
         let game = khora_sdk::GameIdentity {
@@ -773,10 +686,6 @@ mod tests {
         assert_eq!(cfg.window_title.as_deref(), Some("Khora Demo"));
         assert_eq!(cfg.default_scene, DEFAULT_SCENE_REL_PATH);
         assert_eq!(cfg.preset.as_deref(), Some(BuildPreset::Release.label()));
-        assert_eq!(
-            cfg.verify_integrity,
-            BuildPreset::Release.verify_integrity()
-        );
         assert_eq!(cfg.physics, a_128th);
 
         let read: RuntimeConfig = serde_json::from_str(&serde_json::to_string_pretty(&cfg)?)?;
@@ -784,6 +693,111 @@ mod tests {
             read.game_identity(),
             game,
             "the runtime reads the game back from what Build Game writes"
+        );
+        Ok(())
+    }
+
+    /// The key in the one key slot `binary` holds, `None` when it holds no
+    /// slot or several.
+    fn key_in_slot(binary: &[u8]) -> Option<khora_sdk::PackKey> {
+        let magic = khora_sdk::slot_magic();
+        let mut slots = (0..binary.len().saturating_sub(64))
+            .filter(|&at| binary[at] == magic[0] && binary[at..at + 32] == magic);
+        let at = slots.next()?;
+        if slots.next().is_some() {
+            return None;
+        }
+        let key: [u8; 32] = binary[at + 32..at + 64].try_into().ok()?;
+        Some(khora_sdk::PackKey(key))
+    }
+
+    /// **The build signs the pack and stamps the binary**, whatever the
+    /// preset: over a fake runtime binary holding an empty key slot, a build
+    /// signed by a key made in a temporary folder stages a binary whose slot
+    /// holds that key, and the `manifest.bin` beside it verifies with the key
+    /// read from the staged binary over the `index.bin` beside it, recording
+    /// every packed file. The runtime binary built from is left unstamped.
+    #[test]
+    fn the_build_signs_the_pack_and_stamps_the_binary() -> Result<()> {
+        use khora_sdk::khora_core::asset::AssetUUID;
+
+        const FILES: &[(&str, &[u8])] = &[
+            ("scenes/default.kscene", b"the default scene"),
+            ("textures/a.png", b"a texture"),
+        ];
+        let root =
+            std::env::temp_dir().join(format!("khora-editor-signed-build-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let assets = root.join("project").join("assets");
+        for (rel, bytes) in FILES {
+            let path = assets.join(rel);
+            std::fs::create_dir_all(path.parent().expect("a folder"))?;
+            std::fs::write(path, bytes)?;
+        }
+        let runtime_src = root.join(format!("khora-runtime{}", BuildTarget::host().exe_suffix()));
+        let mut fake_runtime = b"a fake runtime's code, then its slot: ".to_vec();
+        fake_runtime.extend_from_slice(&khora_sdk::slot_magic());
+        fake_runtime.extend_from_slice(&[0; 32]);
+        fake_runtime.extend_from_slice(b" and the rest of the fake runtime");
+        std::fs::write(&runtime_src, &fake_runtime)?;
+
+        let outcome = (|| -> Result<Vec<(BuildPreset, BuildOutcome, khora_sdk::PackKey)>> {
+            let signer = PackSigner::load_or_create(&root.join("signing"))?;
+            let mut built = Vec::new();
+            for preset in [
+                BuildPreset::Debug,
+                BuildPreset::Release,
+                BuildPreset::Shipping,
+            ] {
+                let output_dir = root.join("dist").join(preset.label());
+                let outcome = build_with_runtime(
+                    &assets,
+                    &output_dir,
+                    "Khora Demo",
+                    BuildTarget::host(),
+                    preset,
+                    &signer,
+                    &runtime_src,
+                )?;
+                built.push((preset, outcome, signer.public_key()));
+            }
+            Ok(built)
+        })();
+        let checked = outcome.and_then(|built| {
+            for (preset, outcome, signer_key) in built {
+                let staged = std::fs::read(&outcome.binary_path)?;
+                let key = key_in_slot(&staged)
+                    .ok_or_else(|| anyhow!("{preset:?}: the staged binary holds no one slot"))?;
+                assert_eq!(
+                    key, signer_key,
+                    "{preset:?}: the slot holds the signer's key"
+                );
+                assert_eq!(
+                    outcome.binary_path.file_name().and_then(|n| n.to_str()),
+                    Some(format!("Khora_Demo{}", BuildTarget::host().exe_suffix()).as_str()),
+                    "{preset:?}: the staged binary is named after the project"
+                );
+
+                let manifest_bin = std::fs::read(outcome.output_dir.join("manifest.bin"))?;
+                let index_bin = std::fs::read(outcome.output_dir.join("index.bin"))?;
+                let manifest = khora_sdk::SignedManifest::decode(&manifest_bin)
+                    .map_err(|e| anyhow!("{preset:?}: manifest.bin is not signed: {e}"))?
+                    .verify(&key, &index_bin)
+                    .map_err(|e| anyhow!("{preset:?}: manifest.bin does not verify: {e}"))?;
+                assert_eq!(manifest.len(), FILES.len(), "{preset:?}");
+                for (rel, bytes) in FILES {
+                    manifest
+                        .verify(&AssetUUID::new_v5(rel), bytes)
+                        .map_err(|e| anyhow!("{preset:?}: {rel} is not recorded: {e:#}"))?;
+                }
+            }
+            Ok(std::fs::read(&runtime_src)?)
+        });
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(
+            checked?, fake_runtime,
+            "the runtime binary built from was changed"
         );
         Ok(())
     }

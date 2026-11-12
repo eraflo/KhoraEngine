@@ -48,6 +48,5 @@ fn a_runtime_json_on_disk_is_read_and_a_bad_one_falls_back() -> std::io::Result<
     assert_eq!(written.project_name, "Khora Demo");
     assert_eq!(written.window_title(), "Khora Demo");
     assert_eq!(written.preset.as_deref(), Some("release"));
-    assert!(written.verify_integrity);
     Ok(())
 }

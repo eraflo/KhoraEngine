@@ -34,6 +34,7 @@ use crate::{
     EngineCore, IndexHub, Readiness, ReadinessProgress, ReadinessState, SceneLoadHub,
     SerializationGoal, SerializationService,
 };
+use khora_io::asset::signing::{PackKey, PackSealError, PackSigner};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -164,8 +165,31 @@ impl GameDir {
     }
 
     /// Packs `<dir>/project/assets/` into `<dir>/exe/`, the packed game's
-    /// binary directory, which it returns. Nothing loose sits beside it.
+    /// binary directory, which it returns, signed by [`Self::signer`].
+    /// Nothing loose sits beside it.
     fn packed(&self, files: &[(&str, &[u8])]) -> PathBuf {
+        let assets = self.project_assets(files);
+        let exe_dir = self.0.join("exe");
+        let signer = self.signer();
+        crate::PackBuilder::new(&assets, &exe_dir)
+            .with_signer(&signer)
+            .build()
+            .expect("the project packs");
+        exe_dir
+    }
+
+    /// As [`Self::packed`], with no signer: the pack has no `manifest.bin`.
+    fn packed_unsigned(&self, files: &[(&str, &[u8])]) -> PathBuf {
+        let assets = self.project_assets(files);
+        let exe_dir = self.0.join("exe");
+        crate::PackBuilder::new(&assets, &exe_dir)
+            .build()
+            .expect("the project packs");
+        exe_dir
+    }
+
+    /// Writes `files` under `<dir>/project/assets/`, which it returns.
+    fn project_assets(&self, files: &[(&str, &[u8])]) -> PathBuf {
         let assets = self.0.join("project").join("assets");
         for (rel, bytes) in files {
             let path = assets.join(rel);
@@ -174,12 +198,46 @@ impl GameDir {
             std::fs::write(path, bytes).expect("the asset is written");
         }
         std::fs::create_dir_all(&assets).expect("the project's assets");
-        let exe_dir = self.0.join("exe");
-        crate::PackBuilder::new(&assets, &exe_dir)
-            .build()
-            .expect("the project packs");
-        exe_dir
+        assets
     }
+
+    /// The key this game's packs are signed with, kept in
+    /// `<dir>/signing/` — never in the home folder of whoever runs the tests.
+    fn signer(&self) -> PackSigner {
+        signer_beside(&self.0.join("exe")).expect("a signing key in the game's folder")
+    }
+
+    /// The public key of [`Self::signer`]: what the runtime of this game is
+    /// stamped with.
+    fn pack_key(&self) -> PackKey {
+        self.signer().public_key()
+    }
+}
+
+/// The signer of the pack in `exe_dir`, kept in `<exe_dir>/../signing/`.
+fn signer_beside(exe_dir: &Path) -> Result<PackSigner> {
+    let game = exe_dir
+        .parent()
+        .ok_or_else(|| anyhow!("{} has no parent", exe_dir.display()))?;
+    PackSigner::load_or_create(&game.join("signing"))
+}
+
+/// The key the runtime binary in `exe_dir` carries: the one its pack was
+/// signed with, as a build stamps it; none for a loose game.
+fn pack_key_of(exe_dir: &Path) -> Option<PackKey> {
+    exe_dir.join("data.pack").is_file().then(|| {
+        signer_beside(exe_dir)
+            .expect("the key the pack was signed with")
+            .public_key()
+    })
+}
+
+/// The seal error `error` carries, if any.
+fn seal_error(error: &anyhow::Error) -> Option<PackSealError> {
+    error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<PackSealError>())
+        .cloned()
 }
 
 impl Drop for GameDir {
@@ -220,7 +278,8 @@ fn opening(scene: &str) -> RuntimeConfig {
 }
 
 /// The engine the runtime binary in `exe_dir` boots: its assets installed as
-/// `first` installs them, then the runtime app set up. Its machine profile
+/// `first` installs them — a pack verified with the key its build stamped
+/// ([`pack_key_of`]) — then the runtime app set up. Its machine profile
 /// is filed in [`profiles_scratch`], named by `KHORA_PROFILES`; the user's
 /// files it keeps (its quarantine), under [`user_folders_scratch`].
 fn engine_with<A: EngineApp>(exe_dir: &Path, app: A) -> EngineCore<A> {
@@ -231,7 +290,7 @@ fn engine_with<A: EngineApp>(exe_dir: &Path, app: A) -> EngineCore<A> {
     std::env::set_var("APPDATA", user.join("data"));
     std::env::set_var("XDG_DATA_HOME", user.join("data"));
     let mut runtime = Runtime::new();
-    install_game_assets(&mut runtime, exe_dir, false);
+    install_game_assets(&mut runtime, exe_dir, pack_key_of(exe_dir));
     let mut engine = EngineCore::<A>::new();
     engine.bootstrap(app, runtime);
     engine
@@ -456,7 +515,6 @@ fn runtime_json_written_by_the_editor_reads_back_field_for_field() {
     assert_eq!(cfg.window_title.as_deref(), Some("Khora Demo"));
     assert_eq!(cfg.window_title(), "Khora Demo");
     assert_eq!(cfg.preset.as_deref(), Some("release"));
-    assert!(cfg.verify_integrity);
 }
 
 /// A `runtime.json` written before the window title existed still boots,
@@ -504,8 +562,8 @@ fn a_loose_files_runtime_starts_on_an_empty_service() {
         game.asset(file, b"not a real asset");
     }
 
-    let svc = build_asset_service(game.path(), Arc::new(MetricsRegistry::new()), false, None)
-        .expect("a loose-files runtime starts");
+    let svc = build_asset_service(game.path(), Arc::new(MetricsRegistry::new()), None, None)
+        .expect("a loose-files runtime starts, with no key: nothing is verified");
 
     assert_eq!(
         svc.index().asset_count(),
@@ -581,7 +639,7 @@ fn a_loose_files_runtime_resolves_the_uuids_the_registry_froze() -> Result<()> {
 #[test]
 fn the_nothing_to_load_error_has_no_run_of_spaces() -> Result<()> {
     let dir = scratch_dir("nothing-to-load")?;
-    let err = build_asset_service(&dir, Arc::new(MetricsRegistry::new()), false, None)
+    let err = build_asset_service(&dir, Arc::new(MetricsRegistry::new()), None, None)
         .err()
         .map(|e| format!("{e:#}"));
     let _ = std::fs::remove_dir_all(&dir);
@@ -598,51 +656,290 @@ fn the_nothing_to_load_error_has_no_run_of_spaces() -> Result<()> {
     Ok(())
 }
 
-/// A packed runtime registers the same decoders as a loose-files one, and
-/// with `verify_integrity` it checks every asset against `manifest.bin`;
-/// without it, it does not.
+/// A packed runtime, its pack signed and its key stamped, registers the same
+/// decoders as a loose-files one.
 #[test]
-fn a_packed_runtime_registers_every_decoder_and_honours_the_manifest() -> Result<()> {
-    let dir = scratch_dir("packed")?;
-    let assets = dir.join("project").join("assets");
-    let exe_dir = dir.join("exe");
-    std::fs::create_dir_all(&assets)?;
-    for file in PROBES {
-        std::fs::write(assets.join(file), b"not a real asset")?;
-    }
-    crate::PackBuilder::new(&assets, &exe_dir)
-        .with_manifest(true)
-        .build()?;
+fn a_packed_runtime_registers_every_decoder() -> Result<()> {
+    let game = GameDir::new("packed-decoders");
+    let probes: Vec<(&str, &[u8])> = PROBES
+        .iter()
+        .map(|file| (*file, b"not a real asset".as_slice()))
+        .collect();
+    let exe_dir = game.packed(&probes);
 
-    let outcome = (|| -> Result<_> {
-        let mut svc = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), true, None)?;
-        let decodable = decodable_types(&mut svc)?;
+    let mut svc = build_asset_service(
+        &exe_dir,
+        Arc::new(MetricsRegistry::new()),
+        None,
+        Some(game.pack_key()),
+    )?;
 
-        // A manifest that no longer matches the pack: every asset is
-        // refused when verifying, and served when not.
-        let probe = AssetUUID::new_v5("probe.kscene");
-        let mut forged = PackManifest::new();
-        forged.insert(probe, b"other bytes");
-        std::fs::write(exe_dir.join("manifest.bin"), forged.encode()?)?;
-        let verified = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), true, None)?
-            .load_raw(&probe)
-            .is_ok();
-        let unverified =
-            build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), false, None)?
-                .load_raw(&probe)
-                .is_ok();
-        Ok((decodable, verified, unverified))
-    })();
-    let _ = std::fs::remove_dir_all(&dir);
-    let (decodable, verified, unverified) = outcome?;
-
-    assert_eq!(decodable, DECODABLE);
-    assert!(!verified, "a forged manifest did not stop the load");
-    assert!(
-        unverified,
-        "the manifest was applied without verify_integrity"
-    );
+    assert_eq!(decodable_types(&mut svc)?, DECODABLE);
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Signed packs
+// ---------------------------------------------------------------------------
+
+/// The scene and the texture of the packs the seal tests build.
+const SEALED: &[(&str, &[u8])] = &[
+    ("scenes/sealed.kscene", b"sealed scene bytes"),
+    ("textures/sealed.png", b"sealed texture bytes"),
+];
+
+/// **A signed pack starts the runtime**: built with a signer and run with
+/// its key, the service starts on the pack and an asset of it loads, its
+/// bytes as packed.
+#[test]
+fn a_signed_pack_starts_the_runtime() {
+    let game = GameDir::new("signed-starts");
+    let exe_dir = game.packed(SEALED);
+
+    let mut svc = build_asset_service(
+        &exe_dir,
+        Arc::new(MetricsRegistry::new()),
+        None,
+        Some(game.pack_key()),
+    )
+    .unwrap_or_else(|e| panic!("a signed pack starts the runtime: {e:#}"));
+
+    assert_eq!(svc.index().asset_count(), SEALED.len());
+    assert_eq!(
+        svc.load_raw(&AssetUUID::new_v5("scenes/sealed.kscene"))
+            .expect("the scene loads")
+            .as_slice(),
+        b"sealed scene bytes"
+    );
+}
+
+/// **An unsigned pack is refused**: a runtime beside `data.pack` and
+/// `index.bin` does not start when there is no `manifest.bin` (`Missing`),
+/// nor when `manifest.bin` is a bare, unsigned manifest (`Malformed`) —
+/// no more warning and a run unverified.
+#[test]
+fn an_unsigned_pack_is_refused() {
+    let game = GameDir::new("unsigned-refused");
+    let exe_dir = game.packed_unsigned(SEALED);
+    let key = game.pack_key();
+    assert!(
+        !exe_dir.join("manifest.bin").exists(),
+        "a build without a signer wrote a manifest"
+    );
+
+    let missing = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), None, Some(key))
+        .err()
+        .expect("a pack with no manifest.bin is refused");
+    assert_eq!(
+        seal_error(&missing),
+        Some(PackSealError::Missing),
+        "{missing:#}"
+    );
+
+    let mut bare = PackManifest::new();
+    for (rel, bytes) in SEALED {
+        bare.insert(AssetUUID::new_v5(rel), bytes);
+    }
+    std::fs::write(
+        exe_dir.join("manifest.bin"),
+        bare.encode().expect("the bare manifest encodes"),
+    )
+    .expect("the bare manifest is written");
+    let unsigned = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), None, Some(key))
+        .err()
+        .expect("a pack with an unsigned manifest.bin is refused");
+    assert!(
+        matches!(seal_error(&unsigned), Some(PackSealError::Malformed(_))),
+        "{unsigned:#}"
+    );
+}
+
+/// **A runtime refuses a pack signed by another key**: the pack verified
+/// with a key other than the one it was signed with does not start the
+/// runtime (`BadSignature`).
+#[test]
+fn a_runtime_refuses_a_pack_signed_by_another_key() {
+    let game = GameDir::new("other-key-refused");
+    let exe_dir = game.packed(SEALED);
+    let other = PackSigner::load_or_create(&game.path().join("other-signing"))
+        .expect("another signing key")
+        .public_key();
+    assert_ne!(other, game.pack_key(), "two signing folders made one key");
+
+    let refused = build_asset_service(
+        &exe_dir,
+        Arc::new(MetricsRegistry::new()),
+        None,
+        Some(other),
+    )
+    .err()
+    .expect("a pack signed by another key is refused");
+    assert_eq!(
+        seal_error(&refused),
+        Some(PackSealError::BadSignature),
+        "{refused:#}"
+    );
+}
+
+/// **A runtime with no stamped key refuses a pack**: a signed pack, but a
+/// runtime binary that carries no key, does not start (`Unstamped`).
+#[test]
+fn a_runtime_with_no_stamped_key_refuses_a_pack() {
+    let game = GameDir::new("unstamped-refused");
+    let exe_dir = game.packed(SEALED);
+
+    let refused = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), None, None)
+        .err()
+        .expect("a runtime with no key refuses a pack");
+    assert_eq!(
+        seal_error(&refused),
+        Some(PackSealError::Unstamped),
+        "{refused:#}"
+    );
+}
+
+/// **A runtime refuses a pack whose index changed**: the `index.bin` of
+/// another pack of the same files, of other sizes, put in place of the one
+/// the manifest was signed over, does not start the runtime
+/// (`IndexChanged`).
+#[test]
+fn a_runtime_refuses_a_pack_whose_index_changed() {
+    let game = GameDir::new("index-changed");
+    let exe_dir = game.packed(SEALED);
+    let other_game = GameDir::new("index-changed-other");
+    let other_exe = other_game.packed_unsigned(&[
+        (
+            "scenes/sealed.kscene",
+            b"another scene, longer than the first",
+        ),
+        ("textures/sealed.png", b"another texture"),
+    ]);
+    let other_index = std::fs::read(other_exe.join("index.bin")).expect("the other index");
+    assert_ne!(
+        std::fs::read(exe_dir.join("index.bin")).expect("the signed index"),
+        other_index,
+        "the two indexes are the same"
+    );
+    std::fs::write(exe_dir.join("index.bin"), other_index).expect("the index is replaced");
+
+    let refused = build_asset_service(
+        &exe_dir,
+        Arc::new(MetricsRegistry::new()),
+        None,
+        Some(game.pack_key()),
+    )
+    .err()
+    .expect("a pack whose index changed is refused");
+    assert_eq!(
+        seal_error(&refused),
+        Some(PackSealError::IndexChanged),
+        "{refused:#}"
+    );
+}
+
+/// **A tampered pack entry fails its load**: one byte of the scene's bytes
+/// in `data.pack` changed after the build; the seal still holds (the
+/// manifest and the index are untouched), so the runtime starts, but the
+/// scene's load is refused against the manifest's hash. The texture,
+/// untouched, loads.
+#[test]
+fn a_tampered_pack_entry_fails_its_load() {
+    let game = GameDir::new("entry-tampered");
+    let exe_dir = game.packed(SEALED);
+    let pack_path = exe_dir.join("data.pack");
+    let mut pack = std::fs::read(&pack_path).expect("data.pack reads");
+    // The entries are packed in path order, uncompressed: the scene's
+    // bytes come first after the header.
+    pack[crate::PACK_HEADER_SIZE as usize] ^= 0xFF;
+    std::fs::write(&pack_path, pack).expect("data.pack is rewritten");
+
+    let mut svc = build_asset_service(
+        &exe_dir,
+        Arc::new(MetricsRegistry::new()),
+        None,
+        Some(game.pack_key()),
+    )
+    .unwrap_or_else(|e| panic!("the seal holds, the runtime starts: {e:#}"));
+
+    assert!(
+        svc.load_raw(&AssetUUID::new_v5("scenes/sealed.kscene"))
+            .is_err(),
+        "a tampered entry loaded"
+    );
+    assert_eq!(
+        svc.load_raw(&AssetUUID::new_v5("textures/sealed.png"))
+            .expect("the untouched texture loads")
+            .as_slice(),
+        b"sealed texture bytes"
+    );
+}
+
+/// **A stamped runtime refuses loose assets in place of its pack**: a built
+/// game — its binary stamped with a key, its `data.pack` and `manifest.bin`
+/// still beside it — whose `index.bin` was taken away and an `assets/`
+/// folder put beside it does not start on those loose files, unverified. A
+/// stamped binary is a built game, always packed: the loose run left
+/// unverified is a dev run, whose binary carries no key.
+#[test]
+fn a_stamped_runtime_refuses_loose_assets_in_place_of_its_pack() {
+    let game = GameDir::new("stamped-loose");
+    let exe_dir = game.packed(SEALED);
+    let key = game.pack_key();
+    std::fs::remove_file(exe_dir.join("index.bin")).expect("index.bin is taken away");
+    let planted = exe_dir.join("assets").join("scenes").join("sealed.kscene");
+    std::fs::create_dir_all(planted.parent().expect("a folder")).expect("the folder");
+    std::fs::write(&planted, b"a scene the build never signed").expect("the planted scene");
+
+    let checked = check_pack_seal(&exe_dir, Some(key));
+    let served = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), None, Some(key));
+
+    assert!(
+        checked.is_err(),
+        "a stamped runtime passed its seal check over loose assets"
+    );
+    assert!(
+        served.is_err(),
+        "a stamped runtime serves loose assets in place of its pack"
+    );
+}
+
+/// **A sealed game compiles no script left beside its pack**: a packed game,
+/// its pack signed and its key stamped, with an `assets/scripts/` folder
+/// holding a script put beside the binary after the build. Nothing the build
+/// did not sign runs: no compile is filed, and the script's behaviour is
+/// never declared.
+#[test]
+fn a_sealed_game_compiles_no_script_left_beside_its_pack() {
+    let game = GameDir::new("sealed-loose-script");
+    let exe_dir = game.packed(SEALED);
+    let planted = exe_dir.join("assets").join("scripts").join("counter.erg");
+    std::fs::create_dir_all(planted.parent().expect("a folder")).expect("the folder");
+    std::fs::write(&planted, COUNTER).expect("the planted script");
+
+    let mut engine = runtime_engine(&exe_dir, opening("scenes/missing.kscene"));
+    let filed = Hubs::of(engine.runtime()).compiling();
+    frames_until(&mut engine, "the sealed runtime was not ready", |engine| {
+        readiness(engine).poll(engine.runtime(), Instant::now()) == ReadinessState::Ready
+    });
+    for _ in 0..5 {
+        frame(&mut engine);
+    }
+    let declared = engine
+        .game_world_mut()
+        .expect("bootstrapped")
+        .inner_world()
+        .components()
+        .key_named("Counter")
+        .is_some();
+
+    assert!(
+        !filed,
+        "a script beside the sealed pack was filed to compile"
+    );
+    assert!(
+        !declared,
+        "a script beside the sealed pack declared its behaviour"
+    );
 }
 
 /// The triangle a packed glTF's buffer holds, and the one of the decoy
@@ -691,8 +988,13 @@ fn a_packed_gltf_reads_its_buffers_inside_the_pack() {
     )
     .expect("the decoy is written");
 
-    let mut svc = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), false, None)
-        .expect("the packed game's asset service");
+    let mut svc = build_asset_service(
+        &exe_dir,
+        Arc::new(MetricsRegistry::new()),
+        None,
+        Some(game.pack_key()),
+    )
+    .expect("the packed game's asset service");
     let mesh = svc
         .load::<Mesh>(&AssetUUID::new_v5("models/tri.gltf"))
         .unwrap_or_else(|e| panic!("the packed glTF decodes: {e:#}"));
@@ -719,10 +1021,15 @@ fn an_index_over_its_limit_is_refused_before_it_is_read() {
         .and_then(|file| file.set_len((256 << 20) + 1))
         .expect("index.bin is lengthened past its limit");
 
-    let refused = build_asset_service(&exe_dir, Arc::new(MetricsRegistry::new()), false, None)
-        .err()
-        .map(|e| format!("{e:#}"))
-        .expect("an index past 256 MiB is refused");
+    let refused = build_asset_service(
+        &exe_dir,
+        Arc::new(MetricsRegistry::new()),
+        None,
+        Some(game.pack_key()),
+    )
+    .err()
+    .map(|e| format!("{e:#}"))
+    .expect("an index past 256 MiB is refused");
     assert!(
         refused.contains("index.bin"),
         "the error names the index: {refused}"

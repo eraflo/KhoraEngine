@@ -79,10 +79,15 @@ impl GameOpening {
             load: None,
         };
 
-        // Its scripts, read from the disk whatever the index holds. A scene
-        // carries the declarations it holds, so it may land first.
-        let compile: Option<crate::scripts::CompileTicket> =
-            crate::scripts::mount(runtime, &exe_dir.join("assets"));
+        // Its scripts, read from the disk whatever the index holds — a loose
+        // game's only: a packed game is sealed, and a file left beside its
+        // pack is not the game's. A scene carries the declarations it holds,
+        // so it may land first.
+        let compile: Option<crate::scripts::CompileTicket> = if is_packed(exe_dir) {
+            None
+        } else {
+            crate::scripts::mount(runtime, &exe_dir.join("assets"))
+        };
         if let (Some(ticket), Some(readiness)) = (compile, &opening.readiness) {
             readiness.wait_for_compile(ticket);
         }

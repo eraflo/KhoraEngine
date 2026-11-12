@@ -22,7 +22,7 @@
 //!
 //! Every folder here is a temporary one.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use khora_core::asset::{AssetMetadata, AssetSource, AssetUUID, CompressionKind};
@@ -30,6 +30,7 @@ use khora_core::math::Vec3;
 use khora_core::problems::{Problem, ProblemSource, Problems};
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::shader::CpuShaderSource;
+use khora_io::asset::signing::{PackSigner, SignedManifest};
 use khora_io::asset::{AssetService, PackBuilder, PackLoader, PackManifest, PackOutput};
 use khora_io::trust::{Layer, Refusals, SecurityReason};
 use khora_telemetry::MetricsRegistry;
@@ -37,11 +38,12 @@ use khora_telemetry::MetricsRegistry;
 const MIB: u64 = 1 << 20;
 
 /// A packed project: its files written under `<dir>/project/assets/`, packed
-/// with `compression` (and a manifest when `manifest`) into `<dir>/exe/`.
+/// with `compression` into `<dir>/exe/` — signed by the key kept in
+/// `<dir>/signing/` when `signed`, with no manifest otherwise.
 fn pack(
     files: &[(&str, &[u8])],
     compression: CompressionKind,
-    manifest: bool,
+    signed: bool,
 ) -> (tempfile::TempDir, PackOutput) {
     let dir = tempfile::tempdir().expect("a temporary folder");
     let assets = dir.path().join("project").join("assets");
@@ -51,12 +53,36 @@ fn pack(
         std::fs::write(path, bytes).expect("the file is written");
     }
     let exe = dir.path().join("exe");
-    let out = PackBuilder::new(&assets, &exe)
-        .with_compression(compression)
-        .with_manifest(manifest)
-        .build()
-        .expect("the project packs");
+    let builder = PackBuilder::new(&assets, &exe).with_compression(compression);
+    let out = if signed {
+        let signer = PackSigner::load_or_create(&dir.path().join("signing"))
+            .expect("a signing key in the temporary folder");
+        builder.with_signer(&signer).build()
+    } else {
+        builder.build()
+    }
+    .expect("the project packs");
     (dir, out)
+}
+
+/// The manifest of the signed pack `out`, verified with the key it was
+/// signed by (kept in `<dir>/signing/`, beside `<dir>/exe/`) over the
+/// `index.bin` the build wrote.
+fn signed_manifest(out: &PackOutput) -> PackManifest {
+    let dir = (out.index_bin.parent())
+        .and_then(Path::parent)
+        .expect("the pack's folder");
+    let key = PackSigner::load_or_create(&dir.join("signing"))
+        .expect("the key the pack was signed by")
+        .public_key();
+    let path = out.manifest_bin.as_ref().expect("a manifest is written");
+    SignedManifest::decode(&std::fs::read(path).expect("manifest.bin reads"))
+        .expect("manifest.bin is a signed manifest")
+        .verify(
+            &key,
+            &std::fs::read(&out.index_bin).expect("index.bin reads"),
+        )
+        .expect("the manifest verifies")
 }
 
 /// The index of `out`, with the entry of `rel` changed by `forge`.
@@ -90,11 +116,7 @@ fn service_over(
 ) -> (AssetService, Arc<Refusals>) {
     let loader = PackLoader::new(std::fs::File::open(&out.data_pack).expect("data.pack opens"))
         .expect("a valid pack header");
-    let manifest = manifest.then(|| {
-        let path = out.manifest_bin.as_ref().expect("a manifest is written");
-        PackManifest::decode(&std::fs::read(path).expect("manifest.bin reads"))
-            .expect("the manifest decodes")
-    });
+    let manifest = manifest.then(|| signed_manifest(out));
     let mut service = AssetService::new(
         index,
         Box::new(loader),
@@ -363,9 +385,7 @@ fn a_packed_gltf_buffer_with_a_bomb_ratio_is_refused_before_allocating() {
     let index = forged_index(&out, "models/many.bin", claiming(claimed));
     let loader = PackLoader::new(std::fs::File::open(&out.data_pack).expect("data.pack opens"))
         .expect("a valid pack header");
-    let manifest_path = out.manifest_bin.as_ref().expect("a manifest is written");
-    let manifest = PackManifest::decode(&std::fs::read(manifest_path).expect("manifest.bin reads"))
-        .expect("the manifest decodes");
+    let manifest = signed_manifest(&out);
     let mut service = AssetService::new(
         &index,
         Box::new(loader),

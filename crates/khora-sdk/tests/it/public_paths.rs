@@ -89,7 +89,6 @@ fn runtime_config_fields(x: &khora_sdk::RuntimeConfig) {
     let _: &String = &x.default_scene;
     let _: &Option<String> = &x.window_title;
     let _: &Option<String> = &x.preset;
-    let _: &bool = &x.verify_integrity;
 }
 
 fn declared_component_error_variants(x: &khora_sdk::DeclaredComponentError) {
@@ -770,6 +769,36 @@ fn module_crate_root_paths_still_resolve() {
         PhantomData::<khora_sdk::PackHeader>,
         PhantomData::<khora_io::asset::PackHeader>,
     );
+    same_type(
+        PhantomData::<khora_sdk::PackKey>,
+        PhantomData::<khora_io::asset::signing::PackKey>,
+    );
+    same_type(
+        PhantomData::<khora_sdk::PackSigner>,
+        PhantomData::<khora_io::asset::signing::PackSigner>,
+    );
+    same_type(
+        PhantomData::<khora_sdk::SignedManifest>,
+        PhantomData::<khora_io::asset::signing::SignedManifest>,
+    );
+    same_type(
+        PhantomData::<khora_sdk::PackSealError>,
+        PhantomData::<khora_io::asset::signing::PackSealError>,
+    );
+    same_item(
+        &(khora_sdk::stamp_pack_key
+            as fn(&std::path::Path, &khora_sdk::PackKey) -> anyhow::Result<()>),
+        &(khora_io::asset::pack_key::stamp_pack_key
+            as fn(&std::path::Path, &khora_sdk::PackKey) -> anyhow::Result<()>),
+    );
+    same_item(
+        &(khora_sdk::stamped_pack_key as fn() -> Option<khora_sdk::PackKey>),
+        &(khora_io::asset::pack_key::stamped_pack_key as fn() -> Option<khora_sdk::PackKey>),
+    );
+    same_item(
+        &(khora_sdk::slot_magic as fn() -> [u8; 32]),
+        &(khora_io::asset::pack_key::slot_magic as fn() -> [u8; 32]),
+    );
     let _ = type_name::<khora_sdk::PackLoader>();
     same_type(
         PhantomData::<khora_sdk::PackLoader>,
@@ -1403,7 +1432,6 @@ fn runtime_config_file_and_defaults_are_unchanged() {
     assert_eq!(defaults.window_title, None);
     assert_eq!(defaults.window_title(), "Khora Runtime");
     assert_eq!(defaults.preset, None);
-    assert!(!defaults.verify_integrity);
 }
 
 #[test]

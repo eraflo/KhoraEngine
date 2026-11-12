@@ -154,6 +154,10 @@ pub use khora_core::scene::{SceneFile, SerializationGoal};
 pub use khora_data::assets::SoundData;
 pub use khora_data::scene::record::LoadReport;
 pub use khora_io::asset::decoders::audio::SymphoniaDecoder;
+/// The key stamped into a runtime binary, which its packs are verified with.
+pub use khora_io::asset::pack_key::{slot_magic, stamp_pack_key, stamped_pack_key};
+/// Signed packs: the key a build signs with, and what a runtime verifies.
+pub use khora_io::asset::signing::{PackKey, PackSealError, PackSigner, SignedManifest};
 pub use khora_io::asset::{install_indexing, IndexHub, IndexOutcome};
 pub use khora_io::asset::{
     AssetChangeEvent, AssetChangeKind, AssetIdRegistry, AssetIo, AssetReader, AssetService,

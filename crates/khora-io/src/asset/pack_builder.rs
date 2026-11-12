@@ -125,7 +125,8 @@ pub struct PackBuilder<'a> {
     dest_dir: &'a Path,
     progress: Option<Sender<PackProgress>>,
     compression: CompressionKind,
-    write_manifest: bool,
+    /// What signs `manifest.bin`; none, no manifest is written.
+    signer: Option<&'a super::signing::PackSigner>,
 }
 
 impl<'a> PackBuilder<'a> {
@@ -139,7 +140,7 @@ impl<'a> PackBuilder<'a> {
             dest_dir,
             progress: None,
             compression: CompressionKind::None,
-            write_manifest: false,
+            signer: None,
         }
     }
 
@@ -159,12 +160,12 @@ impl<'a> PackBuilder<'a> {
         self
     }
 
-    /// Emits a `manifest.bin` sidecar with BLAKE3 hashes of every
-    /// uncompressed asset. The runtime opts in via
-    /// `RuntimeConfig::verify_integrity` to detect corruption /
-    /// tampering at load time.
-    pub fn with_manifest(mut self, enable: bool) -> Self {
-        self.write_manifest = enable;
+    /// Signs the pack with `signer`: `manifest.bin` is written as a
+    /// [`SignedManifest`](super::signing::SignedManifest) over the
+    /// `index.bin` the build writes. A build without a signer writes no
+    /// manifest, and a runtime refuses its pack.
+    pub fn with_signer(mut self, signer: &'a super::signing::PackSigner) -> Self {
+        self.signer = Some(signer);
         self
     }
 
@@ -216,17 +217,13 @@ impl<'a> PackBuilder<'a> {
         if self.compression == CompressionKind::Lz4 {
             flags |= PACK_FLAG_LZ4;
         }
-        if self.write_manifest {
+        if self.signer.is_some() {
             flags |= PACK_FLAG_MANIFEST;
         }
         PackLoader::write_header(&mut data_file, total as u32, flags)
             .context("Failed to write pack header")?;
 
-        let mut manifest = if self.write_manifest {
-            Some(PackManifest::new())
-        } else {
-            None
-        };
+        let mut manifest = self.signer.map(|_| PackManifest::new());
 
         let mut offset = 0u64;
         for meta in metadata.iter_mut() {
@@ -317,9 +314,14 @@ impl<'a> PackBuilder<'a> {
         std::fs::write(&index_bin_path, &encoded)
             .with_context(|| format!("Failed to write {}", index_bin_path.display()))?;
 
-        let manifest_bin = if let Some(m) = manifest {
+        let manifest_bin = if let (Some(m), Some(signer)) = (manifest, self.signer) {
             let manifest_path = self.dest_dir.join("manifest.bin");
-            let manifest_bytes = m.encode().context("Failed to encode manifest")?;
+            // Signed over the index just written: a pack whose index or
+            // manifest changed no longer verifies.
+            let manifest_bytes = signer
+                .sign(&m, &encoded)
+                .and_then(|signed| signed.encode())
+                .context("Failed to sign the manifest")?;
             std::fs::write(&manifest_path, &manifest_bytes)
                 .with_context(|| format!("Failed to write {}", manifest_path.display()))?;
             Some(manifest_path)
@@ -353,6 +355,7 @@ impl<'a> PackBuilder<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::asset::signing::{PackSigner, SignedManifest};
     use crate::asset::AssetIndex;
     use crate::asset::{AssetService, PackLoader};
     use khora_core::asset::AssetUUID;
@@ -558,6 +561,16 @@ mod tests {
 
     const HERO: &[u8] = b"mesh mesh/Body\nmaterial material/Skin\n";
 
+    /// The manifest of the pack `out`, once its `manifest.bin` verified with
+    /// `signer`'s key over the pack's `index.bin`.
+    fn signed_manifest_of(out: &PackOutput, signer: &PackSigner) -> PackManifest {
+        let path = (out.manifest_bin.as_ref()).expect("a signed build writes a manifest");
+        let signed = SignedManifest::decode(&fs::read(path).unwrap()).unwrap();
+        signed
+            .verify(&signer.public_key(), &fs::read(&out.index_bin).unwrap())
+            .unwrap()
+    }
+
     fn seed_container_project(root: &Path) {
         fs::create_dir_all(root.join("models")).unwrap();
         fs::create_dir_all(root.join("textures")).unwrap();
@@ -571,8 +584,10 @@ mod tests {
         let dest = tempdir().unwrap();
         seed_container_project(proj.path());
 
+        let keys = tempdir().unwrap();
+        let signer = PackSigner::load_or_create(keys.path()).unwrap();
         let out = PackBuilder::new(proj.path(), dest.path())
-            .with_manifest(true)
+            .with_signer(&signer)
             .build()
             .unwrap();
         assert_eq!(
@@ -607,8 +622,7 @@ mod tests {
             }
         }
 
-        let manifest_bytes = std::fs::read(out.manifest_bin.as_ref().unwrap()).unwrap();
-        let manifest = PackManifest::decode(&manifest_bytes).unwrap();
+        let manifest = signed_manifest_of(&out, &signer);
         assert!(manifest.get(&hero).is_some(), "the container is hashed");
         assert!(
             manifest
@@ -624,16 +638,17 @@ mod tests {
         let dest = tempdir().unwrap();
         seed_container_project(proj.path());
 
+        let keys = tempdir().unwrap();
+        let signer = PackSigner::load_or_create(keys.path()).unwrap();
         let out = PackBuilder::new(proj.path(), dest.path())
-            .with_manifest(true)
+            .with_signer(&signer)
             .build()
             .unwrap();
 
         let index_bytes = std::fs::read(&out.index_bin).unwrap();
         let pack_file = std::fs::File::open(&out.data_pack).unwrap();
         let pack_loader = PackLoader::new(pack_file).expect("valid pack header");
-        let manifest_bytes = std::fs::read(out.manifest_bin.as_ref().unwrap()).unwrap();
-        let manifest = PackManifest::decode(&manifest_bytes).unwrap();
+        let manifest = signed_manifest_of(&out, &signer);
         let metrics = Arc::new(MetricsRegistry::new());
         let mut svc =
             AssetService::new(&index_bytes, Box::new(pack_loader), metrics, Some(manifest))

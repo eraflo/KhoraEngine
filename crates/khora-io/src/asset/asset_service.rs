@@ -168,9 +168,8 @@ impl AssetService {
     ) -> Self {
         Self {
             // When `Some`, every byte slice read is re-hashed against the
-            // manifest before reaching the decoder: built by the runtime only
-            // when `RuntimeConfig::verify_integrity` is set and
-            // `manifest.bin` sits next to `data.pack`.
+            // manifest before reaching the decoder: a packed runtime's, once
+            // the pack's signed `manifest.bin` verified.
             reader: Arc::new(AssetReader {
                 index: Arc::new(index),
                 io: Arc::from(io),

@@ -24,7 +24,9 @@ use std::path::PathBuf;
 
 use khora_core::app::GameIdentity;
 use khora_io::profiles::ProfilePlace;
-use khora_io::user_dirs::{data_dir, home_dir, khora_dir, quarantine_path, trust_path};
+use khora_io::user_dirs::{
+    data_dir, home_dir, khora_dir, quarantine_path, signing_dir, trust_path,
+};
 
 /// An environment holding `vars` and nothing else.
 fn env_of(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
@@ -176,6 +178,23 @@ fn the_trust_store_is_kept_in_the_khora_folder() {
     assert_eq!(trust_path(&env_of(&[])), None);
     assert_eq!(
         trust_path(&env_of(&[("USERPROFILE", ""), ("HOME", "")])),
+        None,
+        "an empty variable names no folder"
+    );
+}
+
+/// **The signing key is kept in the engine's folder**, never in a project:
+/// `<home>/.khora/signing`, whatever the game; none when the home does not
+/// resolve.
+#[test]
+fn the_signing_key_is_kept_in_the_khora_folder() {
+    assert_eq!(
+        signing_dir(&everything_set()),
+        Some(fake_home().join(".khora").join("signing"))
+    );
+    assert_eq!(signing_dir(&env_of(&[])), None);
+    assert_eq!(
+        signing_dir(&env_of(&[("USERPROFILE", ""), ("HOME", "")])),
         None,
         "an empty variable names no folder"
     );

@@ -35,9 +35,11 @@ mod off_frame;
 pub use off_frame::{attach_decoding, install_decoding, DecodeHub};
 mod pack;
 mod pack_builder;
+pub mod pack_key;
 mod reader;
 mod requested;
 pub mod root_path;
+pub mod signing;
 mod watch;
 mod watcher;
 

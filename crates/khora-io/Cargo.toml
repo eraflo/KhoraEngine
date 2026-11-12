@@ -56,6 +56,9 @@ walkdir = "2.5"
 # Pack v2: per-entry LZ4 compression + BLAKE3 manifest hashes
 lz4_flex = { version = "0.11", default-features = false, features = ["safe-encode", "safe-decode", "std"] }
 blake3 = "1.5"
+# Signed packs: Ed25519 and the OS random source its keys are made from.
+# Already in the tree (the hub's TLS), with these default features.
+ring = "0.17"
 workspace-hack = { version = "0.1", path = "../../workspace-hack" }
 
 [dev-dependencies]

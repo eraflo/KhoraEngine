@@ -42,6 +42,8 @@ use crate::{
     PhysicsProvider, PipelineSystem, RapierPhysicsWorld, RenderSystem, Runtime, StreamInfo,
     TaffyLayoutSystem, WgpuPipelineSystem, WgpuRenderSystem, WindowConfig,
 };
+use khora_io::asset::pack_key::stamped_pack_key;
+use khora_io::asset::signing::{PackKey, PackSealError, SignedManifest};
 use khora_io::asset::PackManifest;
 
 mod opening;
@@ -58,17 +60,17 @@ static RUNTIME_CONFIG: OnceLock<RuntimeConfig> = OnceLock::new();
 /// a loose `assets/` directory, which the app files to be indexed off the
 /// frame once the engine runs. See module docs for the precedence rules.
 ///
-/// When `verify_integrity` is `true` and a packed runtime is detected,
-/// `manifest.bin` is read alongside `data.pack` and threaded into the
-/// service so each load is hashed against its recorded BLAKE3 digest.
-/// A missing or malformed manifest logs a warning but never aborts
-/// startup — the runtime stays bootable on packs built before manifests
-/// were emitted.
+/// A pack is opened only once its `manifest.bin` verifies with `pack_key`,
+/// the key stamped into the runtime binary, over its `index.bin`: a pack
+/// whose manifest is missing, malformed, unsigned, signed by another key or
+/// over another index — or a runtime with no key — is refused, and the
+/// runtime does not start. Each load is then hashed against the manifest.
+/// Loose `assets/` is not a pack: nothing is verified.
 fn build_asset_service(
     exe_dir: &Path,
     metrics: Arc<MetricsRegistry>,
-    verify_integrity: bool,
     refusals: Option<Arc<khora_io::trust::Refusals>>,
+    pack_key: Option<PackKey>,
 ) -> Result<AssetService> {
     let pack = exe_dir.join("data.pack");
     let idx = exe_dir.join("index.bin");
@@ -92,12 +94,8 @@ fn build_asset_service(
             .with_context(|| format!("Failed to open {}", pack.display()))?;
         let loader = PackLoader::new(pack_file)
             .context("Pack header validation failed — refusing to start")?;
-        let manifest = if verify_integrity {
-            read_manifest(exe_dir)
-        } else {
-            None
-        };
-        let mut svc = AssetService::new(&bytes, Box::new(loader), metrics, manifest)?;
+        let manifest = read_manifest(exe_dir, &bytes, pack_key)?;
+        let mut svc = AssetService::new(&bytes, Box::new(loader), metrics, Some(manifest))?;
         if let Some(refusals) = refusals {
             svc.set_refusals(refusals);
         }
@@ -105,15 +103,7 @@ fn build_asset_service(
         svc.register_packed_decoders();
         (svc, "PackLoader")
     } else if assets.is_dir() {
-        // The manifest is a release-mode artifact emitted alongside
-        // `data.pack`: in dev mode the bytes come straight off disk, so there
-        // is nothing to verify against.
-        if verify_integrity {
-            log::info!(
-                "khora-sdk run_default: verify_integrity=true ignored in dev mode \
-                 (no pack to verify against)"
-            );
-        }
+        refuse_loose_when_stamped(exe_dir, pack_key)?;
         // Indexed off the frame once the engine runs, with the identity
         // registry the editor writes: an asset renamed in the editor keeps
         // the UUID its scenes reference.
@@ -135,37 +125,72 @@ fn build_asset_service(
     Ok(svc)
 }
 
-/// Reads `manifest.bin` next to `data.pack`. A missing or malformed manifest
-/// logs a warning and disables verification rather than aborting startup.
-fn read_manifest(exe_dir: &Path) -> Option<PackManifest> {
-    let manifest_path = exe_dir.join("manifest.bin");
-    match std::fs::read(&manifest_path) {
-        Ok(bytes) => match PackManifest::decode(&bytes) {
-            Ok(m) => {
-                log::info!(
-                    "khora-sdk run_default: integrity verification enabled ({} entries)",
-                    m.len()
-                );
-                Some(m)
-            }
-            Err(e) => {
-                log::warn!(
-                    "khora-sdk run_default: manifest.bin present but malformed ({}) — \
-                     integrity verification disabled",
-                    e
-                );
-                None
-            }
-        },
-        Err(_) => {
-            log::warn!(
-                "khora-sdk run_default: verify_integrity=true but {} is missing — \
-                 integrity verification disabled",
-                manifest_path.display()
+/// The manifest of the pack beside `exe_dir`: its `manifest.bin`, verified
+/// with `pack_key` over the `index.bin` whose bytes are `index_bytes`. Any
+/// failure is a [`khora_io::asset::signing::PackSealError`], logged, and
+/// refuses the pack.
+fn read_manifest(
+    exe_dir: &Path,
+    index_bytes: &[u8],
+    pack_key: Option<PackKey>,
+) -> Result<PackManifest> {
+    let seal = (|| {
+        let key = pack_key.ok_or(PackSealError::Unstamped)?;
+        SignedManifest::read(&exe_dir.join("manifest.bin"))?.verify(&key, index_bytes)
+    })();
+    match seal {
+        Ok(manifest) => {
+            log::info!(
+                "khora-sdk run_default: the pack's seal verifies ({} entries)",
+                manifest.len()
             );
-            None
+            Ok(manifest)
+        }
+        Err(error) => {
+            log::error!("khora-sdk run_default: the pack is refused: {error}");
+            Err(anyhow::Error::new(error)
+                .context(format!("the pack beside {} is refused", exe_dir.display())))
         }
     }
+}
+
+/// A stamped runtime is a built game, and a built game runs from its pack:
+/// loose files in place of it — a pack missing a part, `assets/` beside —
+/// are refused. An unstamped runtime (a dev run) runs loose files.
+fn refuse_loose_when_stamped(exe_dir: &Path, pack_key: Option<PackKey>) -> Result<()> {
+    if pack_key.is_none() {
+        return Ok(());
+    }
+    log::error!(
+        "khora-sdk run_default: this built game finds no complete pack beside it at {}",
+        exe_dir.display()
+    );
+    Err(anyhow!(
+        "a built game runs from its pack: `data.pack` and `index.bin` are not both beside {} — \
+         build the game again",
+        exe_dir.display()
+    ))
+}
+
+/// Refuses the pack beside `exe_dir` before anything starts when its seal
+/// does not verify with `pack_key`; a loose game has nothing to verify.
+fn check_pack_seal(exe_dir: &Path, pack_key: Option<PackKey>) -> Result<()> {
+    if !is_packed(exe_dir) {
+        return refuse_loose_when_stamped(exe_dir, pack_key);
+    }
+    let idx = exe_dir.join("index.bin");
+    let len = std::fs::metadata(&idx)
+        .with_context(|| format!("Failed to read {}", idx.display()))?
+        .len();
+    if len > khora_io::asset::MAX_INDEX_BYTES as u64 {
+        return Err(anyhow!(
+            "{} is {len} bytes, over the {} an index may hold",
+            idx.display(),
+            khora_io::asset::MAX_INDEX_BYTES
+        ));
+    }
+    let bytes = std::fs::read(&idx).with_context(|| format!("Failed to read {}", idx.display()))?;
+    read_manifest(exe_dir, &bytes, pack_key).map(|_| ())
 }
 
 /// The default `EngineApp` used by [`run_default`]. It opens the game
@@ -196,13 +221,13 @@ impl DefaultRuntimeApp {
 /// with: a pack's, read from its precomputed `index.bin`; an empty one for a
 /// loose `assets/` directory, whose open the app files once the engine runs;
 /// none, with the error logged, when there is neither.
-fn install_game_assets(runtime: &mut Runtime, exe_dir: &Path, verify_integrity: bool) {
+fn install_game_assets(runtime: &mut Runtime, exe_dir: &Path, pack_key: Option<PackKey>) {
     let metrics = Arc::new(MetricsRegistry::new());
     let refusals = runtime
         .resources
         .get::<Arc<khora_io::trust::Refusals>>()
         .cloned();
-    match build_asset_service(exe_dir, metrics, verify_integrity, refusals) {
+    match build_asset_service(exe_dir, metrics, refusals, pack_key) {
         Ok(svc) => runtime.services.insert(Arc::new(Mutex::new(svc))),
         Err(e) => log::error!("khora-sdk run_default: AssetService init failed: {:#}", e),
     }
@@ -297,14 +322,14 @@ pub fn run_default() -> Result<()> {
     let _ = GAME_DIR.set(exe_dir.clone());
 
     log::info!(
-        "khora-sdk run_default: project='{}' from {} (preset={}, verify_integrity={})",
+        "khora-sdk run_default: project='{}' from {} (preset={})",
         cfg.project_name,
         exe_dir.display(),
         cfg.preset.as_deref().unwrap_or("unset"),
-        cfg.verify_integrity,
     );
+    // A pack that is not sealed by this runtime's key never starts.
+    check_pack_seal(&exe_dir, stamped_pack_key())?;
 
-    let verify_integrity = cfg.verify_integrity;
     let physics_settings = cfg.physics;
     run_winit::<WinitWindowProvider, DefaultRuntimeApp>(move |window, runtime, _event_loop| {
         let mut rs = WgpuRenderSystem::new();
@@ -376,7 +401,7 @@ pub fn run_default() -> Result<()> {
             &DefaultRuntimeApp::game_identity(),
             DefaultRuntimeApp::keeps_user_files(),
         );
-        install_game_assets(runtime, &exe_dir, verify_integrity);
+        install_game_assets(runtime, &exe_dir, stamped_pack_key());
     })?;
     Ok(())
 }
