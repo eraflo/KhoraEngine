@@ -21,11 +21,15 @@ use serde::{Deserialize, Serialize};
 
 mod guard;
 mod limits;
+mod project;
 mod quarantine;
+mod store;
 
 pub use guard::{FileGuard, ReadError};
 pub use limits::{LimitExceeded, Limits};
+pub use project::ProjectTrustState;
 pub use quarantine::{QuarantineKey, Refusals};
+pub use store::{ProjectTrust, TrustStore};
 
 #[cfg(test)]
 mod tests;

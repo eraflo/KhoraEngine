@@ -40,7 +40,7 @@ use crate::script::hot_reload::{importers_of, is_on_disk, modules_under};
 use crate::script::layout::{script_dir, SCRIPT_DIR};
 use crate::script::mirror::PreludeLoader;
 use crate::script::mounted::MountedScripts;
-use crate::trust::{FileGuard, Refusals, Trust};
+use crate::trust::{FileGuard, ProjectTrustState, Refusals, Trust};
 
 // What a compile is asked and hands on, named here so the engine's wiring
 // reaches them through the compiler it installs, without a dependency on
@@ -58,6 +58,7 @@ pub struct ProjectCompiler {
     reads: Option<Arc<Interest<ScriptReads>>>,
     mounted: Option<Arc<MountedScripts>>,
     refusals: Option<Arc<Refusals>>,
+    trust_state: Option<Arc<ProjectTrustState>>,
 }
 
 impl ProjectCompiler {
@@ -73,7 +74,16 @@ impl ProjectCompiler {
                 .cloned(),
             mounted: runtime.resources.get::<Arc<MountedScripts>>().cloned(),
             refusals: runtime.resources.get::<Arc<Refusals>>().cloned(),
+            trust_state: runtime.resources.get::<Arc<ProjectTrustState>>().cloned(),
         }
+    }
+
+    /// The trust the project's scripts are read at now: a restricted
+    /// project's at the strict caps.
+    fn trust(&self) -> Trust {
+        self.trust_state
+            .as_ref()
+            .map_or(Trust::Project, |state| state.get().trust())
     }
 
     /// A loader of the modules under `script_root`, through a guard
@@ -85,7 +95,7 @@ impl ProjectCompiler {
             .unwrap_or_else(|| Arc::new(Refusals::new(None, None)));
         PreludeLoader::new(DiskLoader::guarded(FileGuard::new(
             script_root,
-            Trust::Project,
+            self.trust(),
             refusals,
         )))
     }
@@ -99,7 +109,7 @@ impl ProjectCompiler {
         let loader = self.loader(script_root);
         let mut compiled = Compiled::default();
         let mut declared = BTreeSet::new();
-        for module in modules_under(script_root, self.refusals.as_ref()).into_keys() {
+        for module in modules_under(script_root, self.refusals.as_ref(), self.trust()).into_keys() {
             let outcome = compile_module(&loader, &module);
             self.report(&module, &outcome);
             match outcome.program {
@@ -245,7 +255,7 @@ impl ProjectCompiler {
         // The folder spelled exactly: a `Scripts/` holds no modules, so every
         // one changed under it is gone.
         let on_disk = script_dir(root)
-            .map(|dir| modules_under(&dir, self.refusals.as_ref()))
+            .map(|dir| modules_under(&dir, self.refusals.as_ref(), self.trust()))
             .unwrap_or_default();
         let affected = importers_of(&on_disk, changed);
         let touched = affected.clone();

@@ -23,9 +23,9 @@ use std::sync::{Arc, Mutex};
 
 use khora_sdk::editor_ui::*;
 use khora_tool_ui::widgets::{
-    self,
+    self, chip,
     paint::{icon, mono},
-    status_dot, Health,
+    status_dot, Health, Tone,
 };
 
 /// Height of the status bar.
@@ -114,6 +114,15 @@ impl EditorPanel for StatusBarPanel {
         // ── Right: what we are editing, and how fast ──
         let mut rx = widgets::right(r) - 14.0;
 
+        // A restricted project says so beside its name: nothing of it runs.
+        if snap.restricted {
+            let label = "restricted";
+            let w = ui.measure_text(label, size, FontFamilyHint::Monospace)[0] + 16.0;
+            rx -= w;
+            chip(ui, t, [rx, cy - 9.0, w, 18.0], label, Tone::Warning, false);
+            rx -= 10.0;
+        }
+
         let project = format!(
             "{} · v{}",
             snap.project.as_deref().unwrap_or("untitled"),
@@ -170,6 +179,8 @@ struct Snapshot {
     engine_version: Option<String>,
     /// What scene load is in flight, if any.
     loading: Option<&'static str>,
+    /// Whether the project open is restricted.
+    restricted: bool,
 }
 
 impl Snapshot {
@@ -198,6 +209,7 @@ impl From<&EditorState> for Snapshot {
             } else {
                 None
             },
+            restricted: s.restricted,
         }
     }
 }

@@ -73,6 +73,11 @@ pub struct RecordingUiBuilder {
     /// Whether `viewport_image` shows the image (at the panel origin) instead
     /// of reporting `None`.
     shows_viewport_image: bool,
+    /// Every tooltip attached with `tooltip_for_last`, in order.
+    tooltips: Vec<String>,
+    /// Whether the last region `interact_rect` allocated reported a click: a
+    /// `menu_on_click_last` after it opens.
+    last_clicked: bool,
 }
 
 impl RecordingUiBuilder {
@@ -91,6 +96,8 @@ impl RecordingUiBuilder {
             keys: HashSet::new(),
             pixels_per_point: None,
             shows_viewport_image: false,
+            tooltips: Vec::new(),
+            last_clicked: false,
         }
     }
 
@@ -192,6 +199,13 @@ impl RecordingUiBuilder {
         )
     }
 
+    /// Every tooltip a widget attached with
+    /// [`UiBuilder::tooltip_for_last`], in order — whatever it is attached
+    /// to: the recorder has no pointer to show it under.
+    pub fn tooltips(&self) -> &[String] {
+        &self.tooltips
+    }
+
     /// Every recorded call, in paint order.
     pub fn calls(&self) -> &[PaintCall] {
         &self.calls
@@ -276,6 +290,34 @@ impl RecordingUiBuilder {
 
     fn record(&mut self, call: PaintCall) {
         self.calls.push(call);
+    }
+
+    /// Records the region and reports what is scripted for it: by its
+    /// `id_salt`, else by the click point.
+    fn interaction_of(&mut self, id_salt: &str, rect: [f32; 4]) -> Interaction {
+        self.record(PaintCall::Interact {
+            id_salt: id_salt.to_owned(),
+            rect,
+        });
+        if let Some(scripted) = self.scripted.get(id_salt) {
+            return *scripted;
+        }
+        match self.click_at {
+            Some(p)
+                if p[0] >= rect[0]
+                    && p[0] <= rect[0] + rect[2]
+                    && p[1] >= rect[1]
+                    && p[1] <= rect[1] + rect[3] =>
+            {
+                Interaction {
+                    hovered: true,
+                    contains_pointer: true,
+                    clicked: true,
+                    ..Interaction::default()
+                }
+            }
+            _ => Interaction::default(),
+        }
     }
 }
 
@@ -396,29 +438,33 @@ impl UiBuilder for RecordingUiBuilder {
     }
 
     fn interact_rect(&mut self, id_salt: &str, rect: [f32; 4]) -> Interaction {
-        self.record(PaintCall::Interact {
-            id_salt: id_salt.to_owned(),
-            rect,
-        });
-        if let Some(scripted) = self.scripted.get(id_salt) {
-            return *scripted;
+        let interaction = self.interaction_of(id_salt, rect);
+        self.last_clicked = interaction.clicked;
+        interaction
+    }
+
+    fn tooltip_for_last(&mut self, text: &str) {
+        self.tooltips.push(text.to_owned());
+    }
+
+    /// Runs the menu when the last region allocated was clicked, as a
+    /// backend opens it on that click: what it paints is recorded.
+    fn menu_on_click_last(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        if self.last_clicked {
+            f(self);
         }
-        match self.click_at {
-            Some(p)
-                if p[0] >= rect[0]
-                    && p[0] <= rect[0] + rect[2]
-                    && p[1] >= rect[1]
-                    && p[1] <= rect[1] + rect[3] =>
-            {
-                Interaction {
-                    hovered: true,
-                    contains_pointer: true,
-                    clicked: true,
-                    ..Interaction::default()
-                }
-            }
-            _ => Interaction::default(),
-        }
+    }
+
+    fn left_inset_panel(&mut self, _id: &str, _width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        f(self);
+    }
+
+    fn right_inset_panel(&mut self, _id: &str, _width: f32, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        f(self);
+    }
+
+    fn central_inset(&mut self, f: &mut dyn FnMut(&mut dyn UiBuilder)) {
+        f(self);
     }
 
     fn region_at(
@@ -488,15 +534,20 @@ impl UiBuilder for RecordingUiBuilder {
         );
     }
 
+    // A stock button paints its label, as the backend's does: a menu's
+    // entries are read by their text.
     fn button(&mut self, text: &str) -> bool {
+        self.paint_text([0.0, 0.0], [1.0; 4], text);
         self.interact_rect(text, [0.0, 0.0, 0.0, 0.0]).clicked
     }
 
     fn small_button(&mut self, text: &str) -> bool {
+        self.paint_text([0.0, 0.0], [1.0; 4], text);
         self.interact_rect(text, [0.0, 0.0, 0.0, 0.0]).clicked
     }
 
     fn selectable_label(&mut self, _active: bool, text: &str) -> bool {
+        self.paint_text([0.0, 0.0], [1.0; 4], text);
         self.interact_rect(text, [0.0, 0.0, 0.0, 0.0]).clicked
     }
 
@@ -684,6 +735,20 @@ mod tests {
             .with_hover("scripted");
         let i = ui.interact_rect("scripted", [10.0, 10.0, 20.0, 20.0]);
         assert!(i.hovered && !i.clicked);
+    }
+
+    #[test]
+    fn a_tooltip_is_recorded_and_a_menu_opens_only_on_a_click() {
+        let mut ui = RecordingUiBuilder::new(100.0, 100.0).with_click("more");
+        ui.interact_rect("more", [0.0, 0.0, 10.0, 10.0]);
+        ui.tooltip_for_last("More actions");
+        ui.menu_on_click_last(&mut |menu| menu.paint_text([0.0, 0.0], [1.0; 4], "opened"));
+        ui.interact_rect("still", [20.0, 0.0, 10.0, 10.0]);
+        ui.menu_on_click_last(&mut |menu| menu.paint_text([0.0, 0.0], [1.0; 4], "not this"));
+
+        assert_eq!(ui.tooltips(), &["More actions".to_owned()]);
+        assert!(ui.painted_text("opened"));
+        assert!(!ui.painted_text("not this"));
     }
 
     #[test]

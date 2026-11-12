@@ -92,7 +92,7 @@ impl EditorPanel for PropertiesPanel {
         // The inspector is context-aware: when an asset is selected in
         // the browser, switch to asset-metadata mode; otherwise show
         // entity components (or empty state).
-        let (entity_data, asset_path, project_folder) = {
+        let (entity_data, asset_path, project_folder, quarantine) = {
             let s = match self.state.lock() {
                 Ok(s) => s,
                 Err(_) => return,
@@ -103,10 +103,16 @@ impl EditorPanel for PropertiesPanel {
                     .filter(|i| i.entity == e)
                     .map(|i| (e, i))
             });
+            let quarantine = s.inspected_asset_path.as_ref().and_then(|rel| {
+                (s.quarantined.iter())
+                    .find(|asset| &asset.rel_path == rel)
+                    .cloned()
+            });
             (
                 entity_data,
                 s.inspected_asset_path.clone(),
                 s.project_folder.clone().unwrap_or_default(),
+                quarantine,
             )
         };
         let asset_mode = entity_data.is_none() && asset_path.is_some();
@@ -165,7 +171,19 @@ impl EditorPanel for PropertiesPanel {
                 let body_y = after_header + 12.0;
                 let body_h = (panel_rect[1] + panel_rect[3] - body_y - 6.0).max(0.0);
                 let body_rect = [px + 6.0, body_y, pw - 12.0, body_h];
-                render_asset_pane(ui, body_rect, rel, &project_folder, &theme);
+                let release = render_asset_pane(
+                    ui,
+                    body_rect,
+                    rel,
+                    &project_folder,
+                    quarantine.as_ref(),
+                    &theme,
+                );
+                if release {
+                    if let Ok(mut state) = self.state.lock() {
+                        state.pending_release = Some(rel.clone());
+                    }
+                }
             }
             return;
         }

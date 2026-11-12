@@ -14,4 +14,7 @@ pub struct HomeState {
     pub filter: String,
     /// Project pending a deletion confirmation modal.
     pub remove_confirm: Option<usize>,
+    /// The restricted project whose trust confirmation is open: its card's
+    /// `More` menu asked `Trust this project…`.
+    pub trust_confirm: Option<crate::services::config::RecentProject>,
 }

@@ -449,6 +449,9 @@ fn create_with_engine(app: &mut HubApp, engine: crate::services::config::EngineI
             app.config
                 .push_recent(&app.new_project.name, &root, &engine.version);
             let _ = app.config.save();
+            // A project the user just made is theirs: trusted.
+            app.trust_store
+                .decide(&root, khora_sdk::trust::ProjectTrust::Trusted);
             match project::launch_editor(&engine.editor_binary, &root) {
                 Ok(()) => {
                     app.banner = Some(crate::state::Banner::info("Editor launched."));

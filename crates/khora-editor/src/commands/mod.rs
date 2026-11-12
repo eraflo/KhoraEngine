@@ -43,7 +43,8 @@ pub use material::process_pending_save_as_material;
 pub use prefab::process_pending_prefab_apply;
 pub use prefab::process_pending_prefab_spawn;
 pub use prefab::process_pending_save_as_prefab;
-pub use scene::browse_and_open_project;
+pub use scene::build_game_refused;
+pub use scene::pick_project_folder;
 pub use scene::run_build_game;
 pub use scene::save_scene_dispatch;
 pub use scene::{land_scene_loads, open_scene_dispatch};
@@ -53,24 +54,27 @@ pub use transport::{process_transport, start_editing};
 
 /// Process every pending menu action queued in `EditorState`. Drains
 /// `pending_browse_project_folder` and `pending_menu_action` in turn.
+///
+/// Returns the folder "File > Open Project…" picked, for the app to open;
+/// a restricted project (`trust`) builds no game.
 pub fn process_menu_actions(
     project_vfs: &mut Option<Arc<Mutex<ProjectVfs>>>,
-    asset_watch: &Arc<khora_sdk::AssetWatch>,
     editor_state: &Arc<Mutex<EditorState>>,
     command_history: &Arc<Mutex<CommandHistory>>,
     world: &mut GameWorld,
-) {
+    trust: khora_sdk::trust::ProjectTrust,
+) -> Option<std::path::PathBuf> {
     let wants_browse = editor_state
         .lock()
         .ok()
         .map(|mut s| std::mem::replace(&mut s.pending_browse_project_folder, false))
         .unwrap_or(false);
 
-    if wants_browse {
-        if let Some(new_pvfs) = browse_and_open_project(editor_state, asset_watch) {
-            *project_vfs = Some(new_pvfs);
-        }
-    }
+    let picked = if wants_browse {
+        pick_project_folder()
+    } else {
+        None
+    };
 
     // The transport is processed before the frame (`process_transport`): an
     // action of its asked since is left for the next frame's.
@@ -85,7 +89,9 @@ pub fn process_menu_actions(
         }
     });
 
-    let Some(action) = action else { return };
+    let Some(action) = action else {
+        return picked;
+    };
 
     match action.as_str() {
         "new_scene" => {
@@ -115,7 +121,11 @@ pub fn process_menu_actions(
                 state.pending_spawn = Some("Empty".to_owned());
             }
         }
-        "build_game" => run_build_game(project_vfs.as_ref(), editor_state),
+        "build_game" => {
+            if !build_game_refused(trust, editor_state) {
+                run_build_game(project_vfs.as_ref(), editor_state);
+            }
+        }
         "documentation" => {
             let _ = open::that("https://github.com/eraflo/KhoraEngine");
             log::info!("Opening documentation in browser");
@@ -130,6 +140,7 @@ pub fn process_menu_actions(
             log::info!("Unhandled menu action: {}", other);
         }
     }
+    picked
 }
 
 /// Empties the undo history after the world was replaced: every edit it holds

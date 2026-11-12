@@ -242,6 +242,29 @@ pub struct EditorState {
     /// Moves at each scene chosen (new, opened): what waited for one before is void.
     pub scene_choices: u64,
 
+    // ── Project trust ──────────────────────────────────
+    /// Why the last action asked was refused — Play or Build Game in a
+    /// restricted project — for the interface to say so; `None` when nothing
+    /// was.
+    pub refusal: Option<String>,
+    /// The project whose open waits for the user's trust decision: it was
+    /// never decided of, and nothing of it is opened until it is.
+    pub trust_prompt: Option<std::path::PathBuf>,
+    /// Whether the project open is restricted: the app mirrors the engine's
+    /// `ProjectTrustState` into it each frame.
+    pub restricted: bool,
+    /// The confirmation of trusting the project open, while it is open, with
+    /// what trusting changes. The restricted bar asks for it through the
+    /// `confirm_trust` menu action; the app fills it.
+    pub trust_confirm: Option<TrustSummary>,
+    /// The files of the project quarantined, mirrored from the run's
+    /// refusals when the problems' generation moves, their paths relative to
+    /// the assets root.
+    pub quarantined: Vec<QuarantinedAsset>,
+    /// A quarantined asset to release, by its forward-slash path under
+    /// `assets/`. Drained by the app.
+    pub pending_release: Option<String>,
+
     // ── Scene file path ──────────────────────────────
     /// Path to the currently open scene file (for Save).
     pub current_scene_path: Option<String>,
@@ -521,4 +544,42 @@ pub struct AssetEntry {
     /// material, texture or scene): its `name` is then its label inside the
     /// file and its `source_path` the file's. `None` for a file of its own.
     pub container: Option<AssetUUID>,
+}
+
+// ════════════════════════════════════════════════════════
+//  Project trust types
+// ════════════════════════════════════════════════════════
+
+/// What trusting the project open changes, for its confirmation.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TrustSummary {
+    /// How many scripts it runs: the `.erg` files under `assets/scripts`.
+    pub scripts: usize,
+    /// The shader modules its overlays replace, by their logical names
+    /// (`khora::lighting`): the `.wgsl` files under `assets/shaders`.
+    pub overlays: Vec<String>,
+    /// Whether Build Game compiles its code: it has a `Cargo.toml`.
+    pub builds_code: bool,
+    /// How many of its files were refused at the restricted limits for their
+    /// size, and are read again once it is trusted.
+    pub refused_for_size: usize,
+}
+
+/// A quarantined asset, as the asset browser and its details pane show it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct QuarantinedAsset {
+    /// Its forward-slash path under `assets/`.
+    pub rel_path: String,
+    /// Why it was refused.
+    pub reason: String,
+    /// What to do about it.
+    pub remedy: String,
+    /// What refused it: `file guard`, `type check`, `decoder` or `pack`.
+    pub refused_by: String,
+    /// The trust it was read at: `trusted project`, `restricted project`,
+    /// `downloaded file`, `engine` or `save`.
+    pub read_as: String,
+    /// What it is held by: `blake3 xxxx…xxxx` for its content, `size and
+    /// date` for its stamp.
+    pub content: String,
 }

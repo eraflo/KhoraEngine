@@ -244,12 +244,12 @@ impl ViewportPanel {
         use khora_tool_ui::widgets::paint::{fill_stroke, icon_centered, tint};
 
         let theme = &self.theme;
-        let mode = self
+        let (mode, restricted) = self
             .state
             .lock()
             .ok()
-            .map(|s| s.play_mode)
-            .unwrap_or(PlayMode::Editing);
+            .map(|s| (s.play_mode, s.restricted))
+            .unwrap_or((PlayMode::Editing, false));
 
         let playing = mode == PlayMode::Playing;
         let paused = mode == PlayMode::Paused;
@@ -282,6 +282,9 @@ impl ViewportPanel {
         // While playing, this is the "running" indicator rather than an action.
         let play_rect = [x, cy, btn, btn];
         let play_hit = ui.interact_rect("vp-play", play_rect);
+        if restricted {
+            ui.tooltip_for_last("Play is off in restricted mode: the project's scripts never run.");
+        }
         if playing {
             ui.paint_circle_filled([x + btn * 0.5, cy + btn * 0.5], btn * 0.5, theme.success);
         }
@@ -292,13 +295,15 @@ impl ViewportPanel {
             13.0,
             if playing {
                 theme.text_inverse
+            } else if restricted {
+                theme.text_disabled
             } else if play_hit.hovered {
                 theme.success
             } else {
                 theme.text
             },
         );
-        if play_hit.clicked && !playing {
+        if play_hit.clicked && !playing && !restricted {
             self.dispatch("play");
         }
         x += btn + gap;

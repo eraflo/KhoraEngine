@@ -578,3 +578,55 @@ fn a_root_unmounted_mid_compile_leaves_no_problem_of_its_importers() {
         left.iter().next()
     );
 }
+
+// ─── At the trust of the project open ───────────────────────────────────────
+
+/// **A restricted project's scripts are read at the strict caps.** Restricted
+/// mode compiles a project's scripts — so their errors show — but reads every
+/// file of it at `Restricted`: a module of 16 MiB and a byte, over the strict
+/// 16 MiB a text file has, under a trusted project's 64 MiB, is refused at
+/// the restricted trust. The compiler is the engine's, made at boot while
+/// the project open was trusted; the project opened restricted since.
+#[test]
+fn a_restricted_projects_scripts_are_read_at_the_strict_caps() {
+    use khora_io::trust::{ProjectTrust, ProjectTrustState, Refusals, SecurityReason, Trust};
+
+    let assets = project(&[("guard.erg", "behavior Guard {}\n")]);
+    let mut long = String::with_capacity((16 << 20) + 1);
+    long.push_str("//");
+    long.extend(std::iter::repeat_n('a', (16 << 20) + 1 - 2));
+    write(assets.path(), "long.erg", &long);
+
+    let refusals = Arc::new(Refusals::new(None, None));
+    let state = Arc::new(ProjectTrustState::new(ProjectTrust::Trusted));
+    let mut runtime = Runtime::default();
+    runtime.resources.insert(Arc::clone(&refusals));
+    runtime.resources.insert(Arc::clone(&state));
+    let compiler = ProjectCompiler::from_runtime(&runtime);
+    state.set(ProjectTrust::Restricted);
+
+    let _ = compiler.compile_all(&assets.path().join("scripts"));
+
+    let refused = refusals
+        .quarantined()
+        .into_iter()
+        .find(|refusal| refusal.path.ends_with("long.erg"));
+    match refused {
+        Some(refusal) => {
+            assert_eq!(
+                refusal.trust,
+                Trust::Restricted,
+                "read at the restricted trust"
+            );
+            assert!(
+                matches!(refusal.reason, SecurityReason::TooLarge { .. }),
+                "refused for its size: {:?}",
+                refusal.reason
+            );
+        }
+        None => panic!(
+            "a module over the strict text cap is refused in a restricted project: {:?}",
+            refusals.quarantined()
+        ),
+    }
+}

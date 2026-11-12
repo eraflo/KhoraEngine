@@ -72,5 +72,14 @@ pub fn quarantine_path(
     Some(folder.join(QUARANTINE_FILE))
 }
 
+/// The trust store's file, shared by the hub and the editor:
+/// `<home>/.khora/trust.ron`, read through `env`.
+pub fn trust_path(env: &dyn Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    khora_dir(env).map(|khora| khora.join(TRUST_FILE))
+}
+
+/// The trust store's file name.
+const TRUST_FILE: &str = "trust.ron";
+
 /// The quarantine list's file name.
 const QUARANTINE_FILE: &str = "quarantine.ron";

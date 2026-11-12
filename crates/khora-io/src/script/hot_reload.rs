@@ -203,7 +203,9 @@ pub(crate) fn importers_of(
 
 /// The modules under `script_root`, by the path they are known by.
 pub fn module_names(script_root: &Path) -> Vec<String> {
-    modules_under(script_root, None).into_keys().collect()
+    modules_under(script_root, None, crate::trust::Trust::Project)
+        .into_keys()
+        .collect()
 }
 
 /// Every `.erg` module under `root`, each with what it imports.
@@ -220,6 +222,7 @@ pub fn module_names(script_root: &Path) -> Vec<String> {
 pub(crate) fn modules_under(
     root: &Path,
     refusals: Option<&Arc<crate::trust::Refusals>>,
+    trust: crate::trust::Trust,
 ) -> BTreeMap<String, Vec<String>> {
     // Read through a guard reporting to `refusals` (to none kept but in
     // memory without): a module over its cap is read as importing nothing,
@@ -227,7 +230,7 @@ pub(crate) fn modules_under(
     let refusals = refusals
         .cloned()
         .unwrap_or_else(|| Arc::new(crate::trust::Refusals::new(None, None)));
-    let guard = crate::trust::FileGuard::new(root, crate::trust::Trust::Project, refusals);
+    let guard = crate::trust::FileGuard::new(root, trust, refusals);
     walkdir::WalkDir::new(root)
         .follow_links(false)
         .into_iter()

@@ -165,6 +165,12 @@ pub use khora_io::scene_loads::{install_scene_loading, LoadOutcome, SceneLoadHub
 pub use khora_io::serialization::{
     prefab_catalog, read_prefab, ReaderPrefabs, SerializationService, SerializationServiceError,
 };
+/// The logical name of a shader file under a project's assets — what an
+/// overlay of it replaces.
+pub use khora_io::systems::shader_hot_reload::logical_name_for_shader_path;
+/// The trust boundary: how much a file is trusted, what was refused, and
+/// what the user decided of each project.
+pub use khora_io::trust;
 /// The user's folders the engine keeps its files in: `~/.khora`, a game's
 /// data folder.
 pub use khora_io::user_dirs;

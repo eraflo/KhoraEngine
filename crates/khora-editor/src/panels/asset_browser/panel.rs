@@ -255,7 +255,7 @@ impl EditorPanel for AssetBrowserPanel {
             with_alpha(theme.separator, 0.55),
             1.0,
         );
-        let (project_folder, problems) = self
+        let (project_folder, problems, quarantined) = self
             .state
             .lock()
             .ok()
@@ -263,6 +263,9 @@ impl EditorPanel for AssetBrowserPanel {
                 (
                     s.project_folder.clone().unwrap_or_default(),
                     s.problems.clone(),
+                    (s.quarantined.iter())
+                        .map(|asset| asset.rel_path.clone())
+                        .collect::<std::collections::HashSet<_>>(),
                 )
             })
             .unwrap_or_default();
@@ -432,6 +435,7 @@ impl EditorPanel for AssetBrowserPanel {
                 asset.asset_type,
                 selected,
                 counts_of(&asset.rel_path).and_then(crate::panels::problems::view::tile_badge),
+                asset.container.is_none() && quarantined.contains(&asset.rel_path),
                 &theme,
             );
             // Every tile is a drag source — the low 32 bits carry the index

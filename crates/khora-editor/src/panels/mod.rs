@@ -22,8 +22,12 @@ pub mod loading;
 pub mod problems;
 pub mod properties;
 pub mod scene_tree;
+pub mod trust;
 pub mod viewport;
 pub mod workbench;
+
+#[cfg(test)]
+mod tests;
 
 pub use asset_browser::AssetBrowserPanel;
 pub use console::ConsolePanel;

@@ -65,6 +65,9 @@ pub enum ProblemSource {
     /// its root, a file over its size cap, bytes that are not what their
     /// extension says.
     Security,
+    /// What a restricted project does not run: a shader overlay ignored, as
+    /// warnings; cleared once the project is trusted.
+    Restricted,
 }
 
 /// One problem, located.

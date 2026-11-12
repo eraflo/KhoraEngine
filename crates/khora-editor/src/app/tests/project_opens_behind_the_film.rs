@@ -158,6 +158,7 @@ impl Opening {
     fn start(&mut self, root: &Path) {
         self.opening = start_opening_project(
             root.to_path_buf(),
+            Some(khora_sdk::trust::ProjectTrust::Trusted),
             &self.engine.runtime,
             &self.state,
             &mut self.hold,

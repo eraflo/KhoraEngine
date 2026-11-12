@@ -143,6 +143,7 @@ Measurements and levers: `docs/research/2026-11-06_build-time-and-target-size.md
 
 - Scripts run only while the scripting family (`khora_core::script::SCRIPT`) is on. The engine has no mode: the editor switches the family off while editing, through the `Activation` resource. The script DataSystems and `ScriptFlow` are `Role::Serves(SCRIPT)`, so they are skipped while it is off, as the family's agent is. An editor editing a scene runs no script.
 - A new statement kind must give its key in `khora-script/src/bytecode/keys.rs` (every match there is exhaustive) and name its sites (`bytecode/sites.rs`) — otherwise a suspended frame cannot be found again after an edit.
+- An Ergon native that reaches beyond the world — a file, the network, a process — declares a capability in `#[ergon_fn]` and runs only in a trusted project (`ProjectTrust::Trusted`). No native does today, so there is no capability manifest yet: it comes with the first such native.
 - A new `Instruction` needs an arm in `bytecode/fingerprint.rs` (exhaustive match) that hashes **what it names** (callee, native, literal, field — never an index), and a deliberate fuel cost (`Instruction::cost` in `vm/instruction.rs`; a native is charged its declared cost).
 
 ## 8 — Must never

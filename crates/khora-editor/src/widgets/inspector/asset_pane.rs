@@ -14,7 +14,7 @@
 //! (Reveal in Explorer, Open Externally). Per-type preview cards
 //! (texture image, mesh stats, audio duration) do not exist yet.
 
-use khora_sdk::editor_ui::{FontFamilyHint, Icon, TextAlign, UiBuilder, UiTheme};
+use khora_sdk::editor_ui::{FontFamilyHint, Icon, QuarantinedAsset, TextAlign, UiBuilder, UiTheme};
 
 use super::header::paint_inspector_header;
 use khora_tool_ui::widgets::paint;
@@ -47,17 +47,24 @@ fn paint_kv_row(
     );
 }
 
-/// Render the asset metadata pane. Returns the y coordinate after the
-/// last painted block.
+/// Render the asset metadata pane — led, when the asset is quarantined, by
+/// its quarantine. Returns whether `Release` was clicked.
 pub fn render_asset_pane(
     ui: &mut dyn UiBuilder,
     body_rect: [f32; 4],
     rel_path: &str,
     project_folder: &str,
+    quarantine: Option<&QuarantinedAsset>,
     theme: &UiTheme,
-) {
+) -> bool {
     let [bx, by, bw, _] = body_rect;
     let mut y = by;
+    let mut release = false;
+    if let Some(quarantine) = quarantine {
+        let (bottom, clicked) = paint_quarantine_card(ui, [bx, y, bw], quarantine, theme);
+        y = bottom + 10.0;
+        release = clicked;
+    }
 
     // Resolve the absolute path + on-disk metadata.
     let abs = std::path::Path::new(project_folder)
@@ -174,6 +181,93 @@ pub fn render_asset_pane(
             }
         }
     }
+    release
+}
+
+/// The quarantine card: why the file is refused, what to do, what refused
+/// it, the trust it was read at, what holds it, and `Release`. Returns the
+/// card's bottom and whether `Release` was clicked.
+fn paint_quarantine_card(
+    ui: &mut dyn UiBuilder,
+    rect: [f32; 3],
+    quarantine: &QuarantinedAsset,
+    theme: &UiTheme,
+) -> (f32, bool) {
+    let [x, y, w] = rect;
+    let inner = w - 24.0;
+    let body = 12.0;
+    let line_h = 17.0;
+    let reason = khora_tool_ui::widgets::wrap_text(ui, &quarantine.reason, body, inner);
+    let remedy = khora_tool_ui::widgets::wrap_text(ui, &quarantine.remedy, body, inner);
+    let facts = [
+        ("Refused by", quarantine.refused_by.as_str()),
+        ("Read as", quarantine.read_as.as_str()),
+        ("Content", quarantine.content.as_str()),
+    ];
+    let h = 36.0
+        + (reason.len() + remedy.len()) as f32 * line_h
+        + 10.0
+        + facts.len() as f32 * 18.0
+        + 10.0
+        + 26.0
+        + 12.0;
+
+    // An error, not a state: the refused file's card is edged in red where
+    // the restricted mode's amber says the project is held.
+    ui.paint_rect_filled([x, y], [w, h], theme.surface_elevated, theme.radius_md);
+    ui.paint_rect_stroke(
+        [x, y],
+        [w, h],
+        with_alpha(theme.error, 0.45),
+        theme.radius_md,
+        1.0,
+    );
+    paint::icon(ui, [x + 12.0, y + 11.0], Icon::Lock, 13.0, theme.error);
+    paint::text(ui, [x + 32.0, y + 10.0], "Quarantined", 12.0, theme.error);
+
+    let mut row_y = y + 36.0;
+    for line in &reason {
+        paint::text(ui, [x + 12.0, row_y], line, body, theme.text);
+        row_y += line_h;
+    }
+    for line in &remedy {
+        paint::text(ui, [x + 12.0, row_y], line, body, theme.text_dim);
+        row_y += line_h;
+    }
+    row_y += 10.0;
+    for (key, value) in facts {
+        ui.paint_text_styled(
+            [x + 12.0, row_y],
+            key,
+            11.0,
+            theme.text_muted,
+            FontFamilyHint::Proportional,
+            TextAlign::Left,
+        );
+        ui.paint_text_styled(
+            [x + w - 12.0, row_y],
+            value,
+            11.0,
+            theme.text,
+            FontFamilyHint::Monospace,
+            TextAlign::Right,
+        );
+        row_y += 18.0;
+    }
+    row_y += 10.0;
+
+    // Releasing reads the file again: refused again if it is unchanged.
+    let label = "Release";
+    let bw = ui.measure_text(label, 12.0, FontFamilyHint::Proportional)[0] + 28.0;
+    let hit = khora_tool_ui::widgets::button(
+        ui,
+        theme,
+        [x + w - 12.0 - bw, row_y, bw, 26.0],
+        "asset-quarantine-release",
+        khora_tool_ui::widgets::Button::new(label, khora_tool_ui::widgets::ButtonKind::Ghost),
+    );
+    ui.tooltip_for_last("Reads the file again. Unchanged, it is refused again.");
+    (y + h, hit.clicked)
 }
 
 /// Header line for asset mode — re-uses the entity Inspector header

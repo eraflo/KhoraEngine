@@ -40,12 +40,47 @@ pub(crate) struct OpeningProject {
 /// in `editor_state` what needs no index — the folder, the name and engine
 /// version `project.json` gives, the git branch. `None`, logged, when it
 /// cannot be filed.
+///
+/// `trust` is what the user decided of the project: `None`, nothing decided
+/// yet, holds the open — nothing is filed and `EditorState::trust_prompt`
+/// names the project until the user decides; a decision opens it at that
+/// trust, the runtime's `ProjectTrustState` set to it.
 pub(crate) fn start_opening_project(
     root: std::path::PathBuf,
+    trust: Option<khora_sdk::trust::ProjectTrust>,
     runtime: &Runtime,
     editor_state: &Arc<Mutex<khora_sdk::EditorState>>,
     hold: &mut Option<khora_sdk::ReadinessHold>,
 ) -> Option<OpeningProject> {
+    let Some(trust) = trust else {
+        // Nothing decided yet: the open waits for the user's answer.
+        log::info!(
+            "Opening '{}' waits for the user to decide whether to trust it",
+            root.display()
+        );
+        if let Ok(mut state) = editor_state.lock() {
+            state.trust_prompt = Some(root);
+        }
+        return None;
+    };
+    match runtime
+        .resources
+        .get::<Arc<khora_sdk::trust::ProjectTrustState>>()
+    {
+        Some(state) => state.set(trust),
+        None => log::error!(
+            "the engine holds no project trust state: '{}' opens as the engine reads it",
+            root.display()
+        ),
+    }
+    // A project opened trusted — trusted from the hub, say, since a run that
+    // opened it restricted — holds none of what the restricted limits
+    // refused: the quarantine outlives a run, and those files are read again.
+    if trust == khora_sdk::trust::ProjectTrust::Trusted {
+        if let Some(refusals) = runtime.resources.get::<Arc<khora_sdk::trust::Refusals>>() {
+            refusals.release_strict_under(khora_sdk::trust::Trust::Restricted, &root);
+        }
+    }
     let readiness = runtime.resources.get::<Arc<khora_sdk::Readiness>>();
     let indexes = runtime.resources.get::<Arc<khora_sdk::IndexHub>>();
     let Some(indexes) = indexes else {
@@ -86,6 +121,7 @@ pub(crate) fn start_opening_project(
         state.project_version =
             Some(text("version").unwrap_or_else(|| khora_sdk::DEFAULT_GAME_VERSION.to_owned()));
         state.current_git_branch = git::read_git_branch(&root);
+        state.trust_prompt = None;
     }
     log::info!("Opening project '{}' off the frame", root.display());
     Some(OpeningProject {
@@ -93,6 +129,158 @@ pub(crate) fn start_opening_project(
         ticket,
         choice,
     })
+}
+
+impl super::EditorApp {
+    /// Opens the project at `root` at what its user decided of it: the
+    /// `--project` of the command line, a folder File > Open Project
+    /// picked. A project nothing was decided of waits for the user's answer
+    /// (`EditorState::trust_prompt`); one that opens replaces the project
+    /// open.
+    pub(super) fn open_at_its_trust(&mut self, root: std::path::PathBuf, runtime: &Runtime) {
+        let store = self.trust_store.get_or_insert_with(|| {
+            khora_sdk::trust::TrustStore::new(khora_sdk::user_dirs::trust_path(&|key| {
+                std::env::var_os(key)
+            }))
+        });
+        if let Some(opening) = open_project(
+            root,
+            store,
+            runtime,
+            &self.editor_state,
+            &mut self.startup_hold,
+        ) {
+            self.project_vfs = None;
+            self.opening = Some(opening);
+        }
+    }
+
+    /// Acts on the user's answers about trust, as the editor's actions carry
+    /// them: `trust_open` / `restrict_open` decide the project waiting
+    /// (`EditorState::trust_prompt`) and open it, `cancel_open` lets it go;
+    /// `trust_project` trusts the project open.
+    pub(super) fn follow_trust_answers(&mut self, runtime: &Runtime) {
+        use khora_sdk::trust::ProjectTrust;
+        let Some(action) = self.editor_state.lock().ok().and_then(|mut state| {
+            let ours = state
+                .pending_menu_action
+                .as_deref()
+                .is_some_and(|action| TRUST_ACTIONS.contains(&action));
+            if ours {
+                state.pending_menu_action.take()
+            } else {
+                None
+            }
+        }) else {
+            return;
+        };
+        let store = self.trust_store.get_or_insert_with(|| {
+            khora_sdk::trust::TrustStore::new(khora_sdk::user_dirs::trust_path(&|key| {
+                std::env::var_os(key)
+            }))
+        });
+        let waiting = || {
+            self.editor_state
+                .lock()
+                .ok()
+                .and_then(|mut state| state.trust_prompt.take())
+        };
+        match action.as_str() {
+            "trust_open" | "restrict_open" => {
+                let Some(root) = waiting() else { return };
+                let decision = if action == "trust_open" {
+                    ProjectTrust::Trusted
+                } else {
+                    ProjectTrust::Restricted
+                };
+                store.decide(&root, decision);
+                self.open_at_its_trust(root, runtime);
+            }
+            "cancel_open" => {
+                if let Some(root) = waiting() {
+                    log::info!("'{}' is not opened", root.display());
+                }
+            }
+            _ => {
+                let open =
+                    (self.editor_state.lock().ok()).and_then(|state| state.project_folder.clone());
+                match open {
+                    Some(root) => grant_trust(runtime, store, std::path::Path::new(&root)),
+                    None => log::warn!("no project is open to trust"),
+                }
+            }
+        }
+    }
+
+    /// The trust of the project open: `Trusted` when the engine shares none.
+    pub(super) fn project_trust(&self) -> khora_sdk::trust::ProjectTrust {
+        self.project_trust_state
+            .as_ref()
+            .map_or(khora_sdk::trust::ProjectTrust::Trusted, |state| state.get())
+    }
+}
+
+/// The editor's actions that answer about trust.
+const TRUST_ACTIONS: [&str; 4] = [
+    "trust_open",
+    "restrict_open",
+    "cancel_open",
+    "trust_project",
+];
+
+/// Opens the project at `root` the one way the editor opens a project — the
+/// `--project` of the command line, a folder picked by File > Open Project:
+/// what `store` holds of it decides, through [`start_opening_project`].
+pub(crate) fn open_project(
+    root: std::path::PathBuf,
+    store: &khora_sdk::trust::TrustStore,
+    runtime: &Runtime,
+    editor_state: &Arc<Mutex<khora_sdk::EditorState>>,
+    hold: &mut Option<khora_sdk::ReadinessHold>,
+) -> Option<OpeningProject> {
+    let trust = store.decision(&root);
+    start_opening_project(root, trust, runtime, editor_state, hold)
+}
+
+/// Trusts the project at `project_root`: the decision written to `store`,
+/// the runtime's `ProjectTrustState` set to `Trusted`, the refusals its
+/// restricted limits made released, and its index filed anew so every
+/// reader is built at a trusted project's trust.
+pub(crate) fn grant_trust(
+    runtime: &Runtime,
+    store: &khora_sdk::trust::TrustStore,
+    project_root: &std::path::Path,
+) {
+    use khora_sdk::trust::{ProjectTrust, ProjectTrustState, Refusals, Trust};
+    store.decide(project_root, ProjectTrust::Trusted);
+    if let Some(state) = runtime.resources.get::<Arc<ProjectTrustState>>() {
+        state.set(ProjectTrust::Trusted);
+    }
+    // What the restricted limits refused is read again, at a trusted
+    // project's.
+    if let Some(refusals) = runtime.resources.get::<Arc<Refusals>>() {
+        refusals.release_strict_under(Trust::Restricted, project_root);
+    }
+    // What the restricted mode listed — an overlay ignored — no longer is.
+    if let Some(problems) =
+        (runtime.resources).get::<Arc<khora_sdk::khora_core::problems::Problems>>()
+    {
+        problems.report(
+            khora_sdk::khora_core::problems::ProblemSource::Restricted,
+            Vec::new(),
+        );
+    }
+    // Every reader of the project is built again, at its new trust.
+    match runtime.resources.get::<Arc<khora_sdk::IndexHub>>() {
+        Some(indexes) => {
+            indexes.file(project_root.to_path_buf(), khora_sdk::IndexKind::Open);
+        }
+        None => log::error!(
+            "the engine holds no index hub: '{}' is trusted from its next open",
+            project_root.display()
+        ),
+    }
+    log::info!("'{}' is trusted", project_root.display());
 }
 
 /// Lands the project `opening` names once its `Open` landed, as

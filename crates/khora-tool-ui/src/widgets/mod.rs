@@ -58,6 +58,7 @@ use khora_core::ui::UiTheme;
 pub mod buttons;
 pub mod chips;
 pub mod containers;
+pub mod dialog;
 pub mod disclosure;
 pub mod dock;
 pub mod feedback;
@@ -75,6 +76,7 @@ pub mod scroll;
 pub use buttons::{button, icon_button, Button, ButtonKind};
 pub use chips::{chip, filter_pill, kbd_chip, Pill, Tone};
 pub use containers::{card, card_action_slot};
+pub use dialog::{dialog, wrap_text, Choice, Dialog};
 pub use disclosure::{group_header, Group};
 pub use dock::{
     dock_drag_ghost, dock_drop_overlay, dock_splitter, dock_tab_strip, TabStripEvent,

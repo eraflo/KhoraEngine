@@ -74,9 +74,41 @@ pub fn process_transport(
             None
         }
     });
+    // A project turned restricted while playing — opened restricted over a
+    // play — stops playing: its scripts never run.
+    let restricted = khora_sdk::trust::ProjectTrustState::of(runtime)
+        == khora_sdk::trust::ProjectTrust::Restricted;
+    if restricted && play_mode(editor_state) != PlayMode::Editing {
+        log::warn!("Play stops: the project is restricted");
+        match runtime.resources.get::<Arc<SceneLoadHub>>() {
+            Some(loads) => super::apply_stop(world, editor_state, loads),
+            None => {
+                if let Ok(mut state) = editor_state.lock() {
+                    state.play_mode = PlayMode::Editing;
+                }
+            }
+        }
+        if let Ok(mut state) = editor_state.lock() {
+            state.refusal = Some(PLAY_REFUSED.to_owned());
+        }
+        ops::sync_scene_cameras_for_mode(world, play_mode(editor_state));
+    }
     if let Some(action) = action {
         match action.as_str() {
-            "play" => super::apply_play(world, editor_state),
+            "play" => {
+                // Playing runs the project's scripts: a restricted project
+                // is not played.
+                if khora_sdk::trust::ProjectTrustState::of(runtime)
+                    == khora_sdk::trust::ProjectTrust::Restricted
+                {
+                    log::warn!("Play is refused: the project is restricted");
+                    if let Ok(mut state) = editor_state.lock() {
+                        state.refusal = Some(PLAY_REFUSED.to_owned());
+                    }
+                } else {
+                    super::apply_play(world, editor_state);
+                }
+            }
             "pause" => super::apply_pause(editor_state),
             _ => match runtime.resources.get::<Arc<SceneLoadHub>>() {
                 Some(loads) => super::apply_stop(world, editor_state, loads),
@@ -96,6 +128,10 @@ pub fn process_transport(
     }
     follow(runtime, play_mode(editor_state));
 }
+
+/// Why Play is refused in a restricted project.
+const PLAY_REFUSED: &str =
+    "Play is off in restricted mode: playing runs this project's scripts. Trust the project to play it.";
 
 fn play_mode(editor_state: &Arc<Mutex<EditorState>>) -> PlayMode {
     editor_state

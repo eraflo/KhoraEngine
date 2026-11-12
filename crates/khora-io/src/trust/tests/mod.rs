@@ -29,6 +29,9 @@ use tempfile::TempDir;
 
 use super::*;
 
+mod project_trust;
+mod quarantine_view;
+
 const MIB: u64 = 1 << 20;
 
 /// A project's assets folder, `<dir>/assets`, holding

@@ -21,7 +21,7 @@ use khora_core::app::GameIdentity;
 use khora_core::problems::Problems;
 use khora_core::Runtime;
 use khora_io::profiles::ProfilePlace;
-use khora_io::trust::Refusals;
+use khora_io::trust::{ProjectTrust, ProjectTrustState, Refusals};
 use khora_io::user_dirs::quarantine_path;
 
 /// Puts the run's [`Refusals`] in `runtime`'s resources, reporting to its
@@ -33,6 +33,13 @@ use khora_io::user_dirs::quarantine_path;
 /// from the first (`AssetService::set_refusals` before
 /// `register_default_decoders`).
 pub(crate) fn install(runtime: &mut Runtime, game: &GameIdentity, keeps_user_files: bool) {
+    // The trust of the project the run serves: a game's, trusted; a tool
+    // opening a project sets it to what its user decided.
+    if runtime.resources.get::<Arc<ProjectTrustState>>().is_none() {
+        runtime
+            .resources
+            .insert(Arc::new(ProjectTrustState::new(ProjectTrust::Trusted)));
+    }
     if runtime.resources.get::<Arc<Refusals>>().is_some() {
         return;
     }

@@ -31,7 +31,7 @@ use super::file::FileLoader;
 use super::id_registry::AssetIdRegistry;
 use super::index_builder::IndexBuilder;
 use super::AssetService;
-use crate::trust::{FileGuard, Trust};
+use crate::trust::FileGuard;
 
 impl AssetService {
     /// Walks `inventory::iter::<DecoderRegistration>` and runs each entry's
@@ -85,7 +85,9 @@ impl AssetService {
         self.register_inventory_decoders();
         self.register_decoder::<SoundData>("audio", SymphoniaDecoder);
         let refusals = self.refusals();
-        let guard = || FileGuard::new(assets_root, Trust::Project, Arc::clone(&refusals));
+        // At the trust the service reads at (`set_trust`, set before).
+        let trust = self.reader().trust;
+        let guard = || FileGuard::new(assets_root, trust, Arc::clone(&refusals));
         let gltf_resolver = Arc::new(FileSystemResolver::guarded(guard()));
         let container = GltfContainer::guarded(guard());
         self.register_decoder::<Mesh>("mesh", MeshDispatcher::new(gltf_resolver));

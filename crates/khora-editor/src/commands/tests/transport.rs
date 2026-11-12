@@ -232,3 +232,142 @@ fn another_action_is_left_for_update() {
     );
     assert_eq!(play_mode(&state), PlayMode::Editing);
 }
+
+// ─── In a restricted project ────────────────────────────────────────────────
+
+/// `engine` serving a project open at `trust`, as the editor's open sets it.
+fn at_trust(engine: &mut Engine, trust: khora_sdk::trust::ProjectTrust) {
+    engine
+        .runtime
+        .resources
+        .insert(Arc::new(khora_sdk::trust::ProjectTrustState::new(trust)));
+}
+
+/// **Play is refused in a restricted project**: nothing of a project the
+/// user has not trusted runs. Play leaves the editor editing — no snapshot,
+/// the scene's scripts, physics and sounds still off — and the editor's
+/// state says why, for the transport to show.
+#[test]
+fn play_is_refused_in_a_restricted_project() {
+    let mut engine = engine();
+    at_trust(&mut engine, khora_sdk::trust::ProjectTrust::Restricted);
+    let (mut world, state) = editing(&engine);
+    assert_eq!(engine.off_at_the_boundary(), play_families());
+
+    ask(&state, "play");
+    process_transport(&mut world, &state, &engine.runtime);
+
+    assert_eq!(play_mode(&state), PlayMode::Editing, "Play is refused");
+    {
+        let state = state.lock().expect("the editor state");
+        assert!(state.scene_snapshot.is_none(), "no snapshot is taken");
+        assert!(
+            state
+                .refusal
+                .as_deref()
+                .is_some_and(|why| !why.trim().is_empty()),
+            "the editor's state says why Play was refused: {:?}",
+            state.refusal
+        );
+        assert_eq!(
+            state.pending_menu_action, None,
+            "the refused action is consumed, not asked again every frame"
+        );
+    }
+    assert_eq!(
+        engine.off_at_the_boundary(),
+        play_families(),
+        "the scene's scripts, physics and sounds stay off"
+    );
+}
+
+/// **Play runs in a trusted project**, refusing nothing: the editor plays,
+/// the play families on, and no refusal is said.
+#[test]
+fn play_runs_in_a_trusted_project() {
+    let mut engine = engine();
+    at_trust(&mut engine, khora_sdk::trust::ProjectTrust::Trusted);
+    let (mut world, state) = editing(&engine);
+
+    ask(&state, "play");
+    process_transport(&mut world, &state, &engine.runtime);
+
+    assert_eq!(play_mode(&state), PlayMode::Playing);
+    assert_eq!(
+        state.lock().expect("the editor state").refusal,
+        None,
+        "nothing is refused"
+    );
+    assert!(
+        engine.off_at_the_boundary().is_empty(),
+        "every play family is on"
+    );
+}
+
+/// **Build Game is refused in a restricted project** — a build runs the
+/// project's own code — and the editor's state says why; in a trusted
+/// project it is not refused, and no refusal is said.
+#[test]
+fn build_game_is_refused_in_a_restricted_project() {
+    use khora_sdk::trust::ProjectTrust;
+
+    let restricted = Arc::new(Mutex::new(EditorState::default()));
+    assert!(
+        super::super::build_game_refused(ProjectTrust::Restricted, &restricted),
+        "a restricted project does not build"
+    );
+    assert!(
+        restricted
+            .lock()
+            .expect("the editor state")
+            .refusal
+            .as_deref()
+            .is_some_and(|why| !why.trim().is_empty()),
+        "the editor's state says why Build Game was refused"
+    );
+
+    let trusted = Arc::new(Mutex::new(EditorState::default()));
+    assert!(
+        !super::super::build_game_refused(ProjectTrust::Trusted, &trusted),
+        "a trusted project builds"
+    );
+    assert_eq!(trusted.lock().expect("the editor state").refusal, None);
+}
+
+/// **A project that becomes restricted while playing runs none of its
+/// scripts.** The editor plays a trusted project; a restricted one is opened
+/// meanwhile — File > Open Project sets the trust of the project open as the
+/// open starts, and nothing stops the play. From the next frame on, the
+/// scene's scripts are off: what lands of the restricted project, its scripts
+/// mounted and its scene, never runs.
+#[test]
+fn a_project_turned_restricted_during_play_runs_no_script() {
+    let mut engine = engine();
+    at_trust(&mut engine, khora_sdk::trust::ProjectTrust::Trusted);
+    let (mut world, state) = editing(&engine);
+    ask(&state, "play");
+    process_transport(&mut world, &state, &engine.runtime);
+    assert!(
+        engine.off_at_the_boundary().is_empty(),
+        "the premise: the trusted project plays"
+    );
+
+    // A restricted project's open starts: the trust of the project open is
+    // set to it.
+    engine
+        .runtime
+        .resources
+        .get::<Arc<khora_sdk::trust::ProjectTrustState>>()
+        .expect("the trust of the project open")
+        .set(khora_sdk::trust::ProjectTrust::Restricted);
+    process_transport(&mut world, &state, &engine.runtime);
+
+    assert!(
+        engine
+            .off_at_the_boundary()
+            .contains(&khora_sdk::khora_core::script::SCRIPT),
+        "a restricted project's scripts do not run: {:?} off, play mode {:?}",
+        engine.off_at_the_boundary(),
+        play_mode(&state)
+    );
+}

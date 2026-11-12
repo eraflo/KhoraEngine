@@ -324,6 +324,74 @@ impl Refusals {
         self.report(&held);
     }
 
+    /// Releases the refusals made at `trust` for a size or a limit
+    /// (`TooLarge`, `OverLimit`): what trusting a project lifts. A file
+    /// refused for what it holds (`WrongType`, `DecoderPanic`), or refused at
+    /// another trust, stays.
+    pub fn release_strict(&self, trust: super::Trust) {
+        if let Some(successor) = self.successor() {
+            return successor.release_strict(trust);
+        }
+        let mut held = self.lock();
+        let lifted: Vec<PathBuf> = (held.quarantined.iter())
+            .filter(|(_, entry)| {
+                entry.refusal.trust == trust
+                    && matches!(
+                        entry.refusal.reason,
+                        SecurityReason::TooLarge { .. } | SecurityReason::OverLimit { .. }
+                    )
+            })
+            .map(|(at, _)| at.clone())
+            .collect();
+        if lifted.is_empty() {
+            return;
+        }
+        for at in lifted {
+            held.quarantined.remove(&at);
+            held.changed.insert(at, None);
+        }
+        self.write(&mut held);
+        self.report(&held);
+    }
+
+    /// Releases the refusals made at `trust` for a size or a limit, of the
+    /// files under `root` only — trusting one project lifts its own
+    /// refusals, never another project's.
+    pub fn release_strict_under(&self, trust: super::Trust, root: &Path) {
+        if let Some(successor) = self.successor() {
+            return successor.release_strict_under(trust, root);
+        }
+        let real_root = real_path(root);
+        // A file is under the project by its real path, or — gone from disk
+        // since it was refused — by the path it was refused under.
+        let under = |at: &Path, entry: &Entry| {
+            at.starts_with(&real_root)
+                || entry.refusal.path.starts_with(root)
+                || real_path(&entry.refusal.path).starts_with(&real_root)
+        };
+        let mut held = self.lock();
+        let lifted: Vec<PathBuf> = (held.quarantined.iter())
+            .filter(|(at, entry)| {
+                under(at, entry)
+                    && entry.refusal.trust == trust
+                    && matches!(
+                        entry.refusal.reason,
+                        SecurityReason::TooLarge { .. } | SecurityReason::OverLimit { .. }
+                    )
+            })
+            .map(|(at, _)| at.clone())
+            .collect();
+        if lifted.is_empty() {
+            return;
+        }
+        for at in lifted {
+            held.quarantined.remove(&at);
+            held.changed.insert(at, None);
+        }
+        self.write(&mut held);
+        self.report(&held);
+    }
+
     /// The refusals quarantined, but those whose file has read with another
     /// content since.
     pub fn quarantined(&self) -> Vec<SecurityRefusal> {
@@ -336,6 +404,22 @@ impl Refusals {
             .collect();
         refusals.sort_by(|a, b| a.path.cmp(&b.path));
         refusals
+    }
+
+    /// The refusals quarantined, as [`quarantined`](Self::quarantined) lists
+    /// them, each with the key its file is held by — what the editor shows
+    /// of a quarantined file.
+    pub fn quarantine(&self) -> Vec<(SecurityRefusal, QuarantineKey)> {
+        if let Some(successor) = self.successor() {
+            return successor.quarantine();
+        }
+        let mut quarantine: Vec<(SecurityRefusal, QuarantineKey)> =
+            (self.lock().quarantined.values())
+                .filter(|entry| !entry.superseded)
+                .map(|entry| (entry.refusal.clone(), entry.key))
+                .collect();
+        quarantine.sort_by(|a, b| a.0.path.cmp(&b.0.path));
+        quarantine
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Held> {

@@ -18,6 +18,7 @@ use crate::services::config::RecentProject;
 use crate::state::Screen;
 use crate::ui::format::format_ts;
 use khora_sdk::tool_ui::{FontFamilyHint, Icon, Interaction, UiBuilder, UiTheme};
+use khora_sdk::trust::ProjectTrust;
 use khora_tool_ui::widgets::paint::eyebrow;
 use khora_tool_ui::widgets::{
     self, Button, ButtonKind, Tone, button, chip, empty_state, icon_button, nav_item,
@@ -37,6 +38,10 @@ enum ProjectAction {
     Open(RecentProject),
     AskRemove(usize),
     AddNativeCode(usize),
+    /// Asks to trust a project, through its confirmation.
+    ConfirmTrust(RecentProject),
+    Restrict(RecentProject),
+    ShowInFolder(RecentProject),
 }
 
 /// Renders the home screen.
@@ -47,6 +52,8 @@ pub fn show_home(app: &mut HubApp, ui: &mut dyn UiBuilder) {
     if let Some(idx) = app.home.remove_confirm {
         show_remove_confirm_modal(app, ui, idx);
     }
+    super::trust::show_trust_confirm(app, ui);
+    super::trust::show_trust_prompt(app, ui);
 }
 
 // ── Sidebar ─────────────────────────────────────────────
@@ -247,7 +254,8 @@ fn show_main(app: &mut HubApp, ui: &mut dyn UiBuilder) {
         if widgets::bottom(rect) > widgets::bottom(body) {
             break; // Off-screen; the panel doesn't scroll yet.
         }
-        project_card(ui, &t, rect, proj, *src_idx, &mut action);
+        let trust = app.trust_store.decision(std::path::Path::new(&proj.path));
+        project_card(ui, &t, rect, proj, *src_idx, trust, &mut action);
     }
 
     apply_action(app, action);
@@ -259,6 +267,7 @@ fn project_card(
     rect: [f32; 4],
     proj: &RecentProject,
     idx: usize,
+    trust: Option<ProjectTrust>,
     action: &mut Option<ProjectAction>,
 ) -> Interaction {
     // The whole card is the Open affordance. Allocate it first so the icon
@@ -294,7 +303,23 @@ fn project_card(
         false,
     );
 
-    let name_w = (widgets::right(rect) - pad - ver_w - 8.0 - name_x).max(0.0);
+    // A restricted project says so beside its version: nothing of it runs.
+    let mut chips_w = ver_w;
+    if trust == Some(ProjectTrust::Restricted) {
+        let label = "Restricted";
+        let w = ui.measure_text(label, t.font_size_caption, FontFamilyHint::Proportional)[0] + 18.0;
+        chips_w += w + 6.0;
+        chip(
+            ui,
+            t,
+            [widgets::right(rect) - pad - chips_w, cy - 9.0, w, 18.0],
+            label,
+            Tone::Warning,
+            false,
+        );
+    }
+
+    let name_w = (widgets::right(rect) - pad - chips_w - 8.0 - name_x).max(0.0);
     ui.region_at(
         "project-card-name",
         [name_x, cy - 8.0, name_w, 16.0],
@@ -362,6 +387,31 @@ fn project_card(
         {
             *action = Some(ProjectAction::AddNativeCode(idx));
         }
+        bx -= bw + 2.0;
+
+        // What the user decided of the project, changed here.
+        icon_button(
+            ui,
+            t,
+            [bx, fy - 13.0, bw, 26.0],
+            &format!("hp-more-{idx}"),
+            Icon::More,
+            true,
+        );
+        ui.menu_on_click_last(&mut |menu| {
+            if trust != Some(ProjectTrust::Trusted) && menu.button("Trust this project\u{2026}") {
+                *action = Some(ProjectAction::ConfirmTrust(proj.clone()));
+                menu.close_menu();
+            }
+            if trust != Some(ProjectTrust::Restricted) && menu.button("Restrict this project") {
+                *action = Some(ProjectAction::Restrict(proj.clone()));
+                menu.close_menu();
+            }
+            if menu.button("Show in folder") {
+                *action = Some(ProjectAction::ShowInFolder(proj.clone()));
+                menu.close_menu();
+            }
+        });
     } else {
         let ts = format_ts(proj.last_opened);
         let w = ui.measure_text(&ts, t.font_size_caption, FontFamilyHint::Monospace)[0];
@@ -384,6 +434,14 @@ fn apply_action(app: &mut HubApp, action: Option<ProjectAction>) {
     match action {
         Some(ProjectAction::Open(proj)) => app.launch_project(&proj),
         Some(ProjectAction::AskRemove(idx)) => app.home.remove_confirm = Some(idx),
+        Some(ProjectAction::ConfirmTrust(proj)) => app.home.trust_confirm = Some(proj),
+        Some(ProjectAction::Restrict(proj)) => app.restrict_project(&proj),
+        Some(ProjectAction::ShowInFolder(proj)) => {
+            let path = std::path::PathBuf::from(&proj.path);
+            if let Err(e) = crate::services::project::reveal_in_explorer(&path) {
+                app.banner = Some(crate::state::Banner::error(format!("{e:#}")));
+            }
+        }
         Some(ProjectAction::AddNativeCode(idx)) => {
             let Some(proj) = app.config.recent_projects.get(idx).cloned() else {
                 return;

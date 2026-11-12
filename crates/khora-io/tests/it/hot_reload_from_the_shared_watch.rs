@@ -490,3 +490,92 @@ fn a_shader_saved_during_a_flood_is_overlaid_by_the_rescan() {
         pipelines.overlays()
     );
 }
+
+// ─── The shader pump, at the trust of the project open ──────────────────────
+
+/// A runtime watching a shader tree holding `lib/std/camera.wgsl`, the
+/// recording pipeline system and a device installed, the project open at
+/// `trust`. Returns the runtime, the watch, the pipelines, the shader file
+/// and the folder holding it.
+fn shader_tree_at(
+    trust: khora_io::trust::ProjectTrust,
+) -> (
+    Runtime,
+    Arc<AssetWatch>,
+    Arc<RecordingPipelines>,
+    std::path::PathBuf,
+    tempfile::TempDir,
+) {
+    let shaders = tempfile::TempDir::new().expect("a temp dir");
+    let camera = shaders.path().join("lib/std/camera.wgsl");
+    std::fs::create_dir_all(camera.parent().expect("a parent")).expect("makes the shader tree");
+    std::fs::write(&camera, "// before").expect("writes");
+    let (mut runtime, watch) = watching(&[shaders.path()]);
+    runtime
+        .resources
+        .insert(Arc::new(khora_io::trust::ProjectTrustState::new(trust)));
+    let pipelines = Arc::new(RecordingPipelines::default());
+    let as_system: Arc<dyn PipelineSystem> = pipelines.clone();
+    runtime.resources.insert(as_system);
+    let device: Arc<dyn GraphicsDevice> = Arc::new(UnusedDevice);
+    runtime.backends.insert(device);
+    (runtime, watch, pipelines, camera, shaders)
+}
+
+/// **A project overlay cannot replace a built-in module unless the project
+/// is trusted.** A `.wgsl` saved under a watched root maps to a `khora::`
+/// module — here `khora::std::camera`, one the engine ships:
+/// - while the project open is `Restricted`, the shader pump hands no
+///   overlay to the pipeline system at all, though the save reached the
+///   watch (a witness subscriber heard it, and the pump ran after);
+/// - while it is `Trusted`, the same save is overlaid under the built-in
+///   module's name.
+#[test]
+fn a_project_overlay_cannot_replace_a_builtin_module_unless_trusted() {
+    use khora_io::trust::ProjectTrust;
+
+    let (runtime, watch, pipelines, camera, _shaders) = shader_tree_at(ProjectTrust::Restricted);
+    std::fs::write(&camera, "// restricted").expect("edits");
+    let mut heard = false;
+    run_until("shader_hot_reload", &runtime, || {
+        heard |= watch
+            .poll_for("restricted_overlay_witness")
+            .iter()
+            .any(|event| event.rel_path.ends_with("camera.wgsl"));
+        heard
+    });
+    assert!(heard, "the premise: the save reached the watch");
+    // The pump runs once more after the witness heard the save: the change
+    // is retained for it whatever the witness read.
+    (data_system("shader_hot_reload").run)(
+        &mut World::new(),
+        &runtime,
+        &mut OutputDeck::new(),
+        khora_data::ecs::SystemContext {
+            since: khora_data::ecs::Tick(0),
+            resumed: false,
+            scope: None,
+        },
+    );
+    assert!(
+        pipelines.overlays().is_empty(),
+        "a restricted project overlays no shader: {:?}",
+        pipelines.overlays()
+    );
+
+    let (runtime, _watch, pipelines, camera, _shaders) = shader_tree_at(ProjectTrust::Trusted);
+    std::fs::write(&camera, "// trusted").expect("edits");
+    run_until("shader_hot_reload", &runtime, || {
+        pipelines
+            .overlays()
+            .iter()
+            .any(|(_, source)| source == "// trusted")
+    });
+    assert!(
+        pipelines
+            .overlays()
+            .contains(&("khora::std::camera".to_owned(), "// trusted".to_owned())),
+        "a trusted project's overlay replaces the built-in module: {:?}",
+        pipelines.overlays()
+    );
+}

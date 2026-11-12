@@ -600,3 +600,189 @@ fn the_intake_runs_after_the_asset_intake() {
         intake.runs_after
     );
 }
+
+// ─── At the trust of the project open ───────────────────────────────────────
+
+/// A real PNG of `width` × `height` pixels.
+fn png(width: u32, height: u32) -> Vec<u8> {
+    let mut png = Vec::new();
+    image::DynamicImage::ImageRgba8(image::RgbaImage::new(width, height))
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .expect("encode png");
+    png
+}
+
+/// An engine serving an empty project, holding the run's refusals and the
+/// trust of the project open as `trust`; a project holding an image of
+/// 16384 × 1 pixels — over the strict 8192, under a trusted project's 16384
+/// — opened in it. Returns the engine, its refusals and the project.
+fn opened_at(
+    trust: khora_io::trust::ProjectTrust,
+) -> (
+    Engine,
+    Arc<khora_io::trust::Refusals>,
+    tempfile::TempDir,
+    tempfile::TempDir,
+) {
+    use khora_io::trust::{ProjectTrustState, Refusals};
+
+    let serving = project(&[]);
+    let wide = project(&[("textures/wide.png", &png(16384, 1))]);
+    let mut engine = Engine::serving(opened(serving.path()));
+    let refusals = Arc::new(Refusals::new(None, None));
+    engine.runtime.resources.insert(Arc::clone(&refusals));
+    engine
+        .runtime
+        .resources
+        .insert(Arc::new(ProjectTrustState::new(trust)));
+
+    let ticket = engine.hub().file(wide.path(), IndexKind::Open);
+    assert_eq!(engine.settle(ticket), Ok(()), "the open lands");
+    (engine, refusals, serving, wide)
+}
+
+/// **A restricted project is opened at the strict limits**: the asset
+/// service an `Open` swaps in while the project open is `Restricted` reads
+/// its files at `Restricted` — an image of 16384 × 1 pixels, which a trusted
+/// project loads, is refused over the strict 8192, at the restricted trust,
+/// and quarantined in the run's refusals.
+#[test]
+fn a_restricted_project_is_opened_at_the_strict_limits() {
+    use khora_core::renderer::api::resource::CpuTexture;
+    use khora_io::trust::{ProjectTrust, SecurityReason, Trust};
+
+    let (engine, refusals, _serving, _wide) = opened_at(ProjectTrust::Restricted);
+
+    assert!(
+        locked(&engine.service())
+            .load::<CpuTexture>(&uuid("textures/wide.png"))
+            .is_err(),
+        "an image over the strict dimension does not load in a restricted project"
+    );
+    let refusal = refusals
+        .quarantined()
+        .into_iter()
+        .find(|refusal| refusal.path.ends_with("wide.png"))
+        .unwrap_or_else(|| {
+            panic!(
+                "the image is refused in the run's refusals: {:?}",
+                refusals.quarantined()
+            )
+        });
+    assert_eq!(
+        refusal.trust,
+        Trust::Restricted,
+        "read at the restricted trust"
+    );
+    match &refusal.reason {
+        SecurityReason::OverLimit { limit, .. } => {
+            assert_eq!(*limit, 8192, "the strict dimension cap")
+        }
+        other => panic!("refused over a limit, not: {other:?}"),
+    }
+}
+
+/// **A trusted project is opened at a project's limits**: the same image,
+/// opened while the project open is `Trusted`, loads whole, and nothing is
+/// refused.
+#[test]
+fn a_trusted_project_is_opened_at_the_project_limits() {
+    use khora_core::renderer::api::resource::CpuTexture;
+    use khora_io::trust::ProjectTrust;
+
+    let (engine, refusals, _serving, _wide) = opened_at(ProjectTrust::Trusted);
+
+    let texture = locked(&engine.service())
+        .load::<CpuTexture>(&uuid("textures/wide.png"))
+        .expect("16384 px load at a trusted project's limits");
+    assert_eq!(texture.size.width, 16384);
+    assert!(
+        refusals.quarantined().is_empty(),
+        "nothing refused: {:?}",
+        refusals.quarantined()
+    );
+}
+
+// ─── Trusting a project opened restricted ───────────────────────────────────
+
+/// What the editor's `grant_trust` does to an engine serving `wide`, a
+/// project opened restricted: the trust of the project open set to
+/// `Trusted`, the run's refusals made at the restricted limits released,
+/// and the project's `Open` filed anew. Returns its ticket.
+fn grant_trust(engine: &Engine, refusals: &khora_io::trust::Refusals, wide: &Path) -> IndexTicket {
+    use khora_io::trust::{ProjectTrust, ProjectTrustState, Trust};
+
+    engine
+        .runtime
+        .resources
+        .get::<Arc<ProjectTrustState>>()
+        .expect("the engine holds the trust of the project open")
+        .set(ProjectTrust::Trusted);
+    refusals.release_strict(Trust::Restricted);
+    engine.hub().file(wide, IndexKind::Open)
+}
+
+/// **A project trusted after a restricted open loads what its restricted
+/// limits refused**: the image of 16384 × 1 pixels refused over the strict
+/// 8192 while the project was restricted loads whole once it is trusted and
+/// its `Open` filed anew has landed — the service it swaps in reads at a
+/// trusted project's limits, and nothing stays quarantined.
+#[test]
+fn a_project_trusted_after_a_restricted_open_loads_what_its_limits_refused() {
+    use khora_core::renderer::api::resource::CpuTexture;
+    use khora_io::trust::ProjectTrust;
+
+    let (mut engine, refusals, _serving, wide) = opened_at(ProjectTrust::Restricted);
+    assert!(
+        locked(&engine.service())
+            .load::<CpuTexture>(&uuid("textures/wide.png"))
+            .is_err(),
+        "the premise: refused while restricted"
+    );
+
+    let ticket = grant_trust(&engine, &refusals, wide.path());
+    assert_eq!(engine.settle(ticket), Ok(()), "the trusted open lands");
+
+    let texture = locked(&engine.service())
+        .load::<CpuTexture>(&uuid("textures/wide.png"))
+        .expect("the image loads at a trusted project's limits");
+    assert_eq!(texture.size.width, 16384);
+    assert!(
+        refusals.quarantined().is_empty(),
+        "nothing stays quarantined: {:?}",
+        refusals.quarantined()
+    );
+}
+
+/// **A file read while the trusted open is landing is not kept from the
+/// trusted project.** Trusting a project files its `Open` anew; until it
+/// lands — the next boundary at the earliest — the restricted service still
+/// serves. A load of the image in that gap is refused again at the strict
+/// limits; once the trusted service has landed, the image loads, as it
+/// would have without that load.
+#[test]
+fn a_file_read_while_the_trusted_open_lands_is_not_kept_from_the_trusted_project() {
+    use khora_core::renderer::api::resource::CpuTexture;
+    use khora_io::trust::ProjectTrust;
+
+    let (mut engine, refusals, _serving, wide) = opened_at(ProjectTrust::Restricted);
+    assert!(
+        locked(&engine.service())
+            .load::<CpuTexture>(&uuid("textures/wide.png"))
+            .is_err(),
+        "the premise: refused while restricted"
+    );
+
+    let ticket = grant_trust(&engine, &refusals, wide.path());
+    // The restricted service still serves until the trusted open lands.
+    let _ = locked(&engine.service()).load::<CpuTexture>(&uuid("textures/wide.png"));
+    assert_eq!(engine.settle(ticket), Ok(()), "the trusted open lands");
+
+    let loaded = locked(&engine.service()).load::<CpuTexture>(&uuid("textures/wide.png"));
+    assert!(
+        loaded.is_ok(),
+        "the image loads in the trusted project: {:?} — quarantined: {:?}",
+        loaded.err().map(|error| format!("{error:#}")),
+        refusals.quarantined()
+    );
+}

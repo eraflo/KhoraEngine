@@ -237,6 +237,7 @@ pub(super) fn paint_new_script_tile(
         AssetTileKind::Script,
         true,
         None,
+        false,
         theme,
     );
     // The name typed is not always the name written: say which file it will

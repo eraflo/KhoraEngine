@@ -15,5 +15,6 @@
 //! The asset browser's own behaviour, beside its panel.
 
 mod new_script;
+mod quarantine;
 mod reveal;
 mod sub_assets;

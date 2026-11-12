@@ -24,7 +24,7 @@ use std::path::PathBuf;
 
 use khora_core::app::GameIdentity;
 use khora_io::profiles::ProfilePlace;
-use khora_io::user_dirs::{data_dir, home_dir, khora_dir, quarantine_path};
+use khora_io::user_dirs::{data_dir, home_dir, khora_dir, quarantine_path, trust_path};
 
 /// An environment holding `vars` and nothing else.
 fn env_of(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
@@ -161,5 +161,22 @@ fn the_quarantine_list_is_filed_with_the_user_files() {
     assert_eq!(
         quarantine_path(ProfilePlace::Player, &game("Ember", "1"), &empty),
         None
+    );
+}
+
+/// **The trust store is kept in the engine's folder**: one
+/// `<home>/.khora/trust.ron` the hub and the editor share, whatever the
+/// game; none when the home does not resolve.
+#[test]
+fn the_trust_store_is_kept_in_the_khora_folder() {
+    assert_eq!(
+        trust_path(&everything_set()),
+        Some(fake_home().join(".khora").join("trust.ron"))
+    );
+    assert_eq!(trust_path(&env_of(&[])), None);
+    assert_eq!(
+        trust_path(&env_of(&[("USERPROFILE", ""), ("HOME", "")])),
+        None,
+        "an empty variable names no folder"
     );
 }

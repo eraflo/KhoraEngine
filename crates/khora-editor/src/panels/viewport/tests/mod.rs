@@ -17,6 +17,7 @@
 //! its default scene, a part of a file for itself.
 
 mod broken_play_camera;
+mod restricted_play;
 
 use std::sync::{Arc, Mutex};
 

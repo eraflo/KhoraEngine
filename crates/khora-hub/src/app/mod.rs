@@ -17,6 +17,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
+use khora_sdk::trust::TrustStore;
 use khora_tool_ui::widgets::LoadingScreen;
 use khora_tool_ui::widgets::film::Film;
 
@@ -40,6 +41,11 @@ pub struct HubApp {
     /// The sign film over the hub while it opens, with the clock it plays
     /// on; gone once it has faded out.
     pub splash: Option<(LoadingScreen, Instant)>,
+    /// What the user decided of each project, shared with the editor.
+    pub trust_store: TrustStore,
+    /// The project whose launch waits for the user's trust decision: it was
+    /// never decided of, and is not launched until it is.
+    pub trust_prompt: Option<RecentProject>,
 }
 
 impl HubApp {
@@ -78,6 +84,10 @@ impl HubApp {
             home: HomeState::default(),
             settings,
             splash: Some((LoadingScreen::new(Film::Sign, 0.0, false), Instant::now())),
+            trust_store: TrustStore::new(khora_sdk::user_dirs::trust_path(&|key| {
+                std::env::var_os(key)
+            })),
+            trust_prompt: None,
         }
     }
 
@@ -134,7 +144,18 @@ impl HubApp {
 
     /// Launch the editor on `proj` using the matching engine binary.
     /// Surfaces success / failure as a banner.
+    ///
+    /// A project the user never decided of is not launched: it waits for
+    /// their answer (`trust_prompt`).
     pub fn launch_project(&mut self, proj: &RecentProject) {
+        if self
+            .trust_store
+            .decision(std::path::Path::new(&proj.path))
+            .is_none()
+        {
+            self.trust_prompt = Some(proj.clone());
+            return;
+        }
         let engines = self.available_engines();
         let engine = engines
             .iter()
@@ -164,6 +185,34 @@ impl HubApp {
                 }
             }
         }
+    }
+
+    /// The user's answer to the trust prompt (`trust_prompt`): a decision
+    /// is written to the trust store and the project waiting is launched;
+    /// `None` lets it go, launching nothing. Either way the prompt closes.
+    pub fn answer_trust(&mut self, answer: Option<khora_sdk::trust::ProjectTrust>) {
+        let Some(proj) = self.trust_prompt.take() else {
+            return;
+        };
+        if let Some(decision) = answer {
+            self.trust_store
+                .decide(std::path::Path::new(&proj.path), decision);
+            self.launch_project(&proj);
+        }
+    }
+
+    /// Restricts `proj` at once — the `Restrict this project` of its card's
+    /// `More` menu: the decision is written to the trust store, and a banner
+    /// says so.
+    pub fn restrict_project(&mut self, proj: &RecentProject) {
+        self.trust_store.decide(
+            std::path::Path::new(&proj.path),
+            khora_sdk::trust::ProjectTrust::Restricted,
+        );
+        self.banner = Some(Banner::info(format!(
+            "'{}' is restricted: its scripts, shaders and Build Game are off.",
+            proj.name
+        )));
     }
 
     /// Open a project that already exists on disk (from a folder
@@ -279,6 +328,9 @@ impl HubApp {
                 self.config
                     .push_recent(&self.new_project.name, &root, &version);
                 let _ = self.config.save();
+                // A project the user just made is theirs: trusted.
+                self.trust_store
+                    .decide(&root, khora_sdk::trust::ProjectTrust::Trusted);
 
                 match project::launch_editor(&engine.editor_binary, &root) {
                     Ok(()) => {
@@ -306,3 +358,6 @@ impl Default for HubApp {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -19,7 +19,7 @@ use std::sync::{Arc, Mutex};
 use khora_sdk::{EditorState, GameWorld, SerializationGoal};
 
 use crate::project_vfs::ProjectVfs;
-use crate::{build_game, hot_reload, scene_io};
+use crate::{build_game, scene_io};
 
 /// Save dispatch: routes through the project VFS when the target path
 /// lives under `<project>/assets/`, falls back to direct `std::fs` for
@@ -216,6 +216,27 @@ fn load_failed(message: String) -> khora_sdk::khora_core::problems::Problem {
     }
 }
 
+/// Whether Build Game is refused in a project at `trust` — a restricted
+/// project's build would run its code — saying why in the editor's
+/// `EditorState::refusal` when it is. A trusted project's build is not
+/// refused, and leaves the refusal as it was.
+pub fn build_game_refused(
+    trust: khora_sdk::trust::ProjectTrust,
+    editor_state: &Arc<Mutex<EditorState>>,
+) -> bool {
+    if trust == khora_sdk::trust::ProjectTrust::Trusted {
+        return false;
+    }
+    log::warn!("Build Game is refused: the project is restricted");
+    if let Ok(mut state) = editor_state.lock() {
+        state.refusal = Some(BUILD_REFUSED.to_owned());
+    }
+    true
+}
+
+/// Why Build Game is refused in a restricted project.
+const BUILD_REFUSED: &str = "Build Game is off in restricted mode: building runs this project's                              code. Trust the project to build it.";
+
 /// Build Game dispatch: packs the project's assets, copies the host-target
 /// `khora-runtime` binary into `<project>/dist/<target>/`, and writes the
 /// runtime config so the staged binary auto-loads the project's default
@@ -263,40 +284,9 @@ pub fn run_build_game(
     }
 }
 
-/// Bridge: open a folder picker and rebuild the project VFS at the new
-/// location. Used when the user invokes "File > Open Project…" while
-/// another project is already loaded.
-pub fn browse_and_open_project(
-    editor_state: &Arc<Mutex<EditorState>>,
-    asset_watch: &Arc<khora_sdk::AssetWatch>,
-) -> Option<Arc<Mutex<ProjectVfs>>> {
-    let path = rfd::FileDialog::new().pick_folder()?;
-
-    let metrics = std::sync::Arc::new(khora_sdk::MetricsRegistry::new());
-    match ProjectVfs::open_watched(path.clone(), metrics, Arc::clone(asset_watch)) {
-        Ok(pvfs) => {
-            let entries = hot_reload::collect_asset_entries(&pvfs);
-            let dirs = pvfs.list_dirs();
-            if let Ok(mut state) = editor_state.lock() {
-                state.project_folder = Some(path.to_string_lossy().to_string());
-                state.asset_entries = entries;
-                state.asset_dirs = dirs;
-                state.asset_epoch = state.asset_epoch.wrapping_add(1);
-                log::info!(
-                    "Asset browser: scanned '{}' - {} assets found",
-                    path.display(),
-                    state.asset_entries.len()
-                );
-            }
-            Some(Arc::new(Mutex::new(pvfs)))
-        }
-        Err(e) => {
-            log::error!(
-                "Failed to open ProjectVfs for '{}': {:#}",
-                path.display(),
-                e
-            );
-            None
-        }
-    }
+/// "File > Open Project…": the folder the user picks, if any. The project is
+/// opened the one way the editor opens a project — what the user decided of
+/// it decides — once the frame can (`EditorApp::open_picked`).
+pub fn pick_project_folder() -> Option<std::path::PathBuf> {
+    rfd::FileDialog::new().pick_folder()
 }

@@ -23,9 +23,11 @@ pub use crate::after_index::{AfterIndex, Landed};
 use anyhow::{bail, Context, Result};
 use khora_sdk::khora_core::asset::{asset_key, AssetUUID};
 use khora_sdk::khora_core::physics::PhysicsSettings;
+#[cfg(test)]
+use khora_sdk::MetricsRegistry;
 use khora_sdk::{
     AssetChangeEvent, AssetIdRegistry, AssetService, AssetWatch, AssetWriter, FileLoader,
-    IndexBuilder, MetricsRegistry,
+    IndexBuilder,
 };
 use std::{
     path::{Path, PathBuf},
@@ -89,7 +91,10 @@ impl ProjectVfs {
     /// from the engine's shared `watch` — one subscriber among the script and
     /// shader pumps — rather than from a watcher of its own.
     /// [`Self::poll_changes`] then reports the changes under this project's
-    /// assets root only.
+    /// assets root only. A run opens a project through the engine's index
+    /// (`start_opening_project`), at the trust its user decided; this builds
+    /// one on the spot, for tests.
+    #[cfg(test)]
     pub fn open_watched(
         root: PathBuf,
         metrics: Arc<MetricsRegistry>,

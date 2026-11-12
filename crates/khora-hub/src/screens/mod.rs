@@ -12,6 +12,10 @@ mod engine_manager;
 mod home;
 mod new_project;
 mod settings;
+mod trust;
+
+#[cfg(test)]
+mod tests;
 
 pub use engine_manager::show_engine_manager;
 pub use home::show_home;

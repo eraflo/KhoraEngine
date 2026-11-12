@@ -29,6 +29,7 @@ use khora_data::ecs::SystemContext;
 use std::sync::Arc;
 
 use khora_core::lane::OutputDeck;
+use khora_core::problems::{Problem, ProblemSeverity, ProblemSource, Problems};
 use khora_core::renderer::traits::{GraphicsDevice, PipelineSystem};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
@@ -103,6 +104,39 @@ fn changed_files(event: &AssetChangeEvent) -> Vec<(std::path::PathBuf, String)> 
         .collect()
 }
 
+/// Lists the overlay at `file` among what the restricted mode left unused,
+/// under [`ProblemSource::Restricted`] — each file once; the list is cleared
+/// when the project is trusted.
+fn list_ignored(runtime: &Runtime, file: &std::path::Path) {
+    let Some(problems) = runtime.resources.get::<Arc<Problems>>() else {
+        return;
+    };
+    let module = file.display().to_string();
+    let mut listed = problems.of_source(&ProblemSource::Restricted);
+    if listed
+        .iter()
+        .any(|problem| problem.module.as_deref() == Some(&module))
+    {
+        return;
+    }
+    listed.push(Problem {
+        severity: ProblemSeverity::Warning,
+        module: Some(module),
+        line: 0,
+        column: 0,
+        message: "Shader overlay ignored".to_owned(),
+        note: Some(
+            "A restricted project's shaders are not used. Trust the project to use them."
+                .to_owned(),
+        ),
+        entity: None,
+        behavior: None,
+        component: None,
+        field: None,
+    });
+    problems.report(ProblemSource::Restricted, listed);
+}
+
 fn shader_hot_reload_system(
     _world: &mut World,
     runtime: &Runtime,
@@ -128,12 +162,23 @@ fn shader_hot_reload_system(
         .get::<Arc<crate::trust::Refusals>>()
         .cloned()
         .unwrap_or_else(|| Arc::new(crate::trust::Refusals::new(None, None)));
+    // A restricted project's shaders never replace the engine's.
+    let restricted =
+        crate::trust::ProjectTrustState::of(runtime) == crate::trust::ProjectTrust::Restricted;
     let mut changed = false;
     for (root, rel_path) in events.iter().flat_map(changed_files) {
         let Some(logical) = logical_name_for_shader_path(&rel_path) else {
             continue; // Not a shader file.
         };
+        if restricted {
+            log::debug!(
+                "shader hot-reload: {rel_path} is not used for `{logical}`: the project is restricted"
+            );
+            list_ignored(runtime, &root.join(&rel_path));
+            continue;
+        }
         if let Some(source) = overlay_source(&root, &rel_path, &refusals) {
+            log::info!("shader hot-reload: {rel_path} replaces the engine's `{logical}`");
             pipeline_system.set_overlay_source(&logical, source);
             changed = true;
         }

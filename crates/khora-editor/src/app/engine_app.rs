@@ -78,6 +78,7 @@ impl EngineApp for EditorApp {
             shell: None,
             loading: None,
             brand_installed: false,
+            trust_view: Default::default(),
             overlay: None,
             raw_window: None,
             monitors: None,
@@ -94,6 +95,9 @@ impl EngineApp for EditorApp {
             mounted_scripts: None,
             opening: None,
             startup_hold: None,
+            trust_store: None,
+            project_trust_state: None,
+            picked_project: None,
             problems: None,
             script_catalog: None,
             prefab_view: None,
@@ -139,12 +143,7 @@ impl EngineApp for EditorApp {
         if let Some(Some(project)) = crate::bootstrap::PROJECT_PATH.get() {
             let root = std::path::PathBuf::from(project);
             if root.exists() {
-                self.opening = super::project_open::start_opening_project(
-                    root,
-                    runtime,
-                    &self.editor_state,
-                    &mut self.startup_hold,
-                );
+                self.open_at_its_trust(root, runtime);
             } else {
                 log::warn!("--project path does not exist: {project}");
             }
@@ -214,13 +213,16 @@ impl EngineApp for EditorApp {
             }
         }
 
-        commands::process_menu_actions(
+        let trust = self.project_trust();
+        if let Some(picked) = commands::process_menu_actions(
             &mut self.project_vfs,
-            &self.asset_watch,
             &self.editor_state,
             &self.command_history,
             world,
-        );
+            trust,
+        ) {
+            self.picked_project = Some(picked);
+        }
 
         commands::process_pending_save_as_prefab(
             self.project_vfs.as_ref(),
@@ -366,6 +368,13 @@ impl EngineApp for EditorApp {
                 commands::forget_history(&self.command_history);
             }
         }
+        // The user's answers about trust; a project picked by File > Open
+        // Project, opened at its trust.
+        self.follow_trust_answers(runtime);
+        if let Some(root) = self.picked_project.take() {
+            self.open_at_its_trust(root, runtime);
+        }
+        self.follow_project_trust(runtime);
         // The `--project`, once its index landed: its VFS over the engine's
         // assets, its default scene filed.
         // A project the user opened meanwhile — the film gave up waiting —

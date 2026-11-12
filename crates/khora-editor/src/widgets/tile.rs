@@ -118,6 +118,7 @@ pub fn paint_asset_tile(
     kind: AssetTileKind,
     selected: bool,
     badge: Option<crate::panels::problems::view::TileBadge>,
+    quarantined: bool,
     theme: &UiTheme,
 ) -> AssetTileInteraction {
     let [w, h] = size;
@@ -151,6 +152,8 @@ pub fn paint_asset_tile(
     );
     if selected {
         ui.paint_rect_stroke([thumb_x, thumb_y], [tw, th], theme.accent_c, 4.0, 1.5);
+    } else if quarantined {
+        paint_dashed_frame(ui, [thumb_x, thumb_y, tw, th], with_alpha(theme.error, 0.8));
     }
 
     // Centered icon
@@ -218,14 +221,54 @@ pub fn paint_asset_tile(
         [origin[0] + 4.0, name_y],
         &truncated,
         11.0,
-        if selected { theme.text } else { theme.text_dim },
+        if quarantined {
+            theme.error
+        } else if selected {
+            theme.text
+        } else {
+            theme.text_dim
+        },
     );
+    // A quarantined file is refused: a lock on its thumbnail says it is
+    // held, not merely flagged.
+    if quarantined {
+        paint::icon(
+            ui,
+            [thumb_x + 5.0, thumb_y + 5.0],
+            Icon::Lock,
+            12.0,
+            theme.error,
+        );
+    }
 
     AssetTileInteraction {
         clicked: interaction.clicked,
         double_clicked: interaction.double_clicked,
         hovered: interaction.hovered,
     }
+}
+
+/// Paints a dashed frame around `rect`: a refused file's thumbnail.
+fn paint_dashed_frame(ui: &mut dyn UiBuilder, rect: [f32; 4], color: [f32; 4]) {
+    let [x, y, w, h] = rect;
+    let (dash, gap) = (4.0, 3.0);
+    let mut dashes = |from: [f32; 2], along: [f32; 2], length: f32| {
+        let mut at = 0.0;
+        while at < length {
+            let end = (at + dash).min(length);
+            ui.paint_line(
+                [from[0] + along[0] * at, from[1] + along[1] * at],
+                [from[0] + along[0] * end, from[1] + along[1] * end],
+                color,
+                1.0,
+            );
+            at += dash + gap;
+        }
+    };
+    dashes([x, y], [1.0, 0.0], w);
+    dashes([x, y + h], [1.0, 0.0], w);
+    dashes([x, y], [0.0, 1.0], h);
+    dashes([x + w, y], [0.0, 1.0], h);
 }
 
 /// Paints the disclosure chip of a tile that holds parts (a glTF file's

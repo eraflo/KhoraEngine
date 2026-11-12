@@ -270,6 +270,9 @@ impl AssetService {
 
     /// How much this service trusts the files it decodes: the limits each
     /// decode has. `Project` until set.
+    ///
+    /// Set it before [`Self::register_default_decoders`]: the readers those
+    /// decoders hold (a glTF's buffers and images) take it then.
     pub fn set_trust(&mut self, trust: crate::trust::Trust) {
         self.reader_mut().trust = trust;
     }

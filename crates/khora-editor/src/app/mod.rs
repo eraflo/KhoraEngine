@@ -43,6 +43,7 @@ mod engine_app;
 mod layout;
 pub(crate) mod project_open;
 mod startup;
+mod trust_view;
 
 #[cfg(test)]
 mod tests;
@@ -102,6 +103,13 @@ pub struct EditorApp {
     /// The startup's hold on the engine's `Readiness` while the project
     /// files what it opens with in steps.
     startup_hold: Option<khora_sdk::ReadinessHold>,
+    /// What the user decided of each project, read when a project is first
+    /// opened — never by an editor that opens none, a test's.
+    trust_store: Option<khora_sdk::trust::TrustStore>,
+    /// The trust of the project open, as the engine shares it.
+    project_trust_state: Option<Arc<khora_sdk::trust::ProjectTrustState>>,
+    /// The folder File > Open Project picked, opened once the frame can.
+    picked_project: Option<std::path::PathBuf>,
     /// What is wrong with the project's scripts, as the engine finds it.
     problems: Option<Arc<khora_sdk::khora_core::problems::Problems>>,
     /// What the project's scripts declare, as the engine lists it — the
@@ -130,6 +138,8 @@ pub struct EditorApp {
     loading: Option<crate::panels::loading::LoadingHandle>,
     /// Whether the brand theme and typefaces are on the shell already.
     brand_installed: bool,
+    /// What the editor last showed of the project's trust.
+    trust_view: trust_view::TrustView,
 }
 
 impl EditorApp {
@@ -148,6 +158,10 @@ impl EditorApp {
         self.problems = runtime
             .resources
             .get::<Arc<khora_sdk::khora_core::problems::Problems>>()
+            .cloned();
+        self.project_trust_state = runtime
+            .resources
+            .get::<Arc<khora_sdk::trust::ProjectTrustState>>()
             .cloned();
         self.script_catalog = runtime
             .resources

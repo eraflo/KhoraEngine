@@ -181,6 +181,15 @@ impl EditorApp {
                     brand_theme.clone(),
                 )),
             );
+            // The trust prompt and confirmation, over everything: a question
+            // the project waits on.
+            shell.register_panel(
+                PanelLocation::Floating(200),
+                Box::new(crate::panels::trust::TrustPanel::new(
+                    self.editor_state.clone(),
+                    brand_theme.clone(),
+                )),
+            );
             log::info!("EditorApp: panels registered with shell.");
         }
         self.shell = Some(shell_ref);

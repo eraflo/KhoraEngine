@@ -33,7 +33,7 @@ use khora_telemetry::MetricsRegistry;
 
 use crate::asset::{AssetService, FileLoader, IndexHub, IndexOutcome};
 use crate::serialization::prefab_catalog;
-use crate::trust::{FileGuard, Refusals, Trust};
+use crate::trust::{FileGuard, ProjectTrustState, Refusals};
 
 /// Takes in every project index the reserve holds, into the runtime's asset
 /// service, and files each outcome in the runtime's `IndexHub`. Nothing
@@ -112,14 +112,25 @@ fn take_in(runtime: &Runtime, indexed: IndexedAssets) -> IndexOutcome {
                 .get::<Arc<Refusals>>()
                 .cloned()
                 .unwrap_or_else(|| Arc::new(Refusals::new(None, None)));
+            // Read at the trust the project was opened at: a restricted
+            // project's files at the strict limits.
+            let trust = ProjectTrustState::of(runtime).trust();
             let io = Box::new(FileLoader::guarded(FileGuard::new(
                 &assets_root,
-                Trust::Project,
+                trust,
                 Arc::clone(&refusals),
             )));
             let mut opened = AssetService::new(&bytes, io, Arc::new(MetricsRegistry::new()), None)
                 .map_err(|error| format!("{error:#}"))?;
+            // A trusted open lifts what the project's restricted limits
+            // refused — read again, at a trusted project's — whatever was
+            // refused before it landed.
+            if trust == crate::trust::Trust::Project {
+                refusals
+                    .release_strict_under(crate::trust::Trust::Restricted, &indexed.project_root);
+            }
             opened.set_refusals(refusals);
+            opened.set_trust(trust);
             opened.register_default_decoders(&assets_root);
             opened.serve_project(&indexed.project_root);
             // The engine holds the service it serves by this one handle: the

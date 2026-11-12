@@ -45,7 +45,7 @@ pub use shell::EditorShell;
 pub use state::{
     AssetEntry, ComponentJson, ComponentOverride, EditorMode, EditorState, EntityIcon, GizmoMode,
     InspectedEntity, InspectedPrefab, LogEntry, LogLevel, PlayMode, PrefabApplyScope, PropertyEdit,
-    SceneNode, StatusBarData,
+    QuarantinedAsset, SceneNode, StatusBarData, TrustSummary,
 };
 pub use ui_builder::{FontFamilyHint, InlineEditEvent, Interaction, TextAlign, UiBuilder};
 pub use viewport_texture::ViewportTextureHandle;
