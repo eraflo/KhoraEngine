@@ -33,7 +33,8 @@ use khora_core::renderer::GraphicsDevice;
 use khora_core::ui::text::{GlyphKey, GlyphKind, ShapedGlyph};
 use khora_data::ui::{ExtractedUiText, GlyphAtlas, GlyphSlot, UiScene};
 
-use super::{fallback_view, UiGpu, UiInstanceData};
+use super::fallback::fallback_view;
+use super::lane::{UiGpu, UiInstanceData};
 
 /// Glyphs the glyph storage holds before it first grows.
 pub(super) const GLYPH_CAPACITY: usize = 1024;

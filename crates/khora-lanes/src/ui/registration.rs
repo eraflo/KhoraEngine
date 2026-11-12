@@ -15,10 +15,10 @@
 //! The UI family's registration: the one `LaneAgent` the engine boots for
 //! it, its phase and its lane.
 
+use super::{UiFamily, UiLane};
 use khora_core::agent::{AgentImportance, ExecutionPhase};
-use khora_lanes::ui_lane::{UiFamily, UiLane};
 
-use crate::registered_agent::RegisteredAgent;
+use khora_core::agent::RegisteredAgent;
 
 khora_script::inventory::submit! {
     RegisteredAgent(khora_core::register_agent! {

@@ -69,7 +69,7 @@ mod every_pub_mod {
     use khora_lanes::script_lane::runtime as _;
     use khora_lanes::shadows as _;
     use khora_lanes::skybox as _;
-    use khora_lanes::ui_lane as _;
+    use khora_lanes::ui as _;
 }
 
 // ---------------------------------------------------------------------------
@@ -318,14 +318,14 @@ fn module_skybox_lane_paths_still_resolve() {
 
 #[test]
 fn module_ui_lane_paths_still_resolve() {
-    let _ = type_name::<khora_lanes::ui_lane::UiLane>();
-    is_debug::<khora_lanes::ui_lane::UiLane>();
-    is_default::<khora_lanes::ui_lane::UiLane>();
-    let _ = type_name::<khora_lanes::ui_lane::UiFamily>();
-    let _ = type_name::<khora_lanes::ui_lane::UiInputs<'static>>();
-    let _ = type_name::<khora_lanes::ui_lane::UiOutputs<'static>>();
-    is_typed_lane::<khora_lanes::ui_lane::UiLane>();
-    is_lane_family::<khora_lanes::ui_lane::UiFamily>();
+    let _ = type_name::<khora_lanes::ui::UiLane>();
+    is_debug::<khora_lanes::ui::UiLane>();
+    is_default::<khora_lanes::ui::UiLane>();
+    let _ = type_name::<khora_lanes::ui::UiFamily>();
+    let _ = type_name::<khora_lanes::ui::UiInputs<'static>>();
+    let _ = type_name::<khora_lanes::ui::UiOutputs<'static>>();
+    is_typed_lane::<khora_lanes::ui::UiLane>();
+    is_lane_family::<khora_lanes::ui::UiFamily>();
 }
 
 #[test]
@@ -498,8 +498,8 @@ mod paths_used_by_other_crates {
     use khora_lanes::shadows::ShadowsFamily as _; // khora-agents
     use khora_lanes::shadows::ShadowsLane as _; // khora-agents
     use khora_lanes::skybox::SkyboxLane as _; // khora-agents
-    use khora_lanes::ui_lane::UiFamily as _; // khora-agents
-    use khora_lanes::ui_lane::UiLane as _; // khora-agents
+    use khora_lanes::ui::UiFamily as _; // khora-agents
+    use khora_lanes::ui::UiLane as _; // khora-agents
 }
 
 #[test]
@@ -509,5 +509,5 @@ fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_lanes::overlay_lane::WireframeLane::default; // khora-agents
     let _ = khora_lanes::script_lane::ScriptRuntime::new; // khora-agents, khora-sdk
     let _ = khora_lanes::skybox::SkyboxLane::default; // khora-agents
-    let _ = khora_lanes::ui_lane::UiLane::default; // khora-agents
+    let _ = khora_lanes::ui::UiLane::default; // khora-agents
 }

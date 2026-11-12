@@ -16,7 +16,7 @@ transform gizmos, dock layout, theme, and the egui/Taffy plumbing.
   `EditorState` pending actions: scene, prefab, material, asset ops), `scene_io/` (project-relative save/
   load, Play snapshot/restore), `gizmo/`, `project_vfs.rs`, `hot_reload.rs`.
 - Editor UI types: `crates/khora-core/src/ui/editor/` (gizmos, viewport, panels, theme).
-- UI lanes / layout: `crates/khora-lanes/src/ui_lane/`, `crates/khora-agents/src/ui_agent/`, `crates/khora-infra/src/ui/{taffy,egui}/`.
+- UI lanes / layout: `crates/khora-lanes/src/ui/`, `crates/khora-infra/src/ui/{taffy,egui}/`.
 - SDK surface: `khora_sdk::editor_ui` / `tool_ui` re-exports (panels import from the SDK only).
 
 ## Prefab overrides (inspector)

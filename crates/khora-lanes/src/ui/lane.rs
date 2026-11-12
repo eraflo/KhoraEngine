@@ -48,23 +48,17 @@ use khora_core::renderer::GraphicsDevice;
 use khora_data::ui::{GlyphAtlas, UiImageAtlas, UiScene};
 use khora_macros::LaneInputs;
 
+use super::family::{UiFamily, UiOutputs};
 use crate::render_lane::util::Block;
 
-mod fallback;
-mod glyphs;
-mod pipeline;
-mod ui_family;
-
-use fallback::{destroy_texture, fallback_view};
-use glyphs::{glyph_bind_group, glyph_instances_of, GLYPH_CAPACITY};
-use pipeline::{
+use super::fallback::{destroy_texture, fallback_view};
+use super::glyphs::{glyph_bind_group, glyph_instances_of, GLYPH_CAPACITY};
+use super::pipeline::{
     ui_atlas_layout_entries, ui_global_layout_entries, ui_glyph_atlas_layout_entries,
     ui_instance_layout_entries, ui_pipeline_spec, ui_sampler_descriptor, ui_text_pipeline_spec,
     UI_ATLAS_LAYOUT_LABEL, UI_GLOBAL_LAYOUT_LABEL, UI_GLYPH_ATLAS_LAYOUT_LABEL,
     UI_INSTANCE_LAYOUT_LABEL,
 };
-
-pub use ui_family::*;
 
 /// UI nodes the instance storage holds before it first grows.
 const UI_CAPACITY: usize = 1024;
@@ -88,13 +82,13 @@ const GLYPH_GPU: Duration = Duration::from_nanos(30);
 /// `ui.wgsl` and `GlyphInstance` in `ui_text.wgsl`.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct UiInstanceData {
-    pos: [f32; 2],
-    size: [f32; 2],
-    color: [f32; 4],
-    params: [f32; 4],
-    uv_min: [f32; 2],
-    uv_max: [f32; 2],
+pub(super) struct UiInstanceData {
+    pub(super) pos: [f32; 2],
+    pub(super) size: [f32; 2],
+    pub(super) color: [f32; 4],
+    pub(super) params: [f32; 4],
+    pub(super) uv_min: [f32; 2],
+    pub(super) uv_max: [f32; 2],
 }
 
 /// The UI lane. Holds what it built on the device; `None` before the first
@@ -126,30 +120,30 @@ impl Default for UiLane {
 
 /// What the UI builds on the device.
 #[derive(Debug)]
-struct UiGpu {
+pub(super) struct UiGpu {
     /// The projection matrix and its set-0 bind group.
-    projection: Block,
+    pub(super) projection: Block,
     /// The node instances and their set-1 bind group, grown when a frame
     /// brings more nodes than they hold.
-    instances: Block,
+    pub(super) instances: Block,
     /// The glyph instances and their set-1 bind group, grown likewise.
-    glyphs: Block,
-    instance_layout: BindGroupLayoutId,
-    atlas_layout: BindGroupLayoutId,
-    glyph_atlas_layout: BindGroupLayoutId,
-    sampler: SamplerId,
+    pub(super) glyphs: Block,
+    pub(super) instance_layout: BindGroupLayoutId,
+    pub(super) atlas_layout: BindGroupLayoutId,
+    pub(super) glyph_atlas_layout: BindGroupLayoutId,
+    pub(super) sampler: SamplerId,
     /// The two pipelines and the colour format and samples they were built
     /// for.
     pipelines: Option<((TextureFormat, u32), UiPipelines)>,
     /// The quads' set-2 bind group and the atlas view it binds, rebuilt only
     /// when the view changes.
-    atlas_bind_group: Option<(TextureViewId, BindGroupId)>,
+    pub(super) atlas_bind_group: Option<(TextureViewId, BindGroupId)>,
     /// The glyphs' set-2 bind group and the `(mask, colour)` views it binds,
     /// rebuilt only when one of them changes.
-    glyph_bind_group: Option<((TextureViewId, TextureViewId), BindGroupId)>,
+    pub(super) glyph_bind_group: Option<((TextureViewId, TextureViewId), BindGroupId)>,
     /// A one-texel texture set 2 binds in place of an atlas not made yet: the
     /// layouts need a texture even when nothing samples one.
-    fallback: Option<(TextureId, TextureViewId)>,
+    pub(super) fallback: Option<(TextureId, TextureViewId)>,
 }
 
 /// The UI's two pipelines, built for one colour format and sample count.

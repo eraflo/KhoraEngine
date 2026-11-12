@@ -26,7 +26,7 @@ use khora_core::renderer::api::resource::{
 use khora_core::renderer::error::ResourceError;
 use khora_core::renderer::GraphicsDevice;
 
-use super::UiGpu;
+use super::lane::UiGpu;
 
 /// The view of the lane's one-texel fallback, made the first time an atlas
 /// is missing and kept until shutdown.

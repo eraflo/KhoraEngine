@@ -26,7 +26,7 @@ use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 use khora_data::ui::{GlyphAtlas, UiImageAtlas};
-use khora_lanes::ui_lane::UiFamily;
+use khora_lanes::ui::UiFamily;
 
 use crate::shadows_family::fixtures::{Pipelines, SubmitLog};
 

@@ -23,4 +23,3 @@ pub mod overlay_agent;
 pub mod registered_agent;
 pub mod render_agent;
 pub mod script_agent;
-pub mod ui_agent;

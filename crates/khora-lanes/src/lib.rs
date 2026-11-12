@@ -26,7 +26,7 @@ pub mod render_lane;
 pub mod script_lane;
 pub mod shadows;
 pub mod skybox;
-pub mod ui_lane;
+pub mod ui;
 
 #[cfg(test)]
 pub(crate) mod tests;

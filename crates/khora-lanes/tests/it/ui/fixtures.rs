@@ -91,7 +91,7 @@ use khora_data::ui::{
     ExtractedUiNode, ExtractedUiText, GlyphAtlas, GlyphSlot, UiBorder, UiColor, UiImage,
     UiImageAtlas, UiScene, UiTextLayout, UiTransform,
 };
-use khora_lanes::ui_lane::UiLane;
+use khora_lanes::ui::UiLane;
 
 /// The UI lane's one level.
 pub const LEVEL: usize = 0;

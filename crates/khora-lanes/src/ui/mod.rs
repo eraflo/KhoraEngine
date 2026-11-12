@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The UI family's agent: its registration, and nothing else.
-//!
-//! The engine boots one [`LaneAgent`](crate::agent::LaneAgent) from it
-//! in the OUTPUT phase. Each frame the agent lends the
-//! [`UiLane`](khora_lanes::ui_lane::UiLane) the frame's target, the UI Flow's
-//! `UiScene`, the image atlas and the glyph atlas, and commits its pass
-//! into [`UiPassSlot`](khora_data::render::UiPassSlot).
+//! The UI family: its lane, which lays out and draws the UI tree, and its
+//! registration.
 
-mod agent;
+mod fallback;
+mod family;
+mod glyphs;
+mod lane;
+mod pipeline;
+mod registration;
+
+pub use family::*;
+pub use lane::*;

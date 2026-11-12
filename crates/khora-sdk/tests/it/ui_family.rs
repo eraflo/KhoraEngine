@@ -80,14 +80,14 @@ fn the_engine_boots_the_ui_family_as_one_lane_agent() {
                 .map(|_| {
                     registry
                         .origin(AgentId::new("ui"))
-                        .is_some_and(|module| module.starts_with("khora_agents::"))
+                        .is_some_and(|module| module == "khora_lanes::ui::registration")
                 })
         })
         .collect();
     assert_eq!(
         ui,
         [true],
-        "one UI agent in OUTPUT, the lane agent of the UI family, registered from khora-agents"
+        "one UI agent in OUTPUT, the lane agent of the UI family, registered in its family folder"
     );
 }
 
