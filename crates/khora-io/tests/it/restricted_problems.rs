@@ -177,16 +177,31 @@ fn a_restricted_projects_overlay_is_listed_as_ignored() {
 
 // ─── A pipeline system and a device that do nothing ─────────────────────────
 
-/// A pipeline system that records the overlays it is handed and builds
+/// A pipeline system that records the overlays it is handed and the times
+/// they are cleared, holds the overlays set since the last clear, and builds
 /// nothing.
 #[derive(Default)]
-struct RecordingPipelines {
+pub(super) struct RecordingPipelines {
     overlays: Mutex<Vec<(String, String)>>,
+    held: Mutex<std::collections::BTreeMap<String, String>>,
+    clears: std::sync::atomic::AtomicUsize,
 }
 
 impl RecordingPipelines {
-    fn overlays(&self) -> Vec<(String, String)> {
+    /// Every overlay handed to it, in order, cleared or not.
+    pub(super) fn overlays(&self) -> Vec<(String, String)> {
         self.overlays.lock().expect("the overlay lock").clone()
+    }
+
+    /// The overlays it holds now: each module's last source set since the
+    /// last clear.
+    pub(super) fn held(&self) -> std::collections::BTreeMap<String, String> {
+        self.held.lock().expect("the held lock").clone()
+    }
+
+    /// How many times the overlays were cleared.
+    pub(super) fn clears(&self) -> usize {
+        self.clears.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 
@@ -225,7 +240,16 @@ impl PipelineSystem for RecordingPipelines {
         self.overlays
             .lock()
             .expect("the overlay lock")
-            .push((logical_path.to_owned(), source));
+            .push((logical_path.to_owned(), source.clone()));
+        self.held
+            .lock()
+            .expect("the held lock")
+            .insert(logical_path.to_owned(), source);
+    }
+    fn clear_overlays(&self) {
+        self.held.lock().expect("the held lock").clear();
+        self.clears
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
     fn recompose_dirty(&self, _device: &dyn GraphicsDevice) -> Result<(), RenderError> {
         Ok(())
@@ -235,7 +259,7 @@ impl PipelineSystem for RecordingPipelines {
 /// A device the shader pump only hands on to `recompose_dirty`: it is never
 /// asked to do anything.
 #[derive(Debug)]
-struct UnusedDevice;
+pub(super) struct UnusedDevice;
 
 impl GraphicsDevice for UnusedDevice {
     fn create_shader_module(

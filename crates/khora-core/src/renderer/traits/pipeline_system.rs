@@ -98,6 +98,12 @@ pub trait PipelineSystem: Send + Sync {
     /// until the hot-reload phase wires it.
     fn set_overlay_source(&self, _logical_path: &str, _source: String) {}
 
+    /// Hot-reload: drops every overlay set by
+    /// [`set_overlay_source`](Self::set_overlay_source), each module back to
+    /// the engine's own source, recomposed at the next
+    /// [`recompose_dirty`](Self::recompose_dirty). Default no-op.
+    fn clear_overlays(&self) {}
+
     /// Hot-reload: recompose any modules marked dirty by
     /// [`set_overlay_source`](Self::set_overlay_source) and rebuild the
     /// affected cached pipelines in place. Default no-op.

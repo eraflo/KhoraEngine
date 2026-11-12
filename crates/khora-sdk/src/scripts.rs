@@ -19,6 +19,7 @@
 //! open — and changes it while running — and a packed runtime watches nothing
 //! at all. So mounting and unmounting take the runtime shared, at any frame.
 
+use khora_io::systems::shader_hot_reload::OverlaysSeen;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -75,6 +76,12 @@ pub fn install(runtime: &mut Runtime) {
     let resources = &mut runtime.resources;
     if resources.get::<Arc<AssetWatch>>().is_none() {
         resources.insert(Arc::new(AssetWatch::default()));
+    }
+    // What the shader pump last applied the overlays of the watched roots
+    // for: a project opened, closed, trusted or restricted applies them
+    // afresh.
+    if resources.get::<Arc<OverlaysSeen>>().is_none() {
+        resources.insert(Arc::new(OverlaysSeen::default()));
     }
     // What the background staged waits here for a frame's boundary: the
     // programs and declarations compiled off the frame among it.

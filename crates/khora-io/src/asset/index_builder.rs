@@ -135,6 +135,7 @@ pub fn should_skip_file(name: &str) -> bool {
 pub struct IndexBuilder<'a> {
     assets_root: &'a Path,
     registry: Option<&'a AssetIdRegistry>,
+    guard: Option<&'a crate::trust::FileGuard>,
 }
 
 impl<'a> IndexBuilder<'a> {
@@ -150,6 +151,7 @@ impl<'a> IndexBuilder<'a> {
         Self {
             assets_root,
             registry: None,
+            guard: None,
         }
     }
 
@@ -159,6 +161,15 @@ impl<'a> IndexBuilder<'a> {
     /// construction.
     pub fn with_registry(mut self, registry: &'a AssetIdRegistry) -> Self {
         self.registry = Some(registry);
+        self
+    }
+
+    /// Reads the bytes the index looks into — a material's for its
+    /// dependencies, a container's for its sub-assets — through `guard`:
+    /// contained under its root, capped by kind and trust, its refusals
+    /// reported and quarantined. Without one, they are read as they are.
+    pub fn with_guard(mut self, guard: &'a crate::trust::FileGuard) -> Self {
+        self.guard = Some(guard);
         self
     }
 
@@ -220,7 +231,7 @@ impl<'a> IndexBuilder<'a> {
             // Textures, audio, meshes, etc. are never read — this preserves the
             // builder's stat-only fast path and avoids a per-file I/O cliff.
             let dependencies = if type_has_dependency_extractor(&type_name) {
-                match std::fs::read(&abs_path) {
+                match read_bytes(self.guard, &rel_path, &abs_path) {
                     Ok(bytes) => extract_dependencies(&type_name, &rel_fwd, &bytes),
                     Err(e) => {
                         log::warn!(
@@ -250,6 +261,7 @@ impl<'a> IndexBuilder<'a> {
                 &rel_path,
                 &abs_path,
                 &type_name,
+                self.guard,
             );
         }
         Ok(metadata)
@@ -266,6 +278,20 @@ impl<'a> IndexBuilder<'a> {
     }
 }
 
+/// The bytes of the file at `rel_path` under the assets root (`abs_path`):
+/// through `guard` when there is one — refused, they are reported and
+/// quarantined by it — else as they are.
+fn read_bytes(
+    guard: Option<&crate::trust::FileGuard>,
+    rel_path: &Path,
+    abs_path: &Path,
+) -> std::result::Result<Vec<u8>, String> {
+    match guard {
+        Some(guard) => guard.read(rel_path).map_err(|error| error.to_string()),
+        None => std::fs::read(abs_path).map_err(|error| error.to_string()),
+    }
+}
+
 /// Appends one entry per sub-asset the listers of `type_name` find in the
 /// file, right after the file's own entry. Only file types with a lister are
 /// read; a lister that fails is logged and leaves the file's own entry alone.
@@ -276,6 +302,7 @@ fn push_sub_assets(
     rel_path: &Path,
     abs_path: &Path,
     type_name: &str,
+    guard: Option<&crate::trust::FileGuard>,
 ) {
     let mut listers = inventory::iter::<SubAssetListerRegistration>
         .into_iter()
@@ -284,7 +311,7 @@ fn push_sub_assets(
     if listers.peek().is_none() {
         return;
     }
-    let bytes = match std::fs::read(abs_path) {
+    let bytes = match read_bytes(guard, rel_path, abs_path) {
         Ok(bytes) => bytes,
         Err(e) => {
             log::warn!("asset index: failed to read '{rel_fwd}' to list its sub-assets: {e}");
@@ -812,5 +839,169 @@ mod tests {
             body.variants.get("default"),
             Some(AssetSource::Sub { container, label }) if *container == hero && label == "mesh/Body"
         ));
+    }
+
+    // ── Reads through a guard ───────────────────────────────────────────────
+
+    /// One mebibyte.
+    const MIB: usize = 1 << 20;
+
+    /// The strict cap of a text file — a material, or a file of a kind the
+    /// trust module does not name — at `Restricted` trust.
+    const STRICT_TEXT_CAP: usize = 16 * MIB;
+
+    /// `bytes`, padded with `pad` to one byte over the strict text cap: a file
+    /// that still parses as it did, but that a restricted guard refuses for
+    /// its size.
+    fn oversized(bytes: &[u8], pad: u8) -> Vec<u8> {
+        let mut padded = bytes.to_vec();
+        padded.resize(STRICT_TEXT_CAP + 1, pad);
+        padded
+    }
+
+    /// A guard over `root` at `Restricted` trust, reporting to `refusals`.
+    fn restricted_guard(
+        root: &Path,
+        refusals: &std::sync::Arc<crate::trust::Refusals>,
+    ) -> crate::trust::FileGuard {
+        crate::trust::FileGuard::new(
+            root,
+            crate::trust::Trust::Restricted,
+            std::sync::Arc::clone(refusals),
+        )
+    }
+
+    /// The refusals quarantined for the file named `file_name`.
+    fn refused_named(
+        refusals: &crate::trust::Refusals,
+        file_name: &str,
+    ) -> Vec<crate::trust::SecurityRefusal> {
+        refusals
+            .quarantined()
+            .into_iter()
+            .filter(|refusal| {
+                refusal.path.file_name().and_then(|name| name.to_str()) == Some(file_name)
+            })
+            .collect()
+    }
+
+    /// **The index reads a material through its guard.** A project opened
+    /// restricted holds a `.kmat` naming a texture, padded past the strict
+    /// text cap, beside the same material under the cap. Built through a
+    /// restricted guard, the oversized material is refused for its size,
+    /// quarantined and reported; its own entry is kept, with no dependencies,
+    /// since its bytes were never read. The material under the cap is read
+    /// through the guard and lists its texture.
+    #[test]
+    fn the_index_reads_a_material_through_its_guard() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("materials")).unwrap();
+        let texture = AssetUUID::new_v5("textures/base.png");
+        let material = khora_core::asset::StandardMaterial {
+            base_color_texture: Some(texture),
+            ..Default::default()
+        };
+        write_kmat(&root.join("materials").join("small.kmat"), &material);
+        let kmat = fs::read(root.join("materials").join("small.kmat")).unwrap();
+        fs::write(
+            root.join("materials").join("big.kmat"),
+            oversized(&kmat, b' '),
+        )
+        .unwrap();
+        let problems = std::sync::Arc::new(khora_core::problems::Problems::default());
+        let refusals = std::sync::Arc::new(crate::trust::Refusals::new(
+            Some(std::sync::Arc::clone(&problems)),
+            None,
+        ));
+        let guard = restricted_guard(root, &refusals);
+
+        let metadata = IndexBuilder::new(root)
+            .with_guard(&guard)
+            .build_metadata()
+            .expect("a refused file does not abort the index");
+
+        let big = find(&metadata, AssetUUID::new_v5("materials/big.kmat"));
+        assert_eq!(big.asset_type_name, "material", "its own entry is kept");
+        assert!(
+            big.dependencies.is_empty(),
+            "a refused material lists no dependency: {:?}",
+            big.dependencies
+        );
+        let small = find(&metadata, AssetUUID::new_v5("materials/small.kmat"));
+        assert_eq!(
+            small.dependencies,
+            vec![texture],
+            "a material under its cap is read through the guard"
+        );
+
+        let refused = refused_named(&refusals, "big.kmat");
+        assert_eq!(refused.len(), 1, "the oversized material is quarantined");
+        assert_eq!(
+            refused[0].reason,
+            crate::trust::SecurityReason::TooLarge {
+                size: (STRICT_TEXT_CAP + 1) as u64,
+                cap: STRICT_TEXT_CAP as u64,
+            }
+        );
+        assert_eq!(refused[0].trust, crate::trust::Trust::Restricted);
+        assert_eq!(refused[0].layer, crate::trust::Layer::File);
+        assert!(
+            refused_named(&refusals, "small.kmat").is_empty(),
+            "the material under its cap is not refused"
+        );
+        assert!(
+            !problems
+                .of_source(&khora_core::problems::ProblemSource::Security)
+                .is_empty(),
+            "the refusal is reported"
+        );
+    }
+
+    /// **The index reads a container through its guard.** A project opened
+    /// restricted holds a container listing two sub-assets, padded past the
+    /// strict cap with blank lines its lister skips. Built through a
+    /// restricted guard, the container is refused for its size and
+    /// quarantined; its own entry is kept and no sub-asset is listed, since
+    /// its bytes were never read.
+    #[test]
+    fn the_index_reads_a_container_through_its_guard() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("models")).unwrap();
+        fs::write(
+            root.join("models").join("hero.ksubtest"),
+            oversized(HERO_CONTAINER, b'\n'),
+        )
+        .unwrap();
+        let refusals = std::sync::Arc::new(crate::trust::Refusals::new(None, None));
+        let guard = restricted_guard(root, &refusals);
+
+        let metadata = IndexBuilder::new(root)
+            .with_guard(&guard)
+            .build_metadata()
+            .expect("a refused file does not abort the index");
+
+        let hero = AssetUUID::new_v5("models/hero.ksubtest");
+        let own = find(&metadata, hero);
+        assert_eq!(
+            own.asset_type_name, TEST_CONTAINER_TYPE,
+            "its own entry is kept"
+        );
+        assert_eq!(
+            metadata.len(),
+            1,
+            "no sub-asset of a refused container is listed: {metadata:#?}"
+        );
+        let refused = refused_named(&refusals, "hero.ksubtest");
+        assert_eq!(refused.len(), 1, "the oversized container is quarantined");
+        assert!(
+            matches!(
+                refused[0].reason,
+                crate::trust::SecurityReason::TooLarge { .. }
+            ),
+            "{:?}",
+            refused[0].reason
+        );
     }
 }

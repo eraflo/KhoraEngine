@@ -68,6 +68,9 @@ impl EngineApp for Profiled {
 /// A folder of its own under the system's temporary folder — profiles under
 /// `profiles/`, the decisions' journal beside them — named to this process
 /// by `KHORA_PROFILES` and `KHORA_RECORD_DECISIONS`; removed when dropped.
+/// The process's home and data folders are made folders of it too, so an
+/// engine keeping the user's files keeps them there, never in the home of
+/// whoever runs the tests.
 struct Scratch(PathBuf);
 
 impl Scratch {
@@ -82,6 +85,7 @@ impl Scratch {
         std::fs::create_dir_all(root.join("profiles")).expect("a scratch folder");
         std::env::set_var(PROFILES_VAR, root.join("profiles"));
         std::env::set_var(RECORD_VAR, root.join("journal.json"));
+        point_user_folders_at(&root);
         Scratch(root)
     }
 
@@ -155,6 +159,15 @@ fn learnt_by_every_family(
 }
 
 /// The engine, booted headless over `runtime`.
+/// Names folders under `root` as the process's home (`USERPROFILE`, `HOME`)
+/// and data folder (`APPDATA`, `XDG_DATA_HOME`).
+fn point_user_folders_at(root: &std::path::Path) {
+    std::env::set_var("USERPROFILE", root.join("home"));
+    std::env::set_var("HOME", root.join("home"));
+    std::env::set_var("APPDATA", root.join("data"));
+    std::env::set_var("XDG_DATA_HOME", root.join("data"));
+}
+
 fn boot(runtime: Runtime) -> EngineCore<Profiled> {
     let mut engine = EngineCore::<Profiled>::new();
     engine.bootstrap(Profiled, runtime);
@@ -553,5 +566,87 @@ fn a_run_that_never_shuts_down_keeps_what_it_learnt() {
     assert!(
         filed.is_some(),
         "the profile is filed while the engine runs, without a shutdown"
+    );
+}
+
+/// **The engines these tests boot write no quarantine to the home folder.**
+/// An app keeping the user's files ([`Kept`]) quarantines the files its run
+/// refuses under the home folder, `.khora/quarantine.ron` for a developer.
+/// Once a test's scratch folder is made and an engine booted, the home and
+/// data folders the process names (`USERPROFILE`, `HOME`, `APPDATA`,
+/// `XDG_DATA_HOME`) are scratch folders of the test's own, under the
+/// system's temporary folder, not the ones it started with — checked before
+/// anything is refused, so a failing run writes nothing there either. A
+/// [`Kept`] engine then refuses a file: its quarantine lies under the scratch
+/// home, and lists it.
+#[test]
+fn the_engines_these_tests_boot_write_no_quarantine_to_the_home_folder() {
+    use khora_io::trust::{Layer, QuarantineKey, Refusals, SecurityReason, SecurityRefusal, Trust};
+    use khora_io::user_dirs::{data_dir, home_dir, quarantine_path};
+
+    let env = |key: &str| std::env::var_os(key);
+    let real_home = home_dir(&env);
+    let real_data = data_dir(&env);
+    let temp = std::env::temp_dir();
+
+    let scratch = Scratch::new("quarantine-home");
+    let mut engine = boot(Runtime::new());
+    engine.shutdown();
+
+    let home = home_dir(&env).expect("the booted test names a home folder");
+    assert_ne!(
+        Some(&home),
+        real_home.as_ref(),
+        "the boot helper points the home folder away from the real one"
+    );
+    assert!(
+        home.starts_with(&temp),
+        "the home folder is a scratch folder: {home:?}"
+    );
+    let data = data_dir(&env).expect("the booted test names a data folder");
+    assert_ne!(
+        Some(&data),
+        real_data.as_ref(),
+        "the boot helper points the data folder away from the real one"
+    );
+    assert!(
+        data.starts_with(&temp),
+        "the data folder is a scratch folder: {data:?}"
+    );
+
+    let mut kept = EngineCore::<Kept>::new();
+    kept.bootstrap(Kept, Runtime::new());
+    let refusals = kept
+        .runtime()
+        .resources
+        .get::<Arc<Refusals>>()
+        .cloned()
+        .expect("the bootstrap puts the refusals in the runtime");
+    let refused = scratch.0.join("assets").join("lies.png");
+    refusals.refuse(
+        SecurityRefusal {
+            path: refused.clone(),
+            trust: Trust::Project,
+            layer: Layer::Decoder,
+            reason: SecurityReason::WrongType {
+                expected: "texture".to_owned(),
+            },
+        },
+        Some(QuarantineKey::Content([9; 32])),
+    );
+    kept.shutdown();
+
+    let store = quarantine_path(ProfilePlace::Developer, &Kept::game_identity(), &env)
+        .expect("a developer's quarantine under the home folder");
+    assert!(store.starts_with(&home), "{store:?}");
+    let listed: Vec<PathBuf> = Refusals::new(None, Some(store.clone()))
+        .quarantined()
+        .into_iter()
+        .map(|refusal| refusal.path)
+        .collect();
+    assert_eq!(
+        listed,
+        vec![refused],
+        "the refusal is quarantined under the scratch home: {store:?}"
     );
 }

@@ -63,6 +63,18 @@ struct Held {
     /// what the file says, so a user is never asked again for a project
     /// they answered.
     unwritten: HashMap<PathBuf, ProjectTrust>,
+    /// The store file's length and modified time when it was last read:
+    /// while they hold, the file is not read again.
+    stamp: Option<Stamp>,
+}
+
+/// What tells a store file changed: its length and its modified time.
+type Stamp = (u64, std::time::SystemTime);
+
+/// The stamp of the store file at `path`; `None` when it has none to read.
+fn stamp_of(path: &Path) -> Option<Stamp> {
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.len(), meta.modified().ok()?))
 }
 
 /// One decision as the store keeps it.
@@ -88,23 +100,31 @@ impl TrustStore {
     /// The decisions kept in `store`, read when it exists; kept in memory
     /// only without one.
     pub fn new(store: Option<PathBuf>) -> Self {
+        let stamp = store.as_deref().and_then(stamp_of);
         let read = store.as_deref().map(read_store).unwrap_or_default();
         Self {
             store,
             held: Mutex::new(Held {
                 read,
                 unwritten: HashMap::new(),
+                stamp,
             }),
         }
     }
 
     /// What was decided of the project at `project_root`, by its canonical
-    /// path; `None` when nothing was. The store is read again first: another
-    /// program sharing it may have decided since.
+    /// path; `None` when nothing was. The store is read again first when its
+    /// file changed — another program sharing it may have decided since —
+    /// and only then: a screen asking for every project it lists, every
+    /// frame, costs a look at the file's length and time.
     pub fn decision(&self, project_root: &Path) -> Option<ProjectTrust> {
         let mut held = self.lock();
         if let Some(store) = &self.store {
-            held.read = read_store(store);
+            let stamp = stamp_of(store);
+            if stamp.is_none() || stamp != held.stamp {
+                held.read = read_store(store);
+                held.stamp = stamp;
+            }
         }
         let at = real_path(project_root);
         (held.unwritten.get(&at))
@@ -126,6 +146,7 @@ impl TrustStore {
         match write_store(store, &merged) {
             Ok(()) => {
                 held.unwritten.remove(&at);
+                held.stamp = stamp_of(store);
             }
             Err(error) => {
                 log::warn!(

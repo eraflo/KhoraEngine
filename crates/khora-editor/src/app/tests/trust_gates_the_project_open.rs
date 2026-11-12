@@ -392,3 +392,293 @@ fn trusting_a_project_keeps_another_projects_restricted_refusals() {
         "the other project's file stays quarantined"
     );
 }
+
+/// **A restricted project's shader overlays are never used while another
+/// project opens.** A project opened restricted lands: its assets are
+/// watched, its overlay on disk is not used. The user then opens another
+/// project, trusted — in `before_frame`, File > Open Project or a trust
+/// answer: the trust of the project open is the new one's at once. The
+/// restricted project is unmounted only in `before_agents`, so the frame's
+/// `PreExtract` shader pump, between the two, still watches its assets: the
+/// restricted project's overlay must still not be used.
+#[test]
+fn a_restricted_projects_overlay_is_not_used_while_a_trusted_project_opens() {
+    let folder = Folder::new("overlay-while-opening");
+    let restricted = project_in(&folder, "restricted");
+    let shaders = restricted.join("assets").join("shaders");
+    std::fs::create_dir_all(&shaders).expect("the shader folder");
+    std::fs::write(shaders.join("x.wgsl"), "// the restricted project's").expect("the overlay");
+    let trusted = project_in(&folder, "trusted");
+    let store = TrustStore::new(Some(store_in(&folder)));
+    store.decide(&restricted, ProjectTrust::Restricted);
+    store.decide(&trusted, ProjectTrust::Trusted);
+
+    let mut editor = Editor::new();
+    khora_sdk::scripts::install(&mut editor.engine.runtime);
+    let pipelines = Arc::new(OverlayLog::default());
+    let as_system: Arc<dyn PipelineSystem> = pipelines.clone();
+    editor.engine.runtime.resources.insert(as_system);
+    let device: Arc<dyn GraphicsDevice> = Arc::new(NoDevice);
+    editor.engine.runtime.backends.insert(device);
+
+    assert!(
+        editor.open(&restricted, &store),
+        "the premise: it opens restricted"
+    );
+    // Its index landed: the editor mounts it, its assets watched.
+    let mut mounted = None;
+    crate::project_scripts::follow_open_project(
+        &editor.engine.runtime,
+        &mut mounted,
+        Some(&restricted),
+    );
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    for _ in 0..5 {
+        shader_pump(&editor.engine.runtime);
+    }
+    assert!(
+        pipelines.set().is_empty(),
+        "the premise: the restricted project's overlay is not used: {:?}",
+        pipelines.set()
+    );
+
+    assert!(
+        editor.open(&trusted, &store),
+        "the trusted project's open is filed"
+    );
+    assert_eq!(
+        editor.trust.get(),
+        ProjectTrust::Trusted,
+        "the premise: the trust of the project open is the new one's"
+    );
+    // The frame's `PreExtract` pump, before `before_agents` unmounts the
+    // restricted project.
+    shader_pump(&editor.engine.runtime);
+    crate::project_scripts::follow_open_project(&editor.engine.runtime, &mut mounted, None);
+
+    assert!(
+        pipelines.set().is_empty(),
+        "the restricted project's overlay is used while the trusted one opens: {:?}",
+        pipelines.set()
+    );
+}
+
+/// One run of the engine's shader pump over `runtime`.
+fn shader_pump(runtime: &khora_sdk::Runtime) {
+    let system = khora_sdk::inventory::iter::<khora_sdk::khora_data::ecs::DataSystemRegistration>
+        .into_iter()
+        .find(|system| system.name == "shader_hot_reload")
+        .expect("`shader_hot_reload` is registered");
+    (system.run)(
+        &mut khora_sdk::khora_data::ecs::World::new(),
+        runtime,
+        &mut khora_sdk::khora_core::lane::OutputDeck::new(),
+        khora_sdk::khora_data::ecs::SystemContext {
+            since: khora_sdk::khora_data::ecs::Tick(0),
+            resumed: false,
+            scope: None,
+        },
+    );
+}
+
+use khora_sdk::khora_core::renderer::api::command::{
+    BindGroupDescriptor, BindGroupId, BindGroupLayoutDescriptor, BindGroupLayoutEntry,
+    BindGroupLayoutId, CommandBufferId,
+};
+use khora_sdk::khora_core::renderer::api::device::GraphicsAdapterInfo;
+use khora_sdk::khora_core::renderer::api::pipeline::{
+    ComputePipelineDescriptor, ComputePipelineId, ComputePipelineSpec, LayoutKey,
+    PipelineLayoutDescriptor, PipelineLayoutId, PipelineSpec, RenderPipelineDescriptor,
+    RenderPipelineId,
+};
+use khora_sdk::khora_core::renderer::api::resource::{
+    BufferDescriptor, BufferId, SamplerDescriptor, SamplerId, TextureDescriptor, TextureFormat,
+    TextureId, TextureViewDescriptor, TextureViewId,
+};
+use khora_sdk::khora_core::renderer::api::shader::{
+    ShaderModuleDescriptor, ShaderModuleId, ShaderVariantKey,
+};
+use khora_sdk::khora_core::renderer::error::{RenderError, ResourceError};
+use khora_sdk::khora_core::renderer::traits::{CommandEncoder, GraphicsDevice, PipelineSystem};
+
+/// A pipeline system that records the overlays set and builds nothing.
+#[derive(Default)]
+struct OverlayLog(Mutex<Vec<String>>);
+
+impl OverlayLog {
+    /// The modules an overlay was set for, in order.
+    fn set(&self) -> Vec<String> {
+        self.0.lock().expect("the overlay log").clone()
+    }
+}
+
+impl PipelineSystem for OverlayLog {
+    fn layout(
+        &self,
+        _device: &dyn GraphicsDevice,
+        _key: LayoutKey,
+        _variant: &ShaderVariantKey,
+    ) -> Result<BindGroupLayoutId, RenderError> {
+        unreachable!()
+    }
+    fn inline_layout(
+        &self,
+        _device: &dyn GraphicsDevice,
+        _label: &'static str,
+        _entries: &[BindGroupLayoutEntry],
+    ) -> Result<BindGroupLayoutId, RenderError> {
+        unreachable!()
+    }
+    fn pipeline(
+        &self,
+        _device: &dyn GraphicsDevice,
+        _spec: &PipelineSpec,
+    ) -> Result<RenderPipelineId, RenderError> {
+        unreachable!()
+    }
+    fn compute_pipeline(
+        &self,
+        _device: &dyn GraphicsDevice,
+        _spec: &ComputePipelineSpec,
+    ) -> Result<ComputePipelineId, RenderError> {
+        unreachable!()
+    }
+    fn set_overlay_source(&self, logical_path: &str, _source: String) {
+        self.0
+            .lock()
+            .expect("the overlay log")
+            .push(logical_path.to_owned());
+    }
+    fn recompose_dirty(&self, _device: &dyn GraphicsDevice) -> Result<(), RenderError> {
+        Ok(())
+    }
+}
+
+/// A device the shader pump only hands on to `recompose_dirty`.
+#[derive(Debug)]
+struct NoDevice;
+
+impl GraphicsDevice for NoDevice {
+    fn create_shader_module(
+        &self,
+        _d: &ShaderModuleDescriptor,
+    ) -> Result<ShaderModuleId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_shader_module(&self, _id: ShaderModuleId) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_render_pipeline(
+        &self,
+        _d: &RenderPipelineDescriptor,
+    ) -> Result<RenderPipelineId, ResourceError> {
+        unreachable!()
+    }
+    fn create_pipeline_layout(
+        &self,
+        _d: &PipelineLayoutDescriptor,
+    ) -> Result<PipelineLayoutId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_render_pipeline(&self, _id: RenderPipelineId) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_compute_pipeline(
+        &self,
+        _d: &ComputePipelineDescriptor,
+    ) -> Result<ComputePipelineId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_compute_pipeline(&self, _id: ComputePipelineId) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_bind_group_layout(
+        &self,
+        _d: &BindGroupLayoutDescriptor,
+    ) -> Result<BindGroupLayoutId, ResourceError> {
+        unreachable!()
+    }
+    fn create_bind_group(&self, _d: &BindGroupDescriptor) -> Result<BindGroupId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_bind_group_layout(&self, _id: BindGroupLayoutId) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn destroy_bind_group(&self, _id: BindGroupId) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_buffer(&self, _d: &BufferDescriptor) -> Result<BufferId, ResourceError> {
+        unreachable!()
+    }
+    fn create_buffer_with_data(
+        &self,
+        _d: &BufferDescriptor,
+        _data: &[u8],
+    ) -> Result<BufferId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_buffer(&self, _id: BufferId) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn write_buffer(&self, _id: BufferId, _offset: u64, _data: &[u8]) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn write_buffer_async<'a>(
+        &'a self,
+        _id: BufferId,
+        _offset: u64,
+        _data: &'a [u8],
+    ) -> Box<dyn std::future::Future<Output = Result<(), ResourceError>> + Send + 'static> {
+        unreachable!()
+    }
+    fn create_texture(&self, _d: &TextureDescriptor) -> Result<TextureId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_texture(&self, _id: TextureId) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn write_texture(
+        &self,
+        _id: TextureId,
+        _data: &[u8],
+        _bytes_per_row: Option<u32>,
+        _offset: khora_sdk::khora_core::math::dimension::Origin3D,
+        _size: khora_sdk::khora_core::math::dimension::Extent3D,
+    ) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_texture_view(
+        &self,
+        _id: TextureId,
+        _d: &TextureViewDescriptor,
+    ) -> Result<TextureViewId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_texture_view(&self, _id: TextureViewId) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_sampler(&self, _d: &SamplerDescriptor) -> Result<SamplerId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_sampler(&self, _id: SamplerId) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_command_encoder(&self, _label: Option<&str>) -> Box<dyn CommandEncoder> {
+        unreachable!()
+    }
+    fn submit_command_buffer(&self, _command_buffer: CommandBufferId) {
+        unreachable!()
+    }
+    fn get_surface_format(&self) -> Option<TextureFormat> {
+        unreachable!()
+    }
+    fn get_surface_size(&self) -> (u32, u32) {
+        unreachable!()
+    }
+    fn get_adapter_info(&self) -> GraphicsAdapterInfo {
+        unreachable!()
+    }
+    fn supports_feature(&self, _feature_name: &str) -> bool {
+        unreachable!()
+    }
+}

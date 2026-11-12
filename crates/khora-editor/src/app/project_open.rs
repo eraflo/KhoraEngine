@@ -67,7 +67,7 @@ pub(crate) fn start_opening_project(
         .resources
         .get::<Arc<khora_sdk::trust::ProjectTrustState>>()
     {
-        Some(state) => state.set(trust),
+        Some(state) => state.set_for(&root, trust),
         None => log::error!(
             "the engine holds no project trust state: '{}' opens as the engine reads it",
             root.display()
@@ -254,7 +254,7 @@ pub(crate) fn grant_trust(
     use khora_sdk::trust::{ProjectTrust, ProjectTrustState, Refusals, Trust};
     store.decide(project_root, ProjectTrust::Trusted);
     if let Some(state) = runtime.resources.get::<Arc<ProjectTrustState>>() {
-        state.set(ProjectTrust::Trusted);
+        state.set_for(project_root, ProjectTrust::Trusted);
     }
     // What the restricted limits refused is read again, at a trusted
     // project's.

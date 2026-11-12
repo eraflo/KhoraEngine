@@ -185,8 +185,10 @@ impl GameDir {
 impl Drop for GameDir {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
-        // The profiles the engines of this test filed, beside the game.
+        // The profiles and the user's files the engines of this test filed,
+        // beside the game.
         let _ = std::fs::remove_dir_all(profiles_scratch());
+        let _ = std::fs::remove_dir_all(user_folders_scratch());
     }
 }
 
@@ -201,6 +203,14 @@ fn profiles_scratch() -> PathBuf {
     ))
 }
 
+/// The folder the engines these tests boot keep the user's files in — the
+/// process's home and data folders while they run: the default runtime app
+/// keeps them (its quarantine), and never in the home of whoever runs the
+/// tests. One per test process, removed with the test's game folders.
+fn user_folders_scratch() -> PathBuf {
+    std::env::temp_dir().join(format!("khora-sdk-run-default-user-{}", std::process::id()))
+}
+
 /// The config of a runtime started without `runtime.json`, opening `scene`.
 fn opening(scene: &str) -> RuntimeConfig {
     RuntimeConfig {
@@ -211,9 +221,15 @@ fn opening(scene: &str) -> RuntimeConfig {
 
 /// The engine the runtime binary in `exe_dir` boots: its assets installed as
 /// `first` installs them, then the runtime app set up. Its machine profile
-/// is filed in [`profiles_scratch`], named by `KHORA_PROFILES`.
+/// is filed in [`profiles_scratch`], named by `KHORA_PROFILES`; the user's
+/// files it keeps (its quarantine), under [`user_folders_scratch`].
 fn engine_with<A: EngineApp>(exe_dir: &Path, app: A) -> EngineCore<A> {
     std::env::set_var(khora_io::profiles::PROFILES_VAR, profiles_scratch());
+    let user = user_folders_scratch();
+    std::env::set_var("USERPROFILE", user.join("home"));
+    std::env::set_var("HOME", user.join("home"));
+    std::env::set_var("APPDATA", user.join("data"));
+    std::env::set_var("XDG_DATA_HOME", user.join("data"));
     let mut runtime = Runtime::new();
     install_game_assets(&mut runtime, exe_dir, false);
     let mut engine = EngineCore::<A>::new();
@@ -1299,4 +1315,82 @@ fn the_runtime_these_tests_boot_reads_no_profile_from_the_home_folder() {
         "the profile in the home folder seeded the runtime: {:?}",
         first.corrections
     );
+}
+
+/// **The runtime these tests boot writes no quarantine to the home folder.**
+/// The default runtime app keeps the user's files: the files its run refuses
+/// are quarantined in a list under the home folder, `.khora/quarantine.ron`
+/// for a developer. Every test here boots it through [`runtime_engine`]: none
+/// may write the quarantine of whoever runs the tests. Once booted, the home
+/// and data folders the process names (`USERPROFILE`, `HOME`, `APPDATA`,
+/// `XDG_DATA_HOME`) are scratch folders of the test's own, under the system's
+/// temporary folder, not the ones it started with — checked before anything
+/// is refused, so a failing run writes nothing there either. The runtime then
+/// refuses a file: its quarantine lies under the scratch home, and lists it.
+#[test]
+fn the_runtime_these_tests_boot_writes_no_quarantine_to_the_home_folder() {
+    use khora_io::profiles::ProfilePlace;
+    use khora_io::trust::{Layer, QuarantineKey, Refusals, SecurityReason, SecurityRefusal, Trust};
+    use khora_io::user_dirs::{data_dir, home_dir, quarantine_path};
+
+    let env = |key: &str| std::env::var_os(key);
+    let real_home = home_dir(&env);
+    let real_data = data_dir(&env);
+    let scratch = std::env::temp_dir();
+
+    let game = GameDir::new("quarantine-home");
+    let engine = runtime_engine(game.path(), opening("scenes/missing.kscene"));
+
+    let home = home_dir(&env).expect("the booted test names a home folder");
+    assert_ne!(
+        Some(&home),
+        real_home.as_ref(),
+        "the boot helper points the home folder away from the real one"
+    );
+    assert!(
+        home.starts_with(&scratch),
+        "the home folder is a scratch folder: {home:?}"
+    );
+    let data = data_dir(&env).expect("the booted test names a data folder");
+    assert_ne!(
+        Some(&data),
+        real_data.as_ref(),
+        "the boot helper points the data folder away from the real one"
+    );
+    assert!(
+        data.starts_with(&scratch),
+        "the data folder is a scratch folder: {data:?}"
+    );
+
+    let refusals: Arc<Refusals> = resource(&engine, "the run's refusals");
+    let refused = game.path().join("assets").join("textures").join("lies.png");
+    refusals.refuse(
+        SecurityRefusal {
+            path: refused.clone(),
+            trust: Trust::Project,
+            layer: Layer::Decoder,
+            reason: SecurityReason::WrongType {
+                expected: "texture".to_owned(),
+            },
+        },
+        Some(QuarantineKey::Content([9; 32])),
+    );
+
+    let store = quarantine_path(
+        ProfilePlace::Developer,
+        &<DefaultRuntimeApp as EngineApp>::game_identity(),
+        &env,
+    )
+    .expect("a developer's quarantine under the home folder");
+    assert!(store.starts_with(&home), "{store:?}");
+    assert!(
+        store.exists(),
+        "the refusal is quarantined under the scratch home: {store:?}"
+    );
+    let kept: Vec<PathBuf> = Refusals::new(None, Some(store))
+        .quarantined()
+        .into_iter()
+        .map(|refusal| refusal.path)
+        .collect();
+    assert_eq!(kept, vec![refused], "the scratch quarantine lists the file");
 }

@@ -192,6 +192,81 @@ fn a_missing_or_corrupt_store_reads_as_no_decision() {
     );
 }
 
+/// **A decision is read from its file again only when the file changed.**
+/// The hub asks a store for a project's decision once per card per frame:
+/// the store re-reads its file only when its length or its modified time
+/// moved since the last read.
+/// - The file is replaced by bytes that read as no store at all, of the same
+///   length and given back the same modified time: the store still answers
+///   the decision it read, so it did not read the file again.
+/// - The file is given back, then another store — another process sharing
+///   it — decides of a second project: the file grew, so the first store
+///   reads it again and sees that decision, the first one still there.
+#[test]
+fn a_decision_is_read_again_only_when_its_file_changed() {
+    let dir = TempDir::new().expect("a temp dir");
+    let ember = project_in(dir.path(), "ember");
+    let lantern = project_in(dir.path(), "lantern");
+    let path = store_in(dir.path());
+    TrustStore::new(Some(path.clone())).decide(&ember, ProjectTrust::Trusted);
+    let hub = TrustStore::new(Some(path.clone()));
+    assert_eq!(
+        hub.decision(&ember),
+        Some(ProjectTrust::Trusted),
+        "the premise: the store reads the decision"
+    );
+
+    let written = fs::read(&path).expect("the store's file reads");
+    let stamp = fs::metadata(&path)
+        .and_then(|meta| meta.modified())
+        .expect("the store's file has a modified time");
+    let restamp = |modified: std::time::SystemTime| {
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .and_then(|file| file.set_modified(modified))
+            .expect("the store's file takes its modified time back");
+    };
+    fs::write(&path, vec![0xFF; written.len()]).expect("the store's file is replaced");
+    restamp(stamp);
+    assert_eq!(
+        fs::metadata(&path).map(|meta| meta.len()).ok(),
+        Some(written.len() as u64),
+        "the premise: the same length"
+    );
+    assert_eq!(
+        fs::metadata(&path).and_then(|meta| meta.modified()).ok(),
+        Some(stamp),
+        "the premise: the same modified time"
+    );
+    assert_eq!(
+        TrustStore::new(Some(path.clone())).decision(&ember),
+        None,
+        "the premise: the bytes in the file read as no decision"
+    );
+
+    assert_eq!(
+        hub.decision(&ember),
+        Some(ProjectTrust::Trusted),
+        "a file of the same length and modified time is not read again"
+    );
+
+    fs::write(&path, &written).expect("the store's file is given back");
+    restamp(stamp);
+    TrustStore::new(Some(path.clone())).decide(&lantern, ProjectTrust::Restricted);
+
+    assert_eq!(
+        hub.decision(&lantern),
+        Some(ProjectTrust::Restricted),
+        "a decision written by another store is seen"
+    );
+    assert_eq!(
+        hub.decision(&ember),
+        Some(ProjectTrust::Trusted),
+        "the decision read before is still there"
+    );
+}
+
 // ─── The project open ───────────────────────────────────────────────────────
 
 /// **A project's decision is read at its trust**: a trusted project's files
@@ -230,6 +305,62 @@ fn the_project_trust_state_is_shared_through_the_runtime() {
         ProjectTrustState::of(&runtime),
         ProjectTrust::Trusted,
         "a change of the shared state is read through the runtime"
+    );
+}
+
+/// **A folder is read at the trust of the project open only when it lies in
+/// it.** The trust is held for project `game`, trusted:
+/// - its `assets/`, named as the project was, through a `..`, or by its
+///   canonical (`\\?\` on Windows) path, is read trusted;
+/// - `game2` beside it — its name starts with `game` — and any other folder
+///   are read restricted, so is a folder named relative that is not in it;
+/// - the trust set again without naming a project keeps the project named;
+/// - a state that names no project — a game's — reads every folder at its
+///   trust.
+#[test]
+fn a_folder_is_read_at_the_trust_of_the_project_open_only_inside_it() {
+    let dir = TempDir::new().expect("a temp dir");
+    let game = project_in(dir.path(), "game");
+    let game2 = project_in(dir.path(), "game2");
+    let state = ProjectTrustState::new(ProjectTrust::Restricted);
+    state.set_for(&game, ProjectTrust::Trusted);
+
+    let canonical = game.join("assets").canonicalize().expect("canonical");
+    for inside in [
+        game.join("assets"),
+        game.join("..").join("game").join("assets"),
+        canonical,
+    ] {
+        assert_eq!(
+            state.trust_of(&inside),
+            ProjectTrust::Trusted,
+            "{inside:?} lies in the project"
+        );
+    }
+    for outside in [
+        game2.join("assets"),
+        dir.path().to_path_buf(),
+        PathBuf::from("assets"),
+    ] {
+        assert_eq!(
+            state.trust_of(&outside),
+            ProjectTrust::Restricted,
+            "{outside:?} lies outside the project"
+        );
+    }
+
+    state.set(ProjectTrust::Trusted);
+    assert_eq!(
+        state.trust_of(&game2.join("assets")),
+        ProjectTrust::Restricted,
+        "setting the trust again keeps the project it is the trust of"
+    );
+
+    let game_state = ProjectTrustState::new(ProjectTrust::Trusted);
+    assert_eq!(
+        game_state.trust_of(&game2.join("assets")),
+        ProjectTrust::Trusted,
+        "a state that names no project reads every folder at its trust"
     );
 }
 

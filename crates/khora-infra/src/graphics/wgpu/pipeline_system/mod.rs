@@ -189,9 +189,36 @@ struct Inner {
     /// Hot-reload overrides: logical path (lib import path or pipeline name)
     /// → new source. Consulted before the embedded `include_str!` source.
     overlays: HashMap<String, String>,
+    /// Every logical path overlaid since the overlays were last cleared —
+    /// one whose overlay failed to compose included, which the composer may
+    /// still hold: what a clear gives back to the engine.
+    overlaid: HashSet<String>,
     /// Logical module names whose source changed and whose dependent
     /// pipelines must recompose on the next [`PipelineSystem::recompose_dirty`].
     dirty: HashSet<String>,
+    /// The composer was built afresh from the engine's sources (the
+    /// overlays cleared): every cached pipeline recomposes on the next
+    /// [`PipelineSystem::recompose_dirty`].
+    rebuilt: bool,
+}
+
+/// A composer holding the engine's lib modules, added in their order — each
+/// after the ones it imports — with `base_defs`.
+fn engine_composer(base_defs: &HashMap<String, ShaderDefValue>) -> Result<Composer, RenderError> {
+    let mut composer = Composer::default();
+    for (path, source) in LIB_MODULES {
+        let patched = inject_float_defs(source);
+        composer
+            .add_composable_module(ComposableModuleDescriptor {
+                source: &patched,
+                file_path: path,
+                language: ShaderLanguage::Wgsl,
+                shader_defs: base_defs.clone(),
+                ..Default::default()
+            })
+            .map_err(|e| compose_err(path, e))?;
+    }
+    Ok(composer)
 }
 
 /// The wgpu/naga_oil [`PipelineSystem`] backend. Injected via
@@ -204,8 +231,6 @@ impl WgpuPipelineSystem {
     /// Builds the system: registers every lib module with the composer (fails
     /// fast on a compose error). No graphics device needed at construction.
     pub fn new() -> Result<Self, RenderError> {
-        let mut composer = Composer::default();
-
         let base_defs: HashMap<String, ShaderDefValue> = HashMap::from([
             (
                 "MAX_DIRECTIONAL_LIGHTS".to_string(),
@@ -225,18 +250,7 @@ impl WgpuPipelineSystem {
             ),
         ]);
 
-        for (path, source) in LIB_MODULES {
-            let patched = inject_float_defs(source);
-            composer
-                .add_composable_module(ComposableModuleDescriptor {
-                    source: &patched,
-                    file_path: path,
-                    language: ShaderLanguage::Wgsl,
-                    shader_defs: base_defs.clone(),
-                    ..Default::default()
-                })
-                .map_err(|e| compose_err(path, e))?;
-        }
+        let composer = engine_composer(&base_defs)?;
 
         Ok(Self {
             inner: Mutex::new(Inner {
@@ -250,7 +264,9 @@ impl WgpuPipelineSystem {
                 pipeline_specs: HashMap::new(),
                 compute_pipeline_specs: HashMap::new(),
                 overlays: HashMap::new(),
+                overlaid: HashSet::new(),
                 dirty: HashSet::new(),
+                rebuilt: false,
             }),
         })
     }
@@ -401,16 +417,53 @@ impl PipelineSystem for WgpuPipelineSystem {
             }
         };
         inner.overlays.insert(logical_path.to_string(), source);
+        inner.overlaid.insert(logical_path.to_string());
         inner.dirty.insert(logical_path.to_string());
         log::info!("shader hot-reload: overlay source set for `{logical_path}`");
     }
 
+    fn clear_overlays(&self) {
+        let mut inner = match lock(&self.inner) {
+            Ok(g) => g,
+            Err(_) => {
+                log::error!("clear_overlays: pipeline-system mutex poisoned");
+                return;
+            }
+        };
+        inner.overlays.clear();
+        let overlaid = std::mem::take(&mut inner.overlaid);
+        if overlaid.is_empty() {
+            return;
+        }
+        // An overlay may have replaced a module under another name than its
+        // path, or brought modules of its own that the engine's import: the
+        // composer is built afresh from the engine's sources, in their
+        // order, rather than patched module by module.
+        match engine_composer(&inner.base_defs) {
+            Ok(composer) => {
+                inner.composer = composer;
+                inner.rebuilt = true;
+                for path in &overlaid {
+                    inner.dirty.remove(path);
+                }
+                log::info!(
+                    "shader hot-reload: {} overlays dropped: the engine's modules are used",
+                    overlaid.len()
+                );
+            }
+            Err(error) => {
+                log::error!("shader hot-reload: the engine's modules do not compose: {error}");
+            }
+        }
+    }
+
     fn recompose_dirty(&self, device: &dyn GraphicsDevice) -> Result<(), RenderError> {
         let mut inner = lock(&self.inner)?;
-        if inner.dirty.is_empty() {
+        if inner.dirty.is_empty() && !inner.rebuilt {
             return Ok(());
         }
         let dirty: Vec<String> = inner.dirty.drain().collect();
+        let rebuilt = std::mem::take(&mut inner.rebuilt);
 
         // Re-register any dirty lib modules with the composer so subsequent
         // composition picks up their new source. A lib path is one the
@@ -433,8 +486,19 @@ impl PipelineSystem for WgpuPipelineSystem {
 
         // Compute the set of cached pipelines whose module graph includes any
         // dirty source, then rebuild each in place under the same key.
-        let affected_render = affected_render_pipelines(&inner, &dirty);
-        let affected_compute = affected_compute_pipelines(&inner, &dirty);
+        // Built afresh, every cached pipeline recomposes.
+        let (affected_render, affected_compute) = if rebuilt {
+            inner.modules.clear();
+            (
+                inner.pipeline_specs.keys().cloned().collect(),
+                inner.compute_pipeline_specs.keys().cloned().collect(),
+            )
+        } else {
+            (
+                affected_render_pipelines(&inner, &dirty),
+                affected_compute_pipelines(&inner, &dirty),
+            )
+        };
 
         // Drop cached module entries for every dirty name (all variants) so
         // `make_module` recomposes them on the next build.

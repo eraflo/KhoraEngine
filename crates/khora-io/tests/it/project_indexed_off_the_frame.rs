@@ -786,3 +786,111 @@ fn a_file_read_while_the_trusted_open_lands_is_not_kept_from_the_trusted_project
         refusals.quarantined()
     );
 }
+
+// ─── The index read through a guard ─────────────────────────────────────────
+
+/// One byte over the strict cap of a text file — a material — at
+/// `Restricted` trust.
+const OVER_THE_STRICT_TEXT_CAP: u64 = (16 << 20) + 1;
+
+/// A project holding `materials/big.kmat`, one byte over the strict text cap,
+/// made without writing its bytes.
+fn project_with_an_oversized_material() -> tempfile::TempDir {
+    let dir = project(&[]);
+    let big = dir.path().join("assets").join("materials").join("big.kmat");
+    std::fs::create_dir_all(big.parent().expect("a folder")).expect("the materials folder");
+    std::fs::File::create(&big)
+        .and_then(|file| file.set_len(OVER_THE_STRICT_TEXT_CAP))
+        .expect("the oversized material is made");
+    dir
+}
+
+/// The open of the project at `root`, filed with `engine`'s hub and indexed
+/// off the frame through its `AssetIndexing`: the bytes it built, or why
+/// not.
+fn opened_off_the_frame(engine: &Engine, root: &Path) -> Result<Vec<u8>, String> {
+    let ticket = engine.hub().file(root, IndexKind::Open);
+    let filed = engine.requests().drain();
+    let request = filed
+        .into_iter()
+        .find(|request| request.ticket == ticket)
+        .expect("the open is on the family's channel");
+    engine.indexing().index_leased(&request).0.index
+}
+
+/// Whether `refusals` hold `big.kmat`, refused for its size at `Restricted`.
+fn holds_the_oversized_material(refusals: &khora_io::trust::Refusals) -> bool {
+    use khora_io::trust::{SecurityReason, Trust};
+
+    refusals.quarantined().iter().any(|refusal| {
+        refusal.path.ends_with("big.kmat")
+            && refusal.trust == Trust::Restricted
+            && matches!(refusal.reason, SecurityReason::TooLarge { .. })
+    })
+}
+
+/// **The index of an opened project reports to the run's refusals.** The
+/// hub is told to read through the run's refusals at the trust of the
+/// project open, restricted. An `Open` of a project holding a material over
+/// the strict cap is indexed off the frame: the index still builds, the
+/// material's own entry in it, and the material is refused for its size in
+/// the run's refusals, at the restricted trust.
+#[test]
+fn the_index_of_an_opened_project_reports_to_the_runs_refusals() {
+    use khora_io::trust::{ProjectTrust, ProjectTrustState, Refusals};
+
+    let dir = project_with_an_oversized_material();
+    let engine = Engine::new();
+    let refusals = Arc::new(Refusals::new(None, None));
+    let trust = Arc::new(ProjectTrustState::new(ProjectTrust::Restricted));
+    engine
+        .hub()
+        .read_through(Arc::clone(&refusals), Arc::clone(&trust));
+
+    let bytes = opened_off_the_frame(&engine, dir.path()).expect("the project indexes");
+
+    let index = AssetIndex::new(&bytes).expect("the bytes are an asset index");
+    assert!(
+        index.get_metadata(&uuid("materials/big.kmat")).is_some(),
+        "the refused material keeps its own entry"
+    );
+    assert!(
+        holds_the_oversized_material(&refusals),
+        "the material is refused in the run's refusals: {:?}",
+        refusals.quarantined()
+    );
+}
+
+/// **An index hub installed after the run's refusals reads through them.**
+/// Whichever of the hub and the refusals is installed second ties them: here
+/// the runtime holds the run's refusals and the trust of the project open,
+/// restricted, before `install_indexing` runs. An `Open` of a project
+/// holding a material over the strict cap reports it to those refusals.
+#[test]
+fn an_index_hub_installed_after_the_runs_refusals_reads_through_them() {
+    use khora_io::trust::{ProjectTrust, ProjectTrustState, Refusals};
+
+    let dir = project_with_an_oversized_material();
+    let reserve = Reserve::new();
+    let mut runtime = Runtime::new();
+    runtime.resources.insert(reserve.clone());
+    let refusals = Arc::new(Refusals::new(None, None));
+    runtime.resources.insert(Arc::clone(&refusals));
+    runtime
+        .resources
+        .insert(Arc::new(ProjectTrustState::new(ProjectTrust::Restricted)));
+    install_indexing(&mut runtime);
+    let engine = Engine {
+        world: World::new(),
+        runtime,
+        reserve,
+    };
+
+    opened_off_the_frame(&engine, dir.path()).expect("the project indexes");
+
+    assert!(
+        holds_the_oversized_material(&refusals),
+        "the material is refused in the run's refusals: {:?}",
+        refusals.quarantined()
+    );
+}

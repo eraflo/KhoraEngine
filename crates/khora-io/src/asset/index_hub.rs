@@ -58,7 +58,17 @@ pub struct IndexHub {
     /// project replaced since.
     opened: Arc<AtomicU64>,
     tickets: Mutex<IndexTickets>,
+    /// What a project's files are read through while indexed: the run's
+    /// refusals and the trust of the project open. `None` until both are
+    /// installed; the index then reads as it is (a test's).
+    through: Mutex<Option<ReadThrough>>,
 }
+
+/// The run's refusals and the trust of the project open.
+type ReadThrough = (
+    Arc<crate::trust::Refusals>,
+    Arc<crate::trust::ProjectTrustState>,
+);
 
 impl IndexHub {
     fn new() -> Self {
@@ -67,6 +77,7 @@ impl IndexHub {
             next: AtomicU64::new(1),
             opened: Arc::new(AtomicU64::new(0)),
             tickets: Mutex::new(IndexTickets::default()),
+            through: Mutex::new(None),
         }
     }
 
@@ -128,6 +139,21 @@ impl IndexHub {
         self.tickets().pending.contains_key(&ticket)
     }
 
+    /// Builds every project index from now on through a guard at the trust
+    /// of the project open, `trust` read at each index, reporting to the
+    /// run's `refusals`.
+    pub fn read_through(
+        &self,
+        refusals: Arc<crate::trust::Refusals>,
+        trust: Arc<crate::trust::ProjectTrustState>,
+    ) {
+        let mut through = self
+            .through
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *through = Some((refusals, trust));
+    }
+
     /// Files `outcome` under `ticket`: the index landed.
     ///
     /// A ticket no longer in flight — replaced by an `Open` meanwhile —
@@ -153,8 +179,13 @@ impl AssetIndexing for IndexHub {
         let opened = Arc::clone(&self.opened);
         let lease = Lease::new(move || opened.load(Ordering::Acquire) == filed_under);
         // A walk or a lister that panics fails this index alone.
+        let through = self
+            .through
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
         let index = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            build_index(&request.project_root)
+            build_index(&request.project_root, through)
         }))
         .unwrap_or_else(|panic| {
             let why = panic
@@ -175,11 +206,22 @@ impl AssetIndexing for IndexHub {
 }
 
 /// The index of `<project_root>/assets/`, its ids read from the project's
-/// registry.
-fn build_index(project_root: &std::path::Path) -> Result<Vec<u8>, String> {
+/// registry, the files it looks into read `through` a guard at the trust of
+/// the project open.
+fn build_index(
+    project_root: &std::path::Path,
+    through: Option<ReadThrough>,
+) -> Result<Vec<u8>, String> {
     let registry = super::AssetIdRegistry::load(project_root);
-    super::IndexBuilder::new(&project_root.join("assets"))
-        .with_registry(&registry)
+    let assets = project_root.join("assets");
+    let guard = through.map(|(refusals, trust)| {
+        crate::trust::FileGuard::new(&assets, trust.get().trust(), refusals)
+    });
+    let mut builder = super::IndexBuilder::new(&assets).with_registry(&registry);
+    if let Some(guard) = &guard {
+        builder = builder.with_guard(guard);
+    }
+    builder
         .build_index_bytes()
         .map_err(|error| format!("{error:#}"))
 }
@@ -193,6 +235,15 @@ pub fn install_indexing(runtime: &mut Runtime) {
         return;
     }
     let hub = Arc::new(IndexHub::new());
+    // Installed after the run's refusals, it reads through them at once;
+    // installed before, the refusals' install hands them over.
+    let refusals = runtime.resources.get::<Arc<crate::trust::Refusals>>();
+    let trust = runtime
+        .resources
+        .get::<Arc<crate::trust::ProjectTrustState>>();
+    if let (Some(refusals), Some(trust)) = (refusals, trust) {
+        hub.read_through(Arc::clone(refusals), Arc::clone(trust));
+    }
     runtime.resources.insert(hub.requests.clone());
     let indexing: Arc<dyn AssetIndexing> = Arc::clone(&hub) as Arc<dyn AssetIndexing>;
     runtime.resources.insert(indexing);

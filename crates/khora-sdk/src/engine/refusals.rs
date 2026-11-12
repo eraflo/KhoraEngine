@@ -40,9 +40,22 @@ pub(crate) fn install(runtime: &mut Runtime, game: &GameIdentity, keeps_user_fil
             .resources
             .insert(Arc::new(ProjectTrustState::new(ProjectTrust::Trusted)));
     }
-    if runtime.resources.get::<Arc<Refusals>>().is_some() {
-        return;
+    if runtime.resources.get::<Arc<Refusals>>().is_none() {
+        install_refusals(runtime, game, keeps_user_files);
     }
+    // The project index reads the project's files through the run's
+    // refusals, at the trust of the project open.
+    let refusals = runtime.resources.get::<Arc<Refusals>>().cloned();
+    let trust = runtime.resources.get::<Arc<ProjectTrustState>>().cloned();
+    let hub = runtime.resources.get::<Arc<khora_io::asset::IndexHub>>();
+    if let (Some(hub), Some(refusals), Some(trust)) = (hub, refusals, trust) {
+        hub.read_through(refusals, trust);
+    }
+}
+
+/// Installs the run's refusals: kept in the user's folders when the app
+/// keeps its files there.
+fn install_refusals(runtime: &mut Runtime, game: &GameIdentity, keeps_user_files: bool) {
     if runtime.resources.get::<Arc<Problems>>().is_none() {
         runtime.resources.insert(Arc::new(Problems::default()));
     }

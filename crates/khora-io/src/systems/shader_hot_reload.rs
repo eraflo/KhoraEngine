@@ -36,6 +36,36 @@ use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
 
 use crate::asset::{AssetChangeEvent, AssetChangeKind, AssetWatch};
 
+/// What the shader pump last applied the project's overlays for: the watched
+/// roots and the trust of the project open. A runtime resource, held as
+/// `Arc<OverlaysSeen>`.
+#[derive(Default)]
+pub struct OverlaysSeen {
+    /// The watched roots and the trust last applied for; `None` before the
+    /// first run. A leaf lock: held only to compare and replace.
+    seen: std::sync::Mutex<Option<Vec<WatchedRoot>>>,
+}
+
+/// A watched root and the trust it is read at.
+type WatchedRoot = (std::path::PathBuf, crate::trust::ProjectTrust);
+
+impl OverlaysSeen {
+    /// Records `roots`, each with its trust, as what the overlays are
+    /// applied for; whether they differ from what was recorded before.
+    fn moved(&self, roots: Vec<WatchedRoot>) -> bool {
+        let mut seen = self
+            .seen
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let now = Some(roots);
+        if *seen == now {
+            return false;
+        }
+        *seen = now;
+        true
+    }
+}
+
 /// Root segment every composable shader module path carries.
 const LOGICAL_ROOT: &str = "khora";
 
@@ -104,24 +134,11 @@ fn changed_files(event: &AssetChangeEvent) -> Vec<(std::path::PathBuf, String)> 
         .collect()
 }
 
-/// Lists the overlay at `file` among what the restricted mode left unused,
-/// under [`ProblemSource::Restricted`] — each file once; the list is cleared
-/// when the project is trusted.
-fn list_ignored(runtime: &Runtime, file: &std::path::Path) {
-    let Some(problems) = runtime.resources.get::<Arc<Problems>>() else {
-        return;
-    };
-    let module = file.display().to_string();
-    let mut listed = problems.of_source(&ProblemSource::Restricted);
-    if listed
-        .iter()
-        .any(|problem| problem.module.as_deref() == Some(&module))
-    {
-        return;
-    }
-    listed.push(Problem {
+/// What the restricted mode lists of the overlay at `file`, left unused.
+fn ignored(file: &std::path::Path) -> Problem {
+    Problem {
         severity: ProblemSeverity::Warning,
-        module: Some(module),
+        module: Some(file.display().to_string()),
         line: 0,
         column: 0,
         message: "Shader overlay ignored".to_owned(),
@@ -133,8 +150,73 @@ fn list_ignored(runtime: &Runtime, file: &std::path::Path) {
         behavior: None,
         component: None,
         field: None,
-    });
+    }
+}
+
+/// Lists the overlay at `file` among what the restricted mode left unused,
+/// under [`ProblemSource::Restricted`] — each file once; the list is cleared
+/// when the project is trusted.
+fn list_ignored(runtime: &Runtime, file: &std::path::Path) {
+    let Some(problems) = runtime.resources.get::<Arc<Problems>>() else {
+        return;
+    };
+    let problem = ignored(file);
+    let mut listed = problems.of_source(&ProblemSource::Restricted);
+    if listed.iter().any(|known| known.module == problem.module) {
+        return;
+    }
+    listed.push(problem);
     problems.report(ProblemSource::Restricted, listed);
+}
+
+/// Every overlay under `root`, as its root — absolute, as a change under it
+/// names it — and its path under it: what a project holds when it is
+/// opened, trusted or restricted.
+fn overlays_under(root: &std::path::Path) -> Vec<(std::path::PathBuf, String)> {
+    let root = crate::asset::root_path::absolute(root);
+    walkdir::WalkDir::new(&root)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+        .filter_map(|entry| {
+            let rel = entry.path().strip_prefix(&root).ok()?;
+            let rel = khora_core::asset::asset_key(rel);
+            logical_name_for_shader_path(&rel)?;
+            Some((root.clone(), rel))
+        })
+        .collect()
+}
+
+/// Applies the overlays of the watched `roots` afresh, each root at its
+/// trust: the pipeline system's overlays dropped, then each overlay under a
+/// trusted root replaces its module, and each under a restricted one is
+/// listed under [`ProblemSource::Restricted`], the list replaced.
+fn apply_afresh(
+    runtime: &Runtime,
+    pipeline_system: &dyn PipelineSystem,
+    roots: &[WatchedRoot],
+    refusals: &Arc<crate::trust::Refusals>,
+) {
+    pipeline_system.clear_overlays();
+    let mut listed = Vec::new();
+    for (watched, trust) in roots {
+        let restricted = *trust == crate::trust::ProjectTrust::Restricted;
+        for (root, rel_path) in overlays_under(watched) {
+            let Some(logical) = logical_name_for_shader_path(&rel_path) else {
+                continue;
+            };
+            if restricted {
+                listed.push(ignored(&root.join(&rel_path)));
+            } else if let Some(source) = overlay_source(&root, &rel_path, refusals) {
+                log::info!("shader hot-reload: {rel_path} replaces the engine's `{logical}`");
+                pipeline_system.set_overlay_source(&logical, source);
+            }
+        }
+    }
+    if let Some(problems) = runtime.resources.get::<Arc<Problems>>() {
+        problems.report(ProblemSource::Restricted, listed);
+    }
 }
 
 fn shader_hot_reload_system(
@@ -146,30 +228,64 @@ fn shader_hot_reload_system(
     let Some(watch) = runtime.resources.get::<Arc<AssetWatch>>() else {
         return; // No assets dir → embedded sources, nothing to pump.
     };
-    let events = watch.poll_for("shader_hot_reload");
-    if events.is_empty() {
-        return;
-    }
     let Some(pipeline_system) = runtime.resources.get::<Arc<dyn PipelineSystem>>() else {
         return;
     };
     let Some(device) = runtime.backends.get::<Arc<dyn GraphicsDevice>>() else {
         return;
     };
+    // Each watched root at its own trust: a root outside the project whose
+    // trust is held — the project before, still watched while another
+    // opens — is read restricted.
+    let roots: Vec<WatchedRoot> = (watch.roots().into_iter())
+        .map(|root| {
+            let trust = crate::trust::ProjectTrustState::of_path(runtime, &root);
+            (root, trust)
+        })
+        .collect();
+    // A project opened, closed, trusted or restricted: its overlays are
+    // applied afresh, those on disk included — not only the ones saved since.
+    let moved = runtime
+        .resources
+        .get::<Arc<OverlaysSeen>>()
+        .is_some_and(|seen| seen.moved(roots.clone()));
+    let events = watch.poll_for("shader_hot_reload");
+    if events.is_empty() && !moved {
+        return;
+    }
 
     let refusals = runtime
         .resources
         .get::<Arc<crate::trust::Refusals>>()
         .cloned()
         .unwrap_or_else(|| Arc::new(crate::trust::Refusals::new(None, None)));
-    // A restricted project's shaders never replace the engine's.
-    let restricted =
-        crate::trust::ProjectTrustState::of(runtime) == crate::trust::ProjectTrust::Restricted;
-    let mut changed = false;
-    for (root, rel_path) in events.iter().flat_map(changed_files) {
+    // An overlay deleted gives its module back: the overlays are applied
+    // afresh, without it — a shader removed, a folder removed or moved out
+    // (a path with no extension), or a rescan, after which a removal may
+    // have been dropped.
+    let removed = events.iter().any(|event| match event.kind {
+        AssetChangeKind::Rescan => true,
+        AssetChangeKind::Removed => {
+            logical_name_for_shader_path(&event.rel_path).is_some()
+                || std::path::Path::new(&event.rel_path).extension().is_none()
+        }
+        _ => false,
+    });
+    let mut changed = moved || removed;
+    if changed {
+        apply_afresh(runtime, pipeline_system.as_ref(), &roots, &refusals);
+    }
+    // A deleted file has nothing to read: the afresh pass above handled it.
+    let written = events
+        .iter()
+        .filter(|event| event.kind != AssetChangeKind::Removed);
+    for (root, rel_path) in written.flat_map(changed_files) {
         let Some(logical) = logical_name_for_shader_path(&rel_path) else {
             continue; // Not a shader file.
         };
+        // A restricted project's shaders never replace the engine's.
+        let restricted = crate::trust::ProjectTrustState::of_path(runtime, &root)
+            == crate::trust::ProjectTrust::Restricted;
         if restricted {
             log::debug!(
                 "shader hot-reload: {rel_path} is not used for `{logical}`: the project is restricted"

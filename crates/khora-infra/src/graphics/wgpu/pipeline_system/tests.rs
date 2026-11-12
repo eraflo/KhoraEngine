@@ -235,6 +235,430 @@ fn overlay_lib_recomposes_and_dependent_pipeline_still_composes() {
         .expect("standard_pbr composes against the overlaid camera lib");
 }
 
+/// Re-registers every dirty lib module with the composer and forgets the
+/// dirty set — the device-free half of `recompose_dirty`.
+fn recompose_dirty_libs(inner: &mut Inner) {
+    let dirty: Vec<String> = inner.dirty.drain().collect();
+    for path in dirty {
+        if !inner.pipelines.contains_key(path.as_str()) {
+            readd_lib_module(inner, &path)
+                .unwrap_or_else(|e| panic!("re-add the dirty lib `{path}`: {e}"));
+        }
+    }
+}
+
+/// Composes `khora::pipelines::standard_pbr` against the modules the composer
+/// holds now.
+fn compose_standard_pbr(inner: &mut Inner) -> Result<naga::Module, String> {
+    let defs = inner.base_defs.clone();
+    let pbr = resolve_pipeline_source(inner, "khora::pipelines::standard_pbr")
+        .expect("the pbr pipeline has a source");
+    let patched = inject_float_defs(&pbr);
+    inner
+        .composer
+        .make_naga_module(NagaModuleDescriptor {
+            source: &patched,
+            file_path: "khora::pipelines::standard_pbr",
+            shader_defs: defs,
+            shader_type: ShaderType::Wgsl,
+            ..Default::default()
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// **Clearing the overlays restores the engine's module.** A project's
+/// overlay of `khora::std::camera` that drops the `camera` binding is set
+/// and recomposed: `standard_pbr`, which imports it, no longer composes.
+/// Once the overlays are cleared, the camera lib's source is the engine's
+/// again and it is marked for the next recompose; recomposed, `standard_pbr`
+/// composes from the engine's source as before the overlay.
+#[test]
+fn clear_overlays_restores_the_engines_module() {
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    let original = LIB_MODULES
+        .iter()
+        .find(|(p, _)| *p == "khora::std::camera")
+        .map(|(_, s)| (*s).to_owned())
+        .expect("camera lib registered");
+    let overlay = "#define_import_path khora::std::camera\n\n\
+                   fn khora_overlay_marker() -> f32 { return 1.0; }\n"
+        .to_owned();
+
+    sys.set_overlay_source("khora::std::camera", overlay.clone());
+    {
+        let mut inner = sys.inner.lock().unwrap();
+        recompose_dirty_libs(&mut inner);
+        assert_eq!(
+            resolve_lib_source(&inner, "khora::std::camera").as_deref(),
+            Some(overlay.as_str()),
+            "the premise: the overlay is the camera lib's source"
+        );
+        assert!(
+            compose_standard_pbr(&mut inner).is_err(),
+            "the premise: standard_pbr does not compose against an overlay with no camera"
+        );
+    }
+
+    sys.clear_overlays();
+
+    let mut inner = sys.inner.lock().unwrap();
+    assert_eq!(
+        resolve_lib_source(&inner, "khora::std::camera").as_deref(),
+        Some(original.as_str()),
+        "the camera lib's source is the engine's again"
+    );
+    assert!(
+        inner.rebuilt || inner.dirty.contains("khora::std::camera"),
+        "the cleared module is recomposed at the next recompose_dirty: rebuilt {}, dirty {:?}",
+        inner.rebuilt,
+        inner.dirty
+    );
+    recompose_dirty_libs(&mut inner);
+    compose_standard_pbr(&mut inner)
+        .expect("standard_pbr composes from the engine's camera lib again");
+}
+
+/// **Clearing the overlays restores a module whose last overlay failed to
+/// compose.** A project's overlay of `khora::std::camera` with no `camera`
+/// binding is set and recomposed: the composer holds it. The project then
+/// saves a broken version: `recompose_dirty` fails to re-register it, keeps
+/// the composer's previous module — the project's first overlay — and drops
+/// the broken one from the overlays. Once the overlays are cleared and
+/// recomposed (the project restricted or closed), the camera lib the
+/// composer holds must be the engine's: `standard_pbr` composes again.
+#[test]
+fn clear_overlays_restores_a_module_whose_last_overlay_failed_to_compose() {
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    let no_camera = "#define_import_path khora::std::camera\n\n\
+                     fn khora_overlay_marker() -> f32 { return 1.0; }\n"
+        .to_owned();
+    // Its `#define_import_path` line deleted by mistake: the composer cannot
+    // name it.
+    let broken = "fn khora_overlay_marker() -> f32 { return 2.0; }\n".to_owned();
+
+    sys.set_overlay_source("khora::std::camera", no_camera);
+    sys.recompose_dirty(&NoDevice)
+        .expect("the first overlay recomposes");
+    sys.set_overlay_source("khora::std::camera", broken);
+    sys.recompose_dirty(&NoDevice)
+        .expect("a lib that fails to compose is logged, not returned");
+    {
+        let mut inner = sys.inner.lock().unwrap();
+        assert!(
+            !inner.overlays.contains_key("khora::std::camera"),
+            "the premise: the broken overlay is dropped"
+        );
+        assert!(
+            compose_standard_pbr(&mut inner).is_err(),
+            "the premise: the composer still holds the first overlay, with no camera"
+        );
+    }
+
+    sys.clear_overlays();
+    sys.recompose_dirty(&NoDevice)
+        .expect("the cleared overlays recompose");
+
+    let mut inner = sys.inner.lock().unwrap();
+    compose_standard_pbr(&mut inner).expect(
+        "standard_pbr composes from the engine's camera lib once the project's overlays are cleared",
+    );
+}
+
+/// **Clearing the overlays removes a module only a project brought.** A
+/// project's overlay declares a lib module the engine does not have,
+/// `khora::project::extra`, and it is recomposed: the composer holds it.
+/// Once the overlays are cleared and recomposed (the project restricted or
+/// closed), nothing of that project is left: the composer no longer holds
+/// the module, so no later pipeline can import it.
+#[test]
+fn clear_overlays_removes_a_module_only_a_project_brought() {
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    sys.set_overlay_source(
+        "khora::project::extra",
+        "#define_import_path khora::project::extra\n\n\
+         fn project_extra() -> f32 { return 3.0; }\n"
+            .to_owned(),
+    );
+    sys.recompose_dirty(&NoDevice)
+        .expect("the project's module recomposes");
+    assert!(
+        sys.inner
+            .lock()
+            .unwrap()
+            .composer
+            .contains_module("khora::project::extra"),
+        "the premise: the composer holds the project's module"
+    );
+
+    sys.clear_overlays();
+    sys.recompose_dirty(&NoDevice)
+        .expect("the cleared overlays recompose");
+
+    assert!(
+        !sys.inner
+            .lock()
+            .unwrap()
+            .composer
+            .contains_module("khora::project::extra"),
+        "the module only the project brought is gone once its overlays are cleared"
+    );
+}
+
+/// **Clearing the overlays restores a built-in module a project file of
+/// another name replaced.** A project's `shaders/lib/evil.wgsl` — logical
+/// path `khora::evil` — declares `#define_import_path khora::std::camera`,
+/// with no `camera` binding: recomposed, the composer's camera lib is the
+/// project's, and `standard_pbr` no longer composes. Once the overlays are
+/// cleared and recomposed (the project restricted or closed), the camera lib
+/// must be the engine's again: `standard_pbr` composes.
+#[test]
+fn clear_overlays_restores_a_builtin_module_a_file_of_another_name_replaced() {
+    let sys = WgpuPipelineSystem::new().expect("system init");
+    sys.set_overlay_source(
+        "khora::evil",
+        "#define_import_path khora::std::camera\n\n\
+         fn khora_overlay_marker() -> f32 { return 1.0; }\n"
+            .to_owned(),
+    );
+    sys.recompose_dirty(&NoDevice)
+        .expect("the project's file recomposes");
+    assert!(
+        compose_standard_pbr(&mut sys.inner.lock().unwrap()).is_err(),
+        "the premise: the project's file replaced the camera lib"
+    );
+
+    sys.clear_overlays();
+    sys.recompose_dirty(&NoDevice)
+        .expect("the cleared overlays recompose");
+
+    compose_standard_pbr(&mut sys.inner.lock().unwrap())
+        .expect("standard_pbr composes from the engine's camera lib once the overlays are cleared");
+}
+
+/// **Clearing the overlays keeps every built-in module a project overlaid.**
+/// A project overlays `khora::lighting::structs` with a version importing a
+/// lib of its own, `khora::project::extra`, then `khora::lighting::uniforms`
+/// (which imports `structs`) with the engine's source and a comment. Once
+/// the overlays are cleared and recomposed, both built-in libs are in the
+/// composer again, from the engine's source — whatever order the clear and
+/// the recompose visit them in (run twenty times over, each with its own
+/// hash order).
+#[test]
+fn clear_overlays_keeps_every_builtin_module_a_project_overlaid() {
+    let source = |path: &str| {
+        LIB_MODULES
+            .iter()
+            .find(|(p, _)| *p == path)
+            .map(|(_, s)| (*s).to_owned())
+            .unwrap_or_else(|| panic!("`{path}` is a built-in lib"))
+    };
+    for run in 0..20 {
+        let sys = WgpuPipelineSystem::new().expect("system init");
+        sys.set_overlay_source(
+            "khora::project::extra",
+            "#define_import_path khora::project::extra\n\n\
+             fn project_extra() -> f32 { return 3.0; }\n"
+                .to_owned(),
+        );
+        sys.recompose_dirty(&NoDevice)
+            .expect("the project's lib recomposes");
+        let structs = source("khora::lighting::structs").replacen(
+            "#define_import_path khora::lighting::structs",
+            "#define_import_path khora::lighting::structs\n#import khora::project::extra",
+            1,
+        );
+        sys.set_overlay_source("khora::lighting::structs", structs);
+        sys.recompose_dirty(&NoDevice)
+            .expect("the overlaid structs recompose");
+        sys.set_overlay_source(
+            "khora::lighting::uniforms",
+            format!("{}\n// overlay\n", source("khora::lighting::uniforms")),
+        );
+        sys.recompose_dirty(&NoDevice)
+            .expect("the overlaid uniforms recompose");
+
+        sys.clear_overlays();
+        sys.recompose_dirty(&NoDevice)
+            .expect("the cleared overlays recompose");
+
+        let inner = sys.inner.lock().unwrap();
+        for lib in ["khora::lighting::structs", "khora::lighting::uniforms"] {
+            assert!(
+                inner.composer.contains_module(lib),
+                "run {run}: the built-in `{lib}` is in the composer after the clear"
+            );
+        }
+    }
+}
+
+/// A device `recompose_dirty` is handed while no pipeline is cached: it is
+/// never asked to do anything.
+#[derive(Debug)]
+struct NoDevice;
+
+impl GraphicsDevice for NoDevice {
+    fn create_shader_module(
+        &self,
+        _d: &khora_core::renderer::api::shader::ShaderModuleDescriptor,
+    ) -> Result<ShaderModuleId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_shader_module(&self, _id: ShaderModuleId) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_render_pipeline(
+        &self,
+        _d: &RenderPipelineDescriptor,
+    ) -> Result<RenderPipelineId, ResourceError> {
+        unreachable!()
+    }
+    fn create_pipeline_layout(
+        &self,
+        _d: &PipelineLayoutDescriptor,
+    ) -> Result<khora_core::renderer::api::pipeline::PipelineLayoutId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_render_pipeline(&self, _id: RenderPipelineId) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_compute_pipeline(
+        &self,
+        _d: &ComputePipelineDescriptor,
+    ) -> Result<ComputePipelineId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_compute_pipeline(&self, _id: ComputePipelineId) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_bind_group_layout(
+        &self,
+        _d: &BindGroupLayoutDescriptor,
+    ) -> Result<BindGroupLayoutId, ResourceError> {
+        unreachable!()
+    }
+    fn create_bind_group(
+        &self,
+        _d: &khora_core::renderer::api::command::BindGroupDescriptor,
+    ) -> Result<khora_core::renderer::api::command::BindGroupId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_bind_group_layout(&self, _id: BindGroupLayoutId) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn destroy_bind_group(
+        &self,
+        _id: khora_core::renderer::api::command::BindGroupId,
+    ) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_buffer(
+        &self,
+        _d: &khora_core::renderer::api::resource::BufferDescriptor,
+    ) -> Result<khora_core::renderer::api::resource::BufferId, ResourceError> {
+        unreachable!()
+    }
+    fn create_buffer_with_data(
+        &self,
+        _d: &khora_core::renderer::api::resource::BufferDescriptor,
+        _data: &[u8],
+    ) -> Result<khora_core::renderer::api::resource::BufferId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_buffer(
+        &self,
+        _id: khora_core::renderer::api::resource::BufferId,
+    ) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn write_buffer(
+        &self,
+        _id: khora_core::renderer::api::resource::BufferId,
+        _offset: u64,
+        _data: &[u8],
+    ) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn write_buffer_async<'a>(
+        &'a self,
+        _id: khora_core::renderer::api::resource::BufferId,
+        _offset: u64,
+        _data: &'a [u8],
+    ) -> Box<dyn std::future::Future<Output = Result<(), ResourceError>> + Send + 'static> {
+        unreachable!()
+    }
+    fn create_texture(
+        &self,
+        _d: &khora_core::renderer::api::resource::TextureDescriptor,
+    ) -> Result<khora_core::renderer::api::resource::TextureId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_texture(
+        &self,
+        _id: khora_core::renderer::api::resource::TextureId,
+    ) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn write_texture(
+        &self,
+        _id: khora_core::renderer::api::resource::TextureId,
+        _data: &[u8],
+        _bytes_per_row: Option<u32>,
+        _offset: khora_core::math::dimension::Origin3D,
+        _size: khora_core::math::dimension::Extent3D,
+    ) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_texture_view(
+        &self,
+        _id: khora_core::renderer::api::resource::TextureId,
+        _d: &khora_core::renderer::api::resource::TextureViewDescriptor,
+    ) -> Result<khora_core::renderer::api::resource::TextureViewId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_texture_view(
+        &self,
+        _id: khora_core::renderer::api::resource::TextureViewId,
+    ) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_sampler(
+        &self,
+        _d: &khora_core::renderer::api::resource::SamplerDescriptor,
+    ) -> Result<khora_core::renderer::api::resource::SamplerId, ResourceError> {
+        unreachable!()
+    }
+    fn destroy_sampler(
+        &self,
+        _id: khora_core::renderer::api::resource::SamplerId,
+    ) -> Result<(), ResourceError> {
+        unreachable!()
+    }
+    fn create_command_encoder(
+        &self,
+        _label: Option<&str>,
+    ) -> Box<dyn khora_core::renderer::traits::CommandEncoder> {
+        unreachable!()
+    }
+    fn submit_command_buffer(
+        &self,
+        _command_buffer: khora_core::renderer::api::command::CommandBufferId,
+    ) {
+        unreachable!()
+    }
+    fn get_surface_format(&self) -> Option<khora_core::renderer::api::resource::TextureFormat> {
+        unreachable!()
+    }
+    fn get_surface_size(&self) -> (u32, u32) {
+        unreachable!()
+    }
+    fn get_adapter_info(&self) -> khora_core::renderer::api::device::GraphicsAdapterInfo {
+        unreachable!()
+    }
+    fn supports_feature(&self, _feature_name: &str) -> bool {
+        unreachable!()
+    }
+}
+
 /// The sandbox hot-reloads every `.wgsl` under `shader/shaders/`, and the
 /// watcher names a pipeline file `khora::pipelines::<stem>`. A file in
 /// `pipelines/` that the table does not know is taken by `recompose_dirty`
