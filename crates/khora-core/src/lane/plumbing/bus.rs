@@ -31,7 +31,7 @@
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
 
-use super::io::FrameId;
+use crate::lane::io::FrameId;
 
 /// Read-only typed bus carrying [`Flow`] outputs to lanes for one tick.
 ///

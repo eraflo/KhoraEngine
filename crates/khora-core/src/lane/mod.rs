@@ -27,41 +27,17 @@
 //! as a layer at its family's place; its agent only chooses which lane runs,
 //! at which level.
 
-mod error;
-
-pub use error::LaneError;
-
-pub mod bus;
-
-pub mod context_keys;
-
-pub mod deck;
-
-pub mod host_views;
-
-pub mod compile_check;
 pub mod contract;
-pub mod cost;
-pub mod erased;
-pub mod family;
-pub mod guard;
-pub mod io;
-pub mod lease;
-pub mod level;
-pub mod reserve;
-pub mod staging;
+pub mod plumbing;
+
+pub use contract::{compile_check, cost, erased, family, guard, io, level};
+pub use plumbing::{bus, context_keys, deck, host_views, lease, reserve, staging};
 
 pub use bus::LaneBus;
-
-pub use contract::{Lane, LaneReport};
-
 pub use context_keys::*;
-
+pub use contract::{Lane, LaneError, LaneReport};
 pub use deck::OutputDeck;
-
 pub use host_views::HostViews;
-
 pub use lease::{Lease, Leases};
 pub use reserve::{Reserve, Staged};
-
 pub use staging::Staging;

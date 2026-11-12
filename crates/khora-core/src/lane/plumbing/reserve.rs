@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::event::Supersedes;
 
-use super::staging::{Queues, Staging};
+use crate::lane::staging::{Queues, Staging};
 
 /// An output a lane stages: kept in the reserve until a frame's `Boundary`
 /// takes it.
@@ -74,7 +74,7 @@ impl Reserve {
 
     /// Takes in what one run staged: each output waits behind those of its
     /// type already held, and replaces — abandoning it — a waiting one it
-    /// supersedes. Outputs staged under a [`Lease`](super::Lease) that no
+    /// supersedes. Outputs staged under a [`Lease`](crate::lane::Lease) that no
     /// longer holds are abandoned instead. What the scheduler does with a
     /// run's staging at the frame start after the run ended.
     pub fn receive(&self, staging: Staging) {

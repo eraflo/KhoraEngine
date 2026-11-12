@@ -26,17 +26,17 @@
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 
-use super::context_keys::ClearColor;
-use super::contract::Lane;
-use super::family::LaneFamily;
-use super::guard::{InputRefusal, OutputRefusal, Reason, SinkKind, SourceKind};
-use super::io::{
+use crate::event::Supersedes;
+use crate::lane::context_keys::ClearColor;
+use crate::lane::contract::Lane;
+use crate::lane::family::LaneFamily;
+use crate::lane::guard::{InputRefusal, OutputRefusal, Reason, SinkKind, SourceKind};
+use crate::lane::io::{
     Budget, Declaration, FixedStep, InputSource, Locked, OutputSink, Pass, PassSlot, SceneTarget,
     Target, TargetKey,
 };
-use super::reserve::Staged;
-use super::LaneError;
-use crate::event::Supersedes;
+use crate::lane::reserve::Staged;
+use crate::lane::LaneError;
 use crate::residency::{Residency, Resident};
 
 /// What the derive does with one input field.
@@ -364,7 +364,7 @@ impl<'f, T: Staged> StagedField<'f> for Vec<T> {
     }
 }
 
-impl<'f, T: Staged> StagedField<'f> for super::Leases<T> {
+impl<'f, T: Staged> StagedField<'f> for crate::lane::Leases<T> {
     fn declare(d: &mut Declaration, field: &'static str) {
         d.write::<T>(field, SinkKind::Staged);
     }

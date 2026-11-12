@@ -88,6 +88,7 @@ mod every_pub_mod {
     use khora_core::agent::execution_phase as _;
     use khora_core::agent::gorna as _;
     use khora_core::agent::gorna::protocol as _;
+    use khora_core::agent::registration as _;
     use khora_core::agent::timing as _;
     use khora_core::asset as _;
     use khora_core::asset::font as _;
@@ -104,9 +105,20 @@ mod every_pub_mod {
     use khora_core::interpolation as _;
     use khora_core::lane as _;
     use khora_core::lane::bus as _;
+    use khora_core::lane::compile_check as _;
     use khora_core::lane::context_keys as _;
+    use khora_core::lane::contract as _;
     use khora_core::lane::cost as _;
     use khora_core::lane::deck as _;
+    use khora_core::lane::erased as _;
+    use khora_core::lane::family as _;
+    use khora_core::lane::guard as _;
+    use khora_core::lane::host_views as _;
+    use khora_core::lane::io as _;
+    use khora_core::lane::lease as _;
+    use khora_core::lane::level as _;
+    use khora_core::lane::reserve as _;
+    use khora_core::lane::staging as _;
     use khora_core::memory as _;
     use khora_core::physics as _;
     use khora_core::platform as _;
@@ -2091,6 +2103,120 @@ fn lane_is_the_contract_lane() {
     is_clone::<khora_core::lane::LaneReport>();
     is_default::<khora_core::lane::LaneReport>();
     is_partial_eq::<khora_core::lane::LaneReport>();
+}
+
+/// Every `khora_core::lane::<module>` path names the module holding that
+/// module's items, whichever half of the lane folder (`contract/`,
+/// `plumbing/`) the file sits in.
+#[test]
+fn every_lane_module_path_names_its_items() {
+    // plumbing
+    let _ = type_name::<khora_core::lane::host_views::HostViews>();
+    let _ = type_name::<khora_core::lane::lease::Lease>();
+    let _ = type_name::<khora_core::lane::lease::Leases<u32>>();
+    let _ = type_name::<khora_core::lane::reserve::Reserve>();
+    let _ = type_name::<khora_core::lane::staging::Staging>();
+    #[allow(dead_code)]
+    fn staged_by_module_path<T: khora_core::lane::reserve::Staged>() {}
+    // contract
+    #[allow(dead_code)]
+    fn family_by_module_path<T: khora_core::lane::family::LaneFamily>() {}
+    let _ = type_name::<khora_core::lane::family::Semantics>();
+    let _ = type_name::<khora_core::lane::level::Impact>();
+    let _ = type_name::<khora_core::lane::level::Level>();
+    let _ = type_name::<khora_core::lane::erased::RunOutcome>();
+    let _ = type_name::<khora_core::lane::erased::Run>();
+    let _ = type_name::<khora_core::lane::erased::NotPrepared>();
+    let _ = type_name::<khora_core::lane::guard::SourceKind>();
+    let _ = type_name::<khora_core::lane::guard::SinkKind>();
+    let _ = type_name::<khora_core::lane::guard::Reason>();
+    let _ = type_name::<khora_core::lane::guard::InputRefusal>();
+    let _ = type_name::<khora_core::lane::guard::OutputRefusal>();
+    let _ = type_name::<khora_core::lane::guard::ValueProblem>();
+    let _ = type_name::<khora_core::lane::guard::Verdict>();
+    let _ = type_name::<khora_core::lane::guard::InputWarning>();
+    let _ = type_name::<khora_core::lane::compile_check::InputOps<'static, u32>>();
+    let _ = type_name::<khora_core::lane::compile_check::OutputOps<'static, u32>>();
+    let _ = type_name::<khora_core::lane::io::FrameId>();
+    let _ = type_name::<khora_core::lane::io::TargetKey>();
+    let _ = type_name::<khora_core::lane::io::Target>();
+    let _ = type_name::<khora_core::lane::io::SceneTarget>();
+    let _ = type_name::<khora_core::lane::io::FixedStep>();
+    let _ = type_name::<khora_core::lane::io::Budget>();
+    let _ = type_name::<khora_core::lane::io::Declaration>();
+    let _ = type_name::<khora_core::lane::io::InputSource<'static>>();
+    let _ = type_name::<khora_core::lane::io::OutputSink<'static>>();
+    let _: std::time::Duration = khora_core::lane::io::LOCK_WAIT;
+    let _: std::time::Duration = khora_core::lane::io::MAX_LOCK_WAIT;
+}
+
+/// The items `khora_core::lane` re-exports at its root are the items of its
+/// modules, not copies: one type (or one trait) under both paths.
+#[test]
+fn lane_root_reexports_are_the_module_items() {
+    same_type(
+        PhantomData::<khora_core::lane::HostViews>,
+        PhantomData::<khora_core::lane::host_views::HostViews>,
+    );
+    same_type(
+        PhantomData::<khora_core::lane::Lease>,
+        PhantomData::<khora_core::lane::lease::Lease>,
+    );
+    same_type(
+        PhantomData::<khora_core::lane::Leases<u32>>,
+        PhantomData::<khora_core::lane::lease::Leases<u32>>,
+    );
+    same_type(
+        PhantomData::<khora_core::lane::Reserve>,
+        PhantomData::<khora_core::lane::reserve::Reserve>,
+    );
+    same_type(
+        PhantomData::<khora_core::lane::Staging>,
+        PhantomData::<khora_core::lane::staging::Staging>,
+    );
+
+    // A type bounded by either `Staged` path satisfies the other.
+    #[allow(dead_code)]
+    fn needs_root_staged<T: khora_core::lane::Staged>() {}
+    #[allow(dead_code)]
+    fn needs_module_staged<T: khora_core::lane::reserve::Staged>() {}
+    #[allow(dead_code)]
+    fn bounded_by_module_path<T: khora_core::lane::reserve::Staged>() {
+        needs_root_staged::<T>();
+    }
+    #[allow(dead_code)]
+    fn bounded_by_root_path<T: khora_core::lane::Staged>() {
+        needs_module_staged::<T>();
+    }
+}
+
+/// The agent registration collection lives in `khora_core`: the newtype a
+/// family submits (`RegisteredAgent`, its registration public as `.0`) and
+/// the function that reads every submission back, also re-exported at
+/// `khora_core::agent`.
+#[test]
+fn agent_registration_collection_is_in_core() {
+    use khora_core::agent::registration::{AgentRegistration, RegisteredAgent};
+
+    fn registration_of(x: &RegisteredAgent) -> &AgentRegistration {
+        &x.0
+    }
+
+    let _ = type_name::<khora_core::agent::registration::RegisteredAgent>();
+    let _: fn(AgentRegistration) -> RegisteredAgent =
+        khora_core::agent::registration::RegisteredAgent;
+    let _ = registration_of as fn(&RegisteredAgent) -> &AgentRegistration;
+    let _: fn() -> Vec<&'static AgentRegistration> =
+        khora_core::agent::registration::registered_agents;
+
+    same_type(
+        PhantomData::<khora_core::agent::RegisteredAgent>,
+        PhantomData::<khora_core::agent::registration::RegisteredAgent>,
+    );
+    same_item(
+        &khora_core::agent::registered_agents,
+        &khora_core::agent::registration::registered_agents,
+    );
 }
 
 #[test]

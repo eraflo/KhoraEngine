@@ -14,7 +14,7 @@
 
 //! `OutputDeck` — typed mutable bus for lane outputs, scoped to one tick.
 //!
-//! Symmetric counterpart of [`LaneBus`](super::LaneBus): lanes write typed
+//! Symmetric counterpart of [`LaneBus`](crate::lane::LaneBus): lanes write typed
 //! outputs into the deck during the CLAD descent; the engine drains specific
 //! types at the I/O boundary (e.g. recorded GPU command buffers, draw lists).
 //!

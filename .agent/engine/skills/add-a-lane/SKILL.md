@@ -6,7 +6,7 @@ description: Adds a new hot-path Lane to the engine (render, physics, audio, or 
 # Add a Lane
 
 A `Lane` is one behaviour of a family: the per-frame work, offered at one or more levels, which the
-family's agent chooses between via GORNA. Trait in `crates/khora-core/src/lane/contract.rs`
+family's agent chooses between via GORNA. Trait in `crates/khora-core/src/lane/contract/lane.rs`
 (re-exported as `khora_core::lane::Lane`).
 
 ## Steps

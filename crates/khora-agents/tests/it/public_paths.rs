@@ -31,6 +31,8 @@
 //! tree it was written against. Nothing is constructed; the tests only have to
 //! type-check.
 
+use std::marker::PhantomData;
+
 // ---------------------------------------------------------------------------
 // Every `pub mod`, down to the leaves.
 // ---------------------------------------------------------------------------
@@ -61,4 +63,49 @@ fn module_render_agent_paths_still_resolve() {
 #[test]
 fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_agents::render_agent::RENDERER; // khora-sdk
+}
+
+// ---------------------------------------------------------------------------
+// The registration collection, re-exported from `khora_core`.
+// ---------------------------------------------------------------------------
+
+/// Compiles only when both arguments name the same type.
+fn same_type<T: ?Sized>(_: PhantomData<T>, _: PhantomData<T>) {}
+
+/// Compiles only when both references point at the same item (two distinct
+/// `fn` items never share a type, and `&fn-item` does not coerce).
+fn same_item<T>(_: &T, _: &T) {}
+
+/// `khora_agents::registered_agent` re-exports the collection that lives in
+/// `khora_core::agent::registration`: one newtype, one reading function.
+#[test]
+fn registered_agent_is_the_core_registered_agent() {
+    same_type(
+        PhantomData::<khora_agents::registered_agent::RegisteredAgent>,
+        PhantomData::<khora_core::agent::registration::RegisteredAgent>,
+    );
+    same_item(
+        &khora_agents::registered_agent::registered_agents,
+        &khora_core::agent::registration::registered_agents,
+    );
+    let _ = khora_agents::registered_agent::lane_agents;
+    let _ = khora_agents::registered_agent::lane_agents_in;
+}
+
+/// The families submitted in this binary are one collection: reading it
+/// through `khora_core` or through `khora_agents` gives the same
+/// registrations, in the same order, at the same addresses.
+#[test]
+fn core_and_agents_read_the_same_registrations() {
+    let from_core = khora_core::agent::registration::registered_agents();
+    let from_agents = khora_agents::registered_agent::registered_agents();
+    assert!(
+        !from_core.is_empty(),
+        "no family registration reached the core collection"
+    );
+    assert_eq!(from_core.len(), from_agents.len());
+    assert!(from_core
+        .iter()
+        .zip(&from_agents)
+        .all(|(core, agents)| std::ptr::eq(*core, *agents)));
 }

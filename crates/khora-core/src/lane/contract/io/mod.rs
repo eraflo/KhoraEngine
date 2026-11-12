@@ -25,10 +25,10 @@ use std::any::{Any, TypeId};
 use std::sync::{Arc, MutexGuard};
 use std::time::Duration;
 
-use super::context_keys::ClearColor;
-use super::guard::{InputRefusal, OutputRefusal, SinkKind, SourceKind};
-use super::LaneError;
 use crate::agent::Contention;
+use crate::lane::context_keys::ClearColor;
+use crate::lane::guard::{InputRefusal, OutputRefusal, SinkKind, SourceKind};
+use crate::lane::LaneError;
 use crate::math::Extent2D;
 use crate::renderer::api::command::CommandBufferId;
 use crate::renderer::api::frame::FrameContext;
@@ -73,7 +73,7 @@ pub struct Target {
 
 /// The frame's target, read by a lane that depth-tests what it draws: the
 /// target with its depth attachment. A frame whose target has no depth is
-/// refused at the fetch, as a [`Reason::BadTarget`](super::guard::Reason).
+/// refused at the fetch, as a [`Reason::BadTarget`](crate::lane::guard::Reason).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SceneTarget {
     /// The colour attachment.

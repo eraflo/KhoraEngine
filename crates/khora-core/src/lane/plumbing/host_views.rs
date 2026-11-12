@@ -29,7 +29,7 @@ use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use super::LaneBus;
+use crate::lane::LaneBus;
 
 /// A View the host set, able to publish a copy of itself.
 trait HostView: Send + Sync {

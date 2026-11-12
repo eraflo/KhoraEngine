@@ -8,7 +8,7 @@ it to its family's registration so the family's agent can choose it.
 [Extending the engine](../tutorials/extending-the-engine.md) and read
 [Agents and Lanes](../concepts/agents-and-lanes.md).
 
-A lane implements `khora_core::lane::Lane` (`crates/khora-core/src/lane/contract.rs`):
+A lane implements `khora_core::lane::Lane` (`crates/khora-core/src/lane/contract/lane.rs`):
 
 | Item | What it is |
 |---|---|

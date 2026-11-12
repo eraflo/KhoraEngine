@@ -364,6 +364,20 @@ impl std::fmt::Display for BootError {
 
 impl std::error::Error for BootError {}
 
+/// One family's registration, as submitted to the engine's collection:
+/// `inventory::submit! { RegisteredAgent(register_agent! { … }) }`.
+pub struct RegisteredAgent(pub AgentRegistration);
+
+inventory::collect!(RegisteredAgent);
+
+/// Every registration submitted to the collection, in link order.
+pub fn registered_agents() -> Vec<&'static AgentRegistration> {
+    inventory::iter::<RegisteredAgent>
+        .into_iter()
+        .map(|registered| &registered.0)
+        .collect()
+}
+
 /// Checks every registration against the others, the runtime and the device:
 /// one agent per family and one family per agent, every family in a phase that
 /// runs, at least one supported lane

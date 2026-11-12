@@ -19,8 +19,8 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::cost::PerDevice;
 use crate::agent::gorna::StrategyId;
+use crate::lane::cost::PerDevice;
 
 /// How much a level changes what the family's readers see.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

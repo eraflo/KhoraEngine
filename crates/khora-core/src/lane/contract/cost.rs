@@ -17,7 +17,7 @@
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-use super::level::Impact;
+use crate::lane::level::Impact;
 
 /// One value per kind of device.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -95,7 +95,7 @@ pub struct Cost {
     /// How far the figures can be trusted.
     pub confidence: Confidence,
     /// How much running the level on these inputs changes the result; `None`
-    /// means the level's own [`Level::impact`](super::level::Level::impact).
+    /// means the level's own [`Level::impact`](crate::lane::level::Level::impact).
     #[serde(default)]
     pub impact: Option<Impact>,
     /// The share of the frame's due work the level serves on these inputs,

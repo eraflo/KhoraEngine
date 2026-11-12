@@ -12,33 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Every family's agent registration, collected at link time, and the boot
-//! that turns them into one [`LaneAgent`] each.
+//! The boot that turns every family's registration into one [`LaneAgent`].
 //!
-//! A family registers with
-//! `inventory::submit! { RegisteredAgent(register_agent! { … }) }`. The
-//! newtype exists because `inventory::collect!` cannot name a type of another
-//! crate.
+//! The registrations are collected in core
+//! ([`khora_core::agent::registration`]), so a family registers wherever its
+//! lanes live.
 
 use khora_core::agent::registration::{check_registrations_in, AgentRegistration, BootError};
+pub use khora_core::agent::registration::{registered_agents, RegisteredAgent};
 use khora_core::agent::ExecutionPhase;
 use khora_core::gpu::DeviceCaps;
 use khora_core::Runtime;
 
 use crate::agent::{lane_agent, LaneAgent};
-
-/// One family's registration, as submitted to the collection.
-pub struct RegisteredAgent(pub AgentRegistration);
-
-khora_script::inventory::collect!(RegisteredAgent);
-
-/// Every registration submitted to the collection.
-pub fn registered_agents() -> Vec<&'static AgentRegistration> {
-    khora_script::inventory::iter::<RegisteredAgent>
-        .into_iter()
-        .map(|registered| &registered.0)
-        .collect()
-}
 
 /// Checks `registrations` together against `runtime` and `caps`, then builds
 /// one [`LaneAgent`] per registration, in order. A refused set builds none.

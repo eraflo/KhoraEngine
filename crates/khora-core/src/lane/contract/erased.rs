@@ -17,14 +17,14 @@
 
 use std::any::TypeId;
 
-use super::contract::{Lane, LaneReport};
-use super::cost::Cost;
-use super::family::LaneFamily;
-use super::guard::{InputRefusal, InputWarning, OutputRefusal};
-use super::io::{Declaration, InputSource, LaneInputs, LaneOutputs, OutputSink, TargetKey};
-use super::level::Level;
-use super::LaneError;
 use crate::gpu::{DeviceCaps, GpuSetup};
+use crate::lane::contract::{Lane, LaneReport};
+use crate::lane::cost::Cost;
+use crate::lane::family::LaneFamily;
+use crate::lane::guard::{InputRefusal, InputWarning, OutputRefusal};
+use crate::lane::io::{Declaration, InputSource, LaneInputs, LaneOutputs, OutputSink, TargetKey};
+use crate::lane::level::Level;
+use crate::lane::LaneError;
 
 /// How one run of a lane ended.
 #[derive(Debug)]

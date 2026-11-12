@@ -2146,6 +2146,246 @@ fn engine_context_runtime_field_is_private() {
     );
 }
 
+/// The modules of `crates/khora-core/src/lane/plumbing/`: how views reach a
+/// lane and how its outputs and staged items leave it. The folder holds these
+/// and nothing else; anything new about lanes is contract.
+const LANE_PLUMBING: &[&str] = &[
+    "bus",
+    "context_keys",
+    "deck",
+    "host_views",
+    "lease",
+    "reserve",
+    "staging",
+];
+
+/// The modules `crates/khora-core/src/lane/contract/` holds at least: what a
+/// lane is, declares and promises. The rest of the lane folder.
+const LANE_CONTRACT: &[&str] = &[
+    "compile_check",
+    "cost",
+    "erased",
+    "error",
+    "family",
+    "guard",
+    "io",
+    "lane",
+    "level",
+];
+
+/// `crates/khora-core/src/lane/` is split in two: `contract/` (what a lane
+/// is) and `plumbing/` (the bus, the deck and what carries items between
+/// them). The folder holds `mod.rs` and those two folders, nothing else;
+/// `plumbing/` holds exactly the plumbing modules, `contract/` the contract
+/// modules and none of the plumbing ones. A module may be a file (`bus.rs`) or
+/// a folder (`bus/`). Strict: not in the ratchet.
+#[test]
+fn the_lane_folder_holds_the_contract_and_the_plumbing() {
+    let root = repo_root();
+    let lane = root.join("crates/khora-core/src/lane");
+    let problems = lane_folder_problems(&lane);
+    assert!(
+        problems.is_empty(),
+        "crates/khora-core/src/lane/ is not split into `contract/` and `plumbing/`:\n  {}",
+        problems.join("\n  ")
+    );
+}
+
+/// The entries directly under `dir`, a folder's name ending in `/`, sorted.
+/// Empty when `dir` cannot be read.
+fn folder_entries(dir: &Path) -> BTreeSet<String> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return BTreeSet::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|entry| {
+            let path = entry.path();
+            let name = file_name(&path);
+            if path.is_dir() {
+                format!("{name}/")
+            } else {
+                name
+            }
+        })
+        .collect()
+}
+
+/// The module a folder entry declares: `bus.rs` and `bus/` are `bus`; any
+/// other file is not a module.
+fn entry_module(entry: &str) -> Option<&str> {
+    entry
+        .strip_suffix('/')
+        .or_else(|| entry.strip_suffix(".rs"))
+}
+
+/// What keeps `lane` (a `lane/` folder) from being split into `contract/`
+/// and `plumbing/`, sorted. Each line names the entry relative to `lane`.
+fn lane_folder_problems(lane: &Path) -> Vec<String> {
+    let mut problems = Vec::new();
+    if !lane.is_dir() {
+        problems.push(format!("{}: no such folder", lane.display()));
+        return problems;
+    }
+
+    let expected: BTreeSet<String> = ["mod.rs", "contract/", "plumbing/"]
+        .iter()
+        .map(|entry| (*entry).to_owned())
+        .collect();
+    let found = folder_entries(lane);
+    for entry in found.difference(&expected) {
+        problems.push(format!(
+            "lane/{entry}: the lane folder holds only `mod.rs`, `contract/` and `plumbing/`"
+        ));
+    }
+    for entry in expected.difference(&found) {
+        problems.push(format!("lane/{entry}: missing"));
+    }
+
+    let halves = [
+        ("contract", LANE_CONTRACT, LANE_PLUMBING, false),
+        ("plumbing", LANE_PLUMBING, LANE_CONTRACT, true),
+    ];
+    for (half, own, other, closed) in halves {
+        let dir = lane.join(half);
+        if !dir.is_dir() {
+            continue;
+        }
+        let entries = folder_entries(&dir);
+        if !entries.contains("mod.rs") {
+            problems.push(format!("lane/{half}/mod.rs: missing"));
+        }
+        let modules: BTreeSet<&str> = entries.iter().filter_map(|e| entry_module(e)).collect();
+        for module in own {
+            if !modules.contains(module) {
+                problems.push(format!(
+                    "lane/{half}/{module}.rs: missing (`{module}` belongs to `{half}/`)"
+                ));
+            }
+        }
+        for module in other {
+            if modules.contains(module) {
+                problems.push(format!(
+                    "lane/{half}/{module}: `{module}` belongs to the other half, not `{half}/`"
+                ));
+            }
+        }
+        if closed {
+            for entry in &entries {
+                let known = entry == "mod.rs"
+                    || entry_module(entry).is_some_and(|module| own.contains(&module));
+                if !known && !entry_module(entry).is_some_and(|m| other.contains(&m)) {
+                    problems.push(format!(
+                        "lane/{half}/{entry}: `{half}/` holds only {}; the rest is contract",
+                        own.join(", ")
+                    ));
+                }
+            }
+        }
+    }
+    problems.sort();
+    problems
+}
+
+/// The lane folder check accepts the split layout, with a module as a file or
+/// a folder, and names what is wrong in the flat layout, in a plumbing module
+/// left in the contract, and in a new module put in the plumbing.
+#[test]
+fn lane_folder_check_names_what_breaks_the_split() {
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-lane-folder-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    let write_tree = |base: &Path, files: &[&str]| -> std::io::Result<()> {
+        for file in files {
+            let path = base.join(file);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, "")?;
+        }
+        Ok(())
+    };
+    let split: Vec<String> = std::iter::once("mod.rs".to_owned())
+        .chain(["contract/mod.rs".to_owned(), "plumbing/mod.rs".to_owned()])
+        .chain(LANE_CONTRACT.iter().map(|m| {
+            if *m == "io" {
+                "contract/io/mod.rs".to_owned()
+            } else {
+                format!("contract/{m}.rs")
+            }
+        }))
+        .chain(LANE_PLUMBING.iter().map(|m| format!("plumbing/{m}.rs")))
+        .collect();
+    let split: Vec<&str> = split.iter().map(String::as_str).collect();
+    let flat: Vec<String> = std::iter::once("mod.rs".to_owned())
+        .chain(["contract.rs".to_owned(), "io/mod.rs".to_owned()])
+        .chain(
+            LANE_CONTRACT
+                .iter()
+                .chain(LANE_PLUMBING)
+                .filter(|m| !matches!(**m, "io" | "lane"))
+                .map(|m| format!("{m}.rs")),
+        )
+        .collect();
+    let flat: Vec<&str> = flat.iter().map(String::as_str).collect();
+
+    let setup = || -> std::io::Result<()> {
+        write_tree(&dir.join("split/lane"), &split)?;
+        write_tree(&dir.join("folder_module/lane"), &split)?;
+        fs::remove_file(dir.join("folder_module/lane/contract/guard.rs"))?;
+        write_tree(&dir.join("folder_module/lane"), &["contract/guard/mod.rs"])?;
+        write_tree(&dir.join("flat/lane"), &flat)?;
+        write_tree(&dir.join("misplaced/lane"), &split)?;
+        fs::remove_file(dir.join("misplaced/lane/plumbing/bus.rs"))?;
+        write_tree(&dir.join("misplaced/lane"), &["contract/bus.rs"])?;
+        write_tree(&dir.join("new_plumbing/lane"), &split)?;
+        write_tree(&dir.join("new_plumbing/lane"), &["plumbing/route.rs"])?;
+        Ok(())
+    };
+    let setup = setup();
+    let split_problems = lane_folder_problems(&dir.join("split/lane"));
+    let folder_module_problems = lane_folder_problems(&dir.join("folder_module/lane"));
+    let flat_problems = lane_folder_problems(&dir.join("flat/lane"));
+    let misplaced_problems = lane_folder_problems(&dir.join("misplaced/lane"));
+    let new_plumbing_problems = lane_folder_problems(&dir.join("new_plumbing/lane"));
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert!(split_problems.is_empty(), "{split_problems:#?}");
+    assert!(
+        folder_module_problems.is_empty(),
+        "{folder_module_problems:#?}"
+    );
+    assert!(
+        flat_problems.iter().any(|p| p.starts_with("lane/bus.rs:"))
+            && flat_problems.iter().any(|p| p.starts_with("lane/io/:"))
+            && flat_problems
+                .iter()
+                .any(|p| p.starts_with("lane/contract/:"))
+            && flat_problems
+                .iter()
+                .any(|p| p.starts_with("lane/plumbing/:")),
+        "{flat_problems:#?}"
+    );
+    assert!(
+        misplaced_problems
+            .iter()
+            .any(|p| p.starts_with("lane/contract/bus:"))
+            && misplaced_problems
+                .iter()
+                .any(|p| p.starts_with("lane/plumbing/bus.rs: missing")),
+        "{misplaced_problems:#?}"
+    );
+    assert_eq!(new_plumbing_problems.len(), 1, "{new_plumbing_problems:#?}");
+    assert!(
+        new_plumbing_problems[0].starts_with("lane/plumbing/route.rs:"),
+        "{new_plumbing_problems:#?}"
+    );
+}
+
 /// `text` with every `//` and `/* */` comment blanked out (doc comments
 /// included), keeping string and character literals and every newline, so
 /// line numbers survive.

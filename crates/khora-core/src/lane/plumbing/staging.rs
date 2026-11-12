@@ -13,12 +13,12 @@
 // limitations under the License.
 
 //! What one run staged, on its way to the family's
-//! [`Reserve`](super::reserve::Reserve).
+//! [`Reserve`](crate::lane::reserve::Reserve).
 
 use std::any::{Any, TypeId};
 
-use super::lease::Lease;
-use super::reserve::Staged;
+use crate::lane::lease::Lease;
+use crate::lane::reserve::Staged;
 
 /// The reserve's queues: one per output type, each a `Vec` of that type.
 pub(super) type Queues = Vec<(TypeId, Box<dyn Any + Send>)>;
@@ -103,7 +103,7 @@ pub(super) fn supersede<T: Staged>(queue: &mut Vec<T>, item: T) {
 
 /// What one run of a lane staged through its `#[staged]` outputs, in the
 /// order it staged them. The scheduler hands it to the
-/// [`Reserve`](super::reserve::Reserve) at the frame start after the run
+/// [`Reserve`](crate::lane::reserve::Reserve) at the frame start after the run
 /// ended.
 #[derive(Default)]
 pub struct Staging {

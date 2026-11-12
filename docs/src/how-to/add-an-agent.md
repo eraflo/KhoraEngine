@@ -25,7 +25,7 @@ every frame.
 
 A family names what all its lanes share: the outputs they write, and the agent
 that negotiates for them. It implements `LaneFamily`
-(`crates/khora-core/src/lane/family.rs`):
+(`crates/khora-core/src/lane/contract/family.rs`):
 
 - `NAME` — the family's name, as boot errors and telemetry print it;
 - `AGENT` — the `AgentId` the family negotiates under. It must be unique: boot

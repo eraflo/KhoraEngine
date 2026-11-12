@@ -19,8 +19,8 @@
 //! scene). One agent runs one family; its lanes are the behaviours it chooses
 //! between.
 
-use super::io::LaneOutputs;
 use crate::agent::gorna::AgentId;
+use crate::lane::io::LaneOutputs;
 
 /// What a family's adaptation may change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

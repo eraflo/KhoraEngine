@@ -42,7 +42,7 @@ Control ──► Agent ──► Lane ──► Data (via typed Views)
 
 Around it the Scheduler runs a **Substrate Pass** that executes the Data layer's self-maintenance —
 invariants (`DataSystem`s) and presentation (`Flow`s) — and provides Lanes with their typed input
-(`LaneBus`, `khora-core/src/lane/bus.rs`) and output (`OutputDeck`, `khora-core/src/lane/deck.rs`).
+(`LaneBus`, `khora-core/src/lane/plumbing/bus.rs`) and output (`OutputDeck`, `khora-core/src/lane/plumbing/deck.rs`).
 The Substrate Pass is *not* a descent: it is Data maintaining and projecting itself, called by the
 Scheduler because the Scheduler owns the tick. Implemented in `khora-control/src/substrate/`.
 
@@ -140,7 +140,7 @@ Rust component: its script declares `Guard` (authored) and its state companion `
 
 | Area | Path |
 |---|---|
-| Lane trait / family / bus / deck | `crates/khora-core/src/lane/` (`contract.rs`, `family.rs`, `bus.rs`, `deck.rs`, `io/`) |
+| Lane trait / family / bus / deck | `crates/khora-core/src/lane/` (`contract/`: `lane.rs`, `family.rs`, `io/`; `plumbing/`: `bus.rs`, `deck.rs`) |
 | Agent trait / `AgentId` / registration / place | `crates/khora-core/src/agent/` (`mod.rs`, `registration.rs`, `contention.rs`, `layer/`), GORNA types `crates/khora-core/src/agent/gorna/` (`protocol.rs`) |
 | Math / SIMD | `crates/khora-core/src/math/` (`simd.rs`) |
 | ECS (CRPECS) / layout learner | `crates/khora-data/src/ecs/` (`world/`, `storage.rs`, `soa.rs`, `layout/`) |
@@ -202,7 +202,7 @@ background pool (`khora-control/src/scheduler/background.rs`) when a `Take` mail
 takes holds mail; one run per family; boot (`check_background`, `check_takes`, `check_one_taker`,
 `check_nothing_staged` in `khora-core/src/agent/registration.rs`) admits only `#[take]`, `#[resource]`,
 `#[budget]` inputs and `#[staged]` outputs there. `begin_frame` (called by the SDK after settle) brings
-ended runs home, hands their `Staging` to the runtime's `Reserve` (`khora-core/src/lane/reserve.rs`),
+ended runs home, hands their `Staging` to the runtime's `Reserve` (`khora-core/src/lane/plumbing/reserve.rs`),
 lends and swaps; `TickPhase::Boundary` systems then take `SystemContext::staged::<T>()`. The cost model
 skips background agents (`Round.background`, `forecast_frame_ms`). A family's channels declare a `Mailbox` (`khora-core/src/event/mailbox.rs`):
 `BetweenSessions::Drop` mail is emptied at each boundary while the family is off, `Hold` is kept. Family

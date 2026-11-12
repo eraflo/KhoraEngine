@@ -18,7 +18,7 @@ should NOT be agents** — only those that negotiate a GORNA budget. Non-negotia
 
 ## Steps
 1. **Write the family** in `crates/khora-lanes/src/<domain>_lane/<domain>_family.rs`: a unit struct
-   implementing `khora_core::lane::family::LaneFamily` (`crates/khora-core/src/lane/family.rs`) — `NAME`, `AGENT`
+   implementing `khora_core::lane::family::LaneFamily` (`crates/khora-core/src/lane/contract/family.rs`) — `NAME`, `AGENT`
    (`AgentId::new("<name>")`, or a core constant such as `khora_core::audio::AUDIO`), `SEMANTICS`
    (`Presentation`, or `Exact` when every level must give the same result), and `type Outputs<'f>`, a struct
    deriving `LaneOutputs` (`#[pass]`, `#[deck]`, `#[staged]`). Boot refuses two families naming one agent.

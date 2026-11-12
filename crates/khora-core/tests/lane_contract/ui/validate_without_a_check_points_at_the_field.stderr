@@ -13,7 +13,7 @@ help: the trait `Validate` is not implemented for `Positions`
 3 | pub struct Positions(pub Vec<f32>);
   | ^^^^^^^^^^^^^^^^^^^^
 note: required by a bound in `InputSource::<'f>::validate`
- --> src/lane/io/input_source.rs
+ --> src/lane/contract/io/input_source.rs
   |
   |     pub fn validate<V: Validate + ?Sized>(
   |                        ^^^^^^^^ required by this bound in `InputSource::<'f>::validate`

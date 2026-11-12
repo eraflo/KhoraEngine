@@ -13,14 +13,14 @@
 // limitations under the License.
 
 //! The typed lane: one behaviour of one family. Re-exported as
-//! [`khora_core::lane::Lane`](super::Lane).
+//! [`khora_core::lane::Lane`](crate::lane::Lane).
 
-use super::cost::Cost;
-use super::family::LaneFamily;
-use super::io::{LaneInputs, TargetKey};
-use super::level::Level;
-use super::LaneError;
 use crate::gpu::{DeviceCaps, GpuSetup};
+use crate::lane::cost::Cost;
+use crate::lane::family::LaneFamily;
+use crate::lane::io::{LaneInputs, TargetKey};
+use crate::lane::level::Level;
+use crate::lane::LaneError;
 
 /// What a lane says about the work it recorded.
 #[derive(Debug, Clone, Default, PartialEq)]
