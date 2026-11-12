@@ -15,11 +15,11 @@
 //! The physics family's registration: the one `LaneAgent` the engine boots for
 //! it, its phase, its step and its lane.
 
+use super::{PhysicsFamily, StandardPhysicsLane};
 use khora_core::agent::{AgentImportance, ExecutionPhase};
 use khora_core::physics::PhysicsSettings;
-use khora_lanes::physics_lane::{PhysicsFamily, StandardPhysicsLane};
 
-use crate::registered_agent::RegisteredAgent;
+use khora_core::agent::RegisteredAgent;
 
 khora_script::inventory::submit! {
     RegisteredAgent(khora_core::register_agent! {

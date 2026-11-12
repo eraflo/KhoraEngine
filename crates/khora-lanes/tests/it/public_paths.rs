@@ -58,7 +58,7 @@ fn is_serialize<T: serde::Serialize>() {}
 mod every_pub_mod {
     use khora_lanes::audio as _;
     use khora_lanes::overlay_lane as _;
-    use khora_lanes::physics_lane as _;
+    use khora_lanes::physics as _;
     use khora_lanes::render_lane as _;
     use khora_lanes::render_lane::util as _;
     use khora_lanes::render_lane::util::dynamic_uniform_ring_buffer as _;
@@ -175,11 +175,11 @@ fn module_audio_paths_still_resolve() {
 
 #[test]
 fn module_physics_lane_paths_still_resolve() {
-    let _ = type_name::<khora_lanes::physics_lane::StandardPhysicsLane>();
-    let _ = type_name::<khora_lanes::physics_lane::PhysicsFamily>();
-    is_default::<khora_lanes::physics_lane::StandardPhysicsLane>();
-    is_typed_lane::<khora_lanes::physics_lane::StandardPhysicsLane>();
-    is_lane_family::<khora_lanes::physics_lane::PhysicsFamily>();
+    let _ = type_name::<khora_lanes::physics::StandardPhysicsLane>();
+    let _ = type_name::<khora_lanes::physics::PhysicsFamily>();
+    is_default::<khora_lanes::physics::StandardPhysicsLane>();
+    is_typed_lane::<khora_lanes::physics::StandardPhysicsLane>();
+    is_lane_family::<khora_lanes::physics::PhysicsFamily>();
 }
 
 #[test]
@@ -485,7 +485,7 @@ mod paths_used_by_other_crates {
     use khora_lanes::overlay_lane::GridLane as _; // khora-agents
     use khora_lanes::overlay_lane::WireframeFamily as _; // khora-agents
     use khora_lanes::overlay_lane::WireframeLane as _; // khora-agents
-    use khora_lanes::physics_lane::StandardPhysicsLane as _; // khora-agents
+    use khora_lanes::physics::StandardPhysicsLane as _; // khora-agents
     use khora_lanes::render_lane::ForwardPlusLane as _; // khora-agents
     use khora_lanes::render_lane::LitForwardLane as _; // khora-agents
     use khora_lanes::render_lane::RenderFamily as _; // khora-agents

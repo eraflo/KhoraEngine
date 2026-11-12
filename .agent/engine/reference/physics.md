@@ -13,8 +13,8 @@ ECS↔physics synchronization.
   `conversions.rs`) — the one the engine runs; and `crates/khora-infra/src/physics/khora/` — an
   in-house broad phase, narrow phase and impulse solver that **does not implement `PhysicsProvider`
   yet** and is wired to nothing. Deliberate future work, not abandoned code.
-- Lanes: `crates/khora-lanes/src/physics_lane/` (`StandardPhysicsLane`, one level; `PhysicsFamily` is `Exact`).
-  Registration: `crates/khora-agents/src/physics_agent/agent.rs` (TRANSFORM, `fixed_step`).
+- Lanes: `crates/khora-lanes/src/physics/` (`StandardPhysicsLane`, one level; `PhysicsFamily` is `Exact`).
+  Registration: `crates/khora-lanes/src/physics/registration.rs` (TRANSFORM, `fixed_step`).
 - Components / flow: `crates/khora-data/src/ecs/components/physics/`, `crates/khora-data/src/flow/physics.rs`.
 
 ## Hard rules

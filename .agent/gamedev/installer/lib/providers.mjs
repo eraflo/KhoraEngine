@@ -203,7 +203,7 @@ export function generateCopilot(ctx, generated) {
   // from the reference/ docs. Keys are reference doc basenames.
   const globs = {
     'graphics-rendering': 'crates/khora-lanes/src/render_lane/**,crates/khora-infra/src/graphics/**',
-    'physics': 'crates/khora-infra/src/physics/**,crates/khora-lanes/src/physics_lane/**',
+    'physics': 'crates/khora-infra/src/physics/**,crates/khora-lanes/src/physics/**',
     'audio': 'crates/khora-infra/src/audio/**,crates/khora-lanes/src/audio/**',
     'ecs-data': 'crates/khora-data/**',
     'control-gorna': 'crates/khora-control/**',

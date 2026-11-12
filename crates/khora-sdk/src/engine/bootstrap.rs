@@ -597,7 +597,9 @@ fn register_lane_agents(
         .copied()
         .unwrap_or_default();
     for (registration, agent) in registrations.iter().zip(agents.iter_mut()) {
-        if registration.agent == <khora_lanes::physics_lane::PhysicsFamily as khora_core::lane::family::LaneFamily>::AGENT {
+        if registration.agent
+            == <khora_lanes::physics::PhysicsFamily as khora_core::lane::family::LaneFamily>::AGENT
+        {
             set_fixed_step(agent, physics.step);
         }
     }

@@ -645,6 +645,10 @@ const RETIRED_FAMILY_HOMES: &[&str] = &[
     "khora_agents::loading_agent",
     "khora-lanes/src/loading_lane",
     "khora-agents/src/loading_agent",
+    "khora_lanes::physics_lane",
+    "khora_agents::physics_agent",
+    "khora-lanes/src/physics_lane",
+    "khora-agents/src/physics_agent",
 ];
 
 /// The files `nothing_names_the_old_home_of_a_moved_family` reads: those

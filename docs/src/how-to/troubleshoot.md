@@ -142,7 +142,7 @@ present in the world. See [Rendering](../concepts/rendering.md).
 The simulation runs on a **fixed timestep** decoupled from the display rate. The scheduler
 (`crates/khora-control/src/scheduler/sim_steps.rs`, `compute_sim_steps`) accumulates real frame time and runs
 whole game ticks of 1/60 s; the physics family (registered in
-`crates/khora-agents/src/physics_agent/agent.rs`) cuts them into sub-steps of the game's `physics.step`
+`crates/khora-lanes/src/physics/registration.rs`) cuts them into sub-steps of the game's `physics.step`
 — precision, not time, and never a GORNA lever. See [The frame](../concepts/the-frame.md) and
 [Profile performance](./profile-performance.md).
 

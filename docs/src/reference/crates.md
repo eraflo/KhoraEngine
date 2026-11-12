@@ -126,7 +126,7 @@ A flat lookup for "I want to find X."
 | Serialization service | `khora-io::serialization` |
 | Render pipelines | `khora-lanes::render_lane` |
 | WGSL shaders and their composition | `khora-infra::graphics::shader` (the `.wgsl` tree and the one raw-string exception, `EGUI_WGSL`), composed by `khora-infra::graphics::wgpu::WgpuPipelineSystem` |
-| Physics lanes | `khora-lanes::physics_lane` |
+| Physics family | `khora_lanes::physics` |
 | Audio family | `khora_lanes::audio` |
 | Script lane (fuel, deferral, hot-reload) | `khora-lanes::script_lane` |
 | Asset decoders | `khora-io::asset::decoders` — services, not lanes: a decoder has no per-frame strategy to negotiate |

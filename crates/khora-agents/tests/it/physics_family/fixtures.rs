@@ -32,7 +32,7 @@ use khora_core::physics::{
     PhysicsProvider, PhysicsSettings, RaycastHit, RigidBodyDesc, RigidBodyHandle,
 };
 use khora_core::{EngineContext, Runtime};
-use khora_lanes::physics_lane::PhysicsFamily;
+use khora_lanes::physics::PhysicsFamily;
 
 /// The provider as the engine registers it.
 pub type SharedProvider = Arc<Mutex<Box<dyn PhysicsProvider>>>;

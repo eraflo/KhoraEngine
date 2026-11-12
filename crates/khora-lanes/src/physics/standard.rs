@@ -26,7 +26,7 @@ use khora_core::physics::{Collision, CollisionEvent, CollisionKind, PhysicsProvi
 use khora_data::flow::PhysicsStepResult;
 use khora_macros::LaneInputs;
 
-use super::physics_family::{PhysicsFamily, PhysicsOutputs};
+use super::family::{PhysicsFamily, PhysicsOutputs};
 
 /// The standard physics lane: one step of the provider by the agent's fixed
 /// step, and the contacts that step reported.

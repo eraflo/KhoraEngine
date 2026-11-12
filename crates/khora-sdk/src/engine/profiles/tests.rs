@@ -533,7 +533,11 @@ fn a_run_that_never_shuts_down_keeps_what_it_learnt() {
 
     let mut engine = boot(Runtime::new());
     let first = first_epoch(&engine);
-    let (agent, row, _) = first.corrections[0];
+    // A family that does not run here (no audio device): nothing it
+    // measures overwrites the factor the test makes it learn.
+    let (agent, row, _) = *(first.corrections.iter())
+        .find(|(agent, _, _)| *agent == AgentId::new("audio"))
+        .expect("the audio family was planned");
     let dcc = engine.dcc().expect("the engine booted its DCC");
     let tx = dcc.event_sender();
     for _ in 0..30 {
