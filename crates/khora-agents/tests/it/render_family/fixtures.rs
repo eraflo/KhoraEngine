@@ -28,7 +28,7 @@ use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 use khora_data::{AssetStore, IblBaker};
-use khora_lanes::render_lane::RenderFamily;
+use khora_lanes::render::RenderFamily;
 
 use crate::shadows_family::fixtures::{Pipelines, SubmitLog};
 

@@ -15,7 +15,7 @@
 //! Recording the lane's draw calls for one frame.
 
 use super::gpu::UnlitGpu;
-use crate::render_lane::recording::{record_clear, scene_color, scene_depth};
+use crate::render::recording::{record_clear, scene_color, scene_depth};
 use khora_core::lane::io::SceneTarget;
 use khora_core::math::LinearRgba;
 use khora_core::renderer::api::command::{DrawCommand, LoadOp, RenderPassDescriptor};

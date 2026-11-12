@@ -56,7 +56,7 @@ use khora_core::lane::{Lane, LaneReport};
 use khora_core::renderer::api::gpu_scene::GpuMesh;
 use khora_core::renderer::ForwardPlusTileConfig;
 
-use super::render_family::{LitInputs, RenderFamily, RenderOutputs};
+use super::family::{LitInputs, RenderFamily, RenderOutputs};
 use super::scene_load::SceneLoad;
 
 mod gpu;

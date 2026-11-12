@@ -17,13 +17,13 @@
 
 use std::borrow::Cow;
 
-use crate::render_lane::util::dynamic_uniform_ring_buffer::{
+use crate::render::util::dynamic_uniform_ring_buffer::{
     DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
 };
-use crate::render_lane::util::target_state::{
+use crate::render::util::target_state::{
     scene_color_targets, scene_depth_state, scene_multisample,
 };
-use crate::render_lane::util::{DynamicUniformRingBuffer, UniformRingBuffer};
+use crate::render::util::{DynamicUniformRingBuffer, UniformRingBuffer};
 use khora_core::lane::io::TargetKey;
 use khora_core::renderer::api::gpu_scene::{Mesh, ModelUniforms};
 use khora_core::renderer::api::material::MaterialUniforms;

@@ -39,15 +39,7 @@ use std::marker::PhantomData;
 
 #[allow(unused_imports)]
 mod every_pub_mod {
-    use khora_agents::render_agent as _;
     use khora_agents::script_agent as _;
-}
-
-/// The render agent is the render family's `LaneAgent`: its module keeps
-/// only the name the skybox and the overlays wait on.
-#[test]
-fn module_render_agent_paths_still_resolve() {
-    let _: khora_core::agent::gorna::AgentId = khora_agents::render_agent::RENDERER;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,11 +48,6 @@ fn module_render_agent_paths_still_resolve() {
 // the users. Items, modules and enum variants are imported;
 // associated items are named in the test below.
 // ---------------------------------------------------------------------------
-
-#[test]
-fn associated_items_used_by_other_crates_still_resolve() {
-    let _ = khora_agents::render_agent::RENDERER; // khora-sdk
-}
 
 // ---------------------------------------------------------------------------
 // The registration collection, re-exported from `khora_core`.

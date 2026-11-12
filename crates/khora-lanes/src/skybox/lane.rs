@@ -422,7 +422,7 @@ fn skybox_pipeline_spec(key: TargetKey) -> khora_core::renderer::api::pipeline::
             write_mask: ColorWrites::ALL,
         }],
         multisample: MultisampleStateDescriptor {
-            count: crate::render_lane::util::sample_count(key.samples),
+            count: crate::render::util::sample_count(key.samples),
             mask: !0,
             alpha_to_coverage_enabled: false,
         },

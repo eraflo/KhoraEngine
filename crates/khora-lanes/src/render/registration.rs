@@ -15,13 +15,11 @@
 //! The render family's registration: the one `LaneAgent` the engine boots
 //! for it, its phase and its three lanes.
 
+use super::{ForwardPlusLane, LitForwardLane, RenderFamily, SimpleUnlitLane};
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::{AgentImportance, ExecutionPhase};
-use khora_lanes::render_lane::{ForwardPlusLane, LitForwardLane, RenderFamily, SimpleUnlitLane};
 
-use crate::registered_agent::RegisteredAgent;
-
-pub use khora_lanes::render_lane::RENDERER;
+use khora_core::agent::RegisteredAgent;
 
 khora_script::inventory::submit! {
     RegisteredAgent(khora_core::register_agent! {

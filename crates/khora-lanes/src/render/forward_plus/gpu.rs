@@ -17,12 +17,12 @@
 
 use super::g3;
 use super::ForwardPlusGpuResources;
-use crate::render_lane::culling::mesh_cull_mode;
-use crate::render_lane::util::target_state::{
+use crate::render::culling::mesh_cull_mode;
+use crate::render::util::target_state::{
     scene_color_targets, scene_depth_state, scene_multisample,
 };
-use crate::render_lane::util::variant_pipelines::Surface;
-use crate::render_lane::util::{DynamicUniformRingBuffer, UniformRingBuffer};
+use crate::render::util::variant_pipelines::Surface;
+use crate::render::util::{DynamicUniformRingBuffer, UniformRingBuffer};
 use khora_core::lane::io::TargetKey;
 use khora_core::renderer::api::pipeline::enums::PrimitiveTopology;
 use khora_core::renderer::api::pipeline::{
@@ -300,8 +300,8 @@ impl ForwardPlusGpuResources {
                 model_layout,
                 0,
                 std::mem::size_of::<ModelUniforms>() as u32,
-                crate::render_lane::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS,
-                crate::render_lane::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
+                crate::render::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS,
+                crate::render::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
                 "Forward+ Model Ring",
             )
             .map_err(RenderError::ResourceError)?,

@@ -45,7 +45,7 @@ use khora_data::render::{GizmoView, RenderWorld};
 use khora_macros::LaneInputs;
 
 use super::GizmoOutputs;
-use crate::render_lane::util::Block;
+use crate::render::util::Block;
 
 /// Line instances the storage buffer holds before it first grows.
 const GIZMO_CAPACITY: usize = 4096;
@@ -308,7 +308,7 @@ fn grow_storage(
 
 /// Group-0 camera layout: a single uniform buffer (vertex stage).
 fn camera_layout_entries() -> Vec<BindGroupLayoutEntry> {
-    crate::render_lane::util::single_uniform_layout(
+    crate::render::util::single_uniform_layout(
         khora_core::renderer::api::util::ShaderStageFlags::VERTEX,
         false,
     )
@@ -386,7 +386,7 @@ fn gizmo_pipeline_spec((color, samples): (TextureFormat, u32)) -> PipelineSpec {
             write_mask: ColorWrites::ALL,
         }],
         multisample: MultisampleStateDescriptor {
-            count: crate::render_lane::util::sample_count(samples),
+            count: crate::render::util::sample_count(samples),
             mask: !0,
             alpha_to_coverage_enabled: false,
         },

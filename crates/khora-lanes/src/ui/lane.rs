@@ -49,7 +49,7 @@ use khora_data::ui::{GlyphAtlas, UiImageAtlas, UiScene};
 use khora_macros::LaneInputs;
 
 use super::family::{UiFamily, UiOutputs};
-use crate::render_lane::util::Block;
+use crate::render::util::Block;
 
 use super::fallback::{destroy_texture, fallback_view};
 use super::glyphs::{glyph_bind_group, glyph_instances_of, GLYPH_CAPACITY};

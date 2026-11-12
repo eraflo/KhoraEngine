@@ -25,7 +25,7 @@ use khora_core::lane::LaneError;
 use khora_core::lane::{Lane, LaneReport};
 use khora_core::renderer::api::gpu_scene::GpuMesh;
 
-use super::render_family::{RenderFamily, RenderOutputs, UnlitInputs};
+use super::family::{RenderFamily, RenderOutputs, UnlitInputs};
 use super::scene_load::SceneLoad;
 
 mod gpu;

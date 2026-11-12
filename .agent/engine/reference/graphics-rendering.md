@@ -9,7 +9,7 @@ PBR/BRDF (Cook-Torrance GGX), shadows (CSM, PCF 2D, point-light cube), Forward+ 
 HDR/tone mapping, post-processing, GPU occupancy and synchronization (no Vulkan validation errors).
 
 ## Key files
-- Render lanes: `crates/khora-lanes/src/render_lane/` (`SimpleUnlitLane`, `LitForwardLane`, `ForwardPlusLane`;
+- Render lanes: `crates/khora-lanes/src/render/` (`SimpleUnlitLane`, `LitForwardLane`, `ForwardPlusLane`;
   `RenderFamily`, agent `renderer`); shadows `shadows/` (`ShadowsLane`, family `shadows`); overlays
   `overlay/{grid,wireframe,gizmo}/` (`GridLane`, `WireframeLane`, `GizmoLane`, one family each); `skybox/`, `ui/`.
   Registrations in `crates/khora-agents/src/<domain>_agent/agent.rs`; every family's agent is the one `LaneAgent`.

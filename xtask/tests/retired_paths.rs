@@ -665,6 +665,10 @@ const RETIRED_FAMILY_HOMES: &[&str] = &[
     "khora_agents::overlay_agent",
     "khora-lanes/src/overlay_lane",
     "khora-agents/src/overlay_agent",
+    "khora_lanes::render_lane",
+    "khora_agents::render_agent",
+    "khora-lanes/src/render_lane",
+    "khora-agents/src/render_agent",
 ];
 
 /// The files `nothing_names_the_old_home_of_a_moved_family` reads: those

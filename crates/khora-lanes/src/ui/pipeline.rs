@@ -207,7 +207,7 @@ fn instanced_spec(
             write_mask: ColorWrites::ALL,
         }],
         multisample: MultisampleStateDescriptor {
-            count: crate::render_lane::util::sample_count(samples),
+            count: crate::render::util::sample_count(samples),
             mask: !0,
             alpha_to_coverage_enabled: false,
         },

@@ -25,7 +25,7 @@ khora_script::inventory::submit! {
         family: WireframeFamily,
         phase: ExecutionPhase::OUTPUT,
         importance: AgentImportance::Optional,
-        after: [crate::render_lane::RENDERER],
+        after: [crate::render::RENDERER],
         fixed_step: None,
         lanes: [WireframeLane],
     })

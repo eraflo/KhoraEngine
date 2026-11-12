@@ -204,7 +204,7 @@ export function generateCopilot(ctx, generated) {
   // Per-domain instruction files with applyTo globs (best-effort mapping), sourced
   // from the reference/ docs. Keys are reference doc basenames.
   const globs = {
-    'graphics-rendering': 'crates/khora-lanes/src/render_lane/**,crates/khora-infra/src/graphics/**',
+    'graphics-rendering': 'crates/khora-lanes/src/render/**,crates/khora-infra/src/graphics/**',
     'physics': 'crates/khora-infra/src/physics/**,crates/khora-lanes/src/physics/**',
     'audio': 'crates/khora-infra/src/audio/**,crates/khora-lanes/src/audio/**',
     'ecs-data': 'crates/khora-data/**',

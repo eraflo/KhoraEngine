@@ -229,7 +229,7 @@ outputs; to start a new family, see [Add a subsystem (a family)](./add-an-agent.
 ## Step 6 — Add the lane to its family's registration
 
 List the lane in its family's `register_agent!`. The render family's three lanes,
-from `crates/khora-agents/src/render_agent/agent.rs`:
+from `crates/khora-lanes/src/render/registration.rs`:
 
 ```rust
 lanes: [SimpleUnlitLane, LitForwardLane, ForwardPlusLane],

@@ -15,17 +15,17 @@
 //! GPU resources of the lane: creation, release, and the layouts and
 //! pipeline specs they are built from.
 
-use crate::render_lane::culling::mesh_cull_mode;
-use crate::render_lane::neutral::NeutralBindings;
-use crate::render_lane::util::dynamic_uniform_ring_buffer::{
+use crate::render::culling::mesh_cull_mode;
+use crate::render::neutral::NeutralBindings;
+use crate::render::util::dynamic_uniform_ring_buffer::{
     DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
 };
-use crate::render_lane::util::kept_bind_groups::KeptBindGroups;
-use crate::render_lane::util::target_state::{
+use crate::render::util::kept_bind_groups::KeptBindGroups;
+use crate::render::util::target_state::{
     scene_color_targets, scene_depth_state, scene_multisample,
 };
-use crate::render_lane::util::variant_pipelines::{Surface, VariantPipelines};
-use crate::render_lane::util::{DynamicUniformRingBuffer, UniformRingBuffer};
+use crate::render::util::variant_pipelines::{Surface, VariantPipelines};
+use crate::render::util::{DynamicUniformRingBuffer, UniformRingBuffer};
 use khora_core::lane::io::TargetKey;
 use khora_core::renderer::api::command::BindGroupLayoutId;
 use khora_core::renderer::api::frame::MAX_FRAMES_IN_FLIGHT;

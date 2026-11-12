@@ -20,7 +20,7 @@
 
 use std::borrow::Cow;
 
-use crate::render_lane::util::DynamicUniformRingBuffer;
+use crate::render::util::DynamicUniformRingBuffer;
 use khora_core::math::{Extent3D, Mat4};
 use khora_core::renderer::api::resource::{
     CameraUniformData, ImageAspect, TextureDescriptor, TextureDimension, TextureId, TextureUsage,

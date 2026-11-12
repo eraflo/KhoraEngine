@@ -15,7 +15,7 @@
 //! The GPU buffers and bind groups Forward+ keeps across frames.
 
 use super::tile_grid::{grown_tile_capacity, TileGrid};
-use crate::render_lane::util::{DynamicUniformRingBuffer, UniformRingBuffer};
+use crate::render::util::{DynamicUniformRingBuffer, UniformRingBuffer};
 use khora_core::renderer::api::command::BindGroupId;
 use khora_core::renderer::api::command::BindGroupLayoutId;
 use khora_core::renderer::api::command::{BindGroupDescriptor, BindGroupEntry};

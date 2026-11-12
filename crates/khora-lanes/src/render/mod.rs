@@ -19,11 +19,12 @@
 //! agents of their own, have folders of their own beside this one.
 
 mod culling;
+mod family;
 mod forward_plus;
 mod lit_forward;
 mod neutral;
 mod recording;
-mod render_family;
+mod registration;
 mod scene_load;
 mod shader_complexity;
 mod simple_unlit;
@@ -48,9 +49,9 @@ pub(crate) fn camera_distance_sq(
     dx * dx + dy * dy + dz * dz
 }
 
+pub use family::*;
 pub use forward_plus::*;
 pub use lit_forward::*;
-pub use render_family::*;
 pub use shader_complexity::ShaderComplexity;
 pub use simple_unlit::*;
 

@@ -21,7 +21,7 @@
 //! level of another resolution replaces it. The lane holds it by value and
 //! records through `&mut self`: no lock.
 
-use crate::render_lane::util::DynamicUniformRingBuffer;
+use crate::render::util::DynamicUniformRingBuffer;
 use khora_core::renderer::api::gpu_scene::{GpuMesh, ModelUniforms};
 use khora_core::renderer::api::pipeline::RenderPipelineId;
 use khora_core::renderer::api::resource::{CameraUniformData, SamplerId};
@@ -80,7 +80,7 @@ impl ShadowGpu {
         tier: Tier,
         label: &str,
     ) -> Result<Self, RenderError> {
-        use crate::render_lane::util::dynamic_uniform_ring_buffer::{
+        use crate::render::util::dynamic_uniform_ring_buffer::{
             DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
         };
 
@@ -340,7 +340,7 @@ const SHADOW_MODEL_LAYOUT_LABEL: &str = "shadow_model_layout";
 /// Bespoke shadow camera layout: a single dynamic-offset uniform buffer
 /// (vertex stage only).
 fn shadow_camera_layout_entries() -> Vec<khora_core::renderer::api::command::BindGroupLayoutEntry> {
-    crate::render_lane::util::single_uniform_layout(
+    crate::render::util::single_uniform_layout(
         khora_core::renderer::api::util::ShaderStageFlags::VERTEX,
         true,
     )

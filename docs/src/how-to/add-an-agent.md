@@ -120,7 +120,7 @@ The fields, in the order the macro takes them:
 | `lanes` | The family's lanes. Each is built with `Default::default()`. |
 
 The render family names a default level, from
-`crates/khora-agents/src/render_agent/agent.rs`:
+`crates/khora-lanes/src/render/registration.rs`:
 
 ```rust
 khora_script::inventory::submit! {

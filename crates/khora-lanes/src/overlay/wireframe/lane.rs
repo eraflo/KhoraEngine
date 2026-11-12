@@ -27,7 +27,7 @@
 
 use std::time::Duration;
 
-use crate::render_lane::util::DynamicUniformRingBuffer;
+use crate::render::util::DynamicUniformRingBuffer;
 use khora_core::agent::gorna::StrategyId;
 use khora_core::gpu::GpuSetup;
 use khora_core::lane::cost::{Cost, PerDevice};
@@ -52,7 +52,7 @@ use khora_data::AssetStore;
 use khora_macros::LaneInputs;
 
 use super::WireframeOutputs;
-use crate::render_lane::util::Block;
+use crate::render::util::Block;
 
 /// Wireframe material uniform — matches `WireframeMaterialUniforms` in
 /// `wireframe.wgsl` (line color + width, padded to 16 bytes).
@@ -78,8 +78,8 @@ const BLOCK_BYTES: u64 = (std::mem::size_of::<CameraUniformData>()
     + std::mem::size_of::<WireframeMaterialUniforms>()) as u64
     + DynamicUniformRingBuffer::first_bytes(
         std::mem::size_of::<ModelUniforms>() as u32,
-        crate::render_lane::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS,
-        crate::render_lane::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
+        crate::render::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS,
+        crate::render::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT,
     );
 
 /// Wireframe debug overlay lane. Holds what it built on the device; `None`
@@ -356,7 +356,7 @@ fn build_wireframe_gpu(
     device: &dyn GraphicsDevice,
     pipelines: &dyn PipelineSystem,
 ) -> Result<WireframeGpu, RenderError> {
-    use crate::render_lane::util::dynamic_uniform_ring_buffer::{
+    use crate::render::util::dynamic_uniform_ring_buffer::{
         DEFAULT_MAX_ELEMENTS, MIN_UNIFORM_ALIGNMENT,
     };
     use khora_core::renderer::api::pipeline::LayoutKey;
@@ -422,7 +422,7 @@ fn build_wireframe_gpu(
 fn uniform_layout_entries(
     visibility: khora_core::renderer::api::util::ShaderStageFlags,
 ) -> Vec<BindGroupLayoutEntry> {
-    crate::render_lane::util::single_uniform_layout(visibility, false)
+    crate::render::util::single_uniform_layout(visibility, false)
 }
 
 /// The declarative pipeline spec for the wireframe on a target of `key`'s
@@ -481,7 +481,7 @@ fn wireframe_pipeline_spec(key: TargetKey) -> PipelineSpec {
             write_mask: ColorWrites::ALL,
         }],
         multisample: MultisampleStateDescriptor {
-            count: crate::render_lane::util::sample_count(key.samples),
+            count: crate::render::util::sample_count(key.samples),
             mask: !0,
             alpha_to_coverage_enabled: false,
         },

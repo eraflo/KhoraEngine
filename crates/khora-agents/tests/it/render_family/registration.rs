@@ -111,7 +111,7 @@ fn the_render_family_is_registered_once_with_three_lanes() {
 
     assert_eq!(registration.family_name, "render");
     assert_eq!(registration.agent, AgentId::new("renderer"));
-    assert_eq!(registration.agent, khora_agents::render_agent::RENDERER);
+    assert_eq!(registration.agent, khora_lanes::render::RENDERER);
     assert_eq!(registration.semantics, Semantics::Presentation);
     assert_eq!(registration.importance, AgentImportance::Critical);
     assert_eq!(registration.fixed_step, None, "the scene draws every frame");

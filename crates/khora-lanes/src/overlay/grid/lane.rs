@@ -43,7 +43,7 @@ use khora_data::render::{GridView, RenderWorld};
 use khora_macros::LaneInputs;
 
 use super::GridOutputs;
-use crate::render_lane::util::Block;
+use crate::render::util::Block;
 
 /// Stable cache label for the grid camera layout.
 const GRID_CAMERA_LAYOUT_LABEL: &str = "grid_camera_layout";
@@ -231,7 +231,7 @@ impl Lane for GridLane {
 
 /// Group-0 camera layout: a single uniform buffer (vertex + fragment).
 fn camera_layout_entries() -> Vec<BindGroupLayoutEntry> {
-    crate::render_lane::util::single_uniform_layout(
+    crate::render::util::single_uniform_layout(
         khora_core::renderer::api::util::ShaderStageFlags::VERTEX
             | khora_core::renderer::api::util::ShaderStageFlags::FRAGMENT,
         false,
@@ -304,7 +304,7 @@ fn grid_pipeline_spec(key: TargetKey) -> PipelineSpec {
             write_mask: ColorWrites::ALL,
         }],
         multisample: MultisampleStateDescriptor {
-            count: crate::render_lane::util::sample_count(key.samples),
+            count: crate::render::util::sample_count(key.samples),
             mask: !0,
             alpha_to_coverage_enabled: false,
         },

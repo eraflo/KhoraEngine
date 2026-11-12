@@ -22,7 +22,7 @@ pub mod audio;
 pub mod loading;
 pub mod overlay;
 pub mod physics;
-pub mod render_lane;
+pub mod render;
 pub mod script_lane;
 pub mod shadows;
 pub mod skybox;

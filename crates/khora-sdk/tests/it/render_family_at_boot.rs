@@ -96,8 +96,8 @@ fn a_headless_boot_registers_the_render_family_as_the_renderer() {
         let registry = dcc.agent_registry().lock().expect("the registry lock");
         assert_eq!(
             registry.origin(RENDERER),
-            Some("khora_agents::render_agent::agent"),
-            "the renderer is the family registered in `render_agent/agent.rs`"
+            Some("khora_lanes::render::registration"),
+            "the renderer is the family registered in `render/registration.rs`"
         );
     }
     assert_eq!(

@@ -15,12 +15,12 @@
 //! Recording the lane's draw calls for one frame.
 
 use super::gpu::{pipeline_spec, LitGpu, IBL_BASE};
-use crate::render_lane::camera_distance_sq;
-use crate::render_lane::recording::{
+use crate::render::camera_distance_sq;
+use crate::render::family::{LitInputs, RenderOutputs};
+use crate::render::recording::{
     record_clear, record_draws, record_transparent_pass, scene_color, scene_depth,
 };
-use crate::render_lane::render_family::{LitInputs, RenderOutputs};
-use crate::render_lane::util::variant_pipelines::Surface;
+use crate::render::util::variant_pipelines::Surface;
 use khora_core::math::{LinearRgba, Mat4};
 use khora_core::renderer::api::command::{
     BindGroupDescriptor, BindGroupEntry, DrawCommand, LoadOp, RenderPassDescriptor,

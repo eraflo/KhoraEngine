@@ -59,10 +59,10 @@ mod every_pub_mod {
     use khora_lanes::audio as _;
     use khora_lanes::overlay as _;
     use khora_lanes::physics as _;
-    use khora_lanes::render_lane as _;
-    use khora_lanes::render_lane::util as _;
-    use khora_lanes::render_lane::util::dynamic_uniform_ring_buffer as _;
-    use khora_lanes::render_lane::util::uniform_ring_buffer as _;
+    use khora_lanes::render as _;
+    use khora_lanes::render::util as _;
+    use khora_lanes::render::util::dynamic_uniform_ring_buffer as _;
+    use khora_lanes::render::util::uniform_ring_buffer as _;
     use khora_lanes::script_lane as _;
     use khora_lanes::script_lane::persistence as _;
     use khora_lanes::script_lane::report as _;
@@ -77,7 +77,7 @@ mod every_pub_mod {
 // exhaustively). Nothing is constructed.
 // ---------------------------------------------------------------------------
 
-fn forward_plus_gpu_resources_fields(x: &khora_lanes::render_lane::ForwardPlusGpuResources) {
+fn forward_plus_gpu_resources_fields(x: &khora_lanes::render::ForwardPlusGpuResources) {
     let _ = (
         &x.light_buffer,
         &x.light_index_buffer,
@@ -101,19 +101,19 @@ fn forward_plus_gpu_resources_fields(x: &khora_lanes::render_lane::ForwardPlusGp
 
 /// The Forward+ rings are the ring buffers of `render_lane::util`.
 fn forward_plus_gpu_resources_rings(
-    x: &khora_lanes::render_lane::ForwardPlusGpuResources,
+    x: &khora_lanes::render::ForwardPlusGpuResources,
 ) -> (
-    &Option<khora_lanes::render_lane::util::UniformRingBuffer>,
-    &Option<khora_lanes::render_lane::util::DynamicUniformRingBuffer>,
+    &Option<khora_lanes::render::util::UniformRingBuffer>,
+    &Option<khora_lanes::render::util::DynamicUniformRingBuffer>,
 ) {
     (&x.camera_ring, &x.model_ring)
 }
 
-fn shader_complexity_variants(x: &khora_lanes::render_lane::ShaderComplexity) {
+fn shader_complexity_variants(x: &khora_lanes::render::ShaderComplexity) {
     match x {
-        khora_lanes::render_lane::ShaderComplexity::Unlit => {}
-        khora_lanes::render_lane::ShaderComplexity::SimpleLit => {}
-        khora_lanes::render_lane::ShaderComplexity::FullPBR => {}
+        khora_lanes::render::ShaderComplexity::Unlit => {}
+        khora_lanes::render::ShaderComplexity::SimpleLit => {}
+        khora_lanes::render::ShaderComplexity::FullPBR => {}
     }
 }
 
@@ -212,84 +212,76 @@ fn module_overlay_lane_paths_still_resolve() {
 
 #[test]
 fn module_render_lane_paths_still_resolve() {
-    let _ = type_name::<khora_lanes::render_lane::ForwardPlusGpuResources>();
-    let _ =
-        forward_plus_gpu_resources_fields as fn(&khora_lanes::render_lane::ForwardPlusGpuResources);
-    let _ = khora_lanes::render_lane::ForwardPlusGpuResources::is_initialized;
-    is_debug::<khora_lanes::render_lane::ForwardPlusGpuResources>();
-    is_default::<khora_lanes::render_lane::ForwardPlusGpuResources>();
-    let _ = type_name::<khora_lanes::render_lane::ForwardPlusLane>();
-    is_default::<khora_lanes::render_lane::ForwardPlusLane>();
-    is_typed_lane::<khora_lanes::render_lane::ForwardPlusLane>();
-    let _ = type_name::<khora_lanes::render_lane::LitForwardLane>();
-    is_default::<khora_lanes::render_lane::LitForwardLane>();
-    is_typed_lane::<khora_lanes::render_lane::LitForwardLane>();
-    let _ = type_name::<khora_lanes::render_lane::ShaderComplexity>();
-    let _ = shader_complexity_variants as fn(&khora_lanes::render_lane::ShaderComplexity);
-    let _ = khora_lanes::render_lane::ShaderComplexity::cost_multiplier;
-    let _ = khora_lanes::render_lane::ShaderComplexity::name;
-    is_debug::<khora_lanes::render_lane::ShaderComplexity>();
-    is_clone::<khora_lanes::render_lane::ShaderComplexity>();
-    is_copy::<khora_lanes::render_lane::ShaderComplexity>();
-    is_partial_eq::<khora_lanes::render_lane::ShaderComplexity>();
-    is_eq::<khora_lanes::render_lane::ShaderComplexity>();
-    is_partial_ord::<khora_lanes::render_lane::ShaderComplexity>();
-    is_ord::<khora_lanes::render_lane::ShaderComplexity>();
-    is_default::<khora_lanes::render_lane::ShaderComplexity>();
-    let _ = type_name::<khora_lanes::render_lane::SimpleUnlitLane>();
-    is_default::<khora_lanes::render_lane::SimpleUnlitLane>();
-    let _ = type_name::<khora_lanes::render_lane::RenderFamily>();
-    is_lane_family::<khora_lanes::render_lane::RenderFamily>();
-    let _ = type_name::<khora_lanes::render_lane::RenderOutputs<'static>>();
-    is_typed_lane::<khora_lanes::render_lane::SimpleUnlitLane>();
+    let _ = type_name::<khora_lanes::render::ForwardPlusGpuResources>();
+    let _ = forward_plus_gpu_resources_fields as fn(&khora_lanes::render::ForwardPlusGpuResources);
+    let _ = khora_lanes::render::ForwardPlusGpuResources::is_initialized;
+    is_debug::<khora_lanes::render::ForwardPlusGpuResources>();
+    is_default::<khora_lanes::render::ForwardPlusGpuResources>();
+    let _ = type_name::<khora_lanes::render::ForwardPlusLane>();
+    is_default::<khora_lanes::render::ForwardPlusLane>();
+    is_typed_lane::<khora_lanes::render::ForwardPlusLane>();
+    let _ = type_name::<khora_lanes::render::LitForwardLane>();
+    is_default::<khora_lanes::render::LitForwardLane>();
+    is_typed_lane::<khora_lanes::render::LitForwardLane>();
+    let _ = type_name::<khora_lanes::render::ShaderComplexity>();
+    let _ = shader_complexity_variants as fn(&khora_lanes::render::ShaderComplexity);
+    let _ = khora_lanes::render::ShaderComplexity::cost_multiplier;
+    let _ = khora_lanes::render::ShaderComplexity::name;
+    is_debug::<khora_lanes::render::ShaderComplexity>();
+    is_clone::<khora_lanes::render::ShaderComplexity>();
+    is_copy::<khora_lanes::render::ShaderComplexity>();
+    is_partial_eq::<khora_lanes::render::ShaderComplexity>();
+    is_eq::<khora_lanes::render::ShaderComplexity>();
+    is_partial_ord::<khora_lanes::render::ShaderComplexity>();
+    is_ord::<khora_lanes::render::ShaderComplexity>();
+    is_default::<khora_lanes::render::ShaderComplexity>();
+    let _ = type_name::<khora_lanes::render::SimpleUnlitLane>();
+    is_default::<khora_lanes::render::SimpleUnlitLane>();
+    let _ = type_name::<khora_lanes::render::RenderFamily>();
+    is_lane_family::<khora_lanes::render::RenderFamily>();
+    let _ = type_name::<khora_lanes::render::RenderOutputs<'static>>();
+    is_typed_lane::<khora_lanes::render::SimpleUnlitLane>();
 }
 
 #[test]
 fn module_render_lane_util_paths_still_resolve() {
-    const _: u32 =
-        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS;
-    const _: u32 =
-        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT;
+    const _: u32 = khora_lanes::render::util::dynamic_uniform_ring_buffer::DEFAULT_MAX_ELEMENTS;
+    const _: u32 = khora_lanes::render::util::dynamic_uniform_ring_buffer::MIN_UNIFORM_ALIGNMENT;
     let _ = type_name::<
-        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer,
+        khora_lanes::render::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer,
     >();
-    let _ = type_name::<khora_lanes::render_lane::util::DynamicUniformRingBuffer>();
+    let _ = type_name::<khora_lanes::render::util::DynamicUniformRingBuffer>();
     same_type(
-        PhantomData::<khora_lanes::render_lane::util::DynamicUniformRingBuffer>,
+        PhantomData::<khora_lanes::render::util::DynamicUniformRingBuffer>,
         PhantomData::<
-            khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer,
+            khora_lanes::render::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer,
         >,
     );
+    let _ = khora_lanes::render::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::new;
     let _ =
-        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::new;
+        khora_lanes::render::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::advance;
+    let _ = khora_lanes::render::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::push;
+    let _ = khora_lanes::render::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::current_bind_group;
+    let _ = khora_lanes::render::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::current_slot_index;
     let _ =
-        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::advance;
-    let _ =
-        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::push;
-    let _ = khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::current_bind_group;
-    let _ = khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::current_slot_index;
-    let _ =
-        khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::destroy;
-    is_debug::<khora_lanes::render_lane::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer>(
-    );
-    let _ = type_name::<khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer>();
-    let _ = type_name::<khora_lanes::render_lane::util::UniformRingBuffer>();
+        khora_lanes::render::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer::destroy;
+    is_debug::<khora_lanes::render::util::dynamic_uniform_ring_buffer::DynamicUniformRingBuffer>();
+    let _ = type_name::<khora_lanes::render::util::uniform_ring_buffer::UniformRingBuffer>();
+    let _ = type_name::<khora_lanes::render::util::UniformRingBuffer>();
     same_type(
-        PhantomData::<khora_lanes::render_lane::util::UniformRingBuffer>,
-        PhantomData::<khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer>,
+        PhantomData::<khora_lanes::render::util::UniformRingBuffer>,
+        PhantomData::<khora_lanes::render::util::uniform_ring_buffer::UniformRingBuffer>,
     );
-    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::new;
-    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::advance;
-    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::write;
-    let _ =
-        khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::current_bind_group;
-    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::current_buffer;
-    let _ =
-        khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::current_slot_index;
-    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::slot_count;
-    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::data_size;
-    let _ = khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer::destroy;
-    is_debug::<khora_lanes::render_lane::util::uniform_ring_buffer::UniformRingBuffer>();
+    let _ = khora_lanes::render::util::uniform_ring_buffer::UniformRingBuffer::new;
+    let _ = khora_lanes::render::util::uniform_ring_buffer::UniformRingBuffer::advance;
+    let _ = khora_lanes::render::util::uniform_ring_buffer::UniformRingBuffer::write;
+    let _ = khora_lanes::render::util::uniform_ring_buffer::UniformRingBuffer::current_bind_group;
+    let _ = khora_lanes::render::util::uniform_ring_buffer::UniformRingBuffer::current_buffer;
+    let _ = khora_lanes::render::util::uniform_ring_buffer::UniformRingBuffer::current_slot_index;
+    let _ = khora_lanes::render::util::uniform_ring_buffer::UniformRingBuffer::slot_count;
+    let _ = khora_lanes::render::util::uniform_ring_buffer::UniformRingBuffer::data_size;
+    let _ = khora_lanes::render::util::uniform_ring_buffer::UniformRingBuffer::destroy;
+    is_debug::<khora_lanes::render::util::uniform_ring_buffer::UniformRingBuffer>();
     let _ = forward_plus_gpu_resources_rings;
 }
 
@@ -486,10 +478,10 @@ mod paths_used_by_other_crates {
     use khora_lanes::overlay::WireframeFamily as _; // khora-agents
     use khora_lanes::overlay::WireframeLane as _; // khora-agents
     use khora_lanes::physics::StandardPhysicsLane as _; // khora-agents
-    use khora_lanes::render_lane::ForwardPlusLane as _; // khora-agents
-    use khora_lanes::render_lane::LitForwardLane as _; // khora-agents
-    use khora_lanes::render_lane::RenderFamily as _; // khora-agents
-    use khora_lanes::render_lane::SimpleUnlitLane as _; // khora-agents
+    use khora_lanes::render::ForwardPlusLane as _; // khora-agents
+    use khora_lanes::render::LitForwardLane as _; // khora-agents
+    use khora_lanes::render::RenderFamily as _; // khora-agents
+    use khora_lanes::render::SimpleUnlitLane as _; // khora-agents
     use khora_lanes::script_lane::runtime::INITIAL_RATE as _; // khora-agents
     use khora_lanes::script_lane::BudgetedScriptLane as _; // khora-agents
     use khora_lanes::script_lane::ScriptFamily as _; // khora-agents

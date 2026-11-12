@@ -77,7 +77,7 @@ use khora_data::render::{
     ScenePassSlot, TransparentPassSlot,
 };
 use khora_data::{AssetStore, IblBaker, IblSource};
-use khora_lanes::render_lane::{ForwardPlusLane, LitForwardLane, SimpleUnlitLane};
+use khora_lanes::render::{ForwardPlusLane, LitForwardLane, SimpleUnlitLane};
 
 /// The one level each render lane offers.
 pub const LEVEL: usize = 0;

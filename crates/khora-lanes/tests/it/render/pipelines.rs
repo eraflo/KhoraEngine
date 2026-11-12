@@ -21,7 +21,7 @@
 use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::pipeline::enums::CullMode;
 use khora_core::renderer::api::resource::TextureFormat;
-use khora_lanes::render_lane::util::sample_count;
+use khora_lanes::render::util::sample_count;
 
 use super::fixtures::{
     default_target, target, Renderer, Scene, Surface, EVERY_LANE, LIT_LANES, SURFACE_FORMAT,

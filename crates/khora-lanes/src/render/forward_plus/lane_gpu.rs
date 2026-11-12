@@ -16,9 +16,9 @@
 
 use super::gpu::render_pipeline_spec;
 use super::ForwardPlusGpuResources;
-use crate::render_lane::neutral::NeutralBindings;
-use crate::render_lane::util::kept_bind_groups::KeptBindGroups;
-use crate::render_lane::util::variant_pipelines::{Surface, VariantPipelines};
+use crate::render::neutral::NeutralBindings;
+use crate::render::util::kept_bind_groups::KeptBindGroups;
+use crate::render::util::variant_pipelines::{Surface, VariantPipelines};
 use khora_core::lane::io::TargetKey;
 use khora_core::renderer::api::ibl::IblGpuBindings;
 use khora_core::renderer::api::resource::BufferId;
