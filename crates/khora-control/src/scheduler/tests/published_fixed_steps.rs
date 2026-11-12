@@ -27,7 +27,6 @@
 
 use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Terms;
@@ -85,9 +84,7 @@ fn scheduler_of(
         );
         counters.push(runs);
     }
-    let ids: Vec<AgentId> = agents.iter().map(|(id, _)| *id).collect();
-    let scheduler =
-        ExecutionScheduler::new(registry, Arc::new(RwLock::new(Context::default())), &ids);
+    let scheduler = ExecutionScheduler::from_registry(registry);
     (scheduler, counters)
 }
 

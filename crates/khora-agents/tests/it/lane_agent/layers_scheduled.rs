@@ -17,11 +17,11 @@
 //! and an allocation the DCC publishes swaps the layer at a frame start.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc, Mutex, RwLock};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use khora_agents::agent::lane_agent;
-use khora_control::{AgentRegistry, Context, ExecutionScheduler};
+use khora_control::{AgentRegistry, ExecutionScheduler};
 use khora_core::agent::gorna::protocol::{Allocation, Epoch, Trigger};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
@@ -159,7 +159,7 @@ fn scheduling(agent: Arc<Mutex<dyn Agent>>) -> ExecutionScheduler {
         .lock()
         .expect("the registry lock")
         .register(agent, 1.0);
-    ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())))
+    ExecutionScheduler::from_registry(registry)
 }
 
 /// What the last frame recorded: its lane and the instance's record count.

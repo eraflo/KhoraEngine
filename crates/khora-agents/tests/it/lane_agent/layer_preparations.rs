@@ -23,12 +23,12 @@
 //! Each test builds its own lanes, so the prepares each one counts are its
 //! own.
 
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::thread::ThreadId;
 use std::time::{Duration, Instant};
 
 use khora_agents::agent::{lane_agent, LaneAgent};
-use khora_control::{AgentRegistry, Context, ExecutionScheduler};
+use khora_control::{AgentRegistry, ExecutionScheduler};
 use khora_core::agent::gorna::protocol::{Allocation, Epoch, Report, Trigger};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
@@ -490,8 +490,7 @@ fn under_the_scheduler_the_first_layer_is_prepared_in_place_and_a_switch_off_the
         .lock()
         .expect("the registry lock")
         .register(Arc::clone(&agent), 1.0);
-    let mut scheduler =
-        ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+    let mut scheduler = ExecutionScheduler::from_registry(registry);
     let mut world = World::new();
     let runtime = Arc::new(Runtime::new());
     let recorded = |scheduler: &mut ExecutionScheduler| {

@@ -16,8 +16,6 @@
 
 use crate::agent_registry::AgentRegistry;
 use crate::budget_channel::{BudgetChannel, Publication};
-use crate::dcc_context::Context;
-use crate::plugin::EnginePlugin;
 use crate::worker_pool::WorkerPool;
 use crossbeam_channel::Sender;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
@@ -93,7 +91,6 @@ pub struct ExecutionScheduler {
     /// with the place of the last publication it was handed: what it is owed
     /// is what was taken after it.
     lent: Vec<(Weak<Mutex<dyn khora_core::agent::Agent>>, u64)>,
-    plugins: Vec<EnginePlugin>,
     phase_order: Vec<ExecutionPhase>,
     frame_start: Instant,
     frame_budget: Duration,
@@ -145,21 +142,17 @@ pub struct ExecutionScheduler {
 }
 
 impl ExecutionScheduler {
-    /// Creates a new scheduler. The ids and the context are no longer read:
-    /// every agent of `registry` is lent the allocations the DCC publishes,
-    /// and the families a frame runs are the runtime's
+    /// Creates a scheduler over the agents of `registry`.
+    ///
+    /// Every agent the registry holds, now or later, is lent the allocations
+    /// the DCC publishes. The families a frame runs are the runtime's
     /// [`Activation`](khora_core::agent::Activation).
-    pub fn new(
-        registry: Arc<Mutex<AgentRegistry>>,
-        _context: Arc<std::sync::RwLock<Context>>,
-        _agent_ids: &[AgentId],
-    ) -> Self {
+    pub fn from_registry(registry: Arc<Mutex<AgentRegistry>>) -> Self {
         Self {
             registry,
             budget_channel: BudgetChannel::new(),
             taken: Vec::new(),
             lent: Vec::new(),
-            plugins: Vec::new(),
             phase_order: ExecutionPhase::DEFAULT_ORDER.to_vec(),
             frame_start: Instant::now(),
             frame_budget: Duration::from_millis(16),
@@ -177,18 +170,6 @@ impl ExecutionScheduler {
             background: background::Background::new(default_background_size()),
             begun: false,
         }
-    }
-
-    /// Creates a scheduler over the agents of `registry`.
-    ///
-    /// Every agent the registry holds, now or later, is lent the allocations
-    /// the DCC publishes: an agent is budgeted because it is registered — no
-    /// hand-kept id list can forget it.
-    pub fn from_registry(
-        registry: Arc<Mutex<AgentRegistry>>,
-        context: Arc<std::sync::RwLock<Context>>,
-    ) -> Self {
-        Self::new(registry, context, &[])
     }
 
     /// The deck slots agents wrote during the last frame without declaring
@@ -304,34 +285,9 @@ impl ExecutionScheduler {
         &self.budget_channel
     }
 
-    /// Registers an engine plugin.
-    pub fn register_plugin(&mut self, plugin: EnginePlugin) {
-        log::info!("Scheduler: Registered plugin '{}'", plugin.name());
-        self.plugins.push(plugin);
-    }
-
     /// Sets the phase execution order.
     pub fn set_phase_order(&mut self, order: &[ExecutionPhase]) {
         self.phase_order = order.to_vec();
-    }
-
-    /// Inserts a phase after an existing phase.
-    pub fn insert_after(&mut self, existing: ExecutionPhase, new: ExecutionPhase) {
-        if let Some(pos) = self.phase_order.iter().position(|p| *p == existing) {
-            self.phase_order.insert(pos + 1, new);
-        }
-    }
-
-    /// Inserts a phase before an existing phase.
-    pub fn insert_before(&mut self, existing: ExecutionPhase, new: ExecutionPhase) {
-        if let Some(pos) = self.phase_order.iter().position(|p| *p == existing) {
-            self.phase_order.insert(pos, new);
-        }
-    }
-
-    /// Removes a phase from the order.
-    pub fn remove_phase(&mut self, phase: ExecutionPhase) {
-        self.phase_order.retain(|p| *p != phase);
     }
 
     /// The agents of the families on in `phase`, each with its importance, priority

@@ -118,7 +118,7 @@ pub use khora_core::agent::Activation;
 //
 // `AgentRegistry` is exposed as a read-only telemetry surface for the
 // editor's Control Plane panel. The mutating side (`ExecutionScheduler`,
-// `BudgetChannel`, `EnginePlugin`) stays internal — the SDK is a façade
+// `BudgetChannel`) stays internal — the SDK is a façade
 // for game code, not for engine internals.
 pub use khora_control::agent_registry::AgentRegistry;
 pub use khora_control::Context as DccContext;

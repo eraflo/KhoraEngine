@@ -19,13 +19,11 @@ use wgpu;
 
 use khora_core::renderer::api::resource::texture::{self as api_tex};
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct WgpuShaderModuleEntry {
     pub(super) wgpu_module: Arc<wgpu::ShaderModule>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct WgpuRenderPipelineEntry {
     pub(crate) wgpu_pipeline: Arc<wgpu::RenderPipeline>,
@@ -48,26 +46,22 @@ pub(crate) struct WgpuTextureEntry {
     pub(crate) size: u64, // To track VRAM accurately on destruction
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub(crate) struct WgpuTextureViewEntry {
     pub(crate) wgpu_view: Arc<wgpu::TextureView>,
     pub(crate) source_texture_id: Option<api_tex::TextureId>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct WgpuSamplerEntry {
     pub(crate) wgpu_sampler: Arc<wgpu::Sampler>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct WgpuBindGroupLayoutEntry {
     pub(crate) wgpu_layout: Arc<wgpu::BindGroupLayout>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) struct WgpuBindGroupEntry {
     pub(crate) wgpu_bind_group: Arc<wgpu::BindGroup>,

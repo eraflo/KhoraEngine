@@ -6,9 +6,8 @@
 // `khora_core::renderer::api::ShaderDefs` automatically reshapes the
 // `LightingUniforms` arrays here.
 //
-// The BRDF (`khora::lighting::pbr`) and the output tone-map are shared
-// with `standard_pbr` and `forward_plus`, so the three lit lanes render
-// the same image — this lane differs only in how it iterates lights.
+// The BRDF (`khora::lighting::pbr`) and the tone-map are shared with
+// `forward_plus`: both lit lanes render the same image.
 
 #import khora::std::camera::camera
 #import khora::std::model::model

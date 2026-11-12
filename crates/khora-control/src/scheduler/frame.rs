@@ -303,15 +303,9 @@ impl ExecutionScheduler {
             AgentSelection::All
         };
 
-        // 8. Execute each phase: plugins then agents (CLAD descent — each
-        //    family's installed layer runs at its place).
+        // 8. Execute each phase: each family's installed layer runs at its
+        //    place.
         for phase in phases {
-            for plugin in &mut self.plugins {
-                if plugin.wants_phase(phase) {
-                    plugin.execute(phase, world);
-                }
-            }
-
             self.execute_agents_in_phase(
                 phase,
                 &runtime,

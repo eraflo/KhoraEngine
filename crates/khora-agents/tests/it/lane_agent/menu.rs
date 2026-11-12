@@ -267,8 +267,8 @@ fn timing_comes_from_the_registration() {
         timing
             .dependencies
             .iter()
-            .all(|d| matches!(d.kind, DependencyKind::Hard) && d.condition.is_none()),
-        "`after` is an unconditional ordering"
+            .all(|d| matches!(d.kind, DependencyKind::Hard)),
+        "`after` is a hard ordering"
     );
 
     let every_frame = lane_agent(&LADDER, &DeviceCaps::default());

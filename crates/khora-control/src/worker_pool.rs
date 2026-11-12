@@ -17,7 +17,7 @@
 //! The scheduler runs every member of a concurrent wave as an independent
 //! job. Rather than re-spawn threads with `std::thread::scope`
 //! every wave, this pool spawns its workers **once** (in
-//! [`ExecutionScheduler::new`]) and reuses them for the life of the scheduler,
+//! [`ExecutionScheduler::from_registry`]) and reuses them for the life of the scheduler,
 //! amortising the spawn cost as waves grow.
 //!
 //! The jobs it runs are `'static`: no agent touches the `World`, and each
@@ -33,7 +33,7 @@
 //! per frame and its threads never outlive the scheduler.
 //!
 //! [`ExecutionScheduler`]: crate::scheduler::ExecutionScheduler
-//! [`ExecutionScheduler::new`]: crate::scheduler::ExecutionScheduler::new
+//! [`ExecutionScheduler::from_registry`]: crate::scheduler::ExecutionScheduler::from_registry
 
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};

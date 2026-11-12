@@ -433,7 +433,6 @@ impl Agent for LaneAgent {
                 .map(|&target| AgentDependency {
                     target,
                     kind: DependencyKind::Hard,
-                    condition: None,
                 })
                 .collect(),
             ..ExecutionTiming::default()

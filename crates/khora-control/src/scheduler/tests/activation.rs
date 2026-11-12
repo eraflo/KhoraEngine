@@ -22,7 +22,6 @@ use super::allocations::{allocation, envelope, lent_to, scheduler_over, Hand, Sh
 use super::layers::{scheduling, shared, taken, Brush, Painter, SharedLog as LayerLog};
 use super::{offer_of, place_with, report_of, Doing};
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
@@ -30,7 +29,7 @@ use khora_core::agent::{Activation, Agent, ExecutionPhase, ExecutionTiming, Plac
 use khora_core::Runtime;
 use khora_data::ecs::World;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 const SCRIPT: AgentId = AgentId::new("script");
 
@@ -88,11 +87,7 @@ fn one_script() -> (ExecutionScheduler, Arc<AtomicUsize>) {
         })),
         1.0,
     );
-    let scheduler = ExecutionScheduler::new(
-        registry,
-        Arc::new(RwLock::new(Context::default())),
-        &[SCRIPT],
-    );
+    let scheduler = ExecutionScheduler::from_registry(registry);
     (scheduler, runs)
 }
 

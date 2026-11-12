@@ -23,7 +23,6 @@
 
 use super::{hosted_at, set_step, Family};
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::dependency::{AgentDependency, DependencyKind};
 use khora_core::agent::gorna::AgentId;
@@ -82,7 +81,6 @@ impl Family for Stepping {
                     vec![AgentDependency {
                         target,
                         kind: DependencyKind::Hard,
-                        condition: None,
                     }]
                 })
                 .unwrap_or_default(),
@@ -164,9 +162,7 @@ impl Rig {
                 .register(agent, spec.priority);
             handles.push(Handle { place, seen });
         }
-        let ids: Vec<AgentId> = specs.iter().map(|s| s.id).collect();
-        let scheduler =
-            ExecutionScheduler::new(registry, Arc::new(RwLock::new(Context::default())), &ids);
+        let scheduler = ExecutionScheduler::from_registry(registry);
         let time: SharedTime = Arc::new(RwLock::new(Time::default()));
         let mut runtime = Runtime::new();
         runtime.resources.insert(Arc::clone(&time));

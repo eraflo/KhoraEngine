@@ -20,8 +20,7 @@
 //! lighting uniform and the shadow atlases. Unlike shadow — whose bindings
 //! sit at fixed indices 1/2/3 in every lit lane — the IBL block starts at a
 //! **lane-specific base index** because the lit lanes' group-3 layouts
-//! diverge: `StandardPbr` / `LitForward` place IBL right after shadow (base
-//! 4), while `Forward+` packs several extra light-culling bindings at 4..8
+//! diverge: `LitForward` places IBL right after shadow (base 4), while `Forward+` packs several extra light-culling bindings at 4..8
 //! and places IBL at base 8. Both the layout entries and the per-frame bind
 //! group are built from the same `base`, and the matching WGSL declares the
 //! cube/LUT bindings at the same indices, so the three stay in lockstep.

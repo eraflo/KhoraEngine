@@ -524,7 +524,7 @@ impl AssetBrowserPanel {
                     log::info!("Asset browser: loading scene '{}'", asset.rel_path);
                 }
             }
-            ActivationKind::SpawnPrefab { abs_path: _ } => {
+            ActivationKind::SpawnPrefab => {
                 if let Ok(mut state) = self.state.lock() {
                     state.pending_prefab_spawn = Some((asset.uuid, None));
                     log::info!("Asset browser: spawning prefab '{}'", asset.name);

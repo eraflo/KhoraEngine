@@ -21,7 +21,6 @@
 use super::allocations::{allocation, one_phase};
 use super::{offer_of, place_with, report_of, set_step, Doing};
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use crossbeam_channel::Receiver;
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Offer, OfferRequest, Report};
@@ -35,7 +34,7 @@ use khora_core::telemetry::TelemetryEvent;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::any::TypeId;
-use std::sync::{mpsc, Arc, Mutex, RwLock};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 // ─── What the agents and layers did ─────────────────────────────────────────
@@ -319,8 +318,7 @@ pub(super) fn scheduling(
             registry.register(agent, (count - index) as f32);
         }
     }
-    let mut scheduler =
-        ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+    let mut scheduler = ExecutionScheduler::from_registry(registry);
     let (tx, rx) = crossbeam_channel::unbounded();
     scheduler.set_telemetry_sender(tx);
     (scheduler, rx)

@@ -35,7 +35,7 @@ private.
   - its scripts are mounted in `setup`.
 
 ## Principles
-- **The SDK is a façade** — the Scheduler, `BudgetChannel`, `EnginePlugin`, and all `khora-*` internals stay
+- **The SDK is a façade** — the Scheduler, `BudgetChannel` and all `khora-*` internals stay
   hidden. Game code sees only the public API. Add a re-export only when game code genuinely needs the type.
 - Prefer ergonomic builders (`Vessel::at(world, pos).with_component(..).build()`) and a clean `prelude`.
 - `#[non_exhaustive]` on public enums/structs likely to grow; newtype IDs, no bare integers.

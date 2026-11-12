@@ -154,15 +154,11 @@ fn contention_fields(x: &khora_core::agent::contention::Contention) {
     let _ = (&x.deck, &x.reads, &x.writes);
 }
 
+/// Destructured whole, with no `..`: a dependency is its target and its kind,
+/// and nothing else.
 fn agent_dependency_fields(x: &khora_core::agent::dependency::AgentDependency) {
-    let _ = (&x.target, &x.kind, &x.condition);
-}
-
-fn dependency_condition_variants(x: &khora_core::agent::dependency::DependencyCondition) {
-    match x {
-        khora_core::agent::dependency::DependencyCondition::IfTargetActive => {}
-        khora_core::agent::dependency::DependencyCondition::IfBudgetAbove(..) => {}
-    }
+    let khora_core::agent::dependency::AgentDependency { target, kind } = x;
+    let _ = (target, kind);
 }
 
 fn dependency_kind_variants(x: &khora_core::agent::dependency::DependencyKind) {
@@ -1494,16 +1490,6 @@ fn module_agent_paths_still_resolve() {
     let _ = agent_dependency_fields as fn(&khora_core::agent::dependency::AgentDependency);
     is_debug::<khora_core::agent::dependency::AgentDependency>();
     is_clone::<khora_core::agent::dependency::AgentDependency>();
-    let _ = type_name::<khora_core::agent::dependency::DependencyCondition>();
-    let _ = type_name::<khora_core::agent::DependencyCondition>();
-    same_type(
-        PhantomData::<khora_core::agent::DependencyCondition>,
-        PhantomData::<khora_core::agent::dependency::DependencyCondition>,
-    );
-    let _ =
-        dependency_condition_variants as fn(&khora_core::agent::dependency::DependencyCondition);
-    is_debug::<khora_core::agent::dependency::DependencyCondition>();
-    is_clone::<khora_core::agent::dependency::DependencyCondition>();
     let _ = type_name::<khora_core::agent::dependency::DependencyKind>();
     let _ = type_name::<khora_core::agent::DependencyKind>();
     same_type(

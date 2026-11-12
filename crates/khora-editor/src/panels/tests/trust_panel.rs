@@ -232,7 +232,7 @@ fn the_confirmation_keeps_a_long_row_inside_its_box() {
         confirming(TrustSummary {
             overlays: vec![
                 "khora::lighting::structs".to_owned(),
-                "khora::pipelines::standard_pbr".to_owned(),
+                "khora::pipelines::lit_forward".to_owned(),
                 "khora::std::camera".to_owned(),
             ],
             ..full_summary()

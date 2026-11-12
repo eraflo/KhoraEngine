@@ -20,11 +20,11 @@
 //! way when its family switches off still lands, and waits.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use khora_agents::agent::lane_agent;
-use khora_control::{AgentRegistry, Context, ExecutionScheduler};
+use khora_control::{AgentRegistry, ExecutionScheduler};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Activation, Agent, AgentImportance, ExecutionPhase};
@@ -310,8 +310,7 @@ impl Bakery {
             .lock()
             .expect("the registry lock")
             .register(agent, 1.0);
-        let scheduler =
-            ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+        let scheduler = ExecutionScheduler::from_registry(registry);
         let orders = Channel::<Order>::bounded(16, WhenFull::Reject);
         let reserve = Reserve::new();
         let mut runtime = Runtime::new();

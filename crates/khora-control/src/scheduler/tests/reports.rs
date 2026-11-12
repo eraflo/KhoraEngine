@@ -19,7 +19,6 @@
 use super::allocations::one_phase;
 use super::host;
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use crossbeam_channel::Receiver;
 use khora_core::agent::gorna::protocol::{Epoch, Report};
@@ -30,7 +29,7 @@ use khora_core::lane::cost::PerDevice;
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// A family whose layer runs `Custom(7)`, says it measured 3 ms on the
@@ -116,8 +115,7 @@ fn reporting(agents: Vec<Teller>) -> (ExecutionScheduler, Receiver<TelemetryEven
             registry.register(agent, (count - index) as f32);
         }
     }
-    let mut scheduler =
-        ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+    let mut scheduler = ExecutionScheduler::from_registry(registry);
     let (tx, rx) = crossbeam_channel::unbounded();
     scheduler.set_telemetry_sender(tx);
     (scheduler, rx)

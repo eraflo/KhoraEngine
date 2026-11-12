@@ -22,7 +22,6 @@
 
 use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::dependency::{AgentDependency, DependencyKind};
 use khora_core::agent::gorna::AgentId;
@@ -32,7 +31,7 @@ use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::any::TypeId;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// The slot a [`Flaky`] agent writes before it panics.
@@ -104,7 +103,6 @@ impl Family for Steady {
                     vec![AgentDependency {
                         target,
                         kind: DependencyKind::Hard,
-                        condition: None,
                     }]
                 })
                 .unwrap_or_default(),
@@ -139,8 +137,7 @@ fn scheduler_over(agents: Vec<Arc<Mutex<dyn Agent>>>, parallel: bool) -> Executi
             registry.register(agent, (count - index) as f32);
         }
     }
-    let mut scheduler =
-        ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+    let mut scheduler = ExecutionScheduler::from_registry(registry);
     scheduler.set_parallel_execution(parallel);
     scheduler
 }

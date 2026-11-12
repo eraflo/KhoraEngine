@@ -581,6 +581,176 @@ fn khora_core_and_khora_lanes_do_not_use_bincode() {
     );
 }
 
+/// What the agents/lanes contract left with no caller, deleted in its
+/// cleanup: the per-phase plugin hook, the dependency condition no agent set,
+/// the scheduler's constructor that took an id list and a DCC context it never
+/// read (`ExecutionScheduler::from_registry` takes the registry alone), and
+/// the lit pipeline no lane resolved (the lit lanes use `lit_forward` and
+/// `forward_plus`).
+const RETIRED_CONTRACT_SHIMS: &[&str] = &[
+    "EnginePlugin",
+    "register_plugin",
+    "DependencyCondition",
+    "ExecutionScheduler::new",
+    "khora::pipelines::standard_pbr",
+    "standard_pbr.wgsl",
+];
+
+/// The files that held them.
+const RETIRED_CONTRACT_SHIM_FILES: &[&str] = &[
+    "crates/khora-control/src/plugin.rs",
+    "crates/khora-infra/src/graphics/shader/shaders/pipelines/standard_pbr.wgsl",
+];
+
+/// The shims the agents/lanes contract replaced are gone — their files and
+/// every mention of them in code and docs.
+#[test]
+fn nothing_names_a_shim_the_contract_replaced() {
+    let root = repo_root();
+    let mut hits = Vec::new();
+    for retired in RETIRED_CONTRACT_SHIM_FILES {
+        if root.join(retired).exists() {
+            hits.push(format!("{retired} still exists"));
+        }
+    }
+    for file in scanned_files(&root) {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        for (number, line) in text.lines().enumerate() {
+            for retired in RETIRED_CONTRACT_SHIMS {
+                if line.contains(retired) {
+                    hits.push(format!("{}:{}: `{retired}`", rel(&root, &file), number + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "shims the contract replaced are still named:\n  {}",
+        hits.join("\n  ")
+    );
+}
+
+/// Dead items whose names are too common to forbid everywhere: the file or
+/// directory they lived in, the text that declared them, and what they were.
+/// The `allow(dead_code)` that hid them goes with them.
+const DELETED_DEAD_ITEMS: &[(&str, &str, &str)] = &[
+    (
+        "crates/khora-core/src/agent",
+        "pub condition",
+        "`AgentDependency.condition`, always `None`",
+    ),
+    (
+        "crates/khora-control/src",
+        "fn get_agent",
+        "`DccService::get_agent`, never called",
+    ),
+    (
+        "crates/khora-control/src",
+        "fn insert_after",
+        "`ExecutionScheduler::insert_after`: an app orders its phases through `EngineApp`",
+    ),
+    (
+        "crates/khora-control/src",
+        "fn insert_before",
+        "`ExecutionScheduler::insert_before`: an app orders its phases through `EngineApp`",
+    ),
+    (
+        "crates/khora-control/src",
+        "fn remove_phase",
+        "`ExecutionScheduler::remove_phase`: an app removes its phases through `EngineApp`",
+    ),
+    (
+        "crates/khora-infra/src/graphics/wgpu",
+        "fn backend_name",
+        "`backend_name`, never called",
+    ),
+    (
+        "crates/khora-infra/src/graphics/wgpu/backend.rs",
+        "allow(dead_code)",
+        "the allow that hid `backend_name`",
+    ),
+    (
+        "crates/khora-editor/src",
+        "fn focus_on",
+        "`EditorCamera::focus_on`, bound to no input",
+    ),
+    (
+        "crates/khora-editor/src/camera.rs",
+        "allow(dead_code)",
+        "the allow that hid `EditorCamera::focus_on`",
+    ),
+    (
+        "crates/khora-editor/src/widgets/tile.rs",
+        "pub hovered",
+        "`AssetTileInteraction::hovered`, never read",
+    ),
+    (
+        "crates/khora-editor/src/widgets/tile.rs",
+        "allow(dead_code)",
+        "the allow that hid `AssetTileInteraction::hovered`",
+    ),
+    (
+        "crates/khora-editor/src/panels/asset_browser",
+        "SpawnPrefab { abs_path",
+        "`ActivationKind::SpawnPrefab`'s `abs_path`, never read",
+    ),
+    (
+        "crates/khora-editor/src/panels/asset_browser",
+        "fn icon(&self)",
+        "`AssetTypeHandler::icon`, never called",
+    ),
+    (
+        "crates/khora-editor/src",
+        "fn category_label(&self)",
+        "`AssetTypeHandler::category_label`, never called",
+    ),
+    (
+        "crates/khora-editor/src/panels/asset_browser/handlers.rs",
+        "allow(dead_code)",
+        "the allows that hid the asset handlers' unused items",
+    ),
+];
+
+/// The dead items the contract's cleanup deleted stay deleted, and so do the
+/// `allow(dead_code)` attributes that hid them.
+#[test]
+fn the_dead_items_the_contract_cleanup_deleted_stay_deleted() {
+    let root = repo_root();
+    let mut hits = Vec::new();
+    for (place, declared, what) in DELETED_DEAD_ITEMS {
+        let place = root.join(place);
+        let mut files = Vec::new();
+        if place.is_dir() {
+            walk(&place, &mut files);
+        } else {
+            files.push(place);
+        }
+        files.retain(|p| p.extension().and_then(|e| e.to_str()) == Some("rs"));
+        files.sort();
+        for file in files {
+            let Ok(text) = fs::read_to_string(&file) else {
+                continue;
+            };
+            for (number, line) in text.lines().enumerate() {
+                if line.contains(declared) {
+                    hits.push(format!(
+                        "{}:{}: `{declared}` — {what}",
+                        rel(&root, &file),
+                        number + 1
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "dead items the contract's cleanup deleted are back:\n  {}",
+        hits.join("\n  ")
+    );
+}
+
 fn scanned_files(root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for dir in [

@@ -14,7 +14,7 @@
 
 //! Agent dependency system for execution ordering.
 
-use crate::agent::gorna::{AgentId, StrategyId};
+use crate::agent::gorna::AgentId;
 
 /// A dependency declaration from one agent to another.
 #[derive(Debug, Clone)]
@@ -23,8 +23,6 @@ pub struct AgentDependency {
     pub target: AgentId,
     /// Type of dependency constraint.
     pub kind: DependencyKind,
-    /// Optional condition. If None, the dependency is always active.
-    pub condition: Option<DependencyCondition>,
 }
 
 /// The type of dependency constraint.
@@ -36,13 +34,4 @@ pub enum DependencyKind {
     Soft,
     /// Can execute in parallel (same phase). No ordering constraint.
     Parallel,
-}
-
-/// A condition that must be met for a dependency to be active.
-#[derive(Debug, Clone)]
-pub enum DependencyCondition {
-    /// Only depends on the target if the target is active this frame.
-    IfTargetActive,
-    /// Only depends on the target if the current budget >= this strategy.
-    IfBudgetAbove(StrategyId),
 }

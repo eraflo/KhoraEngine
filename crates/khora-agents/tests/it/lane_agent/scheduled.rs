@@ -16,12 +16,12 @@
 //! phase wrote however the scheduler runs it — alone, in a concurrent wave,
 //! at a fixed step — and what its family writes is audited like any agent's.
 
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use khora_agents::agent::LaneAgent;
 use khora_agents::registered_agent::lane_agents;
-use khora_control::{AgentRegistry, Context, ExecutionScheduler};
+use khora_control::{AgentRegistry, ExecutionScheduler};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::{AgentRegistration, BootError};
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
@@ -332,8 +332,7 @@ fn one_frame(registrations: &[&'static AgentRegistration], parallel: bool) -> Ex
             .expect("the registry lock")
             .register(Arc::new(Mutex::new(agent)) as Arc<Mutex<dyn Agent>>, 1.0);
     }
-    let mut scheduler =
-        ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+    let mut scheduler = ExecutionScheduler::from_registry(registry);
     scheduler.set_parallel_execution(parallel);
     scheduler.run_frame(&mut World::new(), runtime);
     scheduler
@@ -618,8 +617,7 @@ fn a_deck_read_boot_accepts_in_a_custom_phase_sees_its_writer() {
             .expect("the registry lock")
             .register(Arc::new(Mutex::new(agent)) as Arc<Mutex<dyn Agent>>, 1.0);
     }
-    let mut scheduler =
-        ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+    let mut scheduler = ExecutionScheduler::from_registry(registry);
     scheduler.set_phase_order(&order);
     scheduler.run_frame(&mut World::new(), runtime);
 

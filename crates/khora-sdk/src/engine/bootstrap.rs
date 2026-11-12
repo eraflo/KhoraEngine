@@ -142,7 +142,7 @@ impl<A: EngineApp> EngineBootstrap<A> {
         // Start the DCC background thread AFTER agents are initialized so
         // GORNA does not run health-checks before agents are ready.
         dcc.start(dcc_rx);
-        let scheduler = build_scheduler(&phase_order, &mut dcc, core);
+        let scheduler = build_scheduler(&phase_order, &mut dcc);
 
         core.app = Some(app);
         core.game_world = Some(game_world);
@@ -634,16 +634,14 @@ fn register_lane_agents(
 }
 
 /// The execution scheduler over `dcc`'s agents, running `phase_order`.
-fn build_scheduler<A: EngineApp>(
+fn build_scheduler(
     phase_order: &[ExecutionPhase],
     dcc: &mut DccService,
-    core: &EngineCore<A>,
 ) -> khora_control::ExecutionScheduler {
     // Every registered agent gets a budget: the built-in ones and the ones the
     // application registered before them.
     let registry = dcc.agent_registry().clone();
-    let mut scheduler =
-        khora_control::ExecutionScheduler::from_registry(registry, core.context.clone());
+    let mut scheduler = khora_control::ExecutionScheduler::from_registry(registry);
 
     // Connect the read-only observation tunnel: the scheduler publishes
     // per-agent cost samples + per-component access snapshots the DCC's

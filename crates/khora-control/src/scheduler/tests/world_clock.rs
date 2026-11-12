@@ -19,7 +19,6 @@
 
 use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::dependency::{AgentDependency, DependencyKind};
 use khora_core::agent::gorna::AgentId;
@@ -29,7 +28,7 @@ use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::any::TypeId;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 /// The deck slot the first agent of the concurrent pair writes.
 struct FirstOutput;
@@ -63,7 +62,6 @@ impl Family for Quiet {
                 .map(|&target| AgentDependency {
                     target,
                     kind: DependencyKind::Hard,
-                    condition: None,
                 })
                 .collect(),
             ..ExecutionTiming::default()
@@ -104,8 +102,7 @@ fn three_quiet_agents(parallel: bool) -> (ExecutionScheduler, Arc<AtomicUsize>) 
             );
         }
     }
-    let mut scheduler =
-        ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+    let mut scheduler = ExecutionScheduler::from_registry(registry);
     scheduler.set_parallel_execution(parallel);
     (scheduler, runs)
 }
@@ -113,10 +110,8 @@ fn three_quiet_agents(parallel: bool) -> (ExecutionScheduler, Arc<AtomicUsize>) 
 /// A scheduler with no agent at all: what a frame does to the world's clock
 /// without agent work (its Flows).
 fn no_agents(parallel: bool) -> ExecutionScheduler {
-    let mut scheduler = ExecutionScheduler::from_registry(
-        Arc::new(Mutex::new(AgentRegistry::new())),
-        Arc::new(RwLock::new(Context::default())),
-    );
+    let mut scheduler =
+        ExecutionScheduler::from_registry(Arc::new(Mutex::new(AgentRegistry::new())));
     scheduler.set_parallel_execution(parallel);
     scheduler
 }

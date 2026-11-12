@@ -175,7 +175,6 @@ pub struct BuildOutcome {
     /// Absolute path of the staged executable. Used by future UI affordances
     /// like a "Reveal in Explorer" button — currently the menu dispatcher
     /// only reads `output_dir` and the asset/byte counts.
-    #[allow(dead_code)]
     pub binary_path: PathBuf,
     pub asset_count: usize,
     pub pack_bytes: u64,

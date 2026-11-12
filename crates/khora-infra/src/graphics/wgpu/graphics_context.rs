@@ -40,7 +40,6 @@ pub struct WgpuGraphicsContext {
     pub adapter_backend: wgpu::Backend,
     pub adapter_device_type: wgpu::DeviceType,
     pub active_device_features: wgpu::Features,
-    #[allow(dead_code)]
     pub device_limits: wgpu::Limits,
 
     /// Lock-free device-health flags raised by the wgpu error callbacks
@@ -223,17 +222,14 @@ impl WgpuGraphicsContext {
         self.surface.get_current_texture()
     }
 
-    #[allow(dead_code)]
     pub fn device(&self) -> &wgpu::Device {
         &self.device
     }
 
-    #[allow(dead_code)]
     pub fn queue(&self) -> &wgpu::Queue {
         &self.queue
     }
 
-    #[allow(dead_code)]
     pub fn surface_configuration(&self) -> &wgpu::SurfaceConfiguration {
         &self.surface_config
     }

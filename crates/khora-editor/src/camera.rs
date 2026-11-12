@@ -104,12 +104,6 @@ impl EditorCamera {
         self.distance = self.distance.clamp(self.min_distance, self.max_distance);
     }
 
-    /// Focus the camera on a given world-space point. Not bound to an input yet.
-    #[allow(dead_code)]
-    pub fn focus_on(&mut self, point: Vec3) {
-        self.target = point;
-    }
-
     /// The camera's forward direction (from camera to target).
     pub fn forward(&self) -> Vec3 {
         (self.target - self.position()).normalize()
@@ -235,16 +229,6 @@ mod tests {
             camera.zoom(-5.0);
         }
         assert_eq!(camera.distance, camera.max_distance);
-    }
-
-    /// Focusing re-targets the orbit without changing how far away it is.
-    #[test]
-    fn focus_moves_the_target_and_keeps_the_distance() {
-        let mut camera = EditorCamera::default();
-        let point = Vec3::new(-5.0, 1.0, 8.0);
-        camera.focus_on(point);
-        assert_eq!(camera.target, point);
-        assert!(((camera.position() - point).length() - camera.distance).abs() < 1e-3);
     }
 
     /// The ray under the centre of the viewport starts at the camera and

@@ -411,7 +411,6 @@ pub fn launch_editor(editor_binary: &str, project_path: &Path) -> Result<()> {
 }
 
 /// Opens the project folder in the system file manager.
-#[allow(dead_code)]
 pub fn reveal_in_explorer(path: &Path) -> Result<()> {
     open::that(path).with_context(|| format!("Failed to open '{}'", path.display()))?;
     Ok(())

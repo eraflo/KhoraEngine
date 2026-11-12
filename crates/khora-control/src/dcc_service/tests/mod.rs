@@ -160,10 +160,9 @@ impl Host {
     /// Builds the scheduler over the DCC's agents, connects the two, and
     /// starts the DCC's thread.
     fn start(&mut self) {
-        let mut scheduler = crate::scheduler::ExecutionScheduler::from_registry(
-            Arc::clone(self.dcc.agent_registry()),
-            self.dcc.context_handle(),
-        );
+        let mut scheduler = crate::scheduler::ExecutionScheduler::from_registry(Arc::clone(
+            self.dcc.agent_registry(),
+        ));
         scheduler.set_telemetry_sender(self.dcc.event_sender());
         self.dcc
             .connect_budget_channel(scheduler.budget_channel().clone());

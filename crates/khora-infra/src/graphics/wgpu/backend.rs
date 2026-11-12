@@ -31,19 +31,6 @@ use khora_core::renderer::api::device::{
 };
 use khora_core::renderer::traits::GraphicsBackendSelector;
 
-/// Returns a human-readable name for a backend.
-#[allow(dead_code)]
-pub fn backend_name(backend: Backend) -> &'static str {
-    match backend {
-        Backend::Vulkan => "Vulkan",
-        Backend::Metal => "Metal",
-        Backend::Dx12 => "DirectX 12",
-        Backend::Gl => "OpenGL",
-        Backend::BrowserWebGpu => "WebGPU",
-        Backend::Noop => "No-op",
-    }
-}
-
 /// WGPU-specific implementation of the GraphicsBackendSelector trait.
 /// This provides a modern, generic interface for backend selection.
 pub struct WgpuBackendSelector {
@@ -259,14 +246,6 @@ impl GraphicsBackendSelector<Adapter> for WgpuBackendSelector {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_backend_name_function() {
-        assert_eq!(backend_name(Backend::Vulkan), "Vulkan");
-        assert_eq!(backend_name(Backend::Metal), "Metal");
-        assert_eq!(backend_name(Backend::Dx12), "DirectX 12");
-        assert_eq!(backend_name(Backend::Gl), "OpenGL");
-    }
 
     #[test]
     fn test_backend_type_conversion() {

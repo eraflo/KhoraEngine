@@ -56,7 +56,6 @@ mod every_pub_mod {
     use khora_control::gorna as _;
     use khora_control::governor as _;
     use khora_control::metrics as _;
-    use khora_control::plugin as _;
     use khora_control::scheduler as _;
     use khora_control::substrate as _;
     use khora_control::substrate::flow_runner as _;
@@ -159,15 +158,6 @@ fn dcc_config_frame_governor(
     &c.frame_governor
 }
 
-/// `EnginePlugin::on_phase` takes an `impl Fn`, so it cannot be named as a
-/// bare path; calling it from a never-run function checks it instead.
-fn engine_plugin_on_phase(
-    p: &mut khora_control::plugin::EnginePlugin,
-    phase: khora_core::agent::ExecutionPhase,
-) {
-    p.on_phase(phase, |_: &mut khora_data::ecs::World| {});
-}
-
 // ---------------------------------------------------------------------------
 // Public constants.
 // ---------------------------------------------------------------------------
@@ -187,7 +177,6 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = type_name::<khora_control::HardwareState>();
     let _ = type_name::<khora_control::ThermalStatus>();
     let _ = type_name::<khora_control::GornaArbitrator>();
-    let _ = type_name::<khora_control::EnginePlugin>();
     let _ = type_name::<khora_control::AgentRegistry>();
     let _ = type_name::<khora_control::ExecutionScheduler>();
     let _ = type_name::<khora_control::DccConfig>();
@@ -215,10 +204,6 @@ fn every_public_path_of_khora_control_still_resolves() {
     same_type(
         PhantomData::<khora_control::GornaArbitrator>,
         PhantomData::<khora_control::gorna::GornaArbitrator>,
-    );
-    same_type(
-        PhantomData::<khora_control::EnginePlugin>,
-        PhantomData::<khora_control::plugin::EnginePlugin>,
     );
     same_type(
         PhantomData::<khora_control::AgentRegistry>,
@@ -392,15 +377,6 @@ fn every_public_path_of_khora_control_still_resolves() {
     is_debug::<khora_control::governor::FrameGovernor>();
     is_clone::<khora_control::governor::FrameGovernor>();
 
-    // --- module `plugin`
-    let _ = type_name::<khora_control::plugin::EnginePlugin>();
-    let _ = khora_control::plugin::EnginePlugin::new;
-    let _ = engine_plugin_on_phase
-        as fn(&mut khora_control::plugin::EnginePlugin, khora_core::agent::ExecutionPhase);
-    let _ = khora_control::plugin::EnginePlugin::execute;
-    let _ = khora_control::plugin::EnginePlugin::wants_phase;
-    let _ = khora_control::plugin::EnginePlugin::name;
-
     // --- module `agent_registry`
     let _ = type_name::<khora_control::agent_registry::AgentRegistry>();
     is_default::<khora_control::agent_registry::AgentRegistry>();
@@ -414,16 +390,17 @@ fn every_public_path_of_khora_control_still_resolves() {
 
     // --- module `scheduler`
     let _ = type_name::<khora_control::scheduler::ExecutionScheduler>();
-    let _ = khora_control::scheduler::ExecutionScheduler::new;
+    // One argument: the registry. A scheduler lends every agent the registry
+    // holds; it takes no id list and no DCC context.
+    let _ = khora_control::scheduler::ExecutionScheduler::from_registry
+        as fn(
+            std::sync::Arc<std::sync::Mutex<khora_control::agent_registry::AgentRegistry>>,
+        ) -> khora_control::scheduler::ExecutionScheduler;
     let _ = khora_control::scheduler::ExecutionScheduler::set_parallel_execution;
     let _ = khora_control::scheduler::ExecutionScheduler::set_telemetry_sender;
     let _ = khora_control::scheduler::ExecutionScheduler::deck_mut;
     let _ = khora_control::scheduler::ExecutionScheduler::budget_channel;
-    let _ = khora_control::scheduler::ExecutionScheduler::register_plugin;
     let _ = khora_control::scheduler::ExecutionScheduler::set_phase_order;
-    let _ = khora_control::scheduler::ExecutionScheduler::insert_after;
-    let _ = khora_control::scheduler::ExecutionScheduler::insert_before;
-    let _ = khora_control::scheduler::ExecutionScheduler::remove_phase;
     let _ = khora_control::scheduler::ExecutionScheduler::run_frame;
 
     // --- module `dcc_service`
@@ -460,7 +437,6 @@ fn every_public_path_of_khora_control_still_resolves() {
     let _ = khora_control::dcc_service::DccService::get_context;
     let _ = khora_control::dcc_service::DccService::context_handle;
     let _ = khora_control::dcc_service::DccService::agent_count;
-    let _ = khora_control::dcc_service::DccService::get_agent;
 
     // --- module `substrate` (used by khora-sdk and khora-agents tests)
     let _ = khora_control::substrate::run_data_systems;
@@ -492,7 +468,8 @@ use khora_control::Context as EngineContext;
 
 #[test]
 fn paths_used_by_other_crates_still_resolve() {
-    // khora-sdk/src/engine/: `substrate::run_data_systems`, `ExecutionScheduler`,
+    // khora-sdk/src/engine/: `substrate::run_data_systems`,
+    // `ExecutionScheduler::from_registry`,
     // `Context { hardware: HardwareState::default(), .. }`.
     let _ = substrate::run_data_systems;
     let _ = type_name::<khora_control::ExecutionScheduler>();
@@ -500,7 +477,8 @@ fn paths_used_by_other_crates_still_resolve() {
     let _ = type_name::<khora_control::HardwareState>();
     let _ = type_name::<DccConfig>();
     let _ = type_name::<DccService>();
-    let _ = khora_control::ExecutionScheduler::new;
+    let _ = khora_control::ExecutionScheduler::from_registry
+        as fn(std::sync::Arc<std::sync::Mutex<AgentRegistry>>) -> khora_control::ExecutionScheduler;
     // khora-sdk/src/lib.rs
     let _ = type_name::<AgentRegistry>();
     same_type(PhantomData::<DccContext>, PhantomData::<EngineContext>);

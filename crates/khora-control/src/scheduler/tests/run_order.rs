@@ -17,14 +17,13 @@
 
 use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Terms;
 use khora_core::agent::{ExecutionPhase, ExecutionTiming};
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 /// An agent of `OUTPUT` alone, at a priority, writing its name when it runs.
 struct Ranked {
@@ -79,8 +78,7 @@ fn agents_of_one_phase_run_in_priority_order() {
                 );
             }
         }
-        let mut scheduler =
-            ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+        let mut scheduler = ExecutionScheduler::from_registry(registry);
         let mut world = World::new();
         let runtime = Arc::new(Runtime::new());
         for _ in 0..5 {

@@ -95,12 +95,6 @@ impl AssetTileKind {
 pub struct AssetTileInteraction {
     pub clicked: bool,
     pub double_clicked: bool,
-    /// Pointer is over the tile — kept here for callers that want to
-    /// surface a tooltip or preview without re-running the rect
-    /// interaction. Currently unused by the asset browser, but the
-    /// future inspector preview will read it.
-    #[allow(dead_code)]
-    pub hovered: bool,
 }
 
 /// Paints an asset tile (thumbnail + name) and reports interaction.
@@ -244,7 +238,6 @@ pub fn paint_asset_tile(
     AssetTileInteraction {
         clicked: interaction.clicked,
         double_clicked: interaction.double_clicked,
-        hovered: interaction.hovered,
     }
 }
 

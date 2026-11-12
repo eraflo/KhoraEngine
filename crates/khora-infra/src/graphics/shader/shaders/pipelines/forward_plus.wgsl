@@ -2,10 +2,9 @@
 // PBR BRDF and full shadow sampling: 2D atlas for directional / spot, cube
 // atlas for point lights.
 //
-// The BRDF (`khora::lighting::pbr`) and the output tone-map are shared with
-// `standard_pbr` and `lit_forward`, so the three lit lanes render the same
-// image — this lane differs only in iterating just the lights its tile's
-// culling list selected.
+// The BRDF (`khora::lighting::pbr`) and the tone-map are shared with
+// `lit_forward`: both lit lanes render the same image; this one iterates only
+// the lights its tile's culling list selected.
 //
 // Bind-group layout — the engine's canonical 4-group render convention
 // (see .agent/conventions.md). Group 3 is the *lighting domain*: it

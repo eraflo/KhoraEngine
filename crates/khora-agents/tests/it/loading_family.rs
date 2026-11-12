@@ -26,13 +26,13 @@ use std::any::{Any, TypeId};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use khora_agents::agent::{choose, lane_agent, Choice};
 use khora_agents::loading_agent::LOADING;
 use khora_agents::registered_agent::{lane_agents, registered_agents};
-use khora_control::{AgentRegistry, Context, ExecutionScheduler};
+use khora_control::{AgentRegistry, ExecutionScheduler};
 use khora_core::agent::gorna::protocol::Envelope;
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::registration::{check_registrations, AgentRegistration};
@@ -307,7 +307,7 @@ fn scheduler_of(registration: &'static AgentRegistration) -> ExecutionScheduler 
         .lock()
         .expect("the registry lock")
         .register(agent, 1.0);
-    ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())))
+    ExecutionScheduler::from_registry(registry)
 }
 
 /// Whole frames, as the host runs them — the frame start, then the rest —

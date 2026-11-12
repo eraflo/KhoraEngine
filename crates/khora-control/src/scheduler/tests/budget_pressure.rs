@@ -17,7 +17,6 @@
 
 use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Terms;
@@ -26,7 +25,7 @@ use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::any::TypeId;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// The slot `TRANSFORM` writes, and one of the optional agents declares.
@@ -120,8 +119,7 @@ fn a_wave_skipped_for_budget_pressure_keeps_the_earlier_phases_slots() {
                 registry.register(hosted(agent), 1.0);
             }
         }
-        let mut scheduler =
-            ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+        let mut scheduler = ExecutionScheduler::from_registry(registry);
         scheduler.set_parallel_execution(parallel);
 
         scheduler.run_frame(&mut World::new(), Arc::new(Runtime::new()));

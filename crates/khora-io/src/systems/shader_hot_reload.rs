@@ -72,8 +72,8 @@ const LOGICAL_ROOT: &str = "khora";
 /// Maps a watcher-relative `.wgsl` path to its logical shader module name.
 ///
 /// The shader tree mirrors the logical namespace: `shaders/lib/std/camera.wgsl`
-/// ↔ `khora::std::camera`, `shaders/pipelines/standard_pbr.wgsl` ↔
-/// `khora::pipelines::standard_pbr`. The mapping strips the `shaders/` root and
+/// ↔ `khora::std::camera`, `shaders/pipelines/lit_forward.wgsl` ↔
+/// `khora::pipelines::lit_forward`. The mapping strips the `shaders/` root and
 /// the `lib/` grouping segment (libs are namespaced directly under `khora::`),
 /// drops the `.wgsl` extension, replaces `/` with `::`, and prefixes `khora::`.
 /// Returns `None` for paths that are not `.wgsl` under `shaders/`.
@@ -342,8 +342,8 @@ mod tests {
     #[test]
     fn maps_pipeline_path_to_logical() {
         assert_eq!(
-            logical_name_for_shader_path("shaders/pipelines/standard_pbr.wgsl").as_deref(),
-            Some("khora::pipelines::standard_pbr")
+            logical_name_for_shader_path("shaders/pipelines/lit_forward.wgsl").as_deref(),
+            Some("khora::pipelines::lit_forward")
         );
         assert_eq!(
             logical_name_for_shader_path("shaders/pipelines/light_culling.wgsl").as_deref(),

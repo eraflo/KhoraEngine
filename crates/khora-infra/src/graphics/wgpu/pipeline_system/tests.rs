@@ -70,7 +70,6 @@ fn composes_lit_pipelines_for_texture_variants() {
     let lit_pipelines = [
         "khora::pipelines::lit_forward",
         "khora::pipelines::forward_plus",
-        "khora::pipelines::standard_pbr",
     ];
 
     let sys = WgpuPipelineSystem::new().expect("system init");
@@ -161,7 +160,7 @@ let x = 1;";
     assert_eq!(imports.len(), 4);
 }
 
-/// A dirty lib that `standard_pbr` imports marks the PBR pipeline as
+/// A dirty lib that `lit_forward` imports marks the lit pipeline as
 /// affected; an unrelated dirty name does not.
 #[test]
 fn pipeline_dependency_tracking_is_transitive_and_precise() {
@@ -170,8 +169,8 @@ fn pipeline_dependency_tracking_is_transitive_and_precise() {
 
     let dirty_material: HashSet<&str> = ["khora::std::material_textures"].into_iter().collect();
     assert!(
-        pipeline_depends_on(&inner, "khora::pipelines::standard_pbr", &dirty_material),
-        "standard_pbr imports material_textures so must be affected"
+        pipeline_depends_on(&inner, "khora::pipelines::lit_forward", &dirty_material),
+        "lit_forward imports material_textures so must be affected"
     );
 
     // The UI pipeline does not depend on the PBR material lib.
@@ -220,19 +219,18 @@ fn overlay_lib_recomposes_and_dependent_pipeline_still_composes() {
     // pipeline composes against the new module.
     readd_lib_module(&mut inner, "khora::std::camera").expect("re-add overlaid lib");
     let defs = inner.base_defs.clone();
-    let pbr =
-        resolve_pipeline_source(&inner, "khora::pipelines::standard_pbr").expect("pbr source");
-    let patched = inject_float_defs(&pbr);
+    let lit = resolve_pipeline_source(&inner, "khora::pipelines::lit_forward").expect("lit source");
+    let patched = inject_float_defs(&lit);
     inner
         .composer
         .make_naga_module(NagaModuleDescriptor {
             source: &patched,
-            file_path: "khora::pipelines::standard_pbr",
+            file_path: "khora::pipelines::lit_forward",
             shader_defs: defs,
             shader_type: ShaderType::Wgsl,
             ..Default::default()
         })
-        .expect("standard_pbr composes against the overlaid camera lib");
+        .expect("lit_forward composes against the overlaid camera lib");
 }
 
 /// Re-registers every dirty lib module with the composer and forgets the
@@ -247,18 +245,18 @@ fn recompose_dirty_libs(inner: &mut Inner) {
     }
 }
 
-/// Composes `khora::pipelines::standard_pbr` against the modules the composer
+/// Composes `khora::pipelines::lit_forward` against the modules the composer
 /// holds now.
-fn compose_standard_pbr(inner: &mut Inner) -> Result<naga::Module, String> {
+fn compose_lit_forward(inner: &mut Inner) -> Result<naga::Module, String> {
     let defs = inner.base_defs.clone();
-    let pbr = resolve_pipeline_source(inner, "khora::pipelines::standard_pbr")
-        .expect("the pbr pipeline has a source");
-    let patched = inject_float_defs(&pbr);
+    let lit = resolve_pipeline_source(inner, "khora::pipelines::lit_forward")
+        .expect("the lit pipeline has a source");
+    let patched = inject_float_defs(&lit);
     inner
         .composer
         .make_naga_module(NagaModuleDescriptor {
             source: &patched,
-            file_path: "khora::pipelines::standard_pbr",
+            file_path: "khora::pipelines::lit_forward",
             shader_defs: defs,
             shader_type: ShaderType::Wgsl,
             ..Default::default()
@@ -268,9 +266,9 @@ fn compose_standard_pbr(inner: &mut Inner) -> Result<naga::Module, String> {
 
 /// **Clearing the overlays restores the engine's module.** A project's
 /// overlay of `khora::std::camera` that drops the `camera` binding is set
-/// and recomposed: `standard_pbr`, which imports it, no longer composes.
+/// and recomposed: `lit_forward`, which imports it, no longer composes.
 /// Once the overlays are cleared, the camera lib's source is the engine's
-/// again and it is marked for the next recompose; recomposed, `standard_pbr`
+/// again and it is marked for the next recompose; recomposed, `lit_forward`
 /// composes from the engine's source as before the overlay.
 #[test]
 fn clear_overlays_restores_the_engines_module() {
@@ -294,8 +292,8 @@ fn clear_overlays_restores_the_engines_module() {
             "the premise: the overlay is the camera lib's source"
         );
         assert!(
-            compose_standard_pbr(&mut inner).is_err(),
-            "the premise: standard_pbr does not compose against an overlay with no camera"
+            compose_lit_forward(&mut inner).is_err(),
+            "the premise: lit_forward does not compose against an overlay with no camera"
         );
     }
 
@@ -314,8 +312,8 @@ fn clear_overlays_restores_the_engines_module() {
         inner.dirty
     );
     recompose_dirty_libs(&mut inner);
-    compose_standard_pbr(&mut inner)
-        .expect("standard_pbr composes from the engine's camera lib again");
+    compose_lit_forward(&mut inner)
+        .expect("lit_forward composes from the engine's camera lib again");
 }
 
 /// **Clearing the overlays restores a module whose last overlay failed to
@@ -325,7 +323,7 @@ fn clear_overlays_restores_the_engines_module() {
 /// the composer's previous module — the project's first overlay — and drops
 /// the broken one from the overlays. Once the overlays are cleared and
 /// recomposed (the project restricted or closed), the camera lib the
-/// composer holds must be the engine's: `standard_pbr` composes again.
+/// composer holds must be the engine's: `lit_forward` composes again.
 #[test]
 fn clear_overlays_restores_a_module_whose_last_overlay_failed_to_compose() {
     let sys = WgpuPipelineSystem::new().expect("system init");
@@ -349,7 +347,7 @@ fn clear_overlays_restores_a_module_whose_last_overlay_failed_to_compose() {
             "the premise: the broken overlay is dropped"
         );
         assert!(
-            compose_standard_pbr(&mut inner).is_err(),
+            compose_lit_forward(&mut inner).is_err(),
             "the premise: the composer still holds the first overlay, with no camera"
         );
     }
@@ -359,8 +357,8 @@ fn clear_overlays_restores_a_module_whose_last_overlay_failed_to_compose() {
         .expect("the cleared overlays recompose");
 
     let mut inner = sys.inner.lock().unwrap();
-    compose_standard_pbr(&mut inner).expect(
-        "standard_pbr composes from the engine's camera lib once the project's overlays are cleared",
+    compose_lit_forward(&mut inner).expect(
+        "lit_forward composes from the engine's camera lib once the project's overlays are cleared",
     );
 }
 
@@ -408,9 +406,9 @@ fn clear_overlays_removes_a_module_only_a_project_brought() {
 /// another name replaced.** A project's `shaders/lib/evil.wgsl` — logical
 /// path `khora::evil` — declares `#define_import_path khora::std::camera`,
 /// with no `camera` binding: recomposed, the composer's camera lib is the
-/// project's, and `standard_pbr` no longer composes. Once the overlays are
+/// project's, and `lit_forward` no longer composes. Once the overlays are
 /// cleared and recomposed (the project restricted or closed), the camera lib
-/// must be the engine's again: `standard_pbr` composes.
+/// must be the engine's again: `lit_forward` composes.
 #[test]
 fn clear_overlays_restores_a_builtin_module_a_file_of_another_name_replaced() {
     let sys = WgpuPipelineSystem::new().expect("system init");
@@ -423,7 +421,7 @@ fn clear_overlays_restores_a_builtin_module_a_file_of_another_name_replaced() {
     sys.recompose_dirty(&NoDevice)
         .expect("the project's file recomposes");
     assert!(
-        compose_standard_pbr(&mut sys.inner.lock().unwrap()).is_err(),
+        compose_lit_forward(&mut sys.inner.lock().unwrap()).is_err(),
         "the premise: the project's file replaced the camera lib"
     );
 
@@ -431,8 +429,8 @@ fn clear_overlays_restores_a_builtin_module_a_file_of_another_name_replaced() {
     sys.recompose_dirty(&NoDevice)
         .expect("the cleared overlays recompose");
 
-    compose_standard_pbr(&mut sys.inner.lock().unwrap())
-        .expect("standard_pbr composes from the engine's camera lib once the overlays are cleared");
+    compose_lit_forward(&mut sys.inner.lock().unwrap())
+        .expect("lit_forward composes from the engine's camera lib once the overlays are cleared");
 }
 
 /// **Clearing the overlays keeps every built-in module a project overlaid.**
@@ -785,8 +783,7 @@ fn compose_pipeline(name: &str) -> naga::Module {
 }
 
 /// Every pipeline that draws a `Mesh` vertex buffer.
-const MESH_PIPELINES: [&str; 6] = [
-    "khora::pipelines::standard_pbr",
+const MESH_PIPELINES: [&str; 5] = [
     "khora::pipelines::lit_forward",
     "khora::pipelines::forward_plus",
     "khora::pipelines::unlit",
@@ -830,7 +827,6 @@ fn mesh_pipeline_vertex_inputs_are_in_the_mesh_vertex() {
 #[test]
 fn coloured_mesh_pipelines_read_the_vertex_colour() {
     for name in [
-        "khora::pipelines::standard_pbr",
         "khora::pipelines::lit_forward",
         "khora::pipelines::forward_plus",
         "khora::pipelines::unlit",
@@ -851,11 +847,10 @@ fn coloured_mesh_pipelines_read_the_vertex_colour() {
 
 // ─── KHR_materials_specular ─────────────────────────────────────────────
 
-/// The three lit pipelines: the ones that shade with the material.
-const LIT_PIPELINES: [&str; 3] = [
+/// The lit pipelines: the ones that shade with the material.
+const LIT_PIPELINES: [&str; 2] = [
     "khora::pipelines::lit_forward",
     "khora::pipelines::forward_plus",
-    "khora::pipelines::standard_pbr",
 ];
 
 /// The group-2 binding of each material texture flag.

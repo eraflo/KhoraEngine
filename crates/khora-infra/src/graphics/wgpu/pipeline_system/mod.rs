@@ -112,10 +112,6 @@ const PIPELINE_MODULES: &[(&str, &str)] = &[
         include_str!("../../shader/shaders/pipelines/forward_plus.wgsl"),
     ),
     (
-        "khora::pipelines::standard_pbr",
-        include_str!("../../shader/shaders/pipelines/standard_pbr.wgsl"),
-    ),
-    (
         "khora::pipelines::unlit",
         include_str!("../../shader/shaders/pipelines/unlit.wgsl"),
     ),

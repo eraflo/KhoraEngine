@@ -17,7 +17,6 @@
 
 use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Terms;
@@ -25,7 +24,7 @@ use khora_core::agent::{ExecutionPhase, ExecutionTiming};
 use khora_core::lane::HostViews;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 /// A View no Flow produces: only the host sets it.
 #[derive(Debug, Clone, PartialEq)]
@@ -66,11 +65,7 @@ fn a_view_the_host_set_reaches_the_agents_bus() {
         }),
         1.0,
     );
-    let mut scheduler = ExecutionScheduler::new(
-        registry,
-        Arc::new(RwLock::new(Context::default())),
-        &[AgentId::new("grid")],
-    );
+    let mut scheduler = ExecutionScheduler::from_registry(registry);
 
     let host_views = Arc::new(HostViews::new());
     host_views.set(HostToggle(1));

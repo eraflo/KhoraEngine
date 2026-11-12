@@ -24,7 +24,7 @@ use khora_control::DccService;
 use khora_core::event::Channel;
 use khora_core::Runtime;
 use khora_telemetry::TelemetryService;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use crate::traits::EngineApp;
 use crate::{GameWorld, InputEvent};
@@ -59,7 +59,6 @@ pub struct EngineCore<A: EngineApp> {
     telemetry: Option<TelemetryService>,
     dcc: Option<DccService>,
     scheduler: Option<khora_control::ExecutionScheduler>,
-    context: Arc<RwLock<khora_control::Context>>,
     runtime: Arc<Runtime>,
     /// This frame's OS input, and the frames before it that nobody read.
     ///
@@ -97,12 +96,6 @@ impl<A: EngineApp> EngineCore<A> {
             telemetry: None,
             dcc: None,
             scheduler: None,
-            context: Arc::new(RwLock::new(khora_control::Context {
-                hardware: khora_control::HardwareState::default(),
-                inactive: Default::default(),
-                global_budget_multiplier: 1.0,
-                memory_pressure: 0.0,
-            })),
             runtime: Arc::new(Runtime::new()),
             input_events: khora_core::platform::input_channel(),
             passes: Vec::new(),

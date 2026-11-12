@@ -34,7 +34,6 @@
 
 use super::{hosted_at, set_step, Family};
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Terms;
@@ -125,11 +124,7 @@ impl Rig {
             .lock()
             .expect("the registry lock")
             .register(agent, 1.0);
-        let scheduler = ExecutionScheduler::new(
-            registry,
-            Arc::new(RwLock::new(Context::default())),
-            &[AgentId::new("physics")],
-        );
+        let scheduler = ExecutionScheduler::from_registry(registry);
         let mut clock = Time::default();
         clock.set_scale(scale);
         let time: SharedTime = Arc::new(RwLock::new(clock));

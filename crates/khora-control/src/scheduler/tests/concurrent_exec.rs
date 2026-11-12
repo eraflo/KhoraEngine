@@ -15,7 +15,6 @@
 use super::allocations::one_phase;
 use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::gorna::AgentId;
@@ -24,7 +23,7 @@ use khora_core::agent::{ExecutionPhase, ExecutionTiming};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::{EngineContext, Runtime};
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 /// Deck slot: did the agent run?
 #[derive(Default)]
@@ -90,8 +89,7 @@ fn a_panicking_agent_is_reported_as_a_failed_completion() {
             0.5,
         );
     }
-    let mut scheduler =
-        ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+    let mut scheduler = ExecutionScheduler::from_registry(registry);
     scheduler.set_parallel_execution(true);
     let runtime = Arc::new(Runtime::new());
     let completion = Arc::new(AgentCompletionMap::new(&[
@@ -214,8 +212,7 @@ fn seen_after_one_frame(parallel: bool) -> Option<u32> {
             registry.register(hosted(agent), priority);
         }
     }
-    let mut scheduler =
-        ExecutionScheduler::from_registry(registry, Arc::new(RwLock::new(Context::default())));
+    let mut scheduler = ExecutionScheduler::from_registry(registry);
     scheduler.set_parallel_execution(parallel);
     scheduler.run_frame(&mut khora_data::ecs::World::new(), Arc::new(Runtime::new()));
     scheduler.deck_mut().take::<Seen>().0

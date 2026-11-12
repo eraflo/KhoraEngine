@@ -25,8 +25,6 @@
 //! [`AssetTypeHandlerRegistration`] from any crate that depends on
 //! `khora-editor` (or via a future plugin loader).
 
-use khora_sdk::editor_ui::Icon;
-
 use crate::widgets::tile::AssetTileKind;
 
 /// Action to take after the user activates (double-clicks) an asset.
@@ -40,32 +38,16 @@ pub enum ActivationKind {
     /// queues `EditorState::pending_prefab_spawn` with the forward-slash
     /// path under `<project>/assets/`; spawning happens next frame in
     /// `commands::process_pending_prefab_spawn`.
-    ///
-    /// `abs_path` is carried for parity with the other variants (and for
-    /// future use when a prefab spawn could feed an OS-level "Reveal in
-    /// Finder" affordance), but the dispatcher reads `rel_path` from the
-    /// asset entry directly.
-    SpawnPrefab {
-        #[allow(dead_code)]
-        abs_path: String,
-    },
+    SpawnPrefab,
     /// Open externally with the OS-default app.
     OpenExternal { abs_path: String },
 }
 
 /// Pluggable handler for one asset type.
-///
-/// `icon` and `category_label` are reserved for Phase 4 (folder-tree
-/// sidebar driven entirely by handlers); built-in implementations
-/// already supply them so the rewrite is a drop-in.
 pub trait AssetTypeHandler: Send + Sync + 'static {
     /// Lower-case `asset_type_name` (matches `AssetMetadata::asset_type_name`).
     fn matches_type_name(&self, type_name: &str) -> bool;
     fn tile_kind(&self) -> AssetTileKind;
-    #[allow(dead_code)]
-    fn icon(&self) -> Icon;
-    #[allow(dead_code)]
-    fn category_label(&self) -> &'static str;
     /// Default activation: open externally.
     fn activate(&self, abs_path: String) -> ActivationKind {
         ActivationKind::OpenExternal { abs_path }
@@ -109,12 +91,6 @@ pub mod builtins {
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Scene
         }
-        fn icon(&self) -> Icon {
-            Icon::Film
-        }
-        fn category_label(&self) -> &'static str {
-            "Scenes"
-        }
         fn activate(&self, abs_path: String) -> ActivationKind {
             ActivationKind::LoadScene { abs_path }
         }
@@ -128,12 +104,6 @@ pub mod builtins {
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Mesh
         }
-        fn icon(&self) -> Icon {
-            Icon::Cube
-        }
-        fn category_label(&self) -> &'static str {
-            "Meshes"
-        }
     }
 
     pub struct TextureHandler;
@@ -143,12 +113,6 @@ pub mod builtins {
         }
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Texture
-        }
-        fn icon(&self) -> Icon {
-            Icon::Image
-        }
-        fn category_label(&self) -> &'static str {
-            "Textures"
         }
     }
 
@@ -160,12 +124,6 @@ pub mod builtins {
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Audio
         }
-        fn icon(&self) -> Icon {
-            Icon::Music
-        }
-        fn category_label(&self) -> &'static str {
-            "Audio"
-        }
     }
 
     pub struct ShaderHandler;
@@ -175,12 +133,6 @@ pub mod builtins {
         }
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Shader
-        }
-        fn icon(&self) -> Icon {
-            Icon::Zap
-        }
-        fn category_label(&self) -> &'static str {
-            "Shaders"
         }
     }
 
@@ -192,14 +144,8 @@ pub mod builtins {
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Scene
         }
-        fn icon(&self) -> Icon {
-            Icon::Cube
-        }
-        fn category_label(&self) -> &'static str {
-            "Prefabs"
-        }
-        fn activate(&self, abs_path: String) -> ActivationKind {
-            ActivationKind::SpawnPrefab { abs_path }
+        fn activate(&self, _abs_path: String) -> ActivationKind {
+            ActivationKind::SpawnPrefab
         }
     }
 
@@ -211,12 +157,6 @@ pub mod builtins {
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Material
         }
-        fn icon(&self) -> Icon {
-            Icon::Circle
-        }
-        fn category_label(&self) -> &'static str {
-            "Materials"
-        }
     }
 
     pub struct ScriptHandler;
@@ -226,12 +166,6 @@ pub mod builtins {
         }
         fn tile_kind(&self) -> AssetTileKind {
             AssetTileKind::Script
-        }
-        fn icon(&self) -> Icon {
-            Icon::Code
-        }
-        fn category_label(&self) -> &'static str {
-            "Scripts"
         }
     }
 

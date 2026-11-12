@@ -1,9 +1,8 @@
 #define_import_path khora::lighting::pbr
 
 // Shared Cook-Torrance physically-based BRDF and the lit lanes' output
-// tone-map. Every lit pipeline (StandardPbr, LitForward, Forward+) imports
-// these so the three lanes are performance variants of the SAME image — the
-// shading model never changes with the lane GORNA picks.
+// tone-map. Both lit pipelines (LitForward, Forward+) import them, so the
+// shading model never changes with the lane an agent picks.
 
 const PI: f32 = 3.14159265359;
 

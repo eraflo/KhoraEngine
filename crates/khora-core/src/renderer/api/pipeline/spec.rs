@@ -153,7 +153,7 @@ impl LayoutSpec {
 pub struct PipelineSpec {
     /// Debug label.
     pub label: &'static str,
-    /// Logical shader module name (e.g. `"khora::pipelines::standard_pbr"`).
+    /// Logical shader module name (e.g. `"khora::pipelines::lit_forward"`).
     pub shader: &'static str,
     /// Shader specialization (texture-set / feature flags). `empty()` default.
     pub variant: ShaderVariantKey,
@@ -275,7 +275,7 @@ mod tests {
         // Single-sided vs double-sided materials share shader + variant +
         // format but must resolve to distinct cached pipelines.
         let single_sided = PipelineKey {
-            shader: "khora::pipelines::standard_pbr",
+            shader: "khora::pipelines::lit_forward",
             variant: ShaderVariantKey::empty(),
             color_format: None,
             depth_format: None,
@@ -296,7 +296,7 @@ mod tests {
         // format + cull mode, but their pipelines differ in blend state and
         // depth-write, so they must not collide in the cache.
         let opaque = PipelineKey {
-            shader: "khora::pipelines::standard_pbr",
+            shader: "khora::pipelines::lit_forward",
             variant: ShaderVariantKey::empty(),
             color_format: None,
             depth_format: None,

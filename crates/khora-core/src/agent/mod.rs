@@ -34,7 +34,7 @@ use std::sync::{Arc, Mutex};
 pub use activation::{Activation, State, UnknownFamily};
 pub use completion::{AgentCompletionMap, CompletionOutcome};
 pub use contention::Contention;
-pub use dependency::{AgentDependency, DependencyCondition, DependencyKind};
+pub use dependency::{AgentDependency, DependencyKind};
 pub use execution_phase::ExecutionPhase;
 pub use layer::{
     CheckedOut, LastRun, Layer, LayerRun, Place, Preparation, Prepared, Terms, Wake, KEEP_EPOCHS,

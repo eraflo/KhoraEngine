@@ -352,11 +352,6 @@ impl DccService {
     pub fn agent_count(&self) -> usize {
         self.registry.lock().map(|r| r.len()).unwrap_or(0)
     }
-
-    /// Returns a reference to the agent with the given ID, if registered.
-    pub fn get_agent(&self, id: AgentId) -> Option<Arc<Mutex<dyn Agent>>> {
-        self.registry.lock().ok()?.get_by_id(id)
-    }
 }
 
 impl Drop for DccService {

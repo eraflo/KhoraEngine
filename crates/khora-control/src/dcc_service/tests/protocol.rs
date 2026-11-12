@@ -1089,10 +1089,8 @@ fn a_channel_connected_after_the_dcc_started_carries_its_allocations() {
     let (agent, ear) = Speaker::with_ear("renderer", Duration::from_millis(2));
     dcc.register_agent(agent, 1.0);
     dcc.start(rx);
-    let mut scheduler = crate::scheduler::ExecutionScheduler::from_registry(
-        Arc::clone(dcc.agent_registry()),
-        dcc.context_handle(),
-    );
+    let mut scheduler =
+        crate::scheduler::ExecutionScheduler::from_registry(Arc::clone(dcc.agent_registry()));
     dcc.connect_budget_channel(scheduler.budget_channel().clone());
     let mut world = khora_data::ecs::World::new();
     let runtime = Arc::new(khora_core::Runtime::new());
@@ -1123,10 +1121,8 @@ fn an_allocation_decided_before_the_scheduler_connected_is_lent() {
         wait_for(3, || !epochs(&dcc).is_empty()),
         "the first epoch opened"
     );
-    let mut scheduler = crate::scheduler::ExecutionScheduler::from_registry(
-        Arc::clone(dcc.agent_registry()),
-        dcc.context_handle(),
-    );
+    let mut scheduler =
+        crate::scheduler::ExecutionScheduler::from_registry(Arc::clone(dcc.agent_registry()));
     dcc.connect_budget_channel(scheduler.budget_channel().clone());
     let mut world = khora_data::ecs::World::new();
     let runtime = Arc::new(khora_core::Runtime::new());

@@ -19,7 +19,6 @@
 use super::{offer_of, place_with, report_of, set_step, Doing};
 use crate::agent_registry::AgentRegistry;
 use crate::budget_channel::BudgetChannel;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::dependency::DependencyKind;
 use khora_core::agent::gorna::protocol::{
@@ -30,7 +29,7 @@ use khora_core::agent::{Agent, AgentDependency, ExecutionPhase, ExecutionTiming,
 use khora_core::lane::cost::PerDevice;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// What the agents of a test were lent and ran on, in order.
@@ -139,7 +138,6 @@ impl Agent for Hand {
                 .map(|target| AgentDependency {
                     target,
                     kind: DependencyKind::Hard,
-                    condition: None,
                 })
                 .into_iter()
                 .collect(),
@@ -178,10 +176,7 @@ pub(super) fn allocation(epoch: u64, named: &[(&'static str, u64)]) -> Allocatio
 
 /// A scheduler over `registry`, its own context in `Playing`.
 pub(super) fn scheduler_over(registry: &Arc<Mutex<AgentRegistry>>) -> ExecutionScheduler {
-    ExecutionScheduler::from_registry(
-        Arc::clone(registry),
-        Arc::new(RwLock::new(Context::default())),
-    )
+    ExecutionScheduler::from_registry(Arc::clone(registry))
 }
 
 /// A timing that runs once a frame, in `OUTPUT` alone, at `priority` within

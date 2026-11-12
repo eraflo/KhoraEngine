@@ -22,7 +22,6 @@
 
 use super::{hosted, Family};
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::*;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::Terms;
@@ -31,7 +30,7 @@ use khora_core::lane::OutputDeck;
 use khora_core::{EngineContext, Runtime};
 use khora_data::ecs::World;
 use std::any::TypeId;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 
 /// A slot one writing agent declares.
 #[derive(Default)]
@@ -103,15 +102,13 @@ fn playing() -> Arc<Runtime> {
 /// A scheduler over `writers`, after one frame.
 fn after_one_frame(writers: Vec<Writer>, parallel: bool) -> ExecutionScheduler {
     let registry = Arc::new(Mutex::new(AgentRegistry::new()));
-    let ids: Vec<AgentId> = writers.iter().map(|w| w.id).collect();
     for writer in writers {
         registry
             .lock()
             .expect("the registry lock")
             .register(hosted(writer), 1.0);
     }
-    let mut scheduler =
-        ExecutionScheduler::new(registry, Arc::new(RwLock::new(Context::default())), &ids);
+    let mut scheduler = ExecutionScheduler::from_registry(registry);
     scheduler.set_parallel_execution(parallel);
     scheduler.run_frame(&mut World::new(), playing());
     scheduler

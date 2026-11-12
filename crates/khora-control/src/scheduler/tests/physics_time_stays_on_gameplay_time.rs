@@ -26,7 +26,6 @@
 
 use super::{hosted_at, set_step, Family};
 use crate::agent_registry::AgentRegistry;
-use crate::dcc_context::Context;
 use crate::scheduler::sim_steps::{compute_sim_steps, compute_sub_steps};
 use crate::scheduler::*;
 use khora_core::agent::gorna::AgentId;
@@ -131,9 +130,7 @@ impl Rig {
                 .register(agent, 1.0);
             handles.push(Handle { place, seen });
         }
-        let ids: Vec<AgentId> = agents.iter().map(|(id, _)| *id).collect();
-        let scheduler =
-            ExecutionScheduler::new(registry, Arc::new(RwLock::new(Context::default())), &ids);
+        let scheduler = ExecutionScheduler::from_registry(registry);
         let mut clock = Time::default();
         clock.set_scale(scale);
         let time: SharedTime = Arc::new(RwLock::new(clock));
