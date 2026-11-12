@@ -38,7 +38,7 @@ use khora_data::ecs::{ComponentKey, TickPhase, World};
 use khora_data::flow::{Flow, FlowContext, ScriptFlow, ScriptView};
 use khora_io::script::declarations::{DeclaredComponents, ScriptDeclarations};
 use khora_io::script::mirror::PreludeLoader;
-use khora_lanes::script_lane::{take_in, ScriptRuntime};
+use khora_lanes::script::{take_in, ScriptRuntime};
 use khora_script::reload::ScriptReload;
 use khora_script::vm::Program;
 use khora_script::{compile_module, Diagnostic, MemoryLoader};

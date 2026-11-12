@@ -21,7 +21,7 @@
 //! behaviors' part is counted apart: it is what the cheapest row must cover.
 
 use khora_core::script::{EventQueue, ScriptEvent};
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::ScriptRuntime;
 
 use super::scheduled_scene::{entity, frame, frame_with, int_of, runtime_of, view, PLENTY};
 

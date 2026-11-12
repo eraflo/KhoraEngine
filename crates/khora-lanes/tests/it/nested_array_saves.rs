@@ -23,7 +23,7 @@
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptArrival, ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{run_behaviors, ScriptRuntime};
+use khora_lanes::script::{run_behaviors, ScriptRuntime};
 use khora_script::bridge::from_persisted;
 use khora_script::vm::Program;
 use khora_script::{check, compile, lex, parse, Host};

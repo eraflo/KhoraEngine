@@ -21,7 +21,7 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{ScriptRunReport, ScriptRuntime};
+use khora_lanes::script::{ScriptRunReport, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::vm::{Program, ResumeTier};
 use khora_script::{check, compile, ergon_fn, lex, parse};
@@ -140,7 +140,7 @@ fn spotted() -> EventQueue {
     events
 }
 
-fn tiers_of(reports: &[khora_lanes::script_lane::ReloadReport]) -> Vec<Result<ResumeTier, String>> {
+fn tiers_of(reports: &[khora_lanes::script::ReloadReport]) -> Vec<Result<ResumeTier, String>> {
     reports
         .iter()
         .flat_map(|report| report.resumes.iter())

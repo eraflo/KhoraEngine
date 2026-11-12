@@ -18,7 +18,7 @@
 //! nobody — not to the body that starts once the debt is paid, which
 //! overdrew none of it.
 
-use khora_lanes::script_lane::{Body, WATCHDOG_WARN};
+use khora_lanes::script::{Body, WATCHDOG_WARN};
 use khora_script::ergon_fn;
 
 use super::watchdog_stage::{entity, Stage, SLICE};

@@ -31,7 +31,7 @@ use khora_data::ecs::{
     PackedLayout, RuntimeComponentDecl, ScriptRole, World,
 };
 use khora_data::flow::companion::{companion_row, companion_snapshot};
-use khora_lanes::script_lane::{ScriptRunReport, ScriptRuntime};
+use khora_lanes::script::{ScriptRunReport, ScriptRuntime};
 use khora_script::vm::{DeclaredComponent, DeclaredKind, Program};
 use khora_script::{compile_module, Diagnostic, MemoryLoader};
 

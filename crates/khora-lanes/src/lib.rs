@@ -23,7 +23,7 @@ pub mod loading;
 pub mod overlay;
 pub mod physics;
 pub mod render;
-pub mod script_lane;
+pub mod script;
 pub mod shadows;
 pub mod skybox;
 pub mod ui;

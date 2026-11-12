@@ -34,7 +34,7 @@ use khora_script::arena::Persisted;
 use khora_script::native::Host;
 
 use super::{compile, entity, runtime_of, MODULE};
-use crate::script_lane::{run_behaviors, Resumed, ScriptRuntime};
+use crate::script::{run_behaviors, Resumed, ScriptRuntime};
 use khora_script::vm::ResumeTier;
 
 /// The guard from the design: two states, each with its own data, and a
@@ -468,7 +468,7 @@ fn data_added_to_the_saved_state_since_the_save_starts_at_its_declared_default()
         .layout("Guard")
         .expect("declared")
         .clone();
-    let held = crate::script_lane::persistence::snapshot_from_store(
+    let held = crate::script::persistence::snapshot_from_store(
         &layout,
         &revived.peek(entity(0), "Guard").expect("live").fields,
     );
@@ -543,7 +543,7 @@ fn entering_the_saved_state_ends_the_same_under_every_fuel_slice() {
             .expect("declared")
             .clone();
         let instance = runtime.peek(entity(0), "Guard").expect("live");
-        crate::script_lane::persistence::snapshot_from_store(&layout, &instance.fields)
+        crate::script::persistence::snapshot_from_store(&layout, &instance.fields)
     };
 
     let whole = load(u64::MAX);

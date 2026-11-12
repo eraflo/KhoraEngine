@@ -34,8 +34,9 @@ With the successful abstraction of command recording and submission, the core ar
 
 ### Architecture refactoring — **done**
 
-`khora-lanes` now holds exactly four lane families — `render_lane`,
-`physics_lane`, `audio_lane`, `script_lane`. Asset decoders are services under
+`khora-lanes` holds one folder per family — `audio`, `loading`, `physics`,
+`render`, `script`, `shadows`, `skybox`, `ui` and the three overlays — each with
+its lanes and its registration. Asset decoders are services under
 `khora-io::asset::decoders`; ECS compaction is maintenance in
 `khora-data::ecs::systems`. Neither had a per-frame strategy to negotiate, which
 is what a `Lane` is for. Kept below for the reasoning.

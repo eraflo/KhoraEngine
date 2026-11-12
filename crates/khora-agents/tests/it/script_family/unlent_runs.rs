@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::ScriptRuntime;
 
 use super::fixtures::{bus_with, run_script_agent, runtime_with, script_agent};
 use crate::behavior_session::{compile, Project};

@@ -27,7 +27,7 @@ use khora_core::problems::{Problem, ProblemSeverity, ProblemSource, Problems};
 use khora_core::script::{EventQueue, ScriptEvent, ScriptValue};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, TickPhase, World};
-use khora_lanes::script_lane::{ScriptRuntime, WATCHDOG_WARN};
+use khora_lanes::script::{ScriptRuntime, WATCHDOG_WARN};
 
 use super::watchdog_stage::{build, entity, Stage, MODULE, SLICE};
 

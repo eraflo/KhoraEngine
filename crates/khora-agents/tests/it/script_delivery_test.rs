@@ -33,7 +33,7 @@ use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::script::{engine_event_channel, ScriptEvent};
 use khora_core::{EngineContext, Runtime};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::ScriptRuntime;
 use khora_script::arena::Persisted;
 use khora_script::reload::ScriptReload;
 use khora_script::vm::{Program, Value};

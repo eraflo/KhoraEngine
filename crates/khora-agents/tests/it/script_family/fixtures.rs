@@ -43,7 +43,7 @@ use khora_core::lane::LaneReport;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::{EngineContext, Runtime};
 use khora_data::flow::{PrefabCatalogView, ReservationView, ScriptView};
-use khora_lanes::script_lane::{BudgetedScriptLane, ScriptFamily, ScriptRuntime};
+use khora_lanes::script::{BudgetedScriptLane, ScriptFamily, ScriptRuntime};
 
 use crate::protocol::pin_with;
 

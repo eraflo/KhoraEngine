@@ -20,7 +20,7 @@
 //! not put the fault off either.
 
 use khora_core::script::ScriptSnapshot;
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::ScriptRuntime;
 
 use super::watchdog_stage::{build, entity, Stage, MODULE, SLICE};
 

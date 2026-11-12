@@ -28,7 +28,7 @@
 use khora_core::script::ScriptSnapshot;
 use khora_core::time::MAX_SIM_STEPS;
 use khora_data::flow::ScriptView;
-use khora_lanes::script_lane::{ScriptRunReport, ScriptRuntime, WATCHDOG_FAULT, WATCHDOG_WARN};
+use khora_lanes::script::{ScriptRunReport, ScriptRuntime, WATCHDOG_FAULT, WATCHDOG_WARN};
 
 use super::saves::{loaded, through_record};
 use super::scheduled_scene::{build, entity, frame, int_of, runtime_of, view, PLENTY};
@@ -268,7 +268,7 @@ const SPINNER: &str = "behavior Spinner {
 
 /// `frames` one-second frames of one step of `Spinner`; the slow bodies they
 /// reported.
-fn spin(runtime: &mut ScriptRuntime, frames: usize) -> Vec<khora_lanes::script_lane::Slow> {
+fn spin(runtime: &mut ScriptRuntime, frames: usize) -> Vec<khora_lanes::script::Slow> {
     let mut scene = view(MODULE, &[("Spinner", &[0])], 1.0);
     scene.fixed_steps = 1;
     scene.fixed_delta_seconds = STEP;

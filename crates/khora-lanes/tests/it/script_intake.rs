@@ -31,7 +31,7 @@ use khora_core::script::{ComponentName, ScriptEvent, ScriptReads, ScriptValue};
 use khora_core::Runtime;
 use khora_data::ecs::{DataSystemRegistration, Role, SystemContext, Tick, TickPhase, World};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{take_in, ScriptRuntime};
+use khora_lanes::script::{take_in, ScriptRuntime};
 use khora_script::reload::ScriptReload;
 use khora_script::vm::Program;
 use khora_script::{compile_module, Diagnostic, MemoryLoader};

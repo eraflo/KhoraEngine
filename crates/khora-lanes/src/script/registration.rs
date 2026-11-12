@@ -15,11 +15,11 @@
 //! The script family's registration: the one `LaneAgent` the engine boots for
 //! it, its phase, its importance and its lane.
 
+use super::{BudgetedScriptLane, ScriptFamily};
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::{AgentImportance, ExecutionPhase};
-use khora_lanes::script_lane::{BudgetedScriptLane, ScriptFamily};
 
-use crate::registered_agent::RegisteredAgent;
+use khora_core::agent::RegisteredAgent;
 
 khora_script::inventory::submit! {
     RegisteredAgent(khora_core::register_agent! {

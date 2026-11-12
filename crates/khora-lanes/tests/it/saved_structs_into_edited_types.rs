@@ -25,7 +25,7 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
 use khora_core::script::{ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::ScriptRuntime;
 use khora_script::bridge::from_persisted;
 use khora_script::vm::Program;
 use khora_script::{check, compile, lex, parse};

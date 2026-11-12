@@ -35,7 +35,7 @@ use khora_core::script::{
     ScriptValue, WorldCommand,
 };
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{take_in, ScriptRuntime};
+use khora_lanes::script::{take_in, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::reload::ScriptReload;
 use khora_script::vm::{Program, Value};

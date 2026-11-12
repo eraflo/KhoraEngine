@@ -26,7 +26,7 @@
 
 use khora_core::script::{EventQueue, ScriptEvent};
 use khora_data::flow::ScriptView;
-use khora_lanes::script_lane::{Body, ScriptRunReport, ScriptRuntime};
+use khora_lanes::script::{Body, ScriptRunReport, ScriptRuntime};
 
 use super::saves::{loaded, through_record};
 use super::scheduled_scene::{

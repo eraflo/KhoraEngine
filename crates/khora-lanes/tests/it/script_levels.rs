@@ -36,7 +36,7 @@ use khora_core::lane::level::Impact;
 use khora_core::lane::OutputDeck;
 use khora_core::script::{EventQueue, ScriptEvent};
 use khora_data::flow::ScriptView;
-use khora_lanes::script_lane::{BudgetedScriptLane, ScriptRuntime};
+use khora_lanes::script::{BudgetedScriptLane, ScriptRuntime};
 
 use super::scheduled_scene::{entity, runtime_of, view, PLENTY};
 use super::script_lane_run::{price_of, quote_lane, run_lane, LaneFrame};

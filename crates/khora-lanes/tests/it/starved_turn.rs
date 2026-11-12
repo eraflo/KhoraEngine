@@ -19,7 +19,7 @@
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{run_behaviors, Resumed, ScriptRuntime};
+use khora_lanes::script::{run_behaviors, Resumed, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::vm::{Program, ResumeTier, Value};
 use khora_script::{check, compile, ergon_fn, lex, parse, Host};
@@ -520,7 +520,7 @@ fn an_await_reached_from_a_timer_body_is_not_dropped() {
 /// write-back — and then through the record a scene holds its component data
 /// in, so a field the snapshot gains has to travel on the real path, not only
 /// in memory.
-fn saved_through_the_scene(report: &khora_lanes::script_lane::ScriptRunReport) -> ScriptSnapshot {
+fn saved_through_the_scene(report: &khora_lanes::script::ScriptRunReport) -> ScriptSnapshot {
     let snapshot = report
         .state
         .first()

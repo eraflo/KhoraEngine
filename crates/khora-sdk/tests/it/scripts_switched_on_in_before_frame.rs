@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::ScriptRuntime;
 use khora_sdk::khora_core::agent::gorna::AgentId;
 use khora_sdk::khora_core::ecs::entity::EntityId;
 use khora_sdk::khora_core::event::Channel;

@@ -124,11 +124,11 @@ A flat lookup for "I want to find X."
 | Scene records, encodings, saves, prefabs | `khora-data::scene` |
 | Asset index and asset loading | `khora-io::asset` (`AssetIndex`, `AssetService`) |
 | Serialization service | `khora-io::serialization` |
-| Render pipelines | `khora-lanes::render_lane` |
+| Render family | `khora_lanes::render` |
 | WGSL shaders and their composition | `khora-infra::graphics::shader` (the `.wgsl` tree and the one raw-string exception, `EGUI_WGSL`), composed by `khora-infra::graphics::wgpu::WgpuPipelineSystem` |
 | Physics family | `khora_lanes::physics` |
 | Audio family | `khora_lanes::audio` |
-| Script lane (fuel, deferral, hot-reload) | `khora-lanes::script_lane` |
+| Script family (fuel, deferral, hot-reload) | `khora_lanes::script` |
 | Asset decoders | `khora-io::asset::decoders` — services, not lanes: a decoder has no per-frame strategy to negotiate |
 | Transform propagation, ECS maintenance | `khora-data::ecs::systems` — data systems, for the same reason |
 | Agent implementations | `khora-agents` |

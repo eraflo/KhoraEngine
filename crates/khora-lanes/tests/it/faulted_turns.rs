@@ -29,7 +29,7 @@ use khora_core::script::{
     ProjectedComponent, ScriptValue, WorldCommand,
 };
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{run_behaviors, ScriptRuntime};
+use khora_lanes::script::{run_behaviors, ScriptRuntime};
 use khora_script::native::Host;
 
 use super::declared_behaviors::program;

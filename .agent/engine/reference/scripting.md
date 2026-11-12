@@ -34,12 +34,12 @@ switches it off while editing.
 - Component mirrors: `crates/khora-io/src/script/mirror.rs` — turns each `ComponentShape`
   (`khora-data/src/scene/shape.rs`, emitted by `#[derive(Component)]`) into Ergon declarations, served
   at `engine/components.erg` by a `PreludeLoader` stacked over the `DiskLoader`.
-- Lane: `crates/khora-lanes/src/script_lane/` — `mod.rs` (the `Lane`), `frame.rs` (the loop),
+- Lane: `crates/khora-lanes/src/script/` — `mod.rs` (the `Lane`), `frame.rs` (the loop),
   `turn.rs` (one behavior's turn), `hooks.rs`, `runtime.rs` (`ScriptRuntime`), `reload.rs`,
   `report.rs`, `persistence.rs`.
-- Lane resume / saves: `script_lane/resumption.rs` (load and hot reload share the VM tiers),
+- Lane resume / saves: `script/resumption.rs` (load and hot reload share the VM tiers),
   `persistence.rs` (snapshot ↔ instance), `frame.rs` (arrivals, `OnLoad`, `OnResumeFailed` owed).
-- Agent: `crates/khora-agents/src/script_agent/agent.rs`.
+- Agent: `crates/khora-lanes/src/script/registration.rs`.
 - Lifecycle hooks table: `crates/khora-script/src/lifecycle.rs` (`Update`, `OnSpawn`, `OnDespawn`,
   `OnLoad`, `OnResumeFailed(string member)`, reserved `FixedUpdate`).
 - Control flow: `bytecode/flow.rs` — `LoopContext` (`break`/`continue` from anywhere in a loop),
@@ -61,7 +61,7 @@ switches it off while editing.
   the script DataSystems (`script_intake`, `script_systems`, `script_commands`, `behavior_writeback`,
   `collision_to_script`) serve SCRIPT, so they are skipped while it is off, as the family's agent is.
   `script_hot_reload`, `script_components`, `script_problems` are `Upkeep`. Mailboxes: `ScriptEvent`
-  Take/Drop (`khora-lanes/src/script_lane/intake.rs`), `Collision` Cursor("collision_to_script")/Drop,
+  Take/Drop (`khora-lanes/src/script/intake.rs`), `Collision` Cursor("collision_to_script")/Drop,
   `CompileRequest` Take/Hold of the `loading` family. On `resumed`, the intake clears only the scripting
   world's own pending mail.
 - **Compiling is a load, off the frame.** The pump (`script_hot_reload`, PreExtract,
@@ -104,7 +104,7 @@ switches it off while editing.
 - **A script never writes the `World`.** Its effects are queued as `WorldCommand`s and applied by a
   data system during `Maintenance`. This is what lets the script lane run world-free.
 - **The agent chooses a level; the lane does the work.** The script family (`ScriptFamily`,
-  `khora-lanes/src/script_lane/script_family.rs`; registration in `khora-agents/src/script_agent/`)
+  `khora-lanes/src/script/family.rs`; registration in `khora-lanes/src/script/registration.rs`)
   is a `LaneAgent` like every family. `BudgetedScriptLane` is typed: `#[bus] ScriptView,
   ReservationView, PrefabCatalogView`, `#[locked] ScriptRuntime`, `#[budget] Option<Budget>` (`None`
   until the agent is lent one: the lane then runs its level at its own price), outputs `#[deck]
@@ -158,11 +158,11 @@ switches it off while editing.
   and no parens — `Attribute.parenthesized`; `[Budget(d)]` one positive Duration; `[Rate(f)]` one positive
   `hz` literal — `TokenKind::Frequency`/`Expr::Frequency`, refused as a value; once each; on systems too;
   `[Rate]` + a `FixedUpdate` anywhere refused) and stored as `BehaviorLayout.schedule: Schedule`. Lane:
-  `script_lane/shares.rs` — `Claim{critical, ceiling, instances}`; critical claim = `turn_cost × due
+  `script/shares.rs` — `Claim{critical, ceiling, instances}`; critical claim = `turn_cost × due
   instances` (≥ an equal share, ≤ ceiling), reserved before the others are water-filled (`fill`); leftover back
   to critical; a pool short of the claims goes to critical alone; ceiling = budget × `runtime.rate()`, also
   bounding `share_end` (`capped`); `too_short`: a turn is not started on less than half of `turn_cost` once one
-  ran. `script_lane/rate.rs` — `skips` accrues `Instance.owed` (time) and `fixed_owed` (steps, only for a
+  ran. `script/rate.rs` — `skips` accrues `Instance.owed` (time) and `fixed_owed` (steps, only for a
   behavior declaring `FixedUpdate`), gates a rate by `Instance.until` (phase from the entity, clamped to the
   period), `due` (asked by the plan), `take_turn` hands both over; a turn's `delta` = owed, watchdog uses
   `frame_delta`. Owed time and steps saved in `InstanceLifecycle` / the companion (`owed`, `fixed_owed`); a
@@ -171,7 +171,7 @@ switches it off while editing.
 - **`FixedUpdate` (R2).** `Time.fixed_steps` published by the scheduler (`khora-control/src/scheduler/frame.rs`;
   game ticks at `DEFAULT_FIXED_DELTA_SECONDS` on the scaled clock, never the physics sub-steps; one cap,
   `khora_core::time::MAX_SIM_STEPS`); `ScriptView.fixed_steps`/`fixed_delta_seconds`. The turn
-  (`script_lane/fixed_step.rs::run_steps`) calls it once per owed step, after the timers and before events and
+  (`script/fixed_step.rs::run_steps`) calls it once per owed step, after the timers and before events and
   `Update`, each with the step it was taken at (`fixed_owed: Vec<f32>`); a cut step parks as `Body::Update`;
   a fault drops the owed steps. Never `async`; the checker refuses one reaching an `async` member
   (`types/members.rs::refuse_waiting_fixed_update`, `Checker.member_calls`, state-qualified names).
@@ -243,7 +243,7 @@ switches it off while editing.
   (`vm/commands.rs`) answer from `Host::components: khora_core::script::FrameComponents` — the view's
   `ComponentProjection` with this frame's own `Set`/`Add`/`Remove` observed over it as they are queued.
   `Program::reads` (sorted) → the lane publishes the union to `Arc<ScriptCatalog>` every frame
-  (`script_lane/reload.rs`); `ScriptFlow` projects only those (`World::project_components`, one
+  (`script/reload.rs`); `ScriptFlow` projects only those (`World::project_components`, one
   `ColumnSnapshot` per page column, live rows only — snapshots include orphan rows). A reload whose reads
   were not projected this frame is deferred one frame. A `component` declaration is also a `StructLayout`, so
   a copy imports as a struct.
@@ -255,7 +255,7 @@ switches it off while editing.
   systems by `(module, order, name)` — `order` = source position among the module's behaviors and
   systems (`DeclaredComponent.order`) — rows by entity, `ScriptInstance.row` = the full row every
   frame, `arrival` only for a new `(entity, behavior)` (fields away from the registered defaults, or — restored — the row and the
-  companion as `observed`). Lane (`script_lane/attached.rs`, `shares.rs`): `seen` rows → fields written
+  companion as `observed`). Lane (`script/attached.rs`, `shares.rs`): `seen` rows → fields written
   outside are adopted; `BehaviorUpdate.changed` = fields the turn changed; fuel shared per behavior (equal
   shares among those that can spend, rotating remainder, debt for overdraft, a cursor each); an arriving
   instance takes its fields from its row and its state from its companion — no base/override merge (the
@@ -333,7 +333,7 @@ switches it off while editing.
   `WorldCommand::WriteColumn` before a later `WriteComponent`/`RemoveComponent` of that component in the
   run and at the end of **every** run (`Machine::run_counting`) — no batch outlives a run, none is frozen.
   `host.swept` → `ScriptRunReport.swept_rows`; the agent prices `2 µs × instances + PER_ROW (200 ns) × rows`.
-- **Watchdog.** Constants in `khora-lanes/src/script_lane/watchdog.rs` (re-exported by `script_lane`),
+- **Watchdog.** Constants in `khora-lanes/src/script/watchdog.rs` (re-exported by `script`),
   report entry `report.rs::Slow`. `Pending.running` = game seconds a pending body *ran* without finishing:
   the frame it starts and is cut (`turn.rs` `kept` + `park`) and every frame it is advanced and cut add `dt`;
   a frame its behavior sits out repaying a debt **that body** overdrew is counted as it passes
@@ -384,7 +384,7 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** �
   stay testable without booting an engine. Do not reach for `khora-data` from here.
 - The rate that converts a time budget into fuel is measured by the **lane** and stored on
   `ScriptRuntime`, not assumed by the agent. `INITIAL_RATE` lives in
-  `khora-lanes/src/script_lane/runtime.rs` and is the single definition.
+  `khora-lanes/src/script/runtime.rs` and is the single definition.
 - **A mirrored component a script cannot write stays an ordinary `struct`** (`Transform`, derived and
   runtime components): its fields read and write like any struct value's. A writable one is a `component`,
   read as a copy with `e.Get(T)`; `entity.Field` is a checker error naming `Get`
@@ -409,7 +409,7 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** �
   (`ScriptCatalog::announce`); the flow projects `reads ∪ announced`; the lane installs before any turn and
   `settle`s. A module whose reload still waits takes no turn (deferred, events kept). An instance's
   `built_for` program differing from the one about to run — a behavior moved to another module — is carried
-  at the turn (`script_lane/carry.rs::carry_instance`, shared with `ScriptRuntime::reload`); a carried
+  at the turn (`script/carry.rs::carry_instance`, shared with `ScriptRuntime::reload`); a carried
   instance is `rewritten` and emits its `BehaviorUpdate` that frame even starved or quiet. An instance whose
   arrival is held is neither carried nor recorded: the arrival rebuilds it.
 - **Scripts in the editor (spec 11).** Watching: `khora-io/src/asset/watch.rs::AssetWatch` — many roots
@@ -425,7 +425,7 @@ with the original arguments (side effects may repeat); 5. else **`Abandoned`** �
   `ProblemSource::{Compile{module}, Registration, Running, Placement{root}, Data, Load}`, `report(source, list)` replaces a source's list; fed by
   `khora-io/src/script/problems.rs::report_compile` (per compiled module, diagnostics under the module they
   are in), `DeclaredComponents::standing_problems` (refused, orphaned) via `script_components`, and the
-  `script_problems` DataSystem (`khora-lanes/src/script_lane/problems.rs`: faulted instances, bodies past
+  `script_problems` DataSystem (`khora-lanes/src/script/problems.rs`: faulted instances, bodies past
   `WATCHDOG_WARN`). Units: `ErgonType::{Duration, Angle}` reach the layout (`FieldKind::Float` storage;
   `retyped` compares stored forms, structs included); `ErgonType::widened` turns an `int` into the float a
   float-typed field holds at any depth — `PackedLayout::admit` applies it, so scripts and the editor write

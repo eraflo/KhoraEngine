@@ -51,7 +51,7 @@ The split follows [CLAD](../clad.md) exactly, and it did not always:
 | The scripting world (programs, live instances, pending mail, last report, measured rate) | `Runtime::services`, as `Arc<Mutex<ScriptRuntime>>` | It is subsystem state, not strategy state — the same place the physics provider lives |
 | The work (reloads, delivery, running behaviors and systems, measuring) | `BudgetedScriptLane` | Lanes execute |
 | A system's one entity | the `script_systems` data system (`khora-data`) | Structure is the data layer's; a lane never spawns |
-| Choosing a level for a budget | the script family's `LaneAgent` (`khora-agents/src/script_agent/`) | Agents are strategists and hold nothing else |
+| Choosing a level for a budget | the script family's `LaneAgent` (`khora-agents/src/agent/`), registered in `khora-lanes/src/script/registration.rs` | Agents are strategists and hold nothing else |
 
 The agent used to own all of it. What that cost was not correctness but reach:
 nothing else could see the live behaviors, because they were a private field of

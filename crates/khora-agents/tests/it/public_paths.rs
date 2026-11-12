@@ -38,9 +38,7 @@ use std::marker::PhantomData;
 // ---------------------------------------------------------------------------
 
 #[allow(unused_imports)]
-mod every_pub_mod {
-    use khora_agents::script_agent as _;
-}
+mod every_pub_mod {}
 
 // ---------------------------------------------------------------------------
 // Paths other crates of the workspace spell today (`crates/`, `examples/`,

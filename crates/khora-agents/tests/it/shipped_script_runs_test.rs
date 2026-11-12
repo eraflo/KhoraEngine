@@ -83,9 +83,9 @@ fn wired() -> Option<Arc<Runtime>> {
 
     let mut runtime = Runtime::default();
     runtime.services.insert(Arc::new(std::sync::Mutex::new(
-        khora_lanes::script_lane::ScriptRuntime::new(),
+        khora_lanes::script::ScriptRuntime::new(),
     ))
-        as Arc<std::sync::Mutex<khora_lanes::script_lane::ScriptRuntime>>);
+        as Arc<std::sync::Mutex<khora_lanes::script::ScriptRuntime>>);
     runtime.resources.insert(reloads);
     runtime
         .resources
@@ -200,9 +200,9 @@ fn the_behaviour_only_ever_queues_commands() {
 fn an_unloaded_module_is_counted_not_ignored() {
     let mut runtime = Runtime::default();
     runtime.services.insert(Arc::new(std::sync::Mutex::new(
-        khora_lanes::script_lane::ScriptRuntime::new(),
+        khora_lanes::script::ScriptRuntime::new(),
     ))
-        as Arc<std::sync::Mutex<khora_lanes::script_lane::ScriptRuntime>>);
+        as Arc<std::sync::Mutex<khora_lanes::script::ScriptRuntime>>);
     runtime.resources.insert(khora_core::lane::Reserve::new());
     let runtime = Arc::new(runtime);
 

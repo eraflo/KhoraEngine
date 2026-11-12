@@ -76,8 +76,6 @@ const RATCHETED_CHECKS: &[&str] = &[
     "test_files_follow_convention",
     "non_test_code_under_700_lines",
     "wgsl_only_in_shader_tree",
-    "every_agent_folder_has_agent_rs",
-    "lanes_mirror_agents",
     "no_tracked_ignored_files",
     "relative_links_resolve",
     "cited_source_paths_exist",
@@ -382,59 +380,6 @@ fn wgsl_only_in_shader_tree() {
     ratchet(
         "wgsl_only_in_shader_tree",
         &format!("WGSL outside {SHADER_TREE}"),
-        &violations,
-    );
-}
-
-/// Each `crates/khora-agents/src/*_agent/` folder holds its agent in
-/// `agent.rs`. Keyed by the agent folder.
-#[test]
-fn every_agent_folder_has_agent_rs() {
-    let root = repo_root();
-    let agents = root.join("crates/khora-agents/src");
-    let mut violations = Violations::new();
-    for domain in domain_folders(&agents, "_agent") {
-        if !agents.join(format!("{domain}_agent/agent.rs")).is_file() {
-            add(
-                &mut violations,
-                format!("crates/khora-agents/src/{domain}_agent"),
-                "has no agent.rs".to_owned(),
-            );
-        }
-    }
-    ratchet(
-        "every_agent_folder_has_agent_rs",
-        "agent folders without agent.rs",
-        &violations,
-    );
-}
-
-/// The agent is the unit: each `khora-agents/src/<domain>_agent/` has a
-/// `khora-lanes/src/<domain>_lane/`, and each lane folder has its agent.
-/// Keyed by the missing folder.
-#[test]
-fn lanes_mirror_agents() {
-    let root = repo_root();
-    let agents = domain_folders(&root.join("crates/khora-agents/src"), "_agent");
-    let lanes = domain_folders(&root.join("crates/khora-lanes/src"), "_lane");
-    let mut violations = Violations::new();
-    for domain in agents.difference(&lanes) {
-        add(
-            &mut violations,
-            format!("crates/khora-lanes/src/{domain}_lane"),
-            format!("missing, although crates/khora-agents/src/{domain}_agent exists"),
-        );
-    }
-    for domain in lanes.difference(&agents) {
-        add(
-            &mut violations,
-            format!("crates/khora-agents/src/{domain}_agent"),
-            format!("missing, although crates/khora-lanes/src/{domain}_lane exists"),
-        );
-    }
-    ratchet(
-        "lanes_mirror_agents",
-        "lanes and agents out of step",
         &violations,
     );
 }
@@ -1010,14 +955,6 @@ fn walk_dirs(dir: &Path) -> Vec<PathBuf> {
     }
     dirs.sort();
     dirs
-}
-
-/// Domain names of the direct children of `dir` named `<domain><suffix>`.
-fn domain_folders(dir: &Path, suffix: &str) -> BTreeSet<String> {
-    child_dirs(dir)
-        .iter()
-        .filter_map(|path| file_name(path).strip_suffix(suffix).map(str::to_owned))
-        .collect()
 }
 
 /// Repository-relative path with `/` separators.
@@ -2519,10 +2456,6 @@ fn family_folder_problems(lanes_src: &Path) -> Vec<String> {
     let mut problems = Vec::new();
     for dir in child_dirs(lanes_src) {
         let name = file_name(&dir);
-        // transitional: removed when 7c ends
-        if name.ends_with("_lane") {
-            continue; // a family not moved into its folder yet
-        }
         if NOT_FAMILY_FOLDERS.contains(&name.as_str()) {
             continue;
         }
@@ -2592,12 +2525,7 @@ fn registration_site_is_allowed(path: &str) -> bool {
         .and_then(|rest| rest.strip_prefix('/'))
         .and_then(|rest| rest.strip_suffix("/registration.rs"))
         .is_some_and(|folder| !folder.is_empty());
-    // transitional: removed when 7c ends
-    let in_unmoved_agent = path
-        .strip_prefix("crates/khora-agents/src/")
-        .and_then(|rest| rest.strip_suffix("/agent.rs"))
-        .is_some_and(|folder| folder.ends_with("_agent") && !folder.contains('/'));
-    in_family_folder || in_unmoved_agent || path == REGISTER_AGENT_DEFINITION
+    in_family_folder || path == REGISTER_AGENT_DEFINITION
 }
 
 /// The 1-based lines of `text` that call `register_agent!` — the name then,
@@ -2661,7 +2589,6 @@ fn family_folder_check_names_what_a_family_folder_lacks() {
     for sub in OVERLAY_FAMILIES {
         good.extend(family(&format!("overlay/{sub}")));
     }
-    good.push(("ui_lane/mod.rs".to_owned(), ""));
     let good: Vec<(&str, &str)> = good.iter().map(|(p, t)| (p.as_str(), *t)).collect();
 
     let bad: Vec<(&str, &str)> = vec![
@@ -2687,6 +2614,8 @@ fn family_folder_check_names_what_a_family_folder_lacks() {
         ("overlay/grid/registration.rs", ONE),
         ("overlay/grid/lane.rs", ""),
         ("overlay/shared/mod.rs", ""),
+        // A lane folder of the old layout.
+        ("ui_lane/mod.rs", ""),
     ];
 
     let setup = || -> std::io::Result<()> {
@@ -2710,18 +2639,18 @@ fn family_folder_check_names_what_a_family_folder_lacks() {
         "overlay/gizmo/: missing",
         "overlay/wireframe/: missing",
         "overlay/shared/:",
+        "ui_lane/: not a family",
     ] {
         assert!(
             bad_problems.iter().any(|p| p.starts_with(expected)),
             "expected a problem starting `{expected}`:\n{bad_problems:#?}"
         );
     }
-    assert_eq!(bad_problems.len(), 8, "{bad_problems:#?}");
+    assert_eq!(bad_problems.len(), 9, "{bad_problems:#?}");
 }
 
 /// The registration rule allows a family folder's `registration.rs` (nested
-/// families too), the macro's definition, and an agent folder not moved yet;
-/// it refuses any other file. It counts calls, not mentions in comments, and
+/// families too) and the macro's definition; it refuses any other file. It counts calls, not mentions in comments, and
 /// not calls in the inline test module.
 #[test]
 fn registration_rule_reads_calls_in_family_folders_only() {
@@ -2729,7 +2658,6 @@ fn registration_rule_reads_calls_in_family_folders_only() {
         "crates/khora-lanes/src/audio/registration.rs",
         "crates/khora-lanes/src/overlay/grid/registration.rs",
         "crates/khora-core/src/agent/registration.rs",
-        "crates/khora-agents/src/ui_agent/agent.rs",
     ] {
         assert!(registration_site_is_allowed(allowed), "{allowed}");
     }
@@ -2739,6 +2667,7 @@ fn registration_rule_reads_calls_in_family_folders_only() {
         "crates/khora-lanes/src/audio/family.rs",
         "crates/khora-agents/src/registered_agent.rs",
         "crates/khora-agents/src/agent/agent.rs",
+        "crates/khora-agents/src/ui_agent/agent.rs",
         "crates/khora-agents/src/ui_agent/mod.rs",
         "crates/khora-agents/src/families/audio/registration.rs",
         "crates/khora-sdk/src/lib.rs",

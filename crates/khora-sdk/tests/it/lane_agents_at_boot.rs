@@ -309,8 +309,8 @@ fn the_script_family_boots_as_a_lane_agent_from_its_registration() {
     let registry = dcc.agent_registry().lock().expect("the registry lock");
     let origin = registry.origin(khora_sdk::khora_core::script::SCRIPT);
     assert!(
-        origin.is_some_and(|module| module.starts_with("khora_agents::")),
-        "the script agent was registered from its registration in khora-agents; origin {origin:?}"
+        origin == Some("khora_lanes::script::registration"),
+        "the script agent was registered from its family folder; origin {origin:?}"
     );
 
     // The agent registered as `script` is the `LaneAgent` that registration
@@ -495,11 +495,9 @@ fn boot_records_each_agents_origin() {
     );
     for engine_agent in ["renderer", "script", "audio", "physics", "ui"] {
         let origin = registry.origin(AgentId::new(engine_agent));
-        // transitional: only `khora_lanes::` once every family has moved.
         assert!(
-            origin.is_some_and(|module| module.starts_with("khora_lanes::")
-                || module.starts_with("khora_agents::")),
-            "`{engine_agent}` comes from the engine's crates: {origin:?}"
+            origin.is_some_and(|module| module.starts_with("khora_lanes::")),
+            "`{engine_agent}` comes from its family folder in khora-lanes: {origin:?}"
         );
     }
 }

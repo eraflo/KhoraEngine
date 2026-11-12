@@ -63,10 +63,10 @@ mod every_pub_mod {
     use khora_lanes::render::util as _;
     use khora_lanes::render::util::dynamic_uniform_ring_buffer as _;
     use khora_lanes::render::util::uniform_ring_buffer as _;
-    use khora_lanes::script_lane as _;
-    use khora_lanes::script_lane::persistence as _;
-    use khora_lanes::script_lane::report as _;
-    use khora_lanes::script_lane::runtime as _;
+    use khora_lanes::script as _;
+    use khora_lanes::script::persistence as _;
+    use khora_lanes::script::report as _;
+    use khora_lanes::script::runtime as _;
     use khora_lanes::shadows as _;
     use khora_lanes::skybox as _;
     use khora_lanes::ui as _;
@@ -117,7 +117,7 @@ fn shader_complexity_variants(x: &khora_lanes::render::ShaderComplexity) {
     }
 }
 
-fn script_run_report_fields(x: &khora_lanes::script_lane::report::ScriptRunReport) {
+fn script_run_report_fields(x: &khora_lanes::script::report::ScriptRunReport) {
     let _ = (
         &x.completed,
         &x.deferred,
@@ -130,7 +130,7 @@ fn script_run_report_fields(x: &khora_lanes::script_lane::report::ScriptRunRepor
     );
 }
 
-fn instance_fields(x: &khora_lanes::script_lane::runtime::Instance) {
+fn instance_fields(x: &khora_lanes::script::runtime::Instance) {
     let _ = (
         &x.module,
         &x.fields,
@@ -144,23 +144,23 @@ fn instance_fields(x: &khora_lanes::script_lane::runtime::Instance) {
     );
 }
 
-fn pending_fields(x: &khora_lanes::script_lane::runtime::Pending) {
+fn pending_fields(x: &khora_lanes::script::runtime::Pending) {
     let _ = (&x.machine, &x.remaining, &x.body, &x.fingerprint);
 }
 
-fn body_variants(x: &khora_lanes::script_lane::runtime::Body) {
+fn body_variants(x: &khora_lanes::script::runtime::Body) {
     match x {
-        khora_lanes::script_lane::runtime::Body::Sequence => {}
-        khora_lanes::script_lane::runtime::Body::Spawn => {}
-        khora_lanes::script_lane::runtime::Body::Update => {}
-        khora_lanes::script_lane::runtime::Body::Load => {}
-        khora_lanes::script_lane::runtime::Body::Timer { index, rearm } => {
+        khora_lanes::script::runtime::Body::Sequence => {}
+        khora_lanes::script::runtime::Body::Spawn => {}
+        khora_lanes::script::runtime::Body::Update => {}
+        khora_lanes::script::runtime::Body::Load => {}
+        khora_lanes::script::runtime::Body::Timer { index, rearm } => {
             let _ = (index, rearm);
         }
     }
 }
 
-fn reload_report_fields(x: &khora_lanes::script_lane::runtime::ReloadReport) {
+fn reload_report_fields(x: &khora_lanes::script::runtime::ReloadReport) {
     let _ = (&x.behavior, &x.kept, &x.added, &x.dropped);
 }
 
@@ -322,118 +322,115 @@ fn module_ui_lane_paths_still_resolve() {
 
 #[test]
 fn module_script_lane_paths_still_resolve() {
-    let _ = type_name::<khora_lanes::script_lane::BudgetedScriptLane>();
-    let _ = khora_lanes::script_lane::BudgetedScriptLane::new;
-    is_debug::<khora_lanes::script_lane::BudgetedScriptLane>();
-    is_default::<khora_lanes::script_lane::BudgetedScriptLane>();
-    is_typed_lane::<khora_lanes::script_lane::BudgetedScriptLane>();
-    let _ = type_name::<khora_lanes::script_lane::ScriptFamily>();
-    let _ = type_name::<khora_lanes::script_lane::ScriptInputs<'static>>();
-    let _ = type_name::<khora_lanes::script_lane::ScriptOutputs>();
-    is_lane_family::<khora_lanes::script_lane::ScriptFamily>();
-    let _ = khora_lanes::script_lane::resumption::resume;
-    let _ = khora_lanes::script_lane::resumption::carry;
-    let _ = khora_lanes::script_lane::persistence::snapshot_from_store;
-    let _ = khora_lanes::script_lane::persistence::store_from_snapshot;
-    let _ = khora_lanes::script_lane::persistence::suspend;
-    let _ = type_name::<khora_lanes::script_lane::report::ScriptRunReport>();
-    let _ = type_name::<khora_lanes::script_lane::ScriptRunReport>();
+    let _ = type_name::<khora_lanes::script::BudgetedScriptLane>();
+    let _ = khora_lanes::script::BudgetedScriptLane::new;
+    is_debug::<khora_lanes::script::BudgetedScriptLane>();
+    is_default::<khora_lanes::script::BudgetedScriptLane>();
+    is_typed_lane::<khora_lanes::script::BudgetedScriptLane>();
+    let _ = type_name::<khora_lanes::script::ScriptFamily>();
+    let _ = type_name::<khora_lanes::script::ScriptInputs<'static>>();
+    let _ = type_name::<khora_lanes::script::ScriptOutputs>();
+    is_lane_family::<khora_lanes::script::ScriptFamily>();
+    let _ = khora_lanes::script::resumption::resume;
+    let _ = khora_lanes::script::resumption::carry;
+    let _ = khora_lanes::script::persistence::snapshot_from_store;
+    let _ = khora_lanes::script::persistence::store_from_snapshot;
+    let _ = khora_lanes::script::persistence::suspend;
+    let _ = type_name::<khora_lanes::script::report::ScriptRunReport>();
+    let _ = type_name::<khora_lanes::script::ScriptRunReport>();
     same_type(
-        PhantomData::<khora_lanes::script_lane::ScriptRunReport>,
-        PhantomData::<khora_lanes::script_lane::report::ScriptRunReport>,
+        PhantomData::<khora_lanes::script::ScriptRunReport>,
+        PhantomData::<khora_lanes::script::report::ScriptRunReport>,
     );
-    let _ = script_run_report_fields as fn(&khora_lanes::script_lane::report::ScriptRunReport);
-    is_debug::<khora_lanes::script_lane::report::ScriptRunReport>();
-    is_clone::<khora_lanes::script_lane::report::ScriptRunReport>();
-    is_default::<khora_lanes::script_lane::report::ScriptRunReport>();
-    is_partial_eq::<khora_lanes::script_lane::report::ScriptRunReport>();
-    let _ = khora_lanes::script_lane::run_behaviors;
-    let _ = khora_lanes::script_lane::runtime::INITIAL_RATE;
-    let _ = type_name::<khora_lanes::script_lane::runtime::Instance>();
-    let _ = type_name::<khora_lanes::script_lane::Instance>();
+    let _ = script_run_report_fields as fn(&khora_lanes::script::report::ScriptRunReport);
+    is_debug::<khora_lanes::script::report::ScriptRunReport>();
+    is_clone::<khora_lanes::script::report::ScriptRunReport>();
+    is_default::<khora_lanes::script::report::ScriptRunReport>();
+    is_partial_eq::<khora_lanes::script::report::ScriptRunReport>();
+    let _ = khora_lanes::script::run_behaviors;
+    let _ = khora_lanes::script::runtime::INITIAL_RATE;
+    let _ = type_name::<khora_lanes::script::runtime::Instance>();
+    let _ = type_name::<khora_lanes::script::Instance>();
     same_type(
-        PhantomData::<khora_lanes::script_lane::Instance>,
-        PhantomData::<khora_lanes::script_lane::runtime::Instance>,
+        PhantomData::<khora_lanes::script::Instance>,
+        PhantomData::<khora_lanes::script::runtime::Instance>,
     );
-    let _ = instance_fields as fn(&khora_lanes::script_lane::runtime::Instance);
-    is_debug::<khora_lanes::script_lane::runtime::Instance>();
-    is_default::<khora_lanes::script_lane::runtime::Instance>();
-    let _ = type_name::<khora_lanes::script_lane::runtime::Pending>();
-    let _ = type_name::<khora_lanes::script_lane::Pending>();
+    let _ = instance_fields as fn(&khora_lanes::script::runtime::Instance);
+    is_debug::<khora_lanes::script::runtime::Instance>();
+    is_default::<khora_lanes::script::runtime::Instance>();
+    let _ = type_name::<khora_lanes::script::runtime::Pending>();
+    let _ = type_name::<khora_lanes::script::Pending>();
     same_type(
-        PhantomData::<khora_lanes::script_lane::Pending>,
-        PhantomData::<khora_lanes::script_lane::runtime::Pending>,
+        PhantomData::<khora_lanes::script::Pending>,
+        PhantomData::<khora_lanes::script::runtime::Pending>,
     );
-    let _ = pending_fields as fn(&khora_lanes::script_lane::runtime::Pending);
-    is_debug::<khora_lanes::script_lane::runtime::Pending>();
-    is_clone::<khora_lanes::script_lane::runtime::Pending>();
-    is_partial_eq::<khora_lanes::script_lane::runtime::Pending>();
-    is_serialize::<khora_lanes::script_lane::runtime::Pending>();
-    is_deserialize_owned::<khora_lanes::script_lane::runtime::Pending>();
-    let _ = type_name::<khora_lanes::script_lane::runtime::Body>();
-    let _ = type_name::<khora_lanes::script_lane::Body>();
+    let _ = pending_fields as fn(&khora_lanes::script::runtime::Pending);
+    is_debug::<khora_lanes::script::runtime::Pending>();
+    is_clone::<khora_lanes::script::runtime::Pending>();
+    is_partial_eq::<khora_lanes::script::runtime::Pending>();
+    is_serialize::<khora_lanes::script::runtime::Pending>();
+    is_deserialize_owned::<khora_lanes::script::runtime::Pending>();
+    let _ = type_name::<khora_lanes::script::runtime::Body>();
+    let _ = type_name::<khora_lanes::script::Body>();
     same_type(
-        PhantomData::<khora_lanes::script_lane::Body>,
-        PhantomData::<khora_lanes::script_lane::runtime::Body>,
+        PhantomData::<khora_lanes::script::Body>,
+        PhantomData::<khora_lanes::script::runtime::Body>,
     );
-    let _ = body_variants as fn(&khora_lanes::script_lane::runtime::Body);
-    is_debug::<khora_lanes::script_lane::runtime::Body>();
-    is_clone::<khora_lanes::script_lane::runtime::Body>();
-    is_partial_eq::<khora_lanes::script_lane::runtime::Body>();
-    is_serialize::<khora_lanes::script_lane::runtime::Body>();
-    is_deserialize_owned::<khora_lanes::script_lane::runtime::Body>();
-    let _ = type_name::<khora_lanes::script_lane::runtime::ReloadReport>();
-    let _ = type_name::<khora_lanes::script_lane::ReloadReport>();
+    let _ = body_variants as fn(&khora_lanes::script::runtime::Body);
+    is_debug::<khora_lanes::script::runtime::Body>();
+    is_clone::<khora_lanes::script::runtime::Body>();
+    is_partial_eq::<khora_lanes::script::runtime::Body>();
+    is_serialize::<khora_lanes::script::runtime::Body>();
+    is_deserialize_owned::<khora_lanes::script::runtime::Body>();
+    let _ = type_name::<khora_lanes::script::runtime::ReloadReport>();
+    let _ = type_name::<khora_lanes::script::ReloadReport>();
     same_type(
-        PhantomData::<khora_lanes::script_lane::ReloadReport>,
-        PhantomData::<khora_lanes::script_lane::runtime::ReloadReport>,
+        PhantomData::<khora_lanes::script::ReloadReport>,
+        PhantomData::<khora_lanes::script::runtime::ReloadReport>,
     );
-    let _ = reload_report_fields as fn(&khora_lanes::script_lane::runtime::ReloadReport);
-    let _ = khora_lanes::script_lane::runtime::ReloadReport::lost_anything;
-    is_debug::<khora_lanes::script_lane::runtime::ReloadReport>();
-    is_clone::<khora_lanes::script_lane::runtime::ReloadReport>();
-    is_partial_eq::<khora_lanes::script_lane::runtime::ReloadReport>();
-    is_eq::<khora_lanes::script_lane::runtime::ReloadReport>();
-    let _ = type_name::<khora_lanes::script_lane::runtime::ScriptRuntime>();
-    let _ = type_name::<khora_lanes::script_lane::ScriptRuntime>();
+    let _ = reload_report_fields as fn(&khora_lanes::script::runtime::ReloadReport);
+    let _ = khora_lanes::script::runtime::ReloadReport::lost_anything;
+    is_debug::<khora_lanes::script::runtime::ReloadReport>();
+    is_clone::<khora_lanes::script::runtime::ReloadReport>();
+    is_partial_eq::<khora_lanes::script::runtime::ReloadReport>();
+    is_eq::<khora_lanes::script::runtime::ReloadReport>();
+    let _ = type_name::<khora_lanes::script::runtime::ScriptRuntime>();
+    let _ = type_name::<khora_lanes::script::ScriptRuntime>();
     same_type(
-        PhantomData::<khora_lanes::script_lane::ScriptRuntime>,
-        PhantomData::<khora_lanes::script_lane::runtime::ScriptRuntime>,
+        PhantomData::<khora_lanes::script::ScriptRuntime>,
+        PhantomData::<khora_lanes::script::runtime::ScriptRuntime>,
     );
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::new;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::take_pending;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::set_pending;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::pending_len;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::set_last_report;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::last_report;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::report_unloaded;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::rate;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::observe;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::overhead;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::fuel_for;
-    let _: fn(
-        &mut khora_lanes::script_lane::runtime::ScriptRuntime,
-        String,
-        khora_script::Program,
-    ) = khora_lanes::script_lane::runtime::ScriptRuntime::add_program;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::reload;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::program;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::module_count;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::instance;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::new;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::take_pending;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::set_pending;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::pending_len;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::set_last_report;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::last_report;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::report_unloaded;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::rate;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::observe;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::overhead;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::fuel_for;
+    let _: fn(&mut khora_lanes::script::runtime::ScriptRuntime, String, khora_script::Program) =
+        khora_lanes::script::runtime::ScriptRuntime::add_program;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::reload;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::program;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::module_count;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::instance;
     #[allow(clippy::type_complexity)]
     let _: fn(
-        &khora_lanes::script_lane::runtime::ScriptRuntime,
+        &khora_lanes::script::runtime::ScriptRuntime,
         fn(khora_core::ecs::entity::EntityId) -> bool,
     ) -> Vec<(khora_core::ecs::entity::EntityId, String, String)> =
-        khora_lanes::script_lane::runtime::ScriptRuntime::departed;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::peek;
+        khora_lanes::script::runtime::ScriptRuntime::departed;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::peek;
     let _: fn(
-        &mut khora_lanes::script_lane::runtime::ScriptRuntime,
+        &mut khora_lanes::script::runtime::ScriptRuntime,
         fn(khora_core::ecs::entity::EntityId) -> bool,
-    ) = khora_lanes::script_lane::runtime::ScriptRuntime::retain_live;
-    let _ = khora_lanes::script_lane::runtime::ScriptRuntime::instance_count;
-    is_debug::<khora_lanes::script_lane::runtime::ScriptRuntime>();
-    is_default::<khora_lanes::script_lane::runtime::ScriptRuntime>();
+    ) = khora_lanes::script::runtime::ScriptRuntime::retain_live;
+    let _ = khora_lanes::script::runtime::ScriptRuntime::instance_count;
+    is_debug::<khora_lanes::script::runtime::ScriptRuntime>();
+    is_default::<khora_lanes::script::runtime::ScriptRuntime>();
 }
 
 // ---------------------------------------------------------------------------
@@ -482,11 +479,11 @@ mod paths_used_by_other_crates {
     use khora_lanes::render::LitForwardLane as _; // khora-agents
     use khora_lanes::render::RenderFamily as _; // khora-agents
     use khora_lanes::render::SimpleUnlitLane as _; // khora-agents
-    use khora_lanes::script_lane::runtime::INITIAL_RATE as _; // khora-agents
-    use khora_lanes::script_lane::BudgetedScriptLane as _; // khora-agents
-    use khora_lanes::script_lane::ScriptFamily as _; // khora-agents
-    use khora_lanes::script_lane::ScriptRunReport as _; // khora-agents
-    use khora_lanes::script_lane::ScriptRuntime as _; // khora-agents, khora-sdk
+    use khora_lanes::script::runtime::INITIAL_RATE as _; // khora-agents
+    use khora_lanes::script::BudgetedScriptLane as _; // khora-agents
+    use khora_lanes::script::ScriptFamily as _; // khora-agents
+    use khora_lanes::script::ScriptRunReport as _; // khora-agents
+    use khora_lanes::script::ScriptRuntime as _; // khora-agents, khora-sdk
     use khora_lanes::shadows::ShadowsFamily as _; // khora-agents
     use khora_lanes::shadows::ShadowsLane as _; // khora-agents
     use khora_lanes::skybox::SkyboxLane as _; // khora-agents
@@ -499,7 +496,7 @@ fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_lanes::overlay::GizmoLane::default; // khora-agents
     let _ = khora_lanes::overlay::GridLane::default; // khora-agents
     let _ = khora_lanes::overlay::WireframeLane::default; // khora-agents
-    let _ = khora_lanes::script_lane::ScriptRuntime::new; // khora-agents, khora-sdk
+    let _ = khora_lanes::script::ScriptRuntime::new; // khora-agents, khora-sdk
     let _ = khora_lanes::skybox::SkyboxLane::default; // khora-agents
     let _ = khora_lanes::ui::UiLane::default; // khora-agents
 }

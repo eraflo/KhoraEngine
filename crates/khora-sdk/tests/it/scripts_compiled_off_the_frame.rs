@@ -30,7 +30,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use khora_io::script::project_compiler::ScriptReload;
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::ScriptRuntime;
 use khora_sdk::khora_core::agent::gorna::AgentId;
 use khora_sdk::khora_core::ecs::entity::EntityId;
 use khora_sdk::khora_core::lane::Reserve;

@@ -28,7 +28,7 @@ use khora_core::scene::SerializationGoal;
 use khora_core::script::ScriptValue;
 use khora_data::ecs::{Transform, World};
 use khora_io::serialization::SerializationService;
-use khora_lanes::script_lane::Slow;
+use khora_lanes::script::Slow;
 
 use super::behavior_session::{attach, field, int, Project};
 use super::system_session::{the_holder, SystemSession};

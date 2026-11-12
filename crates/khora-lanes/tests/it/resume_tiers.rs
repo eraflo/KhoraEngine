@@ -24,7 +24,7 @@
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, PendingBody, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{run_behaviors, Body, Resumed, ScriptRunReport, ScriptRuntime};
+use khora_lanes::script::{run_behaviors, Body, Resumed, ScriptRunReport, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::vm::{Program, ResumeTier, Value};
 use khora_script::{check, compile, ergon_fn, lex, parse, Host};
@@ -154,7 +154,7 @@ fn recorded(report: &ScriptRunReport) -> ScriptSnapshot {
 }
 
 /// Every resume a set of reloads reported.
-fn reloaded_resumes(reports: &[khora_lanes::script_lane::ReloadReport]) -> Vec<Resumed> {
+fn reloaded_resumes(reports: &[khora_lanes::script::ReloadReport]) -> Vec<Resumed> {
     reports
         .iter()
         .flat_map(|report| report.resumes.iter().cloned())

@@ -22,7 +22,7 @@ use khora_script::arena::Persisted;
 use khora_script::native::Host;
 
 use super::{entity, runtime_of, MODULE};
-use crate::script_lane::{run_behaviors, ScriptRuntime};
+use crate::script::{run_behaviors, ScriptRuntime};
 
 /// A guard with two fields and two states.
 const GUARD: &str = r#"
@@ -323,9 +323,9 @@ fn a_starting_value_read_from_the_world_survives_a_save_unchanged() {
         .and_then(|program| program.layout("Guard"))
         .expect("declared")
         .clone();
-    let held = loaded.peek(entity(0), "Guard").map(|instance| {
-        crate::script_lane::persistence::snapshot_from_store(&layout, &instance.fields)
-    });
+    let held = loaded
+        .peek(entity(0), "Guard")
+        .map(|instance| crate::script::persistence::snapshot_from_store(&layout, &instance.fields));
 
     assert_eq!(
         held.as_ref().and_then(|snapshot| snapshot.field("home")),

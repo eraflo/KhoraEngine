@@ -24,7 +24,7 @@ use khora_script::native::Host;
 use khora_script::vm::Value;
 
 use super::{compile, damage_all, entity, health, runtime_with_guard, view_of, GUARD, MODULE};
-use crate::script_lane::{run_behaviors, ReloadReport, ScriptRuntime};
+use crate::script::{run_behaviors, ReloadReport, ScriptRuntime};
 
 /// The guard after an edit that inserts a field *above* `health` and adds one
 /// below — the case a positional carry-over gets wrong.
@@ -571,8 +571,7 @@ mod awaiting {
             .expect("a suspended sequence");
 
         let json = serde_json::to_string(&pending).expect("serialises");
-        let revived: crate::script_lane::Pending =
-            serde_json::from_str(&json).expect("deserialises");
+        let revived: crate::script::Pending = serde_json::from_str(&json).expect("deserialises");
 
         assert_eq!(revived, pending, "the round trip is lossless");
     }

@@ -27,8 +27,8 @@ use khora_script::native::Host;
 use khora_script::vm::Program;
 
 use super::{compile, entity, MODULE};
-use crate::script_lane::persistence::snapshot_from_store;
-use crate::script_lane::{run_behaviors, ScriptRuntime};
+use crate::script::persistence::snapshot_from_store;
+use crate::script::{run_behaviors, ScriptRuntime};
 
 /// The smallest frame that still gives the instance a turn.
 const ONE_UNIT: u64 = 1;

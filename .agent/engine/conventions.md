@@ -12,7 +12,7 @@ Code style and project conventions. Pairs with [`RULES.md`](./RULES.md).
 | Element | Convention | Example |
 |---|---|---|
 | Crates | `khora-{name}` (kebab-case) | `khora-core`, `khora-lanes` |
-| Modules | `snake_case` | `render_lane`, `service_registry` |
+| Modules | `snake_case` | `spatial_mixing`, `service_registry` |
 | Types & traits | `PascalCase` | `LaneBus`, `WgpuDevice` |
 | Functions & methods | `snake_case` | `begin_frame`, `with_capacity` |
 | Constants | `SCREAMING_SNAKE_CASE` | `MAX_LIGHTS`, `DEFAULT_BUDGET` |

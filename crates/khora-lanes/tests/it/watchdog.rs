@@ -23,7 +23,7 @@
 //! body starts in counts, the bounds below allow either.
 
 use khora_core::ecs::entity::EntityId;
-use khora_lanes::script_lane::{WATCHDOG_FAULT, WATCHDOG_WARN};
+use khora_lanes::script::{WATCHDOG_FAULT, WATCHDOG_WARN};
 
 use super::watchdog_stage::{entity, event, Stage, SLICE};
 

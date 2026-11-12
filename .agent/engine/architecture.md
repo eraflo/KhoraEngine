@@ -103,7 +103,7 @@ Dependencies flow downward only. `khora-core` is the foundation. `khora-editor`,
 | `khora-lanes` | Lanes | The typed lanes and their `LaneFamily`s: render (`SimpleUnlitLane`, `LitForwardLane`, `ForwardPlusLane`), `ShadowsLane`, overlays (`GridLane`, `WireframeLane`, `GizmoLane`), `SkyboxLane`, `UiLane`, `StandardPhysicsLane`, `SpatialMixingLane`, `BudgetedScriptLane`, loading (`RushLane`, `PacedLane`). |
 | `khora-infra` | Infra | Default backends: `WgpuRenderSystem`/`WgpuDevice`, `WinitWindow` + input, Rapier3D physics, CPAL audio, Taffy layout, GPU/Memory/Vram monitors, `SaaTrackingAllocator`, `DefaultMixBus`. Each implements a `khora-core` trait and is swappable. |
 | `khora-io` | Data | `AssetService`, `SerializationService` (scene save/load, game `save_game`/`load_game`, `AssetPrefabs`), VFS, `AssetIo`, `PackLoader`/`FileLoader`, decoders (glTF, OBJ, Symphonia audio, texture, font). |
-| `khora-agents` | Agents | The one `LaneAgent` (`agent/mod.rs`; `lane_agent` builds it, `run_frame` drives it without a scheduler in tests) and every family's `inventory::submit! { RegisteredAgent(register_agent! { … }) }` (renderer, shadows, grid, wireframe, gizmo, skybox, physics, ui, audio, script, loading). |
+| `khora-agents` | Agents | The one `LaneAgent` (`agent/mod.rs`; `lane_agent` builds it, `run_frame` drives it without a scheduler in tests) and the boot that builds one per family; the families' `inventory::submit! { RegisteredAgent(register_agent! { … }) }` live in `khora-lanes`, one `registration.rs` per family folder. |
 | `khora-sdk` | Public API | `EngineCore` + `run_winit` entry, `GameWorld` (safe ECS façade), `EngineApp` (with `provide`)/`PhaseProvider` traits, `WindowConfig`, `Vessel` + `spawn_plane`/`spawn_cube_at`/`spawn_sphere`, `prelude`. **The only crate game devs import.** |
 | `khora-editor` | Application | Editor app on the SDK — panels, gizmos, dock, hot-reload, command palette. |
 | `khora-runtime` | Application | Generic player binary stamped with packed assets; boots via `khora_sdk::run_default`. |
@@ -150,10 +150,10 @@ Rust component: its script declares `Guard` (authored) and its state companion `
 | DCC / GORNA / cost / governor | `crates/khora-control/src/dcc_service/`, `gorna/`, `cost_model.rs`; frame governor `crates/khora-control/src/governor/mod.rs` |
 | Substrate dispatcher | `crates/khora-control/src/substrate/` |
 | Render lanes / shaders | `crates/khora-lanes/src/render/`; shaders in `crates/khora-infra/src/graphics/shader/shaders/` (`pipelines/`, `lib/`), composed by `graphics/wgpu/pipeline_system/mod.rs` |
-| Shadow / overlay / skybox / ui / physics / audio / script lanes | `crates/khora-lanes/src/{audio,physics,skybox,shadows,ui,overlay/{grid,wireframe,gizmo},script_lane}/` — one folder per family |
+| Shadow / overlay / skybox / ui / physics / audio / script lanes | `crates/khora-lanes/src/{audio,loading,physics,render,script,shadows,skybox,ui,overlay/{grid,wireframe,gizmo}}/` — one folder per family: `family.rs`, its lanes, `registration.rs` |
 | wgpu backend | `crates/khora-infra/src/graphics/wgpu/` (`system/`, `device/`) |
 | Rapier / CPAL / Taffy | `crates/khora-infra/src/{physics/rapier,audio/cpal,ui/taffy}/` |
-| `LaneAgent` / family registrations | `crates/khora-agents/src/agent/`; a moved family registers in `crates/khora-lanes/src/<family>/registration.rs` (`audio`, `loading`, `physics`, `render`, `skybox`, `shadows`, `ui`, `overlay/*`), the others in `crates/khora-agents/src/script_agent/agent.rs` |
+| `LaneAgent` / family registrations | `crates/khora-agents/src/agent/` (the `LaneAgent`), `registered_agent.rs` (the boot); each family registers in `crates/khora-lanes/src/<family>/registration.rs` |
 | SDK entry / GameWorld / Vessel | `crates/khora-sdk/src/lib.rs`, `game_world.rs`, `vessel.rs` |
 | Sandbox app | `examples/sandbox/src/` (`game.rs`, `player.rs`, `assets.rs`) |
 

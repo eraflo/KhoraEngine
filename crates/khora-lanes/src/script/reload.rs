@@ -19,7 +19,7 @@ use khora_core::projection::Interest;
 use khora_core::script::{ComponentName, ScriptReads};
 use khora_script::reload::ScriptReload;
 
-use crate::script_lane::ScriptRuntime;
+use crate::script::ScriptRuntime;
 
 /// Applies the modules recompiled this frame, reporting what each cost.
 ///

@@ -36,7 +36,7 @@ use khora_data::ecs::{Name, TickPhase, Transform, World};
 use khora_data::flow::{Flow, FlowContext, ScriptFlow};
 use khora_io::script::declarations::{apply_declarations, DeclaredComponents};
 use khora_io::serialization::SerializationService;
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::ScriptRuntime;
 use khora_script::arena::Persisted;
 
 use super::behavior_session::{attach, compile, declared_in, field, int, Project};

@@ -453,8 +453,8 @@ fn populate(
     // is not strategy state. It also means anything that legitimately needs to see
     // live behaviors — an inspector, a debugger — can, without going
     // through the agent.
-    let script_runtime: Arc<Mutex<khora_lanes::script_lane::ScriptRuntime>> =
-        Arc::new(Mutex::new(khora_lanes::script_lane::ScriptRuntime::new()));
+    let script_runtime: Arc<Mutex<khora_lanes::script::ScriptRuntime>> =
+        Arc::new(Mutex::new(khora_lanes::script::ScriptRuntime::new()));
     runtime.services.insert(script_runtime);
 
     // What scripting needs — the engine's `AssetWatch`, the queues that

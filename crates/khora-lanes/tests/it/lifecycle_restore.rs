@@ -27,7 +27,7 @@ use khora_core::script::{EventQueue, InstanceLifecycle, ScriptEvent, ScriptSnaps
 use khora_core::Runtime;
 use khora_data::ecs::{Transform, World};
 use khora_data::flow::{Flow, FlowContext, ScriptFlow, ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{run_behaviors, ScriptRuntime};
+use khora_lanes::script::{run_behaviors, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::native::Host;
 use khora_script::vm::Value;

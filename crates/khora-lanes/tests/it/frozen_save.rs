@@ -25,7 +25,7 @@ use khora_core::script::{
     EventQueue, FrozenMachine, PendingBody, ScriptEvent, ScriptSnapshot, ScriptValue,
 };
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{run_behaviors, ScriptRunReport, ScriptRuntime};
+use khora_lanes::script::{run_behaviors, ScriptRunReport, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::dispatch::resolve_member;
 use khora_script::vm::{Program, Value};

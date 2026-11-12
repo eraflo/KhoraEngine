@@ -30,7 +30,7 @@ use khora_core::lane::level::Impact;
 use khora_core::script::{BehaviorWriteback, CommandBuffer};
 use khora_core::Runtime;
 use khora_data::flow::{PrefabCatalogView, ReservationView, ScriptView};
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::ScriptRuntime;
 
 use super::fixtures::{runtime_with, script_agent, script_registration};
 use crate::protocol::request;

@@ -25,7 +25,7 @@
 
 use khora_core::script::{EventQueue, ScriptEvent};
 use khora_data::flow::ScriptView;
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::ScriptRuntime;
 
 use super::scheduled_scene::{
     entity, float_of, frame, frame_with, int_of, runtime_of, view, PLENTY,

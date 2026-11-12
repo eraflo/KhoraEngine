@@ -161,10 +161,10 @@ fn wired() -> (Arc<Runtime>, Channel<InputEvent>, LaneAgent) {
     runtime
         .services
         .insert(std::sync::Arc::new(std::sync::Mutex::new(
-            khora_lanes::script_lane::ScriptRuntime::new(),
+            khora_lanes::script::ScriptRuntime::new(),
         ))
             as std::sync::Arc<
-                std::sync::Mutex<khora_lanes::script_lane::ScriptRuntime>,
+                std::sync::Mutex<khora_lanes::script::ScriptRuntime>,
             >);
     runtime.resources.insert(events.clone());
     runtime.resources.insert(Arc::new(Mutex::new(map)));

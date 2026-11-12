@@ -18,11 +18,11 @@
 //! beyond passes on to the behaviors after it. A ceiling, not a reservation:
 //! a behavior that spends less leaves the rest to the others.
 //!
-//! [`run_behaviors`](khora_lanes::script_lane::run_behaviors) never corrects
+//! [`run_behaviors`](khora_lanes::script::run_behaviors) never corrects
 //! the rate — only the lane, timing a whole run, does — so here it is the
 //! runtime's starting rate, read through [`ScriptRuntime::rate`].
 
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::ScriptRuntime;
 
 use super::scheduled_scene::{build, frame, int_of, per_turn, ran, runtime_of, view, PLENTY};
 

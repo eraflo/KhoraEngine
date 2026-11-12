@@ -39,7 +39,7 @@ use khora_core::lane::LaneReport;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::Runtime;
 use khora_data::flow::{PrefabCatalogView, ReservationView, ScriptView};
-use khora_lanes::script_lane::{BudgetedScriptLane, ScriptRuntime};
+use khora_lanes::script::{BudgetedScriptLane, ScriptRuntime};
 
 /// The longest time a run is lent: what "all the fuel it wants" buys.
 pub const ALL_THE_TIME: Duration = Duration::from_secs(1);

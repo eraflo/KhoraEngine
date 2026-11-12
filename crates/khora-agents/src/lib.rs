@@ -14,10 +14,11 @@
 
 //! # Khora Agents
 //!
-//! Intelligent wrappers that drive the Lanes with high-level logic.
+//! The one agent, [`LaneAgent`](agent::LaneAgent), and the boot that builds
+//! one for each family registered with `register_agent!`. The families
+//! themselves, their lanes and their registrations, live in `khora-lanes`.
 
 #![warn(missing_docs)]
 
 pub mod agent;
 pub mod registered_agent;
-pub mod script_agent;

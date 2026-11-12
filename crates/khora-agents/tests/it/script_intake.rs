@@ -42,7 +42,7 @@ use khora_data::ecs::{
 use khora_data::flow::{Flow, FlowContext, ScriptFlow};
 use khora_io::script::declarations::DeclaredComponents;
 use khora_io::script::project_compiler::ProjectCompiler;
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::ScriptRuntime;
 use khora_script::arena::Persisted;
 use khora_script::reload::ScriptReload;
 use khora_script::vm::Value;

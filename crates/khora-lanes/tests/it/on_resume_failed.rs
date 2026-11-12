@@ -22,7 +22,7 @@
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{run_behaviors, Body, ScriptRuntime};
+use khora_lanes::script::{run_behaviors, Body, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::vm::{Program, Value};
 use khora_script::{check, compile, lex, parse, Host};
@@ -189,7 +189,7 @@ fn each_body_an_edit_abandons_gets_its_own_on_resume_failed() {
 // ─── An owed `OnResumeFailed` across a save ──────────────────────────────────
 
 /// What a frame wrote back for the guard, as the scene records it.
-fn recorded(report: &khora_lanes::script_lane::ScriptRunReport) -> ScriptSnapshot {
+fn recorded(report: &khora_lanes::script::ScriptRunReport) -> ScriptSnapshot {
     report
         .state
         .first()

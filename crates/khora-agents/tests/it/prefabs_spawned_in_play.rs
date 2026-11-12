@@ -298,8 +298,8 @@ fn the_scripting_agent_hands_its_lane_the_prefab_catalog() {
         );
         let mut runtime = Runtime::default();
         runtime.services.insert(
-            Arc::new(Mutex::new(khora_lanes::script_lane::ScriptRuntime::new()))
-                as Arc<Mutex<khora_lanes::script_lane::ScriptRuntime>>,
+            Arc::new(Mutex::new(khora_lanes::script::ScriptRuntime::new()))
+                as Arc<Mutex<khora_lanes::script::ScriptRuntime>>,
         );
         runtime.resources.insert(reloads);
         let runtime = Arc::new(runtime);

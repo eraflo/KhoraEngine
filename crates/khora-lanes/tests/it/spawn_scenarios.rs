@@ -33,7 +33,7 @@ use khora_data::ecs::{Transform, World};
 use khora_data::flow::{
     Flow, FlowContext, ScriptArrival, ScriptFlow, ScriptInstance, ScriptProgram, ScriptView,
 };
-use khora_lanes::script_lane::{run_behaviors, ScriptRunReport, ScriptRuntime};
+use khora_lanes::script::{run_behaviors, ScriptRunReport, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::ergon_fn;
 use khora_script::native::Host;

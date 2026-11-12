@@ -30,7 +30,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot};
-use khora_lanes::script_lane::{ScriptRunReport, ScriptRuntime};
+use khora_lanes::script::{ScriptRunReport, ScriptRuntime};
 
 use super::saves::{loaded, through_record};
 use super::scheduled_scene::{

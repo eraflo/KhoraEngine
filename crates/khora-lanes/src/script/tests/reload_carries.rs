@@ -25,8 +25,8 @@ use khora_core::script::{EventQueue, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_script::native::Host;
 
 use super::{compile, entity, runtime_of, view_of, MODULE};
-use crate::script_lane::persistence::snapshot_from_store;
-use crate::script_lane::{run_behaviors, ScriptRuntime};
+use crate::script::persistence::snapshot_from_store;
+use crate::script::{run_behaviors, ScriptRuntime};
 
 /// A guard with a behavior-level countdown and two states, the second with
 /// data an event changes.

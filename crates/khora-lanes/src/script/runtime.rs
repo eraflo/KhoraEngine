@@ -27,7 +27,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::script_lane::ScriptRunReport;
+use crate::script::ScriptRunReport;
 use khora_core::ecs::entity::EntityId;
 use khora_core::script::EventQueue;
 use khora_script::arena::{Arena, PersistentStore};
@@ -226,7 +226,7 @@ pub struct ReloadReport {
     pub dropped: Vec<String>,
     /// Suspended bodies the edit took back below the exact tier, or
     /// abandoned.
-    pub resumes: Vec<crate::script_lane::report::Resumed>,
+    pub resumes: Vec<crate::script::report::Resumed>,
 }
 
 impl ReloadReport {

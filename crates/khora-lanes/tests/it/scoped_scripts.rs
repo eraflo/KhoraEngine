@@ -26,7 +26,7 @@ use khora_core::script::EventQueue;
 use khora_core::Runtime;
 use khora_data::ecs::{ComponentKey, Transform, World};
 use khora_data::flow::{Flow, FlowContext, ScriptFlow, ScriptView};
-use khora_lanes::script_lane::{run_behaviors, ScriptRuntime};
+use khora_lanes::script::{run_behaviors, ScriptRuntime};
 use khora_script::native::Host;
 
 use super::declared_behaviors::{attach, declared, key, write_back};

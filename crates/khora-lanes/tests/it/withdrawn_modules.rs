@@ -29,7 +29,7 @@ use khora_core::problems::{Problem, ProblemSeverity};
 use khora_core::projection::Interest;
 use khora_core::script::{ComponentName, ScriptCatalog, ScriptEvent, ScriptReads, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{take_in, ScriptRunReport, ScriptRuntime};
+use khora_lanes::script::{take_in, ScriptRunReport, ScriptRuntime};
 use khora_script::arena::Persisted;
 use khora_script::reload::ScriptReload;
 use khora_script::vm::{Program, Value};

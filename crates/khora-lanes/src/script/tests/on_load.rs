@@ -27,7 +27,7 @@ use khora_script::arena::Persisted;
 use khora_script::native::Host;
 
 use super::{compile, entity, runtime_of, MODULE};
-use crate::script_lane::{run_behaviors, Body, ScriptRunReport, ScriptRuntime};
+use crate::script::{run_behaviors, Body, ScriptRunReport, ScriptRuntime};
 
 /// Every hook the turn runs announces itself with an event, so the order of
 /// the events it raised is the order the turn ran them in. `OnLoad` carries

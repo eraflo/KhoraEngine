@@ -21,11 +21,5 @@ non_test_code_under_700_lines crates/khora-script/src/vm/mod.rs  # 828 non-test 
 # --- wgsl_only_in_shader_tree (T9) -------------------------------------------
 
 
-# --- every_agent_folder_has_agent_rs -----------------------------------------
-
-
-# --- lanes_mirror_agents (T2) ------------------------------------------------
-
-
 # --- no_duplicate_asset_files ------------------------------------------------
 

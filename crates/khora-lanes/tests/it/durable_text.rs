@@ -26,7 +26,7 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::lane::OutputDeck;
 use khora_core::script::{EventQueue, FrozenValue, ScriptEvent, ScriptSnapshot, ScriptValue};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::{ScriptRunReport, ScriptRuntime};
+use khora_lanes::script::{ScriptRunReport, ScriptRuntime};
 use khora_script::arena::{Arena, Object, Persisted};
 use khora_script::vm::{Program, ResumeTier, StrRef, Value};
 use khora_script::{check, compile, ergon_fn, lex, parse};

@@ -28,7 +28,7 @@ use khora_core::ecs::entity::EntityId;
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::{EngineContext, Runtime};
 use khora_data::flow::{ScriptInstance, ScriptProgram, ScriptView};
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::ScriptRuntime;
 
 use super::behavior_session::{compile, Project};
 use crate::script_family::fixtures::{publish_script_views, script_agent};

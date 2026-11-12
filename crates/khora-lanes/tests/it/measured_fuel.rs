@@ -23,8 +23,8 @@
 use std::time::Duration;
 
 use khora_core::Stopwatch;
-use khora_lanes::script_lane::runtime::INITIAL_RATE;
-use khora_lanes::script_lane::ScriptRuntime;
+use khora_lanes::script::runtime::INITIAL_RATE;
+use khora_lanes::script::ScriptRuntime;
 
 use super::scheduled_scene::{frame, runtime_of, view, PLENTY};
 

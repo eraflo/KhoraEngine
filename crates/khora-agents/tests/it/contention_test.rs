@@ -192,7 +192,7 @@ fn the_script_agent_locks_neither_engine_channel_nor_reaches_the_demand() {
     use khora_core::event::Channel;
     use khora_core::projection::Interest;
     use khora_core::script::{ScriptEvent, ScriptReads};
-    use khora_lanes::script_lane::ScriptRuntime;
+    use khora_lanes::script::ScriptRuntime;
     use khora_script::reload::ScriptReload;
     use std::sync::Mutex;
 

@@ -39,7 +39,7 @@ use khora_core::Runtime;
 use khora_data::ecs::{TickPhase, World};
 use khora_data::flow::{Flow, FlowContext, ScriptFlow, ScriptView};
 use khora_io::script::declarations::DeclaredComponents;
-use khora_lanes::script_lane::{take_in, ScriptRuntime};
+use khora_lanes::script::{take_in, ScriptRuntime};
 use khora_script::reload::ScriptReload;
 use khora_script::vm::Program;
 
