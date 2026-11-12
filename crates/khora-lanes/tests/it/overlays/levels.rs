@@ -21,7 +21,7 @@ use khora_core::agent::gorna::StrategyId;
 use khora_core::lane::level::{Impact, Level};
 use khora_core::lane::Lane;
 use khora_data::render::{GizmoPassSlot, GridPassSlot, WireframePassSlot};
-use khora_lanes::overlay_lane::{GizmoLane, GridLane, WireframeLane};
+use khora_lanes::overlay::{GizmoLane, GridLane, WireframeLane};
 
 use super::fixtures::{Gizmos, Grid, Overlay, OverlaySlot, Scene, Wireframe};
 

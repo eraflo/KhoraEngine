@@ -39,7 +39,6 @@ use std::marker::PhantomData;
 
 #[allow(unused_imports)]
 mod every_pub_mod {
-    use khora_agents::overlay_agent as _;
     use khora_agents::render_agent as _;
     use khora_agents::script_agent as _;
 }

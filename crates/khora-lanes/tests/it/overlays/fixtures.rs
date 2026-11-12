@@ -76,7 +76,7 @@ use khora_data::render::{
     WireframePassSlot, WireframeView,
 };
 use khora_data::AssetStore;
-use khora_lanes::overlay_lane::{GizmoLane, GridLane, WireframeLane};
+use khora_lanes::overlay::{GizmoLane, GridLane, WireframeLane};
 
 /// Each overlay lane's one level.
 pub const LEVEL: usize = 0;

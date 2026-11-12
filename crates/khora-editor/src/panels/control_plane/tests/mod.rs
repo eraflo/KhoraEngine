@@ -23,14 +23,14 @@ use khora_sdk::khora_core::lane::cost::PerDevice;
 mod inspector;
 
 /// **An agent is listed under the crate it was registered in.** The
-/// overlay agents, registered in `khora-agents`, are listed under
-/// `khora-agents`; a game's agent under its own crate; an agent whose
+/// overlay agents, registered in `khora-lanes`, are listed under
+/// `khora-lanes`; a game's agent under its own crate; an agent whose
 /// origin was never recorded under `other`.
 #[test]
 fn an_agent_is_listed_under_the_crate_it_was_registered_in() {
     assert_eq!(
-        crate_label(Some("khora_agents::overlay_agent::agent")),
-        "khora-agents"
+        crate_label(Some("khora_lanes::overlay::grid::registration")),
+        "khora-lanes"
     );
     assert_eq!(
         crate_label(Some("my_game::agents::weather")),

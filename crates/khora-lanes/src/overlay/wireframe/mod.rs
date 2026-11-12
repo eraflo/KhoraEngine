@@ -12,20 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The overlay families: the editor overlays drawn over the scene, each its
-//! own family with its own pass, composited in order — the ground grid, the
-//! wireframe, then the gizmos.
+//! The wireframe overlay family: its lane and its registration.
 
-mod gizmo;
-mod gizmo_family;
-mod grid;
-mod grid_family;
-mod wireframe;
-mod wireframe_family;
+mod family;
+mod lane;
+mod registration;
 
-pub use gizmo::{GizmoInputs, GizmoLane};
-pub use gizmo_family::*;
-pub use grid::{GridInputs, GridLane};
-pub use grid_family::*;
-pub use wireframe::{WireframeInputs, WireframeLane};
-pub use wireframe_family::*;
+pub use family::*;
+pub use lane::{WireframeInputs, WireframeLane};

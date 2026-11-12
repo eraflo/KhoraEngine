@@ -22,7 +22,7 @@ use khora_core::renderer::api::gpu_scene::Mesh;
 use khora_core::renderer::api::pipeline::enums::{CompareFunction, PrimitiveTopology};
 use khora_core::renderer::api::resource::{SampleCount, TextureFormat};
 use khora_data::render::{GridPassSlot, WireframePassSlot};
-use khora_lanes::overlay_lane::{GridLane, WireframeLane};
+use khora_lanes::overlay::{GridLane, WireframeLane};
 
 use super::fixtures::{
     sampled_target, target, Gizmos, GpuKind, Grid, Overlay, OverlaySlot, Scene, Wireframe,
@@ -344,7 +344,7 @@ fn assert_a_refused_pipeline_never_draws_with_the_previous_one<
 #[test]
 fn a_refused_overlay_pipeline_never_draws_with_the_previous_targets() {
     use khora_data::render::GizmoPassSlot;
-    use khora_lanes::overlay_lane::GizmoLane;
+    use khora_lanes::overlay::GizmoLane;
     assert_a_refused_pipeline_never_draws_with_the_previous_one::<GridLane, GridPassSlot>(
         GRID_SHADER,
     );

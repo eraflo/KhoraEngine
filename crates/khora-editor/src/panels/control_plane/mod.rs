@@ -98,8 +98,8 @@ impl AgentSnapshot {
 }
 
 /// The crate an agent comes from, as tools show it: the first segment of the
-/// module its family was registered in (`khora_agents::ui_agent` →
-/// `khora-agents`), or `other` for an agent registered without one.
+/// module its family was registered in (`khora_lanes::ui::registration` →
+/// `khora-lanes`), or `other` for an agent registered without one.
 fn crate_label(origin: Option<&str>) -> String {
     origin
         .and_then(|module| module.split("::").next())

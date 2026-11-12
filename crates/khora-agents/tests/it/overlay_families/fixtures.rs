@@ -26,7 +26,7 @@ use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 use khora_data::AssetStore;
-use khora_lanes::overlay_lane::{GizmoFamily, GridFamily, WireframeFamily};
+use khora_lanes::overlay::{GizmoFamily, GridFamily, WireframeFamily};
 
 use crate::shadows_family::fixtures::{Pipelines, SubmitLog};
 

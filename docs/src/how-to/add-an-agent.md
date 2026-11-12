@@ -82,9 +82,9 @@ between (the render family has `SimpleUnlitLane`, `LitForwardLane` and
 ## Step 3 — Register the family's agent
 
 One `register_agent!` (`crates/khora-core/src/agent/registration.rs`) builds the
-family's registration. The engine's live in `crates/khora-agents/src/` — one
-`<domain>_agent/agent.rs` per domain (the grid, wireframe and gizmo families
-share `overlay_agent`) — and are collected at link time. The skybox's,
+family's registration. The engine's live in each family's folder,
+`crates/khora-lanes/src/<family>/registration.rs`, and are collected at link
+time. The skybox's,
 from `crates/khora-lanes/src/skybox/registration.rs`:
 
 ```rust

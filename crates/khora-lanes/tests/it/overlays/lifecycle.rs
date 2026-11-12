@@ -19,7 +19,7 @@
 
 use khora_core::lane::Lane;
 use khora_data::render::{GizmoPassSlot, GridPassSlot, WireframePassSlot};
-use khora_lanes::overlay_lane::{GizmoLane, GridLane, WireframeLane};
+use khora_lanes::overlay::{GizmoLane, GridLane, WireframeLane};
 
 use super::fixtures::{assert_everything_released, GpuKind, Overlay, OverlaySlot, Scene};
 

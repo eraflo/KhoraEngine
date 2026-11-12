@@ -20,7 +20,7 @@
 
 pub mod audio;
 pub mod loading;
-pub mod overlay_lane;
+pub mod overlay;
 pub mod physics;
 pub mod render_lane;
 pub mod script_lane;

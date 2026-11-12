@@ -1393,8 +1393,8 @@ fn whole_crate_reexports_are_the_dependencies() {
         PhantomData::<khora_data::ecs::World>,
     );
     same_type(
-        PhantomData::<khora_sdk::khora_lanes::overlay_lane::GridLane>,
-        PhantomData::<khora_lanes::overlay_lane::GridLane>,
+        PhantomData::<khora_sdk::khora_lanes::overlay::GridLane>,
+        PhantomData::<khora_lanes::overlay::GridLane>,
     );
     same_type(
         PhantomData::<khora_sdk::winit::event_loop::EventLoop<()>>,
