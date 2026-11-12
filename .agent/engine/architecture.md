@@ -150,10 +150,10 @@ Rust component: its script declares `Guard` (authored) and its state companion `
 | DCC / GORNA / cost / governor | `crates/khora-control/src/dcc_service/`, `gorna/`, `cost_model.rs`; frame governor `crates/khora-control/src/governor/mod.rs` |
 | Substrate dispatcher | `crates/khora-control/src/substrate/` |
 | Render lanes / shaders | `crates/khora-lanes/src/render_lane/`; shaders in `crates/khora-infra/src/graphics/shader/shaders/` (`pipelines/`, `lib/`), composed by `graphics/wgpu/pipeline_system/mod.rs` |
-| Shadow / overlay / skybox / ui / physics / audio / script lanes | `crates/khora-lanes/src/{audio,physics,shadow_lane,overlay_lane,skybox_lane,ui_lane,script_lane}/` — one folder per family |
+| Shadow / overlay / skybox / ui / physics / audio / script lanes | `crates/khora-lanes/src/{audio,physics,skybox,shadow_lane,overlay_lane,ui_lane,script_lane}/` — one folder per family |
 | wgpu backend | `crates/khora-infra/src/graphics/wgpu/` (`system/`, `device/`) |
 | Rapier / CPAL / Taffy | `crates/khora-infra/src/{physics/rapier,audio/cpal,ui/taffy}/` |
-| `LaneAgent` / family registrations | `crates/khora-agents/src/agent/`; a moved family registers in `crates/khora-lanes/src/<family>/registration.rs` (`audio`, `loading`, `physics`), the others in `crates/khora-agents/src/{render,shadow,overlay,skybox,ui,script}_agent/agent.rs` |
+| `LaneAgent` / family registrations | `crates/khora-agents/src/agent/`; a moved family registers in `crates/khora-lanes/src/<family>/registration.rs` (`audio`, `loading`, `physics`, `skybox`), the others in `crates/khora-agents/src/{render,shadow,overlay,ui,script}_agent/agent.rs` |
 | SDK entry / GameWorld / Vessel | `crates/khora-sdk/src/lib.rs`, `game_world.rs`, `vessel.rs` |
 | Sandbox app | `examples/sandbox/src/` (`game.rs`, `player.rs`, `assets.rs`) |
 

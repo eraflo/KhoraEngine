@@ -38,10 +38,7 @@
 //! what the opaque pass drew. The pipeline is built for the target's formats,
 //! so the editor's viewport and the window each get the one they need.
 
-mod skybox_family;
-
-pub use skybox_family::*;
-
+use super::{SkyboxFamily, SkyboxOutputs};
 use std::time::Duration;
 
 use khora_core::agent::gorna::StrategyId;

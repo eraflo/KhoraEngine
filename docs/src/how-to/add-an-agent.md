@@ -68,7 +68,7 @@ pub struct AudioOutputs {
 Each output field names where it goes: `#[deck]` (an owned value a later phase
 reads from the `OutputDeck`), `#[pass]` (GPU commands for a pass slot, as the
 skybox family's `Pass<'f, SkyboxPassSlot>` in
-`crates/khora-lanes/src/skybox_lane/skybox_family.rs`) or `#[staged]` (what a
+`crates/khora-lanes/src/skybox/family.rs`) or `#[staged]` (what a
 background family hands on).
 
 ## Step 2 — Write its lanes
@@ -85,11 +85,11 @@ One `register_agent!` (`crates/khora-core/src/agent/registration.rs`) builds the
 family's registration. The engine's live in `crates/khora-agents/src/` — one
 `<domain>_agent/agent.rs` per domain (the grid, wireframe and gizmo families
 share `overlay_agent`) — and are collected at link time. The skybox's,
-from `crates/khora-agents/src/skybox_agent/agent.rs`:
+from `crates/khora-lanes/src/skybox/registration.rs`:
 
 ```rust
 use khora_core::agent::{AgentImportance, ExecutionPhase};
-use khora_lanes::skybox_lane::{SkyboxFamily, SkyboxLane};
+use khora_lanes::skybox::{SkyboxFamily, SkyboxLane};
 
 use crate::registered_agent::RegisteredAgent;
 

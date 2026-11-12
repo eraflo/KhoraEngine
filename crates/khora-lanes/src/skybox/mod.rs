@@ -12,14 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! The skybox family's agent: its registration, and nothing else.
-//!
-//! The engine boots one [`LaneAgent`](crate::agent::LaneAgent) from it,
-//! after the renderer in the OUTPUT phase. Each frame the agent lends the
-//! [`SkyboxLane`](khora_lanes::skybox_lane::SkyboxLane) the frame's target,
-//! opens the skybox pass on the device and commits it into
-//! [`SkyboxPassSlot`](khora_data::render::SkyboxPassSlot)
-//! (`writes(Color).reads(Depth)`), which the FrameGraph folds between the
-//! scene's opaque and blended passes.
+//! The skybox family: its lane, which draws the environment behind the scene,
+//! and its registration.
 
-mod agent;
+mod family;
+mod lane;
+mod registration;
+
+pub use family::*;
+pub use lane::*;

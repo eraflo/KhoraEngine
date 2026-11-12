@@ -68,7 +68,7 @@ mod every_pub_mod {
     use khora_lanes::script_lane::report as _;
     use khora_lanes::script_lane::runtime as _;
     use khora_lanes::shadow_lane as _;
-    use khora_lanes::skybox_lane as _;
+    use khora_lanes::skybox as _;
     use khora_lanes::ui_lane as _;
 }
 
@@ -306,14 +306,14 @@ fn module_shadow_lane_paths_still_resolve() {
 
 #[test]
 fn module_skybox_lane_paths_still_resolve() {
-    let _ = type_name::<khora_lanes::skybox_lane::SkyboxLane>();
-    is_debug::<khora_lanes::skybox_lane::SkyboxLane>();
-    is_default::<khora_lanes::skybox_lane::SkyboxLane>();
-    let _ = type_name::<khora_lanes::skybox_lane::SkyboxFamily>();
-    let _ = type_name::<khora_lanes::skybox_lane::SkyboxInputs<'static>>();
-    let _ = type_name::<khora_lanes::skybox_lane::SkyboxOutputs<'static>>();
-    is_typed_lane::<khora_lanes::skybox_lane::SkyboxLane>();
-    is_lane_family::<khora_lanes::skybox_lane::SkyboxFamily>();
+    let _ = type_name::<khora_lanes::skybox::SkyboxLane>();
+    is_debug::<khora_lanes::skybox::SkyboxLane>();
+    is_default::<khora_lanes::skybox::SkyboxLane>();
+    let _ = type_name::<khora_lanes::skybox::SkyboxFamily>();
+    let _ = type_name::<khora_lanes::skybox::SkyboxInputs<'static>>();
+    let _ = type_name::<khora_lanes::skybox::SkyboxOutputs<'static>>();
+    is_typed_lane::<khora_lanes::skybox::SkyboxLane>();
+    is_lane_family::<khora_lanes::skybox::SkyboxFamily>();
 }
 
 #[test]
@@ -497,7 +497,7 @@ mod paths_used_by_other_crates {
     use khora_lanes::script_lane::ScriptRuntime as _; // khora-agents, khora-sdk
     use khora_lanes::shadow_lane::ShadowsFamily as _; // khora-agents
     use khora_lanes::shadow_lane::ShadowsLane as _; // khora-agents
-    use khora_lanes::skybox_lane::SkyboxLane as _; // khora-agents
+    use khora_lanes::skybox::SkyboxLane as _; // khora-agents
     use khora_lanes::ui_lane::UiFamily as _; // khora-agents
     use khora_lanes::ui_lane::UiLane as _; // khora-agents
 }
@@ -508,6 +508,6 @@ fn associated_items_used_by_other_crates_still_resolve() {
     let _ = khora_lanes::overlay_lane::GridLane::default; // khora-agents
     let _ = khora_lanes::overlay_lane::WireframeLane::default; // khora-agents
     let _ = khora_lanes::script_lane::ScriptRuntime::new; // khora-agents, khora-sdk
-    let _ = khora_lanes::skybox_lane::SkyboxLane::default; // khora-agents
+    let _ = khora_lanes::skybox::SkyboxLane::default; // khora-agents
     let _ = khora_lanes::ui_lane::UiLane::default; // khora-agents
 }

@@ -15,10 +15,10 @@
 //! The skybox family's registration: the one `LaneAgent` the engine boots
 //! for it, its phase and its lane.
 
+use super::{SkyboxFamily, SkyboxLane};
 use khora_core::agent::{AgentImportance, ExecutionPhase};
-use khora_lanes::skybox_lane::{SkyboxFamily, SkyboxLane};
 
-use crate::registered_agent::RegisteredAgent;
+use khora_core::agent::RegisteredAgent;
 
 khora_script::inventory::submit! {
     RegisteredAgent(khora_core::register_agent! {
@@ -27,7 +27,7 @@ khora_script::inventory::submit! {
         phase: ExecutionPhase::OUTPUT,
         // Not debug viz: the background survives budget pressure.
         importance: AgentImportance::Important,
-        after: [crate::render_agent::RENDERER],
+        after: [crate::render_lane::RENDERER],
         fixed_step: None,
         lanes: [SkyboxLane],
     })

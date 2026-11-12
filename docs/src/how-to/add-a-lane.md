@@ -24,7 +24,7 @@ A lane implements `khora_core::lane::Lane` (`crates/khora-core/src/lane/contract
 The lane never sees the `World`, the whole deck or the whole runtime — only the
 fields its inputs name. The examples below come from the audio family's
 `SpatialMixingLane` (`crates/khora-lanes/src/audio/spatial_mixing.rs`) and
-the `SkyboxLane` (`crates/khora-lanes/src/skybox_lane/mod.rs`).
+the `SkyboxLane` (`crates/khora-lanes/src/skybox/mod.rs`).
 
 ## Step 1 — Declare the levels
 

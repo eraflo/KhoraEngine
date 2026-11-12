@@ -26,7 +26,7 @@ use khora_core::renderer::traits::PipelineSystem;
 use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 use khora_data::IblBaker;
-use khora_lanes::skybox_lane::SkyboxFamily;
+use khora_lanes::skybox::SkyboxFamily;
 
 use crate::shadows_family::fixtures::{Pipelines, SubmitLog};
 

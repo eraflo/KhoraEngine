@@ -88,3 +88,7 @@ pub struct LitInputs<'f> {
     #[resource]
     pub ibl: &'f IblBaker,
 }
+
+/// The scene renderer's name: the render family's agent, which other
+/// families of the frame run after.
+pub const RENDERER: AgentId = <RenderFamily as LaneFamily>::AGENT;

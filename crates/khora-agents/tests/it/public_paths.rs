@@ -42,7 +42,6 @@ mod every_pub_mod {
     use khora_agents::overlay_agent as _;
     use khora_agents::render_agent as _;
     use khora_agents::script_agent as _;
-    use khora_agents::skybox_agent as _;
     use khora_agents::ui_agent as _;
 }
 

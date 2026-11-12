@@ -64,7 +64,7 @@ use khora_core::renderer::GraphicsDevice;
 use khora_core::Runtime;
 use khora_data::render::{ExtractedView, PassDescriptor, RenderWorld, ResourceId, SkyboxPassSlot};
 use khora_data::{IblBaker, IblSource};
-use khora_lanes::skybox_lane::SkyboxLane;
+use khora_lanes::skybox::SkyboxLane;
 
 /// The skybox lane's one level.
 pub const LEVEL: usize = 0;

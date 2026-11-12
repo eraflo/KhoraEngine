@@ -25,7 +25,7 @@ pub mod physics;
 pub mod render_lane;
 pub mod script_lane;
 pub mod shadow_lane;
-pub mod skybox_lane;
+pub mod skybox;
 pub mod ui_lane;
 
 #[cfg(test)]
