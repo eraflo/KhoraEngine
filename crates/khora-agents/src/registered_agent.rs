@@ -24,7 +24,7 @@ use khora_core::agent::ExecutionPhase;
 use khora_core::gpu::DeviceCaps;
 use khora_core::Runtime;
 
-use crate::agent::{lane_agent, LaneAgent};
+use crate::lane_agent::{lane_agent, LaneAgent};
 
 /// Checks `registrations` together against `runtime` and `caps`, then builds
 /// one [`LaneAgent`] per registration, in order. A refused set builds none.

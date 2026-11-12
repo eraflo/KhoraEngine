@@ -25,7 +25,7 @@
 
 use std::time::Duration;
 
-use khora_agents::agent::{choose, lane_agent, Choice};
+use khora_agents::lane_agent::{choose, lane_agent, Choice};
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{Agent, AgentImportance, ExecutionPhase};

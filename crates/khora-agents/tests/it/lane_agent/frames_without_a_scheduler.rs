@@ -18,7 +18,7 @@
 
 use std::sync::Arc;
 
-use khora_agents::agent::{lane_agent, run_frame, LaneAgent};
+use khora_agents::lane_agent::{lane_agent, run_frame, LaneAgent};
 use khora_core::agent::gorna::protocol::Report;
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Agent;

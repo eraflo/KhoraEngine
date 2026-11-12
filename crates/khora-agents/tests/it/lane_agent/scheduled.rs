@@ -19,7 +19,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_agents::agent::LaneAgent;
+use khora_agents::lane_agent::LaneAgent;
 use khora_agents::registered_agent::lane_agents;
 use khora_control::{AgentRegistry, ExecutionScheduler};
 use khora_core::agent::gorna::{AgentId, StrategyId};

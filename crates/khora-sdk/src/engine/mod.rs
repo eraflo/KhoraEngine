@@ -72,7 +72,7 @@ pub struct EngineCore<A: EngineApp> {
     passes: Vec<&'static khora_data::render::PassRegistration>,
     /// The lane agents, typed, so their lanes are released when the engine
     /// stops.
-    lane_agents: Vec<Arc<std::sync::Mutex<khora_agents::agent::LaneAgent>>>,
+    lane_agents: Vec<Arc<std::sync::Mutex<khora_agents::lane_agent::LaneAgent>>>,
     /// How long the frame in progress has kept the host busy, reported to
     /// the DCC when the frame closes.
     frame_clock: frame_clock::FrameClock,
@@ -207,7 +207,7 @@ impl<A: EngineApp> EngineCore<A> {
             let mut agent = agent
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            khora_agents::agent::shut_down_lanes(&mut agent, &mut gpu);
+            khora_agents::lane_agent::shut_down_lanes(&mut agent, &mut gpu);
         }
         self.lane_agents.clear();
         if let Some(app) = self.app.as_mut() {

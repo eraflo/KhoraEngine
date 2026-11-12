@@ -28,7 +28,7 @@ family's agent chooses between via GORNA. Trait in `crates/khora-core/src/lane/c
    `crates/khora-agents/src/<domain>_agent/agent.rs`). A new family: see
    [`add-an-agent`](../add-an-agent/SKILL.md).
 6. Add `#[cfg(test)]` unit tests; drive the family end to end without the scheduler through
-   `khora_agents::agent::run_frame`.
+   `khora_agents::lane_agent::run_frame`.
 
 ## Rules
 - Never bypass the `Lane` abstraction for hot-path work. Never expose raw GPU handles. No `unwrap()` on GPU/IO.

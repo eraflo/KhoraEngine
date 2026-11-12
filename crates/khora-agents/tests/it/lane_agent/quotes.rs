@@ -35,7 +35,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_agents::agent::{lane_agent, LaneAgent, QUOTE_MAX_AGE};
+use khora_agents::lane_agent::{lane_agent, LaneAgent, QUOTE_MAX_AGE};
 use khora_core::agent::gorna::protocol::Envelope;
 use khora_core::agent::gorna::protocol::{Confidence, OfferRow};
 use khora_core::agent::gorna::{AgentId, StrategyId};

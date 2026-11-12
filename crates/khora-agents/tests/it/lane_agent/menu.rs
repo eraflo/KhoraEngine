@@ -20,7 +20,7 @@ use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_agents::agent::lane_agent;
+use khora_agents::lane_agent::lane_agent;
 use khora_core::agent::gorna::protocol::Epoch;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::{Agent, AgentImportance, DependencyKind, ExecutionPhase};

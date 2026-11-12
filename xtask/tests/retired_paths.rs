@@ -725,6 +725,191 @@ fn nothing_names_the_old_home_of_a_moved_family() {
     );
 }
 
+/// The old home of the `LaneAgent`, before its folder was named for it: the
+/// `agent` module of khora-agents, as a module path and as a source path.
+/// Each is matched as a whole name (`names_whole`), so the new home,
+/// `khora_agents::lane_agent` and `khora-agents/src/lane_agent/`, never
+/// matches.
+const RETIRED_LANE_AGENT_HOMES: &[&str] = &["khora_agents::agent", "khora-agents/src/agent"];
+
+/// The folder that held it.
+const RETIRED_LANE_AGENT_FOLDER: &str = "crates/khora-agents/src/agent";
+
+/// Whether `line` names `name` as a whole: an occurrence not followed by a
+/// letter, a digit or `_`. `khora_agents::agent::LaneAgent`,
+/// `use khora_agents::agent;` and `khora-agents/src/agent/mod.rs` name
+/// `khora_agents::agent` or `khora-agents/src/agent`;
+/// `khora_agents::agents` and `khora-agents/src/agent_x` do not.
+fn names_whole(line: &str, name: &str) -> bool {
+    line.match_indices(name).any(|(at, _)| {
+        !line[at + name.len()..]
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_alphanumeric() || c == '_')
+    })
+}
+
+/// The `LaneAgent`'s folder is named for it: `crates/khora-agents/src/agent/`
+/// is gone, and nothing in code, docs or the installer scripts names it, by
+/// module path (`khora_agents::agent::…`) or by source path
+/// (`crates/khora-agents/src/agent/…`). Read: the files
+/// `family_home_scanned_files` reads, and the build tool's tests but this
+/// file, which names the old home to forbid it.
+#[test]
+fn nothing_names_the_old_home_of_the_lane_agent() {
+    let root = repo_root();
+    let mut hits = Vec::new();
+    if root.join(RETIRED_LANE_AGENT_FOLDER).exists() {
+        hits.push(format!("{RETIRED_LANE_AGENT_FOLDER}/ still exists"));
+    }
+    let mut files = family_home_scanned_files(&root);
+    let mut xtask_tests = Vec::new();
+    walk(&root.join("xtask/tests"), &mut xtask_tests);
+    xtask_tests.retain(|path| {
+        rel(&root, path) != "xtask/tests/retired_paths.rs"
+            && path.extension().and_then(|e| e.to_str()) == Some("rs")
+    });
+    files.extend(xtask_tests);
+    files.sort();
+    files.dedup();
+    for file in files {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        for (number, line) in text.lines().enumerate() {
+            for retired in RETIRED_LANE_AGENT_HOMES {
+                if names_whole(line, retired) {
+                    hits.push(format!("{}:{}: `{retired}`", rel(&root, &file), number + 1));
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "the LaneAgent's old home is still named (it is `khora_agents::lane_agent`, \
+         `crates/khora-agents/src/lane_agent/`):\n  {}",
+        hits.join("\n  ")
+    );
+}
+
+/// The old home is matched as a whole name: every spelling of the old module
+/// and source path is caught, and the new home, which contains `agent` too,
+/// never is.
+#[test]
+fn the_old_lane_agent_home_is_told_from_the_new_one() {
+    let old = [
+        "use khora_agents::agent::LaneAgent;",
+        "use khora_agents::agent::{lane_agent, LaneAgent};",
+        "use khora_agents::agent;",
+        "`khora_agents::agent::run_frame`",
+        "see `crates/khora-agents/src/agent/mod.rs`",
+        "`khora-agents/src/agent/{layer,wake}.rs`",
+        "`khora-agents/src/agent/`",
+        "\"crates/khora-agents/src/agent\"",
+    ];
+    for line in old {
+        assert!(
+            RETIRED_LANE_AGENT_HOMES
+                .iter()
+                .any(|retired| names_whole(line, retired)),
+            "not caught: {line}"
+        );
+    }
+    let new = [
+        "use khora_agents::lane_agent::LaneAgent;",
+        "use khora_agents::lane_agent::{lane_agent, LaneAgent};",
+        "use khora_agents::lane_agent;",
+        "see `crates/khora-agents/src/lane_agent/mod.rs`",
+        "`khora-agents/src/lane_agent/`",
+        "use khora_core::agent::Agent;",
+        "`crates/khora-core/src/agent/registration.rs`",
+        "use khora_agents::registered_agent::lane_agents;",
+        "crates/khora-agents/src/lane_agent/agent.rs",
+    ];
+    for line in new {
+        assert!(
+            !RETIRED_LANE_AGENT_HOMES
+                .iter()
+                .any(|retired| names_whole(line, retired)),
+            "caught by mistake: {line}"
+        );
+    }
+}
+
+/// The LaneAgent's old folder is not named by a crate-relative path either:
+/// a line about khora-agents (it names `khora-agents` or `khora_agents`, and
+/// not khora-core, whose own `agent/` folder is current) never names a bare
+/// `agent/…` path, such as `agent/mod.rs` in the crate map.
+#[test]
+fn nothing_names_the_old_lane_agent_folder_relative_to_its_crate() {
+    let root = repo_root();
+    let mut hits = Vec::new();
+    for file in family_home_scanned_files(&root) {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        for (number, line) in text.lines().enumerate() {
+            let about_agents = line.contains("khora-agents") || line.contains("khora_agents");
+            let about_core = line.contains("khora-core") || line.contains("khora_core");
+            if !about_agents || about_core {
+                continue;
+            }
+            let bare = line.match_indices("agent/").any(|(at, _)| {
+                !line[..at]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_ascii_alphanumeric() || "_-/".contains(c))
+            });
+            if bare {
+                hits.push(format!("{}:{}", rel(&root, &file), number + 1));
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "a line about khora-agents names its old `agent/` folder (it is `lane_agent/`):\n  {}",
+        hits.join("\n  ")
+    );
+}
+
+/// The integration-test trees whose tests were regrouped by family.
+const FAMILY_TEST_ROOTS: &[&str] = &["khora-agents/tests/it/", "khora-lanes/tests/it/"];
+
+/// A family test cited by path is cited where it lives: every
+/// `khora-agents/tests/it/…` or `khora-lanes/tests/it/…` path the files
+/// `family_home_scanned_files` reads names a file or folder that exists, so
+/// none still points at the home a test had before the tests were grouped by
+/// family (`tests/it/overlays/`, `tests/it/audio_family.rs`, …).
+#[test]
+fn cited_family_test_paths_name_where_the_tests_live() {
+    let root = repo_root();
+    let mut hits = Vec::new();
+    for file in family_home_scanned_files(&root) {
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        for (number, line) in text.lines().enumerate() {
+            for tree in FAMILY_TEST_ROOTS {
+                for (at, _) in line.match_indices(tree) {
+                    let cited: String = line[at..]
+                        .chars()
+                        .take_while(|c| c.is_ascii_alphanumeric() || "_-./".contains(*c))
+                        .collect();
+                    let cited = cited.trim_end_matches(['.', '/']);
+                    if !root.join("crates").join(cited).exists() {
+                        hits.push(format!("{}:{}: `{cited}`", rel(&root, &file), number + 1));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "family tests cited at a path that no longer exists:\n  {}",
+        hits.join("\n  ")
+    );
+}
+
 /// Dead items whose names are too common to forbid everywhere: the file or
 /// directory they lived in, the text that declared them, and what they were.
 /// The `allow(dead_code)` that hid them goes with them.

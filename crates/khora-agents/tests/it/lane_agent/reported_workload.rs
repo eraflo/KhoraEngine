@@ -18,7 +18,7 @@
 
 use std::sync::Arc;
 
-use khora_agents::agent::lane_agent;
+use khora_agents::lane_agent::lane_agent;
 use khora_core::agent::gorna::StrategyId;
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::OutputDeck;

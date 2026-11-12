@@ -16,7 +16,7 @@
 //! it saw before it was swapped out says nothing about the envelope it runs
 //! under now.
 
-use khora_agents::agent::{lane_agent, LaneAgent};
+use khora_agents::lane_agent::{lane_agent, LaneAgent};
 use khora_core::agent::gorna::protocol::Epoch;
 use khora_core::agent::{Agent, Wake};
 use khora_core::gpu::DeviceCaps;

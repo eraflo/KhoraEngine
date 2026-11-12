@@ -24,7 +24,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use khora_agents::agent::{choose, lane_agent, Choice, LaneAgent};
+use khora_agents::lane_agent::{choose, lane_agent, Choice, LaneAgent};
 use khora_core::agent::gorna::protocol::{Epoch, Offer};
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::registration::AgentRegistration;

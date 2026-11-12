@@ -250,7 +250,7 @@ agent with `lane_agent` and drive it with `run_frame`. Add to `heartbeat.rs`:
 mod tests {
     use std::sync::Arc;
 
-    use khora_agents::agent::{lane_agent, run_frame};
+    use khora_agents::lane_agent::{lane_agent, run_frame};
     use khora_core::agent::Agent;
     use khora_core::gpu::DeviceCaps;
     use khora_core::lane::io::FrameId;

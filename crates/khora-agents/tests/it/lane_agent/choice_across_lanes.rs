@@ -20,7 +20,7 @@
 
 use std::time::Duration;
 
-use khora_agents::agent::{choose, Choice};
+use khora_agents::lane_agent::{choose, Choice};
 use khora_core::agent::gorna::protocol::Envelope;
 use khora_core::agent::gorna::StrategyId;
 use khora_core::lane::cost::{Cost, PerDevice};

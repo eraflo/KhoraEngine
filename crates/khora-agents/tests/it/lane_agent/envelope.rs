@@ -30,7 +30,7 @@ use std::any::TypeId;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use khora_agents::agent::{lane_agent, LaneAgent};
+use khora_agents::lane_agent::{lane_agent, LaneAgent};
 use khora_core::agent::gorna::protocol::{Confidence, Envelope, Epoch};
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::registration::AgentRegistration;

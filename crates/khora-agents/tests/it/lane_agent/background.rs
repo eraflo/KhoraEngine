@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use khora_agents::agent::lane_agent;
+use khora_agents::lane_agent::lane_agent;
 use khora_control::{AgentRegistry, ExecutionScheduler};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;

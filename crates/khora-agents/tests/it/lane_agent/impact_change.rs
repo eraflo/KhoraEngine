@@ -20,7 +20,7 @@
 
 use std::time::Duration;
 
-use khora_agents::agent::lane_agent;
+use khora_agents::lane_agent::lane_agent;
 use khora_core::agent::gorna::protocol::Epoch;
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::registration::AgentRegistration;

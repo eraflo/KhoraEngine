@@ -19,7 +19,7 @@
 
 use std::sync::Arc;
 
-use khora_agents::agent::lane_agent;
+use khora_agents::lane_agent::lane_agent;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;
 use khora_core::agent::{AgentImportance, ExecutionPhase};
@@ -37,7 +37,7 @@ use khora_core::lane::{LaneBus, LaneError, OutputDeck};
 use khora_core::renderer::api::command::CommandBufferId;
 use khora_core::renderer::traits::PipelineSystem;
 
-use crate::shadows_family::fixtures::{run_once, shadows_runtime, SubmitLog};
+use crate::families::shadows::fixtures::{run_once, shadows_runtime, SubmitLog};
 
 /// A pass slot holding the buffer its pass finished into.
 #[derive(Debug, Default, PartialEq)]

@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::ThreadId;
 use std::time::{Duration, Instant};
 
-use khora_agents::agent::{lane_agent, LaneAgent};
+use khora_agents::lane_agent::{lane_agent, LaneAgent};
 use khora_control::{AgentRegistry, ExecutionScheduler};
 use khora_core::agent::gorna::protocol::{Allocation, Epoch, Report, Trigger};
 use khora_core::agent::gorna::{AgentId, StrategyId};
@@ -204,7 +204,7 @@ fn driven(agent: &mut LaneAgent, frame: u64, runtime: &Arc<Runtime>, deck: &mut 
     let permit = agent.contention();
     let id = agent.id();
     let mut context = EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
-    khora_agents::agent::run_frame(agent, &mut context);
+    khora_agents::lane_agent::run_frame(agent, &mut context);
 }
 
 /// The lane `deck` holds a record of.
@@ -546,7 +546,7 @@ fn under_the_scheduler_the_first_layer_is_prepared_in_place_and_a_switch_off_the
 #[test]
 fn a_switch_prepared_off_the_frame_builds_on_the_runtimes_device() {
     use super::fixtures::prepare_waiting;
-    use crate::shadows_family::fixtures::{
+    use crate::families::shadows::fixtures::{
         bus_with_a_sun, shadow_agent, shadows_runtime, SubmitLog,
     };
     use khora_core::renderer::api::shadow::ShadowFrame;
@@ -651,7 +651,7 @@ fn an_aged_quote_wakes_the_agent_once_while_a_switch_is_prepared() {
     run(&mut agent, 1, &runtime, &mut deck);
     assert_eq!(recorded_lane(&deck), Some("dear"));
 
-    std::thread::sleep(khora_agents::agent::QUOTE_MAX_AGE + Duration::from_millis(100));
+    std::thread::sleep(khora_agents::lane_agent::QUOTE_MAX_AGE + Duration::from_millis(100));
     agent.apply(Epoch(2), &host_envelope(150), None, None);
     let mut aged = Vec::new();
     for frame in 2..10 {

@@ -13,7 +13,7 @@ should NOT be agents** — only those that negotiate a GORNA budget. Non-negotia
 
 > **A new subsystem is a family, never a new agent type** (RULES §8): its lanes, a `LaneFamily`, and one
 > `register_agent!` registration. Its agent is always the one `LaneAgent`
-> (`crates/khora-agents/src/agent/mod.rs`), built from the registration. `LaneAgent` is the only
+> (`crates/khora-agents/src/lane_agent/mod.rs`), built from the registration. `LaneAgent` is the only
 > implementor of `Agent` outside tests (xtask `only_lane_agent_implements_agent`).
 
 ## Steps
@@ -48,9 +48,9 @@ should NOT be agents** — only those that negotiate a GORNA budget. Non-negotia
 4. **Nothing else.** The agent's contention is built from its lanes' typed inputs and outputs; the
    scheduler runs the installed layer every frame and wakes the agent only for an event. An app never
    registers an agent (`EngineApp::provide` installs runtime entries only).
-5. **Test the family without the scheduler** through `khora_agents::agent::run_frame` (build the agent with
-   `lane_agent(registration, &caps)`, the registration found in `registered_agents()`); integration tests go in `crates/khora-agents/tests/it/` (one module per
-   family, e.g. `audio_family.rs`).
+5. **Test the family without the scheduler** through `khora_agents::lane_agent::run_frame` (build the agent with
+   `lane_agent(registration, &caps)`, the registration found in `registered_agents()`); integration tests go in `crates/khora-agents/tests/it/families/<family>/`
+   (e.g. `families/audio/`); the lane's own tests in `crates/khora-lanes/tests/it/<family>/`.
 
 ## Hard rules
 - Never write a new agent type, and never give an agent more than one family.

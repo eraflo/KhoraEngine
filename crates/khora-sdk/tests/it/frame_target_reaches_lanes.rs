@@ -22,7 +22,7 @@
 
 use std::sync::Arc;
 
-use khora_agents::agent::{lane_agent, LaneAgent};
+use khora_agents::lane_agent::{lane_agent, LaneAgent};
 use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_sdk::khora_core::agent::registration::AgentRegistration;
 use khora_sdk::khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
@@ -229,7 +229,7 @@ fn run_once(agent: &mut LaneAgent, runtime: &Arc<Runtime>) -> OutputDeck {
     let id = agent.id();
     let mut context =
         EngineContext::for_agent(Arc::clone(runtime), &bus, &mut deck, &permit, Some(id));
-    khora_agents::agent::run_frame(agent, &mut context);
+    khora_agents::lane_agent::run_frame(agent, &mut context);
     deck
 }
 

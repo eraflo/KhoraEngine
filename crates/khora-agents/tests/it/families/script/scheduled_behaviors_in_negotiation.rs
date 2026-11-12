@@ -1,0 +1,227 @@
+// Copyright 2025 eraflo
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! **GORNA hears the scheduling attributes** through the script lane's
+//! quotes: its whole level weighs a rate-limited instance by the share of
+//! frames it runs (`min(1, rate × frame delta)` of an instance, the frame
+//! being the view's); its critical level is priced at the lane's overhead and
+//! what the critical behaviors need, and nothing more when none is critical;
+//! its report names the critical behaviors a frame deferred; and a frame a
+//! rate-limited instance skips is not a deferral, so the run is wholly done.
+
+use std::time::Duration;
+
+use khora_core::agent::gorna::StrategyId;
+use khora_data::ecs::{Transform, World};
+
+use super::behavior_session::{attach, Project, Session, PLENTY};
+use crate::families::script::fixtures::price_of;
+
+/// A frame of 1/60 s.
+const FRAME: f32 = 1.0 / 60.0;
+
+const UNRATED: Project = &[(
+    "game/tick.erg",
+    "behavior Tick { int ticks = 0; void Update(float dt) { ticks += 1; } }",
+)];
+
+const TEN_HERTZ: Project = &[(
+    "game/tick.erg",
+    "[Rate(10hz)]
+     behavior Tick { int ticks = 0; void Update(float dt) { ticks += 1; } }",
+)];
+
+const HUNDRED_TWENTY_HERTZ: Project = &[(
+    "game/tick.erg",
+    "[Rate(120hz)]
+     behavior Tick { int ticks = 0; void Update(float dt) { ticks += 1; } }",
+)];
+
+/// A session over `count` entities holding `behavior`.
+fn session_of(project: Project, behavior: &str, count: usize) -> Session {
+    let mut session = Session::new(World::new(), project);
+    for _ in 0..count {
+        let entity = session.world.spawn(Transform::identity());
+        attach(&mut session.world, entity, behavior, &[]);
+    }
+    session
+}
+
+/// The time the lane quotes `strategy` at, on the last 1/60-s frame's view.
+fn estimate(session: &mut Session, strategy: StrategyId) -> Duration {
+    price_of(&session.quote(), strategy).time.cpu
+}
+
+/// The work the whole level prices for sixty `Tick`s of `project` after
+/// three frames: its time past the lane's measured overhead, in the fuel
+/// that time buys at the measured rate — what the sessions' own timings
+/// cannot tell apart.
+fn balanced_work_for_sixty(project: Project) -> f64 {
+    let mut session = session_of(project, "Tick", 60);
+    for _ in 0..3 {
+        session.frame(FRAME);
+    }
+    let balanced = estimate(&mut session, StrategyId::Balanced);
+    let past = balanced.saturating_sub(session.scripts.overhead());
+    past.as_secs_f64() * 1_000.0 * session.scripts.rate()
+}
+
+/// **A rate-limited instance is priced as the share of frames it runs.**
+/// Sixty `Tick`s at 10 Hz in 1/60-s frames run a sixth of the frames each:
+/// the work the whole level prices is at most a third of sixty unrated ones'.
+/// At 120 Hz — more than once a frame — an instance counts as one, and the
+/// work is the unrated one.
+#[test]
+fn a_rate_limited_instance_is_priced_as_the_share_of_frames_it_runs() {
+    let unrated = balanced_work_for_sixty(UNRATED);
+    let ten_hertz = balanced_work_for_sixty(TEN_HERTZ);
+    let fast = balanced_work_for_sixty(HUNDRED_TWENTY_HERTZ);
+    assert!(unrated > 0.0, "set-up: sixty turns are priced at some work");
+
+    assert!(
+        ten_hertz * 3.0 <= unrated,
+        "sixty at 10 Hz in 1/60-s frames are about ten instances' work: {ten_hertz} vs {unrated} unrated"
+    );
+    assert!(
+        (fast - unrated).abs() <= unrated * 0.01 + 1.0,
+        "a rate above the frame rate counts each instance once: {fast} vs {unrated}"
+    );
+}
+
+/// `Heavy`, critical: a loop of three hundred a turn.
+const CRITICAL_HEAVY: Project = &[(
+    "game/heavy.erg",
+    "[Critical]
+     behavior Heavy { int ticks = 0;
+     void Update(float dt) { int n = 0; while (n < 300) { n += 1; } ticks += 1; } }",
+)];
+
+/// The same `Heavy`, not critical.
+const PLAIN_HEAVY: Project = &[(
+    "game/heavy.erg",
+    "behavior Heavy { int ticks = 0;
+     void Update(float dt) { int n = 0; while (n < 300) { n += 1; } ticks += 1; } }",
+)];
+
+/// Four `Heavy`s of `project` after three frames with plenty of fuel: the
+/// critical level's quote, the lane's measured overhead, and what the frame's
+/// spending costs at the measured rate.
+fn low_power_and_last_cost(project: Project) -> (Duration, Duration, Duration) {
+    let mut session = session_of(project, "Heavy", 4);
+    for _ in 0..3 {
+        session.frame(FRAME);
+    }
+    let spent = session.scripts.last_report().spent;
+    let rate = session.scripts.rate();
+    let cost = Duration::from_secs_f64(spent as f64 / rate / 1_000.0);
+    let overhead = session.scripts.overhead();
+    (estimate(&mut session, StrategyId::LowPower), overhead, cost)
+}
+
+/// **The critical level covers what the critical behaviors need.** Four
+/// `[Critical]` `Heavy`s spend a few thousand instructions a frame; LowPower
+/// is the lane's overhead and that demand, converted at the measured rate.
+/// The same four without `[Critical]` are not floored at their spending:
+/// their LowPower is the overhead alone.
+#[test]
+fn low_power_is_floored_at_what_the_critical_behaviors_spent() {
+    let (critical_low, critical_overhead, critical_cost) = low_power_and_last_cost(CRITICAL_HEAVY);
+    let (plain_low, plain_overhead, plain_cost) = low_power_and_last_cost(PLAIN_HEAVY);
+
+    assert!(
+        critical_low.as_secs_f64()
+            >= critical_overhead.as_secs_f64() + critical_cost.as_secs_f64() * 0.99,
+        "LowPower {critical_low:?} covers the overhead {critical_overhead:?} and the critical behaviors' {critical_cost:?}"
+    );
+    assert!(
+        plain_low < plain_overhead + plain_cost,
+        "unfloored, LowPower {plain_low:?} is below the overhead {plain_overhead:?} and what the frame spent ({plain_cost:?})"
+    );
+    assert!(
+        plain_low.abs_diff(plain_overhead) <= Duration::from_micros(1),
+        "with nothing critical, LowPower {plain_low:?} is the overhead {plain_overhead:?}"
+    );
+}
+
+const VITAL_AND_PLAIN: Project = &[(
+    "game/crew.erg",
+    "[Critical]
+     behavior Vital { int ticks = 0; void Update(float dt) { ticks += 1; } }
+     behavior Plain { int ticks = 0; void Update(float dt) { ticks += 1; } }",
+)];
+
+/// **The lane's report names the critical behaviors a frame deferred.**
+/// Seven `Vital`s, critical, and four `Plain`s; a frame with no fuel defers
+/// all eleven. The report's message names `Vital`, the deferral the game
+/// cannot do without.
+#[test]
+fn the_lane_report_names_the_critical_behaviors_deferred() {
+    let mut session = Session::new(World::new(), VITAL_AND_PLAIN);
+    for (behavior, count) in [("Vital", 7), ("Plain", 4)] {
+        for _ in 0..count {
+            let entity = session.world.spawn(Transform::identity());
+            attach(&mut session.world, entity, behavior, &[]);
+        }
+    }
+    session.frame(FRAME);
+    session.frame(FRAME);
+
+    session.fuel = 0;
+    session.frame(FRAME);
+    session.fuel = PLENTY;
+    assert_eq!(
+        session.scripts.last_report().deferred,
+        11,
+        "set-up: {:?}",
+        session.scripts.last_report()
+    );
+
+    let message = session
+        .lane_report
+        .clone()
+        .and_then(|report| report.message)
+        .unwrap_or_default();
+    assert!(
+        message.contains("Vital"),
+        "the report names the critical behavior deferred: {message:?}"
+    );
+}
+
+/// **A frame a rate-limited instance skips is not a deferral.** Twelve
+/// `Tick`s at 10 Hz in 1/60-s frames with plenty of fuel: most frames run
+/// only some of them, none is deferred, and every frame's run is wholly done.
+#[test]
+fn rate_skipped_frames_leave_the_run_wholly_done() {
+    let mut session = session_of(TEN_HERTZ, "Tick", 12);
+    for _ in 0..12 {
+        session.frame(FRAME);
+    }
+
+    let mut skipped_some = false;
+    for at in 0..12 {
+        session.frame(FRAME);
+        let report = session.scripts.last_report().clone();
+        assert_eq!(report.deferred, 0, "frame {at}: {report:?}");
+        skipped_some |= report.completed < 12;
+        let lane = session.lane_report.clone().expect("the frame ran the lane");
+        assert_eq!(
+            lane.done, 1.0,
+            "frame {at}: a skipped turn is not a deferral — {lane:?}"
+        );
+    }
+    assert!(
+        skipped_some,
+        "at 10 Hz in 1/60-s frames some frames skip some instances"
+    );
+}

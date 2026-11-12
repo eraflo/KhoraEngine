@@ -27,7 +27,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 use std::time::Duration;
 
-use khora_agents::agent::{lane_agent, LaneAgent};
+use khora_agents::lane_agent::{lane_agent, LaneAgent};
 use khora_core::agent::gorna::protocol::{Envelope, Epoch};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;

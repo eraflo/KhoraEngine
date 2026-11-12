@@ -23,22 +23,22 @@
 //! Nothing here needs a GPU: `offer` runs on the DCC thread against a stub
 //! scene.
 
-use khora_agents::agent::lane_agent;
+use khora_agents::lane_agent::lane_agent;
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::Agent;
 use khora_core::gpu::DeviceCaps;
 
-use crate::audio_family::audio_registration;
-use crate::overlay_families::fixtures::{
+use crate::families::audio::audio_registration;
+use crate::families::overlay::fixtures::{
     agent_of, gizmo_registration, grid_registration, wireframe_registration,
 };
-use crate::physics_family::fixtures::physics_agent;
+use crate::families::physics::fixtures::physics_agent;
+use crate::families::render::fixtures::{render_agent, EVERY_CAP};
+use crate::families::script::fixtures::script_agent;
+use crate::families::shadows::fixtures::{shadow_agent, LEVEL_MEMORY};
+use crate::families::skybox::fixtures::skybox_agent;
+use crate::families::ui::fixtures::ui_agent;
 use crate::protocol::request;
-use crate::render_family::fixtures::{render_agent, EVERY_CAP};
-use crate::script_family::fixtures::script_agent;
-use crate::shadows_family::fixtures::{shadow_agent, LEVEL_MEMORY};
-use crate::skybox_family::fixtures::skybox_agent;
-use crate::ui_family::fixtures::ui_agent;
 
 const MIB: u64 = 1024 * 1024;
 

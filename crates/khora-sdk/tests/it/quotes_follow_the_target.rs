@@ -25,7 +25,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use khora_agents::agent::{lane_agent, LaneAgent};
+use khora_agents::lane_agent::{lane_agent, LaneAgent};
 use khora_sdk::khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_sdk::khora_core::agent::registration::AgentRegistration;
 use khora_sdk::khora_core::agent::{Agent, AgentImportance, ExecutionPhase};
@@ -241,7 +241,7 @@ fn run(agent: &mut LaneAgent, frame: u64, runtime: &Arc<Runtime>, deck: &mut Out
     let permit = agent.contention();
     let id = agent.id();
     let mut context = EngineContext::for_agent(Arc::clone(runtime), &bus, deck, &permit, Some(id));
-    khora_agents::agent::run_frame(agent, &mut context);
+    khora_agents::lane_agent::run_frame(agent, &mut context);
 }
 
 /// A 640×480 target in `color`, with a 32-bit float depth.

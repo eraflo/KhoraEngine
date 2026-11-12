@@ -14,11 +14,11 @@
 
 //! # Khora Agents
 //!
-//! The one agent, [`LaneAgent`](agent::LaneAgent), and the boot that builds
+//! The one agent, [`LaneAgent`](lane_agent::LaneAgent), and the boot that builds
 //! one for each family registered with `register_agent!`. The families
 //! themselves, their lanes and their registrations, live in `khora-lanes`.
 
 #![warn(missing_docs)]
 
-pub mod agent;
+pub mod lane_agent;
 pub mod registered_agent;

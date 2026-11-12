@@ -21,7 +21,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use khora_agents::agent::{lane_agent, LaneAgent};
+use khora_agents::lane_agent::{lane_agent, LaneAgent};
 use khora_control::gorna::{decide, Bid, Round};
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, Trigger};
 use khora_core::agent::gorna::{AdaptationMode, AgentHints, Planning, StrategyId};

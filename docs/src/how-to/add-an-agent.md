@@ -17,7 +17,7 @@ every frame.
 > (`AssetService`, `EcsMaintenance`) or a `DataSystem`, not in a family.
 
 > **Never write an agent type.** A family is its lanes and one registration; its
-> agent is always `LaneAgent` (`crates/khora-agents/src/agent/mod.rs`), built by
+> agent is always `LaneAgent` (`crates/khora-agents/src/lane_agent/mod.rs`), built by
 > `lane_agent`. An agent implements only `Agent` and has no `execute`: the
 > scheduler runs the family's place, and wakes the agent only for an event.
 
@@ -199,12 +199,12 @@ switch lands at the next frame boundary. An app does this in
 
 Drive the family in a test without the scheduler: build its agent with
 `lane_agent` and run one frame with `run_frame`. From
-`crates/khora-agents/tests/it/audio_family.rs`, simplified:
+`crates/khora-agents/tests/it/families/audio/mod.rs`, simplified:
 
 ```rust
 use std::sync::Arc;
 
-use khora_agents::agent::{lane_agent, run_frame};
+use khora_agents::lane_agent::{lane_agent, run_frame};
 use khora_core::agent::Agent;
 use khora_core::gpu::DeviceCaps;
 use khora_core::lane::io::FrameId;

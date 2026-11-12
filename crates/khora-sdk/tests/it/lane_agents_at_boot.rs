@@ -320,7 +320,7 @@ fn the_script_family_boots_as_a_lane_agent_from_its_registration() {
         .into_iter()
         .find(|registration| registration.agent == khora_sdk::khora_core::script::SCRIPT)
         .expect("the script family is registered");
-    let mut built = khora_agents::agent::lane_agent(registration, &DeviceCaps::default());
+    let mut built = khora_agents::lane_agent::lane_agent(registration, &DeviceCaps::default());
     let agent = registry
         .get_by_id(khora_sdk::khora_core::script::SCRIPT)
         .expect("the script agent is registered");

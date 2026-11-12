@@ -36,7 +36,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use khora_agents::agent::LaneAgent;
+use khora_agents::lane_agent::LaneAgent;
 use khora_core::agent::gorna::protocol::{Envelope, Epoch, OfferRequest, Report};
 use khora_core::agent::gorna::{AgentId, StrategyId};
 use khora_core::agent::registration::AgentRegistration;

@@ -15,7 +15,7 @@
 //! The level a family starts on is named by its registration, not decided by
 //! the order of its menu; a name no row of the menu has is refused at boot.
 
-use khora_agents::agent::lane_agent;
+use khora_agents::lane_agent::lane_agent;
 use khora_agents::registered_agent::lane_agents;
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::registration::{AgentRegistration, BootError};

@@ -2666,7 +2666,7 @@ fn registration_rule_reads_calls_in_family_folders_only() {
         "crates/khora-lanes/src/audio/mod.rs",
         "crates/khora-lanes/src/audio/family.rs",
         "crates/khora-agents/src/registered_agent.rs",
-        "crates/khora-agents/src/agent/agent.rs",
+        "crates/khora-agents/src/lane_agent/agent.rs",
         "crates/khora-agents/src/ui_agent/agent.rs",
         "crates/khora-agents/src/ui_agent/mod.rs",
         "crates/khora-agents/src/families/audio/registration.rs",
@@ -2690,6 +2690,519 @@ mod tests {
 }
 ";
     assert_eq!(register_agent_calls(text), vec![5]);
+}
+
+// ---------------------------------------------------------------------------
+// khora-agents, and the tests of each family
+// ---------------------------------------------------------------------------
+
+/// The source tree of khora-agents.
+const KHORA_AGENTS_SRC: &str = "crates/khora-agents/src";
+
+/// Everything `crates/khora-agents/src/` holds: the crate root, the boot of
+/// the registered families (`registered_agent.rs`) and the one agent
+/// (`lane_agent/`). The families themselves live in khora-lanes.
+const KHORA_AGENTS_SRC_ENTRIES: &[&str] = &["lib.rs", "registered_agent.rs", "lane_agent/"];
+
+/// khora-agents holds the `LaneAgent` and the boot of the registered
+/// families, nothing else: `crates/khora-agents/src/` holds exactly `lib.rs`,
+/// `registered_agent.rs` and the folder `lane_agent/`. Strict: not in the
+/// ratchet.
+#[test]
+fn khora_agents_holds_only_the_lane_agent_and_its_boot() {
+    let root = repo_root();
+    let problems = exact_entries_problems(&root.join(KHORA_AGENTS_SRC), KHORA_AGENTS_SRC_ENTRIES);
+    assert!(
+        problems.is_empty(),
+        "{KHORA_AGENTS_SRC}/ holds more or less than the LaneAgent and its boot \
+         ({}):\n  {}",
+        KHORA_AGENTS_SRC_ENTRIES.join(", "),
+        problems.join("\n  ")
+    );
+}
+
+/// What keeps `dir` from holding exactly `expected` (folders spelled with a
+/// trailing `/`), sorted. Each line names the entry relative to `dir`.
+fn exact_entries_problems(dir: &Path, expected: &[&str]) -> Vec<String> {
+    if !dir.is_dir() {
+        return vec![format!("{}: no such folder", dir.display())];
+    }
+    let expected: BTreeSet<String> = expected.iter().map(|e| (*e).to_owned()).collect();
+    let found = folder_entries(dir);
+    let mut problems = Vec::new();
+    for entry in found.difference(&expected) {
+        problems.push(format!("{entry}: not one of {expected:?}"));
+    }
+    for entry in expected.difference(&found) {
+        problems.push(format!("{entry}: missing"));
+    }
+    problems.sort();
+    problems
+}
+
+/// The khora-agents check accepts the crate as it is meant to be, and names
+/// the agent folder under its old name, a family's agent folder left behind,
+/// a stray file, and a `lane_agent` written as a file instead of a folder.
+#[test]
+fn khora_agents_check_names_what_is_not_the_lane_agent() {
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-agents-src-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    let write_tree = |base: &Path, files: &[&str]| -> std::io::Result<()> {
+        for file in files {
+            let path = base.join(file);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, "")?;
+        }
+        Ok(())
+    };
+    let setup = || -> std::io::Result<()> {
+        write_tree(
+            &dir.join("good"),
+            &[
+                "lib.rs",
+                "registered_agent.rs",
+                "lane_agent/mod.rs",
+                "lane_agent/choice.rs",
+            ],
+        )?;
+        write_tree(
+            &dir.join("old"),
+            &[
+                "lib.rs",
+                "registered_agent.rs",
+                "agent/mod.rs",
+                "ui_agent/mod.rs",
+                "util.rs",
+            ],
+        )?;
+        write_tree(
+            &dir.join("file"),
+            &["lib.rs", "registered_agent.rs", "lane_agent.rs"],
+        )?;
+        Ok(())
+    };
+    let setup = setup();
+    let good = exact_entries_problems(&dir.join("good"), KHORA_AGENTS_SRC_ENTRIES);
+    let old = exact_entries_problems(&dir.join("old"), KHORA_AGENTS_SRC_ENTRIES);
+    let file = exact_entries_problems(&dir.join("file"), KHORA_AGENTS_SRC_ENTRIES);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert!(good.is_empty(), "{good:#?}");
+    for expected in ["agent/:", "ui_agent/:", "util.rs:", "lane_agent/: missing"] {
+        assert!(
+            old.iter().any(|p| p.starts_with(expected)),
+            "expected a problem starting `{expected}`:\n{old:#?}"
+        );
+    }
+    assert_eq!(old.len(), 4, "{old:#?}");
+    assert!(
+        file.iter().any(|p| p.starts_with("lane_agent.rs:"))
+            && file.iter().any(|p| p.starts_with("lane_agent/: missing")),
+        "{file:#?}"
+    );
+    assert_eq!(file.len(), 2, "{file:#?}");
+}
+
+/// An integration-test tree whose tests are grouped by family.
+struct FamilyTestTree {
+    /// The crate's `tests/it/`, repository-relative.
+    it: &'static str,
+    /// The folder directly under `it` that holds one folder per family, or
+    /// `""` when the family folders sit directly under `it`.
+    families: &'static str,
+    /// The entries directly under `it` that pin no single family (a folder
+    /// spelled with a trailing `/`): the crate's own surface, tests across
+    /// families, shared helpers. `main.rs` is always allowed.
+    no_family: &'static [&'static str],
+}
+
+/// The two crates whose integration tests are grouped by family. khora-agents
+/// keeps the family tests that need the `LaneAgent`, the scheduler or a GPU
+/// under `families/<family>/`; khora-lanes keeps its lane tests in
+/// `<family>/`, directly under `tests/it/`.
+const FAMILY_TEST_TREES: &[FamilyTestTree] = &[
+    FamilyTestTree {
+        it: "crates/khora-agents/tests/it",
+        families: "families",
+        no_family: &[
+            // What every family offers GORNA, side by side.
+            "agent_negotiation_snapshot_test.rs",
+            // The asset service's pack loader: no lane, no family.
+            "asset_loading_test.rs",
+            // What every shipped agent declares to the scheduler.
+            "contention_test.rs",
+            // The render, shadow and audio flows of one tick together.
+            "frame_e2e_test.rs",
+            // ECS maintenance: no lane, no family.
+            "garbage_collector_test.rs",
+            // The `LaneAgent` itself, whatever its family.
+            "lane_agent/",
+            // Driving any agent through GORNA's protocol (shared helper).
+            "protocol.rs",
+            // The crate's public surface.
+            "public_paths.rs",
+        ],
+    },
+    FamilyTestTree {
+        it: "crates/khora-lanes/tests/it",
+        families: "",
+        no_family: &[
+            // The crate's public surface.
+            "public_paths.rs",
+        ],
+    },
+];
+
+/// The family an entry under a test tree is named after, if any: its name
+/// (without `/` or `.rs`) is a family's folder name or its domain
+/// (`FAMILY_FOLDERS`), that name in the plural, or starts with one of them
+/// followed by `_` (`audio_family.rs`, `overlay_families/`,
+/// `shadows_through_the_frame_graph.rs`, `loading_lane.rs`). The family's
+/// folder name is returned; a family `overlay/` groups (`OVERLAY_FAMILIES`)
+/// is read as `overlay`.
+fn family_named_by(entry: &str) -> Option<&'static str> {
+    let stem = entry_module(entry).unwrap_or(entry);
+    let named = |name: &str| {
+        stem == name || stem == format!("{name}s") || stem.starts_with(&format!("{name}_"))
+    };
+    FAMILY_FOLDERS
+        .iter()
+        .find_map(|(family, domain)| (named(family) || named(domain)).then_some(*family))
+        .or_else(|| OVERLAY_FAMILIES.iter().any(|f| named(f)).then_some(OVERLAY))
+}
+
+/// A family's tests are read in one folder. In each `FamilyTestTree`, every
+/// entry directly under `tests/it/` is one of:
+///
+/// - `main.rs`;
+/// - a family folder, named after a family of `FAMILY_FOLDERS` (`audio/`,
+///   `loading/`, `overlay/`, `physics/`, `render/`, `script/`, `shadows/`,
+///   `skybox/`, `ui/`) — directly under `tests/it/` in khora-lanes, under
+///   `tests/it/families/` in khora-agents, whose `families/` holds `mod.rs`
+///   and family folders only;
+/// - an entry the tree lists as pinning no single family (`no_family`),
+///   which is never itself named after a family (`family_named_by`).
+///
+/// Anything else is a test of one family left outside its folder. Strict:
+/// not in the ratchet.
+#[test]
+fn family_tests_live_in_their_family_folder() {
+    let root = repo_root();
+    let mut problems = Vec::new();
+    for tree in FAMILY_TEST_TREES {
+        problems.extend(family_test_problems(
+            &root.join(tree.it),
+            tree.it,
+            tree.families,
+            tree.no_family,
+        ));
+    }
+    problems.sort();
+    assert!(
+        problems.is_empty(),
+        "tests outside their family's folder (families: {}):\n  {}",
+        family_names(),
+        problems.join("\n  ")
+    );
+}
+
+/// What keeps the test tree `it` (shown as `label`) grouped by family,
+/// sorted. Each line names the entry as `label/<entry>`.
+fn family_test_problems(it: &Path, label: &str, families: &str, no_family: &[&str]) -> Vec<String> {
+    let mut problems = Vec::new();
+    if !it.is_dir() {
+        problems.push(format!("{label}/: no such folder"));
+        return problems;
+    }
+    let home = if families.is_empty() {
+        label.to_owned()
+    } else {
+        format!("{label}/{families}")
+    };
+    let is_family_folder = |entry: &str| {
+        entry
+            .strip_suffix('/')
+            .is_some_and(|name| FAMILY_FOLDERS.iter().any(|(family, _)| *family == name))
+    };
+
+    for entry in folder_entries(it) {
+        if entry == "main.rs" {
+            continue;
+        }
+        if !families.is_empty() && entry == format!("{families}/") {
+            for inner in folder_entries(&it.join(families)) {
+                if inner != "mod.rs" && !is_family_folder(&inner) {
+                    problems.push(format!(
+                        "{home}/{inner}: `{families}/` holds `mod.rs` and one folder per family \
+                         ({}), nothing else",
+                        family_names()
+                    ));
+                }
+            }
+            continue;
+        }
+        if families.is_empty() && is_family_folder(&entry) {
+            continue;
+        }
+        if no_family.contains(&entry.as_str()) {
+            if let Some(family) = family_named_by(&entry) {
+                problems.push(format!(
+                    "{label}/{entry}: listed as pinning no single family, but named after \
+                     the `{family}` family: its tests go under {home}/{family}/"
+                ));
+            }
+            continue;
+        }
+        match family_named_by(&entry) {
+            Some(family) => problems.push(format!(
+                "{label}/{entry}: a test of the `{family}` family: move it under \
+                 {home}/{family}/"
+            )),
+            None => problems.push(format!(
+                "{label}/{entry}: neither a family folder under {home}/ nor listed among \
+                 the tests that pin no single family"
+            )),
+        }
+    }
+    problems.sort();
+    problems
+}
+
+/// The family folder names, comma-separated.
+fn family_names() -> String {
+    FAMILY_FOLDERS
+        .iter()
+        .map(|(family, _)| *family)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The family test check accepts a tree grouped by family — under
+/// `families/` or directly under `tests/it/` — and names a family test left
+/// at the root (by its family when its name says it), a family folder put at
+/// the root where `families/` is expected, a stray entry in `families/`, a
+/// family's tests as one file, and a no-family list that names a family.
+#[test]
+fn family_test_check_names_what_sits_outside_a_family_folder() {
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-family-tests-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    let write_tree = |base: &Path, files: &[&str]| -> std::io::Result<()> {
+        for file in files {
+            let path = base.join(file);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, "")?;
+        }
+        Ok(())
+    };
+    let agents_no_family: &[&str] = &["lane_agent/", "protocol.rs"];
+    let lanes_no_family: &[&str] = &["public_paths.rs"];
+    let setup = || -> std::io::Result<()> {
+        write_tree(
+            &dir.join("agents_good"),
+            &[
+                "main.rs",
+                "protocol.rs",
+                "lane_agent/mod.rs",
+                "families/mod.rs",
+                "families/audio/mod.rs",
+                "families/overlay/mod.rs",
+                "families/script/behavior_budget.rs",
+            ],
+        )?;
+        write_tree(
+            &dir.join("agents_bad"),
+            &[
+                "main.rs",
+                "protocol.rs",
+                "lane_agent/mod.rs",
+                "families/mod.rs",
+                "families/physics/mod.rs",
+                "families/fixtures.rs",
+                "families/spatial_mixing/mod.rs",
+                "audio_family.rs",
+                "overlay_families/mod.rs",
+                "shadows_through_the_frame_graph.rs",
+                "physics/mod.rs",
+                "behavior_budget.rs",
+            ],
+        )?;
+        write_tree(
+            &dir.join("lanes_good"),
+            &[
+                "main.rs",
+                "public_paths.rs",
+                "audio/mod.rs",
+                "loading/mod.rs",
+                "script/watchdog.rs",
+            ],
+        )?;
+        write_tree(
+            &dir.join("lanes_bad"),
+            &[
+                "main.rs",
+                "public_paths.rs",
+                "loading_lane.rs",
+                "overlays/mod.rs",
+                "spatial_mixing/mod.rs",
+                "script_levels.rs",
+                "watchdog.rs",
+                "ui.rs",
+            ],
+        )?;
+        Ok(())
+    };
+    let setup = setup();
+    let agents_good =
+        family_test_problems(&dir.join("agents_good"), "a", "families", agents_no_family);
+    let agents_bad =
+        family_test_problems(&dir.join("agents_bad"), "a", "families", agents_no_family);
+    let lanes_good = family_test_problems(&dir.join("lanes_good"), "l", "", lanes_no_family);
+    let lanes_bad = family_test_problems(&dir.join("lanes_bad"), "l", "", lanes_no_family);
+    let listing_a_family = family_test_problems(
+        &dir.join("agents_bad"),
+        "a",
+        "families",
+        &[
+            "lane_agent/",
+            "protocol.rs",
+            "shadows_through_the_frame_graph.rs",
+        ],
+    );
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+
+    assert!(agents_good.is_empty(), "{agents_good:#?}");
+    assert!(lanes_good.is_empty(), "{lanes_good:#?}");
+
+    for expected in [
+        "a/families/fixtures.rs: `families/` holds",
+        "a/families/spatial_mixing/: `families/` holds",
+        "a/audio_family.rs: a test of the `audio` family: move it under a/families/audio/",
+        "a/overlay_families/: a test of the `overlay` family: move it under a/families/overlay/",
+        "a/shadows_through_the_frame_graph.rs: a test of the `shadows` family",
+        "a/physics/: a test of the `physics` family: move it under a/families/physics/",
+        "a/behavior_budget.rs: neither a family folder",
+    ] {
+        assert!(
+            agents_bad.iter().any(|p| p.starts_with(expected)),
+            "expected a problem starting `{expected}`:\n{agents_bad:#?}"
+        );
+    }
+    assert_eq!(agents_bad.len(), 7, "{agents_bad:#?}");
+
+    for expected in [
+        "l/loading_lane.rs: a test of the `loading` family: move it under l/loading/",
+        "l/overlays/: a test of the `overlay` family: move it under l/overlay/",
+        "l/spatial_mixing/: neither a family folder",
+        "l/script_levels.rs: a test of the `script` family: move it under l/script/",
+        "l/watchdog.rs: neither a family folder",
+        "l/ui.rs: a test of the `ui` family: move it under l/ui/",
+    ] {
+        assert!(
+            lanes_bad.iter().any(|p| p.starts_with(expected)),
+            "expected a problem starting `{expected}`:\n{lanes_bad:#?}"
+        );
+    }
+    assert_eq!(lanes_bad.len(), 6, "{lanes_bad:#?}");
+
+    assert!(
+        listing_a_family.iter().any(|p| p.starts_with(
+            "a/shadows_through_the_frame_graph.rs: listed as pinning no single family, \
+             but named after the `shadows` family"
+        )),
+        "{listing_a_family:#?}"
+    );
+}
+
+/// A name is read as a family's by its whole first word: `script_levels.rs`
+/// and `shadow_maps/` are, `behavior_budget.rs`, `scripted.rs` and
+/// `uniforms.rs` are not.
+#[test]
+fn family_names_are_read_by_their_whole_first_word() {
+    for (entry, family) in [
+        ("audio_family.rs", "audio"),
+        ("audio/", "audio"),
+        ("loading_lane.rs", "loading"),
+        ("overlay_families/", "overlay"),
+        ("overlays/", "overlay"),
+        ("physics_agent_tests.rs", "physics"),
+        ("physics_lane_contacts_test.rs", "physics"),
+        ("shadows_through_the_frame_graph.rs", "shadows"),
+        ("shadow_maps/", "shadows"),
+        ("script_levels.rs", "script"),
+        ("ui.rs", "ui"),
+    ] {
+        assert_eq!(family_named_by(entry), Some(family), "{entry}");
+    }
+    for entry in [
+        "behavior_budget.rs",
+        "scripted.rs",
+        "uniforms.rs",
+        "spatial_mixing/",
+        "authored_physics.rs",
+        "lane_agent/",
+        "public_paths.rs",
+        "frame_e2e_test.rs",
+    ] {
+        assert_eq!(family_named_by(entry), None, "{entry}");
+    }
+}
+
+/// The three families `overlay/` groups are families too: a name read by the
+/// whole first word as `grid`, `wireframe` or `gizmo` is the `overlay`
+/// family's, so such a test listed as pinning no single family is caught.
+#[test]
+fn the_overlay_families_are_read_by_their_own_names() {
+    for entry in [
+        "grid_lane.rs",
+        "grid/",
+        "wireframe_frames.rs",
+        "gizmos/",
+        "gizmo_hits.rs",
+    ] {
+        assert_eq!(family_named_by(entry), Some(OVERLAY), "{entry}");
+    }
+    let dir = std::env::temp_dir().join(format!(
+        "khora-layout-overlay-family-names-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    let setup = (|| -> std::io::Result<()> {
+        fs::create_dir_all(dir.join("overlay"))?;
+        for file in [
+            "main.rs",
+            "public_paths.rs",
+            "grid_lane.rs",
+            "overlay/mod.rs",
+        ] {
+            fs::write(dir.join(file), "")?;
+        }
+        Ok(())
+    })();
+    let problems = family_test_problems(&dir, "l", "", &["public_paths.rs", "grid_lane.rs"]);
+    let _ = fs::remove_dir_all(&dir);
+    setup.expect("create temp tree");
+    assert!(
+        problems.iter().any(|p| p.starts_with(
+            "l/grid_lane.rs: listed as pinning no single family, but named after the \
+             `overlay` family"
+        )),
+        "{problems:#?}"
+    );
 }
 
 /// `text` with every `//` and `/* */` comment blanked out (doc comments

@@ -116,7 +116,7 @@ at the level it is given and writes the family's outputs. The lane records throu
 use khora_core::lane::cost::{Cost, PerDevice};
 use khora_core::lane::{Lane, LaneError, LaneReport};
 
-use super::audio_family::{AudioFamily, AudioOutputs};
+use super::family::{AudioFamily, AudioOutputs};
 
 #[derive(Default)]
 pub struct SpatialMixingLane {
@@ -242,7 +242,7 @@ boot refuses the family.
 
 ## Step 7 — Verify it works
 
-Drive the family through one frame with `khora_agents::agent::run_frame`, as in
+Drive the family through one frame with `khora_agents::lane_agent::run_frame`, as in
 [Add a subsystem (a family)](./add-an-agent.md#step-7--verify-it-works), and assert
 on what the lane wrote into the deck. Then:
 

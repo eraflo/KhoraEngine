@@ -25,11 +25,11 @@ use khora_data::ui::UiImageAtlas;
 use std::any::TypeId;
 use std::sync::Arc;
 
-use crate::overlay_families::fixtures::{
+use crate::families::overlay::fixtures::{
     agent_of, gizmo_registration, grid_registration, wireframe_registration,
 };
-use crate::render_family::fixtures::{render_agent, EVERY_CAP};
-use crate::ui_family::fixtures::ui_agent;
+use crate::families::render::fixtures::{render_agent, EVERY_CAP};
+use crate::families::ui::fixtures::ui_agent;
 
 /// One agent as the scheduler groups it: the phase it runs in and what it
 /// declares.
@@ -103,11 +103,11 @@ fn the_agents_sharing_read_only_handles_do_not_contend() {
         ("renderer", placed(&render_agent(&EVERY_CAP))),
         (
             "shadows",
-            placed(&crate::shadows_family::fixtures::shadow_agent()),
+            placed(&crate::families::shadows::fixtures::shadow_agent()),
         ),
         (
             "skybox",
-            placed(&crate::skybox_family::fixtures::skybox_agent()),
+            placed(&crate::families::skybox::fixtures::skybox_agent()),
         ),
         ("grid", placed(&agent_of(grid_registration()))),
         ("wireframe", placed(&agent_of(wireframe_registration()))),
@@ -133,8 +133,8 @@ fn the_agents_sharing_read_only_handles_do_not_contend() {
 fn each_render_agent_writes_a_slot_of_its_own() {
     let slots: Vec<_> = [
         render_agent(&EVERY_CAP).contention(),
-        crate::shadows_family::fixtures::shadow_agent().contention(),
-        crate::skybox_family::fixtures::skybox_agent().contention(),
+        crate::families::shadows::fixtures::shadow_agent().contention(),
+        crate::families::skybox::fixtures::skybox_agent().contention(),
         agent_of(grid_registration()).contention(),
         agent_of(wireframe_registration()).contention(),
         agent_of(gizmo_registration()).contention(),
@@ -157,10 +157,9 @@ fn each_render_agent_writes_a_slot_of_its_own() {
 // declared breaks nothing on a serial frame and silently loses one writer's
 // data at the merge of a concurrent wave — so the declaration is pinned here,
 // slot by slot, against what each lane actually writes. A family on the typed
-// contract declares its slots through its outputs (audio: `audio_family.rs`,
-// physics: `physics_family/registration.rs`, shadows:
-// `shadows_family/registration.rs`, skybox: `skybox_family/registration.rs`,
-// ui: `ui_family/registration.rs`).
+// contract declares its slots through its outputs (the tests under
+// `families/<family>/`: audio in `mod.rs`, physics, shadows, skybox and ui in
+// `registration.rs`).
 
 /// The `image_on_gpu` DataSystem uploads every UI image into the shared atlas
 /// before any agent runs; the UI lane only reads the atlas's view and rects.
@@ -196,7 +195,7 @@ fn the_script_agent_locks_neither_engine_channel_nor_reaches_the_demand() {
     use khora_script::reload::ScriptReload;
     use std::sync::Mutex;
 
-    let contention = crate::script_family::fixtures::script_agent().contention();
+    let contention = crate::families::script::fixtures::script_agent().contention();
 
     assert!(
         !contention.may_reach(TypeId::of::<Channel<ScriptReload>>()),

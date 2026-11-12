@@ -16,7 +16,7 @@
 //! one for the next frame start: the row running now is the installed one,
 //! the one its last report measured.
 
-use khora_agents::agent::lane_agent;
+use khora_agents::lane_agent::lane_agent;
 use khora_core::agent::gorna::protocol::{Confidence, Epoch};
 use khora_core::agent::gorna::StrategyId;
 use khora_core::agent::Agent;
