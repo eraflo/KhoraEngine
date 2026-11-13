@@ -41,8 +41,8 @@ use khora_core::event::{Mailbox, Reader};
 use khora_core::lane::{LaneBus, OutputDeck, Reserve, Staging};
 use khora_core::{EngineContext, Runtime};
 
-use super::execution::run_guarded;
 use super::known::{locked, MetAgent};
+use super::panic_guard::run_guarded;
 use crate::worker_pool::WorkerPool;
 
 /// A run off the frame that ended, on its way back to its place.

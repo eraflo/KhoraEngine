@@ -16,6 +16,8 @@
 //! wave on the worker pool.
 
 use super::known::locked;
+use super::panic_guard::{outcome_of, recover, run_guarded, settle_deck};
+use super::pooled_run::PooledRun;
 use super::waves::{build_wave_metas, check_wave_disjoint, partition_waves};
 use super::{
     are_hard_dependencies_completed, sort_agents, AgentSelection, AgentSlot, ExecutionScheduler,
@@ -24,12 +26,12 @@ use khora_core::agent::completion::{AgentCompletionMap, CompletionOutcome};
 use khora_core::agent::gorna::protocol::Report;
 use khora_core::agent::gorna::AgentId;
 use khora_core::agent::timing::AgentImportance;
-use khora_core::agent::{AgentDependency, ExecutionPhase, Place};
+use khora_core::agent::{AgentDependency, ExecutionPhase};
 use khora_core::lane::{LaneBus, OutputDeck};
 use khora_core::telemetry::TelemetryEvent;
 use khora_core::{EngineContext, Runtime};
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 impl ExecutionScheduler {
@@ -297,66 +299,4 @@ impl ExecutionScheduler {
     fn is_under_budget_pressure(&self) -> bool {
         self.frame_start.elapsed() > self.frame_budget
     }
-}
-
-/// What a pooled agent sends back to the wave collector.
-struct PooledRun {
-    /// The agent's index in the wave, to fold shards in a stable order.
-    idx: usize,
-    id: AgentId,
-    shard: OutputDeck,
-    /// The deck slots it wrote (recorded in debug builds only).
-    written: Vec<std::any::TypeId>,
-    permit: khora_core::agent::Contention,
-    ms: f64,
-    /// False when the run panicked.
-    ran: bool,
-    /// The agent's report of the run, if it ran.
-    report: Option<Report>,
-    /// The job's view of the deck the wave reads, handed back so the wave can
-    /// take the deck back once every job is done.
-    earlier: Arc<OutputDeck>,
-}
-
-/// After the run of `id` panicked: its place's lock is usable again, and the
-/// place reports the run stalled, saying it panicked, as a background run
-/// that panicked is.
-fn recover(place: &Mutex<Place>, id: AgentId) -> Option<Report> {
-    place.clear_poison();
-    locked(place).run_failed(format!("the run of `{id}` panicked"))
-}
-
-/// Runs an agent's work — its layer's run, its wake, its place's frame
-/// start — turning a panic into `false` so the frame goes on
-/// and the agent is reported as failed instead of taking the thread down.
-pub(super) fn run_guarded(id: AgentId, execute: impl FnOnce()) -> bool {
-    let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(execute)).is_ok();
-    if !ran {
-        log::error!("agent {id:?} panicked; its work for this frame is dropped");
-    }
-    ran
-}
-
-fn outcome_of(ran: bool) -> CompletionOutcome {
-    if ran {
-        CompletionOutcome::Completed
-    } else {
-        CompletionOutcome::Failed
-    }
-}
-
-/// After an agent wrote straight into the frame's deck: checks its writes
-/// against its declaration, and drops them if it panicked.
-fn settle_deck(
-    scheduler: &ExecutionScheduler,
-    id: AgentId,
-    permit: &khora_core::agent::Contention,
-    deck: &mut OutputDeck,
-    ran: bool,
-) {
-    let written = deck.drain_written();
-    if !ran {
-        deck.discard(&written);
-    }
-    scheduler.audit_deck_writes(id, permit, written);
 }

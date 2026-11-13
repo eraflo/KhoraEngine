@@ -34,9 +34,14 @@ use std::time::{Duration, Instant};
 use waves::{build_wave_metas, partition_waves};
 
 mod background;
+mod clocks;
 mod execution;
 mod frame;
 mod known;
+mod layers;
+mod lending;
+mod panic_guard;
+mod pooled_run;
 mod sim_steps;
 mod waves;
 
